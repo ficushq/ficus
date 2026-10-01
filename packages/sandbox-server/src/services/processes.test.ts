@@ -76,7 +76,7 @@ const server: FakeProcess = {
   ppid: 929,
   uid: BOX_UID,
   comm: 'bun',
-  cmdline: ['/opt/tau/bin/bun', 'server.js'],
+  cmdline: ['/opt/ficus/bin/bun', 'server.js'],
 }
 const tsc: FakeProcess = {
   pid: 2838629,

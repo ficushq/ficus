@@ -1,0 +1,21 @@
+[Unit]
+Description=Ficus shared browser service (per-box contexts, token auth, caps)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ficus-browser
+Group=ficus-browser
+RuntimeDirectory=ficus-browser
+RuntimeDirectoryMode=0750
+Environment=HOME=/opt/ficus/browser/home
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/ficus/browser/ms-playwright
+Environment=FICUS_BROWSER_SOCK=/run/ficus-browser/sock
+ExecStart=/opt/ficus/bin/bun /opt/ficus/browser/service/ficus-browser.js
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+@ALIAS@

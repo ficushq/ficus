@@ -3,7 +3,7 @@
 # Ficus machine bootstrap
 # =====================
 # Prepares a VM host to run Ficus VM-based sandbox "boxes" (per-sandbox unix users
-# managed by box-provision.sh, which this script installs into /opt/tau/bin).
+# managed by box-provision.sh, which this script installs into /opt/ficus/bin).
 #
 # Target OS : Ubuntu 24.04 LTS ONLY (systemd 255, bash 5.2). Other distros are
 #             out of scope for this slice and untested.
@@ -11,7 +11,7 @@
 # Idempotent: safe to re-run — every step checks-then-acts, so a drift
 #             re-bootstrap (same or newer --version) converges without error.
 # No secrets: this script embeds NO credentials. Config/secrets arrive later via
-#             each box's ~/.tau/server.env (pushed by the slice-2 manager).
+#             each box's ~/.ficus/server.env (pushed by the slice-2 manager).
 # Invocation: works both when streamed + run over SSH (bootstrapMachine in
 #             apps/core/src/services/machines/bootstrap.ts) and as a cloud-init
 #             `runcmd` payload.
@@ -20,7 +20,7 @@
 #   bootstrap.sh --version <hash> [--egress-lockdown] [--core-cidr <cidr>]...
 #
 # --version         opaque bootstrap version (sha256 of this file, computed by
-#                   the caller) recorded in /opt/tau/manifest.json.
+#                   the caller) recorded in /opt/ficus/manifest.json.
 # --egress-lockdown install nftables egress rules (default OFF this slice). The
 #                   rules mirror k8s/network-policy.yaml: allow DNS + the public
 #                   internet + any --core-cidr, drop RFC1918 / link-local /
@@ -32,7 +32,7 @@
 # Final line on stdout is exactly one machine-readable capabilities marker:
 #   FICUS_CAPS_JSON: {"arch":...,"cpus":...,"memMb":...,"diskGb":...,"kernel":...,"docker":"rootless","forwarding":"yes","browser":"available"}
 # `browser` is "available" once verify_browser confirms Chromium's sandbox is ON
-# and the tau-browser service is live, else "unavailable" with a "browserReason"
+# and the ficus-browser service is live, else "unavailable" with a "browserReason"
 # token: install/setup — playwright_install_failed / chromium_download_failed /
 # user_setup_failed / setup_failed / install_failed; runtime — apparmor_parser_missing
 # / apparmor_load_failed / sandbox_check_failed / service_start_failed /
@@ -80,8 +80,13 @@ PLAYWRIGHT_VERSION="1.58.2"
 BROWSER_DOWNLOAD_TIMEOUT_SECS=300
 BROWSER_DOWNLOAD_ATTEMPTS=2
 
-FICUS_ROOT="/opt/tau"
-BUN_INSTALL_DIR="${FICUS_ROOT}/bun"      # official installer target (dispatcher: "install to /opt/tau/bun")
+# Test seam: a temp root every host path below is placed under. Empty in
+# production; only bootstrap.test.ts sets it (with the script sourced, which
+# defines the functions and runs nothing).
+FICUS_HOST_ROOT="${FICUS_HOST_ROOT:-}"
+
+FICUS_ROOT="${FICUS_HOST_ROOT}/opt/ficus"
+BUN_INSTALL_DIR="${FICUS_ROOT}/bun"      # official installer target (dispatcher: "install to /opt/ficus/bun")
 BUN_BIN_LINK="${FICUS_ROOT}/bin/bun"     # stable invocation path used by box-provision's unit
 
 # Prebaked-image marker (packages/machine-image/Dockerfile writes it as
@@ -105,21 +110,30 @@ NIX_BIN="${NIX_PROFILE_BIN}/nix"
 DEVBOX_BIN="/usr/local/bin/devbox"
 
 # Shared per-machine browser service layout (install_browser). ONE Chromium per
-# machine, root-owned + world-readable under /opt/tau/browser, driven by the
-# unprivileged `tau-browser` system user over a group-restricted unix socket.
+# machine, root-owned + world-readable under /opt/ficus/browser, driven by the
+# unprivileged `ficus-browser` system user over a group-restricted unix socket.
 # See the browser-tools-in-sandbox spec §4.1/§4.2. install_browser installs the
 # packages + the sandbox hard gate + the real service (per-box BrowserContext,
 # token auth, caps — write_browser_service).
-FICUS_BROWSER_USER="tau-browser"
+FICUS_BROWSER_USER="ficus-browser"
 FICUS_BROWSER_ROOT="${FICUS_ROOT}/browser"
 FICUS_BROWSER_HOME="${FICUS_BROWSER_ROOT}/home"            # writable HOME for the service user
 FICUS_BROWSER_BROWSERS_PATH="${FICUS_BROWSER_ROOT}/ms-playwright"  # PLAYWRIGHT_BROWSERS_PATH
-FICUS_BROWSER_SERVICE_JS="${FICUS_BROWSER_ROOT}/service/tau-browser.js"
+FICUS_BROWSER_SERVICE_JS="${FICUS_BROWSER_ROOT}/service/ficus-browser.js"
 FICUS_BROWSER_VERIFY_JS="${FICUS_BROWSER_ROOT}/service/verify-sandbox.js"
-# The socket path (/run/tau-browser/sock, 0660 group tau-browser) is fixed in the
+# The socket path (/run/ficus-browser/sock, 0660 group ficus-browser) is fixed in the
 # static unit + service program, not a shell constant.
-FICUS_BROWSER_UNIT="/etc/systemd/system/tau-browser.service"
-FICUS_BROWSER_APPARMOR="/etc/apparmor.d/tau-browser-chromium"
+FICUS_BROWSER_UNIT="${FICUS_HOST_ROOT}/etc/systemd/system/ficus-browser.service"
+FICUS_BROWSER_APPARMOR="${FICUS_HOST_ROOT}/etc/apparmor.d/ficus-browser-chromium"
+
+# Bridge (phase 5, U4): the machine root and the browser's user, group, unit,
+# runtime dir and AppArmor profile before the Ficus rename. migrate_machine_root
+# moves a machine off them; the ficus-browser unit carries the old unit name as
+# its Alias (the @ALIAS@ line of the unit, filled by write_browser_unit), and
+# /run/<old> stays a link to /run/ficus-browser for boxes still running on their
+# old units until they are re-provisioned.
+LEGACY_MACHINE_ROOT=/opt/tau             # ficus-p5-bridge
+LEGACY_BROWSER_NAME=tau-browser          # ficus-p5-bridge
 # Durable, machine-readable availability markers written by verify_browser. On a
 # host that CAN run the sandboxed browser: READY (timestamp), UNAVAILABLE removed.
 # On a host that CANNOT: UNAVAILABLE (reason token + timestamp + detail), READY
@@ -222,7 +236,9 @@ fi
 # the one thing cloud-init doesn't serialize — unattended-upgrades kicking
 # off on its own timer. `|| true`: a broken/absent cloud-init must not fail
 # bootstrap over what is only an optimization.
-command -v cloud-init >/dev/null 2>&1 && "${SUDO[@]}" cloud-init status --wait >/dev/null 2>&1 || true
+if ! (return 0 2>/dev/null); then
+  command -v cloud-init >/dev/null 2>&1 && "${SUDO[@]}" cloud-init status --wait >/dev/null 2>&1 || true
+fi
 APT_LOCK_WAIT=(-o DPkg::Lock::Timeout=600)
 
 install_base_packages() {
@@ -249,7 +265,7 @@ install_base_packages() {
 }
 
 make_dirs() {
-  # /opt/tau/server and /opt/tau/cli receive core-pushed machine artifacts (the
+  # /opt/ficus/server and /opt/ficus/cli receive core-pushed machine artifacts (the
   # sandbox-server bundle and the ficus CLI); the push's `install -D` also creates
   # them, so pre-creating here is belt-and-braces.
   "${SUDO[@]}" mkdir -p "${FICUS_ROOT}/bin" "${FICUS_ROOT}/server" "${FICUS_ROOT}/cli"
@@ -363,12 +379,12 @@ install_devbox() {
 # ---------------------------------------------------------------------------
 # Shared per-machine browser service (browser-tools-in-sandbox spec §4.1).
 #
-# PHASE 1 scope: install Playwright + Chromium into /opt/tau/browser
-# (root-owned, world-readable), create the `tau-browser` system user, and lay
-# down the `tau-browser.service` SYSTEM unit + AppArmor profile. The service
+# PHASE 1 scope: install Playwright + Chromium into /opt/ficus/browser
+# (root-owned, world-readable), create the `ficus-browser` system user, and lay
+# down the `ficus-browser.service` SYSTEM unit + AppArmor profile. The service
 # PROGRAM (write_browser_service) is now the real Phase 2 implementation
 # (browser-tools-in-sandbox spec §4.2): per-box BrowserContext, token auth,
-# caps — see scripts/machine/browser/tau-browser.js for the source of truth.
+# caps — see scripts/machine/browser/ficus-browser.js for the source of truth.
 #
 # The Chromium sandbox stays ON (spec §5): the service NEVER passes --no-sandbox.
 # verify_browser() (run on every boot in main) confirms the sandbox is enabled;
@@ -384,7 +400,7 @@ install_devbox() {
 write_browser_service() {
   "${SUDO[@]}" tee "${FICUS_BROWSER_SERVICE_JS}" >/dev/null <<'BROWSER_SERVICE_JS'
 // @ts-check
-// tau-browser.service program — per-box BrowserContext, token auth, caps
+// ficus-browser.service program — per-box BrowserContext, token auth, caps
 // (browser-tools-in-sandbox spec §4.2, Phase 2). Serves a small JSON verb
 // protocol over the unix socket: one Playwright BrowserContext per
 // authenticated box user, run-id-keyed pages inside it. A box can never
@@ -398,12 +414,12 @@ write_browser_service() {
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 
-const SOCK = process.env.FICUS_BROWSER_SOCK || '/run/tau-browser/sock'
-// A SIBLING of /opt/tau/browser, not a child — install_browser recursively
-// chown/chmods /opt/tau/browser to root:root + a+rX (every box user must
+const SOCK = process.env.FICUS_BROWSER_SOCK || '/run/ficus-browser/sock'
+// A SIBLING of /opt/ficus/browser, not a child — install_browser recursively
+// chown/chmods /opt/ficus/browser to root:root + a+rX (every box user must
 // read the browser binaries), which would world-expose token digests if they
 // lived inside it.
-const DEFAULT_TOKENS_DIR = '/opt/tau/browser-tokens'
+const DEFAULT_TOKENS_DIR = '/opt/ficus/browser-tokens'
 const DEFAULT_MEMORY_HIGH_MB = 8192
 
 const VIEWPORT = { width: 1280, height: 720 }
@@ -552,6 +568,15 @@ async function routeHandler(route, blockedHost = isBlockedHost) {
   }
 }
 
+// Playwright defaults chromiumSandbox to false. Use full Chromium's new
+// headless mode so the verifier and service share the same sandbox-capable
+// binary and chrome://sandbox diagnostics (headless-shell omits that WebUI).
+export const CHROMIUM_LAUNCH_OPTIONS = Object.freeze({
+  headless: true,
+  channel: 'chromium',
+  chromiumSandbox: true,
+})
+
 export function createService(deps = {}) {
   const launch =
     deps.launch ||
@@ -561,7 +586,7 @@ export function createService(deps = {}) {
       // test suite has zero load-time dependency on the `playwright` package
       // being installed (Phase 3 drops it from apps/core entirely).
       const { chromium } = await import('playwright')
-      return chromium.launch({ headless: true })
+      return chromium.launch(CHROMIUM_LAUNCH_OPTIONS)
     })
   const now = deps.now || Date.now
   const tokensDir = deps.tokensDir || process.env.FICUS_BROWSER_TOKENS_DIR || DEFAULT_TOKENS_DIR
@@ -1044,7 +1069,7 @@ if (import.meta.main) {
   try {
     fs.chmodSync(SOCK, 0o660)
   } catch (err) {
-    console.error('tau-browser: could not chmod socket', err)
+    console.error('ficus-browser: could not chmod socket', err)
   }
 
   const onShutdown = () => {
@@ -1058,43 +1083,55 @@ BROWSER_SERVICE_JS
 
 # Write the one-shot Chromium sandbox verification program (the hard gate, run by
 # verify_browser). Launches headless Chromium WITHOUT --no-sandbox and confirms a
-# renderer works and chrome://sandbox does not report an unsandboxed process.
+# chrome://sandbox positively confirms namespace and seccomp-BPF isolation.
 write_browser_verify() {
   "${SUDO[@]}" tee "${FICUS_BROWSER_VERIFY_JS}" >/dev/null <<'BROWSER_VERIFY_JS'
-// One-shot Chromium sandbox verification — PHASE 1 hard gate (spec §4.1/§5).
-// Launches headless Chromium WITHOUT --no-sandbox and confirms a renderer works
-// under the unprivileged tau-browser user (a missing user-namespace grant
-// crashes the zygote here) and that chrome://sandbox does not report an
-// unsandboxed process. Exit 0 = sandbox active; non-zero = FAIL (bootstrap
-// aborts, browsing disabled on this host — never downgraded to --no-sandbox).
+// One-shot Linux Chromium sandbox gate. Missing or unreadable diagnostics are
+// failures; a working renderer alone does not prove Chromium enabled isolation.
+// Bootstrap leaves browsing unavailable when this program fails.
 //
-// SINGLE SOURCE OF TRUTH: packages/machine-image/Dockerfile COPYs this file, and
-// scripts/machine/bootstrap.sh (write_browser_verify) embeds it verbatim.
-// bootstrap.test.ts asserts the two copies stay byte-identical.
-const { chromium } = require('playwright')
+// SINGLE SOURCE OF TRUTH: the image COPYs this file and bootstrap.sh embeds it
+// verbatim. Both launchers use the service's exact pinned launch options.
+import { CHROMIUM_LAUNCH_OPTIONS } from './ficus-browser.js'
 
-async function main() {
-  const browser = await chromium.launch({ headless: true })
-  try {
-    const page = await browser.newPage()
-    // A renderer that loads a page proves the user-namespace sandbox could be
-    // entered; without the AppArmor userns grant this throws.
-    await page.goto('about:blank', { timeout: 15000 })
-    await page.goto('chrome://sandbox', { timeout: 15000 }).catch(() => {})
-    const text = (await page.innerText('body').catch(() => '')) || ''
-    if (/not sandboxed/i.test(text)) {
-      throw new Error('chrome://sandbox reports an unsandboxed process: ' + text.slice(0, 200))
+export function assertSandboxStatus(text) {
+  // Chromium's sandboxGood requires a layer-one namespace sandbox (including
+  // PID and network namespaces) plus the layer-two seccomp-BPF sandbox.
+  if (!/(?:^|\n)Layer 1 Sandbox\s+Namespace(?:\s|$)/i.test(text)) {
+    throw new Error('Chromium sandbox status did not confirm the namespace sandbox')
+  }
+  for (const label of ['PID namespaces', 'Network namespaces', 'Seccomp-BPF sandbox']) {
+    if (!new RegExp(`(?:^|\\n)${label}\\s+Yes(?:\\s|$)`, 'i').test(text)) {
+      throw new Error(`Chromium sandbox status did not confirm ${label}`)
     }
-    console.error('tau-browser: sandbox verification passed')
-  } finally {
-    await browser.close().catch(() => {})
+  }
+  if (!/(?:^|\n)You are adequately sandboxed\.(?:\s|$)/i.test(text)) {
+    throw new Error('Chromium did not report adequate sandboxing')
   }
 }
 
-main().catch((err) => {
-  console.error('tau-browser: sandbox verification FAILED —', err && err.message ? err.message : err)
-  process.exit(1)
-})
+export async function verifySandbox(chromium) {
+  const browser = await chromium.launch(CHROMIUM_LAUNCH_OPTIONS)
+  try {
+    const page = await browser.newPage()
+    await page.goto('chrome://sandbox', { timeout: 15000 })
+    const text = await page.innerText('body', { timeout: 15000 })
+    assertSandboxStatus(text)
+  } finally {
+    await browser.close()
+  }
+}
+
+if (import.meta.main) {
+  try {
+    const { chromium } = await import('playwright')
+    await verifySandbox(chromium)
+    console.error('ficus-browser: sandbox verification passed (namespace, PID, network, seccomp-BPF)')
+  } catch (err) {
+    console.error('ficus-browser: sandbox verification FAILED —', err && err.message ? err.message : err)
+    process.exitCode = 1
+  }
+}
 BROWSER_VERIFY_JS
 }
 
@@ -1102,40 +1139,42 @@ BROWSER_VERIFY_JS
 # the pinned Chromium binaries. Ubuntu 24.04 restricts unprivileged userns via
 # AppArmor by default — the same mechanism gates its own browser packages — so
 # Chromium's sandbox cannot enter a namespace without this grant. The glob
-# attachment matches both the full `chrome` and the `headless_shell` binary
+# attachment matches full Chromium and Playwright's separate headless-shell tree
 # across Playwright build directories, so it is version-independent.
 write_browser_apparmor() {
   "${SUDO[@]}" tee "${FICUS_BROWSER_APPARMOR}" >/dev/null <<'BROWSER_APPARMOR'
-# tau-browser: grant unprivileged user-namespace creation to the pinned Chromium
-# so its renderer sandbox works under the unprivileged tau-browser user. KEEP the
+# ficus-browser: grant unprivileged user-namespace creation to the pinned Chromium
+# so its renderer sandbox works under the unprivileged ficus-browser user. KEEP the
 # sandbox ON — never --no-sandbox (browser-tools-in-sandbox spec §4.1/§5).
 #
 # SINGLE SOURCE OF TRUTH: packages/machine-image/Dockerfile COPYs this file to
-# /etc/apparmor.d/tau-browser-chromium, and scripts/machine/bootstrap.sh
+# /etc/apparmor.d/ficus-browser-chromium, and scripts/machine/bootstrap.sh
 # (write_browser_apparmor) embeds it verbatim. bootstrap.test.ts asserts the two
 # copies stay byte-identical.
 abi <abi/4.0>,
 include <tunables/global>
 
-profile tau-browser-chromium /opt/tau/browser/ms-playwright/chromium*/chrome-linux*/{chrome,headless_shell} flags=(unconfined) {
+profile ficus-browser-chromium /opt/ficus/browser/ms-playwright/{chromium-*/chrome-linux*/chrome,chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell} flags=(unconfined) {
   userns,
 
-  include if exists <local/tau-browser-chromium>
+  include if exists <local/ficus-browser-chromium>
 }
 BROWSER_APPARMOR
 }
 
-# Write the tau-browser.service SYSTEM unit. Runs as the unprivileged
-# `tau-browser` user. RuntimeDirectory gives /run/tau-browser (0750, group
-# tau-browser) so box users added to the group at provision (Phase 2) can reach
+# Write the ficus-browser.service SYSTEM unit. Runs as the unprivileged
+# `ficus-browser` user. RuntimeDirectory gives /run/ficus-browser (0750, group
+# ficus-browser) so box users added to the group at provision (Phase 2) can reach
 # the 0660 socket. The memory cap is NOT baked here — it is host-specific and
 # written per-boot by write_browser_memory_dropin (so a prebaked image, built on
 # a different-sized builder, still gets THIS VM's cap).
-# The unit body is fully static (all paths are fixed /opt/tau constants), so it
-# is embedded verbatim — byte-identical to scripts/machine/browser/tau-browser.service
-# (which the machine image COPYs), asserted by bootstrap.test.ts.
+# The unit body is fully static (all paths are fixed /opt/ficus constants), so it
+# is embedded verbatim — byte-identical to scripts/machine/browser/ficus-browser.service
+# (which the machine image COPYs), asserted by bootstrap.test.ts. Its one token
+# line, @ALIAS@, becomes `Alias=<the pre-rename unit name>` (the image fills it
+# the same way).
 write_browser_unit() {
-  "${SUDO[@]}" tee "${FICUS_BROWSER_UNIT}" >/dev/null <<'BROWSER_UNIT'
+  sed "s|^@ALIAS@\$|Alias=${LEGACY_BROWSER_NAME}.service|" <<'BROWSER_UNIT' | "${SUDO[@]}" tee "${FICUS_BROWSER_UNIT}" >/dev/null
 [Unit]
 Description=Ficus shared browser service (per-box contexts, token auth, caps)
 After=network-online.target
@@ -1143,19 +1182,20 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=tau-browser
-Group=tau-browser
-RuntimeDirectory=tau-browser
+User=ficus-browser
+Group=ficus-browser
+RuntimeDirectory=ficus-browser
 RuntimeDirectoryMode=0750
-Environment=HOME=/opt/tau/browser/home
-Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/tau/browser/ms-playwright
-Environment=FICUS_BROWSER_SOCK=/run/tau-browser/sock
-ExecStart=/opt/tau/bin/bun /opt/tau/browser/service/tau-browser.js
+Environment=HOME=/opt/ficus/browser/home
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/ficus/browser/ms-playwright
+Environment=FICUS_BROWSER_SOCK=/run/ficus-browser/sock
+ExecStart=/opt/ficus/bin/bun /opt/ficus/browser/service/ficus-browser.js
 Restart=on-failure
 RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
+@ALIAS@
 BROWSER_UNIT
   "${SUDO[@]}" chmod 0644 "${FICUS_BROWSER_UNIT}"
 }
@@ -1181,8 +1221,8 @@ write_browser_memory_dropin() {
     | "${SUDO[@]}" install -m 0644 /dev/stdin "${dropin_dir}/memory.conf"
 }
 
-# Create the tau-browser system user + group (idempotent). No login shell; a
-# writable HOME under /opt/tau/browser for the browser's runtime state.
+# Create the ficus-browser system user + group (idempotent). No login shell; a
+# writable HOME under /opt/ficus/browser for the browser's runtime state.
 ensure_browser_user() {
   getent group "${FICUS_BROWSER_USER}" >/dev/null 2>&1 \
     || "${SUDO[@]}" groupadd --system "${FICUS_BROWSER_USER}"
@@ -1206,7 +1246,7 @@ _browser_install_steps() {
     || { BROWSER_INSTALL_REASON=setup_failed; return 1; }
 
   # Pin Playwright via a private package.json + `bun install` into
-  # /opt/tau/browser/node_modules. Skip the (350 MB) download when the pinned
+  # /opt/ficus/browser/node_modules. Skip the (350 MB) download when the pinned
   # playwright is already installed AND a Chromium build is present.
   local installed=""
   if [ -f "${FICUS_BROWSER_ROOT}/node_modules/playwright/package.json" ]; then
@@ -1221,7 +1261,7 @@ _browser_install_steps() {
     && compgen -G "${FICUS_BROWSER_BROWSERS_PATH}/chromium-*/INSTALLATION_COMPLETE" >/dev/null 2>&1 \
     && chromium_present=true
   if [ "${installed}" != "${PLAYWRIGHT_VERSION}" ] || [ "${chromium_present}" != true ]; then
-    printf '{"name":"tau-browser","private":true,"dependencies":{"playwright":"%s"}}\n' \
+    printf '{"name":"ficus-browser","private":true,"dependencies":{"playwright":"%s"}}\n' \
       "${PLAYWRIGHT_VERSION}" \
       | "${SUDO[@]}" tee "${FICUS_BROWSER_ROOT}/package.json" >/dev/null \
       || { BROWSER_INSTALL_REASON=setup_failed; return 1; }
@@ -1271,8 +1311,8 @@ _browser_install_steps() {
   return 0
 }
 
-# Install Playwright + Chromium (with OS deps) into /opt/tau/browser and lay down
-# the tau-browser service scaffolding. Idempotent: the heavy download is skipped
+# Install Playwright + Chromium (with OS deps) into /opt/ficus/browser and lay down
+# the ficus-browser service scaffolding. Idempotent: the heavy download is skipped
 # when the pinned Playwright is already present; the small service/unit/profile
 # files are always (re)written so a drift re-bootstrap converges. Called from the
 # non-prebaked install flow (alongside install_bun/install_devbox); on a prebaked
@@ -1312,7 +1352,7 @@ browser_mark_unavailable() {
   "${SUDO[@]}" rm -f "${FICUS_BROWSER_READY_MARKER}" 2>/dev/null || true
   # Stop + disable so the unit does not crash-loop (and stays down across reboots)
   # on a host that cannot sandbox it.
-  "${SUDO[@]}" systemctl disable --now tau-browser.service >/dev/null 2>&1 || true
+  "${SUDO[@]}" systemctl disable --now ficus-browser.service >/dev/null 2>&1 || true
   echo "bootstrap.sh: ERROR browser unavailable on this host (reason=${reason}): ${detail} — browsing disabled; the machine still comes up. NEVER falling back to --no-sandbox." >&2
 }
 
@@ -1332,7 +1372,7 @@ browser_mark_ready() {
 # main() — on both the prebaked (baked layout) and BYO (install_browser) paths,
 # because loading the AppArmor profile into the running kernel and starting the
 # SYSTEM service are per-boot actions. Loads the profile, runs the one-shot
-# Chromium sandbox check as the tau-browser user, and starts the service.
+# Chromium sandbox check as the ficus-browser user, and starts the service.
 #
 # NEVER fails bootstrap: on ANY failure the machine still comes up (return 0)
 # with browsing marked UNAVAILABLE — durable marker + capabilities.browser +
@@ -1345,6 +1385,17 @@ verify_browser() {
   #    sandbox check on a half-installed browser would only overwrite it with a
   #    less useful token. Nothing to verify; the caps/marker already reflect it.
   if [ "${BROWSER_STATUS}" = "unavailable" ] && [ "${BROWSER_REASON}" != "not_verified" ]; then
+    return 0
+  fi
+
+  # Refresh the embedded assets on prebaked/already-migrated hosts too. Stop
+  # the previous process first so a stale launcher cannot keep serving pages.
+  if ! "${SUDO[@]}" systemctl stop ficus-browser.service; then
+    browser_mark_unavailable service_start_failed "could not stop the previous browser before verification"
+    return 0
+  fi
+  if ! write_browser_service || ! write_browser_verify || ! write_browser_apparmor; then
+    browser_mark_unavailable setup_failed "could not refresh the browser sandbox assets"
     return 0
   fi
 
@@ -1361,7 +1412,7 @@ verify_browser() {
     return 0
   fi
 
-  # 2. One-shot sandbox check as the tau-browser user (runuser: always available,
+  # 2. One-shot sandbox check as the ficus-browser user (runuser: always available,
   #    no password, needs root — hence the SUDO wrapper). This is where a host
   #    that cannot enter the userns sandbox (or musl/Alpine that cannot run the
   #    glibc Chromium) fails — non-fatally.
@@ -1373,7 +1424,7 @@ verify_browser() {
   #    is dropped, Playwright falls back to $HOME/.cache/ms-playwright, the
   #    (correctly-installed) Chromium is "not found", and this gate fails with a
   #    misleading sandbox_check_failed. An accessible CWD is mandatory. Any
-  #    tau-browser bun invocation is subject to this (the SYSTEM unit is safe
+  #    ficus-browser bun invocation is subject to this (the SYSTEM unit is safe
   #    only because systemd's default WorkingDirectory=/ is accessible).
   if ! ( cd "${FICUS_BROWSER_ROOT}" && "${SUDO[@]}" runuser -u "${FICUS_BROWSER_USER}" -- \
     env "HOME=${FICUS_BROWSER_HOME}" "PLAYWRIGHT_BROWSERS_PATH=${FICUS_BROWSER_BROWSERS_PATH}" \
@@ -1390,23 +1441,23 @@ verify_browser() {
   #    `set -e`-aborting bootstrap.
   if ! write_browser_memory_dropin; then
     browser_mark_unavailable service_start_failed \
-      "failed to write the tau-browser MemoryHigh drop-in"
+      "failed to write the ficus-browser MemoryHigh drop-in"
     return 0
   fi
   if ! "${SUDO[@]}" systemctl daemon-reload; then
     browser_mark_unavailable service_start_failed "systemctl daemon-reload failed"
     return 0
   fi
-  "${SUDO[@]}" systemctl enable tau-browser.service >/dev/null 2>&1 || true
-  if ! "${SUDO[@]}" systemctl restart tau-browser.service 2>/dev/null; then
+  "${SUDO[@]}" systemctl enable ficus-browser.service >/dev/null 2>&1 || true
+  if ! "${SUDO[@]}" systemctl restart ficus-browser.service 2>/dev/null; then
     browser_mark_unavailable service_start_failed \
-      "systemctl restart tau-browser.service failed"
+      "systemctl restart ficus-browser.service failed"
     return 0
   fi
-  if ! "${SUDO[@]}" systemctl is-active --quiet tau-browser.service; then
-    "${SUDO[@]}" systemctl status tau-browser.service --no-pager -l >&2 2>/dev/null || true
+  if ! "${SUDO[@]}" systemctl is-active --quiet ficus-browser.service; then
+    "${SUDO[@]}" systemctl status ficus-browser.service --no-pager -l >&2 2>/dev/null || true
     browser_mark_unavailable service_inactive \
-      "tau-browser.service did not stay active after start"
+      "ficus-browser.service did not stay active after start"
     return 0
   fi
 
@@ -1816,8 +1867,708 @@ print_capabilities() {
     "${arch}" "${cpus}" "${mem_mb}" "${disk_gb}" "${kernel}" "${docker}" "${forwarding}" "${browser_json}"
 }
 
+# ---------------------------------------------------------------------------
+# migrate_machine_root: move a machine bootstrapped before the Ficus rename onto
+# the Ficus layout. Runs FIRST in main, before anything reads or writes the root.
+#
+# A legacy machine has its root at LEGACY_MACHINE_ROOT and its browser under the
+# LEGACY_BROWSER_NAME user, group, unit, runtime dir and AppArmor profile. Every
+# step below is state-checked (it acts only on what is still legacy), so a fresh
+# host or an already-migrated one journals nothing, and a re-run is a no-op.
+#
+# The journal is $MR_BACKUP_ROOT/machine-<ts>-<pid>/ (the same backup root and
+# the same step semantics as the tenant host-migration framework in
+# scripts/setup/lib.sh, which is not present on a machine host — bootstrap.sh is
+# streamed here alone):
+#   STEPS     intent first: `S<n>` is appended and flushed BEFORE step n acts,
+#             so a step killed half-way is still reversed; every inverse is
+#             state-checked and idempotent
+#   state/    one file per recorded fact (what was enabled, what was written)
+#   EXTRA/    byte copies of the legacy files a step removes
+#   LINKS     `path<TAB>old<TAB>new` of every link S3b re-pointed
+#   MERGE     `N|R<TAB>rel` per file S4 moved in (R: it replaced one, kept in
+#             <stray>.replaced), `D<TAB>rel` per directory it created
+#   DONE      the commit point, written and flushed last (S10)
+#   state/UNDONE_S<n>  flushed after each inverse; later inverses may move roots
+#   REVERSED  written only after files AND prior runtime state are restored
+# A failing step (or TERM/INT/HUP) reverses the journal at once and fails
+# bootstrap; a run killed outright is reversed by the next run (_mr_reconcile)
+# before it migrates again. After DONE nothing is reversed.
+#
+#   S1   stop the legacy browser service (recording enabled/active) and wait
+#        until its user has no processes (usermod refuses a busy user)
+#   S2   set aside a real /opt/ficus — files a new Core pushed before this
+#        re-bootstrap — as /opt/.ficus-stray-<journal>
+#   S3   mv the legacy root to /opt/ficus, then link the legacy path to it
+#   S3b  re-point every absolute link into the legacy root (/opt/ficus/bin/bun,
+#        /usr/local/bin/bun) to the new path
+#   S4   merge the set-aside tree into /opt/ficus, newest wins: each file it
+#        replaces is kept in <stray>.replaced (moved into the journal after DONE)
+#   S5   usermod -l / groupmod -n the browser user and group (UID/GID unchanged,
+#        so every box user's group membership survives)
+#   S6   unload and remove the legacy AppArmor profile; write the Ficus one
+#   S7   disable and remove the legacy unit; move its drop-ins; write and
+#        (if the legacy one was) enable ficus-browser.service, whose Alias is
+#        the legacy name
+#   S8   write ficus-browser.js (and verify-sandbox.js); remove the legacy program
+#   S9   /run/<legacy> -> ficus-browser (and a tmpfiles.d line that recreates it
+#        at boot) for boxes still running on their legacy units
+#   S10  DONE
+# ---------------------------------------------------------------------------
+MR_BACKUP_ROOT="${FICUS_HOST_ROOT}/var/backups/ficus-host-migrate"
+MR_STOP_WAIT_SECS=30
+
+_mr() { "${SUDO[@]}" "$@"; }
+_mr_log() { echo "bootstrap.sh: migrate_machine_root: $*" >&2; }
+
+_mr_paths() {
+  MR_O="${FICUS_HOST_ROOT}${LEGACY_MACHINE_ROOT}"
+  MR_N="${FICUS_ROOT}"
+  MR_UNITDIR="${FICUS_HOST_ROOT}/etc/systemd/system"
+  MR_O_UNIT="${MR_UNITDIR}/${LEGACY_BROWSER_NAME}.service"
+  MR_O_APPARMOR="${FICUS_HOST_ROOT}/etc/apparmor.d/${LEGACY_BROWSER_NAME}-chromium"
+  MR_O_APPARMOR_LOCAL="${FICUS_HOST_ROOT}/etc/apparmor.d/local/${LEGACY_BROWSER_NAME}-chromium"
+  MR_N_APPARMOR_LOCAL="${FICUS_HOST_ROOT}/etc/apparmor.d/local/${FICUS_BROWSER_USER}-chromium"
+  MR_O_RUNDIR="${FICUS_HOST_ROOT}/run/${LEGACY_BROWSER_NAME}"
+  MR_TMPFILES="${FICUS_HOST_ROOT}/etc/tmpfiles.d/${FICUS_BROWSER_USER}-bridge.conf"
+  MR_USR_BUN="${FICUS_HOST_ROOT}/usr/local/bin/bun"
+}
+
+_mr_sync() { # FILE
+  if sync --version >/dev/null 2>&1; then
+    _mr sync -f -- "$1" 2>/dev/null || sync
+  else
+    sync
+  fi
+}
+
+_mr_append() { # FILE LINE — append one line and flush it
+  printf '%s\n' "$2" | _mr tee -a "$1" >/dev/null && _mr_sync "$1"
+}
+_mr_intent() { _mr_append "$1/STEPS" "$2"; } # J STEP
+_mr_set() {                                   # J KEY VALUE
+  printf '%s\n' "$3" | _mr tee "$1/state/$2" >/dev/null && _mr_sync "$1/state/$2"
+}
+_mr_get() { _mr cat "$1/state/$2" 2>/dev/null || true; } # J KEY
+
+# Test seams, honoured only under FICUS_HOST_ROOT: MR_FAIL_AT=<step> fails step
+# <step> after its first action; MR_KILL_IN=<step> SIGKILLs the run there.
+_mr_seam() { # STEP
+  [ -n "${FICUS_HOST_ROOT}" ] || return 0
+  if [ "${MR_FAIL_AT:-}" = "$1" ]; then
+    _mr_log "S$1: injected failure"
+    return 1
+  fi
+  if [ "${MR_KILL_IN:-}" = "$1" ]; then kill -KILL "${BASHPID:-$$}"; fi
+  return 0
+}
+
+# rename(2) of a directory onto a path that must not exist: `mv -T` refuses to
+# move INTO an existing directory, which a plain mv would silently do.
+_mr_rename() { _mr mv -T -- "$1" "$2"; } # SRC DST
+
+_mr_restore_file() { # SRC DST — an interrupted copy cannot become the restored file
+  _mr cp -p -- "$1" "$2.ficus-restore" || return 1
+  _mr_sync "$2.ficus-restore" || return 1
+  _mr mv -T -- "$2.ficus-restore" "$2"
+}
+
+_mr_root_moves() { [ -d "${MR_O}" ] && [ ! -L "${MR_O}" ]; }
+_mr_user_renames() {
+  getent passwd "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1 && ! getent passwd "${FICUS_BROWSER_USER}" >/dev/null 2>&1
+}
+_mr_group_renames() {
+  getent group "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1 && ! getent group "${FICUS_BROWSER_USER}" >/dev/null 2>&1
+}
+_mr_legacy_program() {
+  if _mr_root_moves; then
+    printf '%s' "${MR_O}/browser/service/${LEGACY_BROWSER_NAME}.js"
+  else
+    printf '%s' "${MR_N}/browser/service/${LEGACY_BROWSER_NAME}.js"
+  fi
+}
+
+# Whether anything on this host is still on the legacy layout.
+_mr_needed() {
+  _mr_root_moves && return 0
+  _mr_user_renames && return 0
+  _mr_group_renames && return 0
+  [ -f "${MR_O_UNIT}" ] && [ ! -L "${MR_O_UNIT}" ] && return 0
+  [ -f "${MR_O_APPARMOR}" ] && return 0
+  [ -f "$(_mr_legacy_program)" ] && return 0
+  return 1
+}
+
+_mr_s1() { # J
+  local j=$1 unit=0 was_enabled=0 was_active=0 waited=0
+  [ -f "${MR_O_UNIT}" ] && [ ! -L "${MR_O_UNIT}" ] && unit=1
+  [ "${unit}" = 1 ] || _mr_user_renames || return 0
+  _mr_intent "${j}" S1 || return 1
+  if [ "${unit}" = 1 ]; then
+    _mr systemctl is-enabled --quiet "${LEGACY_BROWSER_NAME}.service" >/dev/null 2>&1 && was_enabled=1
+    _mr systemctl is-active --quiet "${LEGACY_BROWSER_NAME}.service" >/dev/null 2>&1 && was_active=1
+  fi
+  _mr_set "${j}" BROWSER_WAS_ENABLED "${was_enabled}" || return 1
+  _mr_set "${j}" BROWSER_WAS_ACTIVE "${was_active}" || return 1
+  if [ "${unit}" = 1 ]; then
+    _mr_log "S1: stopping ${LEGACY_BROWSER_NAME}.service"
+    _mr systemctl stop "${LEGACY_BROWSER_NAME}.service" || return 1
+  fi
+  _mr_seam 1 || return 1
+  while getent passwd "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1 && _mr pgrep -u "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1; do
+    if [ "${waited}" -ge "${MR_STOP_WAIT_SECS}" ]; then
+      _mr_log "S1: ${LEGACY_BROWSER_NAME} still has processes after ${MR_STOP_WAIT_SECS}s"
+      return 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
+_mr_undo_s1() { # J — files are restored; runtime restoration must succeed too
+  local j=$1
+  _mr systemctl daemon-reload || return 1
+  if [ "$(_mr_get "${j}" APPARMOR_UNLOAD_INTENT)" = 1 ] || [ "$(_mr_get "${j}" APPARMOR_UNLOADED)" = 1 ]; then
+    _mr apparmor_parser -r -W "${MR_O_APPARMOR}" || return 1
+    _mr_apparmor_loaded || return 1
+  fi
+  if [ "$(_mr_get "${j}" BROWSER_WAS_ENABLED)" = 1 ]; then
+    _mr systemctl enable "${LEGACY_BROWSER_NAME}.service" || return 1
+    _mr systemctl is-enabled --quiet "${LEGACY_BROWSER_NAME}.service" || return 1
+  fi
+  if [ "$(_mr_get "${j}" BROWSER_WAS_ACTIVE)" = 1 ]; then
+    _mr_log "S1⁻¹: starting ${LEGACY_BROWSER_NAME}.service"
+    _mr systemctl reset-failed "${LEGACY_BROWSER_NAME}.service" || return 1
+    _mr systemctl start "${LEGACY_BROWSER_NAME}.service" || return 1
+    _mr systemctl is-active --quiet "${LEGACY_BROWSER_NAME}.service" || return 1
+  fi
+}
+
+_mr_apparmor_loaded() {
+  _mr awk -v profile="${LEGACY_BROWSER_NAME}-chromium" '$1 == profile { found=1 } END { exit !found }' \
+    "${FICUS_HOST_ROOT}/sys/kernel/security/apparmor/profiles"
+}
+
+_mr_s2() { # J
+  local j=$1 stray
+  _mr_root_moves || return 0
+  [ -e "${MR_N}" ] || [ -L "${MR_N}" ] || return 0
+  if [ -L "${MR_N}" ] || [ ! -d "${MR_N}" ]; then
+    _mr_log "S2: ${MR_N} exists and is not a directory — refusing"
+    return 1
+  fi
+  stray="$(dirname -- "${MR_N}")/.ficus-stray-$(basename -- "${j}")"
+  _mr_set "${j}" STRAY "${stray}" || return 1
+  _mr_intent "${j}" S2 || return 1
+  _mr_log "S2: setting aside ${MR_N} (files pushed before this re-bootstrap) as ${stray}"
+  _mr_rename "${MR_N}" "${stray}" || return 1
+  _mr_seam 2 || return 1
+}
+
+_mr_undo_s2() { # J
+  local stray
+  stray=$(_mr_get "$1" STRAY)
+  [ -n "${stray}" ] && [ -d "${stray}" ] || return 0
+  if [ -e "${MR_N}" ] || [ -L "${MR_N}" ]; then
+    # Another push recreated it meanwhile. Keep both (nothing is lost, and the
+    # next run merges the new one); never block every later bootstrap on it.
+    _mr_log "S2⁻¹: ${MR_N} was recreated meanwhile; ${stray} is kept beside it"
+    return 0
+  fi
+  _mr_log "S2⁻¹: putting ${stray} back at ${MR_N}"
+  _mr_rename "${stray}" "${MR_N}"
+}
+
+_mr_s3() { # J
+  local j=$1
+  _mr_root_moves || return 0
+  _mr_intent "${j}" S3 || return 1
+  _mr_log "S3: moving ${LEGACY_MACHINE_ROOT} to ${MR_N#"${FICUS_HOST_ROOT}"}"
+  _mr_rename "${MR_O}" "${MR_N}" || return 1
+  _mr_seam 3 || return 1
+  _mr ln -s -- "$(basename -- "${MR_N}")" "${MR_O}"
+}
+
+_mr_undo_s3() {
+  if [ -L "${MR_O}" ] && [ "$(readlink -- "${MR_O}")" = "$(basename -- "${MR_N}")" ]; then
+    _mr rm -f -- "${MR_O}" || return 1
+  fi
+  if [ ! -e "${MR_O}" ] && [ ! -L "${MR_O}" ] && [ -d "${MR_N}" ] && [ ! -L "${MR_N}" ]; then
+    _mr_log "S3⁻¹: moving ${MR_N#"${FICUS_HOST_ROOT}"} back to ${LEGACY_MACHINE_ROOT}"
+    _mr_rename "${MR_N}" "${MR_O}" || return 1
+  fi
+  [ -d "${MR_O}" ] && [ ! -L "${MR_O}" ]
+}
+
+_mr_s3b() { # J
+  local j=$1 link target new first=1
+  local new_root="${MR_N#"${FICUS_HOST_ROOT}"}"
+  [ -d "${MR_N}" ] || return 0
+  _mr bash -c 'find "$1" -type l -print0 >"$2"' -- "${MR_N}" "${j}/LINK_FILES" || return 1
+  if [ -L "${MR_USR_BUN}" ]; then
+    printf '%s\0' "${MR_USR_BUN}" | _mr tee -a "${j}/LINK_FILES" >/dev/null || return 1
+  fi
+  while IFS= read -r -d '' link; do
+    target=$(readlink -- "${link}") || continue
+    case "${target}" in
+      "${LEGACY_MACHINE_ROOT}"/*) ;;
+      *) continue ;;
+    esac
+    case "${link}" in *$'\t'* | *$'\n'*) continue ;; esac
+    new="${new_root}${target#"${LEGACY_MACHINE_ROOT}"}"
+    if [ "${first}" = 1 ]; then
+      _mr_intent "${j}" S3b || return 1
+      _mr_log "S3b: re-pointing links into ${LEGACY_MACHINE_ROOT} at ${new_root}"
+      first=0
+    fi
+    _mr_append "${j}/LINKS" "${link}"$'\t'"${target}"$'\t'"${new}" || return 1
+    _mr ln -sfn -- "${new}" "${link}" || return 1
+    _mr_seam 3b || return 1
+  done < <(_mr cat "${j}/LINK_FILES")
+  return 0
+}
+
+_mr_undo_s3b() { # J
+  local link old new entries
+  _mr test -f "$1/LINKS" || return 0
+  entries=$(_mr tac "$1/LINKS") || return 1
+  while IFS=$'\t' read -r link old new; do
+    [ -n "${link}" ] || continue
+    if [ -L "${link}" ] && [ "$(readlink -- "${link}")" = "${new}" ]; then
+      _mr ln -sfn -- "${old}" "${link}" || return 1
+    fi
+  done <<<"${entries}"
+}
+
+# Whether PATH exists (or is a link), seen with the privilege bootstrap runs
+# with: a merged tree may hold root-only directories a sudoer cannot stat.
+_mr_exists() { _mr test -e "$1" || _mr test -L "$1"; }
+
+_mr_s4() { # J
+  local j=$1 stray f rel dst dir part rest d first=1
+  stray=$(_mr_get "${j}" STRAY)
+  [ -n "${stray}" ] && [ -d "${stray}" ] || return 0
+  _mr_intent "${j}" S4 || return 1
+  _mr_log "S4: merging ${stray} into ${MR_N} (newest wins; replaced files kept in the journal)"
+  _mr bash -o pipefail -c 'find "$1" -mindepth 1 \( -type f -o -type l \) -print0 | sort -z >"$2"' -- "${stray}" "${j}/MERGE_FILES" || return 1
+  while IFS= read -r -d '' f; do
+    rel=${f#"${stray}"/}
+    case "${rel}" in *$'\t'* | *$'\n'*)
+      _mr_log "S4: unsupported file name under ${stray}: ${rel}"
+      return 1
+      ;;
+    esac
+    dst="${MR_N}/${rel}"
+    # Create (and journal) any directory the pushed tree has that the root lacks.
+    dir=$(dirname -- "${rel}")
+    if [ "${dir}" != . ] && ! _mr test -d "${MR_N}/${dir}"; then
+      part='' rest=${dir}
+      while [ -n "${rest}" ]; do
+        d=${rest%%/*}
+        if [ "${d}" = "${rest}" ]; then rest=''; else rest=${rest#*/}; fi
+        part=${part:+${part}/}${d}
+        if ! _mr test -d "${MR_N}/${part}"; then
+          _mr_append "${j}/MERGE" "D"$'\t'"${part}" || return 1
+          _mr mkdir -- "${MR_N}/${part}" || return 1
+          _mr chmod --reference="${stray}/${part}" -- "${MR_N}/${part}" || return 1
+        fi
+      done
+    fi
+    if _mr_exists "${dst}"; then
+      if _mr test -d "${dst}" && ! _mr test -L "${dst}"; then
+        _mr_log "S4: ${dst} is a directory where ${stray} has a file — refusing"
+        return 1
+      fi
+      _mr_append "${j}/MERGE" "R"$'\t'"${rel}" || return 1
+      _mr install -d -m 0700 -- "${stray}.replaced" || return 1
+      _mr mkdir -p -- "${stray}.replaced/${dir}" || return 1
+      _mr mv -T -- "${dst}" "${stray}.replaced/${rel}" || return 1
+    else
+      _mr_append "${j}/MERGE" "N"$'\t'"${rel}" || return 1
+    fi
+    _mr mv -T -- "${f}" "${dst}" || return 1
+    if [ "${first}" = 1 ]; then
+      _mr_seam 4 || return 1
+      first=0
+    fi
+  done < <(_mr cat "${j}/MERGE_FILES")
+}
+
+_mr_undo_s4() { # J
+  local j=$1 stray kind rel entries
+  stray=$(_mr_get "${j}" STRAY)
+  _mr test -f "${j}/MERGE" && [ -n "${stray}" ] || return 0
+  entries=$(_mr tac "${j}/MERGE") || return 1
+  while IFS=$'\t' read -r kind rel; do
+    [ -n "${rel}" ] || continue
+    case "${kind}" in
+      N | R)
+        if _mr_exists "${MR_N}/${rel}" && ! _mr_exists "${stray}/${rel}"; then
+          _mr mv -T -- "${MR_N}/${rel}" "${stray}/${rel}" || return 1
+        fi
+        if [ "${kind}" = R ] && _mr_exists "${stray}.replaced/${rel}" && ! _mr_exists "${MR_N}/${rel}"; then
+          _mr mv -T -- "${stray}.replaced/${rel}" "${MR_N}/${rel}" || return 1
+        fi
+        ;;
+      D) _mr rmdir -- "${MR_N}/${rel}" 2>/dev/null || true ;;
+    esac
+  done <<<"${entries}"
+  if _mr test -d "${stray}.replaced"; then
+    _mr find "${stray}.replaced" -depth -type d -empty -delete 2>/dev/null || true
+  fi
+}
+
+# A new image can already have the new account while the old Core populated
+# HOME as the old account. Repair only HOME's owners; preserve bytes and modes,
+# never follow symlinks, and record numeric ownership before each change.
+_mr_mixed_home() { # J
+  local j=$1 entry rel owner mode target
+  _mr test -d "${FICUS_BROWSER_HOME}" || return 0
+  if _mr test -L "${FICUS_BROWSER_HOME}"; then
+    _mr_log 'S5: browser HOME is a symlink; refusing to change an external tree'
+    return 1
+  fi
+  target=$(getent passwd "${FICUS_BROWSER_USER}" | cut -d: -f3,4) || return 1
+  [[ ${target} =~ ^[0-9]+:[0-9]+$ ]] || return 1
+  _mr bash -c 'find "$1" -print0 >"$2"' -- "${FICUS_BROWSER_HOME}" "${j}/HOME_FILES" || return 1
+  while IFS= read -r -d '' entry; do
+    rel=${entry#"${FICUS_BROWSER_HOME}"}
+    case "${rel}" in *$'\t'* | *$'\n'*) return 1 ;; esac
+    owner=$(_mr stat -c '%u:%g' -- "${entry}") || return 1
+    [ "${owner}" != "${target}" ] || continue
+    mode=$(_mr stat -c '%a' -- "${entry}") || return 1
+    _mr_append "${j}/HOME_OWNERS" "${owner}"$'\t'"${mode}"$'\t'"${rel:-/}" || return 1
+    _mr chown -h -- "${target}" "${entry}" || return 1
+    if ! _mr test -L "${entry}"; then _mr chmod "${mode}" -- "${entry}" || return 1; fi
+    _mr_seam 5-home || return 1
+  done < <(_mr cat "${j}/HOME_FILES")
+}
+
+_mr_undo_home() { # J
+  local j=$1 owner mode rel entries entry
+  _mr test -f "${j}/HOME_OWNERS" || return 0
+  entries=$(_mr tac "${j}/HOME_OWNERS") || return 1
+  while IFS=$'\t' read -r owner mode rel; do
+    [ -n "${rel}" ] || continue
+    entry="${FICUS_BROWSER_HOME}${rel}"
+    _mr chown -h -- "${owner}" "${entry}" || return 1
+    if ! _mr test -L "${entry}"; then _mr chmod "${mode}" -- "${entry}" || return 1; fi
+    _mr_seam undo-5-home || return 1
+  done <<<"${entries}"
+}
+
+_mr_s5() { # J
+  local j=$1 renames_user=0 renames_group=0 mixed_home=0 home_field
+  _mr_user_renames && renames_user=1
+  _mr_group_renames && renames_group=1
+  if getent passwd "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1 && [ "${renames_user}" = 0 ]; then
+    _mr_log "S5: both browser accounts exist; keep the old account and repair the new account's HOME ownership"
+    mixed_home=1
+  fi
+  [ "${renames_user}" = 1 ] || [ "${renames_group}" = 1 ] || [ "${mixed_home}" = 1 ] || return 0
+  _mr_intent "${j}" S5 || return 1
+  if [ "${mixed_home}" = 1 ]; then _mr_mixed_home "${j}" || return 1; fi
+  if [ "${renames_user}" = 1 ]; then
+    home_field="${FICUS_BROWSER_HOME#"${FICUS_HOST_ROOT}"}"
+    _mr_set "${j}" USER_HOME_WAS "$(getent passwd "${LEGACY_BROWSER_NAME}" | cut -d: -f6)" || return 1
+    _mr_set "${j}" USER_RENAMED 1 || return 1
+    _mr_log "S5: renaming the user ${LEGACY_BROWSER_NAME} to ${FICUS_BROWSER_USER} (UID kept)"
+    _mr usermod -l "${FICUS_BROWSER_USER}" -d "${home_field}" "${LEGACY_BROWSER_NAME}" || return 1
+  fi
+  _mr_seam 5 || return 1
+  if [ "${renames_group}" = 1 ]; then
+    _mr_set "${j}" GROUP_RENAMED 1 || return 1
+    _mr_log "S5: renaming the group ${LEGACY_BROWSER_NAME} to ${FICUS_BROWSER_USER} (GID kept)"
+    _mr groupmod -n "${FICUS_BROWSER_USER}" "${LEGACY_BROWSER_NAME}" || return 1
+  fi
+}
+
+_mr_undo_s5() { # J
+  local j=$1
+  _mr_undo_home "${j}" || return 1
+  if [ "$(_mr_get "${j}" GROUP_RENAMED)" = 1 ] && getent group "${FICUS_BROWSER_USER}" >/dev/null 2>&1 &&
+    ! getent group "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1; then
+    _mr groupmod -n "${LEGACY_BROWSER_NAME}" "${FICUS_BROWSER_USER}" || return 1
+  fi
+  if [ "$(_mr_get "${j}" USER_RENAMED)" = 1 ] && getent passwd "${FICUS_BROWSER_USER}" >/dev/null 2>&1 &&
+    ! getent passwd "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1; then
+    _mr usermod -l "${LEGACY_BROWSER_NAME}" -d "$(_mr_get "${j}" USER_HOME_WAS)" "${FICUS_BROWSER_USER}" || return 1
+  fi
+}
+
+_mr_s6() { # J
+  local j=$1 loaded=1
+  [ -f "${MR_O_APPARMOR}" ] || [ -f "${MR_O_APPARMOR_LOCAL}" ] || return 0
+  _mr_intent "${j}" S6 || return 1
+  if [ -f "${MR_O_APPARMOR}" ]; then
+    _mr cp -p -- "${MR_O_APPARMOR}" "${j}/EXTRA/apparmor" || return 1
+    _mr_sync "${j}/EXTRA/apparmor" || return 1
+    if _mr test -e "${FICUS_HOST_ROOT}/sys/kernel/security/apparmor/profiles"; then
+      _mr_apparmor_loaded && loaded=0 || loaded=$?
+      case "${loaded}" in 0 | 1) ;; *) return 1 ;; esac
+      if [ "${loaded}" = 0 ]; then
+        _mr_set "${j}" APPARMOR_UNLOAD_INTENT 1 || return 1
+        _mr apparmor_parser -R "${MR_O_APPARMOR}" || return 1
+        _mr_seam 6-unloaded || return 1
+      fi
+    fi
+    _mr_seam 6 || return 1
+    _mr_log "S6: removing the ${LEGACY_BROWSER_NAME}-chromium AppArmor profile"
+    _mr rm -f -- "${MR_O_APPARMOR}" || return 1
+  fi
+  if [ -f "${MR_O_APPARMOR_LOCAL}" ] && [ ! -e "${MR_N_APPARMOR_LOCAL}" ]; then
+    _mr_set "${j}" APPARMOR_LOCAL_MOVED 1 || return 1
+    _mr mv -T -- "${MR_O_APPARMOR_LOCAL}" "${MR_N_APPARMOR_LOCAL}" || return 1
+  fi
+  if [ ! -e "${FICUS_BROWSER_APPARMOR}" ]; then
+    _mr_set "${j}" APPARMOR_WROTE 1 || return 1
+    write_browser_apparmor || return 1
+  fi
+}
+
+_mr_undo_s6() { # J
+  local j=$1
+  if [ "$(_mr_get "${j}" APPARMOR_WROTE)" = 1 ]; then _mr rm -f -- "${FICUS_BROWSER_APPARMOR}" || return 1; fi
+  if [ "$(_mr_get "${j}" APPARMOR_LOCAL_MOVED)" = 1 ] && [ -f "${MR_N_APPARMOR_LOCAL}" ] && [ ! -e "${MR_O_APPARMOR_LOCAL}" ]; then
+    _mr mv -T -- "${MR_N_APPARMOR_LOCAL}" "${MR_O_APPARMOR_LOCAL}" || return 1
+  fi
+  if _mr test -f "${j}/EXTRA/apparmor" && [ ! -e "${MR_O_APPARMOR}" ]; then
+    _mr_restore_file "${j}/EXTRA/apparmor" "${MR_O_APPARMOR}" || return 1
+  fi
+  # Reload the original profile after all filesystem inverses, in S1⁻¹.
+}
+
+_mr_s7() { # J
+  local j=$1 o_dropin="${MR_O_UNIT}.d" n_dropin="${FICUS_BROWSER_UNIT}.d"
+  [ -f "${MR_O_UNIT}" ] && [ ! -L "${MR_O_UNIT}" ] || return 0
+  _mr_intent "${j}" S7 || return 1
+  _mr cp -p -- "${MR_O_UNIT}" "${j}/EXTRA/unit" || return 1
+  _mr_sync "${j}/EXTRA/unit" || return 1
+  _mr_log "S7: replacing ${LEGACY_BROWSER_NAME}.service with ${FICUS_BROWSER_USER}.service"
+  _mr systemctl disable "${LEGACY_BROWSER_NAME}.service" >/dev/null 2>&1 || return 1
+  _mr_seam 7 || return 1
+  _mr rm -f -- "${MR_O_UNIT}" || return 1
+  if [ -d "${o_dropin}" ]; then
+    if [ ! -e "${n_dropin}" ]; then
+      _mr_set "${j}" DROPIN_MOVED 1 || return 1
+      _mr mv -T -- "${o_dropin}" "${n_dropin}" || return 1
+    else
+      _mr cp -a -- "${o_dropin}" "${j}/EXTRA/dropin" || return 1
+      _mr sync || return 1
+      _mr_set "${j}" DROPIN_SAVED 1 || return 1
+      _mr rm -rf -- "${o_dropin}" || return 1
+    fi
+  fi
+  if [ ! -e "${FICUS_BROWSER_UNIT}" ]; then
+    _mr_set "${j}" UNIT_WROTE 1 || return 1
+    write_browser_unit || return 1
+  fi
+  _mr systemctl daemon-reload || return 1
+  if [ "$(_mr_get "${j}" BROWSER_WAS_ENABLED)" = 1 ]; then
+    _mr systemctl enable "${FICUS_BROWSER_USER}.service" >/dev/null 2>&1 || return 1
+  fi
+}
+
+_mr_undo_s7() { # J
+  local j=$1 o_dropin="${MR_O_UNIT}.d" n_dropin="${FICUS_BROWSER_UNIT}.d"
+  if [ -e "${FICUS_BROWSER_UNIT}" ]; then
+    _mr systemctl disable "${FICUS_BROWSER_USER}.service" >/dev/null 2>&1 || return 1
+  fi
+  if [ "$(_mr_get "${j}" UNIT_WROTE)" = 1 ]; then _mr rm -f -- "${FICUS_BROWSER_UNIT}" || return 1; fi
+  if [ "$(_mr_get "${j}" DROPIN_MOVED)" = 1 ] && [ -d "${n_dropin}" ] && [ ! -e "${o_dropin}" ]; then
+    _mr mv -T -- "${n_dropin}" "${o_dropin}" || return 1
+  fi
+  if [ "$(_mr_get "${j}" DROPIN_SAVED)" = 1 ]; then
+    # Re-copy even if interrupted cp already created a partial destination.
+    _mr cp -a -- "${j}/EXTRA/dropin/." "${o_dropin}" || return 1
+  fi
+  # A leftover alias link is not the unit: the legacy unit file goes back in its place.
+  if [ -L "${MR_O_UNIT}" ]; then _mr rm -f -- "${MR_O_UNIT}" || return 1; fi
+  if _mr test -f "${j}/EXTRA/unit" && [ ! -e "${MR_O_UNIT}" ]; then
+    _mr_restore_file "${j}/EXTRA/unit" "${MR_O_UNIT}" || return 1
+  fi
+  # Re-enable only after daemon-reload, with verification, in S1⁻¹.
+}
+
+_mr_s8() { # J
+  local j=$1 legacy_js="${MR_N}/browser/service/${LEGACY_BROWSER_NAME}.js"
+  [ -f "${legacy_js}" ] || return 0
+  _mr_intent "${j}" S8 || return 1
+  _mr cp -p -- "${legacy_js}" "${j}/EXTRA/service.js" || return 1
+  _mr_sync "${j}/EXTRA/service.js" || return 1
+  if [ ! -e "${FICUS_BROWSER_SERVICE_JS}" ]; then
+    _mr_set "${j}" JS_WROTE 1 || return 1
+    write_browser_service || return 1
+  fi
+  _mr_seam 8 || return 1
+  if [ -f "${FICUS_BROWSER_VERIFY_JS}" ]; then
+    _mr cp -p -- "${FICUS_BROWSER_VERIFY_JS}" "${j}/EXTRA/verify.js" || return 1
+    _mr_sync "${j}/EXTRA/verify.js" || return 1
+    _mr_set "${j}" VERIFY_WROTE 1 || return 1
+    write_browser_verify || return 1
+  fi
+  _mr_log "S8: ${FICUS_BROWSER_USER}.js replaces ${LEGACY_BROWSER_NAME}.js"
+  _mr rm -f -- "${legacy_js}"
+}
+
+_mr_undo_s8() { # J
+  local j=$1 legacy_js="${MR_N}/browser/service/${LEGACY_BROWSER_NAME}.js"
+  if _mr test -f "${j}/EXTRA/service.js" && [ ! -e "${legacy_js}" ]; then
+    _mr_restore_file "${j}/EXTRA/service.js" "${legacy_js}" || return 1
+  fi
+  if [ "$(_mr_get "${j}" VERIFY_WROTE)" = 1 ] && _mr test -f "${j}/EXTRA/verify.js"; then
+    _mr_restore_file "${j}/EXTRA/verify.js" "${FICUS_BROWSER_VERIFY_JS}" || return 1
+  fi
+  if [ "$(_mr_get "${j}" JS_WROTE)" = 1 ]; then _mr rm -f -- "${FICUS_BROWSER_SERVICE_JS}" || return 1; fi
+}
+
+_mr_s9() { # J
+  local j=$1
+  _mr grep -qx S3 "${j}/STEPS" 2>/dev/null || return 0
+  _mr_intent "${j}" S9 || return 1
+  if [ ! -e "${MR_TMPFILES}" ]; then
+    _mr_set "${j}" TMPFILES_WROTE 1 || return 1
+    printf 'L /run/%s - - - - %s\n' "${LEGACY_BROWSER_NAME}" "${FICUS_BROWSER_USER}" |
+      _mr install -D -m 0644 /dev/stdin "${MR_TMPFILES}" || return 1
+  fi
+  _mr_seam 9 || return 1
+  if [ ! -e "${MR_O_RUNDIR}" ] && [ ! -L "${MR_O_RUNDIR}" ]; then
+    _mr_set "${j}" RUNLINK 1 || return 1
+    _mr ln -s -- "${FICUS_BROWSER_USER}" "${MR_O_RUNDIR}" || return 1
+  elif [ ! -L "${MR_O_RUNDIR}" ]; then
+    _mr_log "S9: ${MR_O_RUNDIR} is still a directory; boxes on their old units reach the browser once it is gone (next boot)"
+  fi
+}
+
+_mr_undo_s9() { # J
+  local j=$1
+  if [ "$(_mr_get "${j}" RUNLINK)" = 1 ] && [ -L "${MR_O_RUNDIR}" ]; then _mr rm -f -- "${MR_O_RUNDIR}" || return 1; fi
+  if [ "$(_mr_get "${j}" TMPFILES_WROTE)" = 1 ]; then _mr rm -f -- "${MR_TMPFILES}" || return 1; fi
+}
+
+_mr_s10() { # J — the commit point
+  _mr_seam 10 || return 1
+  _mr_append "$1/DONE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+# After DONE: the set-aside tree is empty but for its directories, and the
+# files it replaced belong with the journal.
+_mr_after_commit() { # J
+  local j=$1 stray
+  stray=$(_mr_get "${j}" STRAY)
+  [ -n "${stray}" ] || return 0
+  if [ -d "${stray}" ]; then
+    _mr find "${stray}" -depth -type d -empty -delete 2>/dev/null || true
+    [ ! -e "${stray}" ] || _mr_log "kept ${stray}: it still holds entries the merge did not move"
+  fi
+  if _mr test -d "${stray}.replaced"; then
+    if _mr cp -a -- "${stray}.replaced" "${j}/REPLACED" && _mr rm -rf -- "${stray}.replaced"; then
+      _mr_log "the files the merge replaced are in ${j}/REPLACED"
+    else
+      _mr_log "kept ${stray}.replaced (could not move it into ${j})"
+    fi
+  fi
+}
+
+# Undo, from J's journal, what a migration that did not reach DONE changed: the
+# inverses in reverse journal order, then S1⁻¹ (restart the legacy browser).
+# Non-zero keeps the journal unmarked, so the next run tries again.
+_mr_reverse() { # J
+  local j=$1 step entries
+  _mr_paths
+  if _mr test -e "${j}/DONE"; then
+    _mr_log "${j} reached its commit point; it is never reversed"
+    return 1
+  fi
+  entries=$(_mr tac "${j}/STEPS") || return 1
+  while IFS= read -r step; do
+    case "${step}" in S1 | '') continue ;; S9 | S8 | S7 | S6 | S5 | S4 | S3b | S3 | S2) ;; *) return 1 ;; esac
+    [ "$(_mr_get "${j}" "UNDONE_${step}")" = 1 ] && continue
+    case "${step}" in
+      S9) _mr_undo_s9 "${j}" || return 1 ;;
+      S8) _mr_undo_s8 "${j}" || return 1 ;;
+      S7) _mr_undo_s7 "${j}" || return 1 ;;
+      S6) _mr_undo_s6 "${j}" || return 1 ;;
+      S5) _mr_undo_s5 "${j}" || return 1 ;;
+      S4) _mr_undo_s4 "${j}" || return 1 ;;
+      S3b) _mr_undo_s3b "${j}" || return 1 ;;
+      S3) _mr_undo_s3 || return 1 ;;
+      S2) _mr_undo_s2 "${j}" || return 1 ;;
+      S1 | '') ;;
+      *)
+        _mr_log "${j}/STEPS has an unknown step '${step}'"
+        return 1
+        ;;
+    esac
+    # Every inverse is replay-safe within its own boundary. Once complete,
+    # skip it on later retries so root moves cannot invalidate earlier paths.
+    _mr_seam "undo-${step}" || return 1
+    # Root and journal can be on different mounts: persist the filesystem
+    # inverse before its durable completion record.
+    _mr sync || return 1
+    _mr_set "${j}" "UNDONE_${step}" 1 || return 1
+  done <<<"${entries}"
+  if _mr grep -qxE 'S1|S6|S7' "${j}/STEPS"; then _mr_undo_s1 "${j}" || return 1; fi
+  _mr_seam undo-runtime || return 1
+  _mr_append "${j}/REVERSED" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" || return 1
+  _mr_log "reversed: this machine is on its previous layout again (journal ${j})"
+}
+
+# Reverse every journal a killed run left before its commit point.
+_mr_reconcile() {
+  local j entries
+  _mr_paths
+  _mr test -d "${MR_BACKUP_ROOT}" || return 0
+  entries=$(_mr find "${MR_BACKUP_ROOT}" -mindepth 1 -maxdepth 1 -type d -name 'machine-*' -print) || return 1
+  while IFS= read -r j; do
+    [ -n "${j}" ] || continue
+    _mr test -f "${j}/STEPS" || continue
+    _mr test -e "${j}/DONE" || _mr test -e "${j}/REVERSED" && continue
+    _mr_log "${j} was interrupted before its commit point — reversing it first"
+    _mr_reverse "${j}" || {
+      _mr_log "could not reverse ${j}; nothing else is changed until it is"
+      return 1
+    }
+  done <<<"${entries}"
+}
+
+_mr_on_signal() { # J
+  _mr_log 'interrupted'
+  _mr_reverse "$1" || _mr_log "the reverse did not complete; the journal ${1} is kept for the next run"
+  exit 143
+}
+
+migrate_machine_root() {
+  local j rc=0
+  _mr_paths
+  _mr_reconcile || return 1
+  _mr_needed || return 0
+  j="${MR_BACKUP_ROOT}/machine-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  # Copies may have been protected by private ancestors in the old tree.
+  # Keep the journal root-only and read it through the same privilege boundary.
+  if ! _mr install -d -m 0755 "${MR_BACKUP_ROOT}" ||
+    ! _mr install -d -m 0700 "${j}" "${j}/state" "${j}/EXTRA" || ! _mr touch "${j}/STEPS" ||
+    ! _mr_sync "${j}/STEPS"; then
+    _mr_log "could not start the journal in ${j} — nothing was changed"
+    return 1
+  fi
+  _mr_log "moving this machine onto the Ficus layout (journal ${j})"
+  # shellcheck disable=SC2064 # the journal path is fixed now, on purpose
+  trap "_mr_on_signal '${j}'" TERM INT HUP
+  _mr_s1 "${j}" && _mr_s2 "${j}" && _mr_s3 "${j}" && _mr_s3b "${j}" && _mr_s4 "${j}" && _mr_s5 "${j}" &&
+    _mr_s6 "${j}" && _mr_s7 "${j}" && _mr_s8 "${j}" && _mr_s9 "${j}" && _mr_s10 "${j}" || rc=1
+  trap - TERM INT HUP
+  if [ "${rc}" -ne 0 ]; then
+    _mr_log 'a step failed before the commit point — reversing'
+    _mr_reverse "${j}" || _mr_log "the reverse did not complete; the journal ${j} is kept for the next run"
+    return 1
+  fi
+  _mr_after_commit "${j}"
+  _mr_log "this machine is on the Ficus layout (journal ${j})"
+}
+
 main() {
-  # Prebaked ficus-machine image: when its /opt/tau/prebaked marker is PRESENT, the
+  # Prebaked ficus-machine image: when its /opt/ficus/prebaked marker is PRESENT, the
   # install_* steps are already baked, so skip them and use the baked tooling —
   # ALWAYS, regardless of whether the baked versions match this script's pins.
   # A prebaked image is never reinstalled over at boot (a nix reinstall over the
@@ -1831,6 +2582,15 @@ main() {
   # the egress lockdown) STILL runs, and print_capabilities (the caps probe
   # reflecting THIS VM) always runs after main. The non-prebaked (no-marker)
   # branch is the original sequence, unchanged: idempotent installs on a bare host.
+  #
+  # FIRST, before anything reads or writes the machine root: move a machine
+  # bootstrapped before the rename onto the Ficus layout. A failure is reversed
+  # (journaled; see migrate_machine_root) and fails bootstrap with the machine
+  # on its previous layout.
+  if ! migrate_machine_root; then
+    echo "bootstrap.sh: ERROR moving this machine onto the Ficus layout failed — see the log for reversal status; incomplete journals are retried" >&2
+    exit 1
+  fi
   if [ -f "${PREBAKED_MARKER}" ]; then
     log_prebaked_decision
     make_dirs
@@ -1859,6 +2619,9 @@ main() {
     apply_egress_lockdown
   fi
 }
+
+# Sourced (bootstrap.test.ts): the functions above are defined; run nothing.
+if (return 0 2>/dev/null); then return 0; fi
 
 # Validate the (untrusted) --core-cidr input BEFORE any nft/apt call — see the
 # security note on validate_core_cidrs. Runs on every invocation.

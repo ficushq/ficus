@@ -470,7 +470,7 @@ describe('verified atomic write transport', () => {
   }, 30_000)
 })
 
-describe('/browser/* pass-through to the machine tau-browser socket', () => {
+describe('/browser/* pass-through to the machine ficus-browser socket', () => {
   interface CapturedRequest {
     pathname: string
     method: string
@@ -478,7 +478,7 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
     body: unknown
   }
 
-  /** A fake tau-browser peer listening on a unix socket, recording what it received. */
+  /** A fake ficus-browser peer listening on a unix socket, recording what it received. */
   function startFakePeer(sockPath: string, respond: (req: CapturedRequest) => { status: number; body: unknown }) {
     const received: CapturedRequest[] = []
     const peer = Bun.serve({
@@ -501,7 +501,7 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
 
   it('forwards the box-user + bearer headers and the body, and mirrors the peer status+JSON verbatim', async () => {
     const token = 'browser-proxy-token'
-    const sockDir = mkdtempSync(join(tmpdir(), 'tau-browser-sock-'))
+    const sockDir = mkdtempSync(join(tmpdir(), 'ficus-browser-sock-'))
     const sockPath = join(sockDir, 'sock')
     const { peer, received } = startFakePeer(sockPath, () => ({
       status: 200,
@@ -534,7 +534,7 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
 
   it('passes through a non-200 peer response (429 at machine capacity) verbatim', async () => {
     const token = 'browser-proxy-429-token'
-    const sockDir = mkdtempSync(join(tmpdir(), 'tau-browser-sock-'))
+    const sockDir = mkdtempSync(join(tmpdir(), 'ficus-browser-sock-'))
     const sockPath = join(sockDir, 'sock')
     const { peer } = startFakePeer(sockPath, () => ({
       status: 429,
@@ -555,9 +555,9 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
     }
   }, 30_000)
 
-  it('returns 503 BROWSER_UNAVAILABLE when the tau-browser socket is absent', async () => {
+  it('returns 503 BROWSER_UNAVAILABLE when the ficus-browser socket is absent', async () => {
     const token = 'browser-proxy-503-token'
-    const sockDir = mkdtempSync(join(tmpdir(), 'tau-browser-sock-'))
+    const sockDir = mkdtempSync(join(tmpdir(), 'ficus-browser-sock-'))
     const missingSock = join(sockDir, 'no-such-socket')
     try {
       const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, FICUS_BROWSER_SOCK: missingSock })
@@ -575,7 +575,7 @@ describe('/browser/* pass-through to the machine tau-browser socket', () => {
 
   it('rejects an unauthenticated /browser/open request through the same auth gate as every other route', async () => {
     const token = 'browser-proxy-auth-token'
-    const sockDir = mkdtempSync(join(tmpdir(), 'tau-browser-sock-'))
+    const sockDir = mkdtempSync(join(tmpdir(), 'ficus-browser-sock-'))
     const sockPath = join(sockDir, 'sock')
     const { peer, received } = startFakePeer(sockPath, () => ({ status: 200, body: { ok: true } }))
     try {

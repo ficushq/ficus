@@ -129,16 +129,16 @@ export EXECUTOR_COMMAND_CONTRACT_DIGEST="$CONTRACT_DIGEST"
 # server (and thus browser-proxy) inherits FICUS_BROWSER_DEV_ALLOW_USER. The
 # dev-allow user is the OS user THIS script runs as, which is exactly the user
 # the un-su-exec'd box server reports via os.userInfo() (see R-B17 note below).
-export FICUS_BROWSER_SOCK="${FICUS_BROWSER_SOCK:-/run/tau-browser/sock}"
+export FICUS_BROWSER_SOCK="${FICUS_BROWSER_SOCK:-/run/ficus-browser/sock}"
 export FICUS_BROWSER_MEMORY_HIGH_MB="${FICUS_BROWSER_MEMORY_HIGH_MB:-2048}"
 export FICUS_BROWSER_DEV_ALLOW_USER="${FICUS_BROWSER_DEV_ALLOW_USER:-$(id -un)}"
 
 FICUS_CHILD_OOM_ADJ=-500 supervise_child executor "$EXECUTOR_PID_FILE" nice -n -10 bun run /opt/sandbox/src/server.ts &
 EXECUTOR_PID=$!
 
-# --- tau-browser service (dev parity with tau-browser.service on VM machines) --
+# --- ficus-browser service (dev parity with ficus-browser.service on VM machines) --
 # One container = one box = one context, so the shared-per-machine browser
-# service (scripts/machine/browser/tau-browser.js, baked at /opt/tau/browser) runs
+# service (scripts/machine/browser/ficus-browser.js, baked at /opt/ficus/browser) runs
 # here as a plain background process. It is NOT supervised and NOT a gate:
 # musl-Chromium is documented-fragile (see the Dockerfile), so a failure to start
 # must never take down the box server — hence the `|| ...` fail-open + a logged
@@ -154,9 +154,9 @@ EXECUTOR_PID=$!
 # <that user>.token, and the var is exported so BOTH the main server (env above,
 # already launched inheriting it) and the browser service (below) see it.
 start_browser_service() {
-  service=/opt/tau/browser/service/tau-browser.js
-  [ -f "$service" ] || { echo '[ficus-sandbox] tau-browser service not present; skipping (dev parity)' >&2; return 0; }
-  tokens_dir="${FICUS_BROWSER_TOKENS_DIR:-/opt/tau/browser-tokens}"
+  service=/opt/ficus/browser/service/ficus-browser.js
+  [ -f "$service" ] || { echo '[ficus-sandbox] ficus-browser service not present; skipping (dev parity)' >&2; return 0; }
+  tokens_dir="${FICUS_BROWSER_TOKENS_DIR:-/opt/ficus/browser-tokens}"
   ( umask 077; mkdir -p "$tokens_dir"; mkdir -p "$(dirname "$FICUS_BROWSER_SOCK")" )
   # sha256 of the container's own box token (trimmed of the trailing newline via
   # command substitution) — the SAME digest form box-manager pushes on VM hosts.
@@ -164,10 +164,17 @@ start_browser_service() {
   # Seed under the user browser-proxy actually sends (FICUS_BROWSER_DEV_ALLOW_USER),
   # NOT the command user — the two differ (root vs ficus) and the header wins.
   ( umask 077; printf '%s' "$digest" >"$tokens_dir/${FICUS_BROWSER_DEV_ALLOW_USER}.token" )
-  FICUS_BROWSER_TOKENS_DIR="$tokens_dir" bun "$service" >/var/log/tau-browser.log 2>&1 &
-  echo "[ficus-sandbox] tau-browser service started (pid $!, sock $FICUS_BROWSER_SOCK, dev-user $FICUS_BROWSER_DEV_ALLOW_USER)" >&2
+  # Chromium refuses its namespace sandbox as root. Reuse the container's
+  # unprivileged command account; the proxy still authenticates as the root
+  # executor, so the token key above deliberately remains unchanged.
+  chown ficus:ficus "$tokens_dir" "$tokens_dir/${FICUS_BROWSER_DEV_ALLOW_USER}.token" "$(dirname "$FICUS_BROWSER_SOCK")" || return 1
+  (
+    cd /opt/ficus/browser || exit 1
+    exec su-exec ficus env HOME=/home/ficus FICUS_BROWSER_TOKENS_DIR="$tokens_dir" bun "$service"
+  ) >/var/log/ficus-browser.log 2>&1 &
+  echo "[ficus-sandbox] ficus-browser service started (pid $!, sock $FICUS_BROWSER_SOCK, dev-user $FICUS_BROWSER_DEV_ALLOW_USER)" >&2
 }
-start_browser_service || echo '[ficus-sandbox] tau-browser service failed to start (non-fatal, dev parity)' >&2
+start_browser_service || echo '[ficus-sandbox] ficus-browser service failed to start (non-fatal, dev parity)' >&2
 
 # Either child reports its exact exit through the root-only FIFO. The EXIT trap
 # then performs bounded termination and join of both supervised wrappers.

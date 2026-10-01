@@ -67,8 +67,8 @@ describe('resolveRepoRoot', () => {
   })
 })
 
-const SERVER_REMOTE_PATH = '/opt/tau/server/server.js'
-const SERVER_LIB_REMOTE_PATH = '/opt/tau/server/librust_pty.so'
+const SERVER_REMOTE_PATH = '/opt/ficus/server/server.js'
+const SERVER_LIB_REMOTE_PATH = '/opt/ficus/server/librust_pty.so'
 
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
@@ -341,7 +341,7 @@ describe('ensureServerBundle', () => {
     const machine = makeMachine({ artifactVersions: { server: 'stale' } })
     await ensureServerBundle(machine, { runner, stampArtifactVersion: stamp })
     // Two pushes: server.js then the native lib (both mode 0755, same
-    // root-owned /opt/tau/server destinations as the pre-refactor push), each
+    // root-owned /opt/ficus/server destinations as the pre-refactor push), each
     // staged beside its destination and renamed in (atomic; see
     // machine-artifacts.ts's buildSudoInstallCommand).
     expect(calls).toHaveLength(2)

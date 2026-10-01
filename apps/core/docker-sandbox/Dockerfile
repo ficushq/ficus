@@ -112,11 +112,11 @@ ENV PATH="/root/.nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH}"
 
 # --- Shared browser layout (dev parity with scripts/machine/bootstrap.sh) ------
 # KEEP IN LOCKSTEP with bootstrap.sh install_browser / packages/machine-image
-# (same PLAYWRIGHT_VERSION — asserted by bootstrap.test.ts — same /opt/tau/browser
+# (same PLAYWRIGHT_VERSION — asserted by bootstrap.test.ts — same /opt/ficus/browser
 # layout: pinned playwright node_modules + PLAYWRIGHT_BROWSERS_PATH). In docker
 # mode a box IS the container, so the shared-per-machine sharing is moot, but the
 # layout must match so the box server's browser code path is identical (spec
-# §4.4). Phase 1 laid down the layout; Phase 2 runs the tau-browser service as a
+# §4.4). Phase 1 laid down the layout; Phase 2 runs the ficus-browser service as a
 # second in-container process (startup.sh) and the docker manager passes
 # --shm-size=512m (apps/core/src/services/sandbox/docker/manager.ts).
 #
@@ -126,7 +126,7 @@ ENV PATH="/root/.nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH}"
 # known-fragile path (glibc-compat is amd64-only above); this layer is authored
 # for parity + build correctness and is NOT runtime-verified here.
 ARG PLAYWRIGHT_VERSION=1.58.2
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/tau/browser/ms-playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ficus/browser/ms-playwright
 RUN apk add --no-cache \
       nss \
       freetype \
@@ -134,20 +134,20 @@ RUN apk add --no-cache \
       ca-certificates \
       ttf-freefont \
       font-noto-emoji && \
-    mkdir -p /opt/tau/browser/service /opt/tau/browser/ms-playwright && \
-    printf '{"name":"tau-browser","private":true,"dependencies":{"playwright":"%s"}}\n' \
-      "${PLAYWRIGHT_VERSION}" > /opt/tau/browser/package.json && \
-    bun install --cwd /opt/tau/browser && \
-    test "$(jq -r .version /opt/tau/browser/node_modules/playwright/package.json)" = "${PLAYWRIGHT_VERSION}" && \
-    bun /opt/tau/browser/node_modules/playwright/cli.js install chromium && \
-    chmod -R a+rX /opt/tau/browser
+    mkdir -p /opt/ficus/browser/service /opt/ficus/browser/ms-playwright && \
+    printf '{"name":"ficus-browser","private":true,"dependencies":{"playwright":"%s"}}\n' \
+      "${PLAYWRIGHT_VERSION}" > /opt/ficus/browser/package.json && \
+    bun install --cwd /opt/ficus/browser && \
+    test "$(jq -r .version /opt/ficus/browser/node_modules/playwright/package.json)" = "${PLAYWRIGHT_VERSION}" && \
+    bun /opt/ficus/browser/node_modules/playwright/cli.js install chromium && \
+    chmod -R a+rX /opt/ficus/browser
 
-# The tau-browser service + sandbox-verification program — the SAME files
+# The ficus-browser service + sandbox-verification program — the SAME files
 # bootstrap.sh embeds and the machine image COPYs (single source under
 # scripts/machine/browser/). No systemd here (Alpine container); startup.sh runs
 # the service as a second in-container process (Phase 2).
-COPY scripts/machine/browser/tau-browser.js /opt/tau/browser/service/tau-browser.js
-COPY scripts/machine/browser/verify-sandbox.js /opt/tau/browser/service/verify-sandbox.js
+COPY scripts/machine/browser/ficus-browser.js /opt/ficus/browser/service/ficus-browser.js
+COPY scripts/machine/browser/verify-sandbox.js /opt/ficus/browser/service/verify-sandbox.js
 
 # Source Nix environment in interactive shells (for devbox)
 # The || true ensures the script doesn't fail if nix.sh doesn't exist for the user

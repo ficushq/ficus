@@ -1,0 +1,16 @@
+# ficus-browser: grant unprivileged user-namespace creation to the pinned Chromium
+# so its renderer sandbox works under the unprivileged ficus-browser user. KEEP the
+# sandbox ON — never --no-sandbox (browser-tools-in-sandbox spec §4.1/§5).
+#
+# SINGLE SOURCE OF TRUTH: packages/machine-image/Dockerfile COPYs this file to
+# /etc/apparmor.d/ficus-browser-chromium, and scripts/machine/bootstrap.sh
+# (write_browser_apparmor) embeds it verbatim. bootstrap.test.ts asserts the two
+# copies stay byte-identical.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile ficus-browser-chromium /opt/ficus/browser/ms-playwright/{chromium-*/chrome-linux*/chrome,chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell} flags=(unconfined) {
+  userns,
+
+  include if exists <local/ficus-browser-chromium>
+}

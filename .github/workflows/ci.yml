@@ -336,6 +336,18 @@ jobs:
           }
           if (( status != 0 )); then exit $(( status )); fi
 
+      - name: Run box provisioning shell suite
+        run: |
+          set -o pipefail
+          status=0
+          out=$(bash scripts/machine/box-provision.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::box-provision.test.sh ended without a clean summary.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
       # Cache downloaded packages only. Installed module trees are worktree/layout-specific.
       - name: Verify deterministic Pi patch regeneration has no drift
         run: |

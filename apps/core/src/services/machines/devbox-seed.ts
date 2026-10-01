@@ -11,15 +11,15 @@
  *
  * A VM box runs on bare Ubuntu with no such image, so its shells lack the comfort
  * set until we seed one. This module materializes a per-user `devbox` at the
- * box's `FICUS_DEVBOX_DIR` (`~/.tau/devbox`, see packages/sandbox-server/src/paths.ts)
+ * box's `FICUS_DEVBOX_DIR` (`~/.ficus/devbox`, see packages/sandbox-server/src/paths.ts)
  * and runs `devbox install` — AS THE BOX USER, because the sandbox-server executes
  * every `/write` and `/bash` as that user (never root), and the box user owns
- * `~/.tau`.
+ * `~/.ficus`.
  *
  * ## Idempotency (the slice-2 sync-on-every-ensure lesson)
  * `devbox install` is slow (minutes). We must NOT pay that on every ensure, so we
  * hash the intended `devbox.json` content and, after a SUCCESSFUL install, record
- * that hash in `~/.tau/devbox/.seeded`. A later ensure whose intended content
+ * that hash in `~/.ficus/devbox/.seeded`. A later ensure whose intended content
  * hashes to the same marker SKIPS the install entirely; a CHANGED comfort set
  * (different hash) forces a fresh install. The marker is written ONLY after a
  * successful install, so a failed install re-attempts on the next ensure.
@@ -64,6 +64,7 @@ import { SandboxHttpError, type BashResponse, type SandboxClient } from '../sand
 import { DevboxLockCache } from '../../entities/DevboxLockCache'
 import { createLogger } from '../../lib/infra/logger'
 import { boxUnixUser } from './box-manager'
+import { boxDotDir } from './box-paths'
 import type { BoxStepTimings } from './box-timing'
 
 const log = createLogger('devbox-seed')
@@ -185,13 +186,13 @@ export function computeDevboxSeedHash(role: SeedBoxRole): string {
  */
 export function devboxInstallCommand(devboxDir: string): string {
   const cleanup =
-    'if [ -f /opt/tau/bin/box-provision.sh ]; then timeout 15s bash /opt/tau/bin/box-provision.sh --unix-user "$(id -un)" --prepare-nix-cache >&2 || true; fi'
+    'if [ -f /opt/ficus/bin/box-provision.sh ]; then timeout 15s bash /opt/ficus/bin/box-provision.sh --unix-user "$(id -un)" --prepare-nix-cache >&2 || true; fi'
   return `cd ${shellQuote(devboxDir)} && (trap ${shellQuote(cleanup)} EXIT; devbox install)`
 }
 
 export function computeDevboxInstallInvocationId(sandboxId: string, role: SeedBoxRole): string {
   const hash = computeDevboxSeedHash(role)
-  const devboxDir = `${defaultBoxHome(sandboxId)}/.tau/devbox`
+  const devboxDir = `${boxDotDir(defaultBoxHome(sandboxId))}/devbox`
   const command = devboxInstallCommand(devboxDir)
   const commandDigest = createHash('sha256').update(command).digest('hex')
   return createHash('sha256').update(`${sandboxId}\0${hash}\0devbox-install\0${commandDigest}`).digest('hex')
@@ -462,7 +463,7 @@ async function tryCachePut(
 /**
  * Seed the box's per-user devbox comfort set and realize it via `devbox install`.
  *
- * Idempotent through the `~/.tau/devbox/.seeded` hash marker (see file header).
+ * Idempotent through the `~/.ficus/devbox/.seeded` hash marker (see file header).
  * THROWS on write/install failure — the caller (VmSandboxManager) treats seeding
  * as NON-fatal and continues the ensure with a degraded shell.
  *
@@ -487,7 +488,7 @@ export async function seedBoxDevbox(
   invocationIdOverride?: string
 ): Promise<BoxStepTimings> {
   const home = (deps.boxHome ?? defaultBoxHome)(sandboxId)
-  const devboxDir = `${home}/.tau/devbox`
+  const devboxDir = `${boxDotDir(home)}/devbox`
   const jsonPath = `${devboxDir}/devbox.json`
   const lockPath = `${devboxDir}/devbox.lock`
   const markerPath = `${devboxDir}/.seeded`
@@ -505,7 +506,7 @@ export async function seedBoxDevbox(
   const existing = await readOptionalDevboxJson(client, jsonPath)
   const merged = mergeDevboxJson(role, existing)
   if (merged.shouldWrite) {
-    // Server writes AS THE BOX USER — the box user owns ~/.tau.
+    // Server writes AS THE BOX USER — the box user owns ~/.ficus.
     await client.write({ path: jsonPath, content: toBase64(merged.content), createDirs: true })
   }
 

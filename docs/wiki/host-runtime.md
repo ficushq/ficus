@@ -171,7 +171,7 @@ deletes it — archive-with-delete only removes the default storage directory.
 ## Browser tools
 
 `browser_open` and friends work on host. There is no box to run the
-`tau-browser` service in, so the core drives a browser **already installed on
+`ficus-browser` service in, so the core drives a browser **already installed on
 this machine** in-process, through `playwright-core` — nothing is ever
 downloaded. Install one first: macOS `brew install --cask google-chrome` (or
 Chrome from <https://google.com/chrome>); Debian/Ubuntu `sudo apt install
@@ -192,7 +192,7 @@ Resolution order, first hit wins:
 3. The usual install locations: Google Chrome / Chromium / Edge / Brave under
    `/Applications` on macOS, `/usr/bin/google-chrome-stable`,
    `/usr/bin/chromium`, `/usr/bin/microsoft-edge`, … plus any
-   Playwright-managed Chromium under `/opt/tau/browser/ms-playwright` or
+   Playwright-managed Chromium under `/opt/ficus/browser/ms-playwright` or
    `~/.cache/ms-playwright` on Linux. `/snap/bin/chromium` is skipped — snap
    confinement breaks the temporary profile Playwright hands it.
 
@@ -208,7 +208,7 @@ including secrets, is stripped.
 On host the browser is NOT subject to the machine-host SSRF blocklist: it can
 reach `localhost`/loopback, link-local (incl. cloud-metadata addresses) and
 private LAN addresses exactly like the agent's `bash` can on this machine. That
-blocklist exists on machine hosts because there `tau-browser` is a shared
+blocklist exists on machine hosts because there `ficus-browser` is a shared
 service whose network reach exceeds the calling box's; here it is your own
 machine and your own network, so the guard would protect nothing while breaking
 the main reason to browse from host — screenshotting the agent's own local

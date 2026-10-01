@@ -27,7 +27,7 @@ const listing: SandboxProcessesData = {
       memRssMb: 123,
       ageSeconds: 136_000,
       state: 'S',
-      command: '/opt/tau/bin/bun /opt/tau/server/server.js',
+      command: '/opt/ficus/bin/bun /opt/ficus/server/server.js',
       protected: true,
     },
   ],

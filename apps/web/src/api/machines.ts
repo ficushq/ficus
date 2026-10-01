@@ -13,7 +13,7 @@ export interface MachineCapabilities {
   kernel?: string
   forwarding?: 'yes' | 'no' | 'unknown'
   // Shared per-machine browser availability (browser-tools-in-sandbox spec §4.1):
-  // `available` when Chromium's sandbox is on and the tau-browser service is
+  // `available` when Chromium's sandbox is on and the ficus-browser service is
   // live, `unavailable` (with a `browserReason` token) when the host cannot
   // sandbox it — browsing is then off but the machine still runs. Absent on a
   // machine bootstrapped before this field existed. Mirror of the server's

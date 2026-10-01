@@ -4,7 +4,7 @@
 # user) with everything scripts/machine/bootstrap.sh installs baked on top, at
 # the SAME pinned versions and paths — so a first bootstrap on a VM booted from
 # this image hits every idempotent skip and completes in seconds instead of
-# minutes. /opt/tau/prebaked marks the image so bootstrap can fast-path.
+# minutes. /opt/ficus/prebaked marks the image so bootstrap can fast-path.
 #
 # KEEP IN LOCKSTEP with scripts/machine/bootstrap.sh: the ARG pins below should
 # match its BUN_VERSION / NIX_VERSION / DEVBOX_VERSION, and every install step
@@ -61,7 +61,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     rm -rf /var/lib/apt/lists/*
 
 # --- bootstrap.sh make_dirs (+ box-provision.sh's archive dir) ---------------
-RUN mkdir -p /opt/tau/bin /opt/tau/server /opt/tau/archive
+RUN mkdir -p /opt/ficus/bin /opt/ficus/server /opt/ficus/archive
 
 # --- bootstrap.sh install_docker_packages ------------------------------------
 # Docker's official apt repo: docker-ce-rootless-extras (dockerd-rootless.sh,
@@ -92,15 +92,15 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     rm -rf /var/lib/apt/lists/*
 
 # --- bootstrap.sh install_bun -------------------------------------------------
-# Official installer, pinned tag, system-wide into /opt/tau/bun (NOT a user
-# home). /opt/tau/bin/bun is the stable path box-provision's systemd unit
+# Official installer, pinned tag, system-wide into /opt/ficus/bun (NOT a user
+# home). /opt/ficus/bin/bun is the stable path box-provision's systemd unit
 # ExecStart references; /usr/local/bin/bun additionally puts bun on every
-# user's PATH (image nicety — bootstrap manages only /opt/tau/bin/bun).
+# user's PATH (image nicety — bootstrap manages only /opt/ficus/bin/bun).
 RUN curl -fsSL https://bun.sh/install \
-      | env BUN_INSTALL=/opt/tau/bun bash -s "bun-v${BUN_VERSION}" && \
-    ln -sf /opt/tau/bun/bin/bun /opt/tau/bin/bun && \
-    ln -sf /opt/tau/bun/bin/bun /usr/local/bin/bun && \
-    [ "$(/opt/tau/bin/bun --version)" = "${BUN_VERSION}" ]
+      | env BUN_INSTALL=/opt/ficus/bun bash -s "bun-v${BUN_VERSION}" && \
+    ln -sf /opt/ficus/bun/bin/bun /opt/ficus/bin/bun && \
+    ln -sf /opt/ficus/bun/bin/bun /usr/local/bin/bun && \
+    [ "$(/opt/ficus/bin/bun --version)" = "${BUN_VERSION}" ]
 
 # --- bootstrap.sh install_nix + link_nix_on_path ------------------------------
 # Multi-user (daemon-mode) nix: one VM hosts MANY unprivileged box users, and
@@ -154,27 +154,27 @@ RUN arch="$(dpkg --print-architecture)" && \
 
 # --- bootstrap.sh install_browser ---------------------------------------------
 # KEEP IN LOCKSTEP with scripts/machine/bootstrap.sh install_browser (same
-# PLAYWRIGHT_VERSION — asserted by bootstrap.test.ts — same /opt/tau/browser
-# layout, same tau-browser user/unit/AppArmor profile/service program). ONE
+# PLAYWRIGHT_VERSION — asserted by bootstrap.test.ts — same /opt/ficus/browser
+# layout, same ficus-browser user/unit/AppArmor profile/service program). ONE
 # shared Chromium per machine, root-owned + world-readable, driven by the
-# unprivileged tau-browser user over a group-restricted socket
+# unprivileged ficus-browser user over a group-restricted socket
 # (browser-tools-in-sandbox spec §4.1/§4.2). The Chromium sandbox is a HARD GATE
 # verified per-boot by bootstrap's verify_browser (which also loads the AppArmor
 # profile into the running kernel, writes the host-specific MemoryHigh drop-in,
 # and starts the service) — none of that is baked here. The service PROGRAM is
 # the real Phase 2 implementation: one BrowserContext per authenticated box,
-# token auth, per-box/machine caps (scripts/machine/browser/tau-browser.js).
-RUN groupadd --system tau-browser && \
-    useradd --system --gid tau-browser --home-dir /opt/tau/browser/home \
-      --create-home --shell /usr/sbin/nologin tau-browser && \
-    mkdir -p /opt/tau/browser/service /opt/tau/browser/ms-playwright && \
-    printf '{"name":"tau-browser","private":true,"dependencies":{"playwright":"%s"}}\n' \
-      "${PLAYWRIGHT_VERSION}" > /opt/tau/browser/package.json && \
+# token auth, per-box/machine caps (scripts/machine/browser/ficus-browser.js).
+RUN groupadd --system ficus-browser && \
+    useradd --system --gid ficus-browser --home-dir /opt/ficus/browser/home \
+      --create-home --shell /usr/sbin/nologin ficus-browser && \
+    mkdir -p /opt/ficus/browser/service /opt/ficus/browser/ms-playwright && \
+    printf '{"name":"ficus-browser","private":true,"dependencies":{"playwright":"%s"}}\n' \
+      "${PLAYWRIGHT_VERSION}" > /opt/ficus/browser/package.json && \
     export DEBIAN_FRONTEND=noninteractive && \
-    export PLAYWRIGHT_BROWSERS_PATH=/opt/tau/browser/ms-playwright && \
-    /opt/tau/bin/bun install --cwd /opt/tau/browser && \
-    [ "$(jq -r .version /opt/tau/browser/node_modules/playwright/package.json)" = "${PLAYWRIGHT_VERSION}" ] && \
-    /opt/tau/bin/bun /opt/tau/browser/node_modules/playwright/cli.js install --with-deps chromium && \
+    export PLAYWRIGHT_BROWSERS_PATH=/opt/ficus/browser/ms-playwright && \
+    /opt/ficus/bin/bun install --cwd /opt/ficus/browser && \
+    [ "$(jq -r .version /opt/ficus/browser/node_modules/playwright/package.json)" = "${PLAYWRIGHT_VERSION}" ] && \
+    /opt/ficus/bin/bun /opt/ficus/browser/node_modules/playwright/cli.js install --with-deps chromium && \
     rm -rf /var/lib/apt/lists/*
 
 # The service program, the sandbox-verification program, the AppArmor
@@ -183,28 +183,31 @@ RUN groupadd --system tau-browser && \
 # duplicate. The unit is NOT enabled here; verify_browser enables + starts it and
 # writes the host-specific MemoryHigh drop-in per-boot. apparmor.service loads
 # the profile at boot; verify_browser also reloads it.
-COPY scripts/machine/browser/tau-browser.js /opt/tau/browser/service/tau-browser.js
-COPY scripts/machine/browser/verify-sandbox.js /opt/tau/browser/service/verify-sandbox.js
-COPY scripts/machine/browser/tau-browser-chromium.apparmor /etc/apparmor.d/tau-browser-chromium
-COPY scripts/machine/browser/tau-browser.service /etc/systemd/system/tau-browser.service
+COPY scripts/machine/browser/ficus-browser.js /opt/ficus/browser/service/ficus-browser.js
+COPY scripts/machine/browser/verify-sandbox.js /opt/ficus/browser/service/verify-sandbox.js
+COPY scripts/machine/browser/ficus-browser-chromium.apparmor /etc/apparmor.d/ficus-browser-chromium
+COPY scripts/machine/browser/ficus-browser.service /etc/systemd/system/ficus-browser.service
+# The unit's one token line, @ALIAS@, names the unit it replaces — filled the
+# same way bootstrap.sh's write_browser_unit fills it.
+RUN sed -i 's/^@ALIAS@$/Alias=tau-browser.service/' /etc/systemd/system/ficus-browser.service # ficus-p5-bridge
 
 # Root-owned + world-readable browser tree (box users read the binaries); the
 # service user's HOME stays private + writable.
-RUN chown -R root:root /opt/tau/browser && \
-    chmod -R a+rX /opt/tau/browser && \
-    chown -R tau-browser:tau-browser /opt/tau/browser/home && \
-    chmod 0700 /opt/tau/browser/home
+RUN chown -R root:root /opt/ficus/browser && \
+    chmod -R a+rX /opt/ficus/browser && \
+    chown -R ficus-browser:ficus-browser /opt/ficus/browser/home && \
+    chmod 0700 /opt/ficus/browser/home
 
 # --- Ficus scripts + prebaked marker --------------------------------------------
 # Bake the machine scripts where the manager expects them. bootstrap.sh's
-# prebaked fast-path (and humans debugging a VM) read /opt/tau/prebaked to
+# prebaked fast-path (and humans debugging a VM) read /opt/ficus/prebaked to
 # know the toolchain above is already installed; the JSON records the pins it
-# was baked at. NOTE: /opt/tau/manifest.json is NOT baked — bootstrap writes
+# was baked at. NOTE: /opt/ficus/manifest.json is NOT baked — bootstrap writes
 # it per-machine with the caller's --version hash.
-COPY scripts/machine/bootstrap.sh scripts/machine/box-provision.sh /opt/tau/bin/
-RUN chmod 0755 /opt/tau/bin/bootstrap.sh /opt/tau/bin/box-provision.sh && \
+COPY scripts/machine/bootstrap.sh scripts/machine/box-provision.sh /opt/ficus/bin/
+RUN chmod 0755 /opt/ficus/bin/bootstrap.sh /opt/ficus/bin/box-provision.sh && \
     printf '{"bunVersion":"%s","nixVersion":"%s","devboxVersion":"%s","playwrightVersion":"%s"}\n' \
-      "${BUN_VERSION}" "${NIX_VERSION}" "${DEVBOX_VERSION}" "${PLAYWRIGHT_VERSION}" > /opt/tau/prebaked
+      "${BUN_VERSION}" "${NIX_VERSION}" "${DEVBOX_VERSION}" "${PLAYWRIGHT_VERSION}" > /opt/ficus/prebaked
 
 # Inherited from exeuntu, restated so the contract survives a base change:
 # exe.dev SSHes into this user.

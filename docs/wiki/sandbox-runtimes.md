@@ -269,7 +269,7 @@ Setup toolkit: `runtime.sandbox: vm` (plus `runtime.exe.ssh_key_path` and
 
 VM boxes already share the machine's `/nix/store`. Ficus also shares the public
 source objects fetched while prewarming the default Devbox toolchains, in
-`/opt/tau/cache/nix/{tarball-cache,tarball-cache-v2}`. Only the dedicated machine
+`/opt/ficus/cache/nix/{tarball-cache,tarball-cache-v2}`. Only the dedicated machine
 prewarmer publishes objects. Shared packs are root-owned and read-only to boxes;
 ordinary agents cannot publish private repositories into this cache.
 

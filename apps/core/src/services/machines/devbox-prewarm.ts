@@ -33,7 +33,7 @@
  * a no-op under `FICUS_TEST_MODE=1`. Every failure is swallowed/logged — a
  * pre-warm can only ever make the first box faster, never fail machine bootstrap
  * or a later ensure. A re-run on an already-warm machine is cheap: `seedBoxDevbox`
- * short-circuits on the `~/.tau/devbox/.seeded` hash marker for a re-used
+ * short-circuits on the `~/.ficus/devbox/.seeded` hash marker for a re-used
  * throwaway sandboxId, and even a fresh throwaway box hits the warm `/nix` store
  * + lock cache, so no slow re-realization happens.
  */

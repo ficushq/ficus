@@ -46,14 +46,14 @@ describe('Docker startup contract', () => {
     expect(shutdown).toContain('if [ "$state" = Z ]')
   })
 
-  test('launches the tau-browser service as a fail-open second process (dev parity)', () => {
+  test('launches the ficus-browser service as a fail-open second process (dev parity)', () => {
     // One container = one box = one context: the shared-per-machine browser
     // service runs here as a plain background process. It is NOT a gate —
     // musl-Chromium is documented-fragile, so a failure must never take down the
     // box server (|| ... non-fatal), and the launch is backgrounded (&).
-    expect(startup).toContain('/opt/tau/browser/service/tau-browser.js')
+    expect(startup).toContain('/opt/ficus/browser/service/ficus-browser.js')
     expect(startup).toContain('FICUS_BROWSER_SOCK')
-    expect(startup).toContain('/run/tau-browser/sock')
+    expect(startup).toContain('/run/ficus-browser/sock')
     expect(startup).toContain('FICUS_BROWSER_MEMORY_HIGH_MB')
     // Fail-open: the service launch is guarded so it can never abort startup.
     expect(startup).toMatch(/start_browser_service \|\|/)
@@ -63,6 +63,14 @@ describe('Docker startup contract', () => {
     expect(startup).toMatch(/browser-tokens/)
     // Never downgrade the Chromium sandbox from a startup launch.
     expect(startup).not.toMatch(/no-sandbox/)
+  })
+
+  test('runs the browser unprivileged while preserving the executor authentication identity', () => {
+    expect(startup).toContain(
+      'exec su-exec ficus env HOME=/home/ficus FICUS_BROWSER_TOKENS_DIR="$tokens_dir" bun "$service"'
+    )
+    expect(startup).toContain('chown ficus:ficus "$tokens_dir" "$tokens_dir/${FICUS_BROWSER_DEV_ALLOW_USER}.token"')
+    expect(startup).toContain('cd /opt/ficus/browser || exit 1')
   })
 
   test('R-B17: seeds the digest at the proxy-sent user and exports FICUS_BROWSER_DEV_ALLOW_USER', () => {

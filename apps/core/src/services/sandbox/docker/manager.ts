@@ -105,7 +105,7 @@ export function buildSandboxUserArgs(identity: DockerExecIdentity): string[] {
 
 const SANDBOX_IMAGE = process.env.FICUS_SANDBOX_IMAGE || 'ficus-sandbox:latest'
 const DOCKER_SANDBOX_MEMORY_LIMIT = '2g'
-// Chromium (the in-container tau-browser service, dev parity with VM machines)
+// Chromium (the in-container ficus-browser service, dev parity with VM machines)
 // needs far more shared memory than Docker's 64 MB /dev/shm default. A create
 // arg, so it folds into computeDockerSpecHash → existing containers without it
 // drift-recreate.
@@ -1244,7 +1244,7 @@ export class DockerSandboxManager implements ISandboxManager {
       // Resource limits
       `--memory=${DOCKER_SANDBOX_MEMORY_LIMIT}`,
       '--cpus=2',
-      // Chromium (in-container tau-browser service) needs a real /dev/shm.
+      // Chromium (in-container ficus-browser service) needs a real /dev/shm.
       `--shm-size=${DOCKER_SANDBOX_SHM_SIZE}`,
       // Mount workspace
       '-v',
@@ -1327,7 +1327,7 @@ export class DockerSandboxManager implements ISandboxManager {
       // Resource limits
       `--memory=${DOCKER_SANDBOX_MEMORY_LIMIT}`,
       '--cpus=2',
-      // Chromium (in-container tau-browser service) needs a real /dev/shm.
+      // Chromium (in-container ficus-browser service) needs a real /dev/shm.
       `--shm-size=${DOCKER_SANDBOX_SHM_SIZE}`,
       // Mount workspace
       '-v',

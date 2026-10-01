@@ -193,9 +193,11 @@ HZ_SSH_KEY_NAME=$(cfg_get '.provision.hetzner.ssh_key_name' '')
 # order, when the primary size/region create fails with a capacity error
 # (do_is_capacity_error in lib.sh) — see provision_vm_digitalocean below.
 # DO_TAG is set on every droplet this toolkit creates and is the idempotent
-# reuse/destroy lookup key (paired with an exact name match; see
-# do_droplet_lookup in lib.sh) — not config-driven, deliberately fixed so a
-# renamed tag can never silently orphan existing tenant droplets.
+# reuse lookup key (paired with an exact name match; see do_droplet_lookup in
+# lib.sh) — not config-driven, deliberately fixed so a renamed tag can never
+# silently orphan existing tenant droplets. A droplet created before the
+# rename carries DO_LEGACY_TAG until it is retagged (and the retag deletes
+# that tag), so the lookup reads both, DO_TAG first.
 DO_SIZE=$(cfg_get '.provision.digitalocean.size' 's-2vcpu-4gb')
 DO_REGION=$(cfg_get '.provision.digitalocean.region' 'nyc3')
 DO_IMAGE=$(cfg_get '.provision.digitalocean.image' 'ubuntu-24-04-x64')
@@ -212,7 +214,8 @@ DO_FALLBACKS=$(cfg_do_fallbacks '.provision.digitalocean.fallbacks')
 #               do_project_assign below.
 DO_VPC_UUID=$(cfg_get '.provision.digitalocean.vpc_uuid' '')
 DO_PROJECT_ID=$(cfg_get '.provision.digitalocean.project_id' '')
-DO_TAG='tau-tenant'
+DO_TAG='ficus-tenant'
+DO_LEGACY_TAG='tau-tenant' # ficus-p5-bridge
 
 DNS_PROVIDER=$(cfg_get '.dns.provider' '')
 DNS_ZONE=$(cfg_get '.dns.zone' '')
@@ -303,7 +306,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
       plan "SSH target = that IPv4 (not DNS — a freshly-upserted record may not have propagated yet)"
       ;;
     digitalocean)
-      plan "GET ${DO_API_BASE}/droplets?tag_name=${DO_TAG} (Bearer \$DIGITALOCEAN_TOKEN), filtered to name=${VM_NAME} — reuse if found"
+      plan "GET ${DO_API_BASE}/droplets?tag_name=${DO_TAG}, then ?tag_name=${DO_LEGACY_TAG} (Bearer \$DIGITALOCEAN_TOKEN), filtered to name=${VM_NAME} — reuse the first found"
       plan "else POST ${DO_API_BASE}/droplets {name:${VM_NAME}, region:${DO_REGION}, size:${DO_SIZE}, image:${DO_IMAGE}, ssh_keys:[${DO_SSH_KEY_ID:-<provision.digitalocean.ssh_key_id — required>}], tags:[${DO_TAG}]${DO_VPC_UUID:+, vpc_uuid:${DO_VPC_UUID}}}"
       if [[ -n ${DO_FALLBACKS} ]]; then
         plan "on a capacity/availability error (422/503), try each fallback in order, not on auth/image errors:"
@@ -629,10 +632,13 @@ do_project_assign() { # DROPLET_ID
 }
 
 provision_vm_digitalocean() {
-  http_bearer_expect "${DO_API_BASE}" "${DIGITALOCEAN_TOKEN}" GET \
-    "/droplets?tag_name=${DO_TAG}" '' '200' "digitalocean: list droplets tagged '${DO_TAG}'"
-  local status id ip
-  read -r status id ip <<<"$(do_droplet_lookup "${HTTP_BODY}" "${VM_NAME}")"
+  local status='' id='' ip='' tag
+  for tag in "${DO_TAG}" "${DO_LEGACY_TAG}"; do
+    http_bearer_expect "${DO_API_BASE}" "${DIGITALOCEAN_TOKEN}" GET \
+      "/droplets?tag_name=${tag}" '' '200' "digitalocean: list droplets tagged '${tag}'"
+    read -r status id ip <<<"$(do_droplet_lookup "${HTTP_BODY}" "${VM_NAME}")"
+    [[ -n ${id} ]] && break
+  done
 
   if [[ -n ${id} ]]; then
     log_info "digitalocean droplet '${VM_NAME}' already exists (id=${id}, status=${status}) — reusing (idempotent re-run)"

@@ -209,6 +209,7 @@ describe('worker boot-time bootstrap-drift reconcile', () => {
     ({ id, name: id, status, bootstrapVersion }) as Machine
   // In-memory claim: every listed machine is still claimable unless named.
   const claims = (held: string[] = []) => ({
+    requiresMachineLayoutMigration: async () => false,
     claimMachineForBootstrap: async (id: string) =>
       held.includes(id) ? null : ({ id, name: id, status: 'bootstrapping' } as Machine),
     failMachineBootstrapClaim: async () => {},
@@ -218,6 +219,7 @@ describe('worker boot-time bootstrap-drift reconcile', () => {
     const claimed: Array<{ id: string; from: readonly string[] }> = []
     const rebootstrapped: Array<{ id: string; status: string }> = []
     await reconcileMachineBootstrapAtBoot({
+      requiresMachineLayoutMigration: async () => false,
       isVmRuntime: () => true,
       currentBootstrapVersion: () => 'v2',
       listMachines: async () => [machine('a', 'ready', 'v1'), machine('b', 'ready', 'v1')],
@@ -242,6 +244,7 @@ describe('worker boot-time bootstrap-drift reconcile', () => {
   it('settles its claim when the re-bootstrap throws before recording an outcome', async () => {
     const failed: Array<{ id: string; lastError: string }> = []
     await reconcileMachineBootstrapAtBoot({
+      requiresMachineLayoutMigration: async () => false,
       isVmRuntime: () => true,
       currentBootstrapVersion: () => 'v2',
       listMachines: async () => [machine('a', 'ready', 'v1')],
@@ -321,6 +324,42 @@ describe('worker boot-time bootstrap-drift reconcile', () => {
     })
     expect(listed).toBe(false)
   })
+
+  for (const outcome of ['migration', 'probe-error'] as const) {
+    it(`defers ${outcome} before claim, preserving ready status and old bootstrapVersion while continuing other hosts`, async () => {
+      const rows = [machine('legacy', 'ready', 'v1'), machine('migrated', 'ready', 'v1')]
+      const before = structuredClone(rows)
+      const events: string[] = []
+      await reconcileMachineBootstrapAtBoot({
+        isVmRuntime: () => true,
+        currentBootstrapVersion: () => 'v2',
+        listMachines: async () => rows,
+        requiresMachineLayoutMigration: async (m) => {
+          events.push(`probe:${m.id}`)
+          if (m.id !== 'legacy') return false
+          if (outcome === 'probe-error') throw new Error('SSH layout probe failed')
+          return true
+        },
+        claimMachineForBootstrap: async (id) => {
+          events.push(`claim:${id}`)
+          const row = rows.find((m) => m.id === id)!
+          row.status = 'bootstrapping'
+          return row
+        },
+        bootstrapMachine: async (m) => {
+          events.push(`bootstrap:${m.id}`)
+          m.status = 'ready'
+          m.bootstrapVersion = 'v2'
+        },
+        failMachineBootstrapClaim: async (id) => {
+          events.push(`fail:${id}`)
+        },
+      })
+      expect(events).toEqual(['probe:legacy', 'probe:migrated', 'claim:migrated', 'bootstrap:migrated'])
+      expect(rows[0]).toEqual(before[0])
+      expect(rows[1]?.bootstrapVersion).toBe('v2')
+    })
+  }
 
   it('startup invokes the bootstrap reconcile fire-and-forget', () => {
     const workerSrc = readFileSync(join(import.meta.dir, 'worker.ts'), 'utf8')

@@ -5,7 +5,8 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { machineBoxes } from '../../db'
 import { getPrivateArchiveRoot } from '../sandbox/private-archive'
-import { boxUnixUser, boxHomeForUser, boxUnitControl as boxUnitControlFor } from './box-paths'
+import { MACHINE_ROOT, boxDotDir, boxUnixUser, boxHomeForUser, boxUnitControl as boxUnitControlFor } from './box-paths'
+import { BOX_PROVISION_REMOTE_PATH } from './box-provision-artifact'
 import { createBoxStepTimer, type BoxStepTimings } from './box-timing'
 import { ensureMachineArtifacts as ensureMachineArtifactsReal } from './machine-artifacts-registry'
 import { positiveIntEnv, resolvePlacement } from './placement'
@@ -361,12 +362,12 @@ export type { BoxUnitControl, BoxUnitMode } from './box-paths'
 const boxHome = boxHomeForUser
 
 /** Where the box's systemd unit runs the bundle; installed by bootstrap.sh. */
-const BOX_PROVISION_PATH = '/opt/tau/bin/box-provision.sh'
+const BOX_PROVISION_PATH = BOX_PROVISION_REMOTE_PATH
 /** Per-box browser auth token DIGEST files live here — a SIBLING of
- *  /opt/tau/browser (NOT inside it: bootstrap.sh recursively world-opens
- *  /opt/tau/browser). Kept in lockstep with the tau-browser service's
+ *  /opt/ficus/browser (NOT inside it: bootstrap.sh recursively world-opens
+ *  /opt/ficus/browser). Kept in lockstep with the ficus-browser service's
  *  FICUS_BROWSER_TOKENS_DIR. See {@link installBoxOnMachine}. */
-const BROWSER_TOKENS_DIR = '/opt/tau/browser-tokens'
+const BROWSER_TOKENS_DIR = `${MACHINE_ROOT}/browser-tokens`
 /** box-provision (user + linger + rootless-docker setuptool) can take a minute+.
  *  Bounds ONLY that one SSH run (see {@link installBoxOnMachine}); it does NOT
  *  wrap the later /healthz poll, whose own budget is {@link resolveBoxHealthBudgetMs}. */
@@ -439,10 +440,10 @@ function assertValidBoxEnv(env: BoxEnv): void {
  *  - `EXECUTOR_PORT` — the port the sandbox-server binds (the box's bound port)
  *  - `WORKSPACE_PATH` — the box's working root (squad → ~/workspace; agent/
  *    system-manager → ~/.private), mirroring workspace-layout.ts semantics
- *  - `FICUS_DEVBOX_DIR` — the box's own minimal devbox dir (~/.tau/devbox)
+ *  - `FICUS_DEVBOX_DIR` — the box's own minimal devbox dir (~/.ficus/devbox)
  *  - `FICUS_BOX_HOME` — the box user's HOME; the sandbox-server's path allow-list
  *    (packages/sandbox-server resolvePath) permits writes under this prefix so
- *    file-sync can land agent assets in the box HOME (~/bin, ~/.tau/skills,
+ *    file-sync can land agent assets in the box HOME (~/bin, ~/.ficus/skills,
  *    ~/memory). k8s pods never set it, so it is a vm-only, per-box widening.
  *  - `DOCKER_HOST` — ONLY on boxes provisioned `--with-docker` (squad,
  *    system-manager). Points the sandbox-server's docker use at the box user's
@@ -452,7 +453,7 @@ function assertValidBoxEnv(env: BoxEnv): void {
  *    the socket path from it. Agent (light) boxes get no docker and no
  *    DOCKER_HOST, mirroring k8s where the agent role skips dockerd.
  *  - `BUN_PTY_LIB` — absolute path to the native bun-pty lib ensureServerBundle
- *    ships next to server.js (machine-global under /opt/tau/server). The bundled
+ *    ships next to server.js (machine-global under /opt/ficus/server). The bundled
  *    server's shell/PTY path dlopens it at boot; pointing the loader here is what
  *    stops a startup crash. k8s pods bake the lib into the image, so this is a
  *    vm-only var.
@@ -512,8 +513,8 @@ function derivedBoxEnv(
     // values override the unit's activation-time Environment fallback.
     EXECUTOR_SERVICE_CGROUP: '1',
     WORKSPACE_PATH: workspacePath,
-    FICUS_DEVBOX_DIR: `${home}/.tau/devbox`,
-    FICUS_TOOLCHAIN_DIR: `${home}/.tau/toolchain`,
+    FICUS_DEVBOX_DIR: `${boxDotDir(home)}/devbox`,
+    FICUS_TOOLCHAIN_DIR: `${boxDotDir(home)}/toolchain`,
     FICUS_BOX_HOME: home,
     BUN_PTY_LIB: SERVER_LIB_REMOTE_PATH,
   }
@@ -785,7 +786,9 @@ export function buildMachineSnapshotCommand(box: { sandboxId: string; unixUser: 
   // socket-activated box whose server has idle-exited is `idle` — healthy, and
   // the steady state of an unused box — while only a missing socket (or a
   // server unit that has genuinely `failed`, i.e. exhausted Restart=on-failure)
-  // means the box is down. The `legacy` leg covers a box this deploy has not
+  // means the box is down. The socket and server are probed under whichever
+  // names the box runs (onHost: a box not re-provisioned since the rename keeps
+  // its legacy units). The `legacy` leg covers a box this deploy has not
   // re-provisioned yet, whose port is held by the server itself with no socket
   // unit at all; without it every not-yet-migrated box would read `exited` and
   // be condemned.
@@ -793,8 +796,10 @@ export function buildMachineSnapshotCommand(box: { sandboxId: string; unixUser: 
   return [
     `uid=$(id -u ${shellQuote(unixUser)} 2>/dev/null || true)`,
     `box_live() { case "$1" in active|activating|reloading|listening|running) return 0 ;; *) return 1 ;; esac; }`,
-    `sock=$(${ctl.socketIsActiveCommand()} 2>/dev/null || true)`,
-    `state=$(${ctl.isActiveCommand()} 2>/dev/null || true)`,
+    ctl.onHost(
+      (u) =>
+        `sock=$(${ctl.isActiveCommandOf(u.socket)} 2>/dev/null || true); state=$(${ctl.isActiveCommandOf(u.unit)} 2>/dev/null || true)`
+    ),
     legacyIsActive ? `legacy=$(${legacyIsActive} 2>/dev/null || true)` : 'legacy=',
     'if box_live "$sock"; then ' +
       'if box_live "$state"; then echo FICUS_BOX_LIVENESS=running; ' +
@@ -1083,7 +1088,7 @@ export async function installBoxOnMachine(opts: InstallBoxOpts, deps: BoxManager
     ...opts.env,
     ...derivedBoxEnv(port, role, home, authToken, uid ?? undefined),
   })
-  const envPath = `${home}/.tau/server.env`
+  const envPath = `${boxDotDir(home)}/server.env`
   // Reuse ssh.ts's push-file builder (0600, single-quoted path) and append the
   // chown that hands read to the box user. `install` runs as root under sudo.
   const envCmd = `sudo ${buildPushFileCommand(envPath, '0600')} && sudo chown ${unixUser}:${unixUser} ${shellQuote(envPath)}`
@@ -1093,25 +1098,25 @@ export async function installBoxOnMachine(opts: InstallBoxOpts, deps: BoxManager
   }
 
   // Push the per-box browser auth token file (R-B8/R-B2): the in-sandbox
-  // tau-browser service authenticates a box by comparing sha256(bearer-token)
+  // ficus-browser service authenticates a box by comparing sha256(bearer-token)
   // to this file's CONTENTS, so the file holds the sha256 hex DIGEST of the
   // box's executor auth token — a raw-token file would 401 every box. The
   // digest rides stdin through the SAME `install -m /dev/stdin` channel
   // server.env uses (NEVER argv — /proc/cmdline is world-readable). The tokens
-  // dir is a SIBLING of /opt/tau/browser (bootstrap.sh recursively world-opens
-  // /opt/tau/browser, which would expose a token placed within); the file is
-  // 0640 root:tau-browser so the service (running as tau-browser) can read it
+  // dir is a SIBLING of /opt/ficus/browser (bootstrap.sh recursively world-opens
+  // /opt/ficus/browser, which would expose a token placed within); the file is
+  // 0640 root:ficus-browser so the service (running as ficus-browser) can read it
   // and the box user cannot.
   const tokenDigest = createHash('sha256').update(authToken).digest('hex')
   const tokenPath = `${BROWSER_TOKENS_DIR}/${unixUser}.token`
   const tokenCmd =
     `sudo mkdir -p ${shellQuote(BROWSER_TOKENS_DIR)} && ` +
     `sudo ${buildPushFileCommand(tokenPath, '0640')} && ` +
-    `sudo chown root:tau-browser ${shellQuote(tokenPath)} && ` +
+    `sudo chown root:ficus-browser ${shellQuote(tokenPath)} && ` +
     `sudo chmod 0640 ${shellQuote(tokenPath)}`
   const tokenRes = await runner.run(machine, tokenCmd, { stdin: tokenDigest })
   if (tokenRes.exitCode !== 0) {
-    // NON-FATAL: a pre-browser machine has no tau-browser group, so the chown
+    // NON-FATAL: a pre-browser machine has no ficus-browser group, so the chown
     // fails. Remove the half-written file (it would otherwise linger with the
     // wrong ownership) and warn — the browser feature simply stays unavailable
     // on that box until the machine gains the group; provisioning proceeds.
@@ -1151,7 +1156,11 @@ export async function startBoxAndAwaitHealth(
   // connection in the window before server.env lands can crash-loop the server
   // into start-limit-hit, which a plain `restart` cannot clear. Best-effort —
   // a unit that is not failed makes it a no-op.
-  const restartCmd = `${ctl.systemctl} reset-failed ${ctl.unit} 2>/dev/null || true; ${ctl.systemctl} start ${ctl.socket} 2>/dev/null || true; ${ctl.systemctl} restart ${ctl.unit}`
+  // onHost: a box not re-provisioned since the rename still runs its legacy units.
+  const restartCmd = ctl.onHost(
+    (u) =>
+      `${ctl.systemctl} reset-failed ${u.unit} 2>/dev/null || true; ${ctl.systemctl} start ${u.socket} 2>/dev/null || true; ${ctl.systemctl} restart ${u.unit}`
+  )
   const restartRes = await runner.run(machine, restartCmd)
   if (restartRes.exitCode !== 0) {
     throw new Error(
@@ -2568,9 +2577,10 @@ export async function stopBox(sandboxId: string, deps: BoxManagerDeps = {}): Pro
   // seam so a light box's system units are stopped rather than user units that
   // do not exist. ALL THREE go down, socket first: parking a box that left its
   // socket listening would let the next stray connection re-activate the proxy
-  // and bring the server straight back up under a `stopped` row.
+  // and bring the server straight back up under a `stopped` row. onHost: a box
+  // not re-provisioned since the rename still runs its legacy units.
   const ctl = boxUnitControlFor(box)
-  const stopCmd = `${ctl.systemctl} stop ${ctl.allUnits}`
+  const stopCmd = ctl.onHost((u) => `${ctl.systemctl} stop ${u.allUnits}`)
   await runner.run(machine, stopCmd)
   await tunnels.removeForward(machine, box.port)
 

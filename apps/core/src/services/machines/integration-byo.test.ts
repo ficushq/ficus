@@ -30,7 +30,7 @@ import { MachineTunnelManager } from './tunnel-manager'
  *   integration-vm.test.ts always used the operator's key directly, so the
  *   minted-key round-trip had never run against a real VM) →
  *   POST /:id/bootstrap (the FULL install path: apt + docker-ce + bun + nix +
- *   devbox — a bare BYO host has no /opt/tau/prebaked marker, so this is the
+ *   devbox — a bare BYO host has no /opt/ficus/prebaked marker, so this is the
  *   multi-minute path every BYO customer actually hits; the exe test only
  *   covers the prebaked fast-path) →
  *   MULTI-USER: two boxes on the ONE machine — an `agent` (light) box and a
@@ -59,7 +59,7 @@ import { MachineTunnelManager } from './tunnel-manager'
  *
  * The VM itself is NOT destroyed (BYO semantics — the operator owns it); the
  * test removes everything it creates ON the VM (both box users, archives stay
- * under /opt/tau/archive) and deletes the machine row + minted secret. Skipped-
+ * under /opt/ficus/archive) and deletes the machine row + minted secret. Skipped-
  * mode collection (no gate) runs nothing: describe.skipIf skips beforeAll too.
  * ============================================================================
  */
@@ -222,7 +222,7 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
 
       // A bare BYO host must NOT carry the prebaked marker — the point of this
       // test is the FULL install path (the exe test covers the fast-path).
-      const marker = await runner.run(machine, 'test -f /opt/tau/prebaked && echo yes || echo no')
+      const marker = await runner.run(machine, 'test -f /opt/ficus/prebaked && echo yes || echo no')
       expect(marker.stdout).toContain('no')
 
       // ── 4. Bootstrap via the REAL route: the full multi-minute install. ────
@@ -305,8 +305,8 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
 
       // ── 8. REAL SOCKET/CGROUP CONTRACT: foreground work needs no probes;
       //       detached work is warned, killed by systemd, and not recovered. ──
-      const unit = `tau-box-${agentUser}.service`
-      const proxy = `tau-box-${agentUser}-proxy.service`
+      const unit = `ficus-box-${agentUser}.service`
+      const proxy = `ficus-box-${agentUser}-proxy.service`
       const waitForUnitState = async (name: string, expected: string, timeoutMs = 60_000) => {
         const deadline = Date.now() + timeoutMs
         while (Date.now() < deadline) {
@@ -332,7 +332,7 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
       const detachedMarker = `idle-cgroup-${randomUUID()}`
       const detached = await bashCollect(
         restartedClient,
-        `setsid env ${canary}=present sh -c 'sleep 120' >/dev/null 2>&1 & echo $! > "$HOME/.tau/${detachedMarker}.pid"`
+        `setsid env ${canary}=present sh -c 'sleep 120' >/dev/null 2>&1 & echo $! > "$HOME/.ficus/${detachedMarker}.pid"`
       )
       expect(detached.exitCode).toBe(0)
       restartedClient.close()
@@ -341,7 +341,7 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
 
       const cleanupProof = await runner.run(
         machine,
-        `pid=$(cat /home/${agentUser}/.tau/${detachedMarker}.pid); if kill -0 "$pid" 2>/dev/null; then echo alive; else echo gone; fi`
+        `pid=$(cat /home/${agentUser}/.ficus/${detachedMarker}.pid); if kill -0 "$pid" 2>/dev/null; then echo alive; else echo gone; fi`
       )
       expect(cleanupProof.stdout.trim()).toBe('gone')
       const journal = await runner.run(machine, `journalctl -u ${unit} --since '-3 minutes' --no-pager -o cat`)

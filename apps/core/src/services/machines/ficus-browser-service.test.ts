@@ -4,9 +4,9 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 // Plain-JS machine script (runs directly under bun on machine hosts, no build
-// step, no .d.ts) — see scripts/machine/browser/tau-browser.js's header.
+// step, no .d.ts) — see scripts/machine/browser/ficus-browser.js's header.
 // @ts-expect-error no type declarations for this untyped machine script
-import { createService } from '../../../../../scripts/machine/browser/tau-browser.js'
+import { createService } from '../../../../../scripts/machine/browser/ficus-browser.js'
 
 // --- Helpers -----------------------------------------------------------
 
@@ -226,18 +226,18 @@ async function req(
     init.body = JSON.stringify(opts.body)
     headers['content-type'] = 'application/json'
   }
-  const res = await service.fetch(new Request(`http://tau-browser${path}`, init))
+  const res = await service.fetch(new Request(`http://ficus-browser${path}`, init))
   const json = await res.json().catch(() => null)
   return { status: res.status, json }
 }
 
 // --- Tests -------------------------------------------------------------
 
-describe('tau-browser service', () => {
+describe('ficus-browser service', () => {
   let tokensDir: string
 
   beforeEach(() => {
-    tokensDir = mkdtempSync(join(tmpdir(), 'tau-browser-tokens-'))
+    tokensDir = mkdtempSync(join(tmpdir(), 'ficus-browser-tokens-'))
     // R-B8: token files store sha256(token) hex digests, never raw tokens.
     writeFileSync(join(tokensDir, 'box_abcdef012345.token'), sha256Hex('right-token') + '\n')
     writeFileSync(join(tokensDir, 'box_fedcba987654.token'), sha256Hex('other-token'))
@@ -326,7 +326,7 @@ describe('tau-browser service', () => {
       // path a naive '../victim' read would resolve to, then point tokensDir
       // one level deeper. If BOX_USER_RE ever stopped gating the filename,
       // this traversal would authenticate.
-      const outerDir = mkdtempSync(join(tmpdir(), 'tau-browser-outer-'))
+      const outerDir = mkdtempSync(join(tmpdir(), 'ficus-browser-outer-'))
       const innerDir = join(outerDir, 'inner')
       mkdirSync(innerDir)
       const victimToken = 'victim-token'
@@ -406,7 +406,7 @@ describe('tau-browser service', () => {
       // Plant the victim digest one dir up and point tokensDir one level deeper,
       // so a naive '../victim' read WOULD resolve to it. isSafeTokenUser must
       // refuse the '/'-bearing user before readFileSync is ever reached.
-      const outerDir = mkdtempSync(join(tmpdir(), 'tau-browser-devouter-'))
+      const outerDir = mkdtempSync(join(tmpdir(), 'ficus-browser-devouter-'))
       const innerDir = join(outerDir, 'inner')
       mkdirSync(innerDir)
       writeFileSync(join(outerDir, 'victim.token'), sha256Hex('victim-token'))
@@ -670,7 +670,7 @@ describe('tau-browser service', () => {
       const service = createService({ launch, tokensDir })
       await req(service, '/open', { body: { runId: 'r1', url: 'http://x' } })
 
-      const res = await service.fetch(new Request('http://tau-browser/healthz', { method: 'GET' }))
+      const res = await service.fetch(new Request('http://ficus-browser/healthz', { method: 'GET' }))
       expect(res.status).toBe(200)
       const json = (await res.json()) as { ok: boolean; pages: number; contexts: number }
       expect(json).toEqual({ ok: true, pages: 1, contexts: 1 })

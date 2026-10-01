@@ -18,7 +18,7 @@ import vmDevboxRouting from '../../../../../packages/sandbox-server/src/services
  * @param workspacePath - Host path to the workspace (used to check for devbox.json)
  * @param workspaceMount - Container-side mount path for the workspace (e.g. /workspace)
  * @param opts.devboxDir - VM box only: the ABSOLUTE box-side dir holding the box's
- *   own devbox.json (`FICUS_DEVBOX_DIR`, e.g. `~/.tau/devbox`). When set, the box's
+ *   own devbox.json (`FICUS_DEVBOX_DIR`, e.g. `~/.ficus/devbox`). When set, the box's
  *   devbox lives OUTSIDE the shell's cwd, so activation runs `devbox shellenv`
  *   from that dir explicitly (a bare `devbox shellenv` would find nothing). Omit
  *   on k8s/docker, where devbox.json sits in the workspace (the shell's cwd).

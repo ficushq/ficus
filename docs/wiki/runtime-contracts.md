@@ -32,7 +32,7 @@ For VM boxes, the shared machine browser service owns Chromium and exposes authe
 - A box shares **three page slots** across its parent agent and subagents. A new run normally evicts that box's least-recently-used realized page; it can receive 429 when all slots are still opening. Net-new pages also face a machine-wide ceiling derived from `MemoryHigh / 256 MB` (at least one). Pending creations count toward capacity. This is a shared machine budget, not a per-agent entitlement.
 - Keep Chromium's sandbox enabled as a deployment requirement. Bootstrap contains a sandbox verification gate and a browser-unavailable path. This source review did not run real Chromium or establish that every installed version satisfies that gate; see the acceptance work below.
 
-Source: [Core browser tools](../../apps/core/src/tools/browser.ts), [browser service](../../scripts/machine/browser/tau-browser.js), [service unit](../../scripts/machine/browser/tau-browser.service), [bootstrap](../../scripts/machine/bootstrap.sh). Historical scope and adjudications: browser design, Phase 2 rulings, Phase 3 implementation. Earlier proposed cleanup hooks and acceptance checklists are not proof of current runtime behavior.
+Source: [Core browser tools](../../apps/core/src/tools/browser.ts), [browser service](../../scripts/machine/browser/ficus-browser.js), [service unit](../../scripts/machine/browser/ficus-browser.service), [bootstrap](../../scripts/machine/bootstrap.sh). Historical scope and adjudications: browser design, Phase 2 rulings, Phase 3 implementation. Earlier proposed cleanup hooks and acceptance checklists are not proof of current runtime behavior.
 
 ## Instance maintenance
 

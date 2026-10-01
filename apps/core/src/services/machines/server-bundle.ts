@@ -15,7 +15,7 @@ import type { Machine } from './queries'
  * The per-box sandbox-server is the `packages/sandbox-server` server (the same
  * one k8s pods and Docker containers run), bundled to a single file with
  * `bun build ... --target bun` (the package's own build script shape) and pushed
- * to each machine at `/opt/tau/server/server.js`, where box-provision's systemd
+ * to each machine at `/opt/ficus/server/server.js`, where box-provision's systemd
  * unit runs it per box. Delivery goes through the
  * generic machine-artifact pipeline ({@link serverArtifact} +
  * `ensureArtifact`): the push is version-stamped by content sha256 under
@@ -41,7 +41,7 @@ const SERVER_ENTRY = 'packages/sandbox-server/src/server.ts'
 /** Deterministic entry-point output name for `bun build <server.ts>`. */
 const SERVER_OUTPUT_NAME = 'server.js'
 /** Where the bundle lands on the machine (dir created by bootstrap.sh). */
-const SERVER_REMOTE_PATH = '/opt/tau/server/server.js'
+const SERVER_REMOTE_PATH = '/opt/ficus/server/server.js'
 
 /**
  * The native library the bundled server's shell/PTY path (bun-pty) `dlopen`s at
@@ -58,7 +58,7 @@ const SERVER_REMOTE_PATH = '/opt/tau/server/server.js'
 const SERVER_LIB_SOURCE = 'node_modules/bun-pty/rust-pty/target/release/librust_pty.so'
 /** Where the native lib lands on the machine; the box env's `BUN_PTY_LIB`
  *  (box-manager `derivedBoxEnv`) points the server's loader here. */
-export const SERVER_LIB_REMOTE_PATH = '/opt/tau/server/librust_pty.so'
+export const SERVER_LIB_REMOTE_PATH = '/opt/ficus/server/librust_pty.so'
 
 /**
  * Repo root, resolved by walking UP from this module's location until a directory
@@ -252,7 +252,7 @@ export const currentBundleVersionCached: () => Promise<ServerBundle> = memoizeBu
 
 /**
  * The sandbox-server as a machine artifact: `server.js` + the bun-pty native
- * lib, both 0755 in root-owned `/opt/tau/server`, versioned by the combined
+ * lib, both 0755 in root-owned `/opt/ficus/server`, versioned by the combined
  * sha256 (same stamp the pre-artifact pipeline wrote, so machines that carried
  * a current bundle before the conversion are not re-pushed). `build` reuses
  * {@link currentBundleVersionCached}, so ensuring N machines — and any other
@@ -277,7 +277,7 @@ export const serverArtifact: MachineArtifact = {
 
 /**
  * Ensure the machine carries the current sandbox-server bundle at
- * `/opt/tau/server/server.js`. Thin wrapper over the generic
+ * `/opt/ficus/server/server.js`. Thin wrapper over the generic
  * {@link ensureArtifact} with {@link serverArtifact}: no-op when
  * `machine.artifactVersions['server']` already matches the current build;
  * otherwise streams both files over SSH via `sudo install` and stamps the new

@@ -1,14 +1,14 @@
 /**
- * `/browser/*` pass-through to the machine's tau-browser socket.
+ * `/browser/*` pass-through to the machine's ficus-browser socket.
  *
  * The box server does not interpret browser verbs at all — it forwards the
- * already-authenticated request body to the per-machine `tau-browser`
+ * already-authenticated request body to the per-machine `ficus-browser`
  * service over its unix socket, identifying itself as this box's own unix
  * user (`x-ficus-box-user`) with the box's own EXECUTOR_AUTH_TOKEN as the
  * bearer (R-B3: "the same secret the box already holds"). The upstream
  * status + JSON body are mirrored back verbatim in both directions.
  *
- * When the socket is absent or unreachable (no tau-browser service on this
+ * When the socket is absent or unreachable (no ficus-browser service on this
  * machine — Phase 1's fail-open capability state), callers get a structured
  * 503 that Phase 3's tool turns into the browser-unavailable tool error.
  */
@@ -16,10 +16,10 @@
 import { userInfo } from 'node:os'
 import { boxUserHeaders } from '@ficus/shared/box-user'
 
-const DEFAULT_SOCK = '/run/tau-browser/sock'
+const DEFAULT_SOCK = '/run/ficus-browser/sock'
 
 /**
- * Forward one already-parsed JSON body to the tau-browser socket and mirror
+ * Forward one already-parsed JSON body to the ficus-browser socket and mirror
  * its response back verbatim (status + JSON body). `pathname` is the
  * incoming `/browser/<verb>` request path.
  */
@@ -33,7 +33,7 @@ export async function handleBrowserProxy(
 
   let upstream: Response
   try {
-    upstream = await fetch(`http://tau-browser${subpath}`, {
+    upstream = await fetch(`http://ficus-browser${subpath}`, {
       unix: sock,
       method: 'POST',
       headers: {
@@ -45,7 +45,7 @@ export async function handleBrowserProxy(
       body: JSON.stringify(body),
     })
   } catch {
-    // Socket missing/ENOENT, connection refused, etc. — no tau-browser
+    // Socket missing/ENOENT, connection refused, etc. — no ficus-browser
     // service reachable on this machine. Pass-through only, so this is the
     // one case the proxy interprets itself.
     return Response.json({ error: 'browser unavailable on this machine', code: 'BROWSER_UNAVAILABLE' }, { status: 503 })

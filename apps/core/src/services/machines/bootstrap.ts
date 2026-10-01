@@ -18,7 +18,7 @@ const log = createLogger('machine-bootstrap')
  * the capabilities it reports, and stamp the machine row `ready` with the probed
  * capabilities and a `bootstrapVersion` (the sha256 of the script content — the
  * drift detector a future reconciler compares against). `box-provision.sh` is
- * pushed into `/opt/tau/bin/` for slice 2 to invoke per-box; it is NOT run here.
+ * pushed into `/opt/ficus/bin/` for slice 2 to invoke per-box; it is NOT run here.
  * That push covers a machine's FIRST delivery only — thereafter the script is
  * kept current by the machine-artifact registry (see box-provision-artifact.ts),
  * so a script change reaches the existing fleet without a re-bootstrap.
@@ -283,7 +283,7 @@ export async function bootstrapMachine(machine: Machine, deps: BootstrapDeps = {
     // 1. Push bootstrap.sh (executable) to a scratch path.
     await pushFile(runner, machine, effectiveBootstrapScript, BOOTSTRAP_REMOTE_PATH, '0755')
 
-    // 2. Run it: creates /opt/tau, installs base packages + bun, writes the
+    // 2. Run it: creates /opt/ficus, installs base packages + bun, writes the
     //    manifest, and prints the capabilities marker on its final stdout line.
     //    When the machine opts into the egress lockdown, append the activation
     //    flag + one --core-cidr per configured Core CIDR. bootstrap.sh
@@ -310,7 +310,7 @@ export async function bootstrapMachine(machine: Machine, deps: BootstrapDeps = {
     }
     const capabilities = parseCapabilities(result.stdout)
 
-    // 3. Push box-provision.sh into /opt/tau/bin (root-owned, created by
+    // 3. Push box-provision.sh into /opt/ficus/bin (root-owned, created by
     //    bootstrap.sh) for slice 2 to invoke per box. It is intentionally NOT
     //    invoked here. Unlike the world-writable /tmp bootstrap push, this
     //    target requires privilege, so stream it through `sudo install` — this

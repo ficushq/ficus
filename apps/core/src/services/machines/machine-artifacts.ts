@@ -99,7 +99,7 @@ function buildSudoInstallCommand(file: ArtifactFile): string {
   //
   // -D creates missing parent directories (GNU coreutils; Ubuntu targets), a
   // no-op when they already exist — so artifacts landing in fresh dirs (e.g.
-  // /opt/tau/cli) need no separate mkdir step. The mode is applied to the
+  // /opt/ficus/cli) need no separate mkdir step. The mode is applied to the
   // staging file and carried through the rename.
   // `|| (rm -f staging; false)` keeps a failed push from leaving its unique
   // staging file behind forever — with per-attempt names there is no later push

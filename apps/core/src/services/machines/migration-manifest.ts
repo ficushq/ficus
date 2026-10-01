@@ -1,7 +1,10 @@
 import { createHash } from 'crypto'
 import { posix } from 'path'
 
-export const MIGRATION_MANIFEST_SCHEMA = 'tau-box-migration/v1' as const
+export const MIGRATION_MANIFEST_SCHEMA = 'ficus-box-migration/v1' as const
+/** Bridge (phase 5, U4): the kind manifests carried before the rename. Still read, never written. */
+export const LEGACY_MIGRATION_MANIFEST_SCHEMA = 'tau-box-migration/v1' as const // ficus-p5-bridge
+export type MigrationManifestSchema = typeof MIGRATION_MANIFEST_SCHEMA | typeof LEGACY_MIGRATION_MANIFEST_SCHEMA
 export type DurableRootName = 'workspace' | '.private'
 export type ManifestEntryV1 =
   | { pathB64: string; type: 'file'; mode: string; size: string; contentSha256: string }
@@ -17,7 +20,7 @@ export interface MigrationRootInput {
 }
 
 export interface MigrationManifestV1 {
-  schema: typeof MIGRATION_MANIFEST_SCHEMA
+  schema: MigrationManifestSchema
   operationId: string
   sandboxId: string
   source: { machineId: string; generation: number | null; unixUser: string }
@@ -145,7 +148,8 @@ function canonicalRoot(input: MigrationRootInput) {
 
 export function createMigrationManifest(
   identity: Omit<MigrationManifestV1, 'schema' | 'roots' | 'totals' | 'manifestSha256'>,
-  rootInputs: MigrationRootInput[]
+  rootInputs: MigrationRootInput[],
+  schema: MigrationManifestSchema = MIGRATION_MANIFEST_SCHEMA
 ): MigrationManifestV1 {
   if (!identity || typeof identity !== 'object') throw new Error('invalid manifest identity')
   const rootsByName = new Map(rootInputs.map((root) => [root.name, root]))
@@ -161,14 +165,15 @@ export function createMigrationManifest(
     directories: roots.reduce((sum, root) => sum + root.directoryCount, 0),
     bytes: roots.reduce((sum, root) => sum + BigInt(root.totalBytes), 0n).toString(),
   }
-  const withoutDigest = { schema: MIGRATION_MANIFEST_SCHEMA, ...identity, roots, totals }
+  const withoutDigest = { schema, ...identity, roots, totals }
   return { ...withoutDigest, manifestSha256: sha256(canonicalJson(withoutDigest)) }
 }
 
 export function parseMigrationManifest(input: unknown): MigrationManifestV1 {
   if (!input || typeof input !== 'object') throw new Error('invalid migration manifest')
   const candidate = input as MigrationManifestV1
-  if (candidate.schema !== MIGRATION_MANIFEST_SCHEMA) throw new Error('unsupported migration manifest schema')
+  if (candidate.schema !== MIGRATION_MANIFEST_SCHEMA && candidate.schema !== LEGACY_MIGRATION_MANIFEST_SCHEMA)
+    throw new Error('unsupported migration manifest schema')
   const rebuilt = createMigrationManifest(
     {
       operationId: candidate.operationId,
@@ -176,7 +181,8 @@ export function parseMigrationManifest(input: unknown): MigrationManifestV1 {
       source: candidate.source,
       target: candidate.target,
     },
-    candidate.roots
+    candidate.roots,
+    candidate.schema
   )
   if (canonicalJson(candidate.totals) !== canonicalJson(rebuilt.totals))
     throw new Error('migration manifest totals mismatch')

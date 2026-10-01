@@ -124,7 +124,7 @@ export function buildSandboxChildEnv(
 
 /**
  * Build-parallelism defaults derived from FICUS_BOX_CPUS (written by
- * box-provision.sh into ~/.tau/host.env as half the host's cores, matching the
+ * box-provision.sh into ~/.ficus/host.env as half the host's cores, matching the
  * slice's CPUQuota). Without these, one box's `cargo test` spawns a rustc per
  * core and pins the whole machine host. Applied last and only where nothing
  * (source env or caller overrides) already set a value, so explicit choices

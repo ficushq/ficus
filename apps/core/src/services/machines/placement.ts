@@ -337,7 +337,7 @@ const realProvisionDeps: DefaultProvisionDeps = {
  * machine: ask the exe provider to provision a VM, insert the machine row, then
  * bootstrap it so it returns `ready` — mirroring exactly what a human
  * register+bootstrap does, because a box can only land on a bootstrapped machine
- * (`ensureBox → ensureMachineArtifacts` needs `/opt/tau` present). Placement therefore
+ * (`ensureBox → ensureMachineArtifacts` needs `/opt/ficus` present). Placement therefore
  * hands the CALLER a machine that is ready to host, not a bare `registered` row.
  *
  * ASSUMPTION — auto-provision ⇒ exe ⇒ account key. Auto-provision only fires when
@@ -403,7 +403,7 @@ export async function defaultProvisionMachine(
   try {
     inserted = await deps.insertMachine(insertValues)
     // Bootstrap so a box can land immediately (a `registered` machine has no
-    // /opt/tau server bundle root yet). bootstrapMachine stamps the row `ready`.
+    // /opt/ficus server bundle root yet). bootstrapMachine stamps the row `ready`.
     await deps.bootstrapMachine(inserted)
     const ready = await deps.getMachine(inserted.id)
     if (!ready) throw new Error(`provisioned machine ${inserted.id} vanished after bootstrap`)

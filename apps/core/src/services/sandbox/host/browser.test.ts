@@ -231,13 +231,13 @@ describe('resolveHostChromium', () => {
   })
 
   test('probes a linux playwright chromium install through the glob dirs', () => {
-    const chrome = '/opt/tau/browser/ms-playwright/chromium-1234/chrome-linux64/chrome'
+    const chrome = '/opt/ficus/browser/ms-playwright/chromium-1234/chrome-linux64/chrome'
     const resolved = resolveHostChromium(
       {},
       deps({
         platform: 'linux',
         present: [chrome],
-        dirs: { '/opt/tau/browser/ms-playwright': ['chromium-1234', 'ffmpeg-1000'] },
+        dirs: { '/opt/ficus/browser/ms-playwright': ['chromium-1234', 'ffmpeg-1000'] },
       })
     )
     expect(resolved).toEqual({ executablePath: chrome })

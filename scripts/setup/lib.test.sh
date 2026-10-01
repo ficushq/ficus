@@ -1565,7 +1565,7 @@ expect_eq 'hcloud_server_status_id_ip handles a not-yet-running server' \
 # --- digitalocean pure helpers (request builder / response parsers / reuse
 # branch / public-vs-private IPv4 pick / capacity-error matcher) -------------
 expect_eq 'do_droplet_create_body shape' \
-  "$(do_droplet_create_body 'acme' 'nyc3' 's-1vcpu-2gb' 'ubuntu-24-04-x64' 'abc123' 'tau-tenant')" \
+  "$(do_droplet_create_body 'acme' 'nyc3' 's-1vcpu-2gb' 'ubuntu-24-04-x64' 'abc123' 'ficus-tenant')" \
   '{
   "name": "acme",
   "region": "nyc3",
@@ -1575,7 +1575,7 @@ expect_eq 'do_droplet_create_body shape' \
     "abc123"
   ],
   "tags": [
-    "tau-tenant"
+    "ficus-tenant"
   ]
 }'
 
@@ -1585,11 +1585,11 @@ expect_eq 'do_droplet_create_body shape' \
 # VPC cannot reach the shared Postgres cluster's private host — which is the
 # host every tenant DSN uses.
 expect_eq 'do_droplet_create_body pins vpc_uuid when one is given' \
-  "$(do_droplet_create_body 'acme' 'nyc3' 's-1vcpu-2gb' 'ubuntu-24-04-x64' 'abc123' 'tau-tenant' 'vpc-abc-123' | jq -c .)" \
-  '{"name":"acme","region":"nyc3","size":"s-1vcpu-2gb","image":"ubuntu-24-04-x64","ssh_keys":["abc123"],"tags":["tau-tenant"],"vpc_uuid":"vpc-abc-123"}'
+  "$(do_droplet_create_body 'acme' 'nyc3' 's-1vcpu-2gb' 'ubuntu-24-04-x64' 'abc123' 'ficus-tenant' 'vpc-abc-123' | jq -c .)" \
+  '{"name":"acme","region":"nyc3","size":"s-1vcpu-2gb","image":"ubuntu-24-04-x64","ssh_keys":["abc123"],"tags":["ficus-tenant"],"vpc_uuid":"vpc-abc-123"}'
 expect_eq 'do_droplet_create_body omits vpc_uuid entirely when it is empty (DO then picks the default VPC)' \
-  "$(do_droplet_create_body 'acme' 'nyc3' 's-1vcpu-2gb' 'ubuntu-24-04-x64' 'abc123' 'tau-tenant' '' | jq -c .)" \
-  '{"name":"acme","region":"nyc3","size":"s-1vcpu-2gb","image":"ubuntu-24-04-x64","ssh_keys":["abc123"],"tags":["tau-tenant"]}'
+  "$(do_droplet_create_body 'acme' 'nyc3' 's-1vcpu-2gb' 'ubuntu-24-04-x64' 'abc123' 'ficus-tenant' '' | jq -c .)" \
+  '{"name":"acme","region":"nyc3","size":"s-1vcpu-2gb","image":"ubuntu-24-04-x64","ssh_keys":["abc123"],"tags":["ficus-tenant"]}'
 
 # Droplet-create has NO project_id field — assignment is a separate call to
 # POST /projects/<id>/resources with the droplet's URN.
@@ -2124,6 +2124,70 @@ EOF
   unset -f fake_do_http_reuse
   unset PROV_DO_CREATE_COUNT_FILE
 
+  # -- digitalocean lookup under BOTH tags: a tenant droplet created before the
+  # Ficus rename carries only the legacy tag until the DigitalOcean rename job
+  # retags it, and the retag deletes the legacy tag. The lookup asks for the
+  # Ficus tag first, then the legacy one, and reuses a droplet found under
+  # either — never creating a duplicate. (The fake answers every tag except
+  # ficus-tenant with the droplet, so no old name is retyped here.)
+  export PROV_DO_CREATE_COUNT_FILE="${PROV_TMP}/do-create-count-dual"
+  export PROV_DO_TAGS_FILE="${PROV_TMP}/do-tags-dual"
+  printf '0' >"${PROV_DO_CREATE_COUNT_FILE}"
+  : >"${PROV_DO_TAGS_FILE}"
+  _fake_do_http_dual() { # FOUND_UNDER (ficus|legacy) ...ARGV
+    local found_under=$1
+    shift
+    _prov_parse_http_argv "$@"
+    local body code tag
+    case "${_url}" in
+      *'?tag_name='*)
+        tag=${_url##*tag_name=}
+        printf '%s\n' "${tag}" >>"${PROV_DO_TAGS_FILE}"
+        if { [[ ${tag} == ficus-tenant && ${found_under} == ficus ]] || [[ ${tag} != ficus-tenant && ${found_under} == legacy ]]; }; then
+          body='{"droplets":[{"id":888,"name":"acme-do","status":"active","networks":{"v4":[{"ip_address":"198.51.100.9","type":"public"}]}}]}'
+        else
+          body='{"droplets":[]}'
+        fi
+        code=200
+        ;;
+      *'/droplets/'*)
+        body='{"droplet":{"id":888,"status":"active","networks":{"v4":[{"ip_address":"198.51.100.9","type":"public"}]}}}'
+        code=200
+        ;;
+      *)
+        printf '%s' "$(($(cat "${PROV_DO_CREATE_COUNT_FILE}") + 1))" >"${PROV_DO_CREATE_COUNT_FILE}"
+        body='{"droplet":{"id":999,"status":"new","networks":{"v4":[]}}}'
+        code=202
+        ;;
+    esac
+    [[ -n ${_outfile} ]] && printf '%s' "${body}" >"${_outfile}"
+    printf '%s' "${code}"
+  }
+  fake_do_http_dual_legacy() { _fake_do_http_dual legacy "$@"; }
+  fake_do_http_dual_ficus() { _fake_do_http_dual ficus "$@"; }
+  export -f _fake_do_http_dual fake_do_http_dual_legacy fake_do_http_dual_ficus
+
+  dual_out=$(DIGITALOCEAN_TOKEN=dummy-do-token FICUS_SETUP_HTTP_CMD=fake_do_http_dual_legacy \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/digitalocean.yaml")
+  expect_eq 'digitalocean dual tag: a droplet found only under the legacy tag is reused' \
+    "$(printf '%s\n' "${dual_out}" | tail -n1)" 'SERVER_IP=198.51.100.9'
+  expect_eq 'digitalocean dual tag: no duplicate droplet is created' "$(cat "${PROV_DO_CREATE_COUNT_FILE}")" '0'
+  expect_eq 'digitalocean dual tag: the Ficus tag is asked first' "$(head -n1 "${PROV_DO_TAGS_FILE}")" 'ficus-tenant'
+  expect_eq 'digitalocean dual tag: then exactly one other (legacy) tag' \
+    "$(sed -n 2p "${PROV_DO_TAGS_FILE}" | grep -cv '^ficus-tenant$' || true)|$(wc -l <"${PROV_DO_TAGS_FILE}" | tr -d ' ')" '1|2'
+
+  : >"${PROV_DO_TAGS_FILE}"
+  dual_out=$(DIGITALOCEAN_TOKEN=dummy-do-token FICUS_SETUP_HTTP_CMD=fake_do_http_dual_ficus \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/digitalocean.yaml")
+  expect_eq 'digitalocean dual tag: a droplet under the Ficus tag is reused' \
+    "$(printf '%s\n' "${dual_out}" | tail -n1)" 'SERVER_IP=198.51.100.9'
+  expect_eq 'digitalocean dual tag: found under the Ficus tag, the legacy tag is not asked' \
+    "$(cat "${PROV_DO_TAGS_FILE}")" 'ficus-tenant'
+  expect_eq 'digitalocean dual tag: still no create' "$(cat "${PROV_DO_CREATE_COUNT_FILE}")" '0'
+
+  unset -f _fake_do_http_dual fake_do_http_dual_legacy fake_do_http_dual_ficus
+  unset PROV_DO_CREATE_COUNT_FILE PROV_DO_TAGS_FILE
+
   # -- digitalocean VPC pinning + project assignment.
   #
   # vpc_uuid must be PASSED, not left to the region's default VPC: the default
@@ -2207,6 +2271,8 @@ EOF
     bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/digitalocean-vpc.yaml")
   expect_eq 'digitalocean vpc: the create body pins vpc_uuid from config' \
     "$(jq -r '.vpc_uuid' <"${PROV_DO_CREATE_BODY_FILE}")" 'vpc-test-uuid'
+  expect_eq 'digitalocean create: a new droplet is tagged ficus-tenant (only)' \
+    "$(jq -c '.tags' <"${PROV_DO_CREATE_BODY_FILE}")" '["ficus-tenant"]'
   # (the recorded line is "<url> <body>", and the body is pretty-printed JSON
   # spanning several lines — hence head -1 before cutting the url off)
   expect_match 'digitalocean project: POST goes to /projects/<configured id>/resources' \
