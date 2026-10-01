@@ -203,6 +203,56 @@ describe('chat extraction: one row per execution, its latest step', () => {
     expect(after.at > before.at).toBe(true)
   })
 
+  test('mid-step, the committed latest text shows while it is newer than the last message', () => {
+    const message = {
+      id: 'm1',
+      role: 'assistant',
+      content: 'Reading the diff',
+      createdAt: new Date('2026-08-27T10:00:00Z'),
+    }
+    const [live] = extractChatExecution({
+      ...execution,
+      latestText: 'Now checking the setup files\nand the vendored ones',
+      latestTextAt: new Date('2026-08-27T10:01:00Z'),
+      messages: [message],
+    })
+    expect(live.summary).toBe('Now checking the setup files and the vendored ones')
+    expect(live.at).toBe('2026-08-27T10:01:00.000Z')
+    expect(live.rowId).toBe(execution.executionId)
+    // The chat opens at the last message there is; the live step has none yet.
+    expect(live.ref).toMatchObject({ messageId: 'm1' })
+
+    // Once the step's message lands (newer), it takes over.
+    const [landed] = extractChatExecution({
+      ...execution,
+      latestText: 'Now checking the setup files',
+      latestTextAt: new Date('2026-08-27T10:01:00Z'),
+      messages: [
+        message,
+        {
+          id: 'm2',
+          role: 'assistant',
+          content: 'Now checking the setup files',
+          createdAt: new Date('2026-08-27T10:01:05Z'),
+        },
+      ],
+    })
+    expect(landed.ref).toMatchObject({ messageId: 'm2' })
+    expect(landed.at).toBe('2026-08-27T10:01:05.000Z')
+  })
+
+  test('the first text of a run shows before any message exists', () => {
+    const [row] = extractChatExecution({
+      ...execution,
+      latestText: 'Starting with the schema',
+      latestTextAt: new Date('2026-08-27T10:00:00Z'),
+      messages: [],
+    })
+    expect(row.summary).toBe('Starting with the schema')
+    expect(row.ref).not.toHaveProperty('messageId')
+    expect(extractChatExecution({ ...execution, latestText: '  ', latestTextAt: new Date(), messages: [] })).toEqual([])
+  })
+
   test('no row until the agent has said something', () => {
     expect(
       extractChatExecution({

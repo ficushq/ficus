@@ -249,6 +249,9 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
   declare startedAt: Date
   declare runStartedAt: Date | null
   declare endedAt: Date | null
+  /** Display only, for the live activity row (see the column); not part of the API shape. */
+  declare latestText: string | null
+  declare latestTextAt: Date | null
 
   // Cached relation (set via setAgent or eager loaded)
   private _agent: Agent | null = null

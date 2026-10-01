@@ -427,6 +427,14 @@ export const executions = pgTable(
     startedAt: timestamp('started_at').notNull().defaultNow(),
     runStartedAt: timestamp('run_started_at', { withTimezone: true }),
     endedAt: timestamp('ended_at'),
+    /**
+     * Display only: the run's newest assistant text, committed when a text
+     * block finishes streaming (before the step's message row exists), so the
+     * squad activity row can show it mid-step. Nothing in recovery or
+     * completion inference reads it; the step's persisted message supersedes it.
+     */
+    latestText: text('latest_text'),
+    latestTextAt: timestamp('latest_text_at', { withTimezone: true }),
   },
   (table) => [
     index('idx_executions_status_started_at').on(table.status, table.startedAt),

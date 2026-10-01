@@ -44,6 +44,9 @@ export interface ChatExecutionSnapshot {
   executionId: string
   agentId: string
   agentTypeId: string
+  /** The run's newest committed text mid-step (executions.latest_text), before its message row lands. */
+  latestText?: string | null
+  latestTextAt?: Date | string | null
   messages: Array<{ id: string; role: string; content: string; createdAt: Date | string }>
 }
 
@@ -63,23 +66,35 @@ export function extractChatExecution(snapshot: ChatExecutionSnapshot): Extracted
         : at(left.createdAt).localeCompare(at(right.createdAt))
     )
     .at(-1)
-  if (!latest) return []
+  // Mid-step, the newest text is committed on the execution before its step's
+  // message exists (tool calls still streaming): show it while it's the newer.
+  // Once the step lands its message is newer and takes over, deep link included.
+  const live =
+    snapshot.latestText &&
+    /\S/.test(snapshot.latestText) &&
+    snapshot.latestTextAt &&
+    (!latest || at(snapshot.latestTextAt) > at(latest.createdAt))
+      ? { content: snapshot.latestText, at: at(snapshot.latestTextAt) }
+      : null
+  if (!latest && !live) return []
+  const shown = live ?? { content: latest!.content, at: at(latest!.createdAt) }
   return [
     {
       id: `10:${snapshot.executionId}`,
       lane: 10,
       rowId: snapshot.executionId,
       squadId: snapshot.squadId,
-      at: at(latest.createdAt),
+      at: shown.at,
       agentId: snapshot.agentId,
       agentTypeId: snapshot.agentTypeId,
       kind: 'message',
-      ...activityPreview(latest.content),
+      ...activityPreview(shown.content),
       ref: {
         type: 'agent',
         agentId: snapshot.agentId,
         view: 'chat',
-        messageId: latest.id,
+        // Mid-step there's no message yet: link the last one there is (the chat opens at the run either way).
+        ...(latest ? { messageId: latest.id } : {}),
         executionId: snapshot.executionId,
       },
       sourceFamily: 'chat',

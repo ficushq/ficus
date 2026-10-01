@@ -1401,6 +1401,13 @@
       "when": 1790753461574,
       "tag": "0199_mixed_shotgun",
       "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1790812178296,
+      "tag": "0200_tricky_boomerang",
+      "breakpoints": true
     }
   ]
 }

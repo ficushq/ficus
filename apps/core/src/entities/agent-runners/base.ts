@@ -724,6 +724,8 @@ export abstract class AgentRunner {
       const durableExecutionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
         this.execution.id
       )
+      // Commit the step's newest text as each text block ends, for the live activity row (display only).
+      if (durableExecutionId) this.collector.setTextBlockEndListener((text) => this.persistence.enqueueLatestText(text))
       if (durableExecutionId && this.execution.runnerClaimToken && this.execution.runnerClaimGeneration !== null) {
         const admissionStore = new AdmissionReservationStore('runner', admissionProcessIncarnation)
         const admissionLease = await admissionStore.claimProvisionalLease(

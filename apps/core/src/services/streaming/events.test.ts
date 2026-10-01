@@ -632,3 +632,39 @@ describe('StreamEventCollector', () => {
     })
   })
 })
+
+describe('text block end (the live activity row commits the newest text mid-step)', () => {
+  const textEnd = (): AgentSessionEvent =>
+    ({ type: 'message_update', assistantMessageEvent: { type: 'text_end', contentIndex: 0 } }) as AgentSessionEvent
+
+  it('reports the step text when a text block ends, then again as later text joins it', () => {
+    const collector = new StreamEventCollector(new MockStreamBuffer() as any)
+    const seen: string[] = []
+    collector.setTextBlockEndListener((text) => seen.push(text))
+    collector.handleEvent(textDelta("I've read the diff"))
+    collector.handleEvent(textEnd())
+    collector.handleEvent(textDelta(' and checked Caddy.'))
+    collector.handleEvent(textEnd())
+    expect(seen).toEqual(["I've read the diff", "I've read the diff and checked Caddy."])
+  })
+
+  it('closes the text when a tool call starts, for adapters that never send text_end', () => {
+    const collector = new StreamEventCollector(new MockStreamBuffer() as any)
+    const seen: string[] = []
+    collector.setTextBlockEndListener((text) => seen.push(text))
+    collector.handleEvent(textDelta('Checking the setup files'))
+    collector.handleEvent(toolcallStart(1, 'call-1', 'bash'))
+    expect(seen).toEqual(['Checking the setup files'])
+  })
+
+  it('stays quiet for blank text, thinking, and a tool call with no text before it', () => {
+    const collector = new StreamEventCollector(new MockStreamBuffer() as any)
+    const seen: string[] = []
+    collector.setTextBlockEndListener((text) => seen.push(text))
+    collector.handleEvent(thinkingDelta('hmm'))
+    collector.handleEvent(textDelta('  \n'))
+    collector.handleEvent(textEnd())
+    collector.handleEvent(toolcallStart(1, 'call-1', 'bash'))
+    expect(seen).toEqual([])
+  })
+})

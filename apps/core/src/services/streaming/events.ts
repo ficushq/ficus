@@ -25,6 +25,7 @@ export class StreamEventCollector {
   private announcedToolCalls = new Set<string>()
 
   private sanitizeEvent?: (event: AgentSessionEvent) => AgentSessionEvent
+  private onTextBlockEnd?: (text: string) => void
 
   /** Last error captured from agent_end or auto_retry_end */
   lastError: string | null = null
@@ -38,6 +39,16 @@ export class StreamEventCollector {
 
   setEventSanitizer(sanitize: (event: AgentSessionEvent) => AgentSessionEvent): void {
     this.sanitizeEvent = sanitize
+  }
+
+  /**
+   * Called when a text block finishes streaming (the model moves on, usually to
+   * tool calls), with the step's text so far — already sanitized, and exactly
+   * what the step's message will say. Lets the runner commit the newest text
+   * before the whole step is persisted.
+   */
+  setTextBlockEndListener(listener: (text: string) => void): void {
+    this.onTextBlockEnd = listener
   }
 
   /**
@@ -82,11 +93,18 @@ export class StreamEventCollector {
       return false
     }
 
+    if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_end') {
+      this.textBlockEnded()
+      return false
+    }
+
     // --- Streaming tool argument events ---
 
     if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'toolcall_start') {
       const { contentIndex, partial } = event.assistantMessageEvent
       const toolCallContent = partial.content[contentIndex]
+      // Adapters that never send text_end still close the text here.
+      if (this.currentBlock?.type === 'text') this.textBlockEnded()
 
       if (toolCallContent && toolCallContent.type === 'toolCall') {
         const { id: toolCallId, name: toolName } = toolCallContent
@@ -335,6 +353,11 @@ export class StreamEventCollector {
   /**
    * Extract plain text from collected blocks.
    */
+  private textBlockEnded(): void {
+    const text = this.getResponseText()
+    if (/\S/.test(text)) this.onTextBlockEnd?.(text)
+  }
+
   private getResponseText(): string {
     return this.blocks
       .filter((b): b is ContentBlock & { type: 'text' } => b.type === 'text')
