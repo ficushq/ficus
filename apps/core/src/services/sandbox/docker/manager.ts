@@ -33,9 +33,13 @@ import { gitIdentityEnv, resolveGitHubIdentity } from '../github-identity'
 import { terminationIntentRegistry } from '../death/intent-registry'
 import { beginSandboxSetupWork, trackSandboxSetupWork, type SandboxSetupWorkReason } from '../setup-progress'
 import {
+  dockerExecIdentityForSet,
+  DOCKER_EXEC_IDENTITY_NEW,
+  identitySetForLabels,
   readSandboxLabel,
   SANDBOX_IDENTITY_WRITE,
   sandboxContainerNames,
+  type DockerExecIdentity,
   type SandboxIdentitySet,
 } from '../identity-names'
 import { parseDockerImageContract, type DockerImageContract } from './runtime-contract'
@@ -53,7 +57,11 @@ import {
 } from './lifecycle-runtime'
 export { classifyDockerContainerOwnership, classifyDockerInspectStatus, SPEC_HASH_LABEL } from './lifecycle-contract'
 import { SandboxClient } from '../client/http-client'
-import { parseDockerCommandIdentity, resolveDockerCommandIdentity } from './command-identity'
+import {
+  LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT,
+  parseDockerCommandIdentity,
+  resolveDockerCommandIdentity,
+} from './command-identity'
 import { computeDockerSpecDigest, validateDockerHealthContract } from './runtime-contract'
 
 // Re-export types for backwards compatibility
@@ -71,6 +79,27 @@ export function terminalApiUrlArgs(apiUrl: string): string {
   const args: string[] = []
   pushEnvArgs(args, { FICUS_API_URL: apiUrl })
   return args.join(' ')
+}
+
+/**
+ * `docker exec` args for running as a container's sandbox user, from its OWN
+ * resolved {@link DockerExecIdentity} — pure, so callers that already resolved
+ * the identity (e.g. to also build an `addgroup`/`adduser` fallback) need only
+ * one `docker inspect` round trip, not one per use.
+ */
+export function buildSandboxUserArgs(identity: DockerExecIdentity): string[] {
+  return [
+    '--user',
+    identity.user,
+    '-e',
+    `HOME=${identity.home}`,
+    '-e',
+    `USER=${identity.user}`,
+    '-e',
+    `LOGNAME=${identity.user}`,
+    '-e',
+    `DOCKER_HOST=unix://${identity.dockerProxySocketPath}`,
+  ]
 }
 
 const SANDBOX_IMAGE = process.env.FICUS_SANDBOX_IMAGE || 'ficus-sandbox:latest'
@@ -673,7 +702,7 @@ export class DockerSandboxManager implements ISandboxManager {
     workspaceMount: string,
     toolchainDir?: string
   ): void {
-    const userArgs = this.getSandboxUserArgs()
+    const userArgs = this.getSandboxUserArgs(containerId)
     const content = buildBashrcContent(workspacePath, workspaceMount, { toolchainDir })
 
     Bun.spawnSync(
@@ -942,7 +971,7 @@ export class DockerSandboxManager implements ISandboxManager {
           await this.connectExecutor(containerId, sandboxId)
 
           // All subsequent docker exec calls run as the sandbox user
-          const userArgs = this.getSandboxUserArgs()
+          const userArgs = this.getSandboxUserArgs(containerId)
 
           const githubIdentity = await resolveGitHubIdentity(opts.squadId ?? getSquadIdFromSandbox(sandboxId))
 
@@ -1438,7 +1467,7 @@ export class DockerSandboxManager implements ISandboxManager {
       const scriptContent = preamble + ctx.command
       fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 })
 
-      const userArgs = this.getSandboxUserArgs()
+      const userArgs = this.getSandboxUserArgs(sandbox.containerId)
       // Inject the per-agent scoped token so `ficus` CLI calls inside the sandbox
       // authenticate AS this agent (RBAC squad-scoped) rather than via the shared
       // FICUS_PASSWORD. Tokens are `ficus_agent_<uuid>` (no shell metacharacters).
@@ -1595,7 +1624,8 @@ export class DockerSandboxManager implements ISandboxManager {
     }
 
     // Check if sandbox user exists, create if not (handles containers from before user setup)
-    const userArgs = this.getSandboxUserArgs()
+    const dockerIdentity = this.resolveDockerExecIdentity(containerId)
+    const userArgs = buildSandboxUserArgs(dockerIdentity)
     if (userArgs.length > 0) {
       const userCheck = Bun.spawnSync(['docker', 'exec', ...userArgs, containerId, 'true'], {
         stdout: 'ignore',
@@ -1606,6 +1636,7 @@ export class DockerSandboxManager implements ISandboxManager {
         const hostUid = process.getuid?.()
         const hostGid = process.getgid?.()
         if (hostUid != null && hostGid != null) {
+          const { user, home } = dockerIdentity
           Bun.spawnSync(
             [
               'docker',
@@ -1613,9 +1644,9 @@ export class DockerSandboxManager implements ISandboxManager {
               containerId,
               'sh',
               '-c',
-              `addgroup -g ${hostGid} ficus 2>/dev/null || true; ` +
-                `adduser -u ${hostUid} -G ficus -D -h /home/ficus ficus 2>/dev/null || true; ` +
-                `chown -R ${hostUid}:${hostGid} /home/ficus 2>/dev/null || true`,
+              `addgroup -g ${hostGid} ${user} 2>/dev/null || true; ` +
+                `adduser -u ${hostUid} -G ${user} -D -h ${home} ${user} 2>/dev/null || true; ` +
+                `chown -R ${hostUid}:${hostGid} ${home} 2>/dev/null || true`,
             ],
             { stdout: 'ignore', stderr: 'ignore' }
           )
@@ -1782,7 +1813,7 @@ export class DockerSandboxManager implements ISandboxManager {
     const sandbox = this.sandboxes.get(sandboxId)
     if (!sandbox) throw new Error(`No sandbox found for ${sandboxId}`)
 
-    const userArgs = this.getSandboxUserArgs()
+    const userArgs = this.getSandboxUserArgs(sandbox.containerId)
     const result = Bun.spawnSync(
       ['docker', 'exec', ...userArgs, '-w', sandbox.workspaceMount, sandbox.containerId, ...args],
       {
@@ -1803,7 +1834,12 @@ export class DockerSandboxManager implements ISandboxManager {
     const sandbox = this.sandboxes.get(sandboxId)
     if (!sandbox) throw new Error(`No sandbox found for ${sandboxId}`)
     const result = Bun.spawnSync(
-      dockerExecWithStdinArgs(sandbox.containerId, sandbox.workspaceMount, this.getSandboxUserArgs(), args),
+      dockerExecWithStdinArgs(
+        sandbox.containerId,
+        sandbox.workspaceMount,
+        this.getSandboxUserArgs(sandbox.containerId),
+        args
+      ),
       { stdin, stdout: 'pipe', stderr: 'pipe' }
     )
     if (result.exitCode !== 0) {
@@ -1830,7 +1866,7 @@ export class DockerSandboxManager implements ISandboxManager {
     const sandbox = this.sandboxes.get(sandboxId)
     if (!sandbox) throw new Error(`No sandbox found for ${sandboxId}`)
 
-    const userArgs = this.getSandboxUserArgs()
+    const userArgs = this.getSandboxUserArgs(sandbox.containerId)
     const proc = Bun.spawn(
       ['docker', 'exec', ...userArgs, '-w', sandbox.workspaceMount, sandbox.containerId, ...args],
       {
@@ -1897,7 +1933,7 @@ export class DockerSandboxManager implements ISandboxManager {
       [
         'docker',
         'exec',
-        ...this.getSandboxUserArgs(),
+        ...this.getSandboxUserArgs(sandbox.containerId),
         '-w',
         sandbox.workspaceMount,
         sandbox.containerId,
@@ -1917,7 +1953,7 @@ export class DockerSandboxManager implements ISandboxManager {
     const sandbox = this.sandboxes.get(sandboxId)
     if (!sandbox) return 1
 
-    const userArgs = this.getSandboxUserArgs()
+    const userArgs = this.getSandboxUserArgs(sandbox.containerId)
     const result = Bun.spawnSync(
       ['docker', 'exec', ...userArgs, '-w', sandbox.workspaceMount, sandbox.containerId, ...args],
       {
@@ -2008,6 +2044,11 @@ export class DockerSandboxManager implements ISandboxManager {
   }
 
   private async connectExecutor(containerId: string, sandboxId: string): Promise<void> {
+    // The container's OWN baked identity — never assumed. A legacy-labelled
+    // container (adopted, not recreated, because it has an active session —
+    // see connectActiveDrift) has a `tau` user and `/run/tau/...` paths; it // ficus-p5-bridge
+    // has no `/run/ficus/...` executor-token file at all.
+    const dockerIdentity = this.resolveDockerExecIdentity(containerId)
     let portResult = Bun.spawnSync(['docker', 'port', containerId, '50051/tcp'], { stdout: 'pipe', stderr: 'pipe' })
     let portMatch = portResult.stdout
       .toString()
@@ -2029,13 +2070,13 @@ export class DockerSandboxManager implements ISandboxManager {
         reason: 'START_FAILED',
         stderr: portResult.stderr.toString(),
       })
-    let tokenResult = Bun.spawnSync(['docker', 'exec', containerId, 'cat', '/run/ficus/executor-token'], {
+    let tokenResult = Bun.spawnSync(['docker', 'exec', containerId, 'cat', dockerIdentity.executorTokenPath], {
       stdout: 'pipe',
       stderr: 'pipe',
     })
     for (let attempt = 0; tokenResult.exitCode !== 0 && attempt < 300; attempt++) {
       await Bun.sleep(100)
-      tokenResult = Bun.spawnSync(['docker', 'exec', containerId, 'cat', '/run/ficus/executor-token'], {
+      tokenResult = Bun.spawnSync(['docker', 'exec', containerId, 'cat', dockerIdentity.executorTokenPath], {
         stdout: 'pipe',
         stderr: 'pipe',
       })
@@ -2052,9 +2093,17 @@ export class DockerSandboxManager implements ISandboxManager {
     const client = new SandboxClient(`127.0.0.1:${portMatch[1]}`, token)
     try {
       await client.waitForReady(30_000)
-      const identity = parseDockerCommandIdentity(
-        fs.readFileSync(path.join(MONOREPO_ROOT, 'apps/core/docker-sandbox/command-identity.json'), 'utf8')
-      )
+      // The expected identity contract follows the SAME container-reported
+      // generation as the token path above: the current release's baked file
+      // for a new-identity container, the fixed pre-release pair (never read
+      // from a file — this release's checkout no longer has one) for a
+      // legacy-identity one.
+      const identity =
+        dockerIdentity === DOCKER_EXEC_IDENTITY_NEW
+          ? parseDockerCommandIdentity(
+              fs.readFileSync(path.join(MONOREPO_ROOT, 'apps/core/docker-sandbox/command-identity.json'), 'utf8')
+            )
+          : LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT
       const expectedIdentity = resolveDockerCommandIdentity(identity, {
         uid: process.getuid?.(),
         gid: process.getgid?.(),
@@ -2077,19 +2126,14 @@ export class DockerSandboxManager implements ISandboxManager {
     }
   }
 
-  private getSandboxUserArgs(): string[] {
-    return [
-      '--user',
-      'ficus',
-      '-e',
-      'HOME=/home/ficus',
-      '-e',
-      'USER=ficus',
-      '-e',
-      'LOGNAME=ficus',
-      '-e',
-      'DOCKER_HOST=unix:///run/ficus-docker/docker.sock',
-    ]
+  /**
+   * `docker exec` args for running as the container's OWN sandbox user — read
+   * from ITS labels (see {@link resolveDockerExecIdentity}), never assumed to
+   * be the current release's. A legacy-labelled container has no `ficus`
+   * user; `docker exec --user ficus` against one fails outright.
+   */
+  private getSandboxUserArgs(containerId: string): string[] {
+    return buildSandboxUserArgs(this.resolveDockerExecIdentity(containerId))
   }
 
   private resolveImageContract(): DockerImageContract {
@@ -2274,6 +2318,20 @@ export class DockerSandboxManager implements ISandboxManager {
     const labels = this.getContainerLabels(containerRef)
     if (!labels) return null
     return readSandboxLabel(labels, pick) || null
+  }
+
+  /**
+   * The in-container exec identity (user/home/token path/docker-proxy socket)
+   * a container ACTUALLY has baked in, read from its own labels — never
+   * assumed to be the current release's. A legacy-labelled container (built
+   * before this release) has a `tau` user and `/run/tau/...` paths; exec'ing // ficus-p5-bridge
+   * into it with the new-only literals fails outright, which is exactly the
+   * bug this resolves (an adopted-not-recreated legacy container must stay
+   * reachable, not just discoverable).
+   */
+  private resolveDockerExecIdentity(containerRef: string): DockerExecIdentity {
+    const labels = this.getContainerLabels(containerRef)
+    return dockerExecIdentityForSet(labels ? identitySetForLabels(labels) : null)
   }
 
   /**

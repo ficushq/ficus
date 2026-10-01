@@ -272,11 +272,12 @@ name:
    kubectl delete namespace "$OLD_CORE_NS" "$OLD_SANDBOX_NS"
    ```
 
-Any sandbox pod still running under a previous release's container-name
-prefix or label set is recognized and adopted by this release (it reads
-every label set this phase of the rename has used), so in-flight agent work
-survives the move; only the control-plane resources above need the manual
-steps.
+Any sandbox pod still running under a previous release's pod-name prefix or
+label set is found, adopted, and kept reachable by this release (it tries
+every name and reads every label set this phase of the rename has used,
+including the in-container executor identity that pod was actually built
+with), so in-flight agent work survives the move; only the control-plane
+resources above need the manual steps.
 
 ---
 

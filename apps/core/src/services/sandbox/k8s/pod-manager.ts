@@ -25,6 +25,7 @@ import { PortForwardManager } from './port-forward'
 import {
   buildSandboxPodSpec,
   sandboxPodName,
+  sandboxPodNames,
   sanitizeLabelValue,
   reconcilableSpecHash,
   SANDBOX_MEMORY_LIMIT,
@@ -304,7 +305,23 @@ export class K8sPodManager {
       return this.getPodEndpoint(existing.podName)
     }
 
-    const podName = this.getPodName(sandboxId)
+    // Discover an existing pod under ANY read name (write name first) before
+    // settling on where to create — a pod this release did not name (e.g. one
+    // built under the legacy `tau-sb-` prefix) is adopted here, never left
+    // running beside a freshly created one under the new name.
+    let podName = this.getPodName(sandboxId)
+    let podExists = false
+    for (const candidate of sandboxPodNames(sandboxId)) {
+      try {
+        await this.coreApi.readNamespacedPod({ name: candidate, namespace: this.namespace })
+        podName = candidate
+        podExists = true
+        log.debug(`Pod ${podName} already exists in cluster`)
+        break
+      } catch (err: unknown) {
+        if (getK8sStatusCode(err) !== 404) throw err
+      }
+    }
     log.info(`Creating pod for sandbox: ${sandboxId} (pod: ${podName})`)
 
     // Mark as pending. A pod reaching creation may be a fresh (or newly
@@ -320,26 +337,11 @@ export class K8sPodManager {
     })
 
     try {
-      // Check if pod already exists in K8s
-      let podExists = false
-      try {
-        await this.coreApi.readNamespacedPod({ name: podName, namespace: this.namespace })
-        podExists = true
-        log.debug(`Pod ${podName} already exists in cluster`)
-      } catch (err: unknown) {
-        if (
-          (err as any)?.response?.statusCode === 404 ||
-          (err as any)?.statusCode === 404 ||
-          (err as any)?.code === 404
-        ) {
-          podExists = false
-        } else {
-          throw err
-        }
-      }
-
       // Hash of the spec actually running once we settle create-vs-adopt below.
       let runningSpecHash: string | undefined
+      // The name a FRESH pod gets — always the write name, even when the
+      // discovery above found (and is about to discard) a legacy-named one.
+      const writePodName = this.getPodName(sandboxId)
 
       if (podExists) {
         // Check if the existing pod is in a terminal state — delete and recreate
@@ -356,10 +358,12 @@ export class K8sPodManager {
               ? this.waitForPodDeletion(podName, POD_DELETION_TIMEOUT_MS, signal)
               : this.waitForPodDeletion(podName))
             podExists = false
+            podName = writePodName
           } else if (phase === 'Failed' || phase === 'Succeeded') {
             log.warn(`Pod ${podName} is in terminal state (${phase}), deleting and recreating...`)
             await this.coreApi.deleteNamespacedPod({ name: podName, namespace: this.namespace })
             podExists = false
+            podName = writePodName
           } else {
             // Adopting an existing pod — its annotation is the real running spec.
             runningSpecHash = podSpecHash(existingPod)
@@ -367,8 +371,15 @@ export class K8sPodManager {
         } catch {
           // Ignore — pod may have been deleted between checks
           podExists = false
+          podName = writePodName
         }
       }
+
+      // The tracked state was seeded with the DISCOVERED name above; keep it
+      // in sync now that a terminal/draining pod may have reset `podName` to
+      // the write name for the fresh create below.
+      const pendingState = this.pods.get(sandboxId)
+      if (pendingState) pendingState.podName = podName
 
       if (!podExists) {
         // Ensure auth secret is current before creating the pod

@@ -20,7 +20,7 @@ import { resolveSandboxAssets } from '../asset-manifest'
 import { containerWorkspaceLayout } from '../workspace-layout'
 import { K8S_STAGED_CLI_SUBPATH, SANDBOX_CLI_PATH } from '../cli-path'
 import { isLocalK8sMode } from '../runtime'
-import { SANDBOX_IDENTITY_WRITE } from '../identity-names'
+import { SANDBOX_IDENTITY_WRITE, sandboxPodNamePrefixes } from '../identity-names'
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
   EXECUTOR_PORT,
@@ -255,19 +255,33 @@ export function readK3dHostIp(): string | null {
   }
 }
 
-/** Sanitize a sandbox ID into a K8s pod name (lowercase, ≤63 chars, hashed when truncated). */
-export function sandboxPodName(sandboxId: string): string {
+/**
+ * Sanitize a sandbox ID into a K8s pod name under the given prefix (default
+ * the write prefix) — lowercase, ≤63 chars, hashed when truncated.
+ */
+export function sandboxPodName(sandboxId: string, prefix: string = SANDBOX_IDENTITY_WRITE.k8sPodNamePrefix): string {
   const sanitized = sandboxId
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-  const name = `tau-sb-${sanitized}`
+  const name = `${prefix}${sanitized}`
   // K8s hostnames must be ≤63 characters. If too long, truncate and append
   // a short hash of the full sanitized ID to avoid collisions.
   if (name.length <= 63) return name
   const hash = Bun.hash(sanitized).toString(36).slice(0, 8)
   return `${name.slice(0, 63 - 9).replace(/-$/, '')}-${hash}`
+}
+
+/**
+ * Every pod name a sandbox may carry: the write name first, then each other
+ * read name — mirrors {@link sandboxContainerNames} for Docker. A pod built
+ * under a prefix this release does not write (e.g. the legacy `tau-sb-`
+ * prefix) is still found, adopted, and cleaned up by trying every name here,
+ * never left running beside a freshly created pod under the write name.
+ */
+export function sandboxPodNames(sandboxId: string): string[] {
+  return sandboxPodNamePrefixes().map((prefix) => sandboxPodName(sandboxId, prefix))
 }
 
 /** Sanitize a value into a valid K8s label value (≤63 chars, hashed when truncated). */
@@ -537,13 +551,13 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
       namespace,
       labels: {
         app: SANDBOX_IDENTITY_WRITE.k8sAppLabelValue,
-        'tau.io/sandbox-id': sanitizeLabelValue(sandboxId),
-        'tau.io/sandbox-type': sandboxType,
-        ...(isSquad ? { 'tau.io/squad-id': sanitizeLabelValue(storageKey) } : {}),
+        'ficus.sh/sandbox-id': sanitizeLabelValue(sandboxId),
+        'ficus.sh/sandbox-type': sandboxType,
+        ...(isSquad ? { 'ficus.sh/squad-id': sanitizeLabelValue(storageKey) } : {}),
       },
       annotations: {
-        'tau.io/idle-timeout': String(config?.idleTimeout ?? DEFAULT_IDLE_TIMEOUT_MS),
-        'tau.io/always-on': String(config?.alwaysOn ?? false),
+        'ficus.sh/idle-timeout': String(config?.idleTimeout ?? DEFAULT_IDLE_TIMEOUT_MS),
+        'ficus.sh/always-on': String(config?.alwaysOn ?? false),
         [SPEC_HASH_ANNOTATION]: reconcilableSpecHash(config),
         // CRI-O requires this annotation for user namespace support (sysbox)
         ...(runtimeClass ? { 'io.kubernetes.cri-o.userns-mode': 'auto:size=65536' } : {}),

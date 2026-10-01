@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
-import { prepullSandboxImages, prepullPodName, type PrepullDeps } from './image-prepull'
+import { prepullSandboxImages, prepullPodName, prepullPodNames, type PrepullDeps } from './image-prepull'
+import { SANDBOX_IDENTITY_LEGACY } from '../identity-names'
 
 interface Call {
   op: 'create' | 'read' | 'delete'
@@ -116,5 +117,20 @@ describe('prepullSandboxImages', () => {
     // 409 is not a hard failure: it must still poll the existing pod and clean up.
     expect(calls.some((c) => c.op === 'read' && c.name === prepullPodName('squad'))).toBe(true)
     expect(calls.some((c) => c.op === 'delete' && c.name === prepullPodName('squad'))).toBe(true)
+  })
+
+  // I1 (fix round 1): a pod left over from a crash mid-prepull BEFORE this
+  // release carries the legacy `tau-sb-prepull-` name, not the write one —
+  // the prior-boot cleanup must find and delete it too, or it leaks forever.
+  test('deletes a leftover pod under EVERY prepull name, not just the write one', async () => {
+    const { api, calls } = makeFakeApi({ phase: 'Succeeded' })
+    await prepullSandboxImages(baseDeps(api))
+
+    const names = prepullPodNames('squad')
+    expect(names).toHaveLength(2)
+    expect(names).toContain(prepullPodName('squad', SANDBOX_IDENTITY_LEGACY.k8sPodNamePrefix))
+    for (const name of names) {
+      expect(calls.some((c) => c.op === 'delete' && c.name === name)).toBe(true)
+    }
   })
 })

@@ -20,6 +20,7 @@ const KEYS: (keyof SandboxIdentitySet)[] = [
   'imageLabelNamespace',
   'k8sSpecHashAnnotation',
   'k8sAppLabelValue',
+  'k8sPodNamePrefix',
 ]
 
 describe('sandbox identity names', () => {
@@ -34,6 +35,7 @@ describe('sandbox identity names', () => {
       imageLabelNamespace: 'sh.ficus.sandbox',
       k8sSpecHashAnnotation: 'ficus.sh/spec-hash',
       k8sAppLabelValue: 'ficus-sandbox',
+      k8sPodNamePrefix: 'ficus-sb-',
     })
   })
 

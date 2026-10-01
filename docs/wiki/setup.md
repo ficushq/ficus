@@ -419,6 +419,14 @@ so run k3d on the default `ficus` instance only, and give the extra instances
 lists the same separation for a second instance you wire up by hand instead of
 with `--instance`.
 
+A checkout that already ran `k3d:setup` under a previous release's cluster
+name has that cluster running separately — the current cluster name is not
+backward-compatible, so an old checkout's cluster is invisible to this
+release's `k3d:setup`/`k3d:status`/`k3d:teardown` and keeps consuming local
+Docker resources until removed by hand. `bun run k3d:setup` and
+`bun run k3d:status` print the old cluster's exact name and the commands to
+migrate its data or delete it whenever one is still present.
+
 ### Moving an install made before the rename
 
 An instance installed before Ficus took its name keeps its old names — launchd

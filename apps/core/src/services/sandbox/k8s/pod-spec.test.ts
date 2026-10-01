@@ -9,12 +9,13 @@ import {
   resolveEphemeralStorageLimit,
   resolveSandboxApiUrl,
   sandboxPodName,
+  sandboxPodNames,
   sanitizeLabelValue,
   type BuildPodSpecInput,
   type SquadSandboxConfig,
 } from './pod-spec'
 import { getSandboxSkillsDir } from '../../agent/skill-materializer'
-import { SANDBOX_IDENTITY_READ, SANDBOX_IDENTITY_WRITE } from '../identity-names'
+import { SANDBOX_IDENTITY_LEGACY, SANDBOX_IDENTITY_READ, SANDBOX_IDENTITY_WRITE } from '../identity-names'
 import * as workspaceLayoutModule from '../workspace-layout'
 
 /** Build a spec with the env seam stubbed out (no secret store / git identity). */
@@ -24,12 +25,12 @@ function buildSpec(input: Omit<BuildPodSpecInput, 'namespace'> & { namespace?: s
 
 describe('sandboxPodName', () => {
   test('sanitizes sandbox ID for K8s naming', () => {
-    expect(sandboxPodName('squad_abc123')).toBe('tau-sb-squad-abc123')
+    expect(sandboxPodName('squad_abc123')).toBe('ficus-sb-squad-abc123')
   })
 
   test('short names stay under 63 chars', () => {
     const name = sandboxPodName('manager_xyz')
-    expect(name).toBe('tau-sb-manager-xyz')
+    expect(name).toBe('ficus-sb-manager-xyz')
     expect(name.length).toBeLessThanOrEqual(63)
   })
 
@@ -45,6 +46,22 @@ describe('sandboxPodName', () => {
     const id1 = 'agent_system-manager_e8890566-3587-4d63-be1f-c474a06bc9f1'
     const id2 = 'agent_system-manager_f9990566-3587-4d63-be1f-c474a06bc9f2'
     expect(sandboxPodName(id1)).not.toBe(sandboxPodName(id2))
+  })
+
+  // I1 (fix round 1): a pod built under the legacy `tau-sb-` prefix must
+  // still be found by name — sandboxPodNames (used by ensurePod's discovery
+  // loop) must try it.
+  test('accepts an explicit prefix, so a legacy-named pod can still be computed', () => {
+    expect(sandboxPodName('squad_abc123', SANDBOX_IDENTITY_LEGACY.k8sPodNamePrefix)).toBe('tau-sb-squad-abc123')
+  })
+})
+
+describe('sandboxPodNames', () => {
+  test('lists the write name first, then every other read name', () => {
+    const names = sandboxPodNames('squad_abc123')
+    expect(names[0]).toBe('ficus-sb-squad-abc123')
+    expect(names).toContain('tau-sb-squad-abc123')
+    expect(names).toHaveLength(2)
   })
 })
 

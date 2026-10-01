@@ -21,6 +21,14 @@
 
 set -euo pipefail
 
+# I2 (fix round 1): the cluster (and its mounted home dir) this script managed
+# before the Ficus rename. Renaming CLUSTER_NAME/FICUS_HOME below does not
+# touch (or even see) a cluster already running under these old names — it is
+# a completely separate k3d cluster/network/node, invisible to
+# `cluster_exists`/`cmd_status`/`cmd_teardown` above. Left alone, it keeps
+# consuming local Docker/OrbStack resources indefinitely.
+LEGACY_CLUSTER_NAME="tau-dev" # ficus-p5-bridge
+LEGACY_HOME="${HOME}/.tau" # ficus-p5-bridge
 CLUSTER_NAME="ficus-dev"
 NAMESPACE="ficus-sandboxes-dev"
 KUBECTL_CONTEXT="${FICUS_K8S_CONTEXT:-k3d-ficus-dev-token}"
@@ -53,6 +61,28 @@ kctl() { kubectl --context "${KUBECTL_CONTEXT}" "$@"; }
 
 cluster_exists() {
   k3d cluster list -o json 2>/dev/null | grep -q "\"name\":\"${CLUSTER_NAME}\""
+}
+
+legacy_cluster_exists() {
+  k3d cluster list -o json 2>/dev/null | grep -q "\"name\":\"${LEGACY_CLUSTER_NAME}\""
+}
+
+# I2: a cluster under the old name is a SEPARATE k3d cluster this script no
+# longer manages — point at it explicitly instead of letting it silently rot.
+warn_legacy_cluster_if_present() {
+  legacy_cluster_exists || return 0
+  echo ""
+  warn "A k3d cluster named '${LEGACY_CLUSTER_NAME}' (from before the Ficus rename) still exists."
+  warn "This script no longer manages it — it will keep using local resources until you act."
+  echo ""
+  echo "  To migrate its data into the new cluster before continuing setup:"
+  echo "    rsync -a ${LEGACY_HOME}/ ${FICUS_HOME}/   # skip if ${FICUS_HOME} already has what you need"
+  echo "    k3d cluster delete ${LEGACY_CLUSTER_NAME}"
+  echo ""
+  echo "  To discard it instead:"
+  echo "    k3d cluster delete ${LEGACY_CLUSTER_NAME}"
+  echo "    rm -rf ${LEGACY_HOME}   # only if you no longer need its data"
+  echo ""
 }
 
 cluster_running() {
@@ -301,6 +331,8 @@ cmd_setup() {
     return
   fi
 
+  warn_legacy_cluster_if_present
+
   ensure_registry
 
   # --- Ensure ~/.ficus directories exist ---
@@ -498,6 +530,7 @@ cmd_status() {
   fi
   if ! cluster_exists; then
     echo -e "  Cluster:  ${RED}not created${NC} — run: bun run k3d:setup"
+    warn_legacy_cluster_if_present
     return
   fi
   if cluster_running; then
