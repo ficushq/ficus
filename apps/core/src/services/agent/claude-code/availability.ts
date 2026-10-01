@@ -29,6 +29,13 @@ export interface ClaudeCodeStatus {
   subscriptionType?: string
   /** Why agents cannot use it right now, for Settings. */
   reason?: string
+  /**
+   * When `claude auth status` could not be read (no JSON: it crashed, printed an error, or could not
+   * start): its exit code and the start of what it printed, for Settings and the log.
+   */
+  detail?: string
+  /** Every `claude` found, newest-first choice aside, so a wrong or stale install is visible. */
+  candidates?: string[]
 }
 
 /**
@@ -89,19 +96,31 @@ function claudeSearchPath(env: Record<string, string | undefined>): string {
     .join(':')
 }
 
-export type RunClaude = (executable: string, args: string[]) => Promise<{ exitCode: number; stdout: string }>
+export type RunClaude = (
+  executable: string,
+  args: string[]
+) => Promise<{ exitCode: number; stdout: string; stderr?: string }>
 
 const runClaude: RunClaude = async (executable, args) => {
   const child = Bun.spawn([executable, ...args], {
     stdout: 'pipe',
-    stderr: 'ignore',
+    // Read for diagnostics only: `auth status` never prints the credential.
+    stderr: 'pipe',
     stdin: 'ignore',
     env: claudeChildEnv(),
   })
-  const timer = setTimeout(() => child.kill(), 15_000)
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    child.kill()
+  }, 15_000)
   try {
-    const [stdout, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited])
-    return { exitCode, stdout }
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+    return { exitCode, stdout, stderr: timedOut ? `Timed out after 15s. ${stderr}` : stderr }
   } finally {
     clearTimeout(timer)
   }
@@ -207,7 +226,10 @@ async function readStatus(
   // Several installs can coexist (native installer, npm, Homebrew, the Claude desktop app), and a
   // background worker's PATH can differ from the user's shell. Run the newest.
   const candidates = claudeExecutableCandidates(env)
-  if (!candidates.length) return { offered: true, enabled, loggedIn: false, reason: 'Claude Code is not installed' }
+  if (!candidates.length) {
+    log.info('Claude Code not found', { searched: claudeSearchPath(env) })
+    return { offered: true, enabled, loggedIn: false, reason: 'Claude Code is not installed' }
+  }
   let executable = candidates[0]!
   let version: string | undefined
   let best: number[] | undefined
@@ -222,12 +244,25 @@ async function readStatus(
   try {
     const result = await run(executable, ['auth', 'status', '--json'])
     // Only these fields are read; the status output never carries the credential itself.
-    const parsed = JSON.parse(result.stdout || '{}') as {
-      loggedIn?: unknown
-      authMethod?: unknown
-      subscriptionType?: unknown
+    const parsed = parseStatus(result.stdout)
+    if (!parsed) {
+      // Signed out is still valid JSON (`loggedIn: false`, exit 1). No JSON means `claude` could not
+      // say: it crashed, errored (an npm install missing `node` on this PATH), or never started.
+      const detail = describeFailure(result.exitCode, result.stderr ?? '', result.stdout)
+      log.warn('Could not read Claude Code sign-in status', { executable, version, candidates, detail })
+      return {
+        offered: true,
+        enabled,
+        executable,
+        ...(version ? { version } : {}),
+        loggedIn: false,
+        reason: "Could not read Claude Code's sign-in status",
+        detail,
+        candidates,
+      }
     }
     const loggedIn = parsed.loggedIn === true
+    if (!loggedIn) log.info('Claude Code is not signed in', { executable, version, candidates })
     const authMethod = typeof parsed.authMethod === 'string' ? parsed.authMethod : undefined
     const subscriptionType = typeof parsed.subscriptionType === 'string' ? parsed.subscriptionType : undefined
     const reason = !loggedIn ? 'Claude Code is not signed in' : !enabled ? 'Turned off' : undefined
@@ -240,9 +275,39 @@ async function readStatus(
       ...(authMethod ? { authMethod } : {}),
       ...(subscriptionType ? { subscriptionType } : {}),
       ...(reason ? { reason } : {}),
+      candidates,
     }
   } catch (error) {
-    log.warn('Could not read Claude Code status', error)
-    return { offered: true, enabled, executable, loggedIn: false, reason: 'Could not run Claude Code' }
+    log.warn('Could not run Claude Code', { executable, version, candidates, error })
+    return {
+      offered: true,
+      enabled,
+      executable,
+      loggedIn: false,
+      reason: 'Could not run Claude Code',
+      detail: error instanceof Error ? error.message : String(error),
+      candidates,
+    }
   }
+}
+
+/** `claude auth status --json`'s answer, or undefined when it printed no status JSON. */
+function parseStatus(
+  stdout: string
+): { loggedIn?: unknown; authMethod?: unknown; subscriptionType?: unknown } | undefined {
+  try {
+    const parsed = JSON.parse(stdout) as unknown
+    return parsed && typeof parsed === 'object' && typeof (parsed as { loggedIn?: unknown }).loggedIn === 'boolean'
+      ? (parsed as { loggedIn?: unknown; authMethod?: unknown; subscriptionType?: unknown })
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** "exit 127: env: node: No such file or directory", trimmed to something a person can read. */
+function describeFailure(exitCode: number, stderr: string, stdout: string): string {
+  const output = (stderr.trim() || stdout.trim()).split('\n').slice(0, 3).join(' ').replace(/\s+/g, ' ')
+  const clipped = output.length > 300 ? `${output.slice(0, 299)}…` : output
+  return clipped ? `exit ${exitCode}: ${clipped}` : `exit ${exitCode} with no output`
 }

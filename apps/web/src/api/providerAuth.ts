@@ -186,6 +186,10 @@ export interface ClaudeCodeStatus {
   authMethod?: string
   subscriptionType?: string
   reason?: string
+  /** Why the sign-in could not be read (exit code and the start of `claude`'s error), when it couldn't. */
+  detail?: string
+  /** Every `claude` found; agents run the newest. */
+  candidates?: string[]
 }
 
 export async function getClaudeCodeStatus(refresh = false): Promise<ClaudeCodeStatus> {

@@ -43,6 +43,7 @@ test('reports sign-in status without keeping anything else from the status outpu
     loggedIn: true,
     authMethod: 'claude.ai',
     subscriptionType: 'max',
+    candidates: [join(bin, 'claude')],
   })
 })
 
@@ -64,6 +65,35 @@ test('signed out, and not installed, are unavailable with a reason', async () =>
   expect(
     await getClaudeCodeStatus({ env: { PATH: '/nonexistent', HOME: '/nonexistent' }, run: signedIn, enabled: true })
   ).toMatchObject({ offered: true, loggedIn: false, reason: 'Claude Code is not installed' })
+})
+
+test("when claude can't say, the status shows its exit code and error instead of 'not signed in'", async () => {
+  const crashed: RunClaude = async (_executable, args) =>
+    args[0] === '--version'
+      ? { exitCode: 0, stdout: '2.1.281 (Claude Code)\n' }
+      : { exitCode: 127, stdout: '', stderr: 'env: node: No such file or directory\n' }
+  expect(await getClaudeCodeStatus({ env: local, run: crashed, enabled: true })).toMatchObject({
+    executable: join(bin, 'claude'),
+    loggedIn: false,
+    reason: "Could not read Claude Code's sign-in status",
+    detail: 'exit 127: env: node: No such file or directory',
+  })
+  const garbled: RunClaude = async () => ({ exitCode: 0, stdout: 'Welcome to Claude Code!' })
+  expect(await getClaudeCodeStatus({ env: local, run: garbled, enabled: true })).toMatchObject({
+    loggedIn: false,
+    detail: 'exit 0: Welcome to Claude Code!',
+  })
+  const silent: RunClaude = async () => ({ exitCode: 143, stdout: '' })
+  expect(await getClaudeCodeStatus({ env: local, run: silent, enabled: true })).toMatchObject({
+    detail: 'exit 143 with no output',
+  })
+  const threw: RunClaude = async () => {
+    throw new Error('spawn EACCES')
+  }
+  expect(await getClaudeCodeStatus({ env: local, run: threw, enabled: true })).toMatchObject({
+    reason: 'Could not run Claude Code',
+    detail: 'spawn EACCES',
+  })
 })
 
 test('with several installs, the newest claude is used', async () => {
