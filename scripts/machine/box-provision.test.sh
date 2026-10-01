@@ -143,13 +143,40 @@ else
     shim sudo 'if [ "$1" = -u ]; then shift 2; fi; exec "$@"'
     shim runuser 'shift 3; exec "$@"'
     shim getent 'grep -m1 "^$2:" "$STUB_R/fakedb/$1"'
-    shim id 'if [ "$1" = -u ] && [ -n "${2:-}" ]; then l=$(grep -m1 "^$2:" "$STUB_R/fakedb/passwd") || exit 1; echo "$l" | cut -d: -f3; exit 0; fi; exec /usr/bin/id "$@"'
+    shim id '
+if [ "$1" = -nG ]; then
+  printf "%s" "$2"
+  while IFS=: read -r group _ _ members; do
+    case ",$members," in *",$2,"*) printf " %s" "$group" ;; esac
+  done <"$STUB_R/fakedb/group"
+  printf "\n"; exit 0
+fi
+if [ "$1" = -u ] && [ -n "${2:-}" ]; then l=$(grep -m1 "^$2:" "$STUB_R/fakedb/passwd") || exit 1; echo "$l" | cut -d: -f3; exit 0; fi
+exec /usr/bin/id "$@"'
     shim useradd 'echo "useradd $*" >>"$STUB_R/calls.log"; u="${!#}"; echo "$u:x:1001:1001::$STUB_R/home/$u:/bin/bash" >>"$STUB_R/fakedb/passwd"; mkdir -p "$STUB_R/home/$u"'
-    shim usermod 'echo "usermod $*" >>"$STUB_R/calls.log"'
+    shim usermod '
+echo "usermod $*" >>"$STUB_R/calls.log"
+[ "$1" = -aG ] || exit 2
+while IFS=: read -r group pass gid members; do
+  if [ "$group" = "$2" ]; then
+    case ",$members," in *",$3,"*) ;; *) members="${members:+$members,}$3" ;; esac
+  fi
+  printf "%s:%s:%s:%s\n" "$group" "$pass" "$gid" "$members"
+done <"$STUB_R/fakedb/group" >"$STUB_R/fakedb/group.new"
+mv "$STUB_R/fakedb/group.new" "$STUB_R/fakedb/group"'
     shim chown 'echo "chown $*" >>"$STUB_R/calls.log"'
     shim install 'a=(); while [ $# -gt 0 ]; do case "$1" in -o|-g) shift 2 ;; *) a+=("$1"); shift ;; esac; done; exec /usr/bin/install "${a[@]}"'
     shim git 'for a in "$@"; do d=$a; done; case " $* " in *" init "*) mkdir -p "$d/objects" ;; esac; exit 0'
-    shim loginctl 'echo "loginctl $*" >>"$STUB_R/calls.log"; case "$1" in enable-linger) touch "$STUB_R/var/lib/systemd/linger/$2" ;; disable-linger) rm -f "$STUB_R/var/lib/systemd/linger/$2" ;; esac; exit 0'
+    shim loginctl '
+echo "loginctl $*" >>"$STUB_R/calls.log"
+case "$1" in
+  enable-linger)
+    touch "$STUB_R/var/lib/systemd/linger/$2"
+    # A running manager retains its old supplementary groups until stopped.
+    [ -f "$STUB_R/fakedb/manager-groups" ] || id -nG "$2" >"$STUB_R/fakedb/manager-groups" ;;
+  disable-linger) rm -f "$STUB_R/var/lib/systemd/linger/$2" ;;
+esac
+exit 0'
     shim systemctl '
 echo "systemctl $*" >>"$STUB_R/calls.log"
 dir="$STUB_R/etc/systemd/system"; verb=""; units=""
@@ -162,6 +189,13 @@ for a in "$@"; do
 done
 installs() { sed -n "s/^$1=//p" "$dir/$2" 2>/dev/null; }
 case "$verb" in
+  is-active)
+    case "$units" in *" user@1001.service"*) [ -f "$STUB_R/fakedb/manager-groups" ]; exit $? ;; esac ;;
+  stop)
+    case "$units" in *" user@1001.service"*)
+      [ ! -f "$STUB_R/fakedb/fail-manager-stop" ] || exit 89
+      rm -f "$STUB_R/fakedb/manager-groups" ;;
+    esac ;;
   enable) for u in $units; do [ -e "$dir/$u" ] || exit 1
       for t in $(installs WantedBy "$u"); do mkdir -p "$dir/$t.wants"; ln -sfn "$dir/$u" "$dir/$t.wants/$u"; done
       for al in $(installs Alias "$u"); do if [ -e "$dir/$al" ] && [ ! -L "$dir/$al" ]; then exit 1; fi; ln -sfn "$dir/$u" "$dir/$al"; done
@@ -207,6 +241,8 @@ exit 0'
       printf '[Socket]\nListenStream=127.0.0.1:20001\n\n[Install]\nWantedBy=sockets.target\n' >"${dir}/${L_USER}.socket"
       ln -s "${dir}/${L_USER}.socket" "${dir}/sockets.target.wants/${L_USER}.socket"
       touch "${R}/var/lib/systemd/linger/${BOX}"
+      printf 'old-browser:x:997:%s\n' "${BOX}" >>"${R}/fakedb/group"
+      printf '%s old-browser\n' "${BOX}" >"${R}/fakedb/manager-groups"
     fi
   }
 
@@ -280,6 +316,10 @@ exit 0'
     "$(grep -c "^systemctl --machine=${BOX}@.host --user enable --now ficus-sandbox-server.socket$" "${R}/calls.log")" '1'
   expect_eq 'fresh user box: its legacy name is the alias link' \
     "$(is_link_to "${U}/${L_USER}.socket" "${U}/ficus-sandbox-server.socket")" 'yes'
+  expect_eq 'fresh user box: its first manager inherits browser membership' \
+    "$(grep -c -w ficus-browser "${R}/fakedb/manager-groups" || true)" '1'
+  expect_eq 'fresh user box: no existing manager needs stopping' \
+    "$(grep -c '^systemctl stop user@1001.service$' "${R}/calls.log" || true)" '0'
   rm -rf "${R}"
 
   make_host
@@ -296,6 +336,41 @@ exit 0'
   expect_eq 'legacy user box: linger is kept for the user manager' \
     "$([[ -e ${R}/var/lib/systemd/linger/${BOX} ]] && echo yes || echo no)" 'yes'
   expect_eq 'legacy user box: server.env moved with the dot dir' "$(cat "${H}/.ficus/server.env")" 'EXECUTOR_AUTH_TOKEN=secret'
+  expect_eq 'legacy user box: refreshed manager inherits browser membership' \
+    "$(grep -c -w ficus-browser "${R}/fakedb/manager-groups" || true)" '1'
+  expect_eq 'legacy user box: only this box manager was stopped once' \
+    "$(grep -c '^systemctl stop user@1001.service$' "${R}/calls.log" || true)" '1'
+  expect_eq 'legacy user box: stop precedes group addition and subsequent enable' \
+    "$(awk '/^systemctl stop user@1001.service$/ { stop=NR } /^usermod -aG ficus-browser / { add=NR } /^loginctl enable-linger / { enable=NR } END { print (stop > 0 && add > stop && enable > add) ? "yes" : "no" }' "${R}/calls.log")" 'yes'
+  before=$(host_snapshot)
+  : >"${R}/calls.log"
+  provision --sandbox-id squad_x --unit-mode user
+  expect_eq 'legacy user box: repeat succeeds without filesystem changes' "${PROV_RC}:$(host_snapshot)" "0:${before}"
+  expect_eq 'legacy user box: repeat does not stop its manager' \
+    "$(grep -c '^systemctl stop user@1001.service$' "${R}/calls.log" || true)" '0'
+  expect_eq 'legacy user box: repeat does not add the group again' \
+    "$(grep -c '^usermod -aG ficus-browser ' "${R}/calls.log" || true)" '0'
+  rm -rf "${R}"
+
+  # A failed stop must not add membership and make the retry skip its refresh.
+  make_host
+  make_legacy_box user
+  H="${R}/home/${BOX}"
+  mkdir -p "${H}/workspace"
+  printf 'keep workspace\n' >"${H}/workspace/keep"
+  touch "${R}/fakedb/fail-manager-stop"
+  provision --sandbox-id squad_x --unit-mode user
+  expect_eq 'manager stop failure: provision fails before changing group membership' "${PROV_RC}" '89'
+  expect_eq 'manager stop failure: no usermod occurred' \
+    "$(grep -c '^usermod ' "${R}/calls.log" || true)" '0'
+  expect_eq 'manager stop failure: old manager still has original groups' "$(cat "${R}/fakedb/manager-groups")" "${BOX} old-browser"
+  rm "${R}/fakedb/fail-manager-stop"
+  provision --sandbox-id squad_x --unit-mode user
+  expect_eq 'manager stop failure: retry succeeds' "${PROV_RC}" '0'
+  expect_eq 'manager stop failure: retry refreshes group membership' \
+    "$(grep -c -w ficus-browser "${R}/fakedb/manager-groups" || true)" '1'
+  expect_eq 'manager refresh: workspace content survives' "$(cat "${H}/workspace/keep")" 'keep workspace'
+  expect_eq 'manager refresh: server env survives' "$(cat "${H}/.ficus/server.env")" 'EXECUTOR_AUTH_TOKEN=secret'
   rm -rf "${R}"
 
   # -- a HOME whose new box server already wrote .ficus beside the legacy dir ---

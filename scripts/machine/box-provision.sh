@@ -1193,6 +1193,26 @@ ensure_user() {
   # fail provisioning, only skip the membership (no browser calls until the
   # box is recreated on a browser-capable machine).
   if getent group ficus-browser >/dev/null 2>&1; then
+    local groups uid
+    groups="$(id -nG "${UNIX_USER}")" || return 1
+    case " ${groups} " in
+      *" ficus-browser "*) return 0 ;;
+    esac
+    if [ "${UNIT_MODE}" = "user" ]; then
+      uid="$(box_uid)" || return 1
+      if "${SUDO[@]}" test -e "${LINGER_DIR}/${UNIX_USER}" ||
+        "${SUDO[@]}" systemctl is-active --quiet "user@${uid}.service"; then
+        # A lingering manager keeps the supplementary groups it started with,
+        # even after usermod; every box server it launches inherits that stale
+        # list. Stop only this box's manager before adding the group. Stopping
+        # first keeps a failed stop retryable (membership is still absent).
+        # provision_box re-enables linger after removing the old units, starting
+        # a new manager with the updated groups. HOME and workspace stay intact.
+        echo "box-provision.sh: refreshing ${UNIX_USER}'s user manager for browser group membership" >&2
+        "${SUDO[@]}" loginctl disable-linger "${UNIX_USER}" || return 1
+        "${SUDO[@]}" systemctl stop "user@${uid}.service" || return $?
+      fi
+    fi
     "${SUDO[@]}" usermod -aG ficus-browser "${UNIX_USER}"
   else
     echo "box-provision.sh: ficus-browser group not found; skipping browser group membership (pre-browser machine)" >&2
@@ -1601,7 +1621,7 @@ migrate_home_dot_dir() {
 # Bridge (phase 5, U4): bootstrap.sh moves the machine root to /opt/ficus. Until
 # a machine has been re-bootstrapped, the units this script writes would run a
 # bun and a server bundle that are not there, so provisioning refuses (Core's
-# boot reconcile re-bootstraps a machine whose bootstrap is stale).
+# operator explicitly migrates the machine after tenant activation succeeds).
 refuse_unmigrated_machine_root() {
   if [ -d "${FICUS_HOST_ROOT}${LEGACY_ROOT}" ] && [ ! -L "${FICUS_HOST_ROOT}${LEGACY_ROOT}" ]; then
     echo "box-provision.sh: this machine still has its root at ${LEGACY_ROOT}; re-bootstrap it before provisioning boxes" >&2
