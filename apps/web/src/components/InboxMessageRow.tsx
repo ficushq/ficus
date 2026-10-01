@@ -29,15 +29,26 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
   const preview = getMessagePreview(message.content, compact ? 80 : 120)
 
   return (
-    <div className={clsx('hover:bg-surface-hover/50 transition-colors', isUnread && 'bg-accent/5')}>
+    // In the popup each row is its own rounded card; on the Inbox page rows sit flush in a divided list.
+    <div
+      className={clsx(
+        'hover:bg-surface-hover/50 transition-colors',
+        compact && 'rounded-lg',
+        isUnread && 'bg-accent/5'
+      )}
+    >
       {/* Header row - always visible */}
       <div
-        className="relative flex items-start gap-3 cursor-pointer min-w-0 px-3 py-4"
+        className="relative flex items-start gap-3 cursor-pointer min-w-0 py-3.5 pl-6 pr-3"
         onClick={() => setExpanded(!expanded)}
       >
         {/* Unread indicator */}
         <span
-          className={clsx('absolute left-0 top-5 w-1.5 h-1.5 rounded-full', isUnread ? 'bg-accent' : 'bg-transparent')}
+          className={clsx(
+            // Its own gutter, left of the text (which every section of the row lines up with, at pl-6).
+            'absolute left-2.5 top-[1.3rem] w-1.5 h-1.5 rounded-full',
+            isUnread ? 'bg-accent' : 'bg-transparent'
+          )}
         />
 
         {/* Content area */}
@@ -146,7 +157,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
 
       {/* Attachment download links */}
       {message.attachments && message.attachments.length > 0 && (
-        <div className={clsx('flex flex-wrap gap-2 pb-2 ', compact ? 'px-2' : 'px-3')}>
+        <div className="flex flex-wrap gap-2 pb-2 pl-6 pr-3">
           {message.attachments.map((att) => (
             <a
               key={att.id}
@@ -162,7 +173,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
 
       {/* Expanded content */}
       {expanded && (
-        <div className={clsx('pb-3 pt-0 ', compact ? 'px-2' : 'px-3')}>
+        <div className="pb-3 pt-0 pl-6 pr-3">
           {workStreamLink && (
             <Link
               to={workStreamLink}
@@ -172,7 +183,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
               View work stream
             </Link>
           )}
-          <div className={clsx('rounded-lg px-1 py-2 overflow-y-auto', compact ? 'max-h-48' : 'max-h-64')}>
+          <div className={clsx('rounded-lg py-2 overflow-y-auto', compact ? 'max-h-48' : 'max-h-64')}>
             <MarkdownContent className="prose-sm">{message.content}</MarkdownContent>
           </div>
         </div>
