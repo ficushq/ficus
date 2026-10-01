@@ -123,12 +123,32 @@ const CLIENT_ADDRESS_HEADERS = [
   'cf-pseudo-ipv4',
 ]
 
+/**
+ * How long (seconds) an HTTP request through the local-app proxy may sit idle
+ * while the app works on its response. Core's Bun.serve idleTimeout (index.ts,
+ * 30 s) is right for the API but cut slow app responses (an AI request taking
+ * 36-40 s) to a 502. Cloudflare in front of the instance gives an origin 100 s,
+ * so this is set past that: Cloudflare (or the Platform bridge) decides when a
+ * slow app has taken too long, never Core. Bun caps it at 255.
+ */
+export const LOCAL_APP_PROXY_IDLE_TIMEOUT_SECONDS = 120
+
+/**
+ * Bun's server as the proxy uses it: WebSocket upgrades, and `timeout` to give
+ * one proxied request a longer idle timeout than the server default.
+ */
+export interface LocalAppProxyServer extends WebSocketUpgradeServer {
+  timeout?(request: Request, seconds: number): void
+}
+
 interface LocalDeploymentProxyDependencies {
   ensureSquadSandbox: typeof ensureSquadSandbox
   resolveLocalDeploymentTarget: typeof resolveLocalDeploymentTarget
   fetch: typeof fetch
   /** How long the app gets to accept a WebSocket upgrade. */
   webSocketConnectTimeoutMs?: number
+  /** Idle timeout for one proxied HTTP request (tests shorten it). */
+  requestIdleTimeoutSeconds?: number
 }
 
 let dependencyOverrides: Partial<LocalDeploymentProxyDependencies> = {}
@@ -139,6 +159,7 @@ function getDependencies(): LocalDeploymentProxyDependencies {
     resolveLocalDeploymentTarget: dependencyOverrides.resolveLocalDeploymentTarget ?? resolveLocalDeploymentTarget,
     fetch: dependencyOverrides.fetch ?? fetch,
     webSocketConnectTimeoutMs: dependencyOverrides.webSocketConnectTimeoutMs,
+    requestIdleTimeoutSeconds: dependencyOverrides.requestIdleTimeoutSeconds,
   }
 }
 
@@ -152,13 +173,15 @@ export function configureLocalDeploymentProxyDependencies(
  * Proxy one request to a local app. `server` is Bun's server (Hono's `c.env`),
  * needed only to accept a WebSocket upgrade: an upgrade is authorized and gets
  * the same cookie, host and client-address headers as HTTP, then is relayed as
- * a socket (local-deployment-websocket.ts) instead of fetched.
+ * a socket (local-deployment-websocket.ts) instead of fetched. An HTTP request
+ * gets {@link LOCAL_APP_PROXY_IDLE_TIMEOUT_SECONDS} to answer, on this request
+ * only: every other Core route keeps the server's shorter idle timeout.
  */
 export async function proxyLocalDeploymentRequest(
   localDeploymentId: string,
   request: Request,
   path: string,
-  server?: WebSocketUpgradeServer
+  server?: LocalAppProxyServer
 ): Promise<Response> {
   const localDeployment = await getLocalDeployment(localDeploymentId)
   if (!localDeployment || localDeployment.status === 'stopped')
@@ -233,6 +256,11 @@ export async function proxyLocalDeploymentRequest(
       connectTimeoutMs: deps.webSocketConnectTimeoutMs,
     })
   }
+
+  // Before waiting on the app: the server's idle timeout would otherwise close
+  // the browser's connection while a slow app is still working. No fetch
+  // timeout or AbortSignal is set below, so the app gets the whole window.
+  server?.timeout?.(request, deps.requestIdleTimeoutSeconds ?? LOCAL_APP_PROXY_IDLE_TIMEOUT_SECONDS)
 
   const upstream = stripLocalDeploymentProxyErrorMarker(
     await deps.fetch(targetUrl, {

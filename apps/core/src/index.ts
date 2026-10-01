@@ -1074,6 +1074,8 @@ if (import.meta.main) {
       return app.fetch(request, server)
     },
     websocket,
+    // Every route but the local-app proxy: that one extends its own requests
+    // (LOCAL_APP_PROXY_IDLE_TIMEOUT_SECONDS) so a slow app can still answer.
     idleTimeout: 30,
   })
 }
