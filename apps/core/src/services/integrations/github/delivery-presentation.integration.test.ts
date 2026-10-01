@@ -72,7 +72,7 @@ test('database delivery watch -> plugin parser -> durable cursor -> serialized a
     checks = 'SUCCESS',
     merge = 'BLOCKED'
   const head = 'a'.repeat(40)
-  const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+  const fetchMock = spyOn(globalThis, 'fetch').mockImplementation((async (input: Parameters<typeof fetch>[0]) => {
     const path = new URL(String(input)).pathname
     const body =
       path === '/graphql'
@@ -109,7 +109,7 @@ test('database delivery watch -> plugin parser -> durable cursor -> serialized a
     return new Response(JSON.stringify(body), {
       headers: { date: new Date().toUTCString(), 'content-type': 'application/json' },
     })
-  })
+  }) as unknown as typeof fetch)
   restoreFetch = () => fetchMock.mockRestore()
   // Use the same database source, watch conversion, and plugin parse boundary as the runner.
   const policy = new GitHubPrWatchPolicy({

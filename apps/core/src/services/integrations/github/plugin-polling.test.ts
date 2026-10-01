@@ -5,6 +5,7 @@ import { readGitHubDeliverySnapshot } from './delivery-presentation'
 import { githubOutputAdapter } from '../outputs/github'
 import { createEventPollingBudget } from '../event-polling-budget'
 import type { EventPollingCapability } from '../types'
+import type { GitHubPollingConfig } from './provider'
 
 const head = 'a'.repeat(40)
 const resource = { owner: 'acme', repo: 'widgets', number: 7 }
@@ -17,7 +18,7 @@ const connection = {
 }
 
 // Runtime watches carry resource configuration, not the stored OAuth account configuration.
-function runtimePoller(credential = 'fixture', expectedConfiguration?: unknown) {
+function runtimePoller(credential = 'fixture', expectedConfiguration?: GitHubPollingConfig) {
   return createGitHubPlugin(
     { currentUser: async () => ({ version: 1, userId: 42, login: 'fixture' }) },
     async (parsed) => {
@@ -29,7 +30,10 @@ function runtimePoller(credential = 'fixture', expectedConfiguration?: unknown) 
 
 function responses(graphql = true) {
   const paths: string[] = []
-  const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+  const fetchMock = spyOn(globalThis, 'fetch').mockImplementation((async (
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1]
+  ) => {
     const path = new URL(String(input)).pathname
     paths.push(path)
     expect((init?.headers as Record<string, string>).authorization).toBe('Bearer fixture')
@@ -71,7 +75,7 @@ function responses(graphql = true) {
           : [],
       { headers: { date: new Date().toUTCString() } }
     )
-  })
+  }) as unknown as typeof fetch)
   return { paths, restore: () => fetchMock.mockRestore() }
 }
 
@@ -111,12 +115,13 @@ test('delivery watch -> plugin parser -> aggregate snapshot survives initial and
     const watches = await policy.listWatches()
     expect(watches).toHaveLength(1)
     const watch = watches[0]!
-    expect(watch.connection.configuration).toEqual({
+    const expectedConfiguration = {
       ...resource,
       deliveryPresentation: true,
       lastVerifiedWebhookDeliveryAt: deliveredAt.toISOString(),
-    })
-    const poller = runtimePoller('fixture', watch.connection.configuration)
+    }
+    expect(watch.connection.configuration).toEqual(expectedConfiguration)
+    const poller = runtimePoller('fixture', expectedConfiguration)
     const budget = createEventPollingBudget(12)
     let cursor: Record<string, unknown> | null = null
     for (let i = 0; i < 2; i++) {
@@ -193,7 +198,7 @@ test('plugin cannot collect delivery facts without an assigned credential', asyn
 
 test('plugin still polls repository issue events and normalizes assignments without querying PR delivery', async () => {
   const paths: string[] = []
-  const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+  const fetchMock = spyOn(globalThis, 'fetch').mockImplementation((async (input: Parameters<typeof fetch>[0]) => {
     paths.push(new URL(String(input)).pathname)
     return Response.json([
       {
@@ -205,7 +210,7 @@ test('plugin still polls repository issue events and normalizes assignments with
         actor: { login: 'noah' },
       },
     ])
-  })
+  }) as unknown as typeof fetch)
   try {
     const result = await runtimePoller().poll(
       { ...connection, configuration: { kind: 'issue-events', owner: 'acme', repo: 'widgets' } },
