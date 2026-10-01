@@ -163,7 +163,7 @@ export function resolveBranchChangeRequest(input: {
   return { status: 'no-candidates' }
 }
 
-export const TRACKED_RESOURCE_KINDS = ['issue', 'pull_request'] as const
+export const TRACKED_RESOURCE_KINDS = ['issue', 'pull_request', 'dependabot_alert'] as const
 export type TrackedResourceKind = (typeof TRACKED_RESOURCE_KINDS)[number]
 const integrationName = z
   .string()
@@ -254,17 +254,23 @@ export interface TrackedResourcesView {
     complete: boolean
   }
 }
-export function trackedResourceKey(r: Pick<TrackedResource, 'integration' | 'repository' | 'kind' | 'number'>) {
+export function trackedResourceKey(
+  r: Pick<TrackedResource, 'integration' | 'repository' | 'kind' | 'number' | 'externalId'>
+) {
+  if (r.kind === 'dependabot_alert' && r.externalId) return `${r.integration}:dependabot_alert:${r.externalId}`
   return `${r.integration}:${r.repository.trim().toLowerCase()}:${r.kind}:${r.number}`
 }
 export function trackedResourceUrl(r: Pick<TrackedResource, 'integration' | 'repository' | 'kind' | 'number' | 'url'>) {
   if (r.url) return r.url
   if (r.integration !== 'github') return undefined
-  return `https://github.com/${r.repository.trim()}/${r.kind === 'issue' ? 'issues' : 'pull'}/${r.number}`
+  return `https://github.com/${r.repository.trim()}/${r.kind === 'issue' ? 'issues' : r.kind === 'dependabot_alert' ? 'security/dependabot' : 'pull'}/${r.number}`
 }
 /** Human-readable reference: GitHub `owner/repo#12`, Linear `KEY-12`. */
-export function trackedResourceLabel(r: Pick<TrackedResource, 'integration' | 'repository' | 'number'>) {
+export function trackedResourceLabel(
+  r: Pick<TrackedResource, 'integration' | 'repository' | 'number'> & Partial<Pick<TrackedResource, 'kind'>>
+) {
   const repository = r.repository.trim()
+  if (r.kind === 'dependabot_alert') return `${repository} alert ${r.number}`
   return r.integration === 'linear' ? `${repository.toUpperCase()}-${r.number}` : `${repository}#${r.number}`
 }
 export function resolveTrackedResources(metadata: unknown): ResolvedTrackedResource[] {
@@ -313,7 +319,8 @@ export function primaryDeliveryPullRequest(metadata: unknown): ResolvedTrackedRe
 // A link copied out of a notification usually points at a comment, so a trailing `?query` or
 // `#fragment` is part of the ordinary form. It is never part of the path: it cannot introduce a
 // resource the path itself does not already name.
-const GITHUB_RESOURCE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/([1-9][0-9]*)\/?(?:[?#].*)?$/i
+const GITHUB_RESOURCE_URL =
+  /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull|security\/dependabot)\/([1-9][0-9]*)\/?(?:[?#].*)?$/i
 const LINEAR_RESOURCE_URL =
   /^https:\/\/linear\.app\/[\w.-]+\/issue\/([A-Za-z][A-Za-z0-9]{0,9})-([1-9][0-9]*)(?:\/[^/?#]*)?\/?(?:[?#].*)?$/i
 const TRACKED_RESOURCE_REFERENCE = /^([A-Za-z][A-Za-z0-9]{0,9})-([1-9]\d*)$/
@@ -326,7 +333,11 @@ export function parseTrackedResourceUrl(url: string) {
     return {
       integration: 'github' as const,
       repository: github[1]!.toLowerCase(),
-      kind: (github[2]!.toLowerCase() === 'issues' ? 'issue' : 'pull_request') as TrackedResourceKind,
+      kind: (github[2]!.toLowerCase() === 'issues'
+        ? 'issue'
+        : github[2]!.toLowerCase() === 'security/dependabot'
+          ? 'dependabot_alert'
+          : 'pull_request') as TrackedResourceKind,
       number,
     }
   }

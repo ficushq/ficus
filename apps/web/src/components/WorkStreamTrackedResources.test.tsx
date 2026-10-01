@@ -164,7 +164,7 @@ test('renders tracked issues and pull requests with their links, delivery badge 
   await renderTracked({ view: view({ subscriptions: 'not-following' }) }, ({ dom }) => {
     const { document } = dom.window
     const text = document.body.textContent ?? ''
-    expect(text).toContain('Tracked issues and PRs')
+    expect(text).toContain('Tracked issues, PRs and alerts')
     expect(text).toContain('acme/api#7')
     expect(text).toContain('acme/api#12')
     const links = [...document.querySelectorAll('a')]
@@ -394,5 +394,25 @@ test('marks a tracked pull request as delivery and refreshes the list', async ()
   })
   await renderTracked({ view: marked, canUpdate: false }, ({ dom }) => {
     expect(buttonWithLabel(dom.window.document, 'Mark acme/api#9 as delivery')).toBeUndefined()
+  })
+})
+
+test('Dependabot alerts have a security label and never a delivery designation', async () => {
+  const alert: TrackedRow = {
+    ...trackedIssue,
+    kind: 'dependabot_alert',
+    externalId: '101:7',
+    number: 7,
+    url: 'https://github.com/acme/api/security/dependabot/7',
+    key: 'github:dependabot_alert:101:7',
+    subscribed: true,
+  }
+  await renderTracked({ view: view({ resources: [alert], delivery: deliveryState() }) }, async () => {
+    expect(document.body.textContent).toContain('acme/api alert 7')
+    expect(document.body.textContent).toContain('Tracked issues, PRs and alerts')
+    expect(
+      Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.includes('delivery'))
+    ).toBe(false)
+    expect(document.querySelector('a')?.getAttribute('href')).toBe(alert.url!)
   })
 })

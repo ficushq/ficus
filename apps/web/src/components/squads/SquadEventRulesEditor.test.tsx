@@ -245,3 +245,33 @@ test('typed conditions and synthetic preview follow unsaved filters and priority
     await dom.cleanup()
   }
 })
+
+test('Dependabot defaults render manager routing and editable severity, state and action predicates', async () => {
+  const { effectiveSquadEventRules, githubOutputCatalog } = await import('@ficus/shared')
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(integrationQueries.outputs().queryKey, githubOutputCatalog)
+  client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
+  const rules = effectiveSquadEventRules({}, 'github').filter(
+    (rule) => rule.source.output === 'dependabot_alert.updated'
+  )
+  const root = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={client}>
+          <SquadEventRulesEditor squadId="test" provider="github" value={rules} onChange={() => {}} disabled={false} />
+        </QueryClientProvider>
+      )
+    )
+    const selected = Array.from(document.querySelectorAll('select')).map((select) => select.value)
+    expect(selected).toContain('dependabot_alert.updated')
+    expect(selected).toContain('notify-manager')
+    for (const field of ['severity', 'state', 'action']) expect(selected).toContain(field)
+    expect(document.body.textContent).toContain('Repository')
+    expect(document.querySelector('input[type="checkbox"]')?.checked).toBe(true)
+  } finally {
+    await dom.cleanup()
+    client.clear()
+  }
+})

@@ -112,6 +112,7 @@ export function effectiveSquadEventRules(metadata: unknown, provider: string): S
   const defaults =
     provider === 'github'
       ? [
+          ['dependabot_alert.updated', 'notify-manager', 'any'],
           ['issue.assigned', 'notify-manager', 'connected-account'],
           ['issue.unassigned', 'notify-manager', 'connected-account'],
           ['pull_request.review_requested', 'start-workstream', 'connected-account'],
@@ -132,6 +133,15 @@ export function effectiveSquadEventRules(metadata: unknown, provider: string): S
           source: { integration: provider, output, version: 1 },
           filters: { squadRouting: true, audience },
           action: { type: action },
+          ...(output === 'dependabot_alert.updated'
+            ? {
+                predicates: [
+                  { field: 'severity', op: 'in', value: ['high', 'critical'] },
+                  { field: 'state', op: 'eq', value: 'open' },
+                  { field: 'action', op: 'neq', value: 'assignees_changed' },
+                ],
+              }
+            : {}),
         })
       )
   }

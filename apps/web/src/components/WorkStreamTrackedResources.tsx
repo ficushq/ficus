@@ -6,7 +6,7 @@ import { addWorkStreamTracked, removeWorkStreamTracked, type AddWorkStreamTracke
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { Badge, type BadgeColor } from './Badge'
-import { IssueIcon, PullRequestIcon } from './icons'
+import { IssueIcon, PullRequestIcon, ShieldIcon } from './icons'
 
 type TrackedRow = TrackedResourcesView['resources'][number]
 
@@ -71,14 +71,19 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
   const deliverable = parseTrackedResourceUrl(url.trim())?.kind === 'pull_request'
 
   return (
-    <section aria-label="Tracked issues and PRs" className="space-y-1.5">
-      <h3 className="text-xs font-medium text-secondary">Tracked issues and PRs</h3>
+    <section aria-label="Tracked issues, PRs and alerts" className="space-y-1.5">
+      <h3 className="text-xs font-medium text-secondary">Tracked issues, PRs and alerts</h3>
       {resources.length > 0 && (
         <ul className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
           {resources.map((resource) => {
             const href = trackedResourceUrl(resource)
             const label = trackedResourceLabel(resource)
-            const Icon = resource.kind === 'issue' ? IssueIcon : PullRequestIcon
+            const Icon =
+              resource.kind === 'dependabot_alert'
+                ? ShieldIcon
+                : resource.kind === 'issue'
+                  ? IssueIcon
+                  : PullRequestIcon
             return (
               <li key={resource.key} className="flex items-center gap-1.5">
                 {href ? (

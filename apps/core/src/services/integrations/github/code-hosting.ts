@@ -28,6 +28,22 @@ const validateRepository = (repository: string) => /^[\w.-]+\/[\w.-]+$/.test(rep
 function trackedSubscriptions(resource: ResolvedTrackedResource): IntegrationSubscription[] {
   const hash = createHash('sha256').update(trackedResourceKey(resource)).digest('hex').slice(0, 12)
   const repository = resource.repository.trim().toLowerCase()
+  if (resource.kind === 'dependabot_alert')
+    return [
+      {
+        id: `tracked-${hash}-dependabot`,
+        source: {
+          integration: 'github',
+          output: 'dependabot_alert.updated',
+          version: 1,
+          ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
+        },
+        match: resource.externalId
+          ? { 'alert.externalId': { value: resource.externalId } }
+          : { repository: { value: repository }, 'alert.number': { value: resource.number } },
+        deliver: { to: 'delivery-owner', whenInactive: 'retain' },
+      },
+    ]
   const issue = resource.kind === 'issue'
   return (issue ? ISSUE_EVENTS : PULL_REQUEST_EVENTS).map((event) => ({
     id: `tracked-${hash}-${event.replaceAll('_', '-')}`,
@@ -51,9 +67,33 @@ export const githubTrackedResourceAdapter: TrackedResourceAdapter = {
   validateRepository,
   matchFields: (kind) => ({
     repository: 'repository',
-    number: kind === 'issue' ? 'issue.number' : 'pullRequest.number',
+    number: kind === 'issue' ? 'issue.number' : kind === 'dependabot_alert' ? 'alert.number' : 'pullRequest.number',
+    ...(kind === 'dependabot_alert' ? { externalId: 'alert.externalId' } : {}),
   }),
   trackedSubscriptions,
+  async describe(resource, squadId) {
+    // Preserve the existing issue/PR identity-only contract. Alerts additionally require security visibility.
+    if (resource.kind !== 'dependabot_alert') return {}
+    if (!resource.repository || !resource.number) return null
+    const repo = await githubApiGet<{ id: number; full_name: string }>(
+      `/repos/${resource.repository}`,
+      squadId,
+      resource.connectionId
+    )
+    if (!repo || !Number.isSafeInteger(repo.id) || !validateRepository(repo.full_name)) return null
+    const alert = await githubApiGet<{ number: number }>(
+      `/repos/${repo.full_name}/dependabot/alerts/${resource.number}`,
+      squadId,
+      resource.connectionId
+    )
+    if (alert?.number !== resource.number) return null
+    return {
+      repository: repo.full_name.toLowerCase(),
+      number: alert.number,
+      externalId: `${repo.id}:${alert.number}`,
+      url: `https://github.com/${repo.full_name}/security/dependabot/${alert.number}`,
+    }
+  },
   async authorizeSquad(squadId, connectionId) {
     return !!(await resolveGitHubRelayAssignment(squadId, connectionId))
   },

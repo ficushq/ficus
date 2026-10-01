@@ -146,3 +146,13 @@ export interface IntegrationProvider<C = unknown> {
   readonly outputs?: import('./outputs/types').IntegrationOutputAdapter
   readonly capabilities: Partial<IntegrationCapabilities<C>>
 }
+
+/** Safe provider backoff hint; the runner clamps it before writing its durable retry deadline. */
+export class EventPollingRetryError extends Error {
+  constructor(
+    message: string,
+    readonly retryAfterMs: number
+  ) {
+    super(message)
+  }
+}
