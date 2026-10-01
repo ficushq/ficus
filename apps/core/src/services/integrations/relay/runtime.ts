@@ -1,3 +1,4 @@
+import { canObserveGitHubDependabot } from '../github/ingress'
 import { isPlatformManaged } from '../../secrets/managed'
 import { platformRequest, PlatformRequestError } from '../../platform/instance-client'
 import { relayPullResponse } from '@ficus/shared/integration-relay'
@@ -68,6 +69,15 @@ export async function dispatchHostedGitHubDelivery(delivery: RelayDelivery, inte
     // Expiry may race a successful pull. Leave the lease unacknowledged so fresh authorization can retry.
     if (!live) throw new Error('relay_authorization_unavailable')
     if (live.connection.materialRevision !== delivery.connectionRevision) continue
+    if (delivery.eventType === 'dependabot_alert') {
+      const repository = delivery.payload.repository as { id?: number; full_name?: string } | undefined
+      if (
+        String(repository?.id) !== delivery.resourceId ||
+        repository?.full_name?.toLowerCase() !== delivery.resourceKey ||
+        !(await canObserveGitHubDependabot(event, { squadId, connectionId: delivery.connectionId }))
+      )
+        continue
+    }
     await publishIntegrationOutputs('github', event, {
       kind: 'connection',
       connectionId: delivery.connectionId,

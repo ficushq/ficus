@@ -243,7 +243,7 @@ export async function publishIntegrationOutput(
       ],
     })
     .returning()
-  const event =
+  let event =
     inserted ??
     (
       await db
@@ -257,6 +257,23 @@ export async function publishIntegrationOutput(
           )
         )
     )[0]!
+  // A provider can refine a snapshot into native lifecycle evidence. Keep the same
+  // event ID/key: notification, subscription and stream receipts remain idempotent.
+  // Compare-and-set prevents stale pollers from replacing a concurrent native fact.
+  if (!inserted && adapterShouldRefine(integration, event.fact, fact)) {
+    const [refined] = await db
+      .update(integrationOutputEvents)
+      .set({ fact, matchedAt: null, lastErrorCode: null })
+      .where(
+        and(
+          eq(integrationOutputEvents.id, event.id),
+          sql`${integrationOutputEvents.fact} = ${JSON.stringify(event.fact)}::jsonb`
+        )
+      )
+      .returning()
+    event =
+      refined ?? (await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, event.id)))[0]!
+  }
   let triggerError: unknown
   try {
     await applyOutputTriggers(event)
@@ -284,6 +301,14 @@ export async function publishIntegrationOutput(
     throw triggerError
   }
   return event.id
+}
+
+function adapterShouldRefine(integration: string, current: IntegrationOutputFact, incoming: IntegrationOutputFact) {
+  return (
+    current.eventKey === incoming.eventKey &&
+    current.resourceKey === incoming.resourceKey &&
+    integrationOutputRegistry.adapter(integration)?.shouldRefineFact?.(current, incoming) === true
+  )
 }
 
 /** Routes the event and returns the streams it bound as their delivery pull request. */
@@ -404,7 +429,14 @@ async function finalizeOutputRouting(event: Event) {
   await db
     .update(integrationOutputEvents)
     .set({ matchedAt: new Date(), lastErrorCode: null })
-    .where(eq(integrationOutputEvents.id, event.id))
+    // A stale observation must not settle stronger native evidence after it was
+    // persisted. If native routing crashes, that row stays in the durable retry queue.
+    .where(
+      and(
+        eq(integrationOutputEvents.id, event.id),
+        sql`${integrationOutputEvents.fact} = ${JSON.stringify(event.fact)}::jsonb`
+      )
+    )
 }
 
 function laterPosition(a: number[], b: number[]) {

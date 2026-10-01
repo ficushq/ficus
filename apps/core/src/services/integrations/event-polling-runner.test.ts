@@ -1196,3 +1196,50 @@ test('failed cursor saves cannot publish a presentation observation', async () =
   expect(notified).toBe(false)
   expect(cursorStore.failures).toBe(1)
 })
+
+test('provider retry-after preserves the cursor and durably delays retries within one day', async () => {
+  const { DependabotDiscoveryError } = await import('./github/dependabot-poller')
+  const memory = new MemoryCursorStore()
+  const store: EventPollingCursorStore = memory
+  let retryAt: Date | undefined
+  store.fail = async (_p: string, _r: string, _t: string, at: Date) => {
+    retryAt = at
+    return true
+  }
+  const now = new Date('2026-09-01T00:00:00Z')
+  const runner = new EventPollingRunner({
+    listWatches: async () => [watch],
+    cursorStore: store,
+    resolveCapability: () => ({
+      poll: async () => {
+        throw new DependabotDiscoveryError(429, 3_600_000)
+      },
+    }),
+    dispatch: async () => {},
+    now: () => now,
+    random: () => 0,
+  })
+  await runner.runOnce()
+  expect(retryAt?.getTime()).toBe(now.getTime() + 3_600_000)
+  expect(memory.saves).toBe(0)
+})
+
+test('repository discovery can opt into bounded provider cadence without the active PR two-minute cap', async () => {
+  const memory = new MemoryCursorStore()
+  const store: EventPollingCursorStore = memory
+  let nextPollAt: Date | undefined
+  store.save = async (_p: string, _r: string, _t: string, _c: Record<string, unknown>, at: Date) => {
+    nextPollAt = at
+  }
+  const now = new Date('2026-09-01T00:00:00Z')
+  const runner = new EventPollingRunner({
+    listWatches: async () => [{ ...watch, cadence: 'provider' }],
+    cursorStore: store,
+    resolveCapability: () => ({ poll: async () => ({ events: [], nextCursor: {}, suggestedIntervalMs: 86_400_000 }) }),
+    dispatch: async () => {},
+    now: () => now,
+    random: () => 0,
+  })
+  await runner.runOnce()
+  expect(nextPollAt?.getTime()).toBe(now.getTime() + 86_400_000)
+})

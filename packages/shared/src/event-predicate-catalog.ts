@@ -14,6 +14,22 @@ const fields: IntegrationOutputDescriptor['fields'] = {
   requestedTeam: { type: 'string', description: 'Requested reviewer team.' },
   workflow: { type: 'string', description: 'CI workflow name.' },
 }
+const dependabotFields: IntegrationOutputDescriptor['fields'] = {
+  repository: fields.repository!,
+  repositoryId: { type: 'number', description: 'Immutable GitHub repository ID.' },
+  action: fields.action!,
+  state: { type: 'string', description: 'Alert state: open, fixed, dismissed, auto_dismissed.' },
+  severity: { type: 'string', description: 'Severity: low, medium, high, critical.' },
+  'alert.number': { type: 'number', description: 'Dependabot alert number.' },
+  'alert.externalId': { type: 'string', description: 'Immutable repository ID and alert number.' },
+  'alert.advisoryId': { type: 'string', description: 'GitHub advisory ID (GHSA).' },
+  'alert.package': { type: 'string', description: 'Dependency package name.' },
+  'alert.ecosystem': { type: 'string', description: 'Dependency ecosystem.' },
+  'alert.manifest': { type: 'string', description: 'Dependency manifest path.' },
+  'alert.affectedRange': { type: 'string', description: 'Vulnerable version range.' },
+  'alert.patchedVersion': { type: 'string', description: 'First patched version, empty if unavailable.' },
+  'alert.groupKey': { type: 'string', description: 'Same repository, advisory and package across manifests.' },
+}
 const outputs = {
   'issue.assigned': 'Issue assigned',
   'issue.unassigned': 'Issue unassigned',
@@ -27,6 +43,7 @@ const outputs = {
   'pull_request.comment': 'Pull request comment',
   'pull_request.review_comment': 'Review line comment',
   'pull_request.ci_completed': 'CI completed',
+  'dependabot_alert.updated': 'Dependabot alert',
 }
 
 export type EventPredicateField = Omit<IntegrationOutputField, 'type'> & {
@@ -61,8 +78,8 @@ export const githubOutputCatalog: IntegrationOutputDescriptor[] = Object.entries
   version: 1,
   title,
   description: title + ' from GitHub webhooks or polling.',
-  fields,
-  predicateFields: githubPredicateFields(output),
+  fields: output === 'dependabot_alert.updated' ? dependabotFields : fields,
+  predicateFields: output === 'dependabot_alert.updated' ? dependabotFields : githubPredicateFields(output),
 }))
 const linearFields: Record<string, IntegrationOutputField> = {
   'issue.id': { type: 'string', description: 'Linear issue ID.' },

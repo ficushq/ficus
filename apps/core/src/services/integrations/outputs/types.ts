@@ -11,6 +11,8 @@ export interface IntegrationOutputAdapter {
   catalog: readonly IntegrationOutputDescriptor[]
   /** Bind provider resource details when a squad rule starts work. Actions remain provider independent. */
   workStreamBindings?(fact: IntegrationOutputFact): WorkflowEventTrigger['create']['metadata']
+  /** Equality match for a resource whose identity needs no stream metadata binding. */
+  workStreamMatch?(fact: IntegrationOutputFact): WorkflowEventTrigger['match'] | undefined
   /** Provider resource identity carried by the fact, for tracking and existing-stream matching. */
   trackedResource?(fact: IntegrationOutputFact): {
     integration: string
@@ -27,6 +29,8 @@ export interface IntegrationOutputAdapter {
   shouldNotify?(fact: IntegrationOutputFact, connectionConfiguration: unknown): boolean
   /** Agent-facing presentation only; never used for matching, canonical facts, or delivery identity. */
   notificationBody?(fact: IntegrationOutputFact): string
+  /** Refine an already-recorded event with stronger evidence, preserving its identity and receipts. */
+  shouldRefineFact?(current: IntegrationOutputFact, incoming: IntegrationOutputFact): boolean
   normalize(event: VerifiedIngressEvent): IntegrationOutputFact[]
 }
 /** Supplied by the authenticated ingress, never by event payload or stream metadata. */

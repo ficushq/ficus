@@ -1,3 +1,4 @@
+import { normalizeDependabot, DEPENDABOT_OUTPUT, DEPENDABOT_ACTIONS } from '../github/dependabot-output'
 import { createHash } from 'node:crypto'
 import { githubOutputCatalog, isGitHubSelfComment, type IntegrationOutputFact } from '@ficus/shared'
 import type { IntegrationOutputAdapter } from './types'
@@ -16,14 +17,32 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
   integration: 'github',
   catalog: githubOutputCatalog,
   workStreamBindings(fact) {
+    if (fact.output === DEPENDABOT_OUTPUT) return {}
     // Issues are linked through `metadata.tracked`, so only pull requests bind an identity here.
     return {
       'github.repo': { event: 'repository' },
       ...(fact.data.pullRequest ? { 'github.pr.number': { event: 'pullRequest.number' } } : {}),
     }
   },
+  workStreamMatch(fact) {
+    return fact.output === DEPENDABOT_OUTPUT
+      ? { 'alert.externalId': { value: String(record(fact.data.alert)?.externalId ?? '') } }
+      : undefined
+  },
   trackedResource(fact) {
     const repository = typeof fact.data.repository === 'string' ? fact.data.repository : ''
+    if (fact.output === DEPENDABOT_OUTPUT) {
+      const alert = record(fact.data.alert)
+      if (!alert || !Number.isSafeInteger(alert.number) || !Number.isSafeInteger(fact.data.repositoryId)) return null
+      return {
+        integration: 'github',
+        repository,
+        kind: 'dependabot_alert',
+        number: alert.number,
+        externalId: alert.externalId,
+        url: fact.url,
+      }
+    }
     const pullRequest = record(fact.data.pullRequest)
     const issue = record(fact.data.issue)
     const number = pullRequest?.number ?? issue?.number
@@ -77,7 +96,16 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
       .filter(Boolean)
       .join('\n')
   },
+  shouldRefineFact(current, incoming) {
+    return (
+      current.output === DEPENDABOT_OUTPUT &&
+      incoming.output === DEPENDABOT_OUTPUT &&
+      current.data.action === 'observed' &&
+      DEPENDABOT_ACTIONS.includes(String(incoming.data.action))
+    )
+  },
   normalize(event) {
+    if (event.type === 'dependabot_alert') return normalizeDependabot(event)
     const payload = record(event.payload)
     const repository = payload?.repository?.full_name
     if (typeof repository !== 'string' || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) return []

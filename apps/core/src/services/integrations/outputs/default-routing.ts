@@ -38,10 +38,16 @@ export function eventRuleTrigger(metadata: unknown, event: Event, login: string)
     event.authority.kind === 'connection' ? event.authority.connectionId : undefined
   )
   if (rule?.action.type !== 'start-workstream') return
+  if (
+    event.fact.output === 'dependabot_alert.updated' &&
+    (event.fact.data.state !== 'open' || event.fact.data.action === 'assignees_changed')
+  )
+    return
   const bindings =
     rule.action.metadata ?? integrationOutputRegistry.adapter(event.integration)?.workStreamBindings?.(event.fact) ?? {}
   const match =
     rule.match ??
+    integrationOutputRegistry.adapter(event.integration)?.workStreamMatch?.(event.fact) ??
     Object.fromEntries(
       Object.values(bindings).map((binding) => [
         binding.event,
@@ -191,7 +197,12 @@ async function send(
     !workStreamId && !resource
       ? integrationOutputRegistry.adapter(event.integration)?.trackedIdentity?.(event.fact)
       : null
-  const label = resource && resource.kind !== 'issue' ? 'pull request' : 'issue'
+  const label =
+    resource?.kind === 'dependabot_alert'
+      ? 'Dependabot alert'
+      : resource && resource.kind !== 'issue'
+        ? 'pull request'
+        : 'issue'
   const named = resource
     ? `${trackedResourceLabel(resource)}${resource.url ? ` (${resource.url})` : ''}`
     : identity?.externalId

@@ -172,6 +172,7 @@ test('an assignee trigger discovers exact repositories already connected in squa
   })
   expect((await policy.listWatches()).map((watch) => watch.resourceKey)).toEqual([
     's1:account-s1:acme/widgets:issue-events',
+    's1:account-s1:acme/widgets:dependabot-alerts',
   ])
 })
 

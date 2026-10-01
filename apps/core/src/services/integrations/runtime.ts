@@ -1,3 +1,5 @@
+import { DependabotDiscoveryError } from './github/dependabot-poller'
+import { reportDependabotUnavailable } from './github/dependabot-status'
 import { notifyDeliverySnapshotChanged } from './github/delivery-presentation-store'
 import { credentialSetupStatus, connectionSetupStatus } from './setup-status'
 import {
@@ -490,7 +492,13 @@ export const integrationEventPollingRuntime = new EventPollingRunner({
   onCompletedDispatch: async (dispatch, watch) => {
     await materializeGitHubDispatch(dispatch.activityId, watch.connection.squadId)
   },
-  onError: (error, watch) => log.error(`Polling failed for ${watch.providerKey}:${watch.resourceKey}`, error),
+  onError: (error, watch) => {
+    log.error(`Polling failed for ${watch.providerKey}:${watch.resourceKey}`, error)
+    if (error instanceof DependabotDiscoveryError)
+      void reportDependabotUnavailable(watch.connection.squadId, watch.connection.id).catch(() =>
+        log.warn('Could not report Dependabot discovery unavailable')
+      )
+  },
   // Forty requests per 30-second scan stay below 5,000/hour. Every REST page
   // and optional delivery aggregate request consumes the same bounded budget.
   maxResourcesPerTick: 8,
