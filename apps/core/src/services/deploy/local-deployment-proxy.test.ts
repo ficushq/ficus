@@ -6,6 +6,7 @@ import { Squad } from '../../entities/Squad'
 import { Hono } from 'hono'
 import { attachPeerAddress } from '../../lib/client-address'
 import { identityMiddleware } from '../../middleware/identity'
+import { deploymentsRouter } from '../../routes/deployments'
 import {
   createLocalDeployment,
   stopLocalDeploymentRecord,
@@ -826,6 +827,68 @@ describe('localDeployment proxy', () => {
         app.stop(true)
       }
     })
+  })
+
+  // Core's server idle timeout (index.ts) closed the browser's connection while a
+  // slow app was still answering. Scaled down: the server idles out at 1 s (Bun
+  // checks every few seconds), the app answers after 6 s.
+  describe('slow app responses', () => {
+    const APP_DELAY_MS = 6_000
+
+    it('waits past the server idle timeout for the app, and only on the proxy route', async () => {
+      const squad = await createTestSquad()
+      const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+      await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+      const app = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        async fetch() {
+          await Bun.sleep(APP_DELAY_MS)
+          return new Response('slow but fine')
+        },
+      })
+      // Core's chain as index.ts serves it, with a non-proxy route just as slow.
+      // The control route sits before identity so it answers late instead of 401ing.
+      const routes = new Hono()
+      routes.get('/api/slow-non-proxy', async (c) => {
+        await Bun.sleep(APP_DELAY_MS)
+        return c.text('too late')
+      })
+      routes.use('*', identityMiddleware)
+      routes.route('/api', deploymentsRouter)
+      const core = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        idleTimeout: 1,
+        fetch(req, server) {
+          attachPeerAddress(req, server.requestIP(req)?.address)
+          return routes.fetch(req, server)
+        },
+      })
+      configureLocalDeploymentProxyDependencies({
+        resolveLocalDeploymentTarget: async () => ({ host: '127.0.0.1', port: app.port! }),
+        requestIdleTimeoutSeconds: 15,
+      })
+      try {
+        const [proxied, nonProxy] = await Promise.all([
+          fetch(`http://127.0.0.1:${core.port}${localDeployment.urlPathOrHost}`).then(
+            async (response) => ({ status: response.status, body: await response.text() }),
+            (error: Error) => ({ status: 0, body: error.message })
+          ),
+          fetch(`http://127.0.0.1:${core.port}/api/slow-non-proxy`).then(
+            async (response) => ({ status: response.status, body: await response.text() }),
+            (error: Error) => ({ status: 0, body: error.message })
+          ),
+        ])
+
+        expect(proxied).toEqual({ status: 200, body: 'slow but fine' })
+        // Every other route keeps the server's idle timeout: the connection is closed.
+        expect(nonProxy.status).toBe(0)
+      } finally {
+        core.stop(true)
+        app.stop(true)
+      }
+    }, 30_000)
   })
 
   // Real sockets end to end: an app upstream that compresses, the proxy served
