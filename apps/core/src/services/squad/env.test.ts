@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
-import { existsSync, mkdirSync, readFileSync, readlinkSync, statSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, lstatSync, statSync, writeFileSync } from 'fs'
 
 // Mock the home module to use a temp directory
 const originalEnv = process.env.HOME_DIR
@@ -77,7 +77,7 @@ describe('squad-env', () => {
 
       expect(getEnvFile(squadId)).toBe('KEPT=1')
       expect(readFileSync(join(root, WORKSPACE_DOT_DIR, 'env.user'), 'utf-8')).toBe('KEPT=1')
-      expect(readlinkSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+      expect(() => lstatSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toThrow('ENOENT')
     })
 
     it('fails closed with a clear error when the workspace has both dot dirs, and a regeneration skips it', async () => {
