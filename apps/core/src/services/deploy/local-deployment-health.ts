@@ -36,7 +36,6 @@ interface LocalDeploymentHealthDependencies {
   ensureSquadSandbox: typeof ensureSquadSandbox
   supervisor: Pick<
     LocalDeploymentProcessSupervisor,
-    managedLocalDeploymentSessionName,
     'hasSession' | 'startManagedLocalDeployment' | 'stopLocalDeployment'
   >
   resolveLocalDeploymentTarget: typeof resolveLocalDeploymentTarget
@@ -115,7 +114,9 @@ export async function probeLocalDeploymentHttp(
  * after recording it so the poller does not restart on that uncertain result.
  */
 export async function refreshLocalDeploymentHealth(target: string | LocalDeployment): Promise<LocalDeployment> {
-  const localDeployment = typeof target === 'string' ? await requireLocalDeployment(target) : target
+  // Capture caller-owned records before I/O; later mutations must not change
+  // the lifecycle snapshot that produced the evidence or its write guard.
+  const localDeployment = { ...(typeof target === 'string' ? await requireLocalDeployment(target) : target) }
   if (localDeployment.status === 'stopped' || localDeployment.archivedAt) return localDeployment
 
   const deps = getDependencies()
@@ -127,6 +128,17 @@ export async function refreshLocalDeploymentHealth(target: string | LocalDeploym
     // separately; cold/unreachable executor state is unverified, not a crash.
     observed = await observeLocalDeployment(
       localDeployment.id,
+      // Shared evidence must belong to the SAME CAS snapshot and target, not
+      // merely the same app id (tmux session names survive every restart).
+      JSON.stringify([
+        localDeployment.updatedAt,
+        localDeployment.status,
+        localDeployment.processId,
+        localDeployment.restartCount,
+        localDeployment.sandboxId,
+        localDeployment.port,
+        localDeployment.mode,
+      ]),
       async (signal) => {
         if (localDeployment.mode === 'managed') {
           const processId = localDeployment.processId ?? managedLocalDeploymentSessionName(localDeployment.id)

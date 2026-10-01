@@ -411,6 +411,159 @@ describe('localDeployment health', () => {
     expect((await getLocalDeployment(deployment.id))?.status).toBe('unhealthy')
   })
 
+  for (const oldHealthy of [false, true]) {
+    it(`does not share ${oldHealthy ? 'healthy' : 'missing-session'} evidence across restart generations`, async () => {
+      const squad = await createTestSquad(`generation-sharing-${oldHealthy}`)
+      const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'fixture' })
+      const oldRow = await updateLocalDeploymentRecord(deployment.id, { status: 'running', processId: 'old-session' })
+      const entered = Promise.withResolvers<void>()
+      const oldRead = Promise.withResolvers<boolean>()
+      let sessionCalls = 0
+      let httpCalls = 0
+      configureLocalDeploymentHealthDependencies({
+        ensureSquadSandbox: async () => '/workspace',
+        supervisor: {
+          hasSession: async () => {
+            sessionCalls++
+            if (!oldHealthy && sessionCalls === 1) {
+              entered.resolve()
+              return oldRead.promise
+            }
+            return true
+          },
+          startManagedLocalDeployment: (args) => supervisor.startManagedLocalDeployment(args),
+          stopLocalDeployment: (...args) => supervisor.stopLocalDeployment(...args),
+        },
+        probeLocalDeploymentHttp: async () => {
+          httpCalls++
+          if (oldHealthy && httpCalls === 1) {
+            entered.resolve()
+            return oldRead.promise
+          }
+          return false // the NEW app is alive but not HTTP-ready
+        },
+        resolveLocalDeploymentTarget: async () => ({ host: 'localhost', port: 5173 }),
+        waitForReadinessInterval: (signal) =>
+          new Promise<void>((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true })
+          }),
+      })
+      const first = refreshLocalDeploymentHealth(oldRow).catch((error) => error)
+      let second: Promise<LocalDeployment | Error> | undefined
+      try {
+        await entered.promise
+        const restarted = await restartManagedLocalDeployment(deployment.id)
+        expect(restarted.restartCount).toBe(1)
+        expect(restarted.status).toBe('restarting')
+        second = refreshLocalDeploymentHealth(restarted).catch((error) => error)
+        // Resolving the old read must not publish its evidence as generation 1.
+        oldRead.resolve(oldHealthy)
+        await Promise.all([first, second])
+        const current = (await getLocalDeployment(deployment.id))!
+        expect(current.restartCount).toBe(1)
+        expect(current.status).not.toBe(oldHealthy ? 'running' : 'crashed')
+        expect(current.status).toBe('unhealthy') // new evidence is not yet verified
+        expect(sessionCalls).toBe(1) // no parallel read of the new generation
+        expect(httpCalls).toBe(oldHealthy ? 1 : 0)
+        await drainLocalDeploymentHealthObservations()
+        const fresh = await refreshLocalDeploymentHealth(current)
+        expect(fresh.status).toBe('unhealthy')
+        expect(fresh.restartCount).toBe(1)
+        expect(sessionCalls).toBe(2) // fresh read is allowed ONLY after old cleanup
+      } finally {
+        oldRead.resolve(oldHealthy)
+        await Promise.all([first, second])
+        await stopLocalDeploymentReadinessChecks()
+        await drainLocalDeploymentHealthObservations()
+      }
+    })
+  }
+
+  it('does not cancel a newer generation read when a stale snapshot arrives', async () => {
+    const squad = await createTestSquad('stale-snapshot-new-read')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'fixture' })
+    const stale = await updateLocalDeploymentRecord(deployment.id, { status: 'running', processId: 'old-session' })
+    const entered = Promise.withResolvers<void>()
+    const readiness = Promise.withResolvers<boolean>()
+    let readSignal: AbortSignal | undefined
+    let sessionCalls = 0
+    configureLocalDeploymentHealthDependencies({
+      ensureSquadSandbox: async () => '/workspace',
+      supervisor: {
+        hasSession: async () => {
+          sessionCalls++
+          return true
+        },
+        startManagedLocalDeployment: (args) => supervisor.startManagedLocalDeployment(args),
+        stopLocalDeployment: (...args) => supervisor.stopLocalDeployment(...args),
+      },
+      resolveLocalDeploymentTarget: async () => ({ host: 'localhost', port: 5173 }),
+      probeLocalDeploymentHttp: async (_host, _port, _timeout, signal) => {
+        readSignal = signal
+        entered.resolve()
+        return readiness.promise
+      },
+      waitForReadinessInterval: (signal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true })
+        }),
+    })
+    const restarted = await restartManagedLocalDeployment(deployment.id)
+    const fresh = refreshLocalDeploymentHealth(restarted).catch((error) => error)
+    try {
+      await entered.promise
+      await expect(refreshLocalDeploymentHealth(stale)).rejects.toThrow('unverified')
+      expect(readSignal?.aborted).toBe(false)
+      expect(sessionCalls).toBe(1)
+      expect((await getLocalDeployment(deployment.id))?.status).toBe('restarting')
+      readiness.resolve(true)
+      const verified = await fresh
+      expect(verified.status).toBe('running')
+      expect(verified.restartCount).toBe(1)
+    } finally {
+      readiness.resolve(true)
+      await fresh
+      await stopLocalDeploymentReadinessChecks()
+      await drainLocalDeploymentHealthObservations()
+    }
+  })
+
+  it('captures the lifecycle snapshot before I/O even when its caller mutates the row', async () => {
+    const squad = await createTestSquad('caller-mutated-snapshot')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'fixture' })
+    const supplied = await updateLocalDeploymentRecord(deployment.id, { status: 'running', processId: 'old-session' })
+    const entered = Promise.withResolvers<void>()
+    const session = Promise.withResolvers<boolean>()
+    supervisor.hasSession = async () => {
+      entered.resolve()
+      return session.promise
+    }
+    configureLocalDeploymentHealthDependencies({
+      ensureSquadSandbox: async () => '/workspace',
+      supervisor,
+      waitForReadinessInterval: (signal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true })
+        }),
+    })
+    const observation = refreshLocalDeploymentHealth(supplied).catch((error) => error)
+    try {
+      await entered.promise
+      const restarted = await restartManagedLocalDeployment(deployment.id)
+      Object.assign(supplied, restarted)
+      session.resolve(false)
+      const result = await observation
+      expect(result.status).toBe('restarting')
+      expect((await getLocalDeployment(deployment.id))?.status).toBe('restarting')
+      expect(result.restartCount).toBe(1)
+    } finally {
+      session.resolve(false)
+      await observation
+      await stopLocalDeploymentReadinessChecks()
+      await drainLocalDeploymentHealthObservations()
+    }
+  })
+
   it('restarts managed localDeployments with restartPolicy always', async () => {
     const squad = await createTestSquad('restart')
     const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })

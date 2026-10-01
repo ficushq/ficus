@@ -6,21 +6,28 @@ const scheduleTimeout: ScheduleObservationTimeout = (callback, ms) => {
   return () => clearTimeout(timer)
 }
 
-const observations = new Map<string, { result: Promise<unknown>; settled: Promise<void> }>()
+const observations = new Map<string, { snapshotKey: string; result: Promise<unknown>; settled: Promise<void> }>()
 const MAX_PENDING_OBSERVATIONS = 2
 
 /**
  * Cancel a read at its total deadline, retaining ownership until its transport
- * cleanup settles. Subsequent ticks join that result rather than spawning
- * another read. Late results cannot escape the expired public promise.
+ * cleanup settles. Only identical lifecycle snapshots may join its evidence.
+ * A different snapshot is unverified until the owned read/cleanup settles,
+ * rather than starting a parallel read or reinterpreting old evidence as new.
+ * A stale caller cannot cancel a newer read; the original deadline still owns
+ * cancellation. Late results cannot escape the expired public promise.
  */
 export function observeLocalDeployment<T>(
   id: string,
+  snapshotKey: string,
   read: (signal: AbortSignal) => Promise<T>,
   schedule: ScheduleObservationTimeout = scheduleTimeout
 ): Promise<T> {
   const existing = observations.get(id)
-  if (existing) return existing.result as Promise<T>
+  if (existing) {
+    if (existing.snapshotKey === snapshotKey) return existing.result as Promise<T>
+    return Promise.reject(new Error('Observation belongs to a different lifecycle snapshot'))
+  }
   if (observations.size >= MAX_PENDING_OBSERVATIONS)
     return Promise.reject(new Error('Observation capacity unavailable'))
   const controller = new AbortController()
@@ -44,7 +51,7 @@ export function observeLocalDeployment<T>(
       cancelTimer()
       observations.delete(id)
     })
-  observations.set(id, { result: result.promise, settled })
+  observations.set(id, { snapshotKey, result: result.promise, settled })
   return result.promise
 }
 
