@@ -79,21 +79,21 @@ restart_deployments() {
 deploy_core() {
   ensure_kubeconfig
   build_and_push --core-only
-  restart_deployments tau-api tau-worker
+  restart_deployments ficus-api ficus-worker
   echo "Core deploy complete."
 }
 
 deploy_api() {
   ensure_kubeconfig
   build_and_push --core-only
-  restart_deployments tau-api
+  restart_deployments ficus-api
   echo "API deploy complete."
 }
 
 deploy_worker() {
   ensure_kubeconfig
   build_and_push --core-only
-  restart_deployments tau-worker
+  restart_deployments ficus-worker
   echo "Worker deploy complete."
 }
 
@@ -101,7 +101,7 @@ deploy_sandbox() {
   ensure_kubeconfig
   build_and_push --sandbox-only
 
-  local SANDBOX_NS="${NAMESPACE/tau-core-/tau-sandboxes-}"
+  local SANDBOX_NS="${NAMESPACE/ficus-core-/ficus-sandboxes-}"
   echo "=== Kill sandbox pods (namespace: $SANDBOX_NS) ==="
   kubectl -n "$SANDBOX_NS" delete pods --all --force
   echo ""
@@ -158,9 +158,9 @@ case "$TARGET" in
   all)
     ensure_kubeconfig
     build_and_push
-    restart_deployments tau-api tau-worker
+    restart_deployments ficus-api ficus-worker
 
-    SANDBOX_NS="${NAMESPACE/tau-core-/tau-sandboxes-}"
+    SANDBOX_NS="${NAMESPACE/ficus-core-/ficus-sandboxes-}"
     echo "=== Kill sandbox pods (namespace: $SANDBOX_NS) ==="
     kubectl -n "$SANDBOX_NS" delete pods --all --force
     echo ""

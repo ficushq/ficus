@@ -1,16 +1,16 @@
 # Ficus Core Deployments and Services
 #
 # Two Deployments from the same image (override image via Kustomize or Pulumi):
-#   1. tau-api    — HTTP API server (port 3000)
-#   2. tau-worker — Agent execution, scheduling (port 3002)
+#   1. ficus-api    — HTTP API server (port 3000)
+#   2. ficus-worker — Agent execution, scheduling (port 3002)
 #
 # Web frontend is served via CloudFront + S3 (see cdn.ts).
 #
 # Prerequisites (created separately per environment):
-#   - Namespace: tau-core
-#   - ServiceAccount: tau-core
-#   - ConfigMap: tau-core-config
-#   - Secret: tau-core-secrets
+#   - Namespace: ficus-core
+#   - ServiceAccount: ficus-core
+#   - ConfigMap: ficus-core-config
+#   - Secret: ficus-core-secrets
 #
 # Image placeholder: IMAGE_PLACEHOLDER (replaced at deploy time)
 
@@ -21,26 +21,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: tau-api
-  namespace: tau-core
+  name: ficus-api
+  namespace: ficus-core
   labels:
-    app: tau-core
+    app: ficus-core
     component: api
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: tau-core
+      app: ficus-core
       component: api
   template:
     metadata:
       labels:
-        app: tau-core
+        app: ficus-core
         component: api
     spec:
-      serviceAccountName: tau-core
+      serviceAccountName: ficus-core
       containers:
-        - name: tau-api
+        - name: ficus-api
           image: IMAGE_PLACEHOLDER
           command: ["bun", "run", "apps/core/dist/index.js"]
           ports:
@@ -48,14 +48,14 @@ spec:
               containerPort: 3000
           envFrom:
             - configMapRef:
-                name: tau-core-config
+                name: ficus-core-config
             - secretRef:
-                name: tau-core-secrets
+                name: ficus-core-secrets
           env:
             - name: FORCE_COLOR
               value: "1"
             - name: WORKER_URL
-              value: "http://tau-worker:3002"
+              value: "http://ficus-worker:3002"
             - name: FICUS_SANDBOX_RUNTIME
               value: "k8s"
             - name: FICUS_SYSTEM_LOG_PROVIDER
@@ -97,26 +97,26 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: tau-worker
-  namespace: tau-core
+  name: ficus-worker
+  namespace: ficus-core
   labels:
-    app: tau-core
+    app: ficus-core
     component: worker
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: tau-core
+      app: ficus-core
       component: worker
   template:
     metadata:
       labels:
-        app: tau-core
+        app: ficus-core
         component: worker
     spec:
-      serviceAccountName: tau-core
+      serviceAccountName: ficus-core
       containers:
-        - name: tau-worker
+        - name: ficus-worker
           image: IMAGE_PLACEHOLDER
           command: ["bun", "run", "apps/core/dist/worker.js"]
           ports:
@@ -124,9 +124,9 @@ spec:
               containerPort: 3002
           envFrom:
             - configMapRef:
-                name: tau-core-config
+                name: ficus-core-config
             - secretRef:
-                name: tau-core-secrets
+                name: ficus-core-secrets
           env:
             - name: FORCE_COLOR
               value: "1"
@@ -162,15 +162,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: tau-api
-  namespace: tau-core
+  name: ficus-api
+  namespace: ficus-core
   labels:
-    app: tau-core
+    app: ficus-core
     component: api
 spec:
   type: ClusterIP
   selector:
-    app: tau-core
+    app: ficus-core
     component: api
   ports:
     - name: http
@@ -180,15 +180,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: tau-worker
-  namespace: tau-core
+  name: ficus-worker
+  namespace: ficus-core
   labels:
-    app: tau-core
+    app: ficus-core
     component: worker
 spec:
   type: ClusterIP
   selector:
-    app: tau-core
+    app: ficus-core
     component: worker
   ports:
     - name: worker

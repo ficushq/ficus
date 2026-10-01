@@ -20,9 +20,10 @@
  *     k3d:import, but only when an import happens).
  *
  * Safe by construction: never touches running containers of live worktrees,
- * tagged images, named volumes of other projects, or anything outside the
- * tau-test-* / tau-registry / k3d-tau-dev scope plus docker's own
- * dangling-only prunes.
+ * tagged images, named volumes of other projects, or anything outside this
+ * project's test-DB/registry/buildx/k3d-node resources (recognised under
+ * both the current Ficus name and the pre-rename one — see the arrays below)
+ * plus docker's own dangling-only prunes.
  *
  * Run manually: bun run docker:gc
  * Install daily launchd job: bun run docker:gc -- --install

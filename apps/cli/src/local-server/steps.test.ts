@@ -55,7 +55,7 @@ describe('computeEnvUpdates', () => {
     const byKey = Object.fromEntries(computeEnvUpdates(opts({ runtime: 'k3d' }), secrets).map((u) => [u.key, u]))
     expect(byKey.FICUS_SANDBOX_RUNTIME.value).toBe('k8s')
     expect(byKey.FICUS_K8S_LOCAL.value).toBe('true')
-    expect(byKey.FICUS_K8S_NAMESPACE.value).toBe('tau-sandboxes-dev')
+    expect(byKey.FICUS_K8S_NAMESPACE.value).toBe('ficus-sandboxes-dev')
     expect(byKey.FICUS_K8S_RUNTIME_CLASS.value).toBe('')
   })
 
@@ -101,7 +101,7 @@ describe('computeEnvUpdates', () => {
       }).map((u) => [u.key, u])
     )
     expect(byKey.FICUS_K8S_LOCAL.value).toBe('true')
-    expect(byKey.FICUS_K8S_NAMESPACE.value).toBe('tau-sandboxes-dev')
+    expect(byKey.FICUS_K8S_NAMESPACE.value).toBe('ficus-sandboxes-dev')
     expect(logged).toEqual([])
   })
 

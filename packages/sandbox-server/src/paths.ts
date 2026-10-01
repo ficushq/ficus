@@ -46,7 +46,7 @@ export function getDevboxBashrcPath(): string {
  * Allowed path prefixes for file operations.
  * Paths outside these directories are rejected.
  */
-const ALLOWED_PREFIXES = ['/private', '/workspace', '/memory', '/home/tau', '/nix', '/opt/tau', '/tmp']
+const ALLOWED_PREFIXES = ['/private', '/workspace', '/memory', '/home/ficus', '/nix', '/opt/ficus', '/tmp']
 
 function getAllowedPrefixes(): string[] {
   const prefixes = [...ALLOWED_PREFIXES]

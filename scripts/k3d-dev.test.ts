@@ -8,16 +8,16 @@ const compose = readFileSync(join(import.meta.dir, '..', 'docker-compose.yml'), 
 describe('k3d-dev.sh local image safeguards', () => {
   test('docker compose provides a local registry for k3d sandbox image pulls', () => {
     expect(compose).toContain('registry:')
-    expect(compose).toContain('container_name: tau-registry')
+    expect(compose).toContain('container_name: ficus-registry')
     expect(compose).toContain('registry-data:/var/lib/registry')
     expect(compose).toContain("'127.0.0.1:5001:5000'")
-    expect(compose).toContain('name: tau-dev')
+    expect(compose).toContain('name: ficus-dev')
   })
 
   test('k3d setup/import pushes sandbox image to the compose registry instead of relying on node-only image import', () => {
-    expect(script).toContain('REGISTRY_CONTAINER="tau-registry"')
+    expect(script).toContain('REGISTRY_CONTAINER="ficus-registry"')
     expect(script).toContain('docker compose up -d registry')
-    expect(script).toContain('K3D_NETWORK="${FICUS_K3D_NETWORK:-tau-dev}"')
+    expect(script).toContain('K3D_NETWORK="${FICUS_K3D_NETWORK:-ficus-dev}"')
     expect(script).toContain('--network "${K3D_NETWORK}"')
     expect(script).toContain('docker network connect "${network}" "${REGISTRY_CONTAINER}"')
     expect(script).toContain('docker push "${REGISTRY_IMAGE}"')
@@ -50,5 +50,23 @@ describe('k3d-dev.sh local image safeguards', () => {
   test('status image check normalizes grep count to a single numeric value', () => {
     expect(script).toMatch(/grep -c .*SANDBOX_IMAGE.*\|\| true/)
     expect(script).toContain('image_loaded=${image_loaded:-0}')
+  })
+
+  // I2 (fix round 1): a pre-rename legacy-named cluster is a SEPARATE k3d
+  // cluster this script can no longer see by name — it must say so
+  // explicitly, with the exact commands to migrate or delete it, rather than
+  // silently leaving it running.
+  test('setup and status both warn when the legacy dev cluster is still present', () => {
+    expect(script).toContain('LEGACY_CLUSTER_NAME="tau-dev"') // ficus-p5-bridge
+    expect(script).toContain('legacy_cluster_exists()')
+    expect(script).toContain('warn_legacy_cluster_if_present()')
+    // The exact migrate/delete commands name the legacy cluster via the
+    // marked constant, not a retyped literal.
+    expect(script).toMatch(/k3d cluster delete \$\{LEGACY_CLUSTER_NAME\}/)
+    expect(script).toMatch(/rsync -a \$\{LEGACY_HOME\}/)
+    // Wired into both the fresh-setup path and a routine status check —
+    // not just one of the two places a developer would notice it.
+    expect(script).toMatch(/cmd_setup\(\)[\s\S]*warn_legacy_cluster_if_present/)
+    expect(script).toMatch(/cmd_status\(\)[\s\S]*warn_legacy_cluster_if_present/)
   })
 })

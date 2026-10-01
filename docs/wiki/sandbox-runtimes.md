@@ -22,13 +22,13 @@ toolkit, or the hosted platform) — any combination works. See
 
 ## Comparison
 
-| Runtime         | Isolation                                               | Prerequisites                                                                       | Where agents' files live                                      | Not available                                                           |
-| --------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `host`          | None — same unix user as the core                       | `bash`; `tmux` for local deployments                                                | The core's own storage dirs (under `HOME_DIR`), no copy       | devbox/toolchains, container log streaming, workspace-file memory watch |
-| `docker-socket` | Container, but the sandbox holds the host Docker socket | Docker (any host, incl. macOS); sandbox image built                                 | Bind mounts from the core's storage dirs into `tau-sandbox-*` | —                                                                       |
-| `docker-sysbox` | Container with user-namespace isolation + real DinD     | Linux + [sysbox](https://github.com/nestybox/sysbox) installed; sandbox image built | Bind mounts from the core's storage dirs into `tau-sandbox-*` | —                                                                       |
-| `vm`            | Separate unix user on a separate VM per box             | At least one registered machine (BYO-SSH host or exe.dev credentials)               | On the machine VM, synced/served by the box sandbox server    | —                                                                       |
-| `k8s`           | Pod, with scheduler limits and network policy           | A cluster + `KUBECONFIG` (or in-cluster core), storage classes, manifests applied   | PVC subPath mounts on the shared volume                       | —                                                                       |
+| Runtime         | Isolation                                               | Prerequisites                                                                       | Where agents' files live                                        | Not available                                                           |
+| --------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `host`          | None — same unix user as the core                       | `bash`; `tmux` for local deployments                                                | The core's own storage dirs (under `HOME_DIR`), no copy         | devbox/toolchains, container log streaming, workspace-file memory watch |
+| `docker-socket` | Container, but the sandbox holds the host Docker socket | Docker (any host, incl. macOS); sandbox image built                                 | Bind mounts from the core's storage dirs into `ficus-sandbox-*` | —                                                                       |
+| `docker-sysbox` | Container with user-namespace isolation + real DinD     | Linux + [sysbox](https://github.com/nestybox/sysbox) installed; sandbox image built | Bind mounts from the core's storage dirs into `ficus-sandbox-*` | —                                                                       |
+| `vm`            | Separate unix user on a separate VM per box             | At least one registered machine (BYO-SSH host or exe.dev credentials)               | On the machine VM, synced/served by the box sandbox server      | —                                                                       |
+| `k8s`           | Pod, with scheduler limits and network policy           | A cluster + `KUBECONFIG` (or in-cluster core), storage classes, manifests applied   | PVC subPath mounts on the shared volume                         | —                                                                       |
 
 Nothing on this page changes agent behaviour except where the "Not available"
 column says so: every runtime delivers the same per-sandbox asset set (skills,
@@ -140,8 +140,8 @@ the two share a machine, so everything they both hold has to be moved apart:
 A second database in the same Postgres container, then migrate it:
 
 ```bash
-docker exec -it $(docker ps -qf name=postgres) psql -U postgres -c 'CREATE DATABASE tau_host_test'
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/tau_host_test bun run db:migrate
+docker exec -it $(docker ps -qf name=postgres) psql -U postgres -c 'CREATE DATABASE ficus_host_test'
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/ficus_host_test bun run db:migrate
 ```
 
 Then build and start it (the same checkout is fine):
@@ -155,7 +155,7 @@ explicit process env var wins over the `--env-file` `dev:core` loads.
 
 ## `docker-socket` — containers on any Docker host
 
-One `tau-sandbox-*` container per sandbox, with the host's Docker socket
+One `ficus-sandbox-*` container per sandbox, with the host's Docker socket
 mounted in so agents can use Docker. That socket is host-level access: an agent
 that can talk to it can escape the container. Use it when you want containers
 on macOS, or on a Linux host without sysbox.
@@ -168,7 +168,7 @@ bun run sandbox:build:docker
 
 ```bash
 FICUS_SANDBOX_RUNTIME=docker-socket
-# FICUS_SANDBOX_IMAGE=tau-sandbox:latest   # optional override
+# FICUS_SANDBOX_IMAGE=ficus-sandbox:latest   # optional override
 ```
 
 Setup toolkit: `runtime.sandbox: docker-socket`.
@@ -190,7 +190,7 @@ image as above.
 
 ```bash
 FICUS_SANDBOX_RUNTIME=docker-sysbox
-# FICUS_SANDBOX_IMAGE=tau-sandbox:latest   # optional override
+# FICUS_SANDBOX_IMAGE=ficus-sandbox:latest   # optional override
 ```
 
 Setup toolkit: `runtime.sandbox: docker-sysbox`.
@@ -308,7 +308,7 @@ Build and push the sandbox image with `bun run sandbox:build:k8s`.
 
 ```bash
 FICUS_SANDBOX_RUNTIME=k8s
-FICUS_K8S_NAMESPACE=tau-sandboxes
+FICUS_K8S_NAMESPACE=ficus-sandboxes
 # FICUS_K8S_RUNTIME_CLASS=sysbox-runc        # set empty to disable
 # FICUS_K8S_STORAGE_CLASS_RWX=...            # workspace/memory volumes
 # FICUS_K8S_STORAGE_CLASS_RWO=...            # nix store volumes
@@ -323,7 +323,7 @@ bun run k3d:setup            # one-time: cluster, image, namespace, PVC
 ```bash
 FICUS_SANDBOX_RUNTIME=k8s
 FICUS_K8S_LOCAL=true
-FICUS_K8S_NAMESPACE=tau-sandboxes-dev
+FICUS_K8S_NAMESPACE=ficus-sandboxes-dev
 FICUS_K8S_RUNTIME_CLASS=
 ```
 
@@ -421,7 +421,7 @@ The in-app preflight ships WITH this change, so an instance still running
 pre-rename code must set `FICUS_SANDBOX_RUNTIME` in `.env` BEFORE applying the
 update that introduces it; `upgrade-host.sh` from this checkout is safe either
 way.
-On the docker runtimes, expect every existing `tau-sandbox-*` container to be
+On the docker runtimes, expect every existing `ficus-sandbox-*` container to be
 recreated once after the upgrade: the runtime name is part of the container
 spec hash, so the rename alone counts as drift. That recreate is safe —
 workspaces, memory and private dirs are host bind mounts.

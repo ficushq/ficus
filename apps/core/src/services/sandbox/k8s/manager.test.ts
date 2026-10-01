@@ -82,6 +82,7 @@ describe('K8sSandboxManager', () => {
       podManager: {
         queryPodStatus: async () => ({ status: 'running', containerReady: true }),
         getPodName: () => 'pod-1',
+        resolvePodName: async () => 'pod-1',
       },
       attachProvisionedSandbox: async (_sandboxId: string, podName: string) => void attached.push(podName),
     }
@@ -94,6 +95,37 @@ describe('K8sSandboxManager', () => {
       K8sSandboxManager.prototype.attachExistingSandbox.call(self as any, 'missing', { workspacePath: '/workspace' })
     ).resolves.toBe(false)
     expect(attached).toEqual(['pod-1'])
+  })
+
+  // N1 (fix round 2): after a Core restart (sandbox untracked, `getPodName`
+  // only ever guesses the write/Ficus name) a sandbox whose pod is still
+  // running under the legacy name must resolve to that pod and attach to
+  // THAT exact name — not to `getPodName`'s write-name guess, and not to two
+  // different names for the status check vs. the attach call.
+  test('no-create attachment resolves and attaches to a legacy-named pod after a restart', async () => {
+    const attached: string[] = []
+    const statusCheckedNames: string[] = []
+    const self = {
+      sandboxes: new Map(),
+      podManager: {
+        resolvePodName: async () => 'tau-sb-legacy-only',
+        queryPodStatus: async (_sandboxId: string, podNameHint?: string) => {
+          statusCheckedNames.push(podNameHint!)
+          return { status: 'running', containerReady: true }
+        },
+        getPodName: () => 'ficus-sb-legacy-only', // the write-name guess — must NOT be what's used
+      },
+      attachProvisionedSandbox: async (_sandboxId: string, podName: string) => void attached.push(podName),
+    }
+
+    await expect(
+      K8sSandboxManager.prototype.attachExistingSandbox.call(self as any, 'legacy_only', {
+        workspacePath: '/workspace',
+      })
+    ).resolves.toBe(true)
+
+    expect(statusCheckedNames).toEqual(['tau-sb-legacy-only'])
+    expect(attached).toEqual(['tau-sb-legacy-only'])
   })
 
   test('module exports K8sSandboxManager', () => {
@@ -185,8 +217,8 @@ describe('K8sSandboxManager', () => {
         'test-sandbox',
         {
           sandboxId: 'test-sandbox',
-          podName: 'tau-sandbox-test',
-          endpoint: 'tau-sandbox-test.tau-sandboxes.svc.cluster.local:50051',
+          podName: 'ficus-sandbox-test',
+          endpoint: 'ficus-sandbox-test.ficus-sandboxes.svc.cluster.local:50051',
           client: {} as any,
           workspacePath: '/host/workspace',
         },
@@ -201,7 +233,7 @@ describe('K8sSandboxManager', () => {
         5173
       )
 
-      expect(result).toEqual({ host: 'tau-sandbox-test.tau-sandboxes.custom-ns.svc.cluster.local', port: 5173 })
+      expect(result).toEqual({ host: 'ficus-sandbox-test.ficus-sandboxes.custom-ns.svc.cluster.local', port: 5173 })
     } finally {
       if (previousLocal === undefined) delete process.env.FICUS_K8S_LOCAL
       else process.env.FICUS_K8S_LOCAL = previousLocal
@@ -230,7 +262,7 @@ describe('K8sSandboxManager', () => {
     const forwarded: Array<{ sandboxId: string; podName: string; port: number }> = []
     const podManager = {
       namespace: 'custom-ns',
-      getPodState: () => ({ podName: 'tau-sandbox-test' }),
+      getPodState: () => ({ podName: 'ficus-sandbox-test' }),
       ensureAppPortForward: async (sandboxId: string, podName: string, port: number) => {
         forwarded.push({ sandboxId, podName, port })
         return 59668
@@ -245,7 +277,7 @@ describe('K8sSandboxManager', () => {
       )
 
       expect(result).toEqual({ host: 'localhost', port: 59668 })
-      expect(forwarded).toEqual([{ sandboxId: 'test-sandbox', podName: 'tau-sandbox-test', port: 3000 }])
+      expect(forwarded).toEqual([{ sandboxId: 'test-sandbox', podName: 'ficus-sandbox-test', port: 3000 }])
     } finally {
       if (previousLocal === undefined) delete process.env.FICUS_K8S_LOCAL
       else process.env.FICUS_K8S_LOCAL = previousLocal
@@ -266,8 +298,8 @@ describe('K8sSandboxManager', () => {
         'test-sandbox',
         {
           sandboxId: 'test-sandbox',
-          podName: 'tau-sandbox-test',
-          endpoint: 'tau-sandbox-test.tau-sandboxes.svc.cluster.local:50051',
+          podName: 'ficus-sandbox-test',
+          endpoint: 'ficus-sandbox-test.ficus-sandboxes.svc.cluster.local:50051',
           client: {} as any,
           workspacePath: '/host/workspace',
         },
@@ -288,7 +320,7 @@ describe('K8sSandboxManager', () => {
         5173
       )
 
-      expect(result).toEqual({ host: 'tau-sandbox-test.tau-sandboxes.custom-ns.svc.cluster.local', port: 5173 })
+      expect(result).toEqual({ host: 'ficus-sandbox-test.ficus-sandboxes.custom-ns.svc.cluster.local', port: 5173 })
     } finally {
       if (previousLocal === undefined) delete process.env.FICUS_K8S_LOCAL
       else process.env.FICUS_K8S_LOCAL = previousLocal
@@ -317,8 +349,8 @@ describe('K8sSandboxManager', () => {
         'test-sandbox',
         {
           sandboxId: 'test-sandbox',
-          podName: 'tau-sandbox-test',
-          endpoint: 'tau-sandbox-test.tau-sandboxes.svc.cluster.local:50051',
+          podName: 'ficus-sandbox-test',
+          endpoint: 'ficus-sandbox-test.ficus-sandboxes.svc.cluster.local:50051',
           client: {} as any,
           workspacePath: '/host/workspace',
           workspaceMount: '/workspace',
@@ -340,8 +372,8 @@ describe('K8sSandboxManager', () => {
         'test-sandbox',
         {
           sandboxId: 'test-sandbox',
-          podName: 'tau-sandbox-test',
-          endpoint: 'tau-sandbox-test.tau-sandboxes.svc.cluster.local:50051',
+          podName: 'ficus-sandbox-test',
+          endpoint: 'ficus-sandbox-test.ficus-sandboxes.svc.cluster.local:50051',
           client: {} as any,
           workspacePath: '/host/workspace',
         },
@@ -364,7 +396,7 @@ describe('K8sSandboxManager', () => {
         'test-sandbox',
         {
           sandboxId: 'test-sandbox',
-          podName: 'tau-sandbox-test',
+          podName: 'ficus-sandbox-test',
           endpoint: 'localhost:50051',
           client: {} as any,
           workspacePath: '/host/workspace',

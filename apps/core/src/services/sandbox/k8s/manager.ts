@@ -153,7 +153,7 @@ export class K8sSandboxManager implements ISandboxManager {
 
   constructor(namespace?: string, options: K8sSandboxManagerOptions = {}) {
     const runPeriodicLoops = options.runPeriodicLoops ?? true
-    const ns = namespace || process.env.FICUS_K8S_NAMESPACE || 'tau-sandboxes'
+    const ns = namespace || process.env.FICUS_K8S_NAMESPACE || 'ficus-sandboxes'
     this.podManager = new K8sPodManager(ns)
     this.provisionScope = provisionScope(this.podManager.getClusterServer(), ns)
     this.provisionCoordinator = new ProvisionCoordinator({
@@ -344,14 +344,16 @@ export class K8sSandboxManager implements ISandboxManager {
 
   async attachExistingSandbox(sandboxId: string, opts: SandboxOptions): Promise<boolean> {
     if (this.sandboxes.has(sandboxId)) return true
-    const status = await this.podManager.queryPodStatus(sandboxId)
+    // N1 (fix round 2): resolve ONCE (write name first, then every other
+    // name) and reuse the SAME name for the status check and the attach —
+    // `getPodName` alone always guesses the write name, which 404s the
+    // status check (or worse, attaches to the wrong/nonexistent pod) for a
+    // sandbox whose pod is still running under a legacy name, the no-create
+    // reconciler's exact untracked-sandbox scenario.
+    const podName = await this.podManager.resolvePodName(sandboxId)
+    const status = await this.podManager.queryPodStatus(sandboxId, podName)
     if (status.status !== 'running' || status.containerReady !== true) return false
-    await this.attachProvisionedSandbox(
-      sandboxId,
-      this.podManager.getPodName(sandboxId),
-      opts,
-      AbortSignal.timeout(300_000)
-    )
+    await this.attachProvisionedSandbox(sandboxId, podName, opts, AbortSignal.timeout(300_000))
     return true
   }
 
@@ -784,7 +786,7 @@ export class K8sSandboxManager implements ISandboxManager {
       return { host: 'localhost', port: localPort }
     }
 
-    return { host: `${podName}.tau-sandboxes.${this.podManager.namespace}.svc.cluster.local`, port }
+    return { host: `${podName}.ficus-sandboxes.${this.podManager.namespace}.svc.cluster.local`, port }
   }
 
   /**

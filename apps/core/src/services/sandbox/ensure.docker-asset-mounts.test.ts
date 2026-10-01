@@ -92,7 +92,7 @@ describe('docker per-asset volume golden master', () => {
     expect(existsSync(skillsParent)).toBe(true)
   })
 
-  it('squad member: CLI + extensions + ro skills-parent + writable ssh at /home/tau/.ssh; NO memory mount', async () => {
+  it('squad member: CLI + extensions + ro skills-parent + writable ssh at /home/ficus/.ssh; NO memory mount', async () => {
     const sandboxId = 'agent_gm_member'
     const squadId = randomUUID()
     const skillsParent = join(home, 'skills', 'sandboxes', 'agent-gm-member')
@@ -122,7 +122,7 @@ describe('docker per-asset volume golden master', () => {
       '/tmp/ficus.js:/usr/local/bin/ficus:ro',
       `${EXTENSIONS_DIR}:${EXTENSIONS_DIR}:ro`,
       `${skillsParent}:${skillsParent}:ro`,
-      `${home}/ssh/${squadId}:/home/tau/.ssh`,
+      `${home}/ssh/${squadId}:/home/ficus/.ssh`,
     ])
     // Host-side ssh prep: known_hosts is pre-seeded into the mounted dir.
     expect(existsSync(join(home, 'ssh', squadId, 'known_hosts'))).toBe(true)
@@ -157,7 +157,7 @@ describe('docker per-asset volume golden master', () => {
       // Manifest order: memory before squad-ssh (secrets last), previously
       // ssh-then-memory — order-only difference, same mounts.
       `${home}/memory/${squadId}:/memory/${squadId}:ro`,
-      `${home}/ssh/${squadId}:/home/tau/.ssh`,
+      `${home}/ssh/${squadId}:/home/ficus/.ssh`,
     ])
     expect(existsSync(join(home, 'ssh', squadId, 'known_hosts'))).toBe(true)
     expect(existsSync(skillsParent)).toBe(true)

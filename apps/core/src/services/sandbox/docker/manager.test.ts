@@ -26,14 +26,18 @@ import {
   type SandboxRuntime,
 } from './manager'
 import {
+  DOCKER_EXEC_IDENTITY_LEGACY,
+  DOCKER_EXEC_IDENTITY_NEW,
   SANDBOX_IDENTITY_LEGACY,
   SANDBOX_IDENTITY_NEW,
   SANDBOX_IDENTITY_READ,
   SANDBOX_IDENTITY_WRITE,
   sandboxContainerNames,
+  type DockerExecIdentity,
   type SandboxIdentitySet,
 } from '../identity-names'
 import { computeDockerSpecDigest } from './runtime-contract'
+import { LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT, resolveDockerCommandIdentity } from './command-identity'
 import { buildBashrcContent } from '../bashrc'
 import type { SandboxOptions } from '../types'
 import { observeSandboxSetupProgress, type SandboxSetupProgressEvent } from '../setup-progress'
@@ -607,16 +611,20 @@ describe('reclaimAgentNixStore', () => {
   it('refuses storage reclamation while a container under any identity prefix is running', () => {
     const store = path.join(nixRoot, sandboxId)
     fs.mkdirSync(store, { recursive: true })
-    const newName = `${SANDBOX_IDENTITY_NEW.containerPrefix}${sandboxId}`
+    // The LAST checked name (not necessarily the write name) is the one found
+    // running, so the loop must keep checking past earlier not-found entries
+    // regardless of which identity set is currently written.
+    const names = sandboxContainerNames(sandboxId)
+    const runningName = names[names.length - 1]
     const commands: string[][] = []
     const spawnSync = (args: string[]) => {
       commands.push(args)
       if (args[1] !== 'inspect') return result()
-      return args[4] === newName ? result(0, 'true\n') : result(1, '', 'No such object')
+      return args[4] === runningName ? result(0, 'true\n') : result(1, '', 'No such object')
     }
 
     expect(() => reclaimAgentNixStore(sandboxId, { spawnSync })).toThrow('running')
-    expect(commands.map((args) => args[4])).toEqual(sandboxContainerNames(sandboxId))
+    expect(commands.map((args) => args[4])).toEqual(names)
     expect(commands.some((args) => args[1] === 'run')).toBe(false)
     expect(fs.existsSync(store)).toBe(true)
   })
@@ -659,7 +667,7 @@ describe('reclaimAgentNixStore', () => {
         '0',
         '-v',
         `${store}:/target`,
-        'tau-sandbox:latest',
+        'ficus-sandbox:latest',
         '-c',
         'find /target -mindepth 1 -delete',
       ],
@@ -764,7 +772,7 @@ describe('computeDockerSpecHash', () => {
 
   it('is a full digest and changes when a mutable tag resolves to a new immutable image', () => {
     const first = {
-      imageReference: 'tau-sandbox:latest',
+      imageReference: 'ficus-sandbox:latest',
       imageId: `sha256:${'a'.repeat(64)}`,
       runtimeContractVersion: 1 as const,
       executorProtocolVersion: 1 as const,
@@ -808,7 +816,7 @@ describe('docker --shm-size=512m (browser parity, Phase 2)', () => {
   // it must drift-recreate, so it MUST fold into computeDockerSpecDigest.
   it('shmSize is part of the hashed spec digest (drift recreates)', () => {
     const base = {
-      imageReference: 'tau-sandbox:latest',
+      imageReference: 'ficus-sandbox:latest',
       imageId: `sha256:${'a'.repeat(64)}`,
       runtimeContractVersion: 1 as const,
       executorProtocolVersion: 1 as const,
@@ -854,12 +862,12 @@ describe('ensureSandbox spec-hash drift detection', () => {
     const removed: string[] = []
     const base = {
       sandboxes: new Map<string, unknown>(),
-      containerName: (id: string) => `tau-sandbox-${id}`,
+      containerName: (id: string) => `${SANDBOX_IDENTITY_WRITE.containerPrefix}${id}`,
       isContainerRunning: () => true,
       getExistingContainer: () => null,
       resolveImageContract: () => ({
-        imageReference: 'tau-sandbox:latest',
-        imageId: 'unresolved:tau-sandbox:latest',
+        imageReference: 'ficus-sandbox:latest',
+        imageId: 'unresolved:ficus-sandbox:latest',
         runtimeContractVersion: 1,
         executorProtocolVersion: 1,
         commandContractVersion: 1,
@@ -1862,5 +1870,166 @@ describe('docker-sandbox-manager', () => {
       // State-reading methods still work when optional fields are absent
       expect(manager.getSandboxRuntime(sandboxId)).toBe('docker-socket')
     })
+  })
+})
+
+// C1 (fix round 1 — review finding): an adopted container that was built
+// under the LEGACY identity (user `tau`, `/run/tau/...` paths — every // ficus-p5-bridge
+// container running before this release) has no `ficus` user and no
+// `/run/ficus/...` paths. connectExecutor and getSandboxUserArgs must read
+// the container's OWN label set to decide which paths/user to use — not
+// unconditionally assume the current release's. These exercise the REAL
+// private methods (not stubbed, unlike every higher-level ensureSandbox/
+// attachExistingSandbox test above, which stubs connectExecutor/
+// connectActiveDrift and therefore cannot see this bug) against a fake
+// docker + fake fetch.
+describe("connectExecutor and getSandboxUserArgs resolve the container's OWN identity (C1)", () => {
+  const proto = DockerSandboxManager.prototype as any
+
+  /** A `this` exposing only the real prototype methods the call chain under test needs, plus a labels stub. */
+  function fakeThisForLabels(labels: Record<string, string>) {
+    const sandboxes = new Map<string, any>()
+    return {
+      sandboxes,
+      getContainerLabels: (_ref: string) => labels,
+      resolveDockerExecIdentity: proto.resolveDockerExecIdentity,
+    }
+  }
+
+  describe('getSandboxUserArgs', () => {
+    it('uses the Ficus identity for a new-labelled container', () => {
+      const self = fakeThisForLabels({ [SANDBOX_IDENTITY_NEW.managedLabel]: 'true' })
+      const args: string[] = proto.getSandboxUserArgs.call(self, 'container-new')
+      expect(args).toEqual([
+        '--user',
+        DOCKER_EXEC_IDENTITY_NEW.user,
+        '-e',
+        `HOME=${DOCKER_EXEC_IDENTITY_NEW.home}`,
+        '-e',
+        `USER=${DOCKER_EXEC_IDENTITY_NEW.user}`,
+        '-e',
+        `LOGNAME=${DOCKER_EXEC_IDENTITY_NEW.user}`,
+        '-e',
+        `DOCKER_HOST=unix://${DOCKER_EXEC_IDENTITY_NEW.dockerProxySocketPath}`,
+      ])
+    })
+
+    it('uses the legacy identity for a legacy-labelled container — not the Ficus one', () => {
+      const self = fakeThisForLabels({ [SANDBOX_IDENTITY_LEGACY.managedLabel]: 'true' })
+      const args: string[] = proto.getSandboxUserArgs.call(self, 'container-legacy')
+      // Built from the exported LEGACY constant (not retyped literals) so this
+      // test tracks the real pre-release values, whatever they are.
+      expect(args).toEqual([
+        '--user',
+        DOCKER_EXEC_IDENTITY_LEGACY.user,
+        '-e',
+        `HOME=${DOCKER_EXEC_IDENTITY_LEGACY.home}`,
+        '-e',
+        `USER=${DOCKER_EXEC_IDENTITY_LEGACY.user}`,
+        '-e',
+        `LOGNAME=${DOCKER_EXEC_IDENTITY_LEGACY.user}`,
+        '-e',
+        `DOCKER_HOST=unix://${DOCKER_EXEC_IDENTITY_LEGACY.dockerProxySocketPath}`,
+      ])
+      expect(args).not.toContain(DOCKER_EXEC_IDENTITY_NEW.user)
+    })
+
+    it('falls back to the Ficus (write) identity when a container has no managed label at all', () => {
+      const self = fakeThisForLabels({})
+      const args: string[] = proto.getSandboxUserArgs.call(self, 'container-unlabelled')
+      expect(args).toContain(DOCKER_EXEC_IDENTITY_NEW.user)
+      expect(args).not.toContain(DOCKER_EXEC_IDENTITY_LEGACY.user)
+    })
+  })
+
+  describe('connectExecutor', () => {
+    /** Each identity's expected health-contract payload, computed via the REAL resolveDockerCommandIdentity. */
+    function expectedHealthIdentity(execIdentity: DockerExecIdentity) {
+      const contract =
+        execIdentity === DOCKER_EXEC_IDENTITY_NEW
+          ? { version: 1 as const, user: 'ficus', home: '/home/ficus', uid: 1000, gid: 1000 }
+          : LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT
+      return resolveDockerCommandIdentity(contract, { uid: process.getuid?.(), gid: process.getgid?.() })
+    }
+
+    for (const [label, identitySet, execIdentity] of [
+      ['new', SANDBOX_IDENTITY_NEW, DOCKER_EXEC_IDENTITY_NEW],
+      ['legacy', SANDBOX_IDENTITY_LEGACY, DOCKER_EXEC_IDENTITY_LEGACY],
+    ] as const) {
+      it(`reads the executor token from the ${label} path and validates the ${label} identity for a ${label}-labelled container`, async () => {
+        const sandboxId = `agent_${label}`
+        const containerId = `container-${label}`
+        const self = fakeThisForLabels({ [identitySet.managedLabel]: 'true' })
+        self.sandboxes.set(sandboxId, {})
+
+        const resolved = expectedHealthIdentity(execIdentity)
+        const tokenCalls: string[] = []
+        const otherIdentityTokenPath =
+          execIdentity === DOCKER_EXEC_IDENTITY_NEW
+            ? DOCKER_EXEC_IDENTITY_LEGACY.executorTokenPath
+            : DOCKER_EXEC_IDENTITY_NEW.executorTokenPath
+
+        const spawnSpy = spyOn(Bun, 'spawnSync').mockImplementation(
+          (args: unknown) =>
+            ({
+              exitCode: ((): number => {
+                const a = args as string[]
+                if (a[1] === 'port') return 0
+                if (a[1] === 'exec' && a[3] === 'cat') {
+                  tokenCalls.push(a[4])
+                  return a[4] === execIdentity.executorTokenPath ? 0 : 1
+                }
+                return 1
+              })(),
+              stdout: ((): Buffer => {
+                const a = args as string[]
+                if (a[1] === 'port') return Buffer.from('127.0.0.1:54321\n')
+                if (a[1] === 'exec' && a[3] === 'cat' && a[4] === execIdentity.executorTokenPath)
+                  return Buffer.from(`${'a'.repeat(64)}\n`)
+                return Buffer.alloc(0)
+              })(),
+              stderr: Buffer.from('cat: No such file or directory'),
+            }) as any
+        )
+        // The 300-attempt retry loops are real (unmocked) code; make Bun.sleep
+        // resolve instantly so a wrong-path RED run throws in milliseconds, not 30s.
+        const sleepSpy = spyOn(Bun, 'sleep').mockImplementation(() => Promise.resolve() as any)
+        const originalFetch = globalThis.fetch
+        globalThis.fetch = (async () => ({
+          ok: true,
+          json: async () => ({
+            runtimeContract: {
+              runtime: 'docker',
+              version: 1,
+              executorProtocol: 1,
+              capabilities: ['bash', 'bash-cancel', 'command-identity', 'socket-proxy'],
+              commandIdentity: {
+                user: resolved.user,
+                home: resolved.home,
+                uid: resolved.resolvedUid,
+                gid: resolved.resolvedGid,
+                source: resolved.source,
+                contractDigest: resolved.contractDigest,
+              },
+            },
+          }),
+        })) as unknown as typeof fetch
+
+        try {
+          await proto.connectExecutor.call(self, containerId, sandboxId)
+        } finally {
+          spawnSpy.mockRestore()
+          sleepSpy.mockRestore()
+          globalThis.fetch = originalFetch
+        }
+
+        // The exec that actually succeeded read the identity's OWN token path —
+        // never the other identity's (the regression: hardcoding the Ficus path
+        // unconditionally means a legacy container's token is never found).
+        expect(tokenCalls).toContain(execIdentity.executorTokenPath)
+        expect(tokenCalls).not.toContain(otherIdentityTokenPath)
+        expect(self.sandboxes.get(sandboxId)?.client).toBeDefined()
+      })
+    }
   })
 })

@@ -87,7 +87,7 @@ export async function reconcileBashRecord(
 }
 
 const bashInvocationRegistry = new BashInvocationRegistry({
-  runtimeDir: join(process.env.FICUS_BOX_HOME ?? process.env.HOME ?? '/tmp', '.tau/runtime/bash-invocations'),
+  runtimeDir: join(process.env.FICUS_BOX_HOME ?? process.env.HOME ?? '/tmp', '.ficus/runtime/bash-invocations'),
   reconcile: reconcileBashRecord,
 })
 
@@ -456,7 +456,7 @@ export function handleBash(
             childEnv.HOME = commandIdentity.home
             childEnv.USER = commandIdentity.user
             childEnv.LOGNAME = commandIdentity.user
-            childEnv.DOCKER_HOST = 'unix:///run/tau-docker/docker.sock'
+            childEnv.DOCKER_HOST = 'unix:///run/ficus-docker/docker.sock'
           }
           proc = dependencies.spawn(
             commandIdentity ? 'su-exec' : 'bash',

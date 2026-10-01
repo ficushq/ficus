@@ -1,5 +1,6 @@
 import * as k8s from '@kubernetes/client-node'
 import { createLogger } from '../../../lib/infra/logger'
+import { SANDBOX_IDENTITY_WRITE, sandboxPodNamePrefixes } from '../identity-names'
 import { getSandboxImage, type SandboxType } from './pod-spec'
 
 const log = createLogger('k8s-image-prepull')
@@ -7,7 +8,7 @@ const log = createLogger('k8s-image-prepull')
 /** Identifying label on the throwaway pre-pull pods (for humans/kubectl).
  *  Cleanup is by deterministic name (finally-delete + delete-before-create),
  *  not by label sweep. */
-const PREPULL_LABEL = 'tau-sandbox-prepull'
+const PREPULL_LABEL = 'ficus-sandbox-prepull'
 /** Bounds a wedged pull: at the deadline the kubelet marks the pod Failed
  *  (DeadlineExceeded). It does NOT delete the Pod object — reaping relies on the
  *  finally-delete below and the next boot's delete-before-create (by name). */
@@ -28,11 +29,21 @@ export interface PrepullDeps {
 }
 
 /** 'squad' and 'system-manager' resolve to the same image, so these two types
- *  cover both distinct sandbox images (tau-sandbox + tau-sandbox-agent). */
+ *  cover both distinct sandbox images (ficus-sandbox + ficus-sandbox-agent). */
 const PREPULL_TYPES: SandboxType[] = ['squad', 'agent']
 
-export function prepullPodName(type: SandboxType): string {
-  return `tau-sb-prepull-${type}`
+/** The pre-pull pod name under the given k8s pod-name prefix (default the write prefix). */
+export function prepullPodName(type: SandboxType, prefix: string = SANDBOX_IDENTITY_WRITE.k8sPodNamePrefix): string {
+  return `${prefix}prepull-${type}`
+}
+
+/**
+ * Every pre-pull pod name a leftover may carry: the write name first, then
+ * each other read name — a pod left over from a prior release's prefix (e.g.
+ * a crash mid-prepull before this release) is still found and cleaned up.
+ */
+export function prepullPodNames(type: SandboxType): string[] {
+  return sandboxPodNamePrefixes().map((prefix) => prepullPodName(type, prefix))
 }
 
 function statusCode(err: unknown): number | undefined {
@@ -84,8 +95,11 @@ async function prepullOne(deps: PrepullDeps, type: SandboxType): Promise<void> {
   const pollMs = deps.pollMs ?? POLL_MS
   const waitTimeoutMs = deps.waitTimeoutMs ?? WAIT_TIMEOUT_MS
 
-  // Idempotent: clear any leftover pod from a prior boot before creating.
-  await deletePrepullPod(deps, name)
+  // Idempotent: clear any leftover pod from a prior boot before creating —
+  // under EVERY name this type may have had (a crash mid-prepull before this
+  // release left one under the legacy prefix, which the write-name-only
+  // delete below would never find).
+  for (const leftoverName of prepullPodNames(type)) await deletePrepullPod(deps, leftoverName)
 
   log.info(`Pre-pulling sandbox image ${image} (pod ${name})`)
   try {

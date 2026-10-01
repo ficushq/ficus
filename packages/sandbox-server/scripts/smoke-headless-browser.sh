@@ -3,8 +3,8 @@ set -euo pipefail
 
 cd /workspace
 
-if [ ! -f devbox.json ] && [ -f /opt/tau/defaults/devbox.json ]; then
-  cp /opt/tau/defaults/devbox.json devbox.json
+if [ ! -f devbox.json ] && [ -f /opt/ficus/defaults/devbox.json ]; then
+  cp /opt/ficus/defaults/devbox.json devbox.json
 fi
 
 devbox install >/dev/null

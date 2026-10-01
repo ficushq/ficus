@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: tau-sandboxes
+  name: ficus-sandboxes
   labels:
-    app: tau
+    app: ficus
     component: sandboxes

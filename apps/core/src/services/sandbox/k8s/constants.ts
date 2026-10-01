@@ -16,16 +16,16 @@ import { isLocalK8sMode } from '../runtime'
  */
 export const IS_LOCAL_DEV = isLocalK8sMode()
 
-export const LOCAL_KUBECTL_CONTEXT = process.env.FICUS_K8S_CONTEXT || 'k3d-tau-dev-token'
+export const LOCAL_KUBECTL_CONTEXT = process.env.FICUS_K8S_CONTEXT || 'k3d-ficus-dev-token'
 
 /** Port the in-pod executor HTTP server listens on. */
 export const EXECUTOR_PORT = 50051
 
 /** Headless service that gives each sandbox pod a stable DNS name. */
-export const HEADLESS_SERVICE_NAME = 'tau-sandboxes'
+export const HEADLESS_SERVICE_NAME = 'ficus-sandboxes'
 
 /** K8s Secret name for sandbox auth credentials (mounted as volume) */
-export const SANDBOX_AUTH_SECRET_NAME = 'tau-sandbox-auth'
+export const SANDBOX_AUTH_SECRET_NAME = 'ficus-sandbox-auth'
 
 /** Default idle timeout in milliseconds (15 minutes) */
 export const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60 * 1000

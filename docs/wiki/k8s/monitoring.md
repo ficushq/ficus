@@ -10,7 +10,7 @@ What to monitor for Ficus's K8s sandbox system, health check schemas, and recomm
 GET /health
 ```
 
-Standard health check for the Core API server. Used by the K8s readiness/liveness probes on the `tau-api` deployment.
+Standard health check for the Core API server. Used by the K8s readiness/liveness probes on the `ficus-api` deployment.
 
 ### Sandbox (Sandbox Pods)
 
@@ -48,7 +48,7 @@ GET /healthz
 
 | Metric                     | How to Observe                                           | Why It Matters                             |
 | -------------------------- | -------------------------------------------------------- | ------------------------------------------ | ----------------- |
-| Sandbox pods running       | `kubectl -n tau-sandboxes get pods                       | wc -l`                                     | Capacity planning |
+| Sandbox pods running       | `kubectl -n ficus-sandboxes get pods                     | wc -l`                                     | Capacity planning |
 | Pods in Pending state      | `kubectl get pods --field-selector=status.phase=Pending` | Scheduling issues, resource pressure       |
 | Pod startup time           | Time from pod creation to `Ready` condition              | Detects image pull slowness, devbox issues |
 | Devbox ready time          | Time from `Ready` to `devboxReady: true`                 | Detects nix cache misses, EFS slowness     |
@@ -60,7 +60,7 @@ GET /healthz
 
 ```bash
 # Pod-level CPU and memory
-kubectl -n tau-sandboxes top pods
+kubectl -n ficus-sandboxes top pods
 
 # Node-level pressure (if pods are pending)
 kubectl top nodes
@@ -88,22 +88,22 @@ EFS metrics are available in CloudWatch (AWS):
 
 ### Connectivity
 
-| What to Check                  | Command                                                           |
-| ------------------------------ | ----------------------------------------------------------------- |
-| DNS resolution works           | `kubectl exec -n tau-core ... -- nslookup <pod>.tau-sandboxes...` |
-| HTTP client connectivity       | Core logs: `"Failed to connect"`, `"ECONNREFUSED"`                |
-| Headless service has endpoints | `kubectl -n tau-sandboxes get endpoints tau-sandboxes`            |
+| What to Check                  | Command                                                               |
+| ------------------------------ | --------------------------------------------------------------------- |
+| DNS resolution works           | `kubectl exec -n ficus-core ... -- nslookup <pod>.ficus-sandboxes...` |
+| HTTP client connectivity       | Core logs: `"Failed to connect"`, `"ECONNREFUSED"`                    |
+| Headless service has endpoints | `kubectl -n ficus-sandboxes get endpoints ficus-sandboxes`            |
 
 ## Recommended Alerts
 
 ### Critical
 
-| Alert                     | Condition                              | Action                               |
-| ------------------------- | -------------------------------------- | ------------------------------------ |
-| Core API down             | `/health` unreachable for >2min        | Check `tau-api` pod, DB connectivity |
-| Core Worker down          | `tau-worker` pod not ready for >2min   | Check pod logs, resource limits      |
-| Sandbox pod stuck Pending | Pod in Pending >5min                   | Check node resources, sysbox, PVC    |
-| PVC not bound             | `tau-core-data` PVC in non-Bound state | Check EFS CSI driver, access point   |
+| Alert                     | Condition                                | Action                                 |
+| ------------------------- | ---------------------------------------- | -------------------------------------- |
+| Core API down             | `/health` unreachable for >2min          | Check `ficus-api` pod, DB connectivity |
+| Core Worker down          | `ficus-worker` pod not ready for >2min   | Check pod logs, resource limits        |
+| Sandbox pod stuck Pending | Pod in Pending >5min                     | Check node resources, sysbox, PVC      |
+| PVC not bound             | `ficus-core-data` PVC in non-Bound state | Check EFS CSI driver, access point     |
 
 ### Warning
 
@@ -113,7 +113,7 @@ EFS metrics are available in CloudWatch (AWS):
 | Sandbox OOMKilled       | Pod terminated with OOMKilled reason | Increase memory limit or investigate agent workload |
 | Reconciliation failures | `"Failed to reconcile"` in Core logs | Check RBAC, K8s API access                          |
 | EFS burst credits low   | `BurstCreditBalance < 1TB`           | Consider provisioned throughput                     |
-| High sandbox pod count  | >50 pods in tau-sandboxes            | Review idle timeouts, scale nodes                   |
+| High sandbox pod count  | >50 pods in ficus-sandboxes          | Review idle timeouts, scale nodes                   |
 
 ### Informational
 
@@ -129,10 +129,10 @@ Core and sandbox pods write structured logs to stdout. Collect with your preferr
 
 ```bash
 # Quick: stream all sandbox logs
-kubectl -n tau-sandboxes logs -l app=tau-sandbox -f --max-log-requests=20
+kubectl -n ficus-sandboxes logs -l app=ficus-sandbox -f --max-log-requests=20
 
 # Quick: stream all core logs
-kubectl -n tau-core logs -l app=tau-core -f --max-log-requests=10
+kubectl -n ficus-core logs -l app=ficus-core -f --max-log-requests=10
 ```
 
 **Key log prefixes to monitor:**

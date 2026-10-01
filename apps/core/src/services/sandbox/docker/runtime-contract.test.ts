@@ -8,10 +8,10 @@ import {
 } from './runtime-contract'
 const id = `sha256:${'a'.repeat(64)}`
 const labels = {
-  'io.hiretau.sandbox.managed': 'true',
-  'io.hiretau.sandbox.runtime-contract': '1',
-  'io.hiretau.sandbox.executor-protocol': '1',
-  'io.hiretau.sandbox.command-contract': '1',
+  'sh.ficus.sandbox.managed': 'true',
+  'sh.ficus.sandbox.runtime-contract': '1',
+  'sh.ficus.sandbox.executor-protocol': '1',
+  'sh.ficus.sandbox.command-contract': '1',
 }
 describe('Docker runtime contract', () => {
   test('same-tag immutable image and executor protocol drift change the canonical spec', () => {
@@ -42,18 +42,18 @@ describe('Docker runtime contract', () => {
     )
   })
   test('requires immutable image identity and exact labels', () => {
-    expect(parseDockerImageContract('tau-sandbox:latest', [{ Id: id, Config: { Labels: labels } }])).toMatchObject({
+    expect(parseDockerImageContract('ficus-sandbox:latest', [{ Id: id, Config: { Labels: labels } }])).toMatchObject({
       imageId: id,
       runtimeContractVersion: 1,
     })
     const missingManaged = { ...labels }
-    delete (missingManaged as Partial<typeof labels>)['io.hiretau.sandbox.managed']
+    delete (missingManaged as Partial<typeof labels>)['sh.ficus.sandbox.managed']
     const missingRuntime = { ...labels }
-    delete (missingRuntime as Partial<typeof labels>)['io.hiretau.sandbox.runtime-contract']
+    delete (missingRuntime as Partial<typeof labels>)['sh.ficus.sandbox.runtime-contract']
     const missingExecutor = { ...labels }
-    delete (missingExecutor as Partial<typeof labels>)['io.hiretau.sandbox.executor-protocol']
+    delete (missingExecutor as Partial<typeof labels>)['sh.ficus.sandbox.executor-protocol']
     const missingCommand = { ...labels }
-    delete (missingCommand as Partial<typeof labels>)['io.hiretau.sandbox.command-contract']
+    delete (missingCommand as Partial<typeof labels>)['sh.ficus.sandbox.command-contract']
     for (const inspect of [
       [],
       [{ Id: 'tag', Config: { Labels: labels } }],
@@ -107,8 +107,8 @@ describe('Docker runtime contract', () => {
         executorProtocol: 1,
         capabilities: ['bash', 'bash-cancel', 'command-identity', 'socket-proxy'],
         commandIdentity: {
-          user: 'tau' as const,
-          home: '/home/tau' as const,
+          user: 'ficus' as const,
+          home: '/home/ficus' as const,
           uid: 1000,
           gid: 1000,
           source: 'image' as const,

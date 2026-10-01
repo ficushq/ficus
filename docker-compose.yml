@@ -1,13 +1,13 @@
 services:
   registry:
     image: registry:2
-    container_name: tau-registry
+    container_name: ficus-registry
     ports:
       - '127.0.0.1:5001:5000'
     volumes:
       - registry-data:/var/lib/registry
     networks:
-      - tau-dev
+      - ficus-dev
     restart: unless-stopped
 
   postgres:
@@ -38,5 +38,5 @@ volumes:
     name: ficus_postgres-data
 
 networks:
-  tau-dev:
-    name: tau-dev
+  ficus-dev:
+    name: ficus-dev

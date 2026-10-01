@@ -51,10 +51,10 @@ describe('Docker sandbox image source contract', () => {
 
   test('declares the negotiated runtime and installs identity/proxy tools', () => {
     for (const label of [
-      'io.hiretau.sandbox.managed="true"',
-      'io.hiretau.sandbox.runtime-contract="1"',
-      'io.hiretau.sandbox.executor-protocol="1"',
-      'io.hiretau.sandbox.command-contract="1"',
+      'sh.ficus.sandbox.managed="true"',
+      'sh.ficus.sandbox.runtime-contract="1"',
+      'sh.ficus.sandbox.executor-protocol="1"',
+      'sh.ficus.sandbox.command-contract="1"',
     ])
       expect(dockerfile).toContain(label)
     expect(dockerfile).toMatch(/\bsocat\b/)

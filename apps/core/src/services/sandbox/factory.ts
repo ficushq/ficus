@@ -212,7 +212,7 @@ export function validateSandboxSetup(): void {
   }
 
   const runtime = selectRuntime()
-  const image = process.env.FICUS_SANDBOX_IMAGE || 'tau-sandbox:latest'
+  const image = process.env.FICUS_SANDBOX_IMAGE || 'ficus-sandbox:latest'
 
   // Check if the sandbox image exists locally
   const result = Bun.spawnSync(['docker', 'image', 'inspect', image], {

@@ -1,7 +1,7 @@
 import { describe, test, expect, mock, spyOn } from 'bun:test'
 import * as k8s from '@kubernetes/client-node'
 import { K8sPodManager, podDeathSignal, type PodState } from './pod-manager'
-import { reconcilableSpecHash } from './pod-spec'
+import { reconcilableSpecHash, sandboxPodName, sandboxPodNames } from './pod-spec'
 import { SANDBOX_IDENTITY_LEGACY, SANDBOX_IDENTITY_NEW, sandboxPodLabelSelector } from '../identity-names'
 import * as secretStoreModule from '../../secrets/store'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
@@ -49,10 +49,10 @@ describe('K8sPodManager', () => {
 
   test('getPodEndpoint returns correct DNS', () => {
     const endpoint = K8sPodManager.prototype.getPodEndpoint.call(
-      { namespace: 'tau-sandboxes', pods: new Map(), portForwards: new Map() },
-      'tau-sandbox-squad-abc123'
+      { namespace: 'ficus-sandboxes', pods: new Map(), portForwards: new Map() },
+      'ficus-sandbox-squad-abc123'
     )
-    expect(endpoint).toBe('tau-sandbox-squad-abc123.tau-sandboxes.tau-sandboxes.svc.cluster.local:50051')
+    expect(endpoint).toBe('ficus-sandbox-squad-abc123.ficus-sandboxes.ficus-sandboxes.svc.cluster.local:50051')
   })
 
   test('getPodEndpoint works with different namespace', () => {
@@ -60,7 +60,7 @@ describe('K8sPodManager', () => {
       { namespace: 'custom-ns', pods: new Map(), portForwards: new Map() },
       'my-pod'
     )
-    expect(endpoint).toBe('my-pod.tau-sandboxes.custom-ns.svc.cluster.local:50051')
+    expect(endpoint).toBe('my-pod.ficus-sandboxes.custom-ns.svc.cluster.local:50051')
   })
 
   test('getPodEndpoint does not use app port-forwards for executor traffic', () => {
@@ -74,7 +74,7 @@ describe('K8sPodManager', () => {
       },
       'my-pod'
     )
-    expect(endpoint).toBe('my-pod.tau-sandboxes.custom-ns.svc.cluster.local:50051')
+    expect(endpoint).toBe('my-pod.ficus-sandboxes.custom-ns.svc.cluster.local:50051')
   })
 
   test('getPodState returns null for unknown sandbox', () => {
@@ -85,7 +85,7 @@ describe('K8sPodManager', () => {
   test('getPodState returns tracked pod state', () => {
     const podState: PodState = {
       sandboxId: 'squad_abc123',
-      podName: 'tau-sandbox-squad-abc123',
+      podName: 'ficus-sandbox-squad-abc123',
       status: 'ready',
       lastActivity: new Date(),
       idleTimeout: 900_000,
@@ -143,6 +143,7 @@ describe('K8sPodManager', () => {
         bashrcHashes: new Map([['agent_x', 'hash']]),
         coreApi: { deleteNamespacedPod: mock(async () => {}) },
         getPodName: () => 'tau-sb-agent-x',
+        resolvePodName: async () => 'tau-sb-agent-x',
         stopPortForward: () => {},
       }
       await K8sPodManager.prototype['terminatePod'].call(fakeThis as any, 'agent_x', 'manual')
@@ -159,6 +160,7 @@ describe('K8sPodManager', () => {
         bashrcHashes: new Map(),
         coreApi: { deleteNamespacedPod },
         getPodName: () => 'tau-sb-agent-x',
+        resolvePodName: async () => 'tau-sb-agent-x',
         stopPortForward: () => {},
       }
 
@@ -179,6 +181,7 @@ describe('K8sPodManager', () => {
         bashrcHashes: new Map(),
         coreApi: { deleteNamespacedPod },
         getPodName: () => 'tau-sb-agent-x',
+        resolvePodName: async () => 'tau-sb-agent-x',
         stopPortForward: () => {},
       }
 
@@ -194,7 +197,7 @@ describe('K8sPodManager', () => {
       // reports the old pod as Running with a deletionTimestamp; adopting it would
       // make us wait on a corpse forever. We must drain it, then create fresh.
       const readNamespacedPod = mock(async () => ({
-        metadata: { name: 'tau-sb-agent-x', deletionTimestamp: '2026-06-29T00:00:00Z' },
+        metadata: { name: 'ficus-sb-agent-x', deletionTimestamp: '2026-06-29T00:00:00Z' },
         status: { phase: 'Running' },
       }))
       const createNamespacedPod = mock(async () => ({}))
@@ -202,14 +205,14 @@ describe('K8sPodManager', () => {
       const waitForPodReady = mock(async () => {})
       const syncAuthSecret = mock(async () => {})
       const createPodSpec = mock(async () => ({ metadata: {}, spec: {} }))
-      const getPodEndpoint = mock(() => 'tau-sb-agent-x.endpoint:50051')
+      const getPodEndpoint = mock(() => 'ficus-sb-agent-x.endpoint:50051')
 
       const fakeThis = {
-        namespace: 'tau-sandboxes',
+        namespace: 'ficus-sandboxes',
         pods: new Map(),
         bashrcHashes: new Map(),
         coreApi: { readNamespacedPod, createNamespacedPod },
-        getPodName: () => 'tau-sb-agent-x',
+        getPodName: () => 'ficus-sb-agent-x',
         waitForPodDeletion,
         waitForPodReady,
         syncAuthSecret,
@@ -221,9 +224,223 @@ describe('K8sPodManager', () => {
 
       await K8sPodManager.prototype['ensurePod'].call(fakeThis as any, 'agent_x', { sandboxType: 'agent' } as any)
 
-      expect(waitForPodDeletion).toHaveBeenCalledWith('tau-sb-agent-x')
+      expect(waitForPodDeletion).toHaveBeenCalledWith('ficus-sb-agent-x')
       expect(createNamespacedPod).toHaveBeenCalledTimes(1)
-      expect(waitForPodReady).toHaveBeenCalledWith('tau-sb-agent-x')
+      expect(waitForPodReady).toHaveBeenCalledWith('ficus-sb-agent-x')
+    })
+  })
+
+  // I1 (fix round 1): a pod built under the legacy `tau-sb-` prefix (every pod
+  // running before this release) must still be found, adopted, and never
+  // double-created beside a fresh pod under the write (`ficus-sb-`) name.
+  describe('ensurePod pod-name discovery (I1)', () => {
+    test('adopts a pod found only under the legacy pod-name prefix — no duplicate create', async () => {
+      const sandboxId = 'agent_x'
+      const writeName = sandboxPodName(sandboxId)
+      const legacyName = sandboxPodName(sandboxId, SANDBOX_IDENTITY_LEGACY.k8sPodNamePrefix)
+      expect(writeName).not.toBe(legacyName)
+
+      const readNamespacedPod = mock(async ({ name }: { name: string; namespace: string }) => {
+        if (name === legacyName) return { metadata: { name: legacyName }, status: { phase: 'Running' } }
+        throw { response: { statusCode: 404 } }
+      })
+      const createNamespacedPod = mock(async () => ({}))
+      const waitForPodReady = mock(async () => {})
+      const getPodEndpoint = mock((name: string) => `${name}.endpoint:50051`)
+
+      const fakeThis = {
+        namespace: 'ficus-sandboxes',
+        pods: new Map(),
+        bashrcHashes: new Map(),
+        coreApi: { readNamespacedPod, createNamespacedPod },
+        getPodName: () => writeName,
+        waitForPodReady,
+        syncAuthSecret: mock(async () => {}),
+        createPodSpec: mock(async () => ({ metadata: {}, spec: {} })),
+        updatePodState: () => {},
+        getPodEndpoint,
+        touchPod: () => {},
+      }
+
+      const endpoint = await K8sPodManager.prototype['ensurePod'].call(fakeThis as any, sandboxId, {
+        sandboxType: 'agent',
+      } as any)
+
+      // Every read name was tried (write first) before settling on the legacy one.
+      const readNames = readNamespacedPod.mock.calls.map((call) => (call[0] as { name: string }).name)
+      expect(readNames.slice(0, 2)).toEqual(sandboxPodNames(sandboxId))
+      // Adopted the legacy pod — no create, and the tracked/returned name is the legacy one.
+      expect(createNamespacedPod).not.toHaveBeenCalled()
+      expect(waitForPodReady).toHaveBeenCalledWith(legacyName)
+      expect(endpoint).toBe(`${legacyName}.endpoint:50051`)
+      expect((fakeThis.pods.get(sandboxId) as any)?.podName).toBe(legacyName)
+    })
+
+    test('creates under the write name when no pod exists under any read name', async () => {
+      const sandboxId = 'agent_fresh'
+      const writeName = sandboxPodName(sandboxId)
+
+      const readNamespacedPod = mock(async () => {
+        throw { response: { statusCode: 404 } }
+      })
+      const createNamespacedPod = mock(async () => ({}))
+      const waitForPodReady = mock(async () => {})
+
+      const fakeThis = {
+        namespace: 'ficus-sandboxes',
+        pods: new Map(),
+        bashrcHashes: new Map(),
+        coreApi: { readNamespacedPod, createNamespacedPod },
+        getPodName: () => writeName,
+        waitForPodReady,
+        syncAuthSecret: mock(async () => {}),
+        createPodSpec: mock(async () => ({ metadata: {}, spec: {} })),
+        updatePodState: () => {},
+        getPodEndpoint: (name: string) => `${name}.endpoint:50051`,
+        touchPod: () => {},
+      }
+
+      await K8sPodManager.prototype['ensurePod'].call(fakeThis as any, sandboxId, { sandboxType: 'agent' } as any)
+
+      expect(createNamespacedPod).toHaveBeenCalledTimes(1)
+      expect(waitForPodReady).toHaveBeenCalledWith(writeName)
+      expect((fakeThis.pods.get(sandboxId) as any)?.podName).toBe(writeName)
+    })
+  })
+
+  // N1 (fix round 2): every pod-lookup path — not just `ensurePod` — must
+  // resolve an untracked sandbox (empty `pods` map, the state right after
+  // every Core restart) through the same write-name-then-legacy-name
+  // discovery, or a legacy-named pod is unreachable (status/attach/logs
+  // 404 forever) and un-terminable (terminate 404s, reports "already
+  // deleted", and leaks the real pod).
+  describe('pod-name resolution across a Core restart (N1)', () => {
+    const sandboxId = 'agent_restart'
+    const writeName = sandboxPodName(sandboxId)
+    const legacyName = sandboxPodName(sandboxId, SANDBOX_IDENTITY_LEGACY.k8sPodNamePrefix)
+
+    /** A fake `coreApi` whose `readNamespacedPod` only resolves names in `existing`. */
+    function fakeCoreApi(existing: Record<string, any>) {
+      const readNamespacedPod = mock(async ({ name }: { name: string; namespace: string }) => {
+        if (name in existing) return existing[name]
+        throw { response: { statusCode: 404 } }
+      })
+      const deleteNamespacedPod = mock(async () => {})
+      return { readNamespacedPod, deleteNamespacedPod }
+    }
+
+    function runningPod(name: string) {
+      return {
+        metadata: { name },
+        status: {
+          phase: 'Running',
+          conditions: [{ type: 'Ready', status: 'True' }],
+          containerStatuses: [{ name: 'sandbox', state: { running: { startedAt: '2026-03-06T08:00:00Z' } } }],
+        },
+      }
+    }
+
+    // `resolveExistingPod` is private; every fake `this` below needs it wired
+    // in (bound at call time via `this.resolveExistingPod(...)`) so the real
+    // resolution logic — not a stub — runs against the fake coreApi.
+    const resolveExistingPod = (K8sPodManager.prototype as any).resolveExistingPod
+    const { resolvePodName } = K8sPodManager.prototype
+
+    function baseFakeThis(coreApi: ReturnType<typeof fakeCoreApi>) {
+      return {
+        namespace: 'ficus-sandboxes',
+        pods: new Map(), // simulated restart: nothing tracked
+        bashrcHashes: new Map(),
+        coreApi,
+        getPodName: () => writeName,
+        getPodEndpoint: (name: string) => `${name}.endpoint:50051`,
+        stopPortForward: () => {},
+        resolveExistingPod,
+        resolvePodName,
+      }
+    }
+
+    test('queryPodStatus finds a legacy-named pod after a restart (untracked sandbox)', async () => {
+      const coreApi = fakeCoreApi({ [legacyName]: runningPod(legacyName) })
+      const fakeThis = baseFakeThis(coreApi)
+
+      const result = await K8sPodManager.prototype.queryPodStatus.call(fakeThis as any, sandboxId)
+
+      expect(result.status).toBe('running')
+      const triedNames = coreApi.readNamespacedPod.mock.calls.map((c) => (c[0] as any).name)
+      expect(triedNames).toEqual([writeName, legacyName]) // write name tried first, then legacy
+    })
+
+    test('attachExistingSandbox (via resolvePodName) finds a legacy-named pod after a restart', async () => {
+      const coreApi = fakeCoreApi({ [legacyName]: runningPod(legacyName) })
+      const fakeThis = baseFakeThis(coreApi)
+
+      const resolved = await K8sPodManager.prototype.resolvePodName.call(fakeThis as any, sandboxId)
+      expect(resolved).toBe(legacyName)
+      const status = await K8sPodManager.prototype.queryPodStatus.call(fakeThis as any, sandboxId, resolved)
+      expect(status.status).toBe('running')
+      expect(status.containerReady).toBe(true)
+    })
+
+    test('streamPodLogs resolves a legacy-named pod after a restart and streams from it', async () => {
+      const coreApi = fakeCoreApi({ [legacyName]: runningPod(legacyName) })
+      const logSpy = spyOn(k8s.Log.prototype, 'log').mockResolvedValue({ abort: () => {} } as any)
+      const fakeThis = {
+        ...baseFakeThis(coreApi),
+        kc: {},
+        queryPodStatus: K8sPodManager.prototype.queryPodStatus,
+      } as unknown as K8sPodManager
+
+      K8sPodManager.prototype.streamPodLogs.call(
+        fakeThis,
+        sandboxId,
+        { tailLines: 10 },
+        () => {},
+        () => {}
+      )
+
+      const deadline = Date.now() + 3000
+      while (logSpy.mock.calls.length === 0 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 10))
+      }
+      expect(logSpy.mock.calls.length).toBeGreaterThan(0)
+      const [, podArg] = logSpy.mock.calls[0] as any[]
+      expect(podArg).toBe(legacyName)
+      logSpy.mockRestore()
+    })
+
+    test('terminatePod actually deletes a legacy-named pod after a restart (does not 404-and-leak)', async () => {
+      const coreApi = fakeCoreApi({ [legacyName]: runningPod(legacyName) })
+      const fakeThis = baseFakeThis(coreApi)
+
+      await K8sPodManager.prototype['terminatePod'].call(fakeThis as any, sandboxId, 'manual')
+
+      expect(coreApi.deleteNamespacedPod).toHaveBeenCalledWith({
+        name: legacyName,
+        namespace: 'ficus-sandboxes',
+        gracePeriodSeconds: 0,
+      })
+    })
+
+    test('when both a Ficus-named and a legacy-named pod exist, resolution prefers the Ficus one and terminate deletes only it', async () => {
+      const coreApi = fakeCoreApi({
+        [writeName]: runningPod(writeName),
+        [legacyName]: runningPod(legacyName),
+      })
+
+      const resolved = await K8sPodManager.prototype.resolvePodName.call(baseFakeThis(coreApi) as any, sandboxId)
+      expect(resolved).toBe(writeName)
+
+      await K8sPodManager.prototype['terminatePod'].call(baseFakeThis(coreApi) as any, sandboxId, 'manual')
+
+      // Only the adopted (Ficus-named) target is deleted — the legacy pod under
+      // the same sandboxId is left alone, never double-deleted or guessed at.
+      expect(coreApi.deleteNamespacedPod).toHaveBeenCalledTimes(1)
+      expect(coreApi.deleteNamespacedPod).toHaveBeenCalledWith({
+        name: writeName,
+        namespace: 'ficus-sandboxes',
+        gracePeriodSeconds: 0,
+      })
     })
   })
 
@@ -273,6 +490,7 @@ describe('K8sPodManager', () => {
           namespace: 'sandbox-ns',
           pods: new Map(),
           getPodName: () => 'sb-squad-abc',
+          resolveExistingPod: (K8sPodManager.prototype as any).resolveExistingPod,
           coreApi: {
             readNamespacedPod: async () => ({
               metadata: { annotations: { [key]: 'h1' } },
@@ -291,6 +509,7 @@ describe('K8sPodManager', () => {
         namespace: 'sandbox-ns',
         pods: new Map(),
         getPodName: () => 'sb-squad-abc',
+        resolveExistingPod: (K8sPodManager.prototype as any).resolveExistingPod,
         coreApi: { readNamespacedPod: async () => ({ metadata: { annotations: {} }, status: { phase: 'Running' } }) },
       }
       await expect(K8sPodManager.prototype.getRunningPodSpecHash.call(fakeThis as any, 'squad_abc')).resolves.toBeNull()
@@ -330,6 +549,7 @@ describe('K8sPodManager', () => {
         bashrcHashes: new Map(),
         coreApi: { deleteNamespacedPod: mock(async () => {}) },
         getPodName: () => 'tau-sb-agent-x',
+        resolvePodName: async () => 'tau-sb-agent-x',
         stopPortForward: () => {},
       }
 
@@ -403,14 +623,14 @@ describe('K8sPodManager', () => {
             throw new Error('must not be called')
           }),
         },
-        namespace: 'tau-sandboxes',
+        namespace: 'ficus-sandboxes',
         kc: { getCurrentCluster: () => ({ server: 'https://kubernetes.default.svc' }) },
       }
 
       const result = await K8sPodManager.prototype.checkClusterConnectivity.call(manager)
 
       expect(result).toBe(true)
-      expect(readNamespacedPod).toHaveBeenCalledWith({ name: 'tau-connectivity-check', namespace: 'tau-sandboxes' })
+      expect(readNamespacedPod).toHaveBeenCalledWith({ name: 'ficus-connectivity-check', namespace: 'ficus-sandboxes' })
       expect(manager.coreApi.listNamespace).not.toHaveBeenCalled()
     })
 
@@ -437,8 +657,10 @@ describe('K8sPodManager', () => {
       return {
         coreApi: { readNamespacedPod },
         namespace: 'tau-sandboxes',
+        pods: new Map(),
         // getPodName is private, replicate its logic
         getPodName: (sandboxId: string) => `tau-sandbox-${sandboxId.toLowerCase().replace(/[^a-z0-9-]/g, '-')}`,
+        resolveExistingPod: (K8sPodManager.prototype as any).resolveExistingPod,
       }
     }
 
@@ -605,6 +827,7 @@ describe('K8sPodManager', () => {
           namespace: 'tau-sandboxes',
           pods: new Map(),
           getPodName: (id: string) => `pod-${id}`,
+          resolvePodName: async (id: string) => `pod-${id}`,
           queryPodStatus,
         } as unknown as K8sPodManager,
         queryPodStatus,
@@ -696,6 +919,7 @@ describe('K8sPodManager', () => {
         namespace: 'tau-sandboxes',
         pods: new Map(),
         getPodName: (id: string) => `pod-${id}`,
+        resolvePodName: async (id: string) => `pod-${id}`,
         queryPodStatus,
       } as unknown as K8sPodManager
 

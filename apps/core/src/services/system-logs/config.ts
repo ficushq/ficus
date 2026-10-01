@@ -70,20 +70,20 @@ export function loadExplicitSystemLogConfig(
           api: clean(
             env.FICUS_SYSTEM_LOG_K8S_API_SELECTOR,
             'FICUS_SYSTEM_LOG_K8S_API_SELECTOR',
-            'app=tau-core,component=api'
+            'app=ficus-core,component=api'
           ),
           worker: clean(
             env.FICUS_SYSTEM_LOG_K8S_WORKER_SELECTOR,
             'FICUS_SYSTEM_LOG_K8S_WORKER_SELECTOR',
-            'app=tau-core,component=worker'
+            'app=ficus-core,component=worker'
           ),
         },
         containers: {
-          api: clean(env.FICUS_SYSTEM_LOG_K8S_API_CONTAINER, 'FICUS_SYSTEM_LOG_K8S_API_CONTAINER', 'tau-api'),
+          api: clean(env.FICUS_SYSTEM_LOG_K8S_API_CONTAINER, 'FICUS_SYSTEM_LOG_K8S_API_CONTAINER', 'ficus-api'),
           worker: clean(
             env.FICUS_SYSTEM_LOG_K8S_WORKER_CONTAINER,
             'FICUS_SYSTEM_LOG_K8S_WORKER_CONTAINER',
-            'tau-worker'
+            'ficus-worker'
           ),
         },
       }

@@ -10,6 +10,7 @@ import micromatch from 'micromatch'
 import { existsSync, readFileSync } from 'fs'
 import { readdir, stat, readFile, lstat, realpath } from 'fs/promises'
 import { join, relative } from 'path'
+import { sandboxPasswordPath } from '@ficus/shared/node'
 
 const DEFAULT_EXCLUDES = [
   '**/node_modules/**',
@@ -159,17 +160,17 @@ const log = (msg: string) => {
 /**
  * Read the secret for authenticating callbacks to core. Prefers the dedicated
  * SANDBOX_CALLBACK_SECRET (env var or mounted K8s Secret file at
- * /etc/tau/sandbox-callback-secret), falling back to the legacy FICUS_PASSWORD for
+ * /etc/ficus/sandbox-callback-secret), falling back to the legacy FICUS_PASSWORD for
  * transition.
  */
 function getAuthPassword(): string {
   if (process.env.SANDBOX_CALLBACK_SECRET) return process.env.SANDBOX_CALLBACK_SECRET
-  const callbackSecretPath = '/etc/tau/sandbox-callback-secret'
+  const callbackSecretPath = '/etc/ficus/sandbox-callback-secret'
   if (existsSync(callbackSecretPath)) {
     return readFileSync(callbackSecretPath, 'utf-8').trim()
   }
   if (process.env.FICUS_PASSWORD) return process.env.FICUS_PASSWORD
-  const secretPath = '/etc/tau/password'
+  const secretPath = sandboxPasswordPath()
   if (existsSync(secretPath)) {
     return readFileSync(secretPath, 'utf-8').trim()
   }

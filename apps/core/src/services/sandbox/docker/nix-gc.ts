@@ -12,7 +12,7 @@ import { reclaimAgentNixStore, resolveReclaimableNixStorePath } from './manager'
  *
  * #632 reclaims a personal agent's per-sandbox Nix store at terminal lifecycle,
  * but pre-existing leaked stores (and any future misses) stay invisible. This
- * enumerates `~/.tau/nix/agent_<uuid>` stores, anti-joins the agent table, and
+ * enumerates `~/.ficus/nix/agent_<uuid>` stores, anti-joins the agent table, and
  * classifies each store so an operator can reclaim the dead ones.
  *
  * All the safety (strict `agent_<uuid>` regex, canonical-path guard, symlink /
@@ -53,7 +53,7 @@ export interface NixGcApplyResult extends NixGcScan {
  * reclaimer; tests inject pure fakes.
  */
 export interface NixGcDeps {
-  /** Raw dirnames under `~/.tau/nix` (unfiltered — the strict regex is applied here). */
+  /** Raw dirnames under `~/.ficus/nix` (unfiltered — the strict regex is applied here). */
   listStoreEntries?: () => string[]
   /** Reclaimable bytes for a resolved store path. */
   storeSize?: (storePath: string) => number

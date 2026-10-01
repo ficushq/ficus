@@ -7,21 +7,23 @@ describe('executor Docker command identity', () => {
   test('uses an execing named-user launcher', () => {
     const identity = readExecutorCommandIdentity({
       EXECUTOR_DOCKER_RUNTIME: '1',
-      EXECUTOR_COMMAND_USER: 'tau',
-      EXECUTOR_COMMAND_HOME: '/home/tau',
+      EXECUTOR_COMMAND_USER: 'ficus',
+      EXECUTOR_COMMAND_HOME: '/home/ficus',
       EXECUTOR_COMMAND_UID: '1000',
       EXECUTOR_COMMAND_GID: '1000',
       EXECUTOR_COMMAND_CONTRACT_DIGEST: digest,
     })!
-    expect(commandSpawn(identity, 'id')).toEqual({ executable: 'su-exec', args: ['tau', 'bash', '-c', 'id'] })
+    expect(commandSpawn(identity, 'id')).toEqual({ executable: 'su-exec', args: ['ficus', 'bash', '-c', 'id'] })
   })
   test('fails closed for root or partial Docker configuration', () => {
-    expect(() => readExecutorCommandIdentity({ EXECUTOR_DOCKER_RUNTIME: '1', EXECUTOR_COMMAND_USER: 'tau' })).toThrow()
+    expect(() =>
+      readExecutorCommandIdentity({ EXECUTOR_DOCKER_RUNTIME: '1', EXECUTOR_COMMAND_USER: 'ficus' })
+    ).toThrow()
     expect(() =>
       readExecutorCommandIdentity({
         EXECUTOR_DOCKER_RUNTIME: '1',
-        EXECUTOR_COMMAND_USER: 'tau',
-        EXECUTOR_COMMAND_HOME: '/home/tau',
+        EXECUTOR_COMMAND_USER: 'ficus',
+        EXECUTOR_COMMAND_HOME: '/home/ficus',
         EXECUTOR_COMMAND_UID: '0',
         EXECUTOR_COMMAND_GID: '0',
         EXECUTOR_COMMAND_CONTRACT_DIGEST: digest,

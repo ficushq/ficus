@@ -20,6 +20,7 @@ const KEYS: (keyof SandboxIdentitySet)[] = [
   'imageLabelNamespace',
   'k8sSpecHashAnnotation',
   'k8sAppLabelValue',
+  'k8sPodNamePrefix',
 ]
 
 describe('sandbox identity names', () => {
@@ -34,6 +35,7 @@ describe('sandbox identity names', () => {
       imageLabelNamespace: 'sh.ficus.sandbox',
       k8sSpecHashAnnotation: 'ficus.sh/spec-hash',
       k8sAppLabelValue: 'ficus-sandbox',
+      k8sPodNamePrefix: 'ficus-sb-',
     })
   })
 
@@ -41,8 +43,8 @@ describe('sandbox identity names', () => {
     for (const key of KEYS) expect(SANDBOX_IDENTITY_LEGACY[key]).not.toBe(SANDBOX_IDENTITY_NEW[key])
   })
 
-  test('this release writes the legacy set and reads both, new first', () => {
-    expect(SANDBOX_IDENTITY_WRITE).toBe(SANDBOX_IDENTITY_LEGACY)
+  test('this release writes the new set and reads both, new first', () => {
+    expect(SANDBOX_IDENTITY_WRITE).toBe(SANDBOX_IDENTITY_NEW)
     expect(SANDBOX_IDENTITY_READ).toEqual([SANDBOX_IDENTITY_NEW, SANDBOX_IDENTITY_LEGACY])
   })
 
