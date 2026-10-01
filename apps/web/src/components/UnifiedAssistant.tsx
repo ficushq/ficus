@@ -79,6 +79,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
   const positionControl = (
     <AssistantSnapMenu
       snap={assistantWindow.placement.snap}
+      isDefault={!assistantWindow.placement.snap && !assistantWindow.placement.rect}
       onSnap={assistantWindow.snap}
       onReset={assistantWindow.reset}
     />
@@ -221,9 +222,8 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       }}
       className={clsx(
         'ficus-assistant-panel fixed z-[60] ficus-glass rounded-2xl overflow-hidden flex flex-col transition-[left,top,width,height] duration-200 motion-reduce:transition-none max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)]',
-        small ? 'w-64 touch-none cursor-grab' : 'w-[42rem]',
-        !small &&
-          (viewing || stack.length > 0 ? 'h-[min(42rem,calc(100dvh-1rem))]' : 'h-[min(36rem,calc(100dvh-1rem))]')
+        // The default card keeps one size whether searching or in a conversation.
+        small ? 'w-64 touch-none cursor-grab' : 'w-[44rem] h-[min(40rem,calc(100dvh-1rem))]'
       )}
     >
       {!small && (

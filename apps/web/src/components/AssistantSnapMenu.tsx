@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { SNAPS, SNAP_INFO, type Snap } from '../lib/assistantWindow'
+import { DEFAULT_PLACEMENT_KEY, SNAPS, SNAP_INFO, type Snap } from '../lib/assistantWindow'
 import { WindowLayoutIcon } from './icons'
 
 /** The menu's height, px, near enough, for keeping it on screen. */
@@ -10,9 +10,10 @@ const MENU_H = 400
 const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const MODIFIERS = MAC ? '⌃⌥' : 'Ctrl+Alt+'
 
-/** The part of the screen a snap fills, as a tiny picture (in a 30×20 box). */
-function SnapDiagram({ snap }: { snap: Snap }) {
+/** The part of the screen a snap fills (or the default centered card), as a tiny picture (in a 30×20 box). */
+function SnapDiagram({ snap }: { snap: Snap | 'default' }) {
   const [x, y, w, h] = {
+    default: [7.5, 4, 15, 12],
     left: [0, 0, 14.5, 20],
     right: [15.5, 0, 14.5, 20],
     top: [0, 0, 30, 9.5],
@@ -40,10 +41,13 @@ function SnapDiagram({ snap }: { snap: Snap }) {
  */
 export function AssistantSnapMenu({
   snap,
+  isDefault = false,
   onSnap,
   onReset,
 }: {
   snap?: Snap
+  /** Neither snapped nor moved: the default centered card. */
+  isDefault?: boolean
   onSnap: (snap: Snap) => void
   onReset: () => void
 }) {
@@ -111,6 +115,25 @@ export function AssistantSnapMenu({
               }
             }}
           >
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={isDefault}
+              title={`Default size and position, centered (${MODIFIERS}${DEFAULT_PLACEMENT_KEY.key})`}
+              className={clsx(
+                'ficus-button flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-hover',
+                isDefault ? 'text-accent-light' : 'text-secondary'
+              )}
+              onClick={() => choose(onReset)}
+            >
+              <SnapDiagram snap="default" />
+              <span className="min-w-0 flex-1 truncate">Default (centered)</span>
+              <kbd className="shrink-0 font-sans text-xs text-muted">
+                {MODIFIERS}
+                {DEFAULT_PLACEMENT_KEY.key}
+              </kbd>
+            </button>
+            <div className="my-1 border-t border-th-border" />
             {SNAPS.map((item) => (
               <button
                 key={item}
@@ -132,15 +155,6 @@ export function AssistantSnapMenu({
                 </kbd>
               </button>
             ))}
-            <div className="my-1 border-t border-th-border" />
-            <button
-              type="button"
-              role="menuitem"
-              className="ficus-button flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm text-secondary hover:bg-surface-hover"
-              onClick={() => choose(onReset)}
-            >
-              Default size and position
-            </button>
           </div>,
           document.body
         )}

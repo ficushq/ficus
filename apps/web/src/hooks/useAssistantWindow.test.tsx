@@ -32,9 +32,9 @@ async function setup({ small = false, initial }: { small?: boolean; initial?: un
               ({
                 left: Number.parseFloat(node.style.left) || 0,
                 top: Number.parseFloat(node.style.top) || 0,
-                width: Number.parseFloat(node.style.width) || (compact ? 256 : 672),
+                width: Number.parseFloat(node.style.width) || (compact ? 256 : 704),
                 height: Math.min(
-                  Number.parseFloat(node.style.height) || (compact ? 60 : 576),
+                  Number.parseFloat(node.style.height) || (compact ? 60 : 640),
                   Number.parseFloat(node.style.maxHeight) || Infinity
                 ),
               }) as DOMRect
@@ -87,13 +87,13 @@ async function setup({ small = false, initial }: { small?: boolean; initial?: un
   }
 }
 
-test('by default it sits at the upper-center command-center anchor with its CSS size', async () => {
+test('by default it is a card centered on the screen with its CSS size', async () => {
   const { dom, panel } = await setup()
   try {
-    expect(panel.style.left).toBe(`${(1200 - 672) / 2}px`)
-    expect(panel.style.top).toBe('160px')
+    expect(panel.style.left).toBe(`${(1200 - 704) / 2}px`)
+    expect(panel.style.top).toBe(`${(900 - 640) / 2}px`)
     expect(panel.style.width).toBe('')
-    expect(panel.style.maxHeight).toBe(`${900 - 160 - 8}px`)
+    expect(panel.style.maxHeight).toBe(`${900 - (900 - 640) / 2 - 8}px`)
   } finally {
     await dom.cleanup()
   }
@@ -106,7 +106,7 @@ test('dragging the header places it anywhere, stays put, and is remembered; head
     await pointer(panel.querySelector('button')!, 'pointerdown', 300, 170)
     await pointer(panel, 'pointermove', 500, 400)
     await pointer(panel, 'pointerup', 500, 400)
-    expect(box().left).toBe(264)
+    expect(box().left).toBe(248)
     expect(saved()).toBeNull()
 
     await pointer(header, 'pointerdown', 300, 170)
@@ -114,13 +114,13 @@ test('dragging the header places it anywhere, stays put, and is remembered; head
     expect(panel.style.transition).toBe('none')
     await pointer(panel, 'pointerup', 402, 291)
     // No corner snapping: it stays exactly where it was dropped.
-    expect(box()).toEqual({ left: 366, top: 281, width: 672, height: 576 })
-    expect(saved()).toEqual({ rect: { x: 366, y: 281, w: 672, h: 576 } })
+    expect(box()).toEqual({ left: 350, top: 251, width: 704, height: 640 })
+    expect(saved()).toEqual({ rect: { x: 350, y: 251, w: 704, h: 640 } })
     // Dropped past an edge, it stays on screen.
     await pointer(header, 'pointerdown', 400, 290)
     await pointer(panel, 'pointermove', 400, 890)
     await pointer(panel, 'pointerup', 400, 890)
-    expect(box().top).toBe(900 - 576 - 8)
+    expect(box().top).toBe(900 - 640 - 8)
     expect(panel.style.transition).toBe('')
   } finally {
     await dom.cleanup()
@@ -142,7 +142,9 @@ test('the corner handle resizes and is remembered; arrow keys nudge; double-clic
     expect(box().width).toBe(584)
     await dom.act(async () => handle.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true })))
     expect(saved()).toBeNull()
-    expect(panel.style.top).toBe('160px')
+    // Re-measured at its default size (a ResizeObserver does this in a browser), it's centered again.
+    await dom.act(async () => dom.window.dispatchEvent(new dom.window.Event('resize')))
+    expect(panel.style.top).toBe(`${(900 - 640) / 2}px`)
   } finally {
     await dom.cleanup()
   }
