@@ -170,6 +170,74 @@ fixture
 check "$(test -e "$HOST_MIGRATE_BACKUP_ROOT/PENDING" && echo pending || echo clear)" pending 'runtime failure retains journal'
 host_migrate_reconcile
 assert_bridge
+# A different bridge must not bypass owned-sudoers validation.
+fixture
+printf '# unexpected local grant\n' >>"$HL_SUDOERS"
+if (host_migrate_needed "$SRC_DEST/releases/final") >"$SCRATCH/early-sudoers.log" 2>&1; then
+ echo 'FAIL: an existing compatibility link bypassed sudoers validation' >&2; exit 1
+fi
+PASS=$((PASS+1))
+check "$([[ -e $HOST_MIGRATE_BACKUP_ROOT/PENDING ]] && echo pending || echo absent)" absent 'unknown sudoers plus links refuses before journal'
+fixture
+host_migration_host_layout_fin_needed "$SRC_DEST/releases/final"
+printf '# drift after inventory\n' >>"$HL_SUDOERS"
+if (_hfin_plan "$SCRATCH/rejected-plan" "$SRC_DEST/releases/final") >"$SCRATCH/plan-sudoers.log" 2>&1; then
+ echo 'FAIL: planning accepted sudoers drift after inventory' >&2; exit 1
+fi
+PASS=$((PASS+1))
+check "$([[ -e $SCRATCH/rejected-plan/PLANNED ]] && echo planned || echo absent)" absent 'sudoers drift cannot publish mutation plan'
+# A readable environment without HOME_DIR defaults; failed reads never do.
+fixture
+printf 'OTHER_KEY=value\n' >"$SRC_DEST/.env"
+check "$(_hfin_links | tail -1)" "$FICUS_HOST_ROOT/root/$HL_LEGACY_HOME_NAME"$'\t'"$FICUS_HOST_ROOT/root/$HL_NEW_HOME_NAME" 'absent HOME_DIR defaults from readable env'
+rm "$SRC_DEST/.env"
+if (host_migrate_needed "$SRC_DEST/releases/final") >"$SCRATCH/missing-env.log" 2>&1; then
+ echo 'FAIL: missing environment was treated as default HOME_DIR' >&2; exit 1
+fi
+PASS=$((PASS+1))
+check "$([[ -e $HOST_MIGRATE_BACKUP_ROOT/PENDING ]] && echo pending || echo absent)" absent 'missing env refuses before journal publication'
+fixture
+printf 'PRIVATE_VALUE=fin-secret-do-not-log\n' >>"$SRC_DEST/.env"
+if (cat() { [[ $* != "-- $SRC_DEST/.env" ]] || return 1; command cat "$@"; }; host_migrate_needed "$SRC_DEST/releases/final") >"$SCRATCH/unreadable-env.log" 2>&1; then
+ echo 'FAIL: failed environment read was treated as default HOME_DIR' >&2; exit 1
+fi
+PASS=$((PASS+1))
+grep -q 'fin-secret-do-not-log' "$SCRATCH/unreadable-env.log" && exit 1
+PASS=$((PASS+1))
+check "$([[ -e $HOST_MIGRATE_BACKUP_ROOT/PENDING ]] && echo pending || echo absent)" absent 'unreadable env refuses before journal publication'
+# Partially finalized hosts must still schedule cleanup of owned remnants.
+without_links_or_aliases() {
+ local from to unit
+ while IFS=$'\t' read -r from to; do rm "$from"; done < <(_hfin_links)
+ for unit in "$HL_UNIT_API.service" "$HL_UNIT_WORKER.service" "$HL_UNIT_BACKUP.service" "$HL_UNIT_BACKUP.timer"; do
+  sed -i '/^Alias=/d' "$FICUS_SYSTEMD_UNIT_DIR/$unit"
+  systemctl reenable "$unit"
+ done
+}
+fixture
+without_links_or_aliases
+HL_BRIDGE_ALIASES=0 host_layout_sudoers_content svc >"$HL_SUDOERS"
+check "$(host_migration_host_layout_fin_needed "$SRC_DEST/releases/final" && echo needed || echo current)" needed 'legacy marker alone still needs finalize'
+host_migrate "$SRC_DEST/releases/final"
+check "$([[ -e $SRC_DEST/releases/bridge/$HL_LEGACY_RELEASE_MARKER ]] && echo old || echo absent)" absent 'marker-only finalize removes old marker'
+host_migrate_reconcile
+check "$(cat "$SRC_DEST/releases/bridge/$HL_LEGACY_RELEASE_MARKER")" marker 'marker-only inverse restores original'
+fixture
+without_links_or_aliases
+rm "$SRC_DEST/releases/bridge/$HL_LEGACY_RELEASE_MARKER"
+check "$(host_migration_host_layout_fin_needed "$SRC_DEST/releases/final" && echo needed || echo current)" needed 'owned legacy sudoers alone still needs finalize'
+cp "$HL_SUDOERS" "$SCRATCH/sudoers-only.before"
+host_migrate "$SRC_DEST/releases/final"
+check "$(grep -c "$HL_LEGACY_UNIT_PREFIX" "$HL_SUDOERS" || :)" 0 'sudoers-only finalize removes legacy grant'
+check "$(host_migration_host_layout_fin_needed "$SRC_DEST/releases/final" && echo needed || echo current)" current 'canonical-only result no longer needs finalize'
+host_migrate_reconcile
+cmp "$HL_SUDOERS" "$SCRATCH/sudoers-only.before"; PASS=$((PASS+1))
+printf '# altered owned rule\n' >>"$HL_SUDOERS"
+if (host_migrate_needed "$SRC_DEST/releases/final") >"$SCRATCH/foreign-sudoers.log" 2>&1; then
+ echo 'FAIL: unrecognized legacy sudoers was silently treated as finalized' >&2; exit 1
+fi
+PASS=$((PASS+1))
+check "$([[ -e $HOST_MIGRATE_BACKUP_ROOT/PENDING ]] && echo pending || echo absent)" absent 'unrecognized legacy sudoers refuses before mutation'
 # An in-flight backup must finish before any finalize host mutation.
 fixture
 echo active >"$FIN_STATE/$HL_UNIT_BACKUP.service"

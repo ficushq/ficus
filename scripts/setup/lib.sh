@@ -6611,12 +6611,16 @@ require_host_layout_ready() { # [RELEASE_DIR] [DECLARED_LAYOUT]
 }
 
 _hfin_links() { # exact link path<TAB>target pairs, children before parents
-  local home user_home
+  local home='' user_home env_bytes line
   _hl_paths
   printf '%s\t%s\n' "${_HLN_SETUP}/${HL_LEGACY_SETUP_YAML}" "${HL_NEW_SETUP_YAML}" \
     "${_HLO_SETUP}" "${_HLN_SETUP}" "${_HLO_ETC}" "${_HLN_ETC}" \
     "${_HLO_DEST}" "${_HLN_DEST}" "${_HLO_SCRIPT}" "${_HLN_SCRIPT##*/}"
-  home=$(envfile_get "${SRC_DEST}/.env" HOME_DIR) || home=''
+  # Missing keys may default; a missing, unreadable or partial file may not.
+  [[ -f ${SRC_DEST}/.env ]] && read_file_exact "${SRC_DEST}/.env" env_bytes || return 1
+  while IFS= read -r line || [[ -n ${line} ]]; do
+    [[ ${line} != HOME_DIR=* ]] || home=${line#HOME_DIR=}
+  done <<<"${env_bytes}"
   if [[ -z ${home} || ${home} == '~' || ${home} == '~/'* ]]; then
     user_home=$(managed_user_home "${RUN_USER:-root}") || return 1
     case ${home} in
@@ -6634,10 +6638,31 @@ _hfin_links() { # exact link path<TAB>target pairs, children before parents
   fi
 }
 
+# Only the generated update grant is owned by this migration. Validate even
+# when some other bridge would already make finalize necessary.
+_hfin_sudoers_state() {
+  local sudoers user expected
+  if [[ ! -e ${HL_SUDOERS} && ! -L ${HL_SUDOERS} ]]; then printf 'absent\n'; return; fi
+  [[ -f ${HL_SUDOERS} && ! -L ${HL_SUDOERS} ]] && read_file_exact "${HL_SUDOERS}" sudoers || {
+    log_error 'host_layout_fin: could not inventory update sudoers'; return 1;
+  }
+  user=${sudoers%%[[:space:]]*}
+  [[ ${user} =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || {
+    log_error 'host_layout_fin: unrecognized update sudoers'; return 1;
+  }
+  expected=$(HL_BRIDGE_ALIASES=1 host_layout_sudoers_content "${user}") || return 1
+  if [[ ${sudoers} == "${expected}"$'\n' ]]; then printf 'bridge\n'; return; fi
+  expected=$(HL_BRIDGE_ALIASES=0 host_layout_sudoers_content "${user}") || return 1
+  if [[ ${sudoers} == "${expected}"$'\n' ]]; then printf 'canonical\n'; return; fi
+  log_error 'host_layout_fin: unrecognized update sudoers'
+  return 1
+}
+
 host_migration_host_layout_fin_needed() { # RELEASE_DIR (read-only)
   [[ $(host_layout_detect) == 2 && $(core_release_host_layout "$1") == 2 ]] || return 1
-  local links from to unit
+  local links from to unit marker sudoers_state
   links=$(_hfin_links) || die 'host_layout_fin: could not inventory HOME_DIR compatibility links — nothing was changed'
+  sudoers_state=$(_hfin_sudoers_state) || die 'host_layout_fin: inspect update sudoers before finalizing — nothing was changed'
   while IFS=$'\t' read -r from to; do
     [[ -L ${from} && $(readlink -- "${from}") == "${to}" ]] && return 0
   done <<<"${links}"
@@ -6645,7 +6670,12 @@ host_migration_host_layout_fin_needed() { # RELEASE_DIR (read-only)
     [[ ! -f ${FICUS_SYSTEMD_UNIT_DIR}/${unit} ]] ||
       ! grep -q '^Alias=' "${FICUS_SYSTEMD_UNIT_DIR}/${unit}" || return 0
   done
-  return 1
+  # An interrupted/manual cleanup can leave only these owned remnants.
+  # Missing canonical marker counterparts are rejected by the read-only plan.
+  for marker in "${SRC_DEST}"/releases/*/"${HL_LEGACY_RELEASE_MARKER}"; do
+    [[ ! -f ${marker} || -L ${marker} ]] || return 0
+  done
+  [[ ${sudoers_state} == bridge ]]
 }
 
 _hfin_seam() { # checkpoint (fixtures only)
@@ -6713,6 +6743,7 @@ _hfin_save_extra() { # FINDIR PATH (intent + verified private byte copy)
 
 _hfin_plan() { # FINDIR RELEASE_DIR (no host mutations)
   local fin=$1 release=$2 links from to unit enabled active marker
+  _hfin_sudoers_state >/dev/null || return 1
   # Core rendering writes both units: never create an unjournaled missing unit.
   for unit in "${HL_UNIT_API}.service" "${HL_UNIT_WORKER}.service"; do
     [[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${unit} && ! -L ${FICUS_SYSTEMD_UNIT_DIR}/${unit} ]] || return 1
