@@ -9,12 +9,22 @@ export const CLAUDE_CODE_TOO_OLD = 'Claude Code is too old'
 const TOO_OLD = /does not support this model|or newer is required/i
 const SIGN_IN = /failed to authenticate|oauth session expired|please run \/login|invalid api key|not logged in/i
 
+/** Only a provider refusal, not a quotation or ordinary assistant/tool output. */
+export function isClaudeCodePlanLimit(text: string): boolean {
+  return /^(?:Claude Code (?:rate limit|usage limit exhausted):\s*)?you['’]ve hit your (?:session|weekly) limit\b/i.test(
+    text.trim()
+  )
+}
+
 /** The error text a failed Claude Code turn reports, naming the `claude` it ran. */
 export function describeClaudeCodeFailure(text: string, code?: string, executable?: string): string {
   const ran = executable ? ` (ran ${executable})` : ''
   if (TOO_OLD.test(text)) return `${CLAUDE_CODE_TOO_OLD}${ran}: ${text} Update it with \`claude update\`.`
   if (code === 'authentication_failed' || SIGN_IN.test(text))
     return `${CLAUDE_CODE_SIGN_IN_FAILED}${ran}: ${text} Sign in again with \`claude auth login\`.`
+  // Pi retries the generic rate-limit label before Core sees the settled error. Use its
+  // existing terminal 'limit exhausted' signal for known hard windows, keeping the reset prose.
+  if (isClaudeCodePlanLimit(text)) return `Claude Code usage limit exhausted: ${text}`
   // Keep the structured upstream code when its prose alone is not recognizable.
   if (code === 'rate_limit') return `Claude Code rate limit: ${text}`
   return text

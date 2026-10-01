@@ -705,3 +705,45 @@ describe('Claude Code session window exhaustion', () => {
     expect(classifyCaughtProviderError('Session limit configuration is invalid')).toBeNull()
   })
 })
+
+describe('Claude Code weekly quota reset', () => {
+  const now = Date.parse('2026-10-01T18:00:00Z')
+  const text = "You've hit your weekly limit · resets Oct 6, 6am (UTC)"
+  test('raw and adapter-prefixed errors are hard exhaustion until the announced date', () => {
+    for (const error of [text, new Error(text), `Claude Code rate limit: ${text}`]) {
+      expect(classifyCaughtProviderError(error, { now })).toEqual({
+        kind: 'plan-credit',
+        retryAt: Date.parse('2026-10-06T06:00:00Z'),
+      })
+    }
+  })
+  test('handles year rollover without interpreting stale dates as next year', () => {
+    expect(
+      classifyCaughtProviderError('You’ve hit your weekly limit · resets Jan 2, 12am (UTC)', {
+        now: Date.parse('2026-12-30T18:00:00Z'),
+      })?.retryAt
+    ).toBe(Date.parse('2027-01-02T00:00:00Z'))
+  })
+  test('missing, ambiguous, invalid and stale dates retain the plan-credit default', () => {
+    for (const suffix of [
+      '',
+      'resets Oct 6, 6am',
+      'resets Oct 6, 6am (America/New_York)',
+      'resets Feb 30, 6am (UTC)',
+      'resets Oct 6, 13am (UTC)',
+      'resets Oct 6, 6:60am (UTC)',
+      'resets Sep 30, 6am (UTC)',
+      'resets Oct 1, 6am (UTC)',
+    ]) {
+      expect(classifyProviderError(`You've hit your weekly limit · ${suffix}`, { now })).toMatchObject({
+        reason: 'plan-credit',
+        cooldownMs: 30 * 60_000,
+        retryAt: undefined,
+      })
+    }
+  })
+  test('does not mistake quoted quota prose or configuration text for a provider refusal', () => {
+    expect(classifyCaughtProviderError(`The tool printed: "${text}"`, { now })).toBeNull()
+    expect(classifyCaughtProviderError('Weekly limit configuration is invalid', { now })).toBeNull()
+  })
+})

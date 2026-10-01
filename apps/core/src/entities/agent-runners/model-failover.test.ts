@@ -5,6 +5,8 @@ import * as modelSelection from '../../services/model-selection'
 import * as accountStore from '../../services/agent/account-store'
 import * as accountSelection from '../../services/agent/account-selection'
 import { CLAUDE_CODE_ACCOUNT_ID } from '../../services/agent/claude-code/account'
+import { describeClaudeCodeFailure } from '../../services/agent/claude-code/failures'
+import { routeFailure } from '../../services/execution/failure-routing'
 
 function makeDeps(overrides: Partial<ModelFailoverDeps> = {}): ModelFailoverDeps {
   return {
@@ -241,3 +243,75 @@ it('moves a revoked ChatGPT sign-in to the next model and parks only that accoun
     resetProviderHealthForTests()
   }
 })
+
+for (const fallback of [true, false]) {
+  it(`weekly Claude Code exhaustion ${fallback ? 'fails over once' : 'stops without fallback'} and preserves account reset`, async () => {
+    resetProviderHealthForTests()
+    // The singleton health registry owns its real clock. Keep this reset in the
+    // future; the classifier/bridge tests pin the exact reported Oct 6 fixture.
+    const now = Date.now()
+    const reset = new Date(now + 5 * 24 * 60 * 60_000)
+    reset.setUTCHours(6, 0, 0, 0)
+    const date = reset.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+    const clock = spyOn(Date, 'now').mockReturnValue(now)
+    const next = 'openai-codex:gpt-6-astra:high'
+    const current = 'anthropic:claude-sonnet-5'
+    const selection = spyOn(modelSelection, 'selectModelSpecForCurrentEnv').mockImplementation(() => {
+      if (!fallback) throw new Error('No usable model: provider exhausted')
+      return { selected: next, candidates: [] }
+    })
+    const read = spyOn(accountStore, 'readAccountStore').mockReturnValue({ version: 1, accounts: {} })
+    const selectAccount = spyOn(accountSelection, 'selectAccount').mockReturnValue(null)
+    const modelCalls: unknown[] = []
+    const events: any[] = []
+    let resent = 0
+    const session = {
+      accountId: CLAUDE_CODE_ACCOUNT_ID as string | undefined,
+      authBackend: { selectAccount: () => {} },
+      pi: {
+        getContextUsage: () => undefined,
+        setModel: async (model: unknown) => {
+          modelCalls.push(model)
+        },
+        setThinkingLevel: () => {},
+      },
+    }
+    const coordinator = new ModelFailoverCoordinator(
+      makeDeps({
+        getSession: () => session as never,
+        getBuffer: () => ({ push: (event: unknown) => events.push(event) }) as never,
+        getCollector: () => ({ reset: () => {} }) as never,
+        resendPrompt: async () => {
+          resent++
+        },
+      })
+    )
+    try {
+      await coordinator.beginTurn(fallback ? `${current},${next}` : current, current)
+      const error = describeClaudeCodeFailure(`You've hit your weekly limit · resets ${date}, 6am (UTC)`, 'rate_limit')
+      expect(await coordinator.attempt(error)).toBe(fallback)
+      expect(coordinator.currentSelectedSpec).toBe(fallback ? next : current)
+      expect(modelCalls).toHaveLength(fallback ? 1 : 0)
+      expect(resent).toBe(fallback ? 1 : 0)
+      expect(providerHealth.getRecord('anthropic', CLAUDE_CODE_ACCOUNT_ID)).toMatchObject({
+        kind: 'plan-credit',
+        retryAt: reset.getTime(),
+      })
+      expect(providerHealth.isAccountHealthy('anthropic', CLAUDE_CODE_ACCOUNT_ID)).toBe(false)
+      expect(providerHealth.getRecord('anthropic')).toBeUndefined()
+      if (fallback) {
+        const mins = Math.round((reset.getTime() - now) / 60_000)
+        expect(events[0]?.text).toBe(`Provider anthropic exhausted — failed over to ${next}. (retry in ~${mins}m)`)
+      } else {
+        expect(events).toHaveLength(0)
+        expect(routeFailure(error).disposition).toMatchObject({ status: 'waiting-input' })
+      }
+    } finally {
+      clock.mockRestore()
+      selection.mockRestore()
+      read.mockRestore()
+      selectAccount.mockRestore()
+      resetProviderHealthForTests()
+    }
+  })
+}

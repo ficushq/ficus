@@ -287,7 +287,7 @@ class Bridge {
       if (stop) this.completed(turn)
       return
     }
-    if (message.type === 'assistant' && message.error && this.turn && !this.turn.done) {
+    if (message.type === 'assistant' && !message.parent_tool_use_id && message.error && this.turn && !this.turn.done) {
       // An API error (rate limit, billing, auth) arrives as a synthetic assistant message.
       const text = message.message.content
         .map((part: any) => (part.type === 'text' ? part.text : ''))
