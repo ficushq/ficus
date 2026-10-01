@@ -829,12 +829,6 @@ describe('localDeployment proxy', () => {
     })
   })
 
-  // Real sockets end to end: an app upstream that compresses, the proxy served
-  // by Bun.serve as Core serves it, and a client that reads the raw wire bytes
-  // (decompress: false) and decodes them per the Content-Encoding it received,
-  // as a browser does. Bun's default fetch decodes the body but kept the
-  // upstream Content-Encoding, which browsers reject as
-  // ERR_CONTENT_DECODING_FAILED.
   // Core's server idle timeout (index.ts) closed the browser's connection while a
   // slow app was still answering. Scaled down: the server idles out at 1 s (Bun
   // checks every few seconds), the app answers after 6 s.
@@ -897,6 +891,12 @@ describe('localDeployment proxy', () => {
     }, 30_000)
   })
 
+  // Real sockets end to end: an app upstream that compresses, the proxy served
+  // by Bun.serve as Core serves it, and a client that reads the raw wire bytes
+  // (decompress: false) and decodes them per the Content-Encoding it received,
+  // as a browser does. Bun's default fetch decodes the body but kept the
+  // upstream Content-Encoding, which browsers reject as
+  // ERR_CONTENT_DECODING_FAILED.
   describe('compressed upstream responses', () => {
     const asset = 'body{color:red}\n'.repeat(400)
     const encoders: Record<string, (input: string) => Uint8Array<ArrayBuffer>> = {
