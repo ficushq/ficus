@@ -8,6 +8,7 @@ import { WorkStream } from '../../entities/WorkStream'
 import { prepareRepository, type WorktreeOwnership } from './repository-setup'
 import { claimWorktreeCleanup } from './worktree-cleanup-store'
 import * as reconciler from './worktree-cleanup-reconciler'
+import { WorktreeDeliveryUnprovenError } from './worktree-cleanup-delivery'
 let root: string, squadId: string, streamId: string, head: string
 let ownership: WorktreeOwnership
 let metadata: Record<string, unknown>
@@ -347,4 +348,42 @@ test('binding mismatches defer before provider or sandbox calls and report recov
   expect(calls).toBe(0)
   expect(await job()).toMatchObject({ status: 'deferred', operationId: null })
   expect((await job()).reason).toContain('cleanup inspect')
+})
+
+test('a delivery refusal persists its sanitized reason and keeps the worktree; unexpected errors stay generic', async () => {
+  const notified: string[] = []
+  await processJob({
+    verify: async () => {
+      throw new WorktreeDeliveryUnprovenError('Exact remote recovery reference is unavailable')
+    },
+    notify: async (id: string) => {
+      notified.push(id)
+    },
+  })
+  expect(await job()).toMatchObject({
+    status: 'deferred',
+    operationId: null,
+    attempts: 1,
+    reason:
+      'Delivery is not proven: Exact remote recovery reference is unavailable. No removal was dispatched; cleanup will retry.',
+  })
+  expect(notified).toEqual([streamId])
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+
+  // Raw errors (remote output, credentials) never reach the persisted reason.
+  await db
+    .update(worktreeCleanupJobs)
+    .set({ nextAttemptAt: new Date(0) })
+    .where(eq(worktreeCleanupJobs.workStreamId, streamId))
+  await processJob({
+    verify: async () => {
+      throw new Error('fatal: could not read Username; token ghp_secret')
+    },
+  })
+  const generic = await job()
+  expect(generic).toMatchObject({ status: 'deferred', operationId: null, attempts: 2 })
+  expect(generic.reason).toBe(
+    'Delivery or runtime verification is unavailable. No removal was dispatched; cleanup will retry.'
+  )
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
 })

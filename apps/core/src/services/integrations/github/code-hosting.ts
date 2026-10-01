@@ -6,7 +6,7 @@ import {
   type ResolvedTrackedResource,
 } from '@ficus/shared'
 import { resolveGitHubRelayAssignment } from './resolve-connection'
-import type { CodeHostingAdapter } from '../code-hosting/registry'
+import type { CodeHostingAdapter, RecoveryTarget } from '../code-hosting/registry'
 import type { TrackedResourceAdapter } from '../tracked-resources/registry'
 import { githubApiGet } from '../../github/api-client'
 
@@ -91,6 +91,24 @@ function branchChangeRequests(pulls: Array<Record<string, any>>): BranchChangeRe
   })
 }
 
+/** The ref (without `refs/`) for a recovery target, or null for anything not an exact, well-formed name. */
+function recoveryRef(target: RecoveryTarget): string | null {
+  if ('changeRequest' in target)
+    return Number.isSafeInteger(target.changeRequest) && target.changeRequest > 0
+      ? `pull/${target.changeRequest}/head`
+      : null
+  const branch = target.branch
+  const valid =
+    typeof branch === 'string' &&
+    branch !== '' &&
+    ![...branch].some((char) => char <= ' ' || char === '\x7f' || '~^:?*[\\'.includes(char)) &&
+    !branch.split('/').some((part) => !part || part.startsWith('.') || part.endsWith('.lock')) &&
+    !branch.includes('..') &&
+    !branch.includes('@{') &&
+    !branch.endsWith('.')
+  return valid ? `heads/${branch}` : null
+}
+
 export const githubCodeHostingAdapter: CodeHostingAdapter = {
   integration: 'github',
   validateRepository,
@@ -127,6 +145,25 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
       reference.connectionId
     )
     return !!comparison && ['identical', 'behind'].includes(comparison.status)
+  },
+  async recoveryHead(reference, squadId, target) {
+    const ref = recoveryRef(target)
+    if (!ref) return null
+    // The single-ref endpoint answers only an exact match: the same ref `git ls-remote` advertises,
+    // including the hidden refs/pull/<n>/head, authorized by the squad connection instead of git.
+    const found = await githubApiGet<{ ref?: unknown; object?: { sha?: unknown; type?: unknown } }>(
+      `/repos/${reference.repository}/git/ref/${ref.split('/').map(encodeURIComponent).join('/')}`,
+      squadId,
+      reference.connectionId
+    )
+    const sha = found?.object?.sha
+    return !Array.isArray(found) &&
+      found?.ref === `refs/${ref}` &&
+      found.object?.type === 'commit' &&
+      typeof sha === 'string' &&
+      /^[a-f0-9]{40}$/.test(sha)
+      ? sha
+      : null
   },
   subscriptions(reference) {
     return PULL_REQUEST_EVENTS.map((event) => ({

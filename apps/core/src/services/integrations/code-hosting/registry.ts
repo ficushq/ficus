@@ -12,6 +12,9 @@ import {
 } from '@ficus/shared'
 import { subscriptionTargetsResource, trackedResourceRegistry } from '../tracked-resources'
 
+/** An exact code-host reference that keeps a delivered commit recoverable after local removal. */
+export type RecoveryTarget = { changeRequest: number } | { branch: string }
+
 export interface CodeHostingAdapter {
   integration: string
   validateRepository(repository: string): boolean
@@ -30,6 +33,12 @@ export interface CodeHostingAdapter {
     headBranch: string
   ): Promise<BranchChangeRequestCandidate[] | null>
   containsCommit(reference: CodeHostReference, squadId: string, base: string, commit: string): Promise<boolean>
+  /**
+   * The commit the code host currently advertises for one exact recovery reference (a change
+   * request's head ref, or a branch), read with the squad's connection so private repositories
+   * work without git credentials in the sandbox. Null when the reference is unavailable.
+   */
+  recoveryHead(reference: CodeHostReference, squadId: string, target: RecoveryTarget): Promise<string | null>
   subscriptions(reference: CodeHostReference): IntegrationSubscription[]
 }
 

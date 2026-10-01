@@ -17,6 +17,7 @@ test('a new code hosting adapter supplies delivery evidence and events without c
       { number: 7, merged: true, state: 'closed', headBranch: 'feature', baseBranch: 'main' },
     ],
     containsCommit: async (_reference, _squadId, base, commit) => base === 'main' && commit === 'a'.repeat(40),
+    recoveryHead: async () => null,
     subscriptions: (reference) => [
       {
         id: 'code-host-merged',
