@@ -1,16 +1,21 @@
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
 import { createLogger } from '../../lib/infra/logger'
 import { listLiveLocalDeployments } from './local-deployment-service'
-import { refreshLocalDeploymentHealth, restartManagedLocalDeployment } from './local-deployment-health'
+import {
+  LocalDeploymentHealthUnavailableError,
+  refreshLocalDeploymentHealth,
+  restartManagedLocalDeployment,
+  stopLocalDeploymentReadinessChecks,
+} from './local-deployment-health'
+import { drainLocalDeploymentHealthObservations } from './local-deployment-observation'
 
 const log = createLogger('local-deployment-health-poller')
 /**
- * Default reconciliation cadence: 30s, plus each tick's bounded HTTP probes
- * (2s each) and sandbox ensure/session I/O. Runs immediately on worker startup.
- * Managed apps require their own live session AND an HTTP readiness response;
- * an accepting SSH-forward listener alone must never keep a dead app running.
- * Startup also has a short 500ms readiness loop. Recovery attempts remain
- * limited to one per deployment per 30s cooldown, with single-flight launches.
+ * Every read-only observation has a 5s total deadline; ensure/start are owned
+ * separately and cannot hold this tick open. With N apps, observation time per
+ * tick is at most 5N seconds. Accounting for an in-flight tick plus the next
+ * scheduled tick gives a conservative 30 + 10N second correction bound while
+ * Core/DB are responsive. Cleanup and recovery each retain at most two jobs.
  */
 const LOCAL_APP_HEALTH_POLL_INTERVAL_MS = Number(process.env.LOCAL_APP_HEALTH_POLL_INTERVAL_MS) || 30_000
 const LOCAL_APP_RESTART_COOLDOWN_MS = Number(process.env.LOCAL_APP_RESTART_COOLDOWN_MS) || 30_000
@@ -18,6 +23,8 @@ const LOCAL_APP_RESTART_COOLDOWN_MS = Number(process.env.LOCAL_APP_RESTART_COOLD
 const RESTARTABLE_STATUSES = new Set(['crashed', 'unhealthy'] as const)
 
 let runner: PeriodicRunner | null = null
+const recoveries = new Map<string, Promise<void>>()
+const MAX_PENDING_RECOVERIES = 2
 const lastRestartAttempts = new Map<string, number>()
 
 export interface LocalDeploymentHealthReconcileDeps {
@@ -36,24 +43,53 @@ export async function reconcileLocalDeploymentHealth(
   deps: LocalDeploymentHealthReconcileDeps = defaultDeps
 ): Promise<void> {
   const localDeployments = await deps.listLiveLocalDeployments()
+  const liveIds = new Set(localDeployments.map((deployment) => deployment.id))
+  for (const id of lastRestartAttempts.keys())
+    if (!liveIds.has(id) && !recoveries.has(id)) lastRestartAttempts.delete(id)
   for (const localDeployment of localDeployments) {
     try {
       // Hand the row we just listed to the refresh instead of its id: the
       // re-read it would otherwise do returns the same row we already have.
       const refreshed = await deps.refreshLocalDeploymentHealth(localDeployment)
-      if (
-        refreshed.mode === 'managed' &&
-        refreshed.restartPolicy === 'always' &&
-        RESTARTABLE_STATUSES.has(refreshed.status as 'crashed' | 'unhealthy') &&
-        shouldAttemptRestart(refreshed.id)
-      ) {
-        lastRestartAttempts.set(refreshed.id, Date.now())
-        await deps.restartManagedLocalDeployment(refreshed.id)
-      }
+      if (RESTARTABLE_STATUSES.has(refreshed.status as 'crashed' | 'unhealthy')) scheduleRecovery(refreshed, deps)
     } catch (err) {
+      if (err instanceof LocalDeploymentHealthUnavailableError) scheduleRecovery(localDeployment, deps)
       log.warn(`Failed to reconcile localDeployment ${localDeployment.id}:`, err)
     }
   }
+}
+
+function scheduleRecovery(
+  deployment: Awaited<ReturnType<typeof listLiveLocalDeployments>>[number],
+  deps: LocalDeploymentHealthReconcileDeps
+): void {
+  if (
+    deployment.mode !== 'managed' ||
+    deployment.restartPolicy !== 'always' ||
+    deployment.status === 'stopped' ||
+    deployment.archivedAt ||
+    recoveries.has(deployment.id) ||
+    recoveries.size >= MAX_PENDING_RECOVERIES ||
+    !shouldAttemptRestart(deployment.id)
+  )
+    return
+  if (!RESTARTABLE_STATUSES.has(deployment.status as 'crashed' | 'unhealthy') && deployment.status !== 'running') return
+  lastRestartAttempts.set(deployment.id, Date.now())
+  // Own, do not race or abandon, mutating ensure/start. At most two such jobs
+  // may be pending; health observation and future ticks never wait on them.
+  const recovery = Promise.resolve()
+    .then(() => deps.restartManagedLocalDeployment(deployment.id, { onlyIfNeeded: true }))
+    .then(
+      () => {},
+      (error) => log.warn(`Managed localDeployment ${deployment.id} recovery failed:`, error)
+    )
+    .finally(() => recoveries.delete(deployment.id))
+  recoveries.set(deployment.id, recovery)
+}
+
+/** Shutdown/tests must drain owned mutation jobs before disposing fixtures. */
+export async function drainLocalDeploymentRecoveries(): Promise<void> {
+  await Promise.all([...recoveries.values()])
 }
 
 function shouldAttemptRestart(localDeploymentId: string): boolean {
@@ -73,8 +109,10 @@ export function startLocalDeploymentHealthPoller(): void {
 }
 
 export async function stopLocalDeploymentHealthPoller(): Promise<void> {
-  if (!runner) return
-  await runner.stop()
+  if (runner) await runner.stop()
   runner = null
+  await drainLocalDeploymentRecoveries()
+  await stopLocalDeploymentReadinessChecks()
+  await drainLocalDeploymentHealthObservations()
   lastRestartAttempts.clear()
 }

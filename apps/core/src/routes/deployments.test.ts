@@ -2,10 +2,16 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock 
 import { Hono } from 'hono'
 import { eq, like } from 'drizzle-orm'
 import { existsSync } from 'fs'
-import { db, appDeployments, squads } from '../db'
+import { db, appDeployments, squads, localDeployments } from '../db'
 import { Squad } from '../entities/Squad'
 import { getLocalDeployment, updateLocalDeploymentRecord } from '../services/deploy/local-deployment-service'
 import { configureDeploymentsRouteDependencies, deploymentsRouter } from './deployments'
+import {
+  configureLocalDeploymentHealthDependencies,
+  refreshLocalDeploymentHealth,
+} from '../services/deploy/local-deployment-health'
+import { reconcileLocalDeploymentHealth } from '../services/deploy/local-deployment-health-poller'
+import { LocalDeploymentLaunchFailedError } from '../services/deploy/local-deployment-process-supervisor'
 import { SandboxProvisionError } from '../services/sandbox/k8s/provision-errors'
 import { identityMiddleware } from '../middleware/identity'
 import { getSquadWorkspacePath } from '../services/squad/workspace'
@@ -88,6 +94,7 @@ describe('deployments routes', () => {
 
   afterEach(async () => {
     configureDeploymentsRouteDependencies()
+    configureLocalDeploymentHealthDependencies()
     await db.delete(squads).where(like(squads.name, `${testPrefix}%`))
   })
 
@@ -514,7 +521,7 @@ describe('deployments routes', () => {
       supervisor: {
         ...getRouteSupervisor(),
         startManagedLocalDeployment: async () => {
-          throw new Error('tmux unavailable')
+          throw new LocalDeploymentLaunchFailedError()
         },
       } as any,
     })
@@ -824,6 +831,143 @@ describe('deployments routes', () => {
       expect(statusDuringCleanup).toBe('stopped')
     })
   }
+
+  it('does not convert unverified creation health into a proven crash', async () => {
+    const squad = await createTestSquad()
+    let id = ''
+    configureLocalDeploymentHealthDependencies({
+      ensureSquadSandbox: async () => {
+        throw new Error('transport lost')
+      },
+      supervisor: {
+        hasSession: async () => {
+          throw new Error('transport lost')
+        },
+      } as any,
+    })
+    configureDeploymentsRouteDependencies({
+      ensureSquadSandbox: async () => '/workspace',
+      refreshLocalDeploymentHealth,
+      supervisor: {
+        ...getRouteSupervisor(),
+        startManagedLocalDeployment: async (args: any) => {
+          id = args.localDeploymentId
+          return { processId: 'fixture-session' }
+        },
+      } as any,
+    })
+    const response = await app.request(`/api/squads/${squad.id}/local-deployments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(adminUser.token) },
+      body: JSON.stringify({ name: 'web', port: 5173, command: 'fixture' }),
+    })
+    expect(response.status).toBe(400)
+    expect((await getLocalDeployment(id))?.status).toBe('unhealthy')
+  })
+
+  for (const restartPolicy of ['always', 'never'] as const) {
+    it(`excludes recovery while an initial ${restartPolicy} launch is in progress`, async () => {
+      const squad = await createTestSquad()
+      let starts = 0
+      const supervisor = {
+        ...getRouteSupervisor(),
+        hasSession: async () => false,
+        startManagedLocalDeployment: async (args: any) => {
+          starts++
+          if (starts === 1)
+            await reconcileLocalDeploymentHealth({
+              listLiveLocalDeployments: async () => [(await getLocalDeployment(args.localDeploymentId))!],
+              refreshLocalDeploymentHealth,
+              restartManagedLocalDeployment: (await import('../services/deploy/local-deployment-health'))
+                .restartManagedLocalDeployment,
+            })
+          return { processId: 'fixture-session' }
+        },
+      }
+      configureLocalDeploymentHealthDependencies({
+        ensureSquadSandbox: async () => '/workspace',
+        supervisor: supervisor as any,
+        isBoxMigrating: async () => false,
+      })
+      configureDeploymentsRouteDependencies({
+        ensureSquadSandbox: async () => '/workspace',
+        supervisor: supervisor as any,
+      })
+      const response = await app.request(`/api/squads/${squad.id}/local-deployments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(adminUser.token) },
+        body: JSON.stringify({ name: 'web', port: 5173, command: 'fixture', restartPolicy }),
+      })
+      expect(response.status).toBe(201)
+      expect(starts).toBe(1)
+    })
+  }
+
+  for (const unknownOutcome of [false, true]) {
+    it(`reaps creation losing to stop, including unknown outcome=${unknownOutcome}`, async () => {
+      const squad = await createTestSquad()
+      let id = ''
+      let stops = 0
+      configureDeploymentsRouteDependencies({
+        ensureSquadSandbox: async () => '/workspace',
+        supervisor: {
+          ...getRouteSupervisor(),
+          startManagedLocalDeployment: async (args: any) => {
+            id = args.localDeploymentId
+            await updateLocalDeploymentRecord(id, { status: 'stopped', keepSandboxAlive: false })
+            if (unknownOutcome) throw Object.assign(new Error('transport lost'), { code: 'BASH_OUTCOME_UNKNOWN' })
+            return { processId: 'fixture-session' }
+          },
+          stopLocalDeployment: async () => {
+            stops++
+          },
+        } as any,
+      })
+      const response = await app.request(`/api/squads/${squad.id}/local-deployments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(adminUser.token) },
+        body: JSON.stringify({ name: 'web', port: 5173, command: 'fixture' }),
+      })
+      expect(response.status).toBe(unknownOutcome ? 400 : 201)
+      expect((await getLocalDeployment(id))?.status).toBe('stopped')
+      expect(stops).toBe(1)
+    })
+  }
+
+  it('observes readiness while a creation launch is owned instead of suppressing health indefinitely', async () => {
+    const squad = await createTestSquad()
+    let observedStatus = ''
+    const supervisor = {
+      ...getRouteSupervisor(),
+      hasSession: async () => true,
+      startManagedLocalDeployment: async (args: any) => {
+        await db
+          .update(localDeployments)
+          .set({ createdAt: new Date(Date.now() - 11_000) })
+          .where(eq(localDeployments.id, args.localDeploymentId))
+        observedStatus = (await refreshLocalDeploymentHealth(args.localDeploymentId)).status
+        return { processId: `tau-local-deployment-${args.localDeploymentId.slice(0, 8)}` }
+      },
+    }
+    configureLocalDeploymentHealthDependencies({
+      supervisor: supervisor as any,
+      probeLocalDeploymentHttp: async () => true,
+      resolveLocalDeploymentTarget: async () => ({ host: 'localhost', port: 5173 }),
+    })
+    configureDeploymentsRouteDependencies({
+      ensureSquadSandbox: async () => '/workspace',
+      supervisor: supervisor as any,
+      refreshLocalDeploymentHealth,
+    })
+    const response = await app.request(`/api/squads/${squad.id}/local-deployments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(adminUser.token) },
+      body: JSON.stringify({ name: 'web', port: 5173, command: 'fixture' }),
+    })
+    expect(response.status).toBe(201)
+    expect(observedStatus).toBe('running')
+    expect((await response.json()).status).toBe('running')
+  })
 
   // ── Attached logPath tests ──────────────────────────────────────────────────
 

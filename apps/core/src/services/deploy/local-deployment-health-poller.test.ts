@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { like } from 'drizzle-orm'
+import { eq, like } from 'drizzle-orm'
 import net from 'node:net'
 import http from 'node:http'
 import type { LocalDeployment } from '@ficus/shared'
-import { db, squads } from '../../db'
+import { db, squads, localDeployments } from '../../db'
 import { Squad } from '../../entities/Squad'
 import { createLocalDeployment, getLocalDeployment, updateLocalDeploymentRecord } from './local-deployment-service'
 import {
@@ -11,8 +11,10 @@ import {
   refreshLocalDeploymentHealth,
   restartManagedLocalDeployment,
 } from './local-deployment-health'
+import { drainLocalDeploymentHealthObservations } from './local-deployment-observation'
 import { listPeriodicRunners } from '../../lib/infra/PeriodicRunner'
 import {
+  drainLocalDeploymentRecoveries,
   reconcileLocalDeploymentHealth,
   startLocalDeploymentHealthPoller,
   stopLocalDeploymentHealthPoller,
@@ -78,6 +80,7 @@ describe('local deployment health poller', () => {
       },
     })
 
+    await drainLocalDeploymentRecoveries()
     expect(restarts).toEqual([crashed.id])
   })
   it('automatically recovers after box loss and reconnect without an operator restart', async () => {
@@ -96,7 +99,10 @@ describe('local deployment health poller', () => {
       probeLocalDeploymentHttp: async () => sessionAlive,
       resolveLocalDeploymentTarget: async () => ({ host: 'localhost', port: 5173 }),
       supervisor: {
-        hasSession: async () => sessionAlive,
+        hasSession: async () => {
+          if (!boxAvailable) throw new Error('fixture box offline')
+          return sessionAlive
+        },
         startManagedLocalDeployment: async () => {
           starts++
           sessionAlive = true
@@ -116,13 +122,17 @@ describe('local deployment health poller', () => {
     await reconcile()
     expect((await getLocalDeployment(deployment.id))?.status).toBe('unhealthy')
     expect(starts).toBe(0)
+    await drainLocalDeploymentRecoveries()
     boxAvailable = true
+    await stopLocalDeploymentHealthPoller()
     await Promise.all([reconcile(), reconcile()])
+    await drainLocalDeploymentRecoveries()
     expect(starts).toBe(1)
     expect((await refreshLocalDeploymentHealth(deployment.id)).status).toBe('running')
     expect((await getLocalDeployment(deployment.id))?.restartCount).toBe(54)
     // Core may forget its box tracking, but the external session is alive.
     await reconcile()
+    await drainLocalDeploymentRecoveries()
     expect(starts).toBe(1)
   })
 
@@ -180,6 +190,7 @@ describe('local deployment health poller', () => {
         refreshLocalDeploymentHealth,
         restartManagedLocalDeployment,
       })
+      await drainLocalDeploymentRecoveries()
       expect(starts).toBe(1)
       expect((await refreshLocalDeploymentHealth(deployment.id)).status).toBe('running')
     } finally {
@@ -190,6 +201,129 @@ describe('local deployment health poller', () => {
       }
       if (forward.listening) await new Promise<void>((resolve) => forward.close(() => resolve()))
     }
+  })
+
+  it('continues ticks and a second app while session observation and owned ensure stall', async () => {
+    const squad = await createTestSquad('stalled-observation-and-ensure')
+    const first = await createLocalDeployment(squad, { name: 'first', port: 5173, command: 'fixture' })
+    const second = await createLocalDeployment(squad, { name: 'second', port: 5174, mode: 'attached' })
+    await updateLocalDeploymentRecord(first.id, { status: 'running', processId: 'fixture-session' })
+    await updateLocalDeploymentRecord(second.id, { status: 'running' })
+    const sessionEntered = Promise.withResolvers<void>()
+    const ensureEntered = Promise.withResolvers<void>()
+    const session = Promise.withResolvers<boolean>()
+    const ensure = Promise.withResolvers<string>()
+    const timeouts: Array<() => void> = []
+    let sessionCalls = 0
+    let ensureCalls = 0
+    let starts = 0
+    configureLocalDeploymentHealthDependencies({
+      scheduleObservationTimeout: (callback) => {
+        timeouts.push(callback)
+        return () => {}
+      },
+      ensureSquadSandbox: async () => {
+        ensureCalls++
+        ensureEntered.resolve()
+        return ensure.promise
+      },
+      supervisor: {
+        hasSession: async () => {
+          sessionCalls++
+          sessionEntered.resolve()
+          return session.promise
+        },
+        startManagedLocalDeployment: async () => {
+          starts++
+          return { processId: 'fixture-session' }
+        },
+        stopLocalDeployment: async () => {},
+      },
+      isBoxMigrating: async () => false,
+      probeLocalDeploymentHttp: async () => true,
+      resolveLocalDeploymentTarget: async () => ({ host: 'localhost', port: 5173 }),
+    })
+    const tick = () =>
+      reconcileLocalDeploymentHealth({
+        listLiveLocalDeployments: async () => [
+          (await getLocalDeployment(first.id))!,
+          (await getLocalDeployment(second.id))!,
+        ],
+        refreshLocalDeploymentHealth,
+        restartManagedLocalDeployment,
+      })
+    const firstTick = tick()
+    try {
+      await sessionEntered.promise
+      timeouts[0]()
+      await firstTick
+      await ensureEntered.promise
+      expect((await getLocalDeployment(first.id))?.status).toBe('unhealthy')
+      expect((await getLocalDeployment(second.id))?.status).toBe('running')
+      await tick()
+      expect(sessionCalls).toBe(1)
+      expect(ensureCalls).toBe(1)
+      expect(starts).toBe(0)
+      session.resolve(true)
+      await drainLocalDeploymentHealthObservations()
+      expect((await getLocalDeployment(first.id))?.status).toBe('unhealthy')
+      ensure.resolve('/workspace')
+      await drainLocalDeploymentRecoveries()
+      expect((await getLocalDeployment(first.id))?.status).toBe('running')
+      expect(starts).toBe(0) // connectivity returned; no healthy app was killed
+    } finally {
+      session.resolve(true)
+      ensure.resolve('/workspace')
+      await firstTick
+      await drainLocalDeploymentRecoveries()
+      await drainLocalDeploymentHealthObservations()
+    }
+  })
+
+  it('recovers an incomplete initial row after Core loss without reviving a never-restart row', async () => {
+    const squad = await createTestSquad('core-lost-initial-row')
+    const managed = await createLocalDeployment(squad, { name: 'managed', port: 5173, command: 'fixture' })
+    const never = await createLocalDeployment(squad, {
+      name: 'never',
+      port: 5174,
+      command: 'fixture',
+      restartPolicy: 'never',
+    })
+    for (const deployment of [managed, never])
+      await db
+        .update(localDeployments)
+        .set({ createdAt: new Date(Date.now() - 11_000) })
+        .where(eq(localDeployments.id, deployment.id))
+    const sessions = new Set<string>()
+    const starts: string[] = []
+    configureLocalDeploymentHealthDependencies({
+      ensureSquadSandbox: async () => '/workspace',
+      isBoxMigrating: async () => false,
+      supervisor: {
+        hasSession: async (_id, processId) => sessions.has(processId),
+        startManagedLocalDeployment: async (args) => {
+          starts.push(args.localDeploymentId)
+          const processId = `tau-local-deployment-${args.localDeploymentId.slice(0, 8)}`
+          sessions.add(processId)
+          return { processId }
+        },
+        stopLocalDeployment: async () => {},
+      },
+      probeLocalDeploymentHttp: async () => true,
+      resolveLocalDeploymentTarget: async () => ({ host: 'localhost', port: 5173 }),
+    })
+    await reconcileLocalDeploymentHealth({
+      listLiveLocalDeployments: async () => [
+        (await getLocalDeployment(managed.id))!,
+        (await getLocalDeployment(never.id))!,
+      ],
+      refreshLocalDeploymentHealth,
+      restartManagedLocalDeployment,
+    })
+    await drainLocalDeploymentRecoveries()
+    expect(starts).toEqual([managed.id])
+    expect((await refreshLocalDeploymentHealth(managed.id)).status).toBe('running')
+    expect((await getLocalDeployment(never.id))?.status).toBe('crashed')
   })
 
   it('keeps failed recovery attempts behind the restart cooldown', async () => {
@@ -207,6 +341,7 @@ describe('local deployment health poller', () => {
     }
     await Promise.all([reconcileLocalDeploymentHealth(deps), reconcileLocalDeploymentHealth(deps)])
     await reconcileLocalDeploymentHealth(deps)
+    await drainLocalDeploymentRecoveries()
     expect(attempts).toBe(1)
   })
 
