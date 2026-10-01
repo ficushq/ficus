@@ -2,7 +2,7 @@ import { githubOutputAdapter } from '../outputs/github'
 import { listGitHubPrWorkStreamCandidates } from './database-watch-source'
 import { notifyDeliverySnapshotChanged } from './delivery-presentation-store'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, expect, spyOn, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import {
   createBlankWorkflow,
@@ -23,20 +23,25 @@ import {
 import { WorkStream } from '../../../entities/WorkStream'
 import { computeDerivedStates } from '../../work-streams/derived-state'
 import { DbEventPollingCursorStore } from '../db-event-polling-cursor-store'
-import { GitHubPrEventPoller } from './event-poller'
+import { createGitHubPlugin } from './plugin'
+import { GitHubPrWatchPolicy } from './watch-policy'
+import type { EventPollingCapability } from '../types'
 import { listPendingActions } from '../../agents/actions'
 
 const squadId = crypto.randomUUID()
 const connectionId = crypto.randomUUID()
 const key = `${squadId}:${connectionId}:acme/widgets#7`
+let restoreFetch: (() => void) | undefined
 afterEach(async () => {
+  restoreFetch?.()
+  restoreFetch = undefined
   await db.delete(integrationOutputEvents).where(eq(integrationOutputEvents.sourceKey, key))
   await db.delete(integrationEventPollingCursors).where(eq(integrationEventPollingCursors.resourceKey, key))
   await db.delete(workStreams).where(eq(workStreams.squadId, squadId))
   await db.delete(squads).where(eq(squads.id, squadId))
 })
 
-test('actual poll -> durable cursor -> serialized attention supports baseline and same-head changes without activity replay', async () => {
+test('database delivery watch -> plugin parser -> durable cursor -> serialized attention supports baseline and same-head changes without activity replay', async () => {
   await db.insert(squads).values({ id: squadId, name: 'Delivery snapshot test', purpose: 'test' })
   const [row] = await db
     .insert(workStreams)
@@ -67,54 +72,59 @@ test('actual poll -> durable cursor -> serialized attention supports baseline an
     checks = 'SUCCESS',
     merge = 'BLOCKED'
   const head = 'a'.repeat(40)
-  const poller = new GitHubPrEventPoller({
-    resolveCredential: async () => 'fixture',
-    fetch: async (input) => {
-      const path = new URL(input).pathname
-      const body =
-        path === '/graphql'
-          ? {
-              data: {
-                repository: {
-                  pullRequest: {
-                    headRefOid: head,
-                    headRefName: 'work',
-                    baseRefName: 'main',
-                    state: 'OPEN',
-                    isDraft: false,
-                    mergeStateStatus: merge,
-                    reviewDecision: decision,
-                    commits: { nodes: [{ commit: { statusCheckRollup: { state: checks } } }] },
-                  },
+  const fetchMock = spyOn(globalThis, 'fetch').mockImplementation((async (input: Parameters<typeof fetch>[0]) => {
+    const path = new URL(String(input)).pathname
+    const body =
+      path === '/graphql'
+        ? {
+            data: {
+              repository: {
+                pullRequest: {
+                  headRefOid: head,
+                  headRefName: 'work',
+                  baseRefName: 'main',
+                  state: 'OPEN',
+                  isDraft: false,
+                  mergeStateStatus: merge,
+                  reviewDecision: decision,
+                  commits: { nodes: [{ commit: { statusCheckRollup: { state: checks } } }] },
                 },
               },
+            },
+          }
+        : path.endsWith('/pulls/7')
+          ? {
+              id: 7,
+              number: 7,
+              state: 'open',
+              merged: false,
+              head: { sha: head },
+              base: { repo: { full_name: 'acme/widgets' } },
+              requested_reviewers: [],
+              requested_teams: [],
             }
-          : path.endsWith('/pulls/7')
-            ? {
-                id: 7,
-                number: 7,
-                state: 'open',
-                merged: false,
-                head: { sha: head },
-                base: { repo: { full_name: 'acme/widgets' } },
-                requested_reviewers: [],
-                requested_teams: [],
-              }
-            : path.endsWith('/issues/7')
-              ? { number: 7 }
-              : []
-      return new Response(JSON.stringify(body), {
-        headers: { date: new Date().toUTCString(), 'content-type': 'application/json' },
-      })
-    },
+          : path.endsWith('/issues/7')
+            ? { number: 7 }
+            : []
+    return new Response(JSON.stringify(body), {
+      headers: { date: new Date().toUTCString(), 'content-type': 'application/json' },
+    })
+  }) as unknown as typeof fetch)
+  restoreFetch = () => fetchMock.mockRestore()
+  // Use the same database source, watch conversion, and plugin parse boundary as the runner.
+  const policy = new GitHubPrWatchPolicy({
+    listWorkStreams: listGitHubPrWorkStreamCandidates,
+    resolveConnection: async (id, selected) =>
+      id === squadId && selected === connectionId ? { id: connectionId } : undefined,
+    lastRealDeliveries: async () => new Map(),
   })
-  const watch = {
-    id: connectionId,
-    squadId,
-    providerKey: 'github',
-    adapterVersion: 1,
-    configuration: { owner: 'acme', repo: 'widgets', number: 7, deliveryPresentation: true },
-  }
+  const watches = await policy.listWatches()
+  const watch = watches.find((candidate) => candidate.resourceKey === key)!.connection
+  expect(watch.configuration).toMatchObject({ deliveryPresentation: true })
+  const poller = createGitHubPlugin(
+    { currentUser: async () => ({ version: 1, userId: 42, login: 'fixture' }) },
+    async () => 'fixture'
+  ).runtime.provider.capabilities.event_polling! as EventPollingCapability
   const older = new Date(Date.now() - 60_000)
   const [fact] = githubOutputAdapter.normalize({
     type: 'pull_request',

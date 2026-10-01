@@ -60,6 +60,11 @@ export class GitHubPollingProvider implements IntegrationProvider<GitHubPollingC
       owner: config.owner.trim(),
       repo: config.repo.trim(),
       number: Number(config.number),
+      // Synthetic delivery watches pass through this parser at the plugin boundary.
+      // Preserve explicit false; ignore malformed optional values rather than coercing them.
+      ...(typeof config.deliveryPresentation === 'boolean'
+        ? { deliveryPresentation: config.deliveryPresentation }
+        : {}),
       ...(typeof config.lastVerifiedWebhookDeliveryAt === 'string'
         ? { lastVerifiedWebhookDeliveryAt: config.lastVerifiedWebhookDeliveryAt }
         : {}),

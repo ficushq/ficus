@@ -30,6 +30,23 @@ describe('GitHubPollingProvider', () => {
     expect(provider.parseConfig(connection.configuration)).toEqual(connection.configuration)
   })
 
+  test('roundtrips delivery mode and verified webhook metadata without coercion', () => {
+    const provider = new GitHubPollingProvider(async () => undefined)
+    const resource = { owner: 'acme', repo: 'widgets', number: 7 }
+    const lastVerifiedWebhookDeliveryAt = '2026-10-01T21:00:00.000Z'
+    for (const deliveryPresentation of [true, false]) {
+      const config = { ...resource, deliveryPresentation, lastVerifiedWebhookDeliveryAt }
+      expect(provider.parseConfig(config)).toEqual(config)
+      expect(provider.parseConfig(provider.parseConfig(config))).toEqual(config)
+    }
+    for (const deliveryPresentation of [undefined, null, 'true', 'false', 1, 0, {}, []]) {
+      expect(provider.parseConfig({ ...resource, deliveryPresentation, lastVerifiedWebhookDeliveryAt })).toEqual({
+        ...resource,
+        lastVerifiedWebhookDeliveryAt,
+      })
+    }
+  })
+
   test('rejects malformed resource configurations', () => {
     const provider = new GitHubPollingProvider(async () => undefined)
     expect(() => provider.parseConfig({ owner: '', repo: 'x', number: 0 })).toThrow(
