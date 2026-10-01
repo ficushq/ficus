@@ -13,7 +13,8 @@ import {
 } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR } from '../../workspace/dot-dir'
+import { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } from '../../workspace/dot-dir'
+import { getHomeDir } from '../../../lib/utils/home'
 import * as factory from '../factory'
 import {
   boxWorkspaceDotDirCommand,
@@ -1547,6 +1548,32 @@ describe('syncBoxFiles workspace dot dir bridge', () => {
       })
     )
     expect(client.bashes().map((b) => b.command)).toContain(`rm -f -- '${home}/workspace/${WORKSPACE_DOT_DIR}/.env'`)
+  })
+
+  test('an agent whose private dir needs a manual fix fails the sync closed and never prunes the box identity key', async () => {
+    const sandboxId = `agent_dotdir${Date.now()}${Math.random().toString(36).slice(2, 8)}`
+    const root = join(getHomeDir(), 'private', sandboxId)
+    mkdirSync(join(root, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
+    writeFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'identity.pem'), 'KEY STILL IN THE LEGACY DIR')
+    mkdirSync(join(root, WORKSPACE_DOT_DIR))
+    try {
+      const client = new FakeClient()
+      await expect(
+        syncBoxFiles(
+          client as any,
+          sandboxId,
+          soloAgentOpts,
+          fullDeps({
+            box: syncBox({ identity: { hash: 'pushed-before', files: ['identity.pem'] } }),
+            stampBoxSyncedHash: async () => {},
+            readIdentityPem: undefined, // the real manifest reader
+          })
+        )
+      ).rejects.toBeInstanceOf(WorkspaceDotDirConflictError)
+      expect(client.bashes().some((b) => b.command.includes('identity.pem'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   test('a refused move does not fail the sync; an ambiguous bash outcome still stops it', async () => {

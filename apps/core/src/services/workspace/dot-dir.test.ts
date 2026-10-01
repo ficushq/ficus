@@ -17,7 +17,7 @@ import {
   writeSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import {
   LEGACY_WORKSPACE_DOT_DIR,
   WORKSPACE_DOT_DIR,
@@ -28,6 +28,7 @@ import {
   workspaceDotDirsLogLine,
   workspaceDotPath,
   WorkspaceDotDirConflictError,
+  type WorkspaceDotDirConflictKind,
 } from './dot-dir'
 import { getHomeDir } from '../../lib/utils/home'
 import { preparedAgentIdentityHostPath } from '../amtp/agent-identity'
@@ -324,7 +325,12 @@ describe('workspaceDotDirsLogLine', () => {
 })
 
 describe('fail closed: Core never uses .ficus beside an unresolved conflict', () => {
-  function expectConflict(run: () => unknown, reason: string): void {
+  /** Asserts the conflict kind, and that the message is actionable and names no path beyond the workspace id. */
+  function expectConflict(
+    run: () => unknown,
+    kind: WorkspaceDotDirConflictKind,
+    root = squadRoot()
+  ): WorkspaceDotDirConflictError {
     let thrown: unknown
     try {
       run()
@@ -332,17 +338,21 @@ describe('fail closed: Core never uses .ficus beside an unresolved conflict', ()
       thrown = error
     }
     expect(thrown).toBeInstanceOf(WorkspaceDotDirConflictError)
-    expect((thrown as WorkspaceDotDirConflictError).reason).toBe(reason)
-    expect((thrown as Error).message).toContain('needs a manual fix')
+    const error = thrown as WorkspaceDotDirConflictError
+    expect(error.kind).toBe(kind)
+    expect(error.code).toBe('workspace_dot_dir_conflict')
+    expect(error.message).toStartWith(`Workspace ${basename(root)} needs a manual fix to its settings dir: `)
+    expect(error.message).not.toContain(home)
+    return error
   }
 
   test('both real dirs: prepare throws and nothing changes', () => {
     legacyWorkspace(squadRoot(), '.env', 'OLD=1\n')
     mkdirSync(join(squadRoot(), WORKSPACE_DOT_DIR))
 
-    expectConflict(
-      () => prepareWorkspaceDotDir(squadRoot()),
-      `both ${LEGACY_WORKSPACE_DOT_DIR} and ${WORKSPACE_DOT_DIR} exist`
+    const error = expectConflict(() => prepareWorkspaceDotDir(squadRoot()), 'both-present')
+    expect(error.message).toContain(
+      `Merge anything still needed from ${LEGACY_WORKSPACE_DOT_DIR}/ into ${WORKSPACE_DOT_DIR}/, then remove ${LEGACY_WORKSPACE_DOT_DIR}/`
     )
     expect(readFileSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe('OLD=1\n')
   })
@@ -353,7 +363,10 @@ describe('fail closed: Core never uses .ficus beside an unresolved conflict', ()
     mkdirSync(squadRoot(), { recursive: true })
     symlinkSync(outside, join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR))
 
-    expectConflict(() => ensureWorkspaceDotDir(squadRoot()), `${LEGACY_WORKSPACE_DOT_DIR} is a link to ${outside}`)
+    const error = expectConflict(() => ensureWorkspaceDotDir(squadRoot()), 'legacy-link-elsewhere')
+    expect(error.message).toContain('then remove the link')
+    expect(error.message).not.toContain(outside)
+    expect(error.detail).toBe(`${LEGACY_WORKSPACE_DOT_DIR} is a link to ${outside}`)
     expect(existsSync(join(squadRoot(), WORKSPACE_DOT_DIR))).toBe(false)
   })
 
@@ -363,7 +376,9 @@ describe('fail closed: Core never uses .ficus beside an unresolved conflict', ()
     mkdirSync(squadRoot(), { recursive: true })
     symlinkSync(outside, join(squadRoot(), WORKSPACE_DOT_DIR))
 
-    expectConflict(() => ensureWorkspaceDotDir(squadRoot()), `${WORKSPACE_DOT_DIR} is not a directory`)
+    expect(expectConflict(() => ensureWorkspaceDotDir(squadRoot()), 'ficus-not-a-directory').message).toContain(
+      'Replace it with a directory'
+    )
     expect(existsSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR))).toBe(false)
   })
 
@@ -371,7 +386,7 @@ describe('fail closed: Core never uses .ficus beside an unresolved conflict', ()
     legacyWorkspace(squadRoot())
     chmodSync(squadRoot(), 0o555)
     try {
-      expectConflict(() => ensureWorkspaceDotDir(squadRoot()), `${LEGACY_WORKSPACE_DOT_DIR} could not be moved`)
+      expectConflict(() => ensureWorkspaceDotDir(squadRoot()), 'legacy-not-moved')
       expect(existsSync(join(squadRoot(), WORKSPACE_DOT_DIR))).toBe(false)
     } finally {
       chmodSync(squadRoot(), 0o755)
@@ -383,9 +398,8 @@ describe('fail closed: Core never uses .ficus beside an unresolved conflict', ()
     legacyWorkspace(elsewhere)
     mkdirSync(join(home, 'workspaces', 'squads'), { recursive: true })
     symlinkSync(elsewhere, squadRoot())
-    expectConflict(
-      () => prepareWorkspaceDotDir(squadRoot()),
-      `the workspace is a symlink and still holds ${LEGACY_WORKSPACE_DOT_DIR}`
+    expect(expectConflict(() => prepareWorkspaceDotDir(squadRoot()), 'symlinked-workspace').message).toContain(
+      `In the target, move ${LEGACY_WORKSPACE_DOT_DIR}/ to ${WORKSPACE_DOT_DIR}/`
     )
 
     const clean = join(home, 'clean')

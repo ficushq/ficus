@@ -22,7 +22,7 @@
  * and left alone.
  */
 import { lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, symlinkSync, type Stats } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { createLogger } from '../../lib/infra/logger'
 
 const log = createLogger('workspace-dot-dir')
@@ -138,16 +138,53 @@ export function migrateWorkspaceDotDir(
   }
 }
 
-/** A work root whose dot dir Core must not use until a person resolves it (see {@link prepareWorkspaceDotDir}). */
+/** The kinds of state in which Core will not use a work root's `.ficus` (see {@link prepareWorkspaceDotDir}). */
+export type WorkspaceDotDirConflictKind =
+  | 'both-present'
+  | 'legacy-link-elsewhere'
+  | 'legacy-not-a-directory'
+  | 'ficus-not-a-directory'
+  | 'symlinked-workspace'
+  | 'legacy-not-moved'
+  | 'uninspectable'
+
+/** What a person does to resolve each kind. Names only the dot dirs, never a path or a link target. */
+function conflictAdvice(kind: WorkspaceDotDirConflictKind): string {
+  const legacy = `${LEGACY_WORKSPACE_DOT_DIR}/`
+  const next = `${WORKSPACE_DOT_DIR}/`
+  switch (kind) {
+    case 'both-present':
+      return `it has both ${legacy} and ${next}. Merge anything still needed from ${legacy} into ${next}, then remove ${legacy}`
+    case 'legacy-link-elsewhere':
+      return `its ${LEGACY_WORKSPACE_DOT_DIR} is a link that does not point to ${WORKSPACE_DOT_DIR}. Copy anything still needed from the link's target into ${next}, then remove the link`
+    case 'legacy-not-a-directory':
+      return `its ${LEGACY_WORKSPACE_DOT_DIR} is a file, not a directory. Remove or rename it`
+    case 'ficus-not-a-directory':
+      return `its ${WORKSPACE_DOT_DIR} is not a real directory (a file or a symlink). Replace it with a directory`
+    case 'symlinked-workspace':
+      return `the workspace is a symlink and its target still holds ${legacy}. In the target, move ${legacy} to ${next}`
+    case 'legacy-not-moved':
+      return `its ${legacy} could not be moved to ${next}, usually because of permissions. Fix the permissions (or move it by hand) and retry`
+    case 'uninspectable':
+      return `its settings dir could not be inspected, usually because of permissions. Fix the permissions and retry`
+  }
+}
+
+/**
+ * A work root whose dot dir Core must not use until a person resolves it (see
+ * {@link prepareWorkspaceDotDir}). `message` is safe to return from the API: it names the workspace
+ * only by its last path segment (the squad or sandbox id) and says what to do. `root` and `detail`
+ * are for the server log.
+ */
 export class WorkspaceDotDirConflictError extends Error {
+  readonly code = 'workspace_dot_dir_conflict'
+
   constructor(
     readonly root: string,
-    readonly reason: string
+    readonly kind: WorkspaceDotDirConflictKind,
+    readonly detail: string = kind
   ) {
-    super(
-      `The workspace settings dir in ${root} needs a manual fix before it can be used: ${reason}. ` +
-        `Move its contents into ${WORKSPACE_DOT_DIR}/ so only one settings dir remains.`
-    )
+    super(`Workspace ${basename(root)} needs a manual fix to its settings dir: ${conflictAdvice(kind)}.`)
     this.name = 'WorkspaceDotDirConflictError'
   }
 }
@@ -157,20 +194,30 @@ export class WorkspaceDotDirConflictError extends Error {
  * real dir (or a symlink holding no legacy dir), `.ficus` is absent or a real dir, and the legacy
  * name is absent or exactly the bridge link. Read-only.
  */
-function unusableReason(root: string): string | undefined {
+function unusableReason(root: string): { kind: WorkspaceDotDirConflictKind; detail: string } | undefined {
   const rootStat = lstatOrNull(root)
   if (!rootStat) return undefined
   const current = lstatOrNull(join(root, WORKSPACE_DOT_DIR))
-  if (current && !current.isDirectory()) return `${WORKSPACE_DOT_DIR} is not a directory`
+  if (current && !current.isDirectory())
+    return { kind: 'ficus-not-a-directory', detail: `${WORKSPACE_DOT_DIR} is not a directory` }
   const legacy = join(root, LEGACY_WORKSPACE_DOT_DIR)
   const old = lstatOrNull(legacy)
   if (!old || (old.isSymbolicLink() && readlinkSync(legacy) === WORKSPACE_DOT_DIR)) return undefined
-  if (rootStat.isSymbolicLink()) return `the workspace is a symlink and still holds ${LEGACY_WORKSPACE_DOT_DIR}`
-  if (old.isSymbolicLink()) return `${LEGACY_WORKSPACE_DOT_DIR} is a link to ${readlinkSync(legacy)}`
-  if (!old.isDirectory()) return `${LEGACY_WORKSPACE_DOT_DIR} is not a directory`
+  if (rootStat.isSymbolicLink())
+    return {
+      kind: 'symlinked-workspace',
+      detail: `the workspace is a symlink and still holds ${LEGACY_WORKSPACE_DOT_DIR}`,
+    }
+  if (old.isSymbolicLink())
+    return {
+      kind: 'legacy-link-elsewhere',
+      detail: `${LEGACY_WORKSPACE_DOT_DIR} is a link to ${readlinkSync(legacy)}`,
+    }
+  if (!old.isDirectory())
+    return { kind: 'legacy-not-a-directory', detail: `${LEGACY_WORKSPACE_DOT_DIR} is not a directory` }
   return current
-    ? `both ${LEGACY_WORKSPACE_DOT_DIR} and ${WORKSPACE_DOT_DIR} exist`
-    : `${LEGACY_WORKSPACE_DOT_DIR} could not be moved`
+    ? { kind: 'both-present', detail: `both ${LEGACY_WORKSPACE_DOT_DIR} and ${WORKSPACE_DOT_DIR} exist` }
+    : { kind: 'legacy-not-moved', detail: `${LEGACY_WORKSPACE_DOT_DIR} could not be moved` }
 }
 
 const warnedRoots = new Set<string>()
@@ -190,13 +237,13 @@ export function prepareWorkspaceDotDir(root: string): void {
     warnedRoots.add(root)
     log.warn(`Workspace dot dir not migrated: ${root}: ${outcome.conflict}`)
   }
-  let reason: string | undefined
+  let unusable: { kind: WorkspaceDotDirConflictKind; detail: string } | undefined
   try {
-    reason = unusableReason(root)
+    unusable = unusableReason(root)
   } catch (error) {
-    reason = `could not inspect: ${errorCode(error)}`
+    unusable = { kind: 'uninspectable', detail: `could not inspect: ${errorCode(error)}` }
   }
-  if (reason) throw new WorkspaceDotDirConflictError(root, reason)
+  if (unusable) throw new WorkspaceDotDirConflictError(root, unusable.kind, unusable.detail)
 }
 
 /** Moves a legacy dir if there is one, creates `<root>/.ficus` if needed, links the legacy name, and returns the dir. */

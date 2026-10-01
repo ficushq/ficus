@@ -4,6 +4,7 @@ import { createPublicKey } from 'crypto'
 import type { AmtpSigningIdentity, AmtpSigningIdentityReason } from '@ficus/shared'
 import type { Agent } from '../../entities/Agent'
 import { preparedAgentIdentityHostPath, publicPemFromPrivate, samePublicKey } from './agent-identity'
+import { WorkspaceDotDirConflictError } from '../workspace/dot-dir'
 
 const MESSAGES: Record<AmtpSigningIdentityReason, string> = {
   shared_system_manager_custody:
@@ -20,6 +21,8 @@ const MESSAGES: Record<AmtpSigningIdentityReason, string> = {
     'Federation signing identity private key is invalid; automatic rotation is disabled. Contact an operator.',
   public_private_mismatch:
     'Federation signing identity does not match recorded identity; automatic rotation is disabled. Contact an operator.',
+  workspace_dot_dir_conflict:
+    "The agent's private settings dir needs a manual fix before its signing key can be used. Contact an operator.",
 }
 
 function failed(status: 'unavailable' | 'unsupported', reason: AmtpSigningIdentityReason): AmtpSigningIdentity {
@@ -40,7 +43,13 @@ export async function inspectAgentSigningIdentity(agent: Agent): Promise<AmtpSig
     return failed('unavailable', 'invalid_public_key')
   }
 
-  const path = preparedAgentIdentityHostPath(await agent.getSandboxId())
+  let path: string
+  try {
+    path = preparedAgentIdentityHostPath(await agent.getSandboxId())
+  } catch (error) {
+    if (error instanceof WorkspaceDotDirConflictError) return failed('unavailable', 'workspace_dot_dir_conflict')
+    throw error
+  }
   if (!existsSync(path)) return failed('unavailable', 'missing_private_key')
 
   let derived: string

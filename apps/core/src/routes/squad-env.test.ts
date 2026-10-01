@@ -3,6 +3,7 @@ import { like } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { squadEnvRouter } from './squad-env'
 import { identityMiddleware } from '../middleware/identity'
+import { jsonBodyErrorHandler } from '../middleware/json-body-errors'
 import {
   assignRole,
   authHeaders,
@@ -16,11 +17,12 @@ import { db, squads, secrets } from '../db'
 import { RESERVED_SQUAD_ENV_KEYS } from '../services/squad/env'
 import { getSquadWorkspacePath } from '../services/squad/workspace'
 import { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR } from '../services/workspace/dot-dir'
-import { lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 
 const app = new Hono()
 app.use('*', identityMiddleware)
+app.onError(jsonBodyErrorHandler)
 app.route('/api/squads/workspace', squadEnvRouter)
 
 const rbacPrefix = `squad-env-rbac-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -301,6 +303,36 @@ describe('squad-env routes', () => {
       expect(lstatSync(join(root, WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
       expect(readFileSync(join(root, WORKSPACE_DOT_DIR, 'env.user'), 'utf8')).toBe('BEFORE_UPGRADE=1')
       expect(readlinkSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+    })
+
+    it('answers 409 with the actionable message when the workspace settings dir needs a manual fix', async () => {
+      const root = getSquadWorkspacePath(squadId)
+      mkdirSync(join(root, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
+      writeFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'env.user'), 'OLD=1')
+      mkdirSync(join(root, WORKSPACE_DOT_DIR), { recursive: true })
+
+      for (const init of [
+        undefined,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: 'NEW=1' }),
+        },
+      ]) {
+        const res = await app.request(`/api/squads/workspace/${squadId}/env`, {
+          ...init,
+          headers: { ...(init?.headers ?? {}), ...authHeaders(admin.token) },
+        })
+        expect(res.status).toBe(409)
+        const data = await res.json()
+        expect(data.code).toBe('workspace_dot_dir_conflict')
+        expect(data.error).toStartWith(`Workspace ${squadId} needs a manual fix to its settings dir: it has both `)
+        expect(data.error).not.toContain(root)
+      }
+      // Fail closed: nothing was written beside the legacy dir.
+      expect(readFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'env.user'), 'utf8')).toBe('OLD=1')
+      expect(existsSync(join(root, WORKSPACE_DOT_DIR, 'env.user'))).toBe(false)
+      rmSync(root, { recursive: true, force: true })
     })
 
     it('handles empty content', async () => {

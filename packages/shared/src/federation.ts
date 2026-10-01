@@ -20,6 +20,7 @@ export type AmtpSigningIdentityReason =
   | 'shared_system_manager_custody'
   | 'shared_parent_custody'
   | 'shared_consultant_custody'
+  | 'workspace_dot_dir_conflict'
 
 export interface AmtpSigningIdentity {
   status: AmtpSigningIdentityStatus

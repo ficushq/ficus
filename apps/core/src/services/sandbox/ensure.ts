@@ -21,7 +21,7 @@ import { CLI_BUNDLE_FILE, SANDBOX_CLI_PATH } from './cli-path'
 import * as homeUtils from '../../lib/utils/home'
 import { ensureWorkspace } from './workspace'
 import * as squadWorkspace from '../squad/workspace'
-import { prepareWorkspaceDotDir } from '../workspace/dot-dir'
+import { prepareWorkspaceDotDir, WorkspaceDotDirConflictError } from '../workspace/dot-dir'
 import * as squadSsh from '../squad/ssh'
 import * as memoryPaths from '../memory/paths'
 import * as localDeploymentHealth from '../deploy/local-deployment-health'
@@ -318,6 +318,8 @@ async function doEnsureAgentIdentityForSandbox(sandboxId: string): Promise<void>
   try {
     await ensureAgentIdentity(agent, sandboxId)
   } catch (err) {
+    // A private dir that needs a manual fix fails closed like a squad workspace: never a degraded start.
+    if (err instanceof WorkspaceDotDirConflictError) throw err
     const message = err instanceof Error ? err.message : String(err)
     if (agent.identityPublicKey) {
       log.error(
@@ -370,7 +372,12 @@ export async function ensureWorkspaceSandbox(
     const manager = deps.getSandboxManager()
     if (squadId) await refreshHostWorkspaceOverride(squadId)
     const workspacePath = sandboxWorkRoot(manager, { squadId, sandboxId })
-    mkdirSync(join(deps.getHomeDir(), 'private', sandboxId), { recursive: true })
+    const privatePath = join(deps.getHomeDir(), 'private', sandboxId)
+    mkdirSync(privatePath, { recursive: true })
+    // Fail closed like the container runtimes: the squad env is sourced from the storage workspace,
+    // and the agent's private dir holds its key, whatever the override.
+    prepareWorkspaceDotDir(privatePath)
+    if (squadId) prepareWorkspaceDotDir(squadWorkspace.getSquadWorkspacePath(squadId))
     mkdirSync(workspacePath, { recursive: true })
     // Record what was actually applied — the override cache alone only says
     // where agents WILL work after the next start (see active-workspace.ts).
@@ -401,6 +408,7 @@ export async function ensureWorkspaceSandbox(
     try {
       const privatePath = join(deps.getHomeDir(), 'private', sandboxId) // HOME_DIR/private/<sandboxId>
       mkdirSync(privatePath, { recursive: true })
+      prepareWorkspaceDotDir(privatePath) // fails closed on a private dir that needs a manual fix
       // Solo agents work in /private (no /workspace); squad members use the shared squad workspace.
       const workspacePath = squadId ? deps.ensureSquadWorkspace(squadId) : privatePath
       const sandboxOpts: SandboxManagerOptions = {
@@ -510,6 +518,7 @@ export async function ensureWorkspaceSandbox(
     // Solo agents work in /private (no /workspace), same as K8s.
     workspacePath = join(deps.getHomeDir(), 'private', sandboxId)
     mkdirSync(workspacePath, { recursive: true })
+    prepareWorkspaceDotDir(workspacePath) // fails closed on a private dir that needs a manual fix
   }
 
   // Per-asset bind mounts (skills / memory / ssh) come from the shared asset manifest.
@@ -524,6 +533,7 @@ export async function ensureWorkspaceSandbox(
   if (squadId) {
     privateVolumePath = join(deps.getHomeDir(), 'private', sandboxId)
     mkdirSync(privateVolumePath, { recursive: true })
+    prepareWorkspaceDotDir(privateVolumePath) // fails closed on a private dir that needs a manual fix
   }
 
   // Defer spec-drift recreation while the agent has an active session (parity
@@ -606,6 +616,9 @@ export async function ensureSquadSandbox(
     : undefined
   try {
     if (sandboxFactory.isHostRuntime()) {
+      // Fail closed like the container runtimes: the squad env is sourced from the storage workspace
+      // (the regeneration above skips a conflicted squad), whatever the override.
+      prepareWorkspaceDotDir(squadWorkspace.getSquadWorkspacePath(squadId))
       await refreshHostWorkspaceOverride(squadId)
       workspacePath = sandboxWorkRoot(manager, { squadId, sandboxId })
       mkdirSync(workspacePath, { recursive: true })

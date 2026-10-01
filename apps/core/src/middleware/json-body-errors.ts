@@ -2,6 +2,7 @@ import type { Context, ErrorHandler } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { HTTPException } from 'hono/http-exception'
 import { createLogger } from '../lib/infra/logger'
+import { WorkspaceDotDirConflictError } from '../services/workspace/dot-dir'
 
 export const INVALID_JSON_BODY_MESSAGE = 'Invalid JSON body'
 
@@ -55,6 +56,12 @@ export const jsonBodyErrorHandler: ErrorHandler = (error, c) => {
     return c.json({ error: INVALID_JSON_BODY_MESSAGE }, 400)
   }
   if (error instanceof HTTPException) return error.getResponse()
+  // A workspace settings dir that needs a manual fix: say what to do instead of a bare 500. The
+  // message names the workspace by id only; the full path and detail stay in the server log.
+  if (error instanceof WorkspaceDotDirConflictError) {
+    log.warn(`Refused ${c.req.method} ${c.req.path}: ${error.root}: ${error.detail}`)
+    return c.json({ error: error.message, code: error.code }, 409)
+  }
 
   log.error('Unhandled request error', error)
   return c.text('Internal Server Error', 500)

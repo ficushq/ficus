@@ -27,7 +27,10 @@ async function skipConflictedSquad(squadId: string, run: () => Promise<void>): P
     await run()
   } catch (error) {
     if (!(error instanceof WorkspaceDotDirConflictError)) throw error
-    log.warn(`Skipped regenerating the env of squad ${squadId}: ${error.message}`)
+    log.warn(
+      `Skipped regenerating the env of squad ${squadId}: ${error.message} Until this is fixed, the squad's ` +
+        `sandbox .env may still hold secrets that were rotated, revoked or disconnected since it was last written.`
+    )
   }
 }
 
