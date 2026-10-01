@@ -1557,6 +1557,23 @@ non-manager worker records `run_started_at`; the current manager's wake executio
 recover or reset the episode, while a worker execution started by that manager counts
 normally.
 
+Dead-fleet demand is executable backlog, not residual lifecycle history. Dormant queued
+turns count only when wake-eligible; pending-dormancy agents, stale workflow/integration
+mail, and informational observer mail do not seed demand. Ordinary standalone and
+consultant inbox work still counts, including a genuinely waking dormant batch.
+Attempt-local waits do not hide runnable parallel siblings; paused streams and external
+PR/human delivery gates remain quiet. Due inbox schedules require live scopes and targets.
+
+A squad stall names a provider only when its known demand routes are currently blocked
+by the same provider/account failure. Routing uses the effective agent override or
+workflow/type/tier chain and the actual model selector, including configured accounts
+and available fallbacks. Elapsed cooldowns permit retry without resolving historical
+provider health. Unknown routes (such as not-yet-dispatched streams or work-creating
+schedules), mixed causes, and healthy fallbacks leave the demand unattributed. Provider
+attribution uses the same-tick health snapshot, not the newest global incident, so
+provider-incident persistence order cannot create a false explanation. Legacy stall
+notices without routing proof also avoid provider blame and provider-specific fixes.
+
 Manager-audience rows are written unconditionally. This is safe only between
 audience-aware Core builds, so the audience-aware image must already be deployed
 fleet-wide before this build ships: a pre-audience worker that claimed a manager row

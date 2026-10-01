@@ -1,11 +1,19 @@
-import { activeWorkflowAttempts, type WorkflowRun, LIVE_AGENT_STATUSES } from '@ficus/shared'
+import {
+  activeWorkflowAttempts,
+  type WorkflowRun,
+  type InboxMessageSenderType,
+  LIVE_AGENT_STATUSES,
+} from '@ficus/shared'
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
+import { isInboxMessageWakeEligible } from '../../entities/InboxMessage'
 import { awaitsCodeHostDelivery } from '../workflows/delivery-state'
 
 export interface SquadDemandSnapshot {
   count: number
   firstDemandAt: Date | null
+  /** Present only when every demand item has a known executable agent route. */
+  agentIds?: string[]
 }
 
 const liveAgentStatusSql = sql.join(
@@ -46,23 +54,35 @@ export function hasRunnableStreamDemand(stream: StreamDemand): boolean {
   })
 }
 
+interface InboxDemand {
+  id: string
+  recipientId: string
+  senderType: InboxMessageSenderType
+  metadata: Record<string, unknown> | null
+  createdAt: string
+  agentStatus: string
+}
+
 interface DemandRow extends Record<string, unknown> {
   squadId: string
   count: number | string
   firstDemandAt: Date | string | null
   streams: StreamDemand[] | null
+  agentIds: string[] | null
+  unknownRoutes: boolean
+  messages: InboxDemand[] | null
 }
 
 /**
- * Returns one bounded database snapshot for every active squad, including
- * explicit zero-demand entries. Demand is executable backlog, not merely a
+ * Returns a base database snapshot plus shared delivery-policy rechecks for
+ * every active squad, including explicit zero-demand entries. Demand is executable backlog, not merely a
  * row that exists in an operational table.
  */
 export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map<string, SquadDemandSnapshot>> {
   const now = input.now.toISOString()
   const rows = await db.execute<DemandRow>(sql`
     WITH active_squads AS (
-      SELECT id
+      SELECT id, manager_agent_id
       FROM squads
       WHERE status = 'active'
         AND NOT EXISTS (
@@ -101,55 +121,21 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         -- Those messages cannot run, just like their queued executions above.
         AND agent.status <> 'terminated'
         AND NOT EXISTS (SELECT 1 FROM paused_agents WHERE id = agent.id)
-        -- Workflow assignment messages are intentionally held at input gates.
-        -- Superseded attempts are history, not runnable inbox demand.
-        AND (message.metadata->>'source' IS DISTINCT FROM 'work-stream-resume' OR EXISTS (
-          SELECT 1 FROM work_streams AS resumed
-          WHERE resumed.id::text = message.metadata->>'workStreamId'
-            AND resumed.status = 'active' AND resumed.pause IS NULL
-        ))
-        AND (COALESCE(message.metadata->>'source', '') NOT IN ('workflow', 'workflow-wait-resolution') OR EXISTS (
-          SELECT 1 FROM work_stream_flow_runs AS flow
-          JOIN work_streams AS stream ON stream.id = flow.work_stream_id
-          CROSS JOIN LATERAL jsonb_array_elements(flow.state->'attempts') AS attempt
-          WHERE stream.id::text = message.metadata->>'workStreamId'
-            AND flow.activated
-            AND (message.metadata->>'source' <> 'workflow' OR
-              (stream.status = 'active' AND stream.pause IS NULL AND flow.state->>'status' = 'running'))
-            AND attempt->>'status' = 'running'
-            AND attempt->>'id' = message.metadata->>'attemptId'
-            AND flow.attempt_agents->>(attempt->>'id') = message.recipient_id
-            AND (message.metadata->>'source' <> 'workflow' OR NOT EXISTS (SELECT 1 FROM work_stream_waits AS wait
-              WHERE wait.work_stream_id = stream.id AND wait.closed_at IS NULL
-                AND (wait.flow_attempt_id IS NULL OR wait.flow_attempt_id::text = attempt->>'id')))
-        ))
+        AND agent.pending_dormancy_at IS NULL
+        -- Observer delivery is informational and never starts an execution.
+        AND message.metadata->>'source' IS DISTINCT FROM 'work-stream-observer'
     ), demand AS (
-      SELECT agent.squad_id, execution.started_at AS demanded_at
+      SELECT agent.squad_id, execution.started_at AS demanded_at, agent.id AS agent_id
       FROM executions AS execution
       JOIN agents AS agent ON agent.id = execution.agent_id
       JOIN active_squads AS squad ON squad.id = agent.squad_id
       WHERE execution.status = 'queued'
         AND (execution.startup_retry_at IS NULL OR execution.startup_retry_at <= ${now}::timestamptz)
-        -- A TERMINATED agent can never serve its queued rows (pickup fails
-        -- them on sight), so counting them as demand alerted eternally about
-        -- work no live agent exists to run (the 2026-09-04 dead-fleet
-        -- incident). A DORMANT agent stays counted: pickup wakes it for
-        -- wake-eligible work, so its demand is genuine and must still alert.
-        -- Executions whose agent row is gone are structurally excluded by the
-        -- inner join — belt and braces for FK-bypassed orphan rows.
+        -- Match pickup's lifecycle gates, not merely the existence of a row.
         AND agent.status <> 'terminated'
+        AND agent.pending_dormancy_at IS NULL
+        AND (agent.status <> 'dormant' OR execution.wake_eligible)
         AND NOT EXISTS (SELECT 1 FROM paused_agents WHERE id = agent.id)
-
-      UNION ALL
-
-      SELECT message.squad_id, message.created_at AS demanded_at
-      FROM eligible_inbox AS message
-      -- Delivery wakes the entire eligible batch when any message can wake it.
-      WHERE message.agent_status <> 'dormant' OR EXISTS (
-        SELECT 1 FROM eligible_inbox AS wake WHERE wake.recipient_id = message.recipient_id
-          AND CASE WHEN jsonb_typeof(wake.metadata->'wakeEligible') = 'boolean'
-            THEN (wake.metadata->>'wakeEligible')::boolean ELSE wake.sender_type <> 'system' END
-      )
 
       UNION ALL
 
@@ -157,7 +143,7 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
           WHEN schedule.scope_type = 'agent' THEN scoped_agent.squad_id
           ELSE schedule.scope_id
         END AS squad_id,
-        schedule.next_trigger_at AS demanded_at
+        schedule.next_trigger_at AS demanded_at, NULL::uuid AS agent_id
       FROM schedules AS schedule
       LEFT JOIN agents AS scoped_agent
         ON schedule.scope_type = 'agent'
@@ -170,6 +156,18 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
       WHERE schedule.enabled = true
         AND schedule.next_trigger_at IS NOT NULL
         AND schedule.next_trigger_at <= ${now}::timestamptz
+        AND (schedule.scope_type <> 'agent' OR scoped_agent.status::text IN (${liveAgentStatusSql}))
+        -- Match schedule lifecycle/reference gates: unavailable inbox targets
+        -- cannot create executable work even before lifecycle reconciliation.
+        AND (schedule.action->>'type' <> 'inbox_message' OR EXISTS (
+          SELECT 1 FROM agents AS target
+          WHERE target.status::text IN (${liveAgentStatusSql})
+            AND target.pending_dormancy_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM paused_agents WHERE id = target.id)
+            AND target.id::text = CASE
+              WHEN schedule.action->'target'->>'type' = 'agent' THEN schedule.action->'target'->>'agentId'
+              ELSE squad.manager_agent_id::text END
+        ))
         AND (
           (schedule.scope_type = 'agent' AND schedule.action->>'type' = 'inbox_message')
           OR
@@ -194,7 +192,9 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         )
 
     ), aggregate_demand AS (
-      SELECT squad_id, count(*)::integer AS count, min(demanded_at) AS first_demand_at
+      SELECT squad_id, count(*)::integer AS count, min(demanded_at) AS first_demand_at,
+        array_agg(DISTINCT agent_id) FILTER (WHERE agent_id IS NOT NULL) AS agent_ids,
+        bool_or(agent_id IS NULL) AS unknown_routes
       FROM demand
       GROUP BY squad_id
     )
@@ -212,6 +212,7 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         'participants', (SELECT COALESCE(jsonb_agg(participant.id), '[]'::jsonb)
           FROM agents AS participant
           WHERE participant.squad_id = stream.squad_id
+            AND participant.pending_dormancy_at IS NULL
             AND participant.status::text IN (${liveAgentStatusSql})
             AND (participant.id = stream.assignee_agent_id OR participant.id = ANY(COALESCE(stream.agent_ids, '{}'::uuid[])))
             AND NOT EXISTS (SELECT 1 FROM paused_agents WHERE id = participant.id)
@@ -227,23 +228,47 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
     SELECT squad.id AS "squadId",
       COALESCE(aggregate.count, 0)::integer AS count,
       aggregate.first_demand_at AS "firstDemandAt",
+      aggregate.agent_ids AS "agentIds", COALESCE(aggregate.unknown_routes, false) AS "unknownRoutes",
+      (SELECT jsonb_agg(jsonb_build_object('id', message.id, 'recipientId', message.recipient_id,
+        'senderType', message.sender_type, 'metadata', jsonb_build_object(
+          'source', message.metadata->'source', 'wakeEligible', message.metadata->'wakeEligible',
+          'workStreamId', message.metadata->'workStreamId', 'attemptId', message.metadata->'attemptId',
+          'integrationDeliveryId', message.metadata->'integrationDeliveryId', 'questionId', message.metadata->'questionId'),
+        'createdAt', message.created_at,
+        'agentStatus', message.agent_status)) FROM eligible_inbox AS message WHERE message.squad_id = squad.id) AS messages,
       (SELECT jsonb_agg(candidate) FROM stream_candidates WHERE squad_id = squad.id) AS streams
     FROM active_squads AS squad
     LEFT JOIN aggregate_demand AS aggregate ON aggregate.squad_id = squad.id
   `)
 
-  return new Map(
-    rows.map((row) => {
-      const streams = (row.streams ?? []).filter(hasRunnableStreamDemand)
-      const dates = streams.map((stream) => new Date(stream.createdAt).getTime())
-      if (row.firstDemandAt) dates.push(new Date(row.firstDemandAt).getTime())
-      return [
-        row.squadId,
-        {
-          count: Number(row.count) + streams.length,
-          firstDemandAt: dates.length ? new Date(Math.min(...dates)) : null,
-        },
-      ]
+  // Use delivery's authoritative policy for integration subscriptions, question
+  // origins, and attempt gates. Never inspect payloads or mutate inbox history.
+  const { isCurrentFlowMessage } = await import('../workflows/execution')
+  const snapshots = new Map<string, SquadDemandSnapshot>()
+  for (const row of rows) {
+    const eligible: InboxDemand[] = []
+    for (const message of row.messages ?? []) {
+      if (await isCurrentFlowMessage(message)) eligible.push(message)
+    }
+    const wakingAgents = new Set(eligible.filter(isInboxMessageWakeEligible).map((message) => message.recipientId))
+    const messages = eligible.filter(
+      (message) => message.agentStatus !== 'dormant' || wakingAgents.has(message.recipientId)
+    )
+    const streams = (row.streams ?? []).filter(hasRunnableStreamDemand)
+    const dates = [
+      ...streams.map((stream) => new Date(stream.createdAt).getTime()),
+      ...messages.map((message) => new Date(message.createdAt).getTime()),
+    ]
+    if (row.firstDemandAt) dates.push(new Date(row.firstDemandAt).getTime())
+    // An undispatched stream or a schedule may still need routing/spawning.
+    // Keep its demand, but do not invent a provider explanation for it.
+    snapshots.set(row.squadId, {
+      count: Number(row.count) + messages.length + streams.length,
+      firstDemandAt: dates.length ? new Date(Math.min(...dates)) : null,
+      ...(!row.unknownRoutes && streams.length === 0 && dates.length > 0
+        ? { agentIds: [...new Set([...(row.agentIds ?? []), ...messages.map((message) => message.recipientId)])] }
+        : {}),
     })
-  )
+  }
+  return snapshots
 }

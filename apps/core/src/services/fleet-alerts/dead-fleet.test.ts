@@ -376,7 +376,7 @@ describe('dead fleet reconciliation', () => {
     expect(await notifications(afterRestart.id)).toHaveLength(2)
   })
 
-  test('refreshes a pending incident with the most recent unresolved cause at alert time', async () => {
+  test('never attributes demand to the newest unrelated global provider incident', async () => {
     await reconcileDeadFleet({ now: at(WINDOW - 1000), demand: demand(2, START) })
     const [pending] = await incidents()
     expect(pending).toMatchObject({ causeCode: 'demand-not-served' })
@@ -439,21 +439,56 @@ describe('dead fleet reconciliation', () => {
 
     const deadFleet = (await incidents()).find((row) => row.kind === 'squad_dead_fleet')!
     expect(deadFleet.id).toBe(pending.id)
-    expect(deadFleet).toMatchObject({
-      causeCode: 'expired-oauth',
-      causeSummary: 'OAuth refresh credential expired or was revoked.',
-      remediation: 'Run `ficus pa login openai-codex` to authenticate again.',
-    })
-    expect(deadFleet.details).toEqual({
-      demandCount: 2,
-      oldestDemandAt: START.toISOString(),
-      providerIncidentId: expectedId,
-      provider: 'openai-codex',
-    })
+    expect(deadFleet.causeCode).toBe('demand-not-served')
+    expect(deadFleet.details).toEqual({ demandCount: 2, oldestDemandAt: START.toISOString() })
     expect(JSON.stringify(deadFleet)).not.toContain('secret')
     expect(JSON.stringify(deadFleet)).not.toContain(olderId)
     expect(JSON.stringify(deadFleet)).not.toContain(resolvedNewerId)
     expect((await notifications(deadFleet.id)).map((row) => row.audience).sort()).toEqual(['human', 'manager'])
+  })
+
+  test('attributes only a currently blocked demand route, independent of provider incident persistence', async () => {
+    const now = at(WINDOW)
+    const record = {
+      provider: 'anthropic',
+      accountId: 'demand-account',
+      kind: 'rate-limit' as const,
+      since: START.getTime(),
+      retryAt: now.getTime() + 60_000,
+      message: 'DO NOT PERSIST payload',
+    }
+    const snapshot = new Map([[squadId, { count: 1, firstDemandAt: START, agentIds: [agentId] }]])
+    await reconcileDeadFleet(
+      { now, demand: snapshot, records: [record] },
+      {
+        getDemandChains: async () => [[{ provider: 'anthropic', accountId: 'demand-account', credentialUsable: true }]],
+      }
+    )
+    const [blocked] = await incidents()
+    expect(blocked.causeCode).toBe('rate-limit')
+    expect(blocked.details).toMatchObject({ provider: 'anthropic', providerRouteBlocked: true })
+    expect(JSON.stringify(blocked)).not.toContain('DO NOT PERSIST')
+    // An available account/fallback or elapsed cooldown invalidates causality,
+    // without resolving the health episode or changing notification policy.
+    for (const chains of [
+      [[{ provider: 'anthropic', accountId: 'other-account', credentialUsable: true }]],
+      [
+        [
+          { provider: 'anthropic', accountId: 'demand-account', credentialUsable: true },
+          { provider: 'openai', credentialUsable: true },
+        ],
+      ],
+    ]) {
+      await reconcileDeadFleet({ now, demand: snapshot, records: [record] }, { getDemandChains: async () => chains })
+      expect((await incidents())[0]!.causeCode).toBe('demand-not-served')
+    }
+    await reconcileDeadFleet(
+      { now: new Date(record.retryAt), demand: snapshot, records: [record] },
+      {
+        getDemandChains: async () => [[{ provider: 'anthropic', accountId: 'demand-account', credentialUsable: true }]],
+      }
+    )
+    expect((await incidents())[0]!.causeCode).toBe('demand-not-served')
   })
 
   test("blames THIS squad's degraded sandbox — the kind that explains transport stalls", async () => {

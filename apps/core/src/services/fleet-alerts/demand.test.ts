@@ -147,9 +147,15 @@ describe('actionable squad demand', () => {
       content: 'held',
       createdAt: at(3),
     })
-    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toMatchObject({
+      count: 0,
+      firstDemandAt: null,
+    })
     await db.update(workStreams).set({ pause: null }).where(eq(workStreams.id, id))
-    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 2, firstDemandAt: at(4) })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toMatchObject({
+      count: 2,
+      firstDemandAt: at(4),
+    })
   })
 
   test('dormant non-waking notices are quiet, but an eligible message wakes the whole batch', async () => {
@@ -161,7 +167,10 @@ describe('actionable squad demand', () => {
       content: 'FYI',
       createdAt: at(3),
     })
-    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toMatchObject({
+      count: 0,
+      firstDemandAt: null,
+    })
     await db.insert(inbox).values({
       recipientType: 'agent',
       recipientId: targetAgentId,
@@ -169,7 +178,10 @@ describe('actionable squad demand', () => {
       content: 'continue',
       createdAt: at(1),
     })
-    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 2, firstDemandAt: at(3) })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toMatchObject({
+      count: 2,
+      firstDemandAt: at(3),
+    })
   })
 
   test('workflow assignment inbox respects attempt input gates and resumes when resolved', async () => {
@@ -197,7 +209,10 @@ describe('actionable squad demand', () => {
       .insert(workStreamWaits)
       .values({ workStreamId: id, type: 'question', flowAttemptId: 1, openedAt: at(2) })
       .returning()
-    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toMatchObject({
+      count: 0,
+      firstDemandAt: null,
+    })
     await db.update(workStreamWaits).set({ closedAt: NOW }).where(eq(workStreamWaits.id, wait!.id))
     expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(2)
     await db
@@ -262,7 +277,146 @@ describe('actionable squad demand', () => {
       metadata: { source: 'work-stream-resume', workStreamId: id },
       createdAt: at(90),
     })
-    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toMatchObject({
+      count: 0,
+      firstDemandAt: null,
+    })
+  })
+
+  test('queue demand matches pickup lifecycle eligibility', async () => {
+    await db.update(agents).set({ status: 'dormant' }).where(eq(agents.id, targetAgentId))
+    await db
+      .insert(executions)
+      .values({ agentId: targetAgentId, status: 'queued', wakeEligible: false, startedAt: at(90) })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
+    await db.update(executions).set({ wakeEligible: true }).where(eq(executions.agentId, targetAgentId))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.agentIds).toEqual([targetAgentId])
+    await db.update(agents).set({ pendingDormancyAt: NOW }).where(eq(agents.id, targetAgentId))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
+  })
+
+  test('stale integration and observer mail never seed a lifecycle wake batch', async () => {
+    await db.update(agents).set({ status: 'dormant' }).where(eq(agents.id, targetAgentId))
+    await db.insert(inbox).values([
+      {
+        recipientType: 'agent',
+        recipientId: targetAgentId,
+        senderType: 'system',
+        content: 'stale',
+        metadata: { source: 'integration-output', integrationDeliveryId: crypto.randomUUID(), wakeEligible: true },
+        createdAt: at(90),
+      },
+      {
+        recipientType: 'agent',
+        recipientId: targetAgentId,
+        senderType: 'system',
+        content: 'observer',
+        metadata: { source: 'work-stream-observer', wakeEligible: true },
+        createdAt: at(80),
+      },
+      {
+        recipientType: 'agent',
+        recipientId: targetAgentId,
+        senderType: 'system',
+        content: 'FYI',
+        metadata: { wakeEligible: false },
+        createdAt: at(1),
+      },
+    ])
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
+    await db.update(agents).set({ status: 'idle' }).where(eq(agents.id, targetAgentId))
+    // Non-waking ordinary mail is executable for a nondormant standalone agent.
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(1)
+  })
+
+  test('question answers for superseded attempts match dispatcher eligibility', async () => {
+    const id = await addWorkStream({ status: 'queued', assigneeAgentId: targetAgentId })
+    const definition = createBlankWorkflow()
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: id,
+      activated: true,
+      state: createWorkflowRun(definition),
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      attemptAgents: { '1': targetAgentId },
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+    })
+    const questionId = crypto.randomUUID()
+    await db.insert(workStreamWaits).values({
+      workStreamId: id,
+      type: 'question',
+      referenceId: questionId,
+      flowAttemptId: 999,
+      openedAt: at(3),
+      closedAt: at(2),
+    })
+    const [message] = await db
+      .insert(inbox)
+      .values({
+        recipientType: 'agent',
+        recipientId: targetAgentId,
+        senderType: 'system',
+        content: 'answer',
+        metadata: { source: 'agent-question-answer', questionId, wakeEligible: true },
+        createdAt: at(1),
+      })
+      .returning()
+    const { isCurrentFlowMessage } = await import('../workflows/execution')
+    expect(await isCurrentFlowMessage(message!)).toBe(false)
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
+    await db.update(workStreamWaits).set({ flowAttemptId: 1 }).where(eq(workStreamWaits.referenceId, questionId))
+    expect(await isCurrentFlowMessage(message!)).toBe(true)
+    // A parked branch's legitimate resolution is still deliverable.
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(1)
+  })
+
+  test('dead schedule scopes and inbox targets are not executable demand', async () => {
+    for (const scopeId of [terminatedTargetAgentId, crypto.randomUUID()]) {
+      await addSchedule({
+        scopeType: 'agent',
+        scopeId,
+        action: { type: 'inbox_message', target: { type: 'agent', agentId: targetAgentId }, content: 'dead scope' },
+      })
+    }
+    for (const agentId of [terminatedTargetAgentId, crypto.randomUUID()]) {
+      await addSchedule({
+        scopeType: 'squad',
+        scopeId: targetSquadId,
+        action: { type: 'inbox_message', target: { type: 'agent', agentId }, content: 'dead target' },
+      })
+    }
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
+  })
+
+  test('scheduled inbox housekeeping cannot execute for dormant or paused targets', async () => {
+    await db.update(agents).set({ status: 'dormant' }).where(eq(agents.id, secondTargetAgentId))
+    await addSchedule({
+      scopeType: 'agent',
+      scopeId: secondTargetAgentId,
+      action: {
+        type: 'inbox_message',
+        target: { type: 'agent', agentId: secondTargetAgentId },
+        content: 'housekeeping',
+      },
+    })
+    const id = await addWorkStream({ assigneeAgentId: targetAgentId })
+    await db
+      .update(workStreams)
+      .set({
+        pause: { id: crypto.randomUUID(), pausedAt: NOW.toISOString(), reason: null, parkAt: null, agentIds: [] },
+      })
+      .where(eq(workStreams.id, id))
+    await addSchedule({
+      scopeType: 'squad',
+      scopeId: targetSquadId,
+      action: {
+        type: 'inbox_message',
+        target: { type: 'agent', agentId: targetAgentId },
+        content: 'held housekeeping',
+      },
+    })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
   })
 
   test('queued execution startup backoff is not demand until its retry deadline', async () => {
@@ -272,11 +426,16 @@ describe('actionable squad demand', () => {
       startedAt: at(90),
       startupRetryAt: new Date(NOW.getTime() + 60_000),
     })
-    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
-    expect((await getSquadDemandSnapshots({ now: new Date(NOW.getTime() + 60_000) })).get(targetSquadId)).toEqual({
-      count: 1,
-      firstDemandAt: at(90),
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toMatchObject({
+      count: 0,
+      firstDemandAt: null,
     })
+    expect((await getSquadDemandSnapshots({ now: new Date(NOW.getTime() + 60_000) })).get(targetSquadId)).toMatchObject(
+      {
+        count: 1,
+        firstDemandAt: at(90),
+      }
+    )
   })
 
   test('ignores old merger notices for terminated reviewers without hiding deliverable inbox work', async () => {
@@ -296,7 +455,10 @@ describe('actionable squad demand', () => {
         createdAt: at(3999),
       },
     ])
-    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toMatchObject({
+      count: 0,
+      firstDemandAt: null,
+    })
 
     await db.update(agents).set({ status: 'dormant' }).where(eq(agents.id, secondTargetAgentId))
     await db.insert(inbox).values([
@@ -316,13 +478,19 @@ describe('actionable squad demand', () => {
         createdAt: at(3),
       },
     ])
-    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 2, firstDemandAt: at(3) })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toMatchObject({
+      count: 2,
+      firstDemandAt: at(3),
+    })
 
     await db
       .update(agents)
       .set({ status: 'terminated', terminatedAt: NOW })
       .where(inArray(agents.id, [targetAgentId, secondTargetAgentId]))
-    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toMatchObject({
+      count: 0,
+      firstDemandAt: null,
+    })
     // Detection never deletes or marks historical messages read.
     expect(
       await db
@@ -502,9 +670,9 @@ describe('actionable squad demand', () => {
     await addSchedule({ scopeType: 'squad', scopeId: crossSquadId, nextTriggerAt: at(42) })
 
     const snapshots = await getSquadDemandSnapshots({ now: NOW })
-    expect(snapshots.get(targetSquadId)).toEqual({ count: 8, firstDemandAt: at(5) })
-    expect(snapshots.get(crossSquadId)).toEqual({ count: 3, firstDemandAt: at(42) })
-    expect(snapshots.get(quietSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect(snapshots.get(targetSquadId)).toMatchObject({ count: 8, firstDemandAt: at(5) })
+    expect(snapshots.get(crossSquadId)).toMatchObject({ count: 3, firstDemandAt: at(42) })
+    expect(snapshots.get(quietSquadId)).toMatchObject({ count: 0, firstDemandAt: null })
   })
 
   test('excludes queued executions whose agent is terminated but keeps counting live and dormant agents', async () => {
@@ -527,20 +695,22 @@ describe('actionable squad demand', () => {
       status: 'dormant',
       dormantAt: at(1),
     })
-    await db.insert(executions).values({ agentId: dormantAgentId, status: 'queued', startedAt: at(3) })
+    await db
+      .insert(executions)
+      .values({ agentId: dormantAgentId, status: 'queued', startedAt: at(3), wakeEligible: true })
     // Control: a live agent's queued execution still counts.
     await db.insert(executions).values({ agentId: targetAgentId, status: 'queued', startedAt: at(4) })
 
     const snapshots = await getSquadDemandSnapshots({ now: NOW })
     // Two genuine rows remain (dormant@at(3), live@at(4)); the terminated
     // agent's at(2) row is excluded — including from the earliest-demand clock.
-    expect(snapshots.get(targetSquadId)).toEqual({ count: 2, firstDemandAt: at(4) })
+    expect(snapshots.get(targetSquadId)).toMatchObject({ count: 2, firstDemandAt: at(4) })
   })
 
   test('uses each source-specific demand timestamp when it becomes the earliest row', async () => {
     await db.insert(executions).values({ agentId: targetAgentId, status: 'queued', startedAt: at(1) })
     let snapshots = await getSquadDemandSnapshots({ now: NOW })
-    expect(snapshots.get(targetSquadId)).toEqual({ count: 1, firstDemandAt: at(1) })
+    expect(snapshots.get(targetSquadId)).toMatchObject({ count: 1, firstDemandAt: at(1) })
 
     await addSchedule({
       scopeType: 'agent',
@@ -553,16 +723,16 @@ describe('actionable squad demand', () => {
       },
     })
     snapshots = await getSquadDemandSnapshots({ now: NOW })
-    expect(snapshots.get(targetSquadId)).toEqual({ count: 2, firstDemandAt: at(2) })
+    expect(snapshots.get(targetSquadId)).toMatchObject({ count: 2, firstDemandAt: at(2) })
 
     await addSchedule({ scopeType: 'squad', scopeId: targetSquadId, nextTriggerAt: at(3) })
     snapshots = await getSquadDemandSnapshots({ now: NOW })
-    expect(snapshots.get(targetSquadId)).toEqual({ count: 3, firstDemandAt: at(3) })
+    expect(snapshots.get(targetSquadId)).toMatchObject({ count: 3, firstDemandAt: at(3) })
 
     await addWorkStream({ assigneeAgentId: secondTargetAgentId, createdAt: at(4) })
     snapshots = await getSquadDemandSnapshots({ now: NOW })
-    expect(snapshots.get(targetSquadId)).toEqual({ count: 4, firstDemandAt: at(4) })
-    expect(snapshots.get(quietSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect(snapshots.get(targetSquadId)).toMatchObject({ count: 4, firstDemandAt: at(4) })
+    expect(snapshots.get(quietSquadId)).toMatchObject({ count: 0, firstDemandAt: null })
   })
 
   test('excludes actionable-looking rows while the owning squad is paused', async () => {
@@ -591,8 +761,8 @@ describe('actionable squad demand', () => {
 
     const snapshots = await getSquadDemandSnapshots({ now: NOW })
     expect(snapshots.has(quietSquadId)).toBe(false)
-    expect(snapshots.get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
-    expect(snapshots.get(crossSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect(snapshots.get(targetSquadId)).toMatchObject({ count: 0, firstDemandAt: null })
+    expect(snapshots.get(crossSquadId)).toMatchObject({ count: 0, firstDemandAt: null })
   })
 
   test('excludes actionable-looking rows once the owning squad is archived', async () => {
@@ -621,8 +791,8 @@ describe('actionable squad demand', () => {
 
     const snapshots = await getSquadDemandSnapshots({ now: NOW })
     expect(snapshots.has(quietSquadId)).toBe(false)
-    expect(snapshots.get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
-    expect(snapshots.get(crossSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect(snapshots.get(targetSquadId)).toMatchObject({ count: 0, firstDemandAt: null })
+    expect(snapshots.get(crossSquadId)).toMatchObject({ count: 0, firstDemandAt: null })
   })
   test('suppresses all squad demand while the instance is maintenance-paused', async () => {
     const [prior] = await db.select().from(instanceMaintenanceState).where(eq(instanceMaintenanceState.id, 'global'))

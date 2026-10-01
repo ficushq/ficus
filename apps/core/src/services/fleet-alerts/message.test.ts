@@ -71,7 +71,7 @@ describe('fleet incident messages', () => {
         causeCode: 'plan-credit',
         causeSummary: 'Provider plan credits are unavailable.',
         remediation: undefined,
-        details: { demandCount: 2, provider: 'openai-codex' },
+        details: { demandCount: 2, provider: 'openai-codex', providerRouteBlocked: true },
       }),
       { squadName: 'Ficus Core' },
       NOW
@@ -79,6 +79,23 @@ describe('fleet incident messages', () => {
     expect(message.subject).toBe('Squad Ficus Core stalled: OpenAI Codex out of plan credits')
     expect(message.content).toContain('Cause: OpenAI Codex plan credits are unavailable.')
     expect(message.content).toContain('Waiting: 2 work items')
+  })
+
+  test('legacy global provider attribution without routing proof cannot blame a provider', () => {
+    const message = renderFleetIncidentMessage(
+      claim({
+        causeCode: 'rate-limit',
+        causeSummary: 'Provider rate limit is preventing requests.',
+        remediation: 'Run login for anthropic',
+        details: { provider: 'anthropic' },
+      }),
+      { squadName: 'Example' },
+      NOW
+    )
+    expect(message.subject).toBe('Squad Example stalled')
+    expect(message.content).not.toContain('Anthropic')
+    expect(message.content).not.toContain('login')
+    expect(message.content).toContain('current provider cause has not been established')
   })
 
   test('a recovery reports how long it lasted and the earlier cause, without remediation', () => {

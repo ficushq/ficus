@@ -1,13 +1,13 @@
 import { eq } from 'drizzle-orm'
-import { isAccountUsable } from '../agent/account-usable'
 import type { ProviderRoute } from '@ficus/shared/provider-health'
 import { createLogger } from '../../lib/infra/logger'
-import { parseModelSpec, splitModelPriorityList } from '../../lib/utils/model-spec'
 import { db } from '../../db'
 import { agentTypes, modelTiers } from '../../db/schema'
 import { tryGetModelRuntime } from '../agent'
-import { listAccounts, readAccountStore, type AccountStoreV1 } from '../agent/account-store'
+import { readAccountStore } from '../agent/account-store'
 import { providerHealth } from '../provider-health/registry'
+import { buildProviderChains } from './provider-chains'
+export { buildProviderChains } from './provider-chains'
 import { getSquadDemandSnapshots } from './demand'
 import { reconcileDeadFleet } from './dead-fleet'
 import { FleetIncidentNotifier } from './notifier'
@@ -32,23 +32,6 @@ interface FleetAlertRuntimeDeps {
   drainNotifications?: (input: { now: Date }) => Promise<void>
   setIntervalFn?: (callback: () => void, intervalMs: number) => IntervalHandle
   clearIntervalFn?: (handle: IntervalHandle) => void
-}
-
-export function buildProviderChains(
-  chainSpecs: readonly string[],
-  accountStore: AccountStoreV1,
-  hasConfiguredAuth: (provider: string) => boolean
-): ProviderRoute[][] {
-  return chainSpecs.map((chain) =>
-    splitModelPriorityList(chain).flatMap((candidate) => {
-      const provider = parseModelSpec(candidate).provider
-      const accounts = listAccounts(accountStore, provider).filter(isAccountUsable)
-      if (accounts.length > 0) {
-        return accounts.map((account) => ({ provider, accountId: account.id, credentialUsable: true }))
-      }
-      return [{ provider, credentialUsable: hasConfiguredAuth(provider) }]
-    })
-  )
 }
 
 async function getEnabledProviderChains(): Promise<ProviderRoute[][]> {
@@ -127,7 +110,7 @@ export class FleetAlertRuntime {
     const health = this.getHealth()
     await Promise.all([
       this.reconcileProvider({ ...health, enabledChains, now }),
-      this.reconcileDeadFleetFn({ demand, now, coldStartAt: this.startedAt }),
+      this.reconcileDeadFleetFn({ demand, records: health.records, now, coldStartAt: this.startedAt }),
       // Box probes must never hold back provider/dead-fleet alerts or delivery.
       this.reconcileSandboxOverloadFn({ now }).catch((error) =>
         log.warn('Sandbox overload reconciliation failed:', error)
