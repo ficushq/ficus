@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, test } from 'bun:test'
 import { ContentSafety } from './content-safety'
@@ -329,4 +330,41 @@ describe('ContentSafety', () => {
 
     expect(safety.redact(longest)).toBe('[REDACTED_SECRET_ENV:LONG]')
   })
+})
+
+test('discards query error SQL, parameters, driver details and stack at the content boundary', () => {
+  const error = new DrizzleQueryError(
+    'insert into private_table values ($1)',
+    ['private-value'],
+    Object.assign(new Error('private driver detail'), { code: '23505', detail: 'private-detail' })
+  )
+  const safe = ContentSafety.fromSecretEntries([]).redact({ error })
+  expect(safe.error.message).toBe('Database query failed')
+  expect(safe.error.cause).toBeUndefined()
+  expect(JSON.stringify(safe)).not.toContain('private')
+  expect(safe.error.stack).not.toContain('private')
+})
+
+test('interpolated query error messages do not leak SQL or parameters into logs', () => {
+  const error = new DrizzleQueryError('insert into private_table values ($1)', ['private-value'], new Error('driver'))
+  const safe = ContentSafety.fromSecretEntries([]).redact(`Operation failed: ${error.message}`)
+  expect(safe).toBe('Operation failed: Database query failed')
+})
+
+test('dropping query payloads preserves matching stored-key audit metadata', () => {
+  const safety = ContentSafety.fromSecretEntries([
+    { key: 'PARAMETER_SECRET', value: 'canary-query-parameter' },
+    { key: 'DRIVER_SECRET', value: 'canary-driver-detail' },
+  ])
+  const error = new DrizzleQueryError(
+    'insert into private_table values ($1)',
+    ['canary-query-parameter'],
+    new Error('canary-driver-detail')
+  )
+  const inspected = safety.redactWithStoredKeys(error)
+  expect(inspected.storedKeys).toEqual(['DRIVER_SECRET', 'PARAMETER_SECRET'])
+  expect(inspected.value.message).toBe('Database query failed')
+  const interpolated = safety.redactWithStoredKeys(`Operation failed: ${error.message}`)
+  expect(interpolated.storedKeys).toEqual(['PARAMETER_SECRET'])
+  expect(interpolated.value).toBe('Operation failed: Database query failed')
 })

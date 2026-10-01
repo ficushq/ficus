@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import {
   isObservingWorkStream,
   observeWorkStream,
@@ -932,7 +933,7 @@ export const workStreamsRouter = new Hono()
       if (error instanceof TrackedResourceError) return c.json({ error: error.message }, error.status)
       if (error instanceof WorktreeCleanupConflictError)
         return c.json({ error: error.message, code: 'worktree_cleanup_conflict' }, 409)
-      const message = error instanceof Error ? error.message : String(error)
+      const message = publicErrorMessage(error)
       const { WorkflowError } = await import('../services/workflows/catalog')
       if (error instanceof WorkflowError) return c.json({ error: message }, error.status)
       if (error instanceof RepositorySetupError || message.includes('metadata.sources')) {
@@ -1187,7 +1188,7 @@ export const workStreamsRouter = new Hono()
         return c.json({ error: error.message, code: 'terminal_status' }, 409)
       }
       if (error instanceof TrackedResourceError) return c.json({ error: error.message }, error.status)
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+      return c.json({ error: publicErrorMessage(error) }, 400)
     }
   })
   // --- Wait verbs ---
@@ -1216,7 +1217,7 @@ export const workStreamsRouter = new Hono()
                 : 400
           return c.json({ error: error.message, code: error.code }, status)
         }
-        return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+        return c.json({ error: publicErrorMessage(error) }, 400)
       }
     }
   )
@@ -1238,7 +1239,7 @@ export const workStreamsRouter = new Hono()
         })
         return c.json({ ...existing.toJson(), wait: toWaitJson(wait), alreadyOpen })
       } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+        return c.json({ error: publicErrorMessage(error) }, 400)
       }
     }
   )
@@ -1265,7 +1266,7 @@ export const workStreamsRouter = new Hono()
       })
       return c.json(existing.toJson())
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = publicErrorMessage(error)
       return c.json({ error: message }, message.includes('no open review wait') ? 409 : 400)
     }
   })
@@ -1283,7 +1284,7 @@ export const workStreamsRouter = new Hono()
         })
         return c.json(existing.toJson())
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
+        const message = publicErrorMessage(error)
         return c.json({ error: message }, message.includes('no open review wait') ? 409 : 400)
       }
     }
@@ -1324,7 +1325,7 @@ export const workStreamsRouter = new Hono()
                 : 400
           return c.json({ error: error.message, code: error.code }, status)
         }
-        return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+        return c.json({ error: publicErrorMessage(error) }, 400)
       }
     }
   )
@@ -1343,7 +1344,7 @@ export const workStreamsRouter = new Hono()
         const wait = await existing.block({ ...input, ...attribution })
         return c.json({ ...existing.toJson(), wait: toWaitJson(wait) })
       } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+        return c.json({ error: publicErrorMessage(error) }, 400)
       }
     }
   )
@@ -1361,7 +1362,7 @@ export const workStreamsRouter = new Hono()
       }
       return c.json({ ...existing.toJson(), closedWaits: closed.map(toWaitJson) })
     } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+      return c.json({ error: publicErrorMessage(error) }, 400)
     }
   })
   .post(
@@ -1373,7 +1374,7 @@ export const workStreamsRouter = new Hono()
         const stream = await pauseWorkStream(await routeWorkStreamId(c), text ? JSON.parse(text) : {})
         return c.json(stream.toJson())
       } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+        return c.json({ error: publicErrorMessage(error) }, 400)
       }
     }
   )
@@ -1384,7 +1385,7 @@ export const workStreamsRouter = new Hono()
       try {
         return c.json((await resumeWorkStream(await routeWorkStreamId(c))).toJson())
       } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+        return c.json({ error: publicErrorMessage(error) }, 400)
       }
     }
   )
@@ -1426,7 +1427,7 @@ export const workStreamsRouter = new Hono()
           )
         }
         const status = error instanceof WorkStreamNotParkableError ? 409 : 400
-        return c.json({ error: error instanceof Error ? error.message : String(error) }, status)
+        return c.json({ error: publicErrorMessage(error) }, status)
       }
     }
   )
@@ -1449,7 +1450,7 @@ export const workStreamsRouter = new Hono()
         if (error instanceof WorkStreamNotReopenableError) {
           return c.json({ error: error.message, code: 'not_reopenable' }, 409)
         }
-        return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+        return c.json({ error: publicErrorMessage(error) }, 400)
       }
     }
   )
@@ -1468,7 +1469,7 @@ export const workStreamsRouter = new Hono()
         })
         return c.json({ ...existing.toJson(), cancellation: { stopResults } })
       } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+        return c.json({ error: publicErrorMessage(error) }, 400)
       }
     }
   )

@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { firstPartyIntegrationPlugin } from '../services/integrations/first-party-plugins'
 import { isIntegrationEnabled } from '../services/integrations/provider-state'
 /**
@@ -388,7 +389,7 @@ webhooksRouter.post('/:provider', async (c) => {
       await dispatchVerifiedWebhookContext(ctx)
       await markWebhookProcessed(eventId)
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
+      const errorMsg = publicErrorMessage(error)
       log.error(`Handler error for ${provider}:${eventType}:`, error)
       await markWebhookError(eventId, errorMsg)
     }

@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../../db/errors'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
@@ -251,7 +252,7 @@ export class LocalUpdateManager {
         // cannot record this failure. Persist it here to avoid leaving a run
         // permanently marked running when the database is temporarily unavailable.
         run.status = 'failed'
-        run.error = err instanceof Error ? err.message : String(err)
+        run.error = publicErrorMessage(err)
         run.completedAt = new Date().toISOString()
         this.persistLatest(run)
         await this.notifyFailure(run)
@@ -346,7 +347,7 @@ export class LocalUpdateManager {
       this.envNamingPreflight()
     } catch (err) {
       run.status = 'failed'
-      run.error = err instanceof Error ? err.message : String(err)
+      run.error = publicErrorMessage(err)
       run.completedAt = new Date().toISOString()
       this.persistLatest(run)
       await this.notifyFailure(run)
@@ -396,7 +397,7 @@ export class LocalUpdateManager {
       this.persistLatest(run)
     } catch (err) {
       run.status = 'failed'
-      run.error = err instanceof Error ? err.message : String(err)
+      run.error = publicErrorMessage(err)
       run.completedAt = new Date().toISOString()
       this.persistLatest(run)
       await this.notifyFailure(run)
@@ -407,7 +408,7 @@ export class LocalUpdateManager {
       run.status = 'succeeded'
     } catch (err) {
       run.status = 'failed'
-      run.error = err instanceof Error ? err.message : String(err)
+      run.error = publicErrorMessage(err)
       await this.notifyFailure(run)
       throw err
     } finally {
@@ -454,7 +455,7 @@ export class LocalUpdateManager {
       run.message = `Rebuilt: ${tasks.join(', ')}`
     } catch (err) {
       run.status = 'failed'
-      run.error = err instanceof Error ? err.message : String(err)
+      run.error = publicErrorMessage(err)
       await this.notifyFailure(run)
       throw err
     } finally {
@@ -637,7 +638,7 @@ export class LocalUpdateManager {
   }
 
   private errorMessage(err: unknown): string {
-    return err instanceof Error ? err.message : String(err)
+    return publicErrorMessage(err)
   }
 
   private sanitizeErrorMessage(err: unknown, token: string): string {

@@ -1,3 +1,4 @@
+import { getPostgresError } from '../db/errors'
 import { Hono } from 'hono'
 import { eq, and, ne, isNull, sql } from 'drizzle-orm'
 import { db } from '../db'
@@ -576,8 +577,8 @@ usersRouter.post('/:id/roles', requirePermission('users:update'), async (c) => {
     invalidatePermissionCache()
     eventEmitter.emit('liveActivity.interestChanged', { userId })
     return c.json(assignment, 201)
-  } catch (err: any) {
-    if (err?.code === '23505') {
+  } catch (err) {
+    if (getPostgresError(err)?.code === '23505') {
       return c.json({ error: 'Role assignment already exists for this user, role, and scope' }, 409)
     }
     throw err

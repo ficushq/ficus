@@ -621,3 +621,23 @@ describe('Security: permission enforcement on POST /:id/roles', () => {
     }
   })
 })
+
+it('duplicate role assignments remain a safe 409 through wrapped driver failures', async () => {
+  const pfx = `${prefix}-duplicate-role`
+  const user = await createTestUser({ prefix: pfx })
+  const role = await createTestRole({ prefix: pfx, permissions: ['users:read'] })
+  try {
+    const request = () =>
+      app.request(`/api/users/${user.id}/roles`, {
+        method: 'POST',
+        headers: { ...authHeaders(admin.token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roleId: role.id, scope: 'system' }),
+      })
+    expect((await request()).status).toBe(201)
+    const duplicate = await request()
+    expect(duplicate.status).toBe(409)
+    expect(await duplicate.json()).toEqual({ error: 'Role assignment already exists for this user, role, and scope' })
+  } finally {
+    await cleanupTestRbac(pfx)
+  }
+})

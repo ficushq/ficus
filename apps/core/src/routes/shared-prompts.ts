@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { AgentType } from '../entities/AgentType'
 import { SharedPrompt } from '../entities/SharedPrompt'
@@ -49,7 +50,7 @@ sharedPromptsRoutes.post('/', requirePermission('agent-types:update'), async (c)
     await SharedPrompt.upsert(input)
     return c.json((await SharedPrompt.mustFind(input.id)).toJson(), 201)
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 
@@ -64,7 +65,7 @@ sharedPromptsRoutes.put('/:id', requirePermission('agent-types:update'), async (
     SharedPrompt.invalidateCache()
     return c.json((await SharedPrompt.mustFind(id)).toJson())
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 
@@ -84,7 +85,7 @@ sharedPromptsRoutes.get('/:id/template-diff', requirePermission('agent-types:rea
   try {
     return c.json(await sharedPromptSync.getTemplateDiff(c.req.param('id')))
   } catch (e: any) {
-    return c.json({ error: e.message }, 404)
+    return c.json({ error: publicErrorMessage(e) }, 404)
   }
 })
 
@@ -94,7 +95,7 @@ sharedPromptsRoutes.post('/:id/revert-to-template', requirePermission('agent-typ
     SharedPrompt.invalidateCache()
     return c.json({ ok: true })
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 
@@ -105,7 +106,7 @@ sharedPromptsRoutes.post('/:id/revert-template-fields', requirePermission('agent
     SharedPrompt.invalidateCache()
     return c.json({ ok: true })
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 

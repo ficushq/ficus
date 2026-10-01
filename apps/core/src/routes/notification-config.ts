@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { resolveActingUser } from '../services/rbac'
 import { Hono } from 'hono'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
@@ -73,7 +74,7 @@ notificationConfigRouter.get('/template-diff', requirePermission('settings:read'
     const diff = await notificationSync.getTemplateDiff('default')
     return c.json(diff)
   } catch (e: any) {
-    return c.json({ error: e.message }, 404)
+    return c.json({ error: publicErrorMessage(e) }, 404)
   }
 })
 
@@ -88,7 +89,7 @@ notificationConfigRouter.post('/revert-to-template', requirePermission('settings
     }
     return c.json({ ok: true })
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 
@@ -103,7 +104,7 @@ notificationConfigRouter.post('/revert-template-fields', requirePermission('sett
     }
     return c.json({ ok: true })
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 

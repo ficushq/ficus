@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import {
@@ -255,7 +256,7 @@ function routeError(
   c: { json: (body: { error: string }, status: 400 | 404 | 500) => Response },
   error: unknown
 ): Response {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = publicErrorMessage(error)
   if (message.includes('Artifact question not found')) {
     return c.json({ error: message }, 400)
   }

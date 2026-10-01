@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'bun:test'
+import { DrizzleQueryError } from 'drizzle-orm/errors'
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, spyOn } from 'bun:test'
 import { like, inArray, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { db, memoryChunks, memoryDocuments, squads, squadMemoryGrants, agents, agentTypes, agentTokens } from '../db'
@@ -73,6 +74,46 @@ describe('memory routes', () => {
     await db.delete(agents).where(eq(agents.squadId, callerSquadId))
     await db.delete(agentTypes).where(like(agentTypes.id, `${testPrefix}%`))
     await db.delete(squads).where(like(squads.name, `${testPrefix}%`))
+  })
+
+  it('nested workspace rescan failures conceal actual query parameters and retain controlled sandbox messages', async () => {
+    const actualFailure = await db
+      .select()
+      .from(squads)
+      .where(eq(squads.name, 'WORKSPACE_SCAN_PARAMETER_CANARY\0'))
+      .then(
+        () => undefined,
+        (error: unknown) => error
+      )
+    expect(actualFailure).toBeInstanceOf(DrizzleQueryError)
+    const sandbox = await import('../services/sandbox')
+    const remote = spyOn(sandbox, 'isRemoteSandboxRuntime').mockReturnValue(true)
+    const manager = spyOn(sandbox, 'getSandboxManager').mockImplementation(() => {
+      throw actualFailure
+    })
+    try {
+      const request = () =>
+        app.request(`/api/memory/${targetSquadId}/reindex`, {
+          method: 'POST',
+          headers: { ...authHeaders(admin.token), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'workspace_file' }),
+        })
+      const response = await request()
+      expect(response.status).toBe(200)
+      const body = await response.text()
+      expect(JSON.parse(body).workspaceFilesScanError).toBe('Database query failed')
+      expect(body).not.toContain('WORKSPACE_SCAN_PARAMETER_CANARY')
+      expect(body).not.toContain('select ')
+      manager.mockImplementation(() => {
+        throw new Error('Sandbox is unavailable')
+      })
+      const controlled = await request()
+      expect(controlled.status).toBe(200)
+      expect((await controlled.json()).workspaceFilesScanError).toBe('Sandbox is unavailable')
+    } finally {
+      manager.mockRestore()
+      remote.mockRestore()
+    }
   })
 
   it('returns 400 for unknown search sourceTypes instead of broadening search', async () => {

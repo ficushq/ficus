@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import {
@@ -546,7 +547,7 @@ export const inboxRouter = new Hono()
       return c.json(message.toJson(), 201)
     } catch (error) {
       if (error instanceof AgentTargetUnavailableError) return c.json({ error: error.message, code: error.code }, 409)
-      const msg = error instanceof Error ? error.message : 'Failed to send message'
+      const msg = error instanceof Error ? publicErrorMessage(error) : 'Failed to send message'
       // Map error messages to appropriate HTTP status codes
       let status: 400 | 403 | 404 = 400
       if (msg.includes('not found')) {
@@ -600,7 +601,7 @@ export const inboxRouter = new Hono()
       })
       return c.json(att.toJson(), 201)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Upload failed'
+      const msg = err instanceof Error ? publicErrorMessage(err) : 'Upload failed'
       if (msg === 'ATTACHMENT_TOO_LARGE' || msg === 'INBOX_STORAGE_QUOTA_EXCEEDED') {
         return c.json({ error: msg }, 413)
       }

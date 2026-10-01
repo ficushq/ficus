@@ -1,3 +1,5 @@
+import { getPostgresError } from '../../db/errors'
+import { DrizzleQueryError } from 'drizzle-orm/errors'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
@@ -281,16 +283,16 @@ describe('machine queries', () => {
   it('surfaces a unique name violation as SQLSTATE 23505 (placement dedupe adopts on this)', async () => {
     await insertMachine(machineValues('dup'))
     // The concurrent-provision dedupe (placement.provisionCapped) recognises the
-    // race-loser by this exact driver shape — code 23505 on machines_name_unique —
+    // race-loser by the underlying SQLSTATE 23505 on machines_name_unique —
     // then adopts the winner's row. Pin the shape so a driver bump can't silently
     // turn adopt back into a hard failure.
     const err = await insertMachine(machineValues('dup')).then(
       () => null,
-      (e: unknown) => e as { code?: string; constraint_name?: string }
+      (e: unknown) => e
     )
     expect(err).not.toBeNull()
-    expect(err?.code).toBe('23505')
-    expect(err?.constraint_name).toBe('machines_name_unique')
+    expect(err).toBeInstanceOf(DrizzleQueryError)
+    expect(getPostgresError(err)).toEqual({ code: '23505', constraint: 'machines_name_unique' })
   })
 })
 

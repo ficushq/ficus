@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test'
+import { DrizzleQueryError } from 'drizzle-orm/errors'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { db, sharedPrompts, agentTypes } from '../db'
@@ -81,6 +82,30 @@ describe('shared prompt routes', () => {
   beforeEach(async () => {
     await db.delete(sharedPrompts).where(eq(sharedPrompts.id, 'custom-inc'))
     SharedPrompt.invalidateCache()
+  })
+
+  test('wrapped database failures in shared prompt create/update responses contain no SQL or parameters', async () => {
+    const content = 'PRIVATE_QUERY_PARAMETER_CANARY\0'
+    const input = { id: 'custom-inc', name: 'Custom', content }
+    const actualFailure = await SharedPrompt.upsert(input).then(
+      () => undefined,
+      (error: unknown) => error
+    )
+    expect(actualFailure).toBeInstanceOf(DrizzleQueryError)
+    expect((actualFailure as DrizzleQueryError).message).toContain('PRIVATE_QUERY_PARAMETER_CANARY')
+    for (const method of ['POST', 'PUT']) {
+      if (method === 'PUT') await SharedPrompt.upsert({ ...input, content: 'Valid content' })
+      const response = await app.request(
+        method === 'POST' ? '/api/shared-prompts' : '/api/shared-prompts/custom-inc',
+        adminJson(method, input)
+      )
+      expect(response.status).toBe(400)
+      const body = await response.text()
+      expect(JSON.parse(body)).toEqual({ error: 'Database query failed' })
+      expect(body).not.toContain('PRIVATE_QUERY_PARAMETER_CANARY')
+      expect(body).not.toContain('insert into')
+      expect(body).not.toContain('params:')
+    }
   })
 
   test('creates, updates, disables, enables and deletes a custom include', async () => {

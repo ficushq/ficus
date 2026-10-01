@@ -1,3 +1,5 @@
+import { DATABASE_QUERY_FAILED, isDatabaseQueryError } from '../../db/errors'
+
 export interface StoredKeyRedaction<T> {
   value: T
   storedKeys: readonly string[]
@@ -120,6 +122,16 @@ export class ContentSafety implements ContentSafetyPort {
         return output
       }
       if (value instanceof Error) {
+        // A query wrapper includes SQL/parameters in its message, stack and own fields.
+        // Drop the entire payload (including driver detail), not just known credentials.
+        if (isDatabaseQueryError(value)) {
+          // Still inspect own data for stored-key audit attribution; discard the sanitized payload.
+          copyOwnData(value, {})
+          const error = new Error(DATABASE_QUERY_FAILED)
+          error.stack = DATABASE_QUERY_FAILED
+          replacements.set(value, error)
+          return error
+        }
         const message = redactText(value.message)
         const error = new Error(message)
         if (value.cause !== undefined)
@@ -216,7 +228,12 @@ export class ContentSafety implements ContentSafetyPort {
   }
 
   private redactString(input: string, storedKeys?: Set<string>): string {
-    let value = input
+    // Interpolated Drizzle messages no longer carry the Error object/type.
+    const queryStart = input.indexOf('Failed query: ')
+    if (queryStart >= 0 && storedKeys) {
+      for (const entry of this.#entries) if (input.includes(entry.value)) storedKeys.add(entry.key)
+    }
+    let value = queryStart < 0 ? input : `${input.slice(0, queryStart)}${DATABASE_QUERY_FAILED}`
     const placeholders: string[] = []
     value = value.replace(/\[REDACTED_(?:SECRET_ENV:[A-Za-z0-9_.-]+|CREDENTIAL)\]/g, (placeholder) => {
       const index = placeholders.push(placeholder) - 1

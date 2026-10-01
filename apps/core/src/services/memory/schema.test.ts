@@ -1,3 +1,4 @@
+import { getPostgresError } from '../../db/errors'
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { db } from '../../db'
@@ -61,7 +62,7 @@ describe('memory schema', () => {
       })
 
       // Second insert with same squad_id + source_type + source_id should fail
-      let error: Error | null = null
+      let error: unknown
       try {
         await db.insert(memoryDocuments).values({
           squadId: testSquadId,
@@ -70,10 +71,12 @@ describe('memory schema', () => {
           contentHash: 'hash2',
         })
       } catch (e) {
-        error = e as Error
+        error = e
       }
-      expect(error).not.toBeNull()
-      expect(error?.message).toContain('unique')
+      expect(getPostgresError(error)).toEqual({
+        code: '23505',
+        constraint: 'memory_documents_squad_id_source_type_source_id_unique',
+      })
     })
 
     it('allows same source_id in different squads', async () => {
@@ -151,7 +154,7 @@ describe('memory schema', () => {
       })
 
       // Insert second chunk at same index should fail
-      let error: Error | null = null
+      let error: unknown
       try {
         await db.insert(memoryChunks).values({
           squadId: testSquadId,
@@ -161,10 +164,12 @@ describe('memory schema', () => {
           contentHash: computeContentHash('Duplicate chunk 1'),
         })
       } catch (e) {
-        error = e as Error
+        error = e
       }
-      expect(error).not.toBeNull()
-      expect(error?.message).toContain('unique')
+      expect(getPostgresError(error)).toEqual({
+        code: '23505',
+        constraint: 'memory_chunks_document_id_chunk_index_unique',
+      })
     })
 
     it('cascades delete when document is deleted', async () => {

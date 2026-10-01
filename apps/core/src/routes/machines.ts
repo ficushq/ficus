@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { and, eq, sql } from 'drizzle-orm'
 import { db, instanceMaintenanceState } from '../db'
 import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'
@@ -442,7 +443,7 @@ export function createMachinesRouter(
         // 'unreachable' only if the row is still sitting in the state we put it
         // in, and persist the error message alongside it so the row still tells
         // an operator WHY even when bootstrapMachine's own write never ran.
-        const message = err instanceof Error ? err.message : String(err)
+        const message = publicErrorMessage(err)
         await failMachineBootstrapClaim(machine.id, capLastError(message))
       })
       .finally(async () => {
@@ -501,7 +502,7 @@ export function createMachinesRouter(
       return c.json(plan)
     } catch (err) {
       // e.g. not the VM sandbox runtime — surface the message instead of a bare 500.
-      const message = err instanceof Error ? err.message : String(err)
+      const message = publicErrorMessage(err)
       log.warn(`rebalance failed: ${message}`)
       // An execute overlapping a running execute is a caller-resolvable
       // conflict (retry when it finishes), not a server fault.
@@ -520,7 +521,7 @@ export function createMachinesRouter(
         const operation = await beginMachineEvacuation({ ...body, sourceMachineId: c.req.param('id') })
         return c.json(operation)
       } catch (err) {
-        return c.json({ error: err instanceof Error ? err.message : String(err) }, 409)
+        return c.json({ error: publicErrorMessage(err) }, 409)
       }
     }
   )
@@ -529,7 +530,7 @@ export function createMachinesRouter(
     try {
       return c.json(await verifyMachineEvacuation(c.req.param('id')))
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 409)
+      return c.json({ error: publicErrorMessage(err) }, 409)
     }
   })
 
@@ -580,7 +581,7 @@ export function createMachinesRouter(
                 await recordEvacuationBoxProof({ evacuationId, sandboxId, ...result.migrationProof })
               queue.push({ event: 'result', data: JSON.stringify(result) })
             } catch (err) {
-              const message = err instanceof Error ? err.message : String(err)
+              const message = publicErrorMessage(err)
               log.warn(`migrate-box ${sandboxId} -> ${machine.id} failed: ${message}`)
               queue.push({ event: 'error', data: JSON.stringify({ error: message }) })
             } finally {
@@ -608,7 +609,7 @@ export function createMachinesRouter(
     } catch (err) {
       // migrateBox returns structured reasons for every expected failure; a
       // throw is unexpected (or a non-VM runtime) — surface the message.
-      const message = err instanceof Error ? err.message : String(err)
+      const message = publicErrorMessage(err)
       log.warn(`migrate-box ${sandboxId} -> ${machine.id} failed: ${message}`)
       return c.json({ error: message }, 500)
     }
@@ -687,7 +688,7 @@ export function createMachinesRouter(
       }
       return c.json({ quiesced: result.quiesced })
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = publicErrorMessage(err)
       log.warn(`quiesce ${machine.id} failed: ${message}`)
       return c.json({ error: message }, 500)
     }
@@ -761,7 +762,7 @@ export function createMachinesRouter(
         terminationReconciliationRequired = authorization.reconciliationRequired === true
         evacuationOperationId = parsed.data.operationId
       } catch (err) {
-        return c.json({ error: err instanceof Error ? err.message : String(err) }, 409)
+        return c.json({ error: publicErrorMessage(err) }, 409)
       }
     }
 

@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from 'drizzle-orm/errors'
 import { randomUUID } from 'crypto'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -660,6 +661,25 @@ describe('cross-process update run lock (real advisory lock)', () => {
       expect(run.status).not.toBe('failed')
     } finally {
       await held?.release().catch(() => {})
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('background lock query failures are private in status and the persisted status artifact', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-updater-private-query-'))
+    try {
+      const statusPath = join(dir, 'status.json')
+      const { updater } = manager({
+        runLock: async () => {
+          throw new DrizzleQueryError('select LOCK_SQL_CANARY', ['LOCK_PARAMETER_CANARY'], new Error('driver'))
+        },
+        statusPath,
+      })
+      updater.applyInBackground({ manual: true })
+      await waitUntilInactive(updater)
+      expect(updater.status().latest?.error).toBe('Database query failed')
+      expect(readFileSync(statusPath, 'utf8')).not.toContain('CANARY')
+    } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })

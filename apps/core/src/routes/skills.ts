@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { db, skills } from '../db'
@@ -51,7 +52,7 @@ skillsRoutes.post('/', requirePermission('skills:write'), async (c) => {
     await Skill.upsert(input)
     return c.json((await Skill.mustFind(input.id)).toJson(), 201)
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 
@@ -70,7 +71,7 @@ skillsRoutes.post('/import', requirePermission('skills:write'), async (c) => {
     await Skill.upsert(parsed)
     return c.json((await Skill.mustFind(parsed.id)).toJson(), 201)
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 
@@ -84,7 +85,7 @@ skillsRoutes.put('/:id', requirePermission('skills:write'), async (c) => {
     Skill.invalidateCache()
     return c.json((await Skill.mustFind(id)).toJson())
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 
@@ -102,7 +103,7 @@ skillsRoutes.get('/:id/template-diff', requirePermission('skills:read'), async (
   try {
     return c.json(await skillSync.getTemplateDiff(c.req.param('id')))
   } catch (e: any) {
-    return c.json({ error: e.message }, 404)
+    return c.json({ error: publicErrorMessage(e) }, 404)
   }
 })
 skillsRoutes.post('/:id/revert-to-template', requirePermission('skills:write'), async (c) => {
@@ -111,7 +112,7 @@ skillsRoutes.post('/:id/revert-to-template', requirePermission('skills:write'), 
     Skill.invalidateCache()
     return c.json({ ok: true })
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 skillsRoutes.post('/:id/revert-template-fields', requirePermission('skills:write'), async (c) => {
@@ -121,7 +122,7 @@ skillsRoutes.post('/:id/revert-template-fields', requirePermission('skills:write
     Skill.invalidateCache()
     return c.json({ ok: true })
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 skillsRoutes.post('/:id/disable', requirePermission('skills:write'), async (c) => {
@@ -158,7 +159,7 @@ skillsRoutes.put('/:id/support-file', requirePermission('skills:write'), async (
     Skill.invalidateCache()
     return c.json((await Skill.mustFind(id)).toJson())
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 
@@ -182,7 +183,7 @@ skillsRoutes.delete('/:id/support-file', requirePermission('skills:write'), asyn
     Skill.invalidateCache()
     return c.json((await Skill.mustFind(id)).toJson())
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 

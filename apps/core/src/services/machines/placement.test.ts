@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
   DEFAULT_MACHINE_UNIT_CAPACITY,
@@ -656,7 +657,7 @@ describe('provisionCapped — concurrent same-name dedupe', () => {
       getMachineByName: async (name) => (name === 'exe-ded-agent_race3' ? winner : null),
       provisionMachine: async () => {
         provisionCalls += 1
-        throw uniqueNameViolation()
+        throw new DrizzleQueryError('insert into machines values ($1)', ['private-key'], uniqueNameViolation())
       },
     }
     const result = await provisionCapped(deps, {

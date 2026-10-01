@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { SquadPreset } from '../entities/SquadPreset'
@@ -25,7 +26,7 @@ export const squadPresetsRouter = new Hono()
     try {
       await validateSquadPresetConfig({ ...body, id })
     } catch (e: any) {
-      return c.json({ error: e.message }, 400)
+      return c.json({ error: publicErrorMessage(e) }, 400)
     }
     const existing = await SquadPreset.find(id)
     if (existing) return c.json({ error: `Squad preset "${id}" already exists` }, 409)
@@ -41,7 +42,7 @@ export const squadPresetsRouter = new Hono()
     try {
       await validateSquadPresetConfig({ ...body, id })
     } catch (e: any) {
-      return c.json({ error: e.message }, 400)
+      return c.json({ error: publicErrorMessage(e) }, 400)
     }
     await SquadPreset.upsert({ ...body, id })
     await squadPresetSync.recomputeFieldOverrides(id)
@@ -65,7 +66,7 @@ export const squadPresetsRouter = new Hono()
       const diff = await squadPresetSync.getTemplateDiff(c.req.param('id'))
       return c.json(diff)
     } catch (e: any) {
-      return c.json({ error: e.message }, 404)
+      return c.json({ error: publicErrorMessage(e) }, 404)
     }
   })
   .post('/:id/revert-to-template', requirePermission('squad-presets:update'), async (c) => {
@@ -74,7 +75,7 @@ export const squadPresetsRouter = new Hono()
       SquadPreset.invalidateCache()
       return c.json({ ok: true })
     } catch (e: any) {
-      return c.json({ error: e.message }, 400)
+      return c.json({ error: publicErrorMessage(e) }, 400)
     }
   })
   .post('/:id/revert-template-fields', requirePermission('squad-presets:update'), async (c) => {
@@ -84,7 +85,7 @@ export const squadPresetsRouter = new Hono()
       SquadPreset.invalidateCache()
       return c.json({ ok: true })
     } catch (e: any) {
-      return c.json({ error: e.message }, 400)
+      return c.json({ error: publicErrorMessage(e) }, 400)
     }
   })
   .post('/:id/disable', requirePermission('squad-presets:update'), async (c) => {

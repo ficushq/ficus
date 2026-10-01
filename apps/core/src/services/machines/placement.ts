@@ -1,3 +1,4 @@
+import { getPostgresError } from '../../db/errors'
 import { randomUUID } from 'crypto'
 import { InflightDeduper } from '../../lib/infra/inflight'
 import { createLogger } from '../../lib/infra/logger'
@@ -427,17 +428,12 @@ export async function defaultProvisionMachine(
   }
 }
 
-/** True for the `machines.name` UNIQUE-index conflict as the postgres-js driver
- *  surfaces it: SQLSTATE 23505 (unique_violation) on `machines_name_unique`. The
- *  driver rethrows this verbatim through drizzle's insert; the exact shape is
- *  pinned by a real-DB test (queries.test.ts). The `machines` insert has no other
- *  unique constraint, so 23505 alone is decisive — the constraint-name check is a
- *  belt-and-braces guard against a future one. */
+/** Recognize the wrapped postgres-js name race without mistaking another unique constraint for it. */
 function isUniqueNameViolation(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null) return false
-  const e = err as { code?: unknown; constraint_name?: unknown }
-  if (e.code !== '23505') return false
-  return e.constraint_name === undefined || e.constraint_name === 'machines_name_unique'
+  const failure = getPostgresError(err)
+  return (
+    failure?.code === '23505' && (failure.constraint === undefined || failure.constraint === 'machines_name_unique')
+  )
 }
 
 /**

@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from 'drizzle-orm'
 import { describe, expect, it } from 'bun:test'
 import { classifyScheduleFailure, ScheduleExecutionError } from './failure-classifier'
 
@@ -45,5 +46,31 @@ describe('classifyScheduleFailure', () => {
     expect(
       classifyScheduleFailure(Object.assign(new Error('api key secret'), { status: 503, name: 'APIError' }))
     ).toMatchObject({ class: 'transient', code: 'provider_error' })
+  })
+})
+
+it('recognizes wrapped driver failures without persisting SQL or parameters', () => {
+  const error = new DrizzleQueryError(
+    'insert into private_table values ($1)',
+    ['private-value'],
+    Object.assign(new Error('private driver detail'), { code: '40001' })
+  )
+  expect(classifyScheduleFailure(error)).toEqual({
+    class: 'transient',
+    code: 'database_error',
+    summary: 'A database error interrupted the scheduled action.',
+  })
+})
+
+it('preserves transport classification when Drizzle wraps a driver socket error', () => {
+  const error = new DrizzleQueryError(
+    'private SQL',
+    ['private'],
+    Object.assign(new Error('socket'), { code: 'ECONNRESET' })
+  )
+  expect(classifyScheduleFailure(error)).toEqual({
+    class: 'transient',
+    code: 'transport_error',
+    summary: 'A transport error interrupted the scheduled action.',
   })
 })

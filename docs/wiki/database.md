@@ -34,6 +34,27 @@ Every postgres connection in the codebase goes through this function. It wraps t
 
 Reads the `DATABASE_URL` environment variable. Throws if not set.
 
+## Query errors
+
+Drizzle wraps postgres-js failures in `DrizzleQueryError`. Its message, stack,
+`query` and `params` include SQL and application data; do not expose them to
+clients, logs or durable failure summaries. Use `publicErrorMessage` for existing
+catch-to-response paths (including nested result fields and stringified failures)
+and the ContentSafety boundary for logging. The helper accepts unknown caught
+values and an optional fallback for non-Error values. Copied query messages also
+receive the fixed summary; known domain validation messages retain their existing
+behavior.
+
+Use `getPostgresError` from `apps/core/src/db/errors.ts` instead of top-level
+`error.code` to recognize SQLSTATEs (for example, `23505` unique conflicts).
+It inspects a bounded, cycle-safe cause chain and returns only the code and
+optional constraint name. `hasErrorCode` supports allowlisted transport codes.
+
+The disposable test database is push-built, not migration-built. Kit can omit
+indexes (including `uq_agent_scope` on both Kit 0.30.6 and 0.31.10). Tests of a
+migration-defined uniqueness fence must establish that exact index explicitly;
+a passing application-side duplicate precheck is not a database race regression.
+
 ## Schema
 
 The schema is defined in `apps/core/src/db/schema.ts` using Drizzle's `pgTable` definitions.

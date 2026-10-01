@@ -1,3 +1,4 @@
+import { getPostgresError, publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import type { Context } from 'hono'
@@ -98,8 +99,8 @@ export const amtpRouter = new Hono()
       return c.json(peer.toJson(), 201)
     } catch (err) {
       // Unique violation on localAlias/instanceId → 409
-      if ((err as { code?: string })?.code === '23505') return c.json({ error: 'Peer already exists' }, 409)
-      const msg = err instanceof Error ? err.message : 'Failed to create peer'
+      if (getPostgresError(err)?.code === '23505') return c.json({ error: 'Peer already exists' }, 409)
+      const msg = err instanceof Error ? publicErrorMessage(err) : 'Failed to create peer'
       return c.json({ error: msg }, 400)
     }
   })
@@ -261,7 +262,7 @@ export const amtpRouter = new Hono()
     try {
       if (agent.amtpHandle !== handle) await agent.update({ amtpHandle: handle, cardJson: null })
     } catch (err) {
-      if ((err as { code?: string })?.code === '23505') return c.json({ error: 'handle already taken' }, 409)
+      if (getPostgresError(err)?.code === '23505') return c.json({ error: 'handle already taken' }, 409)
       throw err
     }
     const { instanceId } = await InstanceIdentity.getPublic()
