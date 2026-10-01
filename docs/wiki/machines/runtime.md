@@ -1625,12 +1625,16 @@ fixed inventory before each box.
 
 Load the same EnvironmentFiles as the installed Core units using Bun's env parser;
 do not shell-source them (valid dotenv values can contain shell metacharacters).
-For the standard hosted paths:
+Also set `FICUS_ROOT` to the active release and use its Core working directory,
+matching the installed units. `FICUS_ROOT` is supplied by the units' `Environment=`,
+not their EnvironmentFiles; omitting it can make artifact lookup fall back to a
+source build outside the release. For the standard hosted artifact paths:
 
 ```bash
 (
 set -eu
-cd /opt/ficus-core
+export FICUS_ROOT=/opt/ficus-core/current
+cd "$FICUS_ROOT/apps/core"
 # Require the allow-start path to be absent, including a dangling symlink.
 test ! -e /run/ficus-box-reprovision.allow-start
 test ! -L /run/ficus-box-reprovision.allow-start
@@ -1657,7 +1661,7 @@ trap 'exit 143' TERM
 systemctl daemon-reload
 systemctl stop ficus-api.service ficus-worker.service
 FICUS_BR_BOX=all bun --env-file /opt/ficus-core/.env \
-  --env-file /etc/ficus/managed.env current/apps/core/dist/box-reprovision.js
+  --env-file /etc/ficus/managed.env dist/box-reprovision.js
 completed=1
 )
 ```

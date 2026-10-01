@@ -1,7 +1,10 @@
 #!/usr/bin/env bun
 /** Maintenance-only operator; API and worker must have the documented runtime
  * start guards and be stopped. Secrets come from the units' actual EnvironmentFile.
- * FICUS_BR_BOX=<sandboxId>|all bun --env-file <config> current/apps/core/dist/box-reprovision.js
+ * export FICUS_ROOT=/opt/ficus-core/current
+ * cd "$FICUS_ROOT/apps/core"
+ * FICUS_BR_BOX=all bun --env-file /opt/ficus-core/.env \
+ *   --env-file /etc/ficus/managed.env dist/box-reprovision.js
  */
 import { runBoxReprovision, ReprovisionError } from './services/machines/box-reprovision'
 import {
