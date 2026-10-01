@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { getSettingsStore } from '../services/settings'
 import {
@@ -76,7 +77,7 @@ export function createUpdatesRouter(deps: { store?: Store; updater?: Updater } =
     } catch (err) {
       const status = updater.status()
       if (err instanceof UpdateLockedError) return c.json({ error: err.message, status }, 409)
-      const message = err instanceof Error ? err.message : String(err)
+      const message = publicErrorMessage(err)
       return c.json({ error: message, status }, 500)
     }
   })
@@ -91,7 +92,7 @@ export function createUpdatesRouter(deps: { store?: Store; updater?: Updater } =
         err instanceof UnsupportedDeploymentError
       )
         return c.json({ error: err.message, status }, 409)
-      const message = err instanceof Error ? err.message : String(err)
+      const message = publicErrorMessage(err)
       return c.json({ error: message, status }, 500)
     }
   })
@@ -122,7 +123,7 @@ export function createUpdatesRouter(deps: { store?: Store; updater?: Updater } =
       const status = updater.status()
       if (err instanceof UpdateLockedError || err instanceof UnsupportedDeploymentError)
         return c.json({ error: err.message, status }, 409)
-      const message = err instanceof Error ? err.message : String(err)
+      const message = publicErrorMessage(err)
       return c.json({ error: message, status }, 500)
     }
   })

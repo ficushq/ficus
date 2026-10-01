@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { randomUUID } from 'crypto'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
@@ -124,7 +125,7 @@ async function probeHost(sshRunner: SshRunner, host: RemoteHost): Promise<{ reac
     }
     return { reachable: false, error: result.stderr.trim() || `ssh exited ${result.exitCode}` }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = publicErrorMessage(err)
     // `materializePrivateKey`'s missing-secret error (keys.ts) embeds the
     // secret-store handle (`remote-host-ssh:<id>`) for operator-side
     // debugging — never return it to an API caller. Map it to a generic

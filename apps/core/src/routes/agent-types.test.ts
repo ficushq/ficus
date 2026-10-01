@@ -56,6 +56,26 @@ describe('agent type route validation', () => {
     return res.json()
   }
 
+  test('agent type create conceals actual query failures but preserves validation messages', async () => {
+    const response = await app.request('/api/agent-types', {
+      method: 'POST',
+      headers: { ...authHeaders(funcAdmin.token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...validAgentType, includes: ['AGENT_TYPE_PARAMETER_CANARY\0'] }),
+    })
+    expect(response.status).toBe(400)
+    const body = await response.text()
+    expect(JSON.parse(body)).toEqual({ error: 'Database query failed' })
+    expect(body).not.toContain('AGENT_TYPE_PARAMETER_CANARY')
+    expect(body).not.toContain('select ')
+    const invalid = await app.request('/api/agent-types', {
+      method: 'POST',
+      headers: { ...authHeaders(funcAdmin.token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...validAgentType, id: 'invalid id' }),
+    })
+    expect(invalid.status).toBe(400)
+    expect((await invalid.json()).error).toContain('agent type id')
+  })
+
   test('GET detail includes the resolved tier chain and provenance', async () => {
     const tierSlug = `${funcPrefix}-standard`
     const typeId = `${funcPrefix}-tier-detail-agent`

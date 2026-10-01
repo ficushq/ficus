@@ -713,10 +713,7 @@ export const agentsRouter = new Hono()
         if (error instanceof ImageInputUnsupportedError) return c.json({ error: error.message }, 400)
         if (error instanceof ChatIdempotencyConflictError) return c.json({ error: error.message }, 409)
         if (error instanceof AgentTargetUnavailableError) return c.json({ error: error.message, code: error.code }, 409)
-        return c.json(
-          { error: `Failed to send message: ${error instanceof Error ? publicErrorMessage(error) : String(error)}` },
-          500
-        )
+        return c.json({ error: `Failed to send message: ${publicErrorMessage(error)}` }, 500)
       }
     }
   )

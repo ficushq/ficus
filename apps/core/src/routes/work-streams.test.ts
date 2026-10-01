@@ -79,6 +79,24 @@ describe('work-streams routes', () => {
     )
   }
 
+  it('legacy request-review conceals wrapped wait-write SQL and message parameters', async () => {
+    const [row] = await db
+      .insert(workStreams)
+      .values({ squadId: testSquadId, title: 'Private query response' })
+      .returning()
+    const response = await apiFetch(`/api/workstreams/${row!.id}/request-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'WAIT_MESSAGE_PARAMETER_CANARY\0' }),
+    })
+    expect(response.status).toBe(400)
+    const body = await response.text()
+    expect(JSON.parse(body)).toEqual({ error: 'Database query failed' })
+    expect(body).not.toContain('WAIT_MESSAGE_PARAMETER_CANARY')
+    expect(body).not.toContain('insert into')
+    expect(body).not.toContain('params:')
+  })
+
   it('uses numeric references for detail, mutation and subscriptions without changing UUID identity', async () => {
     const [row] = await db.insert(workStreams).values({ squadId: testSquadId, title: 'Number lookup' }).returning()
     for (const ref of [row!.id, row!.id.slice(0, 8), String(row!.number), `%23${row!.number}`]) {

@@ -48,6 +48,11 @@ export function isDatabaseQueryError(error: unknown): boolean {
 }
 
 /** Keep existing domain messages; query errors contain SQL and parameters and must never be returned verbatim. */
-export function publicErrorMessage(error: Error): string {
-  return isDatabaseQueryError(error) ? DATABASE_QUERY_FAILED : error.message
+export function publicErrorMessage(error: unknown, fallback?: string): string {
+  if (isDatabaseQueryError(error)) return DATABASE_QUERY_FAILED
+  const ownMessage = error !== null && typeof error === 'object' ? ownData(error, 'message') : undefined
+  const message =
+    error instanceof Error ? error.message : typeof ownMessage === 'string' ? ownMessage : (fallback ?? String(error))
+  // Some adapters copy/stringify the message and lose the typed wrapper/cause.
+  return message.includes('Failed query: ') ? DATABASE_QUERY_FAILED : message
 }

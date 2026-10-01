@@ -176,10 +176,7 @@ export const chatRouter = new Hono().post('/', zValidator('json', chatRequestSch
       if (error instanceof InvalidAttachmentError) return c.json({ error: 'Invalid attachment' }, 400)
       if (error instanceof ImageInputUnsupportedError) return c.json({ error: error.message }, 400)
       if (error instanceof ChatIdempotencyConflictError) return c.json({ error: error.message }, 409)
-      return c.json(
-        { error: `Failed to queue execution: ${error instanceof Error ? publicErrorMessage(error) : String(error)}` },
-        500
-      )
+      return c.json({ error: `Failed to queue execution: ${publicErrorMessage(error)}` }, 500)
     }
 
     if (agent.agentTypeId === 'assistant')

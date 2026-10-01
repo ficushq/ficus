@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { parseTrustedChannelIds, parseChannelIds } from '../services/channel-access'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
@@ -134,7 +135,7 @@ export const channelInstancesRouter = new Hono()
       const diff = await channelSync.getTemplateDiff(c.req.param('id'))
       return c.json(diff)
     } catch (e: any) {
-      return c.json({ error: e.message }, 404)
+      return c.json({ error: publicErrorMessage(e) }, 404)
     }
   })
   .post('/:id/revert-to-template', requirePermission('channels:update'), async (c) => {
@@ -142,7 +143,7 @@ export const channelInstancesRouter = new Hono()
       await channelSync.revertToTemplate(c.req.param('id'))
       return c.json({ ok: true })
     } catch (e: any) {
-      return c.json({ error: e.message }, 400)
+      return c.json({ error: publicErrorMessage(e) }, 400)
     }
   })
   .post('/:id/revert-template-fields', requirePermission('channels:update'), async (c) => {
@@ -151,7 +152,7 @@ export const channelInstancesRouter = new Hono()
       await channelSync.revertTemplateFields(c.req.param('id'), body.fields ?? [])
       return c.json({ ok: true })
     } catch (e: any) {
-      return c.json({ error: e.message }, 400)
+      return c.json({ error: publicErrorMessage(e) }, 400)
     }
   })
   .post('/:id/disable', requirePermission('channels:update'), async (c) => {

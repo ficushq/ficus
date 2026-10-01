@@ -457,7 +457,8 @@ export const memoryRouter = new Hono()
             }
           } catch (err: unknown) {
             // Sandbox might not be running
-            results.workspaceFilesScanError = err instanceof Error ? err.message : `Unknown error: ${String(err)}`
+            results.workspaceFilesScanError =
+              err instanceof Error ? publicErrorMessage(err) : `Unknown error: ${publicErrorMessage(err)}`
           }
         }
 

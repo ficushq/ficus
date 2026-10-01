@@ -39,8 +39,11 @@ Reads the `DATABASE_URL` environment variable. Throws if not set.
 Drizzle wraps postgres-js failures in `DrizzleQueryError`. Its message, stack,
 `query` and `params` include SQL and application data; do not expose them to
 clients, logs or durable failure summaries. Use `publicErrorMessage` for existing
-catch-to-response paths and the ContentSafety boundary for logging. Known domain
-validation messages retain their existing behavior.
+catch-to-response paths (including nested result fields and stringified failures)
+and the ContentSafety boundary for logging. The helper accepts unknown caught
+values and an optional fallback for non-Error values. Copied query messages also
+receive the fixed summary; known domain validation messages retain their existing
+behavior.
 
 Use `getPostgresError` from `apps/core/src/db/errors.ts` instead of top-level
 `error.code` to recognize SQLSTATEs (for example, `23505` unique conflicts).

@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { getSquadClient } from '../services/squad/client'
 import { WorkflowError } from '../services/workflows/catalog'
 import { resolveActingUser } from '../services/rbac'
@@ -424,7 +425,7 @@ export const squadsRouter = new Hono()
       const stat = fs.statSync(targetPath)
       if (!stat.isDirectory()) return c.json({ error: 'Path is not a directory' }, 400)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Invalid path'
+      const message = publicErrorMessage(error, 'Invalid path')
       return c.json({ error: message }, message.includes('not') ? 404 : 400)
     }
 
@@ -444,11 +445,11 @@ export const squadsRouter = new Hono()
     try {
       validateMemoryPath(memoryPath)
     } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : 'Invalid path' }, 400)
+      return c.json({ error: publicErrorMessage(error, 'Invalid path') }, 400)
     }
 
     const result = await WriteService.instance().read(squad.id, memoryPath)
-    if (!result.success) return c.json({ error: result.error.message }, 404)
+    if (!result.success) return c.json({ error: publicErrorMessage(result.error.message) }, 404)
 
     return c.json({
       path: memoryPath,
@@ -473,7 +474,7 @@ export const squadsRouter = new Hono()
         return c.json({ error: 'Invalid path' }, 400)
       }
     } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : 'Invalid path' }, 400)
+      return c.json({ error: publicErrorMessage(error, 'Invalid path') }, 400)
     }
 
     try {
@@ -483,10 +484,7 @@ export const squadsRouter = new Hono()
     } catch (error: any) {
       if (error.code === 'ENOENT') return c.json({ error: 'Path not found' }, 404)
       log.error('Error downloading memory file:', error)
-      return c.json(
-        { error: `Failed to download memory file: ${error instanceof Error ? error.message : String(error)}` },
-        500
-      )
+      return c.json({ error: `Failed to download memory file: ${publicErrorMessage(error)}` }, 500)
     }
   })
   .get('/:id/workspace/tree', requireSquadPermission('workspace:read'), async (c) => {
@@ -620,7 +618,7 @@ export const squadsRouter = new Hono()
     if (relativePath.startsWith('/memory/')) {
       const result = await WriteService.instance().read(squad.id, relativePath)
       if (!result.success) {
-        return c.json({ error: result.error.message }, 404)
+        return c.json({ error: publicErrorMessage(result.error.message) }, 404)
       }
       const content = result.content
       return c.json({
@@ -683,7 +681,7 @@ export const squadsRouter = new Hono()
       return c.json({ path: relativePath, content: binary ? '' : buffer.toString('utf-8'), size: stat.size, binary })
     } catch (error) {
       log.error('Error reading file:', error)
-      return c.json({ error: `Failed to read file: ${error instanceof Error ? error.message : String(error)}` }, 500)
+      return c.json({ error: `Failed to read file: ${publicErrorMessage(error)}` }, 500)
     }
   })
   .get('/:id/workspace/download', requireSquadPermission('workspace:read'), async (c) => {
@@ -735,7 +733,7 @@ export const squadsRouter = new Hono()
         return c.json({ error: 'Path not found' }, 404)
       }
       log.error('Error downloading:', error)
-      return c.json({ error: `Failed to download: ${error instanceof Error ? error.message : String(error)}` }, 500)
+      return c.json({ error: `Failed to download: ${publicErrorMessage(error)}` }, 500)
     }
   })
   .post('/:id/workspace/upload', requireSquadPermission('workspace:write'), async (c) => {
@@ -813,7 +811,7 @@ export const squadsRouter = new Hono()
             results.push({
               path: fullRelativePath,
               status: 'error',
-              error: err instanceof Error ? err.message : String(err),
+              error: publicErrorMessage(err),
             })
           }
         }
@@ -864,7 +862,7 @@ export const squadsRouter = new Hono()
       return c.json({ uploaded: results.filter((r) => r.status !== 'error').length, results })
     } catch (error) {
       log.error('Error uploading files:', error)
-      return c.json({ error: `Failed to upload: ${error instanceof Error ? error.message : String(error)}` }, 500)
+      return c.json({ error: `Failed to upload: ${publicErrorMessage(error)}` }, 500)
     }
   })
   .get('/:id/workspace/sessions', requireSquadPermission('terminal:read'), async (c) => {
@@ -966,7 +964,7 @@ export const squadsRouter = new Hono()
       const agent = await squad.spawnAgent(agentTypeId, { model })
       return c.json(agent.toJson(), 201)
     } catch (error) {
-      return c.json({ error: (error as Error).message }, 400)
+      return c.json({ error: publicErrorMessage(error) }, 400)
     }
   })
   .delete('/:id/agents/:agentId', requireSquadPermission('agents:terminate'), async (c) => {
@@ -992,7 +990,15 @@ export const squadsRouter = new Hono()
     try {
       await agent.tryTerminate()
     } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : `Failed to unspawn agent: ${error}` }, 400)
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? publicErrorMessage(error)
+              : `Failed to unspawn agent: ${publicErrorMessage(error)}`,
+        },
+        400
+      )
     }
 
     return c.body(null, 204)
@@ -1026,7 +1032,7 @@ export const squadsRouter = new Hono()
           terminated.push(agent.id)
         }
       } catch (error) {
-        skipped.push({ id: agent.id, reason: error instanceof Error ? error.message : String(error) })
+        skipped.push({ id: agent.id, reason: publicErrorMessage(error) })
       }
     }
 
@@ -1302,7 +1308,7 @@ export const squadsRouter = new Hono()
     try {
       ;[created] = await Image.createMany([image], { squadId: squad.id })
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : 'Upload failed' }, 400)
+      return c.json({ error: publicErrorMessage(err, 'Upload failed') }, 400)
     }
     await created.markUsed()
 

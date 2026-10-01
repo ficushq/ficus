@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import { sql } from 'drizzle-orm'
+import { db } from '../db'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { notificationConfigRouter } from './notification-config'
@@ -70,6 +73,22 @@ describe('notification-config RBAC guards', () => {
     const res = await app.request('/notification-config', withAuth())
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ rules: [], channels: {} })
+  })
+
+  test('template-diff conceals an actual wrapped SELECT failure', async () => {
+    // Own and restore this disposable table rename even on assertion failure.
+    const renamed = `notification_config_${randomUUID().replaceAll('-', '')}`
+    await db.execute(sql`ALTER TABLE notification_config RENAME TO ${sql.identifier(renamed)}`)
+    try {
+      const response = await app.request('/notification-config/template-diff', withAuth())
+      expect(response.status).toBe(404)
+      const body = await response.text()
+      expect(JSON.parse(body)).toEqual({ error: 'Database query failed' })
+      expect(body).not.toContain('notification_config')
+      expect(body).not.toContain('select ')
+    } finally {
+      await db.execute(sql`ALTER TABLE ${sql.identifier(renamed)} RENAME TO notification_config`)
+    }
   })
 
   test('requires settings:write for mutating endpoints', async () => {

@@ -256,7 +256,7 @@ function routeError(
   c: { json: (body: { error: string }, status: 400 | 404 | 500) => Response },
   error: unknown
 ): Response {
-  const message = error instanceof Error ? publicErrorMessage(error) : String(error)
+  const message = publicErrorMessage(error)
   if (message.includes('Artifact question not found')) {
     return c.json({ error: message }, 400)
   }

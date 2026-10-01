@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { createSquadRelationshipSchema } from '@ficus/shared'
@@ -54,7 +55,7 @@ export const squadRelationshipsRouter = new Hono()
       const relationship = await squad.addRelationship(input.targetSquadId, input.relationshipType, input.metadata)
       return c.json(relationship, 201)
     } catch (e) {
-      return c.json({ error: (e as Error).message }, 400)
+      return c.json({ error: publicErrorMessage(e) }, 400)
     }
   })
   .delete('/:id', requirePermission('squad-relationships:write'), async (c) => {

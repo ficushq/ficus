@@ -476,7 +476,7 @@ app.post('/openai-compatible/probe', requirePermission('provider-auth:write'), a
       contextWindowFloor: Number(process.env.MODEL_CONTEXT_WINDOW_FLOOR ?? 16384),
     })
   } catch (error) {
-    return c.json({ error: error instanceof Error ? publicErrorMessage(error) : String(error) }, 400)
+    return c.json({ error: publicErrorMessage(error) }, 400)
   }
 })
 app.post('/openai-compatible/accounts', requirePermission('provider-auth:write'), async (c) => {
@@ -506,7 +506,7 @@ app.post('/openai-compatible/accounts', requirePermission('provider-auth:write')
     await refreshModelRuntime()
     return c.json({ account: accountSummary(body.providerId, created!), models: result.models }, 201)
   } catch (error) {
-    return c.json({ error: error instanceof Error ? publicErrorMessage(error) : String(error) }, 400)
+    return c.json({ error: publicErrorMessage(error) }, 400)
   }
 })
 
@@ -1016,7 +1016,7 @@ app.post('/:provider/oauth/start', requirePermission('provider-auth:write'), asy
         reportRetiredFlow(provider, pending)
         return
       }
-      const message = err instanceof Error ? publicErrorMessage(err) : String(err)
+      const message = publicErrorMessage(err)
       pending.need = { kind: 'error', message }
       log.error(`OAuth flow failed for ${provider}: ${message}`)
     })
@@ -1077,7 +1077,7 @@ app.post('/:provider/oauth/callback', requirePermission('provider-auth:write'), 
   try {
     await Promise.race([pending.completed, timeout])
   } catch (err: unknown) {
-    const message = err instanceof Error ? publicErrorMessage(err) : String(err)
+    const message = publicErrorMessage(err)
     // The exchange outlived our patience but the login is STILL RUNNING. Merely
     // dropping it from the map would leave a zombie: un-superseded, invisible to
     // cleanupStaleFlows (which sweeps the map) and to any later /oauth/start, and

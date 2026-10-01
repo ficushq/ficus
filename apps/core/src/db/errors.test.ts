@@ -52,3 +52,21 @@ test('transport-code inspection is allowlisted and handles wrapped and cyclic er
   cycle.cause = cycle
   expect(hasErrorCode(cycle, codes)).toBe(false)
 })
+
+test('copied query messages remain private even when their typed wrapper or cause was lost', () => {
+  expect(publicErrorMessage(new Error('Failed query: SQL_CANARY\nparams: VALUE_CANARY'))).toBe('Database query failed')
+})
+
+test('non-Error query strings and copied error records are safe without changing controlled messages', () => {
+  expect(publicErrorMessage('Failed query: SQL_CANARY\nparams: VALUE_CANARY')).toBe('Database query failed')
+  expect(publicErrorMessage({ message: 'Failed query: SQL_CANARY\nparams: VALUE_CANARY' })).toBe(
+    'Database query failed'
+  )
+  expect(publicErrorMessage('Controlled error')).toBe('Controlled error')
+  expect(publicErrorMessage({ message: 'Controlled error' })).toBe('Controlled error')
+  expect(publicErrorMessage(undefined, 'Unknown error')).toBe('Unknown error')
+})
+
+test('keeps an empty ordinary Error message unchanged', () => {
+  expect(publicErrorMessage(new Error())).toBe('')
+})

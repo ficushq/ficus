@@ -1,3 +1,4 @@
+import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { AgentType } from '../entities/AgentType'
@@ -47,7 +48,7 @@ agentTypesRoutes.post('/', requirePermission('agent-types:create'), async (c) =>
   try {
     await validateAgentTypeConfig({ ...body, id })
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
   const existing = await AgentType.find(id)
   if (existing) return c.json({ error: `Agent type "${id}" already exists` }, 409)
@@ -65,7 +66,7 @@ agentTypesRoutes.put('/:id', requirePermission('agent-types:update'), async (c) 
   try {
     await validateAgentTypeConfig({ ...body, id })
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
   await AgentType.upsert({ ...body, includes: body.includes ?? existing.includes, id })
   await agentTypeSync.recomputeFieldOverrides(id)
@@ -160,7 +161,7 @@ agentTypesRoutes.get('/:id/template-diff', requirePermission('agent-types:read')
     const diff = await agentTypeSync.getTemplateDiff(c.req.param('id'))
     return c.json(diff)
   } catch (e: any) {
-    return c.json({ error: e.message }, 404)
+    return c.json({ error: publicErrorMessage(e) }, 404)
   }
 })
 
@@ -171,7 +172,7 @@ agentTypesRoutes.post('/:id/revert-to-template', requirePermission('agent-types:
     AgentType.invalidateCache()
     return c.json({ ok: true })
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 
@@ -183,7 +184,7 @@ agentTypesRoutes.post('/:id/revert-template-fields', requirePermission('agent-ty
     AgentType.invalidateCache()
     return c.json({ ok: true })
   } catch (e: any) {
-    return c.json({ error: e.message }, 400)
+    return c.json({ error: publicErrorMessage(e) }, 400)
   }
 })
 
