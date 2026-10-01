@@ -140,7 +140,7 @@ export function claudeChildEnv(
   const child: Record<string, string> = { PATH: claudeSearchPath(env) }
   for (const name of keep) if (env[name]) child[name] = env[name]!
   // On macOS Claude Code finds its sign-in in the Keychain under $USER; without it, a signed-in
-  // `claude` reports signed out. Ficus Desktop starts Core without USER, so take it from the OS.
+  // `claude` reports signed out. Ficus Desktop starts Core without USER, so ask the OS.
   const user = child.USER ?? child.LOGNAME ?? currentUser()
   if (user) {
     child.USER ??= user
@@ -149,12 +149,33 @@ export function claudeChildEnv(
   return { ...child, ...extra }
 }
 
+let osUser: string | null | undefined
+
 function currentUser(): string | undefined {
-  try {
-    return userInfo().username || undefined
-  } catch {
-    return undefined
+  if (osUser === undefined) osUser = loginName() ?? null
+  return osUser ?? undefined
+}
+
+/**
+ * The account's login name. Not `os.userInfo()` alone: Bun's reads $USER and says "unknown" without
+ * it, and `claude` would then look up the Keychain sign-in of a user named "unknown".
+ */
+export function loginName(
+  id: () => string = () => {
+    const result = Bun.spawnSync(['/usr/bin/id', '-un'], { stdout: 'pipe', stderr: 'ignore', stdin: 'ignore' })
+    return result.exitCode === 0 ? result.stdout.toString() : ''
+  },
+  info: () => string = () => userInfo().username
+): string | undefined {
+  for (const read of [id, info]) {
+    try {
+      const name = read().trim()
+      if (name && name !== 'unknown') return name
+    } catch {
+      // Try the next source.
+    }
   }
+  return undefined
 }
 
 let cached: { at: number; status: ClaudeCodeStatus } | undefined
