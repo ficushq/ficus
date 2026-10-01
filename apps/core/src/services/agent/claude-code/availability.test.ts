@@ -1,8 +1,8 @@
 import { afterAll, expect, test } from 'bun:test'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir, userInfo } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { claudeChildEnv, getClaudeCodeStatus, type RunClaude } from './availability'
+import { claudeChildEnv, getClaudeCodeStatus, loginName, type RunClaude } from './availability'
 
 // A `claude` on PATH for Bun.which to find; the runner below answers for it.
 const bin = mkdtempSync(join(tmpdir(), 'claude-code-bin-'))
@@ -135,12 +135,36 @@ test("claude never inherits Core's secrets or an Anthropic API key", () => {
 })
 
 test('claude gets USER even when Core was started without it, so it finds its Keychain sign-in', () => {
-  expect(claudeChildEnv({ HOME: '/Users/me', PATH: '/usr/bin' })).toMatchObject({
-    USER: userInfo().username,
-    LOGNAME: userInfo().username,
-  })
+  // The real login name, not Bun's userInfo() "unknown" when $USER is unset.
+  const login = Bun.spawnSync(['/usr/bin/id', '-un']).stdout.toString().trim()
+  expect(login).not.toBe('')
+  expect(claudeChildEnv({ HOME: '/Users/me', PATH: '/usr/bin' })).toMatchObject({ USER: login, LOGNAME: login })
   expect(claudeChildEnv({ HOME: '/Users/me', PATH: '/usr/bin', USER: 'me' })).toMatchObject({
     USER: 'me',
     LOGNAME: 'me',
   })
+})
+
+test('the login name comes from the OS, never Bun\'s "unknown" without $USER', () => {
+  expect(
+    loginName(
+      () => 'noah\n',
+      () => 'unknown'
+    )
+  ).toBe('noah')
+  // `id` failing falls back to userInfo, but not to its "unknown" placeholder.
+  expect(
+    loginName(
+      () => '',
+      () => 'noah'
+    )
+  ).toBe('noah')
+  expect(
+    loginName(
+      () => {
+        throw new Error('no id')
+      },
+      () => 'unknown'
+    )
+  ).toBeUndefined()
 })
