@@ -854,12 +854,13 @@ describe('localDeployment proxy', () => {
         },
       })
       // Core's chain as index.ts serves it, with a non-proxy route just as slow.
+      // The control route sits before identity so it answers late instead of 401ing.
       const routes = new Hono()
-      routes.use('*', identityMiddleware)
       routes.get('/api/slow-non-proxy', async (c) => {
         await Bun.sleep(APP_DELAY_MS)
         return c.text('too late')
       })
+      routes.use('*', identityMiddleware)
       routes.route('/api', deploymentsRouter)
       const core = Bun.serve({
         port: 0,
