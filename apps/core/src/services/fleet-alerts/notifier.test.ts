@@ -860,15 +860,14 @@ describe('fleet incident notifier', () => {
     expect(alertRow.subject).toBe(`Squad ${squadName} stalled`)
     expect(alertRow.content).toBe(
       `Work in squad ${squadName} has been stalled for 1h.\n\n` +
-        'Cause: OAuth refresh credential expired or was revoked.\n' +
-        'Fix: Run `ficus pa login openai-codex` to authenticate again.'
+        'Cause: No agent run has started; a current provider cause has not been established.'
     )
     const recoveryRow = byKey.get(recovery.idempotencyKey)!
     expect(recoveryRow.subject).toBe(`Squad ${squadName} is running again`)
     // A recovery reports the past cause and duration, never the stall's live remediation.
     expect(recoveryRow.content).toBe(
       `Work in squad ${squadName} is running again after being stalled for 1h.\n\n` +
-        'Earlier cause: OAuth refresh credential expired or was revoked.'
+        'Earlier cause: No agent run has started; a current provider cause has not been established.'
     )
     const persisted = await db
       .select()

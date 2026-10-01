@@ -121,6 +121,7 @@ export function renderFleetIncidentMessage(
   let subject: string
   let headline: string
   let cause = claim.causeSummary
+  let remediation = claim.remediation
   const facts: string[] = []
 
   if (claim.incidentKind === 'provider_unhealthy') {
@@ -133,15 +134,19 @@ export function renderFleetIncidentMessage(
       : `${label} is working again after ${lasted}.`
     if (alert) facts.push(`Started: ${lasted} ago`)
   } else if (claim.incidentKind === 'squad_dead_fleet') {
-    const provider = providerProblem(
-      claim.causeCode,
-      typeof details.provider === 'string' ? details.provider : undefined
-    )
+    const provider =
+      details.providerRouteBlocked === true
+        ? providerProblem(claim.causeCode, typeof details.provider === 'string' ? details.provider : undefined)
+        : undefined
     const reasons = sandboxReasons(details.sandboxReasons)
     let short: string | undefined
     if (provider) {
       short = provider.short
       cause = provider.sentence
+    } else if (PROVIDER_PROBLEMS[claim.causeCode as ProviderHealthKind]) {
+      // Older rows carried global incident attribution without routing proof.
+      cause = 'No agent run has started; a current provider cause has not been established.'
+      remediation = undefined
     } else if (claim.causeCode === 'sandbox-setup-degraded') {
       short = 'sandbox degraded'
       if (reasons) cause = `The squad’s sandbox setup is degraded: ${reasons}.`
@@ -186,7 +191,7 @@ export function renderFleetIncidentMessage(
   }
 
   const lines = alert
-    ? [`Cause: ${cause}`, ...facts, ...(claim.remediation ? [`Fix: ${claim.remediation}`] : [])]
+    ? [`Cause: ${cause}`, ...facts, ...(remediation ? [`Fix: ${remediation}`] : [])]
     : [`Earlier cause: ${cause}`]
   return {
     subject,

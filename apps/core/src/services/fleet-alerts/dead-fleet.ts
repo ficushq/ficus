@@ -1,3 +1,5 @@
+import type { ProviderHealthRecord, ProviderRoute } from '@ficus/shared/provider-health'
+import { getDemandProviderChains, blockedDemandProvider } from './provider-attribution'
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
 import type { SquadDemandSnapshot } from './demand'
@@ -12,6 +14,12 @@ export interface DeadFleetReconciliationInput {
   now: Date
   demand: ReadonlyMap<string, SquadDemandSnapshot>
   coldStartAt?: Date
+  /** Same-tick routing health, not the independently persisted incident table. */
+  records?: readonly ProviderHealthRecord[]
+}
+
+export interface DeadFleetReconciliationAdapter extends DeadFleetIncidentStoreAdapter {
+  getDemandChains?: (snapshot: SquadDemandSnapshot) => Promise<readonly (readonly ProviderRoute[])[]>
 }
 
 /**
@@ -21,7 +29,7 @@ export interface DeadFleetReconciliationInput {
  */
 export async function reconcileDeadFleet(
   input: DeadFleetReconciliationInput,
-  adapter: DeadFleetIncidentStoreAdapter = {}
+  adapter: DeadFleetReconciliationAdapter = {}
 ): Promise<void> {
   const squadIds = [...input.demand.keys()]
   if (squadIds.length === 0) return
@@ -55,16 +63,23 @@ export async function reconcileDeadFleet(
   )
 
   await Promise.all(
-    [...input.demand].map(([squadId, snapshot]) => {
+    [...input.demand].map(async ([squadId, snapshot]) => {
       const lastRunStartedAt = lastRunBySquad.get(squadId)
       if (snapshot.count === 0 || snapshot.firstDemandAt == null) {
         return observeDeadFleet({ status: 'quiet', squadId, lastRunStartedAt, now: input.now }, adapter)
       }
+      const records = input.records ?? []
+      const chains =
+        snapshot.agentIds?.length && records.length
+          ? await (adapter.getDemandChains ?? getDemandProviderChains)(snapshot)
+          : []
+      const providerCause = blockedDemandProvider(chains, records, input.now.getTime())
       return observeDeadFleet(
         {
           status: 'stalled',
           squadId,
           demandCount: snapshot.count,
+          providerCause,
           firstDemandAt:
             lastRunStartedAt == null && input.coldStartAt && snapshot.firstDemandAt < input.coldStartAt
               ? input.coldStartAt

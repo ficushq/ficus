@@ -78,6 +78,8 @@ export type DeadFleetObservation =
       status: 'stalled'
       squadId: string
       demandCount: number
+      /** Proven by the current executable demand routes and routing cooldown. */
+      providerCause?: ProviderHealthRecord
       firstDemandAt: Date
       lastRunStartedAt?: Date | undefined
       now: Date
@@ -378,28 +380,13 @@ export async function observeDeadFleet(
       return openIncident.id
     }
 
-    // Why is this fleet not serving demand? Attribute it to the most specific
-    // OPEN incident that explains a stall, in priority order:
-    //   1. an unhealthy provider — nothing can run anywhere;
-    //   2. a degraded sandbox IN THIS SQUAD — the boxes that would run the work
-    //      cannot come up (transport wedges land here). This kind exists but was
-    //      never consulted, so transport/sandbox stalls reported no cause at all.
-    //   3. neither — describe the observed stall itself.
-    const [providerIncident] = await tx
-      .select({
-        id: fleetIncidents.id,
-        provider: fleetIncidents.provider,
-        causeCode: fleetIncidents.causeCode,
-        causeSummary: fleetIncidents.causeSummary,
-        remediation: fleetIncidents.remediation,
-      })
-      .from(fleetIncidents)
-      .where(and(eq(fleetIncidents.kind, 'provider_unhealthy'), isNull(fleetIncidents.resolvedAt)))
-      .orderBy(desc(fleetIncidents.lastObservedAt), desc(fleetIncidents.id))
-      .limit(1)
+    // Attribution arrives from current demand routes, never the newest global
+    // health incident. Provider persistence can race this transaction safely.
+    const providerCause = input.providerCause
+    const provider = providerCause ? sanitizeProviderRecord(providerCause) : undefined
     // Scoped to THIS squad: another squad's degraded box does not explain this
     // squad's stall, and blaming it would be worse than saying nothing.
-    const [sandboxIncident] = providerIncident
+    const [sandboxIncident] = provider
       ? []
       : await tx
           .select({
@@ -422,7 +409,9 @@ export async function observeDeadFleet(
     const sandboxReasons = Array.isArray((sandboxIncident?.details as { reasons?: unknown } | null)?.reasons)
       ? ((sandboxIncident!.details as { reasons: string[] }).reasons ?? []).slice(0, 5)
       : []
-    const explaining = providerIncident ?? sandboxIncident
+    const explaining = provider
+      ? { causeCode: provider.kind, causeSummary: provider.summary, remediation: provider.remediation ?? null }
+      : sandboxIncident
     const cause = explaining
       ? {
           code: explaining.causeCode,
@@ -439,10 +428,10 @@ export async function observeDeadFleet(
     const details = {
       demandCount: input.demandCount,
       oldestDemandAt: input.firstDemandAt.toISOString(),
-      ...(providerIncident
+      ...(providerCause
         ? {
-            providerIncidentId: providerIncident.id,
-            ...(providerIncident.provider ? { provider: providerIncident.provider } : {}),
+            provider: providerCause.provider,
+            providerRouteBlocked: true,
           }
         : {}),
       ...(sandboxIncident ? { sandboxIncidentId: sandboxIncident.id, sandboxReasons } : {}),
