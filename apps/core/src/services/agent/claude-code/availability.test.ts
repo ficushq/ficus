@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from 'bun:test'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { claudeChildEnv, getClaudeCodeStatus, type RunClaude } from './availability'
 
@@ -131,5 +131,16 @@ test("claude never inherits Core's secrets or an Anthropic API key", () => {
     ANTHROPIC_BASE_URL: 'https://proxy',
   })
   expect(env.HOME).toBe('/Users/me')
-  expect(Object.keys(env).sort()).toEqual(['HOME', 'PATH'])
+  expect(Object.keys(env).sort()).toEqual(['HOME', 'LOGNAME', 'PATH', 'USER'])
+})
+
+test('claude gets USER even when Core was started without it, so it finds its Keychain sign-in', () => {
+  expect(claudeChildEnv({ HOME: '/Users/me', PATH: '/usr/bin' })).toMatchObject({
+    USER: userInfo().username,
+    LOGNAME: userInfo().username,
+  })
+  expect(claudeChildEnv({ HOME: '/Users/me', PATH: '/usr/bin', USER: 'me' })).toMatchObject({
+    USER: 'me',
+    LOGNAME: 'me',
+  })
 })
