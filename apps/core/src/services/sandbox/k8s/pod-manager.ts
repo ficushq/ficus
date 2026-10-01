@@ -482,9 +482,9 @@ export class K8sPodManager {
    * created the pod). Returns null when there's no usable running pod.
    */
   async getRunningPodSpecHash(sandboxId: string): Promise<string | null> {
-    const podName = this.pods.get(sandboxId)?.podName ?? this.getPodName(sandboxId)
     try {
-      const pod = await this.coreApi.readNamespacedPod({ name: podName, namespace: this.namespace })
+      const { pod } = await this.resolveExistingPod(sandboxId)
+      if (!pod) return null
       const phase = pod.status?.phase
       if (phase === 'Failed' || phase === 'Succeeded') return null
       return podSpecHash(pod) ?? null
@@ -511,7 +511,10 @@ export class K8sPodManager {
     onData: (chunk: Buffer) => void,
     onError?: (err: Error) => void
   ): { cancel: () => void } {
-    const podName = this.pods.get(sandboxId)?.podName ?? this.getPodName(sandboxId)
+    // Placeholder until resolved (write-name guess) — the async block below
+    // replaces it with the N1 discovery result before `startStream` ever
+    // reads it, so an untracked legacy-named pod's logs are still found.
+    let podName = this.pods.get(sandboxId)?.podName ?? this.getPodName(sandboxId)
     // Defense-in-depth: clamp here too so callers that bypass getLogsParams can't exceed the ceiling.
     const tailLines = Math.min(Math.max(Math.floor(opts.tailLines ?? 500), 1), 5000)
     const lease = resourceDiagnostics.begin('pod_log_transport')
@@ -561,12 +564,23 @@ export class K8sPodManager {
 
     // Wait for the container to have started before requesting logs.
     void (async () => {
+      // N1 (fix round 2): resolve the pod's real name ONCE — write name first,
+      // falling back through every other name — before the wait loop, so an
+      // untracked legacy-named pod's logs are found instead of 404ing
+      // forever against a write-name guess. Reused as a hint on every
+      // `queryPodStatus` poll below so the loop doesn't re-resolve each tick.
+      try {
+        podName = await this.resolvePodName(sandboxId)
+      } catch (err) {
+        if (!aborted) fail(err as Error)
+        return
+      }
       const deadline = Date.now() + POD_LOG_READY_TIMEOUT_MS
       for (;;) {
         if (aborted) return
         let status: Awaited<ReturnType<K8sPodManager['queryPodStatus']>>
         try {
-          status = await this.queryPodStatus(sandboxId)
+          status = await this.queryPodStatus(sandboxId, podName)
         } catch (err) {
           if (!aborted) fail(err as Error)
           return
@@ -632,8 +646,13 @@ export class K8sPodManager {
       return
     }
 
-    // Use tracked pod name if available, otherwise derive it
-    const podName = state?.podName ?? this.getPodName(sandboxId)
+    // Use tracked pod name if available, otherwise discover it (N1, fix
+    // round 2): write name first, then every other name — an untracked
+    // legacy-named pod (always true right after a restart) must be the one
+    // actually deleted, or this 404s against a write-name guess, reports
+    // "already deleted", and leaks the real pod forever (nothing else will
+    // ever re-associate it with this sandboxId).
+    const podName = state?.podName ?? (await this.resolvePodName(sandboxId))
     log.info(`Terminating pod for sandbox: ${sandboxId} (pod: ${podName})`)
 
     if (state) {
@@ -769,8 +788,18 @@ export class K8sPodManager {
   /**
    * Query the actual K8s API for the sandbox pod status.
    * This checks the real cluster state, not just in-memory tracking.
+   *
+   * `podNameHint` (N1, fix round 2): a caller that already resolved the
+   * pod's real name (e.g. `attachExistingSandbox`, or `streamPodLogs`'s
+   * poll loop) passes it through so this doesn't re-run the discovery
+   * (write name, then every other name) on every call — without a hint,
+   * this resolves it itself, so every caller stays correct for an untracked
+   * sandbox (always true right after a Core restart) even if it forgets to.
    */
-  async queryPodStatus(sandboxId: string): Promise<{
+  async queryPodStatus(
+    sandboxId: string,
+    podNameHint?: string
+  ): Promise<{
     status:
       | 'not_found'
       | 'pending'
@@ -788,9 +817,14 @@ export class K8sPodManager {
     startedAt?: string
     devboxReady?: boolean
   }> {
-    const podName = this.getPodName(sandboxId)
     try {
-      const pod = await this.coreApi.readNamespacedPod({ name: podName, namespace: this.namespace })
+      const { name: podName, pod } = podNameHint
+        ? {
+            name: podNameHint,
+            pod: await this.coreApi.readNamespacedPod({ name: podNameHint, namespace: this.namespace }),
+          }
+        : await this.resolveExistingPod(sandboxId)
+      if (!pod) return { status: 'not_found' }
 
       // Check if pod is being deleted
       if (pod.metadata?.deletionTimestamp) {
@@ -971,6 +1005,45 @@ export class K8sPodManager {
 
   getLabelValue(value: string): string {
     return sanitizeLabelValue(value)
+  }
+
+  /**
+   * N1 (fix round 2): which pod name actually addresses this sandbox right
+   * now — the tracked name when `this.pods` has it (the normal case, no
+   * extra cluster call), otherwise discovered by trying every name from
+   * {@link sandboxPodNames} (write name first — "prefer the Ficus one" if a
+   * pod somehow exists under both). `this.pods` is a plain in-memory `Map`
+   * with no boot-time reconciliation, so it is EMPTY after every Core
+   * restart — this is exactly the no-create reconciler's own scenario
+   * (`attachExistingSandbox`), not a rare edge case. Every pod lookup that
+   * can run untracked (`queryPodStatus`, `terminatePod`,
+   * `getRunningPodSpecHash`, `streamPodLogs`, `attachExistingSandbox`) must
+   * go through this, or a legacy-named pod is unreachable and un-terminable
+   * (a 404-and-leak) until `ensurePod` happens to run for that sandbox again.
+   */
+  async resolvePodName(sandboxId: string): Promise<string> {
+    return (await this.resolveExistingPod(sandboxId)).name
+  }
+
+  /**
+   * Like {@link resolvePodName}, but also returns the pod body when one was
+   * found — callers that need it ({@link queryPodStatus},
+   * {@link getRunningPodSpecHash}) avoid a second `readNamespacedPod` round
+   * trip. `pod` is `null` when nothing exists under any name; `name` is
+   * still a usable string then (the write name), so a caller's own 404
+   * handling (delete/read) still reports "not found" cleanly.
+   */
+  private async resolveExistingPod(sandboxId: string): Promise<{ name: string; pod: k8s.V1Pod | null }> {
+    const tracked = this.pods.get(sandboxId)?.podName
+    for (const name of tracked ? [tracked] : sandboxPodNames(sandboxId)) {
+      try {
+        const pod = await this.coreApi.readNamespacedPod({ name, namespace: this.namespace })
+        return { name, pod }
+      } catch (err) {
+        if (getK8sStatusCode(err) !== 404) throw err
+      }
+    }
+    return { name: tracked ?? this.getPodName(sandboxId), pod: null }
   }
 
   private updatePodState(sandboxId: string, status: PodState['status']): void {

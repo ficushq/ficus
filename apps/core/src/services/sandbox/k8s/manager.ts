@@ -344,14 +344,16 @@ export class K8sSandboxManager implements ISandboxManager {
 
   async attachExistingSandbox(sandboxId: string, opts: SandboxOptions): Promise<boolean> {
     if (this.sandboxes.has(sandboxId)) return true
-    const status = await this.podManager.queryPodStatus(sandboxId)
+    // N1 (fix round 2): resolve ONCE (write name first, then every other
+    // name) and reuse the SAME name for the status check and the attach —
+    // `getPodName` alone always guesses the write name, which 404s the
+    // status check (or worse, attaches to the wrong/nonexistent pod) for a
+    // sandbox whose pod is still running under a legacy name, the no-create
+    // reconciler's exact untracked-sandbox scenario.
+    const podName = await this.podManager.resolvePodName(sandboxId)
+    const status = await this.podManager.queryPodStatus(sandboxId, podName)
     if (status.status !== 'running' || status.containerReady !== true) return false
-    await this.attachProvisionedSandbox(
-      sandboxId,
-      this.podManager.getPodName(sandboxId),
-      opts,
-      AbortSignal.timeout(300_000)
-    )
+    await this.attachProvisionedSandbox(sandboxId, podName, opts, AbortSignal.timeout(300_000))
     return true
   }
 
