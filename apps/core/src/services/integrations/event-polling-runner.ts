@@ -12,8 +12,6 @@ export interface EventPollingWatch {
   resourceKey: string
   /** Active/in-review resources use the fast cadence. */
   active: boolean
-  /** Opt in to the provider's bounded cadence instead of adaptive PR cadence. */
-  cadence?: 'provider'
   connection: RuntimeConnection
 }
 
@@ -203,9 +201,7 @@ export class EventPollingRunner {
       const result = await deadline(capability.poll(watch.connection, claimed.cursor, watchSignal))
       for (const event of result.events) await deadline(this.#dispatchOnce(event, watch))
       const completedAt = this.#options.now?.() ?? new Date()
-      const nextPollAt = new Date(
-        completedAt.getTime() + this.#interval(watch.active, result.suggestedIntervalMs, watch.cadence)
-      )
+      const nextPollAt = new Date(completedAt.getTime() + this.#interval(watch.active, result.suggestedIntervalMs))
       await deadline(
         this.#options.cursorStore.save(
           watch.providerKey,
@@ -362,9 +358,7 @@ export class EventPollingRunner {
     return Math.round(min + (max - min) * random)
   }
 
-  #interval(active: boolean, suggested: number, cadence?: 'provider'): number {
-    if (cadence === 'provider')
-      return Math.max(60_000, Math.min(86_400_000, Number.isFinite(suggested) ? suggested : 300_000))
+  #interval(active: boolean, suggested: number): number {
     const min = active ? 60_000 : 300_000
     const max = active ? 120_000 : 600_000
     const base = Math.max(min, Math.min(max, Number.isFinite(suggested) ? suggested : min))

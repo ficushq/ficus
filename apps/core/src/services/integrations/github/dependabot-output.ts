@@ -17,7 +17,7 @@ const states = ['open', 'fixed', 'dismissed', 'auto_dismissed']
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const text = (value: unknown) => (typeof value === 'string' ? value.slice(0, 2000) : '')
 
-/** REST snapshots preserve current state without inventing a native lifecycle action. */
+/** Normalize native webhook lifecycle evidence with stable repository/alert identity. */
 export function normalizeDependabot(event: VerifiedIngressEvent): IntegrationOutputFact[] {
   const payload = event.payload as Record<string, any> | null
   const alert = payload?.alert
@@ -33,7 +33,8 @@ export function normalizeDependabot(event: VerifiedIngressEvent): IntegrationOut
     !Number.isSafeInteger(alert.number) ||
     alert.number <= 0 ||
     !states.includes(alert.state) ||
-    !(DEPENDABOT_ACTIONS.includes(action) || (action === 'observed' && event.metadata?.synthetic === true))
+    event.metadata?.synthetic === true ||
+    !DEPENDABOT_ACTIONS.includes(action)
   )
     return []
   const timestamp = alert.updated_at ?? alert.created_at
@@ -78,7 +79,7 @@ export function normalizeDependabot(event: VerifiedIngressEvent): IntegrationOut
         `Advisory: ${advisoryId}. Affected: ${details.affectedRange || 'unknown'}. First patched: ${details.patchedVersion || 'unavailable'}.`,
         `Group: ${details.groupKey} — same package/advisory across manifests; consolidate remediation where appropriate.`,
         url,
-        'Discovery is read-only. Fixed or dismissed state is not proof of remediation acceptance, merge approval, or work completion.',
+        'Webhook intake is read-only. Fixed or dismissed state is not proof of remediation acceptance, merge approval, or work completion.',
       ].join('\n'),
       url,
       ordering: { key: externalId, position: [Date.parse(occurredAt)] },

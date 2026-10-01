@@ -253,13 +253,13 @@ Comments, review line comments, and submitted reviews authored by the connected 
 
 Set `github.connectionId` to choose an attached account explicitly. Otherwise the code-host connection, or the original event's connection when it refers to this issue, pins routing; without a pinned connection, normal squad authorization applies. Removing or rebinding the issue invalidates pending delivery. Disabling **Code hosting** disables inferred PR and issue subscriptions; explicit workflow subscriptions remain available. Squad manager rules remain fallbacks and do not override a linked stream's subscription settings.
 
-## Dependabot dependency-security discovery
+## Dependabot dependency-security webhooks
 
 **Squad settings → Integrations → GitHub → Event rules → Dependabot alert**
 uses the existing actions, account selector, enabled checkbox, repository scope
-and typed conditions. The inherited default notifies the manager for **high or
-critical, open** alerts. It never starts a consultant by default. Low/medium
-alerts are still discovered; change the severity condition to route them.
+and typed conditions. The inherited default is enabled and notifies the manager
+for **high or critical, open** alerts. It never starts a consultant by default. Low/medium
+webhook events are still accepted; change the severity condition to route them.
 Explicit saved rule arrays are preserved: add the Dependabot rule yourself if
 that squad already has saved rules. An explicit empty array disables defaults.
 
@@ -267,15 +267,9 @@ Conditions include `severity`, `state`, `action`, `repositoryId`, alert number,
 GHSA advisory, package, ecosystem, manifest, affected range and first patched
 version. Native actions are `created`, `reopened`, `reintroduced`,
 `auto_reopened`, `fixed`, `dismissed`, `auto_dismissed`, and
-`assignees_changed`. API snapshots use **`observed`**, not an invented reopen
-or creation action. Include `observed` when filtering native actions if you
-want initial backfill and missed-delivery reconciliation too. Native-only action
-conditions also work: a later matching webhook refines an earlier API snapshot
-and re-evaluates routing, without repeating notices or subscription deliveries
-already recorded for that snapshot. A later API read never downgrades native
-action evidence. Shared issue label filters do not apply to security alerts.
+`assignees_changed`. Shared issue label filters do not apply to security alerts.
 
-Discovery requires a GitHub App's **Dependabot alerts: read-only** repository
+Webhook intake requires a GitHub App's **Dependabot alerts: read-only** repository
 permission, an installation on the selected repositories, and a connected
 user who can read their security alerts. For direct delivery, subscribe the
 App/repository webhook to **`dependabot_alert`** and configure the existing
@@ -284,21 +278,22 @@ Ficus checks the exact alert under the squad's connection before accepting
 private security details. It does not route every installation alert to every
 squad: declare a shared repository scope or per-rule repository filter.
 
-Enabling an applicable rule schedules initial API discovery, including existing
-open alerts, on the next available polling tick (normally 30 seconds, subject
-to the shared request budget). A repository scan reads at most 100 alerts per
-page, persists its pagination cursor, and resumes another page after a minute.
-Completed scans reconcile daily even when webhooks are healthy. The scheduler
-bounds requests and execution time, honors rate-limit backoff, and retries
-transient errors without advancing the failed page. Permission failures produce
-an integration audit and a manager **discovery unavailable** notice (at most
-once per account/squad/day); they are never reported as zero vulnerabilities.
-Disabling/removing the rule stops future discovery watches unless an unfinished
-stream independently tracks that alert. Already running reads are bounded;
-current rule, connection and assignment gates are checked again on dispatch.
-Re-enabling resumes the durable cursor; it does not replay handled facts.
+Dependabot intake is **webhook-only**. Enabling a rule, assigning an account,
+subscribing to an alert, or tracking an alert does not list existing alerts or
+schedule polling. There is no automatic backfill, daily reconciliation, or
+missed-delivery recovery: existing alerts and missed webhooks are intentionally
+not discovered. Retired polling cursors and dispatch records remain inert;
+pending API observations cannot route new work or notifications. A later real
+webhook can refine historical evidence under the same identity without repeating
+already handled notifications. Existing inbox history is not changed.
 
-Replay and webhook/API overlap use immutable repository ID + alert number +
+Permission failures, unavailable accounts, rate limits, and other intake errors
+do not create manager health/housekeeping messages or wakeups. Failed exact-alert
+authorization remains fail-closed; it never reports zero vulnerabilities or
+releases private alert details. Actual authorized webhook events continue to
+follow the configured rules (manager notification by default).
+
+Webhook replays use immutable repository ID + alert number +
 snapshot timestamp/state, within connection/squad authority. Renames/transfers
 retain alert identity; update repository routing names when needed. A later
 reopen remains distinct from an earlier open snapshot. Notices include a
@@ -312,14 +307,14 @@ triage. Workflow-created streams and event references track a typed
 admission. It creates remediation work only for open alerts, not fixed,
 dismissed or assignment-only events, and reuses existing resource receipts.
 Fixed/dismissed updates can inform tracked work but never complete it, approve
-a merge, or prove acceptance criteria. Discovery does not dismiss alerts,
+a merge, or prove acceptance criteria. Webhook intake does not dismiss alerts,
 upgrade dependencies, change security settings, merge, or deploy anything.
 
 Managed shared-App delivery additionally requires Platform support for
 `dependabot_alert` ingress and exact alert-resource authorization, plus the
 operator's App permission/subscription setup. Do not assume managed relay
-coverage until both are verified. Direct signed webhooks and API discovery
-operate independently of that rollout.
+coverage until both are verified. Direct signed webhooks operate independently
+of managed relay support.
 
 References: [GitHub Dependabot webhook](https://docs.github.com/en/webhooks/webhook-events-and-payloads#dependabot_alert)
-and [REST alert discovery](https://docs.github.com/en/rest/dependabot/alerts#list-dependabot-alerts-for-a-repository).
+and [REST exact-alert authorization](https://docs.github.com/en/rest/dependabot/alerts#get-a-dependabot-alert).

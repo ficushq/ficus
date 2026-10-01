@@ -1,6 +1,11 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { and, eq, inArray, sql } from 'drizzle-orm'
-import { createBlankWorkflow, effectiveSquadEventRules, resolveTrackedResources } from '@ficus/shared'
+import {
+  createBlankWorkflow,
+  createWorkflowRun,
+  effectiveSquadEventRules,
+  resolveTrackedResources,
+} from '@ficus/shared'
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 import { createTestGitHubConnection } from '../../../test-utils/github-connection'
 import {
@@ -16,18 +21,26 @@ import {
   integrationOutputDeliveries,
   integrationAuditEvents,
   integrationConnections,
+  integrationEventPollingCursors,
+  integrationEventPollingDispatches,
 } from '../../../db'
 import { Agent } from '../../../entities/Agent'
 import * as api from '../../github/api-client'
 import { publishGitHubWebhookOutputs } from './ingress'
-import { publishIntegrationOutputs, reconcileUnmatchedOutputs } from '../outputs/runtime'
+import {
+  publishIntegrationOutputs,
+  reconcileUnmatchedOutputs,
+  reconcileOutputDeliveries,
+  isCurrentIntegrationDelivery,
+} from '../outputs/runtime'
 import { InboxMessage } from '../../../entities/InboxMessage'
-import { reportDependabotUnavailable } from './dependabot-status'
 import { resolveEventTrackedResource } from '../../work-streams/tracked-resources'
 useEnabledIntegrationFixtures('github')
 
 const owned: string[] = []
 const connections: Awaited<ReturnType<typeof createTestGitHubConnection>>[] = []
+const pollKeys: string[] = []
+const dispatchKeys: string[] = []
 const prefix = `dependabot-${crypto.randomUUID()}`
 const repo = `${prefix}/private`
 const repository = { id: 101, full_name: repo }
@@ -55,7 +68,7 @@ async function fixture(metadata: unknown = { github: [{ repo }] }) {
     .onConflictDoNothing()
   const [squad] = await db
     .insert(squads)
-    .values({ name: prefix, purpose: 'Dependabot discovery test', metadata })
+    .values({ name: prefix, purpose: 'Dependabot webhook test', metadata })
     .returning()
   owned.push(squad!.id)
   const [manager] = await db
@@ -68,6 +81,14 @@ async function fixture(metadata: unknown = { github: [{ repo }] }) {
   return { squadId: squad!.id, managerId: manager!.id, connectionId: connection.id }
 }
 afterEach(async () => {
+  if (pollKeys.length)
+    await db
+      .delete(integrationEventPollingCursors)
+      .where(inArray(integrationEventPollingCursors.resourceKey, pollKeys.splice(0)))
+  if (dispatchKeys.length)
+    await db
+      .delete(integrationEventPollingDispatches)
+      .where(inArray(integrationEventPollingDispatches.eventKey, dispatchKeys.splice(0)))
   const recipients = await db.select({ id: agents.id }).from(agents).where(inArray(agents.squadId, owned))
   if (recipients.length)
     await db.delete(inbox).where(
@@ -90,7 +111,7 @@ afterEach(async () => {
   await db.delete(agentTypes).where(eq(agentTypes.id, prefix))
 })
 
-test('webhook and API overlap notify one manager; inaccessible alerts and unrelated squads receive no vulnerability details', async () => {
+test('duplicate webhooks notify one manager; inaccessible alerts and unrelated squads receive no messages', async () => {
   const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
     success: true,
     queued: true,
@@ -105,8 +126,7 @@ test('webhook and API overlap notify one manager; inaccessible alerts and unrela
   )
   try {
     await publishGitHubWebhookOutputs(event())
-    const authority = { kind: 'connection' as const, squadId: one.squadId, connectionId: one.connectionId }
-    await publishIntegrationOutputs('github', { ...event('observed'), metadata: { synthetic: true } }, authority)
+    await publishGitHubWebhookOutputs(event())
     const messages = await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))
     expect(messages).toHaveLength(1)
     expect(messages[0]!.content).toContain('--from-event')
@@ -130,10 +150,7 @@ test('webhook and API overlap notify one manager; inaccessible alerts and unrela
     securityAllowed = false
     await publishGitHubWebhookOutputs(event('reopened', { updated_at: '2026-09-02T00:00:00Z' }))
     const notices = await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))
-    expect(notices).toHaveLength(2)
-    expect(notices.filter((notice) => notice.subject === 'Dependabot discovery unavailable')).toHaveLength(1)
-    await reportDependabotUnavailable(one.squadId, one.connectionId)
-    expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(2)
+    expect(notices).toHaveLength(1)
   } finally {
     read.mockRestore()
     send.mockRestore()
@@ -276,160 +293,300 @@ test('managed relay rejects unrelated squad interests and rechecks Dependabot re
 })
 
 for (const action of ['created', 'reopened', 'fixed', 'dismissed']) {
-  for (const observedFirst of [true, false]) {
-    test(`native-only ${action} rule works with ${observedFirst ? 'API' : 'webhook'} first`, async () => {
-      const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
-        success: true,
-        queued: true,
-        status: 'queued',
-      })
-      try {
-        const rules = effectiveSquadEventRules({ github: [{ repo }] }, 'github').filter(
-          (rule) => rule.source.output === 'dependabot_alert.updated'
-        )
-        rules[0]!.predicates = [{ field: 'action', op: 'eq', value: action }]
-        const one = await fixture({ github: [{ repo }], integrationRules: { github: rules } })
-        const authority = { kind: 'connection' as const, squadId: one.squadId, connectionId: one.connectionId }
-        const state = ['fixed', 'dismissed'].includes(action) ? action : 'open'
-        const native = event(action, { state, updated_at: '2026-09-02T00:00:00Z' })
-        const observed = { ...event('observed', native.payload.alert), metadata: { synthetic: true } }
-        const ordered = observedFirst ? [observed, native] : [native, observed]
-        await publishIntegrationOutputs('github', ordered[0]!, authority)
-        expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(
-          observedFirst ? 0 : 1
-        )
-        await publishIntegrationOutputs('github', ordered[1]!, authority)
-        await Promise.all(ordered.map((item) => publishIntegrationOutputs('github', item, authority)))
-        expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(1)
-        const facts = await db
-          .select()
-          .from(integrationOutputEvents)
-          .where(sql`${integrationOutputEvents.authority}->>'connectionId' = ${one.connectionId}`)
-        expect(facts).toHaveLength(1)
-        expect(facts[0]!.fact.data.action).toBe(action)
-      } finally {
-        send.mockRestore()
-      }
-    })
-  }
-}
-
-for (const observedFirst of [true, false]) {
-  test(`default overlap has one notice, with ${observedFirst ? 'API' : 'webhook'} first`, async () => {
+  test(`authorized ${action} webhooks route native-only rules exactly once`, async () => {
     const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
       success: true,
       queued: true,
       status: 'queued',
     })
+    const read = spyOn(api, 'githubApiGet').mockImplementation(
+      async <T>(path: string): Promise<T | null> =>
+        (path.includes('/dependabot/alerts/') ? { number: 7 } : repository) as T
+    )
     try {
-      const one = await fixture()
-      const authority = { kind: 'connection' as const, squadId: one.squadId, connectionId: one.connectionId }
-      const native = event()
-      const observed = { ...event('observed'), metadata: { synthetic: true } }
-      await publishIntegrationOutputs('github', observedFirst ? observed : native, authority)
-      await publishIntegrationOutputs('github', observedFirst ? native : observed, authority)
-      await Promise.all([native, observed, native].map((item) => publishIntegrationOutputs('github', item, authority)))
+      const rules = effectiveSquadEventRules({ github: [{ repo }] }, 'github').filter(
+        (r) => r.source.output === 'dependabot_alert.updated'
+      )
+      rules[0]!.predicates = [{ field: 'action', op: 'eq', value: action }]
+      const one = await fixture({ github: [{ repo }], integrationRules: { github: rules } })
+      const native = event(action, { state: ['fixed', 'dismissed'].includes(action) ? action : 'open' })
+      await publishGitHubWebhookOutputs(native)
+      await publishGitHubWebhookOutputs(native)
       expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(1)
     } finally {
+      read.mockRestore()
       send.mockRestore()
     }
   })
 }
 
-for (const nativeOnly of [false, true])
-  test(`native refinement keeps one stream and one delivery (${nativeOnly ? 'native-only' : 'default'} rule)`, async () => {
-    const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+for (const action of ['notify-manager', 'start-workstream'] as const) {
+  test(`unmatched historical polling is silent with ${action}; real webhooks can refine and route`, async () => {
+    const send = spyOn(InboxMessage, 'send')
+    const sendOnce = spyOn(InboxMessage, 'sendOnce')
+    const wake = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
       success: true,
       queued: true,
       status: 'queued',
     })
     try {
       const rules = effectiveSquadEventRules({ github: [{ repo }] }, 'github').filter(
-        (rule) => rule.source.output === 'dependabot_alert.updated'
+        (r) => r.source.output === 'dependabot_alert.updated'
       )
-      if (nativeOnly) rules[0]!.predicates = [{ field: 'action', op: 'eq', value: 'created' }]
-      const flow = createBlankWorkflow()
-      flow.participants.worker!.agentTypeId = prefix
-      flow.completion.followChanges = true
-      rules[0]!.action = { type: 'start-workstream', workflow: { kind: 'inline', definition: flow } }
+      if (action === 'start-workstream') {
+        const definition = createBlankWorkflow()
+        definition.participants.worker!.agentTypeId = prefix
+        rules[0]!.action = { type: 'start-workstream', workflow: { kind: 'inline', definition } }
+      }
       const one = await fixture({ github: [{ repo }], integrationRules: { github: rules } })
-      const authority = { kind: 'connection' as const, squadId: one.squadId, connectionId: one.connectionId }
-      const observed = { ...event('observed'), metadata: { synthetic: true } }
-      await publishIntegrationOutputs('github', observed, authority)
-      expect(await db.select().from(workStreams).where(eq(workStreams.squadId, one.squadId))).toHaveLength(
-        nativeOnly ? 0 : 1
-      )
-      await Promise.all(
-        [event(), event(), observed].map((item) => publishIntegrationOutputs('github', item, authority))
-      )
-      const streams = await db.select().from(workStreams).where(eq(workStreams.squadId, one.squadId))
-      expect(streams).toHaveLength(1)
+      const { githubOutputAdapter } = await import('../outputs/github')
+      const native = githubOutputAdapter.normalize(event())[0]!
+      const [stored] = await db
+        .insert(integrationOutputEvents)
+        .values({
+          integration: 'github',
+          sourceKey: `connection:${one.connectionId}:${one.squadId}:${(await db.select().from(integrationConnections).where(eq(integrationConnections.id, one.connectionId)))[0]!.materialRevision}`,
+          eventKey: native.eventKey,
+          authority: { kind: 'connection', squadId: one.squadId, connectionId: one.connectionId },
+          fact: { ...native, data: { ...native.data, action: 'observed' } },
+        })
+        .returning()
+      await reconcileUnmatchedOutputs()
+      expect(send).not.toHaveBeenCalled()
+      expect(sendOnce).not.toHaveBeenCalled()
+      expect(wake).not.toHaveBeenCalled()
+      expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(0)
+      expect(await db.select().from(workStreams).where(eq(workStreams.squadId, one.squadId))).toHaveLength(0)
+      await publishIntegrationOutputs('github', event(), {
+        kind: 'connection',
+        squadId: one.squadId,
+        connectionId: one.connectionId,
+      })
+      if (action === 'notify-manager')
+        expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(1)
+      else expect(await db.select().from(workStreams).where(eq(workStreams.squadId, one.squadId))).toHaveLength(1)
       expect(
-        await db
-          .select()
-          .from(integrationOutputDeliveries)
-          .where(eq(integrationOutputDeliveries.workStreamId, streams[0]!.id))
-      ).toHaveLength(1)
-      expect(
-        await db
-          .select()
-          .from(integrationOutputTriggerRuns)
-          .where(eq(integrationOutputTriggerRuns.squadId, one.squadId))
-      ).toHaveLength(1)
+        (await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, stored!.id)))[0]!.fact
+          .data.action
+      ).toBe('created')
     } finally {
       send.mockRestore()
+      sendOnce.mockRestore()
+      wake.mockRestore()
     }
   })
+}
 
-test('a stale API routing completion cannot settle failed native refinement; durable retry recovers', async () => {
-  const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+for (const status of [401, 403, 404, 429, 500, 'missing-auth', 'network-error'] as const) {
+  test(`webhook authorization ${status} emits no inbox, send, sendOnce or manager wake`, async () => {
+    const send = spyOn(InboxMessage, 'send')
+    const sendOnce = spyOn(InboxMessage, 'sendOnce')
+    const wake = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+      success: true,
+      queued: true,
+      status: 'queued',
+    })
+    const request = spyOn(globalThis, 'fetch').mockImplementation((async (input: any) => {
+      if (!String(input).includes('/dependabot/alerts/')) return Response.json(repository)
+      if (status === 'network-error') throw new Error('network unavailable')
+      return new Response(null, { status: typeof status === 'number' ? status : 401 })
+    }) as typeof fetch)
+    try {
+      const one = await fixture()
+      if (status === 'missing-auth')
+        await db
+          .update(integrationConnections)
+          .set({ authState: 'reauthorization_required' })
+          .where(eq(integrationConnections.id, one.connectionId))
+      if (status === 'network-error')
+        await expect(publishGitHubWebhookOutputs(event())).rejects.toThrow('network unavailable')
+      else expect(await publishGitHubWebhookOutputs(event())).toEqual([])
+      expect(send).not.toHaveBeenCalled()
+      expect(sendOnce).not.toHaveBeenCalled()
+      expect(wake).not.toHaveBeenCalled()
+      expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(0)
+      expect(
+        await db
+          .select()
+          .from(integrationOutputEvents)
+          .where(sql`${integrationOutputEvents.authority}->>'connectionId' = ${one.connectionId}`)
+      ).toHaveLength(0)
+      if (status === 'missing-auth') expect(request).not.toHaveBeenCalled()
+    } finally {
+      request.mockRestore()
+      send.mockRestore()
+      sendOnce.mockRestore()
+      wake.mockRestore()
+    }
+  })
+}
+
+test('no-event runtime ticks and restarts leave retired cursors/dispatches inert and never send housekeeping', async () => {
+  const send = spyOn(InboxMessage, 'send')
+  const sendOnce = spyOn(InboxMessage, 'sendOnce')
+  const wake = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
     success: true,
     queued: true,
     status: 'queued',
   })
-  const original = InboxMessage.sendOnce.bind(InboxMessage)
-  let release!: () => void
-  const held = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  let reached!: () => void
-  const ready = new Promise<void>((resolve) => {
-    reached = resolve
-  })
-  let failNative = true
-  const notice = spyOn(InboxMessage, 'sendOnce').mockImplementation(async (...args) => {
-    if (String(args[0].content).includes('(open; observed)')) {
-      reached()
-      await held
-    } else if (failNative) {
-      failNative = false
-      throw new Error('native notice deferred')
-    }
-    return original(...args)
-  })
-  let observing: Promise<unknown> | undefined
+  // Only fetch calls are intercepted; Bun's attached preconnect method is not
+  // part of this fixture, matching the existing delivery-presentation boundary.
+  const request = spyOn(globalThis, 'fetch').mockImplementation((async () =>
+    Response.json([])) as unknown as typeof fetch)
+  let restorePoll: (() => void) | undefined
   try {
     const one = await fixture()
-    const authority = { kind: 'connection' as const, squadId: one.squadId, connectionId: one.connectionId }
-    observing = publishIntegrationOutputs('github', { ...event('observed'), metadata: { synthetic: true } }, authority)
-    await ready
-    await expect(publishIntegrationOutputs('github', event(), authority)).rejects.toThrow('native notice deferred')
-    release()
-    await observing
-    const rows = () =>
-      db
+    const { integrationEventPollingRuntime } = await import('../runtime')
+    const { createGitHubPlugin, githubPlugin } = await import('./plugin')
+    const { resolveGitHubConnection } = await import('./resolve-connection')
+    // The singleton captured fetch at module load. Delegate to a fresh real plugin
+    // so all requests use this fixture's transport, never a live GitHub endpoint.
+    const fresh = createGitHubPlugin(
+      { currentUser: async () => ({ version: 1, userId: 123, login: 'testbot' }) },
+      async (connection) => (await resolveGitHubConnection(connection.squadId, connection.id))?.credential.accessToken
+    )
+    const poll = spyOn(githubPlugin.runtime.provider.capabilities.event_polling!, 'poll').mockImplementation(
+      fresh.runtime.provider.capabilities.event_polling!.poll
+    )
+    restorePoll = () => poll.mockRestore()
+    pollKeys.push(`${one.squadId}:${one.connectionId}:${repo}:issue-events`)
+    await integrationEventPollingRuntime.runOnce()
+    const key = `${one.squadId}:${one.connectionId}:${repo}:dependabot-alerts`
+    pollKeys.push(key)
+    const eventKey = `retired-${crypto.randomUUID()}`
+    dispatchKeys.push(eventKey)
+    const [cursor] = await db
+      .insert(integrationEventPollingCursors)
+      .values({
+        providerKey: 'github',
+        resourceKey: key,
+        cursor: { after: 'unfinished-page', repository },
+        nextPollAt: new Date(0),
+      })
+      .returning()
+    const [dispatch] = await db
+      .insert(integrationEventPollingDispatches)
+      .values({ providerKey: 'github', eventKey, leaseUntil: new Date(0), leaseToken: crypto.randomUUID() })
+      .returning()
+    await db.insert(workStreams).values({
+      squadId: one.squadId,
+      title: 'Tracked security alert',
+      status: 'active',
+      metadata: {
+        tracked: [
+          { integration: 'github', repository: repo, kind: 'dependabot_alert', number: 7, externalId: '101:7' },
+        ],
+      },
+    })
+    // Each tick reloads current DB watch sources, including startup with stale durable state.
+    await integrationEventPollingRuntime.runOnce()
+    await integrationEventPollingRuntime.stop()
+    await integrationEventPollingRuntime.runOnce()
+    expect(
+      await db.select().from(integrationEventPollingCursors).where(eq(integrationEventPollingCursors.resourceKey, key))
+    ).toEqual([cursor!])
+    expect(
+      await db
         .select()
-        .from(integrationOutputEvents)
-        .where(sql`${integrationOutputEvents.authority}->>'connectionId' = ${one.connectionId}`)
-    expect((await rows())[0]!.fact.data.action).toBe('created')
-    expect((await rows())[0]!.matchedAt).toBeNull()
-    await reconcileUnmatchedOutputs()
-    expect((await rows())[0]!.matchedAt).not.toBeNull()
-    expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(1)
+        .from(integrationEventPollingDispatches)
+        .where(eq(integrationEventPollingDispatches.eventKey, eventKey))
+    ).toEqual([dispatch!])
+    expect(request.mock.calls.some(([url]) => String(url).includes('/dependabot/alerts'))).toBe(false)
+    expect(request.mock.calls.some(([url]) => String(url).includes('/issues/events'))).toBe(true)
+    expect(send).not.toHaveBeenCalled()
+    expect(sendOnce).not.toHaveBeenCalled()
+    expect(wake).not.toHaveBeenCalled()
+    expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(0)
   } finally {
-    release()
-    await observing?.catch(() => {})
-    notice.mockRestore()
+    restorePoll?.()
+    request.mockRestore()
     send.mockRestore()
+    sendOnce.mockRestore()
+    wake.mockRestore()
   }
 })
+
+for (const status of ['pending', 'queued'] as const) {
+  test(`${status} historical synthetic deliveries are suppressed without new inbox creation or history removal`, async () => {
+    const send = spyOn(InboxMessage, 'send')
+    const sendOnce = spyOn(InboxMessage, 'sendOnce')
+    const wake = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+      success: true,
+      queued: true,
+      status: 'queued',
+    })
+    try {
+      const one = await fixture()
+      const { githubOutputAdapter } = await import('../outputs/github')
+      const native = githubOutputAdapter.normalize(event())[0]!
+      const [stored] = await db
+        .insert(integrationOutputEvents)
+        .values({
+          integration: 'github',
+          sourceKey: `retired:${one.connectionId}`,
+          eventKey: native.eventKey,
+          authority: { kind: 'connection', squadId: one.squadId, connectionId: one.connectionId },
+          fact: { ...native, data: { ...native.data, action: 'observed' } },
+          matchedAt: new Date(),
+        })
+        .returning()
+      const definition = createBlankWorkflow()
+      definition.participants.worker!.agentTypeId = prefix
+      const subscription = {
+        id: 'security',
+        source: { integration: 'github', output: 'dependabot_alert.updated', version: 1 },
+        match: { 'alert.externalId': { value: '101:7' } },
+        deliver: { to: { participant: 'worker' }, whenInactive: 'retain' as const },
+      }
+      definition.subscriptions = [subscription]
+      const [stream] = await db
+        .insert(workStreams)
+        .values({ squadId: one.squadId, title: 'Active tracked security work', status: 'active' })
+        .returning()
+      const state = createWorkflowRun(definition)
+      await db.insert(workStreamFlowRuns).values({
+        workStreamId: stream!.id,
+        activated: true,
+        state,
+        attemptAgents: { '1': one.managerId },
+        source: { schemaVersion: 1, source: { kind: 'inline' }, definition },
+        createRequestId: crypto.randomUUID(),
+        createRequestHash: 'fixture',
+        createdBy: 'test',
+      })
+      const [history] = await db
+        .insert(inbox)
+        .values({
+          recipientType: 'agent',
+          recipientId: one.managerId,
+          senderType: 'system',
+          content: 'Historical notification; preserve unread history',
+        })
+        .returning()
+      const [delivery] = await db
+        .insert(integrationOutputDeliveries)
+        .values({
+          eventId: stored!.id,
+          workStreamId: stream!.id,
+          subscriptionId: subscription.id,
+          subscription,
+          status,
+          targets: status === 'queued' ? [{ agentId: one.managerId, attemptId: 1, inboxId: history!.id }] : [],
+        })
+        .returning()
+      expect(await isCurrentIntegrationDelivery(db, delivery!.id, one.managerId, history!.id)).toBe(false)
+      await reconcileOutputDeliveries(stream!.id)
+      expect(
+        (await db.select().from(integrationOutputDeliveries).where(eq(integrationOutputDeliveries.id, delivery!.id)))[0]
+      ).toMatchObject({ status: 'superseded', reason: 'Event suppressed by integration notification policy' })
+      expect(send).not.toHaveBeenCalled()
+      expect(sendOnce).not.toHaveBeenCalled()
+      expect(wake).not.toHaveBeenCalled()
+      expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toEqual([history!])
+    } finally {
+      send.mockRestore()
+      sendOnce.mockRestore()
+      wake.mockRestore()
+    }
+  })
+}

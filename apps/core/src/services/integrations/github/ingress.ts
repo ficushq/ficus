@@ -1,7 +1,6 @@
 import { normalizeDependabot } from './dependabot-output'
 import { dependabotRepositoryInterest } from './dependabot-authority'
 import { listGitHubPrWorkStreamCandidates, listGitHubTriggerSquads } from './database-watch-source'
-import { reportDependabotUnavailable } from './dependabot-status'
 import { integrationEnabledPredicate } from '../provider-state'
 import { and, eq } from 'drizzle-orm'
 import { db, integrationConnectionAssignments, integrationConnections } from '../../../db'
@@ -81,9 +80,6 @@ export async function canObserveGitHubDependabot(
     assignment.squadId,
     assignment.connectionId
   )
-  if (alert?.number !== number) {
-    await reportDependabotUnavailable(assignment.squadId, assignment.connectionId)
-    return false
-  }
-  return true
+  // Authorization failures are silent: no manager health/permission notices.
+  return alert?.number === number
 }
