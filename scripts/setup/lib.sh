@@ -2702,7 +2702,7 @@ hcloud_server_status_id_ip() { # SERVER_RESPONSE_JSON
 
 # ------------------------------------------------------------------ digitalocean (droplets)
 
-# Request body for POST /droplets. TAG is set at create (e.g. 'tau-tenant')
+# Request body for POST /droplets. TAG is set at create (e.g. 'ficus-tenant')
 # so idempotent reuse/destroy can filter by tag+exact-name — DO's list
 # endpoint can't combine a `name` and `tag_name` query in one call (see
 # do_droplet_lookup below), so the tag is what keeps an unrelated,
@@ -2919,7 +2919,7 @@ git_source_sync() {
   fi
 
   # A pre-existing NON-git, non-empty dest means someone pointed source.dest at
-  # an occupied path (classic: /opt/tau, which the ficus-machine image owns). Fail
+  # an occupied path (classic: /opt/ficus, which the ficus-machine image owns). Fail
   # with a clear instruction instead of git's opaque "destination path already
   # exists and is not an empty directory" fatal.
   if [[ ! -d ${SRC_DEST}/.git ]] && [[ -n $(ls -A "${SRC_DEST}" 2>/dev/null) ]]; then

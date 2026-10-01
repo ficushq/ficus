@@ -22,7 +22,7 @@ it('round-trips manifested durable roots through production archive and staged r
   const operationId = randomUUID()
   const sourceHome = `/home/${sourceUser}`
   const targetHome = `/home/${targetUser}`
-  const stagingHome = `${targetHome}/.tau-migrate/${operationId}`
+  const stagingHome = `${targetHome}/.ficus-migrate/${operationId}`
   const script = `${process.cwd()}/scripts/machine/box-provision.sh`
   const identity = {
     operationId,

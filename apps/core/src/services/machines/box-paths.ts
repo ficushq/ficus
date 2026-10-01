@@ -31,13 +31,42 @@ export function boxHome(sandboxId: string): string {
 }
 
 /**
+ * The dot dir in a box user's HOME that holds its `server.env`, `host.env`,
+ * devbox, toolchain and skills. box-provision.sh moves a box's legacy one here
+ * on its next provision and leaves the legacy name as a relative link to it.
+ */
+export const BOX_DOT_DIR = '.ficus'
+/** Bridge (phase 5, U4): the box HOME dot dir before the rename. */
+export const LEGACY_BOX_DOT_DIR = '.tau' // ficus-p5-bridge
+
+/** A box's HOME dot dir (`<home>/.ficus`). */
+export function boxDotDir(home: string): string {
+  return `${home}/${BOX_DOT_DIR}`
+}
+
+/** The machine root every box runs from (box-provision.sh, the server bundle, bun). */
+export const MACHINE_ROOT = '/opt/ficus'
+
+/**
+ * Bridge (phase 5, U4): the unit names a box provisioned before the rename runs
+ * under. Its units keep them until box-provision.sh re-provisions it (and the
+ * Ficus units it then installs carry them as `Alias=`), so every command Core
+ * builds for a box can still reach a box that has not been re-provisioned yet.
+ */
+export const LEGACY_BOX_UNIT_PREFIX = 'tau-box' // ficus-p5-bridge
+export const LEGACY_USER_UNIT_PREFIX = 'tau-sandbox-server' // ficus-p5-bridge
+
+const BOX_UNIT_PREFIX = 'ficus-box'
+const USER_UNIT_PREFIX = 'ficus-sandbox-server'
+
+/**
  * WHICH systemd manager runs a box's sandbox-server.
  *
  * - `system` — one root-owned unit per box under /etc/systemd/system
- *   (`tau-box-<user>.service`, `User=`/`Group=<user>`, its own
- *   `tau-box-<user>.slice`). No linger, so the box costs no `systemd --user`
+ *   (`ficus-box-<user>.service`, `User=`/`Group=<user>`, its own
+ *   `ficus-box-<user>.slice`). No linger, so the box costs no `systemd --user`
  *   manager + dbus pair.
- * - `user` — the historical layout: `tau-sandbox-server.service` inside the box
+ * - `user` — the historical layout: `ficus-sandbox-server.service` inside the box
  *   user's own lingering user manager. Required by rootless docker, whose
  *   daemon IS a user service on /run/user/<uid>/docker.sock.
  */
@@ -59,9 +88,8 @@ export function boxUnitMode(sandboxId: string): BoxUnitMode {
   return sandboxId.startsWith('agent_') ? 'system' : 'user'
 }
 
-/** The unit + the command prefixes that drive it. See {@link boxUnitControl}. */
-export interface BoxUnitControl {
-  mode: BoxUnitMode
+/** One box's three units under one naming. */
+export interface BoxUnitNames {
   /** The SERVER unit — what `restart` targets, and what may be `inactive` on a
    *  perfectly healthy socket-activated box. */
   unit: string
@@ -72,26 +100,55 @@ export interface BoxUnitControl {
   /** socket, proxy and server, space-joined in the order a teardown must stop
    *  them — the socket FIRST, or it re-activates the proxy mid-stop. */
   allUnits: string
+}
+
+/** The unit + the command prefixes that drive it. See {@link boxUnitControl}. */
+export interface BoxUnitControl extends BoxUnitNames {
+  mode: BoxUnitMode
+  /** Bridge (phase 5, U4): the same three units under the names a box
+   *  provisioned before the rename still runs. */
+  legacy: BoxUnitNames
   /** Full systemctl command prefix INCLUDING sudo: `${systemctl} restart ${unit}`. */
   systemctl: string
-  /** Full journalctl command through `-u <unit>`; callers append their own
-   *  `-n <lines> --no-pager` and redirection. */
+  /** Full journalctl command through `-u <unit>` (both names while the bridge
+   *  lasts); callers append their own `-n <lines> --no-pager` and redirection. */
   journalctl: string
+  /** The `is-active` probe of one unit in this box's manager, as one command. */
+  isActiveCommandOf: (unit: string) => string
   /** The SERVER unit's `is-active` probe, as one complete command. */
   isActiveCommand: () => string
   /** The SOCKET unit's `is-active` probe. An active socket is the box's real
    *  liveness signal: it means the port is held and the chain can wake. */
   socketIsActiveCommand: () => string
   /**
-   * A probe for the PRE-SOCKET layout of a box this deploy has not
-   * re-provisioned yet, or `undefined` when {@link isActiveCommand} already
-   * covers it. Only system-mode boxes need one: an `agent_*` box that has not
-   * been re-provisioned since S2 still runs `tau-sandbox-server.service` inside
+   * Bridge (phase 5, U4): `fn` applied to the unit set this box actually has on
+   * its host, as ONE remote shell command. The legacy names are used only when
+   * the box's legacy server unit is loaded and its Ficus one is not (a box not
+   * re-provisioned since the rename); otherwise the Ficus names. `fn`'s command
+   * keeps its own exit status.
+   */
+  onHost: (fn: (names: BoxUnitNames) => string) => string
+  /**
+   * A probe for an OLDER layout of the box that {@link onHost}'s two unit sets
+   * do not cover, or `undefined` when there is none. Only system-mode boxes have
+   * one: an `agent_*` box not re-provisioned since S2 still runs its server in
    * its own user manager, which no system-mode probe would ever see — and
-   * calling that box `exited` would condemn a perfectly live box.
+   * calling that box `exited` would condemn a perfectly live box. During the
+   * bridge it probes both legacy shapes (the legacy system units and the legacy
+   * user unit) and prints one live state, or nothing.
    */
   legacyIsActiveCommand?: () => string
 }
+
+function unitNames(prefix: string): BoxUnitNames {
+  const unit = `${prefix}.service`
+  const socket = `${prefix}.socket`
+  const proxy = `${prefix}-proxy.service`
+  return { unit, socket, proxy, allUnits: `${socket} ${proxy} ${unit}` }
+}
+
+/** The states a box's unit may report while it is alive. */
+const LIVE_STATES = 'active|activating|reloading|listening|running'
 
 /**
  * The ONE seam every systemctl/journalctl string this codebase builds for a box
@@ -99,56 +156,50 @@ export interface BoxUnitControl {
  * which unit exists (the script is also passed `--unit-mode` explicitly, derived
  * from {@link boxUnitMode}).
  *
- * User-mode output is byte-identical to the pre-density commands, including the
- * split between the two shapes systemd offers for reaching another user's
- * manager: `--machine=<user>@.host --user` for control verbs (needs a running
- * per-user manager, which linger guarantees) and a `sudo -u <user> env
- * XDG_RUNTIME_DIR=…` drop for the read-only probes.
+ * The two modes reach their manager in the two shapes systemd offers for
+ * another user's manager: `--machine=<user>@.host --user` for control verbs
+ * (needs a running per-user manager, which linger guarantees) and a
+ * `sudo -u <user> env XDG_RUNTIME_DIR=…` drop for the read-only probes.
  *
- * CONTRACT: the user-mode `journalctl` / `isActiveCommand()` strings reference
- * a `$uid` REMOTE shell variable, which the calling command must define first
- * (`uid=$(id -u <user>)`) — as box-manager's machine snapshot does. System mode
- * needs no such variable.
+ * CONTRACT: the user-mode `journalctl` / `isActiveCommand()` strings (and the
+ * system-mode legacy probe) reference a `$uid` REMOTE shell variable, which the
+ * calling command must define first (`uid=$(id -u <user>)`) — as box-manager's
+ * machine snapshot does.
  */
 export function boxUnitControl(input: { sandboxId: string; unixUser: string }): BoxUnitControl {
   const { unixUser } = input
   const mode = boxUnitMode(input.sandboxId)
   const asBoxUser = `sudo -u ${shellQuoteBoxPath(unixUser)} env XDG_RUNTIME_DIR=/run/user/$uid`
-  const legacyUserUnit = 'tau-sandbox-server.service'
-  if (mode === 'system') {
-    const prefix = `tau-box-${unixUser}`
-    const unit = `${prefix}.service`
-    const socket = `${prefix}.socket`
-    const proxy = `${prefix}-proxy.service`
-    return {
-      mode,
-      unit,
-      socket,
-      proxy,
-      allUnits: `${socket} ${proxy} ${unit}`,
-      systemctl: 'sudo systemctl',
-      journalctl: `sudo journalctl -u ${unit}`,
-      isActiveCommand: () => `sudo systemctl is-active ${unit}`,
-      socketIsActiveCommand: () => `sudo systemctl is-active ${socket}`,
-      legacyIsActiveCommand: () => `${asBoxUser} systemctl --user is-active ${legacyUserUnit}`,
-    }
-  }
-  const unit = legacyUserUnit
-  const socket = 'tau-sandbox-server.socket'
-  const proxy = 'tau-sandbox-server-proxy.service'
+  const legacyUserUnit = `${LEGACY_USER_UNIT_PREFIX}.service`
+  const names = unitNames(mode === 'system' ? `${BOX_UNIT_PREFIX}-${unixUser}` : USER_UNIT_PREFIX)
+  const legacy = unitNames(mode === 'system' ? `${LEGACY_BOX_UNIT_PREFIX}-${unixUser}` : LEGACY_USER_UNIT_PREFIX)
+  const systemctl = mode === 'system' ? 'sudo systemctl' : `sudo systemctl --machine=${unixUser}@.host --user`
+  const isActiveCommandOf =
+    mode === 'system'
+      ? (unit: string) => `sudo systemctl is-active ${unit}`
+      : (unit: string) => `${asBoxUser} systemctl --user is-active ${unit}`
+  const loaded = (unit: string) => `[ "$(${systemctl} show -p LoadState --value ${unit} 2>/dev/null)" = loaded ]`
   return {
     mode,
-    unit,
-    socket,
-    proxy,
-    allUnits: `${socket} ${proxy} ${unit}`,
-    systemctl: `sudo systemctl --machine=${unixUser}@.host --user`,
-    journalctl: `${asBoxUser} journalctl --user -u ${unit}`,
-    isActiveCommand: () => `${asBoxUser} systemctl --user is-active ${unit}`,
-    socketIsActiveCommand: () => `${asBoxUser} systemctl --user is-active ${socket}`,
-    // A user-mode box's pre-socket layout used the SAME service unit name, so
-    // `isActiveCommand()` already is the legacy probe.
-    legacyIsActiveCommand: undefined,
+    ...names,
+    legacy,
+    systemctl,
+    journalctl:
+      mode === 'system'
+        ? `sudo journalctl -u ${names.unit} -u ${legacy.unit}`
+        : `${asBoxUser} journalctl --user -u ${names.unit} -u ${legacy.unit}`,
+    isActiveCommandOf,
+    isActiveCommand: () => isActiveCommandOf(names.unit),
+    socketIsActiveCommand: () => isActiveCommandOf(names.socket),
+    onHost: (fn) => `if ${loaded(legacy.unit)} && ! ${loaded(names.unit)}; then ${fn(legacy)}; else ${fn(names)}; fi`,
+    legacyIsActiveCommand:
+      mode === 'system'
+        ? () =>
+            `{ sudo systemctl is-active ${legacy.socket} ${legacy.unit}; ` +
+            `${asBoxUser} systemctl --user is-active ${legacyUserUnit}; } 2>/dev/null | grep -m1 -xE '${LIVE_STATES}'`
+        : // A user-mode box's pre-socket layout used the SAME service unit name,
+          // which onHost's legacy set already covers.
+          undefined,
   }
 }
 

@@ -41,7 +41,7 @@ import { MachineTunnelManager } from './tunnel-manager'
  *
  * WHAT THIS DOES NOT COVER (deferred to the tenant-zero VM smoke, see
  * docs/wiki/machines/runtime.md § "Known limitations"): the full systemd `--user`
- * path (linger, the `tau-sandbox-server.service` unit, `--machine=<user>@.host`
+ * path (linger, the `ficus-sandbox-server.service` unit, `--machine=<user>@.host`
  * restart) only runs on a real VM with systemd as PID 1. This container test
  * validates everything AROUND that seam — the exact same ssh runner, tunnel
  * manager, server bundle, SandboxClient, and file/exec/reverse contracts.
@@ -285,7 +285,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real
       // partial success.
       const prov = await runner.run(
         machine,
-        `bash /opt/tau/bin/box-provision.sh --sandbox-id ${sandboxId} --unix-user ${unixUser} --port ${BOX_PORT}`
+        `bash /opt/ficus/bin/box-provision.sh --sandbox-id ${sandboxId} --unix-user ${unixUser} --port ${BOX_PORT}`
       )
       expect(prov.exitCode).not.toBe(0)
       expect(prov.stderr.trim().length).toBeGreaterThan(0)
@@ -294,13 +294,13 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real
       //       provision may already have created the user via --create-home). ──
       const mkbox =
         `id -u ${unixUser} >/dev/null 2>&1 || useradd --create-home --shell /bin/bash ${unixUser}; ` +
-        `install -d -o ${unixUser} -g ${unixUser} -m 0700 ${home}/.private ${home}/.tau; ` +
+        `install -d -o ${unixUser} -g ${unixUser} -m 0700 ${home}/.private ${home}/.ficus; ` +
         `install -d -o ${unixUser} -g ${unixUser} -m 0755 ${home}/workspace ${home}/bin`
       const mk = await runner.run(machine, mkbox)
       expect(mk.exitCode).toBe(0)
 
       // ── 4. Ship the REAL sandbox-server via the PRODUCTION bundle path. ────
-      // ensureServerBundle pushes BOTH /opt/tau/server/server.js AND the native
+      // ensureServerBundle pushes BOTH /opt/ficus/server/server.js AND the native
       // bun-pty lib (librust_pty.so) that the bundled shell/PTY path dlopens at
       // boot — if that lib is absent the server crashes on startup before
       // /healthz ever comes up. This exercises the exact production push (no
@@ -321,7 +321,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real
         // step 4 (SERVER_LIB_REMOTE_PATH). In production the box's server.env sets
         // this same var (box-manager derivedBoxEnv); this unit-free start mirrors it.
         `export BUN_PTY_LIB=${SERVER_LIB_REMOTE_PATH}`,
-        'exec /opt/tau/bin/bun /opt/tau/server/server.js',
+        'exec /opt/ficus/bin/bun /opt/ficus/server/server.js',
         '',
       ].join('\n')
       const putScript = await runner.run(machine, `install -m 0755 /dev/stdin /tmp/start-box.sh`, {
@@ -408,7 +408,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real
 
       // ── 11. Devbox comfort-set seeding (VM-smoke: needs a LIVE nix daemon). ──
       // seedBoxDevbox is the EXACT call the manager makes at ensure (writes
-      // ~/.tau/devbox/devbox.json AS THE BOX USER, runs `devbox install`, records
+      // ~/.ficus/devbox/devbox.json AS THE BOX USER, runs `devbox install`, records
       // the content-hash marker). bootstrap.sh installs nix + devbox, so `devbox`
       // is on PATH — but `devbox install` REALIZES packages through the nix
       // DAEMON, which runs only on a real systemd VM (a plain container has no
@@ -422,7 +422,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real
         // Agent-role box → the LIGHT comfort set. Seeding is idempotent; a marker
         // matching this role's content-hash proves the install completed.
         await seedBoxDevbox(client, sandboxId, 'agent', { installTimeoutSeconds: 10 * 60 })
-        const marker = await bashCollect(client, `cat ${home}/.tau/devbox/.seeded`)
+        const marker = await bashCollect(client, `cat ${home}/.ficus/devbox/.seeded`)
         expect(marker.exitCode).toBe(0)
         expect(marker.stdout.trim()).toBe(computeDevboxSeedHash('agent'))
         // Signal /devbox-ready so the box server caches the devbox shellenv — the
@@ -738,7 +738,7 @@ function buildIntegrationMachine(name: string, egressPolicy: boolean): Machine {
  * runs ONLY when `FICUS_TEST_SYSTEMD=1` asserts the SSH target is a real systemd VM
  * (or systemd-enabled container) on which bootstrap.sh has ALREADY run (docker
  * engine + rootless launcher installed, the system daemon masked, box-provision
- * installed at /opt/tau/bin). On a plain container it is SKIPPED and the path is
+ * installed at /opt/ficus/bin). On a plain container it is SKIPPED and the path is
  * covered by the tenant-zero VM smoke + the unit tests (docker.ts, bootstrap.ts).
  *
  * What it proves: (1) `--with-docker` provisions cleanly and REPORTS the box uid;
@@ -785,7 +785,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_SYST
         if (runner && machine) {
           await runner.run(
             machine,
-            `bash /opt/tau/bin/box-provision.sh --unix-user ${unixUser} --remove 2>/dev/null; ` +
+            `bash /opt/ficus/bin/box-provision.sh --unix-user ${unixUser} --remove 2>/dev/null; ` +
               `pkill -KILL -u ${unixUser} 2>/dev/null; userdel -r ${unixUser} 2>/dev/null; true`,
             { timeoutMs: 60_000 }
           )
@@ -812,7 +812,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_SYST
         //    rootless setup and prints the box uid on its sole stdout line.
         const prov = await runner.run(
           machine,
-          `bash /opt/tau/bin/box-provision.sh --sandbox-id ${sandboxId} --unix-user ${unixUser} --port ${BOX_PORT} --with-docker`,
+          `bash /opt/ficus/bin/box-provision.sh --sandbox-id ${sandboxId} --unix-user ${unixUser} --port ${BOX_PORT} --with-docker`,
           { timeoutMs: 5 * 60 * 1000 }
         )
         expect(prov.exitCode).toBe(0)
@@ -898,7 +898,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_EGRE
         if (runner && machine) {
           await runner.run(
             machine,
-            `bash /opt/tau/bin/box-provision.sh --unix-user ${unixUser} --remove 2>/dev/null; ` +
+            `bash /opt/ficus/bin/box-provision.sh --unix-user ${unixUser} --remove 2>/dev/null; ` +
               `pkill -KILL -u ${unixUser} 2>/dev/null; userdel -r ${unixUser} 2>/dev/null; ` +
               `nft delete table inet tau_egress 2>/dev/null; true`,
             { timeoutMs: 60_000 }
@@ -941,7 +941,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_EGRE
         // 2. Provision a --with-docker box (squad role) with a live rootless daemon.
         const prov = await runner.run(
           machine,
-          `bash /opt/tau/bin/box-provision.sh --sandbox-id ${sandboxId} --unix-user ${unixUser} --port ${BOX_PORT} --with-docker`,
+          `bash /opt/ficus/bin/box-provision.sh --sandbox-id ${sandboxId} --unix-user ${unixUser} --port ${BOX_PORT} --with-docker`,
           { timeoutMs: 5 * 60 * 1000 }
         )
         expect(prov.exitCode).toBe(0)

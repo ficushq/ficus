@@ -6,7 +6,7 @@ Docker engine + rootless extras, nftables, the Ficus machine scripts) baked into
 exe-compatible image, at the **same pinned versions and paths** bootstrap uses.
 Booting a box VM from this image collapses bootstrap from a multi-minute install
 to seconds: every idempotent check-then-act step finds its artifact already in
-place and skips, and the `/opt/tau/prebaked` marker lets bootstrap fast-path the
+place and skips, and the `/opt/ficus/prebaked` marker lets bootstrap fast-path the
 install steps entirely (see `scripts/machine/bootstrap.sh`).
 
 The per-box devbox **comfort set is NOT baked** — it is seeded per box at runtime
@@ -40,18 +40,18 @@ regression ever needs freezing out.
 
 ## What is baked on top (mirrors bootstrap.sh, keep in lockstep)
 
-| Component | Version pin | Path | bootstrap.sh counterpart |
-| --- | --- | --- | --- |
-| apt base + rootless prereqs | — | (git, curl, unzip, tmux, jq, build-essential, ca-certificates, gnupg, uidmap, dbus-user-session, slirp4netns, fuse-overlayfs) | `install_base_packages` |
-| nftables | — | — | `apply_egress_lockdown` (on-demand install, pre-baked here) |
-| Docker engine + rootless | — | docker-ce, docker-ce-cli, containerd.io, docker-ce-rootless-extras from Docker's apt repo (replaces exeuntu's docker.io); `docker.service`/`docker.socket` disabled + masked | `install_docker_packages` |
-| bun | `1.2.23` | `/opt/tau/bun`, symlinks `/opt/tau/bin/bun` + `/usr/local/bin/bun` | `install_bun` (`BUN_VERSION`) |
-| nix (multi-user) | `2.24.9` | `/nix`, daemon units enabled, symlink `/usr/local/bin/nix` | `install_nix` (`NIX_VERSION`) + `link_nix_on_path` |
-| devbox | `0.14.0` | `/usr/local/bin/devbox` | `install_devbox` (`DEVBOX_VERSION`) |
-| Ficus dirs + scripts | — | `/opt/tau/{bin,server,archive}`, `bootstrap.sh` + `box-provision.sh` in `/opt/tau/bin/` | `make_dirs` / manager push |
-| prebaked marker | — | `/opt/tau/prebaked` (JSON: baked pins) | read by bootstrap's fast-path |
+| Component                   | Version pin | Path                                                                                                                                                                         | bootstrap.sh counterpart                                    |
+| --------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| apt base + rootless prereqs | —           | (git, curl, unzip, tmux, jq, build-essential, ca-certificates, gnupg, uidmap, dbus-user-session, slirp4netns, fuse-overlayfs)                                                | `install_base_packages`                                     |
+| nftables                    | —           | —                                                                                                                                                                            | `apply_egress_lockdown` (on-demand install, pre-baked here) |
+| Docker engine + rootless    | —           | docker-ce, docker-ce-cli, containerd.io, docker-ce-rootless-extras from Docker's apt repo (replaces exeuntu's docker.io); `docker.service`/`docker.socket` disabled + masked | `install_docker_packages`                                   |
+| bun                         | `1.2.23`    | `/opt/ficus/bun`, symlinks `/opt/ficus/bin/bun` + `/usr/local/bin/bun`                                                                                                       | `install_bun` (`BUN_VERSION`)                               |
+| nix (multi-user)            | `2.24.9`    | `/nix`, daemon units enabled, symlink `/usr/local/bin/nix`                                                                                                                   | `install_nix` (`NIX_VERSION`) + `link_nix_on_path`          |
+| devbox                      | `0.14.0`    | `/usr/local/bin/devbox`                                                                                                                                                      | `install_devbox` (`DEVBOX_VERSION`)                         |
+| Ficus dirs + scripts        | —           | `/opt/ficus/{bin,server,archive}`, `bootstrap.sh` + `box-provision.sh` in `/opt/ficus/bin/`                                                                                  | `make_dirs` / manager push                                  |
+| prebaked marker             | —           | `/opt/ficus/prebaked` (JSON: baked pins)                                                                                                                                     | read by bootstrap's fast-path                               |
 
-`/opt/tau/manifest.json` is deliberately **not** baked — bootstrap writes it
+`/opt/ficus/manifest.json` is deliberately **not** baked — bootstrap writes it
 per-machine with the caller's `--version` hash.
 
 ## Building
@@ -88,7 +88,7 @@ exe new --image=ghcr.io/ficushq/ficus-machine:latest
 The exe provider passes this via `FICUS_EXE_MACHINE_IMAGE`
 (default `ghcr.io/ficushq/ficus-machine:latest`).
 
-On a VM booted from this image, bootstrap.sh detects `/opt/tau/prebaked` and
+On a VM booted from this image, bootstrap.sh detects `/opt/ficus/prebaked` and
 skips the install steps (bun/nix/devbox/apt), doing only per-boot work — the
 manifest write and the capabilities probe — so bootstrap completes in seconds.
 On a non-prebaked machine (BYO-SSH Ubuntu) bootstrap still performs the full

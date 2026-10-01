@@ -4,7 +4,7 @@ import type { Machine } from './queries'
 import type { SshRunner } from './ssh'
 
 const BOX_USER = /^box_[0-9a-f]{12}$/
-const HOME = /^\/home\/box_[0-9a-f]{12}(?:\/.tau-migrate\/[0-9a-f-]{36})?$/
+const HOME = /^\/home\/box_[0-9a-f]{12}(?:\/.ficus-migrate\/[0-9a-f-]{36})?$/
 
 export function buildMigrationScanCommand(home: string, unixUser: string): string {
   if (!BOX_USER.test(unixUser) || !HOME.test(home) || !home.startsWith(`/home/${unixUser}`))

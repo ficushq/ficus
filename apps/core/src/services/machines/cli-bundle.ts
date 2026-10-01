@@ -48,7 +48,7 @@ const CLI_GENERATED_BUILD_INFO = 'apps/cli/src/build-info.generated.ts'
 const CLI_OUTPUT_NAME = CLI_BUNDLE_FILE
 /** Where the bundle lands on the machine (dir created by bootstrap.sh's
  *  make_dirs; ensureArtifact's `install -D` also creates it). */
-export const CLI_REMOTE_PATH = '/opt/tau/cli/ficus.js'
+export const CLI_REMOTE_PATH = '/opt/ficus/cli/ficus.js'
 /** The PATH-visible entrypoint every box shell resolves `ficus` to — the only
  *  CLI name a box gets (the same path docker and k8s sandboxes mount). */
 export const CLI_WRAPPER_PATH = SANDBOX_CLI_PATH
@@ -56,7 +56,7 @@ export const CLI_WRAPPER_PATH = SANDBOX_CLI_PATH
  *  Pushed as an artifact file AND folded into the version hash, so editing
  *  this string re-stamps + re-pushes the artifact. */
 export const CLI_WRAPPER_BYTES = new TextEncoder().encode(
-  '#!/bin/sh\nexec /opt/tau/bin/bun /opt/tau/cli/ficus.js "$@"\n'
+  '#!/bin/sh\nexec /opt/ficus/bin/bun /opt/ficus/cli/ficus.js "$@"\n'
 )
 
 const repoRoot = resolveRepoRoot()

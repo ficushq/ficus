@@ -54,6 +54,7 @@ import {
   roleWantsDocker,
   tarCodecFlag,
 } from './box-manager'
+import { LEGACY_BOX_UNIT_PREFIX, LEGACY_USER_UNIT_PREFIX } from './box-paths'
 import { insertMachine, deleteMachine, listMachines, upsertMachineBox } from './queries'
 import type { Machine, MachineBox } from './queries'
 import type { SshResult, SshRunner, SshStreamer } from './ssh'
@@ -400,7 +401,7 @@ describe('ensureBox', () => {
     // The env push is built via ssh.ts's buildPushFileCommand + a chown suffix;
     // its final command string must be byte-identical to the prior inline form.
     const user = boxUnixUser('sb-1')
-    const envPath = `/home/${user}/.tau/server.env`
+    const envPath = `/home/${user}/.ficus/server.env`
     const envCall = calls.find((c) => c.command.includes('server.env'))!
     expect(envCall.command).toBe(
       `sudo install -m 0600 /dev/stdin '${envPath}' && sudo chown ${user}:${user} '${envPath}'`
@@ -899,7 +900,7 @@ describe('ensureBox', () => {
     expect(envCall!.command).toContain('install -m 0600 /dev/stdin')
     const user = boxUnixUser('sb-1')
     expect(envCall!.command).toContain(`chown ${user}:${user}`)
-    expect(envCall!.command).toContain(`/home/${user}/.tau/server.env`)
+    expect(envCall!.command).toContain(`/home/${user}/.ficus/server.env`)
     // Caller env + the baked runtime vars are all present in the pushed content.
     expect(envCall!.stdin).toContain('FOO=bar')
     expect(envCall!.stdin).toContain('EXECUTOR_PORT=50100')
@@ -907,12 +908,12 @@ describe('ensureBox', () => {
     expect(envCall!.stdin).toContain(`WORKSPACE_PATH=/home/${user}/workspace`)
     expect(envCall!.stdin).toContain('FICUS_DEVBOX_DIR=')
     // FICUS_BOX_HOME is baked so the box's sandbox-server permits file-sync writes
-    // under the box HOME (~/bin, ~/.tau/skills, ~/memory).
+    // under the box HOME (~/bin, ~/.ficus/skills, ~/memory).
     expect(envCall!.stdin).toContain(`FICUS_BOX_HOME=/home/${user}`)
     // BUN_PTY_LIB points the bundled server's shell/PTY loader at the native lib
     // ensureServerBundle ships next to server.js; without it the server crashes at
     // boot when the shell path dlopens librust_pty.so.
-    expect(envCall!.stdin).toContain('BUN_PTY_LIB=/opt/tau/server/librust_pty.so')
+    expect(envCall!.stdin).toContain('BUN_PTY_LIB=/opt/ficus/server/librust_pty.so')
   })
 
   it('overrides a conflicting caller service-cgroup marker in pushed server.env', async () => {
@@ -1069,7 +1070,7 @@ describe('ensureBox', () => {
 
   // ── per-box browser token DIGEST file (R-B8 / R-B2) ──────────────────────
 
-  it('pushes the browser token DIGEST (not the raw token) to /opt/tau/browser-tokens/<user>.token, 0640 root:tau-browser, over the same non-argv channel as server.env', async () => {
+  it('pushes the browser token DIGEST (not the raw token) to /opt/ficus/browser-tokens/<user>.token, 0640 root:ficus-browser, over the same non-argv channel as server.env', async () => {
     const events: string[] = []
     const { runner, calls } = makeFakeRunner(events)
     const machine = makeMachine()
@@ -1089,15 +1090,15 @@ describe('ensureBox', () => {
       { runner, clearBoxSyncedHashes: async () => {} }
     )
 
-    const tokenPath = `/opt/tau/browser-tokens/${unixUser}.token`
-    const tokenCall = calls.find((c) => c.command.includes('/opt/tau/browser-tokens'))
+    const tokenPath = `/opt/ficus/browser-tokens/${unixUser}.token`
+    const tokenCall = calls.find((c) => c.command.includes('/opt/ficus/browser-tokens'))
     expect(tokenCall).toBeDefined()
-    // Correct sibling path (NOT inside /opt/tau/browser, which bootstrap chmods world-open).
+    // Correct sibling path (NOT inside /opt/ficus/browser, which bootstrap chmods world-open).
     expect(tokenCall!.command).toContain(tokenPath)
-    expect(tokenCall!.command).not.toContain('/opt/tau/browser/tokens')
+    expect(tokenCall!.command).not.toContain('/opt/ficus/browser/tokens')
     // The dir is created, ownership handed to the service group, mode locked to 0640.
     expect(tokenCall!.command).toContain('mkdir -p')
-    expect(tokenCall!.command).toContain('chown root:tau-browser')
+    expect(tokenCall!.command).toContain('chown root:ficus-browser')
     expect(tokenCall!.command).toContain('0640')
     // The bytes ride stdin (install -m /dev/stdin), the SAME non-argv channel server.env uses.
     const envCall = calls.find((c) => c.command.includes('server.env'))!
@@ -1111,15 +1112,15 @@ describe('ensureBox', () => {
     expect(tokenCall!.command).not.toContain(authToken)
   })
 
-  it('browser token push is NON-FATAL and self-cleans on a pre-browser machine (no tau-browser group → chown fails)', async () => {
+  it('browser token push is NON-FATAL and self-cleans on a pre-browser machine (no ficus-browser group → chown fails)', async () => {
     const events: string[] = []
     const machine = makeMachine()
     const unixUser = boxUnixUser('sb-legacy')
-    const tokenPath = `/opt/tau/browser-tokens/${unixUser}.token`
+    const tokenPath = `/opt/ficus/browser-tokens/${unixUser}.token`
     const { runner, calls } = makeFakeRunner(events, (command) => {
       // The token write chain fails at chown (no group) on a pre-browser machine.
-      if (command.includes('/opt/tau/browser-tokens') && command.includes('chown root:tau-browser')) {
-        return { exitCode: 1, stdout: '', stderr: 'chown: invalid group: root:tau-browser' }
+      if (command.includes('/opt/ficus/browser-tokens') && command.includes('chown root:ficus-browser')) {
+        return { exitCode: 1, stdout: '', stderr: 'chown: invalid group: root:ficus-browser' }
       }
       return undefined
     })
@@ -2470,7 +2471,7 @@ describe('removeBox', () => {
       deleteMachineBox: async () => {},
     })
 
-    const tokenPath = `/opt/tau/browser-tokens/${box.unixUser}.token`
+    const tokenPath = `/opt/ficus/browser-tokens/${box.unixUser}.token`
     const removed = calls.some((c) => c.command.includes('rm -f') && c.command.includes(tokenPath))
     expect(removed).toBe(true)
   })
@@ -2570,7 +2571,7 @@ describe('restorePrivateArchive', () => {
     expect(calls[0].stdin).toBe(archiveBytes)
     // (c) box-provision extracts the scratch tar into the box home.
     expect(calls[1].command).toBe(
-      `sudo bash /opt/tau/bin/box-provision.sh --unix-user '${boxUnixUser('sb-1')}' ` +
+      `sudo bash /opt/ficus/bin/box-provision.sh --unix-user '${boxUnixUser('sb-1')}' ` +
         `--restore '/tmp/ficus-restore-sb-1.tar.gz'`
     )
     // (d) the scratch tar (a full copy of the private tree) never lingers.
@@ -2824,7 +2825,7 @@ describe('buildStreamRestoreCommand', () => {
 
     // Let bash parse the exact production command suffix into NUL-delimited
     // argv. No handwritten argv or shell word splitting approximates it.
-    const launcher = 'sudo bash /opt/tau/bin/box-provision.sh '
+    const launcher = 'sudo bash /opt/ficus/bin/box-provision.sh '
     expect(cmd.startsWith(launcher)).toBeTrue()
     const capture = Bun.spawn(['bash', '-c', `printf '%s\\0' ${cmd.slice(launcher.length)}`], {
       stdout: 'pipe',
@@ -2848,7 +2849,7 @@ describe('buildStreamRestoreCommand', () => {
     expect(stderr).not.toContain('--port')
 
     expect(cmd).toBe(
-      `sudo bash /opt/tau/bin/box-provision.sh --unix-user 'box_ffffeeee2222' ` +
+      `sudo bash /opt/ficus/bin/box-provision.sh --unix-user 'box_ffffeeee2222' ` +
         `--restore-stream --codec zstd --state-dirs 'workspace .private' ` +
         `--staging-id '00000000-0000-4000-8000-000000000000'`
     )
@@ -2866,7 +2867,7 @@ describe('buildStreamRestoreCommand', () => {
     const marker = `/tmp/ficus-restore-render-${randomUUID()}`
     const unixUser = `-bad 'quote' space $(touch ${marker}) ` + '`touch ' + marker + '` ; back\\slash\nnewline'
     const cmd = buildStreamRestoreCommand(unixUser, ['workspace', '.private'], 'gzip')
-    const launcher = 'sudo bash /opt/tau/bin/box-provision.sh '
+    const launcher = 'sudo bash /opt/ficus/bin/box-provision.sh '
 
     rmSync(marker, { force: true })
     try {
@@ -3418,7 +3419,7 @@ describe('stopBox', () => {
     // ALL THREE units, socket first: a park that left the socket listening
     // would be undone by the next connection re-activating the proxy.
     expect(stopCall.command).toContain(
-      'stop tau-sandbox-server.socket tau-sandbox-server-proxy.service tau-sandbox-server.service'
+      'stop ficus-sandbox-server.socket ficus-sandbox-server-proxy.service ficus-sandbox-server.service'
     )
   })
 
@@ -3526,10 +3527,13 @@ describe('boxUnitControl', () => {
     const unixUser = boxUnixUser('agent_a1')
     const ctl = boxUnitControl({ sandboxId: 'agent_a1', unixUser })
     expect(ctl.mode).toBe('system')
-    expect(ctl.unit).toBe(`tau-box-${unixUser}.service`)
+    expect(ctl.unit).toBe(`ficus-box-${unixUser}.service`)
     expect(ctl.systemctl).toBe('sudo systemctl')
-    expect(ctl.journalctl).toBe(`sudo journalctl -u tau-box-${unixUser}.service`)
-    expect(ctl.isActiveCommand()).toBe(`sudo systemctl is-active tau-box-${unixUser}.service`)
+    // Both names while the bridge lasts: a box not re-provisioned since the rename logs under its old unit.
+    expect(ctl.journalctl).toBe(
+      `sudo journalctl -u ficus-box-${unixUser}.service -u ${LEGACY_BOX_UNIT_PREFIX}-${unixUser}.service`
+    )
+    expect(ctl.isActiveCommand()).toBe(`sudo systemctl is-active ficus-box-${unixUser}.service`)
   })
 
   it('keeps docker-bearing and legacy boxes on the user manager, byte-identical to the pre-density commands', () => {
@@ -3537,15 +3541,15 @@ describe('boxUnitControl', () => {
       const unixUser = boxUnixUser(sandboxId)
       const ctl = boxUnitControl({ sandboxId, unixUser })
       expect(ctl.mode).toBe('user')
-      expect(ctl.unit).toBe('tau-sandbox-server.service')
+      expect(ctl.unit).toBe('ficus-sandbox-server.service')
       expect(ctl.systemctl).toBe(`sudo systemctl --machine=${unixUser}@.host --user`)
       // `$uid` is a REMOTE shell variable the caller defines (`uid=$(id -u …)`);
       // these two strings are exactly what the machine snapshot used to inline.
       expect(ctl.journalctl).toBe(
-        `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid journalctl --user -u tau-sandbox-server.service`
+        `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid journalctl --user -u ficus-sandbox-server.service -u ${LEGACY_USER_UNIT_PREFIX}.service`
       )
       expect(ctl.isActiveCommand()).toBe(
-        `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid systemctl --user is-active tau-sandbox-server.service`
+        `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid systemctl --user is-active ficus-sandbox-server.service`
       )
     }
   })
@@ -3582,7 +3586,7 @@ describe('machine snapshot liveness (executed)', () => {
         'for a in "$@"; do unit="$a"; done',
         'case "$unit" in',
         '  *.socket) printf "%s\\n" "$FAKE_SOCK" ;;',
-        '  tau-box-*) printf "%s\\n" "$FAKE_SERVICE" ;;',
+        '  ficus-box-*) printf "%s\\n" "$FAKE_SERVICE" ;;',
         '  *) printf "%s\\n" "$FAKE_LEGACY" ;;',
         'esac',
         '',
@@ -3642,6 +3646,49 @@ describe('machine snapshot liveness (executed)', () => {
   it('never mistakes the substring "inactive" for "active"', async () => {
     expect(await livenessFor({ sock: 'inactive', service: 'inactive', legacy: 'inactive' })).toBe('exited')
     expect(await livenessFor({ sock: 'failed', service: 'inactive', legacy: 'deactivating' })).toBe('exited')
+  })
+
+  // A box not re-provisioned since the rename runs its units under the legacy
+  // names: its socket and server must be read there (an idle legacy box is
+  // healthy), never as an `exited` Ficus box.
+  async function legacyNamedLiveness(states: { sock: string; service: string }): Promise<string> {
+    const sandboxId = 'agent_live2'
+    const unixUser = boxUnixUser(sandboxId)
+    const legacy = `${LEGACY_BOX_UNIT_PREFIX}-${unixUser}`
+    const command = buildMachineSnapshotCommand({ sandboxId, unixUser })
+    const dir = mkdtempSync(join(tmpdir(), 'box-liveness-legacy-'))
+    stubs.push(dir)
+    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\nif [ "$1" = "-u" ]; then shift 2; fi\nexec "$@"\n')
+    writeFileSync(
+      join(dir, 'systemctl'),
+      [
+        '#!/bin/sh',
+        'last=""; for a in "$@"; do last="$a"; done',
+        'case " $* " in *" show "*) [ "$last" = "$LEGACY.service" ] && echo loaded || echo not-found; exit 0 ;; esac',
+        'case "$last" in',
+        '  "$LEGACY.socket") printf "%s\\n" "$FAKE_SOCK" ;;',
+        '  "$LEGACY.service") printf "%s\\n" "$FAKE_SERVICE" ;;',
+        '  *) echo inactive ;;',
+        'esac',
+        '',
+      ].join('\n')
+    )
+    chmodSync(join(dir, 'sudo'), 0o755)
+    chmodSync(join(dir, 'systemctl'), 0o755)
+    const proc = Bun.spawn(['bash', '-c', command], {
+      env: { PATH: `${dir}:/usr/bin:/bin`, LEGACY: legacy, FAKE_SOCK: states.sock, FAKE_SERVICE: states.service },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const stdout = await new Response(proc.stdout).text()
+    await proc.exited
+    return stdout.match(/^FICUS_BOX_LIVENESS=(\w+)$/m)?.[1] ?? `NONE:${stdout}`
+  }
+
+  it('reads a legacy-named box through its legacy socket and server', async () => {
+    expect(await legacyNamedLiveness({ sock: 'active', service: 'inactive' })).toBe('idle')
+    expect(await legacyNamedLiveness({ sock: 'active', service: 'active' })).toBe('running')
+    expect(await legacyNamedLiveness({ sock: 'inactive', service: 'inactive' })).toBe('exited')
   })
 })
 
@@ -3831,7 +3878,7 @@ describe('box unit commands by mode', () => {
   it('drives an agent_* box entirely through its system unit', async () => {
     const sandboxId = 'agent_a1'
     const unixUser = boxUnixUser(sandboxId)
-    const unit = `tau-box-${unixUser}.service`
+    const unit = `ficus-box-${unixUser}.service`
 
     const calls = await provisionCommands(sandboxId, 'agent')
     // The script is told the mode explicitly, so the two sides cannot disagree
@@ -3842,24 +3889,29 @@ describe('box unit commands by mode', () => {
     // The socket start is what resumes a PARKED box; it is tolerated failing so
     // a box not yet re-provisioned onto the socket layout still restarts, and
     // the compound command's exit code is the RESTART's.
-    expect(calls.find((c) => c.command.includes('systemctl'))!.command).toBe(
-      `sudo systemctl reset-failed ${unit} 2>/dev/null || true; sudo systemctl start tau-box-${unixUser}.socket 2>/dev/null || true; sudo systemctl restart ${unit}`
+    const legacy = `${LEGACY_BOX_UNIT_PREFIX}-${unixUser}`
+    const restart = calls.find((c) => c.command.includes('systemctl'))!.command
+    expect(restart).toContain(
+      `sudo systemctl reset-failed ${unit} 2>/dev/null || true; sudo systemctl start ficus-box-${unixUser}.socket 2>/dev/null || true; sudo systemctl restart ${unit}`
     )
+    // ...or the box's legacy units, when only those are loaded (not re-provisioned since the rename).
+    expect(restart).toContain(`sudo systemctl restart ${legacy}.service`)
 
-    expect(await stopCommand(sandboxId)).toBe(
-      `sudo systemctl stop tau-box-${unixUser}.socket tau-box-${unixUser}-proxy.service ${unit}`
+    const stop = await stopCommand(sandboxId)
+    expect(stop).toContain(
+      `sudo systemctl stop ficus-box-${unixUser}.socket ficus-box-${unixUser}-proxy.service ${unit}`
     )
+    expect(stop).toContain(`sudo systemctl stop ${legacy}.socket ${legacy}-proxy.service ${legacy}.service`)
 
     const snapshot = await snapshotCommand(sandboxId, 'agent')
-    expect(snapshot).toContain(`sock=$(sudo systemctl is-active tau-box-${unixUser}.socket 2>/dev/null || true)`)
+    expect(snapshot).toContain(`sock=$(sudo systemctl is-active ficus-box-${unixUser}.socket 2>/dev/null || true)`)
     expect(snapshot).toContain(`state=$(sudo systemctl is-active ${unit} 2>/dev/null || true)`)
+    expect(snapshot).toContain(`sock=$(sudo systemctl is-active ${legacy}.socket 2>/dev/null || true)`)
     // A system-mode box that has NOT been re-provisioned since the unit-mode
     // split still runs the old user unit; without this leg it would read
     // `exited` and be condemned on its first unhealthy probe.
-    expect(snapshot).toContain(
-      `legacy=$(sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid systemctl --user is-active tau-sandbox-server.service 2>/dev/null || true)`
-    )
-    expect(snapshot).toContain(`sudo journalctl -u ${unit} -n 200 --no-pager`)
+    expect(snapshot).toContain(`systemctl --user is-active ${LEGACY_USER_UNIT_PREFIX}.service`)
+    expect(snapshot).toContain(`sudo journalctl -u ${unit} -u ${legacy}.service -n 200 --no-pager`)
   })
 
   it('leaves a squad_* box on the user manager with the exact commands it had before', async () => {
@@ -3871,26 +3923,32 @@ describe('box unit commands by mode', () => {
     expect(provCall.command).toContain('--unit-mode user')
     expect(provCall.command).toContain('--with-docker')
     const userCtl = `sudo systemctl --machine=${unixUser}@.host --user`
-    expect(calls.find((c) => c.command.includes('systemctl'))!.command).toBe(
-      `${userCtl} reset-failed tau-sandbox-server.service 2>/dev/null || true; ${userCtl} start tau-sandbox-server.socket 2>/dev/null || true; ${userCtl} restart tau-sandbox-server.service`
+    const restart = calls.find((c) => c.command.includes('systemctl'))!.command
+    expect(restart).toContain(
+      `${userCtl} reset-failed ficus-sandbox-server.service 2>/dev/null || true; ${userCtl} start ficus-sandbox-server.socket 2>/dev/null || true; ${userCtl} restart ficus-sandbox-server.service`
     )
+    expect(restart).toContain(`${userCtl} restart ${LEGACY_USER_UNIT_PREFIX}.service`)
 
-    expect(await stopCommand(sandboxId)).toBe(
-      `${userCtl} stop tau-sandbox-server.socket tau-sandbox-server-proxy.service tau-sandbox-server.service`
+    const stop = await stopCommand(sandboxId)
+    expect(stop).toContain(
+      `${userCtl} stop ficus-sandbox-server.socket ficus-sandbox-server-proxy.service ficus-sandbox-server.service`
+    )
+    expect(stop).toContain(
+      `${userCtl} stop ${LEGACY_USER_UNIT_PREFIX}.socket ${LEGACY_USER_UNIT_PREFIX}-proxy.service ${LEGACY_USER_UNIT_PREFIX}.service`
     )
 
     const snapshot = await snapshotCommand(sandboxId, 'squad')
     expect(snapshot).toContain(
-      `state=$(sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid systemctl --user is-active tau-sandbox-server.service 2>/dev/null || true)`
+      `state=$(sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid systemctl --user is-active ficus-sandbox-server.service 2>/dev/null || true)`
     )
     expect(snapshot).toContain(
-      `sock=$(sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid systemctl --user is-active tau-sandbox-server.socket 2>/dev/null || true)`
+      `sock=$(sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid systemctl --user is-active ficus-sandbox-server.socket 2>/dev/null || true)`
     )
     // A user-mode box's pre-socket layout used the SAME service unit name, so
     // there is no separate legacy probe to run.
     expect(snapshot).toContain('legacy=;')
     expect(snapshot).toContain(
-      `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid journalctl --user -u tau-sandbox-server.service -n 200 --no-pager`
+      `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid journalctl --user -u ficus-sandbox-server.service -u ${LEGACY_USER_UNIT_PREFIX}.service -n 200 --no-pager`
     )
   })
 })

@@ -84,12 +84,12 @@ function makeFakeStamp(): {
 }
 
 const fileA: ArtifactFile = {
-  remotePath: '/opt/tau/x/a.js',
+  remotePath: '/opt/ficus/x/a.js',
   bytes: new TextEncoder().encode('A-BYTES'),
   mode: '0755',
 }
 const fileB: ArtifactFile = {
-  remotePath: '/opt/tau/x/b.so',
+  remotePath: '/opt/ficus/x/b.so',
   bytes: new TextEncoder().encode('B-BYTES'),
   mode: '0644',
 }
@@ -134,20 +134,20 @@ describe('ensureArtifact', () => {
     // assert the SHAPE: install into a unique '<dest>.ficus-new.<token>' beside
     // the destination, then rename that exact path onto the destination.
     expect(calls[0].command).toMatch(
-      /^sudo install -D -m 0755 \/dev\/stdin '\/opt\/tau\/x\/a\.js\.ficus-new\.[0-9a-f]{8}' && /
+      /^sudo install -D -m 0755 \/dev\/stdin '\/opt\/ficus\/x\/a\.js\.ficus-new\.[0-9a-f]{8}' && /
     )
-    expect(stagedThenRenamed(calls[0].command, '/opt/tau/x/a.js')).toBe(true)
+    expect(stagedThenRenamed(calls[0].command, '/opt/ficus/x/a.js')).toBe(true)
     expect(calls[0].stdin).toBe(fileA.bytes)
     expect(calls[1].command).toMatch(
-      /^sudo install -D -m 0644 \/dev\/stdin '\/opt\/tau\/x\/b\.so\.ficus-new\.[0-9a-f]{8}' && /
+      /^sudo install -D -m 0644 \/dev\/stdin '\/opt\/ficus\/x\/b\.so\.ficus-new\.[0-9a-f]{8}' && /
     )
-    expect(stagedThenRenamed(calls[1].command, '/opt/tau/x/b.so')).toBe(true)
+    expect(stagedThenRenamed(calls[1].command, '/opt/ficus/x/b.so')).toBe(true)
     expect(calls[1].stdin).toBe(fileB.bytes)
     // The final path is never itself an `install` target — that is the whole
     // point of the staging step.
     for (const call of calls) {
-      expect(call.command).not.toContain(`install -D -m 0755 /dev/stdin '/opt/tau/x/a.js'`)
-      expect(call.command).not.toContain(`install -D -m 0644 /dev/stdin '/opt/tau/x/b.so'`)
+      expect(call.command).not.toContain(`install -D -m 0755 /dev/stdin '/opt/ficus/x/a.js'`)
+      expect(call.command).not.toContain(`install -D -m 0644 /dev/stdin '/opt/ficus/x/b.so'`)
     }
     // Stamped exactly once, after all files pushed.
     expect(stamps).toEqual([[machine.id, 'x', 'v1']])
@@ -287,8 +287,8 @@ describe('ensureMachineArtifacts', () => {
       await ensureMachineArtifacts(machine, { runner, stampArtifactVersion: stamp })
     })
     expect(calls).toHaveLength(2)
-    expect(stagedThenRenamed(calls[0].command, '/opt/tau/x/a.js')).toBe(true)
-    expect(stagedThenRenamed(calls[1].command, '/opt/tau/x/b.so')).toBe(true)
+    expect(stagedThenRenamed(calls[0].command, '/opt/ficus/x/a.js')).toBe(true)
+    expect(stagedThenRenamed(calls[1].command, '/opt/ficus/x/b.so')).toBe(true)
     expect(stamps).toEqual([
       [machine.id, 'first', 'v-first'],
       [machine.id, 'second', 'v-second'],
@@ -330,13 +330,13 @@ describe('ensureMachineArtifacts', () => {
 // BEFORE the streamed restore, so rollout is automatic.
 // ---------------------------------------------------------------------------
 describe('boxProvisionArtifact', () => {
-  it('pushes the CHECKED-IN script to /opt/tau/bin/box-provision.sh, executable', async () => {
+  it('pushes the CHECKED-IN script to /opt/ficus/bin/box-provision.sh, executable', async () => {
     const { files } = await boxProvisionArtifact.build()
 
     expect(boxProvisionArtifact.name).toBe('box-provision')
     expect(files).toHaveLength(1)
     expect(files[0].remotePath).toBe(BOX_PROVISION_REMOTE_PATH)
-    expect(BOX_PROVISION_REMOTE_PATH).toBe('/opt/tau/bin/box-provision.sh')
+    expect(BOX_PROVISION_REMOTE_PATH).toBe('/opt/ficus/bin/box-provision.sh')
     expect(files[0].mode).toBe('0755')
     // Byte-identical to the repo's script — not a re-rendered or trimmed copy.
     expect(new TextDecoder().decode(files[0].bytes)).toBe(boxProvisionScript)
@@ -376,7 +376,7 @@ describe('boxProvisionArtifact', () => {
     // Staged + renamed, never installed over the live path: this artifact is a
     // shell script bash may be reading INCREMENTALLY on the far side.
     expect(calls).toHaveLength(1)
-    expect(stagedThenRenamed(calls[0].command, '/opt/tau/bin/box-provision.sh')).toBe(true)
+    expect(stagedThenRenamed(calls[0].command, '/opt/ficus/bin/box-provision.sh')).toBe(true)
     const { version } = await boxProvisionArtifact.build()
     expect(stamps).toEqual([[machine.id, 'box-provision', version]])
   })

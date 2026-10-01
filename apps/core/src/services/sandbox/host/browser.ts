@@ -2,10 +2,10 @@
  * Browser tools on the `host` runtime.
  *
  * Every other runtime runs the browser engine INSIDE the box (the
- * `tau-browser` service on a machine host, reached over the box server's
+ * `ficus-browser` service on a machine host, reached over the box server's
  * `/browser/*` routes). On host there is no box — so the core drives a
  * locally installed Chrome/Chromium/Edge itself, in-process, by reusing the
- * exact same engine: `scripts/machine/browser/tau-browser.js`'s
+ * exact same engine: `scripts/machine/browser/ficus-browser.js`'s
  * `createService()`, with our own `launch` injected. That engine already
  * carries the session/caps/idle/console/SSRF behaviour the tools expect, so
  * nothing about the agent-visible contract changes.
@@ -38,7 +38,7 @@ import type { Browser } from 'playwright-core'
 // Plain-JS machine script (runs directly under bun on machine hosts, no build
 // step, no .d.ts) — see the header above and the script's own.
 // @ts-expect-error no type declarations for this untyped machine script
-import { createService } from '../../../../../../scripts/machine/browser/tau-browser.js'
+import { createService } from '../../../../../../scripts/machine/browser/ficus-browser.js'
 import { expandTilde } from '@ficus/shared/node'
 import { boxUserHeaders } from '@ficus/shared/box-user'
 import { boxUnixUser } from '../../machines/box-paths'
@@ -138,7 +138,7 @@ function probeCandidates(platform: NodeJS.Platform, home: string, listDir: (p: s
   // A Playwright-managed Chromium, if the machine happens to have one (the
   // machine-host layout, then the per-user cache). `chrome-linux` was renamed
   // `chrome-linux64` in newer builds — accept both.
-  for (const root of ['/opt/tau/browser/ms-playwright', join(home, '.cache/ms-playwright')]) {
+  for (const root of ['/opt/ficus/browser/ms-playwright', join(home, '.cache/ms-playwright')]) {
     for (const entry of listDir(root)) {
       if (!entry.startsWith('chromium-')) continue
       for (const sub of listDir(join(root, entry))) {
@@ -548,7 +548,7 @@ export function createHostBrowserBackend(opts: HostBrowserOptions = {}): HostBro
     const engine = ensureService()
     ensureToken(boxUser)
     const response = await engine.fetch(
-      new Request(`http://tau-browser/${verb}`, {
+      new Request(`http://ficus-browser/${verb}`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

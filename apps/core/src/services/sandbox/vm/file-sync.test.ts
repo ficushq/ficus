@@ -149,9 +149,9 @@ describe('syncBoxFiles', () => {
     await syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
 
     expect(client.writePaths()).toEqual([
-      `${home}/.tau/skills/skill-a/SKILL.md`,
-      `${home}/.tau/skills/skill-a/ref/x.md`,
-      `${home}/.tau/skills/skill-b/SKILL.md`,
+      `${home}/.ficus/skills/skill-a/SKILL.md`,
+      `${home}/.ficus/skills/skill-a/ref/x.md`,
+      `${home}/.ficus/skills/skill-b/SKILL.md`,
       `${home}/workspace/.ficus/.env`,
       `${home}/memory/context.md`,
       `${home}/memory/map.md`,
@@ -308,7 +308,7 @@ describe('syncBoxFiles', () => {
     await syncBoxFiles(client as any, 'agent_a1', soloAgentOpts, fullDeps())
 
     const paths = client.writePaths()
-    expect(paths).toContain(`${home}/.tau/skills/skill-a/SKILL.md`)
+    expect(paths).toContain(`${home}/.ficus/skills/skill-a/SKILL.md`)
     expect(paths).toContain(`${home}/.private/identity.pem`)
     expect(paths.some((p) => p.endsWith('/workspace/.ficus/.env'))).toBe(false)
     expect(paths.some((p) => p.includes('/memory/'))).toBe(false)
@@ -321,7 +321,7 @@ describe('syncBoxFiles', () => {
     await syncBoxFiles(client as any, 'agent_a1', squadAgentOpts, fullDeps())
 
     const paths = client.writePaths()
-    expect(paths).toContain(`${home}/.tau/skills/skill-a/SKILL.md`)
+    expect(paths).toContain(`${home}/.ficus/skills/skill-a/SKILL.md`)
     expect(paths).toContain(`${home}/workspace/.ficus/.env`)
     expect(paths).toContain(`${home}/.private/identity.pem`)
     expect(paths).toContain(`${home}/.ssh/ficus_remote_prod`)
@@ -352,7 +352,7 @@ describe('syncBoxFiles', () => {
 
   test('a failing /write surfaces as an error', async () => {
     const client = new FakeClient()
-    client.throwOnWrite = (p) => p.includes('/.tau/skills/')
+    client.throwOnWrite = (p) => p.includes('/.ficus/skills/')
     await expect(
       syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
     ).rejects.toThrow()
@@ -526,7 +526,7 @@ describe('syncBoxFiles content-hash skip', () => {
     )
 
     // Only the skills asset re-pushed (+ re-stamped); env/memory/ssh skipped.
-    expect(client.writePaths()).toEqual([`${home}/.tau/skills/skill-a/SKILL.md`])
+    expect(client.writePaths()).toEqual([`${home}/.ficus/skills/skill-a/SKILL.md`])
     expect(Object.keys(restamp.stamped)).toEqual(['skills'])
     expect(restamp.stamped.skills).not.toBe(baseline.skills)
     expect(progress).toEqual(['started', 'finished:ready'])
@@ -684,7 +684,7 @@ describe('syncBoxFiles content-hash skip', () => {
       })
     )
     const clearIndex = client.calls.findIndex(
-      (call) => call.kind === 'bash' && call.command === `find '${home}/.tau/skills' -mindepth 1 -delete`
+      (call) => call.kind === 'bash' && call.command === `find '${home}/.ficus/skills' -mindepth 1 -delete`
     )
     const writeIndex = client.calls.findIndex((call) => call.kind === 'write')
     expect(clearIndex).toBeGreaterThan(-1)
@@ -794,7 +794,7 @@ describe('syncBoxFiles content-hash skip', () => {
     const stamp = recordingStamp()
     const progress: string[] = []
     // Fail on the SECOND skill file (sorted): skill-a/ref/x.md.
-    client.throwOnWrite = (p) => p === `${home}/.tau/skills/skill-a/ref/x.md`
+    client.throwOnWrite = (p) => p === `${home}/.ficus/skills/skill-a/ref/x.md`
     await expect(
       syncBoxFiles(
         client as any,
@@ -906,9 +906,9 @@ describe('syncBoxFiles golden master', () => {
       B(`rm -f '${home}/bin/tau'`),
       B(DOT_DIR(home)),
       // skills — sorted by relPath, content-only (no /write mode)
-      W(`${home}/.tau/skills/skill-a/SKILL.md`, 'A'),
-      W(`${home}/.tau/skills/skill-a/ref/x.md`, 'X'),
-      W(`${home}/.tau/skills/skill-b/SKILL.md`, 'B'),
+      W(`${home}/.ficus/skills/skill-a/SKILL.md`, 'A'),
+      W(`${home}/.ficus/skills/skill-a/ref/x.md`, 'X'),
+      W(`${home}/.ficus/skills/skill-b/SKILL.md`, 'B'),
       // squad .env — secret, created 0600
       W(`${home}/workspace/.ficus/.env`, 'export FOO=bar\n', '0600'),
       // memory replica — sorted, content-only (no mode)
@@ -931,9 +931,9 @@ describe('syncBoxFiles golden master', () => {
     expect(client.calls).toEqual([
       B(`rm -f '${home}/bin/tau'`),
       B(DOT_DIR(home)),
-      W(`${home}/.tau/skills/skill-a/SKILL.md`, 'A'),
-      W(`${home}/.tau/skills/skill-a/ref/x.md`, 'X'),
-      W(`${home}/.tau/skills/skill-b/SKILL.md`, 'B'),
+      W(`${home}/.ficus/skills/skill-a/SKILL.md`, 'A'),
+      W(`${home}/.ficus/skills/skill-a/ref/x.md`, 'X'),
+      W(`${home}/.ficus/skills/skill-b/SKILL.md`, 'B'),
       // identity key — secret, created 0600 (no squad .env / memory / ssh for a solo agent)
       W(`${home}/.private/identity.pem`, PEM, '0600'),
     ])
@@ -947,9 +947,9 @@ describe('syncBoxFiles golden master', () => {
     expect(client.calls).toEqual([
       B(`rm -f '${home}/bin/tau'`),
       B(DOT_DIR(home)),
-      W(`${home}/.tau/skills/skill-a/SKILL.md`, 'A'),
-      W(`${home}/.tau/skills/skill-a/ref/x.md`, 'X'),
-      W(`${home}/.tau/skills/skill-b/SKILL.md`, 'B'),
+      W(`${home}/.ficus/skills/skill-a/SKILL.md`, 'A'),
+      W(`${home}/.ficus/skills/skill-a/ref/x.md`, 'X'),
+      W(`${home}/.ficus/skills/skill-b/SKILL.md`, 'B'),
       // .env before identity (secrets-last, in manifest order); no memory replica on a member box
       W(`${home}/workspace/.ficus/.env`, 'export FOO=bar\n', '0600'),
       W(`${home}/.private/identity.pem`, PEM, '0600'),
@@ -981,9 +981,9 @@ describe('syncBoxFiles golden master', () => {
     expect(client.calls).toEqual([
       B(`rm -f '${home}/bin/tau'`),
       B(DOT_DIR(home)),
-      W(`${home}/.tau/skills/skill-a/SKILL.md`, 'A'),
-      W(`${home}/.tau/skills/skill-a/ref/x.md`, 'X'),
-      W(`${home}/.tau/skills/skill-b/SKILL.md`, 'B'),
+      W(`${home}/.ficus/skills/skill-a/SKILL.md`, 'A'),
+      W(`${home}/.ficus/skills/skill-a/ref/x.md`, 'X'),
+      W(`${home}/.ficus/skills/skill-b/SKILL.md`, 'B'),
       W(`${home}/workspace/.ficus/.env`, 'export FOO=bar\n', '0600'),
       W(`${home}/memory/context.md`, '# ctx'),
       W(`${home}/memory/map.md`, '# map'),
@@ -1014,9 +1014,9 @@ describe('syncBoxFiles golden master', () => {
     expect(client.calls).toEqual([
       B(`rm -f '${home}/bin/tau'`),
       B(DOT_DIR(home)),
-      W(`${home}/.tau/skills/skill-a/SKILL.md`, 'A'),
-      W(`${home}/.tau/skills/skill-a/ref/x.md`, 'X'),
-      W(`${home}/.tau/skills/skill-b/SKILL.md`, 'B'),
+      W(`${home}/.ficus/skills/skill-a/SKILL.md`, 'A'),
+      W(`${home}/.ficus/skills/skill-a/ref/x.md`, 'X'),
+      W(`${home}/.ficus/skills/skill-b/SKILL.md`, 'B'),
       W(`${home}/workspace/.ficus/.env`, 'export FOO=bar\n', '0600'),
       W(`${home}/.private/identity.pem`, PEM, '0600'),
       B(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`),

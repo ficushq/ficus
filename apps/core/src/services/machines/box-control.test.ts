@@ -66,8 +66,15 @@ describe('buildBoxControlCommand', () => {
   test("uses Core's own unit layout: stop takes every unit down, other verbs target the server", () => {
     for (const sandboxId of ['squad_4ea8b934-a90a-42d1-b6fe-483a2ab9a18b', 'agent_60cb57e6']) {
       const ctl = boxUnitControl({ sandboxId, unixUser: boxUnixUser(sandboxId) })
-      expect(buildBoxControlCommand({ sandboxId, action: 'stop' })).toBe(`${ctl.systemctl} stop ${ctl.allUnits}`)
-      expect(buildBoxControlCommand({ sandboxId, action: 'restart' })).toBe(`${ctl.systemctl} restart ${ctl.unit}`)
+      const stop = buildBoxControlCommand({ sandboxId, action: 'stop' })
+      const restart = buildBoxControlCommand({ sandboxId, action: 'restart' })
+      expect(stop).toBe(ctl.onHost((u) => `${ctl.systemctl} stop ${u.allUnits}`))
+      expect(restart).toBe(ctl.onHost((u) => `${ctl.systemctl} restart ${u.unit}`))
+      // The Ficus units, and the legacy ones of a box not re-provisioned since the rename.
+      expect(stop).toContain(`${ctl.systemctl} stop ${ctl.allUnits}`)
+      expect(stop).toContain(`${ctl.systemctl} stop ${ctl.legacy.allUnits}`)
+      expect(restart).toContain(`${ctl.systemctl} restart ${ctl.unit}`)
+      expect(restart).toContain(`${ctl.systemctl} restart ${ctl.legacy.unit}`)
     }
   })
 

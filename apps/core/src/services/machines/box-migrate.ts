@@ -4,7 +4,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { isVmRuntime as isVmRuntimeReal } from '../sandbox/runtime'
 import { resolveBoxApiUrl as resolveBoxApiUrlReal } from '../sandbox/vm/file-sync'
-import { boxHomeForUser, boxUnitControl, boxUnixUser } from './box-paths'
+import { LEGACY_BOX_DOT_DIR, boxDotDir, boxHomeForUser, boxUnitControl, boxUnixUser } from './box-paths'
 import {
   BoxArchiveStreamError,
   durableStateDirsForRole,
@@ -663,7 +663,7 @@ export async function migrateBox(
     const unitCtl = boxUnitControl({ sandboxId, unixUser })
     const quiesceCmd =
       unitCtl.mode === 'system'
-        ? `${unitCtl.systemctl} stop ${unitCtl.allUnits} && { sudo loginctl terminate-user ${unixUser} || true; }`
+        ? `${unitCtl.onHost((u) => `${unitCtl.systemctl} stop ${u.allUnits}`)} && { sudo loginctl terminate-user ${unixUser} || true; }`
         : // User mode needs no explicit unit stop: terminate-user takes the whole
           // user manager down, and the box's three units live inside it.
           `sudo loginctl terminate-user ${unixUser}`
@@ -743,7 +743,12 @@ export async function migrateBox(
     let port: number | undefined
     progress('provision')
     try {
-      const envRes = await runner.run(oldMachine, `sudo cat ${shellQuote(`${home}/.tau/server.env`)}`)
+      // The source may not have been re-provisioned since the rename: its server.env
+      // is then still under the legacy dot dir (bridge, phase 5 U4).
+      const envRes = await runner.run(
+        oldMachine,
+        `sudo cat ${shellQuote(`${boxDotDir(home)}/server.env`)} 2>/dev/null || sudo cat ${shellQuote(`${home}/${LEGACY_BOX_DOT_DIR}/server.env`)}`
+      )
       if (envRes.exitCode !== 0) {
         throw new Error(`server.env read failed (exit ${envRes.exitCode}): ${envRes.stderr.trim()}`)
       }
@@ -816,7 +821,7 @@ export async function migrateBox(
     // running box user could swap a restored dir for a symlink and race the
     // restore's chmod). The source's `tar c` is piped straight into the
     // destination's `box-provision.sh --restore-stream`, which extracts from
-    // stdin into per-operation staging (~/.tau-migrate/<operationId>) and
+    // stdin into per-operation staging (~/.ficus-migrate/<operationId>) and
     // re-owns/locks the members (workspace 0755, private 0700) with the SAME
     // helper the file-restore path uses. No archive is buffered on core or
     // written as a file on either machine; the staged tree lives on the
@@ -896,11 +901,11 @@ export async function migrateBox(
       const targetEvidence = JSON.stringify(sourceManifest)
       const evidenceResult = await runner.run(
         target,
-        `sudo install -d -m 0700 /opt/tau/migrations/${manifestIdentity.operationId} && sudo install -m 0600 -o root -g root /dev/stdin /opt/tau/migrations/${manifestIdentity.operationId}/${unixUser}.manifest.json`,
+        `sudo install -d -m 0700 /opt/ficus/migrations/${manifestIdentity.operationId} && sudo install -m 0600 -o root -g root /dev/stdin /opt/ficus/migrations/${manifestIdentity.operationId}/${unixUser}.manifest.json`,
         { stdin: targetEvidence }
       )
       if (evidenceResult.exitCode !== 0) throw new Error('transfer-incomplete')
-      const stagingHome = `${home}/.tau-migrate/${operationId}`
+      const stagingHome = `${home}/.ficus-migrate/${operationId}`
       const stagedManifest = await scanManifest(runner, target, stagingHome, unixUser, manifestIdentity)
       const stagedVerification = compareMigrationManifests(sourceManifest, stagedManifest)
       if (!stagedVerification.ok)
@@ -1123,9 +1128,12 @@ export async function migrateBox(
         // same shape, and the same missing-socket tolerance for a box that has
         // not been re-provisioned since the socket layout landed, as
         // box-manager's startBoxAndAwaitHealth.
+        // onHost: the source may still run its legacy units (not re-provisioned since the rename).
         const result = await runner.run(
           oldMachine,
-          `${ctl.systemctl} start ${ctl.socket} 2>/dev/null || true; ${ctl.systemctl} restart ${ctl.unit}`
+          ctl.onHost(
+            (u) => `${ctl.systemctl} start ${u.socket} 2>/dev/null || true; ${ctl.systemctl} restart ${u.unit}`
+          )
         )
         if (result.exitCode !== 0) restartSourceError = new Error(`source box restart failed: ${result.stderr.trim()}`)
       } catch (error) {

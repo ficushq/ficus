@@ -181,7 +181,7 @@ function makeFakeCache(opts: { getError?: Error; putError?: Error } = {}) {
 }
 
 const HOME = (id: string) => `/home/${boxUnixUser(id)}`
-const DEVBOX_DIR = (id: string) => `${HOME(id)}/.tau/devbox`
+const DEVBOX_DIR = (id: string) => `${HOME(id)}/.ficus/devbox`
 
 // ---------------------------------------------------------------------------
 // No-op devbox.lock cache — the DEFAULT for every test below that isn't

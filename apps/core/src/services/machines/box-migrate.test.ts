@@ -6,7 +6,7 @@ import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from '../../entities/agent-runners/con
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { BoxArchiveStreamError } from './box-manager'
 import type { ArchiveCodec, StateDirFacts } from './box-manager'
-import { boxUnixUser } from './box-paths'
+import { LEGACY_BOX_DOT_DIR, boxUnixUser } from './box-paths'
 import { migrateBox, sandboxHasActiveExecution } from './box-migrate'
 import type { MigrateDeps } from './box-migrate'
 import { createMigrationManifest } from './migration-manifest'
@@ -70,9 +70,9 @@ const OLD_SERVER_ENV = [
   'EXECUTOR_AUTH_TOKEN=tok-old',
   'EXECUTOR_BIND=127.0.0.1',
   'WORKSPACE_PATH=/home/box_x/.private',
-  'FICUS_DEVBOX_DIR=/home/box_x/.tau/devbox',
+  'FICUS_DEVBOX_DIR=/home/box_x/.ficus/devbox',
   'FICUS_BOX_HOME=/home/box_x',
-  'BUN_PTY_LIB=/opt/tau/server/bun-pty.so',
+  'BUN_PTY_LIB=/opt/ficus/server/bun-pty.so',
   'DOCKER_HOST=unix:///run/user/4321/docker.sock',
   'FICUS_API_URL=https://ficus.example.com',
 ].join('\n')
@@ -523,6 +523,16 @@ describe('migrateBox', () => {
     ]) {
       expect(env[key]).toBeUndefined()
     }
+  })
+
+  it('reads the source server.env from ~/.ficus, falling back to the legacy dot dir of a box not re-provisioned since the rename', async () => {
+    const h = makeHarness()
+    await migrateBox(h.sandboxId, h.targetMachineId, h.deps)
+    const read = h.runnerCommands.find((c) => c.includes('server.env'))!
+    const home = `/home/${boxUnixUser(h.sandboxId)}`
+    expect(read).toBe(
+      `sudo cat '${home}/.ficus/server.env' 2>/dev/null || sudo cat '${home}/${LEGACY_BOX_DOT_DIR}/server.env'`
+    )
   })
 
   it('re-resolves a reverse-tunnel FICUS_API_URL against the TARGET machine', async () => {

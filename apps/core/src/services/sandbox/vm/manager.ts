@@ -105,6 +105,7 @@ import {
   type MachineBox,
 } from '../../machines/queries'
 import { machineTunnels, type ForwardRefreshResult } from '../../machines/tunnel-manager'
+import { boxDotDir } from '../../machines/box-paths'
 import {
   createBoxStepTimer,
   formatBoxReadyLine as formatBoxReadyLineReal,
@@ -847,7 +848,7 @@ export class VmSandboxManager implements ISandboxManager {
         specHash,
         devboxSeedHash: computeDevboxSeedHash(role),
         bashrcContent: buildBashrcContent(setupWorkRoot, setupWorkRoot, {
-          devboxDir: `${boxHome(sandboxId)}/.tau/devbox`,
+          devboxDir: `${boxDotDir(boxHome(sandboxId))}/devbox`,
         }),
         gitCredentialsRequired: false,
       })
@@ -1057,8 +1058,12 @@ export class VmSandboxManager implements ISandboxManager {
     const client = state?.client ?? (await this.getOrAttachClient(sandboxId))
     if (!client) throw new Error('Sandbox is not connected')
     const workRoot = state?.workRoot ?? boxWorkRoot(sandboxId, resolveRole(sandboxId, opts))
-    return reconcileRemoteToolchain(client, `${boxHome(sandboxId)}/.tau/toolchain`, workRoot, request, (operation) =>
-      trackSandboxSetupWork(this, sandboxId, 'toolchain_reconcile', operation)
+    return reconcileRemoteToolchain(
+      client,
+      `${boxDotDir(boxHome(sandboxId))}/toolchain`,
+      workRoot,
+      request,
+      (operation) => trackSandboxSetupWork(this, sandboxId, 'toolchain_reconcile', operation)
     )
   }
 
@@ -1205,7 +1210,7 @@ export class VmSandboxManager implements ISandboxManager {
   /**
    * Write the box's interactive `.ficus/.bashrc` (devbox activation + `.env`
    * sourcing) so `spawnShell` terminals get the same env as the seeded `/bash`
-   * PATH. The box's devbox lives at `FICUS_DEVBOX_DIR` (`~/.tau/devbox`), OUTSIDE
+   * PATH. The box's devbox lives at `FICUS_DEVBOX_DIR` (`~/.ficus/devbox`), OUTSIDE
    * the shell cwd, so the bashrc activates it from there explicitly (see
    * {@link buildBashrcContent}'s `devboxDir`). The physical `<workRoot>/.ficus/`
    * target is under `FICUS_BOX_HOME`, so the box server's path allow-list permits
@@ -1215,7 +1220,7 @@ export class VmSandboxManager implements ISandboxManager {
    */
   private async ensureBoxBashrc(client: SandboxClient, sandboxId: string, role: BoxRole): Promise<void> {
     const workRoot = boxWorkRoot(sandboxId, role)
-    const devboxDir = `${boxHome(sandboxId)}/.tau/devbox`
+    const devboxDir = `${boxDotDir(boxHome(sandboxId))}/devbox`
     const content = buildBashrcContent(workRoot, workRoot, { devboxDir })
     await client.write({
       path: `${workRoot}/${WORKSPACE_DOT_DIR}/.bashrc`,

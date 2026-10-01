@@ -2802,7 +2802,7 @@ export interface MachineCapabilities {
   forwarding?: 'yes' | 'no' | 'unknown'
   // Whether the shared per-machine browser is usable (browser-tools-in-sandbox
   // spec §4.1): `available` once verify_browser confirms Chromium's sandbox is ON
-  // and the tau-browser service is live; `unavailable` when the sandbox cannot be
+  // and the ficus-browser service is live; `unavailable` when the sandbox cannot be
   // enabled on this host. An unavailable browser NEVER fails bootstrap — the
   // machine still comes up, only browsing is off (the sandbox is never downgraded
   // to --no-sandbox). Surfaced to the control plane / machines UI so a

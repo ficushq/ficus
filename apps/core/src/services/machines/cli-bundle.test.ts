@@ -111,9 +111,9 @@ describeSubprocess('CLI wrapper constants', () => {
     // part of the pushed artifact AND folded into the version hash, so this
     // string is a wire contract, not an implementation detail.
     expect(new TextDecoder().decode(CLI_WRAPPER_BYTES)).toBe(
-      '#!/bin/sh\nexec /opt/tau/bin/bun /opt/tau/cli/ficus.js "$@"\n'
+      '#!/bin/sh\nexec /opt/ficus/bin/bun /opt/ficus/cli/ficus.js "$@"\n'
     )
-    expect(CLI_REMOTE_PATH).toBe('/opt/tau/cli/ficus.js')
+    expect(CLI_REMOTE_PATH).toBe('/opt/ficus/cli/ficus.js')
     expect(CLI_WRAPPER_PATH).toBe('/usr/local/bin/ficus')
   })
 

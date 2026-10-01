@@ -19,9 +19,9 @@
 #                          socket is, so an idle box costs zero RAM (measured
 #                          2026-09-01 on a test host: 39 idle bun servers =
 #                          1,672 MB).
-# <prefix> is `tau-box-<user>` in system mode and `tau-sandbox-server` in user
+# <prefix> is `ficus-box-<user>` in system mode and `ficus-sandbox-server` in user
 # mode. Installed onto the host
-# by bootstrap.sh at /opt/tau/bin/box-provision.sh; INVOKED by the slice-2
+# by bootstrap.sh at /opt/ficus/bin/box-provision.sh; INVOKED by the slice-2
 # manager, never during bootstrap itself.
 #
 # Target OS : Ubuntu 24.04 LTS ONLY (systemd 255, bash 5.2).
@@ -30,7 +30,7 @@
 # Idempotent: safe to re-run — user creation, dirs, unit install, and linger all
 #             check-then-act; --remove on an absent user is a no-op success.
 # No secrets: embeds NO credentials. The server config/secrets arrive out-of-band
-#             in %h/.tau/server.env, pushed by the slice-2 manager AFTER this
+#             in %h/.ficus/server.env, pushed by the slice-2 manager AFTER this
 #             runs; the unit tolerates that file's (and the server bundle's)
 #             absence and simply starts once they appear.
 #
@@ -72,12 +72,12 @@
 #            never disagree about which unit exists, so the manager passes the
 #            flag explicitly.
 #
-#            user   — today's layout: `tau-sandbox-server.service` under the box
+#            user   — today's layout: `ficus-sandbox-server.service` under the box
 #                     user's own lingering `systemd --user` manager. Required
 #                     for --with-docker (rootless dockerd IS a user service).
 #            system — one root-owned unit per box,
-#                     /etc/systemd/system/tau-box-<user>.service with
-#                     User=/Group=<user> and Slice=tau-box-<user>.slice. No
+#                     /etc/systemd/system/ficus-box-<user>.service with
+#                     User=/Group=<user> and Slice=ficus-box-<user>.slice. No
 #                     linger, so a light box costs no `systemd --user` + dbus
 #                     pair (measured 2026-09-01 on a test host: ~13 MB per box
 #                     × 45 managers ≈ 585 MB of pure idle overhead).
@@ -103,7 +103,7 @@
 #
 # --remove   Stop all three units (socket first, so it cannot re-activate the
 #            proxy mid-teardown), disable linger, ARCHIVE the whole home to
-#            /opt/tau/archive/<user>-<epoch>.tar.gz (timestamped, never
+#            /opt/ficus/archive/<user>-<epoch>.tar.gz (timestamped, never
 #            overwriting), then `userdel -r`. The archive includes the workspace;
 #            slice 2's manager must pull any archives it cares about BEFORE
 #            calling --remove.
@@ -169,6 +169,27 @@ NPROC_OVERRIDE=""
 # --print-egress-ruleset). Nothing else changes these.
 SUBUID_FILE="/etc/subuid"
 SUBGID_FILE="/etc/subgid"
+
+# Test seam: a temp root every host path this script reads or writes is placed
+# under (never a path written INTO a unit). Empty in production; only
+# box-provision.test.sh sets it.
+FICUS_HOST_ROOT="${FICUS_HOST_ROOT:-}"
+SYSTEMD_SYSTEM_DIR="${FICUS_HOST_ROOT}/etc/systemd/system"
+LINGER_DIR="${FICUS_HOST_ROOT}/var/lib/systemd/linger"
+
+# The box HOME dot dir: host.env and server.env (the units' EnvironmentFiles),
+# the box's devbox and toolchain, its skills.
+HOME_DOT_DIR=".ficus"
+
+# Bridge (phase 5, U4): the names a box provisioned before the Ficus rename
+# carries — its units (system and user mode), its HOME dot dir — and the machine
+# root bootstrap.sh moves. Provisioning such a box tears its legacy units down,
+# moves the dot dir (leaving the old name as a relative link) and installs the
+# Ficus units, which carry the old names as Alias=.
+LEGACY_SYSTEM_UNIT_PREFIX='tau-box'             # ficus-p5-bridge
+LEGACY_USER_UNIT_PREFIX='tau-sandbox-server'    # ficus-p5-bridge
+LEGACY_HOME_DOT_DIR='.tau'                      # ficus-p5-bridge
+LEGACY_ROOT='/opt/tau'                          # ficus-p5-bridge
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -359,7 +380,7 @@ host_nproc() {
 }
 
 # The parallelism a box's builds should default to: half the host's cores,
-# at least one. Written to ~/.tau/host.env as FICUS_BOX_CPUS; the server derives
+# at least one. Written to ~/.ficus/host.env as FICUS_BOX_CPUS; the server derives
 # CARGO_BUILD_JOBS / MAKEFLAGS / GOMAXPROCS / CMAKE_BUILD_PARALLEL_LEVEL for
 # every child it spawns unless the caller set them explicitly.
 box_cpus() {
@@ -409,25 +430,29 @@ slice_limits() {
   printf 'MemoryHigh=%s\nMemoryMax=%s\nTasksMax=%s\nCPUQuota=%s%%\n' "$(( high_kb * 1024 ))" "$(( max_kb * 1024 ))" "${SLICE_TASKS_MAX}" "${quota}"
 }
 
-# ~/.tau/host.env: per-box facts the HOST decides (Core never sees nproc). The
+# ~/.ficus/host.env: per-box facts the HOST decides (Core never sees nproc). The
 # unit loads it BEFORE server.env, so anything Core pushes still wins.
 write_host_env() {
   local home="$1" cpus
   cpus="$(box_cpus)" || return 1
   printf 'FICUS_BOX_CPUS=%s\n' "${cpus}" \
-    | "${SUDO[@]}" install -o "${UNIX_USER}" -g "${UNIX_USER}" -m 0644 /dev/stdin "${home}/.tau/host.env"
+    | "${SUDO[@]}" install -o "${UNIX_USER}" -g "${UNIX_USER}" -m 0644 /dev/stdin "${home}/.ficus/host.env"
 }
 
 # Where the limits land depends on WHICH slice the box's server runs under:
 # user mode inherits the box user's own user-<uid>.slice, system mode carries
-# its own tau-box-<user>.slice (named in the unit's `Slice=`). Both live under
+# its own ficus-box-<user>.slice (named in the unit's `Slice=`). Both live under
 # /etc/systemd/system so a box user cannot raise its own limits.
 user_slice_dropin_dir() {
-  printf '/etc/systemd/system/user-%s.slice.d' "$(box_uid)"
+  printf '%s/user-%s.slice.d' "${SYSTEMD_SYSTEM_DIR}" "$(box_uid)"
 }
 
 system_slice_dropin_dir() {
-  printf '/etc/systemd/system/tau-box-%s.slice.d' "${UNIX_USER}"
+  printf '%s/ficus-box-%s.slice.d' "${SYSTEMD_SYSTEM_DIR}" "${UNIX_USER}"
+}
+
+legacy_system_slice_dropin_dir() {
+  printf '%s/%s-%s.slice.d' "${SYSTEMD_SYSTEM_DIR}" "${LEGACY_SYSTEM_UNIT_PREFIX}" "${UNIX_USER}"
 }
 
 slice_dropin_dir() {
@@ -445,14 +470,17 @@ install_slice_limits() {
   dir="$(slice_dropin_dir)"
   "${SUDO[@]}" install -d -m 0755 "${dir}"
   printf '[Slice]\n%s\n' "${limits}" \
-    | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "${dir}/50-tau-box.conf"
+    | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "${dir}/50-ficus-box.conf"
+  # A user-mode box keeps its user-<uid>.slice across the rename; drop the
+  # drop-in it carried under the old name so the limits are set once.
+  "${SUDO[@]}" rm -f "${dir}/50-${LEGACY_SYSTEM_UNIT_PREFIX}.conf"
   "${SUDO[@]}" systemctl daemon-reload
 }
 
 # Removal drops BOTH modes' drop-ins: the box is going away entirely, and a box
 # that was migrated between modes at some point may carry the other one.
 remove_slice_limits() {
-  "${SUDO[@]}" rm -rf "$(user_slice_dropin_dir)" "$(system_slice_dropin_dir)"
+  "${SUDO[@]}" rm -rf "$(user_slice_dropin_dir)" "$(system_slice_dropin_dir)" "$(legacy_system_slice_dropin_dir)"
   "${SUDO[@]}" systemctl daemon-reload >/dev/null 2>&1 || true
 }
 
@@ -564,7 +592,7 @@ fi
 
 # The user-manager unit name is FIXED (one per box user, in that user's own
 # manager); the system unit is per-box, so it carries the user in its name.
-USER_UNIT_PREFIX="tau-sandbox-server"
+USER_UNIT_PREFIX="ficus-sandbox-server"
 USER_UNIT_NAME="${USER_UNIT_PREFIX}.service"
 USER_SOCKET_NAME="${USER_UNIT_PREFIX}.socket"
 USER_PROXY_NAME="${USER_UNIT_PREFIX}-proxy.service"
@@ -573,8 +601,12 @@ USER_PROXY_NAME="${USER_UNIT_PREFIX}-proxy.service"
 # refuses rather than installing a socket whose activated service cannot exist.
 SOCKET_PROXYD="/usr/lib/systemd/systemd-socket-proxyd"
 
+# The machine root the units run from (bootstrap.sh's FICUS_ROOT). Written into
+# units, so never under FICUS_HOST_ROOT.
+FICUS_ROOT="/opt/ficus"
+
 system_unit_prefix() {
-  printf 'tau-box-%s' "${UNIX_USER}"
+  printf 'ficus-box-%s' "${UNIX_USER}"
 }
 
 system_unit_name() {
@@ -590,19 +622,38 @@ system_proxy_name() {
 }
 
 system_unit_path() {
-  printf '/etc/systemd/system/%s' "$(system_unit_name)"
+  printf '%s/%s' "${SYSTEMD_SYSTEM_DIR}" "$(system_unit_name)"
 }
 
 system_socket_path() {
-  printf '/etc/systemd/system/%s' "$(system_socket_name)"
+  printf '%s/%s' "${SYSTEMD_SYSTEM_DIR}" "$(system_socket_name)"
 }
 
 system_proxy_path() {
-  printf '/etc/systemd/system/%s' "$(system_proxy_name)"
+  printf '%s/%s' "${SYSTEMD_SYSTEM_DIR}" "$(system_proxy_name)"
 }
 
 system_slice_name() {
-  printf 'tau-box-%s.slice' "${UNIX_USER}"
+  printf 'ficus-box-%s.slice' "${UNIX_USER}"
+}
+
+# Bridge (phase 5, U4): this box's units under their pre-rename names, for this
+# --unit-mode. The Ficus units carry them as Alias=; teardown_legacy_units
+# removes them where they are still real unit files.
+legacy_unit_prefix() {
+  if [ "${UNIT_MODE}" = "system" ]; then
+    printf '%s-%s' "${LEGACY_SYSTEM_UNIT_PREFIX}" "${UNIX_USER}"
+  else
+    printf '%s' "${LEGACY_USER_UNIT_PREFIX}"
+  fi
+}
+
+legacy_unit_name() {
+  printf '%s.service' "$(legacy_unit_prefix)"
+}
+
+legacy_socket_name() {
+  printf '%s.socket' "$(legacy_unit_prefix)"
 }
 
 user_unit_path() {
@@ -677,7 +728,7 @@ runtime_dir_name() {
   if [ "${UNIT_MODE}" = "system" ]; then
     system_unit_prefix
   else
-    printf 'tau-sandbox'
+    printf 'ficus-sandbox'
   fi
 }
 
@@ -685,7 +736,7 @@ box_socket_file() {
   if [ "${UNIT_MODE}" = "system" ]; then
     printf '/run/%s/server.sock' "$(system_unit_prefix)"
   else
-    printf '%%t/tau-sandbox/server.sock'
+    printf '%%t/ficus-sandbox/server.sock'
   fi
 }
 
@@ -895,6 +946,9 @@ remove_box() {
   "${SUDO[@]}" systemctl stop "$(system_socket_name)" "$(system_proxy_name)" "$(system_unit_name)" >/dev/null 2>&1 || true
   "${SUDO[@]}" systemctl disable "$(system_socket_name)" "$(system_unit_name)" >/dev/null 2>&1 || true
   "${SUDO[@]}" rm -f "$(system_unit_path)" "$(system_socket_path)" "$(system_proxy_path)"
+  # ...and both modes' units under their pre-rename names (a box not
+  # re-provisioned since the rename).
+  teardown_legacy_units "$(user_home)"
   "${SUDO[@]}" loginctl disable-linger "${UNIX_USER}" >/dev/null 2>&1 || true
   remove_slice_limits
   # Give the per-user manager a moment to exit so its files aren't in the tar.
@@ -943,7 +997,7 @@ remove_box() {
   echo "box-provision.sh: removed box user ${UNIX_USER}" >&2
 }
 
-# Bound /opt/tau/archive before writing another tarball into it.
+# Bound /opt/ficus/archive before writing another tarball into it.
 #
 # Removal archives a box's whole home to <user>-<epoch>.tar.gz, "timestamped,
 # never overwriting" — and until now NOTHING ever deleted them. On a host with
@@ -1057,7 +1111,7 @@ restore_stream() {
     echo "box-provision.sh: --restore-stream requires a UUID --staging-id" >&2
     exit 2
   fi
-  local staging="${home}/.tau-migrate/${STAGING_ID}"
+  local staging="${home}/.ficus-migrate/${STAGING_ID}"
   "${SUDO[@]}" rm -rf -- "${staging}"
   "${SUDO[@]}" install -d -m 0700 -o "${UNIX_USER}" -g "${UNIX_USER}" "${staging}"
 
@@ -1133,22 +1187,22 @@ ensure_user() {
   if ! id -u "${UNIX_USER}" >/dev/null 2>&1; then
     "${SUDO[@]}" useradd --create-home --shell /bin/bash "${UNIX_USER}"
   fi
-  # Join the box user to the tau-browser group so it can reach the 0660
-  # /run/tau-browser/sock (Phase 2). Fail-open: a machine provisioned before
-  # the browser service exists has no tau-browser group yet — that must not
+  # Join the box user to the ficus-browser group so it can reach the 0660
+  # /run/ficus-browser/sock (Phase 2). Fail-open: a machine provisioned before
+  # the browser service exists has no ficus-browser group yet — that must not
   # fail provisioning, only skip the membership (no browser calls until the
   # box is recreated on a browser-capable machine).
-  if getent group tau-browser >/dev/null 2>&1; then
-    "${SUDO[@]}" usermod -aG tau-browser "${UNIX_USER}"
+  if getent group ficus-browser >/dev/null 2>&1; then
+    "${SUDO[@]}" usermod -aG ficus-browser "${UNIX_USER}"
   else
-    echo "box-provision.sh: tau-browser group not found; skipping browser group membership (pre-browser machine)" >&2
+    echo "box-provision.sh: ficus-browser group not found; skipping browser group membership (pre-browser machine)" >&2
   fi
 }
 
 # Only the dedicated, pristine machine prewarmer may populate this store.
 # Ordinary boxes READ shared objects via Git alternates; their fetcher SQLite
 # databases, credentials, custom sources and new objects remain private.
-NIX_CACHE_ROOT="/opt/tau/cache/nix"
+NIX_CACHE_ROOT="${FICUS_HOST_ROOT:-}/opt/ficus/cache/nix"
 
 init_shared_nix_cache() (
   umask 022
@@ -1195,7 +1249,7 @@ prepare_nix_cache() {
   # ExecStartPre runs unprivileged. Operator invocations drop privileges too,
   # so poisoned cache paths cannot escape the box UID.
   if [ "$(id -un)" != "${UNIX_USER}" ]; then
-    run_as_box bash /opt/tau/bin/box-provision.sh --unix-user "${UNIX_USER}" --prepare-nix-cache
+    run_as_box bash "${FICUS_ROOT}/bin/box-provision.sh" --unix-user "${UNIX_USER}" --prepare-nix-cache
     return
   fi
   for name in tarball-cache tarball-cache-v2; do
@@ -1243,14 +1297,14 @@ ensure_dirs() {
   local home="$1"
   # The HOME itself is 0700: Ubuntu useradd leaves 0755 (via /etc/login.defs
   # HOME_MODE not being set), which would let every co-located box user on the
-  # shared machine read this box's ~/memory, ~/.tau/skills, ~/bin, ... —
+  # shared machine read this box's ~/memory, ~/.ficus/skills, ~/bin, ... —
   # cross-tenant data exposure. chmod (not install -d) so re-provisioning an
   # EXISTING box tightens it too; idempotent by nature.
   "${SUDO[@]}" chmod 700 "${home}"
-  # ~/.private (0700) private scratch, ~/.tau (0700) holds server.env secrets,
+  # ~/.private (0700) private scratch, ~/.ficus (0700) holds server.env secrets,
   # ~/workspace the box's working tree.
   "${SUDO[@]}" install -d -o "${UNIX_USER}" -g "${UNIX_USER}" -m 0700 "${home}/.private"
-  "${SUDO[@]}" install -d -o "${UNIX_USER}" -g "${UNIX_USER}" -m 0700 "${home}/.tau"
+  "${SUDO[@]}" install -d -o "${UNIX_USER}" -g "${UNIX_USER}" -m 0700 "${home}/${HOME_DOT_DIR}"
   "${SUDO[@]}" install -d -o "${UNIX_USER}" -g "${UNIX_USER}" -m 0755 "${home}/workspace"
 }
 
@@ -1281,7 +1335,7 @@ ensure_dirs() {
 #
 # The system unit spells the HOME out instead of using `%h`: in a SYSTEM unit
 # `%h` resolves against the service manager (root), NOT against `User=`, so
-# `%h/.tau/server.env` would silently read /root's files and the box would boot
+# `%h/.ficus/server.env` would silently read /root's files and the box would boot
 # without its env. The user unit keeps `%h` byte-for-byte as it always was.
 render_unit() {
   local home="$1"
@@ -1289,7 +1343,7 @@ render_unit() {
   if [ "${UNIT_MODE}" = "system" ]; then
     unit=(
       '[Unit]'
-      'Description=tau sandbox server'
+      'Description=Ficus sandbox server'
       'After=network-online.target'
       'Wants=network-online.target'
       ''
@@ -1300,13 +1354,13 @@ render_unit() {
       "WorkingDirectory=${home}"
       "RuntimeDirectory=$(runtime_dir_name)"
       "Environment=FICUS_BOX_PORT=${PORT}"
-      'Environment=FICUS_BROWSER_SOCK=/run/tau-browser/sock'
+      'Environment=FICUS_BROWSER_SOCK=/run/ficus-browser/sock'
       "Environment=EXECUTOR_SOCKET=$(box_socket_file)"
       "Environment=EXECUTOR_IDLE_EXIT_MS=${IDLE_EXIT_MS}"
-      "EnvironmentFile=-${home}/.tau/host.env"
-      "EnvironmentFile=-${home}/.tau/server.env"
-      "ExecStartPre=-/bin/bash /opt/tau/bin/box-provision.sh --unix-user ${UNIX_USER} --prepare-nix-cache"
-      "ExecStart=/opt/tau/bin/bun /opt/tau/server/server.js --service-cgroup"
+      "EnvironmentFile=-${home}/${HOME_DOT_DIR}/host.env"
+      "EnvironmentFile=-${home}/${HOME_DOT_DIR}/server.env"
+      "ExecStartPre=-/bin/bash ${FICUS_ROOT}/bin/box-provision.sh --unix-user ${UNIX_USER} --prepare-nix-cache"
+      "ExecStart=${FICUS_ROOT}/bin/bun ${FICUS_ROOT}/server/server.js --service-cgroup"
       'Delegate=no'
       'ExitType=main'
       'KillMode=control-group'
@@ -1316,11 +1370,12 @@ render_unit() {
       ''
       '[Install]'
       'WantedBy=multi-user.target'
+      "Alias=$(legacy_unit_name)"
     )
   else
     unit=(
       '[Unit]'
-      'Description=tau sandbox server'
+      'Description=Ficus sandbox server'
       'After=network-online.target'
       'Wants=network-online.target'
       ''
@@ -1328,13 +1383,13 @@ render_unit() {
       'Type=simple'
       "RuntimeDirectory=$(runtime_dir_name)"
       "Environment=FICUS_BOX_PORT=${PORT}"
-      'Environment=FICUS_BROWSER_SOCK=/run/tau-browser/sock'
+      'Environment=FICUS_BROWSER_SOCK=/run/ficus-browser/sock'
       "Environment=EXECUTOR_SOCKET=$(box_socket_file)"
       "Environment=EXECUTOR_IDLE_EXIT_MS=${IDLE_EXIT_MS}"
-      'EnvironmentFile=-%h/.tau/host.env'
-      'EnvironmentFile=-%h/.tau/server.env'
-      "ExecStartPre=-/bin/bash /opt/tau/bin/box-provision.sh --unix-user ${UNIX_USER} --prepare-nix-cache"
-      'ExecStart=/opt/tau/bin/bun /opt/tau/server/server.js --service-cgroup'
+      'EnvironmentFile=-%h/.ficus/host.env'
+      'EnvironmentFile=-%h/.ficus/server.env'
+      "ExecStartPre=-/bin/bash ${FICUS_ROOT}/bin/box-provision.sh --unix-user ${UNIX_USER} --prepare-nix-cache"
+      "ExecStart=${FICUS_ROOT}/bin/bun ${FICUS_ROOT}/server/server.js --service-cgroup"
       'Delegate=no'
       'ExitType=main'
       'KillMode=control-group'
@@ -1343,6 +1398,7 @@ render_unit() {
       ''
       '[Install]'
       'WantedBy=default.target'
+      "Alias=$(legacy_unit_name)"
     )
   fi
   printf '%s\n' "${unit[@]}"
@@ -1356,7 +1412,7 @@ render_unit() {
 render_socket_unit() {
   printf '%s\n' \
     '[Unit]' \
-    'Description=tau sandbox server socket' \
+    'Description=Ficus sandbox server socket' \
     '' \
     '[Socket]' \
     "ListenStream=127.0.0.1:${PORT}" \
@@ -1364,7 +1420,8 @@ render_socket_unit() {
     "Service=$(proxy_name)" \
     '' \
     '[Install]' \
-    'WantedBy=sockets.target'
+    'WantedBy=sockets.target' \
+    "Alias=$(legacy_socket_name)"
 }
 
 # The PROXY unit: socket-activated, forwards the accepted TCP connection to the
@@ -1379,7 +1436,7 @@ render_proxy_unit() {
   local -a unit
   unit=(
     '[Unit]'
-    'Description=tau sandbox server socket proxy'
+    'Description=Ficus sandbox server socket proxy'
     "Requires=$(unit_name)"
     "After=$(unit_name)"
     ''
@@ -1431,7 +1488,7 @@ install_unit() {
 # request to the box would hang. Refuse loudly instead of silently falling back
 # to the old single-unit layout (spec: "never silently installs the old layout").
 assert_socket_proxyd() {
-  if [ ! -x "${SOCKET_PROXYD}" ]; then
+  if [ ! -x "${FICUS_HOST_ROOT}${SOCKET_PROXYD}" ]; then
     echo "box-provision.sh: ${SOCKET_PROXYD} is missing; this machine image is too old for socket-activated boxes" >&2
     exit 1
   fi
@@ -1444,15 +1501,120 @@ assert_socket_proxyd() {
 #
 # Leaving user mode also KILLS the old user manager (disable-linger +
 # terminate-user) before the new system unit is installed: the outgoing
-# tau-sandbox-server still holds FICUS_BOX_PORT, and the incoming unit binds the
+# ficus-sandbox-server still holds FICUS_BOX_PORT, and the incoming unit binds the
 # same port. Belt-and-braces — the caller starts the unit only after this
 # returns — but a lingering manager would otherwise survive indefinitely.
+# Bridge (phase 5, U4): stop, disable and remove this box's units under their
+# PRE-RENAME names, in both managers — whatever is still a real unit file there
+# (a link of that name is the Ficus unit's own Alias, and is left alone). Socket
+# first, so it cannot re-activate the proxy mid-stop. Its slice drop-in goes
+# with it. Idempotent: a box with no legacy units is untouched.
+teardown_legacy_units() {
+  local home="$1" sys_prefix="${LEGACY_SYSTEM_UNIT_PREFIX}-${UNIX_USER}" f found=false
+  local -a sys_units=("${sys_prefix}.socket" "${sys_prefix}-proxy.service" "${sys_prefix}.service")
+  for f in "${sys_units[@]}"; do
+    if "${SUDO[@]}" test -f "${SYSTEMD_SYSTEM_DIR}/${f}" && ! "${SUDO[@]}" test -L "${SYSTEMD_SYSTEM_DIR}/${f}"; then
+      found=true
+    fi
+  done
+  if [ "${found}" = true ]; then
+    echo "box-provision.sh: removing ${UNIX_USER}'s system units from before the rename (${sys_prefix}.*)" >&2
+    "${SUDO[@]}" systemctl stop "${sys_units[@]}" >/dev/null 2>&1 || true
+    "${SUDO[@]}" systemctl disable "${sys_prefix}.socket" "${sys_prefix}.service" >/dev/null 2>&1 || true
+    for f in "${sys_units[@]}"; do
+      if ! "${SUDO[@]}" test -L "${SYSTEMD_SYSTEM_DIR}/${f}"; then "${SUDO[@]}" rm -f "${SYSTEMD_SYSTEM_DIR}/${f}"; fi
+    done
+    "${SUDO[@]}" rm -rf "$(legacy_system_slice_dropin_dir)"
+    "${SUDO[@]}" systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+
+  [ -n "${home}" ] || return 0
+  local user_dir="${home}/.config/systemd/user"
+  local -a user_units=("${LEGACY_USER_UNIT_PREFIX}.socket" "${LEGACY_USER_UNIT_PREFIX}-proxy.service" "${LEGACY_USER_UNIT_PREFIX}.service")
+  found=false
+  for f in "${user_units[@]}"; do
+    if "${SUDO[@]}" test -f "${user_dir}/${f}" && ! "${SUDO[@]}" test -L "${user_dir}/${f}"; then found=true; fi
+  done
+  if [ "${found}" = true ]; then
+    echo "box-provision.sh: removing ${UNIX_USER}'s user units from before the rename (${LEGACY_USER_UNIT_PREFIX}.*)" >&2
+    sysu stop "${user_units[@]}" >/dev/null 2>&1 || true
+    sysu disable "${LEGACY_USER_UNIT_PREFIX}.socket" "${LEGACY_USER_UNIT_PREFIX}.service" >/dev/null 2>&1 || true
+    for f in "${user_units[@]}"; do
+      if ! "${SUDO[@]}" test -L "${user_dir}/${f}"; then "${SUDO[@]}" rm -f "${user_dir}/${f}"; fi
+    done
+    sysu daemon-reload >/dev/null 2>&1 || true
+  fi
+}
+
+# Bridge (phase 5, U4): move the box HOME's pre-rename dot dir to .ficus and
+# leave the old name as a RELATIVE link to it, so anything that still says the
+# old path (a box server or a Core from before the rename) reads the same files.
+# Runs AS THE BOX USER — never traverse a box-controlled tree as root — after its
+# units are down. A .ficus a newer box server already created beside the old dir
+# is merged: every entry only the old dir has moves over; an entry both have is
+# kept from .ficus, and the old one is set aside under .ficus/.before-rename-<ts>
+# (never deleted). Idempotent: once the old name is the link, nothing happens.
+HOME_DOT_DIR_PROGRAM='set -u
+home=$1 old_name=$2 new_name=$3
+old="${home}/${old_name}" new="${home}/${new_name}" clash=""
+if [ -L "${old}" ]; then
+  [ "$(readlink -- "${old}")" = "${new_name}" ] || echo "box-provision.sh: ${old} links elsewhere; left alone" >&2
+  exit 0
+fi
+if [ -L "${new}" ] || { [ -e "${new}" ] && [ ! -d "${new}" ]; }; then
+  echo "box-provision.sh: ${new} is not a directory" >&2
+  exit 1
+fi
+if [ -e "${old}" ] && [ ! -d "${old}" ]; then
+  echo "box-provision.sh: ${old} is not a directory" >&2
+  exit 1
+fi
+if [ -d "${old}" ]; then
+  if [ ! -e "${new}" ]; then
+    mv -T -- "${old}" "${new}" || exit 1
+  else
+    for entry in "${old}"/* "${old}"/.[!.]* "${old}"/..?*; do
+      [ -e "${entry}" ] || [ -L "${entry}" ] || continue
+      target="${new}/${entry##*/}"
+      if [ -e "${target}" ] || [ -L "${target}" ]; then
+        clash=1
+        continue
+      fi
+      mv -T -- "${entry}" "${target}" || exit 1
+    done
+    if [ -n "${clash}" ]; then
+      keep="${new}/.before-rename-$(date -u +%Y%m%dT%H%M%SZ)"
+      mv -T -- "${old}" "${keep}" || exit 1
+      echo "box-provision.sh: ${old} and ${new} both had some entries; the old ones are kept in ${keep}" >&2
+    else
+      rmdir -- "${old}" || exit 1
+    fi
+  fi
+fi
+mkdir -p -- "${new}" && chmod 700 -- "${new}" && ln -sT -- "${new_name}" "${old}"'
+
+migrate_home_dot_dir() {
+  local home="$1"
+  run_as_box bash -c "${HOME_DOT_DIR_PROGRAM}" box-home-dot-dir "${home}" "${LEGACY_HOME_DOT_DIR}" "${HOME_DOT_DIR}"
+}
+
+# Bridge (phase 5, U4): bootstrap.sh moves the machine root to /opt/ficus. Until
+# a machine has been re-bootstrapped, the units this script writes would run a
+# bun and a server bundle that are not there, so provisioning refuses (Core's
+# boot reconcile re-bootstraps a machine whose bootstrap is stale).
+refuse_unmigrated_machine_root() {
+  if [ -d "${FICUS_HOST_ROOT}${LEGACY_ROOT}" ] && [ ! -L "${FICUS_HOST_ROOT}${LEGACY_ROOT}" ]; then
+    echo "box-provision.sh: this machine still has its root at ${LEGACY_ROOT}; re-bootstrap it before provisioning boxes" >&2
+    exit 3
+  fi
+}
+
 reconcile_unit_mode() {
   local home="$1"
   if [ "${UNIT_MODE}" = "system" ]; then
     local old_unit
     old_unit="$(user_unit_path "${home}")"
-    if "${SUDO[@]}" test -e "${old_unit}" || "${SUDO[@]}" test -e "/var/lib/systemd/linger/${UNIX_USER}"; then
+    if "${SUDO[@]}" test -e "${old_unit}" || "${SUDO[@]}" test -e "${LINGER_DIR}/${UNIX_USER}"; then
       echo "box-provision.sh: converting ${UNIX_USER} from the user unit to the system unit" >&2
       sysu stop "${USER_SOCKET_NAME}" "${USER_PROXY_NAME}" "${USER_UNIT_NAME}" >/dev/null 2>&1 || true
       sysu disable "${USER_SOCKET_NAME}" "${USER_UNIT_NAME}" >/dev/null 2>&1 || true
@@ -1479,6 +1641,7 @@ reconcile_unit_mode() {
 
 provision_box() {
   assert_socket_proxyd
+  refuse_unmigrated_machine_root
   ensure_user
 
   local home
@@ -1488,9 +1651,11 @@ provision_box() {
     exit 1
   fi
 
-  # Tear the OTHER mode's layout down first (no-op for a box already in this
-  # mode, or a brand-new one), so the two never coexist and the outgoing server
-  # can never hold the port the incoming unit binds.
+  # Tear down the units from before the rename, then the OTHER mode's layout
+  # (no-op for a box already in this mode, or a brand-new one), so no two
+  # layouts ever coexist and an outgoing server can never hold the port the
+  # incoming unit binds.
+  teardown_legacy_units "${home}"
   reconcile_unit_mode "${home}"
 
   if [ "${UNIT_MODE}" = "user" ]; then
@@ -1501,6 +1666,8 @@ provision_box() {
     "${SUDO[@]}" loginctl enable-linger "${UNIX_USER}"
   fi
 
+  # With every old unit down, the box HOME's dot dir can move.
+  migrate_home_dot_dir "${home}"
   ensure_dirs "${home}"
   init_shared_nix_cache
   install_slice_limits
@@ -1555,7 +1722,7 @@ provision_box() {
   printf 'FICUS_BOX_UID=%s\n' "$(box_uid)"
 }
 
-FICUS_ARCHIVE_DIR="/opt/tau/archive"
+FICUS_ARCHIVE_DIR="${FICUS_HOST_ROOT}/opt/ficus/archive"
 
 # Side-effect-free dry run (tests): print the three unit files this invocation
 # would install (server, socket, proxy), each prefixed with a `# path: <path>`

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'bun:test'
+import { createHash } from 'crypto'
 import {
+  LEGACY_MIGRATION_MANIFEST_SCHEMA,
+  MIGRATION_MANIFEST_SCHEMA,
   compareMigrationManifests,
   createMigrationManifest,
   parseMigrationManifest,
@@ -105,8 +108,28 @@ describe('migration manifest v1', () => {
     ).toThrow(/type/i)
 
     const valid = createMigrationManifest(identity, roots(file('safe')))
-    expect(() => parseMigrationManifest({ ...valid, schema: 'tau-box-migration/v2' })).toThrow(/schema/i)
+    expect(() => parseMigrationManifest({ ...valid, schema: 'ficus-box-migration/v2' })).toThrow(/schema/i)
     expect(() => parseMigrationManifest({ ...valid, totals: { ...valid.totals, files: 99 } })).toThrow(/totals/i)
     expect(() => parseMigrationManifest({ ...valid, manifestSha256: '0'.repeat(64) })).toThrow(/digest/i)
+  })
+
+  it('writes ficus-box-migration/v1 and still reads a manifest of the legacy kind', () => {
+    const written = createMigrationManifest(identity, roots(file('safe')))
+    expect(written.schema).toBe(MIGRATION_MANIFEST_SCHEMA)
+    expect(MIGRATION_MANIFEST_SCHEMA).toBe('ficus-box-migration/v1')
+
+    const { manifestSha256: _digest, ...body } = written
+    const legacyBody = { ...body, schema: LEGACY_MIGRATION_MANIFEST_SCHEMA }
+    const legacy = {
+      ...legacyBody,
+      manifestSha256: createHash('sha256').update(JSON.stringify(legacyBody)).digest('hex'),
+    }
+    const parsed = parseMigrationManifest(legacy)
+    expect(parsed.schema).toBe(LEGACY_MIGRATION_MANIFEST_SCHEMA)
+    expect(parsed.manifestSha256).toBe(legacy.manifestSha256)
+    // A legacy manifest still compares entry for entry with a current one.
+    expect(compareMigrationManifests(legacy, written)).toEqual({ ok: true })
+    // The legacy kind is accepted only with its own digest.
+    expect(() => parseMigrationManifest({ ...legacy, manifestSha256: written.manifestSha256 })).toThrow(/digest/i)
   })
 })

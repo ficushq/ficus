@@ -1,6 +1,6 @@
 // One-shot Chromium sandbox verification — PHASE 1 hard gate (spec §4.1/§5).
 // Launches headless Chromium WITHOUT --no-sandbox and confirms a renderer works
-// under the unprivileged tau-browser user (a missing user-namespace grant
+// under the unprivileged ficus-browser user (a missing user-namespace grant
 // crashes the zygote here) and that chrome://sandbox does not report an
 // unsandboxed process. Exit 0 = sandbox active; non-zero = FAIL (bootstrap
 // aborts, browsing disabled on this host — never downgraded to --no-sandbox).
@@ -22,13 +22,13 @@ async function main() {
     if (/not sandboxed/i.test(text)) {
       throw new Error('chrome://sandbox reports an unsandboxed process: ' + text.slice(0, 200))
     }
-    console.error('tau-browser: sandbox verification passed')
+    console.error('ficus-browser: sandbox verification passed')
   } finally {
     await browser.close().catch(() => {})
   }
 }
 
 main().catch((err) => {
-  console.error('tau-browser: sandbox verification FAILED —', err && err.message ? err.message : err)
+  console.error('ficus-browser: sandbox verification FAILED —', err && err.message ? err.message : err)
   process.exit(1)
 })

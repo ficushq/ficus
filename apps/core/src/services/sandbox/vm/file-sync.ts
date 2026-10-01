@@ -8,7 +8,7 @@
  * sandbox-server `/write` endpoint AT ENSURE TIME. Pushing through the server
  * (rather than ssh/root) matters: the box's unix user must OWN the files, and
  * the server writes as that user. The `ficus` CLI is NOT pushed here: on vm it is
- * a MACHINE-level artifact (`/usr/local/bin/ficus` → `/opt/tau/cli/ficus.js`,
+ * a MACHINE-level artifact (`/usr/local/bin/ficus` → `/opt/ficus/cli/ficus.js`,
  * delivered + drift-updated by machine-artifact delivery), shared by every box
  * on the machine.
  *
@@ -31,7 +31,7 @@
  *      PATH); removing it keeps that stale copy off the box PATH. Idempotent when absent
  *   0b. move the box's legacy workspace dot dirs (`~/workspace`, `~/.private`) to
  *      `.ficus` with a relative legacy link left behind ({@link boxWorkspaceDotDirCommand})
- *   1. materialized skills tree → `~/.tau/skills/<materializer layout>`
+ *   1. materialized skills tree → `~/.ficus/skills/<materializer layout>`
  *   2. squad `.env` → `~/workspace/.ficus/.env`   (mode 0600; squad-scoped only)
  *   3. identity key → `~/.private/identity.pem`  (mode 0600; per-agent only)
  *   4. memory replica → `~/memory/<tree>`   (content only — read-only convention;
@@ -84,6 +84,7 @@ import { join, relative } from 'path'
 import { BashOutcomeUnknownError, type BashResponse, type SandboxClient } from '../client/http-client'
 import { getSquadIdFromSandbox, type SandboxOptions } from '../types'
 import { boxUnixUser } from '../../machines/box-manager'
+import { boxDotDir } from '../../machines/box-paths'
 import { machineTunnels } from '../../machines/tunnel-manager'
 import {
   getMachineBox as getMachineBoxReal,
@@ -503,7 +504,7 @@ async function writeSshFiles(
 function resolveBoxDest(home: string, base: AssetDest['base']): string {
   switch (base) {
     case 'skills':
-      return `${home}/.tau/skills`
+      return `${boxDotDir(home)}/skills`
     case 'workspace':
       return `${home}/workspace`
     case 'private':

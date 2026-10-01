@@ -9,13 +9,13 @@ import {
 } from './service-cgroup'
 
 const MOUNTINFO = '29 23 0:26 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime - cgroup2 cgroup rw\n'
-const CGROUP = '0::/system.slice/tau-box-x.service\n'
+const CGROUP = '0::/system.slice/ficus-box-x.service\n'
 
 describe('service cgroup parsing', () => {
   it('resolves an Ubuntu unified service cgroup', () => {
-    expect(parseUnifiedCgroupPath(CGROUP)).toBe('/system.slice/tau-box-x.service')
-    expect(resolveCgroupProcsPath(MOUNTINFO, '/system.slice/tau-box-x.service')).toBe(
-      '/sys/fs/cgroup/system.slice/tau-box-x.service/cgroup.procs'
+    expect(parseUnifiedCgroupPath(CGROUP)).toBe('/system.slice/ficus-box-x.service')
+    expect(resolveCgroupProcsPath(MOUNTINFO, '/system.slice/ficus-box-x.service')).toBe(
+      '/sys/fs/cgroup/system.slice/ficus-box-x.service/cgroup.procs'
     )
   })
 
@@ -40,7 +40,7 @@ describe('isServiceCgroupManaged', () => {
   // to the one channel those configurable files cannot override: the unit's
   // ExecStart argv.
   it('the ExecStart switch is authoritative over every hostile/empty/false environment value', () => {
-    const argv = ['bun', '/opt/tau/server/server.js', SERVICE_CGROUP_ARG]
+    const argv = ['bun', '/opt/ficus/server/server.js', SERVICE_CGROUP_ARG]
     for (const hostile of ['0', '', 'garbage', '1']) {
       expect(isServiceCgroupManaged(argv, { EXECUTOR_SERVICE_CGROUP: hostile })).toBe(true)
     }
@@ -50,11 +50,11 @@ describe('isServiceCgroupManaged', () => {
   it('the legacy environment marker still affirms for units provisioned before the switch existed', () => {
     // Transitional fallback: a unit provisioned before the flag still carries
     // `Environment=EXECUTOR_SERVICE_CGROUP=1` and must keep its census.
-    expect(isServiceCgroupManaged(['bun', '/opt/tau/server/server.js'], { EXECUTOR_SERVICE_CGROUP: '1' })).toBe(true)
+    expect(isServiceCgroupManaged(['bun', '/opt/ficus/server/server.js'], { EXECUTOR_SERVICE_CGROUP: '1' })).toBe(true)
   })
 
   it('a non-service server (k8s/docker/local test) assumes no systemd ownership', () => {
-    const argv = ['bun', '/opt/tau/server/server.js']
+    const argv = ['bun', '/opt/ficus/server/server.js']
     expect(isServiceCgroupManaged(argv, {})).toBe(false)
     for (const value of ['0', '', 'no', 'true']) {
       expect(isServiceCgroupManaged(argv, { EXECUTOR_SERVICE_CGROUP: value })).toBe(false)
@@ -68,7 +68,7 @@ describe('countOwnServiceCgroupChildren', () => {
     const fixtures = new Map([
       ['/proc/self/cgroup', CGROUP],
       ['/proc/self/mountinfo', MOUNTINFO],
-      ['/sys/fs/cgroup/system.slice/tau-box-x.service/cgroup.procs', '41\n42\n42\n43\n'],
+      ['/sys/fs/cgroup/system.slice/ficus-box-x.service/cgroup.procs', '41\n42\n42\n43\n'],
     ])
     const count = await countOwnServiceCgroupChildren({
       platform: 'linux',
@@ -82,7 +82,7 @@ describe('countOwnServiceCgroupChildren', () => {
     expect(paths).toEqual([
       '/proc/self/cgroup',
       '/proc/self/mountinfo',
-      '/sys/fs/cgroup/system.slice/tau-box-x.service/cgroup.procs',
+      '/sys/fs/cgroup/system.slice/ficus-box-x.service/cgroup.procs',
     ])
   })
 

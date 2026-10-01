@@ -114,7 +114,7 @@ function probeCandidates(platform: NodeJS.Platform, home: string, listDir: (p: s
   }
 
   // Playwright-managed Chromium, if present
-  for (const root of ['/opt/tau/browser/ms-playwright', join(home, '.cache/ms-playwright')]) {
+  for (const root of ['/opt/ficus/browser/ms-playwright', join(home, '.cache/ms-playwright')]) {
     for (const entry of listDir(root)) {
       if (!entry.startsWith('chromium-')) continue
       for (const sub of listDir(join(root, entry))) {

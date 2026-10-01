@@ -60,7 +60,7 @@ function getAllowedPrefixes(): string[] {
   }
 
   // VM "box" runtime only: a box works out of a per-user HOME (`/home/box_<hash>`),
-  // and file-sync writes agent assets there (~/bin, ~/.tau/skills, ~/memory) — a
+  // and file-sync writes agent assets there (~/bin, ~/.ficus/skills, ~/memory) — a
   // path that is NOT a static ALLOWED_PREFIX. box-manager bakes FICUS_BOX_HOME=<box
   // HOME> so the server permits writes under exactly that one box's home. k8s pods
   // NEVER set FICUS_BOX_HOME, so this widens nothing there; it is scoped per-box.

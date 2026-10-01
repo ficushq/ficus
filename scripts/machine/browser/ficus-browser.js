@@ -1,5 +1,5 @@
 // @ts-check
-// tau-browser.service program — per-box BrowserContext, token auth, caps
+// ficus-browser.service program — per-box BrowserContext, token auth, caps
 // (browser-tools-in-sandbox spec §4.2, Phase 2). Serves a small JSON verb
 // protocol over the unix socket: one Playwright BrowserContext per
 // authenticated box user, run-id-keyed pages inside it. A box can never
@@ -13,12 +13,12 @@
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 
-const SOCK = process.env.FICUS_BROWSER_SOCK || '/run/tau-browser/sock'
-// A SIBLING of /opt/tau/browser, not a child — install_browser recursively
-// chown/chmods /opt/tau/browser to root:root + a+rX (every box user must
+const SOCK = process.env.FICUS_BROWSER_SOCK || '/run/ficus-browser/sock'
+// A SIBLING of /opt/ficus/browser, not a child — install_browser recursively
+// chown/chmods /opt/ficus/browser to root:root + a+rX (every box user must
 // read the browser binaries), which would world-expose token digests if they
 // lived inside it.
-const DEFAULT_TOKENS_DIR = '/opt/tau/browser-tokens'
+const DEFAULT_TOKENS_DIR = '/opt/ficus/browser-tokens'
 const DEFAULT_MEMORY_HIGH_MB = 8192
 
 const VIEWPORT = { width: 1280, height: 720 }
@@ -659,7 +659,7 @@ if (import.meta.main) {
   try {
     fs.chmodSync(SOCK, 0o660)
   } catch (err) {
-    console.error('tau-browser: could not chmod socket', err)
+    console.error('ficus-browser: could not chmod socket', err)
   }
 
   const onShutdown = () => {

@@ -50,25 +50,25 @@ looking to let a squad reach an existing box the team already owns, see
            ▼
   ┌──────────────────────── Machine (Ubuntu 24.04) ─────────────────────────┐
   │  sshd (AllowTcpForwarding yes)                                           │
-  │  /opt/tau/{bin/bun, bin/box-provision.sh, server/server.js, manifest}    │
+  │  /opt/ficus/{bin/bun, bin/box-provision.sh, server/server.js, manifest}  │
   │                                                                          │
   │  box user  box_<hash>  (HOME /home/box_<hash>, 0700)                     │
   │    ├─ <prefix>.socket        → owns 127.0.0.1:<boxPort>, always on       │
   │    │     └─ <prefix>-proxy.service (systemd-socket-proxyd, 30s idle)     │
   │    │           └─ <prefix>.service  (see "unit modes")                   │
-  │    │                 └─ bun /opt/tau/server/server.js → unix server.sock │
-  │    ├─ ~/.tau/server.env   (0600, systemd EnvironmentFile — secrets)      │
+  │    │                 └─ bun /opt/ficus/server/server.js → unix socket    │
+  │    ├─ ~/.ficus/server.env   (0600, systemd EnvironmentFile — secrets)    │
   │    ├─ ~/workspace         (squad box work root)                          │
   │    ├─ ~/.private          (0700; agent/system-manager work root)         │
-  │    └─ ~/bin/ficus, ~/.tau/skills, ~/memory  (pushed over /write)           │
+  │    └─ ~/bin/ficus, ~/.ficus/skills, ~/memory  (pushed over /write)       │
   └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Box server** = the unbundled k8s sandbox-server, `bun build`-bundled to a
-  single `server.js` and pushed to `/opt/tau/server/server.js`. One copy per
+  single `server.js` and pushed to `/opt/ficus/server/server.js`. One copy per
   machine; every box runs it as its own Unix user under a systemd unit.
 - **Socket activation** — a box is THREE units, `<prefix>` being
-  `tau-box-<user>` (system mode) or `tau-sandbox-server` (user mode):
+  `ficus-box-<user>` (system mode) or `ficus-sandbox-server` (user mode):
   - `<prefix>.socket` holds `127.0.0.1:<boxPort>` forever and is the only unit
     that is enabled. Core's tunnel forward always finds a listener.
   - `<prefix>-proxy.service` (`systemd-socket-proxyd --exit-idle-time=30s`) is
@@ -117,13 +117,13 @@ Completion-critical work must stay in one foreground Bash request with a timeout
 - **Unit modes** (`box-provision.sh --unit-mode`, derived from the sandboxId
   prefix and mirrored by box-manager's `boxUnitControl` seam):
   - `agent_*` → **system**: one root-owned
-    `/etc/systemd/system/tau-box-<user>.service` with `User=`/`Group=<user>`
-    and its own `tau-box-<user>.slice` (which carries the per-box
+    `/etc/systemd/system/ficus-box-<user>.service` with `User=`/`Group=<user>`
+    and its own `ficus-box-<user>.slice` (which carries the per-box
     memory/CPU/tasks limits). **No linger**, so a light box costs no
     `systemd --user` manager + dbus pair — measured 2026-09-01 on a test
     host at ~13 MB per box across 45 managers.
   - `squad_*` / `system_manager_*` (and any unknown legacy id) → **user**:
-    the lingering `tau-sandbox-server.service` in the box user's own manager,
+    the lingering `ficus-sandbox-server.service` in the box user's own manager,
     with limits on `user-<uid>.slice`. Required by **rootless docker**, whose
     daemon is itself a user service on `/run/user/<uid>/docker.sock` —
     `--with-docker` with `--unit-mode system` is rejected outright.
@@ -141,7 +141,7 @@ A machine must be:
 - **Ubuntu 24.04 LTS.** `bootstrap.sh` and `box-provision.sh` target systemd
   255 / bash 5.2 only. Other distros are out of scope and untested.
 - **Reachable over SSH as root, or as a passwordless sudoer.** Bootstrap and
-  per-box provisioning install system packages, write `/opt/tau`, and manage
+  per-box provisioning install system packages, write `/opt/ficus`, and manage
   other users' systemd `--user` managers via
   `systemctl --machine=<user>@.host --user`, all of which need root.
 - **sshd with `AllowTcpForwarding yes`** (or `all`/`local`/`remote`). Forwarding
@@ -193,7 +193,7 @@ a VM booted from it needs to install nothing. See § exe.dev in
 `docs/wiki/machines/exe-provider.md` for how the exe provider boots box VMs from it.
 
 **How bootstrap fast-paths it.** The image writes a marker file
-`/opt/tau/prebaked` — JSON recording the pins it baked
+`/opt/ficus/prebaked` — JSON recording the pins it baked
 (`{"bunVersion","nixVersion","devboxVersion"}`). Near the top of a run,
 `bootstrap.sh` reads it (via `jq`, baked into the image; grep/sed fallback):
 
@@ -227,7 +227,7 @@ versions`). bootstrap does **not** attempt to reinstall over the baked
 genuinely per-machine / per-boot work always runs, prebaked or not:
 
 - `make_dirs` (harmless when the dirs are already baked),
-- the **manifest write** (`/opt/tau/manifest.json`, stamped with the caller's
+- the **manifest write** (`/opt/ficus/manifest.json`, stamped with the caller's
   `--version` bootstrap hash — deliberately NOT baked into the image),
 - the **egress lockdown** (`--egress-lockdown` nftables rules) when the machine
   opts in,
@@ -245,6 +245,20 @@ in `MACHINE_ARTIFACTS`), so bootstrap is only its first delivery. Every later
 is what lets a new script MODE reach machines already in the fleet without a
 re-bootstrap — `--restore-stream` is exactly that case, and a migration ensures
 the destination's artifacts before it streams.
+
+An operator re-bootstraps machines from the tenant Core VM, without an admin
+token, with the bundled entrypoint (run from the Core install root, where Bun
+loads Core's `.env`):
+
+```bash
+FICUS_MB_MACHINE=<machineId>|all-stale bun current/apps/core/dist/machine-bootstrap.js
+```
+
+It claims and bootstraps each machine exactly as `POST /api/machines/:id/bootstrap`
+does — `all-stale` takes every `ready` or `unreachable` machine whose stored
+`bootstrapVersion` differs from the running Core's — and prints one
+`MACHINE_BOOTSTRAP <id> ok` or `MACHINE_BOOTSTRAP <id> failed <reason>` line per
+machine. It exits 1 if any failed and 2 for an unknown machine id.
 
 ## The ensure flow
 
@@ -269,13 +283,13 @@ the destination's artifacts before it streams.
    mint its auth token atomically) → `box-provision.sh` (create the user, dirs,
    and the lingering systemd unit — enabled but deliberately NOT started: the
    unit fails closed until `server.env` lands, see the hardening section) →
-   push `~/.tau/server.env` (**mode 0600**, chowned to the box user) → restart
+   push `~/.ficus/server.env` (**mode 0600**, chowned to the box user) → restart
    the unit (its first real activation, with token + bind already in place) →
    establish the ControlMaster + `-L` forward → poll `/healthz` (bounded: 240s default, `FICUS_BOX_HEALTH_BUDGET_MS`; a "still waiting" progress line every ~20s)
    → mark the box row `ready`.
 6. **Sync files.** Push the k8s-PVC-equivalent artifacts over the box's own
    `/write` endpoint (so the box user OWNS them): the `ficus` CLI → `~/bin/ficus`
-   (0755), materialized skills → `~/.tau/skills`, squad `.env` →
+   (0755), materialized skills → `~/.ficus/skills`, squad `.env` →
    `~/workspace/.ficus/.env` (0600), `identity.pem` → `~/.private/identity.pem`
    (0600), and a read-only memory replica → `~/memory`. A failure after a secret
    write best-effort removes the partial secret, so a half-provisioned box never
@@ -330,7 +344,7 @@ is set on k8s/docker, which keep the legacy no-enforcement path.
 
 `box-provision.sh` additionally `chmod 700`s the box HOME on every provision
 (Ubuntu `useradd` leaves 0755), closing sibling reads of `~/memory`,
-`~/.tau/skills`, `~/bin`; re-provisioning an existing box tightens it too.
+`~/.ficus/skills`, `~/bin`; re-provisioning an existing box tightens it too.
 
 ## Tool paths: logical roots rebased to the box HOME
 
@@ -409,7 +423,7 @@ the gap for the per-agent session tools and `squad_bash`.
   its trailing epoch. The existing private-archive janitor
   (`purgeExpiredAgentPrivateArchives`) sweeps entries whose name matches
   `/-(\d+)$/`, exactly as it does for k8s agent archives. Machine-side archives
-  under `/opt/tau/archive` are the reconciler's concern.
+  under `/opt/ficus/archive` are the reconciler's concern.
 
 ## Lifecycle: idle reap, machine health, orphan reconcile
 
@@ -1125,14 +1139,14 @@ box** — one Chromium process serves every box on the host, the same trade
 that keeps ~1.5 GB of browser-process overhead off a 9-box machine instead of
 paying it per box (design: `docs/history/superpowers/specs/2026-08-21-browser-tools-in-sandbox-design.md`).
 
-- **One `tau-browser` service per machine.** `bootstrap.sh`'s `install_browser`
-  creates an unprivileged `tau-browser` system user + group, installs Playwright
-  - a pinned Chromium under `/opt/tau/browser`, and writes the `tau-browser.service`
-    systemd **system** unit (`User=tau-browser`, `RuntimeDirectory=tau-browser`).
-    The service (`scripts/machine/browser/tau-browser.js`, embedded byte-identical
+- **One `ficus-browser` service per machine.** `bootstrap.sh`'s `install_browser`
+  creates an unprivileged `ficus-browser` system user + group, installs Playwright
+  - a pinned Chromium under `/opt/ficus/browser`, and writes the `ficus-browser.service`
+    systemd **system** unit (`User=ficus-browser`, `RuntimeDirectory=ficus-browser`).
+    The service (`scripts/machine/browser/ficus-browser.js`, embedded byte-identical
     into both `bootstrap.sh` and `packages/machine-image/Dockerfile`) launches one
-    headless Chromium and listens on a unix socket at `/run/tau-browser/sock`,
-    mode `0660` group `tau-browser` — nothing outside that group can connect.
+    headless Chromium and listens on a unix socket at `/run/ficus-browser/sock`,
+    mode `0660` group `ficus-browser` — nothing outside that group can connect.
     Chromium's own sandbox stays on (a hard bootstrap gate, unrelated to the box
     sandbox); `Restart=on-failure` recovers a crashed browser, dropping every
     box's in-flight pages.
@@ -1144,14 +1158,14 @@ paying it per box (design: `docs/history/superpowers/specs/2026-08-21-browser-to
   mirror the seven core browser tools' schemas verbatim (`apps/core/src/tools/browser.ts`).
 - **Auth: per-box token digest files, not a pushed token list.** Box-manager
   writes `sha256(<box's EXECUTOR_AUTH_TOKEN>)` hex — never the raw token — to
-  `/opt/tau/browser-tokens/<boxUser>.token`, `0640` `root:tau-browser`, at
+  `/opt/ficus/browser-tokens/<boxUser>.token`, `0640` `root:ficus-browser`, at
   provision (right after the `server.env` push, over the same non-argv
   `install -m /dev/stdin` channel). The service compares `sha256(bearer)` from
   the request against the file contents with `crypto.timingSafeEqual` — a
   leaked digest file is unreplayable, so a chown mistake or an on-box `cat`
   can't hand out a working credential. The tokens directory is a **sibling**
-  of `/opt/tau/browser` (not nested in it), because `install_browser`
-  recursively chown/chmods `/opt/tau/browser` world-readable for the Chromium
+  of `/opt/ficus/browser` (not nested in it), because `install_browser`
+  recursively chown/chmods `/opt/ficus/browser` world-readable for the Chromium
   binaries and would otherwise expose every box's digest to every other box.
   Box removal `rm -f`s the token file (`removeBoxUserOnMachine`), which is the
   revocation mechanism — the service never gets an explicit "box removed"
@@ -1182,11 +1196,11 @@ machine', code: 'BROWSER_UNAVAILABLE' }` rather than hanging or 500ing.
 open in this browser session — use browser_open with a URL first.`
   instead of the old silent blank-page creation (spec §10, R-C3).
 - **DEPLOY-WINDOW semantics — two machine/box generations can lag core.**
-  Because the tools, the box-server routes and the `tau-browser` service
+  Because the tools, the box-server routes and the `ficus-browser` service
   version independently (§ Fleet effect below), a rollout window exists
   where core's expectations outrun what a given machine or box is actually
   running:
-  - A machine whose `tau-browser` service predates `returnScreenshot`
+  - A machine whose `ficus-browser` service predates `returnScreenshot`
     ignores the flag (unknown field, old code path) — `click`/`type`/`scroll`
     still succeed but come back with no `screenshotBase64`, so the tool
     degrades to a text-only result `(screenshot unavailable)` until that
@@ -1206,7 +1220,7 @@ open in this browser session — use browser_open with a URL first.`
   concurrency-safe — an in-flight page reservation counts toward the cap so a
   concurrent burst can't sneak past it); a machine-wide ceiling of
   `floor(MemoryHigh / 256 MB)` total pages (`MemoryHigh` from the
-  `tau-browser.service` memory-cap drop-in, default 8 GB → 32 pages),
+  `ficus-browser.service` memory-cap drop-in, default 8 GB → 32 pages),
   returning `429` past either limit; pages idle-close after 10 minutes, whole
   contexts idle-close after 15 (cookies/storage are not preserved across
   that — browsing is ephemeral by design).
@@ -1237,7 +1251,7 @@ open in this browser session — use browser_open with a URL first.`
 The k8s sandbox image baked a "comfort set" of ergonomic CLIs (ripgrep, fd, tree,
 gh, tmux, …) into each box. A vm box runs on bare Ubuntu with no such image, so
 `seedBoxDevbox` (called at ensure, after file-sync) materializes a per-user
-`devbox` at `~/.tau/devbox` and runs `devbox install` **as the box user** (via the
+`devbox` at `~/.ficus/devbox` and runs `devbox install` **as the box user** (via the
 box's own `/write` + `/bash`, never root):
 
 - **Role split.** Agent (light) boxes get the LIGHT set (node/python + ripgrep/fd/
@@ -1245,7 +1259,7 @@ box's own `/write` + `/bash`, never root):
   profile); squad + system-manager boxes get the HEAVIER set (adds bun/jq/gnumake/
   gcc/diffutils/patch/perl, mirroring `packages/sandbox-server/sandbox/devbox.json`).
 - **Hash marker (no per-ensure tax).** The intended `devbox.json` content is
-  hashed; after a successful install the hash is recorded in `~/.tau/devbox/.seeded`.
+  hashed; after a successful install the hash is recorded in `~/.ficus/devbox/.seeded`.
   A later ensure whose content hashes to the same marker SKIPS the slow install
   entirely; a changed comfort set (different hash) forces a fresh install. The
   marker is written ONLY after success, so a failed install retries next ensure —
@@ -1272,12 +1286,12 @@ box's own `/write` + `/bash`, never root):
   `/devbox-ready` to trigger that cache; a vm box has no entrypoint (its systemd
   unit execs the server directly), so it is delivered two ways: (1) the manager
   POSTs `/devbox-ready` right after a successful seed, and (2) the server
-  **self-caches at boot** when `FICUS_BOX_HOME` is set and `~/.tau/devbox/devbox.json`
+  **self-caches at boot** when `FICUS_BOX_HOME` is set and `~/.ficus/devbox/devbox.json`
   declares packages (surviving unit restarts; an empty/un-realized devbox is never
   shellenv'd — it would hang). Interactive terminals get the same env from a
   `~/workspace/.ficus/.bashrc` (or `~/.private/.ficus/.bashrc` for agent boxes) the
   manager writes after seeding, which activates the box devbox from its fixed
-  `~/.tau/devbox` dir. Both the boot self-cache and the bashrc `devboxDir` mode are
+  `~/.ficus/devbox` dir. Both the boot self-cache and the bashrc `devboxDir` mode are
   gated so k8s/docker behavior is byte-identical.
 
 ## Troubleshooting
@@ -1328,8 +1342,8 @@ box's own `/write` + `/bash`, never root):
     is unrecoverable where it lives and will be re-placed / reclaimed.
 - **Diagnosing a box that never goes healthy.** The systemd unit tolerates a
   missing bundle/env and stays failed-and-retrying until they arrive; check the
-  unit with `systemctl status tau-box-<user>.service` (system mode) or
-  `systemctl --machine=<user>@.host --user status tau-sandbox-server.service`
+  unit with `systemctl status ficus-box-<user>.service` (system mode) or
+  `systemctl --machine=<user>@.host --user status ficus-sandbox-server.service`
   (user mode) and its journal on the machine. Under socket activation an
   `inactive (dead)` server unit is NOT a fault — check the `.socket` unit
   first: if it is `active (listening)`, the box is idle and healthy, and

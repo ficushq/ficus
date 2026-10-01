@@ -104,7 +104,7 @@ installs (see § Prebaked box image + fast bootstrap in `runtime.md`).
   `FROM ghcr.io/boldsoftware/exeuntu:latest` (exe's own default image, public on
   ghcr) with `install_base_packages` / `install_docker_packages` / `install_bun`
   / `install_nix` / `install_devbox` mirrored on top, plus the ficus scripts in
-  `/opt/tau/bin` and the **`/opt/tau/prebaked` marker** — JSON recording the pins
+  `/opt/ficus/bin` and the **`/opt/ficus/prebaked` marker** — JSON recording the pins
   it baked (`{"bunVersion","nixVersion","devboxVersion"}`) — that bootstrap's
   fast-path reads. It keeps the `exe.dev/login-user=exedev` label so it stays a
   valid exe custom image. It is the **base toolchain only**; the per-box devbox
@@ -158,7 +158,7 @@ live 2026-07-13); when the ref is `undefined` the flag is omitted.
 If the running Core's `bootstrap.sh` pins ever get ahead of the image (a bump
 merged but the image not yet rebaked/republished, or `FICUS_EXE_MACHINE_IMAGE`
 pinned to an old tag), the marker's baked versions won't match the script's
-pins. Because the `/opt/tau/prebaked` marker is **present**, bootstrap **keeps
+pins. Because the `/opt/ficus/prebaked` marker is **present**, bootstrap **keeps
 using the baked tooling** — it does **not** reinstall over the image — and logs a
 `WARNING` per drifting tool (e.g. `prebaked image nix 2.24.9 != script 2.25.0 —
 using baked tooling; rebake the ficus-machine image to change pinned versions`).
@@ -330,7 +330,7 @@ nothing**. This is why `park`/`resume` are intentional no-ops in
 free CPU/RAM the operator is paying for regardless), an exe VM has no
 explicit pause/snapshot primitive and idling it costs the tenant nothing
 worth the round-trip. The vm-runtime's idle reaper still calls `stopBox`
-(which stops the box's own `tau-sandbox-server.service` unit and cancels its
+(which stops the box's own `ficus-sandbox-server.service` unit and cancels its
 tunnel) exactly as it would for BYO — that's a **box**-level park, not a
 **machine**-level one, and is unaffected by exe's no-op park/resume. The exe
 VM itself, and its disk, simply keep existing (and costing ~free) until an

@@ -42,7 +42,7 @@ import type { ArtifactFile, MachineArtifact } from './machine-artifacts'
 /** Where box-provision.sh lands on every machine. The dir is created by
  *  bootstrap.sh's make_dirs; `ensureArtifact`'s `install -D` also creates it.
  *  Single source of truth for the push side (bootstrap.ts imports it). */
-export const BOX_PROVISION_REMOTE_PATH = '/opt/tau/bin/box-provision.sh'
+export const BOX_PROVISION_REMOTE_PATH = '/opt/ficus/bin/box-provision.sh'
 
 /**
  * Build the artifact with an injectable prebuilt source (test seam; the registry

@@ -59,7 +59,7 @@ export type AssetScope = 'agent' | 'squad'
  * runtime resolves `base` to an absolute sandbox-side path — `private` /
  * `workspace` / `memory` via `resolveWorkspaceLayout` (privateMount /
  * workspaceMount / memoryMount), plus the anchors the layout doesn't expose:
- * `home` (the sandbox user's HOME), `skills` (`~/.tau/skills` on vm — the
+ * `home` (the sandbox user's HOME), `skills` (`~/.ficus/skills` on vm — the
  * materializer-layout skills root), and `ssh` (`~/.ssh` on vm; the k8s
  * entrypoint mirrors its ssh-source mount there itself).
  */

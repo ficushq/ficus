@@ -50,8 +50,9 @@ export function buildBoxControlCommand(request: BoxControlRequest): string {
   const ctl = boxUnitControl({ sandboxId: request.sandboxId, unixUser })
   // A box is several units under socket activation. `stop` must take them all
   // down, socket first, or the next connection simply re-activates the server.
-  const target = request.action === 'stop' ? ctl.allUnits : ctl.unit
-  return `${ctl.systemctl} ${request.action} ${target}`
+  // onHost: a box not re-provisioned since the rename still runs its legacy units.
+  const action = request.action
+  return ctl.onHost((u) => `${ctl.systemctl} ${action} ${action === 'stop' ? u.allUnits : u.unit}`)
 }
 
 /**

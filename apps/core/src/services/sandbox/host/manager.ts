@@ -448,7 +448,7 @@ export class HostSandboxManager implements ISandboxManager {
   // --- Browser ---
 
   /**
-   * There is no box to run `tau-browser` in, so the core drives a locally
+   * There is no box to run `ficus-browser` in, so the core drives a locally
    * installed Chrome/Chromium/Edge itself — one shared engine for the
    * process, one browser context (cookie jar) per sandbox. The engine (and
    * the browser process) is built lazily on the first browser verb, so a core
