@@ -2924,14 +2924,14 @@ function StreamingToolCallItem({
   )
 }
 
-/** How long the plant's hop back down takes (index.css .ficus-plant-peek), the fallback if animationend never fires. */
-const PLANT_HIDE_MS = 520
+/** How long the plant's jump out of sight takes (index.css .ficus-plant-peek), the fallback if animationend never fires. */
+const PLANT_HIDE_MS = 600
 
 /**
  * While the agent works, the Ficus plant peeks up from behind the composer,
- * pot half hidden: it hops up into place when work starts, and hops back down
- * out of sight when it ends (kept mounted just for that). Reduced motion
- * shows and hides it without the hops.
+ * pot half hidden: it jumps up into place when work starts, and jumps then
+ * falls back out of sight when it ends (kept mounted just for that), the same
+ * jump it does when clicked. Reduced motion shows and hides it without them.
  */
 function PeekingPlant({ working, label }: { working: boolean; label?: string }) {
   const [shown, setShown] = useState(working)
