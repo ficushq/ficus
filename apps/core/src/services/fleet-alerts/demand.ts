@@ -58,7 +58,7 @@ interface InboxDemand {
   id: string
   recipientId: string
   senderType: InboxMessageSenderType
-  metadata: Record<string, unknown> | null
+  metadata: Record<string, unknown>
   createdAt: string
   agentStatus: string
 }
