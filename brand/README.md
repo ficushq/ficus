@@ -46,8 +46,20 @@ the mark's measured content bounding box) and rasterizes each in a single
 pass, so output is deterministic byte-for-byte across runs. See
 `scripts/brand/generate.ts` for the exact sizes, fill ratios and per-target
 background/transparency rules, and `scripts/brand/generate.test.ts` for the
-regression test that re-renders to a temp directory and diffs against the
-committed output.
+regression tests (`cd scripts/brand && bun test ./generate.test.ts`). These
+use trusted repository SVGs, compare two fresh renders byte-for-byte, and
+compare every decoded PNG pixel and its color/alpha/palette metadata against
+the committed output. SVGs are compared byte-for-byte. PNG compression can
+change across native-library versions without changing any pixels; do not
+rewrite the committed imagery just to accept a dependency upgrade.
+
+The direct `sharp` dependencies require Node >=20.9 (CI uses Node 24) or the
+repository's pinned Bun runtime. Use the optional prebuilt platform packages;
+source builds are opt-in in sharp 0.35. The Linux x64 glibc artifact requires
+glibc >=2.28; its musl counterpart requires musl >=1.2.5 (check the selected
+artifact's prerequisites on other architectures). If building against global libvips,
+it must satisfy sharp's patched minimum (8.18.6 for sharp 0.35.4). Check
+`sharp.versions` to verify the actually loaded library, not just the manifest.
 
 ### Generated layout
 
