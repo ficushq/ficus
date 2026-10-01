@@ -16,7 +16,7 @@
  * `SANDBOX_ASSETS` order IS the vm push order (secrets last, per file-sync's
  * partial-secret-cleanup convention):
  *   1. `skills`    — materialized skills tree → `<skills anchor>/…` (all roles)
- *   2. `squad-env` — squad `.env`  → `<workspace>/.tau/.env`  (0600, squad-scoped)
+ *   2. `squad-env` — squad `.env`  → `<workspace>/.ficus/.env`  (0600, squad-scoped)
  *   3. `identity`  — identity key  → `<private>/identity.pem` (0600, per-agent;
  *                    a shared squad box has no single agent identity)
  *   4. `memory`    — memory replica → `<memory>/…` (SQUAD box only — squad
@@ -49,6 +49,7 @@ import { getSquadSshPath } from '../squad/ssh'
 import { getSquadWorkspacePath } from '../squad/workspace'
 import { materializeSquadRemoteHosts } from '../remote-hosts/materialize'
 import { getSquadIdFromSandbox } from './types'
+import { WORKSPACE_DOT_DIR, workspaceDotPath } from '../workspace/dot-dir'
 
 /** Whether an asset is per-agent material or squad-shared material. */
 export type AssetScope = 'agent' | 'squad'
@@ -64,7 +65,7 @@ export type AssetScope = 'agent' | 'squad'
  */
 export interface AssetDest {
   base: 'private' | 'workspace' | 'memory' | 'home' | 'skills' | 'ssh'
-  /** Path under `base`: a file path for single-file assets (e.g. `.tau/.env`),
+  /** Path under `base`: a file path for single-file assets (e.g. `.ficus/.env`),
    *  `''` for directory-tree assets (the tree's `files()` relPaths apply). */
   relPath: string
 }
@@ -192,7 +193,7 @@ export const SANDBOX_ASSETS: SandboxAsset[] = [
   },
   {
     name: 'squad-env',
-    dest: { base: 'workspace', relPath: '.tau/.env' },
+    dest: { base: 'workspace', relPath: `${WORKSPACE_DOT_DIR}/.env` },
     mode: '0600',
     scope: 'squad',
     required: false,
@@ -201,7 +202,7 @@ export const SANDBOX_ASSETS: SandboxAsset[] = [
       // generated `.env` (user content + rendered Secret Store exports) — NOT
       // env.ts's `getEnvFile`, which masks secrets for the API/UI surface.
       if (!squadId) return null
-      const hostPath = join(getSquadWorkspacePath(squadId), '.tau', '.env')
+      const hostPath = workspaceDotPath(getSquadWorkspacePath(squadId), '.env')
       return { hostPath, files: singleFile(hostPath, '0600') }
     },
   },
@@ -214,9 +215,9 @@ export const SANDBOX_ASSETS: SandboxAsset[] = [
     source: async ({ sandboxId, role }) => {
       // Per-agent key material only; a shared squad box has no single agent
       // identity. Path mirrors services/amtp/agent-identity.ts:
-      // <HOME_DIR>/private/<sandboxId>/.tau/identity.pem.
+      // <HOME_DIR>/private/<sandboxId>/.ficus/identity.pem.
       if (role === 'squad') return null
-      const hostPath = join(getHomeDir(), 'private', sandboxId, '.tau', 'identity.pem')
+      const hostPath = workspaceDotPath(join(getHomeDir(), 'private', sandboxId), 'identity.pem')
       return { hostPath, files: singleFile(hostPath, '0600') }
     },
   },

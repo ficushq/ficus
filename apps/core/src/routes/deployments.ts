@@ -92,7 +92,7 @@ const log = createLogger('deployments')
 /**
  * Only a MANAGED local deployment has logs: Ficus starts it through the launcher
  * script, which tees the app's combined output into
- * `<workspace>/.tau/local-deployments/<id>/logs/current.log`. An ATTACHED one
+ * `<workspace>/.ficus/local-deployments/<id>/logs/current.log`. An ATTACHED one
  * is a process Ficus never started — the agent ran it itself and only registered
  * the port — so that file is never written by anything.
  *

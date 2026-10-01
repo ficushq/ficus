@@ -105,9 +105,9 @@ describe('LocalDeploymentProcessSupervisor', () => {
           "PORT='5173'",
           "FICUS_APP_BASE_PATH='/'",
           "FICUS_LOCAL_DEPLOYMENT_CWD='/workspace/1/my app'",
-          "FICUS_LOCAL_DEPLOYMENT_DIR='/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc'",
+          "FICUS_LOCAL_DEPLOYMENT_DIR='/workspace/1/.ficus/local-deployments/abcdef12-1234-1234-1234-123456789abc'",
           `FICUS_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Ficus app'"'"''`,
-          "bash '/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc/run.sh'",
+          "bash '/workspace/1/.ficus/local-deployments/abcdef12-1234-1234-1234-123456789abc/run.sh'",
         ].join(' ')
       )
     } finally {
@@ -139,7 +139,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     }
   })
 
-  it('writes a launcher script under /workspace/.tau/local-deployments/<id>/run.sh', async () => {
+  it('writes a launcher script under /workspace/.ficus/local-deployments/<id>/run.sh', async () => {
     const manager = new FakeSandboxManager()
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
 
@@ -152,8 +152,10 @@ describe('LocalDeploymentProcessSupervisor', () => {
     })
 
     const command = manager.execCalls[0].args.join(' ')
-    expect(command).toContain('mkdir -p /workspace/1/.tau/local-deployments/12345678-1234-1234-1234-123456789abc/logs')
-    expect(command).toContain('cat > /workspace/1/.tau/local-deployments/12345678-1234-1234-1234-123456789abc/run.sh')
+    expect(command).toContain(
+      'mkdir -p /workspace/1/.ficus/local-deployments/12345678-1234-1234-1234-123456789abc/logs'
+    )
+    expect(command).toContain('cat > /workspace/1/.ficus/local-deployments/12345678-1234-1234-1234-123456789abc/run.sh')
     expect(command).toContain('FICUS_LOCAL_DEPLOYMENT_DIR/logs/current.log')
   })
 
@@ -207,7 +209,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
 
     const command = manager.execCalls[0].args[2]
     const record = command.indexOf(
-      `printf '%s\\n' "$PATH" > '/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc/${LAUNCH_PATH_FILE}'`
+      `printf '%s\\n' "$PATH" > '/workspace/1/.ficus/local-deployments/abcdef12-1234-1234-1234-123456789abc/${LAUNCH_PATH_FILE}'`
     )
     expect(record).toBeGreaterThan(-1)
     expect(record).toBeLessThan(command.indexOf('tmux new-session'))
@@ -246,7 +248,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
   it('tails persisted log file without leaking missing-file errors', async () => {
     const manager = new FakeSandboxManager()
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
-    manager.statuses.set("test -f '/workspace/1/.tau/local-deployments/localDeployment-1/logs/current.log'", 1)
+    manager.statuses.set("test -f '/workspace/1/.ficus/local-deployments/localDeployment-1/logs/current.log'", 1)
 
     const logs = await supervisor.tailLogs('squad_1', 'localDeployment-1', 100)
 
@@ -295,8 +297,10 @@ describe('LocalDeploymentProcessSupervisor', () => {
     })
 
     const command = manager.execCalls[0].args.join(' ')
-    expect(command).toContain('mkdir -p /workspace/2/.tau/local-deployments/aabbccdd-1234-1234-1234-123456789abc/logs')
-    expect(command).toContain('cat > /workspace/2/.tau/local-deployments/aabbccdd-1234-1234-1234-123456789abc/run.sh')
+    expect(command).toContain(
+      'mkdir -p /workspace/2/.ficus/local-deployments/aabbccdd-1234-1234-1234-123456789abc/logs'
+    )
+    expect(command).toContain('cat > /workspace/2/.ficus/local-deployments/aabbccdd-1234-1234-1234-123456789abc/run.sh')
     expect(command).toMatch(/FICUS_LOCAL_DEPLOYMENT_CWD.*\/workspace\/2/)
   })
   describe('attached log paths', () => {

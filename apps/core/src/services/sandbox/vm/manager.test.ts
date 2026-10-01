@@ -1680,7 +1680,7 @@ describe('VmSandboxManager', () => {
     expect(client.devboxReadyCalls).toBe(1)
   })
 
-  test('writes the box interactive .tau/.bashrc at the box work root (box-user owned via /write)', async () => {
+  test('writes the box interactive .ficus/.bashrc at the box work root (box-user owned via /write)', async () => {
     const h = makeHarness()
     const mgr = new VmSandboxManager(h.deps)
 
@@ -1688,7 +1688,7 @@ describe('VmSandboxManager', () => {
 
     const client = [...h.clients.values()][0]
     const workRoot = `/home/${boxUnixUser('squad_s1')}/workspace`
-    expect(client.writeCalls.map((w) => w.path)).toContain(`${workRoot}/.tau/.bashrc`)
+    expect(client.writeCalls.map((w) => w.path)).toContain(`${workRoot}/.ficus/.bashrc`)
   })
 
   describe('git credential helper (docker parity)', () => {

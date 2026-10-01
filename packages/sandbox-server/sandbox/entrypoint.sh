@@ -245,7 +245,7 @@ fi
 # spend ~20s extracting its nix delta cache; doing that inline here would block
 # the server from starting and hold the pod NotReady the whole time. The server
 # starts immediately below; devboxReady flips only once this finishes.
-# Note: .tau/.bashrc is created by the sandbox manager (ensureBashrc) when
+# Note: .ficus/.bashrc is created by the sandbox manager (ensureBashrc) when
 # connecting to the pod, not here — keeps content in sync with Docker manager.
 # Squad boxes (and any agent that has `devbox add`ed a package) realize their
 # devbox here; an empty agent devbox.json short-circuits to a true no-op.
@@ -274,9 +274,9 @@ fi
   # Agent (light) boxes have no nix-cache mount — skip the save.
   if [ "${FICUS_SANDBOX_ROLE:-squad}" != "agent" ]; then save_nix_cache; fi
 
-  if [ -x "$WS/.tau/setup.sh" ]; then
+  if [ -x "$WS/.ficus/setup.sh" ]; then
     echo "[background] Running workspace setup script..."
-    (cd "$WS" && .tau/setup.sh) || true
+    (cd "$WS" && .ficus/setup.sh) || true
   fi
 
   # Signal devbox ready to the sandbox server (retry until server is up)

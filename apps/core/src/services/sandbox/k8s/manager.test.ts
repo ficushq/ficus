@@ -43,7 +43,7 @@ describe('K8sSandboxManager', () => {
         { reportStage: async () => {} }
       )
     ).toBe('cleared')
-    expect(calls[0]).toContain('/private/.tau/toolchain/.ready')
+    expect(calls[0]).toContain('/private/.ficus/toolchain/.ready')
     expect(calls).toContain('active:false')
     expect(progress[0]).toMatchObject({ type: 'started', reason: 'toolchain_reconcile' })
     expect(progress.at(-1)).toMatchObject({ type: 'finished', outcome: 'ready' })
@@ -444,7 +444,7 @@ describe('K8sSandboxManager', () => {
       '/host',
       '/workspace/sq1'
     )
-    expect(writes[0].path).toBe('/workspace/sq1/.tau/.bashrc')
+    expect(writes[0].path).toBe('/workspace/sq1/.ficus/.bashrc')
   })
 })
 

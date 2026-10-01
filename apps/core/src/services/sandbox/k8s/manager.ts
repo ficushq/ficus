@@ -28,6 +28,7 @@ import { getSecretStore } from '../../secrets'
 import { hasActiveLocalDeployments } from '../../deploy/local-deployment-service'
 import { hasRecentWorkStreamActivityForSandbox } from '../work-stream-activity'
 import { buildBashrcContent } from '../bashrc'
+import { WORKSPACE_DOT_DIR } from '../../workspace/dot-dir'
 import { containerWorkspaceLayout, type WorkspaceLayout, type WorkspaceLayoutContext } from '../workspace-layout'
 import { isLocalK8sMode } from '../runtime'
 import { listActiveSessions, removeSession } from '../../execution/session-state'
@@ -365,8 +366,12 @@ export class K8sSandboxManager implements ISandboxManager {
     const state = this.sandboxes.get(sandboxId)
     if (!state) throw new Error('Sandbox is not connected')
     const workRoot = opts.k8s?.sandboxType === 'agent' ? '/private' : state.workspaceMount
-    return reconcileRemoteToolchain(state.client, `${workRoot}/.tau/toolchain`, workRoot, request, (operation) =>
-      trackSandboxSetupWork(this, sandboxId, 'toolchain_reconcile', operation)
+    return reconcileRemoteToolchain(
+      state.client,
+      `${workRoot}/${WORKSPACE_DOT_DIR}/toolchain`,
+      workRoot,
+      request,
+      (operation) => trackSandboxSetupWork(this, sandboxId, 'toolchain_reconcile', operation)
     )
   }
 
@@ -790,8 +795,8 @@ export class K8sSandboxManager implements ISandboxManager {
   }
 
   /**
-   * Ensure the .tau/.bashrc file exists for terminal sessions.
-   * This sources .tau/.env and activates devbox if available.
+   * Ensure the .ficus/.bashrc file exists for terminal sessions.
+   * This sources .ficus/.env and activates devbox if available.
    * Mirrors DockerSandboxManager.ensureBashrc() but writes via HTTP client.
    *
    * The reconcile pass calls this for every tracked squad pod every 60s. The
@@ -812,14 +817,14 @@ export class K8sSandboxManager implements ISandboxManager {
 
     try {
       await client.write({
-        path: `${workspaceMount}/.tau/.bashrc`,
+        path: `${workspaceMount}/${WORKSPACE_DOT_DIR}/.bashrc`,
         content: Buffer.from(content).toString('base64'),
         createDirs: true,
       })
       // Only after a successful write — a failed write must be retried.
       this.podManager.setBashrcHash(sandboxId, hash)
     } catch (err) {
-      log.warn('Failed to write .tau/.bashrc:', err)
+      log.warn('Failed to write .ficus/.bashrc:', err)
     }
   }
 

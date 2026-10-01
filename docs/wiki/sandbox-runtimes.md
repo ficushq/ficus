@@ -393,7 +393,7 @@ them from the sandbox's existing environment instead. The script must be safe to
 rerun after failures or configuration drift.
 
 This managed toolchain is separate from repository `devbox.json`, legacy
-`.tau/setup.sh`, custom images, and ad hoc `devbox add` workflows. Those existing
+`.ficus/setup.sh`, custom images, and ad hoc `devbox add` workflows. Those existing
 mechanisms remain unchanged. It is not available on the `host` runtime (see the
 comparison table above).
 

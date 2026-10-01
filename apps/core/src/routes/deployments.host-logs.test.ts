@@ -148,7 +148,7 @@ describe('local deployment logs over HTTP on the host runtime', () => {
 
   async function seedDeploymentWithLogs(): Promise<{ id: string }> {
     const { id, squadId } = await seedDeployment('managed')
-    const dir = join(resolveWorkspaceLayout({ squadId }).workspaceMount, '.tau', 'local-deployments', id)
+    const dir = join(resolveWorkspaceLayout({ squadId }).workspaceMount, '.ficus', 'local-deployments', id)
     mkdirSync(join(dir, 'logs'), { recursive: true })
     writeFileSync(join(dir, 'logs', 'current.log'), 'line-one\nline-two\n')
     return { id }

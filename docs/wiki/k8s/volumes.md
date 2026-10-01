@@ -72,7 +72,7 @@ volumes:
       claimName: ficus-core-data # PVC in ficus-sandboxes-{name} namespace
 ```
 
-- **Workspace**: read-write, contains code, devbox.json, .tau/ directory
+- **Workspace**: read-write, contains code, devbox.json, .ficus/ directory
 - **Memory**: read-only, agent memory files (map.md, context.md)
 - **SSH source**: shared mount of the host SSH key dir; the entrypoint mirrors it into a container-private `/root/.ssh` with strict perms (see `packages/sandbox-server/sandbox/entrypoint.sh`)
 

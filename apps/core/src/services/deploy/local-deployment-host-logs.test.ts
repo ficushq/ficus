@@ -50,7 +50,7 @@ describe('local deployment logs on the host runtime', () => {
 
   test('streamLogs delivers lines already in the log file', async () => {
     const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-    const dir = join(resolveWorkspaceLayout({ squadId: SQUAD }).workspaceMount, '.tau', 'local-deployments', id)
+    const dir = join(resolveWorkspaceLayout({ squadId: SQUAD }).workspaceMount, '.ficus', 'local-deployments', id)
     mkdirSync(join(dir, 'logs'), { recursive: true })
     writeFileSync(join(dir, 'logs', 'current.log'), 'line-one\nline-two\n')
 
@@ -74,7 +74,7 @@ describe('local deployment logs on the host runtime', () => {
 
   test('streamLogs delivers lines appended after the stream starts', async () => {
     const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeef'
-    const dir = join(resolveWorkspaceLayout({ squadId: SQUAD }).workspaceMount, '.tau', 'local-deployments', id)
+    const dir = join(resolveWorkspaceLayout({ squadId: SQUAD }).workspaceMount, '.ficus', 'local-deployments', id)
     const logFile = join(dir, 'logs', 'current.log')
     const lines: string[] = []
     const errors: string[] = []

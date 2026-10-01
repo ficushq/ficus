@@ -207,7 +207,7 @@ Provider CLI commands in squad sandboxes can only read exposed secrets:
 ficus squad-env secrets <squad-id>
 
 # Admin/operator only: expose the provider token(s) needed by this squad.
-# This renders selected values into the squad's sandbox .tau/.env file,
+# This renders selected values into the squad's sandbox .ficus/.env file,
 # so treat it as explicit access.
 ficus squad-env expose-secrets <squad-id> DEPLOY_VERCEL_TOKEN
 ```

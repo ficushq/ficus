@@ -354,7 +354,7 @@ export const agents = pgTable(
     // opaque/unverified in Slice 3.
     amtpHandle: varchar('amtp_handle', { length: 200 }).unique(),
     // SPKI public PEM of the agent's constant Ed25519 identity (private key on disk
-    // at /private/.tau/identity.pem). Renamed from federation_public_key in Slice 5.
+    // at /private/.ficus/identity.pem). Renamed from federation_public_key in Slice 5.
     identityPublicKey: text('identity_public_key'),
     // Receive gate (D3): registering a handle is addressable; inbound also requires
     // the agent be open (self) or an operator allow-rule. Default-CLOSED.

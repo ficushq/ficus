@@ -21,6 +21,7 @@ import { CLI_BUNDLE_FILE, SANDBOX_CLI_PATH } from './cli-path'
 import * as homeUtils from '../../lib/utils/home'
 import { ensureWorkspace } from './workspace'
 import * as squadWorkspace from '../squad/workspace'
+import { prepareWorkspaceDotDir } from '../workspace/dot-dir'
 import * as squadSsh from '../squad/ssh'
 import * as memoryPaths from '../memory/paths'
 import * as localDeploymentHealth from '../deploy/local-deployment-health'
@@ -232,6 +233,8 @@ export function getAgentWorkspaceStoragePath(workspaceId: string): string {
 export function getAgentPrivateStoragePath(sandboxId: string): string {
   const privatePath = join(homeUtils.getHomeDir(), 'private', sandboxId)
   mkdirSync(privatePath, { recursive: true })
+  // A private dir still under the legacy dot dir (identity key, toolchain) moves to `.ficus` first.
+  prepareWorkspaceDotDir(privatePath)
   return privatePath
 }
 

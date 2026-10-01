@@ -4,6 +4,7 @@ import { rm } from 'fs/promises'
 import { getHomeDir } from '../../lib/utils/home'
 import { isHostRuntime } from '../sandbox/runtime'
 import { getHostWorkspaceOverride } from '../sandbox/host/workspace-overrides'
+import { prepareWorkspaceDotDir } from '../workspace/dot-dir'
 
 /** Directories to skip when searching */
 const SKIP_DIRS = new Set(['node_modules', '.git', '.todo', 'dist', 'build', '.next', '__pycache__', '.cache'])
@@ -67,11 +68,13 @@ export function isInsideWorkspaceRoot(root: string, target: string): boolean {
 }
 
 /**
- * Ensure a squad workspace directory exists. Returns the absolute path.
+ * Ensure a squad workspace directory exists. Returns the absolute path. A workspace still under the
+ * legacy dot dir is moved to `.ficus` here, before any sandbox writes into it.
  */
 export function ensureSquadWorkspace(squadId: string): string {
   const fullPath = getSquadWorkspacePath(squadId)
   mkdirSync(fullPath, { recursive: true })
+  prepareWorkspaceDotDir(fullPath)
   return fullPath
 }
 

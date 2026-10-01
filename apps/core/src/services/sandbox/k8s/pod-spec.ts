@@ -20,6 +20,7 @@ import { resolveSandboxAssets } from '../asset-manifest'
 import { containerWorkspaceLayout } from '../workspace-layout'
 import { K8S_STAGED_CLI_SUBPATH, SANDBOX_CLI_PATH } from '../cli-path'
 import { isLocalK8sMode } from '../runtime'
+import { WORKSPACE_DOT_DIR } from '../../workspace/dot-dir'
 import { SANDBOX_IDENTITY_WRITE, sandboxPodNamePrefixes } from '../identity-names'
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
@@ -541,7 +542,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
   const devboxDir = sandboxType === 'agent' ? privateMount : workspaceMount
   containerEnv.push({ name: 'FICUS_SANDBOX_ROLE', value: sandboxRole })
   containerEnv.push({ name: 'FICUS_DEVBOX_DIR', value: devboxDir })
-  containerEnv.push({ name: 'FICUS_TOOLCHAIN_DIR', value: `${devboxDir}/.tau/toolchain` })
+  containerEnv.push({ name: 'FICUS_TOOLCHAIN_DIR', value: `${devboxDir}/${WORKSPACE_DOT_DIR}/toolchain` })
 
   const podSpec: k8s.V1Pod = {
     apiVersion: 'v1',

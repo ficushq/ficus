@@ -5,10 +5,20 @@ import { createPrivateKey, createPublicKey, type KeyObject } from 'crypto'
 import { getHomeDir } from '../../lib/utils/home'
 import type { Agent } from '../../entities/Agent'
 import { generateInstanceKeyPair } from './crypto'
+import { prepareWorkspaceDotDir, workspaceDotPath } from '../workspace/dot-dir'
 
-/** Canonical host-side path for an agent's AMTP private identity. */
+/** Canonical host-side path for an agent's AMTP private identity. A pure path; it touches no filesystem. */
 export function agentIdentityHostPath(sandboxId: string): string {
-  return join(getHomeDir(), 'private', sandboxId, '.tau', 'identity.pem')
+  return workspaceDotPath(join(getHomeDir(), 'private', sandboxId), 'identity.pem')
+}
+
+/**
+ * {@link agentIdentityHostPath} for a caller about to read or write the key: a private dir still under
+ * the legacy dot dir is moved to `.ficus` first, so the key is found rather than read as missing.
+ */
+export function preparedAgentIdentityHostPath(sandboxId: string): string {
+  prepareWorkspaceDotDir(join(getHomeDir(), 'private', sandboxId))
+  return agentIdentityHostPath(sandboxId)
 }
 
 function requireEd25519Private(privateKeyPem: string): KeyObject {
@@ -40,7 +50,7 @@ export function samePublicKey(left: string, right: string): boolean {
 export async function ensureAgentIdentity(agent: Agent, sandboxId: string): Promise<string> {
   if (consultantSandboxSquadId(sandboxId))
     throw new Error('Shared consultant sandboxes have no per-agent signing identity')
-  const path = agentIdentityHostPath(sandboxId)
+  const path = preparedAgentIdentityHostPath(sandboxId)
   let privateKeyPem: string | undefined
 
   if (existsSync(path)) {

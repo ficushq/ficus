@@ -50,7 +50,7 @@ test('deployment cards preserve existing tokens and exposure choices while enfor
     expect(JSON.stringify(getDeploymentIntegrationSettings('vercel'))).not.toContain('existing-test-token')
     await db.insert(squads).values({ id: squadId, name: 'Deployment integration fixture', purpose: 'test' })
     await setExposedSecretKeys(squadId, ['DEPLOY_VERCEL_TOKEN'])
-    const generated = () => readFile(join(getSquadWorkspacePath(squadId), '.tau', '.env'), 'utf8')
+    const generated = () => readFile(join(getSquadWorkspacePath(squadId), '.ficus', '.env'), 'utf8')
     expect(await generated()).toContain("export DEPLOY_VERCEL_TOKEN='existing-test-token'")
     await setDeploymentIntegrationEnabled('vercel', false, 'test')
     expect(await generated()).not.toContain('existing-test-token')

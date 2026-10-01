@@ -7,6 +7,7 @@ import { isManagedSecretKey } from '../secrets'
 import { loadProtectedIntegrationBindings } from '../integrations/projection/protected-env'
 import { githubSigningPublicKeyForSquad } from '../integrations/github/commit-signing-store'
 import { getSquadWorkspacePath } from './workspace'
+import { ensureWorkspaceDotDir, prepareWorkspaceDotDir, workspaceDotPath } from '../workspace/dot-dir'
 
 const USER_ENV_FILE = 'env.user'
 const GENERATED_ENV_FILE = '.env'
@@ -14,21 +15,23 @@ const GENERATED_SECRET_MARKER = '# Generated from Ficus Secret Store allowlist. 
 const GENERATED_INTEGRATION_MARKER = '# Generated protected integration bindings. Do not edit values here.'
 
 /**
- * Get the .tau directory path for a squad workspace.
+ * Get the .ficus directory path for a squad workspace. A workspace still under the legacy dot dir
+ * is moved first (see services/workspace/dot-dir.ts), so this process never reads an empty `.ficus`
+ * while the env is still beside it.
  */
 function getFicusDir(squadId: string): string {
   const workspacePath = getSquadWorkspacePath(squadId)
-  return join(workspacePath, '.tau')
+  prepareWorkspaceDotDir(workspacePath)
+  return workspaceDotPath(workspacePath)
 }
 
 /**
- * Ensure the .tau directory exists.
+ * Ensure the .ficus directory exists.
  */
 function ensureFicusDir(squadId: string): string {
-  const ficusDir = getFicusDir(squadId)
-  if (!existsSync(ficusDir)) {
-    mkdirSync(ficusDir, { recursive: true })
-  }
+  const workspacePath = getSquadWorkspacePath(squadId)
+  mkdirSync(workspacePath, { recursive: true })
+  const ficusDir = ensureWorkspaceDotDir(workspacePath)
 
   // K8s sandboxes can write to the same workspace from container-root. Keep
   // Ficus's private workspace dir group-writable/setgid when Core owns it so
@@ -56,7 +59,7 @@ const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 /**
  * Keys a squad env may never set, each with the reason the writer is told.
  *
- * The squad `.tau/.env` is sourced INSIDE every agent shell, so these decide
+ * The squad `.ficus/.env` is sourced INSIDE every agent shell, so these decide
  * WHICH instance an agent talks to and AS WHOM. Exact, case-sensitive names —
  * these are literal env names, not a namespace.
  */
@@ -116,7 +119,7 @@ function normalizeSecretKeys(keys: string[]): string[] {
         // even if a tenant names one explicitly in the exposure allowlist. This
         // is the single chokepoint: every persistence and render path routes
         // exposure keys through here, so a managed key can neither be stored as
-        // an exposure nor rendered into .tau/.env.
+        // an exposure nor rendered into .ficus/.env.
         .filter((key) => !isManagedSecretKey(key))
         .filter(
           (key) =>
@@ -126,7 +129,7 @@ function normalizeSecretKeys(keys: string[]): string[] {
             key !== 'DEPLOY_GITHUB_PAGES_TOKEN'
         )
         // Same reasoning for the identity/PATH names: a Secret Store key called
-        // FICUS_API_URL would otherwise be RENDERED into .tau/.env and sourced into
+        // FICUS_API_URL would otherwise be RENDERED into .ficus/.env and sourced into
         // every agent shell, which is the very thing the write-time check refuses.
         .filter((key) => !(key in RESERVED_SQUAD_ENV_KEYS))
     )
@@ -184,7 +187,7 @@ function getUserEnvContentForGeneration(squadId: string): string {
   const userEnvPath = getUserEnvPath(squadId)
   if (existsSync(userEnvPath)) return readFileSync(userEnvPath, 'utf-8')
 
-  // First-time migration for squads that only have the pre-env.user .tau/.env file.
+  // First-time migration for squads that only have the pre-env.user .ficus/.env file.
   // Capture legacy user content before generating selected Secret Store exports so
   // first exposure does not drop existing user variables.
   const generatedEnvPath = getGeneratedEnvPath(squadId)
@@ -311,7 +314,7 @@ export async function setGloballyExposedSecretKeys(keys: string[]): Promise<void
 }
 
 /**
- * Set the explicit Secret Store allowlist for a squad and regenerate .tau/.env.
+ * Set the explicit Secret Store allowlist for a squad and regenerate .ficus/.env.
  * Only selected keys are rendered; unselected secrets are never exposed.
  */
 export async function setExposedSecretKeys(squadId: string, keys: string[]): Promise<void> {

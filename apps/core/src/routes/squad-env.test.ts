@@ -14,6 +14,10 @@ import {
 } from '../test-utils'
 import { db, squads, secrets } from '../db'
 import { RESERVED_SQUAD_ENV_KEYS } from '../services/squad/env'
+import { getSquadWorkspacePath } from '../services/squad/workspace'
+import { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR } from '../services/workspace/dot-dir'
+import { lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'fs'
+import { join } from 'path'
 
 const app = new Hono()
 app.use('*', identityMiddleware)
@@ -269,6 +273,34 @@ describe('squad-env routes', () => {
       expect(res.status).toBe(200)
       const getRes = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
       expect((await getRes.json()).content).toBe(content)
+    })
+
+    it('writes the env under the workspace .ficus dir, with the legacy name left as a link to it', async () => {
+      const content = 'ON_DISK=1'
+      const res = await app.request(`/api/squads/workspace/${squadId}/env`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+        body: JSON.stringify({ content }),
+      })
+
+      expect(res.status).toBe(200)
+      const root = getSquadWorkspacePath(squadId)
+      expect(readFileSync(join(root, WORKSPACE_DOT_DIR, 'env.user'), 'utf8')).toBe(content)
+      expect(readFileSync(join(root, WORKSPACE_DOT_DIR, '.env'), 'utf8')).toContain(content)
+      expect(readlinkSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+    })
+
+    it('reads a workspace still under the legacy dot dir, moving it to .ficus first', async () => {
+      const root = getSquadWorkspacePath(squadId)
+      mkdirSync(join(root, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
+      writeFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'env.user'), 'BEFORE_UPGRADE=1')
+
+      const res = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
+
+      expect((await res.json()).content).toBe('BEFORE_UPGRADE=1')
+      expect(lstatSync(join(root, WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
+      expect(readFileSync(join(root, WORKSPACE_DOT_DIR, 'env.user'), 'utf8')).toBe('BEFORE_UPGRADE=1')
+      expect(readlinkSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
     })
 
     it('handles empty content', async () => {

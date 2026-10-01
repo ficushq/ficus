@@ -252,9 +252,9 @@ the host runtime ficus re-prepends its own shim directory afterwards, so squad
 PATH additions apply but cannot displace `ficus`.
 
 ```bash
-ficus squad-env get <squadId>                # Get .tau/.env content for a squad
-ficus squad-env set <squadId> <content>      # Set .tau/.env content (use quotes for multi-line)
-ficus squad-env set-file <squadId> <path>    # Set .tau/.env content from a file
+ficus squad-env get <squadId>                # Get .ficus/.env content for a squad
+ficus squad-env set <squadId> <content>      # Set .ficus/.env content (use quotes for multi-line)
+ficus squad-env set-file <squadId> <path>    # Set .ficus/.env content from a file
 ficus squad-env secrets <squadId>            # List per-squad/global secret exposure status
 ficus squad-env expose-secrets <squadId> KEY # Expose Secret Store keys to one squad
 ficus squad-env global-secrets               # List globally exposed Secret Store keys

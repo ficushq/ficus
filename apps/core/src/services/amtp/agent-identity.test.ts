@@ -29,7 +29,7 @@ async function makeAgent(): Promise<Agent> {
 }
 
 describe('ensureAgentIdentity', () => {
-  test('generates /private/.tau/identity.pem and records the SPKI public PEM', async () => {
+  test('generates /private/.ficus/identity.pem and records the SPKI public PEM', async () => {
     const agent = await makeAgent()
     const sandboxId = `agent_${agent.id}`
     sandboxIds.push(sandboxId)
@@ -37,7 +37,7 @@ describe('ensureAgentIdentity', () => {
     const pub = await ensureAgentIdentity(agent, sandboxId)
     expect(pub).toContain('BEGIN PUBLIC KEY')
 
-    const keyPath = join(getAgentPrivateStoragePath(sandboxId), '.tau', 'identity.pem')
+    const keyPath = join(getAgentPrivateStoragePath(sandboxId), '.ficus', 'identity.pem')
     expect(existsSync(keyPath)).toBe(true)
     expect(readFileSync(keyPath, 'utf-8')).toContain('BEGIN PRIVATE KEY')
 
@@ -70,7 +70,7 @@ describe('ensureAgentIdentity', () => {
     sandboxIds.push(sandboxId)
 
     // Pre-seed a garbage (non-parseable) key file at the expected location.
-    const ficusDir = join(getAgentPrivateStoragePath(sandboxId), '.tau')
+    const ficusDir = join(getAgentPrivateStoragePath(sandboxId), '.ficus')
     mkdirSync(ficusDir, { recursive: true })
     writeFileSync(join(ficusDir, 'identity.pem'), 'NOT-A-REAL-KEY\n', { mode: 0o600 })
 
@@ -96,7 +96,7 @@ describe('ensureAgentIdentity', () => {
       cardSig: 'deadbeef',
     }
     await agent.update({ cardJson })
-    const keyPath = join(getAgentPrivateStoragePath(sandboxId), '.tau', 'identity.pem')
+    const keyPath = join(getAgentPrivateStoragePath(sandboxId), '.ficus', 'identity.pem')
     writeFileSync(keyPath, generateInstanceKeyPair().privateKeyPem, { mode: 0o600 })
 
     await expect(ensureAgentIdentity(await Agent.mustFind(agent.id), sandboxId)).rejects.toThrow(

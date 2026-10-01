@@ -163,7 +163,7 @@ All persistent data lives on a single shared EFS volume (`ficus-core-data`). San
 
 | Mount Path                  | SubPath                            | Access     | Purpose                                                                |
 | --------------------------- | ---------------------------------- | ---------- | ---------------------------------------------------------------------- |
-| `/workspace`                | `workspaces/squads/{squadId}`      | read-write | Code, devbox.json, .tau/                                               |
+| `/workspace`                | `workspaces/squads/{squadId}`      | read-write | Code, devbox.json, .ficus/                                             |
 | `/memory`                   | `memory/{squadId}`                 | read-only  | Agent memory files                                                     |
 | `/var/lib/ficus/ssh-source` | `ssh/{squadId}`                    | read-write | SSH key source; entrypoint mirrors into container-private `/root/.ssh` |
 | `/etc/ficus`                | (K8s Secret: `ficus-sandbox-auth`) | read-only  | Auth password for Ficus CLI                                            |

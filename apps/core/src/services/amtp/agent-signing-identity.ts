@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'fs'
 import { createPublicKey } from 'crypto'
 import type { AmtpSigningIdentity, AmtpSigningIdentityReason } from '@ficus/shared'
 import type { Agent } from '../../entities/Agent'
-import { agentIdentityHostPath, publicPemFromPrivate, samePublicKey } from './agent-identity'
+import { preparedAgentIdentityHostPath, publicPemFromPrivate, samePublicKey } from './agent-identity'
 
 const MESSAGES: Record<AmtpSigningIdentityReason, string> = {
   shared_system_manager_custody:
@@ -40,7 +40,7 @@ export async function inspectAgentSigningIdentity(agent: Agent): Promise<AmtpSig
     return failed('unavailable', 'invalid_public_key')
   }
 
-  const path = agentIdentityHostPath(await agent.getSandboxId())
+  const path = preparedAgentIdentityHostPath(await agent.getSandboxId())
   if (!existsSync(path)) return failed('unavailable', 'missing_private_key')
 
   let derived: string

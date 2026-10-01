@@ -18,7 +18,7 @@ other end can be:
 They are interchangeable: AMTP is a wire protocol, so anything that speaks it is
 reachable the same way. A remote agent is named by an **AMTP address**:
 `amtp://<instanceId>/<handle>`. Your own messages are **signed in-sandbox** with
-your identity key (`.tau/identity.pem` in your private directory) so the recipient can verify you
+your identity key (`.ficus/identity.pem` in your private directory) so the recipient can verify you
 authored them, regardless of what software runs on their side.
 
 **Core principle:** Registering a handle makes you _addressable_; you are _not

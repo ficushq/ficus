@@ -783,7 +783,7 @@ export async function migrateBox(
     // exist and be EMPTY. box-provision's ensure_dirs creates them empty, and
     // nothing has yet written into ~/workspace or ~/.private — NOT because
     // assets avoid those dirs (two of them land squarely inside: the squad
-    // `.env` at ~/workspace/.tau/.env and the identity key at
+    // `.env` at ~/workspace/.ficus/.env and the identity key at
     // ~/.private/identity.pem — see vm/file-sync.ts's push order) but because
     // asset delivery goes through the BOX SERVER's HTTP API, and this box's
     // unit has only been `enable`d, never started (box-provision.sh starts

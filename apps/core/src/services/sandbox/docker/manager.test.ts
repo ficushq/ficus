@@ -1303,7 +1303,7 @@ describe('managed Docker execution safety', () => {
   it('rejects a real ancestor-directory symlink before creating managed files', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'toolchain-ancestor-'))
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'toolchain-outside-'))
-    fs.symlinkSync(outside, path.join(root, '.tau'))
+    fs.symlinkSync(outside, path.join(root, '.ficus'))
     const command = `${buildManagedToolchainDirPrefix(root)}touch .ready`
     const result = Bun.spawnSync(['bash', '-lc', command], { stdout: 'ignore', stderr: 'ignore' })
     expect(result.exitCode).not.toBe(0)
@@ -1390,7 +1390,7 @@ describe('docker-sandbox-manager', () => {
           }
         )
       ).rejects.toMatchObject({ code: 'activation_failed' })
-      expect(fs.existsSync(path.join(workspacePath, '.tau', 'toolchain', '.ready'))).toBe(false)
+      expect(fs.existsSync(path.join(workspacePath, '.ficus', 'toolchain', '.ready'))).toBe(false)
       expect(commands.some((command) => command.includes('devbox install'))).toBe(true)
       expect(commands.at(-1)).toContain('devbox shellenv')
       expect(progress[0]).toMatchObject({ type: 'started', reason: 'toolchain_reconcile' })
@@ -1427,7 +1427,7 @@ describe('docker-sandbox-manager', () => {
     })
 
     it('refreshes activation for an unchanged fingerprint and clears without mutating project devbox files', async () => {
-      const dir = path.join(workspacePath, '.tau', 'toolchain')
+      const dir = path.join(workspacePath, '.ficus', 'toolchain')
       fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(path.join(dir, '.ready'), `${'a'.repeat(64)}\n`)
       fs.writeFileSync(path.join(workspacePath, 'devbox.json'), 'project-owned')
@@ -1466,7 +1466,7 @@ describe('docker-sandbox-manager', () => {
     })
 
     it('never follows sandbox-controlled managed-file symlinks on the host', async () => {
-      const dir = path.join(workspacePath, '.tau', 'toolchain')
+      const dir = path.join(workspacePath, '.ficus', 'toolchain')
       const outside = path.join(workspacePath, '..', `outside-${Date.now()}`)
       fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(outside, 'do-not-overwrite')
@@ -1736,8 +1736,8 @@ describe('docker-sandbox-manager', () => {
     it('buildBashrcContent interpolates the provided workspaceMount for .env sourcing', () => {
       // workspacePath has no devbox.json so the function only emits the .env line
       const content = buildBashrcContent(workspacePath, '/custom-mount')
-      expect(content).toContain('/custom-mount/.tau/.env')
-      expect(content).not.toContain('/workspace/.tau/.env')
+      expect(content).toContain('/custom-mount/.ficus/.env')
+      expect(content).not.toContain('/workspace/.ficus/.env')
     })
   })
 
@@ -1822,7 +1822,7 @@ describe('docker-sandbox-manager', () => {
       const tmpDir = path.join(squadWorkspacePath, '.tmp')
       const scripts = fs.readdirSync(tmpDir)
       const scriptContent = fs.readFileSync(path.join(tmpDir, scripts[0]!), 'utf-8')
-      expect(scriptContent).toContain('/workspace/sq1/.tau/.env')
+      expect(scriptContent).toContain('/workspace/sq1/.ficus/.env')
     })
   })
 

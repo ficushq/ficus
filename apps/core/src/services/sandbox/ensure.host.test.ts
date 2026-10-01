@@ -88,7 +88,7 @@ describe('ensure — host runtime', () => {
     const root = await ensureWorkspaceSandbox({ sandboxId, workspaceId: 'w', squadId: squad.id }, hostDeps())
     expect(root).toBe(join(home, 'workspaces', 'squads', squad.id))
     expect(existsSync(root)).toBe(true)
-    expect(existsSync(join(home, 'private', sandboxId, '.tau', 'identity.pem'))).toBe(true)
+    expect(existsSync(join(home, 'private', sandboxId, '.ficus', 'identity.pem'))).toBe(true)
     expect(manager.hasSandbox(sandboxId)).toBe(true)
   })
 

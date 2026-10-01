@@ -21,7 +21,7 @@ const setEnvSecretsSchema = z.object({
 })
 
 export const squadEnvRouter = new Hono()
-  // Get .tau/.env content
+  // Get .ficus/.env content
   .get('/:squadId/env', requireSquadPermission('env:read', 'squadId'), async (c) => {
     const squadId = resolvedSquadId(c)
 
@@ -29,7 +29,7 @@ export const squadEnvRouter = new Hono()
     return c.json({ content: content ?? '', exposedSecretKeys: await squadEnv.getExposedSecretKeys(squadId) })
   })
 
-  // Set .tau/.env content
+  // Set .ficus/.env content
   .put('/:squadId/env', requireSquadPermission('env:write', 'squadId'), zValidator('json', setEnvSchema), async (c) => {
     const squadId = resolvedSquadId(c)
 
