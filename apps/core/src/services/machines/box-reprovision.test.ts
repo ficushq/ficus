@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { Machine, MachineBox } from './queries'
-import { boxUnixUser } from './box-paths'
+import { boxUnixUser, boxUnitMode } from './box-paths'
 import {
   boxIdentity,
   parseReprovisionEnv,
@@ -112,9 +112,11 @@ const writes = (f: ReturnType<typeof fixture>) =>
 
 describe('maintenance box reprovision', () => {
   it('reuses fixed placement, role, env and stable token without removal or canonical stamping', async () => {
-    const f = fixture([row('agent_one'), row('squad_two'), row('system_manager_three')])
+    const f = fixture([row('agent_one'), row('consultants_four'), row('squad_two'), row('system_manager_three')])
     expect(await runBoxReprovision('all', f.deps)).toBe(0)
-    expect(f.installed.map((i) => i.role)).toEqual(['agent', 'squad', 'system-manager'])
+    expect(f.installed.map((i) => i.role)).toEqual(['agent', 'agent', 'squad', 'system-manager'])
+    expect(f.installed.map((i) => boxUnitMode(i.sandboxId))).toEqual(['system', 'user', 'user', 'user'])
+    expect(f.installed.map((i) => i.env.FICUS_SANDBOX_ROLE)).toEqual(['agent', 'agent', 'squad', 'squad'])
     expect(f.calls.filter((c) => c === 'artifacts')).toHaveLength(1)
     for (const i of f.installed) {
       expect([i.machine.id, i.unixUser, i.port, i.authToken]).toEqual([
@@ -194,11 +196,31 @@ describe('maintenance box reprovision', () => {
       expect(writes(f)).toEqual([])
     }
   })
-  it('refuses a user-mode runtime without its original user manager', async () => {
-    const f = fixture([row('squad_two')])
-    f.deps.captureRuntime = async () => ({ ...running, manager: false })
-    expect(await runBoxReprovision('all', f.deps)).toBe(1)
-    expect(writes(f)).toEqual([])
+  it('preserves active, idle and stopped consultant user runtimes while provisioning the agent role', async () => {
+    for (const runtime of [
+      { ...running, manager: true, linger: true },
+      { ...idle, manager: true, linger: true },
+      stopped,
+    ]) {
+      const status = runtime.socket ? 'ready' : 'stopped'
+      const f = fixture([row('consultants_four', status)])
+      f.deps.captureRuntime = async () => ({ ...runtime })
+      expect(await runBoxReprovision('all', f.deps)).toBe(0)
+      expect(f.installed[0]!.role).toBe('agent')
+      expect(f.installed[0]!.env.FICUS_SANDBOX_ROLE).toBe('agent')
+      expect(f.actual).toEqual(runtime)
+      expect(f.rows[0]!.status).toBe(status)
+      expect(f.calls.includes('health:consultants_four')).toBe(runtime.server)
+    }
+  })
+  it('refuses every user-mode runtime without its original user manager, including agent-role consultants', async () => {
+    for (const id of ['squad_two', 'system_manager_three', 'consultants_four']) {
+      const f = fixture([row(id)])
+      f.deps.captureRuntime = async () => ({ ...running, manager: false })
+      expect(await runBoxReprovision('all', f.deps)).toBe(1)
+      expect(writes(f)).toEqual([])
+      expect(f.lines[0]).toContain('user-runtime-without-manager')
+    }
   })
   it('refuses new rows or changed placement after read-only preflight', async () => {
     for (const changed of [
