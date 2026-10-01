@@ -15,6 +15,7 @@ import {
   listRestartableManagedLocalDeploymentsForSandbox,
   markLocalDeploymentsStoppedForSandbox,
   stopLocalDeploymentRecord,
+  updateLocalDeploymentRecord,
 } from './local-deployment-service'
 
 describe('localDeployment service', () => {
@@ -243,6 +244,54 @@ describe('localDeployment service', () => {
     expect(found?.squadId).toBe(squad.id)
     expect(await getLocalDeployment('00000000-0000-0000-0000-000000000000')).toBeNull()
   })
+
+  for (const identity of ['null', 'omitted', 'undefined', 'concrete'] as const) {
+    it(`matches a CAS snapshot with ${identity} process identity`, async () => {
+      const squad = await createTestSquad(`cas-identity-${identity}`)
+      const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'fixture' })
+      const processId = identity === 'concrete' ? 'fixture-session' : null
+      const current = await updateLocalDeploymentRecord(deployment.id, { processId })
+      const expectedRecord = {
+        updatedAt: current.updatedAt,
+        status: current.status,
+        restartCount: current.restartCount,
+        ...(identity === 'omitted' ? {} : { processId: identity === 'undefined' ? undefined : processId }),
+      }
+      const updated = await updateLocalDeploymentRecord(
+        deployment.id,
+        { status: 'running', keepSandboxAlive: true },
+        { expectedRecord, onlyLive: true }
+      )
+      expect(updated.status).toBe('running')
+      expect(updated.processId).toBe(processId)
+      expect((await getLocalDeployment(deployment.id))?.status).toBe('running')
+    })
+  }
+
+  for (const identity of ['null', 'omitted', 'undefined', 'different-concrete'] as const) {
+    it(`does not let ${identity} CAS identity match an existing concrete session`, async () => {
+      const squad = await createTestSquad(`cas-mismatch-${identity}`)
+      const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'fixture' })
+      const current = await updateLocalDeploymentRecord(deployment.id, { processId: 'fixture-session' })
+      // All other lifecycle fields match exactly: only process identity fences this write.
+      const expectedRecord = {
+        updatedAt: current.updatedAt,
+        status: current.status,
+        restartCount: current.restartCount,
+        ...(identity === 'omitted'
+          ? {}
+          : { processId: identity === 'null' ? null : identity === 'undefined' ? undefined : 'different-session' }),
+      }
+      const unchanged = await updateLocalDeploymentRecord(
+        deployment.id,
+        { status: 'crashed', keepSandboxAlive: false },
+        { expectedRecord, onlyLive: true }
+      )
+      expect(unchanged.status).toBe(current.status)
+      expect(unchanged.processId).toBe('fixture-session')
+      expect((await getLocalDeployment(deployment.id))?.status).toBe(current.status)
+    })
+  }
 
   it('archives a localDeployment row and cleans up keepalive state', async () => {
     const squad = await createTestSquad('archive')

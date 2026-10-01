@@ -9,8 +9,13 @@ import {
   buildStreamAttachedLogCommand,
   LocalDeploymentLogPathOutsideWorkspaceError,
 } from './local-deployment-log-path'
+import { SandboxClient } from '../sandbox/client/http-client'
 import { LAUNCH_PATH_FILE } from '../sandbox/launch-path'
-import { LAUNCHER_SCRIPT, LocalDeploymentProcessSupervisor } from './local-deployment-process-supervisor'
+import {
+  LAUNCHER_SCRIPT,
+  LocalDeploymentLaunchFailedError,
+  LocalDeploymentProcessSupervisor,
+} from './local-deployment-process-supervisor'
 
 class FakeSandboxManager implements ISandboxManager {
   execCalls: Array<{ sandboxId: string; args: string[] }> = []
@@ -74,6 +79,84 @@ class FakeSandboxManager implements ISandboxManager {
 }
 
 describe('LocalDeploymentProcessSupervisor', () => {
+  it('cancels and drains a blackholed read invocation at observation abort', async () => {
+    let bashCalls = 0
+    let cancelCalls = 0
+    const entered = Promise.withResolvers<void>()
+    const client = new SandboxClient('fixture:1', undefined, {
+      fetch: async (input, init) => {
+        if (String(input).endsWith('/bash/cancel')) {
+          cancelCalls++
+          return Response.json({ remainingPids: [] })
+        }
+        bashCalls++
+        entered.resolve()
+        return new Promise<Response>((_resolve, reject) => {
+          init!.signal!.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), {
+            once: true,
+          })
+        })
+      },
+    })
+    const manager = Object.assign(new FakeSandboxManager(), { getClientForSandbox: () => client })
+    const supervisor = new LocalDeploymentProcessSupervisor(manager)
+    const controller = new AbortController()
+    const read = supervisor.hasSession('squad_fixture', 'fixture-session', controller.signal).catch((error) => error)
+    try {
+      await Promise.race([entered.promise, read])
+      expect(bashCalls).toBe(1)
+      controller.abort()
+      expect(await read).toBeInstanceOf(Error)
+      expect(cancelCalls).toBe(1)
+    } finally {
+      controller.abort()
+      await read
+      client.close()
+    }
+  })
+
+  for (const alive of [false, true]) {
+    it(`reaps the manager-owned session read stream after its result, alive=${alive}`, async () => {
+      let reaped = 0
+      const manager = Object.assign(new FakeSandboxManager(), {
+        streamExec: (_id: string, args: string[], stdout: (chunk: Buffer) => void) => {
+          expect(args[2]).toContain('tmux has-session')
+          expect(args[2]).not.toContain('kill-session')
+          queueMicrotask(() => stdout(Buffer.from(`FICUS_SESSION_${alive ? 'ALIVE' : 'MISSING'}\n`)))
+          return {
+            cancel: () => {},
+            cancelAndWait: async () => {
+              reaped++
+            },
+          }
+        },
+      })
+      expect(
+        await new LocalDeploymentProcessSupervisor(manager).hasSession(
+          'squad_fixture',
+          'owned-session',
+          new AbortController().signal
+        )
+      ).toBe(alive)
+      expect(reaped).toBe(1)
+    })
+  }
+
+  it('classifies a reported terminal launch exit without exposing command output', async () => {
+    const manager = new FakeSandboxManager()
+    manager.exec = async () => {
+      throw new Error('Command failed with exit code 1: secret-like fixture output')
+    }
+    const launch = new LocalDeploymentProcessSupervisor(manager).startManagedLocalDeployment({
+      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+      sandboxId: 'squad_fixture',
+      command: 'fixture',
+      port: 5173,
+    })
+    await expect(launch).rejects.toBeInstanceOf(LocalDeploymentLaunchFailedError)
+    await expect(launch).rejects.not.toThrow('secret-like')
+  })
+
   it('uses root FICUS_APP_BASE_PATH in hosted mode without changing launch inputs', async () => {
     const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
     process.env.FICUS_APPS_DOMAIN = 'ficus.app'
