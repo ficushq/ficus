@@ -2818,7 +2818,7 @@ expect_match 'phase_restore: ...naming the key' "${pr_out}" "this archive predat
 expect_not_match 'phase_restore: ...never the value' "${pr_out}" 'archived-old-key'
 expect_eq 'phase_restore: ...before pg_restore ran or the workspace was written' \
   "$([[ -e ${RESTORE_TMP}/pr.log ]] && echo pg_restore || echo none):$([[ -e ${RESTORE_TMP}/pr-home ]] && echo home || echo none)" 'none:none'
-pr_archive ficus 'FICUS_ENCRYPTION_KEY=archived-ficus-key'
+pr_archive ficus 'FICUS_ENCRYPTION_KEY=archived-ficus-key' "${HL_NEW_HOME_NAME}"
 pr_out=$(pr_run ficus)
 expect_match 'phase_restore: a FICUS archive restores' "${pr_out}" 'rc=0$'
 expect_match 'phase_restore: ...carries its key forward' "${pr_out}" 'enc=archived-ficus-key'
@@ -2832,13 +2832,11 @@ expect_eq 'phase_restore: ...after pg_restore and the workspace copy' \
 PR_RH="${RESTORE_TMP}/pr-runhome"
 PR_TARGET="${PR_RH}/${HL_NEW_HOME_NAME}"
 PR_LAYOUT=2
-pr_out=$(pr_run ficus)
-expect_match 'phase_restore (Ruling 84): a layout-1 backup on layout 2 restores' "${pr_out}" 'rc=0$'
-expect_match '...its HOME is the legacy one under the run user (no HOME_DIR in its .env)' "${pr_out}" "from=${PR_RH}/${HL_LEGACY_HOME_NAME}"$'\n'
-expect_eq '...its tree is in the Ficus HOME; the legacy HOME is the compat link to it' \
-  "$(cat "${PR_RH}/${HL_NEW_HOME_NAME}/a.txt" 2>/dev/null):$(readlink "${PR_RH}/${HL_LEGACY_HOME_NAME}")" "x:${PR_RH}/${HL_NEW_HOME_NAME}"
-expect_match '...and says its stored paths are rebased after the migrations' "${pr_out}" \
-  "the backup was taken with HOME ${PR_RH}/${HL_LEGACY_HOME_NAME}, this host's is ${PR_RH}/${HL_NEW_HOME_NAME} — its stored paths are rebased after the migrations"
+pr_archive legacy-home 'FICUS_ENCRYPTION_KEY=archived-ficus-key' "${HL_LEGACY_HOME_NAME}"
+pr_out=$(pr_run legacy-home)
+expect_match 'phase_restore: legacy HOME backup requires bridge toolkit' "${pr_out}" 'legacy HOME backup needs the ficus-host-layout-bridge'
+expect_eq 'legacy restore refuses before database/workspace/link effects' \
+  "$([[ -e ${RESTORE_TMP}/pr.log || -e ${PR_TARGET} || -L ${PR_RH}/${HL_LEGACY_HOME_NAME} ]] && echo changed || echo untouched)" untouched
 pr_archive ficus-l2 "$(printf 'FICUS_ENCRYPTION_KEY=k2\nHOME_DIR=%s' "${PR_RH}/${HL_NEW_HOME_NAME}")" "${HL_NEW_HOME_NAME}"
 PR_TARGET="${PR_RH}/${HL_NEW_HOME_NAME}"
 PR_LAYOUT=2
@@ -2851,9 +2849,8 @@ expect_match '...and says its stored paths stay' "${pr_out}" 'as this host'"'"'s
 PR_TARGET="${PR_RH}/${HL_LEGACY_HOME_NAME}"
 PR_LAYOUT=1
 pr_out=$(pr_run ficus-l2)
-expect_match 'phase_restore (Ruling 84): a layout-2 backup on a layout-1 host restores' "${pr_out}" 'rc=0$'
-expect_eq '...into the legacy HOME (a real dir), with no link at the Ficus one' \
-  "$([[ -d ${PR_RH}/${HL_LEGACY_HOME_NAME} && ! -L ${PR_RH}/${HL_LEGACY_HOME_NAME} ]] && echo real):$([[ -e ${PR_RH}/${HL_NEW_HOME_NAME} || -L ${PR_RH}/${HL_NEW_HOME_NAME} ]] && echo ficus || echo none)" 'real:none'
+expect_match 'phase_restore: even canonical backup cannot target a legacy HOME' "${pr_out}" 'legacy HOME backup needs the ficus-host-layout-bridge'
+expect_eq 'legacy target is not created' "$([[ -e ${PR_TARGET} ]] && echo created || echo absent)" absent
 unset PR_RH PR_TARGET PR_LAYOUT
 unset -f pr_archive pr_run
 
@@ -2978,6 +2975,7 @@ rt_run() { # RESTORE_URL NEEDED — prints the output, then `rc=N`
   (
     eval "$(sed -n '/^require_ficus_target_release() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")"
     core_release_is_ficus() { return 0; }
+    core_release_host_layout() { echo 2; }
     host_migrate_require_privilege() { :; }
     host_migrate_needed() { printf '%s' "${RT_NEEDED}"; }
     ARTIFACT_RELEASE_DIR=/rel SRC_DEST=/opt/x RESTORE_URL=$1 RT_NEEDED=$2
@@ -3540,7 +3538,7 @@ EOF
   expect_match 'setup-host --dry-run (fresh host): the install root is /opt/ficus-core' "${hld_out}" 'clone .* → /opt/ficus-core '
   expect_match 'setup-host --dry-run (fresh host): the etc dir is /etc/ficus' "${hld_out}" "write ${HLD_TMP}/fresh/etc/ficus/backup.env "
   expect_match 'setup-host --dry-run (fresh host): the units are ficus-api / ficus-worker (with the legacy Alias= while the bridge lasts)' \
-    "${hld_out}" "install /etc/systemd/system/ficus-api.service:.*Alias=${HL_LEGACY_UNIT_PREFIX}-api\\.service.*enable ficus-api ficus-worker"
+    "${hld_out}" "install /etc/systemd/system/ficus-api.service:.*enable ficus-api ficus-worker"
   expect_match 'setup-host --dry-run (fresh host): the container is ficus-postgres on ficus-pgdata, database ficus' \
     "${hld_out}" "docker run -d --name ficus-postgres .* -v ficus-pgdata:/var/lib/postgresql .*ensure database 'ficus' exists"
   expect_match "setup-host --dry-run (fresh host): the DSN names the database ficus" "${hld_out}" 'DATABASE_URL=postgres://postgres:<redacted>@127\.0\.0\.1:5432/ficus'
@@ -3554,8 +3552,8 @@ EOF
   mkdir -p "${HLD_TMP}/legacy/etc/systemd/system"
   printf '[Unit]\n' >"${HLD_TMP}/legacy/etc/systemd/system/${HL_LEGACY_UNIT_PREFIX}-api.service"
   hld_out=$(hld_run "${HLD_TMP}/legacy" "${HLD_TMP}/fresh.yaml") || true
-  expect_match 'setup-host --dry-run (layout-1 host): keeps the legacy install root, units and container' \
-    "${hld_out}" "→ ${HL_LEGACY_DEST} .*docker run -d --name ${HL_LEGACY_DB_CONTAINER} .* -v ${HL_LEGACY_DB_VOLUME}:.*enable ${HL_LEGACY_UNIT_PREFIX}-api ${HL_LEGACY_UNIT_PREFIX}-worker"
+  expect_match 'setup-host --dry-run (layout-1 host): refuses before phases' \
+    "${hld_out}" 'ficus-host-layout-bridge'
   expect_eq 'setup-host --dry-run (layout-1 host): its units carry no Alias=' "$([[ ${hld_out} == *'Alias='* ]] && echo alias || echo none)" 'none'
   expect_eq 'setup-host --dry-run (layout-1 host): the .env leaves HOME_DIR to the default' "$([[ ${hld_out} == *'| HOME_DIR='* ]] && echo explicit || echo default)" 'default'
 
@@ -3564,8 +3562,8 @@ EOF
   printf 'ca\n' >"${HLD_TMP}/ca.crt"
   yq -i ".database.mode = \"external\" | .database.ca_path = \"${HLD_TMP}/ca.crt\"" "${HLD_TMP}/fresh.yaml"
   hld_out=$(hld_run "${HLD_TMP}/fresh" "${HLD_TMP}/fresh.yaml" FICUS_SETUP_DATABASE_DSN="${hld_dsn}") || true
-  expect_match 'setup-host --dry-run (fresh host, DSN names the legacy CA path): plans the compat link to /etc/ficus' \
-    "${hld_out}" "link ${HLD_TMP}/fresh${HL_LEGACY_ETC} -> ${HLD_TMP}/fresh/etc/ficus: the DSN's sslrootcert"
+  expect_match 'setup-host --dry-run refuses a legacy CA DSN before effects' \
+    "${hld_out}" 'ficus-host-layout-bridge'
   hld_out=$(hld_run "${HLD_TMP}/fresh" "${HLD_TMP}/fresh.yaml" FICUS_SETUP_DATABASE_DSN="${hld_dsn//${HL_LEGACY_ETC##*/}%2F/ficus%2F}") || true
   expect_eq 'setup-host --dry-run (fresh host, DSN names /etc/ficus): no compat link' \
     "$([[ ${hld_out} == *"link ${HLD_TMP}/fresh${HL_LEGACY_ETC}"* ]] && echo link || echo none)" 'none'
@@ -3594,17 +3592,17 @@ hla_sorted() { # "a<b<c" → yes when strictly ascending and every one found
   echo yes
 }
 expect_eq 'upgrade-host.sh: reconcile → traps → host_layout_adopt → SRC_DEST again → require_host_env_ready' \
-  "$(hla_sorted "$(hla_order upgrade-host.sh 'host_migrate_reconcile || reconcile_rc=$?' 'host_migrate_install_traps' 'host_layout_adopt' 'require_host_env_ready')")" 'yes'
+  "$(hla_sorted "$(hla_order upgrade-host.sh 'host_migrate_reconcile || reconcile_rc=$?' 'host_migrate_install_traps' 'host_layout_adopt --no-repair' 'require_host_env_ready')")" 'yes'
 # The Caddyfile is validated and swapped after the host checks and BEFORE
 # either mode moves Core, so a failure leaves Core and the Caddyfile as they were.
 expect_eq 'upgrade-host.sh: require_host_env_ready → caddy prepare → caddy apply → artifact/git modes' \
-  "$(hla_sorted "$(hla_order upgrade-host.sh 'require_host_env_ready' 'upgrade_caddy_prepare "${SRC_DEST}/.env"' 'upgrade_caddy_apply' 'artifact_upgrade() {' 'if [[ ${ARTIFACT_MODE} -eq 1 ]]; then')")" 'yes'
+  "$(hla_sorted "$(hla_order upgrade-host.sh 'require_host_env_ready' '  upgrade_caddy_prepare "${SRC_DEST}/.env"' '  upgrade_caddy_apply' 'artifact_upgrade() {' 'if [[ ${ARTIFACT_MODE} -eq 1 ]]; then')")" 'yes'
 expect_eq 'upgrade-host.sh: SRC_DEST is read again right after the adopt' \
-  "$(grep -A1 -x 'host_layout_adopt' "${SCRIPT_DIR}/upgrade-host.sh" | tail -n 1)" 'SRC_DEST=$(cfg_source_dest)'
+  "$(grep -A1 -x 'host_layout_adopt --no-repair' "${SCRIPT_DIR}/upgrade-host.sh" | tail -n 1)" 'SRC_DEST=$(cfg_source_dest)'
 expect_eq 'apply-artifacts.sh: reconcile → host_layout_adopt → the PENDING refusal → require_host_env_ready' \
-  "$(hla_sorted "$(hla_order apply-artifacts.sh '  host_migrate_reconcile || reconcile_rc=$?' '  host_layout_adopt' '  [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||' '  require_host_env_ready')")" 'yes'
+  "$(hla_sorted "$(hla_order apply-artifacts.sh '  host_migrate_reconcile || reconcile_rc=$?' '  host_layout_adopt --no-repair' '  [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||' '  require_host_env_ready')")" 'yes'
 expect_eq 'setup-host.sh: reconcile → traps → host_layout_adopt → resolve_layout_globals → require_host_env_ready' \
-  "$(hla_sorted "$(hla_order setup-host.sh '  host_migrate_reconcile || reconcile_rc=$?' '  host_migrate_install_traps' '  host_layout_adopt' '  resolve_layout_globals' 'require_host_env_ready')")" 'yes'
+  "$(hla_sorted "$(hla_order setup-host.sh '  host_migrate_reconcile || reconcile_rc=$?' '  host_migrate_install_traps' '  host_layout_adopt --no-repair' '  resolve_layout_globals' 'require_host_env_ready')")" 'yes'
 expect_eq 'setup-host.sh: resolve_layout_globals follows its host_migrate' \
   "$(grep -A1 -F 'host_migrate "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"' "${SCRIPT_DIR}/setup-host.sh" | tail -n 1)" 'resolve_layout_globals'
 expect_eq 'the hooks: the host layout wrappers in upgrade-host.sh and setup-host.sh (whose pre-flip hook is the restore rebase)' \
@@ -3629,8 +3627,7 @@ if yq_is_mikefarah; then
   expect_eq "setup-host.sh resolve_layout_globals on layout 2 (fresh home): the Ficus names" "$(hla_globals 2)" \
     "${HL_NEW_DEST}|${HL_NEW_DEST}/.env|${HL_NEW_DB_CONTAINER}|${HL_NEW_DB_VOLUME}|${HL_NEW_DB_NAME}|${HL_NEW_SUDOERS}|${HLA_HOME}/${HL_NEW_HOME_NAME}"
   mkdir -p "${HLA_HOME}/${HL_LEGACY_HOME_NAME}/sessions" # Core's data in the legacy home
-  expect_eq "setup-host.sh resolve_layout_globals on layout 1 (Core data in the legacy home): the legacy names" "$(hla_globals 1)" \
-    "${HL_LEGACY_DEST}|${HL_LEGACY_DEST}/.env|${HL_LEGACY_DB_CONTAINER}|${HL_LEGACY_DB_VOLUME}|${HL_LEGACY_DB_NAME}|${HL_LEGACY_SUDOERS}|${HLA_HOME}/${HL_LEGACY_HOME_NAME}"
+  expect_match 'setup-host.sh refuses to hide a real legacy data HOME' "$(hla_globals 1 2>&1 || true)" 'ficus-host-layout-bridge'
   rm -rf "${HLA_HOME}"
   rm -f "${HLA_CFG}"
 fi
@@ -3648,7 +3645,7 @@ expect_eq 'setup-host.sh update_sudoers_content on layout 1: the legacy units on
   "svc ALL=(root) NOPASSWD: /usr/bin/systemctl restart ${HL_LEGACY_UNIT_PREFIX}-api, /usr/bin/systemctl restart ${HL_LEGACY_UNIT_PREFIX}-worker"
 expect_eq 'setup-host.sh update_sudoers_content on layout 2: the ficus units and the legacy spellings' "$(hla_sudoers 2)" \
   "$(host_layout_sudoers_content svc)"
-expect_match '...(which name both)' "$(hla_sudoers 2)" "restart ficus-api, .*restart ficus-worker, .*restart ${HL_LEGACY_UNIT_PREFIX}-api, .*restart ${HL_LEGACY_UNIT_PREFIX}-worker$"
+expect_eq 'finalized sudoers names canonical units only' "$(hla_sudoers 2)" 'svc ALL=(root) NOPASSWD: /usr/bin/systemctl restart ficus-api, /usr/bin/systemctl restart ficus-worker'
 unset -f hla_order hla_sorted hla_globals hla_sudoers
 
 # --- setup-host.sh --dry-run: platform-managed artifacts phase -------------
@@ -4116,6 +4113,7 @@ files = dict(sorted(files.items()))
 digest = "sha256:" + hashlib.sha256(json.dumps(files, separators=(",", ":")).encode()).hexdigest()
 manifest = {
     "schema": 1,
+    "hostLayout": 2,
     "commit": commit,
     "commitDate": commit_date,
     "bun": bun_version,
@@ -4258,9 +4256,8 @@ PYREPACK
     "$([[ -f ${ART_RELEASE_A}/${HL_NEW_RELEASE_MARKER} ]] && echo marked || echo unmarked)" 'marked'
   expect_match 'artifact_stage: the marker records what was staged' \
     "$(<"${ART_RELEASE_A}/${HL_NEW_RELEASE_MARKER}")" "\"sha\":\"${ART_SHA_A}\".*\"digest\":\"sha256:[0-9a-f]{64}\""
-  # Bridge: a toolkit from before the host layout reads only the legacy marker.
-  expect_eq 'artifact_stage: also writes the legacy marker (same record), so an older toolkit sees the release complete' \
-    "$(cmp -s "${ART_RELEASE_A}/${HL_NEW_RELEASE_MARKER}" "${ART_RELEASE_A}/${HL_LEGACY_RELEASE_MARKER}" && echo both || echo missing)" 'both'
+  expect_eq 'artifact_stage: never recreates a legacy marker after finalization' \
+    "$([[ -e ${ART_RELEASE_A}/${HL_LEGACY_RELEASE_MARKER} ]] && echo present || echo absent)" 'absent'
   expect_eq 'artifact_stage: no marker staging file is left behind' \
     "$(find "${ART_RELEASE_A}" -maxdepth 1 -name '*.tmp' | wc -l | tr -d ' ')" '0'
   expect_eq 'artifact_stage: the incoming session dir is cleaned up' \
@@ -4589,14 +4586,15 @@ PYREPACK
     "$([[ -e ${ART_DEST3}/current ]] && echo flipped || echo untouched)" 'untouched'
   # …while a release staged before the host migration (the legacy marker) is
   # complete: activation goes on to the migrations (which fail here: no tree).
+  printf '{"hostLayout":2}\n' >"${ART_DEST3}/releases/unmarked/artifact.json"
   : >"${ART_DEST3}/releases/unmarked/${HL_LEGACY_RELEASE_MARKER}"
   ART_ERR=$( (
     sleep() { :; }
     artifact_activate "${ART_DEST3}" "${ART_DEST3}/releases/unmarked" 3000
   ) 2>&1 >/dev/null) || true
-  expect_match 'artifact_activate: a release carrying the legacy completion marker passes the marker check' \
-    "${ART_ERR}" 'database migrations failed'
-  expect_not_match 'artifact_activate: ...and is not refused as unverified' "${ART_ERR}" 'refusing to activate an unverified tree'
+  expect_match 'artifact_activate: a legacy-only completion marker is not accepted' \
+    "${ART_ERR}" 'refusing to activate an unverified tree'
+  expect_not_match 'artifact_activate: refusal precedes database migrations' "${ART_ERR}" 'database migrations failed'
   rm -f "${ART_DEST3}/releases/unmarked/${HL_LEGACY_RELEASE_MARKER}"
   artifact_stage "${ART_DEST3}" "${ART_TREE_A3}" "${ART_SHA_A}" "${ART_DIGEST12_A}" 2>/dev/null
   ART_RC=0
@@ -4798,9 +4796,9 @@ PYREPACK
       "file://$1/dist/artifact.sig" \
       "${ART_TMP}/pub.pem" 2>/dev/null
   }
-  ART_OUT=$(art_acquire_rooted "${ART_TMP}/work-legacy-root" "${HL_LEGACY_ARTIFACT_ROOT_PREFIX}" | sed -n 2p) || true
-  expect_eq 'artifact_acquire: a tarball rooted at the legacy <prefix><sha>/ is accepted' \
-    "$([[ ${ART_OUT} == */"${HL_LEGACY_ARTIFACT_ROOT_PREFIX}${ART_SHA_A}" && -f ${ART_OUT}/artifact.json ]] && echo accepted || echo "refused: ${ART_OUT}")" 'accepted'
+  ART_OUT=$(art_acquire_rooted "${ART_TMP}/work-legacy-root" "${HL_LEGACY_ARTIFACT_ROOT_PREFIX}") || true
+  expect_eq 'artifact_acquire: a signed archive with a legacy root is refused' \
+    "${ART_OUT}" 'FICUS_ARTIFACT_ERROR=download_failed'
   ART_ERR=$(art_acquire_rooted "${ART_TMP}/work-other-root" 'other-core-') || true
   expect_eq 'artifact_acquire: a tarball rooted at any other name is refused (download_failed)' \
     "${ART_ERR}" 'FICUS_ARTIFACT_ERROR=download_failed'
@@ -4830,182 +4828,18 @@ PYREPACK
     "$(art_incoming_count "${ART_DEST}")" '0'
 
   # --- retention: current + previous + the 2 newest others ---
-  # --- the git -> artifact conversion (upgrade-host.sh's first-upgrade hop) ---
-  # A realistic pre-conversion box: a git checkout with build outputs, a
-  # dotfile, the secrets .env and a build stamp. After the conversion the WHOLE
-  # checkout — dotfiles included — is ONE release directory, .env and the stamp
-  # are still at <dest>, and BOTH layout links point at the moved tree: the box
-  # has to be consistent at every instant, because the units are re-rendered to
-  # <dest>/current in the same breath and must never name a path that does not
-  # exist.
-  ART_CONV=$(mktemp -d)/tau-core
-  mkdir -p "${ART_CONV}/apps/core/dist" "${ART_CONV}/config"
-  git -C "${ART_CONV}" init -q -b main
-  git -C "${ART_CONV}" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
-  ART_CONV_HEAD=$(git -C "${ART_CONV}" rev-parse HEAD)
-  printf 'DATABASE_URL=postgres://fixture/db\nMIGRATE_PROOF=%s\n' "${ART_PROOF}" >"${ART_CONV}/.env"
-  printf 'FICUS_BUILD_COMMIT=%s\n' "${ART_CONV_HEAD}" >"${ART_CONV}/.tau-build-stamp"
-  printf 'old index\n' >"${ART_CONV}/apps/core/dist/index.js"
-  mkdir -p "${ART_CONV}/node_modules/jsdom/browser"
-  printf 'css\n' >"${ART_CONV}/node_modules/jsdom/browser/default-stylesheet.css"
-  printf 'registry=x\n' >"${ART_CONV}/.npmrc"
-  printf '{}\n' >"${ART_CONV}/package.json"
-  printf 'cfg\n' >"${ART_CONV}/config/webhooks.yaml"
-  expect_eq 'convert: before the conversion the box reports git-<head sha> (the BEFORE trailer)' \
-    "$(artifact_current_release_id "${ART_CONV}")" "git-${ART_CONV_HEAD}"
-
-  artifact_convert_git_checkout "${ART_CONV}" 2>/dev/null
-  ART_CONV_REL="${ART_CONV}/releases/git-${ART_CONV_HEAD}"
-  expect_eq 'convert: the checkout lands at releases/git-<head sha>' \
-    "$([[ -d ${ART_CONV_REL} ]] && echo moved || echo missing)" 'moved'
-  expect_eq 'convert: DOTFILES move too — .git is the whole rollback tree' \
-    "$([[ -d ${ART_CONV_REL}/.git && -f ${ART_CONV_REL}/.npmrc ]] && echo moved || echo left-behind)" 'moved'
-  expect_eq 'convert: the whole tree moves, not just its top level' \
-    "$([[ -f ${ART_CONV_REL}/apps/core/dist/index.js && -f ${ART_CONV_REL}/config/webhooks.yaml && -f ${ART_CONV_REL}/package.json ]] && echo complete || echo partial)" 'complete'
-  expect_eq 'convert: .env stays at <dest> — secrets live outside the releases' \
-    "$([[ -f ${ART_CONV}/.env && ! -e ${ART_CONV_REL}/.env ]] && echo kept || echo moved)" 'kept'
-  expect_eq 'convert: the .env is never rewritten' \
-    "$(grep -c 'DATABASE_URL=postgres://fixture/db' "${ART_CONV}/.env")" '1'
-  expect_eq 'convert: the build stamp stays at <dest>' \
-    "$([[ -f ${ART_CONV}/.tau-build-stamp && ! -e ${ART_CONV_REL}/.tau-build-stamp ]] && echo kept || echo moved)" 'kept'
-  # current, not just previous: between the conversion and the first flip the
-  # box must survive a reboot, and the re-rendered units name <dest>/current.
-  expect_eq 'convert: current points at the converted tree (the units can run immediately)' \
-    "$(readlink "${ART_CONV}/current")" "${ART_CONV_REL}"
-  expect_eq 'convert: current/apps/core — the units WorkingDirectory — resolves' \
-    "$([[ -d ${ART_CONV}/current/apps/core ]] && echo resolves || echo dangling)" 'resolves'
-  expect_eq 'convert: previous points at the converted tree too (a complete layout)' \
-    "$(readlink "${ART_CONV}/previous")" "${ART_CONV_REL}"
-  expect_eq 'convert: the release id is still git-<head sha>, now read through current' \
-    "$(artifact_current_release_id "${ART_CONV}")" "git-${ART_CONV_HEAD}"
-  # The moved tree was BUILT at <dest>, and bun bakes that absolute path into
-  # its bundles (jsdom reads node_modules files through it at boot) — so the
-  # OLD path must keep resolving or the conversion breaks its own rollback
-  # target. Live-hit on the first artifact canary.
-  expect_eq 'convert: a node_modules compat symlink keeps the baked build paths resolving' \
-    "$(readlink "${ART_CONV}/node_modules")" "${ART_CONV_REL}/node_modules"
-  expect_eq 'convert: a file read through the OLD node_modules path still works' \
-    "$(cat "${ART_CONV}/node_modules/jsdom/browser/default-stylesheet.css" 2>/dev/null)" 'css'
-  expect_eq 'convert: <dest> keeps exactly .env, the stamp and the layout'  \
-    "$(find "${ART_CONV}" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ')" \
-    '.env .tau-build-stamp current node_modules previous releases '
+  # C-FIN refuses the conversion before moving either the checkout or units.
+  ART_CONV=$(mktemp -d)
+  mkdir -p "${ART_CONV}/.git" "${ART_CONV}/apps/core"
+  printf 'sentinel\n' >"${ART_CONV}/apps/core/data"
+  printf 'private fixture\n' >"${ART_CONV}/.env"
   ART_RC=0
-  (artifact_convert_git_checkout "${ART_CONV}") 2>/dev/null || ART_RC=$?
-  expect_eq 'convert: refuses a <dest> that is not (or is no longer) a git checkout' "${ART_RC}" '1'
-
-  # --- resumable: an interrupted conversion is finished by the next run ---
-  # Simulates a crash mid-move by pre-moving part of the tree by hand into a
-  # release dir that therefore already exists. Because each entry moves with
-  # its own rename and `.git` moves LAST, "a .git at <dest>" still means
-  # "unfinished", and the re-run moves the remainder.
-  ART_CONV3=$(mktemp -d)/tau-core
-  mkdir -p "${ART_CONV3}/apps/core" "${ART_CONV3}/config"
-  git -C "${ART_CONV3}" init -q -b main
-  git -C "${ART_CONV3}" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
-  ART_CONV3_HEAD=$(git -C "${ART_CONV3}" rev-parse HEAD)
-  printf 'secrets\n' >"${ART_CONV3}/.env"
-  printf '{}\n' >"${ART_CONV3}/package.json"
-  printf 'dot\n' >"${ART_CONV3}/.npmrc"
-  printf 'core\n' >"${ART_CONV3}/apps/core/marker"
-  printf 'cfg\n' >"${ART_CONV3}/config/webhooks.yaml"
-  ART_CONV3_REL="${ART_CONV3}/releases/git-${ART_CONV3_HEAD}"
-  mkdir -p "${ART_CONV3_REL}"
-  mv "${ART_CONV3}/apps" "${ART_CONV3_REL}/apps"     # the "already moved" half
-  mv "${ART_CONV3}/.npmrc" "${ART_CONV3_REL}/.npmrc"
-  artifact_convert_git_checkout "${ART_CONV3}" 2>/dev/null
-  expect_eq 'convert: a re-run after an interrupted conversion completes it' \
-    "$([[ -d ${ART_CONV3_REL}/.git && -f ${ART_CONV3_REL}/package.json && -f ${ART_CONV3_REL}/config/webhooks.yaml ]] && echo complete || echo incomplete)" 'complete'
-  expect_eq 'convert: the already-moved half is untouched by the re-run' \
-    "$([[ -f ${ART_CONV3_REL}/apps/core/marker && -f ${ART_CONV3_REL}/.npmrc ]] && echo intact || echo lost)" 'intact'
-  expect_eq 'convert: the resumed run leaves the same <dest> layout' \
-    "$(find "${ART_CONV3}" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ')" \
-    '.env current previous releases '
-  # A name living on BOTH sides cannot come from an interrupted run (rename is
-  # atomic) — it is an ambiguous state, and merging trees blindly is how a
-  # half-old half-new checkout gets served.
-  ART_CONV4=$(mktemp -d)/tau-core
-  mkdir -p "${ART_CONV4}"
-  git -C "${ART_CONV4}" init -q -b main
-  git -C "${ART_CONV4}" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
-  mkdir -p "${ART_CONV4}/releases/git-$(git -C "${ART_CONV4}" rev-parse HEAD)/apps"
-  mkdir -p "${ART_CONV4}/apps"
-  ART_RC=0
-  (artifact_convert_git_checkout "${ART_CONV4}") 2>/dev/null || ART_RC=$?
-  expect_eq 'convert: a name present at BOTH <dest> and the release dir is refused' "${ART_RC}" '1'
-  expect_eq 'convert: the refusal moves nothing' \
-    "$([[ -d ${ART_CONV4}/apps && -d ${ART_CONV4}/.git ]] && echo intact || echo disturbed)" 'intact'
-  rm -rf "$(dirname "${ART_CONV3}")" "$(dirname "${ART_CONV4}")"
-
-  # …and the converted box takes a real release end to end. Because the
-  # conversion left a real `current`, the first activation displaces something:
-  # `previous` names the git tree, which is what makes the auto-rollback below
-  # possible at all.
-  ART_WORK_D="${ART_TMP}/work-d"
-  art_publish "${ART_WORK_D}" "${ART_SHA_D}" "${ART_BUN}"
-  ART_RC=0
-  ART_OUT_D=$(artifact_acquire "${ART_CONV}" \
-    "file://${ART_WORK_D}/dist/tau-core-${ART_SHA_D}-linux-x64.tar.gz" \
-    "file://${ART_WORK_D}/dist/artifact.json" \
-    "file://${ART_WORK_D}/dist/artifact.sig" \
-    "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
-  expect_eq 'convert: a converted box acquires a release (exit 0)' "${ART_RC}" '0'
-  ART_DIGEST12_D=$(printf '%s\n' "${ART_OUT_D}" | sed -n 1p | awk '{print $2}')
-  ART_TREE_D=$(printf '%s\n' "${ART_OUT_D}" | sed -n 2p)
-  ART_RELEASE_D=$(artifact_release_dir "${ART_CONV}" "${ART_SHA_D}" "${ART_DIGEST12_D}")
-  artifact_stage "${ART_CONV}" "${ART_TREE_D}" "${ART_SHA_D}" "${ART_DIGEST12_D}" 2>/dev/null
-  ART_RC=0
-  ART_ACT_OUT=$(artifact_activate "${ART_CONV}" "${ART_RELEASE_D}" 3000 2>/dev/null) || ART_RC=$?
-  expect_eq 'convert: activating the first release on a converted box exits 0' "${ART_RC}" '0'
-  expect_eq 'convert: current now serves the artifact release' \
-    "$(readlink "${ART_CONV}/current")" "${ART_RELEASE_D}"
-  expect_eq 'convert: previous names the git tree it displaced (the rollback target)' \
-    "$(readlink "${ART_CONV}/previous")" "${ART_CONV_REL}"
-  expect_eq 'convert: the AFTER trailer value now reads as the artifact release id' \
-    "$(artifact_current_release_id "${ART_CONV}")" "${ART_SHA_D}-${ART_DIGEST12_D}"
-  artifact_retention "${ART_CONV}" 2>/dev/null
-  expect_eq 'convert: retention keeps the converted git tree (previous protects it)' \
-    "$([[ -d ${ART_CONV_REL} ]] && echo kept || echo deleted)" 'kept'
-  rm -rf "$(dirname "${ART_CONV}")"
-
-  # --- a FAILED first activation on a converted box rolls back to the git tree
-  # This is what the conversion's `current` buys: before it, the very first
-  # artifact activation had nothing to flip back to, so an unhealthy release
-  # stayed current.
-  ART_CONV2=$(mktemp -d)/tau-core
-  mkdir -p "${ART_CONV2}/apps/core"
-  git -C "${ART_CONV2}" init -q -b main
-  git -C "${ART_CONV2}" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
-  ART_CONV2_HEAD=$(git -C "${ART_CONV2}" rev-parse HEAD)
-  printf 'DATABASE_URL=postgres://fixture/db\nMIGRATE_PROOF=%s\n' "${ART_PROOF}" >"${ART_CONV2}/.env"
-  printf 'old\n' >"${ART_CONV2}/apps/core/marker"
-  artifact_convert_git_checkout "${ART_CONV2}" 2>/dev/null
-  ART_CONV2_REL="${ART_CONV2}/releases/git-${ART_CONV2_HEAD}"
-  ART_RC=0
-  ART_OUT_E=$(artifact_acquire "${ART_CONV2}" \
-    "file://${ART_WORK_D}/dist/tau-core-${ART_SHA_D}-linux-x64.tar.gz" \
-    "file://${ART_WORK_D}/dist/artifact.json" \
-    "file://${ART_WORK_D}/dist/artifact.sig" \
-    "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
-  ART_DIGEST12_E=$(printf '%s\n' "${ART_OUT_E}" | sed -n 1p | awk '{print $2}')
-  ART_TREE_E=$(printf '%s\n' "${ART_OUT_E}" | sed -n 2p)
-  ART_RELEASE_E=$(artifact_release_dir "${ART_CONV2}" "${ART_SHA_D}" "${ART_DIGEST12_E}")
-  artifact_stage "${ART_CONV2}" "${ART_TREE_E}" "${ART_SHA_D}" "${ART_DIGEST12_E}" 2>/dev/null
-  : >"${ART_CALLS}"
-  touch "${ART_TMP}/restart-fails"
-  ART_RC=0
-  ART_ACT_OUT=$(artifact_activate "${ART_CONV2}" "${ART_RELEASE_E}" 3000 2>/dev/null) || ART_RC=$?
-  expect_eq 'convert: an unhealthy FIRST activation exits non-zero' \
-    "$([[ ${ART_RC} -ne 0 ]] && echo failed || echo ok)" 'failed'
-  expect_eq 'convert: an unhealthy first activation reports FICUS_RELEASE_ROLLED_BACK=1' \
-    "${ART_ACT_OUT}" 'FICUS_RELEASE_ROLLED_BACK=1'
-  expect_eq 'convert: current is rolled back to the git tree the box was serving' \
-    "$(readlink "${ART_CONV2}/current")" "${ART_CONV2_REL}"
-  expect_eq 'convert: previous is restored to what the conversion left' \
-    "$(readlink "${ART_CONV2}/previous")" "${ART_CONV2_REL}"
-  expect_eq 'convert: the rollback restarted the services again' \
-    "$(grep -c '^restart 3000$' "${ART_CALLS}" || true)" '2'
-  rm -f "${ART_TMP}/restart-fails"
-  rm -rf "$(dirname "${ART_CONV2}")"
+  ART_ERR=$(artifact_convert_git_checkout "${ART_CONV}" 2>&1) || ART_RC=$?
+  expect_eq 'convert: refused with bridge guidance' "${ART_RC}" 1
+  expect_match 'convert: operator gets a precise bridge-release prerequisite' "${ART_ERR}" 'ficus-host-layout-bridge'
+  expect_eq 'convert: original git/data/env remain, no releases or current created' \
+    "$([[ -d ${ART_CONV}/.git && -f ${ART_CONV}/apps/core/data && -f ${ART_CONV}/.env && ! -e ${ART_CONV}/releases && ! -L ${ART_CONV}/current ]] && echo intact)" intact
+  rm -rf "${ART_CONV}"
 
   ART_RET=$(mktemp -d)
   mkdir -p "${ART_RET}/releases"
@@ -5384,15 +5218,15 @@ expect_eq 'build_stamp_path lives next to the checkout' \
   "$(build_stamp_path /srv/core)" "/srv/core/${HL_NEW_BUILD_STAMP}"
 BS_LEGACY=$(mktemp -d)
 : >"${BS_LEGACY}/${HL_LEGACY_BUILD_STAMP}"
-expect_eq 'build_stamp_path: a checkout with only the legacy stamp is read under it' \
-  "$(build_stamp_path "${BS_LEGACY}")" "${BS_LEGACY}/${HL_LEGACY_BUILD_STAMP}"
+expect_eq 'build_stamp_path: a legacy-only stamp is not read' \
+  "$(build_stamp_path "${BS_LEGACY}")" "${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
 expect_eq 'build_stamp_path --write: always the Ficus name' \
   "$(build_stamp_path "${BS_LEGACY}" --write)" "${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
 : >"${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
 expect_eq 'build_stamp_path: with both, the Ficus one' \
   "$(build_stamp_path "${BS_LEGACY}")" "${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
 build_stamp_clear "${BS_LEGACY}"
-expect_eq 'build_stamp_clear: removes both names' "$(find "${BS_LEGACY}" -mindepth 1 | wc -l | tr -d ' ')" '0'
+expect_eq 'build_stamp_clear: leaves legacy record for journaled finalization' "$(find "${BS_LEGACY}" -mindepth 1 -printf '%f')" "${HL_LEGACY_BUILD_STAMP}"
 rm -rf "${BS_LEGACY}"
 
 BS_TMP=$(mktemp -d)
@@ -5452,10 +5286,8 @@ expect_eq 'build_stamp_is_current: no stamp on disk -> not current' \
   "$(build_stamp_is_current "${BS_GIT}" false && echo yes || echo no)" 'no'
 
 build_stamp_write "${BS_GIT}" true
-# Bridge: the legacy stamp is written too (same bytes) for a toolkit from
-# before the host layout.
-expect_eq 'build_stamp_write: writes the Ficus stamp and the legacy one, byte-identical' \
-  "$(cmp -s "${BS_GIT}/${HL_NEW_BUILD_STAMP}" "${BS_GIT}/${HL_LEGACY_BUILD_STAMP}" && echo both || echo missing)" 'both'
+expect_eq 'build_stamp_write: only writes the canonical stamp' \
+  "$([[ -f ${BS_GIT}/${HL_NEW_BUILD_STAMP} && ! -e ${BS_GIT}/${HL_LEGACY_BUILD_STAMP} ]] && echo canonical)" canonical
 expect_eq 'build_stamp_is_current: fresh stamp, commit+lock+outputs all match -> current (skip)' \
   "$(build_stamp_is_current "${BS_GIT}" false && echo yes || echo no)" 'yes'
 

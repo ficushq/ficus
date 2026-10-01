@@ -140,7 +140,7 @@ expect_eq 'no manifest at all → 1' "$(core_release_host_layout "${SCRATCH}/mis
 printf '{"hostLayout":"two"}\n' >"$T/artifact.json"
 expect_eq 'a malformed hostLayout → 1' "$(core_release_host_layout "$T")" '1'
 : >"$T3/$HL_LEGACY_RELEASE_MARKER"
-expect_eq 'legacy marker accepted' "$(release_is_complete "$T3" && echo y)" 'y'
+expect_eq 'legacy marker refused by normal activation' "$(release_is_complete "$T3" && echo y || echo n)" 'n'
 T4=$(mktemp -d "${SCRATCH}/t.XXXXXX")
 : >"$T4/.ficus-release-complete"
 expect_eq 'ficus marker accepted' "$(release_is_complete "$T4" && echo y)" 'y'
@@ -263,7 +263,7 @@ for hl_l in 1 2 fresh; do
   if [[ ${hl_l} == 1 ]]; then
     want_etc=${HL_LEGACY_ETC} want_prefix=${HL_LEGACY_UNIT_PREFIX} want_alias='' want_db=${HL_LEGACY_DB_NAME}
   else
-    want_etc=/etc/ficus want_prefix=ficus want_alias="Alias=${HL_LEGACY_UNIT_PREFIX}-" want_db=ficus
+    want_etc=/etc/ficus want_prefix=ficus want_alias='' want_db=ficus
   fi
   for hl_u in api worker; do
     hl_unit=$(tmpl_render "${hl_l}" render_core_unit "$SCRIPT_DIR/systemd/ficus-${hl_u}.service.tmpl")
@@ -290,9 +290,9 @@ for hl_l in 1 2 fresh; do
   expect_eq "templates (layout ${hl_l}, backup script): the container dump names the layout's database, no @TOKEN@" \
     "$(grep -c "pg_dump -U postgres -Fc ${want_db} " <<<"${hl_unit}"):$(grep -c '@[A-Z_]*@' <<<"${hl_unit}" || true)" '1:0'
 done
-expect_eq 'templates: the backup service [Install] holds only the Alias= (so `enable` creates just the alias)' \
+expect_eq 'templates: normal finalized backup service has no alias-only Install section' \
   "$(tmpl_render 2 render_backup_unit_content "$SCRIPT_DIR/systemd/ficus-backup.service.tmpl" /x '*-*-* 03:15:00' external | sed -n '/^\[Install\]/,$p' | tr '\n' '|')" \
-  "[Install]|Alias=${HL_LEGACY_UNIT_PREFIX}-backup.service|"
+  ""
 expect_eq 'templates: a layout-1 backup service has no [Install] section at all (the unit it always had)' \
   "$(tmpl_render 1 render_backup_unit_content "$SCRIPT_DIR/systemd/ficus-backup.service.tmpl" /x '*-*-* 03:15:00' external | grep -c '^\[Install\]' || true):$(tmpl_render 1 render_backup_unit_content "$SCRIPT_DIR/systemd/ficus-backup.service.tmpl" /x '*-*-* 03:15:00' external | tail -n 1)" \
   '0:StandardError=journal'
@@ -318,9 +318,9 @@ hd=$(mktemp -d)
 hd_new="$hd/$HL_NEW_HOME_NAME" hd_old="$hd/$HL_LEGACY_HOME_NAME"
 expect_eq 'home_dir_default: no data anywhere (a fresh host) → the Ficus dir' "$(home_dir_default "$hd")" "$hd_new"
 mkdir -p "$hd_old/sessions"
-expect_eq 'home_dir_default: data only in the legacy dir → the legacy dir' "$(home_dir_default "$hd")" "$hd_old"
+expect_match 'home_dir_default: legacy data refuses instead of being hidden' "$(home_dir_default "$hd" 2>&1 || true)" ficus-host-layout-bridge
 mkdir -p "$hd_new"
-expect_eq 'home_dir_default: legacy data plus a stray, empty Ficus dir → still the legacy dir' "$(home_dir_default "$hd")" "$hd_old"
+expect_match 'home_dir_default: empty canonical dir does not hide legacy data' "$(home_dir_default "$hd" 2>&1 || true)" ficus-host-layout-bridge
 rm -rf "$hd_old" "$hd_new"
 mkdir -p "$hd_new/sessions" "$hd_old/cli"
 expect_eq 'home_dir_default: Ficus data plus a CLI-only legacy dir → still the Ficus dir' "$(home_dir_default "$hd")" "$hd_new"
@@ -329,7 +329,7 @@ ln -s "$hd_new" "$hd_old"
 expect_eq 'home_dir_default: the legacy dir a link to the Ficus one (migrated) → the Ficus dir' "$(home_dir_default "$hd")" "$hd_new"
 rm -f "$hd_old"
 mkdir -p "$hd_old/sessions"
-expect_match 'home_dir_default: both hold data → the Ficus dir, with a warning' "$(home_dir_default "$hd" 2>&1)" "both .* hold Core data.*$hd_new"
+expect_match 'home_dir_default: both hold data requires explicit migration' "$(home_dir_default "$hd" 2>&1 || true)" ficus-host-layout-bridge
 rm -rf "$hd"
 
 # --- the DSN's CA path, and the compat link a fresh layout-2 host gets for it ---
@@ -743,7 +743,7 @@ YAMLEOF
   expect_eq 'layout 2 now' "$(host_layout_detect)" '2'
   expect_eq 'not needed twice' "$(host_migration_host_layout_needed "$REL" && echo y || echo n)" 'n'
   expect_eq 'the framework re-renders the same units after it (host_migrate_for)' \
-    "$(cp "$UNITS/ficus-api.service" "$SCRATCH/api.before" && install_core_units "$SCRIPT_DIR/systemd" && cmp -s "$SCRATCH/api.before" "$UNITS/ficus-api.service" && echo same)" 'same'
+    "$(cp "$UNITS/ficus-api.service" "$SCRATCH/api.before" && HL_BRIDGE_ALIASES=1 install_core_units "$SCRIPT_DIR/systemd" && cmp -s "$SCRATCH/api.before" "$UNITS/ficus-api.service" && echo same)" 'same'
   host_migrate_commit
   expect_eq 'committed' "$(pending_state)" 'n'
 

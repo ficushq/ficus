@@ -208,27 +208,16 @@ managed_user_home() { # RUN_USER
   printf '%s' "${home}"
 }
 
-# The default HOME_DIR under RUN_HOME, decided as Core decides it
-# (apps/core/src/lib/utils/home.ts, resolveHomeDir) — by where Core's DATA is,
-# its `sessions/` dir (HL_HOME_DATA_MARKER), never by which dirs merely exist:
-# the legacy dir as a link to the Ficus one (a migrated host) → the Ficus dir;
-# else the Ficus dir if it holds data (a warning when the legacy dir does too);
-# else the legacy dir if it holds data (a host that has not moved); else (a
-# fresh host) the Ficus dir.
+# Normal C-FIN defaults are canonical. Refuse rather than hide a separate
+# legacy Core data tree; explicit original migration/recovery owns that move.
 HL_HOME_DATA_MARKER=sessions
 home_dir_default() { # RUN_HOME
   local ficus="$1/${HL_NEW_HOME_NAME}" legacy="$1/${HL_LEGACY_HOME_NAME}"
-  if [[ -L ${legacy} && -e ${ficus} && $(readlink -f -- "${legacy}") == "$(readlink -f -- "${ficus}")" ]]; then
-    printf '%s\n' "${ficus}"
-  elif [[ -d ${ficus}/${HL_HOME_DATA_MARKER} ]]; then
-    [[ ! -d ${legacy}/${HL_HOME_DATA_MARKER} || -L ${legacy} ]] ||
-      log_warn "both ${ficus} and ${legacy} hold Core data (${HL_HOME_DATA_MARKER}/) — using ${ficus}; set HOME_DIR to choose"
-    printf '%s\n' "${ficus}"
-  elif [[ -d ${legacy}/${HL_HOME_DATA_MARKER} ]]; then
-    printf '%s\n' "${legacy}"
-  else
-    printf '%s\n' "${ficus}"
+  if [[ -d ${legacy}/${HL_HOME_DATA_MARKER} ]] &&
+    [[ ! -L ${legacy} || $(readlink -f -- "${legacy}") != "$(readlink -f -- "${ficus}")" ]]; then
+    die 'unmigrated legacy Core HOME data would be hidden — use the ficus-host-layout-bridge Core release first'
   fi
+  printf '%s\n' "${ficus}"
 }
 
 ensure_system_bun_node() { # RUN_USER SOURCE_BUN
@@ -446,7 +435,7 @@ _hl_layout_value() { # VALUE
 # on layout 2 carries its legacy name as a systemd Alias=: `systemctl restart
 # <legacy>-api` from an older release or toolkit still reaches it, and
 # `systemctl enable` creates the alias link. Finalize turns this off.
-HL_BRIDGE_ALIASES=1
+HL_BRIDGE_ALIASES=0
 
 # The Alias= line for the Ficus unit NAME (api.service, backup.timer, ...:
 # the unit's name without its prefix) — `Alias=<legacy prefix>-NAME` on layout
@@ -476,10 +465,10 @@ _hl_alias_sed() { # TEMPLATE
   fi
 }
 
-# Is the release dir TREE complete (staged and verified)? Either marker counts:
-# a release staged before the host migration carries the legacy one.
+# Only the canonical marker proves a normal C-FIN release complete.
+# The retained one-shot migration owns translation of earlier markers.
 release_is_complete() { # TREE
-  [[ -f $1/${HL_NEW_RELEASE_MARKER} || -f $1/${HL_LEGACY_RELEASE_MARKER} ]]
+  [[ -f $1/${HL_NEW_RELEASE_MARKER} ]]
 }
 
 host_layout_resolve "$(host_layout_detect)"
@@ -1425,6 +1414,14 @@ host_layout_dsn_needs_legacy_ca_link() { # DSN
   [[ ! -e ${FICUS_HOST_ROOT:-}${HL_LEGACY_ETC} && ! -L ${FICUS_HOST_ROOT:-}${HL_LEGACY_ETC} ]]
 }
 
+# Normal setup/activation must not recreate the retired CA bridge.
+require_canonical_database_ca() { # DSN (never log the credential)
+  local cert
+  cert=$(dsn_sslrootcert "$1")
+  [[ ${cert} != "${HL_LEGACY_ETC}" && ${cert} != "${HL_LEGACY_ETC}/"* ]] ||
+    die 'database sslrootcert still names the legacy host path — update it through the ficus-host-layout-bridge procedure before finalizing this upgrade'
+}
+
 # Create that compat link (see above) when DSN needs it; a no-op otherwise.
 host_layout_link_legacy_ca_dir() { # DSN
   local legacy="${FICUS_HOST_ROOT:-}${HL_LEGACY_ETC}" cert
@@ -1843,6 +1840,18 @@ restore_archived_home() { # OUT_DIR RUN_HOME
   home=$(printf '%s' "${home}" | tr -s '/')
   [[ ${home} == / ]] || home=${home%/}
   printf '%s\n' "${home}"
+}
+
+# The retained bridge restore covered gitdir/free-text paths outside the DB
+# rebasing registry. C-FIN cannot promise those paths work without its link.
+# Refuse such an envelope before pg_restore or workspace copy; never infer a
+# new migration from directory names. Canonical/custom HOME restores retain
+# the existing declared-column rebase path.
+require_finalized_restore_home() { # OUT_DIR ARCHIVED_HOME TARGET_HOME
+  local sub
+  sub=$(restore_home_subdir "$1")
+  [[ ! -e $1/${HL_LEGACY_HOME_NAME} && ! -L $1/${HL_LEGACY_HOME_NAME} && ${sub##*/} != "${HL_LEGACY_HOME_NAME}" && /${2#/}/ != */"${HL_LEGACY_HOME_NAME}"/* && /${3#/}/ != */"${HL_LEGACY_HOME_NAME}"/* ]] ||
+    die 'restore: legacy HOME backup needs the ficus-host-layout-bridge toolkit first; database and workspace were not restored'
 }
 
 # After a restore, and once the restored database is on this release's schema
@@ -3046,15 +3055,9 @@ git_source_sync() {
 # missing or mid-write just fails the next skip check's hash comparison —
 # never to a corrupted skip.
 
-# The stamp at SRC_DEST: the Ficus name, except that a checkout built before
-# the host migration is still read under the legacy name while only that one
-# exists. --write always names the Ficus one.
+# Normal builds read and write only the canonical stamp.
 build_stamp_path() { # SRC_DEST [--write]
-  if [[ ${2:-} != --write && ! -e $1/${HL_NEW_BUILD_STAMP} && -e $1/${HL_LEGACY_BUILD_STAMP} ]]; then
-    printf '%s/%s\n' "$1" "${HL_LEGACY_BUILD_STAMP}"
-  else
-    printf '%s/%s\n' "$1" "${HL_NEW_BUILD_STAMP}"
-  fi
+  printf '%s/%s\n' "$1" "${HL_NEW_BUILD_STAMP}"
 }
 
 # sha256 of bun.lock. Empty string (never matches a real stamp) when the
@@ -3143,7 +3146,8 @@ build_stamp_is_current() { # SRC_DEST SERVE_WEB
 # NEVER on the skip path — so a build that dies halfway can never leave a
 # valid stamp sitting over stale or half-written outputs.
 build_stamp_clear() { # SRC_DEST
-  rm -f "$1/${HL_NEW_BUILD_STAMP}" "$1/${HL_LEGACY_BUILD_STAMP}"
+  # The legacy stamp is recovery evidence until finalization journals it.
+  rm -f "$1/${HL_NEW_BUILD_STAMP}"
 }
 
 # Write the stamp. Only ever called after build_app's own output assertions
@@ -3166,9 +3170,6 @@ build_stamp_write() { # SRC_DEST SERVE_WEB
     fi
     printf 'FICUS_BUILD_AT=%s\n' "$(date -u +%FT%TZ)"
   } >"${stamp}"
-  # While the host-layout bridge lasts, the same stamp under the legacy name
-  # too: a toolkit from before it reads only that one.
-  cp -f "${stamp}" "${src_dest}/${HL_LEGACY_BUILD_STAMP}" # ficus-p5-bridge
 }
 
 # Install dependencies and build the app from a checkout. ALWAYS builds core;
@@ -3458,6 +3459,7 @@ _artifact_symlink_swap() { # TARGET LINK
 # keeps serving until the caller restarts it.
 artifact_convert_git_checkout() { # DEST
   local dest=$1 head_sha target entry name
+  require_artifact_conversion_ready "${dest}"
   require_cmd git
   [[ -d ${dest}/.git ]] ||
     die "artifact_convert_git_checkout: '${dest}' is not a git checkout — nothing to convert"
@@ -3542,6 +3544,8 @@ _artifact_curl_download() { # OUT_FILE URL
 artifact_acquire() { # DEST TARBALL_URL MANIFEST_URL SIG_URL PUBKEY_PEM_PATH
   local dest=$1 tarball_url=$2 manifest_url=$3 sig_url=$4 pubkey=$5
   local incoming tree schema commit platform digest digest12 manifest_bun host_bun files_n pkeyutl_help
+  require_host_layout_ready
+  require_artifact_conversion_ready "${dest}"
 
   require_cmd curl
   require_cmd jq
@@ -3606,20 +3610,14 @@ artifact_acquire() { # DEST TARBALL_URL MANIFEST_URL SIG_URL PUBKEY_PEM_PATH
     _artifact_fail "${incoming}" manifest_invalid "artifact manifest lists no files"
 
   # --- 3. extract, refusing a tarball that reaches outside its own root ------
-  # The root is ficus-core-<sha>/, or the legacy one for an artifact built
-  # before the rename; every member must sit under ONE of them.
+  # Only the canonical archive root matching the signed commit is accepted.
+  require_host_layout_ready '' "$(jq -r '.hostLayout // 1' <"${incoming}/artifact.json")"
   mkdir -p "${incoming}/tree"
   tar -tzf "${incoming}/artifact.tar.gz" >"${incoming}/members.txt" 2>/dev/null ||
     _artifact_fail "${incoming}" download_failed "the artifact tarball is not readable gzip (truncated download?)"
-  local root_name='' root_candidate
-  for root_candidate in "${HL_NEW_ARTIFACT_ROOT_PREFIX}${commit}" "${HL_LEGACY_ARTIFACT_ROOT_PREFIX}${commit}"; do
-    if ! grep -qvE "^${root_candidate}/" "${incoming}/members.txt"; then
-      root_name=${root_candidate}
-      break
-    fi
-  done
-  if [[ -z ${root_name} ]] || grep -qE '(^|/)\.\.(/|$)' "${incoming}/members.txt"; then
-    _artifact_fail "${incoming}" download_failed "the tarball has members outside ${HL_NEW_ARTIFACT_ROOT_PREFIX}${commit}/ (or the legacy root) — refusing to extract it"
+  local root_name="${HL_NEW_ARTIFACT_ROOT_PREFIX}${commit}"
+  if grep -qvE "^${root_name}/" "${incoming}/members.txt" || grep -qE '(^|/)\.\.(/|$)' "${incoming}/members.txt"; then
+    _artifact_fail "${incoming}" download_failed "the tarball has members outside ${root_name}/ — refusing to extract it"
   fi
   tree="${incoming}/tree/${root_name}"
   # --no-same-owner/--no-same-permissions: the archive's uid/gid/mode bits are
@@ -3688,6 +3686,7 @@ artifact_acquire() { # DEST TARBALL_URL MANIFEST_URL SIG_URL PUBKEY_PEM_PATH
 # tree would become activatable.
 artifact_stage() { # DEST INCOMING_TREE SHA DIGEST12
   local dest=$1 tree=$2 sha=$3 digest12=$4 release marker digest tree_commit
+  require_host_layout_ready "${tree}"
   release=$(artifact_release_dir "${dest}" "${sha}" "${digest12}")
   marker="${release}/${HL_NEW_RELEASE_MARKER}"
   if release_is_complete "${release}"; then
@@ -3711,15 +3710,10 @@ artifact_stage() { # DEST INCOMING_TREE SHA DIGEST12
   mv "${tree}" "${release}" ||
     die "artifact_stage: could not move the verified tree into ${release} (same-filesystem rename expected)"
   digest=$(jq -r '.digest // empty' <"${release}/artifact.json" 2>/dev/null || true)
-  # Marker last, and renamed into place, so its mere existence is proof the
-  # whole tree landed. While the host-layout bridge lasts the legacy marker is
-  # written too (first), so a toolkit from before it — an emergency Platform
-  # rollback — still sees this release as complete.
+  # Marker last and atomically renamed: later releases must not recreate a
+  # legacy marker after the finalizer has removed it.
   printf '{"sha":"%s","digest":"%s","digest12":"%s","stagedAt":"%s"}\n' \
     "${sha}" "${digest}" "${digest12}" "$(date -u +%FT%TZ)" >"${marker}.tmp"
-  cp -f "${marker}.tmp" "${release}/${HL_LEGACY_RELEASE_MARKER}.tmp" &&        # ficus-p5-bridge
-    mv -f "${release}/${HL_LEGACY_RELEASE_MARKER}.tmp" "${release}/${HL_LEGACY_RELEASE_MARKER}" || # ficus-p5-bridge
-    die "artifact_stage: could not write the legacy completion marker in ${release}" # ficus-p5-bridge
   mv -f "${marker}.tmp" "${marker}"
   # The tree has moved out; the tarball, signature and work files it came with
   # have not. Leaving them would grow releases/.incoming by one artifact-sized
@@ -3793,6 +3787,7 @@ cd "$2/apps/core" && exec bun dist/migrate.js'
 #                           runs.
 artifact_activate() { # DEST RELEASE_DIR CORE_PORT
   local dest=$1 release_dir=$2 core_port=$3 cur_before prev_before attempt hook_rc
+  require_host_layout_ready "${release_dir}"
   release_is_complete "${release_dir}" ||
     die "artifact_activate: ${release_dir} has no ${HL_NEW_RELEASE_MARKER} marker — refusing to activate an unverified tree"
   [[ -f ${dest}/.env ]] ||
@@ -3894,17 +3889,29 @@ artifact_activate() { # DEST RELEASE_DIR CORE_PORT
 }
 
 # Prune old releases: keep whatever `current` and `previous` point at, plus the
-# two newest others (by mtime), and delete the rest. Only direct children of
+# two newest others (by mtime), and unreversed finalize recovery inputs.
+# Delete the rest. Only direct children of
 # <dest>/releases are considered — the glob skips .incoming, and nothing
 # outside that directory is ever looked at, let alone removed.
 artifact_retention() { # DEST
-  local dest=$1 releases keep entry name extra=0 target
+  local dest=$1 releases keep entry name extra=0 target fin_set fin_sets pins
   releases="${dest}/releases"
   [[ -d ${releases} ]] || return 0
   keep=$'\n'
   for target in "$(readlink "${dest}/current" 2>/dev/null || true)" "$(readlink "${dest}/previous" 2>/dev/null || true)"; do
     if [[ -n ${target} ]]; then keep="${keep}$(basename "${target}")"$'\n'; fi
   done
+  # Finalize promises a byte-exact inverse, including removed release
+  # markers. Retain their parent releases until that inverse is retired;
+  # otherwise a successful activation can delete its own recovery inputs.
+  fin_sets=$(host_layout_fin_latest_committed_set --all) ||
+    die 'cannot validate finalize journal inventory — no releases were pruned'
+  while IFS= read -r fin_set; do
+    [[ -n ${fin_set} ]] || continue
+    pins=$(_hfin_release_pins "${fin_set}" "${dest}") ||
+      die 'cannot validate finalize recovery inputs — no releases were pruned'
+    keep="${keep}${pins}"$'\n'
+  done <<<"${fin_sets}"
   while IFS= read -r entry; do
     [[ -d ${entry} ]] || continue
     name=$(basename "${entry}")
@@ -4123,7 +4130,7 @@ envfile_read() { # VAR FILE KEY
 # spans, where bash suppresses errexit for the whole dynamic extent.
 
 # The registered migrations, in the order they run.
-HOST_MIGRATIONS=(host_layout)
+HOST_MIGRATIONS=(host_layout host_layout_fin)
 
 # Where backup sets and the PENDING journal live. Read at CALL time, so a test
 # (or an operator) can point it elsewhere after sourcing this file.
@@ -4520,6 +4527,7 @@ host_migrate_backup_restore() { # SETDIR
     # checkout that no longer exists. Render the CURRENT layout's units. A
     # subshell, so a die in the render is contained to this restore.
     if ! (
+      HL_BRIDGE_ALIASES=1
       install_core_units "${SCRIPT_DIR}/systemd"
       ensure_api_memory_guardrail
     ); then
@@ -4547,7 +4555,7 @@ host_migrate_backup_restore() { # SETDIR
 }
 
 # Keep the newest five backup sets; never remove the one PENDING journals, nor
-# the latest committed host_layout set (the manual reverse's way back).
+# the latest committed host_layout set or any unreversed finalize set.
 host_migrate_backup_prune() {
   local root pending d name keep='' keep_fin=''
   local -a sets=()
@@ -4557,14 +4565,15 @@ host_migrate_backup_prune() {
   if declare -F host_layout_latest_committed_set >/dev/null; then
     keep=$(host_layout_latest_committed_set) || keep=''
   fi
-  keep_fin=$(host_layout_fin_latest_committed_set) || keep_fin=''
+  keep_fin=$(host_layout_fin_latest_committed_set --all) || return 1
+  keep_fin=$'\n'"${keep_fin}"$'\n'
   for d in "${root}"/*; do
     name=${d##*/}
     [[ -d ${d} && ${name} =~ ^[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]{6}$ ]] && sets+=("${d}")
   done
   ((${#sets[@]} > 5)) || return 0
   for d in "${sets[@]:0:${#sets[@]}-5}"; do
-    [[ ${d} == "${pending}" || ${d} == "${keep}" || ${d} == "${keep_fin}" ]] && continue
+    [[ ${d} == "${pending}" || ${d} == "${keep}" || ${keep_fin} == *$'\n'"${d}"$'\n'* ]] && continue
     rm -rf -- "${d}" || return 1
     log_info "pruned host backup set ${d}"
   done
@@ -4676,6 +4685,8 @@ host_migrate() { # RELEASE_DIR
 # needs, then render the units that release runs under, right before the flip.
 host_migrate_for() { # RELEASE_DIR
   host_migrate "$1"
+  local HL_BRIDGE_ALIASES=${HL_BRIDGE_ALIASES}
+  [[ ,${HOST_MIGRATE_NAMES:-}, != *,host_layout,* ]] || HL_BRIDGE_ALIASES=1
   install_core_units "${SCRIPT_DIR}/systemd"
   ensure_api_memory_guardrail
 }
@@ -5859,6 +5870,7 @@ _hl_db_container_run() { # NAME VOLUME DB_NAME IMAGE PASSWORD
 # shellcheck disable=SC2030,SC2031
 _hl_render_core_units() {
   (
+    HL_BRIDGE_ALIASES=1
     host_layout_resolve 2
     SRC_DEST=${_HLJ_DEST_TO} DB_MODE=${_HLJ_DB_MODE}
     RUN_USER=${RUN_USER:-${_HLJ_RUN_USER}} BUN_BIN=${BUN_BIN:-/usr/local/bin/bun}
@@ -5917,7 +5929,7 @@ _hl_s10b() { # HLDIR
   user=$(awk '!/^[[:space:]]*(#|$)/ { print $1; exit }' "${extra}") || user=''
   [[ ${user} =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || user=${_HLJ_RUN_USER}
   tmp=$(mktemp) || return 1
-  if ! host_layout_sudoers_content "${user}" >"${tmp}"; then
+  if ! HL_BRIDGE_ALIASES=1 host_layout_sudoers_content "${user}" >"${tmp}"; then
     rm -f -- "${tmp}"
     return 1
   fi
@@ -5995,6 +6007,7 @@ _hl_s11() { # HLDIR
 # Render the Ficus backup .service or .timer (KIND) as layout 2 does.
 _hl_render_backup_unit() { # service|timer SCRIPT_PATH ONCALENDAR
   (
+    HL_BRIDGE_ALIASES=1
     host_layout_resolve 2
     install_rendered --check-placeholders 0644 root root "${_HL_UNITS}/${_HLN_BACKUP}.$1" \
       render_backup_unit_content "${SCRIPT_DIR}/systemd/ficus-backup.$1.tmpl" "$2" "$3" "${_HLJ_DB_MODE}"
@@ -6357,7 +6370,7 @@ _hl_undo_s1() {
 # globals to it — a reconcile that finished the migration forward did so in a
 # subshell, and one that reversed it put the host back at the legacy paths.
 # Then repair what an older toolkit wrote over the bridges.
-host_layout_adopt() {
+host_layout_adopt() { # [--no-repair] normal finalized paths only resolve
   local layout
   layout=$(host_layout_detect)
   host_layout_resolve "${layout}"
@@ -6392,7 +6405,7 @@ host_layout_adopt() {
   fi
   # Only the pre-flip hook's own move may leave these set for artifact_activate.
   ARTIFACT_RELOCATED_FROM='' ARTIFACT_RELOCATED_TO=''
-  host_layout_repair
+  [[ ${1:-} == --no-repair ]] || host_layout_repair
 }
 
 # Repair what an OLD (pre-migration) toolkit writes through the bridges on a
@@ -6404,6 +6417,7 @@ host_layout_adopt() {
 # and something stray is there.
 # shellcheck disable=SC2031 # SRC_DEST/RUN_USER/BUN_BIN: the caller's globals, read here
 host_layout_repair() {
+  local HL_BRIDGE_ALIASES=1
   local f set u timer_on=0 core=0
   local -a strays=()
   _hm_is_root || return 0
@@ -6597,17 +6611,51 @@ host_layout_reverse_committed() { # SETDIR
 }
 
 # -------------------------------------- reversible host-layout finalization
-# Prepared separately from activation: C-FIN enables this registry entry and
-# the alias-free defaults only after all canonical readers ship together.
+# Registered with normal activation; original migration and inverse remain
+# available for explicit recovery until the cleanup release.
 
 # Flush after the rename too: the plan/commit marker must survive a power loss.
 _hfin_put() { _hl_put "$@" && _hm_sync "$1"; }
 
 require_host_layout_ready() { # [RELEASE_DIR] [DECLARED_LAYOUT]
+  require_box_reprovision_settled
+  if [[ -n ${SRC_DEST:-} && ( -e ${SRC_DEST}/${HL_LEGACY_BUILD_STAMP} || -L ${SRC_DEST}/${HL_LEGACY_BUILD_STAMP} ) ]]; then
+    _hfin_build_stamp_owned "${SRC_DEST}/${HL_LEGACY_BUILD_STAMP}" ||
+      die 'unrecognized legacy build stamp — inspect it using ficus-host-layout-bridge before this upgrade; nothing was changed'
+  fi
+  if [[ -n ${SRC_DEST:-} && -f ${SRC_DEST}/.env ]]; then
+    require_canonical_database_ca "$(envfile_get "${SRC_DEST}/.env" DATABASE_URL)"
+  fi
   local target=${2:-2}
   [[ -z ${1:-} ]] || target=$(core_release_host_layout "$1")
   [[ $(host_layout_detect) != 1 && ${target} == 2 ]] ||
     die 'this host (or this release) predates the Ficus host layout — upgrade through the ficus-host-layout-bridge Core release first'
+}
+
+# The operator journal is local to Core, not the remote sandbox machine.
+# Never print its identity/auth-derived contents. Unknown or partial files
+# remain pending; an unreadable directory cannot prove that it is empty.
+require_box_reprovision_settled() {
+  local root="${FICUS_HOST_ROOT:-}/var/backups/ficus-box-reprovision" entries file
+  [[ -e ${root} || -L ${root} ]] || return 0
+  [[ -d ${root} && ! -L ${root} && -r ${root} && -x ${root} && $(readlink -f -- "${root}") == "${root}" && $(stat -c %u:%a -- "${root}") == 0:700 ]] ||
+    die 'unfinished or unreadable box reprovision journal — finish the guarded operator recovery before finalizing this upgrade'
+  entries=$(find "${root}" -mindepth 1 -maxdepth 1 -print) ||
+    die 'could not inventory box reprovision journals — finish the guarded operator recovery before finalizing this upgrade'
+  while IFS= read -r file; do
+    [[ -n ${file} ]] || continue
+    [[ ${file##*/} =~ ^[0-9a-f]{64}\.json$ && -f ${file} && ! -L ${file} && $(stat -c %u:%a -- "${file}") == 0:600 ]] &&
+      jq -se 'length == 1 and (.[0] | type == "object" and .version == 1 and .done == true and (.identity | type == "string" and length > 0) and (.runtime | type == "object" and ([.server, .socket, .proxy, .docker, .manager, .linger, .serverEnabled, .socketEnabled, .dockerEnabled] | all(type == "boolean"))))' "${file}" >/dev/null 2>&1 ||
+      die 'unfinished or invalid box reprovision journal — finish the guarded operator recovery before finalizing this upgrade'
+  done <<<"${entries}"
+}
+
+# A conversion excludes the original units from its backup. That cannot
+# provide the byte-exact finalize inverse. Convert with the bridge toolkit
+# first, then return here for a separate, fully journaled finalization.
+require_artifact_conversion_ready() { # DEST
+  [[ ! -d $1/.git ]] ||
+    die 'This upgrade cannot safely combine git-to-artifact conversion with host finalization — convert using the ficus-host-layout-bridge Core release first, then retry this upgrade'
 }
 
 _hfin_links() { # exact link path<TAB>target pairs, children before parents
@@ -6675,7 +6723,32 @@ host_migration_host_layout_fin_needed() { # RELEASE_DIR (read-only)
   for marker in "${SRC_DEST}"/releases/*/"${HL_LEGACY_RELEASE_MARKER}"; do
     [[ ! -f ${marker} || -L ${marker} ]] || return 0
   done
-  [[ ${sudoers_state} == bridge ]]
+  [[ -e ${SRC_DEST}/${HL_LEGACY_BUILD_STAMP} || -L ${SRC_DEST}/${HL_LEGACY_BUILD_STAMP} || ${sudoers_state} == bridge ]]
+}
+
+# Bridge builds copied this generated stamp. Remove only a validated copy
+# in the known generated schema; foreign bytes stay for operator inspection.
+_hfin_build_stamp_owned() { # LEGACY_STAMP
+  local stamp=$1 key value count=0 seen='|'
+  [[ -f ${stamp} && ! -L ${stamp} ]] || return 1
+  # The normal git build has already refreshed the canonical stamp. Its
+  # content need not equal the old generated cache record being journaled.
+  while IFS='=' read -r key value || [[ -n ${key}${value} ]]; do
+    [[ ${seen} != *"|${key}|"* ]] || return 1
+    seen+="${key}|"
+    case ${key} in
+      FICUS_BUILD_COMMIT) [[ ${value} =~ ^[0-9a-f]{40}$ ]] || return 1 ;;
+      FICUS_BUILD_LOCK_HASH | FICUS_BUILD_HASH_CORE_INDEX | FICUS_BUILD_HASH_CORE_WORKER | FICUS_BUILD_HASH_CORE_MIGRATE | FICUS_BUILD_HASH_CLI_FICUS | FICUS_BUILD_HASH_WEB_INDEX)
+        [[ ${value} =~ ^[0-9a-f]{64}$ ]] || return 1 ;;
+      FICUS_BUILD_AT) [[ ${value} =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || return 1 ;;
+      *) return 1 ;;
+    esac
+    count=$((count + 1))
+  done <"$stamp"
+  for key in FICUS_BUILD_COMMIT FICUS_BUILD_LOCK_HASH FICUS_BUILD_HASH_CORE_INDEX FICUS_BUILD_HASH_CORE_WORKER FICUS_BUILD_HASH_CORE_MIGRATE FICUS_BUILD_HASH_CLI_FICUS FICUS_BUILD_AT; do
+    [[ ${seen} == *"|${key}|"* ]] || return 1
+  done
+  [[ $count == 7 || $count == 8 ]]
 }
 
 _hfin_seam() { # checkpoint (fixtures only)
@@ -6751,6 +6824,7 @@ _hfin_plan() { # FINDIR RELEASE_DIR (no host mutations)
   mkdir -p -m 0700 "${fin}/EXTRA" && chmod 0700 "${fin}" || return 1
   : >"${fin}/STEPS" && : >"${fin}/LINKS" && : >"${fin}/UNITS" && : >"${fin}/EXTRA/MANIFEST" || return 1
   _hfin_put "${fin}" RELEASE "${release}" || return 1
+  _hfin_put "${fin}" DEST "${SRC_DEST}" || return 1
   links=$(_hfin_links) || return 1
   while IFS=$'\t' read -r from to; do
     if [[ -L ${from} && $(readlink -- "${from}") == "${to}" ]]; then
@@ -6774,6 +6848,14 @@ _hfin_plan() { # FINDIR RELEASE_DIR (no host mutations)
     [[ -f ${marker%/*}/${HL_NEW_RELEASE_MARKER} ]] || return 1
     _hfin_save_extra "${fin}" "${marker}" || return 1
   done
+  marker="${SRC_DEST}/${HL_LEGACY_BUILD_STAMP}"
+  if [[ -e ${marker} || -L ${marker} ]]; then
+    [[ -f ${marker} && ! -L ${marker} ]] && _hfin_build_stamp_owned "${marker}" || {
+      log_error 'host_layout_fin: preserving an unrecognized legacy build stamp; inspect it with the bridge toolkit before finalizing'
+      return 1
+    }
+    _hfin_save_extra "${fin}" "${marker}" || return 1
+  fi
   _hfin_put "${fin}" PLANNED 1
 }
 
@@ -6845,7 +6927,7 @@ host_migration_host_layout_fin_apply() { # RELEASE_DIR
   _hfin_seam units || return 1
   _hl_append "${fin}" STEPS markers || return 1
   while IFS=$'\t' read -r idx sha path; do
-    [[ ${path##*/} == "${HL_LEGACY_RELEASE_MARKER}" ]] || continue
+    [[ ${path##*/} == "${HL_LEGACY_RELEASE_MARKER}" || ${path} == "${SRC_DEST}/${HL_LEGACY_BUILD_STAMP}" ]] || continue
     if [[ -e ${path} ]]; then
       touch -r "${path%/*}" "${fin}/marker-mtime" || return 1
       rm -- "${path}" && touch -r "${fin}/marker-mtime" "${path%/*}" || return 1
@@ -6866,6 +6948,8 @@ host_migration_host_layout_fin_reverse() { # SETDIR (framework only)
   [[ ${_HM_IN_REVERSE:-} == 1 && ${_HM_REVERSE_RUNNING:-} == host_layout_fin && ${_HM_REVERSE_SET:-} == "${set}" ]] || return 1
   [[ -f ${fin}/PLANNED ]] || return 0
   host_layout_resolve 2
+  SRC_DEST=${SRC_DEST:-$(_hl_get "${fin}" DEST)}
+  _hfin_release_pins "${set}" "${SRC_DEST}" >/dev/null || return 1
   _hfin_stop || return 1
   # Restore only links that this plan actually removed; a foreign replacement
   # is an operator conflict, never an overwrite. Parent links go back last.
@@ -6889,21 +6973,61 @@ host_migration_host_layout_fin_reverse() { # SETDIR (framework only)
   _hfin_put "${fin}" REVERSED 1
 }
 
-host_layout_fin_latest_committed_set() {
-  local dir best=''
-  for dir in "$(host_migrate_backup_root)"/*/; do
-    dir=${dir%/}
-    [[ -f ${dir}/fin/DONE && ! -e ${dir}/fin/REVERSED && ! -e ${dir}/RESTORED ]] || continue
+# Shared by retention and inverse preflight. Validate every extra-file
+# backup and destination before pruning or stopping anything. Cleanup release
+# must retire this retention dependency together with finalize journals.
+_hfin_release_pins() { # SET DEST -> one confined release basename per line
+  local set=$1 dest=${2%/} fin="$1/fin" idx sha path parent count=0 mtime line
+  local record_re=$'^[1-9][0-9]*\t[0-9a-f]{64}\t[^\t]+$'
+  [[ ${dest} == /* && -d ${dest} && $(readlink -f -- "${dest}") == "${dest}" &&
+    -f ${fin}/DEST && ! -L ${fin}/DEST && $(_hl_get "${fin}" DEST) == "${dest}" &&
+    ${set%/*} == "$(host_migrate_backup_root)" && -d ${set} && ! -L ${set} &&
+    $(readlink -f -- "${set}") == "${set}" && -d ${fin}/EXTRA && ! -L ${fin} && ! -L ${fin}/EXTRA &&
+    $(_hm_set_reverse_names "${set}") == host_layout_fin && -f ${fin}/EXTRA/MANIFEST && ! -L ${fin}/EXTRA/MANIFEST ]] || return 1
+  while IFS= read -r line || [[ -n ${line} ]]; do
+    [[ ${line} =~ ${record_re} ]] || return 1
+    IFS=$'\t' read -r idx sha path <<<"${line}"
+    count=$((count + 1))
+    [[ ${idx} == "${count}" && ${sha} =~ ^[0-9a-f]{64}$ && -n ${path} && ! -L ${path} &&
+      -f ${fin}/EXTRA/${idx} && ! -L ${fin}/EXTRA/${idx} && $(_hm_sha256 "${fin}/EXTRA/${idx}") == "${sha}" ]] || return 1
+    parent=${path%/*}
+    [[ -d ${parent} && ! -L ${parent} && $(readlink -f -- "${parent}") == "${parent}" ]] || return 1
+    mtime=$(_hl_get "${fin}/EXTRA" "${idx}.parent-mtime") && date -d "${mtime}" >/dev/null 2>&1 || return 1
+    if [[ ${path} == "${dest}/${HL_LEGACY_BUILD_STAMP}" || ${path} == "${HL_SUDOERS}" ]]; then continue; fi
+    [[ ${parent%/*} == "${dest}/releases" && ${path##*/} == "${HL_LEGACY_RELEASE_MARKER}" &&
+      ${parent##*/} != . && ${parent##*/} != .. ]] || return 1
+    printf '%s\n' "${parent##*/}"
+  done <"${fin}/EXTRA/MANIFEST"
+}
+
+host_layout_fin_latest_committed_set() { # [--all] validated unreversed sets; default newest only
+  local dir best='' root marker
+  root=$(host_migrate_backup_root)
+  [[ -e ${root} || -L ${root} ]] || return 0
+  [[ -d ${root} && ! -L ${root} && $(readlink -f -- "${root}") == "${root}" ]] || return 1
+  for dir in "${root}"/*; do
+    [[ -e ${dir}/fin || -L ${dir}/fin ]] || continue
+    [[ -d ${dir} && ! -L ${dir} && -d ${dir}/fin && ! -L ${dir}/fin ]] || return 1
+    for marker in DONE REVERSED; do
+      [[ -e ${dir}/fin/${marker} || -L ${dir}/fin/${marker} ]] || continue
+      [[ -f ${dir}/fin/${marker} && ! -L ${dir}/fin/${marker} && $(cat "${dir}/fin/${marker}") == 1 ]] || return 1
+    done
+    [[ -f ${dir}/fin/DONE && ! -e ${dir}/fin/REVERSED ]] || continue
+    _hfin_release_pins "${dir}" "${SRC_DEST}" >/dev/null || return 1
+    [[ ${1:-} != --all ]] || printf '%s\n' "${dir}"
     if [[ -z ${best} || ${dir}/fin/DONE -nt ${best}/fin/DONE ]] ||
       { [[ ! ${dir}/fin/DONE -ot ${best}/fin/DONE ]] && [[ ${dir} > ${best} ]]; }; then best=${dir}; fi
   done
-  [[ -n ${best} ]] && printf '%s\n' "${best}"
+  [[ -z ${best} || ${1:-} == --all ]] || printf '%s\n' "${best}"
+  return 0
 }
 
 host_layout_fin_reverse_committed() { # SETDIR
   local set=${1%/} root fin latest names pending want path now tmp
   _hm_is_root || die 'host_layout_fin: committed reverse is root-only'
   root=$(host_migrate_backup_root); fin="${set}/fin"
+  host_layout_resolve 2
+  SRC_DEST=${SRC_DEST:-$(_hl_get "${fin}" DEST)}
   [[ ${set%/*} == "${root}" && -d ${set} && ! -L ${set} ]] || die 'host_layout_fin: backup set is outside the journal root'
   names=$(_hm_set_reverse_names "${set}") && [[ ${names} == host_layout_fin ]] || die 'host_layout_fin: not a finalize backup set'
   if [[ -e ${root}/PENDING ]]; then
@@ -6912,13 +7036,15 @@ host_layout_fin_reverse_committed() { # SETDIR
     host_migrate_reconcile
     return
   fi
-  latest=$(host_layout_fin_latest_committed_set) || latest=''
+  latest=$(host_layout_fin_latest_committed_set) || die 'host_layout_fin: invalid finalize journal inventory — nothing was stopped or changed'
   [[ ${latest} == "${set}" ]] || die 'host_layout_fin: only the latest unreversed finalize set can be reversed'
   [[ -z $(_hl_newer_foreign_sets "${set}") ]] || die 'host_layout_fin: a newer host migration remains in effect'
   while IFS=$'\t' read -r want path; do
     now=absent; [[ ! -f ${path} ]] || now=$(_hm_sha256 "${path}") || return 1
     [[ ${now} == "${want}" || ${HL_REVERSE_ACCEPT_FILE_REVERT:-0} == 1 ]] || die 'host_layout_fin: host files changed since finalize; inspect before --accept-file-revert'
   done <"${fin}/LIVE_SHAS"
+  _hfin_release_pins "${set}" "${SRC_DEST}" >/dev/null ||
+    die 'host_layout_fin: recovery destinations or backup metadata are missing/invalid — nothing was stopped or changed'
   _hfin_put "${set}" REVERSE_INTENT 1 || return 1
   tmp=$(mktemp "${root}/.PENDING.fin.XXXXXX") || return 1
   printf '%s\t%s\t%s\n' "${set}" host_layout_fin "$(_hl_get "${fin}" RELEASE)" >"${tmp}" &&

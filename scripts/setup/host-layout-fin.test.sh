@@ -61,6 +61,7 @@ export PATH="$SCRATCH/bin:$PATH"
 PASS=0
 check() { [[ $1 == "$2" ]] || { echo "FAIL: $3 ($1 != $2)" >&2; exit 1; }; PASS=$((PASS+1)); }
 fixture() {
+ local HL_BRIDGE_ALIASES=1 # Fixture is the bridge release; normal rendering stays finalized.
  rm -rf "$FICUS_HOST_ROOT" "$HOST_MIGRATE_BACKUP_ROOT" "$FIN_STATE"
  mkdir -p "$FICUS_SYSTEMD_UNIT_DIR" "$FIN_STATE" "$HOST_MIGRATE_BACKUP_ROOT"
  host_layout_resolve 2
@@ -326,4 +327,207 @@ check "$(readlink "$offline/etc/systemd/system/old-fixture.service")" /etc/syste
 printf '[Service]\nType=oneshot\nExecStart=/bin/true\n' >"$offline/etc/systemd/system/ficus-fixture.service"
 /usr/bin/systemctl --root "$offline" reenable ficus-fixture.service >/dev/null 2>&1
 check "$([[ -L $offline/etc/systemd/system/old-fixture.service ]] && echo alias || echo absent)" absent 'real systemd drops alias from static service'
+# A leftover bridge build stamp is journaled and reversed with the markers.
+fixture
+stamp="$SRC_DEST/$HL_NEW_BUILD_STAMP"
+{
+ printf 'FICUS_BUILD_COMMIT=%040d\n' 1
+ for field in LOCK_HASH HASH_CORE_INDEX HASH_CORE_WORKER HASH_CORE_MIGRATE HASH_CLI_FICUS; do printf 'FICUS_BUILD_%s=%064d\n' "$field" 2; done
+ printf 'FICUS_BUILD_AT=2026-10-01T00:00:00Z\n'
+} >"$stamp"
+cp -p "$stamp" "$SRC_DEST/$HL_LEGACY_BUILD_STAMP"
+cp -p "$SRC_DEST/$HL_LEGACY_BUILD_STAMP" "$SCRATCH/old-build-stamp"
+build_stamp_clear "$SRC_DEST"
+check "$(cmp -s "$SRC_DEST/$HL_LEGACY_BUILD_STAMP" "$SCRATCH/old-build-stamp" && echo retained)" retained 'build invalidation retains old stamp before journal'
+# Exercise the actual writer with a new commit and real output hashes.
+git -C "$SRC_DEST" init -q
+git -C "$SRC_DEST" -c user.name=Fixture -c user.email=fixture@example.invalid commit -q --allow-empty -m fixture
+mkdir -p "$SRC_DEST/apps/core/dist" "$SRC_DEST/apps/cli/dist"
+for file in bun.lock apps/core/dist/index.js apps/core/dist/worker.js apps/core/dist/migrate.js apps/cli/dist/ficus.js; do printf fixture >"$SRC_DEST/$file"; done
+build_stamp_write "$SRC_DEST" false
+check "$(cmp -s "$stamp" "$SCRATCH/old-build-stamp" && echo same || echo newer)" newer 'normal writer refreshes canonical stamp independently'
+stamp_sha=$(sha256sum "$stamp")
+host_migrate "$SRC_DEST/releases/final"
+check "$([[ -e $SRC_DEST/$HL_LEGACY_BUILD_STAMP ]] && echo legacy || echo absent)" absent 'finalize removes known generated legacy build stamp'
+check "$(sha256sum "$stamp")" "$stamp_sha" 'canonical build stamp unchanged'
+host_migrate_reconcile
+check "$(cmp -s "$SCRATCH/old-build-stamp" "$SRC_DEST/$HL_LEGACY_BUILD_STAMP" && echo restored)" restored 'inverse restores exact old stamp'
+for foreign in 'foreign bytes' 'FICUS_BUILD_COMMIT=bad'; do
+ fixture
+ printf '%s\n' "$foreign" >"$SRC_DEST/$HL_LEGACY_BUILD_STAMP"
+ cp "$SRC_DEST/$HL_LEGACY_BUILD_STAMP" "$SRC_DEST/$HL_NEW_BUILD_STAMP"
+ if (require_host_layout_ready) >/dev/null 2>&1; then echo 'FAIL foreign stamp accepted by early readiness'; exit 1; fi
+ check "$([[ -e $HOST_MIGRATE_BACKUP_ROOT/PENDING ]] && echo pending || echo absent)" absent 'foreign stamp readiness refuses before journal'
+ if (host_migrate "$SRC_DEST/releases/final") >/dev/null 2>&1; then echo 'FAIL foreign stamp accepted'; exit 1; fi
+ check "$(cat "$SRC_DEST/$HL_LEGACY_BUILD_STAMP")" "$foreign" 'unrecognized stamp preserved'
+ check "$(readlink "$FICUS_HOST_ROOT$HL_LEGACY_DEST")" "$SRC_DEST" 'foreign stamp refuses before link mutation'
+done
+
+# Retention must not make a later committed inverse impossible. Missing
+# destinations and foreign/corrupt metadata refuse before stops or pruning.
+fixture
+host_migrate "$SRC_DEST/releases/final"
+setdir=$HOST_MIGRATE_BACKUP_SET
+ln -sfn "$SRC_DEST/releases/final" "$SRC_DEST/current"
+host_migrate_commit
+mv "$SRC_DEST/releases/bridge" "$SCRATCH/pruned-fixture-release"
+if (host_layout_fin_reverse_committed "$setdir") >"$SCRATCH/pruned-inverse.log" 2>&1; then echo 'FAIL inverse accepted missing release parent'; exit 1; fi
+grep -q 'nothing was stopped or changed' "$SCRATCH/pruned-inverse.log"
+check "$(cat "$FIN_STATE/$HL_UNIT_API.service")" active 'missing release refuses before stopping API'
+check "$([[ -e $HOST_MIGRATE_BACKUP_ROOT/PENDING ]] && echo pending || echo absent)" absent 'missing release refuses before inverse journal'
+mv "$SCRATCH/pruned-fixture-release" "$SRC_DEST/releases/bridge"
+cp "$setdir/fin/EXTRA/MANIFEST" "$SCRATCH/valid-extra-manifest"
+for mutation in foreign malformed unterminated; do
+ if [[ $mutation == foreign ]]; then
+  sed "s|$SRC_DEST/releases/bridge/|$SCRATCH/|" "$SCRATCH/valid-extra-manifest" >"$setdir/fin/EXTRA/MANIFEST"
+ elif [[ $mutation == unterminated ]]; then
+  cp "$SCRATCH/valid-extra-manifest" "$setdir/fin/EXTRA/MANIFEST"
+  printf 'invalid trailing record' >>"$setdir/fin/EXTRA/MANIFEST"
+ else
+  printf 'invalid record\n' >"$setdir/fin/EXTRA/MANIFEST"
+ fi
+ if (artifact_retention "$SRC_DEST") >/dev/null 2>&1; then echo "FAIL retention accepted $mutation metadata"; exit 1; fi
+ check "$([[ -d $SRC_DEST/releases/bridge ]] && echo preserved)" preserved "retention $mutation refuses before pruning"
+done
+cp "$SCRATCH/valid-extra-manifest" "$setdir/fin/EXTRA/MANIFEST"
+host_layout_fin_reverse_committed "$setdir"
+assert_bridge
+
+# Multiple finalize cycles retain the union of inverse inputs.
+fixture
+for name in old-a old-b old-c; do
+ mkdir -p "$SRC_DEST/releases/$name"
+ printf marker >"$SRC_DEST/releases/$name/$HL_NEW_RELEASE_MARKER"
+ cp "$SRC_DEST/releases/$name/$HL_NEW_RELEASE_MARKER" "$SRC_DEST/releases/$name/$HL_LEGACY_RELEASE_MARKER"
+ touch -d '2026-01-01' "$SRC_DEST/releases/$name"
+done
+host_migrate "$SRC_DEST/releases/final"
+first=$HOST_MIGRATE_BACKUP_SET
+ln -sfn "$SRC_DEST/releases/final" "$SRC_DEST/current"
+host_migrate_commit
+HL_BRIDGE_ALIASES=1 install_core_units "$SCRIPT_DIR/systemd"
+mkdir -p "$SRC_DEST/releases/final2"
+printf '{"hostLayout":2}\n' >"$SRC_DEST/releases/final2/artifact.json"
+host_migrate "$SRC_DEST/releases/final2"
+second=$HOST_MIGRATE_BACKUP_SET
+ln -sfn "$SRC_DEST/releases/final2" "$SRC_DEST/current"
+host_migrate_commit
+for name in fresh-a fresh-b; do mkdir -p "$SRC_DEST/releases/$name"; touch -d '2030-01-01' "$SRC_DEST/releases/$name"; done
+artifact_retention "$SRC_DEST"
+check "$([[ -d $SRC_DEST/releases/old-a && -d $SRC_DEST/releases/old-b && -d $SRC_DEST/releases/old-c ]] && echo retained)" retained 'all unreversed finalize release parents retained'
+check "$(host_layout_fin_latest_committed_set)" "$second" 'two finalize sets remain valid; newest inverse selected'
+for n in 1 2 3 4 5 6 7; do mkdir "$HOST_MIGRATE_BACKUP_ROOT/9999010${n}T000000Z-ABCDEF"; done
+host_migrate_backup_prune
+check "$([[ -d $first && -d $second ]] && echo retained)" retained 'backup pruning keeps every unreversed finalize set'
+
+# C-FIN readiness uses the real local Core operator journal schema.
+fixture
+check "${HL_BRIDGE_ALIASES}" 0 'normal default never recreates aliases'
+check "${HOST_MIGRATIONS[*]}" host_layout_fin 'isolated finalizer fixture registry'
+check "$(bash -c 'source "$1/lib.sh"; echo "${HOST_MIGRATIONS[*]}"' _ "$SCRIPT_DIR")" 'host_layout host_layout_fin' 'normal toolkit registers both retained migration and finalize'
+readonly_before=$(sha256sum "$FICUS_SYSTEMD_UNIT_DIR/$HL_UNIT_API.service" "$SRC_DEST/.env")
+journal_root="$FICUS_HOST_ROOT/var/backups/ficus-box-reprovision"
+mkdir -p "$journal_root"; chmod 0700 "$journal_root"
+journal="$journal_root/$(printf fixture | sha256sum | cut -d' ' -f1).json"
+settled='{"version":1,"identity":"private-fixture-identity","done":true,"runtime":{"server":false,"socket":false,"proxy":false,"docker":false,"manager":false,"linger":false,"serverEnabled":false,"socketEnabled":false,"dockerEnabled":false}}'
+printf '%s\n' "$settled" >"$journal"; chmod 0600 "$journal"
+require_host_layout_ready "$SRC_DEST/releases/final"
+PASS=$((PASS+1))
+for bad in pending malformed concatenated version runtime temporary symlink mode; do
+ printf '%s\n' "$settled" >"$journal"; chmod 0600 "$journal"
+ case $bad in
+  pending) sed -i 's/"done":true/"done":false/' "$journal";;
+  malformed) printf '{' >"$journal";;
+  concatenated) printf '%s\n%s\n' "${settled/true/false}" "$settled" >"$journal";;
+  version) sed -i 's/"version":1/"version":2/' "$journal";;
+  runtime) sed -i 's/"server":false/"server":"false"/' "$journal";;
+  temporary) mv "$journal" "$journal.partial.tmp";;
+  symlink) mv "$journal" "$SCRATCH/journal-target"; ln -s "$SCRATCH/journal-target" "$journal";;
+  mode) chmod 0644 "$journal";;
+ esac
+ if (require_host_layout_ready "$SRC_DEST/releases/final") >"$SCRATCH/refusal.log" 2>&1; then echo "FAIL journal $bad"; exit 1; fi
+ grep -q 'private-fixture-identity' "$SCRATCH/refusal.log" && exit 1
+ check "$(sha256sum "$FICUS_SYSTEMD_UNIT_DIR/$HL_UNIT_API.service" "$SRC_DEST/.env")" "$readonly_before" "journal $bad refuses without changing units/env"
+ rm -f "$journal" "$journal.partial.tmp" "$SCRATCH/journal-target"
+done
+printf '%s\n' "$settled" >"$journal"; chmod 0600 "$journal"
+chmod 0755 "$journal_root"
+if (require_host_layout_ready) >/dev/null 2>&1; then echo 'FAIL unsafe journal directory'; exit 1; fi
+PASS=$((PASS+1))
+rm -rf "$journal_root"
+
+# Actual entrypoint: unfinished operator work refuses before reconciliation,
+# Caddy, runtime preparation, download or unit changes. Guards remain in place.
+cat >"$HL_CFG" <<YAML
+source:
+  mode: artifact
+  dest: $SRC_DEST
+core:
+  origin: https://fixture.invalid
+  run_user: root
+database:
+  mode: external
+runtime:
+  sandbox: host
+backup:
+  enabled: false
+YAML
+mkdir -p "$journal_root" "$FICUS_SYSTEMD_UNIT_DIR/ficus-api.service.d"
+chmod 0700 "$journal_root"
+printf '%s\n' "${settled/true/false}" >"$journal"; chmod 0600 "$journal"
+printf 'guard-sentinel\n' >"$FICUS_SYSTEMD_UNIT_DIR/ficus-api.service.d/90-ficus-box-reprovision.conf"
+if FICUS_ARTIFACT_TARBALL_URL=file:///unreachable FICUS_ARTIFACT_MANIFEST_URL=file:///unreachable FICUS_ARTIFACT_SIG_URL=file:///unreachable FICUS_ARTIFACT_PUBKEY_B64=fixture bash "$SCRIPT_DIR/upgrade-host.sh" --config "$HL_CFG" >"$SCRATCH/entrypoint.log" 2>&1; then echo 'FAIL entrypoint accepted pending journal'; exit 1; fi
+grep -q 'unfinished or invalid box reprovision journal' "$SCRATCH/entrypoint.log"
+check "$(cat "$FICUS_SYSTEMD_UNIT_DIR/ficus-api.service.d/90-ficus-box-reprovision.conf")" guard-sentinel 'refusal leaves maintenance guard unchanged'
+check "$([[ -e $HOST_MIGRATE_BACKUP_ROOT/PENDING ]] && echo pending || echo absent)" absent 'refusal creates no migration journal'
+rm -rf "$journal_root"
+# Conversion refusal is also before an attempted artifact download.
+mkdir -p "$SRC_DEST/.git"
+if FICUS_ARTIFACT_TARBALL_URL=file:///unreachable FICUS_ARTIFACT_MANIFEST_URL=file:///unreachable FICUS_ARTIFACT_SIG_URL=file:///unreachable FICUS_ARTIFACT_PUBKEY_B64=fixture bash "$SCRIPT_DIR/upgrade-host.sh" --config "$HL_CFG" >"$SCRATCH/conversion.log" 2>&1; then echo 'FAIL conversion accepted'; exit 1; fi
+grep -q 'cannot safely combine git-to-artifact conversion' "$SCRATCH/conversion.log"
+check "$(readlink "$SRC_DEST/current")" "$SRC_DEST/releases/bridge" 'conversion refusal preserves active release'
+check "$([[ -d $SRC_DEST/.git ]] && echo intact)" intact 'conversion refusal preserves checkout'
+rm -rf "$SRC_DEST/.git"
+
+# The setup hook runs before checkout -f on an existing canonical git host.
+# Transport is a local bare repository; the target-reader and checkout logic
+# are the actual toolkit functions, not a simulated guard.
+origin="$SCRATCH/origin"; checkout="$SCRATCH/checkout"
+git init -q "$origin"
+git -C "$origin" config user.email fixture@example.invalid
+git -C "$origin" config user.name fixture
+printf '{"name":"ficus","ficusHostLayout":2}\n' >"$origin/package.json"
+git -C "$origin" add package.json; git -C "$origin" commit -qm current
+git -C "$origin" branch canonical
+git -C "$origin" checkout -qb old-layout
+printf '{"name":"ficus","ficusHostLayout":1}\n' >"$origin/package.json"
+git -C "$origin" commit -qam earlier-layout
+git clone -q --branch canonical "$origin" "$checkout"
+printf 'preserved-data\n' >"$checkout/data"
+head_before=$(git -C "$checkout" rev-parse HEAD)
+if (
+ eval "$(sed -n '/^setup_git_target_check() {/,/^}/p' "$SCRIPT_DIR/setup-host.sh")"
+ git_env_setup() { GIT_CLEAN_URL=$origin GIT_AUTH_URL=$origin; }
+ SRC_DEST=$checkout SRC_REPO=$origin SRC_MODE=git-https SRC_REF=old-layout
+ GIT_PRE_CHECKOUT_HOOK=setup_git_target_check
+ git_source_sync
+) >"$SCRATCH/git-refusal.log" 2>&1; then echo 'FAIL setup precheckout accepted layout1'; exit 1; fi
+grep -q ficus-host-layout-bridge "$SCRATCH/git-refusal.log"
+check "$(git -C "$checkout" rev-parse HEAD)" "$head_before" 'setup target refusal keeps HEAD unchanged'
+check "$(cat "$checkout/data")" preserved-data 'setup target refusal preserves untracked data'
+check "$(grep -c 'GIT_PRE_CHECKOUT_HOOK=setup_git_target_check' "$SCRIPT_DIR/setup-host.sh")" 1 'setup wires actual precheckout hook'
+# A valid target whose Caddy preparation fails must also keep checkout HEAD.
+git -C "$origin" checkout -q canonical
+printf '{"name":"ficus","ficusHostLayout":2,"fixture":2}\n' >"$origin/package.json"
+git -C "$origin" commit -qam next-canonical
+if (
+ eval "$(sed -n '/^git_target_check() {/,/^}/p' "$SCRIPT_DIR/upgrade-host.sh")"
+ git_env_setup() { GIT_CLEAN_URL=$origin GIT_AUTH_URL=$origin; }
+ prepare_upgrade_host() { printf 'caddy-prepare-failed\n' >&2; exit 1; }
+ SRC_DEST=$checkout SRC_REPO=$origin SRC_MODE=git-https SRC_REF=canonical
+ GIT_PRE_CHECKOUT_HOOK=git_target_check
+ git_source_sync
+) >"$SCRATCH/caddy-refusal.log" 2>&1; then echo 'FAIL checkout ignored Caddy failure'; exit 1; fi
+grep -q caddy-prepare-failed "$SCRATCH/caddy-refusal.log"
+check "$(git -C "$checkout" rev-parse HEAD)" "$head_before" 'Caddy failure precedes checkout mutation'
 printf 'host-layout-fin: %s passed, 0 failed\n' "$PASS"

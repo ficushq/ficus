@@ -58,6 +58,8 @@ done
 [[ -n ${STAGE_DIR} ]] || die "usage: apply-artifacts.sh [--config <ficus-setup.yaml>] <staging-dir>"
 [[ -d ${STAGE_DIR} ]] || die "apply-artifacts.sh: staging directory not found: ${STAGE_DIR}"
 
+require_host_layout_ready
+
 if [[ -n ${CONFIG} ]]; then
   [[ -f ${CONFIG} ]] || die "config file '${CONFIG}' not found"
   ensure_yq
@@ -79,7 +81,7 @@ if [[ -n ${CONFIG} ]]; then
   [[ ${reconcile_rc} -eq 0 ]] ||
     die "not applying artifacts: a journaled host migration could not be reconciled (${reconcile_rc}) — run the tenant upgrade"
   # The layout as the reconcile left it, before any path below is used.
-  host_layout_adopt
+  host_layout_adopt --no-repair
   SRC_DEST=$(cfg_source_dest)
   [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||
     die "not applying artifacts: a host migration is still journaled in $(host_migrate_backup_root)/PENDING — run the tenant upgrade"
@@ -91,8 +93,10 @@ else
   host_migrate_lock
   [[ ! -e $(host_migrate_backup_root)/PENDING ]] ||
     die "not applying artifacts: a host migration is journaled in $(host_migrate_backup_root)/PENDING — pass --config <the host's setup config> so it is reconciled first, or run the tenant upgrade"
-  host_layout_adopt
+  host_layout_adopt --no-repair
 fi
+
+require_host_layout_ready
 
 # Detect BEFORE installing (the install overwrites the file being compared).
 ENV_CHANGED=$(managed_env_would_change "${STAGE_DIR}")
