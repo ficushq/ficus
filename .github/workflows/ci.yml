@@ -469,6 +469,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Validate brand rendering with patched native libraries
+        run: bun test ./generate.test.ts
+        working-directory: scripts/brand
+
       - name: Report typecheck memory context
         run: |
           grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo
