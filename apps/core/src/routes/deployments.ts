@@ -1,6 +1,7 @@
 import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import { getBunServer } from 'hono/bun'
 import { createLogger } from '../lib/infra/logger'
 import { getSandboxProvisionErrorResponse } from './sandbox-provision-error'
 import { and, desc, eq, isNull } from 'drizzle-orm'
@@ -25,6 +26,7 @@ import { refreshLocalDeploymentHealth, restartManagedLocalDeployment } from '../
 import { normalizeLocalDeploymentInput } from '../services/deploy/local-deployment-validation'
 import { proxyLocalDeploymentRequest } from '../services/deploy/local-deployment-proxy'
 import { localDeploymentProxyJsonError } from '../services/deploy/local-deployment-proxy-response'
+import type { WebSocketUpgradeServer } from '../services/deploy/local-deployment-websocket'
 import { deploymentProviders } from '../services/deploy/providers'
 import { requirePermission, requireSquadPermission } from '../middleware'
 import { requireEntityPermission } from '../middleware/require-entity-permission'
@@ -264,7 +266,9 @@ export const deploymentsRouter = new Hono()
     const localDeploymentId = c.get('resolvedLocalDeploymentId') ?? routeParameter
     const path = c.req.path.split(`/api/app/${routeParameter}/`)[1] ?? ''
     try {
-      return await getDependencies().proxyLocalDeploymentRequest(localDeploymentId, c.req.raw, path)
+      // Bun's server (index.ts hands it to app.fetch as env) accepts WebSocket upgrades.
+      const server = c.env ? getBunServer<WebSocketUpgradeServer>(c) : undefined
+      return await getDependencies().proxyLocalDeploymentRequest(localDeploymentId, c.req.raw, path, server)
     } catch (err) {
       if (err instanceof AmbiguousPrefixError) {
         return localDeploymentProxyJsonError(AMBIGUOUS_LOCAL_DEPLOYMENT_LINK_ERROR, 409)
