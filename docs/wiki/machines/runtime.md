@@ -276,7 +276,7 @@ the destination's artifacts before it streams.
 6. **Sync files.** Push the k8s-PVC-equivalent artifacts over the box's own
    `/write` endpoint (so the box user OWNS them): the `ficus` CLI → `~/bin/ficus`
    (0755), materialized skills → `~/.tau/skills`, squad `.env` →
-   `~/workspace/.tau/.env` (0600), `identity.pem` → `~/.private/identity.pem`
+   `~/workspace/.ficus/.env` (0600), `identity.pem` → `~/.private/identity.pem`
    (0600), and a read-only memory replica → `~/memory`. A failure after a secret
    write best-effort removes the partial secret, so a half-provisioned box never
    lingers with readable key material.
@@ -351,7 +351,7 @@ and the `/bash` `cwd`):
 
 The `/<squadId>` namespace segment **collapses**: a box holds exactly one squad's
 tree directly under `~/workspace` / `~/memory` (file sync writes
-`~/workspace/.tau/.env`, not `~/workspace/<squadId>/.tau/.env`), so the box's own
+`~/workspace/.ficus/.env`, not `~/workspace/<squadId>/.ficus/.env`), so the box's own
 `FICUS_SQUAD_ID` segment is stripped during the rebase. Rebasing is gated on
 `FICUS_BOX_HOME`, which **only** vm boxes set (box-manager `derivedBoxEnv`); k8s
 pods and docker sandboxes never set it, so their path handling is byte-identical
@@ -691,7 +691,7 @@ A migrating squad box behaves like an agent box with two additions:
   After the move proves out (repoint + old teardown), the managed/restartable
   deployments are restarted on the target; a restart failure is logged, never a
   migration failure (the user can restart them). `~/memory` and
-  `~/workspace/.tau/.env` are re-materialized from core, so they are not
+  `~/workspace/.ficus/.env` are re-materialized from core, so they are not
   archived. The quiesce marks a managed-always deployment `crashed` (not
   `stopped`) so it _stays_ restartable — but `crashed` is also the health
   poller's and `ensureSquadSandbox`'s restart trigger, so both consult the
@@ -765,7 +765,7 @@ A migrating squad box behaves like an agent box with two additions:
 
   Two details are load-bearing. The empty baseline holds NOT because assets
   avoid the state dirs — two of the five vm assets land inside them (the squad
-  `.env` at `~/workspace/.tau/.env`, the identity key at
+  `.env` at `~/workspace/.ficus/.env`, the identity key at
   `~/.private/identity.pem`) — but because asset delivery goes through the box
   SERVER's HTTP API, `box-provision.sh` only `enable`s the unit and never starts
   it, and migrate never calls `syncBoxFiles` at all. Move asset delivery ahead
@@ -1275,7 +1275,7 @@ box's own `/write` + `/bash`, never root):
   **self-caches at boot** when `FICUS_BOX_HOME` is set and `~/.tau/devbox/devbox.json`
   declares packages (surviving unit restarts; an empty/un-realized devbox is never
   shellenv'd — it would hang). Interactive terminals get the same env from a
-  `~/workspace/.tau/.bashrc` (or `~/.private/.tau/.bashrc` for agent boxes) the
+  `~/workspace/.ficus/.bashrc` (or `~/.private/.ficus/.bashrc` for agent boxes) the
   manager writes after seeding, which activates the box devbox from its fixed
   `~/.tau/devbox` dir. Both the boot self-cache and the bashrc `devboxDir` mode are
   gated so k8s/docker behavior is byte-identical.

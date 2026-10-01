@@ -12,9 +12,12 @@ export function getWorkspace(): string {
   return process.env.WORKSPACE_PATH || '/workspace'
 }
 
-/** Path to .tau/.env file for workspace environment variables */
+/** The workspace settings dir name (Core's `WORKSPACE_DOT_DIR`, services/workspace/dot-dir.ts). */
+export const WORKSPACE_DOT_DIR = '.ficus'
+
+/** Path to .ficus/.env file for workspace environment variables */
 export function getFicusEnvPath(): string {
-  return `${getWorkspace()}/.tau/.env`
+  return `${getWorkspace()}/${WORKSPACE_DOT_DIR}/.env`
 }
 
 /**
@@ -37,9 +40,9 @@ export function getDevboxJsonPath(): string {
   return `${getDevboxDir()}/devbox.json`
 }
 
-/** Path to .tau/.bashrc (devbox activation for interactive shells) */
+/** Path to .ficus/.bashrc (devbox activation for interactive shells) */
 export function getDevboxBashrcPath(): string {
-  return `${getWorkspace()}/.tau/.bashrc`
+  return `${getWorkspace()}/${WORKSPACE_DOT_DIR}/.bashrc`
 }
 
 /**
@@ -87,12 +90,12 @@ function getAllowedPrefixes(): string[] {
  *   /workspace[/<sq>]   → $FICUS_BOX_HOME/workspace  (squad working tree)
  *   /memory[/<sq>]      → $FICUS_BOX_HOME/memory     (memory replica)
  * These land EXACTLY where file-sync.ts writes (~/.private/identity.pem,
- * ~/workspace/.tau/.env, ~/memory/<tree>) and where box-provision.sh created the
+ * ~/workspace/.ficus/.env, ~/memory/<tree>) and where box-provision.sh created the
  * dirs (~/.private, ~/workspace; ~/memory is materialized by file-sync's
  * create-dirs write).
  *
  * The namespaced roots collapse: a box holds exactly ONE squad's tree directly
- * under `~/workspace` / `~/memory` (file-sync writes `~/workspace/.tau/.env`, not
+ * under `~/workspace` / `~/memory` (file-sync writes `~/workspace/.ficus/.env`, not
  * `~/workspace/<sq>/...`), so the `/<squadId>` segment is stripped. The box's own
  * squad id arrives as `FICUS_SQUAD_ID`; the namespaced rules are matched BEFORE the
  * bare ones so the segment is dropped rather than preserved.

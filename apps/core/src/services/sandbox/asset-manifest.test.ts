@@ -35,6 +35,11 @@ describe('SANDBOX_ASSETS', () => {
     expect(byName.get('squad-env')?.mode).toBe('0600')
     expect(byName.get('identity')?.mode).toBe('0600')
   })
+
+  test('the squad env lands in the workspace .ficus dir', () => {
+    const byName = new Map(SANDBOX_ASSETS.map((a) => [a.name, a]))
+    expect(byName.get('squad-env')?.dest).toEqual({ base: 'workspace', relPath: '.ficus/.env' })
+  })
 })
 
 describe('sshFileMode', () => {
@@ -110,11 +115,11 @@ describe('resolved sources point at the materializer locations', () => {
     expect(skills?.pvcSubPath).toBe('skills/sandboxes/agent-a1')
 
     const squadEnv = byName.get('squad-env')
-    expect(squadEnv?.hostPath.endsWith('11111111-1111-4111-8111-111111111111/.tau/.env')).toBe(true)
+    expect(squadEnv?.hostPath.endsWith('11111111-1111-4111-8111-111111111111/.ficus/.env')).toBe(true)
     expect(squadEnv?.pvcSubPath).toBeUndefined()
 
     const identity = byName.get('identity')
-    expect(identity?.hostPath.endsWith('private/agent_a1/.tau/identity.pem')).toBe(true)
+    expect(identity?.hostPath.endsWith('private/agent_a1/.ficus/identity.pem')).toBe(true)
     expect(identity?.pvcSubPath).toBeUndefined()
 
     const ssh = byName.get('squad-ssh')

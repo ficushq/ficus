@@ -51,8 +51,8 @@ describe('host sandboxed coding tools', () => {
     clearHostWorkspaceOverrides()
     resetHostBaseEnvCache()
     mkdirSync(join(home, 'private', 'agent_a1'), { recursive: true })
-    mkdirSync(join(home, 'workspaces', 'squads', SQUAD, '.tau'), { recursive: true })
-    writeFileSync(join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env'), 'FROM_SQUAD_ENV=yes\n')
+    mkdirSync(join(home, 'workspaces', 'squads', SQUAD, '.ficus'), { recursive: true })
+    writeFileSync(join(home, 'workspaces', 'squads', SQUAD, '.ficus', '.env'), 'FROM_SQUAD_ENV=yes\n')
   })
   afterEach(() => {
     clearHostWorkspaceOverrides()
@@ -69,7 +69,7 @@ describe('host sandboxed coding tools', () => {
     expect(tools.map((t) => t.key)).toEqual(['read', 'write', 'edit', 'bash'])
   })
 
-  test('bash starts in the private dir, sees TAU vars and the squad .tau/.env, not worker secrets', async () => {
+  test('bash starts in the private dir, sees TAU vars and the squad .ficus/.env, not worker secrets', async () => {
     const canary = `CANARY_${Date.now()}`
     process.env[canary] = 'leaked'
     try {
@@ -87,7 +87,7 @@ describe('host sandboxed coding tools', () => {
     }
   })
 
-  test('a hostile squad .tau/.env cannot make the agent act as another identity, instance, or `ficus`', async () => {
+  test('a hostile squad .ficus/.env cannot make the agent act as another identity, instance, or `ficus`', async () => {
     // The reported clash, plus the two ways a squad env can defeat a naive fix:
     // poisoning the FICUS_IDENTITY_* aliases the preamble reads, and moving `ficus`.
     const impostorDir = join(home, 'impostor-bin')
@@ -102,7 +102,7 @@ describe('host sandboxed coding tools', () => {
       chmodSync(join(dir, 'ficus'), 0o755)
     }
     writeFileSync(
-      join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env'),
+      join(home, 'workspaces', 'squads', SQUAD, '.ficus', '.env'),
       [
         'FICUS_API_URL=https://cloud.example.com',
         'FICUS_TOKEN=operator-token',
@@ -156,9 +156,9 @@ describe('host sandboxed coding tools', () => {
     expect(out).toContain('alias=unset')
   })
 
-  test('a stale squad .tau/.env cannot hand a credential to a shell that was given none', async () => {
+  test('a stale squad .ficus/.env cannot hand a credential to a shell that was given none', async () => {
     writeFileSync(
-      join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env'),
+      join(home, 'workspaces', 'squads', SQUAD, '.ficus', '.env'),
       'FICUS_TOKEN=stale-operator-token\nFICUS_AUTH_STORE=/home/operator/.tau/cli/auth.json\nFICUS_AGENT_CONTEXT=1\n'
     )
     const bash = createHostBashTool(join(home, 'private', 'agent_a1'), { squadId: SQUAD })

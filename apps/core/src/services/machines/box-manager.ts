@@ -2182,7 +2182,7 @@ export function compareStateDirFacts(
  * box-provision's `ensure_dirs` creates every state dir EMPTY, and nothing has
  * written into `~/workspace` or `~/.private` by this point. NOT because asset
  * delivery avoids those dirs — two of the five vm assets land squarely inside
- * them (the squad `.env` at `~/workspace/.tau/.env`, the identity key at
+ * them (the squad `.env` at `~/workspace/.ficus/.env`, the identity key at
  * `~/.private/identity.pem`; see vm/file-sync.ts's push order) — but because
  * that delivery goes through the BOX SERVER's HTTP API, and box-provision.sh
  * only `enable`s the unit, never starts it. The caller's first activation comes

@@ -77,6 +77,7 @@ import { reconcileVmSetup } from './setup-reconciler'
 import { runIdempotentSandboxOperation } from './retry'
 import { reconcileRemoteToolchain } from '../toolchain/remote-adapter'
 import { buildBashrcContent } from '../bashrc'
+import { WORKSPACE_DOT_DIR } from '../../workspace/dot-dir'
 import { vmWorkspaceLayout, type WorkspaceLayout, type WorkspaceLayoutContext } from '../workspace-layout'
 import { createLogger } from '../../../lib/infra/logger'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
@@ -1202,21 +1203,22 @@ export class VmSandboxManager implements ISandboxManager {
   }
 
   /**
-   * Write the box's interactive `.tau/.bashrc` (devbox activation + `.env`
+   * Write the box's interactive `.ficus/.bashrc` (devbox activation + `.env`
    * sourcing) so `spawnShell` terminals get the same env as the seeded `/bash`
    * PATH. The box's devbox lives at `FICUS_DEVBOX_DIR` (`~/.tau/devbox`), OUTSIDE
    * the shell cwd, so the bashrc activates it from there explicitly (see
-   * {@link buildBashrcContent}'s `devboxDir`). The physical `<workRoot>/.tau/`
+   * {@link buildBashrcContent}'s `devboxDir`). The physical `<workRoot>/.ficus/`
    * target is under `FICUS_BOX_HOME`, so the box server's path allow-list permits
-   * it and it lands exactly where `shell.ts` reads it (`WORKSPACE_PATH/.tau/
-   * .bashrc`). Non-fatal.
+   * it and it lands exactly where `shell.ts` reads it (`WORKSPACE_PATH/.ficus/
+   * .bashrc`; a box server from before the rename reads the same file through the
+   * legacy link file-sync leaves). Non-fatal.
    */
   private async ensureBoxBashrc(client: SandboxClient, sandboxId: string, role: BoxRole): Promise<void> {
     const workRoot = boxWorkRoot(sandboxId, role)
     const devboxDir = `${boxHome(sandboxId)}/.tau/devbox`
     const content = buildBashrcContent(workRoot, workRoot, { devboxDir })
     await client.write({
-      path: `${workRoot}/.tau/.bashrc`,
+      path: `${workRoot}/${WORKSPACE_DOT_DIR}/.bashrc`,
       content: Buffer.from(content).toString('base64'),
       createDirs: true,
     })

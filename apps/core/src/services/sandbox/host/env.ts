@@ -15,6 +15,7 @@ import { getHomeDir } from '../../../lib/utils/home'
 import { getCliHostPath } from '../../../lib/utils/cli-help'
 import { getSquadSshPath } from '../../squad/ssh'
 import { getSquadWorkspacePath } from '../../squad/workspace'
+import { workspaceDotPath } from '../../workspace/dot-dir'
 import { createLogger } from '../../../lib/infra/logger'
 
 const log = createLogger('sandbox-host')
@@ -263,7 +264,7 @@ export const IDENTITY_ALIAS_KEYS = [
 /**
  * Every identity name the preamble owns after the squad env file is sourced:
  * each is either re-exported from the runtime's own value or unset, so a
- * `.tau/.env` can neither replace nor supply one.
+ * `.ficus/.env` can neither replace nor supply one.
  */
 export const IDENTITY_ENV_KEYS = [
   'FICUS_API_URL',
@@ -334,7 +335,7 @@ export function buildHostCommandEnv(
 
 /**
  * Shell preamble for agent bash on the host runtime: snapshot the injected
- * identity into shell-local names, source the squad's `.tau/.env` from the
+ * identity into shell-local names, source the squad's `.ficus/.env` from the
  * STORAGE workspace (never from an override directory, so secrets are never
  * written into a user's own repo), then re-assert the identity from the
  * snapshots. Solo sandboxes source nothing but still get the re-assertion.
@@ -394,7 +395,7 @@ export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string
   const lines = [snapshots.join('; ')]
 
   if (opts.squadId) {
-    const envPath = join(getSquadWorkspacePath(opts.squadId), '.tau', '.env')
+    const envPath = workspaceDotPath(getSquadWorkspacePath(opts.squadId), '.env')
     // A brace group, not an `&&` chain: a sourced file whose last command exits
     // non-zero would short-circuit an `&& set +a` and leave `allexport` on for
     // the agent's entire command.

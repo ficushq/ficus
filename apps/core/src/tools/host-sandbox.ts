@@ -4,7 +4,7 @@
  * No transport: read/write use pi's local filesystem defaults, edit uses the
  * shared verified-edit planner over local fs, bash uses pi's local shell
  * backend with a spawn hook that swaps in the host runtime env (login-shell
- * snapshot + FICUS vars) and prepends the squad `.tau/.env` preamble. Paths are
+ * snapshot + FICUS vars) and prepends the squad `.ficus/.env` preamble. Paths are
  * absolute (enforceAbsolutePaths) exactly as on every other runtime.
  */
 

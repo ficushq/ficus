@@ -2,6 +2,7 @@ import type { ISandboxManager } from '../sandbox'
 import { getSandboxManager } from '../sandbox'
 import { loadLaunchPathLines, recordLaunchPathCommand, runWithLaunchPath } from '../sandbox/launch-path'
 import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
+import { WORKSPACE_DOT_DIR } from '../workspace/dot-dir'
 import { localDeploymentProxyPath } from './local-deployment-auth'
 import {
   buildResolveAttachedLogPathCommand,
@@ -27,7 +28,7 @@ function sessionNameForLocalDeployment(localDeploymentId: string): string {
 function localDeploymentDir(sandboxId: string, localDeploymentId: string): string {
   const squadId = sandboxId.replace(/^squad_/, '')
   const { workspaceMount } = resolveWorkspaceLayout({ squadId })
-  return `${workspaceMount}/.tau/local-deployments/${localDeploymentId}`
+  return `${workspaceMount}/${WORKSPACE_DOT_DIR}/local-deployments/${localDeploymentId}`
 }
 
 /**

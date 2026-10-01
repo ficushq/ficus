@@ -43,7 +43,7 @@ snapshots the user's login shell (`$SHELL -l`) from an identity-only seed
 your PATH and profile exports apply, and the core's secrets do not. A change
 to your profile needs a core restart. Each command also gets a `ficus` shim on
 PATH (`<HOME_DIR>/host/bin`) and, for squads, `GIT_SSH_COMMAND` pointing at the
-squad's ssh config plus the squad's `.tau/.env` sourced from the storage
+squad's ssh config plus the squad's `.ficus/.env` sourced from the storage
 workspace.
 
 For squads, `FICUS_SQUAD_SSH_DIR` names the squad's SSH directory, and `ssh`,
@@ -79,7 +79,7 @@ shell of yours.
 
 What is actually enforced for an agent shell:
 
-- **The identity is re-asserted after the squad `.tau/.env` is sourced.** That
+- **The identity is re-asserted after the squad `.ficus/.env` is sourced.** That
   file is sourced INSIDE the shell, after the process env exists, so it used to
   win. The preamble now snapshots the injected values into shell-local names
   BEFORE the source line, sources the file, then exports the identity from the
@@ -102,7 +102,7 @@ What is actually enforced for an agent shell:
 - **Reserved keys are rejected at write time** — see
   [Reserved squad env keys](#reserved-squad-env-keys) — and are also filtered
   out of Secret Store rendering, so a Secret Store key literally named
-  `FICUS_API_URL` cannot reach `.tau/.env` either.
+  `FICUS_API_URL` cannot reach `.ficus/.env` either.
 - **A per-agent CLI auth store.** Host agents run as your unix user with your
   `$HOME`, so without `FICUS_AUTH_STORE` the `ficus` CLI falls back to
   `~/.ficus/cli/auth.json` — YOUR login, against whatever instance you last
@@ -120,7 +120,7 @@ Run `ficus whoami` in any shell to see which instance it talks to and as whom.
 stale value and no Secret Store name can reach an agent's identity or its `ficus`
 by mistake. It is not a security boundary, and host mode does not have one:
 
-- `.tau/.env` is executed as shell, not parsed. A squad env written
+- `.ficus/.env` is executed as shell, not parsed. A squad env written
   specifically to defeat the preamble is still shell code running in the
   agent's own shell.
 - There is no isolation on host at all. An agent that deliberately reads

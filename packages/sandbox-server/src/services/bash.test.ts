@@ -309,8 +309,8 @@ describe('handleBash', () => {
     expect(stdout.trim()).toBe('test-value')
   })
 
-  it('sources .tau/.env when sourceEnv is true', async () => {
-    const ficusDir = join(testDir, '.tau')
+  it('sources .ficus/.env when sourceEnv is true', async () => {
+    const ficusDir = join(testDir, '.ficus')
     mkdirSync(ficusDir, { recursive: true })
     writeFileSync(join(ficusDir, '.env'), 'FICUS_SECRET=from-env-file\n')
 
@@ -319,8 +319,8 @@ describe('handleBash', () => {
     expect(stdout.trim()).toBe('from-env-file')
   })
 
-  it('does not source .tau/.env when sourceEnv is false', async () => {
-    const ficusDir = join(testDir, '.tau')
+  it('does not source .ficus/.env when sourceEnv is false', async () => {
+    const ficusDir = join(testDir, '.ficus')
     mkdirSync(ficusDir, { recursive: true })
     writeFileSync(join(ficusDir, '.env'), 'FICUS_SECRET=should-not-appear\n')
 

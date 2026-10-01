@@ -2,6 +2,7 @@ import { Squad } from '../../entities/Squad'
 import { getSandboxManager, isRemoteSandboxRuntime } from './factory'
 import { buildSquadK8sSandboxOptions, isSquadSandboxIdle } from './ensure'
 import type { ISandboxManager, SandboxOptions } from './types'
+import { WorkspaceDotDirConflictError } from '../workspace/dot-dir'
 
 const RECONCILE_CONCURRENCY = 3
 
@@ -53,17 +54,28 @@ export async function reconcileSquadSandboxSpecs(log: Logger, options: Reconcile
   for (const squad of squads) {
     const sandboxId = Squad.getSandboxId(squad.id)
 
-    // Compare the durable running spec hash to desired. A null hash on a ready
-    // pre-rollout box is drift, so an idle box is recreated once and stamped.
-    const runningHash = await manager.getRunningSandboxSpecHash(sandboxId)
-    const desiredHash = manager.computeSpecHash(buildOptions(squad))
-    if (runningHash === desiredHash) continue // up to date
+    // Each squad is isolated: one that cannot be inspected (a workspace settings
+    // dir that needs a manual fix fails closed in buildOptions) is skipped with a
+    // warning and never stops the reconcile of every other squad.
+    try {
+      // Compare the durable running spec hash to desired. A null hash on a ready
+      // pre-rollout box is drift, so an idle box is recreated once and stamped.
+      const runningHash = await manager.getRunningSandboxSpecHash(sandboxId)
+      const desiredHash = manager.computeSpecHash(buildOptions(squad))
+      if (runningHash === desiredHash) continue // up to date
 
-    // Drifted — only recreate if the squad is idle (no recent agent activity,
-    // no active local deployments). Busy squads are retried on a later pass.
-    if (!(await isIdle(squad, sandboxId))) continue
+      // Drifted — only recreate if the squad is idle (no recent agent activity,
+      // no active local deployments). Busy squads are retried on a later pass.
+      if (!(await isIdle(squad, sandboxId))) continue
 
-    candidates.push({ squad, sandboxId })
+      candidates.push({ squad, sandboxId })
+    } catch (err) {
+      if (err instanceof WorkspaceDotDirConflictError) {
+        log.warn(`Sandbox spec reconcile skipped for squad ${squad.id}: ${err.message}`)
+      } else {
+        log.warn(`Sandbox spec reconcile skipped for squad ${squad.id}:`, err)
+      }
+    }
   }
 
   if (candidates.length === 0) return

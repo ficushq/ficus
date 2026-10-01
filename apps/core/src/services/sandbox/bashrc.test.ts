@@ -12,7 +12,7 @@ describe('buildBashrcContent', () => {
     const content = buildBashrcContent(ws, '/workspace')
 
     // Sources the workspace .env at the container mount.
-    expect(content).toContain('[ -f /workspace/.tau/.env ] && set -a && . /workspace/.tau/.env && set +a')
+    expect(content).toContain('[ -f /workspace/.ficus/.env ] && set -a && . /workspace/.ficus/.env && set +a')
     // Bare `devbox shellenv` (devbox.json is the shell's cwd on k8s/docker).
     expect(content).toContain('eval "$(devbox shellenv --init-hook 2>/dev/null)" 2>/dev/null || true')
     // NOT the box-mode `cd <dir> && devbox shellenv` form.
@@ -42,6 +42,6 @@ describe('buildBashrcContent', () => {
     expect(content).toContain('command devbox "$@"')
     expect(content).toContain('.shellenv-dirty.$$')
     // Sources the box's physical workspace .env.
-    expect(content).toContain('[ -f /home/box_x/workspace/.tau/.env ]')
+    expect(content).toContain('[ -f /home/box_x/workspace/.ficus/.env ]')
   })
 })

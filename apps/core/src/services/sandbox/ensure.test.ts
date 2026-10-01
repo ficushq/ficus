@@ -698,7 +698,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
     try {
       await ensureWorkspaceSandbox({ sandboxId, workspaceId: sandboxId }, fakeDeps(tmp))
 
-      const keyPath = join(homeUtils.getHomeDir(), 'private', sandboxId, '.tau', 'identity.pem')
+      const keyPath = join(homeUtils.getHomeDir(), 'private', sandboxId, '.ficus', 'identity.pem')
       expect(existsSync(keyPath)).toBe(true)
       expect(readFileSync(keyPath, 'utf-8')).toContain('BEGIN PRIVATE KEY')
 
@@ -746,7 +746,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
       // generate + rename.
       expect(ensureIdentitySpy).toHaveBeenCalledTimes(1)
 
-      const keyPath = join(homeUtils.getHomeDir(), 'private', sandboxId, '.tau', 'identity.pem')
+      const keyPath = join(homeUtils.getHomeDir(), 'private', sandboxId, '.ficus', 'identity.pem')
       const privatePem = readFileSync(keyPath, 'utf-8')
       const derivedPublicPem = createPublicKey(privatePem).export({ type: 'spki', format: 'pem' }) as string
 
@@ -772,7 +772,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
 
     try {
       await identityModule.ensureAgentIdentity(agent, sandboxId)
-      const keyPath = join(homeUtils.getHomeDir(), 'private', sandboxId, '.tau', 'identity.pem')
+      const keyPath = join(homeUtils.getHomeDir(), 'private', sandboxId, '.ficus', 'identity.pem')
       rmSync(keyPath, { force: true })
 
       await expect(ensureWorkspaceSandbox({ sandboxId, workspaceId: sandboxId }, fakeDeps(tmp))).resolves.toBeString()
@@ -796,7 +796,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
     try {
       await ensureWorkspaceSandbox({ sandboxId, workspaceId: sandboxId }, fakeDeps(tmp))
 
-      const keyPath = join(homeUtils.getHomeDir(), 'private', sandboxId, '.tau', 'identity.pem')
+      const keyPath = join(homeUtils.getHomeDir(), 'private', sandboxId, '.ficus', 'identity.pem')
       expect(existsSync(keyPath)).toBe(false)
 
       const reloaded = await Agent.find(agent.id)
@@ -829,7 +829,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
     try {
       await ensureSquadSandbox(squadId)
 
-      const keyPath = join(homeUtils.getHomeDir(), 'private', sandboxId, '.tau', 'identity.pem')
+      const keyPath = join(homeUtils.getHomeDir(), 'private', sandboxId, '.ficus', 'identity.pem')
       expect(existsSync(keyPath)).toBe(false)
     } finally {
       getSandboxManagerSpy.mockRestore()

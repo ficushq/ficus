@@ -56,7 +56,7 @@ async function removeStaleFiles(dir: string, expectedFiles: Set<string>) {
 }
 
 /**
- * Materializes enabled DB skills into deterministic directories under ~/.tau/skills/materialized
+ * Materializes enabled DB skills into deterministic directories under <HOME_DIR>/skills/materialized
  * (or the provided baseDir in tests). Files persist across runs, are only rewritten when content
  * changes, and stale support files are removed so Pi can load stable SKILL.md folders by path.
  */

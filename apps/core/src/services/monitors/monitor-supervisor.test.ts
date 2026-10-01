@@ -263,7 +263,7 @@ describe('MonitorSupervisor', () => {
     const monitor = await createMonitor()
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
-    const probe = pollProbeCommand(`/workspace/.tau/monitors/${monitor.id}`)
+    const probe = pollProbeCommand(`/workspace/.ficus/monitors/${monitor.id}`)
 
     // Two 2s rounds: proves the self-rescheduling timer keeps polling rather
     // than firing once and stopping.
@@ -275,7 +275,7 @@ describe('MonitorSupervisor', () => {
     const monitor = await createMonitor()
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
-    const dir = `/workspace/.tau/monitors/${monitor.id}`
+    const dir = `/workspace/.ficus/monitors/${monitor.id}`
     sandbox.outputs.set(pollProbeCommand(dir), Buffer.from('0'))
 
     await Promise.all([supervisor.pollExit(monitor.id), supervisor.pollExit(monitor.id)])
@@ -371,7 +371,7 @@ describe('MonitorSupervisor', () => {
     const monitor = await createMonitor()
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
-    const dir = `/workspace/.tau/monitors/${monitor.id}`
+    const dir = `/workspace/.ficus/monitors/${monitor.id}`
     sandbox.outputs.set(pollProbeCommand(dir), Buffer.from('__MONITOR_DIR_GONE__'))
 
     await supervisor.pollExit(monitor.id)
@@ -522,7 +522,7 @@ describe('MonitorSupervisor', () => {
       const monitor = await createMonitor()
       const supervisor = makeSupervisor(sandbox, async () => {})
       await supervisor.start(monitor)
-      expect(sandbox.execs[0].join(' ')).toContain(`/workspace/${squadId}/.tau/monitors/`)
+      expect(sandbox.execs[0].join(' ')).toContain(`/workspace/${squadId}/.ficus/monitors/`)
     } finally {
       spy.mockRestore()
     }
@@ -540,7 +540,7 @@ describe('MonitorSupervisor', () => {
       const supervisor = makeSupervisor(sandbox, async () => {})
       await supervisor.start(monitor)
       const launch = sandbox.execs[0].join(' ')
-      expect(launch).toContain(`/home/${boxUnixUser('agent_a1')}/.private/.tau/monitors/`)
+      expect(launch).toContain(`/home/${boxUnixUser('agent_a1')}/.private/.ficus/monitors/`)
       expect(launch).not.toContain(boxUnixUser(`squad_${squadId}`))
     } finally {
       spy.mockRestore()

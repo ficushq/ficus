@@ -13,9 +13,9 @@ The entrypoint (`sandbox/entrypoint.sh`) runs on pod creation:
 3. **Fix SSH permissions** — the `.ssh` dir is mounted from a shared PVC written by Core (possibly different UID with sysbox). Fixes ownership/permissions on startup and re-checks every 5s in background.
 4. **Configure git** — sets up credential helper (if `GITHUB_TOKEN` set), user name/email
 5. **Seed workspace** — copies default `devbox.json` if workspace doesn't have one
-6. **Create `.tau/.bashrc`** — shell activation script for devbox, created by Core when connecting to the pod
+6. **Create `.ficus/.bashrc`** — shell activation script for devbox, created by Core when connecting to the pod
 7. **Start sandbox** — `bun run /opt/sandbox/src/server.ts`
-8. **Background: devbox install** — runs `devbox install` (fast no-op if packages are baked into image), re-sources the runtime env, then runs `.tau/setup.sh` if present, then signals `/devbox-ready` to the server
+8. **Background: devbox install** — runs `devbox install` (fast no-op if packages are baked into image), re-sources the runtime env, then runs `.ficus/setup.sh` if present, then signals `/devbox-ready` to the server
 
 The HTTP server starts immediately (step 7) and responds to health checks, while devbox setup completes in the background (step 8).
 
@@ -80,7 +80,7 @@ Execute a command. Returns a streaming SSE response.
 | `cwd`            | string | `/workspace` | Working directory                                |
 | `env`            | object | `{}`         | Additional environment variables                 |
 | `timeoutSeconds` | number | (none)       | Kill command after N seconds                     |
-| `sourceEnv`      | bool   | `true`       | Source `.tau/.env` before command                |
+| `sourceEnv`      | bool   | `true`       | Source `.ficus/.env` before command              |
 | `activateDevbox` | bool   | `true`       | Activate devbox shell environment before command |
 
 **Response:** `text/event-stream` (SSE)
@@ -104,7 +104,7 @@ Possible fields per event:
 
 **Command preamble:** Before executing the command, the service prepends:
 
-1. `source .tau/.env` (if `sourceEnv: true` and file exists) — loads workspace secrets
+1. `source .ficus/.env` (if `sourceEnv: true` and file exists) — loads workspace secrets
 2. Cached devbox shellenv exports (if `activateDevbox: true` and devbox is ready) — activates devbox packages. The shellenv output is captured once at startup (when `/devbox-ready` fires) and inlined into each command. See [local-dev-k3d.md](local-dev-k3d.md#cached-devbox-shellenv) for why this is cached instead of run per-command.
 3. `/opt/sandbox/runtime-env.sh` — normalizes `TMPDIR`, Playwright's browser cache path, and Nix runtime library paths after devbox activation.
 
@@ -222,7 +222,7 @@ Interactive PTY shell via WebSocket upgrade.
 { "kill": true }
 ```
 
-- `spawn` — must be the first message. Creates a PTY process. `useDevboxRc` loads `.tau/.bashrc` for devbox activation.
+- `spawn` — must be the first message. Creates a PTY process. `useDevboxRc` loads `.ficus/.bashrc` for devbox activation.
 - `data` — base64-encoded stdin data
 - `resize` — resize the PTY
 - `kill` — terminate the shell
@@ -315,7 +315,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 ## First-class squad toolchains
 
-Squads may declare a Ficus-managed package set and inline setup script with `ficus squad toolchain set`. Ficus realizes this isolated Devbox before squad and squad-agent sandboxes are reported ready, retains its per-sandbox lock/cache state, and reconciles a changed fingerprint without modifying the repository's `devbox.json` or `.tau/setup.sh`. Provisioning status and safe fixed failure reasons are included in sandbox status responses.
+Squads may declare a Ficus-managed package set and inline setup script with `ficus squad toolchain set`. Ficus realizes this isolated Devbox before squad and squad-agent sandboxes are reported ready, retains its per-sandbox lock/cache state, and reconciles a changed fingerprint without modifying the repository's `devbox.json` or `.ficus/setup.sh`. Provisioning status and safe fixed failure reasons are included in sandbox status responses.
 
 Before each turn Core confirms the toolchain is active in the sandbox server. The server reuses its cached environment when the fingerprint is unchanged, and otherwise resolves it with a 20-second limit, below Core's 30-second request budget. A sandbox too loaded to answer in time reports "Toolchain provisioning timed out; the sandbox may be overloaded" rather than "Toolchain provisioning failed", and Core logs the underlying error for every toolchain failure.
 

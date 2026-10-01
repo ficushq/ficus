@@ -77,11 +77,11 @@ Secret exposure storage model:
 
 - Selected key names are stored in Core's server-controlled database tables, not in the workspace.
 - Globally exposed keys are rendered into every existing squad env file immediately and into future squad env files when generated.
-- User-authored environment content is stored in `.tau/env.user`.
+- User-authored environment content is stored in `.ficus/env.user`.
 - Reserved keys: squad env content may not assign `FICUS_TOKEN`, `FICUS_API_URL`, `FICUS_PASSWORD`, `FICUS_AUTH_STORE`, `FICUS_AGENT_CONTEXT`, `FICUS_AGENT_ID` or the `FICUS_IDENTITY_*` aliases. The agent's identity is injected by ficus; setting one in a squad env would make every agent in the squad act as a different identity, against a possibly different instance. Such a write is rejected with a 400 naming the key, and the same names are filtered out of Secret Store exposure rendering. `PATH` is not reserved — on the host runtime ficus re-prepends its `ficus` shim directory after the squad env is sourced, so PATH additions apply but cannot displace `ficus`.
-- The generated sandbox env file `.tau/.env` contains `.tau/env.user` content plus selected Secret Store values so shells, local app commands, and deployment CLIs can source them.
+- The generated sandbox env file `.ficus/.env` contains `.ficus/env.user` content plus selected Secret Store values so shells, local app commands, and deployment CLIs can source them.
 - Normal APIs and UI responses return user-authored env content and key names/status only; they do not return generated plaintext Secret Store values.
-- Secret Store rotation/deletion regenerates affected squad `.tau/.env` files so stale selected or globally exposed values are updated or removed.
+- Secret Store rotation/deletion regenerates affected squad `.ficus/.env` files so stale selected or globally exposed values are updated or removed.
 
 Treat selected exposure as explicit access to that squad; do not use it for unrelated secrets.
 

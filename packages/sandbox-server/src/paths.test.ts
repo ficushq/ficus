@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { resolvePath, getDevboxDir, getDevboxJsonPath, rebaseLogicalRoot } from './paths'
+import {
+  resolvePath,
+  getDevboxDir,
+  getDevboxJsonPath,
+  getDevboxBashrcPath,
+  getFicusEnvPath,
+  rebaseLogicalRoot,
+} from './paths'
 
 // Save and restore WORKSPACE_PATH / FICUS_DEVBOX_DIR / FICUS_BOX_HOME / FICUS_SQUAD_ID across tests
 const originalWorkspace = process.env.WORKSPACE_PATH
@@ -260,5 +267,13 @@ describe('resolvePath', () => {
       expect(resolvePath('/private/scratch.txt')).toBe('/private/scratch.txt')
       expect(resolvePath('/memory/sq123/notes.md')).toBe('/memory/sq123/notes.md')
     })
+  })
+})
+
+describe('workspace settings dir', () => {
+  it('reads the squad env and the interactive bashrc from <workspace>/.ficus', () => {
+    process.env.WORKSPACE_PATH = '/home/box_x/workspace'
+    expect(getFicusEnvPath()).toBe('/home/box_x/workspace/.ficus/.env')
+    expect(getDevboxBashrcPath()).toBe('/home/box_x/workspace/.ficus/.bashrc')
   })
 })

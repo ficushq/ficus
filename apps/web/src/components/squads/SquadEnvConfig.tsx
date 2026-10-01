@@ -173,7 +173,7 @@ export function SquadEnvConfig({ squadId }: Props) {
         </h4>
         <p className="text-xs text-muted mt-1">
           Select only the global secrets this squad sandbox may read as environment variables. Values are never shown
-          here, but selected secrets are rendered into the squad sandbox .tau/.env file.
+          here, but selected secrets are rendered into the squad sandbox .ficus/.env file.
         </p>
 
         {secretsLoading ? (

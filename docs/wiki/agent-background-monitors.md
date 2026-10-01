@@ -52,11 +52,11 @@ Monitor output (line batches and lifecycle status) is delivered to the agent as 
 
 ## Lifecycle
 
-The worker supervisor starts a tmux session inside the squad sandbox and maintains a live foreground stream of `/workspace/.tau/monitors/<id>/logs/current.log`. Output batches are delivered via the existing DB-backed steering-message path. Monitors are canceled during agent cleanup and worker shutdown. On startup, active monitor records are recovered when their tmux session still exists; otherwise they are marked failed.
+The worker supervisor starts a tmux session inside the squad sandbox and maintains a live foreground stream of `/workspace/.ficus/monitors/<id>/logs/current.log`. Output batches are delivered via the existing DB-backed steering-message path. Monitors are canceled during agent cleanup and worker shutdown. On startup, active monitor records are recovered when their tmux session still exists; otherwise they are marked failed.
 
 ## Debugging
 
-Use `monitor` with `action: "get"` to inspect recent lines. In a sandbox shell, monitor state lives under `/workspace/.tau/monitors/<monitorId>/` with `run.sh`, `logs/current.log`, `exitCode`, and timestamp files.
+Use `monitor` with `action: "get"` to inspect recent lines. In a sandbox shell, monitor state lives under `/workspace/.ficus/monitors/<monitorId>/` with `run.sh`, `logs/current.log`, `exitCode`, and timestamp files.
 
 ## Management
 

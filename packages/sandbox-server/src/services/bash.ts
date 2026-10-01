@@ -2,7 +2,7 @@
  * Bash execution service.
  *
  * Runs commands inside the sandbox with optional preamble that mirrors
- * the Docker spawnHook behavior: source .tau/.env and activate devbox.
+ * the Docker spawnHook behavior: source .ficus/.env and activate devbox.
  *
  * Returns a streaming response (SSE) with stdout/stderr chunks and exit code.
  */
@@ -128,7 +128,7 @@ export function hasActiveBashInvocations(): boolean {
 
 /**
  * Build a preamble script that mirrors the Docker spawnHook behavior:
- * 1. Source .tau/.env for secrets/environment variables
+ * 1. Source .ficus/.env for secrets/environment variables
  * 2. Activate devbox if devbox.json exists in workspace
  * 3. Normalize runtime environment for Nix Python and browser tooling
  */

@@ -8,7 +8,7 @@ export function registerSquadEnvCommands(program: Command) {
   // ficus squad-env get <squadId>
   env
     .command('get <squadId>')
-    .description('Get .tau/.env content for a squad')
+    .description('Get .ficus/.env content for a squad')
     .action(async (squadId) => {
       try {
         const result = await apiGet<{ content: string }>(`/api/squads/workspace/${squadId}/env`)
@@ -25,7 +25,7 @@ export function registerSquadEnvCommands(program: Command) {
   // ficus squad-env set <squadId> <content>
   env
     .command('set <squadId> <content>')
-    .description('Set .tau/.env content for a squad (use quotes for multi-line)')
+    .description('Set .ficus/.env content for a squad (use quotes for multi-line)')
     .action(async (squadId, content) => {
       try {
         await apiPut(`/api/squads/workspace/${squadId}/env`, { content })
@@ -38,7 +38,7 @@ export function registerSquadEnvCommands(program: Command) {
   // ficus squad-env set-file <squadId> <path>
   env
     .command('set-file <squadId> <path>')
-    .description('Set .tau/.env content from a file')
+    .description('Set .ficus/.env content from a file')
     .action(async (squadId, path) => {
       try {
         const fs = await import('fs')

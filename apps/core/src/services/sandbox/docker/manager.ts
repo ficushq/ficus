@@ -22,6 +22,7 @@ import { getSquadIdFromSandbox } from '../types'
 import type { ISandboxManager, ManagedToolchainRequest, SandboxOptions, SandboxRuntime } from '../types'
 import { requireSandboxRuntime } from '../runtime'
 import { buildBashrcContent } from '../bashrc'
+import { WORKSPACE_DOT_DIR, workspaceDotPath } from '../../workspace/dot-dir'
 import { ToolchainAdapterError } from '../toolchain/provision'
 import {
   containerWorkspaceLayout,
@@ -162,8 +163,8 @@ function findSandboxContainer(sandboxId: string, lookup: (name: string) => strin
 
 export function buildManagedToolchainDirPrefix(workRoot: string): string {
   const quote = (value: string) => `'${value.replaceAll("'", `'"'"'`)}'`
-  const containerDir = `${workRoot}/.tau/toolchain`
-  return `set -e; test ! -L ${quote(`${workRoot}/.tau`)}; test ! -L ${quote(containerDir)}; mkdir -p -- ${quote(containerDir)}; cd -P -- ${quote(containerDir)}; test "$(pwd -P)" = ${quote(containerDir)}; `
+  const containerDir = `${workRoot}/${WORKSPACE_DOT_DIR}/toolchain`
+  return `set -e; test ! -L ${quote(`${workRoot}/${WORKSPACE_DOT_DIR}`)}; test ! -L ${quote(containerDir)}; mkdir -p -- ${quote(containerDir)}; cd -P -- ${quote(containerDir)}; test "$(pwd -P)" = ${quote(containerDir)}; `
 }
 
 export async function waitForDockerExec(
@@ -693,8 +694,8 @@ export class DockerSandboxManager implements ISandboxManager {
   }
 
   /**
-   * Ensure the .tau/.bashrc file exists for terminal sessions.
-   * This sources .tau/.env and activates devbox if available.
+   * Ensure the .ficus/.bashrc file exists for terminal sessions.
+   * This sources .ficus/.env and activates devbox if available.
    */
   private ensureBashrc(
     containerId: string,
@@ -715,7 +716,7 @@ export class DockerSandboxManager implements ISandboxManager {
         containerId,
         'sh',
         '-c',
-        `mkdir -p .tau && echo '${content.trimEnd()}' > .tau/.bashrc`,
+        `mkdir -p ${WORKSPACE_DOT_DIR} && echo '${content.trimEnd()}' > ${WORKSPACE_DOT_DIR}/.bashrc`,
       ],
       { stdout: 'ignore', stderr: 'ignore' }
     )
@@ -1044,10 +1045,10 @@ export class DockerSandboxManager implements ISandboxManager {
           // Create bashrc for terminal sessions to load .env and activate devbox
           this.ensureBashrc(containerId, opts.workspacePath, newLayout.workspaceMount)
 
-          // Run workspace setup script if present (.tau/setup.sh)
+          // Run workspace setup script if present (.ficus/setup.sh)
           // This allows workspaces to install system-level tools or run custom initialization.
           // The script runs as the sandbox user with sudo access.
-          const setupScript = `${newLayout.workspaceMount}/.tau/setup.sh`
+          const setupScript = `${newLayout.workspaceMount}/${WORKSPACE_DOT_DIR}/setup.sh`
           const setupResult = Bun.spawnSync(
             [
               'docker',
@@ -1449,8 +1450,8 @@ export class DockerSandboxManager implements ISandboxManager {
       // Build script preamble
       let preamble = `trap 'rm -f "${containerScriptPath}"' EXIT\n`
 
-      // Source workspace .tau/.env if it exists (for secrets/environment variables)
-      preamble += `[ -f ${sandbox.workspaceMount}/.tau/.env ] && set -a && . ${sandbox.workspaceMount}/.tau/.env && set +a\n`
+      // Source workspace .ficus/.env if it exists (for secrets/environment variables)
+      preamble += `[ -f ${sandbox.workspaceMount}/${WORKSPACE_DOT_DIR}/.env ] && set -a && . ${sandbox.workspaceMount}/${WORKSPACE_DOT_DIR}/.env && set +a\n`
 
       // Auto-activate devbox if devbox.json exists in workspace
       // This makes devbox-installed tools available in PATH for all commands
@@ -1460,8 +1461,8 @@ export class DockerSandboxManager implements ISandboxManager {
 
       const managedHostRoot = sandbox.privateVolumePath ?? sandbox.workspacePath
       const managedContainerRoot = sandbox.privateVolumePath ? '/private' : sandbox.workspaceMount
-      if (fs.existsSync(path.join(managedHostRoot, '.tau', 'toolchain', '.ready'))) {
-        preamble += `eval "$(cd ${managedContainerRoot}/.tau/toolchain && devbox shellenv --init-hook 2>/dev/null)" 2>/dev/null || true\n`
+      if (fs.existsSync(workspaceDotPath(managedHostRoot, 'toolchain', '.ready'))) {
+        preamble += `eval "$(cd ${managedContainerRoot}/${WORKSPACE_DOT_DIR}/toolchain && devbox shellenv --init-hook 2>/dev/null)" 2>/dev/null || true\n`
       }
 
       const scriptContent = preamble + ctx.command
@@ -1512,7 +1513,7 @@ export class DockerSandboxManager implements ISandboxManager {
     if (!state) throw new Error(`No sandbox found for ${sandboxId}`)
     const isAgent = Boolean(state.privateVolumePath)
     const workRoot = isAgent ? '/private' : state.workspaceMount
-    const containerDir = `${workRoot}/.tau/toolchain`
+    const containerDir = `${workRoot}/${WORKSPACE_DOT_DIR}/toolchain`
     const quote = (value: string) => `'${value.replaceAll("'", `'"'"'`)}'`
     const enterManagedDir = buildManagedToolchainDirPrefix(workRoot)
     const runManaged = (command: string, timeoutMs = 600_000) =>
@@ -1658,7 +1659,7 @@ export class DockerSandboxManager implements ISandboxManager {
     // Docker exec -t can be finicky with bun-pty's pseudo-TTY, but script handles it correctly.
 
     // Use devbox bashrc if it exists (created during sandbox init)
-    const hasDevboxBashrc = workspacePath && fs.existsSync(path.join(workspacePath, '.tau', '.bashrc'))
+    const hasDevboxBashrc = workspacePath && fs.existsSync(workspaceDotPath(workspacePath, '.bashrc'))
 
     const shellWorkspaceMount = sandbox?.workspaceMount ?? containerWorkspaceLayout().workspaceMount
     // Inject the live Core URL so the terminal's `ficus` CLI reaches the current Core
@@ -1667,7 +1668,7 @@ export class DockerSandboxManager implements ISandboxManager {
     const apiUrlArg = terminalApiUrlArgs(resolveDockerApiUrl())
     let dockerCmd: string
     if (hasDevboxBashrc) {
-      dockerCmd = `docker exec ${userArgs.join(' ')} ${apiUrlArg} -it -w ${shellWorkspaceMount} ${containerId} bash --rcfile .tau/.bashrc`
+      dockerCmd = `docker exec ${userArgs.join(' ')} ${apiUrlArg} -it -w ${shellWorkspaceMount} ${containerId} bash --rcfile ${WORKSPACE_DOT_DIR}/.bashrc`
     } else {
       dockerCmd = `docker exec ${userArgs.join(' ')} ${apiUrlArg} -it -w ${shellWorkspaceMount} ${containerId} bash`
     }

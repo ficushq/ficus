@@ -1,7 +1,23 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { EventEmitter } from 'events'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } from '../../workspace/dot-dir'
+import { getHomeDir } from '../../../lib/utils/home'
 import * as factory from '../factory'
 import {
+  boxWorkspaceDotDirCommand,
   syncBoxFiles,
   resolveBoxApiUrl,
   resolveBoxApiTransport,
@@ -71,6 +87,14 @@ class FakeClient {
 // ---------------------------------------------------------------------------
 
 const HOME = (id: string) => `/home/${boxUnixUser(id)}`
+/** The unconditional step-0b command that moves a box's work-root dot dirs. */
+const DOT_DIR = (home: string) => boxWorkspaceDotDirCommand([`${home}/workspace`, `${home}/.private`])
+/** Removes the recorded step-0b calls from `client` and returns how many there were. */
+function takeDotDirSteps(client: FakeClient, home: string): number {
+  const before = client.calls.length
+  client.calls = client.calls.filter((call) => !(call.kind === 'bash' && call.command === DOT_DIR(home)))
+  return before - client.calls.length
+}
 
 /** deps that provide every artifact; individual tests null out what they don't want. */
 function fullDeps(over: Partial<SyncBoxFilesDeps> = {}): SyncBoxFilesDeps {
@@ -128,7 +152,7 @@ describe('syncBoxFiles', () => {
       `${home}/.tau/skills/skill-a/SKILL.md`,
       `${home}/.tau/skills/skill-a/ref/x.md`,
       `${home}/.tau/skills/skill-b/SKILL.md`,
-      `${home}/workspace/.tau/.env`,
+      `${home}/workspace/.ficus/.env`,
       `${home}/memory/context.md`,
       `${home}/memory/map.md`,
       `${home}/.ssh/config`,
@@ -186,7 +210,7 @@ describe('syncBoxFiles', () => {
     const home = HOME('agent_a1')
     await syncBoxFiles(client as any, 'agent_a1', squadAgentOpts, fullDeps())
 
-    expect(client.modeAt(`${home}/workspace/.tau/.env`)).toBe('0600')
+    expect(client.modeAt(`${home}/workspace/.ficus/.env`)).toBe('0600')
     expect(client.modeAt(`${home}/.private/identity.pem`)).toBe('0600')
     // No chmod-over-bash follow-ups — the mode lands at creation.
     expect(client.bashes().some((b) => b.command.startsWith('chmod'))).toBe(false)
@@ -286,7 +310,7 @@ describe('syncBoxFiles', () => {
     const paths = client.writePaths()
     expect(paths).toContain(`${home}/.tau/skills/skill-a/SKILL.md`)
     expect(paths).toContain(`${home}/.private/identity.pem`)
-    expect(paths.some((p) => p.endsWith('/workspace/.tau/.env'))).toBe(false)
+    expect(paths.some((p) => p.endsWith('/workspace/.ficus/.env'))).toBe(false)
     expect(paths.some((p) => p.includes('/memory/'))).toBe(false)
     expect(paths.some((p) => p.includes('/.ssh/'))).toBe(false)
   })
@@ -298,7 +322,7 @@ describe('syncBoxFiles', () => {
 
     const paths = client.writePaths()
     expect(paths).toContain(`${home}/.tau/skills/skill-a/SKILL.md`)
-    expect(paths).toContain(`${home}/workspace/.tau/.env`)
+    expect(paths).toContain(`${home}/workspace/.ficus/.env`)
     expect(paths).toContain(`${home}/.private/identity.pem`)
     expect(paths).toContain(`${home}/.ssh/ficus_remote_prod`)
     // Squad memory's canonical vm root is the SQUAD box's ~/memory; a replica
@@ -321,6 +345,8 @@ describe('syncBoxFiles', () => {
       })
     )
     expect(client.writes()).toHaveLength(0)
+    // Step 0b (the workspace dot dir move) runs exactly once, then nothing but the shadow removal.
+    expect(takeDotDirSteps(client, HOME('agent_a1'))).toBe(1)
     expect(client.bashes().map((b) => b.command)).toEqual([`rm -f '${HOME('agent_a1')}/bin/tau'`])
   })
 
@@ -345,7 +371,7 @@ describe('syncBoxFiles', () => {
 
     const bashCmds = client.bashes().map((b) => b.command)
     expect(bashCmds).toContain(`rm -f '${home}/.private/identity.pem'`)
-    expect(bashCmds).not.toContain(`rm -f '${home}/workspace/.tau/.env'`)
+    expect(bashCmds).not.toContain(`rm -f '${home}/workspace/.ficus/.env'`)
   })
 })
 
@@ -409,6 +435,7 @@ describe('syncBoxFiles content-hash skip', () => {
     )
     expect(second.writes()).toHaveLength(0)
     // materialize/list still ran (ssh hash needs its output), but no ssh mkdir.
+    expect(takeDotDirSteps(second, home)).toBe(1)
     expect(second.bashes().map((b) => b.command)).toEqual([`rm -f '${home}/bin/tau'`])
     expect(progress).toEqual([])
   })
@@ -514,7 +541,7 @@ describe('syncBoxFiles content-hash skip', () => {
       'squad_11111111-1111-4111-8111-111111111111',
       squadOpts,
       fullDeps({
-        box: syncBox({ 'squad-env': { hash: 'old', files: ['.tau/.env'] } }),
+        box: syncBox({ 'squad-env': { hash: 'old', files: ['.ficus/.env'] } }),
         stampBoxSyncedHash: stamp.fn,
         listSkillFiles: async () => [],
         readSquadEnv: () => null,
@@ -523,8 +550,9 @@ describe('syncBoxFiles content-hash skip', () => {
       })
     )
     expect(client.writePaths()).toEqual([])
-    expect(client.bashes().map((b) => b.command)).toContain(`rm -f -- '${home}/workspace/.tau/.env'`)
-    expect(stamp.stamped['squad-env']).toMatchObject({ files: [] })
+    expect(client.bashes().map((b) => b.command)).toContain(`rm -f -- '${home}/workspace/.ficus/.env'`)
+    // A bare hash while the workspace dot dir bridge lasts (see stampsHashOnlyDuringBridge).
+    expect(stamp.stamped['squad-env']).toBeString()
   })
 
   test('removes only a revoked SSH key from the prior managed manifest', async () => {
@@ -625,7 +653,7 @@ describe('syncBoxFiles content-hash skip', () => {
       soloAgentOpts,
       fullDeps({
         box: syncBox({
-          'squad-env': { hash: 'old', files: ['.tau/.env'] },
+          'squad-env': { hash: 'old', files: ['.ficus/.env'] },
           'squad-ssh': { hash: 'old', files: ['config', 'ficus_remote_prod'] },
         }),
         stampBoxSyncedHash: stamps.fn,
@@ -634,9 +662,10 @@ describe('syncBoxFiles content-hash skip', () => {
       })
     )
     const commands = client.bashes().map((b) => b.command)
-    expect(commands).toContain(`rm -f -- '${home}/workspace/.tau/.env'`)
+    expect(commands).toContain(`rm -f -- '${home}/workspace/.ficus/.env'`)
     expect(commands).toContain(`rm -f -- '${home}/.ssh/config' '${home}/.ssh/ficus_remote_prod'`)
-    expect(stamps.stamped['squad-env']).toMatchObject({ files: [] })
+    // A bare hash while the workspace dot dir bridge lasts (see stampsHashOnlyDuringBridge).
+    expect(stamps.stamped['squad-env']).toBeString()
     expect(stamps.stamped['squad-ssh']).toMatchObject({ files: [] })
   })
 
@@ -664,6 +693,7 @@ describe('syncBoxFiles content-hash skip', () => {
       client
         .bashes()
         .map((b) => b.command)
+        .filter((command) => command !== DOT_DIR(home))
         .join(' ')
     ).not.toContain(`${home}/workspace`)
   })
@@ -874,12 +904,13 @@ describe('syncBoxFiles golden master', () => {
 
     expect(client.calls).toEqual([
       B(`rm -f '${home}/bin/tau'`),
+      B(DOT_DIR(home)),
       // skills — sorted by relPath, content-only (no /write mode)
       W(`${home}/.tau/skills/skill-a/SKILL.md`, 'A'),
       W(`${home}/.tau/skills/skill-a/ref/x.md`, 'X'),
       W(`${home}/.tau/skills/skill-b/SKILL.md`, 'B'),
       // squad .env — secret, created 0600
-      W(`${home}/workspace/.tau/.env`, 'export FOO=bar\n', '0600'),
+      W(`${home}/workspace/.ficus/.env`, 'export FOO=bar\n', '0600'),
       // memory replica — sorted, content-only (no mode)
       W(`${home}/memory/context.md`, '# ctx'),
       W(`${home}/memory/map.md`, '# map'),
@@ -899,6 +930,7 @@ describe('syncBoxFiles golden master', () => {
 
     expect(client.calls).toEqual([
       B(`rm -f '${home}/bin/tau'`),
+      B(DOT_DIR(home)),
       W(`${home}/.tau/skills/skill-a/SKILL.md`, 'A'),
       W(`${home}/.tau/skills/skill-a/ref/x.md`, 'X'),
       W(`${home}/.tau/skills/skill-b/SKILL.md`, 'B'),
@@ -914,11 +946,12 @@ describe('syncBoxFiles golden master', () => {
 
     expect(client.calls).toEqual([
       B(`rm -f '${home}/bin/tau'`),
+      B(DOT_DIR(home)),
       W(`${home}/.tau/skills/skill-a/SKILL.md`, 'A'),
       W(`${home}/.tau/skills/skill-a/ref/x.md`, 'X'),
       W(`${home}/.tau/skills/skill-b/SKILL.md`, 'B'),
       // .env before identity (secrets-last, in manifest order); no memory replica on a member box
-      W(`${home}/workspace/.tau/.env`, 'export FOO=bar\n', '0600'),
+      W(`${home}/workspace/.ficus/.env`, 'export FOO=bar\n', '0600'),
       W(`${home}/.private/identity.pem`, PEM, '0600'),
       B(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`),
       W(`${home}/.ssh/config`, 'Host prod\n', '0644'),
@@ -947,10 +980,11 @@ describe('syncBoxFiles golden master', () => {
 
     expect(client.calls).toEqual([
       B(`rm -f '${home}/bin/tau'`),
+      B(DOT_DIR(home)),
       W(`${home}/.tau/skills/skill-a/SKILL.md`, 'A'),
       W(`${home}/.tau/skills/skill-a/ref/x.md`, 'X'),
       W(`${home}/.tau/skills/skill-b/SKILL.md`, 'B'),
-      W(`${home}/workspace/.tau/.env`, 'export FOO=bar\n', '0600'),
+      W(`${home}/workspace/.ficus/.env`, 'export FOO=bar\n', '0600'),
       W(`${home}/memory/context.md`, '# ctx'),
       W(`${home}/memory/map.md`, '# map'),
       B(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`),
@@ -979,10 +1013,11 @@ describe('syncBoxFiles golden master', () => {
 
     expect(client.calls).toEqual([
       B(`rm -f '${home}/bin/tau'`),
+      B(DOT_DIR(home)),
       W(`${home}/.tau/skills/skill-a/SKILL.md`, 'A'),
       W(`${home}/.tau/skills/skill-a/ref/x.md`, 'X'),
       W(`${home}/.tau/skills/skill-b/SKILL.md`, 'B'),
-      W(`${home}/workspace/.tau/.env`, 'export FOO=bar\n', '0600'),
+      W(`${home}/workspace/.ficus/.env`, 'export FOO=bar\n', '0600'),
       W(`${home}/.private/identity.pem`, PEM, '0600'),
       B(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`),
       // config write throws (no 0600 ssh key written → nothing for the failing
@@ -1401,5 +1436,254 @@ describe('resolveBoxApiUrl', () => {
     expect(isValidHttpUrl('http://localhost:3000')).toBe(true)
     expect(isValidHttpUrl('ftp://ficus.example.com')).toBe(false)
     expect(isValidHttpUrl('not a url')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Workspace dot dir bridge (phase 5): a box running a server from before the
+// rename reads <root>/<legacy>/.env and .bashrc until it is recycled.
+// ---------------------------------------------------------------------------
+
+describe('syncBoxFiles workspace dot dir bridge', () => {
+  const SQUAD_BOX = 'squad_11111111-1111-4111-8111-111111111111'
+
+  test('moves the box work roots before the first asset write', async () => {
+    const client = new FakeClient()
+    const home = HOME(SQUAD_BOX)
+    await syncBoxFiles(client as any, SQUAD_BOX, squadOpts, fullDeps())
+
+    const migrateIndex = client.calls.findIndex((call) => call.kind === 'bash' && call.command === DOT_DIR(home))
+    const firstWrite = client.calls.findIndex((call) => call.kind === 'write')
+    expect(migrateIndex).toBeGreaterThan(-1)
+    expect(migrateIndex).toBeLessThan(firstWrite)
+  })
+
+  test('a squad env stamped under the legacy dot dir is re-pushed to .ficus and NOT pruned through the link', async () => {
+    const client = new FakeClient()
+    const home = HOME(SQUAD_BOX)
+    const stamp = recordingStamp()
+    await syncBoxFiles(
+      client as any,
+      SQUAD_BOX,
+      squadOpts,
+      fullDeps({
+        box: syncBox({
+          'squad-env': { hash: 'stamped-before-the-rename', files: [`${LEGACY_WORKSPACE_DOT_DIR}/.env`] },
+        }),
+        stampBoxSyncedHash: stamp.fn,
+      })
+    )
+
+    expect(client.writePaths()).toContain(`${home}/workspace/${WORKSPACE_DOT_DIR}/.env`)
+    const commands = client.bashes().map((b) => b.command)
+    // `rm` through the legacy link would delete the .env just pushed.
+    expect(commands.some((command) => command.includes(`/workspace/${LEGACY_WORKSPACE_DOT_DIR}/.env`))).toBe(false)
+    expect(stamp.stamped['squad-env']).toBeString()
+  })
+
+  test('stamps the squad env as a bare hash, and never upgrades it to a file list on a hash match', async () => {
+    const first = recordingStamp()
+    await syncBoxFiles(
+      new FakeClient() as any,
+      SQUAD_BOX,
+      squadOpts,
+      fullDeps({ box: syncBox(), stampBoxSyncedHash: first.fn })
+    )
+    expect(first.stamped['squad-env']).toBeString()
+    // Other assets keep their exact manifests.
+    expect(first.stamped.skills).toMatchObject({ files: expect.any(Array) })
+
+    const second = recordingStamp()
+    const client = new FakeClient()
+    await syncBoxFiles(
+      client as any,
+      SQUAD_BOX,
+      squadOpts,
+      fullDeps({ box: syncBox(first.stamped), stampBoxSyncedHash: second.fn })
+    )
+    expect(second.stamped['squad-env']).toBeUndefined()
+    expect(client.writePaths().some((path) => path.endsWith('/.env'))).toBe(false)
+  })
+
+  test('a Core rolled back to the previous release prunes nothing from the stamp this Core records', async () => {
+    const stamp = recordingStamp()
+    await syncBoxFiles(
+      new FakeClient() as any,
+      SQUAD_BOX,
+      squadOpts,
+      fullDeps({ box: syncBox(), stampBoxSyncedHash: stamp.fn })
+    )
+
+    // The previous release's prune (941d9ff5 file-sync.ts syncAsset), for its own squad-env dest:
+    // previous.files ?? (previous ? [dest] : []), minus what it just pushed. After step 0b its dest
+    // resolves through the legacy link to .ficus/.env, so anything this returns is deleted there.
+    const legacyDest = `${LEGACY_WORKSPACE_DOT_DIR}/.env`
+    const previousReleasePrune = (recorded: unknown): string[] => {
+      const previous =
+        typeof recorded === 'string'
+          ? { hash: recorded, files: undefined as string[] | undefined }
+          : (recorded as { hash: string; files?: string[] })
+      const current = new Set([legacyDest])
+      return (previous.files ?? (previous ? [legacyDest] : [])).filter((path) => !current.has(path))
+    }
+
+    expect(previousReleasePrune(stamp.stamped['squad-env'])).toEqual([])
+    // The file-list stamp this bridge avoids is exactly the one that would have deleted .ficus/.env.
+    expect(previousReleasePrune({ hash: 'h', files: [`${WORKSPACE_DOT_DIR}/.env`] })).toEqual([
+      `${WORKSPACE_DOT_DIR}/.env`,
+    ])
+  })
+
+  test("this Core's revoke still removes the env from a bare-hash stamp", async () => {
+    const client = new FakeClient()
+    const home = HOME(SQUAD_BOX)
+    await syncBoxFiles(
+      client as any,
+      SQUAD_BOX,
+      squadOpts,
+      fullDeps({
+        box: syncBox({ 'squad-env': 'stamped-by-this-core' }),
+        stampBoxSyncedHash: async () => {},
+        readSquadEnv: () => null,
+      })
+    )
+    expect(client.bashes().map((b) => b.command)).toContain(`rm -f -- '${home}/workspace/${WORKSPACE_DOT_DIR}/.env'`)
+  })
+
+  test('an agent whose private dir needs a manual fix fails the sync closed and never prunes the box identity key', async () => {
+    const sandboxId = `agent_dotdir${Date.now()}${Math.random().toString(36).slice(2, 8)}`
+    const root = join(getHomeDir(), 'private', sandboxId)
+    mkdirSync(join(root, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
+    writeFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'identity.pem'), 'KEY STILL IN THE LEGACY DIR')
+    mkdirSync(join(root, WORKSPACE_DOT_DIR))
+    try {
+      const client = new FakeClient()
+      await expect(
+        syncBoxFiles(
+          client as any,
+          sandboxId,
+          soloAgentOpts,
+          fullDeps({
+            box: syncBox({ identity: { hash: 'pushed-before', files: ['identity.pem'] } }),
+            stampBoxSyncedHash: async () => {},
+            readIdentityPem: undefined, // the real manifest reader
+          })
+        )
+      ).rejects.toBeInstanceOf(WorkspaceDotDirConflictError)
+      expect(client.bashes().some((b) => b.command.includes('identity.pem'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('a refused move does not fail the sync; an ambiguous bash outcome still stops it', async () => {
+    const refused = new FakeClient()
+    refused.bashExit = 1
+    await syncBoxFiles(refused as any, 'agent_a1', soloAgentOpts, fullDeps())
+    expect(refused.writePaths()).toContain(`${HOME('agent_a1')}/.private/identity.pem`)
+
+    const ambiguous = new FakeClient()
+    ambiguous.bash = (req: { command: string }) => {
+      ambiguous.calls.push({ kind: 'bash', command: req.command })
+      if (req.command === DOT_DIR(HOME('agent_a1'))) {
+        const stream = new EventEmitter() as any
+        stream.cancel = () => {}
+        queueMicrotask(() => stream.emit('error', new BashOutcomeUnknownError('inv-1', 'protocol_truncated')))
+        return stream
+      }
+      return makeBashStream(0)
+    }
+    await expect(syncBoxFiles(ambiguous as any, 'agent_a1', soloAgentOpts, fullDeps())).rejects.toBeInstanceOf(
+      BashOutcomeUnknownError
+    )
+    expect(ambiguous.writes()).toHaveLength(0)
+  })
+})
+
+/** GNU `mv -T` / `ln -sT` (a box is Linux); on macOS the coreutils `gmv` / `gln` stand in. */
+const gnuMv = Bun.which('gmv') ?? (process.platform === 'linux' ? Bun.which('mv') : null)
+const gnuLn = Bun.which('gln') ?? (process.platform === 'linux' ? Bun.which('ln') : null)
+
+describe.skipIf(!gnuMv || !gnuLn)('boxWorkspaceDotDirCommand, run for real against a temp box home', () => {
+  function runOnBox(home: string): number {
+    const bin = mkdtempSync(join(tmpdir(), 'ficus-box-bin-'))
+    try {
+      symlinkSync(gnuMv!, join(bin, 'mv'))
+      symlinkSync(gnuLn!, join(bin, 'ln'))
+      const result = Bun.spawnSync(
+        ['bash', '-c', boxWorkspaceDotDirCommand([`${home}/workspace`, `${home}/.private`])],
+        {
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+          stderr: 'pipe',
+        }
+      )
+      return result.exitCode
+    } finally {
+      rmSync(bin, { recursive: true, force: true })
+    }
+  }
+
+  function withBoxHome(run: (home: string) => void): void {
+    const home = mkdtempSync(join(tmpdir(), 'ficus-box-home-'))
+    try {
+      run(home)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }
+
+  test('a legacy dir moves with its bytes and leaves a relative link; a second run is a no-op', () => {
+    withBoxHome((home) => {
+      mkdirSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
+      writeFileSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR, '.env'), 'A=1\n')
+      mkdirSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR, 'monitors', 'm1'), { recursive: true })
+
+      expect(runOnBox(home)).toBe(0)
+      expect(readFileSync(join(home, 'workspace', WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe('A=1\n')
+      expect(existsSync(join(home, 'workspace', WORKSPACE_DOT_DIR, 'monitors', 'm1'))).toBe(true)
+      expect(readlinkSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+
+      expect(runOnBox(home)).toBe(0)
+      expect(readlinkSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+    })
+  })
+
+  test('a fresh root gets .ficus and the link; a missing root is skipped', () => {
+    withBoxHome((home) => {
+      mkdirSync(join(home, '.private'))
+
+      expect(runOnBox(home)).toBe(0)
+      expect(lstatSync(join(home, '.private', WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
+      expect(readlinkSync(join(home, '.private', LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+      expect(existsSync(join(home, 'workspace'))).toBe(false)
+    })
+  })
+
+  test('a symlinked work root is reported and not followed', () => {
+    withBoxHome((home) => {
+      const elsewhere = join(home, 'elsewhere')
+      mkdirSync(join(elsewhere, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
+      symlinkSync(elsewhere, join(home, 'workspace'))
+
+      expect(runOnBox(home)).toBe(1)
+      expect(lstatSync(join(elsewhere, LEGACY_WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
+      expect(existsSync(join(elsewhere, WORKSPACE_DOT_DIR))).toBe(false)
+    })
+  })
+
+  test('both dirs present, or a legacy link elsewhere, is reported and left untouched while other roots still run', () => {
+    withBoxHome((home) => {
+      mkdirSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
+      writeFileSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR, '.env'), 'OLD=1\n')
+      mkdirSync(join(home, 'workspace', WORKSPACE_DOT_DIR))
+      mkdirSync(join(home, '.private'))
+      symlinkSync('/etc', join(home, '.private', LEGACY_WORKSPACE_DOT_DIR))
+
+      expect(runOnBox(home)).toBe(1)
+      expect(readFileSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe('OLD=1\n')
+      expect(lstatSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
+      expect(readlinkSync(join(home, '.private', LEGACY_WORKSPACE_DOT_DIR))).toBe('/etc')
+      expect(existsSync(join(home, '.private', WORKSPACE_DOT_DIR))).toBe(false)
+    })
   })
 })

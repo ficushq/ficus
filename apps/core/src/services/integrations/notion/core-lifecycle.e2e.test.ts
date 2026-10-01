@@ -292,7 +292,7 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
     connections: repository,
     regenerateEnv: async (squadId) => {
       await regenerateEnvFileForSquad(squadId)
-      const generated = join(ensureSquadWorkspace(squadId), '.tau', '.env')
+      const generated = join(ensureSquadWorkspace(squadId), '.ficus', '.env')
       observedEnv = await Bun.file(generated).text()
       observedSkills = (await resolveAssignedIntegrationRefs(squadId)).skills
       writeFileSync(envFile, observedEnv, { mode: 0o600 })

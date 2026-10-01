@@ -16,7 +16,7 @@
  * `SANDBOX_ASSETS` order IS the vm push order (secrets last, per file-sync's
  * partial-secret-cleanup convention):
  *   1. `skills`    — materialized skills tree → `<skills anchor>/…` (all roles)
- *   2. `squad-env` — squad `.env`  → `<workspace>/.tau/.env`  (0600, squad-scoped)
+ *   2. `squad-env` — squad `.env`  → `<workspace>/.ficus/.env`  (0600, squad-scoped)
  *   3. `identity`  — identity key  → `<private>/identity.pem` (0600, per-agent;
  *                    a shared squad box has no single agent identity)
  *   4. `memory`    — memory replica → `<memory>/…` (SQUAD box only — squad
@@ -49,6 +49,7 @@ import { getSquadSshPath } from '../squad/ssh'
 import { getSquadWorkspacePath } from '../squad/workspace'
 import { materializeSquadRemoteHosts } from '../remote-hosts/materialize'
 import { getSquadIdFromSandbox } from './types'
+import { prepareWorkspaceDotDir, WORKSPACE_DOT_DIR, workspaceDotPath } from '../workspace/dot-dir'
 
 /** Whether an asset is per-agent material or squad-shared material. */
 export type AssetScope = 'agent' | 'squad'
@@ -64,7 +65,7 @@ export type AssetScope = 'agent' | 'squad'
  */
 export interface AssetDest {
   base: 'private' | 'workspace' | 'memory' | 'home' | 'skills' | 'ssh'
-  /** Path under `base`: a file path for single-file assets (e.g. `.tau/.env`),
+  /** Path under `base`: a file path for single-file assets (e.g. `.ficus/.env`),
    *  `''` for directory-tree assets (the tree's `files()` relPaths apply). */
   relPath: string
 }
@@ -161,6 +162,19 @@ function singleFile(path: string, mode: string): () => Promise<AssetFile[]> {
   return async () => (existsSync(path) ? [{ relPath: '', bytes: readFileSync(path), mode }] : [])
 }
 
+/**
+ * {@link singleFile} for a file in a work root's dot dir. Reading first moves a legacy dot dir and
+ * FAILS CLOSED (WorkspaceDotDirConflictError) on one that needs a manual fix: a key or env still in
+ * an unmoved legacy dir must never read as "absent", which would make a vm sync prune the box copy.
+ */
+function dotDirFile(workRoot: string, name: string, mode: string): () => Promise<AssetFile[]> {
+  const read = singleFile(workspaceDotPath(workRoot, name), mode)
+  return async () => {
+    prepareWorkspaceDotDir(workRoot)
+    return read()
+  }
+}
+
 /** Mode for one squad-ssh file: `config`/`known_hosts`/`*.pub` are non-secret
  *  ssh metadata (0644); everything else is a private key (0600). Mirrors
  *  file-sync's `sshArtifactMode`. */
@@ -192,7 +206,7 @@ export const SANDBOX_ASSETS: SandboxAsset[] = [
   },
   {
     name: 'squad-env',
-    dest: { base: 'workspace', relPath: '.tau/.env' },
+    dest: { base: 'workspace', relPath: `${WORKSPACE_DOT_DIR}/.env` },
     mode: '0600',
     scope: 'squad',
     required: false,
@@ -201,8 +215,8 @@ export const SANDBOX_ASSETS: SandboxAsset[] = [
       // generated `.env` (user content + rendered Secret Store exports) — NOT
       // env.ts's `getEnvFile`, which masks secrets for the API/UI surface.
       if (!squadId) return null
-      const hostPath = join(getSquadWorkspacePath(squadId), '.tau', '.env')
-      return { hostPath, files: singleFile(hostPath, '0600') }
+      const workRoot = getSquadWorkspacePath(squadId)
+      return { hostPath: workspaceDotPath(workRoot, '.env'), files: dotDirFile(workRoot, '.env', '0600') }
     },
   },
   {
@@ -214,10 +228,13 @@ export const SANDBOX_ASSETS: SandboxAsset[] = [
     source: async ({ sandboxId, role }) => {
       // Per-agent key material only; a shared squad box has no single agent
       // identity. Path mirrors services/amtp/agent-identity.ts:
-      // <HOME_DIR>/private/<sandboxId>/.tau/identity.pem.
+      // <HOME_DIR>/private/<sandboxId>/.ficus/identity.pem.
       if (role === 'squad') return null
-      const hostPath = join(getHomeDir(), 'private', sandboxId, '.tau', 'identity.pem')
-      return { hostPath, files: singleFile(hostPath, '0600') }
+      const workRoot = join(getHomeDir(), 'private', sandboxId)
+      return {
+        hostPath: workspaceDotPath(workRoot, 'identity.pem'),
+        files: dotDirFile(workRoot, 'identity.pem', '0600'),
+      }
     },
   },
   {

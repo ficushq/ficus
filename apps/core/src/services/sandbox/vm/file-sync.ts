@@ -29,8 +29,10 @@
  *   0. best-effort `rm -f ~/bin/tau` — an earlier revision pushed a per-box copy
  *      of the pre-ficus CLI there (`~/bin` precedes `/usr/local/bin` on the box
  *      PATH); removing it keeps that stale copy off the box PATH. Idempotent when absent
+ *   0b. move the box's legacy workspace dot dirs (`~/workspace`, `~/.private`) to
+ *      `.ficus` with a relative legacy link left behind ({@link boxWorkspaceDotDirCommand})
  *   1. materialized skills tree → `~/.tau/skills/<materializer layout>`
- *   2. squad `.env` → `~/workspace/.tau/.env`   (mode 0600; squad-scoped only)
+ *   2. squad `.env` → `~/workspace/.ficus/.env`   (mode 0600; squad-scoped only)
  *   3. identity key → `~/.private/identity.pem`  (mode 0600; per-agent only)
  *   4. memory replica → `~/memory/<tree>`   (content only — read-only convention;
  *      SQUAD box only — the layout's canonical memory root on vm)
@@ -91,6 +93,7 @@ import type { Machine, MachineBox } from '../../machines/queries'
 import { getSquadSshPath, RESERVED_REMOTE_HOST_KEY_PREFIXES } from '../../squad/ssh'
 import { materializeSquadRemoteHosts as materializeSquadRemoteHostsReal } from '../../remote-hosts/materialize'
 import { createLogger } from '../../../lib/infra/logger'
+import { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR } from '../../workspace/dot-dir'
 import {
   resolveSandboxAssets,
   SANDBOX_ASSETS,
@@ -295,6 +298,84 @@ async function bestEffortRemove(client: SandboxClient, path: string, fence?: Set
   }
 }
 
+/**
+ * Bridge (phase 5, U4): the box-side half of services/workspace/dot-dir.ts, as one
+ * shell command run as the box user. For each work root (a real dir; a symlinked
+ * root is reported and not followed, a missing one skipped): a legacy dot dir that is a real dir while `.ficus` is absent is renamed
+ * (`mv -T`, a single rename(2) that refuses a non-empty target) to `.ficus`; then
+ * `.ficus` is created if missing and the legacy name is linked to it RELATIVELY
+ * (`ln -sT`, which fails rather than linking inside a dir that reappeared).
+ * A box server from before the rename reads `<root>/<legacy>/.env` and `.bashrc`
+ * through that link until the box is recycled. Both names as real dirs, a legacy
+ * link to anywhere else, or a non-directory is left alone, reported on stderr, and
+ * makes the command exit non-zero after the other roots ran.
+ */
+export function boxWorkspaceDotDirCommand(roots: string[]): string {
+  const legacy = LEGACY_WORKSPACE_DOT_DIR
+  const next = WORKSPACE_DOT_DIR
+  return [
+    'rc=0',
+    'dot_dir() {',
+    '  if [ -L "$1" ]; then echo "$1 is a symlink, not followed" >&2; rc=1; return 0; fi',
+    '  [ -d "$1" ] || return 0',
+    `  o="$1/${legacy}"; n="$1/${next}"`,
+    '  if [ -L "$o" ]; then',
+    `    [ "$(readlink -- "$o")" = ${shellQuote(next)} ] || { echo "$o is a link elsewhere" >&2; rc=1; }`,
+    '    return 0',
+    '  fi',
+    '  if [ -e "$n" ] || [ -L "$n" ]; then',
+    '    if [ -L "$n" ] || [ ! -d "$n" ]; then echo "$n is not a directory" >&2; rc=1; return 0; fi',
+    '    if [ -e "$o" ]; then echo "both $o and $n exist" >&2; rc=1; return 0; fi',
+    '  elif [ -e "$o" ]; then',
+    '    if [ ! -d "$o" ]; then echo "$o is not a directory" >&2; rc=1; return 0; fi',
+    '    mv -T -- "$o" "$n" || { rc=1; return 0; }',
+    '  fi',
+    `  mkdir -p -- "$n" && ln -sT -- ${shellQuote(next)} "$o" || rc=1`,
+    '}',
+    ...roots.map((root) => `dot_dir ${shellQuote(root)}`),
+    'exit $rc',
+  ].join('\n')
+}
+
+async function migrateBoxWorkspaceDotDirs(client: SandboxClient, home: string, fence?: SetupBashFence): Promise<void> {
+  try {
+    await runBash(
+      client,
+      boxWorkspaceDotDirCommand([`${home}/workspace`, `${home}/.private`]),
+      'file_sync',
+      undefined,
+      fence
+    )
+  } catch (error) {
+    // Same rule as bestEffortRemove: an ambiguous outcome must stop all later effects.
+    if (error instanceof BashOutcomeUnknownError) throw error
+    log.warn(`Workspace dot dir not migrated on box ${home}:`, error instanceof Error ? error.message : error)
+  }
+}
+
+/**
+ * Bridge (phase 5, U4): a stamped path under the legacy dot dir whose `.ficus` twin is
+ * in the current push is the SAME file once step 0b left the legacy link, so pruning
+ * it as stale would delete the file just pushed (through the link).
+ */
+function isMovedDotDirTwin(relPath: string, current: Set<string>): boolean {
+  const legacyPrefix = `${LEGACY_WORKSPACE_DOT_DIR}/`
+  return relPath.startsWith(legacyPrefix) && current.has(`${WORKSPACE_DOT_DIR}/${relPath.slice(legacyPrefix.length)}`)
+}
+
+/**
+ * Bridge (phase 5, U4): a file asset that lands in the workspace dot dir (the squad `.env`) is
+ * stamped as a bare hash, without its file list, while the legacy link exists. A Core rolled back to
+ * the previous release reads a bare-hash stamp as "prune my own dest" (`<legacy>/.env`), which it is
+ * about to keep; a `['.ficus/.env']` manifest would make it `rm` `.ficus/.env` — the very file it
+ * just pushed through the link. This Core's own revoke still works from a bare hash (it falls back
+ * to the asset's dest, `.ficus/.env`). P5-T26 restores the file list when it removes the link.
+ */
+function stampsHashOnlyDuringBridge(assetName: string): boolean {
+  const dest = SANDBOX_ASSETS.find((asset) => asset.name === assetName)?.dest
+  return dest?.base === 'workspace' && dest.relPath.startsWith(`${WORKSPACE_DOT_DIR}/`) // ficus-p5-bridge
+}
+
 /** Deterministic order regardless of readdir/reader ordering. */
 function sortByRelPath<T extends { relPath: string }>(files: T[]): T[] {
   return [...files].sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0))
@@ -315,7 +396,7 @@ function sshArtifactMode(relPath: string): string {
  *  it will be CREATED with (undefined ⇒ server umask default; tree assets like
  *  skills/memory push no mode). `relPath` is the full path suffix under the
  *  resolved dest root (for single-file assets it includes the dest's own
- *  relPath, e.g. `.tau/.env`). */
+ *  relPath, e.g. `.ficus/.env`). */
 interface PushableFile {
   relPath: string
   bytes: Uint8Array
@@ -585,10 +666,11 @@ export async function syncBoxFiles(
     const hash = computeAssetHash(destRoot, files)
     const previous = parseSyncedAssetState(box?.syncedHashes?.[name])
     const currentFiles = files.map((file) => file.relPath).sort()
+    const hashOnly = stampsHashOnlyDuringBridge(name)
     if (previous?.hash === hash) {
       // Upgrade legacy hash-only stamps while the source is still present, so
       // a later revoke has an exact bounded deletion manifest.
-      if (box && !previous.files) await stamp(box.machineId, sandboxId, name, hash, currentFiles)
+      if (box && !previous.files && !hashOnly) await stamp(box.machineId, sandboxId, name, hash, currentFiles)
       return
     }
     if (files.length === 0 && !previous) return
@@ -602,10 +684,12 @@ export async function syncBoxFiles(
       await removeManagedFiles(
         client,
         destRoot,
-        (previous?.files ?? (previous ? legacyFilesWhenEmpty : [])).filter((path) => !current.has(path)),
+        (previous?.files ?? (previous ? legacyFilesWhenEmpty : [])).filter(
+          (path) => !current.has(path) && !isMovedDotDirTwin(path, current)
+        ),
         deps.bashFence
       )
-      if (box) await stamp(box.machineId, sandboxId, name, hash, currentFiles)
+      if (box) await stamp(box.machineId, sandboxId, name, hash, hashOnly ? undefined : currentFiles)
     }
     await (deps.trackSetupWork ? deps.trackSetupWork(mutate) : mutate())
   }
@@ -616,6 +700,12 @@ export async function syncBoxFiles(
   //    second, outdated CLI. `rm -f` is idempotent when the file is absent,
   //    and a removal failure never fails the sync. Not an asset — unconditional.
   await bestEffortRemove(client, `${home}/bin/tau`, deps.bashFence)
+
+  // 0b. Bring the box's work roots to the `.ficus` dot dir BEFORE any asset lands
+  //     in one, so a push never creates `.ficus` beside a legacy dir that still
+  //     holds the box's monitors, deployments and setup script. Unconditional
+  //     (a no-op once done); a refusal is logged and never fails the sync.
+  await migrateBoxWorkspaceDotDirs(client, home, deps.bashFence)
 
   // Resolve the applicable assets for this box (manifest order, scope-filtered).
   // `squadId` matches the manifest's own derivation, so passing opts.squadId
@@ -656,7 +746,7 @@ export async function syncBoxFiles(
     }
 
     const baseDir = resolveBoxDest(home, asset.dest.base)
-    // Single-file assets (dest.relPath names the file, e.g. `.tau/.env`) carry
+    // Single-file assets (dest.relPath names the file, e.g. `.ficus/.env`) carry
     // an explicit creation mode — the secrets. Directory-tree assets
     // (dest.relPath === '') are content-only and push at the umask default; the
     // mode-as-pushed (undefined for trees) is also what the hash folds in.

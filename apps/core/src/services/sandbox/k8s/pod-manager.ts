@@ -172,7 +172,7 @@ export class K8sPodManager {
   private readonly portForwardManager: PortForwardManager
   private idleCheckInterval: ReturnType<typeof setInterval> | null = null
   /**
-   * Content hash of the .tau/.bashrc last written into each tracked pod, so the
+   * Content hash of the .ficus/.bashrc last written into each tracked pod, so the
    * 60s reconcile pass rewrites it only when it actually changed. Dropped
    * wherever a pod's tracked state is created or removed — a fresh pod's
    * filesystem is empty, so it must be written again.
@@ -775,12 +775,12 @@ export class K8sPodManager {
     this.bashrcHashes.delete(sandboxId)
   }
 
-  /** Content hash of the .tau/.bashrc last written into this sandbox's pod. */
+  /** Content hash of the .ficus/.bashrc last written into this sandbox's pod. */
   getBashrcHash(sandboxId: string): string | undefined {
     return this.bashrcHashes.get(sandboxId)
   }
 
-  /** Record the .tau/.bashrc content hash after a successful write. */
+  /** Record the .ficus/.bashrc content hash after a successful write. */
   setBashrcHash(sandboxId: string, hash: string): void {
     this.bashrcHashes.set(sandboxId, hash)
   }

@@ -70,7 +70,7 @@ describe('extractAgentAttachmentReferences', () => {
   })
 
   test.each([
-    '@/private/.tau/identity.pem',
+    '@/private/.ficus/identity.pem',
     '@/workspace/report.pdf',
     `@${AGENT_ATTACHMENT_ROOT}/not-a-uuid/report.pdf`,
     `@${AGENT_ATTACHMENT_ROOT}/${ID}/report.pdf/../secret`,

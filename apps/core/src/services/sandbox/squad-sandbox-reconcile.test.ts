@@ -3,6 +3,7 @@ import { Squad } from '../../entities/Squad'
 import * as factory from './factory'
 import type { ISandboxManager, SandboxOptions } from './types'
 import { reconcileSquadSandboxSpecs } from './squad-sandbox-reconcile'
+import { WorkspaceDotDirConflictError } from '../workspace/dot-dir'
 
 type TestSquad = Pick<Squad, 'id'>
 
@@ -46,6 +47,36 @@ describe('reconcileSquadSandboxSpecs', () => {
     listSpy = spyOn(Squad, 'list').mockResolvedValue(squads as Squad[])
     return squads
   }
+
+  test('a squad whose workspace dot dir needs a manual fix is skipped; the squads around it are still reconciled', async () => {
+    const squads = mockSquadList([{ id: 'sq1' }, { id: 'sq2' }, { id: 'sq3' }])
+    const stub: ManagerStub = {
+      running: { [Squad.getSandboxId('sq1')]: 'OLD', [Squad.getSandboxId('sq3')]: 'OLD' },
+      desired: { sq1: 'NEW', sq3: 'NEW' },
+      recreated: [],
+    }
+    const warnings: string[] = []
+
+    await expect(
+      reconcileSquadSandboxSpecs(
+        { info: () => {}, warn: (...args: unknown[]) => void warnings.push(args.map(String).join(' ')) },
+        {
+          manager: makeManager(stub),
+          buildOptions: (squad) => {
+            if (squad.id === 'sq2') throw new WorkspaceDotDirConflictError('/home/w/sq2', 'both-present')
+            return buildOptions(squad)
+          },
+          isIdle: async () => true,
+        }
+      )
+    ).resolves.toBeUndefined()
+
+    expect(stub.recreated.sort()).toEqual([Squad.getSandboxId('sq1'), Squad.getSandboxId('sq3')].sort())
+    expect(warnings).toEqual([
+      `Sandbox spec reconcile skipped for squad sq2: ${new WorkspaceDotDirConflictError('/home/w/sq2', 'both-present').message}`,
+    ])
+    expect(squads.length).toBe(3)
+  })
 
   test('recreates a drifted sandbox when the squad is idle', async () => {
     const squads = mockSquadList([{ id: 'sq1' }])

@@ -1,18 +1,19 @@
 /**
  * Shared bashrc content generation for sandbox terminal sessions.
  *
- * Both Docker and K8s sandbox managers create a .tau/.bashrc file
+ * Both Docker and K8s sandbox managers create a .ficus/.bashrc file
  * that sources workspace secrets and activates devbox. This module
  * generates that content so both implementations stay in sync.
  */
 
 import * as fs from 'fs'
 import * as path from 'path'
+import { WORKSPACE_DOT_DIR } from '../workspace/dot-dir'
 import vmDevboxRouting from '../../../../../packages/sandbox-server/src/services/devbox-routing.sh' with { type: 'text' }
 
 /**
- * Generate .tau/.bashrc content for sandbox terminal sessions.
- * Sources .tau/.env for workspace secrets and activates devbox if configured.
+ * Generate .ficus/.bashrc content for sandbox terminal sessions.
+ * Sources .ficus/.env for workspace secrets and activates devbox if configured.
  *
  * @param workspacePath - Host path to the workspace (used to check for devbox.json)
  * @param workspaceMount - Container-side mount path for the workspace (e.g. /workspace)
@@ -32,7 +33,7 @@ export function buildBashrcContent(
     "export PS1='\\[\\033[01;32m\\]\\w\\[\\033[00m\\]\\$ '",
     '',
     '# Source workspace secrets',
-    `[ -f ${workspaceMount}/.tau/.env ] && set -a && . ${workspaceMount}/.tau/.env && set +a`,
+    `[ -f ${workspaceMount}/${WORKSPACE_DOT_DIR}/.env ] && set -a && . ${workspaceMount}/${WORKSPACE_DOT_DIR}/.env && set +a`,
   ]
 
   // --init-hook runs shell.init_hook commands from devbox.json (env vars, aliases, etc.)

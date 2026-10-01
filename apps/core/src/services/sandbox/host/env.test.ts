@@ -373,7 +373,7 @@ describe('host env', () => {
 
   test('buildHostPreamble snapshots the identity BEFORE sourcing, then re-asserts it from the snapshots', () => {
     const pre = buildHostPreamble({ squadId: SQUAD, ficusToken: 'tok', agentId: 'agent-1' })
-    const envPath = join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env')
+    const envPath = join(home, 'workspaces', 'squads', SQUAD, '.ficus', '.env')
     const names = snapshotNames(pre)
     const snapshotIndex = pre.indexOf(`${names.url}="$FICUS_IDENTITY_API_URL"`)
     const sourceIndex = pre.indexOf(`. "${envPath}"`)
@@ -406,7 +406,7 @@ describe('host env', () => {
 
   test('buildHostPreamble re-asserts the shim PATH after sourcing, keeping what the squad env added', () => {
     const pre = buildHostPreamble({ squadId: SQUAD, ficusToken: 'tok', agentId: 'agent-1' })
-    const envPath = join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env')
+    const envPath = join(home, 'workspaces', 'squads', SQUAD, '.ficus', '.env')
     const names = snapshotNames(pre)
     // `$PATH` is kept, so a squad env's own additions survive behind the shim dir.
     const pathIndex = pre.indexOf(`export PATH="$${names.bin}:$PATH"`)

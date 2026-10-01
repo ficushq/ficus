@@ -1,5 +1,6 @@
 import { loadLaunchPathLines, runWithLaunchPath } from '../sandbox/launch-path'
 import { isHostRuntime, isVmRuntime } from '../sandbox/runtime'
+import { WORKSPACE_DOT_DIR } from '../workspace/dot-dir'
 import {
   containerWorkspaceLayout,
   hostWorkspaceLayout,
@@ -47,7 +48,7 @@ export function monitorWorkRoot(ctx: WorkspaceLayoutContext): string {
 }
 
 export function monitorDir(workspaceMount: string, monitorId: string): string {
-  return `${workspaceMount}/.tau/monitors/${monitorId}`
+  return `${workspaceMount}/${WORKSPACE_DOT_DIR}/monitors/${monitorId}`
 }
 
 export function sessionNameForMonitor(monitorId: string): string {
