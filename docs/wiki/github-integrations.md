@@ -269,8 +269,11 @@ version. Native actions are `created`, `reopened`, `reintroduced`,
 `auto_reopened`, `fixed`, `dismissed`, `auto_dismissed`, and
 `assignees_changed`. API snapshots use **`observed`**, not an invented reopen
 or creation action. Include `observed` when filtering native actions if you
-want initial backfill and missed-delivery reconciliation too. Shared issue
-label filters do not apply to security alerts.
+want initial backfill and missed-delivery reconciliation too. Native-only action
+conditions also work: a later matching webhook refines an earlier API snapshot
+and re-evaluates routing, without repeating notices or subscription deliveries
+already recorded for that snapshot. A later API read never downgrades native
+action evidence. Shared issue label filters do not apply to security alerts.
 
 Discovery requires a GitHub App's **Dependabot alerts: read-only** repository
 permission, an installation on the selected repositories, and a connected

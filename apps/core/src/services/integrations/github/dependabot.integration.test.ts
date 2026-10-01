@@ -13,13 +13,15 @@ import {
   workStreamFlowRuns,
   integrationOutputEvents,
   integrationOutputTriggerRuns,
+  integrationOutputDeliveries,
   integrationAuditEvents,
   integrationConnections,
 } from '../../../db'
 import { Agent } from '../../../entities/Agent'
 import * as api from '../../github/api-client'
 import { publishGitHubWebhookOutputs } from './ingress'
-import { publishIntegrationOutputs } from '../outputs/runtime'
+import { publishIntegrationOutputs, reconcileUnmatchedOutputs } from '../outputs/runtime'
+import { InboxMessage } from '../../../entities/InboxMessage'
 import { reportDependabotUnavailable } from './dependabot-status'
 import { resolveEventTrackedResource } from '../../work-streams/tracked-resources'
 useEnabledIntegrationFixtures('github')
@@ -129,7 +131,7 @@ test('webhook and API overlap notify one manager; inaccessible alerts and unrela
     await publishGitHubWebhookOutputs(event('reopened', { updated_at: '2026-09-02T00:00:00Z' }))
     const notices = await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))
     expect(notices).toHaveLength(2)
-    expect(notices[1]!.subject).toBe('Dependabot discovery unavailable')
+    expect(notices.filter((notice) => notice.subject === 'Dependabot discovery unavailable')).toHaveLength(1)
     await reportDependabotUnavailable(one.squadId, one.connectionId)
     expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(2)
   } finally {
@@ -269,6 +271,165 @@ test('managed relay rejects unrelated squad interests and rechecks Dependabot re
     ).toHaveLength(1)
   } finally {
     read.mockRestore()
+    send.mockRestore()
+  }
+})
+
+for (const action of ['created', 'reopened', 'fixed', 'dismissed']) {
+  for (const observedFirst of [true, false]) {
+    test(`native-only ${action} rule works with ${observedFirst ? 'API' : 'webhook'} first`, async () => {
+      const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+        success: true,
+        queued: true,
+        status: 'queued',
+      })
+      try {
+        const rules = effectiveSquadEventRules({ github: [{ repo }] }, 'github').filter(
+          (rule) => rule.source.output === 'dependabot_alert.updated'
+        )
+        rules[0]!.predicates = [{ field: 'action', op: 'eq', value: action }]
+        const one = await fixture({ github: [{ repo }], integrationRules: { github: rules } })
+        const authority = { kind: 'connection' as const, squadId: one.squadId, connectionId: one.connectionId }
+        const state = ['fixed', 'dismissed'].includes(action) ? action : 'open'
+        const native = event(action, { state, updated_at: '2026-09-02T00:00:00Z' })
+        const observed = { ...event('observed', native.payload.alert), metadata: { synthetic: true } }
+        const ordered = observedFirst ? [observed, native] : [native, observed]
+        await publishIntegrationOutputs('github', ordered[0]!, authority)
+        expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(
+          observedFirst ? 0 : 1
+        )
+        await publishIntegrationOutputs('github', ordered[1]!, authority)
+        await Promise.all(ordered.map((item) => publishIntegrationOutputs('github', item, authority)))
+        expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(1)
+        const facts = await db
+          .select()
+          .from(integrationOutputEvents)
+          .where(sql`${integrationOutputEvents.authority}->>'connectionId' = ${one.connectionId}`)
+        expect(facts).toHaveLength(1)
+        expect(facts[0]!.fact.data.action).toBe(action)
+      } finally {
+        send.mockRestore()
+      }
+    })
+  }
+}
+
+for (const observedFirst of [true, false]) {
+  test(`default overlap has one notice, with ${observedFirst ? 'API' : 'webhook'} first`, async () => {
+    const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+      success: true,
+      queued: true,
+      status: 'queued',
+    })
+    try {
+      const one = await fixture()
+      const authority = { kind: 'connection' as const, squadId: one.squadId, connectionId: one.connectionId }
+      const native = event()
+      const observed = { ...event('observed'), metadata: { synthetic: true } }
+      await publishIntegrationOutputs('github', observedFirst ? observed : native, authority)
+      await publishIntegrationOutputs('github', observedFirst ? native : observed, authority)
+      await Promise.all([native, observed, native].map((item) => publishIntegrationOutputs('github', item, authority)))
+      expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(1)
+    } finally {
+      send.mockRestore()
+    }
+  })
+}
+
+for (const nativeOnly of [false, true])
+  test(`native refinement keeps one stream and one delivery (${nativeOnly ? 'native-only' : 'default'} rule)`, async () => {
+    const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+      success: true,
+      queued: true,
+      status: 'queued',
+    })
+    try {
+      const rules = effectiveSquadEventRules({ github: [{ repo }] }, 'github').filter(
+        (rule) => rule.source.output === 'dependabot_alert.updated'
+      )
+      if (nativeOnly) rules[0]!.predicates = [{ field: 'action', op: 'eq', value: 'created' }]
+      const flow = createBlankWorkflow()
+      flow.participants.worker!.agentTypeId = prefix
+      flow.completion.followChanges = true
+      rules[0]!.action = { type: 'start-workstream', workflow: { kind: 'inline', definition: flow } }
+      const one = await fixture({ github: [{ repo }], integrationRules: { github: rules } })
+      const authority = { kind: 'connection' as const, squadId: one.squadId, connectionId: one.connectionId }
+      const observed = { ...event('observed'), metadata: { synthetic: true } }
+      await publishIntegrationOutputs('github', observed, authority)
+      expect(await db.select().from(workStreams).where(eq(workStreams.squadId, one.squadId))).toHaveLength(
+        nativeOnly ? 0 : 1
+      )
+      await Promise.all(
+        [event(), event(), observed].map((item) => publishIntegrationOutputs('github', item, authority))
+      )
+      const streams = await db.select().from(workStreams).where(eq(workStreams.squadId, one.squadId))
+      expect(streams).toHaveLength(1)
+      expect(
+        await db
+          .select()
+          .from(integrationOutputDeliveries)
+          .where(eq(integrationOutputDeliveries.workStreamId, streams[0]!.id))
+      ).toHaveLength(1)
+      expect(
+        await db
+          .select()
+          .from(integrationOutputTriggerRuns)
+          .where(eq(integrationOutputTriggerRuns.squadId, one.squadId))
+      ).toHaveLength(1)
+    } finally {
+      send.mockRestore()
+    }
+  })
+
+test('a stale API routing completion cannot settle failed native refinement; durable retry recovers', async () => {
+  const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+    success: true,
+    queued: true,
+    status: 'queued',
+  })
+  const original = InboxMessage.sendOnce.bind(InboxMessage)
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let reached!: () => void
+  const ready = new Promise<void>((resolve) => {
+    reached = resolve
+  })
+  let failNative = true
+  const notice = spyOn(InboxMessage, 'sendOnce').mockImplementation(async (...args) => {
+    if (String(args[0].content).includes('(open; observed)')) {
+      reached()
+      await held
+    } else if (failNative) {
+      failNative = false
+      throw new Error('native notice deferred')
+    }
+    return original(...args)
+  })
+  let observing: Promise<unknown> | undefined
+  try {
+    const one = await fixture()
+    const authority = { kind: 'connection' as const, squadId: one.squadId, connectionId: one.connectionId }
+    observing = publishIntegrationOutputs('github', { ...event('observed'), metadata: { synthetic: true } }, authority)
+    await ready
+    await expect(publishIntegrationOutputs('github', event(), authority)).rejects.toThrow('native notice deferred')
+    release()
+    await observing
+    const rows = () =>
+      db
+        .select()
+        .from(integrationOutputEvents)
+        .where(sql`${integrationOutputEvents.authority}->>'connectionId' = ${one.connectionId}`)
+    expect((await rows())[0]!.fact.data.action).toBe('created')
+    expect((await rows())[0]!.matchedAt).toBeNull()
+    await reconcileUnmatchedOutputs()
+    expect((await rows())[0]!.matchedAt).not.toBeNull()
+    expect(await db.select().from(inbox).where(eq(inbox.recipientId, one.managerId))).toHaveLength(1)
+  } finally {
+    release()
+    await observing?.catch(() => {})
+    notice.mockRestore()
     send.mockRestore()
   }
 })

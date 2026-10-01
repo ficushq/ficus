@@ -66,7 +66,8 @@ export function normalizeDependabot(event: VerifiedIngressEvent): IntegrationOut
       resourceKey: `dependabot:${externalId}`,
       occurredAt,
       // Native action and mutable repo name are intentionally absent: webhook / API observations
-      // of the same state collapse. A later reopen has a different updated_at. Assignment updates
+      // of the same state collapse; native evidence refines an earlier API snapshot in-place.
+      // A later reopen has a different updated_at. Assignment updates
       // are represented by the snapshot too, not by transport delivery IDs.
       eventKey: hash([DEPENDABOT_OUTPUT, externalId, occurredAt, alert.state]),
       data: { repository: repo, repositoryId: repository.id, action, state: alert.state, severity, alert: details },

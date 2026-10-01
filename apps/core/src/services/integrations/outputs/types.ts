@@ -29,6 +29,8 @@ export interface IntegrationOutputAdapter {
   shouldNotify?(fact: IntegrationOutputFact, connectionConfiguration: unknown): boolean
   /** Agent-facing presentation only; never used for matching, canonical facts, or delivery identity. */
   notificationBody?(fact: IntegrationOutputFact): string
+  /** Refine an already-recorded event with stronger evidence, preserving its identity and receipts. */
+  shouldRefineFact?(current: IntegrationOutputFact, incoming: IntegrationOutputFact): boolean
   normalize(event: VerifiedIngressEvent): IntegrationOutputFact[]
 }
 /** Supplied by the authenticated ingress, never by event payload or stream metadata. */

@@ -1,4 +1,4 @@
-import { normalizeDependabot, DEPENDABOT_OUTPUT } from '../github/dependabot-output'
+import { normalizeDependabot, DEPENDABOT_OUTPUT, DEPENDABOT_ACTIONS } from '../github/dependabot-output'
 import { createHash } from 'node:crypto'
 import { githubOutputCatalog, isGitHubSelfComment, type IntegrationOutputFact } from '@ficus/shared'
 import type { IntegrationOutputAdapter } from './types'
@@ -95,6 +95,14 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
     ]
       .filter(Boolean)
       .join('\n')
+  },
+  shouldRefineFact(current, incoming) {
+    return (
+      current.output === DEPENDABOT_OUTPUT &&
+      incoming.output === DEPENDABOT_OUTPUT &&
+      current.data.action === 'observed' &&
+      DEPENDABOT_ACTIONS.includes(String(incoming.data.action))
+    )
   },
   normalize(event) {
     if (event.type === 'dependabot_alert') return normalizeDependabot(event)
