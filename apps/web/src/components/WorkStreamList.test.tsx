@@ -1653,3 +1653,26 @@ describe('WorkStreamDetailModal respond flows', () => {
     }
   })
 })
+
+test('list rows share the authoritative delivery label matrix', async () => {
+  const { CODE_HOST_DELIVERY_PRESENTATION_CASES } = await import('@ficus/shared/test-fixtures/work-stream-presentation')
+  const queryClient = createTestQueryClient()
+  try {
+    for (const row of CODE_HOST_DELIVERY_PRESENTATION_CASES) {
+      const html = renderToStaticMarkup(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <WorkStreamList
+              workStreams={[workStream(row.facts)]}
+              squadMap={new Map([[squad.id, squad]])}
+              agentMap={new Map()}
+            />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+      expect(html).toContain(row.label)
+    }
+  } finally {
+    queryClient.clear()
+  }
+})

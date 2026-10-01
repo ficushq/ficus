@@ -1,7 +1,7 @@
 import { workStreamRef } from '@ficus/shared'
 import { workStreamTitle } from '@ficus/shared'
 import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
-import { WS_STATUS_LABELS } from '../../lib/workStreamStatusPresentation'
+import { workStreamStatusLabel, WS_STATUS_LABELS } from '../../lib/workStreamStatusPresentation'
 import { CreateFlowWorkStream } from './CreateFlowWorkStream'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import clsx from 'clsx'
@@ -35,13 +35,15 @@ import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 
-const KANBAN_CALLOUT: Partial<Record<WorkStreamPresentationState, { label: string; pulse: boolean }>> = {
-  delivery_approval: { label: 'Approve delivery — click to open', pulse: true },
-  delivery_review: { label: 'Review pull request — click to open', pulse: true },
-  delivery_merge: { label: 'Merge pull request — click to open', pulse: true },
-  delivery_external: { label: 'Awaiting code host', pulse: false },
-  delivery_setup: { label: 'Delivery setup required — click to inspect', pulse: true },
-  delivery_failure: { label: 'Delivery changes required — click to inspect', pulse: true },
+const KANBAN_CALLOUT: Partial<
+  Record<WorkStreamPresentationState, { label?: string; suffix?: string; pulse: boolean }>
+> = {
+  delivery_approval: { suffix: ' — click to open', pulse: true },
+  delivery_review: { suffix: ' — click to open', pulse: true },
+  delivery_merge: { suffix: ' — click to open', pulse: true },
+  delivery_external: { pulse: false },
+  delivery_setup: { suffix: ' — click to inspect', pulse: true },
+  delivery_failure: { suffix: ' — click to inspect', pulse: true },
   in_review: { label: 'Needs review — click to open', pulse: true },
   waiting_on_answer: { label: 'Waiting on answer — click to respond', pulse: true },
   waiting_on_dependency: { label: 'Waiting on dependency — click to inspect', pulse: false },
@@ -504,7 +506,7 @@ function WorkStreamCard({
               callout.pulse && 'animate-pulse'
             )}
           />
-          {callout.label}
+          {callout.label ?? `${workStreamStatusLabel(workStream)}${callout.suffix ?? ''}`}
         </div>
       )}
 

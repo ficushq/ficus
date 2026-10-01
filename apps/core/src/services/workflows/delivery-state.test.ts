@@ -52,6 +52,7 @@ test('only positive current-head provider facts identify a human gate', () => {
     explanation: {
       pullRequests: [{ number: 42, state: 'open' }],
       gates: { mergeState: 'clean' },
+      codeHostReason: 'awaiting-merge',
     },
   })
   expect(
@@ -78,12 +79,15 @@ test('only positive current-head provider facts identify a human gate', () => {
   })
 })
 test('negative current-head facts never look ready for review or merge', () => {
-  for (const fact of [
-    event('pull_request.ci_completed', { state: 'failure' }),
-    event('pull_request.reviewed', { state: 'changes_requested' }),
-    event('pull_request.updated', { mergeConflict: true }),
-  ]) {
-    expect(classifyDeliveryPresentation(run(), metadata, [fact])).toEqual({ kind: 'failure' })
+  for (const [fact, codeHostReason] of [
+    [event('pull_request.ci_completed', { state: 'failure' }), undefined],
+    [event('pull_request.reviewed', { state: 'changes_requested' }), 'changes-requested'],
+    [event('pull_request.updated', { mergeConflict: true }), 'merge-conflict'],
+  ] as const) {
+    expect(classifyDeliveryPresentation(run(), metadata, [fact])).toEqual({
+      kind: 'failure',
+      ...(codeHostReason ? { explanation: { codeHostReason } } : {}),
+    })
   }
 })
 
@@ -109,6 +113,7 @@ test('branch identity, draft state, bot requests, and old review commits cannot 
     explanation: {
       pullRequests: [{ number: 42, state: 'open' }],
       gates: { mergeState: 'clean', draft: true },
+      codeHostReason: 'draft',
     },
   })
   expect(
@@ -182,7 +187,10 @@ test('unknown or failing additional delivery PRs prevent claiming a ready primar
     pullRequest: { number: 8, headSha: 'b'.repeat(40) },
     mergeConflict: true,
   })
-  expect(classifyDeliveryPresentation(run(), multiple, [primary, failed])).toEqual({ kind: 'failure' })
+  expect(classifyDeliveryPresentation(run(), multiple, [primary, failed])).toEqual({
+    kind: 'failure',
+    explanation: { codeHostReason: 'merge-conflict' },
+  })
 })
 
 test('already merged additional PRs do not hide the remaining human merge', () => {
@@ -198,7 +206,7 @@ test('already merged additional PRs do not hide the remaining human merge', () =
   expect(classifyDeliveryPresentation(run(), multiple, [primary, merged])).toEqual({ kind: 'merge' })
   expect(classifyDeliveryPresentation(run(), metadata, [event('pull_request.merged')])).toEqual({
     kind: 'external',
-    explanation: { pullRequests: [{ number: 42, state: 'merged' }] },
+    explanation: { pullRequests: [{ number: 42, state: 'merged' }], codeHostReason: 'merged' },
   })
 })
 
@@ -251,10 +259,13 @@ test('current clean review snapshots clear older changes requests and survive su
 test('draft does not hide current-head failures or conflicts', () => {
   const draft = event('pull_request.updated', { draft: true })
   const failure = event('pull_request.ci_completed', { state: 'failure' }, 'a'.repeat(40), '2026-09-21T11:00:00Z')
-  expect(classifyDeliveryPresentation(run(), metadata, [draft, failure])).toEqual({ kind: 'failure' })
+  expect(classifyDeliveryPresentation(run(), metadata, [draft, failure])).toEqual({
+    kind: 'failure',
+    explanation: { codeHostReason: 'ci-failed' },
+  })
   expect(
     classifyDeliveryPresentation(run(), metadata, [event('pull_request.updated', { draft: true, mergeConflict: true })])
-  ).toEqual({ kind: 'failure' })
+  ).toEqual({ kind: 'failure', explanation: { codeHostReason: 'merge-conflict' } })
 })
 
 test('stale aggregate observations cannot claim human readiness', () => {
@@ -301,7 +312,10 @@ test('explanations key pull requests by repository, prefer live pending checks, 
       event('pull_request.updated', { mergeState: 'blocked', checksState: 'pending' }),
       event('pull_request.merged', {}, 'a'.repeat(40), '2026-09-21T11:00:00Z'),
     ])
-  ).toEqual({ kind: 'external', explanation: { pullRequests: [{ number: 42, state: 'merged' }] } })
+  ).toEqual({
+    kind: 'external',
+    explanation: { pullRequests: [{ number: 42, state: 'merged' }], codeHostReason: 'merged' },
+  })
 })
 
 test('normalized approvals, newer native snapshots and per-workflow CI recovery clear superseded failure without losing the gate', async () => {
@@ -346,7 +360,7 @@ test('normalized approvals, newer native snapshots and per-workflow CI recovery 
         ...ci('failure', 12),
         ...ci('success', 13, 8),
       ])
-    ).toEqual({ kind: 'failure' })
+    ).toEqual({ kind: 'failure', explanation: { codeHostReason: 'ci-failed' } })
     const facts = [...rejected, ...recovered, ...ci('failure', 12), ...ci('success', 13)]
     const delivery = classifyDeliveryPresentation(run(), metadata, facts)
     expect(delivery).toEqual({ kind: 'merge' })
@@ -371,6 +385,7 @@ test('explicit unknown aggregates supersede clean readiness while sparse facts d
       explanation: {
         pullRequests: [{ number: 42, state: 'open' }],
         gates: data as WorkStreamDeliveryGateFacts,
+        ...(data.checksState === 'pending' ? { codeHostReason: 'ci-pending' } : {}),
       },
     })
   expect(classifyDeliveryPresentation(run(), metadata, [clean, newer({})])).toEqual({ kind: 'merge' })
@@ -403,7 +418,7 @@ test('explicit unknown aggregates supersede clean readiness while sparse facts d
       event('pull_request.updated', { mergeState: 'dirty' }),
       newer({ mergeState: 'unknown', checksState: 'unknown' }),
     ])
-  ).toEqual({ kind: 'failure' })
+  ).toEqual({ kind: 'failure', explanation: { codeHostReason: 'merge-conflict' } })
 })
 
 test('setup explanations distinguish unbound, not-following and direct-merge facts', () => {
@@ -460,6 +475,7 @@ test('external explanations carry the deciding gates including event-derived pen
     explanation: {
       pullRequests: [{ number: 42, state: 'open' }],
       gates: { mergeState: 'blocked', reviewDecision: 'approved', checksState: 'pending' },
+      codeHostReason: 'ci-pending',
     },
   })
 })
@@ -481,7 +497,7 @@ test('observed pull request states override the metadata delivery view primary-f
   })
 })
 
-test('specific human gates and failures stay lean without explanation payload', () => {
+test('human gates and failures without an authoritative head stay lean', () => {
   expect(
     classifyDeliveryPresentation(run(), metadata, [event('pull_request.updated', { mergeState: 'clean' })])
   ).toEqual({ kind: 'merge' })
@@ -556,9 +572,12 @@ describe('a known required human review survives stale or superseding non-review
     expect(classify([requiredWhilePending, oldApproval])).toEqual({ kind: 'review' })
     expect(classify([requiredWhilePending, observed(event('pull_request.merged'), 5)])).toEqual({
       kind: 'external',
-      explanation: { pullRequests: [{ number: 42, state: 'merged' }] },
+      explanation: { pullRequests: [{ number: 42, state: 'merged' }], codeHostReason: 'merged' },
     })
-    expect(classify([requiredWhilePending, observed(event('pull_request.closed'), 5)])).toEqual({ kind: 'failure' })
+    expect(classify([requiredWhilePending, observed(event('pull_request.closed'), 5)])).toEqual({
+      kind: 'failure',
+      explanation: { codeHostReason: 'closed' },
+    })
     expect(
       classify([
         requiredWhilePending,
@@ -591,6 +610,7 @@ describe('a known required human review survives stale or superseding non-review
       explanation: {
         pullRequests: [{ number: 42, state: 'open' }],
         gates: { mergeState: 'blocked', checksState: 'pending', reviewDecision: 'approved' },
+        codeHostReason: 'ci-pending',
       },
     })
     expect(classify([aggregate({ mergeState: 'blocked', reviewDecision: 'required', draft: true }, 1)])).toMatchObject({
@@ -600,6 +620,7 @@ describe('a known required human review survives stale or superseding non-review
       classify([requiredWhilePending, observed(event('pull_request.ci_completed', { state: 'failure' }), 5)])
     ).toEqual({
       kind: 'failure',
+      explanation: { codeHostReason: 'ci-failed' },
     })
   })
 
@@ -656,4 +677,121 @@ test('an expired cached snapshot keeps its review requirement but not its merge 
   })
   const current = deliverySnapshotEvent(snapshot, Date.parse('2026-01-01T07:41:00Z'))
   expect(current.data).toMatchObject({ mergeState: 'clean', checksState: 'failure' })
+})
+
+describe('authoritative code-host label reasons', () => {
+  const cases = [
+    { data: { checksState: 'pending' }, kind: 'external', reason: 'ci-pending' },
+    { data: { checksState: 'failure' }, kind: 'failure', reason: 'ci-failed' },
+    { data: { mergeState: 'dirty' }, kind: 'failure', reason: 'merge-conflict' },
+    { data: { mergeConflict: true }, kind: 'failure', reason: 'merge-conflict' },
+    { data: { reviewDecision: 'changes_requested' }, kind: 'failure', reason: 'changes-requested' },
+    { data: { draft: true }, kind: 'external', reason: 'draft' },
+    { data: { mergeState: 'clean' }, kind: 'external', reason: 'awaiting-merge' },
+    { data: { mergeState: 'blocked' }, kind: 'external', reason: undefined },
+    { data: { mergeState: 'unknown' }, kind: 'external', reason: undefined },
+    { data: {}, kind: 'external', reason: undefined },
+  ]
+  for (const row of cases)
+    test(JSON.stringify(row.data), () => {
+      const result = classifyDeliveryPresentation(
+        run('pr-auto-merge'),
+        metadata,
+        [event('pull_request.updated', row.data)],
+        { allowAutoMerge: true }
+      )
+      expect(result?.kind).toBe(row.kind)
+      expect(result?.explanation?.codeHostReason).toBe(row.reason)
+    })
+  test('review wins pending CI and CI failure wins review without changing attention', () => {
+    const required = event('pull_request.updated', { reviewDecision: 'required', checksState: 'pending' })
+    expect(classifyDeliveryPresentation(run(), metadata, [required])?.kind).toBe('review')
+    const failure = event('pull_request.ci_completed', { state: 'failure' }, 'a'.repeat(40), '2026-09-21T11:00:00Z')
+    expect(classifyDeliveryPresentation(run(), metadata, [required, failure])?.explanation?.codeHostReason).toBe(
+      'ci-failed'
+    )
+  })
+  test('a secondary designated PR supplies the reason, never the primary', () => {
+    const multiple = {
+      ...metadata,
+      tracked: [{ integration: 'github', repository: 'acme/other', kind: 'pull_request', number: 8, delivery: true }],
+    }
+    const secondary = event('pull_request.updated', {
+      repository: 'acme/other',
+      pullRequest: { number: 8, headSha: 'b'.repeat(40) },
+      mergeConflict: true,
+    })
+    const result = classifyDeliveryPresentation(run(), multiple, [
+      event('pull_request.updated', { checksState: 'pending' }),
+      secondary,
+    ])
+    expect(result?.kind).toBe('failure')
+    expect(result?.explanation?.codeHostReason).toBe('merge-conflict')
+  })
+  test('stale pending and clean snapshots cannot claim a current CI or merge reason', () => {
+    for (const data of [{ checksState: 'pending' }, { mergeState: 'clean' }]) {
+      const stale = {
+        ...event('pull_request.updated', data),
+        observedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+      }
+      expect(
+        classifyDeliveryPresentation(run('pr-auto-merge'), metadata, [stale])?.explanation?.codeHostReason
+      ).toBeUndefined()
+    }
+  })
+  test('all designated PRs merged finalizes; one unknown PR does not', () => {
+    expect(
+      classifyDeliveryPresentation(run(), metadata, [event('pull_request.merged')])?.explanation?.codeHostReason
+    ).toBe('merged')
+    const multiple = {
+      ...metadata,
+      tracked: [{ integration: 'github', repository: 'acme/other', kind: 'pull_request', number: 8, delivery: true }],
+    }
+    expect(
+      classifyDeliveryPresentation(run(), multiple, [event('pull_request.merged')])?.explanation?.codeHostReason
+    ).toBeUndefined()
+  })
+})
+
+test('a newer explicit unknown check rollup cannot resurrect an older pending CI label', () => {
+  const result = classifyDeliveryPresentation(run('pr-auto-merge'), metadata, [
+    event('pull_request.updated', { mergeState: 'blocked' }),
+    event('pull_request.ci_completed', { state: 'in_progress' }, 'a'.repeat(40), '2026-09-21T11:00:00Z'),
+    event(
+      'pull_request.snapshot',
+      { checksState: 'unknown', mergeState: 'unknown' },
+      'a'.repeat(40),
+      '2026-09-21T12:00:00Z'
+    ),
+  ])
+  expect(result?.kind).toBe('external')
+  expect(result?.explanation?.codeHostReason).toBeUndefined()
+})
+
+test('awaiting automatic merge requires readiness of every designated PR, not only the winning primary', () => {
+  const multiple = {
+    ...metadata,
+    tracked: [{ integration: 'github', repository: 'acme/other', kind: 'pull_request', number: 8, delivery: true }],
+  }
+  const primary = event('pull_request.updated', { mergeState: 'clean' })
+  for (const data of [{}, { checksState: 'pending' }, { draft: true }]) {
+    const secondary = event('pull_request.updated', {
+      repository: 'acme/other',
+      pullRequest: { number: 8, headSha: 'b'.repeat(40) },
+      ...data,
+    })
+    const result = classifyDeliveryPresentation(run('pr-auto-merge'), multiple, [primary, secondary], {
+      allowAutoMerge: true,
+    })
+    expect(result?.kind).toBe('external')
+    expect(result?.explanation?.codeHostReason).toBeUndefined()
+  }
+  const secondary = event('pull_request.merged', {
+    repository: 'acme/other',
+    pullRequest: { number: 8, headSha: 'b'.repeat(40) },
+  })
+  expect(
+    classifyDeliveryPresentation(run('pr-auto-merge'), multiple, [primary, secondary], { allowAutoMerge: true })
+      ?.explanation?.codeHostReason
+  ).toBe('awaiting-merge')
 })

@@ -10,6 +10,7 @@ import {
   selectWorkStreamPresentationState,
   workStreamNeedsHumanAttention,
   buildWorkInterestSnapshot,
+  codeHostDeliveryLabel,
 } from '@ficus/shared'
 import {
   db,
@@ -172,18 +173,27 @@ test('database delivery watch -> plugin parser -> durable cursor -> serialized a
     if (event.workStreamId === row!.id) notifications++
   })
   try {
-    for (const [review, check, mergeState, expected, attention, bucket] of [
-      ['APPROVED', 'PENDING', 'UNKNOWN', 'delivery_external', false, 'externalWait'],
-      ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'delivery_external', false, 'externalWait'],
-      ['REVIEW_REQUIRED', 'PENDING', 'UNKNOWN', 'delivery_review', true, 'needsYou'],
-      ['CHANGES_REQUESTED', 'SUCCESS', 'BLOCKED', 'delivery_failure', false, 'blocked'],
+    for (const [review, check, mergeState, expected, attention, bucket, reason, label] of [
+      ['APPROVED', 'PENDING', 'UNKNOWN', 'delivery_external', false, 'externalWait', 'ci-pending', 'Awaiting CI'],
+      ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'delivery_external', false, 'externalWait', undefined, null],
+      ['REVIEW_REQUIRED', 'PENDING', 'UNKNOWN', 'delivery_review', true, 'needsYou', undefined, null],
+      [
+        'CHANGES_REQUESTED',
+        'SUCCESS',
+        'BLOCKED',
+        'delivery_failure',
+        false,
+        'blocked',
+        'changes-requested',
+        'Changes requested',
+      ],
       // Dismissing a rejecting review restores the required-review gate without
       // synthesizing a review event or advancing the workflow.
-      ['REVIEW_REQUIRED', 'SUCCESS', 'BLOCKED', 'delivery_review', true, 'needsYou'],
-      ['APPROVED', 'PENDING', 'BLOCKED', 'delivery_external', false, 'externalWait'],
-      ['APPROVED', 'SUCCESS', 'CLEAN', 'delivery_merge', true, 'needsYou'],
-      ['APPROVED', 'FAILURE', 'UNSTABLE', 'delivery_failure', false, 'blocked'],
-      ['APPROVED', 'SUCCESS', 'CLEAN', 'delivery_merge', true, 'needsYou'],
+      ['REVIEW_REQUIRED', 'SUCCESS', 'BLOCKED', 'delivery_review', true, 'needsYou', undefined, null],
+      ['APPROVED', 'PENDING', 'BLOCKED', 'delivery_external', false, 'externalWait', 'ci-pending', 'Awaiting CI'],
+      ['APPROVED', 'SUCCESS', 'CLEAN', 'delivery_merge', true, 'needsYou', undefined, null],
+      ['APPROVED', 'FAILURE', 'UNSTABLE', 'delivery_failure', false, 'blocked', 'ci-failed', 'CI failed'],
+      ['APPROVED', 'SUCCESS', 'CLEAN', 'delivery_merge', true, 'needsYou', undefined, null],
     ] as const) {
       decision = review
       checks = check
@@ -209,6 +219,10 @@ test('database delivery watch -> plugin parser -> durable cursor -> serialized a
       const stream = await WorkStream.mustFind(row!.id)
       const json = { ...stream.toJson(), ...(await computeDerivedStates([stream])).get(stream.id) }
       expect(selectWorkStreamPresentationState(json)).toBe(expected)
+      const wire = JSON.parse(JSON.stringify(json))
+      expect(wire.delivery?.explanation?.codeHostReason).toBe(reason)
+      expect(codeHostDeliveryLabel(wire.delivery)).toBe(label)
+      expect(buildWorkInterestSnapshot([json]).top[0]?.delivery).toEqual(json.delivery)
       expect(workStreamNeedsHumanAttention(json)).toBe(attention)
       expect(buildWorkInterestSnapshot([json]).liveActivity.top[0]?.bucket).toBe(bucket)
     }

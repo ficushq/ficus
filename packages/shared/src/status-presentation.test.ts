@@ -1,4 +1,7 @@
-import { WORK_STREAM_PRESENTATION_CASES } from './test-fixtures/work-stream-presentation'
+import {
+  CODE_HOST_DELIVERY_PRESENTATION_CASES,
+  WORK_STREAM_PRESENTATION_CASES,
+} from './test-fixtures/work-stream-presentation'
 import { describe, expect, test } from 'bun:test'
 import type {
   AgentStatus,
@@ -9,6 +12,7 @@ import type {
   WorkStreamWait,
 } from './types'
 import {
+  codeHostDeliveryLabel,
   AGENT_STATUS_ROLE,
   MANUAL_WAIT_ACTOR_STATE,
   EXECUTION_STATUS_ROLE,
@@ -349,3 +353,16 @@ test('slot context cannot mask any existing non-idle state in the shared matrix'
     )
   }
 })
+
+for (const row of CODE_HOST_DELIVERY_PRESENTATION_CASES)
+  test(`code-host wire matrix: ${row.name}`, () => {
+    expect(selectWorkStreamPresentationState(row.facts)).toBe(row.state)
+    expect(WORK_STREAM_STATUS_ROLE[row.state]).toBe(row.role)
+    expect(workStreamNeedsHumanAttention(row.facts)).toBe(row.attention)
+    if (row.state === 'delivery_external' || row.state === 'delivery_failure') {
+      expect(
+        codeHostDeliveryLabel(row.facts.delivery) ??
+          (row.state === 'delivery_external' ? 'Awaiting Code Host' : 'Delivery Changes Required')
+      ).toBe(row.label)
+    }
+  })

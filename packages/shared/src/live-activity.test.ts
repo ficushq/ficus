@@ -244,3 +244,20 @@ test('widget summary carries only the optional authoritative slot fact, includin
     expect('poolKey' in summary).toBe(false)
   }
 })
+
+test('delivery label reasons survive widget JSON while aggregate vocabulary and ranking stay unchanged', async () => {
+  const { CODE_HOST_DELIVERY_PRESENTATION_CASES } = await import('./test-fixtures/work-stream-presentation')
+  for (const row of CODE_HOST_DELIVERY_PRESENTATION_CASES) {
+    const withReason = { ...stream(), ...row.facts } as WorkStream
+    const withoutReason = {
+      ...withReason,
+      delivery: withReason.delivery && { ...withReason.delivery, explanation: undefined },
+    }
+    const snapshot = JSON.parse(JSON.stringify(buildWorkInterestSnapshot([withReason])))
+    const coarse = buildWorkInterestSnapshot([withoutReason])
+    expect(snapshot.top[0].delivery).toEqual(withReason.delivery)
+    expect(snapshot.top[0].bucket).toBe(row.bucket)
+    expect(snapshot.bucketCounts).toEqual(coarse.bucketCounts)
+    expect(snapshot.liveActivity).toEqual(coarse.liveActivity)
+  }
+})
