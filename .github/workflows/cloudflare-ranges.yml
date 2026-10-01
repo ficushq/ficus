@@ -2,72 +2,23 @@ name: Cloudflare ranges
 
 # The ingress Caddyfiles believe CF-Connecting-IP only from Cloudflare's edge
 # ranges, pinned in scripts/setup/lib.sh (CLOUDFLARE_PROXY_RANGES). This job
-# compares that list with the one Cloudflare publishes, so a change there is
-# noticed instead of silently recording a new edge as the visitor. On the
-# schedule it opens (or comments on) an issue naming what changed; update the
-# list, and hosts follow when their Caddyfile is next rendered (upgrade-host.sh
-# re-renders it on every upgrade).
+# checks a change to that list (or to this check) against the list Cloudflare
+# publishes. It runs for pull requests, so it is read-only; the weekly watch
+# that opens an issue on drift is cloudflare-ranges-watch.yml.
 on:
-  schedule:
-    - cron: '41 6 * * 1'
-  workflow_dispatch:
   pull_request:
     paths:
       - scripts/setup/lib.sh
+      - scripts/ci/check-cloudflare-ranges.sh
       - .github/workflows/cloudflare-ranges.yml
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   compare:
     runs-on: ubuntu-24.04
-
     steps:
       - uses: actions/checkout@v7
-
       - name: Compare the pinned list with Cloudflare's
-        id: compare
-        run: |
-          set -euo pipefail
-          CLOUDFLARE_PROXY_RANGES=()
-          eval "$(sed -n '/^CLOUDFLARE_PROXY_RANGES=(/,/^)/p' scripts/setup/lib.sh)"
-          pinned=$(printf '%s\n' "${CLOUDFLARE_PROXY_RANGES[@]}" | sed '/^$/d' | sort)
-          [[ -n ${pinned} ]] || { echo "::error::CLOUDFLARE_PROXY_RANGES not found in scripts/setup/lib.sh"; exit 1; }
-          published=$({ curl -fsS --retry 3 https://www.cloudflare.com/ips-v4; echo
-            curl -fsS --retry 3 https://www.cloudflare.com/ips-v6; echo; } | sed '/^$/d' | sort)
-          [[ -n ${published} ]] || { echo "::error::Cloudflare published no ranges"; exit 1; }
-          added=$(comm -13 <(echo "${pinned}") <(echo "${published}"))
-          removed=$(comm -23 <(echo "${pinned}") <(echo "${published}"))
-          if [[ -z ${added} && -z ${removed} ]]; then
-            echo "The pinned list matches Cloudflare's (${#CLOUDFLARE_PROXY_RANGES[@]} ranges)."
-            exit 0
-          fi
-          {
-            echo 'Cloudflare'"'"'s published edge ranges no longer match `CLOUDFLARE_PROXY_RANGES` in `scripts/setup/lib.sh`.'
-            echo
-            echo "Added by Cloudflare (not trusted yet, so visitors behind them are recorded as the edge):"
-            echo '```'; echo "${added:-none}"; echo '```'
-            echo "Removed by Cloudflare (still trusted; drop them):"
-            echo '```'; echo "${removed:-none}"; echo '```'
-            echo
-            echo "Update the list; a host picks it up when its Caddyfile is next rendered (an upgrade, or a setup re-run)."
-          } >"${RUNNER_TEMP}/drift.md"
-          cat "${RUNNER_TEMP}/drift.md"
-          echo "drift=true" >>"${GITHUB_OUTPUT}"
-          echo "::error::The pinned Cloudflare ranges are out of date"
-          exit 1
-
-      - name: Open or update the drift issue
-        if: failure() && steps.compare.outputs.drift == 'true' && github.event_name != 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          title='Pinned Cloudflare proxy ranges are out of date'
-          number=$(gh issue list --state open --search "in:title \"${title}\"" --json number --jq '.[0].number // empty')
-          if [[ -n ${number} ]]; then
-            gh issue comment "${number}" --body-file "${RUNNER_TEMP}/drift.md"
-          else
-            gh issue create --title "${title}" --body-file "${RUNNER_TEMP}/drift.md"
-          fi
+        run: scripts/ci/check-cloudflare-ranges.sh
