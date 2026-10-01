@@ -246,7 +246,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
               aria-describedby="first-squad-preset-help"
               className="ficus-field w-full sm:max-w-sm px-3 py-2 border border-th-border bg-surface text-primary rounded-md focus:ring-2 focus:ring-accent"
             >
-              <option value="">Build your own squad</option>
+              <option value="">No preset</option>
               {squadPresets.data
                 ?.filter((type) => !type.disabled)
                 .map((type) => (
