@@ -1772,14 +1772,10 @@ export function ChatView({
       {/* Input */}
       {!shouldHideComposer && (
         <div className="relative shrink-0">
-          {peekingWorkItem && (
-            // The agent is working: the Ficus plant peeks up from behind the composer, pot half hidden.
-            <div className="pointer-events-none absolute bottom-full left-3 z-0 translate-y-[26%] md:left-4">
-              <TypingIndicator
-                label={peekingWorkItem.waitingFor === 'sandbox' ? 'Waiting for the sandbox to start…' : thinkingLabel}
-              />
-            </div>
-          )}
+          <PeekingPlant
+            working={Boolean(peekingWorkItem)}
+            label={peekingWorkItem?.waitingFor === 'sandbox' ? 'Waiting for the sandbox to start…' : thinkingLabel}
+          />
           <div
             ref={inputContainerRef}
             className={clsx(
@@ -2924,6 +2920,48 @@ function StreamingToolCallItem({
           {inProgress && !result && <div className="text-placeholder text-[10px] italic">Running...</div>}
         </div>
       )}
+    </div>
+  )
+}
+
+/** How long the plant's jump out of sight takes (index.css .ficus-plant-peek), the fallback if animationend never fires. */
+const PLANT_HIDE_MS = 600
+
+/**
+ * While the agent works, the Ficus plant peeks up from behind the composer,
+ * pot half hidden: it jumps up into place when work starts, and jumps then
+ * falls back out of sight when it ends (kept mounted just for that), the same
+ * jump it does when clicked. Reduced motion shows and hides it without them.
+ */
+function PeekingPlant({ working, label }: { working: boolean; label?: string }) {
+  const [shown, setShown] = useState(working)
+  const [shownLabel, setShownLabel] = useState(label)
+  if (working && !shown) setShown(true)
+  if (working && label !== shownLabel) setShownLabel(label)
+
+  useEffect(() => {
+    if (working || !shown) return
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      setShown(false)
+      return
+    }
+    const timeout = window.setTimeout(() => setShown(false), PLANT_HIDE_MS + 80)
+    return () => window.clearTimeout(timeout)
+  }, [working, shown])
+
+  if (!shown) return null
+  return (
+    <div className="pointer-events-none absolute bottom-full left-3 z-0 translate-y-[26%] md:left-4">
+      <div
+        className="ficus-plant-peek"
+        data-state={working ? 'in' : 'out'}
+        aria-hidden={working ? undefined : true}
+        onAnimationEnd={(event) => {
+          if (!working && event.target === event.currentTarget) setShown(false)
+        }}
+      >
+        <TypingIndicator label={shownLabel} />
+      </div>
     </div>
   )
 }

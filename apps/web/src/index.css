@@ -1414,6 +1414,109 @@
   animation: ficus-hop 1.4s ease-in-out infinite;
 }
 
+/* The working plant's one jump (crouch, leap, squash on landing, a little bounce),
+   used three ways: leaping up from behind the composer when work starts (ChatView
+   PeekingPlant), on a click (TypingIndicator), and leaping then falling back out of
+   sight when work ends. */
+.ficus-plant-peek {
+  transform-origin: 50% 100%;
+}
+
+.ficus-plant-peek[data-state='in'] {
+  animation: ficus-plant-pop-in 600ms ease-out both;
+}
+
+.ficus-plant-peek[data-state='out'] {
+  animation: ficus-plant-pop-out 600ms ease-in-out forwards;
+}
+
+.ficus-plant-jump {
+  display: block;
+  transform-origin: 50% 100%;
+}
+
+/* A click: crouch, jump, squash on landing, a little bounce (two names so every click restarts it). */
+.ficus-plant-jump[data-jump='a'] {
+  animation: ficus-plant-jump-a 600ms ease-out;
+}
+
+.ficus-plant-jump[data-jump='b'] {
+  animation: ficus-plant-jump-b 600ms ease-out;
+}
+
+@keyframes ficus-plant-jump-a {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  14% {
+    transform: translateY(0) scale(1.14, 0.84);
+  }
+  42% {
+    transform: translateY(-60%) scale(0.9, 1.12);
+  }
+  66% {
+    transform: translateY(0) scale(1.16, 0.84);
+  }
+  82% {
+    transform: translateY(-10%) scale(0.97, 1.04);
+  }
+}
+
+@keyframes ficus-plant-jump-b {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  14% {
+    transform: translateY(0) scale(1.14, 0.84);
+  }
+  42% {
+    transform: translateY(-60%) scale(0.9, 1.12);
+  }
+  66% {
+    transform: translateY(0) scale(1.16, 0.84);
+  }
+  82% {
+    transform: translateY(-10%) scale(0.97, 1.04);
+  }
+}
+
+@keyframes ficus-plant-pop-in {
+  /* From hiding: the jump's leap, landing and bounce. */
+  0% {
+    transform: translateY(110%) scale(1, 1);
+  }
+  42% {
+    transform: translateY(-60%) scale(0.9, 1.12);
+  }
+  66% {
+    transform: translateY(0) scale(1.16, 0.84);
+  }
+  82% {
+    transform: translateY(-10%) scale(0.97, 1.04);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+
+@keyframes ficus-plant-pop-out {
+  /* The jump's crouch and leap, then down past its spot into hiding. */
+  0% {
+    transform: translateY(0) scale(1, 1);
+  }
+  14% {
+    transform: translateY(0) scale(1.14, 0.84);
+  }
+  42% {
+    transform: translateY(-60%) scale(0.9, 1.12);
+  }
+  100% {
+    transform: translateY(115%) scale(1, 1);
+  }
+}
+
 @keyframes ficus-sway-left {
   0%,
   100% {
@@ -1457,6 +1560,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ficus-plant-jump[data-jump],
+  .ficus-plant-peek[data-state='in'],
+  .ficus-plant-peek[data-state='out'],
   .ficus-dance,
   .ficus-dance-left,
   .ficus-dance-right,
