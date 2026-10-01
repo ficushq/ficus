@@ -288,6 +288,7 @@ export async function reconcileMachineArtifactsAtBoot(deps: BootArtifactReconcil
 }
 
 export interface BootBootstrapReconcileDeps {
+  requiresMachineLayoutMigration?: (machine: Machine) => Promise<boolean>
   isVmRuntime?: () => boolean
   listMachines?: () => Promise<Machine[]>
   currentBootstrapVersion?: () => string
@@ -313,6 +314,9 @@ export interface BootBootstrapReconcileDeps {
  * check-then-act), so re-running it is safe; bootstrapMachine restamps
  * bootstrapVersion, so the next boot is a no-op.
  *
+ * A read-only host-layout probe defers destructive identity migrations to an
+ * explicit operator/API bootstrap after Core activation succeeds. Deferral and
+ * failed probes leave the ready row and its old bootstrapVersion unchanged.
  * Best-effort, per-machine try/catch, fire-and-forget from startup(), no-op on
  * container/k8s runtimes — same posture as the artifact reconcile.
  */
@@ -327,12 +331,37 @@ export async function reconcileMachineBootstrapAtBoot(deps: BootBootstrapReconci
   const bootstrapMachine = deps.bootstrapMachine ?? bootstrapModule.bootstrapMachine
   const currentBootstrapVersion = deps.currentBootstrapVersion ?? bootstrapModule.currentBootstrapVersion
 
+  const requiresMachineLayoutMigration =
+    deps.requiresMachineLayoutMigration ??
+    (await import('./services/machines/machine-layout-preflight')).requiresMachineLayoutMigration
+
   const target = currentBootstrapVersion()
   const drifted = (await listMachines()).filter((m) => m.status === 'ready' && m.bootstrapVersion !== target)
   if (drifted.length === 0) return
   let failures = 0
   let skipped = 0
+  let deferred = 0
   for (const machine of drifted) {
+    // Worker startup runs before artifact activation proves this Core healthy.
+    // Keep destructive host identity changes behind an explicit post-activation
+    // operator/API bootstrap: automatic rollback may still select the old Core.
+    // Probe before claiming, and leave status/version unchanged on uncertainty.
+    try {
+      if (await requiresMachineLayoutMigration(machine)) {
+        deferred++
+        log.info(
+          `Boot bootstrap reconcile: ${machine.name} needs an explicit machine layout migration after Core activation; deferring`
+        )
+        continue
+      }
+    } catch (err) {
+      deferred++
+      log.warn(
+        `Boot bootstrap reconcile: could not verify ${machine.name}'s layout; deferring without changing its state:`,
+        err
+      )
+      continue
+    }
     // Claim the row first, exactly like POST /machines/:id/bootstrap, so an
     // operator-triggered bootstrap and this sweep never run bootstrap.sh on
     // the same host at once. Only a still-ready machine is ours to take.
@@ -355,8 +384,9 @@ export async function reconcileMachineBootstrapAtBoot(deps: BootBootstrapReconci
     }
   }
   log.info(
-    `Boot bootstrap reconcile: re-bootstrapped ${drifted.length - failures - skipped}/${drifted.length} drifted machine(s)` +
-      (skipped > 0 ? ` (${skipped} skipped: no longer ready)` : '')
+    `Boot bootstrap reconcile: re-bootstrapped ${drifted.length - failures - skipped - deferred}/${drifted.length} drifted machine(s)` +
+      (skipped > 0 ? ` (${skipped} skipped: no longer ready)` : '') +
+      (deferred > 0 ? ` (${deferred} deferred: explicit migration or a successful layout probe required)` : '')
   )
 }
 
@@ -1029,8 +1059,8 @@ async function startup(): Promise<void> {
   // fleet-wide at boot — see reconcileMachineArtifactsAtBoot. Fire-and-forget: boot must not
   // be gated on SSH to every machine; per-machine failures are logged inside.
   // Re-bootstrap drifted hosts (e.g. a bootstrap.sh change like install_browser)
-  // BEFORE the artifact reconcile, so a host that needs a fresh bootstrap gets
-  // it before we push artifacts onto it. Both are best-effort and independent.
+  // alongside artifact delivery. Legacy host identity migrations are deferred
+  // until an explicit post-activation bootstrap. Both are best-effort and independent.
   void reconcileMachineBootstrapAtBoot().catch((err) => log.warn('Boot bootstrap reconcile failed:', err))
   void reconcileMachineArtifactsAtBoot().catch((err) => log.warn('Boot artifact reconcile failed:', err))
 

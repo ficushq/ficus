@@ -246,6 +246,20 @@ is what lets a new script MODE reach machines already in the fleet without a
 re-bootstrap — `--restore-stream` is exactly that case, and a migration ensures
 the destination's artifacts before it streams.
 
+At worker startup, automatic re-bootstrap first checks the host layout over
+SSH without changing it. A host that needs an identity migration, or has an
+interrupted migration journal, waits for an explicit operator or API bootstrap.
+An inconclusive probe also defers the work. Deferral preserves the machine's
+ready status and old bootstrap version so existing boxes remain usable and the
+operator's stale-machine selection still includes it. Fresh and already
+migrated hosts retain automatic re-bootstrap.
+
+Complete the tenant Core upgrade successfully before explicitly migrating its
+machines. Recycle their boxes only after that migration succeeds. This ordering
+keeps the activation health check's automatic Core rollback from crossing a
+machine identity change. Once machines migrate, do not roll Core back to a
+release predating that layout.
+
 An operator re-bootstraps machines from the tenant Core VM, without an admin
 token, with the bundled entrypoint (run from the Core install root, where Bun
 loads Core's `.env`):
