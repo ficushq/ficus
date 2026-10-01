@@ -7,6 +7,17 @@ import type { GlobalSquadActivityItem, NormalizedSquadActivityFilters, Squad } f
 import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
 import { ActivityPage } from './ActivityPage'
+import { WebSocketContext } from '../hooks/useWebSocket'
+
+/** A socket that records subscriptions, so a test can push a squad's activity event. */
+const listeners = new Map<string, (message: { event: string; data: unknown }) => void>()
+const socket = {
+  isConnected: true,
+  subscribe: (topic: string, callback: (message: { event: string; data: unknown }) => void) => {
+    listeners.set(topic, callback)
+    return () => listeners.delete(topic)
+  },
+} as never
 
 const squadAId = '00000000-0000-4000-8000-00000000000a'
 const squadBId = '00000000-0000-4000-8000-00000000000b'
@@ -126,7 +137,9 @@ function staticRender(
   return renderToStaticMarkup(
     <MemoryRouter>
       <QueryClientProvider client={client}>
-        <ActivityPage />
+        <WebSocketContext.Provider value={socket}>
+          <ActivityPage />
+        </WebSocketContext.Provider>
       </QueryClientProvider>
     </MemoryRouter>
   )
@@ -241,7 +254,9 @@ describe('ActivityPage kind filtering', () => {
         rendered.root.render(
           <MemoryRouter>
             <QueryClientProvider client={client}>
-              <ActivityPage />
+              <WebSocketContext.Provider value={socket}>
+                <ActivityPage />
+              </WebSocketContext.Provider>
             </QueryClientProvider>
           </MemoryRouter>
         )
@@ -314,7 +329,9 @@ describe('ActivityPage squad chip', () => {
         rendered.root.render(
           <MemoryRouter initialEntries={['/activity']}>
             <QueryClientProvider client={client}>
-              <Harness />
+              <WebSocketContext.Provider value={socket}>
+                <Harness />
+              </WebSocketContext.Provider>
             </QueryClientProvider>
           </MemoryRouter>
         )
@@ -366,7 +383,9 @@ describe('ActivityPage issue rows', () => {
         rendered.root.render(
           <MemoryRouter initialEntries={['/activity']}>
             <QueryClientProvider client={client}>
-              <Harness />
+              <WebSocketContext.Provider value={socket}>
+                <Harness />
+              </WebSocketContext.Provider>
             </QueryClientProvider>
           </MemoryRouter>
         )
@@ -416,27 +435,29 @@ describe('ActivityPage in-place modals', () => {
         rendered.root.render(
           <MemoryRouter>
             <QueryClientProvider client={client}>
-              <ActivityPage
-                dependencies={{
-                  WorkStreamViewModalComponent: (({
-                    workStreamId,
-                    squadId,
-                  }: {
-                    workStreamId: string
-                    squadId: string
-                  }) => (
-                    <p>
-                      workstream-modal:{workStreamId}:{squadId}
-                    </p>
-                  )) as never,
-                  AgentConversationComponent: (() => <p>conversation-stub</p>) as never,
-                  AgentViewModalComponent: ((props: { agent: { id: string }; squadId: string }) => (
-                    <p>
-                      agent-view-modal:{props.agent.id}:{props.squadId}
-                    </p>
-                  )) as never,
-                }}
-              />
+              <WebSocketContext.Provider value={socket}>
+                <ActivityPage
+                  dependencies={{
+                    WorkStreamViewModalComponent: (({
+                      workStreamId,
+                      squadId,
+                    }: {
+                      workStreamId: string
+                      squadId: string
+                    }) => (
+                      <p>
+                        workstream-modal:{workStreamId}:{squadId}
+                      </p>
+                    )) as never,
+                    AgentConversationComponent: (() => <p>conversation-stub</p>) as never,
+                    AgentViewModalComponent: ((props: { agent: { id: string }; squadId: string }) => (
+                      <p>
+                        agent-view-modal:{props.agent.id}:{props.squadId}
+                      </p>
+                    )) as never,
+                  }}
+                />
+              </WebSocketContext.Provider>
             </QueryClientProvider>
           </MemoryRouter>
         )
@@ -488,12 +509,14 @@ describe('ActivityPage in-place modals', () => {
         rendered.root.render(
           <MemoryRouter>
             <QueryClientProvider client={client}>
-              <ActivityPage
-                dependencies={{
-                  AgentConversationComponent: (() => <p>conversation-stub</p>) as never,
-                  AgentViewModalComponent: (() => <p>agent-view-modal</p>) as never,
-                }}
-              />
+              <WebSocketContext.Provider value={socket}>
+                <ActivityPage
+                  dependencies={{
+                    AgentConversationComponent: (() => <p>conversation-stub</p>) as never,
+                    AgentViewModalComponent: (() => <p>agent-view-modal</p>) as never,
+                  }}
+                />
+              </WebSocketContext.Provider>
             </QueryClientProvider>
           </MemoryRouter>
         )
@@ -538,23 +561,25 @@ for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
         view.root.render(
           <MemoryRouter initialEntries={['/activity']}>
             <QueryClientProvider client={client}>
-              <LocationProbe />
-              <ActivityPage
-                dependencies={{
-                  AgentViewModalComponent: (({
-                    agent,
-                    squadId,
-                    onClose,
-                  }: {
-                    agent: { id: string }
-                    squadId: string
-                    onClose: () => void
-                  }) => {
-                    opened.push(`${agent.id}:${squadId}`)
-                    return <button onClick={onClose}>Close referenced agent</button>
-                  }) as never,
-                }}
-              />
+              <WebSocketContext.Provider value={socket}>
+                <LocationProbe />
+                <ActivityPage
+                  dependencies={{
+                    AgentViewModalComponent: (({
+                      agent,
+                      squadId,
+                      onClose,
+                    }: {
+                      agent: { id: string }
+                      squadId: string
+                      onClose: () => void
+                    }) => {
+                      opened.push(`${agent.id}:${squadId}`)
+                      return <button onClick={onClose}>Close referenced agent</button>
+                    }) as never,
+                  }}
+                />
+              </WebSocketContext.Provider>
             </QueryClientProvider>
           </MemoryRouter>
         )
@@ -591,3 +616,38 @@ for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
     }
   })
 }
+
+describe('ActivityPage live updates', () => {
+  test("a squad's activity change refreshes the feed moments later", async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/activity' })
+    const client = seedClient([], false)
+    client.setQueryData(queryKeys.squads.list(), [{ id: 'sq-1', name: 'Chlea', status: 'active' }] as never)
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () => {
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={client}>
+              <WebSocketContext.Provider value={socket}>
+                <ActivityPage />
+              </WebSocketContext.Provider>
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      })
+      expect(listeners.has('squadActivity:sq-1')).toBe(true)
+      const feed = () => client.getQueryCache().findAll({ queryKey: queryKeys.activity.all })
+      expect(feed().some((query) => query.state.isInvalidated)).toBe(false)
+
+      listeners.get('squadActivity:sq-1')!({ event: 'squadActivity.projected', data: {} })
+      await dom.act(async () => {
+        await Bun.sleep(450)
+      })
+      expect(feed().some((query) => query.state.isInvalidated)).toBe(true)
+    } finally {
+      await dom.act(async () => rendered.root.unmount())
+      await dom.cleanup()
+      client.clear()
+    }
+  })
+})
