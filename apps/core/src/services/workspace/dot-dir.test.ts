@@ -10,6 +10,7 @@ import {
   readFileSync,
   readlinkSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -23,9 +24,13 @@ import {
   ensureWorkspaceDotDir,
   migrateWorkspaceDotDir,
   migrateWorkspaceDotDirs,
+  prepareWorkspaceDotDir,
   workspaceDotDirsLogLine,
   workspaceDotPath,
+  WorkspaceDotDirConflictError,
 } from './dot-dir'
+import { getHomeDir } from '../../lib/utils/home'
+import { preparedAgentIdentityHostPath } from '../amtp/agent-identity'
 
 const SQUAD = '11111111-1111-4111-8111-111111111111'
 const OTHER_SQUAD = '22222222-2222-4222-8222-222222222222'
@@ -247,6 +252,39 @@ describe('migrateWorkspaceDotDir (one work root, used lazily by Core before it t
     expect(readFileSync(join(squadRoot(), WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe(ENV_BYTES)
   })
 
+  test('losing the race to a process that already renamed AND linked is not a conflict', () => {
+    legacyWorkspace(squadRoot())
+    const legacy = join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR)
+    const target = join(squadRoot(), WORKSPACE_DOT_DIR)
+    let calls = 0
+    // Our lstat saw the real legacy dir; before our rename, the other process moves it and links it.
+    // Our rename then moves the winner's symlink onto a directory, which the OS refuses (EISDIR).
+    const rename = (from: string, to: string) => {
+      if (calls++ === 0) {
+        renameSync(legacy, target)
+        symlinkSync(WORKSPACE_DOT_DIR, legacy)
+      }
+      renameSync(from, to)
+    }
+
+    expect(migrateWorkspaceDotDir(squadRoot(), { rename })).toEqual({ moved: false })
+    expect(readFileSync(join(target, '.env'), 'utf8')).toBe(ENV_BYTES)
+    expectBridgeLink(squadRoot())
+  })
+
+  test('a rename that keeps failing after the re-read is still reported', () => {
+    legacyWorkspace(squadRoot())
+    const rename = () => {
+      throw Object.assign(new Error('busy'), { code: 'EBUSY' })
+    }
+
+    expect(migrateWorkspaceDotDir(squadRoot(), { rename })).toEqual({
+      moved: false,
+      conflict: `could not move ${LEGACY_WORKSPACE_DOT_DIR}: EBUSY`,
+    })
+    expect(lstatSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
+  })
+
   test('a link deleted after the move (a crash between rename and link) is recreated', () => {
     legacyWorkspace(squadRoot())
     migrateWorkspaceDotDir(squadRoot())
@@ -282,5 +320,92 @@ describe('workspaceDotDirsLogLine', () => {
     expect(workspaceDotDirsLogLine({ moved: 0, conflicts: ['/h/w: both'] })).toBe(
       'migrateWorkspaceDotDirs moved=0 conflicts=["/h/w: both"]'
     )
+  })
+})
+
+describe('fail closed: Core never uses .ficus beside an unresolved conflict', () => {
+  function expectConflict(run: () => unknown, reason: string): void {
+    let thrown: unknown
+    try {
+      run()
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(WorkspaceDotDirConflictError)
+    expect((thrown as WorkspaceDotDirConflictError).reason).toBe(reason)
+    expect((thrown as Error).message).toContain('needs a manual fix')
+  }
+
+  test('both real dirs: prepare throws and nothing changes', () => {
+    legacyWorkspace(squadRoot(), '.env', 'OLD=1\n')
+    mkdirSync(join(squadRoot(), WORKSPACE_DOT_DIR))
+
+    expectConflict(
+      () => prepareWorkspaceDotDir(squadRoot()),
+      `both ${LEGACY_WORKSPACE_DOT_DIR} and ${WORKSPACE_DOT_DIR} exist`
+    )
+    expect(readFileSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe('OLD=1\n')
+  })
+
+  test('a legacy link elsewhere: ensure throws and does not create .ficus beside it', () => {
+    const outside = join(home, 'outside')
+    mkdirSync(outside)
+    mkdirSync(squadRoot(), { recursive: true })
+    symlinkSync(outside, join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR))
+
+    expectConflict(() => ensureWorkspaceDotDir(squadRoot()), `${LEGACY_WORKSPACE_DOT_DIR} is a link to ${outside}`)
+    expect(existsSync(join(squadRoot(), WORKSPACE_DOT_DIR))).toBe(false)
+  })
+
+  test('a .ficus symlink: ensure throws instead of writing through it', () => {
+    const outside = join(home, 'outside')
+    mkdirSync(outside)
+    mkdirSync(squadRoot(), { recursive: true })
+    symlinkSync(outside, join(squadRoot(), WORKSPACE_DOT_DIR))
+
+    expectConflict(() => ensureWorkspaceDotDir(squadRoot()), `${WORKSPACE_DOT_DIR} is not a directory`)
+    expect(existsSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR))).toBe(false)
+  })
+
+  test.skipIf(process.getuid?.() === 0)('a legacy dir that could not be moved: ensure throws, no .ficus', () => {
+    legacyWorkspace(squadRoot())
+    chmodSync(squadRoot(), 0o555)
+    try {
+      expectConflict(() => ensureWorkspaceDotDir(squadRoot()), `${LEGACY_WORKSPACE_DOT_DIR} could not be moved`)
+      expect(existsSync(join(squadRoot(), WORKSPACE_DOT_DIR))).toBe(false)
+    } finally {
+      chmodSync(squadRoot(), 0o755)
+    }
+  })
+
+  test('a symlinked workspace that still holds the legacy dir throws; one without it is usable', () => {
+    const elsewhere = join(home, 'elsewhere')
+    legacyWorkspace(elsewhere)
+    mkdirSync(join(home, 'workspaces', 'squads'), { recursive: true })
+    symlinkSync(elsewhere, squadRoot())
+    expectConflict(
+      () => prepareWorkspaceDotDir(squadRoot()),
+      `the workspace is a symlink and still holds ${LEGACY_WORKSPACE_DOT_DIR}`
+    )
+
+    const clean = join(home, 'clean')
+    mkdirSync(clean)
+    symlinkSync(clean, squadRoot(OTHER_SQUAD))
+    expect(() => prepareWorkspaceDotDir(squadRoot(OTHER_SQUAD))).not.toThrow()
+  })
+
+  test('the agent identity path refuses a conflicted private dir, so no second key is minted', () => {
+    const sandboxId = `agent_dotdir_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const root = join(getHomeDir(), 'private', sandboxId)
+    try {
+      mkdirSync(join(root, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
+      writeFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'identity.pem'), 'OLD KEY')
+      mkdirSync(join(root, WORKSPACE_DOT_DIR))
+
+      expect(() => preparedAgentIdentityHostPath(sandboxId)).toThrow(WorkspaceDotDirConflictError)
+      expect(existsSync(join(root, WORKSPACE_DOT_DIR, 'identity.pem'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

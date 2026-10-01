@@ -80,6 +80,24 @@ describe('squad-env', () => {
       expect(readlinkSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
     })
 
+    it('fails closed with a clear error when the workspace has both dot dirs, and a regeneration skips it', async () => {
+      const { getEnvFile, regenerateEnvFileForSquad } = await getModule()
+      const { getSquadWorkspacePath } = await import('./workspace')
+      const { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } =
+        await import('../workspace/dot-dir')
+      const squadId = randomUUID()
+      const root = getSquadWorkspacePath(squadId)
+      mkdirSync(join(root, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
+      writeFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'env.user'), 'OLD=1')
+      mkdirSync(join(root, WORKSPACE_DOT_DIR))
+
+      expect(() => getEnvFile(squadId)).toThrow(WorkspaceDotDirConflictError)
+      // A fleet-wide regeneration must not stop on this squad, and writes nothing into it.
+      await regenerateEnvFileForSquad(squadId)
+      expect(existsSync(join(root, WORKSPACE_DOT_DIR, '.env'))).toBe(false)
+      expect(readFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'env.user'), 'utf-8')).toBe('OLD=1')
+    })
+
     it('returns content when .ficus/.env exists', async () => {
       const { getEnvFile, setEnvFile } = await getModule()
       const squadId = randomUUID()

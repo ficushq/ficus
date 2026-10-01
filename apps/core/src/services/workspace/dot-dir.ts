@@ -79,10 +79,16 @@ function ensureBridgeLink(root: string): string | undefined {
  *   root itself is a symlink; a rename or link the OS refuses (permissions) → a `conflict`, and
  *   nothing is changed. A later call retries.
  *
- * Two callers racing on the same root both converge: the loser's rename finds the legacy dir gone
- * (ENOENT) and re-reads the state, and an EEXIST on the link is accepted when it is the same link.
+ * Two callers racing on the same root both converge: the loser's rename fails (ENOENT when the dir
+ * is gone, EISDIR when the winner's link already took the legacy name) and any rename failure
+ * re-reads the state once before it is classified; an EEXIST on the link is accepted when it is the
+ * same link. `options.rename` is a test seam for that race.
  */
-export function migrateWorkspaceDotDir(root: string, retried = false): WorkspaceDotDirOutcome {
+export function migrateWorkspaceDotDir(
+  root: string,
+  options: { retried?: boolean; rename?: (from: string, to: string) => void } = {}
+): WorkspaceDotDirOutcome {
+  const rename = options.rename ?? renameSync
   try {
     const rootStat = lstatOrNull(root)
     if (!rootStat) return { moved: false }
@@ -116,11 +122,11 @@ export function migrateWorkspaceDotDir(root: string, retried = false): Workspace
     try {
       // rename(2) never replaces a non-empty directory, so a `.ficus` that appeared since the
       // lstat above makes this fail (EEXIST/ENOTEMPTY) instead of being merged or clobbered.
-      renameSync(legacy, target)
+      rename(legacy, target)
     } catch (error) {
       const code = errorCode(error)
-      // Another process moved it between our lstat and the rename: re-read once.
-      if (code === 'ENOENT' && !retried) return migrateWorkspaceDotDir(root, true)
+      // Another process may have moved and linked it between our lstat and the rename: re-read once.
+      if (!options.retried) return migrateWorkspaceDotDir(root, { ...options, retried: true })
       if (code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'ENOTDIR')
         return { moved: false, conflict: `both ${LEGACY_WORKSPACE_DOT_DIR} and ${WORKSPACE_DOT_DIR} exist` }
       return { moved: false, conflict: `could not move ${LEGACY_WORKSPACE_DOT_DIR}: ${code}` }
@@ -132,12 +138,50 @@ export function migrateWorkspaceDotDir(root: string, retried = false): Workspace
   }
 }
 
+/** A work root whose dot dir Core must not use until a person resolves it (see {@link prepareWorkspaceDotDir}). */
+export class WorkspaceDotDirConflictError extends Error {
+  constructor(
+    readonly root: string,
+    readonly reason: string
+  ) {
+    super(
+      `The workspace settings dir in ${root} needs a manual fix before it can be used: ${reason}. ` +
+        `Move its contents into ${WORKSPACE_DOT_DIR}/ so only one settings dir remains.`
+    )
+    this.name = 'WorkspaceDotDirConflictError'
+  }
+}
+
+/**
+ * Why `.ficus` in `root` cannot be used safely, or undefined when it can: the root is missing or a
+ * real dir (or a symlink holding no legacy dir), `.ficus` is absent or a real dir, and the legacy
+ * name is absent or exactly the bridge link. Read-only.
+ */
+function unusableReason(root: string): string | undefined {
+  const rootStat = lstatOrNull(root)
+  if (!rootStat) return undefined
+  const current = lstatOrNull(join(root, WORKSPACE_DOT_DIR))
+  if (current && !current.isDirectory()) return `${WORKSPACE_DOT_DIR} is not a directory`
+  const legacy = join(root, LEGACY_WORKSPACE_DOT_DIR)
+  const old = lstatOrNull(legacy)
+  if (!old || (old.isSymbolicLink() && readlinkSync(legacy) === WORKSPACE_DOT_DIR)) return undefined
+  if (rootStat.isSymbolicLink()) return `the workspace is a symlink and still holds ${LEGACY_WORKSPACE_DOT_DIR}`
+  if (old.isSymbolicLink()) return `${LEGACY_WORKSPACE_DOT_DIR} is a link to ${readlinkSync(legacy)}`
+  if (!old.isDirectory()) return `${LEGACY_WORKSPACE_DOT_DIR} is not a directory`
+  return current
+    ? `both ${LEGACY_WORKSPACE_DOT_DIR} and ${WORKSPACE_DOT_DIR} exist`
+    : `${LEGACY_WORKSPACE_DOT_DIR} could not be moved`
+}
+
 const warnedRoots = new Set<string>()
 
 /**
- * {@link migrateWorkspaceDotDir} for a caller about to use `root`'s dot dir. A conflict is logged
- * (once per root per process) and the caller goes on with `.ficus`; the worker's start-up pass
- * reports it in its summary line for the operator.
+ * {@link migrateWorkspaceDotDir} for a caller about to use `root`'s dot dir. Fails closed: when the
+ * root is left in a state where using `.ficus` would split the settings (a legacy dir that could not
+ * be moved, a legacy link elsewhere) or write through a non-directory `.ficus`, it throws
+ * {@link WorkspaceDotDirConflictError} instead of letting the caller create `.ficus`, mint a new
+ * identity key, or read an empty env. A harmless conflict (only the link could not be made) is
+ * logged once per root per process; the worker's start-up pass reports every conflict.
  */
 export function prepareWorkspaceDotDir(root: string): void {
   const outcome = migrateWorkspaceDotDir(root)
@@ -146,6 +190,13 @@ export function prepareWorkspaceDotDir(root: string): void {
     warnedRoots.add(root)
     log.warn(`Workspace dot dir not migrated: ${root}: ${outcome.conflict}`)
   }
+  let reason: string | undefined
+  try {
+    reason = unusableReason(root)
+  } catch (error) {
+    reason = `could not inspect: ${errorCode(error)}`
+  }
+  if (reason) throw new WorkspaceDotDirConflictError(root, reason)
 }
 
 /** Moves a legacy dir if there is one, creates `<root>/.ficus` if needed, links the legacy name, and returns the dir. */

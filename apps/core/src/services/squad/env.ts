@@ -7,7 +7,29 @@ import { isManagedSecretKey } from '../secrets'
 import { loadProtectedIntegrationBindings } from '../integrations/projection/protected-env'
 import { githubSigningPublicKeyForSquad } from '../integrations/github/commit-signing-store'
 import { getSquadWorkspacePath } from './workspace'
-import { ensureWorkspaceDotDir, prepareWorkspaceDotDir, workspaceDotPath } from '../workspace/dot-dir'
+import {
+  ensureWorkspaceDotDir,
+  prepareWorkspaceDotDir,
+  workspaceDotPath,
+  WorkspaceDotDirConflictError,
+} from '../workspace/dot-dir'
+import { createLogger } from '../../lib/infra/logger'
+
+const log = createLogger('squad-env')
+
+/**
+ * Runs one squad's step of an env regeneration that may span many squads. A squad whose workspace
+ * dot dir needs a manual fix is skipped with a warning, so it cannot stop every other squad's env
+ * from being regenerated (a rotated or deleted secret must still leave the others).
+ */
+async function skipConflictedSquad(squadId: string, run: () => Promise<void>): Promise<void> {
+  try {
+    await run()
+  } catch (error) {
+    if (!(error instanceof WorkspaceDotDirConflictError)) throw error
+    log.warn(`Skipped regenerating the env of squad ${squadId}: ${error.message}`)
+  }
+}
 
 const USER_ENV_FILE = 'env.user'
 const GENERATED_ENV_FILE = '.env'
@@ -290,8 +312,15 @@ async function getEffectiveExposedSecretKeys(squadId: string, squadKeys?: string
   return normalizeSecretKeys([...globalKeys, ...resolvedSquadKeys])
 }
 
+/**
+ * Regenerate one squad's sandbox `.env` from its stored content and exposures. Callers loop it over
+ * many squads (exposure, integration and connection changes), so a squad whose workspace dot dir
+ * needs a manual fix is skipped with a warning rather than stopping the rest.
+ */
 export async function regenerateEnvFileForSquad(squadId: string): Promise<void> {
-  await writeGeneratedEnvFile(squadId, getEnvFile(squadId) ?? '', await getEffectiveExposedSecretKeys(squadId))
+  await skipConflictedSquad(squadId, async () =>
+    writeGeneratedEnvFile(squadId, getEnvFile(squadId) ?? '', await getEffectiveExposedSecretKeys(squadId))
+  )
 }
 
 export async function setGloballyExposedSecretKeys(keys: string[]): Promise<void> {
@@ -345,8 +374,10 @@ export async function regenerateEnvFilesForSecretKey(key: string): Promise<void>
         .from(squadSecretExposures)
         .where(eq(squadSecretExposures.secretKey, key))
   for (const { squadId } of rows) {
-    const keys = await getEffectiveExposedSecretKeys(squadId)
-    await writeGeneratedEnvFile(squadId, getEnvFile(squadId) ?? '', keys)
+    await skipConflictedSquad(squadId, async () => {
+      const keys = await getEffectiveExposedSecretKeys(squadId)
+      await writeGeneratedEnvFile(squadId, getEnvFile(squadId) ?? '', keys)
+    })
   }
 }
 

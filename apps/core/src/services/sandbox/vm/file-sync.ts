@@ -300,10 +300,11 @@ async function bestEffortRemove(client: SandboxClient, path: string, fence?: Set
 
 /**
  * Bridge (phase 5, U4): the box-side half of services/workspace/dot-dir.ts, as one
- * shell command run as the box user. For each work root (a real dir, never a
- * symlink): a legacy dot dir that is a real dir while `.ficus` is absent is renamed
+ * shell command run as the box user. For each work root (a real dir; a symlinked
+ * root is reported and not followed, a missing one skipped): a legacy dot dir that is a real dir while `.ficus` is absent is renamed
  * (`mv -T`, a single rename(2) that refuses a non-empty target) to `.ficus`; then
- * `.ficus` is created if missing and the legacy name is linked to it RELATIVELY.
+ * `.ficus` is created if missing and the legacy name is linked to it RELATIVELY
+ * (`ln -sT`, which fails rather than linking inside a dir that reappeared).
  * A box server from before the rename reads `<root>/<legacy>/.env` and `.bashrc`
  * through that link until the box is recycled. Both names as real dirs, a legacy
  * link to anywhere else, or a non-directory is left alone, reported on stderr, and
@@ -315,7 +316,8 @@ export function boxWorkspaceDotDirCommand(roots: string[]): string {
   return [
     'rc=0',
     'dot_dir() {',
-    '  [ -d "$1" ] && [ ! -L "$1" ] || return 0',
+    '  if [ -L "$1" ]; then echo "$1 is a symlink, not followed" >&2; rc=1; return 0; fi',
+    '  [ -d "$1" ] || return 0',
     `  o="$1/${legacy}"; n="$1/${next}"`,
     '  if [ -L "$o" ]; then',
     `    [ "$(readlink -- "$o")" = ${shellQuote(next)} ] || { echo "$o is a link elsewhere" >&2; rc=1; }`,
@@ -328,7 +330,7 @@ export function boxWorkspaceDotDirCommand(roots: string[]): string {
     '    if [ ! -d "$o" ]; then echo "$o is not a directory" >&2; rc=1; return 0; fi',
     '    mv -T -- "$o" "$n" || { rc=1; return 0; }',
     '  fi',
-    `  mkdir -p -- "$n" && ln -s ${shellQuote(next)} "$o" || rc=1`,
+    `  mkdir -p -- "$n" && ln -sT -- ${shellQuote(next)} "$o" || rc=1`,
     '}',
     ...roots.map((root) => `dot_dir ${shellQuote(root)}`),
     'exit $rc',
@@ -359,6 +361,19 @@ async function migrateBoxWorkspaceDotDirs(client: SandboxClient, home: string, f
 function isMovedDotDirTwin(relPath: string, current: Set<string>): boolean {
   const legacyPrefix = `${LEGACY_WORKSPACE_DOT_DIR}/`
   return relPath.startsWith(legacyPrefix) && current.has(`${WORKSPACE_DOT_DIR}/${relPath.slice(legacyPrefix.length)}`)
+}
+
+/**
+ * Bridge (phase 5, U4): a file asset that lands in the workspace dot dir (the squad `.env`) is
+ * stamped as a bare hash, without its file list, while the legacy link exists. A Core rolled back to
+ * the previous release reads a bare-hash stamp as "prune my own dest" (`<legacy>/.env`), which it is
+ * about to keep; a `['.ficus/.env']` manifest would make it `rm` `.ficus/.env` — the very file it
+ * just pushed through the link. This Core's own revoke still works from a bare hash (it falls back
+ * to the asset's dest, `.ficus/.env`). P5-T26 restores the file list when it removes the link.
+ */
+function stampsHashOnlyDuringBridge(assetName: string): boolean {
+  const dest = SANDBOX_ASSETS.find((asset) => asset.name === assetName)?.dest
+  return dest?.base === 'workspace' && dest.relPath.startsWith(`${WORKSPACE_DOT_DIR}/`) // ficus-p5-bridge
 }
 
 /** Deterministic order regardless of readdir/reader ordering. */
@@ -651,10 +666,11 @@ export async function syncBoxFiles(
     const hash = computeAssetHash(destRoot, files)
     const previous = parseSyncedAssetState(box?.syncedHashes?.[name])
     const currentFiles = files.map((file) => file.relPath).sort()
+    const hashOnly = stampsHashOnlyDuringBridge(name)
     if (previous?.hash === hash) {
       // Upgrade legacy hash-only stamps while the source is still present, so
       // a later revoke has an exact bounded deletion manifest.
-      if (box && !previous.files) await stamp(box.machineId, sandboxId, name, hash, currentFiles)
+      if (box && !previous.files && !hashOnly) await stamp(box.machineId, sandboxId, name, hash, currentFiles)
       return
     }
     if (files.length === 0 && !previous) return
@@ -673,7 +689,7 @@ export async function syncBoxFiles(
         ),
         deps.bashFence
       )
-      if (box) await stamp(box.machineId, sandboxId, name, hash, currentFiles)
+      if (box) await stamp(box.machineId, sandboxId, name, hash, hashOnly ? undefined : currentFiles)
     }
     await (deps.trackSetupWork ? deps.trackSetupWork(mutate) : mutate())
   }
