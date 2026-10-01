@@ -1414,6 +1414,105 @@
   animation: ficus-hop 1.4s ease-in-out infinite;
 }
 
+/* The working plant hops up from behind the composer, and back down when work ends
+   (ChatView PeekingPlant): a leap past its spot, a squash on landing, a settle. */
+.ficus-plant-peek {
+  transform-origin: 50% 100%;
+}
+
+.ficus-plant-peek[data-state='in'] {
+  animation: ficus-plant-pop-in 620ms cubic-bezier(0.3, 0.7, 0.4, 1) both;
+}
+
+.ficus-plant-peek[data-state='out'] {
+  animation: ficus-plant-pop-out 520ms cubic-bezier(0.5, 0, 0.75, 0.4) forwards;
+}
+
+.ficus-plant-jump {
+  display: block;
+  transform-origin: 50% 100%;
+}
+
+/* A click: crouch, jump, squash on landing, a little bounce (two names so every click restarts it). */
+.ficus-plant-jump[data-jump='a'] {
+  animation: ficus-plant-jump-a 600ms ease-out;
+}
+
+.ficus-plant-jump[data-jump='b'] {
+  animation: ficus-plant-jump-b 600ms ease-out;
+}
+
+@keyframes ficus-plant-jump-a {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  14% {
+    transform: translateY(0) scale(1.14, 0.84);
+  }
+  42% {
+    transform: translateY(-60%) scale(0.9, 1.12);
+  }
+  66% {
+    transform: translateY(0) scale(1.16, 0.84);
+  }
+  82% {
+    transform: translateY(-10%) scale(0.97, 1.04);
+  }
+}
+
+@keyframes ficus-plant-jump-b {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  14% {
+    transform: translateY(0) scale(1.14, 0.84);
+  }
+  42% {
+    transform: translateY(-60%) scale(0.9, 1.12);
+  }
+  66% {
+    transform: translateY(0) scale(1.16, 0.84);
+  }
+  82% {
+    transform: translateY(-10%) scale(0.97, 1.04);
+  }
+}
+
+@keyframes ficus-plant-pop-in {
+  0% {
+    transform: translateY(110%) scale(1, 1);
+  }
+  45% {
+    transform: translateY(-24%) scale(0.92, 1.1);
+  }
+  68% {
+    transform: translateY(3%) scale(1.12, 0.88);
+  }
+  84% {
+    transform: translateY(-4%) scale(0.97, 1.03);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+
+@keyframes ficus-plant-pop-out {
+  0% {
+    transform: translateY(0) scale(1, 1);
+  }
+  22% {
+    transform: translateY(4%) scale(1.1, 0.9);
+  }
+  48% {
+    transform: translateY(-18%) scale(0.94, 1.08);
+  }
+  100% {
+    transform: translateY(115%) scale(1, 1);
+  }
+}
+
 @keyframes ficus-sway-left {
   0%,
   100% {
@@ -1457,6 +1556,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ficus-plant-jump[data-jump],
+  .ficus-plant-peek[data-state='in'],
+  .ficus-plant-peek[data-state='out'],
   .ficus-dance,
   .ficus-dance-left,
   .ficus-dance-right,
