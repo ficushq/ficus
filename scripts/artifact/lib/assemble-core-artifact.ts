@@ -120,6 +120,8 @@ const LAYOUT: { path: string; kind: 'file' | 'dir' | 'generated'; contents?: str
   { path: 'apps/core/dist/box-control.js', kind: 'file' },
   // Operator machine re-bootstrap (FICUS_MB_MACHINE=<id>|all-stale, run on the tenant VM).
   { path: 'apps/core/dist/machine-bootstrap.js', kind: 'file' },
+  // Maintenance-only in-place box reprovision (preserves stopped/runtime intent).
+  { path: 'apps/core/dist/box-reprovision.js', kind: 'file' },
   // Root-only platform-orchestrator token re-issue (the control plane's reissue_system_token job runs it).
   { path: 'apps/core/dist/system-token-control.js', kind: 'file' },
   // Stored HOME path rebase (the host layout migration runs it from the target release).

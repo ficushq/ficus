@@ -1603,3 +1603,92 @@ units, and verifying no command processes survive before recording termination.
 Preserve the original invocation record for diagnosis. Do not simply delete the
 setup row or replay an ambiguous command; stopping a process does not undo any
 side effects it already produced.
+
+### Reprovision every registered box during offline maintenance
+
+The artifact includes `apps/core/dist/box-reprovision.js`. It rewrites box units
+in place using the existing provisioning code and the box's saved `server.env`,
+recorded machine/port/user and unchanged executor token. It never removes a box
+or relocates its data. `FICUS_BR_BOX=<sandboxId>` selects one registered box;
+`FICUS_BR_BOX=all` preflights the whole inventory before the first mutation and
+refuses any row that is not settled (`ready` or `stopped`). Resolve exceptions
+before claiming the inventory is complete; do not delete orphan rows as a shortcut.
+
+Run only as root on the Linux/systemd tenant Core host, after successful release
+activation and explicit machine bootstrap. The API and worker must remain stopped
+behind the following temporary start guards throughout the operation. Runtime
+masks alone do not work when the installed unit is a regular `/etc` file. The
+operator checks the actual D-Bus condition, guard ownership/content, absence of
+the allow-start path, inactive units and absence of active executions. A global
+advisory lease serializes operator invocations. It rechecks maintenance and the
+fixed inventory before each box.
+
+Load the same EnvironmentFiles as the installed Core units using Bun's env parser;
+do not shell-source them (valid dotenv values can contain shell metacharacters).
+For the standard hosted paths:
+
+```bash
+(
+set -eu
+cd /opt/ficus-core
+# Require the allow-start path to be absent, including a dangling symlink.
+test ! -e /run/ficus-box-reprovision.allow-start
+test ! -L /run/ficus-box-reprovision.allow-start
+for service in ficus-api ficus-worker; do
+  install -d -m 0755 "/run/systemd/system/$service.service.d"
+  printf '[Unit]\nConditionPathExists=/run/ficus-box-reprovision.allow-start\n' \
+    > "/run/systemd/system/$service.service.d/90-ficus-box-reprovision.conf"
+done
+# Resume automatically only after the entire operation succeeds.
+completed=0
+cleanup() {
+  if [ "$completed" != 1 ]; then
+    echo "Maintenance guards retained: inspect the failure and pending journals, then retry." >&2
+    return
+  fi
+  rm -f /run/systemd/system/ficus-api.service.d/90-ficus-box-reprovision.conf \
+    /run/systemd/system/ficus-worker.service.d/90-ficus-box-reprovision.conf
+  systemctl daemon-reload
+  systemctl start ficus-api.service ficus-worker.service
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+systemctl daemon-reload
+systemctl stop ficus-api.service ficus-worker.service
+FICUS_BR_BOX=all bun --env-file /opt/ficus-core/.env \
+  --env-file /etc/ficus/managed.env current/apps/core/dist/box-reprovision.js
+completed=1
+)
+```
+
+Inspect the installed units' EnvironmentFile paths first if this host uses a
+nonstandard configuration. Do not print the env files or tokens. Each result is
+`BOX_REPROVISION <id> ok state=<original-status>` or a fixed, secret-free failure
+reason; nonzero exit means the run is incomplete. Failure retains the start guards
+and leaves the API/worker stopped. Inspect pending journals and retry before
+resuming. A preflight-only refusal with no pending recovery may be explicitly
+ended by removing only these two guard files, reloading systemd and starting the
+API/worker; do not resume automatically after an unverified restoration.
+
+The operator records original runtime intent in root-only, atomically written
+journals under `/var/backups/ficus-box-reprovision` before it changes artifacts or
+units. If the process dies, retain those journals and rerun with maintenance guards
+in place: pending journals restore the original intent rather than treating a
+socket started by an interrupted provision as its original state. The script
+may temporarily start rootless Docker during maintenance; final server, socket,
+proxy, Docker daemon, enabled-unit and linger/manager states are restored.
+Previously idle boxes remain idle, and stopped rows remain stopped. Docker
+container process continuity is not guaranteed: the existing provisioning code
+restarts its daemon, and containers without restart policies may need an operator
+restart. Box home/workspace/private data and credentials are preserved.
+
+Every installation verifies canonical unit/env files and browser-token digest,
+ownership, permissions and browser-user readability without waking an idle box.
+Only previously running servers receive authenticated health checks, through
+their Unix sockets so the TCP proxy stays idle. The operator invalidates the
+provisioning stamp after success; it does not invent a canonical spec hash or
+change the lifecycle generation. The next canonical ensure can refresh that stamp.
+Verify each expected system/user unit and the absence of legacy **regular** unit
+files; deliberate alias symlinks remain. Count boxes by identity and unit mode,
+not by comparing wildcard system-unit counts to all ready rows.

@@ -55,6 +55,7 @@ async function makeCheckout(): Promise<string> {
   await write(join(root, 'apps/core/dist/smoke-configured-extensions.js'), 'configured extension smoke bundle\n')
   await write(join(root, 'apps/core/dist/box-control.js'), 'operator box control bundle\n')
   await write(join(root, 'apps/core/dist/machine-bootstrap.js'), 'operator machine bootstrap bundle\n')
+  await write(join(root, 'apps/core/dist/box-reprovision.js'), 'operator box reprovision bundle\n')
   await write(join(root, 'apps/core/dist/system-token-control.js'), 'system token control bundle\n')
   await write(join(root, 'apps/core/dist/rebase-home.js'), 'stored HOME path rebase bundle\n')
   // Not part of the layout: dist holds build detritus that must not ship.
@@ -215,6 +216,7 @@ describe('assembleCoreArtifact', () => {
         'apps/cli/dist/ficus.js',
         'apps/core/dist/box-control.js',
         'apps/core/dist/machine-bootstrap.js',
+        'apps/core/dist/box-reprovision.js',
         'apps/core/dist/index.js',
         'apps/core/dist/migrate.js',
         'apps/core/dist/rebase-home.js',
@@ -422,7 +424,7 @@ describe('assembleCoreArtifact', () => {
     const fake = makeRun()
     const { result } = await assemble({ smoke: true }, fake)
 
-    expect(result.smoke).toEqual({ migrateExitCode: 1, verifiedFiles: 31 })
+    expect(result.smoke).toEqual({ migrateExitCode: 1, verifiedFiles: 32 })
     expect(fake.calls).toContainEqual([
       'bun',
       expect.stringMatching(/apps\/core\/dist\/smoke-configured-extensions\.js$/),
