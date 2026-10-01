@@ -178,6 +178,31 @@ describe('sparse chat execution lookup', () => {
   })
 })
 
+describe('chat snapshot', () => {
+  test("reads a run's newest substantive assistant message (not its first page) and its latest text", async () => {
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `chat-snapshot-${crypto.randomUUID()}`, purpose: 'test' })
+      .returning()
+    squadIds.push(squad.id)
+    const [agent] = await db.insert(agents).values({ squadId: squad.id, agentTypeId: 'engineer' }).returning()
+    const [execution] = await db
+      .insert(executions)
+      .values({ agentId: agent.id, status: 'running', latestText: 'Mid-step', latestTextAt: new Date('2026-01-02') })
+      .returning()
+    // 25 steps, the last one blank (a tool-only step): the newest substantive one is step 24.
+    await db.execute(sql`INSERT INTO messages (agent_id, role, content, metadata, created_at)
+      SELECT ${agent.id}::uuid, 'assistant', CASE WHEN n = 25 THEN ' ' ELSE 'step ' || n END,
+        jsonb_build_object('executionId', ${execution.id}::text),
+        '2026-01-01'::timestamp + n * interval '1 second'
+      FROM generate_series(1, 25) n`)
+    const snapshot = await loadChatSnapshot(db, execution.id)
+    expect(snapshot?.messages.map((message) => message.content)).toEqual(['step 24'])
+    expect(snapshot?.latestText).toBe('Mid-step')
+    expect(new Date(snapshot!.latestTextAt!).toISOString()).toBe('2026-01-02T00:00:00.000Z')
+  })
+})
+
 describe('Activity source pagination', () => {
   test('returns each chat execution once across message-heavy page boundaries', async () => {
     const [squad] = await db

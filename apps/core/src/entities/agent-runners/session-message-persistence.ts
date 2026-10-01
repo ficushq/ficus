@@ -7,8 +7,9 @@ import type { Agent } from '../Agent'
 import { createLogger } from '../../lib/infra/logger'
 import { withoutDelta } from '../../services/execution/usage-delta'
 import { db } from '../../db'
-import { messages } from '../../db/schema'
-import { and, eq } from 'drizzle-orm'
+import { executions, messages } from '../../db/schema'
+import { and, eq, inArray, sql } from 'drizzle-orm'
+import { refreshChatActivity } from '../../services/squad-activity/event-handlers'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import type { ResponseGroupIdentity } from '../../services/agent/pending-delivery'
 import { messageEventData } from '../message-event'
@@ -125,6 +126,30 @@ export class SessionMessagePersistence {
   protected get bound(): SessionMessagePersistenceBindings {
     if (!this.bindings) throw new Error('SessionMessagePersistence used before attach()')
     return this.bindings
+  }
+
+  private lastLatestText: string | undefined
+
+  /**
+   * Commit the step's newest text as soon as a text block finishes streaming,
+   * well before the step's message row lands (after its tool calls stream), so
+   * the squad activity row shows it mid-step. A display-only column on the
+   * execution, never a message row: session-file-first persistence, completion
+   * inference and the turn ledger only ever see real messages. On the same
+   * serialized chain, so it is always older than the step's own message.
+   */
+  enqueueLatestText(text: string): void {
+    if (text === this.lastLatestText) return
+    this.lastLatestText = text
+    const executionId = this.deps.executionId
+    this.enqueue(async () => {
+      const updated = await db
+        .update(executions)
+        .set({ latestText: text, latestTextAt: sql`clock_timestamp()` })
+        .where(and(eq(executions.id, executionId), inArray(executions.status, ['running', 'stopping'])))
+        .returning({ id: executions.id })
+      if (updated.length > 0) refreshChatActivity(executionId)
+    })
   }
 
   /** Chain a persisted-session-message event through the serialized queue. */

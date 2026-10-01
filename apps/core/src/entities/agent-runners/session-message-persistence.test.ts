@@ -5,7 +5,7 @@ import { StreamBuffer } from '../../services/streaming/buffer'
 import { StreamEventCollector } from '../../services/streaming/events'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { db } from '../../db'
-import { agents, agentTypes, messages } from '../../db/schema'
+import { agents, agentTypes, executions, messages } from '../../db/schema'
 import { Agent } from '../Agent'
 import { AgentType } from '../AgentType'
 
@@ -611,5 +611,48 @@ describe('SessionMessagePersistence persisted events', () => {
     expect(recorded[0].metadata.source).toBe('compaction')
     expect(recorded[0].metadata).not.toHaveProperty('executionId')
     expect(recorded[0].metadata).not.toHaveProperty('streamGroupId')
+  })
+})
+
+describe('SessionMessagePersistence latest text (live activity, display only)', () => {
+  it('commits a running execution text once per change, and never a finished one', async () => {
+    const typeId = `latest-text-${crypto.randomUUID()}`
+    let ownerId: string | undefined
+    try {
+      await AgentType.create({
+        id: typeId,
+        model: 'anthropic:claude-sonnet-4-5',
+        name: 'Latest text fixture',
+        systemPrompt: 'Test.',
+      })
+      ownerId = (await Agent.create({ agentTypeId: typeId })).id
+      const [running] = await db.insert(executions).values({ agentId: ownerId, status: 'running' }).returning()
+      const [finished] = await db.insert(executions).values({ agentId: ownerId, status: 'completed' }).returning()
+      const read = async (id: string) => (await db.select().from(executions).where(eq(executions.id, id)))[0]!
+
+      const live = new SessionMessagePersistence(makeDeps({ executionId: running.id }))
+      live.enqueueLatestText('Reading the diff')
+      await live.waitForAll()
+      const first = await read(running.id)
+      expect(first.latestText).toBe('Reading the diff')
+      expect(first.latestTextAt).toBeInstanceOf(Date)
+
+      // The same text again (text_end then toolcall_start) writes nothing.
+      live.enqueueLatestText('Reading the diff')
+      await live.waitForAll()
+      expect((await read(running.id)).latestTextAt?.getTime()).toBe(first.latestTextAt?.getTime())
+
+      live.enqueueLatestText('Reading the diff, then the Caddyfile')
+      await live.waitForAll()
+      expect((await read(running.id)).latestText).toBe('Reading the diff, then the Caddyfile')
+
+      const done = new SessionMessagePersistence(makeDeps({ executionId: finished.id }))
+      done.enqueueLatestText('Too late')
+      await done.waitForAll()
+      expect((await read(finished.id)).latestText).toBeNull()
+    } finally {
+      if (ownerId) await db.delete(agents).where(eq(agents.id, ownerId))
+      await db.delete(agentTypes).where(eq(agentTypes.id, typeId))
+    }
   })
 })

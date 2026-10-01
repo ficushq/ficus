@@ -286,16 +286,16 @@ async function squadOwnsSource(executor: Executor, sourceId: string, squadId: st
 export async function loadChatSnapshot(executor: Executor, groupId: string): Promise<ChatExecutionSnapshot | null> {
   const header = rows<any>(
     await executor.execute(
-      sql`SELECT e.id,e.agent_id,a.squad_id,a.agent_type_id FROM executions e JOIN agents a ON a.id=e.agent_id WHERE e.id=${groupId}::uuid`
+      sql`SELECT e.id,e.agent_id,e.latest_text,e.latest_text_at,a.squad_id,a.agent_type_id FROM executions e JOIN agents a ON a.id=e.agent_id WHERE e.id=${groupId}::uuid`
     )
   )[0]
   if (!header?.squad_id) return null
   const messages = rows<any>(
     await executor.execute(
-      // Only assistant messages can become rows and only the first
-      // substantive one is extracted; a small page covers leading
-      // whitespace-only messages without shipping whole transcripts.
-      sql`SELECT id,role,content,created_at FROM messages WHERE agent_id=${header.agent_id}::uuid AND metadata->>'executionId'=${groupId} AND role='assistant' ORDER BY created_at,id LIMIT 20`
+      // The row shows the execution's LATEST substantive assistant message, so
+      // only that one is read (newest first; idx_messages_agent_execution
+      // serves the backward scan) rather than a page of the oldest.
+      sql`SELECT id,role,content,created_at FROM messages WHERE agent_id=${header.agent_id}::uuid AND metadata->>'executionId'=${groupId} AND role='assistant' AND content ~ '\\S' ORDER BY created_at DESC,id DESC LIMIT 1`
     )
   )
   return {
@@ -303,6 +303,8 @@ export async function loadChatSnapshot(executor: Executor, groupId: string): Pro
     executionId: header.id,
     agentId: header.agent_id,
     agentTypeId: header.agent_type_id,
+    latestText: header.latest_text ?? null,
+    latestTextAt: header.latest_text_at ?? null,
     messages: messages.map((row) => ({
       id: row.id,
       role: row.role,

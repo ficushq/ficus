@@ -196,6 +196,23 @@ async function materializeEvent(
   await materializeKeys(event, await directKeys(event, data), materialize)
 }
 
+/** Set while this process's live handlers are registered (api and worker), so direct refreshes follow them. */
+let liveMaterialize: typeof materializeSourceGroup | undefined
+
+/**
+ * A running execution committed newer text (executions.latest_text, written
+ * mid-step before its message row exists): refresh its chat activity row now.
+ * Coalesced with the event-driven path for the same execution. A no-op where
+ * the live handlers aren't registered (tests, scripts).
+ */
+export function refreshChatActivity(executionId: string): void {
+  const materialize = liveMaterialize
+  if (!materialize) return
+  queueMicrotask(() => {
+    void coalescedMaterialize('execution.updated', { family: 'chat', groupId: executionId }, materialize)
+  })
+}
+
 /**
  * Lossy best-effort after-commit path; the hourly repair sweep closes misses
  * inside 48 hours. This is the LIVE fast-path wiring — the per-family
@@ -207,7 +224,8 @@ export function registerSquadActivityEventHandlers(
   options: { materialize?: typeof materializeSourceGroup } = {}
 ): () => void {
   const materialize = options.materialize ?? materializeSourceGroup
-  return eventEmitter.onAny((event, data, meta) => {
+  liveMaterialize = materialize
+  const unsubscribe = eventEmitter.onAny((event, data, meta) => {
     // Both api and worker register this handler, and the distributed emitter
     // re-emits every peer event locally — so without this guard every event
     // was materialized TWICE (one full advisory-lock transaction + snapshot
@@ -220,6 +238,10 @@ export function registerSquadActivityEventHandlers(
       )
     })
   })
+  return () => {
+    unsubscribe()
+    if (liveMaterialize === materialize) liveMaterialize = undefined
+  }
 }
 
 export function relatedInboxPageSql(workStreamId: string, after: string | null, limit: number) {
