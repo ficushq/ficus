@@ -580,3 +580,84 @@ for (const legacy of [false, true]) {
     expect(precision!.micros).toBe(legacy ? '123457' : '123456')
   })
 }
+
+for (const mode of ['stop', 'complete'] as const) {
+  it(`delayed ${mode} settlement preserves a replacement session and skips stale finalization`, async () => {
+    const { getSession } = await import('../../services/execution/session-state')
+    const runner = new DeliveryRunner(agent, fixture)
+    const run = runner.start()
+    await fixture.waitForRequest(1)
+    await fixture.session.abort()
+    await run
+    await runner.waitForPersistence()
+    let entered!: () => void
+    let release!: () => void
+    const started = new Promise<void>((r) => {
+      entered = r
+    })
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const original = agent.reconcileSessionDeliveries.bind(agent)
+    const reconcile = spyOn(agent, 'reconcileSessionDeliveries').mockImplementation(async (...args) => {
+      entered()
+      await gate
+      return original(...args)
+    })
+    const record = spyOn(agent, 'recordMessage')
+    const hooks = await import('../../services/turn-hooks')
+    const hook = spyOn(hooks.turnHooks, 'run')
+    let replacement: Awaited<ReturnType<typeof controlledPiSession>> | undefined
+    const settlement = mode === 'stop' ? runner.stopQuietly() : runner.finishNormally()
+    try {
+      await started
+      // The stop timeout can remove A before its pending reconciliation ends.
+      // A subsequent authorized wake registers B while A is still unwinding.
+      removeSession(agent.id)
+      replacement = await controlledPiSession(
+        root,
+        SessionManager.open(fixture.session.sessionManager.getSessionFile()!)
+      )
+      new DeliveryRunner(agent, replacement)
+      const activeB = getSession(agent.id)
+      const dispose = spyOn(replacement.session, 'dispose')
+      try {
+        expect(activeB).toBeDefined()
+        release()
+        await settlement
+        expect(getSession(agent.id)).toBe(activeB)
+        expect(dispose).not.toHaveBeenCalled()
+        expect(record).not.toHaveBeenCalled()
+        expect(hook).not.toHaveBeenCalled()
+      } finally {
+        dispose.mockRestore()
+      }
+    } finally {
+      release()
+      await settlement
+      reconcile.mockRestore()
+      record.mockRestore()
+      hook.mockRestore()
+      await replacement?.session.abort()
+      replacement?.session.dispose()
+    }
+  })
+}
+
+it('does not load receipt history for healthy turns, legacy claims or another generation', async () => {
+  let reads = 0
+  const receipts = async () => {
+    reads++
+    throw new Error('Receipt history should not be read')
+  }
+  await agent.reconcileSessionDeliveries(receipts)
+  const legacy = await agent.recordMessage({ role: 'human', content: 'legacy', pending: true })
+  await agent.claimInitialPendingMessagesForSessionDelivery()
+  await agent.reconcileSessionDeliveries(receipts)
+  expect((await Agent.findMessage(legacy.id))!.injectedAt).toBeNull()
+  const owner = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
+  await agent.claimInitialPendingMessagesForSessionDelivery(owner)
+  await agent.reconcileSessionDeliveries(receipts, 'other-generation')
+  expect((await Agent.findMessage(legacy.id))!.injectedAt).not.toBeNull()
+  expect(reads).toBe(0)
+})

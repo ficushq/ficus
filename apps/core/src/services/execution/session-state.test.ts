@@ -5,6 +5,7 @@ import {
   registerSession,
   releaseSessionReservation,
   removeSession,
+  removeSessionIfCurrent,
   reserveSession,
   beginTransitionalOperation,
   endTransitionalOperation,
@@ -16,6 +17,36 @@ import {
 } from './session-state'
 
 describe('execution session-state reservations', () => {
+  it('fences stale teardown against both successor sessions and reservations', () => {
+    const agentId = `agent-${crypto.randomUUID()}`
+    const successorId = crypto.randomUUID()
+    const stale = {} as any
+    let disposed = 0
+    const successor = { dispose: () => disposed++ } as any
+    try {
+      expect(reserveSession(agentId, successorId)).toBe(true)
+      expect(removeSessionIfCurrent(agentId, stale)).toBe(false)
+      expect(removeSessionIfCurrent(agentId, undefined as any)).toBe(false)
+      expect(isSessionReserved(agentId, successorId)).toBe(true)
+      registerSession(agentId, {
+        session: successor,
+        collector: {} as any,
+        buffer: {} as any,
+        agentId,
+        executionId: successorId,
+      })
+      expect(removeSessionIfCurrent(agentId, stale)).toBe(false)
+      expect(disposed).toBe(0)
+      expect(isSessionHeldFor(agentId, successorId)).toBe(true)
+      expect(removeSessionIfCurrent(agentId, successor)).toBe(true)
+      expect(disposed).toBe(1)
+      expect(removeSessionIfCurrent(agentId, successor)).toBe(false)
+      expect(disposed).toBe(1)
+    } finally {
+      removeSession(agentId)
+    }
+  })
+
   it('counts pre-session reservations as active capacity', () => {
     const agentId = `agent-${crypto.randomUUID()}`
     const executionId = crypto.randomUUID()

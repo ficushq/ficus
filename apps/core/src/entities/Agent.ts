@@ -1198,7 +1198,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   }
 
   async reconcileSessionDeliveries(
-    entries: readonly pendingDelivery.PersistedDeliveryEntry[],
+    entries: pendingDelivery.SessionDeliveryReceipts,
     generation?: string
   ): Promise<void> {
     return pendingDelivery.reconcileSessionDeliveries(this.id, entries, generation)

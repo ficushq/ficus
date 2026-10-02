@@ -16,7 +16,7 @@ type PromptOptions = NonNullable<Parameters<PiAgentSession['prompt']>[1]>
 
 export class MockPiAgentSession {
   private listeners: EventListener[] = []
-  sessionManager = { getEntries: () => [], getPersistedEntries: () => [] }
+  sessionManager = { getEntries: () => [], getPersistedEntries: () => [], getSessionFile: () => undefined }
   promptCalls: Array<{ text: string; options?: PromptOptions }> = []
   steerCalls: string[] = []
   followUpCalls: string[] = []

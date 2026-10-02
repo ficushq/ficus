@@ -1,6 +1,7 @@
 import { consultantSandboxSquadId, consultantScratchPath } from '../../services/sandbox/consultant-sandbox'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { messageTextForModel } from '../../services/chat/message-context'
+import { readSessionDeliveryReceipts } from '../../services/agent/session-delivery-receipts'
 import { existsSync, readFileSync } from 'fs'
 import { markExecutionStartupFailure } from '../../services/execution/startup-retry'
 import { join, resolve } from 'path'
@@ -41,6 +42,7 @@ import {
   getSession,
   isTransitionalOperationInProgress,
   removeSession,
+  removeSessionIfCurrent,
   setSessionCompacting,
   isWorkerShuttingDown,
   isWorkerStopping,
@@ -673,13 +675,15 @@ export abstract class AgentRunner {
    * Subclasses can call super.onError() and add context-specific cleanup.
    */
   protected onError(error: string, failure?: ExecutionFailure): void {
+    const active = getSession(this.agent.id)
+    if (this.session && active && active.session !== this.session) return
     log.error(`Execution ${this.execution.id} failed: ${error}`)
     this.interventionQueue.clear()
     // Hold the execution as ours through the terminal transition: the row is
     // still 'running' after the session is gone, and its lease has expired, so
     // the abandoned-lease sweep would otherwise re-queue it mid-failure.
     markExecutionSettling(this.agent.id, this.execution.id)
-    removeSession(this.agent.id)
+    if (active) removeSessionIfCurrent(this.agent.id, active.session)
     this.execution
       .fail(error, this.admissionLease ?? undefined, failure)
       .catch(() => {})
@@ -709,7 +713,7 @@ export abstract class AgentRunner {
       await this.persistence.waitForAll()
       await this.reconcileTerminatingDeliveries()
       await this.storedSecretToolContainment.waitForAuditWrites()
-      removeSession(this.agent.id)
+      removeSessionIfCurrent(this.agent.id, this.session)
       maintenanceLifecycle.settle()
     })
     if (maintenanceLifecycle?.interruptRequested) return
@@ -1172,7 +1176,7 @@ export abstract class AgentRunner {
     metadata = this.persistence.lastAssistant()?.metadata ?? metadata
 
     await this.reconcileTerminatingDeliveries()
-    removeSession(this.agent.id)
+    if (!removeSessionIfCurrent(this.agent.id, this.session)) return
     await this.agent.recordMessage({
       role: 'assistant',
       content: '[System] Agent was stopped.',
@@ -1241,6 +1245,7 @@ export abstract class AgentRunner {
     metadata: MessageMetadata | undefined,
     sessionUsage: SessionUsage
   ): Promise<string | undefined> {
+    if (getSession(this.agent.id)?.session !== this.session) return
     this.interventionQueue.clear()
     // Hold the execution as this process's work until its row leaves 'running'.
     // The session is torn down NOW, but the terminal transition happens only
@@ -1254,7 +1259,7 @@ export abstract class AgentRunner {
     markExecutionSettling(this.agent.id, this.execution.id)
     try {
       await this.reconcileTerminatingDeliveries()
-      removeSession(this.agent.id)
+      if (!removeSessionIfCurrent(this.agent.id, this.session)) return
       return await this.completeNormallyHeld(response, metadata, sessionUsage)
     } finally {
       clearExecutionSettling(this.agent.id, this.execution.id)
@@ -1403,7 +1408,7 @@ export abstract class AgentRunner {
     await this.persistence.waitForAll()
     if (!this.session) return
     await this.agent.reconcileSessionDeliveries(
-      this.session.pi.sessionManager.getPersistedEntries(),
+      (ids) => readSessionDeliveryReceipts(this.session.pi.sessionManager.getSessionFile(), ids),
       this.deliveryOwner.generation
     )
   }
@@ -1418,9 +1423,12 @@ export abstract class AgentRunner {
     // Exclusive runner ownership is established before dispatch. Reconcile the dead
     // generation once, including the append-before-ack gap, without scheduling a wake.
     if (!this.deliveriesReconciled) {
-      await this.agent.reconcileSessionDeliveries(this.session.pi.sessionManager.getPersistedEntries())
+      await this.agent.reconcileSessionDeliveries((ids) =>
+        readSessionDeliveryReceipts(this.session.pi.sessionManager.getSessionFile(), ids)
+      )
       this.deliveriesReconciled = true
     }
+    if (getSession(this.agent.id)?.session !== this.session) return
     const claimed = await this.agent.claimInitialPendingMessagesForSessionDelivery(this.deliveryOwner)
     const text =
       claimed.length > 0 ? this.buildInitialPromptText(claimed) : this.execution.message?.trim() || 'Continue.'

@@ -116,21 +116,21 @@ export interface PersistedDeliveryEntry {
   message?: { role: string }
 }
 
+export type SessionDeliveryReceipts =
+  | readonly PersistedDeliveryEntry[]
+  | ((deliveryIds: ReadonlySet<string>) => Promise<readonly PersistedDeliveryEntry[]>)
+
 /** Call only after obtaining exclusive runner ownership, or settling this exact session.
- * Supply verified disk receipts (SessionManager.getPersistedEntries()), never the
- * live getEntries() context view. Read all entries, not just the compacted branch.
+ * Supply verified disk receipts or a lazy reader, never the live getEntries()
+ * context view. A reader receives only IDs that still need recovery; it must
+ * search the full history, not just the compacted branch.
  * Legacy claims have no durable identity; conservatively release them, never guess an ack.
  */
 export async function reconcileSessionDeliveries(
   agentId: string,
-  entries: readonly PersistedDeliveryEntry[],
+  receipts: SessionDeliveryReceipts,
   generation?: string
 ): Promise<void> {
-  const persisted = new Map(
-    entries
-      .filter((e) => e.type === 'message' && e.message?.role === 'user' && e.deliveryId)
-      .map((e) => [e.deliveryId!, e.id])
-  )
   const claimed = await db
     .select({
       id: messages.id,
@@ -152,9 +152,20 @@ export async function reconcileSessionDeliveries(
         )
       )
     )
-  for (const row of claimed) {
-    const claim = (row.metadata as MessageMetadata | null)?.sessionDelivery
-    if (generation && claim?.generation !== generation) continue
+  const owned = claimed
+    .map((row) => ({ ...row, claim: (row.metadata as MessageMetadata | null)?.sessionDelivery }))
+    .filter((row) => !generation || row.claim?.generation === generation)
+  const deliveryIds = new Set(owned.flatMap((row) => (row.claim ? [row.claim.id] : [])))
+  // Most turns have already acknowledged everything. Legacy claims have no
+  // receipt identity either: neither case needs to touch the session file.
+  const entries = deliveryIds.size === 0 ? [] : typeof receipts === 'function' ? await receipts(deliveryIds) : receipts
+  const persisted = new Map(
+    entries
+      .filter((e) => e.type === 'message' && e.message?.role === 'user' && e.deliveryId)
+      .map((e) => [e.deliveryId!, e.id])
+  )
+  for (const row of owned) {
+    const { claim } = row
     const entryId = claim && persisted.get(claim.id)
     if (claim && entryId) {
       await acknowledgeSessionDelivery(
