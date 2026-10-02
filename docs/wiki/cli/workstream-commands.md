@@ -81,7 +81,19 @@ that workspace, including on remote/container runtimes. Defaults are branch
 parent directories are created inside the squad workspace. A path nested inside the
 repository must be Git-ignored to keep its contents out of commits. The base is taken from the
 selected remote's local default-branch ref; supply `--base-branch` if unknown.
-Setup uses existing local refs and does not fetch or clone.
+For a **new branch**, setup fetches that base from the selected remote using the
+existing squad-authorized Git environment, resolves it to an exact commit OID,
+and passes that OID to worktree creation. It does not update local branches,
+remote-tracking refs, `FETCH_HEAD`, or existing checkouts. The starting OID and
+source are recorded in `metadata.git.baseCommit` / `baseSource` and the immutable
+server ownership receipt, atomically with the stream metadata.
+
+Fetch, authentication, network, or missing-remote-branch failures stop setup;
+there is no silent fallback to cached refs or local branches. For a deliberate
+local or initiative base, supply `--base-source local --base-branch <local-branch>`
+(API: `baseSource: "local"`). This explicitly pins the local branch without a
+fetch, even if a same-named remote branch exists. Local-only bases that formerly
+relied on implicit fallback now require this explicit choice. Setup does not clone.
 
 GitHub HTTPS and SSH remotes are detected automatically. This records repository
 identity; authentication still uses the squad-authorized integration connection.
@@ -99,7 +111,7 @@ fails; they are never force-deleted. Git fields without `--repository` retain
 their existing metadata-only behavior.
 
 API create/update bodies accept `repository`, `gitRemote`, `worktree`, `branch`,
-and `baseBranch` with the same behavior. No schema migration is required.
+`baseBranch`, and `baseSource` (`remote` by default, or `local`) with the same behavior. No schema migration is required.
 
 ## Overview
 

@@ -5,7 +5,7 @@ export class RepositorySetupError extends Error {}
 
 export type RepositorySetupInput = Pick<
   CreateWorkStreamInput,
-  'repository' | 'gitRemote' | 'worktree' | 'branch' | 'baseBranch'
+  'repository' | 'gitRemote' | 'worktree' | 'branch' | 'baseBranch' | 'baseSource'
 >
 export type RepositoryExec = (args: string[]) => Promise<string>
 
@@ -61,6 +61,8 @@ export async function prepareRepository(
   ) {
     throw new Error('Code-host metadata does not match the selected Git remote')
   }
+  const baseSource = input.baseSource ?? 'remote'
+  if (baseSource === 'local' && !input.baseBranch) throw new Error('Local base requires an explicit baseBranch')
   let base = input.baseBranch
   if (!base) {
     try {
@@ -74,13 +76,6 @@ export async function prepareRepository(
   const branch = input.branch ?? `work/${key}`
   await git('check-ref-format', '--branch', branch)
   if (branch === base || branch.startsWith('-')) throw new Error('Worktree branch must differ from the base branch')
-  let baseRef = `refs/remotes/${remote}/${base}`
-  try {
-    await git('rev-parse', '--verify', `${baseRef}^{commit}`)
-  } catch {
-    baseRef = `refs/heads/${base}`
-    await git('rev-parse', '--verify', `${baseRef}^{commit}`)
-  }
   const requestedTarget = path.resolve(root, input.worktree ?? `worktrees/${key}`)
   if (!inside(requestedTarget) || requestedTarget === root)
     throw new Error('Worktree must be inside the squad workspace')
@@ -110,6 +105,7 @@ export async function prepareRepository(
       )
     }
   }
+  let provisionedBase: { baseCommit: string; baseSource: 'remote' | 'local' } | undefined
   if (missing.length) await exec(['mkdir', '-p', parent])
   // Test existence without treating an invalid checkout as permission to replace it.
   const exists = await pathExists(target)
@@ -132,7 +128,47 @@ export async function prepareRepository(
     } catch {
       /* New branch. */
     }
-    await git('worktree', 'add', ...(branchExists ? [] : ['-b', branch]), '--', target, branchExists ? branch : baseRef)
+    // A private ref isolates this fetch from concurrent fetches (including FETCH_HEAD).
+    // Keep it alive until add finishes, and pass the resolved OID, never a mutable ref.
+    const fetchedRef = `refs/ficus/provisioning/${crypto.randomUUID()}`
+    try {
+      if (!branchExists) {
+        let baseCommit: string
+        if (baseSource === 'local') {
+          baseCommit = await git('rev-parse', '--verify', `refs/heads/${base}^{commit}`)
+        } else {
+          try {
+            await git(
+              'fetch',
+              '--no-tags',
+              '--no-recurse-submodules',
+              '--no-write-fetch-head',
+              '--refmap=',
+              remote,
+              `+refs/heads/${base}:${fetchedRef}`
+            )
+            baseCommit = await git('rev-parse', '--verify', `${fetchedRef}^{commit}`)
+          } catch {
+            // Git/transport errors can contain credential-bearing URLs. Do not expose
+            // those diagnostics or substitute a cached/local ref on any failure.
+            throw new Error(
+              'Could not refresh Git base from the selected remote. Check squad-authorized Git access and baseBranch; use baseSource=local only for a deliberate local base.'
+            )
+          }
+        }
+        provisionedBase = { baseCommit, baseSource }
+      }
+      await git(
+        'worktree',
+        'add',
+        ...(branchExists ? [] : ['-b', branch]),
+        '--',
+        target,
+        branchExists ? branch : provisionedBase!.baseCommit
+      )
+    } finally {
+      if (!branchExists && baseSource === 'remote') await git('update-ref', '-d', fetchedRef)
+    }
     if (recordOwnership) {
       const gitDirectory = (
         await physical((await exec(['git', '-C', target, 'rev-parse', '--path-format=absolute', '--git-dir'])).trim())
@@ -156,13 +192,27 @@ export async function prepareRepository(
         worktree: target,
         directoryIdentity,
         branch,
+        ...provisionedBase,
       })
     }
   }
+  const priorGit = (metadata.git as Record<string, unknown> | undefined) ?? {}
+  const { baseCommit: _baseCommit, baseSource: _baseSource, ...priorBindings } = priorGit
+  // Only retain provenance when reattaching the same binding, never attribute an
+  // existing branch to a fresh base it was not created from.
+  const sameBinding = priorGit.repository === repo && priorGit.worktree === target && priorGit.branch === branch
   return {
     ...metadata,
     ...(!explicit && detected ? { codeHost: detected } : {}),
-    git: { ...((metadata.git as object) ?? {}), repository: repo, remote, worktree: target, branch, baseBranch: base },
+    git: {
+      ...(sameBinding ? priorGit : priorBindings),
+      repository: repo,
+      remote,
+      worktree: target,
+      branch,
+      baseBranch: base,
+      ...provisionedBase,
+    },
   }
 }
 
