@@ -318,3 +318,23 @@ test('canonical admitted event is durable across source connections and uses onl
     await h.close()
   }
 })
+
+test('exact current-version replays dedupe before any provider-current requests', async () => {
+  const h = await fixture()
+  try {
+    const first = await h.capture(event('DUPLICATE'))
+    const id = await h.source(event('DUPLICATE'))
+    let providerReads = 0
+    const replay = await store.captureGitHubFeedback(id, {
+      authorizeSource: async () => true,
+      readCurrent: async () => {
+        providerReads++
+        return null
+      },
+    })
+    expect(replay.revision.id).toBe(first.revision.id)
+    expect(providerReads).toBe(0)
+  } finally {
+    await h.close()
+  }
+})

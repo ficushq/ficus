@@ -54,8 +54,18 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
     eq(githubFeedbackObjects.nativeId, identity.nativeId)
   )
   const [beforeRead] = await db.select().from(githubFeedbackObjects).where(condition)
+  const [knownHead] = beforeRead?.currentRevisionId
+    ? await db
+        .select({ contentHash: githubFeedbackRevisions.contentHash })
+        .from(githubFeedbackRevisions)
+        .where(eq(githubFeedbackRevisions.id, beforeRead.currentRevisionId))
+    : []
   let currentHash: string | null = null
-  if (beforeRead && (!content.providerVersion || content.providerVersion === beforeRead.providerVersion)) {
+  if (
+    beforeRead &&
+    knownHead?.contentHash !== content.contentHash &&
+    (!content.providerVersion || content.providerVersion === beforeRead.providerVersion)
+  ) {
     try {
       currentHash = (await (deps.readCurrent ?? readCurrentGitHubFeedback)(event, content))?.contentHash ?? null
     } catch {
