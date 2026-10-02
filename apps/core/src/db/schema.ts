@@ -1335,10 +1335,11 @@ export const githubPersonalIdentities = pgTable(
       .primaryKey()
       .references(() => users.id, { onDelete: 'cascade' }),
     host: text('host').notNull().default('github.com'),
-    accountId: text('account_id').notNull(),
-    login: varchar('login', { length: 100 }).notNull(),
+    // An unlinked generation tombstone can exist before the first OAuth proof.
+    accountId: text('account_id'),
+    login: varchar('login', { length: 100 }),
     generation: integer('generation').notNull().default(0),
-    linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow(),
     unlinkedAt: timestamp('unlinked_at', { withTimezone: true }),
   },
   (table) => [
@@ -1351,6 +1352,39 @@ export const githubPersonalIdentities = pgTable(
       sql`${table.accountId} ~ '^[1-9][0-9]{0,15}$' AND ${table.accountId}::numeric <= 9007199254740991`
     ),
     check('github_personal_identity_generation', sql`${table.generation} >= 0`),
+    check(
+      'github_personal_identity_link_tuple',
+      sql`(${table.accountId} IS NULL AND ${table.login} IS NULL AND ${table.unlinkedAt} IS NOT NULL) OR (${table.accountId} IS NOT NULL AND ${table.login} IS NOT NULL AND ${table.linkedAt} IS NOT NULL)`
+    ),
+  ]
+)
+
+/** Server-verified, short-lived ownership confirmation. No access/refresh tokens. */
+export const githubIdentityProofs = pgTable(
+  'github_identity_proofs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    flowKey: varchar('flow_key', { length: 64 }).notNull().unique(),
+    generation: integer('generation').notNull(),
+    accountId: text('account_id').notNull(),
+    login: varchar('login', { length: 100 }).notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('github_identity_proof_user').on(table.userId, table.expiresAt),
+    check('github_identity_proof_generation', sql`${table.generation} >= 0`),
+    check('github_identity_proof_flow_hash', sql`${table.flowKey} ~ '^[0-9a-f]{64}$'`),
+    check(
+      'github_identity_proof_account_id',
+      sql`${table.accountId} ~ '^[1-9][0-9]{0,15}$' AND ${table.accountId}::numeric <= 9007199254740991`
+    ),
+    check('github_identity_proof_lifetime', sql`${table.expiresAt} > ${table.verifiedAt}`),
   ]
 )
 

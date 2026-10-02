@@ -82,3 +82,15 @@ test('OAuth state and recovery receipt retain personal purpose and unlink genera
     expect(config.checks.some((check) => check.name.endsWith('_purpose_context'))).toBe(true)
   }
 })
+
+test('personal proof storage fences first-link and delayed-callback generations without retaining tokens', () => {
+  const identity = getTableConfig(schema.githubPersonalIdentities)
+  expect(identity.columns.find((column) => column.name === 'account_id')!.notNull).toBe(false)
+  const table = schema.githubIdentityProofs
+  expect(table).toBeDefined()
+  const proof = getTableConfig(table)
+  expect(proof.columns.map((column) => column.name)).toEqual(
+    expect.arrayContaining(['flow_key', 'generation', 'consumed_at', 'expires_at', 'account_id'])
+  )
+  expect(proof.columns.some((column) => /token|credential|secret/.test(column.name))).toBe(false)
+})
