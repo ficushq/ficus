@@ -36,21 +36,15 @@ export function AgentSlotWaitStatus({
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      className="min-w-0 border-b border-status-queue-border bg-status-queue-surface px-3 py-1 text-xs text-status-queue-fg"
+      className="flex min-w-0 items-start gap-2 px-3 py-2 text-xs text-secondary"
     >
-      <details>
-        <summary className="cursor-pointer rounded py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
-          {isIdle ? 'Waiting for slot' : 'Slot queue'}
-          <span className="ml-1">({data.length})</span>
-        </summary>
-        <ul className="max-h-24 overflow-y-auto space-y-1 py-1" aria-label="Queued slot pools">
-          {data.map((wait) => (
-            <li key={wait.waiterId} className="min-w-0 break-all">
-              {wait.poolKey}
-            </li>
-          ))}
-        </ul>
-      </details>
+      <span
+        aria-hidden="true"
+        className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-status-progress-solid motion-safe:animate-pulse"
+      />
+      <span className="min-w-0 [overflow-wrap:anywhere]">
+        {isIdle ? 'Waiting for slot' : 'Slot queue'}: {[...new Set(data.map((wait) => wait.poolKey))].join(' · ')}
+      </span>
     </div>
   )
 }
