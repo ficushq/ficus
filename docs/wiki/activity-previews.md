@@ -119,3 +119,46 @@ archive/lock integrities. Do not hand-edit packed packages. Coordinate package p
 other mobile changes before adoption. This Core change includes no native repository
 edits or release actions. Native rendering should preserve the existing compact line
 limits and feed scroll context, routing references through authorized in-app resolution.
+
+## Activity subjects and received-message rollout
+
+The primary row identity names its destination. Inbox messages and system notifications
+identify their recipient (`agentId` and `agentTypeId`), not their sender. Descriptions say
+“Received message from …”, “Received report from Subagent …”, or “Received system
+notification …”. An unknown or foreign agent sender is “an agent”, never “system”.
+Sender descriptors come only from the recipient's squad; terminated sender/recipient
+records remain eligible. Inbox access still gates the row, and `agents:read` still gates
+the primary agent-type attribution. Message text and same-squad sender descriptions are
+inbox content, not a new grant of access to another squad's agent records.
+
+Subagent reports remain one event in both Messages and Subagents. Spawn/abnormal-end rows
+identify the parent whose chat hosts the transcript; no extra completion row is added.
+Work, wait and handoff rows identify their work stream; PR/issue rows identify the external
+resource. Their existing agent attribution is secondary (handoffs already describe the
+recipient), and work objects never borrow an actor's live dot. Shared subject labels also
+use “Agent”, not “system”, for missing/redacted agent types. Web received-message focus is
+preserved even in the historical/off-roster conversation fallback.
+
+No schema migration is required. Stable lane/row IDs and existing payload hashes let the
+leased desired-state repair **update**, rather than duplicate, existing message rows.
+A deployment alone does not refresh all history: the hourly/daily sweep only covers 48
+hours, while retained history extends 30 days. Before enabling the new clients, an
+**explicitly authorized operator** should:
+
+1. Deploy the updated Core materializer, then freeze a UTC upper boundary and cover the
+   retained window using consecutive, at-most-one-day repair windows and `--concurrency 1`
+   with the existing command above. Keep the projection pass enabled; never delete the
+   projection to force a rebuild. The command uses bounded pages and the shared repair
+   lease, and clamps to retention. Process one window at a time.
+2. Require zero errors in every report. Inspect representative ordinary messages, system
+   notices and terminated-subagent reports: the stored agent and agent ref must name the
+   same recipient; event identities/counts must not double. Verify recipient agent filters
+   and both global/per-squad read paths, including viewers without agent-type access.
+3. Rerun each frozen window to check idempotency (zero changes absent source mutations),
+   then refresh client queries. Deleted original source records cannot be reconstructed.
+
+The database regression covers a ten-day-old legacy sender-attributed projection, bounded
+one-row pages, concurrency one, terminated agents, both read paths, recipient filters and
+repeat-repair idempotency. No production repair, deployment or native release is performed
+by this code change. Native clients adopt the same shared subject-label helper through the
+repository's exact-SHA package/provenance update workflow; no packed file is edited by hand.

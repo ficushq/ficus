@@ -39,7 +39,7 @@ describe('execution row retirement (operator decision 2026-08-27)', () => {
       subagentName: 'research-competitors',
     })
     // No "finished" row: the subagent's completion report to its parent
-    // already rows as a Sent-message line (operator decision 2026-08-27).
+    // already rows as a received-report line (operator decision 2026-08-27).
     expect(rows.map((row) => row.summary)).toEqual(['Subagent "research-competitors" spawned.'])
     // Attribution is the PARENT: that is the identity the feed reader knows.
     expect(rows.every((row) => row.agentId === 'aeb03ca8-9290-4d2f-9878-79561bd931ce')).toBe(true)
@@ -81,35 +81,40 @@ describe('agent-to-agent inbox rows (operator decision 2026-08-27)', () => {
     workStream: null,
   }
 
-  test('sender-attributed with a recipient-and-preview summary', () => {
+  test('recipient-attributed report preserves terminated sender detail and completion membership', () => {
     const [row] = extractInboxMessage({
       ...base,
-      senderAgentExists: false, // terminated subagent — attribution must survive
       senderAgentTypeId: 'subagent',
       senderName: 'research-competitors',
-      senderParentAgentTypeId: 'reviewer',
     })
     expect(row.summary).toBe(
-      'Subagent sent message to Engineer: Findings for Task 1: second line is not part of the preview'
+      'Received report from Subagent (research-competitors): Findings for Task 1: second line is not part of the preview'
     )
-    // Attributed to the sender's PARENT type (renders as "› Reviewer",
-    // consistent with spawn rows), gated behind agents-read via the flag.
-    expect(row.agentTypeId).toBe('reviewer')
+    expect(row.agentTypeId).toBe('engineer')
     expect(row.agentTypeRequiresAgentsRead).toBe(true)
-    // A terminated sender still yields no agentId ref (dead-agent link guard).
-    expect(row.agentId).toBeNull()
+    expect(row.agentId).toBe(base.recipientId)
+    expect(row.ref).toMatchObject({ agentId: base.recipientId, view: 'inbox', messageId: base.id })
     // Subagent reports are the completion signal: their own lane + kind so
     // BOTH the Messages and Subagents filters include them.
     expect(row.lane).toBe(22)
     expect(row.kind).toBe('subagent')
   })
 
+  test('an agent message with a missing sender id remains a received message', () => {
+    const rows = extractInboxMessage({ ...base, senderId: null })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].summary).toStartWith('Received message from an agent:')
+    expect(rows[0].agentId).toBe(base.recipientId)
+  })
+
   test('a regular agent send stays lane 20 kind message', () => {
     const [row] = extractInboxMessage({
       ...base,
-      senderAgentExists: true,
-      senderAgentTypeId: 'engineer',
+      senderAgentTypeId: 'manager',
     })
+    expect(row.summary).toStartWith('Received message from Manager:')
+    expect(row.agentId).toBe(base.recipientId)
+    expect(row.agentTypeId).toBe('engineer')
     expect(row.lane).toBe(20)
     expect(row.kind).toBe('message')
   })
@@ -124,8 +129,8 @@ describe('agent-to-agent inbox rows (operator decision 2026-08-27)', () => {
     })
     expect(row.lane).toBe(21)
     expect(row.kind).toBe('message')
-    expect(row.summary).toBe('Sent message to Engineer: PR #1236: CI passed (Lint)')
-    expect(row.agentTypeId).toBeNull()
+    expect(row.summary).toBe('Received system notification: PR #1236: CI passed (Lint)')
+    expect(row.agentTypeId).toBe('engineer')
     // Work-stream event notices must NOT duplicate here — the wait/handoff
     // families already row those transitions.
     expect(
@@ -138,11 +143,13 @@ describe('agent-to-agent inbox rows (operator decision 2026-08-27)', () => {
     ).toEqual([])
   })
 
-  test('a sender without attribution still produces the recipient summary as system', () => {
-    const [row] = extractInboxMessage({ ...base, senderAgentExists: true })
-    expect(row.summary).toBe('Sent message to Engineer: Findings for Task 1: second line is not part of the preview')
-    expect(row.agentTypeId).toBeNull()
-    expect(row.agentId).toBe(base.senderId)
+  test('an unknown sender is truthfully an agent, never system', () => {
+    const [row] = extractInboxMessage(base)
+    expect(row.summary).toBe(
+      'Received message from an agent: Findings for Task 1: second line is not part of the preview'
+    )
+    expect(row.agentTypeId).toBe('engineer')
+    expect(row.agentId).toBe(base.recipientId)
   })
 })
 

@@ -123,7 +123,7 @@ export interface ExecutionSnapshot {
   subagentName?: string | null
 }
 // 'completed' deliberately absent: a finishing subagent always sends its
-// parent an inbox report, which already rows as "Sent message to <Parent>"
+// parent an inbox report, which already rows as "Received report from Subagent"
 // immediately after — a "finished" line would double every completion
 // (operator decision 2026-08-27). Abnormal ends keep their status row: no
 // inbox report accompanies them.
@@ -133,9 +133,8 @@ export function extractExecution(snapshot: ExecutionSnapshot): ExtractedSquadAct
   // ([execution started]/[execution <status>]) are low-level noise and are no
   // longer produced — EXCEPT for subagents, whose starts/finishes are the only
   // feed-visible trace of their work. Subagent rows are attributed to the
-  // PARENT agent (the feed identity a reader knows); the web label appends
-  // "'s subagent" for this kind. Historical non-subagent rows are deleted by
-  // the repair's desired-state diff.
+  // PARENT agent, whose chat hosts the subagent transcript. Historical
+  // non-subagent rows are deleted by the repair's desired-state diff.
   if (!snapshot.parentAgentId || !snapshot.parentAgentTypeId) return []
   const subagent = snapshot.subagentName ? `Subagent "${snapshot.subagentName}"` : 'Subagent'
   const base = {
@@ -270,17 +269,12 @@ export interface InboxSnapshot {
   recipientId: string
   recipientSquadId: string | null
   recipientAgentTypeId: string | null
-  /** Assignee display detail: metadata name (preferred) or purpose. */
-  recipientName?: string | null
   senderType: string
   senderId: string | null
-  senderAgentExists?: boolean
   /** Sender attribution (same-squad senders only; survives termination). */
   senderAgentTypeId?: string | null
   /** Sender display detail: metadata name (preferred) or purpose. */
   senderName?: string | null
-  /** The sender's parent agent type (subagent reports label as the parent). */
-  senderParentAgentTypeId?: string | null
   subject?: string | null
   content: string
   metadata: Record<string, unknown> | null
@@ -303,7 +297,7 @@ export function extractInboxMessage(snapshot: InboxSnapshot): ExtractedSquadActi
     quietEligible: true,
     inboxRecipientId: snapshot.recipientId,
   }
-  if (snapshot.senderType === 'agent' && snapshot.senderId) {
+  if (snapshot.senderType === 'agent') {
     // Subagent reports to their parent are the subagent's COMPLETION signal
     // (the finished row was retired in their favor) — they get their own
     // lane + kind so the web's Messages AND Subagents filters both include
@@ -317,21 +311,15 @@ export function extractInboxMessage(snapshot: InboxSnapshot): ExtractedSquadActi
         ...base,
         id: fromSubagent ? `22:${snapshot.id}` : `20:${snapshot.id}`,
         lane: fromSubagent ? (22 as const) : (20 as const),
-        agentId: snapshot.senderAgentExists === false ? null : snapshot.senderId,
-        // Attributed to the SENDER (previously null, which rendered every
-        // agent-to-agent message as 'system'). Redacted for viewers without
-        // agents-read via the flag below.
-        // Subagent reports are attributed to the PARENT type (the feed
-        // identity readers know) — rendered as "› Reviewer" alongside the
-        // spawn rows, which already carry the parent type.
-        agentTypeId: fromSubagent
-          ? (snapshot.senderParentAgentTypeId ?? snapshot.senderAgentTypeId ?? null)
-          : (snapshot.senderAgentTypeId ?? null),
+        // The row opens the recipient. Sender attribution is descriptive only;
+        // the loader limits it to same-squad agents and retains terminated senders.
+        agentId: snapshot.recipientId,
+        agentTypeId: snapshot.recipientAgentTypeId,
         kind: fromSubagent ? ('subagent' as const) : ('message' as const),
         ...activityPreview(
           snapshot.content,
           512,
-          `${fromSubagent ? 'Subagent sent message to' : 'Sent message to'} ${describeAssignee(snapshot.recipientAgentTypeId, null)}:`
+          `Received ${fromSubagent ? 'report' : 'message'} from ${describeAssignee(snapshot.senderAgentTypeId ?? null, snapshot.senderName ?? null)}:`
         ),
         ref: { type: 'agent', agentId: snapshot.recipientId, view: 'inbox', messageId: snapshot.id },
         workStreamId: null,
@@ -356,13 +344,13 @@ export function extractInboxMessage(snapshot: InboxSnapshot): ExtractedSquadActi
         ...base,
         id: `21:${snapshot.id}`,
         lane: 21,
-        agentId: null,
-        agentTypeId: null,
+        agentId: snapshot.recipientId,
+        agentTypeId: snapshot.recipientAgentTypeId,
         kind: 'message',
         ...activityPreview(
           snapshot.subject?.trim() ? snapshot.subject : snapshot.content,
           512,
-          `Sent message to ${describeAssignee(snapshot.recipientAgentTypeId, null)}:`
+          'Received system notification:'
         ),
         ref: { type: 'agent', agentId: snapshot.recipientId, view: 'inbox', messageId: snapshot.id },
         workStreamId: null,

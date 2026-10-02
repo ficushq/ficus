@@ -79,7 +79,7 @@ const historicalMessageItem: SquadActivityItem = {
   ref: {
     type: 'agent',
     agentId: historicalAgentId,
-    view: 'chat',
+    view: 'inbox',
     messageId: '00000000-0000-4000-8000-000000000021',
   },
 }
@@ -671,7 +671,11 @@ describe('SquadActivityTab in-place modals', () => {
                     squadSlug="ficus"
                     agents={[agent]}
                     dependencies={{
-                      AgentConversationComponent: (() => <p>conversation-stub</p>) as never,
+                      AgentConversationComponent: ((props: { agentId: string; focusInboxMessageId?: string }) => (
+                        <p>
+                          conversation-stub:{props.agentId}:{props.focusInboxMessageId}
+                        </p>
+                      )) as never,
                       WorkStreamViewModalComponent: (() => <p>workstream-stub</p>) as never,
                       AgentViewModalComponent: ((props: {
                         agent: Agent
@@ -722,7 +726,9 @@ describe('SquadActivityTab in-place modals', () => {
         historicalRow.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
         await Bun.sleep(10)
       })
-      expect(dom.window.document.body.textContent).toContain('conversation-stub')
+      expect(dom.window.document.body.textContent).toContain(
+        `conversation-stub:${historicalAgentId}:00000000-0000-4000-8000-000000000021`
+      )
       expect(dom.window.document.body.textContent).not.toContain('agent-view-modal:')
 
       // Plain click on a workstream row swaps to the work-stream modal.
