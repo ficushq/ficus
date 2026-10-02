@@ -102,7 +102,8 @@ test('page and popup share rounded, spaced cards for personal/system and unread/
     }
   }
   for (const section of page.querySelectorAll('section')) {
-    expect(section.classList.contains('p-2')).toBe(true)
+    expect(section.classList.contains('py-2')).toBe(true)
+    expect(section.classList.contains('md:p-2')).toBe(true)
     expect(section.classList.contains('overflow-hidden')).toBe(false)
     expect(section.firstElementChild!.classList.contains('pl-6')).toBe(true)
   }

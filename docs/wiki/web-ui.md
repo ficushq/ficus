@@ -143,7 +143,7 @@ Guides size to their content. Phone conversations use the available visual viewp
 
 The live voice control stays visible; disable it with an explanatory tooltip until configuration and permission are confirmed. On insecure or unsupported browsers, explain why starting is unavailable. Show connection progress on the control. A connected call automatically compacts into a small strip: the mic toggles mute, a status label explains the current phase, and icon controls end the call or expand the transcript. Listening means the microphone is ready; a soft mic halo pulses when speech is detected, respecting reduced motion. Connection and error state belong inside Assistant. Keep motion restrained and respect reduced motion.
 
-Inbox rows use plain sender text, wrapping subjects, quieter previews and timestamps, and light separators. Expanded details and attachments remain accessible without outlined cards around each message.
+Inbox rows use plain sender text, wrapping subjects, quieter previews and timestamps, and light separators. Expanded details and attachments remain accessible without outlined cards around each message. Below 768px, the standalone Inbox list keeps an 8px viewport-edge gutter rather than stacking page and section padding. The title keeps the standard page gutter; rows and section headers retain their shared internal unread-dot gutter. Desktop and popup insets are unchanged.
 
 Agent models use safe catalog metadata from the runtime registry when available, retaining custom IDs as a fallback. Model tier editors allow registry selection and custom entry. Agent type editing uses a dialog for long prompts and skill selection; integration-specific controls require the corresponding enabled feature.
 
