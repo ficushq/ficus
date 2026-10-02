@@ -106,7 +106,7 @@ test('bounds repeated hidden destinations without cutting or fabricating them', 
   expect(preview.filter((span) => span.href).every((span) => span.href === href)).toBe(true)
 })
 
-test('inbox Markdown is parsed before adding its literal system prefix', async () => {
+test('inbox Markdown is parsed before adding its literal received-message prefix', async () => {
   const { extractInboxMessage } = await import('./extractors')
   const [row] = extractInboxMessage({
     id: 'i',
@@ -121,7 +121,7 @@ test('inbox Markdown is parsed before adding its literal system prefix', async (
     metadata: null,
     workStream: null,
   })
-  expect(row!.summary).toBe('Sent message to Engineer: #241 ready')
+  expect(row!.summary).toBe('Received message from an agent: #241 ready')
   expect(row!.preview).toContainEqual({ text: '#241', href: 'ficus:ws:241' })
 })
 

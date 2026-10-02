@@ -198,14 +198,25 @@ describe('GET /api/squads/:id/activity', () => {
         headers: authHeaders(token.token),
       })
       expect(response.status).toBe(200)
-      return (await response.json()) as { items: Array<{ summary: string }> }
+      return (await response.json()) as { items: SquadActivityItem[] }
     }
 
-    expect((await read()).items.map((item) => item.summary)).toEqual(['Sent message to Engineer: Own route row'])
+    const ownRows = (await read()).items
+    expect(ownRows).toMatchObject([
+      {
+        agentId: caller.id,
+        summary: 'Received message from Architect: Own route row',
+        ref: { type: 'agent', agentId: caller.id, view: 'inbox' },
+      },
+    ])
     await db.insert(agentExtraScopes).values({ agentId: caller.id, permission: 'inbox:read-squad' })
-    expect((await read()).items.map((item) => item.summary).sort()).toEqual([
-      'Sent message to Engineer: Own route row',
-      'Sent message to Reviewer: Squad route row',
+    const squadRows = (await read()).items
+    expect(squadRows.map((item) => item.agentId).sort()).toEqual([caller.id, teammate.id].sort())
+    for (const item of squadRows)
+      expect(item.ref).toMatchObject({ type: 'agent', agentId: item.agentId, view: 'inbox' })
+    expect(squadRows.map((item) => item.summary).sort()).toEqual([
+      'Received message from Architect: Own route row',
+      'Received message from Architect: Squad route row',
     ])
   })
 
@@ -297,7 +308,12 @@ describe('GET /api/squads/:id/activity', () => {
     expect(response.status).toBe(200)
     const page = (await response.json()) as { items: Array<{ kind: string; summary: string }> }
     expect(page.items).toEqual([
-      expect.objectContaining({ kind: 'message', summary: 'Sent message to Reviewer: Readable inbox row' }),
+      expect.objectContaining({
+        kind: 'message',
+        agentId: recipient.id,
+        ref: expect.objectContaining({ type: 'agent', agentId: recipient.id, view: 'inbox' }),
+        summary: 'Received message from Engineer: Readable inbox row',
+      }),
     ])
 
     const foreignActivityIds = [
