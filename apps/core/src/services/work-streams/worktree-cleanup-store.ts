@@ -6,6 +6,7 @@ import {
 import { posix as path } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import {
   db,
   squads,
@@ -14,6 +15,7 @@ import {
   worktreeCleanupJobs,
   executions,
   workflowBindings,
+  workStreamFlowRuns,
 } from '../../db'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'
@@ -100,12 +102,32 @@ export async function claimWorktreeCleanup(
     if (
       otherStreams.some(
         (other) =>
-          other.id !== id &&
-          ((other.dependsOn ?? []).includes(id) ||
-            referencesOwnedWorktree(other.metadata as Record<string, unknown>, registered.ownership))
+          other.id !== id && referencesOwnedWorktree(other.metadata as Record<string, unknown>, registered.ownership)
       )
     )
-      return defer('Another work stream is attached to this worktree or depends on it')
+      return defer('Another work stream is attached to this worktree')
+    // Dependency edges are durable history, not permanent resource attachments.
+    // The squad lifecycle lock keeps these statuses/attempts stable through claim.
+    const dependents = otherStreams.filter((other) => other.id !== id && (other.dependsOn ?? []).includes(id))
+    if (dependents.some((other) => !['done', 'canceled'].includes(other.status)))
+      return defer('Another live work stream depends on this worktree; cleanup will retry')
+    if (dependents.length) {
+      const runs = await tx
+        .select({ state: workStreamFlowRuns.state })
+        .from(workStreamFlowRuns)
+        .where(
+          inArray(
+            workStreamFlowRuns.workStreamId,
+            dependents.map((other) => other.id)
+          )
+        )
+      if (
+        runs.some(
+          ({ state }) => state.attempts.some((attempt) => attempt.status === 'running') || state.pendingStarts?.length
+        )
+      )
+        return defer('Dependent flow attempts have not settled; cleanup will retry')
+    }
     for (const other of otherStreams) {
       if (other.id === id) continue
       const raw = worktreeAttachmentPaths(other.metadata as Record<string, unknown>)
@@ -116,18 +138,24 @@ export async function claimWorktreeCleanup(
       if (referencesOwnedWorktree({ git: observed.canonical }, registered.ownership))
         return defer('Another work stream is attached through a canonical worktree alias')
     }
+    // Fence terminal dependents' executions too: delivery/cancellation can commit
+    // before their last execution stops. Origins cover detached flow participants.
+    const protectedStreams = [stream, ...dependents]
+    const protectedIds = protectedStreams.map((entry) => entry.id)
     const bindings = await tx
       .select({ agentId: workflowBindings.agentId })
       .from(workflowBindings)
-      .where(eq(workflowBindings.workStreamId, id))
+      .where(inArray(workflowBindings.workStreamId, protectedIds))
     const origins = await tx
       .select({ agentId: executions.agentId })
       .from(executions)
-      .where(sql`${executions.flowContext}->>'workStreamId' = ${id}`)
+      .where(inArray(sql<string>`${executions.flowContext}->>'workStreamId'`, protectedIds))
     const crew = [
       ...new Set([
-        ...(stream.agentIds ?? []),
-        ...(stream.assigneeAgentId ? [stream.assigneeAgentId] : []),
+        ...protectedStreams.flatMap((entry) => [
+          ...(entry.agentIds ?? []),
+          ...(entry.assigneeAgentId ? [entry.assigneeAgentId] : []),
+        ]),
         ...bindings.map((row) => row.agentId),
         ...origins.map((row) => row.agentId),
       ]),
@@ -141,7 +169,7 @@ export async function claimWorktreeCleanup(
           inArray(executions.status, [...ACTIVE_EXECUTION_STATUSES]),
           or(
             crew.length ? inArray(executions.agentId, crew) : sql`false`,
-            sql`${executions.flowContext}->>'workStreamId' = ${id}`
+            inArray(sql<string>`${executions.flowContext}->>'workStreamId'`, protectedIds)
           )
         )
       )
@@ -177,6 +205,33 @@ export async function assertWorktreeCleanupMutable(tx: Store, id: string, reopen
     throw new WorktreeCleanupConflictError(
       'Worktree cleanup removal is pending terminal proof. Do not reuse or modify this resource; inspect the cleanup status.'
     )
+  // A settled dependent released this resource, but it cannot reopen, unlink,
+  // delete, or change crew while removal relies on that settlement. The squad
+  // lock serializes these mutations with claim; pickup uses the queue lock fence.
+  const dependent = alias(workStreams, 'cleanup_dependent')
+  const [predecessor] = await tx
+    .select({ id: workStreams.id })
+    .from(workStreams)
+    .innerJoin(worktreeCleanupJobs, eq(worktreeCleanupJobs.workStreamId, workStreams.id))
+    .innerJoin(
+      dependent,
+      and(
+        eq(dependent.id, id),
+        eq(dependent.squadId, workStreams.squadId),
+        sql`${dependent.dependsOn} @> ARRAY[${workStreams.id}]::uuid[]`
+      )
+    )
+    .where(
+      or(
+        eq(worktreeCleanupJobs.status, 'removing'),
+        and(eq(worktreeCleanupJobs.status, 'error'), sql`${worktreeCleanupJobs.operationId} IS NOT NULL`)
+      )
+    )
+    .limit(1)
+  if (predecessor)
+    throw new WorktreeCleanupConflictError(
+      'A dependency worktree has cleanup removal pending terminal proof. Do not reopen or change dependent use until removal settles.'
+    )
   if (reopening && job?.status === 'succeeded')
     throw new WorktreeCleanupConflictError(
       'This worktree was reclaimed. Create a new work stream with repository setup before starting more work; the delivered stream remains history.'
@@ -211,6 +266,7 @@ export async function assertOwnedWorktreeBindingUnchanged(
 /** Read under the same agent queue lock used by final cleanup claim and pickup.
  * The SELECT deliberately does not lock a stream row (avoids inverted lock order). */
 export async function cleanupWorktreeForAgent(agentId: string, tx: Store = db): Promise<string | null> {
+  const dependent = alias(workStreams, 'cleanup_dependent')
   const rows = await tx
     .select({ id: workStreams.id })
     .from(workStreams)
@@ -225,7 +281,18 @@ export async function cleanupWorktreeForAgent(agentId: string, tx: Store = db): 
           eq(workStreams.assigneeAgentId, agentId),
           sql`${workStreams.agentIds} @> ARRAY[${agentId}]::uuid[]`,
           sql`EXISTS (SELECT 1 FROM ${workflowBindings} WHERE ${workflowBindings.workStreamId} = ${workStreams.id} AND ${workflowBindings.agentId} = ${agentId})`,
-          sql`EXISTS (SELECT 1 FROM ${executions} WHERE ${executions.agentId} = ${agentId} AND ${executions.flowContext}->>'workStreamId' = ${workStreams.id}::text)`
+          sql`EXISTS (SELECT 1 FROM ${executions} WHERE ${executions.agentId} = ${agentId} AND ${executions.flowContext}->>'workStreamId' = ${workStreams.id}::text)`,
+          // Same queue locks as final claim: late dependent work cannot start
+          // after we observed settlement and handed the tree to removal.
+          sql`EXISTS (SELECT 1 FROM ${workStreams} AS cleanup_dependent
+            WHERE ${dependent.squadId} = ${workStreams.squadId}
+              AND ${dependent.dependsOn} @> ARRAY[${workStreams.id}]::uuid[]
+              AND (
+                ${dependent.assigneeAgentId} = ${agentId}
+                OR ${dependent.agentIds} @> ARRAY[${agentId}]::uuid[]
+                OR EXISTS (SELECT 1 FROM ${workflowBindings} WHERE ${workflowBindings.workStreamId} = ${dependent.id} AND ${workflowBindings.agentId} = ${agentId})
+                OR EXISTS (SELECT 1 FROM ${executions} WHERE ${executions.agentId} = ${agentId} AND ${executions.flowContext}->>'workStreamId' = ${dependent.id}::text)
+              ))`
         )
       )
     )

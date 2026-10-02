@@ -610,8 +610,13 @@ describeSubprocess('attemptPickup result matrix', () => {
     return row
   }
 
-  for (const concurrent of [false, true]) {
-    test(`cleanup claim and actual queued pickup serialize (${concurrent ? 'concurrent' : 'cleanup first'})`, async () => {
+  for (const [concurrent, dependent] of [
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ]) {
+    test(`cleanup claim and actual queued pickup serialize (${concurrent ? 'concurrent' : 'cleanup first'}${dependent ? ', terminal dependent' : ''})`, async () => {
       const { claimWorktreeCleanup } = await import('../work-streams/worktree-cleanup-store')
       const agent = await createSquadAgent('zai:glm-5.2')
       const ownership = {
@@ -634,10 +639,22 @@ describeSubprocess('attemptPickup result matrix', () => {
           title: 'cleanup pickup race',
           status: 'done',
           autoCleanupWorktree: true,
-          agentIds: [agent.id],
+          agentIds: dependent ? [] : [agent.id],
           metadata,
         })
         .returning()
+      const [other] = dependent
+        ? await db
+            .insert(workStreams)
+            .values({
+              squadId: agent.squadId!,
+              title: 'settled dependent pickup race',
+              status: 'done',
+              dependsOn: [stream.id],
+              agentIds: [agent.id],
+            })
+            .returning()
+        : []
       try {
         await db.insert(workStreamWorktrees).values({ workStreamId: stream.id, squadId: agent.squadId!, ownership })
         await db
@@ -668,6 +685,7 @@ describeSubprocess('attemptPickup result matrix', () => {
         }
         expect((await Execution.mustFind(execution.id)).status).toBe('queued')
       } finally {
+        if (other) await db.delete(workStreams).where(eq(workStreams.id, other.id))
         await db.delete(workStreams).where(eq(workStreams.id, stream.id))
       }
     })
