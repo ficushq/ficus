@@ -121,10 +121,12 @@ export function InboxPage() {
       ) : isEmpty ? (
         <div className="ficus-section text-muted p-6 text-center">No messages</div>
       ) : (
-        <div className="flex flex-col gap-4">
+        // Keep an 8px viewport gutter on phones without stacking page and section padding.
+        // Shared rows retain their unread-dot gutter; desktop keeps the original insets.
+        <div className="-mx-2 md:mx-0 flex flex-col gap-4">
           {/* Unread Section */}
           {hasUnread && (
-            <section className="ficus-section p-2">
+            <section className="ficus-section py-2 md:p-2">
               <SectionHeader title="Unread" count={unreadMessages.length} />
               <MessageList>
                 {unreadMessages.map((message) => (
@@ -141,7 +143,7 @@ export function InboxPage() {
 
           {/* Read Section */}
           {hasRead && (
-            <section className="ficus-section p-2">
+            <section className="ficus-section py-2 md:p-2">
               <SectionHeader
                 title="Read"
                 count={readMessages.length}
