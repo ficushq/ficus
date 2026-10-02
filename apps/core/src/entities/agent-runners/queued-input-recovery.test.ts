@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, spyOn } from 'bun:test'
-import { eq } from 'drizzle-orm'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { eq, sql } from 'drizzle-orm'
+import { mkdtempSync, rmSync, mkdirSync, existsSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { db } from '../../db'
@@ -206,7 +206,7 @@ it('fresh B never lets inbox F1 consume stranded U; U/S recover only on the auth
     await runningB
     await b.waitForPersistence()
     expect(await agent.listPendingHumanMessages()).toEqual([])
-    await agent.reconcileSessionDeliveries(fixture.session.sessionManager.getEntries())
+    await agent.reconcileSessionDeliveries(fixture.session.sessionManager.getPersistedEntries())
     expect(await agent.listPendingInterventionsForSessionDelivery()).toEqual([])
     const consumed = [await Agent.findMessage(u.id), await Agent.findMessage(f1.id), await Agent.findMessage(f2.id)]
     expect(new Set(consumed.map((m) => m!.metadata!.sessionEntryId)).size).toBe(3)
@@ -236,7 +236,7 @@ it('restart after compaction reconciles append-before-ack idempotently and relea
   expect(fixture.session.sessionManager.buildSessionContext().messages.some((m) => m.role === 'user')).toBe(false)
   fixture.session.dispose()
   fixture = await controlledPiSession(root, SessionManager.open(file))
-  const entries = fixture.session.sessionManager.getEntries()
+  const entries = fixture.session.sessionManager.getPersistedEntries()
   await agent.reconcileSessionDeliveries(entries)
   await agent.reconcileSessionDeliveries(entries)
   expect((await Agent.findMessage(p.id))!.pending).toBe(false)
@@ -317,7 +317,7 @@ it('persisting real SDK inbox F1 cannot falsely acknowledge an older same-text c
       )
     )
     expect(concurrent.flat()).toEqual([])
-    await agent.reconcileSessionDeliveries(fixture.session.sessionManager.getEntries())
+    await agent.reconcileSessionDeliveries(fixture.session.sessionManager.getPersistedEntries())
     expect((await agent.listPendingInterventionsForSessionDelivery()).map((m) => m.id)).toEqual([u.id])
     fixture.reply(0)
     await run
@@ -399,7 +399,184 @@ it('restart recovers a persisted identity even when a later SDK rejection alread
     })
   ).toEqual([])
   await agent.reconcileSessionDeliveries(
-    SessionManager.open(fixture.session.sessionManager.getSessionFile()!).getEntries()
+    SessionManager.open(fixture.session.sessionManager.getSessionFile()!).getPersistedEntries()
   )
   expect((await Agent.findMessage(u.id))!.pending).toBe(false)
 })
+
+for (const legacy of [false, true]) {
+  it(`releases an abandoned ${legacy ? 'legacy' : 'modern initial'} claim with a microsecond timestamp`, async () => {
+    const u = await agent.recordMessage({ role: 'human', content: 'before enqueue', pending: true })
+    const owner = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
+    expect(
+      (await agent.claimInitialPendingMessagesForSessionDelivery(legacy ? undefined : owner)).map((m) => m.id)
+    ).toEqual([u.id])
+    await db.execute(
+      sql`UPDATE ${messages} SET injected_at = date_trunc('second', clock_timestamp()) + interval '1.123456 seconds' WHERE id = ${u.id}`
+    )
+    const [premise] = await db.execute<{ micros: string }>(
+      sql`SELECT to_char(injected_at, 'US') AS micros FROM ${messages} WHERE id = ${u.id}`
+    )
+    expect(premise!.micros).toBe('123456')
+    await agent.reconcileSessionDeliveries([], legacy ? undefined : owner.generation)
+    expect((await Agent.findMessage(u.id))!.injectedAt).toBeNull()
+    expect(
+      (await agent.claimInitialPendingMessagesForSessionDelivery({ ...owner, generation: crypto.randomUUID() })).map(
+        (m) => m.id
+      )
+    ).toEqual([u.id])
+  })
+}
+
+it('quiet termination never acknowledges an SDK memory entry whose real filesystem append failed, and fresh B recovers it', async () => {
+  const a = new DeliveryRunner(agent, fixture)
+  const u = await agent.recordMessage({ role: 'human', content: 'failed filesystem append', pending: true })
+  const claim = await agent.claimPendingInterventionForSessionDelivery(u.id, a.owner)
+  const manager = fixture.session.sessionManager
+  const file = manager.getSessionFile()!
+  mkdirSync(file) // Real SDK initial open(wx) must fail with EEXIST, not a mocked receipt.
+  try {
+    expect(() =>
+      manager.appendMessage(
+        { role: 'user', content: [{ type: 'text', text: u.content }], timestamp: Date.now() },
+        claim!.metadata!.sessionDelivery!.id
+      )
+    ).toThrow('EEXIST')
+  } finally {
+    rmSync(file, { recursive: true, force: true })
+  }
+  expect(existsSync(file)).toBe(false)
+  expect(
+    manager.getEntries().some((e) => e.type === 'message' && e.deliveryId === claim!.metadata!.sessionDelivery!.id)
+  ).toBe(true)
+  await a.stopQuietly()
+  const afterStop = await Agent.findMessage(u.id)
+  expect(afterStop!.pending).toBe(true)
+  expect(afterStop!.injectedAt).toBeNull()
+  fixture.session.dispose()
+  fixture = await controlledPiSession(root)
+  const b = new DeliveryRunner(agent, fixture)
+  const run = b.start()
+  try {
+    await fixture.waitForRequest(1)
+    await b.waitForPersistence()
+    const delivered = await Agent.findMessage(u.id)
+    expect(delivered!.pending).toBe(false)
+    expect(delivered!.metadata!.executionId).toBe(b.owner.executionId)
+    expect(fixture.requestDeliveryIds[0]).toContain(delivered!.metadata!.sessionDelivery!.id)
+    fixture.reply(0)
+    await run
+    await b.waitForPersistence()
+  } finally {
+    await fixture.session.abort()
+    await run.catch(() => {})
+    await b.waitForPersistence()
+  }
+})
+
+it('termination requires a complete durable JSONL receipt rather than a partial initial write', async () => {
+  const runner = new DeliveryRunner(agent, fixture)
+  const u = await agent.recordMessage({ role: 'human', content: 'partial initial write', pending: true })
+  const claim = await agent.claimPendingInterventionForSessionDelivery(u.id, runner.owner)
+  const manager = fixture.session.sessionManager
+  const file = manager.getSessionFile()!
+  mkdirSync(file)
+  try {
+    expect(() =>
+      manager.appendMessage(
+        { role: 'user', content: [{ type: 'text', text: u.content }], timestamp: Date.now() },
+        claim!.metadata!.sessionDelivery!.id
+      )
+    ).toThrow('EEXIST')
+  } finally {
+    rmSync(file, { recursive: true, force: true })
+  }
+  const memoryEntry = manager
+    .getEntries()
+    .find((e) => e.type === 'message' && e.deliveryId === claim!.metadata!.sessionDelivery!.id)!
+  // A failed initial flush can leave a valid prefix and an incomplete final write.
+  // Even parseable JSON at EOF is not a complete SDK newline-terminated append.
+  writeFileSync(file, `${JSON.stringify(manager.getHeader())}\n${JSON.stringify(memoryEntry)}`)
+  await runner.stopQuietly()
+  expect((await Agent.findMessage(u.id))!.pending).toBe(true)
+  expect((await Agent.findMessage(u.id))!.injectedAt).toBeNull()
+  expect(readFileSync(file, 'utf8').endsWith('\n')).toBe(false) // Verification is read-only.
+  fixture.session.dispose()
+  fixture = await controlledPiSession(root, SessionManager.open(file))
+  await agent.reconcileSessionDeliveries(fixture.session.sessionManager.getPersistedEntries())
+  expect((await Agent.findMessage(u.id))!.pending).toBe(true)
+  expect(
+    fixture.session.sessionManager
+      .getEntries()
+      .some((e) => e.type === 'message' && e.deliveryId === claim!.metadata!.sessionDelivery!.id)
+  ).toBe(false)
+})
+
+for (const legacy of [false, true]) {
+  it(`reconciliation cannot release a concurrent ${legacy ? 'legacy' : 'identity-owned'} successor claim`, async () => {
+    const u = await agent.recordMessage({ role: 'human', content: 'claim race', pending: true })
+    const ownerA = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
+    const ownerB = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
+    await agent.claimInitialPendingMessagesForSessionDelivery(legacy ? undefined : ownerA)
+    await db.execute(
+      sql`UPDATE ${messages} SET injected_at = date_trunc('second', clock_timestamp()) + interval '1.123456 seconds' WHERE id = ${u.id}`
+    )
+    const successor = { id: crypto.randomUUID(), ...ownerB }
+    let markHeld!: () => void
+    let release!: () => void
+    let holderPid = 0
+    const held = new Promise<void>((resolve) => {
+      markHeld = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const writer = db.transaction(async (tx) => {
+      const [pid] = await tx.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`)
+      holderPid = pid!.pid
+      // Uncommitted successor state holds the row lock. Reconciliation reads the
+      // old MVCC snapshot, then its CAS must wait and recheck after we commit.
+      await tx
+        .update(messages)
+        .set({
+          metadata: legacy ? null : { sessionDelivery: successor },
+          injectedAt: legacy ? sql`${messages.injectedAt} + interval '1 microsecond'` : sql`${messages.injectedAt}`,
+        })
+        .where(eq(messages.id, u.id))
+      markHeld()
+      await gate
+    })
+    await held
+    let settled = false
+    const reconciliation = agent.reconcileSessionDeliveries([], legacy ? undefined : ownerA.generation).finally(() => {
+      settled = true
+    })
+    let blocked = false
+    try {
+      // A database lock barrier, not a timing sleep. All connections and the
+      // blocker are owned by this fixture; abort/release in finally even on failure.
+      for (let attempt = 0; attempt < 500 && !settled; attempt++) {
+        const [state] = await db.execute<{ blocked: boolean }>(sql`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE ${holderPid} = ANY(pg_blocking_pids(pid))
+        ) AS blocked`)
+        if (state!.blocked) {
+          blocked = true
+          break
+        }
+      }
+      expect(blocked).toBe(true)
+    } finally {
+      release()
+      await writer
+      await reconciliation
+    }
+    const after = await Agent.findMessage(u.id)
+    expect(after!.pending).toBe(true)
+    expect(after!.injectedAt).not.toBeNull()
+    if (!legacy) expect(after!.metadata!.sessionDelivery).toEqual(successor)
+    const [precision] = await db.execute<{ micros: string }>(
+      sql`SELECT to_char(injected_at, 'US') AS micros FROM ${messages} WHERE id = ${u.id}`
+    )
+    expect(precision!.micros).toBe(legacy ? '123457' : '123456')
+  })
+}

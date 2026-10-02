@@ -117,7 +117,8 @@ export interface PersistedDeliveryEntry {
 }
 
 /** Call only after obtaining exclusive runner ownership, or settling this exact session.
- * Read all entries, not just the compacted branch: append-before-DB-ack survives compaction.
+ * Supply verified disk receipts (SessionManager.getPersistedEntries()), never the
+ * live getEntries() context view. Read all entries, not just the compacted branch.
  * Legacy claims have no durable identity; conservatively release them, never guess an ack.
  */
 export async function reconcileSessionDeliveries(
@@ -131,7 +132,14 @@ export async function reconcileSessionDeliveries(
       .map((e) => [e.deliveryId!, e.id])
   )
   const claimed = await db
-    .select()
+    .select({
+      id: messages.id,
+      metadata: messages.metadata,
+      injectedAt: messages.injectedAt,
+      // timestamptz -> Date discards PostgreSQL microseconds. Keep a lossless,
+      // timezone-independent SQL epoch snapshot for legacy claims without IDs.
+      injectedEpoch: sql<string>`extract(epoch FROM ${messages.injectedAt})::text`,
+    })
     .from(messages)
     .where(
       and(
@@ -162,18 +170,24 @@ export async function reconcileSessionDeliveries(
       )
     } else {
       if (!row.injectedAt) continue // Already released and no append witness: leave available.
-      // CAS on both claim and timestamp fences a concurrent reset/reclaim (including legacy rows).
+      // New claims have a unique token fence; legacy claims need the lossless DB
+      // snapshot. Neither fence may round-trip a PostgreSQL timestamp through Date.
       const updated = await db
         .update(messages)
         .set({ injectedAt: null })
         .where(
           and(
             eq(messages.id, row.id),
+            eq(messages.agentId, agentId),
+            eq(messages.role, 'human'),
             eq(messages.pending, true),
-            eq(messages.injectedAt, row.injectedAt!),
+            isNotNull(messages.injectedAt),
             claim
               ? claimFence(claim.id, claim)
-              : sql`${jsonbObjectRecovered(messages.metadata)}->'sessionDelivery' IS NULL`
+              : and(
+                  sql`extract(epoch FROM ${messages.injectedAt}) = ${row.injectedEpoch}::numeric`,
+                  sql`${jsonbObjectRecovered(messages.metadata)}->'sessionDelivery' IS NULL`
+                )
           )
         )
         .returning()

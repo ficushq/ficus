@@ -1,7 +1,8 @@
 import { expect, it } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, mkdirSync, renameSync, writeFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { SessionManager } from '@earendil-works/pi-coding-agent'
 import { controlledPiSession } from '../../test-utils/controlled-pi-session'
 
 it('persists out-of-band delivery identity on real SDK array-valued initial, steer and separate follow-ups', async () => {
@@ -92,6 +93,114 @@ it('retains only host identity through sanitizer replacement, multi-block conten
     await session.abort()
     await run.catch(() => {})
     session.dispose()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('verified receipts exclude a failed append to an already-flushed SDK session', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pi-failed-append-'))
+  const manager = SessionManager.create(root, root)
+  const file = manager.getSessionFile()!
+  const user = { role: 'user' as const, content: [{ type: 'text' as const, text: 'identical' }], timestamp: Date.now() }
+  try {
+    const first = manager.appendMessage(user, 'successful')
+    const backup = `${file}.backup`
+    renameSync(file, backup)
+    mkdirSync(file)
+    try {
+      expect(() => manager.appendMessage(user, 'failed')).toThrow('EISDIR')
+    } finally {
+      rmSync(file, { recursive: true, force: true })
+      renameSync(backup, file)
+    }
+    expect(
+      manager
+        .getEntries()
+        .filter((e) => e.type === 'message')
+        .map((e) => e.deliveryId)
+    ).toEqual(['successful', 'failed'])
+    const receipts = manager.getPersistedEntries().filter((e) => e.type === 'message')
+    expect(receipts.map((e) => e.deliveryId)).toEqual(['successful'])
+    expect(receipts[0]!.id).toBe(first)
+    expect(
+      SessionManager.open(file)
+        .getPersistedEntries()
+        .filter((e) => e.type === 'message')
+        .map((e) => e.deliveryId)
+    ).toEqual(['successful'])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('host EOF append receipts require a newline while legacy SDK EOF repair stays compatible', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pi-incomplete-append-'))
+  try {
+    for (const hostOwned of [false, true]) {
+      const manager = SessionManager.create(root, root)
+      const file = manager.getSessionFile()!
+      manager.appendMessage(
+        { role: 'user', content: [{ type: 'text', text: 'same' }], timestamp: Date.now() },
+        hostOwned ? 'incomplete-host' : undefined
+      )
+      const original = readFileSync(file, 'utf8')
+      writeFileSync(file, original.slice(0, -1))
+      expect(manager.getPersistedEntries()).toEqual([])
+      expect(readFileSync(file, 'utf8')).toBe(original.slice(0, -1))
+      const reopened = SessionManager.open(file)
+      expect(reopened.getEntries().filter((e) => e.type === 'message')).toHaveLength(hostOwned ? 0 : 1)
+      expect(reopened.getPersistedEntries().filter((e) => e.type === 'message')).toHaveLength(hostOwned ? 0 : 1)
+    }
+    const memory = SessionManager.inMemory()
+    memory.appendMessage({ role: 'user', content: 'not durable', timestamp: Date.now() }, 'memory-only')
+    expect(memory.getEntries()).toHaveLength(1)
+    expect(memory.getPersistedEntries()).toEqual([])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('an unavailable receipt path propagates a real filesystem read error instead of reporting an empty ledger', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pi-unavailable-ledger-'))
+  try {
+    const manager = SessionManager.create(root, root)
+    const file = manager.getSessionFile()!
+    symlinkSync(file, file) // ELOOP is distinguishable from verified absence; no permission/root assumptions.
+    expect(() => manager.getPersistedEntries()).toThrow('ELOOP')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('discarding a multi-buffer incomplete UTF-8 host tail preserves the complete durable prefix', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pi-partial-utf8-'))
+  try {
+    const manager = SessionManager.create(root, root)
+    const first = manager.appendMessage(
+      { role: 'user', content: 'complete prefix', timestamp: Date.now() },
+      'durable-prefix'
+    )
+    // More than the SDK reader's 1 MiB buffer; byte boundaries differ from JS character counts.
+    manager.appendMessage({ role: 'user', content: '😀'.repeat(300_000), timestamp: Date.now() }, 'incomplete-tail')
+    const file = manager.getSessionFile()!
+    const original = readFileSync(file, 'utf8')
+    writeFileSync(file, original.slice(0, -1))
+    expect(
+      manager
+        .getPersistedEntries()
+        .filter((e) => e.type === 'message')
+        .map((e) => e.id)
+    ).toEqual([first])
+    expect(readFileSync(file, 'utf8')).toBe(original.slice(0, -1))
+    const reopened = SessionManager.open(file)
+    expect(
+      reopened
+        .getPersistedEntries()
+        .filter((e) => e.type === 'message')
+        .map((e) => e.id)
+    ).toEqual([first])
+    expect(readFileSync(file, 'utf8').split('\n').filter(Boolean)).toHaveLength(2)
+  } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })

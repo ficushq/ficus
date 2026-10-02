@@ -23,6 +23,7 @@ import {
 	readSync,
 	type Stats,
 	statSync,
+	truncateSync,
 	writeFileSync,
 } from "fs";
 import { readdir, stat } from "fs/promises";
@@ -626,12 +627,15 @@ function parseSessionEntryLine(line: string): FileEntry | null {
 }
 
 /** Exported for testing */
-export function loadEntriesFromFile(filePath: string): FileEntry[] {
+export function loadEntriesFromFile(filePath: string, requireCompleteLines = false): FileEntry[] {
 	const resolvedFilePath = normalizePath(filePath);
-	if (!existsSync(resolvedFilePath)) return [];
+	if (!requireCompleteLines && !existsSync(resolvedFilePath)) return [];
 
 	const entries: FileEntry[] = [];
 	let pending = "";
+	let lastCompleteOffset = 0;
+	let readOffset = 0;
+	let incompleteDelivery = false;
 	const fd = openSync(resolvedFilePath, "r");
 	try {
 		const decoder = new StringDecoder("utf8");
@@ -640,6 +644,9 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
 		while (true) {
 			const bytesRead = readSync(fd, buffer, 0, buffer.length, null);
 			if (bytesRead === 0) break;
+			const lastNewline = buffer.subarray(0, bytesRead).lastIndexOf(10);
+			if (lastNewline !== -1) lastCompleteOffset = readOffset + lastNewline + 1;
+			readOffset += bytesRead;
 
 			pending += decoder.write(buffer.subarray(0, bytesRead));
 			let lineStart = 0;
@@ -654,8 +661,13 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
 		}
 
 		pending += decoder.end();
-		const finalEntry = parseSessionEntryLine(pending);
-		if (finalEntry) entries.push(finalEntry);
+		if (!requireCompleteLines) {
+			const finalEntry = parseSessionEntryLine(pending);
+			incompleteDelivery = finalEntry?.type === "message" && typeof finalEntry.deliveryId === "string";
+			// Do not turn an incomplete host append into a receipt by repairing its
+			// newline. Preserve upstream EOF repair for all other/legacy entries.
+			if (finalEntry && !incompleteDelivery) entries.push(finalEntry);
+		}
 	} finally {
 		closeSync(fd);
 	}
@@ -667,7 +679,8 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
 		return [];
 	}
 
-	if (pending) appendFileSync(resolvedFilePath, "\n");
+	if (incompleteDelivery) truncateSync(resolvedFilePath, lastCompleteOffset);
+	else if (pending && !requireCompleteLines) appendFileSync(resolvedFilePath, "\n");
 	return entries;
 }
 
@@ -1522,6 +1535,27 @@ export class SessionManager {
 	 */
 	getEntries(): SessionEntry[] {
 		return this.fileEntries.filter((e): e is SessionEntry => e.type !== "session");
+	}
+
+	/**
+	 * Read complete append receipts from disk without repairing it. getEntries()
+	 * is a context view, not durable evidence: _appendEntry mutates it before a
+	 * filesystem write that can throw. Partial trailing writes are not receipts.
+	 * In-memory sessions have no durable entries. Other read errors propagate so
+	 * callers cannot mistake unavailable storage for an empty, verified session.
+	 */
+	getPersistedEntries(): SessionEntry[] {
+		if (!this.persist || !this.sessionFile) return [];
+		try {
+			const info = statSync(this.sessionFile);
+			if (info.isDirectory()) return [];
+			if (!info.isFile()) throw new Error("Cannot read SDK receipts from a non-regular session file");
+			return loadEntriesFromFile(this.sessionFile, true).filter((e): e is SessionEntry => e.type !== "session");
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code === "ENOENT" || code === "EISDIR") return [];
+			throw error;
+		}
 	}
 
 	/**

@@ -6,6 +6,8 @@ The seven TypeScript overlays preserve Tau's session event sanitization and pers
 
 The delivery-correlation overlay adds optional `deliveryId` host options to `prompt`, `steer`, and `followUp`. A private WeakMap follows the exact user-message object (including sanitizer replacements); identity is neither extracted from content nor placed on the model message. `SessionManager.appendMessage` atomically includes the optional ID on the same JSONL message entry, and `session_message_persisted` reports it with `entryId`. Existing signatures remain compatible and public barrels are preserved. The additional `session-manager.ts` overlay and its four generated outputs are included in the regeneration allowlist. Upstream already writes a session file starting with the first user message, before a model response.
 
+`getPersistedEntries()` is the read-only recovery receipt view: it re-reads complete JSONL records from disk rather than trusting `getEntries()` (which upstream mutates before a filesystem append can throw). Missing files and failed directory targets have no receipts; other read failures propagate. The verifier never repairs a partial tail. On ordinary SDK reopen, an unterminated host `deliveryId` entry is discarded at its exact byte boundary, not promoted into a receipt by upstream's newline repair; legacy EOF repair remains unchanged. In-memory sessions intentionally have no durable receipts.
+
 Regenerate from a clean checkout of that upstream commit:
 
 ```sh

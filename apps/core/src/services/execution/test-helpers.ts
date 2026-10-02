@@ -15,7 +15,7 @@ type EventListener = (event: AgentSessionEvent) => void
 
 export class MockPiAgentSession {
   private listeners: EventListener[] = []
-  sessionManager = { getEntries: () => [] }
+  sessionManager = { getEntries: () => [], getPersistedEntries: () => [] }
   promptCalls: Array<{ text: string; options?: any }> = []
   steerCalls: string[] = []
   followUpCalls: string[] = []

@@ -1403,7 +1403,7 @@ export abstract class AgentRunner {
     await this.persistence.waitForAll()
     if (!this.session) return
     await this.agent.reconcileSessionDeliveries(
-      this.session.pi.sessionManager.getEntries(),
+      this.session.pi.sessionManager.getPersistedEntries(),
       this.deliveryOwner.generation
     )
   }
@@ -1418,7 +1418,7 @@ export abstract class AgentRunner {
     // Exclusive runner ownership is established before dispatch. Reconcile the dead
     // generation once, including the append-before-ack gap, without scheduling a wake.
     if (!this.deliveriesReconciled) {
-      await this.agent.reconcileSessionDeliveries(this.session.pi.sessionManager.getEntries())
+      await this.agent.reconcileSessionDeliveries(this.session.pi.sessionManager.getPersistedEntries())
       this.deliveriesReconciled = true
     }
     const claimed = await this.agent.claimInitialPendingMessagesForSessionDelivery(this.deliveryOwner)
