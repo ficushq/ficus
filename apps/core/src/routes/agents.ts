@@ -1,6 +1,7 @@
 import { getPostgresError, publicErrorMessage } from '../db/errors'
 import { isUserAssistantAgentType } from '@ficus/shared'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
+import { listActiveSlotHolds } from '../services/slots/active-holds'
 import { chatPagePathSchema } from '@ficus/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
 import { withChatQueueState } from '../services/chat/queued-messages'
@@ -384,6 +385,15 @@ export const agentsRouter = new Hono()
     const waits = await listActiveSlotWaits(db, [agent.id])
     // Never expose another agent's queue entries, claim IDs, rank or capacity.
     return c.json(waits.map(({ waiterId, poolKey, queuedAt }) => ({ waiterId, poolKey, queuedAt })))
+  })
+  .get('/:id/slot-holds', requireAgentReadPermission, async (c) => {
+    const agent = await Agent.find(c.req.param('id'))
+    if (!agent) return c.json({ error: 'Agent not found' }, 404)
+    if (!agent.squadId) return c.json([])
+    if (!(await hasAnyPermission(c.get('identity'), ['slots:use', 'slots:write'], agent.squadId))) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
+    return c.json(await listActiveSlotHolds(db, [agent.id]))
   })
   .get('/:id/model-catalog', requireAgentReadPermission, async (c) => {
     const agent = await Agent.find(c.req.param('id'))

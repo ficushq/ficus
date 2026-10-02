@@ -83,3 +83,9 @@ export const agentSlotWaitQueryKeys = {
   squad: (squadId: string) => ['agent-slot-waits', squadId] as const,
   agent: (squadId: string, agentId: string) => ['agent-slot-waits', squadId, agentId] as const,
 }
+
+export const agentSlotHoldQueryKeys = {
+  all: ['agent-slot-holds'] as const,
+  squad: (squadId: string) => ['agent-slot-holds', squadId] as const,
+  agent: (squadId: string, agentId: string) => ['agent-slot-holds', squadId, agentId] as const,
+}

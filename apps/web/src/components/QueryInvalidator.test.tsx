@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { StrictMode } from 'react'
 import { acquireDomHarness } from '../test/domHarness'
-import { onboardingQueryKeys, queryKeys, agentSlotWaitQueryKeys } from '../queryKeys'
+import { onboardingQueryKeys, queryKeys, agentSlotHoldQueryKeys, agentSlotWaitQueryKeys } from '../queryKeys'
 
 /**
  * QueryInvalidator is the single source of truth for WS-event-driven cache
@@ -168,20 +168,21 @@ describe('QueryInvalidator', () => {
     await dom.act(async () => render(false))
     expect(fakeQueryClient.invalidateQueries).not.toHaveBeenCalled()
 
-    // Each open repairs slot waits, stream presentations, Assistant activity, actions, questions, and both storage views exactly once.
+    // Each open repairs slot waits/holds, stream presentations, Assistant activity, actions, questions, and both storage views exactly once.
     await dom.act(async () => render(true))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(7)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(8)
 
     await dom.act(async () => render(true))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(7)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(8)
 
     await dom.act(async () => render(false))
     await dom.act(async () => render(true))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(14)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(16)
     for (const key of [
       agentSlotWaitQueryKeys.all,
+      agentSlotHoldQueryKeys.all,
       assistantQueryKeys.activityPrefix,
       queryKeys.system.storage(),
       queryKeys.system.storageStatus(),

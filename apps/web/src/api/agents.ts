@@ -301,3 +301,24 @@ export interface AgentSlotWait {
 export function getAgentSlotWaits(agentId: string): Promise<AgentSlotWait[]> {
   return apiFetch<AgentSlotWait[]>(`/agents/${agentId}/slot-waits`)
 }
+
+/** Optional chat projection. No claim IDs or coordination authority cross this boundary. */
+export interface AgentSlotHold {
+  poolKey: string
+  expiresAt: string
+}
+
+export async function getAgentSlotHolds(agentId: string): Promise<AgentSlotHold[]> {
+  const rows = await apiFetch<unknown>(`/agents/${encodeURIComponent(agentId)}/slot-holds`)
+  if (!Array.isArray(rows)) return []
+  return rows
+    .filter(
+      (row): row is AgentSlotHold =>
+        row != null &&
+        typeof row.poolKey === 'string' &&
+        row.poolKey.length > 0 &&
+        typeof row.expiresAt === 'string' &&
+        Number.isFinite(Date.parse(row.expiresAt))
+    )
+    .map(({ poolKey, expiresAt }) => ({ poolKey, expiresAt }))
+}
