@@ -13,6 +13,8 @@ import {
 } from '../../db/schema'
 import { materializeSourceGroup } from './materialize'
 import { repairSquadActivity } from './repair'
+import { projectSquadActivity } from '../squad/activity'
+import { projectGlobalActivity } from './global-activity'
 import { listSourceGroupPage } from './families'
 import type { SourceGroupCursor } from './source-loaders'
 
@@ -154,12 +156,7 @@ describe('Activity materialization', () => {
     expect((await repairSquadActivity(repairWindow)).changed).toBe(0)
   })
 
-  test('subagent report rows carry the PARENT agent type through the REAL inbox loader', async () => {
-    // Regression: loadInboxSnapshot SELECTed sender_parent_type_id but never
-    // mapped it to senderParentAgentTypeId, so every lane-22 row fell back to
-    // the literal 'subagent' type and rendered "› Subagent" instead of the
-    // parent ("› Reviewer"). Extractor tests feed snapshots directly and could
-    // not catch the loader gap — this goes through the real loader.
+  test('subagent report rows identify the recipient through the real inbox loader', async () => {
     const [squad] = await db
       .insert(squads)
       .values({ name: `activity-subagent-parent-${crypto.randomUUID()}`, purpose: 'test' })
@@ -185,10 +182,103 @@ describe('Activity materialization', () => {
     try {
       await materializeSourceGroup({ family: 'inbox', groupId: report.id })
       const [row] = await db.select().from(squadActivity).where(eq(squadActivity.sourceGroupId, report.id))
-      expect(row).toMatchObject({ lane: 22, kind: 'subagent', agentTypeId: 'reviewer' })
-      expect(row.summary.startsWith('Subagent sent message to Reviewer:')).toBe(true)
+      expect(row).toMatchObject({ lane: 22, kind: 'subagent', agentId: parent.id, agentTypeId: 'reviewer' })
+      expect(row.summary.startsWith('Received report from Subagent:')).toBe(true)
     } finally {
       await db.delete(inbox).where(eq(inbox.id, report.id))
+    }
+  })
+
+  test('bounded repair rewrites legacy received rows, preserves terminated history, and filters by recipient', async () => {
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `activity-received-${crypto.randomUUID()}`, purpose: 'test' })
+      .returning()
+    createdSquads.push(squad.id)
+    const [recipient] = await db
+      .insert(agents)
+      .values({ squadId: squad.id, agentTypeId: 'engineer', status: 'terminated' })
+      .returning()
+    const [sender] = await db
+      .insert(agents)
+      .values({ squadId: squad.id, agentTypeId: 'subagent', status: 'terminated', metadata: { name: 'audit' } })
+      .returning()
+    // Older than the automatic 48h sweep; explicit bounded repair is required.
+    const createdAt = new Date(Date.now() - 10 * DAY_MS)
+    const receipts = await db
+      .insert(inbox)
+      .values([
+        {
+          recipientType: 'agent',
+          recipientId: recipient.id,
+          senderType: 'agent',
+          senderId: sender.id,
+          content: 'Done',
+          createdAt,
+        },
+        { recipientType: 'agent', recipientId: recipient.id, senderType: 'system', content: 'Notice', createdAt },
+      ])
+      .returning()
+    try {
+      for (const receipt of receipts) await materializeSourceGroup({ family: 'inbox', groupId: receipt.id })
+      await db
+        .update(squadActivity)
+        .set({
+          agentId: sender.id,
+          agentTypeId: 'subagent',
+          summary: 'Sent message to Engineer: legacy',
+          preview: [{ text: 'legacy' }],
+          payloadHash: 'legacy',
+        })
+        .where(eq(squadActivity.squadId, squad.id))
+      const window = {
+        from: new Date(createdAt.getTime() - 1_000),
+        to: new Date(createdAt.getTime() + 1_000),
+        pageSize: 1,
+        concurrency: 1,
+      }
+      const repair = await repairSquadActivity(window)
+      expect(repair.errors).toBe(0)
+      expect(repair.updated).toBe(2)
+      expect(repair.inserted).toBe(0)
+      expect(repair.deleted).toBe(0)
+      expect((await repairSquadActivity(window)).changed).toBe(0)
+      const stored = await db.select().from(squadActivity).where(eq(squadActivity.squadId, squad.id))
+      expect(stored).toHaveLength(2)
+      expect(stored.every((row) => row.agentId === recipient.id && row.agentTypeId === 'engineer')).toBe(true)
+      expect(stored.map((row) => row.summary).sort()).toEqual([
+        'Received report from Subagent (audit): Done',
+        'Received system notification: Notice',
+      ])
+      const access = { agentsRead: true, workstreamsRead: true, inbox: { mode: 'all' as const } }
+      const filters = { verbose: false, agentIds: [recipient.id], kinds: [], limit: 20 }
+      for (const agentsRead of [true, false]) {
+        const scopedAccess = { ...access, agentsRead }
+        const squadPage = await projectSquadActivity({ ...filters, squadId: squad.id, access: scopedAccess })
+        const globalPage = await projectGlobalActivity({
+          ...filters,
+          squadAccess: [{ squadId: squad.id, access: scopedAccess }],
+        })
+        for (const page of [squadPage, globalPage]) {
+          expect(page.items).toHaveLength(2)
+          expect(page.items.every((item) => item.agentTypeId === (agentsRead ? 'engineer' : null))).toBe(true)
+          expect(page.items.every((item) => item.ref.type === 'agent' && item.ref.agentId === recipient.id)).toBe(true)
+        }
+      }
+      expect(
+        (await projectSquadActivity({ ...filters, agentIds: [sender.id], squadId: squad.id, access })).items
+      ).toEqual([])
+      expect(
+        (
+          await projectSquadActivity({
+            ...filters,
+            squadId: squad.id,
+            access: { ...access, inbox: { mode: 'own', recipientId: sender.id } },
+          })
+        ).items
+      ).toEqual([])
+    } finally {
+      for (const receipt of receipts) await db.delete(inbox).where(eq(inbox.id, receipt.id))
     }
   })
 

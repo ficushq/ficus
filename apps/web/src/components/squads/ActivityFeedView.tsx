@@ -12,6 +12,7 @@ import {
   activityExternalHref,
   ACTIVITY_SMALL_TEXT_CLASS,
   activityAgentLabel,
+  activitySubjectLabel,
   FILTER_GROUPS,
   formatActivityTimestamp,
   squadActivityStatusMessage,
@@ -259,8 +260,10 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
             // render newest-first, so first-seen wins; recomputed per render.
             const liveDotted = new Set<string>()
             return items.map((item) => {
-              const showLiveDot = !!item.agentId && workingAgentIds.has(item.agentId) && !liveDotted.has(item.agentId)
-              if (showLiveDot) liveDotted.add(item.agentId!)
+              const subjectAgentId = item.ref.type === 'agent' ? item.ref.agentId : null
+              const showLiveDot =
+                !!subjectAgentId && workingAgentIds.has(subjectAgentId) && !liveDotted.has(subjectAgentId)
+              if (showLiveDot) liveDotted.add(subjectAgentId!)
               const chip = squadChipFor?.(item)
               // Issue rows point at the code host; when the server resolved the
               // stream they also offer an in-app jump to it. Reusing `hrefFor`
@@ -327,10 +330,10 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                         isGlobalFeed
                           ? 'col-start-1 row-start-1 justify-self-start text-left lg:col-start-3'
                           : 'lg:col-start-2',
-                        agentTypeColor(item.agentTypeId)
+                        agentTypeColor(item.ref.type === 'agent' ? item.agentTypeId : null)
                       )}
                       data-activity-column="agent"
-                      title={agentDetailFor(item)}
+                      title={item.ref.type === 'agent' ? agentDetailFor(item) : activitySubjectLabel(item)}
                     >
                       {showLiveDot && (
                         <span
@@ -340,7 +343,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current align-middle"
                         />
                       )}
-                      {activityAgentLabel(item.agentTypeId, item.kind)}
+                      {activitySubjectLabel(item)}
                     </span>
                   </div>
                   <span
@@ -351,6 +354,9 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                     )}
                     data-activity-column="summary"
                   >
+                    {item.ref.type === 'workstream' && item.kind !== 'handoff' && item.agentTypeId && (
+                      <span>By {activityAgentLabel(item.agentTypeId)} · </span>
+                    )}
                     <ActivityPreview spans={item.preview} onOpenAgent={onOpenAgentReference} />
                     {workStreamChip && (
                       <button
@@ -384,14 +390,14 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           href={sourceHref}
                           target="_blank"
                           rel="noopener noreferrer"
-                          aria-label={`Open activity source: ${item.summary}`}
+                          aria-label={`Open activity source: ${activitySubjectLabel(item)} — ${item.summary}`}
                         />
                       ) : (
                         <Link
                           className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-accent"
                           to={sourceHref}
                           onClick={interceptRowClick(item)}
-                          aria-label={`Open activity source: ${item.summary}`}
+                          aria-label={`Open activity source: ${activitySubjectLabel(item)} — ${item.summary}`}
                         />
                       ))}
                     {content}

@@ -66,6 +66,35 @@ export interface SquadActivityItem {
   ref: SquadActivityRef
 }
 
+/** Agent identity only; a missing/redacted type is not evidence of a system sender. */
+export function activityAgentLabel(agentTypeId: string | null): string {
+  if (!agentTypeId) return 'Agent'
+  return agentTypeId
+    .split(/[-_]/)
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(' ')
+}
+
+/** The primary identity always names the navigation destination, never its actor. */
+export function activitySubjectLabel(item: SquadActivityItem): string {
+  const ref = item.ref
+  if (!ref || typeof ref !== 'object') return 'Activity'
+  if (ref.type === 'agent') return activityAgentLabel(item.agentTypeId)
+  if (ref.type === 'workstream')
+    return ref.workStreamNumber !== undefined
+      ? `Work stream #${ref.workStreamNumber}`
+      : `Work stream ${ref.workStreamId.slice(0, 8)}`
+  if (ref.type === 'pr') {
+    const number = /\/pull\/(\d+)(?:[/?#]|$)/.exec(ref.url)?.[1]
+    return number ? `PR #${number}` : 'Pull request'
+  }
+  if (ref.type === 'issue') {
+    const number = /\/issues\/(\d+)(?:[/?#]|$)/.exec(ref.url)?.[1]
+    return number ? `Issue #${number}` : 'Issue'
+  }
+  return 'Activity'
+}
+
 export interface SquadActivityPage {
   items: SquadActivityItem[]
   hasMore: boolean

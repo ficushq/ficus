@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 import {
   coerceSquadActivityRef,
+  activitySubjectLabel,
+  activityAgentLabel,
   compareSquadActivityItems,
   makeSquadActivityId,
   parseSquadActivityId,
@@ -102,5 +104,47 @@ describe('coerceSquadActivityRef', () => {
   it('does not treat a JSON primitive string as an object ref', () => {
     // JSON.parse('"x"') === 'x' (a string, not an object) — must not be returned as a ref object.
     expect(coerceSquadActivityRef('"x"')).toBe('"x"' as never)
+  })
+})
+
+describe('activity subject identity', () => {
+  it('missing or redacted attribution is an agent, never system', () => {
+    expect(activityAgentLabel(null)).toBe('Agent')
+    expect(activityAgentLabel('code_review-bot')).toBe('Code Review Bot')
+    expect(
+      activitySubjectLabel({
+        ...item('20:a'),
+        agentTypeId: null,
+        ref: { type: 'agent', agentId: 'recipient', view: 'inbox' },
+      })
+    ).toBe('Agent')
+  })
+  it('work variants identify the work destination with a stable fallback', () => {
+    for (const kind of ['workstream', 'wait', 'handoff'] as const) {
+      const row = {
+        ...item('30:a'),
+        kind,
+        agentTypeId: 'manager',
+        ref: { type: 'workstream' as const, workStreamId: 'abcd1234-5678', workStreamNumber: 42 },
+      }
+      expect(activitySubjectLabel(row)).toBe('Work stream #42')
+      expect(activitySubjectLabel({ ...row, ref: { ...row.ref, workStreamNumber: undefined } })).toBe(
+        'Work stream abcd1234'
+      )
+    }
+  })
+  it('external subjects identify their resource, with safe unavailable fallbacks', () => {
+    expect(
+      activitySubjectLabel({
+        ...item('70:a'),
+        ref: { type: 'pr', url: 'https://github.com/acme/app/pull/123#comment' },
+      })
+    ).toBe('PR #123')
+    expect(activitySubjectLabel({ ...item('70:a'), ref: { type: 'pr', url: '' } })).toBe('Pull request')
+    expect(
+      activitySubjectLabel({ ...item('71:a'), ref: { type: 'issue', url: 'https://github.com/acme/app/issues/12' } })
+    ).toBe('Issue #12')
+    expect(activitySubjectLabel({ ...item('70:a'), ref: { type: 'future' } as never })).toBe('Activity')
+    expect(activitySubjectLabel({ ...item('70:a'), ref: null as never })).toBe('Activity')
   })
 })

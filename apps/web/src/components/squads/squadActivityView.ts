@@ -24,25 +24,7 @@ export const FILTER_GROUPS: Array<{ label: string; kinds: SquadActivityKind[] }>
   { label: 'GitHub', kinds: ['pr', 'issue'] },
 ]
 
-/** Row agent label: the Title-Cased agent type ONLY, 'system' for rows with no agent type. */
-function titleCaseAgentType(agentTypeId: string): string {
-  return agentTypeId
-    .split(/[-_]/)
-    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
-    .join(' ')
-}
-
-/**
- * Row agent label (operator decision 2026-08-27: the purpose/name
- * parenthetical always truncated in the label column — it now lives in the
- * row's title tooltip instead). Subagent rows (spawn lifecycle + reports)
- * nest under their parent type: "› Reviewer".
- */
-export function activityAgentLabel(agentTypeId: string | null, kind?: SquadActivityKind): string {
-  if (!agentTypeId) return 'system'
-  const type = titleCaseAgentType(agentTypeId)
-  return kind === 'execution' || kind === 'subagent' ? `› ${type}` : type
-}
+export { activityAgentLabel, activitySubjectLabel } from '@ficus/shared'
 
 /** Per-squad row href: the tab's own squad slug for every row. */
 export function squadActivityItemHref(item: SquadActivityItem, slug: string): string {

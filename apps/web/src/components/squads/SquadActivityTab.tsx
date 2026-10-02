@@ -18,7 +18,12 @@ import { AgentConversation } from '../AgentConversation'
 import { AgentViewModal } from './AgentViewModal'
 import { usePermissions } from '../../hooks/usePermissions'
 import { ActivityFeedView } from './ActivityFeedView'
-import { activityAccessSignature, activityAgentLabel, squadActivityItemHref } from './squadActivityView'
+import {
+  activityAccessSignature,
+  activityAgentLabel,
+  activitySubjectLabel,
+  squadActivityItemHref,
+} from './squadActivityView'
 
 /** Hover detail for the label column: the purpose/name the label no longer shows. */
 function activityAgentDetail(agent: Agent | undefined): string | undefined {
@@ -341,7 +346,7 @@ export function SquadActivityTab({
       setOpenItem({
         type: 'agent',
         agentId: item.ref.agentId,
-        label: activityAgentLabel(item.agentTypeId, item.kind),
+        label: activitySubjectLabel(item),
         view: item.ref.view,
         messageId: item.ref.messageId,
       })
@@ -411,7 +416,13 @@ export function SquadActivityTab({
           // plain viewport fallback — AgentViewModal's tabs need roster data.
           return (
             <Modal isOpen onClose={() => setOpenItem(null)} title={openItem.label} size="viewport" noChildPadding>
-              <AgentConversationBody agentId={openItem.agentId} embedded enableFullscreen={false} />
+              <AgentConversationBody
+                agentId={openItem.agentId}
+                embedded
+                enableFullscreen={false}
+                focusMessageId={openItem.view === 'chat' ? openItem.messageId : undefined}
+                focusInboxMessageId={openItem.view === 'inbox' ? openItem.messageId : undefined}
+              />
             </Modal>
           )
         })()}
