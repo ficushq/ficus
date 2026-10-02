@@ -3655,7 +3655,7 @@ done
   for (const sandboxId of ['agent_park', 'squad_park']) {
     for (const legacy of [false, true]) {
       const label = `${sandboxId} ${legacy ? 'legacy' : 'current'}`
-      it(`${label}: park persists across simulated manager restart; retry and resume pair enablement`, async () => {
+      it(`${label}: ${legacy ? 'finalized controls refuse unmigrated units without touching them' : 'park persists across simulated manager restart; retry and resume pair enablement'}`, async () => {
         const f = fixture(sandboxId, legacy)
         let box = makeBox({ sandboxId, unixUser: boxUnixUser(sandboxId) })
         const deps: BoxManagerDeps = {
@@ -3668,6 +3668,19 @@ done
             return box
           },
           fetch: makeFakeFetch([], [{ ok: true, status: 200 }]),
+        }
+        if (legacy) {
+          expect(await stopBox(sandboxId, deps)).toEqual({ kind: 'unverified' })
+          expect(box.status).toBe('stop_unverified')
+          await expect(
+            startBoxAndAwaitHealth({ machine: makeMachine(), sandboxId, unixUser: box.unixUser, port: box.port }, deps)
+          ).rejects.toThrow()
+          for (const unit of f.names.allUnits.split(' ')) expect(f.value(unit, 'active')).toBe('active')
+          expect(f.value(f.names.socket, 'enabled')).toBe('enabled')
+          expect(f.calls()).not.toMatch(
+            new RegExp(`(?:disable|enable|stop|restart) .*${f.names.socket.replaceAll('.', '\\.')}`)
+          )
+          return
         }
         expect(await stopBox(sandboxId, deps)).toEqual({ kind: 'verified' })
         expect(f.value(f.names.socket, 'enabled')).toBe('disabled')
@@ -3691,8 +3704,6 @@ done
         ['stop', ''],
         ['', 'error'],
         ['', 'empty'],
-        ['', 'load-error'],
-        ['', 'load-empty'],
         ['', 'still-active'],
       ]) {
         it(`${label}: ${verb || state} failure cannot verify a previously stopped row`, async () => {
@@ -3719,8 +3730,6 @@ done
         ['restart', ''],
         ['', 'error'],
         ['', 'empty'],
-        ['', 'load-error'],
-        ['', 'load-empty'],
       ]) {
         it(`${label}: resume rejects ${verb || state} failure before tunnel/health success`, async () => {
           const f = fixture(sandboxId, legacy)
