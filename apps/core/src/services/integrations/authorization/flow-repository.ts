@@ -9,6 +9,7 @@ import {
   secrets,
 } from '../../../db'
 import type { OAuthAuthority } from './authority'
+import type { OAuthAuthorizationPurpose } from './state-repository'
 import { connectionAuthorizationLeaseKey } from './connection-lease'
 
 export type AuthorizationInstallKind = 'connect' | 'reconnect_same' | 'reconnect_distinct'
@@ -19,6 +20,8 @@ export interface AuthorizationFlowReceipt {
   authority: OAuthAuthority
   intent: 'connect' | 'reconnect'
   initiatingUserId: string
+  purpose?: OAuthAuthorizationPurpose
+  linkGeneration?: number | null
   returnTo: string
   completionHandleHash: string
   adapterVersion: number | null
@@ -45,6 +48,8 @@ export interface AuthorizationFlowBinding {
   authority: OAuthAuthority
   intent: 'connect' | 'reconnect'
   userId: string
+  purpose?: OAuthAuthorizationPurpose
+  linkGeneration?: number | null
   connectionId: string | null
   expectedMaterialRevision: string | null
 }
@@ -74,6 +79,8 @@ export class DbAuthorizationFlowReceiptRepository implements AuthorizationFlowRe
       binding &&
       (!receipt ||
         receipt.providerKey !== binding.providerKey ||
+        (receipt.purpose ?? 'integration') !== (binding.purpose ?? 'integration') ||
+        (receipt.linkGeneration ?? null) !== (binding.linkGeneration ?? null) ||
         receipt.authority !== binding.authority ||
         receipt.intent !== binding.intent ||
         receipt.initiatingUserId !== binding.userId ||
@@ -431,7 +438,8 @@ function mapReceipt(
   if (
     !row ||
     (row.authority !== 'local' && row.authority !== 'platform_broker') ||
-    (row.intent !== 'connect' && row.intent !== 'reconnect')
+    (row.intent !== 'connect' && row.intent !== 'reconnect') ||
+    (row.purpose !== 'integration' && row.purpose !== 'github_identity')
   ) {
     return null
   }

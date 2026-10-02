@@ -2,7 +2,7 @@ import { createHash, randomBytes as cryptoRandomBytes, randomUUID as cryptoRando
 import { getOAuthProviderAdapter } from '@ficus/shared/oauth-providers'
 import type { IntegrationAuditRecorder } from '../audit'
 import type { AuthorizationGrant, IntegrationPluginV1 } from '../plugin'
-import type { OAuthStateRecord, OAuthStateRepository } from './state-repository'
+import type { OAuthAuthorizationPurpose, OAuthStateRecord, OAuthStateRepository } from './state-repository'
 import type { AuthorizationFlowReceiptRepository } from './flow-repository'
 import { OAuthTransportError, type OAuthTransport } from './transport'
 import { PlatformRequestError } from '../../platform/instance-client'
@@ -37,6 +37,8 @@ export interface AuthorizationServiceDependencies {
     exchange: () => Promise<AuthorizationGrant<unknown, unknown>>
     userId: string
   }): Promise<void>
+  /** Separate finalizer: personal ownership must never install integration credentials or signing. */
+  installIdentityGrant?: AuthorizationServiceDependencies['installGrant']
   audit?: IntegrationAuditRecorder
   randomBytes?: (size: number) => Uint8Array
   uuid?: () => string
@@ -61,7 +63,19 @@ export class IntegrationAuthorizationService {
     userId: string
     returnTo: string
     intent: { kind: 'connect' } | { kind: 'reconnect'; connectionId: string; expectedMaterialRevision: string }
+    purpose?: OAuthAuthorizationPurpose
+    linkGeneration?: number
   }): Promise<{ authorizationUrl: string }> {
+    if (
+      (input.purpose === 'github_identity' &&
+        (input.providerKey !== 'github' ||
+          input.intent.kind !== 'connect' ||
+          !Number.isSafeInteger(input.linkGeneration) ||
+          input.linkGeneration! < 0)) ||
+      ((input.purpose ?? 'integration') === 'integration' && input.linkGeneration !== undefined) ||
+      (input.purpose !== undefined && !['integration', 'github_identity'].includes(input.purpose))
+    )
+      throw new AuthorizationFlowError('invalid_authorization_purpose')
     const plugin = this.#requireOAuthPlugin(input.providerKey)
     if (!isSafeReturnTarget(input.returnTo)) throw new AuthorizationFlowError('unsafe_return_target')
     try {
@@ -84,6 +98,7 @@ export class IntegrationAuthorizationService {
       providerKey: plugin.key,
       userId: input.userId,
       intent: input.intent.kind,
+      ...(input.purpose === 'github_identity' ? { purpose: input.purpose, linkGeneration: input.linkGeneration } : {}),
       connectionId: input.intent.kind === 'reconnect' ? input.intent.connectionId : null,
       expectedMaterialRevision: input.intent.kind === 'reconnect' ? input.intent.expectedMaterialRevision : null,
       redirectUri,
@@ -178,7 +193,7 @@ export class IntegrationAuthorizationService {
       }
     }
     try {
-      await this.#dependencies.installGrant({ plugin, state, exchange, userId: input.userId })
+      await this.#installGrant({ plugin, state, exchange, userId: input.userId })
     } catch (error) {
       const code = error instanceof AuthorizationFlowError ? error.code : 'grant_persistence_failed'
       await this.#audit(input.userId, input.providerKey, 'callback', 'failed', code)
@@ -266,7 +281,7 @@ export class IntegrationAuthorizationService {
     }
 
     try {
-      await this.#dependencies.installGrant({ plugin, state, exchange, userId: input.userId })
+      await this.#installGrant({ plugin, state, exchange, userId: input.userId })
     } catch (error) {
       const code = authorizationErrorCode(error, 'grant_persistence_failed')
       if (burnsCompletionFlow(code)) {
@@ -292,6 +307,21 @@ export class IntegrationAuthorizationService {
     }
     await this.#audit(input.userId, input.providerKey, 'complete', 'succeeded')
     return { returnTo: state.returnTo }
+  }
+
+  async #installGrant(input: Parameters<AuthorizationServiceDependencies['installGrant']>[0]): Promise<void> {
+    const purpose = input.state.purpose ?? 'integration'
+    if (purpose === 'integration') return this.#dependencies.installGrant(input)
+    if (
+      purpose !== 'github_identity' ||
+      input.state.providerKey !== 'github' ||
+      input.state.intent !== 'connect' ||
+      !Number.isSafeInteger(input.state.linkGeneration) ||
+      input.state.linkGeneration! < 0
+    )
+      throw new AuthorizationFlowError('invalid_authorization_purpose')
+    if (!this.#dependencies.installIdentityGrant) throw new AuthorizationFlowError('identity_installer_unavailable')
+    await this.#dependencies.installIdentityGrant(input)
   }
 
   #requireOAuthPlugin(providerKey: string): OAuthPluginView<unknown> {

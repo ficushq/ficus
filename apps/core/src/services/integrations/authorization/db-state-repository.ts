@@ -67,6 +67,8 @@ export class DbOAuthStateRepository implements OAuthStateRepository {
         .values({
           localFlowId: state.localFlowId,
           providerKey: state.providerKey,
+          purpose: state.purpose ?? 'integration',
+          linkGeneration: state.linkGeneration ?? null,
           authority: state.authority,
           intent: state.intent,
           initiatingUserId: state.userId,
@@ -86,6 +88,8 @@ export class DbOAuthStateRepository implements OAuthStateRepository {
       if (
         !receipt ||
         receipt.providerKey !== state.providerKey ||
+        receipt.purpose !== (state.purpose ?? 'integration') ||
+        receipt.linkGeneration !== (state.linkGeneration ?? null) ||
         receipt.authority !== state.authority ||
         receipt.intent !== state.intent ||
         receipt.initiatingUserId !== state.userId ||
@@ -167,9 +171,10 @@ function mapState(row: typeof integrationOauthStates.$inferSelect | undefined): 
   if (
     !row ||
     (row.intent !== 'connect' && row.intent !== 'reconnect') ||
+    (row.purpose !== 'integration' && row.purpose !== 'github_identity') ||
     (row.authority !== 'local' && row.authority !== 'platform_broker')
   ) {
     return null
   }
-  return { ...row, intent: row.intent, authority: row.authority }
+  return { ...row, purpose: row.purpose, intent: row.intent, authority: row.authority }
 }

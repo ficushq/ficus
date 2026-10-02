@@ -3597,6 +3597,8 @@ export const integrationOauthStates = pgTable(
   'integration_oauth_states',
   {
     stateHash: varchar('state_hash', { length: 64 }).primaryKey(),
+    purpose: text('purpose').notNull().default('integration'),
+    linkGeneration: integer('link_generation'),
     localFlowId: uuid('local_flow_id'),
     authority: varchar('authority', { length: 32 }).notNull().default('local'),
     completionHandleHash: varchar('completion_handle_hash', { length: 64 }),
@@ -3618,6 +3620,10 @@ export const integrationOauthStates = pgTable(
     uniqueIndex('uq_integration_oauth_states_local_flow')
       .on(table.localFlowId)
       .where(sql`${table.localFlowId} is not null`),
+    check(
+      'integration_oauth_states_purpose_context',
+      sql`(${table.purpose} = 'integration' AND ${table.linkGeneration} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.providerKey} = 'github' AND ${table.intent} = 'connect' AND ${table.linkGeneration} IS NOT NULL AND ${table.linkGeneration} >= 0)`
+    ),
     check('integration_oauth_states_hash_format', sql`${table.stateHash} ~ '^[0-9a-f]{64}$'`),
     check('integration_oauth_states_authority_check', sql`${table.authority} in ('local', 'platform_broker')`),
     check(
@@ -3643,6 +3649,8 @@ export const integrationAuthorizationFlowReceipts = pgTable(
   'integration_authorization_flow_receipts',
   {
     localFlowId: uuid('local_flow_id').primaryKey(),
+    purpose: text('purpose').notNull().default('integration'),
+    linkGeneration: integer('link_generation'),
     providerKey: varchar('provider_key', { length: 64 }).notNull(),
     authority: varchar('authority', { length: 32 }).notNull(),
     intent: varchar('intent', { length: 16 }).notNull(),
@@ -3680,6 +3688,14 @@ export const integrationAuthorizationFlowReceipts = pgTable(
       .on(table.cleanupRequiredAt, table.localFlowId)
       .where(sql`${table.cleanupRequiredAt} IS NOT NULL AND ${table.cleanupSettledAt} IS NULL`),
     index('idx_integration_auth_receipts_retention').on(table.retainUntil, table.localFlowId),
+    check(
+      'integration_auth_receipts_purpose_context',
+      sql`(${table.purpose} = 'integration' AND ${table.linkGeneration} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.providerKey} = 'github' AND ${table.intent} = 'connect' AND ${table.linkGeneration} IS NOT NULL AND ${table.linkGeneration} >= 0)`
+    ),
+    check(
+      'integration_auth_receipts_connection_purpose',
+      sql`${table.purpose} = 'integration' OR (${table.installKind} IS NULL AND ${table.installedConnectionId} IS NULL AND ${table.installedMaterialRevision} IS NULL)`
+    ),
     check('integration_auth_receipts_authority_check', sql`${table.authority} in ('local', 'platform_broker')`),
     check(
       'integration_auth_receipts_artifact_ref_binding',

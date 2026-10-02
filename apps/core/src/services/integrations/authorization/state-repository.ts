@@ -1,6 +1,7 @@
 import type { OAuthAuthority } from './authority'
 
 export type OAuthAuthorizationIntent = 'connect' | 'reconnect'
+export type OAuthAuthorizationPurpose = 'integration' | 'github_identity'
 
 export interface OAuthStateRecord {
   stateHash: string
@@ -11,6 +12,9 @@ export interface OAuthStateRecord {
   providerKey: string
   userId: string
   intent: OAuthAuthorizationIntent
+  /** Absent on pre-purpose in-memory adapters only; persisted rows default to integration. */
+  purpose?: OAuthAuthorizationPurpose
+  linkGeneration?: number | null
   connectionId: string | null
   expectedMaterialRevision: string | null
   redirectUri: string

@@ -74,3 +74,11 @@ test('feedback snapshots, associations, and decision tombstones are durable and 
   // Audit actor identifiers survive user removal; settled content can be pruned without losing hashes.
   expect(getTableConfig(tables.githubFeedbackDecisions).foreignKeys).toHaveLength(0)
 })
+
+test('OAuth state and recovery receipt retain personal purpose and unlink generation separately from connections', () => {
+  for (const table of [schema.integrationOauthStates, schema.integrationAuthorizationFlowReceipts]) {
+    const config = getTableConfig(table)
+    expect(config.columns.map((column) => column.name)).toEqual(expect.arrayContaining(['purpose', 'link_generation']))
+    expect(config.checks.some((check) => check.name.endsWith('_purpose_context'))).toBe(true)
+  }
+})
