@@ -5,10 +5,13 @@ import {
   githubFeedbackRevisions,
   githubFeedbackSources,
   integrationOutputEvents,
+  type DbTx,
 } from '../../../db'
 import type { GitHubFeedbackContent } from '@ficus/shared'
 import { githubContentHash } from './feedback-envelope'
 import { readCurrentGitHubFeedback } from './feedback-provider'
+import { lockGitHubTrustAuthority } from './trust-authority-lock'
+import { isTrustedGitHubFeedbackContent } from './feedback-trust'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 export interface FeedbackCaptureDependencies {
@@ -19,6 +22,8 @@ export interface FeedbackCaptureDependencies {
   /** Verified native delivery ID, never payload/metadata.synthetic. Poll fingerprints are not transport receipts. */
   transportKey?: string
   routingProvenance?: Array<{ kind: string; id: string }>
+  /** Internal live-trust resolver, only for a new, unambiguous capture; never transported approval. */
+  decideFresh?(tx: DbTx, squadId: string, content: GitHubFeedbackContent): Promise<boolean>
 }
 
 /**
@@ -75,6 +80,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   // The callback's authorization is fresh immediately before entering the transaction.
   if (!(await deps.authorizeSource(event))) throw new Error('feedback_source_unavailable')
   return db.transaction(async (tx) => {
+    if (deps.decideFresh) await lockGitHubTrustAuthority(tx)
     await tx.insert(githubFeedbackObjects).values(identity).onConflictDoNothing()
     const [object] = await tx.select().from(githubFeedbackObjects).where(condition).for('update')
     if (!object) throw new Error('feedback_capture_failed')
@@ -156,6 +162,9 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
       if (revision) disposition = 'replay'
       else {
         const sequence = object.sequence + 1
+        // Only the first capture may be automatic. Pending replay or stronger evidence never upgrades history.
+        const automatic =
+          reason === 'untrusted_author' && !!content.delivery && !!(await deps.decideFresh?.(tx, squadId, content))
         const [created] = await tx
           .insert(githubFeedbackRevisions)
           .values({
@@ -171,7 +180,9 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
             attribution: content.attribution,
             providerVersion: content.providerVersion,
             routingProvenance: deps.routingProvenance ?? [],
-            reason,
+            reason: automatic ? 'trusted_author' : reason,
+            decision: automatic ? 'automatic' : 'pending',
+            releaseState: automatic ? 'ready' : 'held',
           })
           .returning()
         revision = created!
@@ -203,8 +214,8 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
 
 /**
  * Durable delivery alias across transport/connection source rows. Materialization alone never routes.
- * Only explicit human decisions are supported here; automatic admission must first add a fresh-trust
- * guard (and final acceptance recheck) in the admission checkpoint. Markers never confer authority.
+ * Human decisions bind the stored snapshot; automatic decisions additionally require live author/editor
+ * trust. This is materialization, not acceptance; final effect seams must recheck. Markers confer no authority.
  */
 export async function recordCanonicalGitHubFeedback(
   revisionId: string,
@@ -226,6 +237,7 @@ export async function recordCanonicalGitHubFeedback(
   )
     throw new Error('feedback_source_unavailable')
   return db.transaction(async (tx) => {
+    await lockGitHubTrustAuthority(tx)
     const [revision] = await tx
       .select()
       .from(githubFeedbackRevisions)
@@ -234,7 +246,8 @@ export async function recordCanonicalGitHubFeedback(
     if (
       !revision ||
       revision.squadId !== association.squadId ||
-      !['allow_once', 'allow_trust'].includes(revision.decision) ||
+      !['allow_once', 'allow_trust', 'automatic'].includes(revision.decision) ||
+      (revision.decision === 'automatic' && !(await isTrustedGitHubFeedbackContent(tx, revision.squadId, revision))) ||
       !revision.envelope ||
       revision.reason === 'content_unavailable'
     )

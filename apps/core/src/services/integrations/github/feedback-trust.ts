@@ -109,6 +109,20 @@ export async function resolveGitHubAuthorTrust(
   return origins
 }
 
+/** Author AND actual editor must be currently trusted; transport origin is not an authority grant. */
+export async function isTrustedGitHubFeedbackContent(
+  executor: Pick<typeof db, 'select'>,
+  squadId: string,
+  content: { author: GitHubAccountIdentity | null; editor: GitHubAccountIdentity | null; attribution: string }
+): Promise<boolean> {
+  if (!content.author || !['creation', 'verified_edit'].includes(content.attribution)) return false
+  if (!(await resolveGitHubAuthorTrust(executor, squadId, content.author.accountId)).length) return false
+  return (
+    content.attribution === 'creation' ||
+    (!!content.editor && (await resolveGitHubAuthorTrust(executor, squadId, content.editor.accountId)).length > 0)
+  )
+}
+
 /** Shared lock order: authority mutex, then users, then proof/identity/squad trust rows. */
 export async function lockGitHubHuman(tx: DbTx, identity: Identity | undefined): Promise<void> {
   if (identity?.type !== 'user') throw new GitHubFeedbackError('human_required', 403)
