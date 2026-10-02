@@ -48,6 +48,7 @@ import {
   resolveMachineForBox,
   restorePrivateArchive,
   stopBox,
+  startBoxAndAwaitHealth,
   streamBoxStateArchive,
   teardownBoxOnMachine,
   queryReadySharedMachines,
@@ -3454,6 +3455,40 @@ describe('stopBox', () => {
     expect(deleted).toEqual(['sb-1'])
   })
 
+  for (const status of ['ready', 'stopped'] as const) {
+    for (const effect of ['ssh', 'tunnel'] as const) {
+      it(`preserves recoverable stop intent after ${effect} throws from ${status}`, async () => {
+        const box = makeBox({ status })
+        const statuses: string[] = []
+        const events: string[] = []
+        const deps: BoxManagerDeps = {
+          runner:
+            effect === 'ssh'
+              ? {
+                  run: async () => {
+                    throw new Error('SSH failed')
+                  },
+                }
+              : makeFakeRunner(events).runner,
+          tunnels: {
+            ...makeFakeTunnels(events),
+            removeForward: async () => {
+              throw new Error('tunnel failed')
+            },
+          },
+          getMachineBox: async () => box,
+          getMachine: async () => makeMachine(),
+          upsertMachineBox: async (update) => {
+            statuses.push(update.status!)
+            return { ...box, ...update }
+          },
+        }
+        await expect(stopBox(box.sandboxId, deps)).rejects.toThrow()
+        expect(statuses).toEqual(['stop_unverified'])
+      })
+    }
+  }
+
   it('externalizes a durable stop marker, removes its old forward, and invalidates the original identity', async () => {
     const events: string[] = []
     const statuses: Array<{ sandboxId: string; machineId: string; status: string; port: number }> = []
@@ -3511,6 +3546,254 @@ describe('stopBox', () => {
     expect(events).toEqual(['stop', 'removeForward'])
     expect(statuses).toEqual(['stopped'])
   })
+})
+
+// Execute the remote program against a stateful, owned manager fixture. This is
+// not a real systemd boot: reboot() models sockets.target from persistent state.
+// No command can escape to the host's sudo/systemctl or touch another box.
+describe('persistent park/resume (executed remote shell)', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  function fixture(sandboxId: string, legacy: boolean) {
+    const ctl = boxUnitControl({ sandboxId, unixUser: boxUnixUser(sandboxId) })
+    const names = legacy ? ctl.legacy : ctl
+    const dir = mkdtempSync(join(tmpdir(), 'box-park-'))
+    dirs.push(dir)
+    const manager = ctl.systemctl.replace('sudo systemctl', '').trim()
+    for (const unit of names.allUnits.split(' ')) {
+      writeFileSync(join(dir, `${unit}.active`), 'active')
+      writeFileSync(join(dir, `${unit}.enabled`), unit === names.socket ? 'enabled' : 'disabled')
+    }
+    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\nexec "$@"\n')
+    writeFileSync(
+      join(dir, 'systemctl'),
+      `#!/bin/bash
+set -eu
+# Insist on the correct system/user manager, not only the unit names.
+if [ -n "$MANAGER" ]; then
+  [ "$1 $2" = "$MANAGER" ] || exit 91
+  shift 2
+else
+  case "$1" in --*) exit 92 ;; esac
+fi
+verb=$1; shift
+echo "$verb $*" >>"$FIXTURE/calls"
+[ "$verb" != "$FAIL_VERB" ] || exit 93
+if [ "$verb" = show ]; then
+  property=$2; unit=$4
+  if [ "$property" = LoadState ]; then
+    [ "$READBACK" != load-empty ] || exit 0
+    if [ -f "$FIXTURE/$unit.active" ]; then echo loaded; else echo not-found; fi
+    [ "$READBACK" != load-error ] || exit 94
+  elif [ "$READBACK" = error ]; then exit 94
+  elif [ "$READBACK" = empty ]; then :
+  elif [ "$property" = ActiveState ]; then cat "$FIXTURE/$unit.active"
+  elif [ "$property" = UnitFileState ]; then cat "$FIXTURE/$unit.enabled"
+  else exit 95; fi
+  exit 0
+fi
+[ "\${1:-}" != --now ] || shift
+for unit in "$@"; do
+  [ -f "$FIXTURE/$unit.active" ] || exit 96
+  case "$verb" in
+    disable) echo disabled >"$FIXTURE/$unit.enabled" ;;
+    enable) echo enabled >"$FIXTURE/$unit.enabled"; echo active >"$FIXTURE/$unit.active" ;;
+    stop) [ "$READBACK" = still-active ] || echo inactive >"$FIXTURE/$unit.active" ;;
+    restart|start) echo active >"$FIXTURE/$unit.active" ;;
+    reset-failed) : ;;
+    *) exit 97 ;;
+  esac
+done
+`
+    )
+    chmodSync(join(dir, 'sudo'), 0o755)
+    chmodSync(join(dir, 'systemctl'), 0o755)
+    let failVerb = '',
+      readback = ''
+    const runner: SshRunner = {
+      async run(_machine, command) {
+        const proc = Bun.spawn(['bash', '-c', command], {
+          env: {
+            PATH: `${dir}:/usr/bin:/bin`,
+            FIXTURE: dir,
+            MANAGER: manager,
+            FAIL_VERB: failVerb,
+            READBACK: readback,
+          },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ])
+        return { stdout, stderr, exitCode }
+      },
+    }
+    const value = (unit: string, field: string) => readFileSync(join(dir, `${unit}.${field}`), 'utf8').trim()
+    return {
+      ctl,
+      names,
+      runner,
+      value,
+      fail: (verb: string, state = '') => {
+        failVerb = verb
+        readback = state
+      },
+      reboot: () => {
+        for (const unit of names.allUnits.split(' '))
+          writeFileSync(join(dir, `${unit}.active`), value(unit, 'enabled') === 'enabled' ? 'active' : 'inactive')
+      },
+      calls: () => readFileSync(join(dir, 'calls'), 'utf8'),
+    }
+  }
+
+  for (const sandboxId of ['agent_park', 'squad_park']) {
+    for (const legacy of [false, true]) {
+      const label = `${sandboxId} ${legacy ? 'legacy' : 'current'}`
+      it(`${label}: park persists across simulated manager restart; retry and resume pair enablement`, async () => {
+        const f = fixture(sandboxId, legacy)
+        let box = makeBox({ sandboxId, unixUser: boxUnixUser(sandboxId) })
+        const deps: BoxManagerDeps = {
+          runner: f.runner,
+          tunnels: makeFakeTunnels([]),
+          getMachine: async () => makeMachine(),
+          getMachineBox: async () => box,
+          upsertMachineBox: async (update) => {
+            box = { ...box, ...update }
+            return box
+          },
+          fetch: makeFakeFetch([], [{ ok: true, status: 200 }]),
+        }
+        expect(await stopBox(sandboxId, deps)).toEqual({ kind: 'verified' })
+        expect(f.value(f.names.socket, 'enabled')).toBe('disabled')
+        f.reboot()
+        for (const unit of f.names.allUnits.split(' ')) expect(f.value(unit, 'active')).toBe('inactive')
+        expect(await stopBox(sandboxId, deps)).toEqual({ kind: 'verified' })
+        await startBoxAndAwaitHealth(
+          { machine: makeMachine(), sandboxId, unixUser: box.unixUser, port: box.port },
+          deps
+        )
+        expect(f.value(f.names.socket, 'enabled')).toBe('enabled')
+        expect(f.value(f.names.socket, 'active')).toBe('active')
+        expect(f.value(f.names.unit, 'enabled')).toBe('disabled')
+        expect(f.calls()).not.toContain('*')
+        const other = legacy ? f.ctl.socket : f.ctl.legacy.socket
+        expect(f.calls()).not.toMatch(new RegExp(`(?:disable|enable|stop|restart) .*${other.replaceAll('.', '\\.')}`))
+      })
+
+      for (const [verb, state] of [
+        ['disable', ''],
+        ['stop', ''],
+        ['', 'error'],
+        ['', 'empty'],
+        ['', 'load-error'],
+        ['', 'load-empty'],
+        ['', 'still-active'],
+      ]) {
+        it(`${label}: ${verb || state} failure cannot verify a previously stopped row`, async () => {
+          const f = fixture(sandboxId, legacy)
+          f.fail(verb, state)
+          const box = makeBox({ sandboxId, unixUser: boxUnixUser(sandboxId), status: 'stopped' })
+          const statuses: string[] = []
+          const result = await stopBox(sandboxId, {
+            runner: f.runner,
+            tunnels: makeFakeTunnels([]),
+            getMachine: async () => makeMachine(),
+            getMachineBox: async () => box,
+            upsertMachineBox: async (update) => {
+              statuses.push(update.status!)
+              return { ...box, ...update }
+            },
+          })
+          expect(result).toEqual({ kind: 'unverified' })
+          expect(statuses).toEqual(['stop_unverified'])
+        })
+      }
+      for (const [verb, state] of [
+        ['enable', ''],
+        ['restart', ''],
+        ['', 'error'],
+        ['', 'empty'],
+        ['', 'load-error'],
+        ['', 'load-empty'],
+      ]) {
+        it(`${label}: resume rejects ${verb || state} failure before tunnel/health success`, async () => {
+          const f = fixture(sandboxId, legacy)
+          f.fail(verb, state)
+          const events: string[] = []
+          await expect(
+            startBoxAndAwaitHealth(
+              { machine: makeMachine(), sandboxId, unixUser: boxUnixUser(sandboxId), port: 20001 },
+              {
+                runner: f.runner,
+                tunnels: makeFakeTunnels(events),
+                fetch: makeFakeFetch(events, [{ ok: true, status: 200 }]),
+              }
+            )
+          ).rejects.toThrow()
+          expect(events).toEqual([])
+        })
+      }
+    }
+    it(`${sandboxId}: failed fast resume and reprovision activation never stamp ready`, async () => {
+      const f = fixture(sandboxId, false)
+      f.fail('enable')
+      const box = makeBox({
+        sandboxId,
+        unixUser: boxUnixUser(sandboxId),
+        status: 'stopped',
+        provisionedSpecHash: 'spec-abc',
+      })
+      const events: string[] = []
+      const { deps, upserts } = happyDeps(events, makeMachine(), box)
+      deps.getMachineBox = async () => box
+      const fake = deps.runner
+      deps.runner = {
+        run: (m, cmd, opts) => (cmd.includes('systemctl') ? f.runner.run(m, cmd, opts) : fake.run(m, cmd, opts)),
+      }
+      await expect(
+        ensureBox({ sandboxId, machineId: makeMachine().id, env: {}, role: 'agent', specHash: 'spec-abc' }, deps)
+      ).rejects.toThrow()
+      expect(upserts.every((row) => row.status === 'ensuring')).toBe(true)
+      expect(events).not.toContain('health')
+      expect(events).not.toContain('ready')
+    })
+    for (const specHash of ['spec-abc', null]) {
+      it(`${sandboxId}: ${specHash ? 'stamped fast resume' : 'full reprovision'} restores a disabled socket before ready`, async () => {
+        const f = fixture(sandboxId, false)
+        const stoppedBox = makeBox({
+          sandboxId,
+          unixUser: boxUnixUser(sandboxId),
+          status: 'stopped',
+          provisionedSpecHash: specHash,
+        })
+        // Fixture starts parked, as it would after a persistent stop.
+        await f.runner.run(
+          makeMachine(),
+          `${f.ctl.systemctl} disable ${f.names.socket}; ${f.ctl.systemctl} stop ${f.names.allUnits}`
+        )
+        const events: string[] = []
+        const { deps } = happyDeps(events, makeMachine(), stoppedBox)
+        deps.getMachineBox = async () => stoppedBox
+        const fake = deps.runner!
+        deps.runner = {
+          run: (m, cmd, opts) => (cmd.includes('systemctl') ? f.runner.run(m, cmd, opts) : fake.run(m, cmd, opts)),
+        }
+        const result = await ensureBox(
+          { sandboxId, machineId: makeMachine().id, env: {}, role: 'agent', specHash: 'spec-abc' },
+          deps
+        )
+        expect(result.box.status).toBe('ready')
+        expect(f.value(f.names.socket, 'enabled')).toBe('enabled')
+        expect(events.includes('provision')).toBe(!specHash)
+      })
+    }
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -3886,13 +4169,12 @@ describe('box unit commands by mode', () => {
     const provCall = calls.find((c) => c.command.includes('box-provision.sh'))!
     expect(provCall.command).toContain('--unit-mode system')
     expect(provCall.command).not.toContain('--with-docker')
-    // The socket start is what resumes a PARKED box; it is tolerated failing so
-    // a box not yet re-provisioned onto the socket layout still restarts, and
-    // the compound command's exit code is the RESTART's.
+    // Resuming pairs persistent parking with enable --now; failure is not
+    // hidden by a successful server restart.
     const legacy = `${LEGACY_BOX_UNIT_PREFIX}-${unixUser}`
     const restart = calls.find((c) => c.command.includes('systemctl'))!.command
     expect(restart).toContain(
-      `sudo systemctl reset-failed ${unit} 2>/dev/null || true; sudo systemctl start ficus-box-${unixUser}.socket 2>/dev/null || true; sudo systemctl restart ${unit}`
+      `sudo systemctl reset-failed ${unit} 2>/dev/null || true; sudo systemctl enable --now ficus-box-${unixUser}.socket && sudo systemctl restart ${unit}`
     )
     // ...or the box's legacy units, when only those are loaded (not re-provisioned since the rename).
     expect(restart).toContain(`sudo systemctl restart ${legacy}.service`)
@@ -3914,7 +4196,7 @@ describe('box unit commands by mode', () => {
     expect(snapshot).toContain(`sudo journalctl -u ${unit} -u ${legacy}.service -n 200 --no-pager`)
   })
 
-  it('leaves a squad_* box on the user manager with the exact commands it had before', async () => {
+  it('leaves a squad_* box on its user manager for persistent stop/resume', async () => {
     const sandboxId = 'squad_s1'
     const unixUser = boxUnixUser(sandboxId)
 
@@ -3925,7 +4207,7 @@ describe('box unit commands by mode', () => {
     const userCtl = `sudo systemctl --machine=${unixUser}@.host --user`
     const restart = calls.find((c) => c.command.includes('systemctl'))!.command
     expect(restart).toContain(
-      `${userCtl} reset-failed ficus-sandbox-server.service 2>/dev/null || true; ${userCtl} start ficus-sandbox-server.socket 2>/dev/null || true; ${userCtl} restart ficus-sandbox-server.service`
+      `${userCtl} reset-failed ficus-sandbox-server.service 2>/dev/null || true; ${userCtl} enable --now ficus-sandbox-server.socket && ${userCtl} restart ficus-sandbox-server.service`
     )
     expect(restart).toContain(`${userCtl} restart ${LEGACY_USER_UNIT_PREFIX}.service`)
 

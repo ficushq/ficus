@@ -101,8 +101,9 @@ looking to let a squad reach an existing box the team already owns, see
     learns the whole picture in ONE `ss -ltnH` per machine and passes a
     `listening` hint down, so it never HTTP-probes — and so never wakes — an
     idle box. Request-path ensures still probe: waking is what they want.
-  - Park (`stopBox`) takes all three down, socket first; resume starts the
-    socket and restarts the server.
+  - Park (`stopBox`) persistently disables the socket and takes all three down,
+    socket first. Resume re-enables/starts the socket and restarts the server;
+    the server itself remains disabled at boot.
     The foreground-only contract is explicit:
 
 | Event                           | Foreground Bash                      | Detached child                    |
@@ -394,14 +395,18 @@ the gap for the per-agent session tools and `squad_bash`.
 
 ## Park / stop / remove semantics
 
-- **Park (`stopBox` / `stopSandbox`).** Stop the box's systemd unit and cancel
-  its `-L` forward; mark the box row `stopped`. **On-disk state persists** —
+- **Park (`stopBox` / `stopSandbox`).** Disable the box's socket persistently,
+  stop its socket/proxy/server activation chain, and cancel its `-L` forward.
+  Mark the box row `stopped` only after successful commands and readbacks of the
+  disabled socket and inactive units, so a host reboot or user-manager restart
+  cannot re-enable a verified parked box. **On-disk state persists** —
   the home, `~/workspace`, and `~/.private` are untouched, so a later ensure
-  resumes the box in seconds (start unit + retunnel), not the minutes an
-  image-pull + pod-boot costs. **Park is reversible** — this is exactly what the
+  resumes the box in seconds (enable/start socket + restart server + retunnel),
+  not the minutes an image-pull + pod-boot costs. **Park is reversible** — this is exactly what the
   idle-policy loop (§ Lifecycle below) does to an inactive box, and exactly what
   a later ensure undoes.
-- **Unverified park recovery.** If the recorded machine is not ready, Core writes
+- **Unverified park recovery.** If the recorded machine is not ready, or a
+  stop/disable command, state readback, or tunnel removal fails, Core writes
   `stop_unverified`; that is a logical stop intent, not proof the remote unit is
   down. Chain health therefore reports an unknown box server and the raw machine
   view retains the distinct marker. The minute lifecycle tick verifies the unit

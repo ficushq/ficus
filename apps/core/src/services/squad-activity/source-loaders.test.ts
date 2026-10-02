@@ -14,6 +14,7 @@ import {
   webhookEvents,
   workStreams,
 } from '../../db/schema'
+import { extractInboxMessage } from './extractors'
 import { materializeGitHubDispatch, materializeGitHubWebhook } from './materialize'
 import { DbEventPollingDispatchStore } from '../integrations/db-event-polling-dispatch-store'
 import { githubPrLogicalRowId, type GitHubPrDispatchFact } from './github-pr-fact'
@@ -42,6 +43,42 @@ afterEach(async () => {
 })
 
 describe('loadInboxSnapshot join keys', () => {
+  test('cross-squad sender details are absent from the received description', async () => {
+    const created = await db
+      .insert(squads)
+      .values([
+        { name: `recipient-${crypto.randomUUID()}`, purpose: 'test' },
+        { name: `private-sender-${crypto.randomUUID()}`, purpose: 'test' },
+      ])
+      .returning()
+    squadIds.push(...created.map((squad) => squad.id))
+    const [recipient] = await db.insert(agents).values({ squadId: created[0].id, agentTypeId: 'engineer' }).returning()
+    const [sender] = await db
+      .insert(agents)
+      .values({ squadId: created[1].id, agentTypeId: 'private-type', metadata: { name: 'private-name' } })
+      .returning()
+    const [message] = await db
+      .insert(inbox)
+      .values({
+        recipientType: 'agent',
+        recipientId: recipient.id,
+        senderType: 'agent',
+        senderId: sender.id,
+        content: 'Hello',
+      })
+      .returning()
+    inboxIds.push(message.id)
+    const snapshot = (await loadInboxSnapshot(db, message.id))!
+    expect(snapshot.senderAgentTypeId).toBeNull()
+    expect(snapshot.senderName).toBeNull()
+    const [row] = extractInboxMessage(snapshot)
+    expect(row.summary).toBe('Received message from an agent: Hello')
+    expect(row.agentId).toBe(recipient.id)
+    expect(row.agentTypeId).toBe('engineer')
+    expect(JSON.stringify(row)).not.toContain('private-')
+    expect(JSON.stringify(row)).not.toContain(sender.id)
+  })
+
   // The joins cast the *text* side to uuid so agents_pkey stays usable. That
   // makes malformed join keys a correctness problem rather than a slow path:
   // `recipient_id` is varchar(200) and holds the literal 'system', so an
@@ -68,7 +105,6 @@ describe('loadInboxSnapshot join keys', () => {
     // No agent row can match a non-uuid key, exactly as under the old
     // `agents.id::text = recipient_id` form.
     expect(snapshot?.recipientSquadId).toBeNull()
-    expect(snapshot?.senderAgentExists).toBe(false)
   })
 
   test('still resolves the agent, sender and work stream for a normal message', async () => {
@@ -97,7 +133,6 @@ describe('loadInboxSnapshot join keys', () => {
 
     expect(snapshot?.recipientSquadId).toBe(squad.id)
     expect(snapshot?.recipientAgentTypeId).toBe('engineer')
-    expect(snapshot?.senderAgentExists).toBe(true)
     expect(snapshot?.senderAgentTypeId).toBe('architect')
     expect(snapshot?.workStream?.id).toBe(stream.id)
     expect(snapshot?.workStream?.title).toBe('join key stream')

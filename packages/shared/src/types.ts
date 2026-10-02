@@ -1328,6 +1328,9 @@ export interface WorktreeOwnership {
   worktree: string
   directoryIdentity: string
   branch: string
+  /** Exact starting OID and source, when provisioning created a new branch. */
+  baseCommit?: string
+  baseSource?: 'remote' | 'local'
 }
 
 export interface WorktreeCleanupInspection {
@@ -1470,6 +1473,8 @@ export interface CreateWorkStreamInput {
   repository?: string
   /** Remote to detect code-host identity/base from; defaults to origin. */
   gitRemote?: string
+  /** New branches fetch the remote base by default; local requires an explicit baseBranch. */
+  baseSource?: 'remote' | 'local'
   branch?: string
   worktree?: string
   baseBranch?: string
@@ -1499,6 +1504,8 @@ export interface UpdateWorkStreamInput {
   repository?: string
   /** Remote to detect code-host identity/base from; defaults to origin. */
   gitRemote?: string
+  /** New branches fetch the remote base by default; local requires an explicit baseBranch. */
+  baseSource?: 'remote' | 'local'
   branch?: string
   worktree?: string
   baseBranch?: string

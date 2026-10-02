@@ -215,18 +215,27 @@ describe('WorkStream entity', () => {
       worktree: '/workspace/owned',
       directoryIdentity: '1:2',
       branch: 'feature',
+      baseCommit: 'a'.repeat(40),
+      baseSource: 'remote' as const,
     }
     const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
       async (_squad, _input, _key, metadata, record) => {
         record?.(ownership)
         return {
           ...metadata,
-          git: { repository: ownership.repository, worktree: ownership.worktree, branch: ownership.branch },
+          git: {
+            repository: ownership.repository,
+            worktree: ownership.worktree,
+            branch: ownership.branch,
+            baseCommit: ownership.baseCommit,
+            baseSource: ownership.baseSource,
+          },
         }
       }
     )
     try {
       const stream = await WorkStream.create({ squadId: testSquad.id, title: 'owned', repository: 'repo' })
+      expect(stream.metadata?.git).toMatchObject({ baseCommit: ownership.baseCommit, baseSource: 'remote' })
       const [registered] = await db
         .select()
         .from(schema.workStreamWorktrees)
@@ -309,6 +318,49 @@ describe('WorkStream entity', () => {
         setup.mockRestore()
       }
     })
+    it('rolls back stream metadata and ownership together when creation fails after provisioning', async () => {
+      let key: string | undefined
+      const receipt = {
+        workspace: '/workspace',
+        repository: '/workspace/repo',
+        commonDirectory: '/workspace/repo/.git',
+        gitDirectory: '/workspace/repo/.git/worktrees/rollback',
+        worktree: '/workspace/rollback',
+        directoryIdentity: '1:2',
+        branch: 'feature',
+        baseCommit: 'c'.repeat(40),
+        baseSource: 'remote' as const,
+      }
+      const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
+        async (_squad, _input, streamId, metadata, record) => {
+          key = streamId
+          record?.(receipt)
+          return {
+            ...metadata,
+            git: {
+              repository: receipt.repository,
+              worktree: receipt.worktree,
+              branch: receipt.branch,
+              baseCommit: receipt.baseCommit,
+              baseSource: receipt.baseSource,
+            },
+          }
+        }
+      )
+      try {
+        // Observation is validated inside the creation transaction, after its row insert.
+        await expect(
+          WorkStream.create({ squadId: testSquad.id, title: 'rollback', repository: 'repo', observe: 'terminal' })
+        ).rejects.toThrow('Agent identity required')
+        expect(key).toBeDefined()
+        expect(await WorkStream.find(key!)).toBeNull()
+        expect(
+          await db.select().from(schema.workStreamWorktrees).where(eq(schema.workStreamWorktrees.workStreamId, key!))
+        ).toHaveLength(0)
+      } finally {
+        setup.mockRestore()
+      }
+    })
     it('sets up a queued stream and preserves unrelated metadata', async () => {
       const stream = await storedLegacyWorkStream({
         squadId: testSquad.id,
@@ -325,21 +377,29 @@ describe('WorkStream entity', () => {
         worktree: '/workspace/queued',
         directoryIdentity: '1:2',
         branch: 'feature',
+        baseCommit: 'b'.repeat(40),
+        baseSource: 'local' as const,
       }
       const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
         async (_squad, _input, _key, _metadata, record) => {
           record?.(owned)
           return {
-            git: { worktree: '/workspace/queued', branch: 'feature', baseBranch: 'main' },
+            git: {
+              worktree: '/workspace/queued',
+              branch: 'feature',
+              baseBranch: 'main',
+              baseCommit: owned.baseCommit,
+              baseSource: owned.baseSource,
+            },
             codeHost: { integration: 'github', repository: 'example/repo' },
           }
         }
       )
       try {
-        await queued.update({ repository: 'repo' })
+        await queued.update({ repository: 'repo', baseBranch: 'main', baseSource: 'local' })
         expect(queued.metadata).toMatchObject({
           note: 'keep',
-          git: { worktree: '/workspace/queued' },
+          git: { worktree: '/workspace/queued', baseCommit: owned.baseCommit, baseSource: 'local' },
           codeHost: { repository: 'example/repo' },
         })
         expect(queued.status).toBe('queued')

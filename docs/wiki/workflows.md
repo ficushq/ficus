@@ -299,8 +299,13 @@ or missing delivery proof.
 Successful committed delivery creates a durable cleanup intent. A separate
 startup/periodic worker attempts prompt asynchronous cleanup after associated
 executions settle, with bounded retries. This does not delay or undo delivered
-`done`. Other registered stream attachments/dependencies block cleanup; unrelated
-executions continue. Undeclared cross-stream shell access is outside this
+`done`. Dependencies protect the tree while a dependent is nonterminal (including
+paused, parked, queued, or externally waiting work), or while its flow attempts,
+pending starts, or associated executions have not settled. A settled `done` or
+`canceled` dependent's old dependency link no longer blocks retries; the link
+remains in history. Explicit worktree/source-repository attachments still block
+cleanup even on terminal streams. During uncertain removal, dependent restarts
+and mutations are fenced too. Unrelated executions continue. Undeclared cross-stream shell access is outside this
 cooperative model: register shared use and do not interfere with cleanup paths.
 Metadata-only worktree and source-repository attachments are resolved read-only,
 including symlink aliases. Unresolved or concurrently changed identities defer

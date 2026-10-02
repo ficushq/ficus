@@ -12,7 +12,7 @@ import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { useGlobalActivityLive } from '../hooks/useGlobalActivityLive'
 import { ActivityFeedView } from './squads/ActivityFeedView'
 import { AgentViewModal } from './squads/AgentViewModal'
-import { activityAgentLabel, globalActivityItemHref } from './squads/squadActivityView'
+import { activityAgentLabel, activitySubjectLabel, globalActivityItemHref } from './squads/squadActivityView'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { Modal } from './Modal'
 import { AgentConversation } from './AgentConversation'
@@ -89,7 +89,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
         type: 'agent',
         agentId: item.ref.agentId,
         squadId: item.squadId,
-        label: activityAgentLabel(item.agentTypeId, item.kind),
+        label: activitySubjectLabel(item),
         view: item.ref.view,
         messageId: item.ref.messageId,
       })
@@ -169,7 +169,13 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
           />
         ) : (
           <Modal isOpen onClose={() => setOpenItem(null)} title={openItem.label} size="viewport" noChildPadding>
-            <AgentConversationBody agentId={openItem.agentId} embedded enableFullscreen={false} />
+            <AgentConversationBody
+              agentId={openItem.agentId}
+              embedded
+              enableFullscreen={false}
+              focusMessageId={openItem.view === 'chat' ? openItem.messageId : undefined}
+              focusInboxMessageId={openItem.view === 'inbox' ? openItem.messageId : undefined}
+            />
           </Modal>
         ))}
     </section>

@@ -50,7 +50,7 @@ beforeEach(async () => {
   await prepareRepository(
     exec,
     root,
-    { repository: repo, branch: 'feature', baseBranch: 'main' },
+    { repository: repo, branch: 'feature', baseBranch: 'main', baseSource: 'local' },
     'owned',
     {},
     (value) => {
@@ -604,7 +604,7 @@ test('archives under a stable hashed scope when the worktree name is not a valid
   await prepareRepository(
     exec,
     root,
-    { repository: repo, branch: 'odd', baseBranch: 'main', worktree: 'worktrees/fix..thing' },
+    { repository: repo, branch: 'odd', baseBranch: 'main', baseSource: 'local', worktree: 'worktrees/fix..thing' },
     'odd',
     {},
     (value) => {

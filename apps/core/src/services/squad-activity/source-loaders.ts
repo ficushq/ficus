@@ -1,10 +1,4 @@
-import {
-  isLiveAgentStatus,
-  resolveTrackedResources,
-  trackedResourceMatches,
-  type AgentStatus,
-  type TrackedResourceKind,
-} from '@ficus/shared'
+import { resolveTrackedResources, trackedResourceMatches, type TrackedResourceKind } from '@ficus/shared'
 import { sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import {
@@ -389,14 +383,11 @@ export async function loadInboxSnapshot(executor: Executor, groupId: string): Pr
   const row = rows<any>(
     await executor.execute(
       sql`SELECT i.*,recipient.squad_id recipient_squad_id,recipient.agent_type_id recipient_type_id,
-        recipient.metadata->>'name' recipient_name,recipient.metadata->>'purpose' recipient_purpose,
-        sender.id sender_agent_id,sender.squad_id sender_squad_id,sender.status sender_status,
+        sender.squad_id sender_squad_id,
         sender.agent_type_id sender_type_id,sender.metadata->>'name' sender_name,sender.metadata->>'purpose' sender_purpose,
-        sender_parent.agent_type_id sender_parent_type_id,
         ws.id ws_id,ws.squad_id ws_squad_id,ws.title ws_title,ws.owner_agent_id,s.manager_agent_id
         FROM inbox i LEFT JOIN agents recipient ON recipient.id=${uuidJoinKey(sql`i.recipient_id`)}
         LEFT JOIN agents sender ON i.sender_type='agent' AND sender.id=${uuidJoinKey(sql`i.sender_id`)}
-        LEFT JOIN agents sender_parent ON sender_parent.id=sender.parent_agent_id
         LEFT JOIN work_streams ws ON ws.id=${uuidJoinKey(sql`i.metadata->>'workStreamId'`)}
         LEFT JOIN squads s ON s.id=ws.squad_id WHERE i.id=${groupId}::uuid`
     )
@@ -409,25 +400,11 @@ export async function loadInboxSnapshot(executor: Executor, groupId: string): Pr
         recipientId: row.recipient_id,
         recipientSquadId: row.recipient_squad_id,
         recipientAgentTypeId: row.recipient_type_id,
-        recipientName: row.recipient_name ?? row.recipient_purpose ?? null,
         senderType: row.sender_type,
         senderId: row.sender_id,
-        // The sender join no longer filters terminated agents (attribution
-        // must survive a subagent's termination), so liveness is re-checked
-        // here to keep the exact prior semantics of this flag.
-        senderAgentExists:
-          row.sender_agent_id !== null &&
-          isLiveAgentStatus(row.sender_status as AgentStatus) &&
-          row.sender_squad_id !== null &&
-          row.sender_squad_id === row.recipient_squad_id,
         // Attribution only for same-squad senders — a cross-instance or
         // cross-squad sender's type/name is not this squad's to display.
         senderAgentTypeId: row.sender_squad_id === row.recipient_squad_id ? (row.sender_type_id ?? null) : null,
-        // The SELECT has always carried sender_parent_type_id, but it was never
-        // mapped — so the extractor's parent-type attribution for subagent
-        // report rows silently fell back to the literal 'subagent' type.
-        senderParentAgentTypeId:
-          row.sender_squad_id === row.recipient_squad_id ? (row.sender_parent_type_id ?? null) : null,
         senderName:
           row.sender_squad_id === row.recipient_squad_id ? (row.sender_name ?? row.sender_purpose ?? null) : null,
         subject: row.subject ?? null,

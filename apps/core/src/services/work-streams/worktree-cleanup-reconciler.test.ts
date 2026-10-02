@@ -50,7 +50,7 @@ beforeEach(async () => {
   metadata = await prepareRepository(
     exec,
     root,
-    { repository: repo, baseBranch: 'main', branch: 'feature' },
+    { repository: repo, baseBranch: 'main', baseSource: 'local', branch: 'feature' },
     'owned',
     {},
     (value) => {
@@ -386,4 +386,69 @@ test('a delivery refusal persists its sanitized reason and keeps the worktree; u
     'Delivery or runtime verification is unavailable. No removal was dispatched; cleanup will retry.'
   )
   expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+})
+
+for (const status of ['done', 'canceled'] as const) {
+  test(`deferred cleanup retries after a dependent becomes settled ${status}, rechecking delivery`, async () => {
+    const [other] = await db
+      .insert(workStreams)
+      .values({ squadId, title: 'dependent', dependsOn: [streamId] })
+      .returning()
+    await processJob()
+    const blocked = await job()
+    expect(blocked).toMatchObject({ status: 'deferred', operationId: null })
+    expect(blocked.nextAttemptAt.getTime()).toBeGreaterThan(Date.now())
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+    await db.update(workStreams).set({ status }).where(eq(workStreams.id, other.id))
+    await processJob({
+      verify: async () => {
+        throw new WorktreeDeliveryUnprovenError('Merge is not verified')
+      },
+    })
+    expect(await job()).toMatchObject({ status: 'deferred', operationId: null })
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+    await processJob()
+    expect((await job()).status).toBe('succeeded')
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(false)
+    expect((await WorkStream.mustFind(other.id)).dependsOn).toEqual([streamId])
+    expect((await WorkStream.mustFind(streamId)).status).toBe('done')
+    expect(
+      (await db.select().from(workStreamWorktrees).where(eq(workStreamWorktrees.workStreamId, streamId)))[0]!.ownership
+    ).toEqual(ownership)
+  })
+}
+
+test('periodic reconciliation retries a due dependency deferral after settlement', async () => {
+  const [other] = await db
+    .insert(workStreams)
+    .values({ squadId, title: 'dependent', dependsOn: [streamId] })
+    .returning()
+  await processJob()
+  expect(await job()).toMatchObject({ status: 'deferred', operationId: null })
+  const ensure = await import('../sandbox/ensure')
+  const factory = await import('../sandbox/factory')
+  const delivery = await import('./worktree-cleanup-delivery')
+  const ensureSpy = spyOn(ensure, 'ensureSquadSandbox').mockResolvedValue(root)
+  const managerSpy = spyOn(factory, 'getSandboxManager').mockReturnValue({
+    exec: async (_id: string, args: string[]) => exec(args),
+  } as any)
+  const verifySpy = spyOn(delivery, 'verifyWorktreeCleanupDelivery').mockResolvedValue(head)
+  try {
+    // The worker leaves a not-yet-due deferral alone; no wall-clock sleep needed.
+    await reconciler.reconcileWorktreeCleanup()
+    expect(verifySpy).not.toHaveBeenCalled()
+    await db.update(workStreams).set({ status: 'canceled' }).where(eq(workStreams.id, other.id))
+    await db
+      .update(worktreeCleanupJobs)
+      .set({ nextAttemptAt: new Date(0) })
+      .where(eq(worktreeCleanupJobs.workStreamId, streamId))
+    await reconciler.reconcileWorktreeCleanup()
+    expect(verifySpy).toHaveBeenCalledTimes(1)
+    expect((await job()).status).toBe('succeeded')
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(false)
+  } finally {
+    ensureSpy.mockRestore()
+    managerSpy.mockRestore()
+    verifySpy.mockRestore()
+  }
 })

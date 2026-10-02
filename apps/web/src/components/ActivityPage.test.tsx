@@ -449,7 +449,11 @@ describe('ActivityPage in-place modals', () => {
                         workstream-modal:{workStreamId}:{squadId}
                       </p>
                     )) as never,
-                    AgentConversationComponent: (() => <p>conversation-stub</p>) as never,
+                    AgentConversationComponent: ((props: { agentId: string; focusInboxMessageId?: string }) => (
+                      <p>
+                        conversation-stub:{props.agentId}:{props.focusInboxMessageId}
+                      </p>
+                    )) as never,
                     AgentViewModalComponent: ((props: { agent: { id: string }; squadId: string }) => (
                       <p>
                         agent-view-modal:{props.agent.id}:{props.squadId}
@@ -512,7 +516,11 @@ describe('ActivityPage in-place modals', () => {
               <WebSocketContext.Provider value={socket}>
                 <ActivityPage
                   dependencies={{
-                    AgentConversationComponent: (() => <p>conversation-stub</p>) as never,
+                    AgentConversationComponent: ((props: { agentId: string; focusInboxMessageId?: string }) => (
+                      <p>
+                        conversation-stub:{props.agentId}:{props.focusInboxMessageId}
+                      </p>
+                    )) as never,
                     AgentViewModalComponent: (() => <p>agent-view-modal</p>) as never,
                   }}
                 />
@@ -529,7 +537,9 @@ describe('ActivityPage in-place modals', () => {
         agentRow.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
         await Bun.sleep(10)
       })
-      expect(dom.window.document.body.textContent).toContain('conversation-stub')
+      expect(dom.window.document.body.textContent).toContain(
+        `conversation-stub:${agentId}:${messageItem.ref.type === 'agent' ? messageItem.ref.messageId : ''}`
+      )
       expect(dom.window.document.body.textContent).not.toContain('agent-view-modal')
     } finally {
       globalThis.fetch = originalFetch

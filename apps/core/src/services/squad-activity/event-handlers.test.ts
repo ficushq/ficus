@@ -118,7 +118,7 @@ describe('Activity after-commit handlers', () => {
         recipientId: recipient.id,
         senderType: 'agent',
         senderId: sender.id,
-        content: 'Retain the message, clear its deleted sender',
+        content: 'Retain the message and its recipient identity',
       })
       .returning()
     const [recipientMessage] = await db
@@ -135,7 +135,7 @@ describe('Activity after-commit handlers', () => {
     await materializeSourceGroup({ family: 'inbox', groupId: message.id })
     await materializeSourceGroup({ family: 'inbox', groupId: recipientMessage.id })
     expect((await db.select().from(squadActivity).where(eq(squadActivity.sourceGroupId, message.id)))[0].agentId).toBe(
-      sender.id
+      recipient.id
     )
     await db.insert(squadActivity).values(
       Array.from({ length: 251 }, (_, index) => {
@@ -167,7 +167,7 @@ describe('Activity after-commit handlers', () => {
     await terminate(terminating, { finalCleanup: async () => true })
     let row = (await db.select().from(squadActivity).where(eq(squadActivity.sourceGroupId, message.id)))[0]
     let attributed = 252
-    for (let attempt = 0; attempt < 500 && (row?.agentId !== null || attributed > 0); attempt++) {
+    for (let attempt = 0; attempt < 500 && (row?.agentId !== recipient.id || attributed > 1); attempt++) {
       await Bun.sleep(10)
       row = (await db.select().from(squadActivity).where(eq(squadActivity.sourceGroupId, message.id)))[0]
       attributed = (
@@ -177,15 +177,31 @@ describe('Activity after-commit handlers', () => {
           .where(and(eq(squadActivity.squadId, squad.id), eq(squadActivity.agentId, sender.id)))
       ).length
     }
-    expect(row).toMatchObject({ agentId: null, squadId: squad.id, sourceGroupId: message.id })
-    expect(attributed).toBe(0)
+    expect(row).toMatchObject({
+      agentId: recipient.id,
+      squadId: squad.id,
+      sourceGroupId: message.id,
+      summary: 'Received message from Engineer: Retain the message and its recipient identity',
+      ref: { type: 'agent', agentId: recipient.id, view: 'inbox', messageId: message.id },
+    })
+    // Only the received row remains attributed to the terminated agent; all
+    // 251 orphaned sender-attributed projections were reconciled away.
+    expect(attributed).toBe(1)
     // #1241: rows whose RECIPIENT terminated survive — terminated parents'
     // inboxes are where subagent final reports live, and deleting these rows
-    // was the "vanished subagent reports" regression. The row keeps its live
-    // sender attribution; only the recipient side is now a terminated agent.
+    // was the "vanished subagent reports" regression. The row keeps its
+    // recipient attribution even after that recipient terminates.
     expect(
       await db.select().from(squadActivity).where(eq(squadActivity.sourceGroupId, recipientMessage.id))
-    ).toMatchObject([{ agentId: recipient.id, inboxRecipientId: sender.id, kind: 'message' }])
+    ).toMatchObject([
+      {
+        agentId: sender.id,
+        inboxRecipientId: sender.id,
+        kind: 'message',
+        summary: 'Received message from Reviewer: Recipient termination must not remove this row',
+        ref: { type: 'agent', agentId: sender.id, view: 'inbox', messageId: recipientMessage.id },
+      },
+    ])
     expect((await Agent.mustFind(sender.id)).terminatedAt).not.toBeNull()
     // Intentional inconsistent deletion fixture: final rows are read-only to
     // production Agent.update, so move ownership directly for the hard-delete setup.

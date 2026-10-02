@@ -441,7 +441,10 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--git-remote <name>', 'Remote for code-host detection and default base (default: origin)')
     .option('--branch <name>', 'Git branch for this work stream (stored at git.branch metadata)')
     .option('--worktree <path>', 'Worktree path for this work stream (stored at git.worktree metadata)')
-    .option('--base-branch <name>', 'Base branch to merge into (used by direct-merge mode)')
+    .option('--base-branch <name>', 'Base branch for provisioning and delivery')
+    .addOption(
+      new Option('--base-source <source>', 'New branch base source (default: remote)').choices(['remote', 'local'])
+    )
     .option('--source-link <json>', 'Attach a WorkStreamSourceLink JSON object (repeatable)', collect, [])
     .option('--from-memory <squadId:path>', 'Shortcut: attach a memory_document source link')
     .option('--from-url <url>', 'Shortcut: attach a url source link (repeatable)', collect, [])
@@ -485,6 +488,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           ...(options.gitRemote !== undefined ? { gitRemote: options.gitRemote } : {}),
           ...(options.worktree !== undefined ? { worktree: options.worktree } : {}),
           ...(options.baseBranch !== undefined ? { baseBranch: options.baseBranch } : {}),
+          ...(options.baseSource !== undefined ? { baseSource: options.baseSource } : {}),
           ...(options.fromEvent !== undefined ? { integrationEventId: options.fromEvent } : {}),
         })
 
@@ -643,7 +647,10 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--git-remote <name>', 'Remote for code-host detection and default base (default: origin)')
     .option('--branch <name>', 'Git branch for this work stream')
     .option('--worktree <path>', 'Worktree path for this work stream')
-    .option('--base-branch <name>', 'Base branch to merge into (used by direct-merge mode)')
+    .option('--base-branch <name>', 'Base branch for provisioning and delivery')
+    .addOption(
+      new Option('--base-source <source>', 'New branch base source (default: remote)').choices(['remote', 'local'])
+    )
     .option(
       '--completion-mode <mode>',
       "Completion mode: 'pr-merge' (default), 'pr-auto-merge', 'review-approval', or 'direct-merge'"
@@ -706,6 +713,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         if (options.gitRemote !== undefined) updates.gitRemote = options.gitRemote
         if (options.worktree !== undefined) updates.worktree = options.worktree
         if (options.baseBranch !== undefined) updates.baseBranch = options.baseBranch
+        if (options.baseSource !== undefined) updates.baseSource = options.baseSource
 
         const ws = await apiPatch<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`, updates)
         output(ws, `Updated work stream ${workStreamLabel(ws)}`)

@@ -1,13 +1,15 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, waitFor } from '@testing-library/dom'
+import { waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../test/domHarness'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { AgentSlotWaitStatus } from './AgentSlotWaitStatus'
-import { agentSlotWaitQueryKeys } from '../queryKeys'
+import { agentSlotHoldQueryKeys, agentSlotWaitQueryKeys } from '../queryKeys'
 import { QueryInvalidator } from './QueryInvalidator'
 
 type Wait = { waiterId: string; poolKey: string; queuedAt: string }
+type Hold = { poolKey: string; expiresAt: string }
+const held = (poolKey: string): Hold => ({ poolKey, expiresAt: new Date(Date.now() + 60_000).toISOString() })
 type Callback = (entry: { event: string; data: unknown }) => void
 const queued = (poolKey: string): Wait => ({ waiterId: poolKey, poolKey, queuedAt: '2026-09-14T21:49:49.000Z' })
 
@@ -16,11 +18,15 @@ describe('AgentSlotWaitStatus', () => {
   let root: import('react-dom/client').Root
   let client: QueryClient
   let responses: Map<string, Wait[]>
+  let holds: Hold[]
+  let holdStatus: number
+  let holdRequests: string[]
   let captured: Map<string, Callback>
   let requests: string[]
   let permissions: string[]
   let permissionsLoading: boolean
   let responseStatus: number
+  let pendingHoldResponse: Promise<Response> | undefined
   let pendingResponse: Promise<Response> | undefined
   const subscribe = (topic: string, callback: Callback) => {
     captured.set(topic, callback)
@@ -45,12 +51,23 @@ describe('AgentSlotWaitStatus', () => {
       ['agent-b', []],
     ])
     requests = []
+    holds = []
+    holdStatus = 200
+    holdRequests = []
     permissions = ['slots:use']
     permissionsLoading = false
     responseStatus = 200
+    pendingHoldResponse = undefined
     pendingResponse = undefined
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname
+      if (path.endsWith('/slot-holds')) {
+        holdRequests.push(path)
+        return (
+          pendingHoldResponse ??
+          new Response(JSON.stringify(holdStatus === 200 ? holds : { error: 'unavailable' }), { status: holdStatus })
+        )
+      }
       requests.push(path)
       if (!/^\/api\/agents\/[^/]+\/slot-waits$/.test(path)) throw new Error(`Unexpected fixture request ${path}`)
       return (
@@ -91,25 +108,145 @@ describe('AgentSlotWaitStatus', () => {
     })
   }
 
-  test('shows compact accessible queued pool keys including multiple waits', async () => {
-    responses.set('agent-a', [queued('shared-box-intensive'), queued('production-change')])
+  test('shows holding and waiting independently, deduplicating names within each state', async () => {
+    const long = 'held-slot-'.repeat(40)
+    holds = [held('shared-box-intensive'), held(long), held('shared-box-intensive')]
     await render()
-    await eventually(() => expect(text()).toContain('shared-box-intensive'))
-    expect(text()).toContain('production-change')
-    expect(text()).toContain('Waiting for slot')
-    const details = dom.window.document.querySelector('details')!
-    expect(details.open).toBe(false)
-    await dom.act(async () => {
-      fireEvent.click(details.querySelector('summary')!)
+    await eventually(() => expect(text()).toContain(`Holding slots: shared-box-intensive · ${long}`))
+    expect(text()).toContain('Waiting for slot: shared-box-intensive')
+    expect(dom.window.document.querySelectorAll('[role="status"]')).toHaveLength(2)
+    await render('agent-a', false, false)
+    expect(text()).toContain('Slot queue: shared-box-intensive')
+    expect(text()).toContain('Holding slots:')
+    expect(dom.window.document.querySelectorAll('button, details')).toHaveLength(0)
+  })
+
+  test('held-only idle agents show informational ownership, removed on release and reconnect', async () => {
+    responses.set('agent-a', [])
+    holds = [held('build')]
+    await render()
+    await eventually(() => expect(text()).toBe('Holding slot: build'))
+    holds = []
+    await emit('slots.updated', 'other-squad')
+    expect(holdRequests).toHaveLength(1)
+    await render('agent-a', true)
+    await eventually(() => expect(text()).toBe(''))
+    holds = [held('renewed')]
+    await emit('slots.updated')
+    await eventually(() => expect(text()).toBe('Holding slot: renewed'))
+    holds = []
+    await emit('slots.updated')
+    await eventually(() => expect(text()).toBe(''))
+  })
+
+  test.each([403, 404, 500])('optional held endpoint failure %i cannot erase valid waiting context', async (status) => {
+    holds = [held('private')]
+    await render()
+    await eventually(() => expect(text()).toContain('Holding slot: private'))
+    holdStatus = status
+    await emit('slots.updated')
+    await eventually(() => expect(text()).not.toContain('private'))
+    await eventually(() => expect(text()).toBe('Waiting for slot: shared-box-intensive'))
+  })
+
+  test('a failed waiting read cannot erase valid held context', async () => {
+    holds = [held('build')]
+    responseStatus = 403
+    await render()
+    await eventually(() => expect(text()).toContain('Holding slot: build'))
+    expect(text()).toContain('Slot wait status unavailable')
+  })
+
+  test('expired and malformed wire facts never fabricate holding', async () => {
+    holds = [
+      { poolKey: 'expired', expiresAt: new Date(0).toISOString() },
+      { poolKey: 'invalid', expiresAt: 'not a date' },
+      { poolKey: 'missing' } as Hold,
+    ]
+    await render()
+    await eventually(() => expect(holdRequests).toHaveLength(1))
+    expect(text()).not.toContain('Holding')
+  })
+
+  test('cached ownership is hidden during revalidation, including an in-flight reconnect', async () => {
+    client.setQueryData(agentSlotHoldQueryKeys.agent('squad-a', 'agent-a'), [held('old-private')])
+    let resolve!: (response: Response) => void
+    pendingHoldResponse = new Promise((r) => {
+      resolve = r
     })
-    expect(details.open).toBe(true)
-    expect(dom.window.document.querySelector('[role="status"]')?.getAttribute('aria-live')).toBe('polite')
-    expect(text()).not.toMatch(/position|ETA|only reason|idle because/i)
+    await render()
+    expect(text()).not.toContain('old-private')
+    expect(text()).not.toContain('Holding')
+    pendingHoldResponse = undefined
+    holds = []
+    await render('agent-a', true)
+    await dom.act(async () => resolve(new Response(JSON.stringify([held('missed-release')]))))
+    await eventually(() => expect(holdRequests).toHaveLength(2))
+    await eventually(() => expect(text()).not.toContain('Holding'))
+  })
+
+  test('lease expiry removes ownership locally without polling; renewal reschedules its deadline', async () => {
+    let now = 1_800_000_000_000
+    const clock = spyOn(Date, 'now').mockImplementation(() => now)
+    const realTimeout = globalThis.setTimeout
+    const deadlines: Array<() => void> = []
+    globalThis.setTimeout = ((callback: () => void, delay: number, ...args: unknown[]) => {
+      if (delay === 60_000 || delay === 120_000) deadlines.push(callback)
+      return realTimeout(callback, delay, ...args)
+    }) as typeof setTimeout
+    try {
+      holds = [held('build')]
+      await render()
+      await eventually(() => expect(text()).toContain('Holding slot: build'))
+      expect(deadlines).toHaveLength(1)
+      holds = [{ poolKey: 'build', expiresAt: new Date(now + 120_000).toISOString() }]
+      await emit('slots.updated')
+      await eventually(() => expect(text()).toContain('Holding slot: build'))
+      await eventually(() => expect(deadlines).toHaveLength(2))
+      now += 120_000
+      await dom.act(async () => deadlines[1]!())
+      expect(text()).not.toContain('Holding')
+      expect(text()).toContain('Waiting for slot:')
+      expect(holdRequests).toHaveLength(2)
+    } finally {
+      globalThis.setTimeout = realTimeout
+      clock.mockRestore()
+    }
+  })
+
+  test('always shows distinct names inline without disclosure, counts or pool language', async () => {
+    responses.set('agent-a', [
+      queued('shared-box-intensive'),
+      queued('production-change'),
+      { ...queued('shared-box-intensive'), waiterId: 'duplicate' },
+    ])
+    await render()
+    await eventually(() => expect(text()).toBe('Waiting for slot: shared-box-intensive · production-change'))
+    expect(dom.window.document.querySelector('details, summary, button, ul')).toBeNull()
+    const status = dom.window.document.querySelector('[role="status"]')!
+    expect(status.getAttribute('aria-live')).toBe('polite')
+    expect(status.getAttribute('aria-atomic')).toBe('true')
+    expect(status.outerHTML).not.toMatch(/pool|position|ETA|only reason|idle because/i)
+    expect(status.className).toContain('text-secondary')
+    expect(status.className).not.toContain('status-queue')
+    const dot = status.querySelector('[aria-hidden="true"]')!
+    expect(dot.className).toContain('motion-safe:animate-pulse')
+    expect(dot.className).toContain('bg-status-progress-solid')
+  })
+
+  test('keeps a single long name visible and wrappable at narrow widths', async () => {
+    const name = 'shared-box-intensive-'.repeat(20)
+    responses.set('agent-a', [queued(name)])
+    await render()
+    await eventually(() => expect(text()).toBe(`Waiting for slot: ${name}`))
+    const label = dom.window.document.querySelector('[role="status"] span:last-child')!
+    expect(label.className).toContain('[overflow-wrap:anywhere]')
+    expect(label.className).not.toMatch(/truncate|line-clamp|overflow-hidden/)
   })
 
   test('running agent keeps secondary context without claiming it is waiting', async () => {
     await render('agent-a', false, false)
-    await eventually(() => expect(text()).toContain('Slot queue'))
+    await eventually(() => expect(text()).toBe('Slot queue: shared-box-intensive'))
     expect(text()).not.toContain('Waiting for slot')
   })
 

@@ -189,6 +189,16 @@ for a in "$@"; do
 done
 installs() { sed -n "s/^$1=//p" "$dir/$2" 2>/dev/null; }
 case "$verb" in
+  show)
+    [ ! -f "$STUB_R/fakedb/fail-readback" ] || exit 90
+    [ ! -f "$STUB_R/fakedb/empty-readback" ] || exit 0
+    u="${!#}"
+    case " $* " in
+      *" UnitFileState "*)
+        if [ -L "$dir/sockets.target.wants/$u" ]; then echo enabled; else echo disabled; fi ;;
+      *" ActiveState "*)
+        if [ -f "$STUB_R/fakedb/active-$u" ]; then echo active; else echo inactive; fi ;;
+    esac ;;
   is-active)
     case "$units" in *" user@1001.service"*) [ -f "$STUB_R/fakedb/manager-groups" ]; exit $? ;; esac ;;
   stop)
@@ -196,11 +206,14 @@ case "$verb" in
       [ ! -f "$STUB_R/fakedb/fail-manager-stop" ] || exit 89
       rm -f "$STUB_R/fakedb/manager-groups" ;;
     esac ;;
-  enable) for u in $units; do [ -e "$dir/$u" ] || exit 1
+  enable) [ ! -f "$STUB_R/fakedb/fail-enable" ] || exit 87
+    for u in $units; do [ -e "$dir/$u" ] || exit 1
+      touch "$STUB_R/fakedb/active-$u"
       for t in $(installs WantedBy "$u"); do mkdir -p "$dir/$t.wants"; ln -sfn "$dir/$u" "$dir/$t.wants/$u"; done
       for al in $(installs Alias "$u"); do if [ -e "$dir/$al" ] && [ ! -L "$dir/$al" ]; then exit 1; fi; ln -sfn "$dir/$u" "$dir/$al"; done
     done ;;
-  disable) for u in $units; do
+  disable) [ ! -f "$STUB_R/fakedb/fail-disable" ] || exit 88
+    for u in $units; do
       for l in "$dir"/*.wants/"$u"; do [ -L "$l" ] && rm -f "$l"; done
       for al in $(installs Alias "$u"); do [ -L "$dir/$al" ] && rm -f "$dir/$al"; done
     done ;;
@@ -276,6 +289,38 @@ exit 0'
   expect_eq 'fresh system box: a second run succeeds' "${PROV_RC}" '0'
   expect_eq 'fresh system box: a second run changes nothing' "$(host_snapshot)" "${before}"
   rm -rf "${R}"
+
+  # A full reprovision of a parked box must repair persistent enablement, and
+  # must not print a success/UID marker if enable/start or readback fails.
+  for mode in system user; do
+    sandbox_id=agent_park
+    [ "$mode" = system ] || sandbox_id=squad_park
+    for failure in enable disable readback empty-readback; do
+      make_host
+      case "$failure" in
+        empty-readback) touch "${R}/fakedb/empty-readback" ;;
+        *) touch "${R}/fakedb/fail-${failure}" ;;
+      esac
+      provision --sandbox-id "$sandbox_id" --unit-mode "$mode"
+      expect_eq "$mode provision: $failure failure is not success" "$([[ $PROV_RC != 0 ]] && echo failed || echo success)" failed
+      expect_eq "$mode provision: $failure failure emits no UID marker" "$(grep -c '^FICUS_BOX_UID=' "${R}/stdout.log" || true)" 0
+      rm -rf "${R}"
+    done
+    make_host
+    provision --sandbox-id "$sandbox_id" --unit-mode "$mode"
+    if [ "$mode" = system ]; then
+      units="${R}/etc/systemd/system"; socket="ficus-box-${BOX}.socket"
+    else
+      units="${R}/home/${BOX}/.config/systemd/user"; socket=ficus-sandbox-server.socket
+    fi
+    rm -f "$units/sockets.target.wants/$socket" "${R}/fakedb/active-$socket"
+    printf 'preserve-auth\n' >"${R}/home/${BOX}/.ficus/server.env"
+    provision --sandbox-id "$sandbox_id" --unit-mode "$mode"
+    expect_eq "$mode reprovision: succeeds" "$PROV_RC" 0
+    expect_eq "$mode reprovision: parked socket enabled again" "$(is_link_to "$units/sockets.target.wants/$socket" "$units/$socket")" yes
+    expect_eq "$mode reprovision: preserves server.env" "$(cat "${R}/home/${BOX}/.ficus/server.env")" preserve-auth
+    rm -rf "${R}"
+  done
 
   # -- a system-mode box the previous release provisioned ---------------------
   make_host
