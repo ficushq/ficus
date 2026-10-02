@@ -3,7 +3,7 @@ import { workStreamTitle, workStreamWaitActor } from '@ficus/shared'
 import { WORK_STREAM_STATUS_ROLE } from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
-import { getWsDisplayState, WS_STATUS_LABELS, workStreamWaitBadge } from '../lib/workStreamStatusPresentation'
+import { getWsDisplayState, workStreamStatusLabel, workStreamWaitBadge } from '../lib/workStreamStatusPresentation'
 export { getWsDisplayState, WS_STATUS_LABELS, WS_STATUS_BADGE_COLORS } from '../lib/workStreamStatusPresentation'
 import { workStreamGithubRepository, workStreamPullRequests } from '../lib/workStreamGithub'
 import { WorkStreamPauseControls } from './WorkStreamPauseControls'
@@ -732,7 +732,7 @@ export function WorkStreamDetailModal({
                       className="ficus-button inline-flex items-center gap-1.5 text-accent-light hover:underline disabled:text-secondary disabled:no-underline"
                     >
                       <span
-                        aria-label={dependencyState ? `${WS_STATUS_LABELS[dependencyState]} status` : 'Unknown status'}
+                        aria-label={dependency ? `${workStreamStatusLabel(dependency)} status` : 'Unknown status'}
                         className={clsx('h-2 w-2 rounded-full', dependencyTreatment.markerClass)}
                       />
                       {label}

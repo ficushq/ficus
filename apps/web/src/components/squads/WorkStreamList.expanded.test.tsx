@@ -363,3 +363,35 @@ test('preserves filter controls as active and done queries resolve independently
     await dom.cleanup()
   }
 })
+
+test('kanban row callouts use the same specific delivery labels as lists and badges', async () => {
+  const { CODE_HOST_DELIVERY_PRESENTATION_CASES } = await import('@ficus/shared/test-fixtures/work-stream-presentation')
+  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
+  dom.window.localStorage.setItem(`ficus.wsView.${squad.id}`, 'kanban')
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, enabled: false } } })
+  const rendered = dom.createRoot()
+  const rows = CODE_HOST_DELIVERY_PRESENTATION_CASES.filter((row) => row.state.startsWith('delivery_'))
+  try {
+    await dom.act(async () =>
+      rendered.root.render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <WorkStreamList
+              squadId={squad.id}
+              workStreams={rows.map((row, i) => ({ ...stream(`reason-${i}`), ...row.facts }))}
+            />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+    for (const [i, row] of rows.entries()) {
+      const card = dom.window.document.querySelector(
+        `[role="button"][aria-label="Open work stream Stream reason-${i}"]`
+      )
+      expect(card?.textContent).toContain(row.label)
+    }
+  } finally {
+    queryClient.clear()
+    await dom.cleanup()
+  }
+})

@@ -140,3 +140,24 @@ test('delivery action and paused states retain truthful visible labels', async (
   expect(container.textContent).toContain('Paused')
   expect(container.querySelector('[aria-label*="Stream merge, Merge Pull Request"]')).not.toBeNull()
 })
+
+test('graph nodes and accessible names share all code-host delivery row labels', async () => {
+  const { CODE_HOST_DELIVERY_PRESENTATION_CASES } = await import('@ficus/shared/test-fixtures/work-stream-presentation')
+  await domHarness!.act(async () =>
+    root.render(
+      <WorkStreamGraph
+        workStreams={CODE_HOST_DELIVERY_PRESENTATION_CASES.map((row, i) => ({
+          ...stream(`reason-${i}`),
+          ...row.facts,
+        }))}
+        agentMap={new Map()}
+        onSelectWorkStream={() => undefined}
+      />
+    )
+  )
+  for (const [i, row] of CODE_HOST_DELIVERY_PRESENTATION_CASES.entries()) {
+    const node = container.querySelector(`[role="button"][aria-label^="Open Stream reason-${i},"]`)
+    expect(node?.textContent).toContain(row.label)
+    expect(node?.getAttribute('aria-label')).toContain(row.label)
+  }
+})

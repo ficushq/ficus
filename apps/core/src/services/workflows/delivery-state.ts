@@ -18,6 +18,7 @@ import {
   deliveryPullRequests,
   type WorkflowRun,
   type IntegrationOutputFact,
+  type CodeHostDeliveryReason,
   type WorkStreamDeliveryExplanation,
   type WorkStreamDeliveryGateFacts,
   type WorkStreamDeliveryPresentation,
@@ -226,7 +227,7 @@ function classifyPrimaryDeliveryPresentation(
   if (lifecycle?.data.pullRequestState === 'merged' || lifecycle?.output === 'pull_request.merged')
     return { kind: 'merged', explanation: observedPullRequest() }
   if (lifecycle?.data.pullRequestState === 'closed' || lifecycle?.output === 'pull_request.closed')
-    return { kind: 'failure' }
+    return { kind: 'failure', explanation: { codeHostReason: 'closed' } }
   const latestChecks = new Map<string, DeliveryEvent>()
   for (const event of current.filter(
     (event) => event.output === 'pull_request.ci_completed' && time(event) >= ciProof
@@ -236,23 +237,41 @@ function classifyPrimaryDeliveryPresentation(
     if (!latestChecks.has(workflow)) latestChecks.set(workflow, event)
   }
   const checks = [...latestChecks.values()]
-  const negative =
-    current.some(
-      (event) =>
-        (snapshotTime(event) >= conflictProof &&
-          (event.data.mergeConflict === true || event.data.mergeState === 'dirty')) ||
-        (snapshotTime(event) >= ciProof && event.data.checksState === 'failure') ||
-        (snapshotTime(event) >= reviewProof && event.data.reviewDecision === 'changes_requested') ||
-        (time(event) >= reviewProof &&
-          event.data.state === 'changes_requested' &&
-          (!event.data.reviewedHeadSha || event.data.reviewedHeadSha === currentHead))
-    ) ||
+  // Reuse the classifier's exact head/supersession boundaries for the label;
+  // the reason must never revive evidence that no longer decides this gate.
+  const conflict = current.some(
+    (event) =>
+      snapshotTime(event) >= conflictProof && (event.data.mergeConflict === true || event.data.mergeState === 'dirty')
+  )
+  const failedChecks =
+    current.some((event) => snapshotTime(event) >= ciProof && event.data.checksState === 'failure') ||
     checks.some((event) => ['failure', 'cancelled', 'timed_out', 'action_required'].includes(String(event.data.state)))
+  const changesRequested = current.some(
+    (event) =>
+      (snapshotTime(event) >= reviewProof && event.data.reviewDecision === 'changes_requested') ||
+      (time(event) >= reviewProof &&
+        event.data.state === 'changes_requested' &&
+        (!event.data.reviewedHeadSha || event.data.reviewedHeadSha === currentHead))
+  )
   // Draft is a non-readiness fact, never permission to hide a real failure.
-  if (negative) return { kind: 'failure' }
+  if (conflict || failedChecks || changesRequested) {
+    const codeHostReason: CodeHostDeliveryReason = conflict
+      ? 'merge-conflict'
+      : failedChecks
+        ? 'ci-failed'
+        : 'changes-requested'
+    return { kind: 'failure', explanation: { codeHostReason } }
+  }
   if (snapshot?.data.draft === true || lifecycle?.data.pullRequestState === 'unknown') {
     const gates = gateFacts()
-    return { kind: 'external', explanation: { ...observedPullRequest(), ...(gates ? { gates } : {}) } }
+    return {
+      kind: 'external',
+      explanation: {
+        ...observedPullRequest(),
+        ...(gates ? { gates } : {}),
+        ...(snapshot?.data.draft === true ? { codeHostReason: 'draft' as const } : {}),
+      },
+    }
   }
   // A human review requirement is a standing fact of the current head, not a
   // readiness proof: it persists after its observation ages until newer
@@ -293,7 +312,35 @@ function classifyPrimaryDeliveryPresentation(
   )
     return { kind: 'merge', explanation: observedPullRequest() }
   const finalGates = gateFacts(pending, fresh(snapshot))
-  return { kind: 'external', explanation: { ...observedPullRequest(), ...(finalGates ? { gates: finalGates } : {}) } }
+  const currentPending =
+    checks.some(
+      (event) =>
+        fresh(event) &&
+        (!checkRollup || snapshotTime(event) >= snapshotTime(checkRollup)) &&
+        ['pending', 'queued', 'in_progress', 'requested'].includes(String(event.data.state))
+    ) ||
+    (fresh(checkRollup) && checkRollup?.data.checksState === 'pending')
+  // Clean is a provider readiness proof, but a newer explicit unknown rollup
+  // cannot be advertised as ready. This refines text only, not merge policy.
+  const ready =
+    aggregate?.data.mergeState === 'clean' &&
+    fresh(aggregate) &&
+    !pending &&
+    !(checkRollup?.data.checksState === 'unknown' && snapshotTime(checkRollup) > snapshotTime(aggregate)) &&
+    !(reviewSnapshot?.data.reviewDecision === 'unknown' && snapshotTime(reviewSnapshot) > snapshotTime(aggregate))
+  const codeHostReason: CodeHostDeliveryReason | undefined = currentPending
+    ? 'ci-pending'
+    : ready
+      ? 'awaiting-merge'
+      : undefined
+  return {
+    kind: 'external',
+    explanation: {
+      ...observedPullRequest(),
+      ...(finalGates ? { gates: finalGates } : {}),
+      ...(codeHostReason ? { codeHostReason } : {}),
+    },
+  }
 }
 
 /** All designated PRs participate; an unknown extra PR cannot advertise a ready merge. */
@@ -338,7 +385,8 @@ export function classifyDeliveryPresentation(
 
 /**
  * Publish the kind with only the explanation fields its consumers render:
- * setup reasons for `setup`, gate facts and pull requests for `setup`/`external`.
+ * setup reasons for `setup`, canonical reasons for `failure`/`external`,
+ * gate facts and pull requests for `setup`/`external`.
  * Pull request states prefer the classifier's observed evidence over the
  * metadata delivery view, which is open until a merge or close is observed.
  */
@@ -348,8 +396,22 @@ function explainPresentation(
   gates: GateResult[],
   metadata: unknown
 ): WorkStreamDeliveryPresentation {
+  if (kind === 'failure')
+    return winner.explanation?.codeHostReason
+      ? { kind, explanation: { codeHostReason: winner.explanation.codeHostReason } }
+      : { kind }
   if (kind !== 'setup' && kind !== 'external') return { kind }
   const explanation: WorkStreamDeliveryExplanation = {}
+  if (winner.explanation?.codeHostReason) {
+    // Do not imply that automatic merge is all that remains while another
+    // designated PR still lacks readiness. Keep the canonical winning PR/kind.
+    const allReady = gates.every(
+      (gate) => gate.kind === 'merged' || gate.kind === 'merge' || gate.explanation?.codeHostReason === 'awaiting-merge'
+    )
+    if (winner.explanation.codeHostReason !== 'awaiting-merge' || allReady)
+      explanation.codeHostReason = winner.explanation.codeHostReason
+  }
+  if (kind === 'external' && gates.every((gate) => gate.kind === 'merged')) explanation.codeHostReason = 'merged'
   if (kind === 'setup') {
     if (winner.explanation?.setupReason) explanation.setupReason = winner.explanation.setupReason
     if (winner.explanation?.branchMismatch) explanation.branchMismatch = winner.explanation.branchMismatch

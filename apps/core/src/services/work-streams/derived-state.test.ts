@@ -1,4 +1,7 @@
-import { WORK_STREAM_PRESENTATION_CASES } from '@ficus/shared/test-fixtures/work-stream-presentation'
+import {
+  CODE_HOST_DELIVERY_PRESENTATION_CASES,
+  WORK_STREAM_PRESENTATION_CASES,
+} from '@ficus/shared/test-fixtures/work-stream-presentation'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { and, eq, like, inArray } from 'drizzle-orm'
@@ -115,7 +118,9 @@ describe('work-stream derived state', () => {
   it('shared matrix survives derivation, JSON serialization, attention and both native projections', async () => {
     const { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, buildWorkInterestSnapshot } =
       await import('@ficus/shared')
-    for (const row of WORK_STREAM_PRESENTATION_CASES.filter((row) => row.facts.openWaits !== undefined)) {
+    for (const row of [...WORK_STREAM_PRESENTATION_CASES, ...CODE_HOST_DELIVERY_PRESENTATION_CASES].filter(
+      (row) => row.facts.openWaits !== undefined
+    )) {
       const ws = await createStream(row.name)
       for (const wait of row.facts.openWaits ?? [])
         await db.insert(workStreamWaits).values({
@@ -151,6 +156,7 @@ describe('work-stream derived state', () => {
       ).get(ws.id)!
       expect(derived.derivedState).not.toBe('waiting_for_slot') // presentation-only, even with annotated input
       const json = JSON.parse(JSON.stringify({ ...input, ...derived }))
+      expect(json.delivery).toEqual(row.facts.delivery)
       expect(selectWorkStreamPresentationState(json)).toBe(row.state)
       expect(workStreamNeedsHumanAttention(json)).toBe(row.attention)
       const snapshot = buildWorkInterestSnapshot([json])

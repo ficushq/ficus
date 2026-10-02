@@ -65,7 +65,7 @@ describe('WorkStreamDetailModal delivery presentation', () => {
     cleanup = undefined
   })
 
-  async function render(workStream: WorkStream) {
+  async function render(workStream: WorkStream, workStreamMap = new Map<string, WorkStream>()) {
     // The DOM ownership lease is process-global: release the previous render's
     // harness before acquiring the next one within the same test.
     await cleanup?.()
@@ -89,6 +89,7 @@ describe('WorkStreamDetailModal delivery presentation', () => {
           <QueryClientProvider client={queryClient}>
             <WorkStreamDetailModal
               workStream={workStream}
+              workStreamMap={workStreamMap}
               squadMap={new Map([[squad.id, squad]])}
               agentMap={new Map<string, Agent>()}
               onClose={() => undefined}
@@ -99,6 +100,29 @@ describe('WorkStreamDetailModal delivery presentation', () => {
     )
     return { body: dom.window.document.body }
   }
+
+  test('dependency accessible status uses the specific code-host label', async () => {
+    const dependency = {
+      ...deliveryWorkStream({ kind: 'failure', explanation: { codeHostReason: 'merge-conflict' } }),
+      id: 'dependency',
+    }
+    const { body } = await render(
+      { ...deliveryWorkStream(), dependsOn: [dependency.id] },
+      new Map([[dependency.id, dependency]])
+    )
+    expect(body.querySelector('[aria-label="Resolve merge conflicts status"]')).toBeTruthy()
+  })
+
+  test('detail primary badge refines external and failure reasons and preserves PR links', async () => {
+    for (const delivery of [
+      { kind: 'external', explanation: { codeHostReason: 'ci-pending' } },
+      { kind: 'failure', explanation: { codeHostReason: 'merge-conflict' } },
+    ] as const) {
+      const { body } = await render(deliveryWorkStream(delivery))
+      expect(body.textContent).toContain(delivery.kind === 'external' ? 'Awaiting CI' : 'Resolve merge conflicts')
+      expect(body.querySelector('a[href="https://github.com/intentional/design/pull/51"]')).toBeTruthy()
+    }
+  })
 
   test('delivery_setup shows the explanatory callout with the rebind step and protection note', async () => {
     const { body } = await render(
@@ -133,7 +157,7 @@ describe('WorkStreamDetailModal delivery presentation', () => {
     const external = await render(
       deliveryWorkStream({
         kind: 'external',
-        explanation: { pullRequests: [{ number: 51, state: 'open' }] },
+        explanation: { codeHostReason: 'awaiting-merge', pullRequests: [{ number: 51, state: 'open' }] },
       })
     )
     expect(external.body.textContent).not.toContain('What is blocking completion')
@@ -145,10 +169,10 @@ describe('WorkStreamDetailModal delivery presentation', () => {
     const { body } = await render(
       deliveryWorkStream({
         kind: 'external',
-        explanation: { pullRequests: [{ number: 51, state: 'open' }] },
+        explanation: { codeHostReason: 'awaiting-merge', pullRequests: [{ number: 51, state: 'open' }] },
       })
     )
-    expect(body.textContent).toContain('Awaiting merge of #51')
+    expect(body.textContent).toContain('Awaiting merge')
     const blocked = await render(
       deliveryWorkStream({
         kind: 'external',
@@ -158,6 +182,7 @@ describe('WorkStreamDetailModal delivery presentation', () => {
         },
       })
     )
-    expect(blocked.body.textContent).toContain('Blocked by branch protection')
+    expect(blocked.body.textContent).toContain('Awaiting Code Host')
+    expect(blocked.body.textContent).not.toContain('Resolve merge conflicts')
   })
 })

@@ -1,4 +1,5 @@
 import {
+  codeHostDeliveryLabel,
   MANUAL_WAIT_ACTOR_STATE,
   selectWorkStreamPresentationState,
   workStreamWaitActor,
@@ -68,40 +69,16 @@ export const WS_STATUS_BADGE_COLORS: Record<WorkStreamPresentationState, StatusR
 
 export const getWsDisplayState = selectWorkStreamPresentationState
 
-/** Bounded pill text for the delivery-PR numbers a label carries. */
-function formatPullRequestNumbers(numbers: number[]): string {
-  const head = numbers.slice(0, 3).map((number) => `#${number}`)
-  const rest = numbers.length - head.length
-  return `${head.join(', ')}${rest > 0 ? ` +${rest} more` : ''}`
-}
-
-/**
- * A more specific label for a delivery-external stream, derived only from
- * server-owned explanation facts. Unknown or contradictory evidence returns
- * null so the caller keeps the generic label.
- */
+/** Compatibility export; label policy is shared with native consumers. */
 export function externalDeliveryLabel(explanation?: WorkStreamDeliveryExplanation): string | null {
-  if (!explanation) return null
-  const pullRequests = explanation.pullRequests ?? []
-  // Once every delivery PR merged, leftover gate facts describe nothing still pending.
-  if (pullRequests.length && pullRequests.every((pullRequest) => pullRequest.state === 'merged'))
-    return pullRequests.length === 1 ? 'PR merged — finalizing delivery' : 'PRs merged — finalizing delivery'
-  const { gates } = explanation
-  // A draft cannot merge yet, and stale gates may no longer describe the head.
-  if (gates?.draft === true) return null
-  if (gates?.checksState === 'pending') return 'Awaiting CI'
-  if (gates?.reviewDecision === 'required' || gates?.pendingHumanReview === true) return 'Awaiting review'
-  if (gates?.mergeState === 'blocked') return 'Blocked by branch protection'
-  const open = pullRequests.filter((pullRequest) => pullRequest.state === 'open').map((p) => p.number)
-  if (open.length) return `Awaiting merge of ${formatPullRequestNumbers(open)}`
-  return null
+  return codeHostDeliveryLabel({ kind: 'external', explanation })
 }
 
-/** The status pill label for a stream, including the derived external label. */
+/** Refine only the selected delivery state; waits/pause/failures keep their precedence. */
 export function workStreamStatusLabel(workStream: WorkStreamPresentationFacts): string {
   const state = getWsDisplayState(workStream)
-  if (state === 'delivery_external') {
-    return externalDeliveryLabel(workStream.delivery?.explanation) ?? WS_STATUS_LABELS[state]
+  if (state === 'delivery_external' || state === 'delivery_failure') {
+    return codeHostDeliveryLabel(workStream.delivery) ?? WS_STATUS_LABELS[state]
   }
   return WS_STATUS_LABELS[state]
 }
