@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { HourglassIcon, TicketIcon } from './icons'
 import { usePermissions } from '../hooks/usePermissions'
 import { useQuery } from '../reactQueryHooks'
 import { queries } from '../queryOptions'
@@ -49,22 +50,24 @@ export function AgentSlotWaitStatus({
         ]
   const waitNames =
     waits.isError || waits.isFetching ? [] : [...new Set((waits.data ?? []).map((wait) => wait.poolKey))]
+  if (!heldNames.length && !waitNames.length && !waits.isError) return null
   return (
-    <>
-      <SlotStatusRow label={heldNames.length > 1 ? 'Holding slots' : 'Holding slot'} names={heldNames} />
+    <div className="shrink-0 border-b border-th-border">
+      <SlotStatusRow kind="hold" label={heldNames.length > 1 ? 'Holding slots' : 'Holding slot'} names={heldNames} />
       {waits.isError ? (
         <div className="text-xs text-secondary py-1" role="status">
           Slot wait status unavailable
         </div>
       ) : (
-        <SlotStatusRow label={isIdle ? 'Waiting for slot' : 'Slot queue'} names={waitNames} />
+        <SlotStatusRow kind="wait" label={isIdle ? 'Waiting for slot' : 'Slot queue'} names={waitNames} />
       )}
-    </>
+    </div>
   )
 }
 
-function SlotStatusRow({ label, names }: { label: string; names: readonly string[] }) {
+function SlotStatusRow({ label, names, kind }: { label: string; names: readonly string[]; kind: 'hold' | 'wait' }) {
   if (!names.length) return null
+  const Icon = kind === 'hold' ? TicketIcon : HourglassIcon
   return (
     <div
       role="status"
@@ -72,10 +75,7 @@ function SlotStatusRow({ label, names }: { label: string; names: readonly string
       aria-atomic="true"
       className="flex min-w-0 items-start gap-2 px-3 py-2 text-xs text-secondary"
     >
-      <span
-        aria-hidden="true"
-        className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-status-progress-solid motion-safe:animate-pulse"
-      />
+      <Icon className="mt-0.5 h-3 w-3 shrink-0" />
       <span className="min-w-0 [overflow-wrap:anywhere]">
         {label}: {names.join(' · ')}
       </span>
