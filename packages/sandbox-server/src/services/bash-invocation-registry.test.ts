@@ -29,6 +29,86 @@ async function registry(reconcile: (record: BashInvocationRecord) => Promise<voi
   return { dir, value: new BashInvocationRegistry({ runtimeDir: dir, reconcile }) }
 }
 describe('BashInvocationRegistry', () => {
+  test('failed partial start archives its first outcome and permits the next generation', async () => {
+    const { dir, value } = await registry(async () => {
+      throw new Error('terminal completion must not reconcile a partial start')
+    })
+    const id = 'partial-start-failure'
+    const key = createHash('sha256').update(id).digest('hex')
+    const lease = await value.acquire(id, 'digest')
+    await lease.markStarting({ pid: 1981985, startToken: 'linux:420666139' })
+    await lease.complete('failed')
+    expect(value.hasActiveInvocations()).toBe(false)
+    const terminal = JSON.parse(await readFile(join(dir, 'generations', `${key}.json`), 'utf8'))
+    expect(terminal).toMatchObject({
+      state: 'failed',
+      priorState: 'starting',
+      pid: 1981985,
+      startToken: 'linux:420666139',
+    })
+    expect(terminal.pgid).toBeUndefined()
+    expect(terminal.sid).toBeUndefined()
+    expect(new Date(terminal.terminalAt).toISOString()).toBe(terminal.terminalAt)
+    const restarted = new BashInvocationRegistry({
+      runtimeDir: dir,
+      reconcile: async () => {
+        throw new Error('terminal completion must not reconcile after restart')
+      },
+    })
+    await expect(restarted.terminate(id)).resolves.toEqual({ remainingPids: [] })
+    const retry = await restarted.acquire(id, 'changed-digest')
+    expect(retry.generation).toBe(1)
+    await retry.complete('failed')
+  })
+
+  test('retrying partial-start completion preserves the first failure and timestamp', async () => {
+    const { dir, value } = await registry()
+    const id = 'partial-start-persistence-retry'
+    const key = createHash('sha256').update(id).digest('hex')
+    const lease = await value.acquire(id, 'digest')
+    await lease.markStarting({ pid: 1981986, startToken: 'linux:420666140' })
+    await writeFile(join(dir, 'generations'), 'unavailable storage')
+    await expect(lease.complete('failed')).rejects.toThrow()
+    expect(value.hasActiveInvocations()).toBe(true)
+    const [name] = await readdir(join(dir, 'terminal'))
+    const first = JSON.parse(await readFile(join(dir, 'terminal', name!), 'utf8'))
+    expect(first).toMatchObject({ state: 'failed', priorState: 'starting' })
+    await rm(join(dir, 'generations'))
+    await lease.complete('terminated')
+    const durable = JSON.parse(await readFile(join(dir, 'generations', `${key}.json`), 'utf8'))
+    expect(durable.state).toBe('failed')
+    expect(durable.priorState).toBe('starting')
+    expect(durable.terminalAt).toBe(first.terminalAt)
+    expect(value.hasActiveInvocations()).toBe(false)
+  })
+
+  test('partial ownership still refuses success and running records', async () => {
+    const { dir, value } = await registry()
+    const startedAt = '2026-10-02T00:00:00.000Z'
+    for (const state of ['success', 'running'] as const) {
+      const id = `partial-${state}`
+      const key = createHash('sha256').update(id).digest('hex')
+      await mkdir(join(dir, 'active'), { recursive: true, mode: 0o700 })
+      await writeFile(
+        join(dir, 'active', `${key}.json`),
+        JSON.stringify({
+          version: 1,
+          invocationIdHash: key,
+          generation: 0,
+          commandDigest: 'digest',
+          state,
+          priorState: 'starting',
+          startedAt,
+          terminalAt: state === 'success' ? startedAt : undefined,
+          pid: 1981987,
+          startToken: 'linux:420666141',
+        }),
+        { mode: 0o600 }
+      )
+      await expect(value.terminate(id)).rejects.toThrow('INVALID_INVOCATION_RECORD')
+    }
+  })
+
   test('failed admission maintenance never strands a processless active reservation', async () => {
     const { dir, value } = await registry(async () => {
       throw new Error('prior invocation ownership is ambiguous')
