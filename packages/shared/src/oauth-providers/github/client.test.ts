@@ -199,3 +199,33 @@ describe('GitHub App authorization client', () => {
     expect(canceled).toBe(true)
   })
 })
+
+describe('personal GitHub identity proof', () => {
+  test('authenticated identity preserves stable account ID and human type without integration installation', async () => {
+    const { client, requests } = fixture([{ id: 123, login: 'renamed', type: 'User' }])
+    expect(client.currentIdentity).toBeDefined()
+    const identity = await client.currentIdentity({ accessToken: 'proof-token' })
+    expect(identity).toEqual({ id: 123, login: 'renamed', type: 'User' })
+    expect(JSON.stringify(identity)).not.toContain('proof-token')
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.url).toBe('https://api.github.com/user')
+    expect(requests[0]!.input.redirect).toBe('error')
+    expect(requests[0]!.input.headers).toMatchObject({ authorization: 'Bearer proof-token' })
+  })
+
+  test('personal ownership proof rejects bots, organizations, missing types and malformed numeric identities', async () => {
+    for (const row of [
+      { id: 123, login: 'renamed', type: 'Bot' },
+      { id: 123, login: 'renamed', type: 'Organization' },
+      { id: 123, login: 'renamed' },
+      { id: '123', login: 'renamed', type: 'User' },
+      { id: 9007199254740992, login: 'renamed', type: 'User' },
+      { id: -1, login: 'ghost', type: 'User' },
+      { id: 123, login: '../other', type: 'User' },
+    ]) {
+      const { client } = fixture([row])
+      expect(client.currentIdentity).toBeDefined()
+      await expect(client.currentIdentity({ accessToken: 'proof-token' })).rejects.toThrow('invalid_response')
+    }
+  })
+})

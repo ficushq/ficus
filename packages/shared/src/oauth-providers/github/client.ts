@@ -158,6 +158,22 @@ export class GitHubOAuthClient {
     }
   }
 
+  /** Fresh OAuth ownership proof, distinct from an integration's connection configuration. */
+  async currentIdentity(input: {
+    accessToken: string
+    signal?: AbortSignal
+  }): Promise<{ id: number; login: string; type: 'User' }> {
+    const row = record(await this.#api('/user', input))
+    if (row.type !== 'User') throw new GitHubOAuthError('invalid_response')
+    try {
+      const configuration = parseGitHubConfiguration({ version: 1, userId: row.id, login: row.login })
+      if (configuration.login.toLowerCase() === 'ghost') throw new Error('Placeholder account')
+      return { id: configuration.userId, login: configuration.login, type: 'User' }
+    } catch {
+      throw new GitHubOAuthError('invalid_response')
+    }
+  }
+
   async revoke(input: { clientId: string; clientSecret?: string; token: string; signal?: AbortSignal }): Promise<void> {
     if (!input.clientSecret) throw new GitHubOAuthError('manual_revocation_required')
     await this.#request(`https://api.github.com/applications/${encodeURIComponent(input.clientId)}/token`, {
