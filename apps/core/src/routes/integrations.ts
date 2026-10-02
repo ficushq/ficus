@@ -4,7 +4,10 @@ import { isChannelIntegration, type ChannelSettingsView } from '../services/inte
 import type { getDeploymentIntegrationSettings } from '../services/integrations/deployment/settings'
 import type { GitHubWebhookSettings } from '../services/integrations/github/webhook-settings'
 import { integrationOutputRegistry } from '../services/integrations/outputs/registry'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
+import { db } from '../db'
+import { GitHubFeedbackError, requireGitHubHuman } from '../services/integrations/github/feedback-trust'
+import type { OAuthAuthorizationPurpose } from '../services/integrations/authorization/state-repository'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { requireSquadPermission } from '../middleware'
@@ -123,6 +126,12 @@ export interface IntegrationRoutesService extends Pick<
     configure(providerKey: string, input: unknown, actor: string): Promise<SafeOAuthAppSettings>
   }
   authorization?: {
+    /** Purpose is resolved from owner/provider-bound storage, never request hints. */
+    resolvePurpose?(input: {
+      providerKey: string
+      userId: string
+      source: { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string }
+    }): Promise<OAuthAuthorizationPurpose | null>
     start(input: {
       providerKey: string
       userId: string
@@ -137,12 +146,14 @@ export interface IntegrationRoutesService extends Pick<
       state: string
       code?: string
       denied?: true
+      identity?: Identity
     }): Promise<{ returnTo: string }>
     complete(input: {
       providerKey: string
       userId: string
       localFlowId: string
       handle: string
+      identity?: Identity
     }): Promise<{ returnTo: string }>
   }
 }
@@ -188,6 +199,38 @@ export interface SquadIntegrationRoutesService {
     connectionId?: string
   ): Promise<boolean>
   retryProjection(squadId: string, providerKey: string): Promise<{ status: 'pending'; lastErrorCode: null }>
+}
+
+/** Select the permission family before callback side effects, preserving literal requester identity. */
+async function completionAccess(
+  c: Context,
+  service: IntegrationRoutesService,
+  provider: string,
+  source: { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string }
+): Promise<Response | { identity: Extract<Identity, { type: 'user' }>; personal: boolean }> {
+  const identity = c.get('identity') as Identity | undefined
+  if (identity?.type !== 'user') {
+    const denied = await authorize(c, `integrations:write:${provider}`)
+    return denied ?? (await userSessionRequired(c, identity, `connect ${integrationLabel(provider)}`))
+  }
+  if (provider === 'github' && service.authorization?.resolvePurpose) {
+    try {
+      await requireGitHubHuman(db, identity)
+      if (
+        (await service.authorization.resolvePurpose({ providerKey: provider, userId: identity.userId, source })) ===
+        'github_identity'
+      ) {
+        c.set('authzChecked', true)
+        return { identity, personal: true }
+      }
+    } catch (error) {
+      if (error instanceof GitHubFeedbackError)
+        return c.json({ error: 'Enabled human session required', code: error.code }, 403)
+      return authorizationFailure(c, error, provider, source.kind)
+    }
+  }
+  const denied = await authorize(c, `integrations:write:${provider}`)
+  return denied ?? { identity, personal: false }
 }
 
 export function createIntegrationsRouter(service: IntegrationRoutesService): Hono {
@@ -441,17 +484,16 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
     .post('/providers/:provider/authorization/callback', zValidator('json', authorizationCallbackSchema), async (c) => {
       const providerKey = parseProviderParam(c.req.param('provider'))
       if (!providerKey) return c.json({ error: 'Invalid provider' }, 400)
-      const denied = await authorize(c, `integrations:write:${providerKey}`)
-      if (denied) return denied
-      const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return userSessionRequired(c, identity, `connect ${integrationLabel(providerKey)}`)
-      if (!service.authorization) return c.json({ error: 'Authorization unavailable' }, 503)
       const body = c.req.valid('json')
+      const access = await completionAccess(c, service, providerKey, { kind: 'callback', state: body.state })
+      if (access instanceof Response) return access
+      if (!service.authorization) return c.json({ error: 'Authorization unavailable' }, 503)
       try {
         return c.json(
           await service.authorization.callback({
             providerKey,
-            userId: identity.userId,
+            userId: access.identity.userId,
+            ...(access.personal ? { identity: access.identity } : {}),
             state: body.state,
             code: body.code,
             denied: body.denied,
@@ -464,17 +506,19 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
     .post('/providers/:provider/authorization/complete', zValidator('json', authorizationCompleteSchema), async (c) => {
       const providerKey = parseProviderParam(c.req.param('provider'))
       if (!providerKey) return c.json({ error: 'Invalid provider' }, 400)
-      const denied = await authorize(c, `integrations:write:${providerKey}`)
-      if (denied) return denied
-      const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return userSessionRequired(c, identity, `connect ${integrationLabel(providerKey)}`)
-      if (!service.authorization) return c.json({ error: 'Authorization unavailable' }, 503)
       const body = c.req.valid('json')
+      const access = await completionAccess(c, service, providerKey, {
+        kind: 'complete',
+        localFlowId: body.localFlowId,
+      })
+      if (access instanceof Response) return access
+      if (!service.authorization) return c.json({ error: 'Authorization unavailable' }, 503)
       try {
         return c.json(
           await service.authorization.complete({
             providerKey,
-            userId: identity.userId,
+            userId: access.identity.userId,
+            ...(access.personal ? { identity: access.identity } : {}),
             localFlowId: body.localFlowId,
             handle: body.handle,
           })
@@ -854,6 +898,7 @@ function authorizationFailure(
   providerKey: string,
   operation: AuthorizationOperation
 ): Response {
+  if (error instanceof GitHubFeedbackError) return c.json({ error: error.code, code: error.code }, error.status)
   if (error instanceof AuthorizationFlowError) {
     const status = error.code === 'broker_unconfigured' ? 503 : 400
     log.warn(`${providerKey} authorization ${operation} rejected: ${error.code} (HTTP ${status})`)

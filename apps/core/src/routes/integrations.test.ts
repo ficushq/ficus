@@ -7,6 +7,7 @@ import type { Identity } from '../services/rbac'
 import { createIntegrationsRouter, createSquadIntegrationsRouter } from './integrations'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
+import type { OAuthAuthorizationPurpose } from '../services/integrations/authorization/state-repository'
 import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
 
@@ -62,6 +63,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
   const webhookConfigure = mock(async (_input: unknown, _actor: string) => webhookGet())
   const oauthAppConfigure = mock(async () => oauthAppGet('notion'))
   const authorizationStart = mock(async () => ({ authorizationUrl: 'https://provider.example/authorize' }))
+  const authorizationPurpose = mock(async (): Promise<OAuthAuthorizationPurpose | null> => 'integration')
   const authorizationCallback = mock(async () => ({ returnTo: '/settings/integrations' }))
   const authorizationComplete = mock(async () => ({ returnTo: '/settings/integrations' }))
   const authorizationPollDevice = mock(async () => ({ status: 'pending' as const, retryAfterSeconds: 5 }))
@@ -110,6 +112,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
       oauthApp: { get: oauthAppGet, configure: oauthAppConfigure },
       authorization: {
         start: authorizationStart,
+        resolvePurpose: authorizationPurpose,
         callback: authorizationCallback,
         complete: authorizationComplete,
         pollDevice: authorizationPollDevice,
@@ -143,6 +146,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
       oauthAppGet,
       oauthAppConfigure,
       authorizationStart,
+      authorizationPurpose,
       authorizationCallback,
       authorizationComplete,
       authorizationPollDevice,
@@ -1078,4 +1082,130 @@ test('output catalog exposes event-specific predicate types only to authenticate
   expect(assigned.predicateFields!.body).toBeUndefined()
   expect(calls.list).not.toHaveBeenCalled()
   expect(calls.get).not.toHaveBeenCalled()
+})
+
+test('common GitHub callback/completion select self-human authority only from stored personal purpose', async () => {
+  const [user] = await db
+    .insert(users)
+    .values({ email: `${crypto.randomUUID()}@personal-callback.test` })
+    .returning()
+  const identity = { type: 'user' as const, userId: user!.id }
+  try {
+    const { app, calls } = createApp(identity, 'github')
+    calls.authorizationPurpose.mockResolvedValue('github_identity')
+    const state = 's'.repeat(43),
+      localFlowId = crypto.randomUUID(),
+      handle = 'h'.repeat(43)
+    const callback = await app.request('/api/integrations/providers/github/authorization/callback', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ state, code: 'code' }),
+    })
+    expect(callback.status).toBe(200)
+    expect(calls.authorizationPurpose).toHaveBeenCalledWith({
+      providerKey: 'github',
+      userId: user!.id,
+      source: { kind: 'callback', state },
+    })
+    expect(calls.authorizationCallback).toHaveBeenCalledWith(expect.objectContaining({ userId: user!.id, identity }))
+    const complete = await app.request('/api/integrations/providers/github/authorization/complete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ localFlowId, handle }),
+    })
+    expect(complete.status).toBe(200)
+    expect(calls.authorizationPurpose).toHaveBeenCalledWith({
+      providerKey: 'github',
+      userId: user!.id,
+      source: { kind: 'complete', localFlowId },
+    })
+    expect(calls.authorizationComplete).toHaveBeenCalledWith(expect.objectContaining({ userId: user!.id, identity }))
+    calls.authorizationPurpose.mockResolvedValue('integration')
+    expect(
+      (
+        await app.request('/api/integrations/providers/github/authorization/callback', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ state, code: 'code' }),
+        })
+      ).status
+    ).toBe(403)
+    expect(calls.authorizationCallback).toHaveBeenCalledTimes(1)
+  } finally {
+    await db.delete(users).where(eq(users.id, user!.id))
+  }
+})
+
+test('personal-purpose callback authority cannot be selected by body/path or inherited agent/system ownership', async () => {
+  const [user] = await db
+    .insert(users)
+    .values({ email: `${crypto.randomUUID()}@personal-callback.test` })
+    .returning()
+  try {
+    for (const identity of [
+      { type: 'agent' as const, agentId: crypto.randomUUID(), squadId: crypto.randomUUID(), userId: user!.id },
+      { type: 'system' as const, systemTokenId: crypto.randomUUID(), name: 'admin', scopes: ['*'] },
+    ]) {
+      const { app, calls } = createApp(identity, 'github')
+      calls.authorizationPurpose.mockResolvedValue('github_identity')
+      expect(
+        (
+          await app.request('/api/integrations/providers/github/authorization/callback', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ state: 's'.repeat(43), code: 'code' }),
+          })
+        ).status
+      ).toBe(403)
+      expect(calls.authorizationPurpose).not.toHaveBeenCalled()
+      expect(calls.authorizationCallback).not.toHaveBeenCalled()
+    }
+    const { app, calls } = createApp({ type: 'user', userId: user!.id })
+    calls.authorizationPurpose.mockResolvedValue('github_identity')
+    expect(
+      (
+        await app.request('/api/integrations/providers/notion/authorization/callback', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ state: 's'.repeat(43), code: 'code' }),
+        })
+      ).status
+    ).toBe(403)
+    expect(
+      (
+        await app.request('/api/integrations/providers/github/authorization/callback', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ state: 's'.repeat(43), code: 'code', purpose: 'github_identity' }),
+        })
+      ).status
+    ).toBe(400)
+    expect(calls.authorizationCallback).not.toHaveBeenCalled()
+  } finally {
+    await db.delete(users).where(eq(users.id, user!.id))
+  }
+})
+
+test('common personal callback reports generation/ownership domain refusals without a generic server error', async () => {
+  const { GitHubFeedbackError } = await import('../services/integrations/github/feedback-trust')
+  const [user] = await db
+    .insert(users)
+    .values({ email: `${crypto.randomUUID()}@personal-callback.test` })
+    .returning()
+  try {
+    const { app, calls } = createApp({ type: 'user', userId: user!.id }, 'github')
+    calls.authorizationPurpose.mockResolvedValue('github_identity')
+    calls.authorizationCallback.mockImplementationOnce(async () => {
+      throw new GitHubFeedbackError('identity_proof_changed', 409)
+    })
+    const response = await app.request('/api/integrations/providers/github/authorization/callback', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ state: 's'.repeat(43), code: 'code' }),
+    })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ error: 'identity_proof_changed', code: 'identity_proof_changed' })
+  } finally {
+    await db.delete(users).where(eq(users.id, user!.id))
+  }
 })

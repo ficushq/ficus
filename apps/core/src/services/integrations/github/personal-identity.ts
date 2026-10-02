@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { db, type DbTx } from '../../../db'
 import { githubIdentityProofs, githubPersonalIdentities, integrationAuditEvents } from '../../../db/schema'
 import type { Identity } from '../../rbac/permissions'
@@ -112,8 +112,41 @@ export async function getGitHubPersonalIdentity(identity: Identity | undefined) 
     .select()
     .from(githubPersonalIdentities)
     .where(and(eq(githubPersonalIdentities.userId, userId), isNull(githubPersonalIdentities.unlinkedAt)))
-  return row?.accountId && row.login
-    ? { accountId: row.accountId, login: row.login, linkedAt: row.linkedAt?.toISOString() }
+  return row?.accountId && row.login && row.linkedAt
+    ? { accountId: row.accountId, login: row.login, linkedAt: row.linkedAt.toISOString() }
+    : null
+}
+
+/** Self-only, current-generation confirmation metadata; no token, nonce, or caller-supplied profile. */
+export async function getPendingGitHubIdentityProof(identity: Identity | undefined) {
+  const userId = await requireGitHubHuman(db, identity)
+  const [row] = await db
+    .select({ proof: githubIdentityProofs })
+    .from(githubIdentityProofs)
+    .innerJoin(
+      githubPersonalIdentities,
+      and(
+        eq(githubPersonalIdentities.userId, githubIdentityProofs.userId),
+        eq(githubPersonalIdentities.generation, githubIdentityProofs.generation)
+      )
+    )
+    .where(
+      and(
+        eq(githubIdentityProofs.userId, userId),
+        isNull(githubIdentityProofs.consumedAt),
+        isNull(githubIdentityProofs.invalidatedAt),
+        sql`${githubIdentityProofs.expiresAt} > clock_timestamp()`
+      )
+    )
+    .orderBy(desc(githubIdentityProofs.verifiedAt), desc(githubIdentityProofs.id))
+    .limit(1)
+  return row
+    ? {
+        id: row.proof.id,
+        accountId: row.proof.accountId,
+        login: row.proof.login,
+        expiresAt: row.proof.expiresAt.toISOString(),
+      }
     : null
 }
 

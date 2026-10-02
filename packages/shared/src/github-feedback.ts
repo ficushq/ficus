@@ -38,3 +38,10 @@ export interface GitHubAccountIdentity {
   login: string
   accountType: 'User' | 'Bot'
 }
+
+/** Personal ownership is distinct from configuring any squad integration. */
+export interface GitHubPersonalIdentityStatus {
+  linked: { accountId: string; login: string; linkedAt: string } | null
+  confirmation: { id: string; accountId: string; login: string; expiresAt: string } | null
+  authorization: { configured: boolean; authority: 'local' | 'platform_broker'; mode: 'browser' | 'device' }
+}
