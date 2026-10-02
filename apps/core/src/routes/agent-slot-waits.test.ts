@@ -253,6 +253,37 @@ describe('agent held slot projection', () => {
     expect((await getHolds(reader, holderId)).status).toBe(403)
   })
 
+  test('slot permissions from another squad cannot authorize names or mismatched claim ownership', async () => {
+    await fixture()
+    await pool('private-pool')
+    const [other] = await db
+      .insert(squads)
+      .values({ name: `${prefix}-other`, purpose: 'Test' })
+      .returning()
+    try {
+      const role = await createTestRole({ prefix, permissions: ['slots:use'] })
+      await assignRole({ userId: agentOnly.id, roleId: role.id, scope: 'squad', squadId: other.id })
+      const response = await getHolds(agentOnly, holderId)
+      expect(response.status).toBe(403)
+      expect(await response.text()).not.toContain('private-pool')
+      await db.update(agents).set({ squadId: other.id }).where(eq(agents.id, holderId))
+      expect(await listActiveSlotHolds(db, [holderId])).toEqual([])
+    } finally {
+      await db.update(agents).set({ squadId }).where(eq(agents.id, holderId))
+      await db.delete(squads).where(eq(squads.id, other.id))
+    }
+  })
+
+  test('slot write with agent visibility authorizes the same safe projection', async () => {
+    await fixture()
+    await pool('capacity')
+    const role = await createTestRole({ prefix, permissions: ['agents:read'] })
+    await assignRole({ userId: slotOnly.id, roleId: role.id, scope: 'squad', squadId })
+    const response = await getHolds(slotOnly, holderId)
+    expect(response.status).toBe(200)
+    expect((await response.json()).map((row: { poolKey: string }) => row.poolKey)).toEqual(['capacity'])
+  })
+
   test('squadless visible agents have no held context', async () => {
     await fixture()
     await db.update(agents).set({ ownerUserId: reader.id, squadId: null }).where(eq(agents.id, agentId))
