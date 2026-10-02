@@ -1,3 +1,5 @@
+import { renderToStaticMarkup } from 'react-dom/server'
+import * as icons from './icons'
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { waitFor } from '@testing-library/dom'
@@ -121,6 +123,32 @@ describe('AgentSlotWaitStatus', () => {
     expect(dom.window.document.querySelectorAll('button, details')).toHaveLength(0)
   })
 
+  test.each(['hold', 'wait', 'both'] as const)('one neutral divider for %s status', async (state) => {
+    holds = state === 'wait' ? [] : [held('build')]
+    responses.set('agent-a', state === 'hold' ? [] : [queued('build')])
+    await render('agent-a', false, false)
+    await eventually(() =>
+      expect(dom.window.document.querySelectorAll('[role="status"]')).toHaveLength(state === 'both' ? 2 : 1)
+    )
+    const dividers = dom.window.document.querySelectorAll('.border-b')
+    expect(dividers).toHaveLength(1)
+    expect(dividers[0]!.className).toContain('border-th-border')
+    expect(dividers[0]!.querySelectorAll('[role="status"]')).toHaveLength(state === 'both' ? 2 : 1)
+    const rows = [...dom.window.document.querySelectorAll('[role="status"]')]
+    for (const row of rows) {
+      const Icon = row.textContent?.startsWith('Holding') ? icons.TicketIcon : icons.HourglassIcon
+      expect(row.querySelector('svg')?.outerHTML).toBe(
+        renderToStaticMarkup(<Icon className="mt-0.5 h-3 w-3 shrink-0" />)
+      )
+      expect(row.outerHTML).not.toMatch(/animate-|rounded-full|status-progress|[⌛⏳🎟🎫]/u)
+    }
+    holds = []
+    responses.set('agent-a', [])
+    await emit('slots.updated')
+    await eventually(() => expect(text()).toBe(''))
+    expect(dom.window.document.querySelector('.border-b')).toBeNull()
+  })
+
   test('held-only idle agents show informational ownership, removed on release and reconnect', async () => {
     responses.set('agent-a', [])
     holds = [held('build')]
@@ -155,6 +183,7 @@ describe('AgentSlotWaitStatus', () => {
     await render()
     await eventually(() => expect(text()).toContain('Holding slot: build'))
     expect(text()).toContain('Slot wait status unavailable')
+    expect(dom.window.document.querySelectorAll('.border-b')).toHaveLength(1)
   })
 
   test('expired and malformed wire facts never fabricate holding', async () => {
@@ -229,9 +258,10 @@ describe('AgentSlotWaitStatus', () => {
     expect(status.outerHTML).not.toMatch(/pool|position|ETA|only reason|idle because/i)
     expect(status.className).toContain('text-secondary')
     expect(status.className).not.toContain('status-queue')
-    const dot = status.querySelector('[aria-hidden="true"]')!
-    expect(dot.className).toContain('motion-safe:animate-pulse')
-    expect(dot.className).toContain('bg-status-progress-solid')
+    expect(status.querySelector('svg')?.outerHTML).toBe(
+      renderToStaticMarkup(<icons.HourglassIcon className="mt-0.5 h-3 w-3 shrink-0" />)
+    )
+    expect(status.outerHTML).not.toMatch(/animate-|rounded-full|status-progress|[⌛⏳🎟🎫]/u)
   })
 
   test('keeps a single long name visible and wrappable at narrow widths', async () => {
