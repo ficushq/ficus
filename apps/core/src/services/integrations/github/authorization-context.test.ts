@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto'
 import { expect, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../../db'
-import { users, integrationOauthStates, integrationAuthorizationFlowReceipts } from '../../../db/schema'
+import {
+  users,
+  integrationOauthStates,
+  integrationAuthorizationFlowReceipts,
+  integrationDeviceAuthorizations,
+} from '../../../db/schema'
 import { DbOAuthStateRepository } from '../authorization/db-state-repository'
 
 const context = await import('./authorization-context')
@@ -87,3 +92,49 @@ test('hosted purpose resolves only self-owned hosted flow, including receipt rep
     await h.close()
   }
 })
+
+test.each([true, false])(
+  'device purpose is bound to both device and receipt owners before any secret read, personal=%s',
+  async (personal) => {
+    const h = await fixture('platform_broker', personal)
+    try {
+      await h.states.claimByFlow({
+        localFlowId: h.id,
+        providerKey: 'github',
+        userId: h.userId,
+        authority: 'platform_broker',
+        handleHash: 'a'.repeat(64),
+      })
+      await db
+        .update(integrationAuthorizationFlowReceipts)
+        .set({ authority: 'local' })
+        .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.id))
+      const input = { providerKey: 'github', userId: h.userId, source: { kind: 'device' as const, id: h.id } }
+      // A browser receipt must not be selectable as a device receipt.
+      expect(await context.resolveStoredGitHubPurpose(input).catch(() => 'unsupported_source')).toBeNull()
+      await db.insert(integrationDeviceAuthorizations).values({
+        id: h.id,
+        userId: h.userId,
+        clientBinding: {},
+        userCode: 'CODE',
+        verificationUri: 'https://github.com/login/device',
+        encryptedDeviceCode: 'INVALID_CIPHERTEXT_MUST_NOT_BE_READ',
+        deviceCodeIv: 'INVALID_IV',
+        intervalSeconds: 5,
+        nextPollAt: new Date(),
+        expiresAt: new Date(Date.now() + 60000),
+      })
+      expect(await context.resolveStoredGitHubPurpose(input)).toBe(personal ? 'github_identity' : 'integration')
+      expect(await context.resolveStoredGitHubPurpose({ ...input, userId: h.otherUserId })).toBeNull()
+      expect(await context.resolveStoredGitHubPurpose({ ...input, providerKey: 'notion' })).toBeNull()
+      await db
+        .update(integrationDeviceAuthorizations)
+        .set({ userId: h.otherUserId })
+        .where(eq(integrationDeviceAuthorizations.id, h.id))
+      expect(await context.resolveStoredGitHubPurpose(input)).toBeNull()
+      expect(await context.resolveStoredGitHubPurpose({ ...input, userId: h.otherUserId })).toBeNull()
+    } finally {
+      await h.close()
+    }
+  }
+)

@@ -8,6 +8,7 @@ import { createLocalTransport, type OAuthTransport } from './transport'
 import { BrokerUnconfiguredError } from './authority'
 import { PlatformRequestError } from '../../platform/instance-client'
 import { registerOAuthProviderAdapterForTest } from '@ficus/shared/oauth-providers'
+import { GitHubFeedbackError } from '../github/feedback-trust'
 import { createFakeAdapter } from '@ficus/shared/oauth-providers/fake'
 
 class MemoryStateRepository implements OAuthStateRepository {
@@ -1144,7 +1145,7 @@ describe('IntegrationAuthorizationService: manual+managed provider (Slack-shaped
 })
 
 describe('personal GitHub OAuth purpose fencing', () => {
-  function purposeFixture(authority: 'local' | 'platform_broker' = 'local') {
+  function purposeFixture(authority: 'local' | 'platform_broker' = 'local', installError?: Error) {
     const states = new MemoryStateRepository()
     const integrationInstalls: unknown[] = []
     const personalInstalls: unknown[] = []
@@ -1187,6 +1188,7 @@ describe('personal GitHub OAuth purpose fencing', () => {
       },
       installIdentityGrant: async (input) => {
         personalInstalls.push(input.state)
+        if (installError) throw installError
         await input.exchange()
       },
       now: () => states.now,
@@ -1227,6 +1229,43 @@ describe('personal GitHub OAuth purpose fencing', () => {
         })
       expect(h.integrationInstalls).toHaveLength(0)
       expect(h.personalInstalls).toEqual([expect.objectContaining({ purpose: 'github_identity', linkGeneration: 3 })])
+    }
+  )
+
+  test.each(['local', 'platform_broker'] as const)(
+    'personal coordinator preserves only typed ownership errors under %s authority',
+    async (authority) => {
+      const domainError = new GitHubFeedbackError('identity_generation_changed', 409)
+      for (const error of [
+        domainError,
+        Object.assign(new Error('SECRET_PROVIDER_RESPONSE'), { code: 'identity_generation_changed', status: 409 }),
+      ]) {
+        const h = purposeFixture(authority, error)
+        const start = await h.service.start({
+          providerKey: 'github',
+          userId: 'human-1',
+          returnTo: '/settings',
+          intent: { kind: 'connect' },
+          purpose: 'github_identity',
+          linkGeneration: 3,
+        })
+        const operation =
+          authority === 'local'
+            ? h.service.callback({
+                providerKey: 'github',
+                userId: 'human-1',
+                state: new URL(start.authorizationUrl).searchParams.get('state')!,
+                code: 'code',
+              })
+            : h.service.complete({
+                providerKey: 'github',
+                userId: 'human-1',
+                localFlowId: [...h.states.rows.values()][0]!.localFlowId!,
+                handle: completionHandle,
+              })
+        if (error === domainError) await expect(operation).rejects.toBe(domainError)
+        else await expect(operation).rejects.toMatchObject({ code: 'grant_persistence_failed' })
+      }
     }
   )
 

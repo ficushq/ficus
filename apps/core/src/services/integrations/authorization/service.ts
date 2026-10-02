@@ -7,6 +7,7 @@ import type { AuthorizationFlowReceiptRepository } from './flow-repository'
 import { OAuthTransportError, type OAuthTransport } from './transport'
 import { PlatformRequestError } from '../../platform/instance-client'
 import { BrokerUnconfiguredError } from './authority'
+import { GitHubFeedbackError } from '../github/feedback-trust'
 import { oauthPluginView, type OAuthPluginView } from '../oauth-plugin-view'
 
 const STATE_TTL_MS = 10 * 60 * 1_000
@@ -201,6 +202,10 @@ export class IntegrationAuthorizationService {
     try {
       await this.#installGrant({ plugin, state, exchange, userId: input.userId })
     } catch (error) {
+      if (state.purpose === 'github_identity' && error instanceof GitHubFeedbackError) {
+        await this.#audit(input.userId, input.providerKey, 'callback', 'failed', error.code)
+        throw error
+      }
       const code = error instanceof AuthorizationFlowError ? error.code : 'grant_persistence_failed'
       await this.#audit(input.userId, input.providerKey, 'callback', 'failed', code)
       throw new AuthorizationFlowError(code)
@@ -289,7 +294,17 @@ export class IntegrationAuthorizationService {
     try {
       await this.#installGrant({ plugin, state, exchange, userId: input.userId })
     } catch (error) {
-      const code = authorizationErrorCode(error, 'grant_persistence_failed')
+      if (state.purpose === 'github_identity' && error instanceof GitHubFeedbackError) {
+        await this.#audit(input.userId, input.providerKey, 'complete', 'failed', error.code)
+        throw error
+      }
+      // Personal-domain authority cannot be asserted by arbitrary exception properties.
+      const code =
+        state.purpose === 'github_identity'
+          ? error instanceof AuthorizationFlowError
+            ? error.code
+            : 'grant_persistence_failed'
+          : authorizationErrorCode(error, 'grant_persistence_failed')
       if (burnsCompletionFlow(code)) {
         try {
           if (this.#dependencies.flowReceipts) {

@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../../db'
-import { integrationAuthorizationFlowReceipts, integrationOauthStates } from '../../../db/schema'
+import {
+  integrationAuthorizationFlowReceipts,
+  integrationOauthStates,
+  integrationDeviceAuthorizations,
+} from '../../../db/schema'
 import type { OAuthAuthorizationPurpose } from '../authorization/state-repository'
 import { z } from 'zod'
 import type { Identity } from '../../rbac'
@@ -82,7 +86,10 @@ export async function resumeLocalGitHubIdentity(input: {
   return { returnTo: receipt.returnTo }
 }
 
-export type GitHubAuthorizationSource = { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string }
+export type GitHubAuthorizationSource =
+  | { kind: 'callback'; state: string }
+  | { kind: 'complete'; localFlowId: string }
+  | { kind: 'device'; id: string }
 
 /** Internal routing metadata only. The HTTP guard supplies the authenticated user, not a body owner. */
 export async function resolveStoredGitHubPurpose(input: {
@@ -92,6 +99,28 @@ export async function resolveStoredGitHubPurpose(input: {
 }): Promise<OAuthAuthorizationPurpose | null> {
   if (input.providerKey !== 'github') return null
   const { source } = input
+  if (source.kind === 'device') {
+    if (!z.string().uuid().safeParse(source.id).success) return null
+    // Metadata-only join: do not decrypt the device code merely to select a permission family.
+    const [row] = await db
+      .select({ purpose: integrationAuthorizationFlowReceipts.purpose })
+      .from(integrationDeviceAuthorizations)
+      .innerJoin(
+        integrationAuthorizationFlowReceipts,
+        eq(integrationAuthorizationFlowReceipts.localFlowId, integrationDeviceAuthorizations.id)
+      )
+      .where(
+        and(
+          eq(integrationDeviceAuthorizations.id, source.id),
+          eq(integrationDeviceAuthorizations.userId, input.userId),
+          eq(integrationAuthorizationFlowReceipts.initiatingUserId, input.userId),
+          eq(integrationAuthorizationFlowReceipts.providerKey, 'github'),
+          eq(integrationAuthorizationFlowReceipts.authority, 'local')
+        )
+      )
+      .limit(1)
+    return row?.purpose === 'github_identity' || row?.purpose === 'integration' ? row.purpose : null
+  }
   if (source.kind === 'callback' && !BROKER_COMPLETION_HANDLE_PATTERN.test(source.state)) return null
   if (source.kind === 'complete' && !z.string().uuid().safeParse(source.localFlowId).success) return null
   const authority = source.kind === 'callback' ? 'local' : 'platform_broker'
