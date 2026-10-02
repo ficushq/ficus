@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
-import { ChatIcon } from './icons'
+import { ChatIcon, ChevronDownIcon, ChevronRightIcon } from './icons'
 import { WorkStreamReviewers } from './WorkStreamReviewers'
 import { WorkflowGraph } from './WorkflowGraph'
-import { useState } from 'react'
+import { useId, useState, type ComponentProps } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WorkStream, WorkflowCommand, WorkflowSource } from '@ficus/shared'
 import {
@@ -18,7 +18,7 @@ import { client } from '../api/clientInstance'
 import { usePermissions } from '../hooks/usePermissions'
 import { WorkflowEditor } from './squads/WorkflowEditor'
 
-export function WorkflowRunPanel({
+function WorkflowRunPanelContent({
   stream,
   onOpenAgent,
   focusWaitId,
@@ -31,6 +31,8 @@ export function WorkflowRunPanel({
   const { data: run, error } = useQuery(queries.workflows.run(stream.id))
   const { can } = usePermissions(stream.squadId)
   const queryClient = useQueryClient()
+  const [previewExpanded, setPreviewExpanded] = useState(false)
+  const previewId = useId()
   const [selectedAttempt, setSelectedAttempt] = useState<number>()
   const [presetId, setPresetId] = useState('')
   const [editing, setEditing] = useState(false)
@@ -128,7 +130,21 @@ export function WorkflowRunPanel({
   return (
     <section className="border-t border-th-border pt-4 space-y-3">
       <div className="flex justify-between gap-3">
-        <h3 className="text-sm font-medium">{run.state.definition.name}</h3>
+        <h3 className="min-w-0 flex-1 text-sm font-medium">
+          <button
+            type="button"
+            aria-label={`Workflow preview: ${run.state.definition.name}`}
+            aria-expanded={previewExpanded}
+            aria-controls={previewId}
+            onClick={() => setPreviewExpanded((expanded) => !expanded)}
+            className="flex w-full items-center gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <span aria-hidden="true" className="shrink-0">
+              {previewExpanded ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
+            </span>
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{run.state.definition.name}</span>
+          </button>
+        </h3>
         <span className="text-xs text-secondary">
           {terminal
             ? stream.status
@@ -142,16 +158,20 @@ export function WorkflowRunPanel({
       {run.state.definition.steps.some((step) => step.kind === 'human-approval') && (
         <WorkStreamReviewers stream={stream} />
       )}
-      <WorkflowGraph
-        definition={run.state.definition}
-        run={run.state}
-        renderStepDetails={stepAgentLinks}
-        openWaits={waits}
-        integrationDeliveries={run.integrationDeliveries}
-        metadata={stream.metadata ?? {}}
-        paused={!!stream.pause}
-        queued={stream.status === 'queued'}
-      />
+      <div id={previewId} hidden={!previewExpanded}>
+        {previewExpanded && (
+          <WorkflowGraph
+            definition={run.state.definition}
+            run={run.state}
+            renderStepDetails={stepAgentLinks}
+            openWaits={waits}
+            integrationDeliveries={run.integrationDeliveries}
+            metadata={stream.metadata ?? {}}
+            paused={!!stream.pause}
+            queued={stream.status === 'queued'}
+          />
+        )}
+      </div>
       {waits.map((wait) => (
         <p key={wait.id} className="text-sm text-secondary">
           {wait.flowAttemptId == null
@@ -359,4 +379,9 @@ export function WorkflowRunPanel({
       )}
     </section>
   )
+}
+
+// Each detail identity owns its disclosure state; query refreshes keep it intact.
+export function WorkflowRunPanel(props: ComponentProps<typeof WorkflowRunPanelContent>) {
+  return <WorkflowRunPanelContent key={props.stream.id} {...props} />
 }
