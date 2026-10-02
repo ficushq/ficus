@@ -150,6 +150,15 @@ describe('maintenance box reprovision', () => {
       expect(f.rows[0]!.status).toBe(status)
     }
   })
+  it('refuses to normalize any active activation-chain link under a stopped row', async () => {
+    for (const link of ['socket', 'proxy', 'server'] as const) {
+      const f = fixture([row('agent_one', 'stopped')])
+      f.actual = { ...stopped, [link]: true }
+      expect(await runBoxReprovision('all', f.deps)).toBe(1)
+      expect(writes(f)).toEqual([])
+      expect(f.actual[link]).toBe(true)
+    }
+  })
   it('preflights every selected env before any mutation', async () => {
     const f = fixture([row('agent_one'), row('squad_two')])
     f.deps.readEnv = async (_, b) => (b.sandboxId === 'squad_two' ? `${env(b)}EXECUTOR_AUTH_TOKEN=ambiguous\n` : env(b))

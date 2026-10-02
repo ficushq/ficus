@@ -1716,8 +1716,18 @@ provision_box() {
   # provision of this same box left behind — leaving it enabled would start
   # every box's server at host boot and give back exactly the RAM this layout
   # reclaims. Nothing else in the system enables it.
-  sysbox disable "$(unit_name)" >/dev/null 2>&1 || true
-  sysbox enable --now "$(socket_name)" >/dev/null 2>&1 || true
+  # Failure here is recoverable by reprovision, but is NOT a provisioned box.
+  # Keep command failures and empty/failed readbacks out of the success marker.
+  sysbox disable "$(unit_name)"
+  sysbox enable --now "$(socket_name)"
+  local server_enabled socket_enabled socket_active
+  server_enabled="$(sysbox show -p UnitFileState --value "$(unit_name)")" || return $?
+  socket_enabled="$(sysbox show -p UnitFileState --value "$(socket_name)")" || return $?
+  socket_active="$(sysbox show -p ActiveState --value "$(socket_name)")" || return $?
+  if [ "${server_enabled}" != disabled ] || [ "${socket_enabled}" != enabled ] || [ "${socket_active}" != active ]; then
+    echo "box-provision.sh: socket activation readback failed for ${UNIX_USER}" >&2
+    return 1
+  fi
   # The SERVER is deliberately NOT started here. server.env — which carries the box's
   # EXECUTOR_AUTH_TOKEN and EXECUTOR_BIND=127.0.0.1 — is pushed by box-manager
   # only AFTER this script returns, so a unit started now would boot token-less
