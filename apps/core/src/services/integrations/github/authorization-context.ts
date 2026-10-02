@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../../db'
-import { integrationAuthorizationFlowReceipts } from '../../../db/schema'
+import { integrationAuthorizationFlowReceipts, integrationOauthStates } from '../../../db/schema'
+import type { OAuthAuthorizationPurpose } from '../authorization/state-repository'
+import { z } from 'zod'
 import type { Identity } from '../../rbac'
 import type { AuthorizationFlowReceiptRepository } from '../authorization/flow-repository'
 import { AuthorizationFlowError, BROKER_COMPLETION_HANDLE_PATTERN } from '../authorization/service'
@@ -78,4 +80,51 @@ export async function resumeLocalGitHubIdentity(input: {
     },
   })
   return { returnTo: receipt.returnTo }
+}
+
+export type GitHubAuthorizationSource = { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string }
+
+/** Internal routing metadata only. The HTTP guard supplies the authenticated user, not a body owner. */
+export async function resolveStoredGitHubPurpose(input: {
+  providerKey: string
+  userId: string
+  source: GitHubAuthorizationSource
+}): Promise<OAuthAuthorizationPurpose | null> {
+  if (input.providerKey !== 'github') return null
+  const { source } = input
+  if (source.kind === 'callback' && !BROKER_COMPLETION_HANDLE_PATTERN.test(source.state)) return null
+  if (source.kind === 'complete' && !z.string().uuid().safeParse(source.localFlowId).success) return null
+  const authority = source.kind === 'callback' ? 'local' : 'platform_broker'
+  const stateHash = source.kind === 'callback' ? createHash('sha256').update(source.state).digest('hex') : null
+  const [state] = await db
+    .select({ purpose: integrationOauthStates.purpose })
+    .from(integrationOauthStates)
+    .where(
+      and(
+        eq(integrationOauthStates.userId, input.userId),
+        eq(integrationOauthStates.providerKey, 'github'),
+        eq(integrationOauthStates.authority, authority),
+        source.kind === 'callback'
+          ? eq(integrationOauthStates.stateHash, stateHash!)
+          : eq(integrationOauthStates.localFlowId, source.localFlowId)
+      )
+    )
+    .limit(1)
+  const [receipt] = await db
+    .select({ purpose: integrationAuthorizationFlowReceipts.purpose })
+    .from(integrationAuthorizationFlowReceipts)
+    .where(
+      and(
+        eq(integrationAuthorizationFlowReceipts.initiatingUserId, input.userId),
+        eq(integrationAuthorizationFlowReceipts.providerKey, 'github'),
+        eq(integrationAuthorizationFlowReceipts.authority, authority),
+        source.kind === 'callback'
+          ? eq(integrationAuthorizationFlowReceipts.completionHandleHash, stateHash!)
+          : eq(integrationAuthorizationFlowReceipts.localFlowId, source.localFlowId)
+      )
+    )
+    .limit(1)
+  if (state && receipt && state.purpose !== receipt.purpose) throw new AuthorizationFlowError('identity_flow_mismatch')
+  const purpose = state?.purpose ?? receipt?.purpose
+  return purpose === 'github_identity' || purpose === 'integration' ? purpose : null
 }
