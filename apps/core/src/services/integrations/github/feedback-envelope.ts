@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { GitHubAccountIdentity, GitHubFeedbackEnvelope, IntegrationOutputFact } from '@ficus/shared'
+import { buildGitHubStatus } from './feedback-status'
 import type { VerifiedIngressEvent } from '../types'
 
 const record = (value: unknown): Record<string, any> =>
@@ -61,25 +62,7 @@ export function normalizeGitHubFeedback(
     }
     return {
       content: null,
-      status: {
-        output: fact.output,
-        version: fact.version,
-        resourceKey: fact.resourceKey,
-        eventKey: fact.eventKey,
-        occurredAt: fact.occurredAt,
-        data,
-        subject: `Dependabot ${data.severity}: ${data.repository} alert ${alert.number}`,
-        body: [
-          `Dependabot alert ${alert.number}: ${data.severity} (${data.state}; ${data.action}).`,
-          advisoryId ? `Advisory: ${advisoryId}.` : '',
-          fact.url,
-          'Provider state is not remediation acceptance or work completion.',
-        ]
-          .filter(Boolean)
-          .join('\n'),
-        url: fact.url,
-        ordering: fact.ordering,
-      },
+      status: buildGitHubStatus({ ...fact, data }),
     }
   }
   const parent = record(payload.pull_request ?? payload.issue)
@@ -120,7 +103,6 @@ export function normalizeGitHubFeedback(
     const runId = githubNativeId(run.id)
     if (state && (!isCI || (workflowId && runId))) {
       const headSha = sha(parent.head?.sha ?? run.head_sha)
-      const url = isCI ? `https://github.com/${repo}/actions/runs/${runId}` : resourceUrl
       const data = {
         repository: repo,
         ...(repositoryId ? { repositoryId: Number(repositoryId) } : {}),
@@ -143,24 +125,7 @@ export function normalizeGitHubFeedback(
             }),
         projection: 'status',
       }
-      status = {
-        output: fact.output,
-        version: fact.version,
-        eventKey: fact.eventKey,
-        resourceKey: fact.resourceKey,
-        occurredAt: fact.occurredAt,
-        data,
-        subject: isCI ? `CI ${state}: ${repo} · Workflow ${workflowId}` : `Pull request ${state}: ${repo} ${number}`,
-        body: [
-          isCI ? `Workflow ${workflowId}: ${state}.` : `Pull request ${number}: ${state} (${action}).`,
-          headSha ? `Head: ${headSha}` : '',
-          url,
-        ]
-          .filter(Boolean)
-          .join('\n'),
-        url,
-        ...(isCI && fact.ordering && workflowId ? { ordering: { ...fact.ordering, key: workflowId } } : {}),
-      }
+      status = buildGitHubStatus({ ...fact, data })
     }
   }
   if (isCI) return { content: null, status }

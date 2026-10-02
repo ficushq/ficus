@@ -21,6 +21,8 @@ export interface FeedbackCaptureDependencies {
   readCurrent?(event: Event, content: GitHubFeedbackContent): Promise<{ contentHash: string } | null>
   /** Verified native delivery ID, never payload/metadata.synthetic. Poll fingerprints are not transport receipts. */
   transportKey?: string
+  /** Storage-only quarantine when exact native ownership/access could not be witnessed. */
+  holdReason?: 'source_unverified'
   routingProvenance?: Array<{ kind: string; id: string }>
   /** Internal live-trust resolver, only for a new, unambiguous capture; never transported approval. */
   decideFresh?(tx: DbTx, squadId: string, content: GitHubFeedbackContent): Promise<boolean>
@@ -133,15 +135,17 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
           ? 'unknown_identity'
           : previouslyHeld
             ? 'previously_held'
-            : stale
-              ? 'stale_observation'
-              : ambiguous
-                ? 'ambiguous_observation'
-                : content.attribution === 'unknown'
-                  ? 'unknown_editor'
-                  : !content.author
-                    ? 'unknown_author'
-                    : 'untrusted_author')
+            : deps.holdReason
+              ? deps.holdReason
+              : stale
+                ? 'stale_observation'
+                : ambiguous
+                  ? 'ambiguous_observation'
+                  : content.attribution === 'unknown'
+                    ? 'unknown_editor'
+                    : !content.author
+                      ? 'unknown_author'
+                      : 'untrusted_author')
       // Retries of a held ambiguous/stale observation stay pending; never strengthen history.
       revision =
         stale || ambiguous

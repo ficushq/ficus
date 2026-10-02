@@ -5,7 +5,7 @@ import {
   type CodeHostReference,
   type IntegrationOutputFact,
 } from '@ficus/shared'
-import { db, workStreams, workStreamFlowRuns } from '../../../db'
+import { db, workStreams, workStreamFlowRuns, type DbTx } from '../../../db'
 import { recordChangeRequestBinding } from '../../work-streams/change-request-binding'
 import { createLogger } from '../../../lib/infra/logger'
 import { integrationOutputRegistry } from './registry'
@@ -139,7 +139,8 @@ export async function planChangeRequestBinding(
 export async function bindChangeRequestFromEvent(
   integration: string,
   fact: IntegrationOutputFact,
-  authorize: (squadId: string) => Promise<boolean>
+  authorize: (squadId: string) => Promise<boolean>,
+  admit?: (tx: DbTx) => Promise<boolean>
 ): Promise<string[]> {
   const plan = await planChangeRequestBinding(integration, fact, authorize)
   if (!plan) return []
@@ -147,7 +148,8 @@ export async function bindChangeRequestFromEvent(
     plan.workStreamId,
     plan.reference,
     plan.candidate,
-    (metadata) => matchStreamBranch(metadata, plan.head).kind === 'unbound'
+    (metadata) => matchStreamBranch(metadata, plan.head).kind === 'unbound',
+    admit
   )
   if (bound)
     log.info(

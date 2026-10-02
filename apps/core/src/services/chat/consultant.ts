@@ -1,3 +1,4 @@
+import type { DbTx } from '../../db'
 import type { ConsultantOrigin } from '@ficus/shared'
 import { Agent } from '../../entities/Agent'
 import { ChatIdempotencyConflictError } from './consultant-idempotency'
@@ -23,7 +24,12 @@ function matchesConsultantScope(agent: Agent, squadId: string): boolean {
   )
 }
 
-export async function findOrCreateConsultant(id: string, squadId: string, origin: ConsultantOrigin): Promise<Agent> {
+export async function findOrCreateConsultant(
+  id: string,
+  squadId: string,
+  origin: ConsultantOrigin,
+  authorizeInsert?: (tx: DbTx) => Promise<void>
+): Promise<Agent> {
   const existing = await Agent.find(id)
   if (existing) {
     if (!matchesConsultantScope(existing, squadId)) throw new ChatIdempotencyConflictError()
@@ -31,13 +37,16 @@ export async function findOrCreateConsultant(id: string, squadId: string, origin
   }
 
   try {
-    return await Agent.create({
-      id,
-      agentTypeId: 'consultant',
-      squadId,
-      context: { scope: { type: 'consultant', id: squadId }, origin },
-      persist: false,
-    })
+    return await Agent.create(
+      {
+        id,
+        agentTypeId: 'consultant',
+        squadId,
+        context: { scope: { type: 'consultant', id: squadId }, origin },
+        persist: false,
+      },
+      authorizeInsert
+    )
   } catch (error) {
     if (!isUniqueViolation(error)) throw error
     const winner = await Agent.find(id)

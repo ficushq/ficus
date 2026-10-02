@@ -59,6 +59,7 @@ const alert = {
 }
 const event = (action = 'created', overrides = {}) => ({
   type: 'dependabot_alert',
+  githubObservation: { kind: 'webhook' as const },
   payload: { repository, action, alert: { ...alert, ...overrides } },
 })
 async function fixture(metadata: unknown = { github: [{ repo }] }) {
@@ -178,6 +179,11 @@ test('configured workflows create one paused tracked alert stream across replay,
   }
   const one = await fixture({ github: [{ repo: '*' }], integrationRules: { github: rules } })
   const authority = { kind: 'connection' as const, squadId: one.squadId, connectionId: one.connectionId }
+  let currentRepository = repository
+  const read = spyOn(api, 'githubApiGet').mockImplementation(
+    async <T>(path: string): Promise<T | null> =>
+      (path.includes('/dependabot/alerts/') ? { number: Number(path.split('/').at(-1)) } : currentRepository) as T
+  )
   try {
     await Promise.all([
       publishIntegrationOutputs('github', event(), authority),
@@ -185,7 +191,9 @@ test('configured workflows create one paused tracked alert stream across replay,
     ])
     const renamed = event('reopened', { updated_at: '2026-09-02T00:00:00Z' })
     renamed.payload.repository = { ...repository, full_name: `${prefix}/renamed` }
+    currentRepository = renamed.payload.repository
     await publishIntegrationOutputs('github', renamed, authority)
+    currentRepository = repository
     await publishIntegrationOutputs(
       'github',
       event('fixed', { state: 'fixed', number: 8, updated_at: '2026-09-03T00:00:00Z' }),
@@ -208,6 +216,7 @@ test('configured workflows create one paused tracked alert stream across replay,
       await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.squadId, one.squadId))
     ).toHaveLength(1)
   } finally {
+    read.mockRestore()
     send.mockRestore()
   }
 })
@@ -285,7 +294,7 @@ test('managed relay rejects unrelated squad interests and rechecks Dependabot re
         .select()
         .from(integrationOutputEvents)
         .where(sql`${integrationOutputEvents.authority}->>'connectionId' = ${one.connectionId}`)
-    ).toHaveLength(1)
+    ).toHaveLength(2) // internal native source + verified safe effect alias
   } finally {
     read.mockRestore()
     send.mockRestore()
@@ -322,6 +331,10 @@ for (const action of ['created', 'reopened', 'fixed', 'dismissed']) {
 
 for (const action of ['notify-manager', 'start-workstream'] as const) {
   test(`unmatched historical polling is silent with ${action}; real webhooks can refine and route`, async () => {
+    const read = spyOn(api, 'githubApiGet').mockImplementation(
+      async <T>(path: string): Promise<T | null> =>
+        (path.includes('/dependabot/alerts/') ? { number: 7 } : repository) as T
+    )
     const send = spyOn(InboxMessage, 'send')
     const sendOnce = spyOn(InboxMessage, 'sendOnce')
     const wake = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
@@ -370,6 +383,7 @@ for (const action of ['notify-manager', 'start-workstream'] as const) {
           .data.action
       ).toBe('created')
     } finally {
+      read.mockRestore()
       send.mockRestore()
       sendOnce.mockRestore()
       wake.mockRestore()

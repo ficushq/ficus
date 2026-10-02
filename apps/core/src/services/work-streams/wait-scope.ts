@@ -216,10 +216,15 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
   // mutations use this same order; taking it after a stream lock would permit a deadlock.
   if (integrationMessages.length) {
     const eventIds = integrationMessages.flatMap((row) =>
-      typeof row.metadata?.integrationEventId === 'string' ? [row.metadata.integrationEventId] : []
+      typeof row.metadata?.integrationEventId === 'string' &&
+      z.string().uuid().safeParse(row.metadata.integrationEventId).success
+        ? [row.metadata.integrationEventId]
+        : []
     )
     const deliveryIds = integrationMessages.flatMap((row) =>
-      row.metadata?.source === 'integration-output' && typeof row.metadata.integrationDeliveryId === 'string'
+      row.metadata?.source === 'integration-output' &&
+      typeof row.metadata.integrationDeliveryId === 'string' &&
+      z.string().uuid().safeParse(row.metadata.integrationDeliveryId).success
         ? [row.metadata.integrationDeliveryId]
         : []
     )

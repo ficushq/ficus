@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { db, squads, workStreams } from '../../db'
+import { db, squads, workStreams, type DbTx } from '../../db'
 
 /** Canonical shape, shared with query-only future-subscription planning. No metadata is persisted here. */
 export function changeRequestBindingMetadata(
@@ -40,9 +40,11 @@ export async function recordChangeRequestBinding(
   streamId: string,
   reference: { integration: string; repository: string; connectionId?: string },
   chosen: { number: number; url?: string },
-  stillMatches?: (metadata: unknown) => boolean
+  stillMatches?: (metadata: unknown) => boolean,
+  admit?: (tx: DbTx) => Promise<boolean>
 ): Promise<boolean> {
   const changed = await db.transaction(async (tx) => {
+    if (admit && !(await admit(tx))) return false
     // Global lock order: squad before work stream.
     const [owner] = await tx
       .select({ squadId: workStreams.squadId })

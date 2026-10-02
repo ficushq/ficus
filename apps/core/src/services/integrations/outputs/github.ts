@@ -110,7 +110,13 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
   },
   normalize(event) {
     if (event.type === 'dependabot_alert')
-      return normalizeDependabot(event).map((fact) => ({ ...fact, github: normalizeGitHubFeedback(event, fact) }))
+      return normalizeDependabot(event).map((fact) => ({
+        ...fact,
+        github: {
+          ...normalizeGitHubFeedback(event, fact),
+          ...(event.githubObservation ? { observation: event.githubObservation } : {}),
+        },
+      }))
     const payload = record(event.payload)
     const repository = payload?.repository?.full_name
     if (typeof repository !== 'string' || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) return []

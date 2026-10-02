@@ -5,6 +5,7 @@ import {
   integrationSubscriptionMatches,
   type IntegrationSubscription,
   type WorkflowEventTrigger,
+  type IntegrationOutputFact,
 } from '@ficus/shared'
 import {
   db,
@@ -91,7 +92,7 @@ function result(input: OutputRoutingRoute[]): OutputRoutingPlan {
 export async function planOutputRouting(
   event: Event,
   authorize: (squadId: string) => Promise<boolean>,
-  options: { login?: string } = {}
+  options: { login?: string; bindingFact?: IntegrationOutputFact } = {}
 ): Promise<OutputRoutingPlan> {
   if (event.authority.kind !== 'connection' || !(await authorize(event.authority.squadId))) return result([])
   const squadId = event.authority.squadId
@@ -142,7 +143,7 @@ export async function planOutputRouting(
       }
     }
   }
-  const branch = await planChangeRequestBinding(event.integration, event.fact, authorize)
+  const branch = await planChangeRequestBinding(event.integration, options.bindingFact ?? event.fact, authorize)
   if (branch) {
     const target = rows.find((row) => row.stream.id === branch.workStreamId)
     if (target?.run && target.run.createdAt <= event.createdAt) {

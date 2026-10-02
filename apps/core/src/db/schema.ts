@@ -1437,6 +1437,17 @@ export const githubFeedbackObjects = pgTable(
   ]
 )
 
+/** Server-owned, short-lived exact-resource witness. Never accepted from a fact or API DTO. */
+export const githubOutputProofs = pgTable('github_output_proofs', {
+  eventId: uuid('event_id').primaryKey().references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
+  sourceEventId: uuid('source_event_id').notNull().references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
+  sourceHash: varchar('source_hash', { length: 64 }).notNull(),
+  effectHash: varchar('effect_hash', { length: 64 }).notNull(),
+  authorityHash: varchar('authority_hash', { length: 64 }).notNull(),
+  checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+})
+
 /** The envelope is immutable through services; a decision never re-fetches provider content. */
 export const githubFeedbackRevisions = pgTable(
   'github_feedback_revisions',

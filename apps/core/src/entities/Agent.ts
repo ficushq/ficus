@@ -343,7 +343,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     return takenNamesInSquad(squadId)
   }
 
-  static async create(input: CreateAgentInput): Promise<Agent> {
+  static async create(input: CreateAgentInput, authorizeInsert?: (tx: DbTransaction) => Promise<void>): Promise<Agent> {
     const id = input.id ?? crypto.randomUUID()
     // Auto-generated names are unique within a squad (best-effort: concurrent creates can still
     // collide, but squad agents are created serially by the manager). Explicit names pass through.
@@ -359,7 +359,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     // Manager agents are always persistent
     const persist = input.agentTypeId === 'manager' ? true : (input.persist ?? false)
 
-    await insertAgent({
+    const values = {
       id,
       agentTypeId: input.agentTypeId,
       squadId: input.squadId ?? null,
@@ -369,7 +369,15 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       context: input.context ?? {},
       persist,
       modelOverride: input.modelOverride ?? null,
-    })
+    }
+    // Internal ingress gate: the guard and insert share one transaction. Provider I/O must
+    // finish before this callback; ordinary creation keeps its existing behavior.
+    if (authorizeInsert)
+      await db.transaction(async (tx) => {
+        await authorizeInsert(tx)
+        await insertAgent(values, tx)
+      })
+    else await insertAgent(values)
 
     const agent = await Agent.mustFind(id)
     eventEmitter.emit('agent.created', { agentId: agent.id, squadId: agent.squadId })

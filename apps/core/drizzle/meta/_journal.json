@@ -1450,6 +1450,13 @@
       "when": 1790949963444,
       "tag": "0206_solid_black_bolt",
       "breakpoints": true
+    },
+    {
+      "idx": 207,
+      "version": "7",
+      "when": 1790972109609,
+      "tag": "0207_conscious_switch",
+      "breakpoints": true
     }
   ]
 }
