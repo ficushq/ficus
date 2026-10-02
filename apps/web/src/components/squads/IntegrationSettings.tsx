@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { effectiveSquadEventRules, squadEventRulesSchema, type SquadEventRule } from '@ficus/shared'
 import { SquadEventRulesEditor } from './SquadEventRulesEditor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -59,7 +59,7 @@ export function IntegrationSettings({ squadId }: { squadId: string }) {
               canWrite={permissions.can('integrations:write')}
             >
               {(entry.key === 'github' || entry.key === 'linear') && (
-                <IntegrationRoutingSettings squadId={squadId} provider={entry.key} />
+                <IntegrationRoutingSettings key={`${squadId}:${entry.key}`} squadId={squadId} provider={entry.key} />
               )}
             </SquadIntegrationCard>
           ))}
@@ -74,31 +74,31 @@ export function IntegrationSettings({ squadId }: { squadId: string }) {
   )
 }
 
+interface RoutingDraft {
+  github: GithubRoutingFormEntry[]
+  linear: LinearRoutingFormEntry[]
+  rules: SquadEventRule[]
+}
+
 function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; provider: 'github' | 'linear' }) {
   const queryClient = useQueryClient()
   const squadPermissions = usePermissions(squadId)
   const { data: squad, isLoading } = useQuery(queries.squads.basic(squadId))
-  const [githubEntries, setGithubEntries] = useState<GithubRoutingFormEntry[]>([])
-  const [linearEntries, setLinearEntries] = useState<LinearRoutingFormEntry[]>([])
-  const [eventRules, setEventRules] = useState<SquadEventRule[]>([])
-  const [hasChanges, setHasChanges] = useState(false)
-
-  useEffect(() => {
-    if (!squad) return
-    const existingGithub = githubRoutingFromMetadata(squad.metadata)
-    const existingLinear = linearRoutingFromMetadata(squad.metadata)
-    setGithubEntries(existingGithub.length > 0 ? existingGithub : [{ repo: '', labelsText: '' }])
-    setLinearEntries(existingLinear.length > 0 ? existingLinear : [{ teamId: '' }])
-    setEventRules(effectiveSquadEventRules(squad.metadata, provider))
-    setHasChanges(false)
-  }, [squad, provider])
+  // Clean forms follow the query. Once edited, the entire form belongs to the
+  // user until saved or closed; unrelated squad refreshes must not reinitialize it.
+  const [draft, setDraft] = useState<RoutingDraft | null>(null)
+  const existingGithub = githubRoutingFromMetadata(squad?.metadata)
+  const existingLinear = linearRoutingFromMetadata(squad?.metadata)
+  const config = draft ?? {
+    github: existingGithub.length > 0 ? existingGithub : [{ repo: '', labelsText: '' }],
+    linear: existingLinear.length > 0 ? existingLinear : [{ teamId: '' }],
+    rules: effectiveSquadEventRules(squad?.metadata, provider),
+  }
+  const { github: githubEntries, linear: linearEntries, rules: eventRules } = config
+  const hasChanges = draft !== null
 
   const updateMutation = useMutation({
-    mutationFn: async (nextConfig: {
-      github: GithubRoutingFormEntry[]
-      linear: LinearRoutingFormEntry[]
-      rules: SquadEventRule[]
-    }) => {
+    mutationFn: async (nextConfig: RoutingDraft) => {
       const currentMetadata = (squad?.metadata as Record<string, unknown> | null | undefined) ?? {}
       const metadata =
         provider === 'github'
@@ -114,23 +114,26 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
         },
       })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.squads.basic(squadId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.squads.detail(squadId) })
-      setHasChanges(false)
+    onSuccess: async (savedSquad, submitted) => {
+      // A read started before the save must not replace the acknowledged baseline.
+      await queryClient.cancelQueries({ queryKey: queryKeys.squads.basic(squadId) })
+      queryClient.setQueryData(queryKeys.squads.basic(squadId), savedSquad)
+      // Scope inputs remain editable during saves. Only clear the submitted draft,
+      // not a newer edit made while the request was pending.
+      setDraft((current) => (current === submitted ? null : current))
+      void queryClient.invalidateQueries({ queryKey: queryKeys.squads.basic(squadId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.squads.detail(squadId) })
     },
   })
 
   if (isLoading) return <FormSkeleton label="Loading integrations" sections={4} />
 
   const updateGithubEntry = (index: number, patch: Partial<GithubRoutingFormEntry>) => {
-    setGithubEntries((prev) => prev.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)))
-    setHasChanges(true)
+    setDraft({ ...config, github: githubEntries.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)) })
   }
 
   const updateLinearEntry = (index: number, patch: Partial<LinearRoutingFormEntry>) => {
-    setLinearEntries((prev) => prev.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)))
-    setHasChanges(true)
+    setDraft({ ...config, linear: linearEntries.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)) })
   }
 
   return (
@@ -186,8 +189,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                   <button
                     type="button"
                     onClick={() => {
-                      setGithubEntries((prev) => prev.filter((_, i) => i !== index))
-                      setHasChanges(true)
+                      setDraft({ ...config, github: githubEntries.filter((_, i) => i !== index) })
                     }}
                     className="ficus-button text-xs text-status-danger-500 hover:underline"
                   >
@@ -201,8 +203,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
           <button
             type="button"
             onClick={() => {
-              setGithubEntries((prev) => [...prev, { repo: '', labelsText: '' }])
-              setHasChanges(true)
+              setDraft({ ...config, github: [...githubEntries, { repo: '', labelsText: '' }] })
             }}
             className="ficus-button mt-3 px-3 py-1.5 text-sm rounded-md border border-th-border text-primary hover:bg-surface-hover"
           >
@@ -242,8 +243,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                   <button
                     type="button"
                     onClick={() => {
-                      setLinearEntries((prev) => prev.filter((_, i) => i !== index))
-                      setHasChanges(true)
+                      setDraft({ ...config, linear: linearEntries.filter((_, i) => i !== index) })
                     }}
                     className="ficus-button text-xs text-status-danger-500 hover:underline"
                   >
@@ -257,8 +257,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
           <button
             type="button"
             onClick={() => {
-              setLinearEntries((prev) => [...prev, { teamId: '' }])
-              setHasChanges(true)
+              setDraft({ ...config, linear: [...linearEntries, { teamId: '' }] })
             }}
             className="ficus-button mt-3 px-3 py-1.5 text-sm rounded-md border border-th-border text-primary hover:bg-surface-hover"
           >
@@ -277,14 +276,13 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
         }
         disabled={!squadPermissions.can('squads:update') || updateMutation.isPending}
         onChange={(rules) => {
-          setEventRules(rules)
-          setHasChanges(true)
+          setDraft({ ...config, rules })
         }}
       />
       {hasChanges && squadPermissions.can('squads:update') && (
         <button
           type="button"
-          onClick={() => updateMutation.mutate({ github: githubEntries, linear: linearEntries, rules: eventRules })}
+          onClick={() => updateMutation.mutate(config)}
           disabled={updateMutation.isPending || !squadEventRulesSchema.safeParse({ [provider]: eventRules }).success}
           className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent"
         >
