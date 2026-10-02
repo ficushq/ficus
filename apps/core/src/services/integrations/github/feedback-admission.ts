@@ -21,19 +21,26 @@ export async function isGitHubFeedbackAdmitted(store: typeof db | DbTx, event: E
   const revisionId = event.fact.github?.revisionId
   if (!revisionId || event.authority.kind !== 'connection') return false
   const [row] = await store
-    .select({ revision: githubFeedbackRevisions, source: githubFeedbackSources })
+    .select({ revision: githubFeedbackRevisions, source: githubFeedbackSources, storedEvent: integrationOutputEvents })
     .from(githubFeedbackSources)
     .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.id, githubFeedbackSources.revisionId))
+    .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, githubFeedbackSources.eventId))
     .where(and(eq(githubFeedbackSources.eventId, event.id), eq(githubFeedbackSources.revisionId, revisionId)))
   if (!row) return false
-  const { revision, source } = row
+  const { revision, source, storedEvent } = row
   if (
+    storedEvent.integration !== event.integration ||
+    storedEvent.sourceKey !== event.sourceKey ||
+    storedEvent.eventKey !== event.eventKey ||
+    githubContentHash(storedEvent.fact) !== githubContentHash(event.fact) ||
+    githubContentHash(storedEvent.authority) !== githubContentHash(event.authority) ||
     revision.squadId !== event.authority.squadId ||
     source.squadId !== revision.squadId ||
     githubContentHash(source.authority) !== githubContentHash(event.authority) ||
     event.sourceKey !== `github-feedback:${revision.squadId}:${revision.id}` ||
     event.eventKey !== revision.id ||
     !revision.envelope ||
+    revision.releaseState === 'obsolete' ||
     !['allow_once', 'allow_trust', 'automatic'].includes(revision.decision)
   )
     return false

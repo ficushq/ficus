@@ -108,12 +108,23 @@ test('fresh automatic capture requires actual author and editor trust; adding tr
         })
       ).revision.decision
     ).toBe('pending')
+    const freshEdit = input('NEW TRUSTED EDIT', true)
+    ;(freshEdit.payload as any).comment.updated_at = '2026-10-02T12:00:00Z'
+    const fresh = await h.source(freshEdit)
+    expect(
+      (
+        await admission.captureRelevantGitHubFeedback(fresh, {
+          authorizeSource: async () => true,
+          routingProvenance: [],
+        })
+      ).revision.decision
+    ).toBe('automatic')
   } finally {
     await h.close()
   }
 })
 
-test('canonical automatic feedback binds stored snapshot and checks live trust and source association on every acceptance', async () => {
+test('canonical automatic feedback binds stored snapshot and checks live trust and source association on every predicate evaluation', async () => {
   const h = await fixture()
   try {
     await h.trust()
@@ -134,6 +145,8 @@ test('canonical automatic feedback binds stored snapshot and checks live trust a
       fact: { ...source.fact, github: { content: null, status: null, revisionId: captured.revision.id } },
     }
     expect(await admission.isGitHubFeedbackAdmitted(db, forged)).toBe(false)
+    // Even a byte-exact approved envelope cannot confer canonical identity on its original source row.
+    expect(await admission.isGitHubFeedbackAdmitted(db, { ...canonical, id: source.id })).toBe(false)
     expect(
       await admission.isGitHubFeedbackAdmitted(db, { ...canonical, fact: { ...canonical.fact, body: 'UNSEEN' } })
     ).toBe(false)
@@ -165,6 +178,11 @@ test('explicit human approval admits only its exact canonical association; legac
         fact: { ...source.fact, github: undefined, data: { ...source.fact.data, approved: true } },
       })
     ).toBe(false)
+    await db
+      .update(githubFeedbackRevisions)
+      .set({ releaseState: 'obsolete' })
+      .where(eq(githubFeedbackRevisions.id, capture.revision.id))
+    expect(await admission.isGitHubFeedbackAdmitted(db, canonical)).toBe(false)
     await db
       .update(githubFeedbackRevisions)
       .set({ decision: 'deny' })

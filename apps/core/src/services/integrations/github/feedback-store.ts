@@ -27,8 +27,9 @@ export interface FeedbackCaptureDependencies {
 }
 
 /**
- * Capture only otherwise-relevant content. Does not decide trust, send, wake, or claim triggers.
- * The immutable revision key is the future admitted event/delivery identity across all sources.
+ * Capture only otherwise-relevant content. An internal live-trust resolver may decide a NEW
+ * unambiguous version under the authority lock. Pending history is never upgraded on replay.
+ * Does not send, wake, route, or claim triggers. The revision key is stable across source transports.
  */
 export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptureDependencies) {
   const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))

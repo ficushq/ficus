@@ -21,7 +21,9 @@ async function fixture() {
     roleId = crypto.randomUUID()
   await db.insert(users).values({ id: userId, email: `${userId}@moderation.test` })
   await db.insert(squads).values({ id: squadId, name: 'Moderation', purpose: 'Test' })
-  await db.insert(roles).values({ id: roleId, slug: roleId, name: 'Moderator', permissions: ['squads:update'] })
+  await db
+    .insert(roles)
+    .values({ id: roleId, slug: roleId, name: `Moderator ${roleId}`, permissions: ['squads:update'] })
   await db.insert(roleAssignments).values({ subjectType: 'user', subjectId: userId, roleId, scope: 'squad', squadId })
   const revisions: string[] = []
   return {
@@ -112,6 +114,24 @@ test('same request is idempotent; changed payload or human cannot reuse its auth
     const input = { requestId: crypto.randomUUID(), action: 'allow_once' as const, selections: [await h.revision()] }
     const first = await service.moderateGitHubFeedback(h.human, h.squadId, input)
     expect(await service.moderateGitHubFeedback(h.human, h.squadId, input)).toEqual(first)
+    const otherUserId = crypto.randomUUID()
+    await db.insert(users).values({ id: otherUserId, email: `${otherUserId}@moderation.test` })
+    const [assignment] = await db.select().from(roleAssignments).where(eq(roleAssignments.subjectId, h.userId))
+    await db.insert(roleAssignments).values({
+      subjectType: 'user',
+      subjectId: otherUserId,
+      roleId: assignment!.roleId,
+      scope: 'squad',
+      squadId: h.squadId,
+    })
+    try {
+      await expect(
+        service.moderateGitHubFeedback({ type: 'user', userId: otherUserId }, h.squadId, input)
+      ).rejects.toMatchObject({ code: 'moderation_request_conflict' })
+    } finally {
+      await db.delete(roleAssignments).where(eq(roleAssignments.subjectId, otherUserId))
+      await db.delete(users).where(eq(users.id, otherUserId))
+    }
     await expect(
       service.moderateGitHubFeedback(h.human, h.squadId, { ...input, action: 'deny' })
     ).rejects.toMatchObject({ code: 'moderation_request_conflict' })
@@ -131,13 +151,16 @@ test('same request is idempotent; changed payload or human cannot reuse its auth
 
 test('bounded bulk is all-or-nothing on hash, version, missing or cross-squad revisions', async () => {
   const h = await fixture()
+  const other = await fixture()
   try {
+    const foreign = await other.revision()
     const a = await h.revision(),
       b = await h.revision()
     for (const invalid of [
       { ...b, contentHash: 'b'.repeat(64) },
       { ...b, decisionVersion: 1 },
       { ...b, revisionId: crypto.randomUUID() },
+      foreign,
     ]) {
       await expect(
         service.moderateGitHubFeedback(h.human, h.squadId, {
@@ -149,6 +172,7 @@ test('bounded bulk is all-or-nothing on hash, version, missing or cross-squad re
       expect((await h.rows()).every((row) => row.decision === 'pending' && row.releaseState === 'held')).toBe(true)
       expect(await h.decisions()).toHaveLength(0)
     }
+    expect((await other.rows())[0]!.decision).toBe('pending')
     const result = await service.moderateGitHubFeedback(h.human, h.squadId, {
       requestId: crypto.randomUUID(),
       action: 'deny',
@@ -157,6 +181,7 @@ test('bounded bulk is all-or-nothing on hash, version, missing or cross-squad re
     expect(result).toHaveLength(2)
     expect((await h.rows()).every((row) => row.decision === 'deny' && row.releaseState === 'held')).toBe(true)
   } finally {
+    await other.close()
     await h.close()
   }
 })
