@@ -5,7 +5,7 @@ import { queryKeys } from '../queryKeys'
 import { markAsRead, markMyInboxAllRead, markSystemInboxAllRead } from '../api/inbox'
 import { usePermissions } from '../hooks/usePermissions'
 import { CloseIcon, ChevronDownIcon, ChevronRightIcon } from './icons'
-import { MessageRow } from './InboxMessageRow'
+import { MessageList, MessageRow } from './InboxMessageRow'
 import { Presence } from './Presence'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
@@ -155,7 +155,7 @@ export function InboxPopup() {
             <>
               {/* Unread messages */}
               {unreadMessages.length > 0 ? (
-                <div className="space-y-1">
+                <MessageList>
                   {unreadMessages.map((message) => (
                     <MessageRow
                       key={message.id}
@@ -165,7 +165,7 @@ export function InboxPopup() {
                       onMarkAsRead={() => markAsReadMutation.mutate(message.id)}
                     />
                   ))}
-                </div>
+                </MessageList>
               ) : (
                 <p className="p-4 text-sm text-muted">No unread messages</p>
               )}
@@ -182,11 +182,11 @@ export function InboxPopup() {
                     <span>Read messages ({readMessages.length})</span>
                   </button>
                   {showRead && (
-                    <div className="space-y-1">
+                    <MessageList>
                       {readMessages.map((message) => (
                         <MessageRow key={message.id} message={message} squads={squads} compact />
                       ))}
-                    </div>
+                    </MessageList>
                   )}
                 </div>
               )}

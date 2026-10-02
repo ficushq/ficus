@@ -5,7 +5,7 @@ import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'
 import { useURLBooleanState } from '../hooks/useURLState'
-import { MessageRow, SectionHeader } from './InboxMessageRow'
+import { MessageList, MessageRow, SectionHeader } from './InboxMessageRow'
 import { PullToRefresh } from './PullToRefresh'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonLine, SkeletonRows } from './loading/Skeleton'
@@ -124,9 +124,9 @@ export function InboxPage() {
         <div className="flex flex-col gap-4">
           {/* Unread Section */}
           {hasUnread && (
-            <section className="ficus-section overflow-hidden">
+            <section className="ficus-section p-2">
               <SectionHeader title="Unread" count={unreadMessages.length} />
-              <div className="divide-y divide-th-border">
+              <MessageList>
                 {unreadMessages.map((message) => (
                   <MessageRow
                     key={message.id}
@@ -135,13 +135,13 @@ export function InboxPage() {
                     onMarkAsRead={() => markAsReadMutation.mutate(message.id)}
                   />
                 ))}
-              </div>
+              </MessageList>
             </section>
           )}
 
           {/* Read Section */}
           {hasRead && (
-            <section className="ficus-section overflow-hidden">
+            <section className="ficus-section p-2">
               <SectionHeader
                 title="Read"
                 count={readMessages.length}
@@ -150,11 +150,11 @@ export function InboxPage() {
                 onToggle={() => setReadCollapsed(!readCollapsed)}
               />
               {!readCollapsed && (
-                <div className="divide-y divide-th-border">
+                <MessageList>
                   {readMessages.map((message) => (
                     <MessageRow key={message.id} squads={squads} message={message} />
                   ))}
-                </div>
+                </MessageList>
               )}
             </section>
           )}
