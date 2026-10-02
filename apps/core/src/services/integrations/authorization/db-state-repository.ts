@@ -136,7 +136,7 @@ export class DbOAuthStateRepository implements OAuthStateRepository {
         .for('update')
       const compatible =
         disposition === 'installed'
-          ? receipt?.installKind !== null && receipt?.installKind !== undefined
+          ? Boolean(receipt?.installKind || receipt?.identityProofId)
           : receipt?.terminalAt !== null ||
             receipt?.revocationRequiredAt !== null ||
             receipt?.cleanupRequiredAt !== null

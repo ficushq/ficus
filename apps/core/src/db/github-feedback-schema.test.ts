@@ -94,3 +94,11 @@ test('personal proof storage fences first-link and delayed-callback generations 
   )
   expect(proof.columns.some((column) => /token|credential|secret/.test(column.name))).toBe(false)
 })
+
+test('personal OAuth proof result has a separate receipt tuple rather than a fake integration connection', () => {
+  const receipt = getTableConfig(schema.integrationAuthorizationFlowReceipts)
+  expect(receipt.columns.map((column) => column.name)).toEqual(
+    expect.arrayContaining(['identity_proof_id', 'identity_verified_at'])
+  )
+  expect(receipt.checks.map((check) => check.name)).toContain('integration_auth_receipts_identity_result')
+})

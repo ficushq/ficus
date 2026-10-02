@@ -70,6 +70,8 @@ function harness() {
     },
     repository: {
       create: async (input) => {
+        receipt.purpose = input.purpose ?? 'integration'
+        receipt.linkGeneration = input.linkGeneration ?? null
         record = {
           id,
           userId: input.userId,
@@ -316,5 +318,47 @@ test('database device authorization encrypts the code and atomically replaces it
     await getSecretStore().delete(`__integration-credential:authorization-flow:${id}:bearer`)
     await db.delete(users).where(eq(users.id, userId))
     await fixture.dispose()
+  }
+})
+
+test('personal device authorization persists its generation and bypasses all integration install/profile side effects', async () => {
+  const h = harness()
+  let proofs = 0
+  h.dependencies.installIdentity = async ({ state, credential }) => {
+    expect(state).toMatchObject({ purpose: 'github_identity', linkGeneration: 7, providerKey: 'github' })
+    expect(credential.accessToken).toBe('SECRET_ACCESS')
+    h.receipt.identityProofId = 'proof'
+    h.receipt.identityVerifiedAt = new Date('2026-09-07T12:00:05.000Z')
+    proofs++
+  }
+  await h.service.start({ ...start, purpose: 'github_identity', linkGeneration: 7 })
+  expect(h.receipt).toMatchObject({ purpose: 'github_identity', linkGeneration: 7 })
+  h.advance(5)
+  h.outcomes.push(authorized)
+  expect(await h.service.poll({ id: h.id, userId: 'user' })).toEqual({ status: 'complete', returnTo: start.returnTo })
+  expect(h.calls).toEqual(['start', 'poll', 'stage'])
+  expect(proofs).toBe(1)
+  expect(await h.service.poll({ id: h.id, userId: 'user' })).toEqual({ status: 'complete', returnTo: start.returnTo })
+  expect(proofs).toBe(1)
+  expect(h.receipt.installedConnectionId).toBeNull()
+})
+
+test('a personal device start without a valid generation or with a reconnect target cannot create a flow', async () => {
+  for (const input of [
+    { purpose: 'github_identity' as const },
+    { purpose: 'github_identity' as const, linkGeneration: -1 },
+    {
+      purpose: 'github_identity' as const,
+      linkGeneration: 1,
+      connectionId: 'connection',
+      expectedMaterialRevision: 'revision',
+    },
+    { linkGeneration: 1 },
+  ]) {
+    const h = harness()
+    await expect(h.service.start({ ...start, ...input })).rejects.toMatchObject({
+      code: 'invalid_authorization_purpose',
+    })
+    expect(h.calls).toEqual([])
   }
 })

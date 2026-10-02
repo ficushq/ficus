@@ -221,7 +221,7 @@ export class IntegrationAuthorizationService {
     // An installed receipt is the immutable result authority. Deployment-mode
     // changes and coordinator cleanup cannot invalidate an already committed
     // result or turn its replay into a lifecycle mutation.
-    if (receiptMatches && prior?.installKind) return { returnTo: prior.returnTo }
+    if (receiptMatches && (prior?.installKind || prior?.identityProofId)) return { returnTo: prior.returnTo }
 
     const plugin = this.#requireOAuthPlugin(input.providerKey)
     if (receiptMatches && prior) {

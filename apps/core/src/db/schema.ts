@@ -3700,6 +3700,8 @@ export const integrationAuthorizationFlowReceipts = pgTable(
     installedConnectionId: uuid('installed_connection_id'),
     installedMaterialRevision: uuid('installed_material_revision'),
     installedAt: timestamp('installed_at', { withTimezone: true }),
+    identityProofId: uuid('identity_proof_id'),
+    identityVerifiedAt: timestamp('identity_verified_at', { withTimezone: true }),
     terminalCode: varchar('terminal_code', { length: 64 }),
     terminalAt: timestamp('terminal_at', { withTimezone: true }),
     revocationRequiredAt: timestamp('revocation_required_at', { withTimezone: true }),
@@ -3771,7 +3773,11 @@ export const integrationAuthorizationFlowReceipts = pgTable(
     ),
     check(
       'integration_auth_receipts_install_terminal_exclusive',
-      sql`${table.terminalAt} IS NULL OR ${table.installedAt} IS NULL`
+      sql`${table.terminalAt} IS NULL OR (${table.installedAt} IS NULL AND ${table.identityVerifiedAt} IS NULL)`
+    ),
+    check(
+      'integration_auth_receipts_identity_result',
+      sql`(${table.identityProofId} IS NULL AND ${table.identityVerifiedAt} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.identityProofId} IS NOT NULL AND ${table.identityVerifiedAt} IS NOT NULL AND ${table.stagingStartedAt} IS NOT NULL AND ${table.adapterVersion} IS NOT NULL)`
     ),
     check(
       'integration_auth_receipts_revocation_settlement',
@@ -3783,7 +3789,7 @@ export const integrationAuthorizationFlowReceipts = pgTable(
     ),
     check(
       'integration_auth_receipts_obligation_disposition',
-      sql`(${table.revocationRequiredAt} IS NULL AND ${table.cleanupRequiredAt} IS NULL) OR ${table.terminalAt} IS NOT NULL OR ${table.installedAt} IS NOT NULL`
+      sql`(${table.revocationRequiredAt} IS NULL AND ${table.cleanupRequiredAt} IS NULL) OR ${table.terminalAt} IS NOT NULL OR ${table.installedAt} IS NOT NULL OR ${table.identityVerifiedAt} IS NOT NULL`
     ),
     check('integration_auth_receipts_retention_window', sql`${table.retainUntil} >= ${table.recoveryExpiresAt}`),
   ]
