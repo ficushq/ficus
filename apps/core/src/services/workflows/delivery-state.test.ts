@@ -691,7 +691,7 @@ describe('authoritative code-host label reasons', () => {
     { data: { mergeState: 'blocked' }, kind: 'external', reason: undefined },
     { data: { mergeState: 'unknown' }, kind: 'external', reason: undefined },
     { data: {}, kind: 'external', reason: undefined },
-  ]
+  ] as const
   for (const row of cases)
     test(JSON.stringify(row.data), () => {
       const result = classifyDeliveryPresentation(
