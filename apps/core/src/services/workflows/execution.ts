@@ -847,6 +847,11 @@ export async function isCurrentFlowMessage(message: { id?: string; metadata: unk
     attemptId?: number
     integrationDeliveryId?: string
   } | null
+  if (metadata?.source === 'integration-notification') {
+    if (!message.id || !message.recipientId) return false
+    const { isCurrentIntegrationNotification } = await import('../integrations/outputs/runtime')
+    return isCurrentIntegrationNotification(db, message.recipientId, message.id)
+  }
   if (metadata?.source === 'integration-output') {
     if (!metadata.integrationDeliveryId || !message.id || !message.recipientId) return false
     const { isCurrentIntegrationDelivery } = await import('../integrations/outputs/runtime')

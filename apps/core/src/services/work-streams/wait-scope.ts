@@ -10,6 +10,9 @@ import {
   workStreamFlowRuns,
   workStreamWaits,
   workflowBindings,
+  integrationOutputEvents,
+  integrationOutputDeliveries,
+  type DbTx,
 } from '../../db'
 import type { DbHandle, OpenWaitInput, WorkStreamWaitRow } from './waits'
 
@@ -201,15 +204,51 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
   return targets
 }
 
-/** Call before the agent queue lock; flow revisions use the same stream row lock. */
-export async function lockFlowInboxDelivery(store: DbHandle, agentId: string, messageIds: string[] = []) {
-  const targets = await flowInboxTargets(store, messageIds)
+/** Must run in the acceptance transaction, before stream/agent queue locks. */
+export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messageIds: string[] = []) {
   const validIds = messageIds.filter((id) => z.string().uuid().safeParse(id).success)
   const integrationMessages = validIds.length
     ? (
         await store.select({ id: inbox.id, metadata: inbox.metadata }).from(inbox).where(inArray(inbox.id, validIds))
-      ).filter((row) => row.metadata?.source === 'integration-output')
+      ).filter((row) => ['integration-output', 'integration-notification'].includes(String(row.metadata?.source)))
     : []
+  // Serialize revocation with final acceptance BEFORE stream/agent queue locks. Human trust
+  // mutations use this same order; taking it after a stream lock would permit a deadlock.
+  if (integrationMessages.length) {
+    const eventIds = integrationMessages.flatMap((row) =>
+      typeof row.metadata?.integrationEventId === 'string' ? [row.metadata.integrationEventId] : []
+    )
+    const deliveryIds = integrationMessages.flatMap((row) =>
+      row.metadata?.source === 'integration-output' && typeof row.metadata.integrationDeliveryId === 'string'
+        ? [row.metadata.integrationDeliveryId]
+        : []
+    )
+    const events = eventIds.length
+      ? await store.select().from(integrationOutputEvents).where(inArray(integrationOutputEvents.id, eventIds))
+      : []
+    const deliveries = deliveryIds.length
+      ? await store
+          .select({ id: integrationOutputDeliveries.id, integration: integrationOutputEvents.integration })
+          .from(integrationOutputDeliveries)
+          .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
+          .where(inArray(integrationOutputDeliveries.id, deliveryIds))
+      : []
+    // Derive the provider from server rows, not an inbox/payload integration hint. For flow
+    // mail the delivery association wins; unknown/legacy provenance is conservatively locked.
+    if (
+      integrationMessages.some((row) => {
+        const integration =
+          row.metadata?.source === 'integration-output'
+            ? deliveries.find((delivery) => delivery.id === row.metadata?.integrationDeliveryId)?.integration
+            : events.find((event) => event.id === row.metadata?.integrationEventId)?.integration
+        return !integration || integration === 'github'
+      })
+    ) {
+      const { lockGitHubTrustAuthority } = await import('../integrations/github/trust-authority-lock')
+      await lockGitHubTrustAuthority(store)
+    }
+  }
+  const targets = await flowInboxTargets(store, messageIds)
   const ids = [
     ...new Set([
       ...targets.map((target) => target.workStreamId),
@@ -221,8 +260,13 @@ export async function lockFlowInboxDelivery(store: DbHandle, agentId: string, me
   for (const id of ids)
     await store.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.id, id)).for('update')
   if (integrationMessages.length) {
-    const { isCurrentIntegrationDelivery } = await import('../integrations/outputs/runtime')
+    const { isCurrentIntegrationDelivery, isCurrentIntegrationNotification } =
+      await import('../integrations/outputs/runtime')
     for (const row of integrationMessages) {
+      if (row.metadata?.source === 'integration-notification') {
+        if (!(await isCurrentIntegrationNotification(store, agentId, row.id))) throw new FlowWaitSupersededError()
+        continue
+      }
       const deliveryId = String(row.metadata?.integrationDeliveryId)
       if (
         !z.string().uuid().safeParse(deliveryId).success ||

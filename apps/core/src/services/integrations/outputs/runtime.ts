@@ -38,6 +38,7 @@ import { outputSourceMatches as sourceMatches, findOutputTriggerRun, outputTrigg
 import { bindChangeRequestFromEvent } from './delivery-binding'
 import { recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
 import { createLogger } from '../../../lib/infra/logger'
+import { isGitHubFeedbackAdmitted } from '../github/feedback-admission'
 
 const log = createLogger('integration-outputs')
 
@@ -737,6 +738,7 @@ export async function isCurrentIntegrationDelivery(store: Store, deliveryId: str
     !run?.activated ||
     !event ||
     !(await authorized(store, event.integration, event.authority, stream.squadId)) ||
+    !(await isGitHubFeedbackAdmitted(store, event)) ||
     !(await shouldNotifyEvent(store, event))
   )
     return false
@@ -785,6 +787,35 @@ export async function isCurrentIntegrationDelivery(store: Store, deliveryId: str
   )
 }
 
+/** Ordinary integration mail must pass the same stored content decision as flow output mail. */
+export async function isCurrentIntegrationNotification(store: Store, agentId: string, inboxId: string) {
+  const [message] = await store.select().from(inbox).where(eq(inbox.id, inboxId))
+  if (
+    message?.senderType !== 'system' ||
+    message.recipientType !== 'agent' ||
+    message.recipientId !== agentId ||
+    message.metadata?.source !== 'integration-notification' ||
+    typeof message.metadata.integrationEventId !== 'string'
+  )
+    return false
+  const [event] = await store
+    .select()
+    .from(integrationOutputEvents)
+    .where(eq(integrationOutputEvents.id, message.metadata.integrationEventId))
+  if (!event) return false
+  // Other providers retain their existing notification behavior. GitHub connection authority
+  // and the immutable canonical decision are independent; neither can replace the other.
+  if (event.integration !== 'github') return true
+  const [recipient] = await store.select({ squadId: agents.squadId }).from(agents).where(eq(agents.id, agentId))
+  return (
+    event.authority.kind === 'connection' &&
+    recipient?.squadId === event.authority.squadId &&
+    (await authorized(store, event.integration, event.authority, event.authority.squadId)) &&
+    (await isGitHubFeedbackAdmitted(store, event)) &&
+    (await shouldNotifyEvent(store, event))
+  )
+}
+
 export async function reconcileUnmatchedOutputs() {
   const events = await db
     .select()
@@ -806,8 +837,10 @@ export async function reconcileUnmatchedOutputs() {
 }
 
 export async function outputDeliveryHistory(workStreamId: string) {
-  return db
+  const rows = await db
     .select({
+      event: integrationOutputEvents,
+      squadId: workStreams.squadId,
       id: integrationOutputDeliveries.id,
       subscriptionId: integrationOutputDeliveries.subscriptionId,
       status: integrationOutputDeliveries.status,
@@ -819,9 +852,21 @@ export async function outputDeliveryHistory(workStreamId: string) {
     })
     .from(integrationOutputDeliveries)
     .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
+    .innerJoin(workStreams, eq(workStreams.id, integrationOutputDeliveries.workStreamId))
     .where(eq(integrationOutputDeliveries.workStreamId, workStreamId))
     .orderBy(desc(integrationOutputDeliveries.createdAt))
     .limit(100)
+  const visible: Array<Omit<(typeof rows)[number], 'event' | 'squadId'>> = []
+  for (const { event, squadId, ...history } of rows) {
+    if (
+      event.integration === 'github' &&
+      (!(await authorized(db, event.integration, event.authority, squadId)) ||
+        !(await isGitHubFeedbackAdmitted(db, event)))
+    )
+      continue
+    visible.push(history)
+  }
+  return visible
 }
 
 /**
