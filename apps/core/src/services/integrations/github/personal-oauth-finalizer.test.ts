@@ -98,6 +98,7 @@ async function fixture(shared = false) {
   }
   return {
     finalizer,
+    receipts,
     input,
     identity,
     flowId,
@@ -547,6 +548,49 @@ test('ordinary GitHub integration revocation still invokes its persisted-authori
     )
     expect(await cleanup.runOnce()).toBe(true)
     expect(store.get(h.credentialRef)).toBeUndefined()
+  } finally {
+    await h.close()
+  }
+})
+
+test('unlink before finalization rejects the old generation before exchange or authenticated profile I/O', async () => {
+  const h = await fixture()
+  try {
+    await unlinkGitHubIdentity(h.identity)
+    await expect(h.finalizer.install(h.input)).rejects.toMatchObject({ code: 'identity_generation_changed' })
+    expect(h.counters()).toEqual({ exchanges: 0, profiles: 0 })
+    const receipt = await new DbAuthorizationFlowReceiptRepository().get(h.flowId)
+    expect(receipt!.terminalCode).toBe('identity_generation_changed')
+    expect(receipt!.terminalAt).toBeInstanceOf(Date)
+    expect(receipt!.cleanupRequiredAt).toBeNull()
+    expect(receipt!.revocationRequiredAt).toBeNull()
+  } finally {
+    await h.close()
+  }
+})
+
+test('confirmed personal result remains safely replayable after confirmation increments the generation', async () => {
+  const { confirmGitHubIdentityProof } = await import('./personal-identity')
+  const h = await fixture()
+  try {
+    await h.finalizer.install(h.input)
+    const receipt = await new DbAuthorizationFlowReceiptRepository().get(h.flowId)
+    await confirmGitHubIdentityProof(h.identity, receipt!.identityProofId!)
+    await h.finalizer.install(h.input)
+    expect(h.counters()).toEqual({ exchanges: 1, profiles: 1 })
+    expect(await getGitHubPersonalIdentity(h.identity)).toMatchObject({ accountId: '101' })
+  } finally {
+    await h.close()
+  }
+})
+
+test('preflight failure cannot claim terminal settlement if its durable write is not acknowledged', async () => {
+  const h = await fixture()
+  try {
+    await unlinkGitHubIdentity(h.identity)
+    h.receipts.markTerminal = async () => null
+    await expect(h.finalizer.install(h.input)).rejects.toMatchObject({ code: 'flow_finalization_failed' })
+    expect(h.counters()).toEqual({ exchanges: 0, profiles: 0 })
   } finally {
     await h.close()
   }

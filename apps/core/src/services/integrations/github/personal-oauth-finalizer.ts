@@ -15,7 +15,7 @@ import { revocationArtifactLeaseResource } from '../authorization/connection-lea
 import type { AuthorizationServiceDependencies } from '../authorization/service'
 import { AuthorizationFlowError } from '../authorization/service'
 import { GitHubFeedbackError, requireGitHubHuman } from './feedback-trust'
-import { saveGitHubIdentityProof } from './personal-identity'
+import { requireGitHubIdentityGeneration, saveGitHubIdentityProof } from './personal-identity'
 
 interface FinalizerDependencies {
   secrets: Pick<SecretStore, 'setWithDurableObligation' | 'refreshKey' | 'get'>
@@ -62,6 +62,17 @@ export class GitHubPersonalOAuthFinalizer {
         if (!receipt) throw new AuthorizationFlowError('identity_flow_mismatch')
         if (receipt.identityProofId) return
         if (receipt.terminalCode) throw new AuthorizationFlowError(receipt.terminalCode)
+        try {
+          await requireGitHubIdentityGeneration(identity, state.linkGeneration!)
+        } catch (error) {
+          if (error instanceof GitHubFeedbackError) {
+            const disposition = receipt.stagingStartedAt
+              ? await this.dependencies.receipts.requireCleanup(receipt.localFlowId, error.code)
+              : await this.dependencies.receipts.markTerminal(receipt.localFlowId, error.code)
+            if (!disposition?.terminalAt) throw new AuthorizationFlowError('flow_finalization_failed')
+          }
+          throw error
+        }
         const admitted = await this.dependencies.receipts.beginStaging(receipt.localFlowId, 1)
         if (!admitted) throw new AuthorizationFlowError('flow_expired')
         const store = this.dependencies.secrets

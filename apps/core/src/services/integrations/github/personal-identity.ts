@@ -29,6 +29,16 @@ export async function beginGitHubIdentityLink(identity: Identity | undefined): P
   })
 }
 
+/** Preflight only. The immutable proof commit must still recheck under its transaction after provider I/O. */
+export async function requireGitHubIdentityGeneration(identity: Identity | undefined, expected: number): Promise<void> {
+  const userId = await requireGitHubHuman(db, identity)
+  const [row] = await db
+    .select({ generation: githubPersonalIdentities.generation })
+    .from(githubPersonalIdentities)
+    .where(eq(githubPersonalIdentities.userId, userId))
+  if (!row || row.generation !== expected) throw new GitHubFeedbackError('identity_generation_changed', 409)
+}
+
 /** Internal OAuth finalizer boundary. Never expose profile/state as an HTTP mutation body. */
 export async function saveGitHubIdentityProof(
   input: {
