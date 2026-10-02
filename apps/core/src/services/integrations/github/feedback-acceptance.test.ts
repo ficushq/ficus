@@ -31,6 +31,7 @@ import { lockFlowInboxDelivery } from '../../work-streams/wait-scope'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 import { prepareGitHubOutput } from './feedback-routing'
 import * as api from '../../github/api-client'
+import { planOutputRouting } from '../outputs/routing-plan'
 import { defaultNotificationContent } from '../outputs/default-routing'
 import { outputDeliveryHistory } from '../outputs/runtime'
 
@@ -134,19 +135,56 @@ async function fixture() {
     },
     deliver: { to: 'active' as const, whenInactive: 'retain' as const },
   }
+  let flowAudience: { workStreamId: string; recipientId: string } | undefined
+  async function createFlowAudience() {
+    if (flowAudience) return flowAudience
+    let workStreamId: string | undefined, recipientId: string | undefined
+    const definition = createBlankWorkflow()
+    definition.participants.worker!.agentTypeId = typeId
+    definition.subscriptions = [subscription]
+    await db.transaction(async (tx) => {
+      const [stream] = await tx
+        .insert(workStreams)
+        .values({
+          squadId,
+          title: 'Test',
+          status: 'active',
+          metadata: { github: { repo: 'acme/project', pr: { number: 3 } } },
+        })
+        .returning()
+      workStreamId = stream!.id
+      const run = await attachFlow(tx, stream!, { kind: 'inline', definition })
+      await dispatchFlow(tx, stream!, run, [])
+      const [current] = await tx
+        .select()
+        .from(workStreamFlowRuns)
+        .where(eq(workStreamFlowRuns.workStreamId, stream!.id))
+      recipientId = current!.attemptAgents['1']!
+    })
+    // This fixture's native observation is recorded after the existing audience is established.
+    const observedAt = new Date()
+    await db
+      .update(integrationOutputEvents)
+      .set({ createdAt: observedAt })
+      .where(eq(integrationOutputEvents.id, source!.id))
+    source!.createdAt = observedAt
+    flowAudience = { workStreamId: workStreamId!, recipientId: recipientId! }
+    return flowAudience
+  }
   return {
     squadId,
     userId,
     managerId: manager!.id,
     source: source!,
     connectionId: connection!.id,
-    async canonical() {
+    async canonical(flow = false) {
+      if (flow) await createFlowAudience()
       await db
         .insert(githubTrustedAuthors)
         .values({ squadId, accountId: '2', login: 'author', accountType: 'User', addedByUserId: userId })
       const captured = await captureRelevantGitHubFeedback(source!, {
         authorizeSource: async () => true,
-        routingProvenance: [{ kind: 'notify-manager', id: 'rule' }],
+        routingProvenance: (await planOutputRouting(source!, async () => true)).routes,
       })
       const event = await recordCanonicalGitHubFeedback(captured.revision.id, source!.id, async () => true)
       eventIds.push(event.id)
@@ -159,28 +197,7 @@ async function fixture() {
         deliveryId: string | undefined,
         workStreamId: string | undefined
       if (flow) {
-        const definition = createBlankWorkflow()
-        definition.participants.worker!.agentTypeId = typeId
-        definition.subscriptions = [subscription]
-        await db.transaction(async (tx) => {
-          const [stream] = await tx
-            .insert(workStreams)
-            .values({
-              squadId,
-              title: 'Test',
-              status: 'active',
-              metadata: { github: { repo: 'acme/project', pr: { number: 3 } } },
-            })
-            .returning()
-          workStreamId = stream!.id
-          const run = await attachFlow(tx, stream!, { kind: 'inline', definition })
-          await dispatchFlow(tx, stream!, run, [])
-          const [current] = await tx
-            .select()
-            .from(workStreamFlowRuns)
-            .where(eq(workStreamFlowRuns.workStreamId, stream!.id))
-          recipientId = current!.attemptAgents['1']!
-        })
+        ;({ workStreamId, recipientId } = await createFlowAudience())
         const [delivery] = await db
           .insert(integrationOutputDeliveries)
           .values({
@@ -268,7 +285,7 @@ for (const flow of [false, true])
   test(`canonical content is rechecked after trust revocation at ${flow ? 'flow' : 'ordinary'} acceptance`, async () => {
     const h = await fixture()
     try {
-      const canonical = await h.canonical(),
+      const canonical = await h.canonical(flow),
         message = await h.message(canonical, flow)
       expect(await isCurrentFlowMessage(message)).toBe(true)
       const clientId = flow
@@ -330,7 +347,7 @@ for (const flow of [false, true])
       observed = deferred<void>()
     let revocation: Promise<unknown> | undefined, acceptance: Promise<unknown> | undefined
     try {
-      const message = await h.message(await h.canonical(), flow)
+      const message = await h.message(await h.canonical(flow), flow)
       revocation = db.transaction(async (tx) => {
         await lockGitHubTrustAuthority(tx)
         await tx.delete(githubTrustedAuthors).where(eq(githubTrustedAuthors.squadId, h.squadId))
@@ -407,7 +424,7 @@ test('malformed ordinary event references are safely refused instead of reaching
 test('delivery history excludes held raw feedback and removes automatic prose after trust revocation', async () => {
   const h = await fixture()
   try {
-    const canonical = await h.canonical()
+    const canonical = await h.canonical(true)
     const held = await h.message(h.source, true)
     expect(await outputDeliveryHistory(String(held.metadata?.workStreamId))).toEqual([])
     const approved = await h.message(canonical, true)
@@ -467,7 +484,7 @@ test('stored allow-once remains acceptable without future trust, but connection 
 test('canonical flow payload cannot alias another stream even with a valid delivery and native proof', async () => {
   const h = await fixture()
   try {
-    const message = await h.message(await h.canonical(), true)
+    const message = await h.message(await h.canonical(true), true)
     await db
       .update(inbox)
       .set({ metadata: { ...message.metadata, workStreamId: h.squadId } })

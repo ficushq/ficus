@@ -172,7 +172,14 @@ test('planning preserves first matching squad rule with no inbox, consultant, st
     const event = await h.event()
     const before = await h.effects()
     const plan = await planning.planOutputRouting(event, async () => true)
-    expect(plan.routes).toContainEqual({ kind: 'notify-manager', id: 'first', recipientId: h.managerId })
+    expect(plan.routes).toContainEqual(
+      expect.objectContaining({
+        kind: 'notify-manager',
+        id: 'first',
+        recipientId: h.managerId,
+        fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      })
+    )
     expect(JSON.stringify(plan)).not.toContain('HELD')
     expect(await h.effects()).toEqual(before)
     expect(plan.relevant).toBe(true)
@@ -192,12 +199,15 @@ test('tracked pre-flow route owns default audience; paused/parked subscriptions 
     const event = await h.event()
     const before = await h.effects()
     const plan = await planning.planOutputRouting(event, async () => true)
-    expect(plan.routes).toContainEqual({
-      kind: 'pre-flow',
-      id: preflow,
-      workStreamId: preflow,
-      recipientId: h.managerId,
-    })
+    expect(plan.routes).toContainEqual(
+      expect.objectContaining({
+        kind: 'pre-flow',
+        id: preflow,
+        workStreamId: preflow,
+        recipientId: h.managerId,
+        fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      })
+    )
     expect(
       plan.routes
         .filter((route) => route.kind === 'subscription')

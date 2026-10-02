@@ -1439,11 +1439,16 @@ export const githubFeedbackObjects = pgTable(
 
 /** Server-owned, short-lived exact-resource witness. Never accepted from a fact or API DTO. */
 export const githubOutputProofs = pgTable('github_output_proofs', {
-  eventId: uuid('event_id').primaryKey().references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
-  sourceEventId: uuid('source_event_id').notNull().references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
+  eventId: uuid('event_id')
+    .primaryKey()
+    .references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
+  sourceEventId: uuid('source_event_id')
+    .notNull()
+    .references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
   sourceHash: varchar('source_hash', { length: 64 }).notNull(),
   effectHash: varchar('effect_hash', { length: 64 }).notNull(),
   authorityHash: varchar('authority_hash', { length: 64 }).notNull(),
+  routes: jsonb('routes').$type<import('@ficus/shared').GitHubFeedbackRoute[]>().notNull().default([]),
   checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 })
@@ -1469,7 +1474,10 @@ export const githubFeedbackRevisions = pgTable(
     editor: jsonb('editor').$type<import('@ficus/shared').GitHubAccountIdentity>(),
     attribution: text('attribution').$type<'creation' | 'verified_edit' | 'unknown'>().notNull(),
     providerVersion: text('provider_version'),
-    routingProvenance: jsonb('routing_provenance').$type<Array<{ kind: string; id: string }>>().notNull().default([]),
+    routingProvenance: jsonb('routing_provenance')
+      .$type<Array<import('@ficus/shared').GitHubFeedbackRoute>>()
+      .notNull()
+      .default([]),
     decision: text('decision').$type<import('@ficus/shared').GitHubFeedbackDecision>().notNull().default('pending'),
     decisionVersion: integer('decision_version').notNull().default(0),
     decidedByUserId: uuid('decided_by_user_id'),

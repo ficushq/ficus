@@ -6,6 +6,10 @@ import {
   githubFeedbackSources,
   integrationOutputEvents,
   type DbTx,
+  squads,
+  settings,
+  integrationConnections,
+  integrationConnectionAssignments,
 } from '../../../db'
 import { authorized } from '../outputs/authority'
 import { planOutputRouting } from '../outputs/routing-plan'
@@ -80,10 +84,121 @@ export async function isGitHubOutputAdmitted(store: Store, event: Event): Promis
 export async function githubMatchingEvent(store: Store, event: Event): Promise<Event> {
   if (event.integration !== 'github') return event
   const [proof] = await store.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, event.id))
-  const [source] = proof
+  let [source] = proof
     ? await store.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, proof.sourceEventId))
     : []
+  if (!proof && event.fact.github?.revisionId && (await isGitHubFeedbackAdmitted(store, event))) {
+    const [association] = await store
+      .select({ source: integrationOutputEvents })
+      .from(githubFeedbackSources)
+      .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, githubFeedbackSources.eventId))
+      .where(
+        and(
+          eq(githubFeedbackSources.revisionId, event.fact.github.revisionId),
+          ne(githubFeedbackSources.eventId, event.id),
+          sql`${integrationOutputEvents.authority} = ${JSON.stringify(event.authority)}::jsonb`,
+          sql`${integrationOutputEvents.sourceKey} NOT LIKE 'github-feedback:%'`
+        )
+      )
+      .orderBy(githubFeedbackSources.observedAt)
+      .limit(1)
+    source = association?.source
+    return source ? { ...event, fact: source.fact } : event
+  }
   return source && sourceHash(source) === proof?.sourceHash ? { ...event, fact: source.fact } : event
+}
+
+/** Original review audiences are immutable. Replanning can only retain or remove them. */
+export async function originalGitHubRoutes(store: Store, event: Event) {
+  if (event.fact.github?.revisionId) {
+    const [revision] = await store
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.id, event.fact.github.revisionId))
+    return revision?.routingProvenance ?? []
+  }
+  const [proof] = await store.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, event.id))
+  return proof?.routes ?? []
+}
+
+export async function isOriginalGitHubRoute(
+  store: Store,
+  event: Event,
+  selection?: {
+    kind?: string
+    id?: string
+    workStreamId?: string
+    recipientId?: string
+    owner?: boolean
+    target?: { agentId: string; attemptId?: number; version?: number }
+  }
+): Promise<boolean> {
+  if (event.integration !== 'github') return true
+  if (
+    event.authority.kind !== 'connection' ||
+    !(await authorized(store, 'github', event.authority, event.authority.squadId))
+  )
+    return false
+  const originals = await originalGitHubRoutes(store, event)
+  if (!originals.length) return false
+  const raw = await githubMatchingEvent(store, event)
+  const matching = raw.fact.github?.status ? { ...raw, fact: raw.fact.github.status } : raw
+  const current = await planOutputRouting(
+    matching,
+    (squadId) => authorized(store, 'github', event.authority, squadId),
+    { store, bindingFact: raw.fact, includeSettled: true }
+  )
+  return originals.some((original) => {
+    if (
+      !original.fingerprint ||
+      original.authorityHash !== hash(event.authority) ||
+      (selection?.kind && original.kind !== selection.kind) ||
+      (selection?.id && original.id !== selection.id) ||
+      (selection?.workStreamId && original.workStreamId !== selection.workStreamId) ||
+      (selection?.recipientId && original.recipientId !== selection.recipientId)
+    )
+      return false
+    // A branch route becomes a normal subscription after its authorized binding commits.
+    const live = current.routes.find(
+      (route) =>
+        route.id === original.id &&
+        route.workStreamId === original.workStreamId &&
+        (route.kind === original.kind || (original.kind === 'delivery-branch' && route.kind === 'subscription')) &&
+        route.fingerprint === original.fingerprint &&
+        route.runId === original.runId &&
+        route.recipientId === original.recipientId
+    )
+    if (!live) return false
+    if (selection?.owner)
+      return !!original.ownerId && live.ownerId === original.ownerId && selection.target?.agentId === original.ownerId
+    if (!selection?.target)
+      return (
+        !original.consumers ||
+        original.consumers.some((slot) =>
+          live.consumers?.some(
+            (now) =>
+              now.attemptId === slot.attemptId &&
+              now.version === slot.version &&
+              now.stepHash === slot.stepHash &&
+              (!slot.agentId || slot.agentId === now.agentId)
+          )
+        )
+      )
+    const target = selection.target
+    return (
+      original.consumers?.some((slot) => {
+        if (slot.agentId && slot.agentId !== target.agentId) return false
+        if (slot.attemptId !== target.attemptId || slot.version !== target.version) return false
+        return live.consumers?.some(
+          (now) =>
+            now.agentId === target.agentId &&
+            now.attemptId === slot.attemptId &&
+            now.version === slot.version &&
+            now.stepHash === slot.stepHash
+        )
+      }) === true
+    )
+  })
 }
 
 /**
@@ -92,7 +207,10 @@ export async function githubMatchingEvent(store: Store, event: Event): Promise<E
  * is short-lived, content/authority bound and rechecked under final locks; a transported status flag
  * or canonical marker has no authority. Existing decisions are never upgraded on retry.
  */
-export async function prepareGitHubOutput(input: Event): Promise<Event | null> {
+export async function prepareGitHubOutput(
+  input: Event,
+  options: { reverifyAdopted?: boolean } = {}
+): Promise<Event | null> {
   if (input.integration !== 'github') return input
   if (
     input.authority.kind !== 'connection' ||
@@ -159,6 +277,7 @@ export async function prepareGitHubOutput(input: Event): Promise<Event | null> {
     // retry or a trust-list change. In particular, pending replays cost no provider requests.
     if (known && known.decision !== 'automatic') return null
   }
+  if ((prior || input.fact.github?.revisionId) && !(await isOriginalGitHubRoute(db, input))) return null
   const access = await verifyGitHubOutputResource(source)
   if (!access.repositoryAuthorized) return null
   const checkedAt = new Date(),
@@ -220,7 +339,9 @@ export async function prepareGitHubOutput(input: Event): Promise<Event | null> {
   ) {
     // Dedupe may adopt an earlier canonical event, but this observation's access cannot bless
     // or replace that event's original source. Reverify its OWN retained authority instead.
-    return prepareGitHubOutput(effect)
+    // Known-record renewal budgets one native verification per resource. A concurrent source
+    // adoption must defer, not recursively exceed that budget; the next pass checks its own proof.
+    return options.reverifyAdopted === false ? null : prepareGitHubOutput(effect)
   }
   return db.transaction(async (tx) => {
     await lockGitHubTrustAuthority(tx)
@@ -242,6 +363,8 @@ export async function prepareGitHubOutput(input: Event): Promise<Event | null> {
       sourceHash: sourceHash(source),
       effectHash: hash(effect.fact),
       authorityHash: hash(effect.authority),
+      routes:
+        lockedProof?.routes ?? (effect.fact.github?.revisionId ? await originalGitHubRoutes(tx, effect) : plan.routes),
       checkedAt,
       expiresAt,
     }
@@ -259,8 +382,55 @@ export class GitHubOutputNotAdmittedError extends Error {
   }
 }
 
+/**
+ * Fence DB-owned authority/material and source snapshots until the actual effect commits.
+ * Order: trust -> squad -> provider settings -> connection -> assignment -> event/source.
+ * This agrees with assignment's squad-before-connection order; no provider I/O is permitted.
+ * Resource authority is the bounded server witness, never a caller status/approval flag.
+ */
+export async function lockGitHubOutputAuthority(tx: DbTx, event: Event): Promise<void> {
+  if (event.integration !== 'github') return
+  await lockGitHubTrustAuthority(tx)
+  if (event.authority.kind !== 'connection') return
+  await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, event.authority.squadId)).for('share')
+  await tx
+    .select({ key: settings.key })
+    .from(settings)
+    .where(eq(settings.key, '__integration-enabled:github'))
+    .for('share')
+  await tx
+    .select({ id: integrationConnections.id })
+    .from(integrationConnections)
+    .where(eq(integrationConnections.id, event.authority.connectionId))
+    .for('share')
+  await tx
+    .select({ id: integrationConnectionAssignments.connectionId })
+    .from(integrationConnectionAssignments)
+    .where(
+      and(
+        eq(integrationConnectionAssignments.squadId, event.authority.squadId),
+        eq(integrationConnectionAssignments.connectionId, event.authority.connectionId),
+        eq(integrationConnectionAssignments.providerKey, 'github')
+      )
+    )
+    .for('share')
+  const [proof] = await tx
+    .select()
+    .from(githubOutputProofs)
+    .where(eq(githubOutputProofs.eventId, event.id))
+    .for('share')
+  const ids = [...new Set([event.id, ...(proof ? [proof.sourceEventId] : [])])].sort()
+  for (const id of ids)
+    await tx
+      .select({ id: integrationOutputEvents.id })
+      .from(integrationOutputEvents)
+      .where(eq(integrationOutputEvents.id, id))
+      .for('share')
+}
+
 /** Local final effect guard; always acquired before stream/agent locks, never does provider I/O. */
 export async function lockAdmittedGitHubOutput(tx: DbTx, event: Event): Promise<void> {
-  await lockGitHubTrustAuthority(tx)
-  if (!(await isGitHubOutputAdmitted(tx, event))) throw new GitHubOutputNotAdmittedError()
+  await lockGitHubOutputAuthority(tx, event)
+  if (!(await isGitHubOutputAdmitted(tx, event)) || !(await isOriginalGitHubRoute(tx, event)))
+    throw new GitHubOutputNotAdmittedError()
 }

@@ -9,7 +9,6 @@ import { authorized } from './authority'
 import { and, eq, gte, inArray, isNull, lte, ne, desc, sql, or } from 'drizzle-orm'
 import {
   integrationValueAt,
-  activeWorkflowAttempts,
   integrationSubscriptionMatches,
   type IntegrationSubscription,
   type IntegrationOutputFact,
@@ -37,6 +36,8 @@ import {
   eventRuleTrigger,
   routeDefaultNotifications,
   defaultNotificationContent,
+  creationNotificationContent,
+  notifyGitHubCreatedStream,
   selectOutputRule,
 } from './default-routing'
 import { eventTrackedResource, streamTracksEvent } from './tracked-match'
@@ -44,8 +45,17 @@ import { outputSourceMatches as sourceMatches, findOutputTriggerRun, outputTrigg
 import { bindChangeRequestFromEvent } from './delivery-binding'
 import { recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
 import { createLogger } from '../../../lib/infra/logger'
-import { isGitHubOutputAdmitted, prepareGitHubOutput, githubMatchingEvent } from '../github/feedback-routing'
-import { lockGitHubTrustAuthority } from '../github/trust-authority-lock'
+import {
+  isGitHubOutputAdmitted,
+  prepareGitHubOutput,
+  githubMatchingEvent,
+  isOriginalGitHubRoute,
+  lockGitHubOutputAuthority,
+} from '../github/feedback-routing'
+import { renewKnownGitHubOutputs } from '../github/feedback-renewal'
+
+import { outputRecipients } from './routing-audience'
+export { outputRecipients } from './routing-audience'
 
 const log = createLogger('integration-outputs')
 
@@ -54,7 +64,6 @@ type Event = typeof integrationOutputEvents.$inferSelect
 type Delivery = typeof integrationOutputDeliveries.$inferSelect
 type Run = typeof workStreamFlowRuns.$inferSelect
 type Stream = typeof workStreams.$inferSelect
-type Target = Omit<Delivery['targets'][number], 'inboxId'>
 
 /** Correlation is not access: a squad only sees an event its own live connection observed. */
 export async function isOutputEventAuthorizedForSquad(event: Event, squadId: string): Promise<boolean> {
@@ -99,43 +108,6 @@ function independentStreamOwner(stream: Stream, run: Run): string | null {
     ? owner
     : null
 }
-export function outputRecipients(
-  run: Run,
-  stream: Stream,
-  subscription: IntegrationSubscription,
-  managerId?: string | null
-): Target[] {
-  const to = subscription.deliver.to
-  const matches = (attempt: Run['state']['attempts'][number]) => {
-    const step = attempt.step ?? run.state.definition.steps.find((step) => step.id === attempt.stepId)
-    return (
-      step?.kind === 'agent' &&
-      (to === 'active' ||
-        to === 'delivery-owner' ||
-        ('participant' in to ? step.participant === to.participant : step.id === to.step))
-    )
-  }
-  const active = activeWorkflowAttempts(run.state).filter(matches)
-  let targets: Target[] = active.flatMap((attempt) =>
-    run.attemptAgents[String(attempt.id)]
-      ? [{ agentId: run.attemptAgents[String(attempt.id)]!, attemptId: attempt.id }]
-      : []
-  )
-  if (to === 'delivery-owner')
-    targets = stream.assigneeAgentId
-      ? targets.filter((target) => target.agentId === stream.assigneeAgentId).slice(0, 1)
-      : targets.slice(-1)
-  if (!targets.length && run.state.status === 'completion-ready' && to !== 'active') {
-    const last = [...run.state.attempts]
-      .reverse()
-      .find((attempt) => attempt.status === 'completed' && matches(attempt) && run.attemptAgents[String(attempt.id)])
-    if (last) targets = [{ agentId: run.attemptAgents[String(last.id)]!, version: run.version }]
-  }
-  if (!targets.length && subscription.deliver.whenInactive === 'manager' && managerId)
-    targets = [{ agentId: managerId, version: run.version }]
-  return targets
-}
-
 /** Events may inform final delivery review, but must not bypass unrelated blockers. */
 async function recipientBlocked(
   store: Store,
@@ -299,8 +271,8 @@ async function matchOutputEvent(event: Event): Promise<string[]> {
     (squadId) => authorized(db, event.integration, event.authority, squadId),
     event.integration === 'github'
       ? async (tx) => {
-          await lockGitHubTrustAuthority(tx)
-          return isGitHubOutputAdmitted(tx, event)
+          await lockGitHubOutputAuthority(tx, event)
+          return (await isGitHubOutputAdmitted(tx, event)) && (await isOriginalGitHubRoute(tx, event))
         }
       : undefined
   )
@@ -365,7 +337,7 @@ async function routeOutputEvent(event: Event, only?: string[]) {
     )
   for (const { id } of runs) {
     const result = await db.transaction(async (tx) => {
-      if (event.integration === 'github') await lockGitHubTrustAuthority(tx)
+      if (event.integration === 'github') await lockGitHubOutputAuthority(tx, event)
       if (!(await isGitHubOutputAdmitted(tx, event))) return false
       const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, id)).for('update')
       if (
@@ -380,6 +352,7 @@ async function routeOutputEvent(event: Event, only?: string[]) {
         const descriptor = integrationOutputRegistry.descriptor(subscription.source)
         if (
           !descriptor ||
+          !(await isOriginalGitHubRoute(tx, event, { id: subscription.id, workStreamId: id })) ||
           !sourceMatches(subscription, event) ||
           !integrationSubscriptionMatches(subscription, matching.fact, stream.metadata, descriptor)
         )
@@ -431,11 +404,35 @@ async function finalizeOutputRouting(event: Event) {
     )
 }
 
-function laterPosition(a: number[], b: number[]) {
-  for (let index = 0; index < Math.max(a.length, b.length); index++) {
-    if ((a[index] ?? 0) !== (b[index] ?? 0)) return (a[index] ?? 0) > (b[index] ?? 0)
-  }
-  return false
+/** One existence row, including terminal newer observations outside the bounded renewal cohort. */
+async function hasLaterOutputObservation(store: Store, delivery: Delivery, event: Event) {
+  const ordering = event.fact.ordering
+  if (!ordering) return false
+  const position = sql`${integrationOutputEvents.fact}->'ordering'->'position'`
+  const length = sql`greatest(jsonb_array_length(${position}), ${ordering.position.length})`
+  // Equal-length numeric arrays preserve the previous zero-padded lexicographic policy.
+  const after = sql`ARRAY(SELECT coalesce((${position}->>n)::numeric, 0)
+    FROM generate_series(0, ${length}-1) AS n ORDER BY n) >
+    ARRAY(SELECT coalesce((${JSON.stringify(ordering.position)}::jsonb->>n)::numeric, 0)
+    FROM generate_series(0, ${length}-1) AS n ORDER BY n)`
+  const [newer] = await store
+    .select({ id: integrationOutputDeliveries.id })
+    .from(integrationOutputDeliveries)
+    .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
+    .where(
+      and(
+        eq(integrationOutputDeliveries.workStreamId, delivery.workStreamId),
+        eq(integrationOutputDeliveries.subscriptionId, delivery.subscriptionId),
+        sql`${integrationOutputDeliveries.subscription} = ${JSON.stringify(delivery.subscription)}::jsonb`,
+        eq(integrationOutputEvents.sourceKey, event.sourceKey),
+        eq(integrationOutputEvents.integration, event.integration),
+        sql`${integrationOutputEvents.fact}->>'resourceKey' = ${event.fact.resourceKey}`,
+        sql`${integrationOutputEvents.fact}->'ordering'->>'key' = ${ordering.key}`,
+        after
+      )
+    )
+    .limit(1)
+  return !!newer
 }
 
 export async function reconcileOutputDeliveries(workStreamId: string) {
@@ -451,7 +448,7 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
     .limit(1)
   if (!pending.length) return
   const candidates = await db
-    .select({ event: integrationOutputEvents })
+    .select({ event: integrationOutputEvents, deliveryId: integrationOutputDeliveries.id })
     .from(integrationOutputDeliveries)
     .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
     .where(
@@ -460,11 +457,16 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
         inArray(integrationOutputDeliveries.status, ['pending', 'queued'])
       )
     )
-  for (const { event } of candidates) if (event.integration === 'github') await prepareGitHubOutput(event)
+    .orderBy(integrationOutputDeliveries.createdAt, integrationOutputDeliveries.id)
+    .limit(25)
+  await renewKnownGitHubOutputs(
+    candidates.filter(({ event }) => event.integration === 'github').map(({ event }) => event.id)
+  )
   const afterCommit: Array<() => void> = []
   const wake = new Map<string, { deliveryId: string; target: Delivery['targets'][number] }>()
   await db.transaction(async (tx) => {
-    if (candidates.some(({ event }) => event.integration === 'github')) await lockGitHubTrustAuthority(tx)
+    for (const { event } of candidates.filter(({ event }) => event.integration === 'github'))
+      await lockGitHubOutputAuthority(tx, event)
     const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, workStreamId)).for('update')
     const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
     if (!stream || !run) return
@@ -476,7 +478,15 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
       .select({ delivery: integrationOutputDeliveries, event: integrationOutputEvents })
       .from(integrationOutputDeliveries)
       .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
-      .where(eq(integrationOutputDeliveries.workStreamId, workStreamId))
+      .where(
+        and(
+          eq(integrationOutputDeliveries.workStreamId, workStreamId),
+          inArray(
+            integrationOutputDeliveries.id,
+            candidates.map(({ deliveryId }) => deliveryId)
+          )
+        )
+      )
     for (const { delivery, event } of rows) {
       if (['delivered', 'superseded'].includes(delivery.status)) continue
       if (!(await shouldNotifyEvent(tx, event))) {
@@ -490,7 +500,20 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
           .where(eq(integrationOutputDeliveries.id, delivery.id))
         continue
       }
-      if (!(await isGitHubOutputAdmitted(tx, event))) continue
+      if (!(await isGitHubOutputAdmitted(tx, event))) {
+        await tx
+          .update(integrationOutputDeliveries)
+          .set({ reason: 'GitHub proof unavailable; awaiting authorized renewal' })
+          .where(eq(integrationOutputDeliveries.id, delivery.id))
+        continue
+      }
+      if (!(await isOriginalGitHubRoute(tx, event, { id: delivery.subscriptionId, workStreamId }))) {
+        await tx
+          .update(integrationOutputDeliveries)
+          .set({ status: 'superseded', reason: 'Original route changed', updatedAt: new Date() })
+          .where(eq(integrationOutputDeliveries.id, delivery.id))
+        continue
+      }
       const matching = await githubMatchingEvent(tx, event)
       const current = codeHostingRegistry
         .subscriptions(run.state.definition, stream.metadata)
@@ -509,22 +532,7 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
               : !(await shouldNotifyEvent(tx, event))
                 ? 'Event suppressed by integration notification policy'
                 : undefined
-      const ordering = event.fact.ordering
-      if (
-        !reason &&
-        ordering &&
-        rows.some(
-          (row) =>
-            row.event.sourceKey === event.sourceKey &&
-            row.event.integration === event.integration &&
-            row.event.fact.resourceKey === event.fact.resourceKey &&
-            row.delivery.subscriptionId === delivery.subscriptionId &&
-            sameSubscription(delivery.subscription, row.delivery.subscription) &&
-            row.event.fact.ordering?.key === ordering.key &&
-            laterPosition(row.event.fact.ordering.position, ordering.position)
-        )
-      )
-        reason = 'Newer event already received'
+      if (!reason && (await hasLaterOutputObservation(tx, delivery, event))) reason = 'Newer event already received'
       if (reason) {
         await tx
           .update(integrationOutputDeliveries)
@@ -546,7 +554,16 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
               : !owner || ['terminated', 'terminating'].includes(owner.status)
                 ? 'Work stream parked; owner unavailable'
                 : ''
-          if (!holdReason && ownerId) {
+          if (
+            !holdReason &&
+            ownerId &&
+            (await isOriginalGitHubRoute(tx, event, {
+              id: delivery.subscriptionId,
+              workStreamId,
+              owner: true,
+              target: { agentId: ownerId },
+            }))
+          ) {
             const notice = await InboxMessage.persistSystemAgentOnceInTransaction(
               tx,
               {
@@ -595,18 +612,22 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
         continue
       }
       if (delivery.status === 'queued') {
-        const accepted = delivery.targets.length
-          ? await tx
-              .select({ id: inbox.id, deliveredAt: inbox.deliveredAt })
-              .from(inbox)
+        const accepted = await Promise.all(
+          delivery.targets.map(async (target) => {
+            const [receipt] = await tx
+              .select()
+              .from(chatSendReceipts)
               .where(
-                inArray(
-                  inbox.id,
-                  delivery.targets.map((target) => target.inboxId)
+                and(
+                  eq(chatSendReceipts.agentId, target.agentId),
+                  eq(chatSendReceipts.clientId, `integration-output:${delivery.id}:${target.inboxId}`),
+                  eq(chatSendReceipts.state, 'accepted')
                 )
               )
-          : []
-        if (accepted.length === delivery.targets.length && accepted.every((row) => row.deliveredAt)) {
+            return !!receipt?.messageId && !!receipt.executionId && !!receipt.acceptedAt
+          })
+        )
+        if (accepted.length > 0 && accepted.every(Boolean)) {
           await tx
             .update(integrationOutputDeliveries)
             .set({ status: 'delivered', reason: null, updatedAt: new Date() })
@@ -642,6 +663,7 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
       }
       const targets: Delivery['targets'] = []
       for (const target of recipients) {
+        if (!(await isOriginalGitHubRoute(tx, event, { id: delivery.subscriptionId, workStreamId, target }))) continue
         const [agent] = await tx.select({ status: agents.status }).from(agents).where(eq(agents.id, target.agentId))
         if (!agent || ['terminated', 'terminating'].includes(agent.status)) continue
         const message = await InboxMessage.persistSystemAgentOnceInTransaction(
@@ -722,9 +744,9 @@ async function acceptOutputDelivery(deliveryId: string, target: Delivery['target
       if (!result.success) return
       accepted = await receipt()
     }
-    if (!accepted?.messageId || !accepted.executionId) return
+    if (accepted?.state !== 'accepted' || !accepted.messageId || !accepted.executionId || !accepted.acceptedAt) return
     await db.transaction(async (tx) => {
-      await tx.update(inbox).set({ deliveredAt: accepted!.createdAt }).where(eq(inbox.id, target.inboxId))
+      await tx.update(inbox).set({ deliveredAt: accepted!.acceptedAt }).where(eq(inbox.id, target.inboxId))
     })
   } catch {
     // Intent stays queued. Pause/revision/connection gates are rechecked on retry.
@@ -795,7 +817,16 @@ export async function isCurrentIntegrationDelivery(store: Store, deliveryId: str
     message.metadata?.integrationOwnerNotice === true &&
     message.metadata.integrationDeliveryId === delivery.id
   )
-    return isParkedStartedFlow(stream, run) && independentStreamOwner(stream, run) === agentId
+    return (
+      isParkedStartedFlow(stream, run) &&
+      independentStreamOwner(stream, run) === agentId &&
+      (await isOriginalGitHubRoute(store, event, {
+        id: delivery.subscriptionId,
+        workStreamId: stream.id,
+        owner: true,
+        target: { agentId },
+      }))
+    )
   if (
     !['queued', 'delivered'].includes(delivery.status) ||
     stream.status !== 'active' ||
@@ -810,6 +841,7 @@ export async function isCurrentIntegrationDelivery(store: Store, deliveryId: str
   const target = delivery.targets.find((target) => target.agentId === agentId && target.inboxId === inboxId)
   return (
     !!target &&
+    (await isOriginalGitHubRoute(store, event, { id: delivery.subscriptionId, workStreamId: stream.id, target })) &&
     !(await recipientBlocked(store, stream, run, delivery.subscription, agentId)) &&
     outputRecipients(run, stream, delivery.subscription, squad?.managerId).some(
       (recipient) =>
@@ -854,6 +886,53 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
     const rule = selectOutputRule(squad?.metadata, event.fact.data.projection === 'status' ? event : matching, login)
     additionalContext = rule && 'additionalContext' in rule.action ? rule.action.additionalContext : undefined
   }
+  if (message.metadata.integrationCreationNotice === true) {
+    if (
+      !workStreamId ||
+      !z.string().uuid().safeParse(workStreamId).success ||
+      typeof message.metadata.integrationRuleId !== 'string'
+    )
+      return false
+    const [stream] = await store.select().from(workStreams).where(eq(workStreams.id, workStreamId))
+    const [receipt] = await store
+      .select()
+      .from(integrationOutputTriggerRuns)
+      .where(
+        and(
+          eq(integrationOutputTriggerRuns.eventId, event.id),
+          eq(integrationOutputTriggerRuns.workStreamId, workStreamId),
+          eq(integrationOutputTriggerRuns.triggerId, message.metadata.integrationRuleId)
+        )
+      )
+    return (
+      !!stream &&
+      !!receipt &&
+      ['active', 'queued'].includes(stream.status) &&
+      stream.ownerAgentId === agentId &&
+      integrationValueAt(stream.metadata, 'integrationSource.eventId') === event.id &&
+      recipient?.squadId === stream.squadId &&
+      message.subject === `New work stream you own: ${event.fact.subject}` &&
+      message.content === creationNotificationContent(event, stream.id) &&
+      (await isGitHubOutputAdmitted(store, event)) &&
+      (await isOriginalGitHubRoute(store, event, {
+        kind: 'start-workstream',
+        id: message.metadata.integrationRuleId,
+        recipientId: agentId,
+      })) &&
+      (await shouldNotifyEvent(store, event))
+    )
+  }
+  if (workStreamId) {
+    if (!z.string().uuid().safeParse(workStreamId).success) return false
+    const [stream] = await store.select().from(workStreams).where(eq(workStreams.id, workStreamId))
+    if (
+      !stream ||
+      stream.status !== 'active' ||
+      stream.pause ||
+      (await waitsForAgent(store, stream.id, agentId)).length
+    )
+      return false
+  }
   if (
     message.subject !== event.fact.subject ||
     message.content !==
@@ -865,6 +944,10 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
     recipient?.squadId === event.authority.squadId &&
     (await authorized(store, event.integration, event.authority, event.authority.squadId)) &&
     (await isGitHubOutputAdmitted(store, event)) &&
+    (await isOriginalGitHubRoute(store, event, {
+      ...(workStreamId ? { kind: 'pre-flow', workStreamId } : {}),
+      recipientId: agentId,
+    })) &&
     (await shouldNotifyEvent(store, event))
   )
 }
@@ -916,12 +999,16 @@ export async function outputDeliveryHistory(workStreamId: string) {
     .where(eq(integrationOutputDeliveries.workStreamId, workStreamId))
     .orderBy(desc(integrationOutputDeliveries.createdAt))
     .limit(100)
+  await renewKnownGitHubOutputs(
+    [...new Set(rows.filter((row) => row.integration === 'github').map((row) => row.event.id))].slice(0, 25)
+  )
   const visible: Array<Omit<(typeof rows)[number], 'event' | 'squadId'>> = []
   for (const { event, squadId, ...history } of rows) {
     if (
       event.integration === 'github' &&
       (!(await authorized(db, event.integration, event.authority, squadId)) ||
-        !(await isGitHubOutputAdmitted(db, event)))
+        !(await isGitHubOutputAdmitted(db, event)) ||
+        !(await isOriginalGitHubRoute(db, event, { id: history.subscriptionId, workStreamId })))
     )
       continue
     visible.push(history)
@@ -985,7 +1072,7 @@ async function applyOutputTriggers(event: Event) {
     try {
       const identityTarget = await describeIdentityTarget(event, id)
       const created = await db.transaction(async (tx) => {
-        if (event.integration === 'github') await lockGitHubTrustAuthority(tx)
+        if (event.integration === 'github') await lockGitHubOutputAuthority(tx, event)
         if (!(await isGitHubOutputAdmitted(tx, event))) return []
         // Same squad → stream order as admission. Creation and resource identity commit together.
         const [squad] = await tx.select().from(squads).where(eq(squads.id, id)).for('update')
@@ -1017,6 +1104,11 @@ async function applyOutputTriggers(event: Event) {
           const descriptor = integrationOutputRegistry.descriptor(trigger.source)
           if (
             !descriptor ||
+            !(await isOriginalGitHubRoute(tx, event, {
+              kind: 'start-workstream',
+              id: trigger.id,
+              recipientId: squad.managerAgentId ?? undefined,
+            })) ||
             !sourceMatches(subscription, event) ||
             !integrationSubscriptionMatches(subscription, matching.fact, {}, descriptor)
           )
@@ -1197,7 +1289,8 @@ async function applyOutputTriggers(event: Event) {
     const stream = await WorkStream.find(streamId)
     if (!stream || integrationValueAt(stream.metadata, 'integrationSource.eventId') !== event.id) continue
     const { notifyWorkStreamOwnerOfNewStream } = await import('../../squad/work-stream-notifications')
-    await notifyWorkStreamOwnerOfNewStream(stream, { retryOnFailure: true })
+    if (event.integration === 'github') await notifyGitHubCreatedStream(event, stream.id)
+    else await notifyWorkStreamOwnerOfNewStream(stream, { retryOnFailure: true })
   }
   if (errors.length) throw errors[0]
 }

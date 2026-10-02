@@ -1457,6 +1457,13 @@
       "when": 1790972109609,
       "tag": "0207_conscious_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 208,
+      "version": "7",
+      "when": 1790976442412,
+      "tag": "0208_bright_golden_guardian",
+      "breakpoints": true
     }
   ]
 }

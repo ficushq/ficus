@@ -4,8 +4,11 @@ import { advanceWorkflowState, type Notification } from './ci-notification-state
 export { ciNotificationSchema } from './ci-notification-state'
 import { agents, db, workStreams, type integrationOutputEvents } from '../../db'
 import { InboxMessage } from '../../entities/InboxMessage'
-import { isGitHubOutputAdmitted } from '../integrations/github/feedback-routing'
-import { lockGitHubTrustAuthority } from '../integrations/github/trust-authority-lock'
+import {
+  isGitHubOutputAdmitted,
+  lockGitHubOutputAuthority,
+  isOriginalGitHubRoute,
+} from '../integrations/github/feedback-routing'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 
 const record = (value: unknown): Record<string, unknown> =>
@@ -19,8 +22,12 @@ export async function settleCiNotification(
   const afterCommit: Array<() => void> = []
   const result = await db.transaction(async (tx) => {
     if (event) {
-      await lockGitHubTrustAuthority(tx)
-      if (!(await isGitHubOutputAdmitted(tx, event))) return { accepted: false, reason: 'event no longer admitted' }
+      await lockGitHubOutputAuthority(tx, event)
+      if (
+        !(await isGitHubOutputAdmitted(tx, event)) ||
+        !(await isOriginalGitHubRoute(tx, event, { kind: 'pre-flow', workStreamId, recipientId: input.recipientId }))
+      )
+        return { accepted: false, reason: 'event no longer admitted' }
     }
     // Match pause and flow inbox acceptance: stream before agent queue and row.
     const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, workStreamId)).for('update')

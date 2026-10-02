@@ -251,6 +251,11 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
     ) {
       const { lockGitHubTrustAuthority } = await import('../integrations/github/trust-authority-lock')
       await lockGitHubTrustAuthority(store)
+      const { lockGitHubOutputAuthority } = await import('../integrations/github/feedback-routing')
+      for (const event of events
+        .filter((event) => event.integration === 'github')
+        .sort((a, b) => a.id.localeCompare(b.id)))
+        await lockGitHubOutputAuthority(store, event)
     }
   }
   const targets = await flowInboxTargets(store, messageIds)
@@ -285,6 +290,31 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
       throw new FlowWaitSupersededError()
     if (target.assignment && (await waitsForAttempt(store, target.workStreamId, target.attemptId)).length)
       throw new Error('The flow attempt is waiting for input')
+  }
+}
+
+/** No new locks or provider I/O. Call again AFTER queue waits and before any acceptance writes. */
+export async function assertCurrentIntegrationInbox(store: DbTx, agentId: string, messageIds: string[] = []) {
+  const ids = messageIds.filter((id) => z.string().uuid().safeParse(id).success)
+  if (!ids.length) return
+  const rows = await store.select({ id: inbox.id, metadata: inbox.metadata }).from(inbox).where(inArray(inbox.id, ids))
+  const { isCurrentIntegrationDelivery, isCurrentIntegrationNotification } =
+    await import('../integrations/outputs/runtime')
+  for (const row of rows) {
+    if (
+      row.metadata?.source === 'integration-notification' &&
+      !(await isCurrentIntegrationNotification(store, agentId, row.id))
+    )
+      throw new FlowWaitSupersededError()
+    if (row.metadata?.source === 'integration-output') {
+      const id = row.metadata.integrationDeliveryId
+      if (
+        typeof id !== 'string' ||
+        !z.string().uuid().safeParse(id).success ||
+        !(await isCurrentIntegrationDelivery(store, id, agentId, row.id))
+      )
+        throw new FlowWaitSupersededError()
+    }
   }
 }
 

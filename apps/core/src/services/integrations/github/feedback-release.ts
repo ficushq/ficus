@@ -32,7 +32,7 @@ export interface GitHubFeedbackReleaseDependencies {
   /** Must enforce stored audience provenance and recheck every effect and final acceptance seam. */
   route(
     event: Event,
-    provenance: Array<{ kind: string; id: string }>
+    provenance: Array<import('@ficus/shared').GitHubFeedbackRoute>
   ): Promise<void | { state: 'retained' | 'obsolete'; reason: (typeof reasons)[number] }>
 }
 

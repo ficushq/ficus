@@ -23,7 +23,7 @@ export interface FeedbackCaptureDependencies {
   transportKey?: string
   /** Storage-only quarantine when exact native ownership/access could not be witnessed. */
   holdReason?: 'source_unverified'
-  routingProvenance?: Array<{ kind: string; id: string }>
+  routingProvenance?: Array<import('@ficus/shared').GitHubFeedbackRoute>
   /** Internal live-trust resolver, only for a new, unambiguous capture; never transported approval. */
   decideFresh?(tx: DbTx, squadId: string, content: GitHubFeedbackContent): Promise<boolean>
 }
@@ -258,6 +258,25 @@ export async function recordCanonicalGitHubFeedback(
     )
       throw new Error('feedback_not_admitted')
     const sourceKey = `github-feedback:${revision.squadId}:${revision.id}`
+    const [existing] = await tx
+      .select()
+      .from(integrationOutputEvents)
+      .where(
+        and(
+          eq(integrationOutputEvents.integration, 'github'),
+          eq(integrationOutputEvents.sourceKey, sourceKey),
+          eq(integrationOutputEvents.eventKey, revision.id)
+        )
+      )
+    // Dedupe may adopt an already-canonical original authority; a different account/material
+    // cannot become the FIRST authority for an approval captured under another source.
+    const pinned = revision.routingProvenance.filter((route) => route.authorityHash)
+    if (
+      !existing &&
+      pinned.length &&
+      !pinned.some((route) => route.authorityHash === githubContentHash(source.authority))
+    )
+      throw new Error('feedback_source_unavailable')
     const [inserted] = await tx
       .insert(integrationOutputEvents)
       .values({

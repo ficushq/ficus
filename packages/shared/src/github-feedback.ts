@@ -70,3 +70,23 @@ export interface GitHubFeedbackEnvelope {
   /** Explicit content-free lifecycle projection. Never executes squad content rules/bindings. */
   status: import('./integration-outputs').IntegrationOutputFact | null
 }
+
+/** Server-captured routing authority. Hashes contain configuration, never external prose. */
+export interface GitHubFeedbackRoute {
+  kind: string
+  id: string
+  workStreamId?: string
+  recipientId?: string
+  fingerprint?: string
+  authorityHash?: string
+  runId?: string
+  ownerId?: string | null
+  consumers?: Array<{
+    agentId?: string
+    attemptId?: number
+    version?: number
+    stepId?: string
+    participant?: string
+    stepHash?: string
+  }>
+}

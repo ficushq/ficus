@@ -1,6 +1,6 @@
 import { isUserAssistantAgentType } from '@ficus/shared'
 import { consultantSandboxId } from '../services/sandbox/consultant-sandbox'
-import { lockFlowInboxDelivery } from '../services/work-streams/wait-scope'
+import { lockFlowInboxDelivery, assertCurrentIntegrationInbox } from '../services/work-streams/wait-scope'
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
 
 import {
@@ -1630,6 +1630,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     // single-arg constants, so an agent id whose hashtext collides with one of
     // them cannot serialize this queue behind a migration or a CLI-bundle build.
     await acquireAgentQueueLock(tx, this.id)
+    await assertCurrentIntegrationInbox(tx, this.id, metadata?.inboxMessageIds)
     const { assertAgentWorkStreamNotPaused } = await import('../services/work-streams/pause')
     await assertAgentWorkStreamNotPaused(this.id, tx)
 
@@ -1744,6 +1745,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     }
 
     validateNewAcceptance?.()
+    await assertCurrentIntegrationInbox(tx, this.id, metadata?.inboxMessageIds)
 
     if (imageIds?.length) {
       await Image.claimForTargetInTransaction(tx, imageIds, this, attachmentActorUserId ?? '', attachmentScope!)
@@ -1797,6 +1799,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       })
       persistedMessage = persisted
     }
+    await assertCurrentIntegrationInbox(tx, this.id, metadata?.inboxMessageIds)
     if (clientId && requestHash && persistedMessage) {
       await tx
         .update(chatSendReceipts)
@@ -1805,7 +1808,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
           messageId: persistedMessage.id,
           executionId: execution.id,
           disposition: 'turn',
-          acceptedAt: databaseNow,
+          acceptedAt: databaseClockNow(),
         })
         .where(and(eq(chatSendReceipts.agentId, this.id), eq(chatSendReceipts.clientId, clientId)))
     }
@@ -1912,6 +1915,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       const { assertAgentWorkStreamNotPaused } = await import('../services/work-streams/pause')
       await assertAgentWorkStreamNotPaused(this.id, tx)
       await sendMessageLockedHook?.(tx, this.id)
+      await assertCurrentIntegrationInbox(tx, this.id, metadata?.inboxMessageIds)
       const [authoritativeAgent] = await tx
         .select({
           status: agents.status,
@@ -2095,6 +2099,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
         },
         pending: true,
       })
+      await assertCurrentIntegrationInbox(tx, this.id, metadata?.inboxMessageIds)
       if (clientId) {
         await tx
           .update(chatSendReceipts)
@@ -2103,7 +2108,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
             messageId: persisted.id,
             executionId: active.id,
             disposition: 'intervention',
-            acceptedAt: new Date(),
+            acceptedAt: databaseClockNow(),
           })
           .where(and(eq(chatSendReceipts.agentId, this.id), eq(chatSendReceipts.clientId, clientId)))
       }

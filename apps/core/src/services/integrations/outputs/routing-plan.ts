@@ -6,6 +6,8 @@ import {
   type IntegrationSubscription,
   type WorkflowEventTrigger,
   type IntegrationOutputFact,
+  type GitHubFeedbackRoute,
+  integrationValueAt,
 } from '@ficus/shared'
 import {
   db,
@@ -24,15 +26,13 @@ import { integrationOutputRegistry } from './registry'
 import { eventRuleTrigger, selectOutputRule } from './default-routing'
 import { defaultStreamMatches, preFlowRecipient } from './tracked-match'
 import { planChangeRequestBinding } from './delivery-binding'
+import { githubContentHash } from '../github/feedback-envelope'
+import { outputRecipients } from './routing-audience'
+import { consultantAgentId } from '../../chat/consultant-idempotency'
 import { changeRequestBindingMetadata } from '../../work-streams/change-request-binding'
 
 type Event = typeof integrationOutputEvents.$inferSelect
-export interface OutputRoutingRoute {
-  kind: 'start-workstream' | 'notify-manager' | 'notify-consultant' | 'pre-flow' | 'subscription' | 'delivery-branch'
-  id: string
-  workStreamId?: string
-  recipientId?: string
-}
+export type OutputRoutingRoute = GitHubFeedbackRoute
 export interface OutputRoutingPlan {
   relevant: boolean
   routes: OutputRoutingRoute[]
@@ -92,16 +92,22 @@ function result(input: OutputRoutingRoute[]): OutputRoutingPlan {
 export async function planOutputRouting(
   event: Event,
   authorize: (squadId: string) => Promise<boolean>,
-  options: { login?: string; bindingFact?: IntegrationOutputFact } = {}
+  options: {
+    login?: string
+    bindingFact?: IntegrationOutputFact
+    store?: typeof db | DbTx
+    includeSettled?: boolean
+  } = {}
 ): Promise<OutputRoutingPlan> {
+  const store = options.store ?? db
   if (event.authority.kind !== 'connection' || !(await authorize(event.authority.squadId))) return result([])
   const squadId = event.authority.squadId
-  const [squad] = await db
+  const [squad] = await store
     .select()
     .from(squads)
     .where(and(eq(squads.id, squadId), eq(squads.status, 'active')))
   if (!squad) return result([])
-  const [connection] = await db
+  const [connection] = await store
     .select({ configuration: integrationConnections.configuration })
     .from(integrationConnections)
     .where(eq(integrationConnections.id, event.authority.connectionId))
@@ -109,12 +115,12 @@ export async function planOutputRouting(
   const login = String((configuration as { login?: string } | undefined)?.login ?? '')
   if (integrationOutputRegistry.adapter(event.integration)?.shouldNotify?.(event.fact, configuration) === false)
     return result([])
-  const rows = await db
+  const rows = await store
     .select({ stream: workStreams, run: workStreamFlowRuns })
     .from(workStreams)
     .leftJoin(workStreamFlowRuns, eq(workStreamFlowRuns.workStreamId, workStreams.id))
     .where(and(eq(workStreams.squadId, squadId), inArray(workStreams.status, ['active', 'queued'])))
-  const available = await db
+  const available = await store
     .select()
     .from(agents)
     .where(and(eq(agents.squadId, squadId), inArray(agents.status, [...ADDRESSABLE_AGENT_STATUSES])))
@@ -127,7 +133,13 @@ export async function planOutputRouting(
         const recipient = preFlowRecipient(stream, available, squad.managerAgentId)
         // Bot relevance follows the existing audience/rule predicates, not a blanket bot discard.
         if (recipient)
-          routes.push({ kind: 'pre-flow', id: stream.id, workStreamId: stream.id, recipientId: recipient.id })
+          routes.push({
+            kind: 'pre-flow',
+            id: stream.id,
+            workStreamId: stream.id,
+            recipientId: recipient.id,
+            fingerprint: routeHash(['pre-flow', stream.id, recipient.id]),
+          })
       }
     }
     if (!run || run.createdAt > event.createdAt) continue
@@ -138,7 +150,7 @@ export async function planOutputRouting(
         outputSourceMatches(subscription, event) &&
         integrationSubscriptionMatches(subscription, event.fact, stream.metadata, descriptor)
       ) {
-        routes.push({ kind: 'subscription', id: subscription.id, workStreamId: stream.id })
+        routes.push(flowRoute('subscription', subscription, stream, run, squad.managerAgentId))
         defaultAudienceOwned = true
       }
     }
@@ -156,7 +168,9 @@ export async function planOutputRouting(
           outputSourceMatches(subscription, event) &&
           integrationSubscriptionMatches(subscription, event.fact, metadata, descriptor)
         ) {
-          routes.push({ kind: 'delivery-branch', id: subscription.id, workStreamId: branch.workStreamId })
+          routes.push(
+            flowRoute('delivery-branch', subscription, { ...target.stream, metadata }, target.run, squad.managerAgentId)
+          )
           defaultAudienceOwned = true
         }
       }
@@ -170,21 +184,93 @@ export async function planOutputRouting(
       descriptor &&
       outputSourceMatches(subscription, event) &&
       integrationSubscriptionMatches(subscription, event.fact, {}, descriptor) &&
-      !(await findOutputTriggerRun(db, squadId, trigger, event))
+      (options.includeSettled || !(await findOutputTriggerRun(store, squadId, trigger, event)))
     )
-      routes.push({ kind: 'start-workstream', id: trigger.id })
+      routes.push({
+        kind: 'start-workstream',
+        id: trigger.id,
+        recipientId: squad.managerAgentId ?? undefined,
+        fingerprint: routeHash([trigger, selectOutputRule(squad.metadata, event, login)]),
+      })
   }
-  const [delivery] = await db
+  const [delivery] = await store
     .select({ id: integrationOutputDeliveries.id })
     .from(integrationOutputDeliveries)
     .innerJoin(workStreams, eq(workStreams.id, integrationOutputDeliveries.workStreamId))
     .where(and(eq(integrationOutputDeliveries.eventId, event.id), eq(workStreams.squadId, squadId)))
     .limit(1)
-  if (!defaultAudienceOwned && !delivery && !event.triggerSquadIds.includes(squadId)) {
+  if (!defaultAudienceOwned && (options.includeSettled || (!delivery && !event.triggerSquadIds.includes(squadId)))) {
     const rule = selectOutputRule(squad.metadata, event, login)
     if (rule?.action.type === 'notify-manager' && available.some((agent) => agent.id === squad.managerAgentId))
-      routes.push({ kind: 'notify-manager', id: rule.id, recipientId: squad.managerAgentId! })
-    if (rule?.action.type === 'notify-consultant') routes.push({ kind: 'notify-consultant', id: rule.id })
+      routes.push({
+        kind: 'notify-manager',
+        id: rule.id,
+        recipientId: squad.managerAgentId!,
+        fingerprint: routeHash(rule),
+      })
+    if (rule?.action.type === 'notify-consultant')
+      routes.push({
+        kind: 'notify-consultant',
+        id: rule.id,
+        fingerprint: routeHash(rule),
+        recipientId: consultantAgentId({
+          actorUserId: 'integration-event',
+          squadId,
+          clientId: outputLogicalEventKey(event, rule.id),
+        }),
+      })
   }
-  return result(routes)
+  return result(routes.map((route) => ({ ...route, authorityHash: githubContentHash(event.authority) })))
+}
+
+export const routeHash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+export function outputLogicalEventKey(event: Event, suffix: string) {
+  return routeHash([event.integration, event.fact.eventKey, suffix])
+}
+function flowRoute(
+  kind: string,
+  subscription: IntegrationSubscription,
+  stream: typeof workStreams.$inferSelect,
+  run: typeof workStreamFlowRuns.$inferSelect,
+  managerId: string | null
+): OutputRoutingRoute {
+  const bindings = Object.values(subscription.match).flatMap((match) =>
+    'streamMetadata' in match ? [[match.streamMetadata, integrationValueAt(stream.metadata, match.streamMetadata)]] : []
+  )
+  const targets = outputRecipients(run, stream, subscription, managerId)
+  const to = subscription.deliver.to
+  const slots = run.state.attempts
+    .filter((attempt) => ['ready', 'running'].includes(attempt.status))
+    .flatMap((attempt) => {
+      const step = attempt.step ?? run.state.definition.steps.find((step) => step.id === attempt.stepId)
+      return step?.kind === 'agent' &&
+        (to === 'active' ||
+          to === 'delivery-owner' ||
+          ('participant' in to ? step.participant === to.participant : step.id === to.step))
+        ? [
+            {
+              attemptId: attempt.id,
+              stepId: step.id,
+              participant: step.participant,
+              stepHash: routeHash([
+                step,
+                run.state.definition.participants[step.participant],
+                run.participantSnapshots[step.participant],
+              ]),
+              ...(run.attemptAgents[String(attempt.id)] ? { agentId: run.attemptAgents[String(attempt.id)] } : {}),
+            },
+          ]
+        : []
+    })
+  return {
+    kind,
+    id: subscription.id,
+    workStreamId: stream.id,
+    runId: run.createRequestId,
+    ownerId: stream.ownerAgentId,
+    fingerprint: routeHash([subscription, bindings]),
+    consumers: targets.length
+      ? targets.map((target) => ({ ...target, ...slots.find((slot) => slot.attemptId === target.attemptId) }))
+      : slots,
+  }
 }

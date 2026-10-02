@@ -1,3 +1,6 @@
+import { and, eq, inArray } from 'drizzle-orm'
+import { z } from 'zod'
+import { db, integrationOutputEvents, chatSendReceipts } from '../../db'
 import type { DeliveryMode } from '@ficus/shared'
 import { Agent } from '../../entities/Agent'
 import {
@@ -12,6 +15,43 @@ export async function deliverInboxMessagesToAgent(agentId: string): Promise<void
   if (await pausedWorkStreamForAgent(agentId)) return
   const agent = await Agent.mustFind(agentId)
   const pending = await InboxMessage.listUndeliveredUnread('agent', agent.id)
+  const knownMessages = pending
+    .filter(
+      (message) =>
+        message.metadata?.source === 'integration-notification' &&
+        typeof message.metadata.integrationEventId === 'string' &&
+        z.string().uuid().safeParse(message.metadata.integrationEventId).success
+    )
+    .slice(0, 25)
+  const knownClientIds = knownMessages.map(
+    (message) => `github-feedback:${message.metadata!.integrationEventId}:${message.id}`
+  )
+  const receipts = knownClientIds.length
+    ? await db
+        .select()
+        .from(chatSendReceipts)
+        .where(
+          and(
+            eq(chatSendReceipts.agentId, agent.id),
+            inArray(chatSendReceipts.clientId, knownClientIds),
+            eq(chatSendReceipts.state, 'accepted')
+          )
+        )
+    : []
+  const accepted = new Set(
+    receipts
+      .filter((receipt) => receipt.messageId && receipt.executionId && receipt.acceptedAt)
+      .map((receipt) => receipt.clientId)
+  )
+  const knownIds = [
+    ...new Set(
+      knownMessages
+        .filter((message) => !accepted.has(`github-feedback:${message.metadata!.integrationEventId}:${message.id}`))
+        .map((message) => String(message.metadata!.integrationEventId))
+    ),
+  ]
+  const { renewKnownGitHubOutputs } = await import('../integrations/github/feedback-renewal')
+  await renewKnownGitHubOutputs(knownIds)
   const { isCurrentFlowMessage } = await import('../workflows/execution')
   const messages: InboxMessage[] = []
   // Observer mail is informational, never a lifecycle wake. Recheck at delivery:
@@ -53,6 +93,20 @@ export async function deliverInboxMessagesToAgent(agentId: string): Promise<void
         // The committed inbox row remains pending; receipt replay is safe.
       }
       continue
+    }
+    if (message.metadata?.source === 'integration-notification') {
+      const id = message.metadata.integrationEventId
+      const [event] =
+        typeof id === 'string' && z.string().uuid().safeParse(id).success
+          ? await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, id))
+          : []
+      if (event?.integration === 'github') {
+        // One immutable event per accepted send. Never pre-claim, batch, or change payload/mode
+        // on replay: a committed receipt recovers the acceptance-before-ack crash window.
+        if (knownMessages.some((known) => known.id === message.id))
+          await acceptGitHubNotification(agent, message, event.id)
+        continue
+      }
     }
     if (await isCurrentFlowMessage(message)) messages.push(message)
   }
@@ -148,5 +202,43 @@ export function prepareInboxDelivery(messages: InboxMessage[], batchMode: Delive
         }
       }),
     },
+  }
+}
+
+async function acceptGitHubNotification(agent: Agent, message: InboxMessage, eventId: string): Promise<void> {
+  const clientId = `github-feedback:${eventId}:${message.id}`
+  const receipt = async () =>
+    (
+      await db
+        .select()
+        .from(chatSendReceipts)
+        .where(
+          and(
+            eq(chatSendReceipts.agentId, agent.id),
+            eq(chatSendReceipts.clientId, clientId),
+            eq(chatSendReceipts.state, 'accepted')
+          )
+        )
+    )[0]
+  try {
+    let accepted = await receipt()
+    if (!accepted) {
+      if (agent.status === 'terminated' || (agent.status === 'dormant' && !isInboxMessageWakeEligible(message))) return
+      const { isCurrentFlowMessage } = await import('../workflows/execution')
+      if (!(await isCurrentFlowMessage(message))) return
+      const prepared = prepareInboxDelivery([message], message.deliveryMode, message.deliveryMode)
+      const result = await agent.sendMessage(prepared.prompt, {
+        deliveryMode: message.deliveryMode,
+        metadata: { ...prepared.metadata, clientId },
+      })
+      if (!result.success) return
+      accepted = await receipt()
+    }
+    if (accepted?.messageId && accepted.executionId && accepted.acceptedAt)
+      await message.update({ deliveredAt: accepted.acceptedAt })
+  } catch {
+    // The persisted row remains pending. Enqueue/success without a receipt is not delivery.
+    const { withholdRevokedAutomaticGitHubOutput } = await import('../integrations/github/feedback-renewal')
+    await withholdRevokedAutomaticGitHubOutput(eventId)
   }
 }
