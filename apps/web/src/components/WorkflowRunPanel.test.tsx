@@ -557,3 +557,65 @@ test('kept human gates show only the effective outcomes and retain their initial
     await f.cleanup()
   }
 })
+
+test('workflow name is a focusable disclosure that hides only the preview', async () => {
+  const value = run(true)
+  value.state.definition.name = 'A very long workflow name '.repeat(8)
+  value.state.status = 'completion-ready'
+  value.openWaits = [{ id: 'wait', message: 'Please check the result' }] as WorkflowRunDetail['openWaits']
+  const f = await fixture(value, ['workstreams:update', 'workstreams:revise-flow'])
+  const finish = spyOn(client.workflows, 'finish').mockResolvedValue(undefined as never)
+  try {
+    await f.render()
+    const doc = f.dom.window.document
+    const toggle = doc.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+    expect(toggle).not.toBeNull()
+    expect(toggle.textContent).toBe(value.state.definition.name)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle.type).toBe('button')
+    toggle.focus()
+    expect(doc.activeElement).toBe(toggle)
+    expect(doc.querySelector('[aria-label="Workflow visual preview"]')).toBeNull()
+    expect(doc.querySelector('[aria-label="Assigned reviewers"]')).not.toBeNull()
+    expect(doc.body.textContent).toContain('Please check the result')
+    expect(doc.body.textContent).toContain('Revise flow')
+    await f.dom.act(async () => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(doc.querySelector('[aria-label="Workflow visual preview"]')).not.toBeNull()
+    expect(doc.getElementById(toggle.getAttribute('aria-controls')!)?.textContent).toContain('execute')
+    await f.dom.act(async () => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(doc.querySelector('[aria-label="Workflow visual preview"]')).toBeNull()
+    await click(f, 'Complete delivery · deliverable')
+    expect(finish).toHaveBeenCalledWith(stream.id, 0)
+  } finally {
+    finish.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('preview survives refreshes but resets on stream switches and reopening', async () => {
+  const f = await fixture(run())
+  const other = { ...stream, id: 'other-stream' }
+  f.queryClient.setQueryData(queryKeys.workflows.run(other.id), run())
+  const toggle = () => f.dom.window.document.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+  try {
+    await f.render()
+    expect(toggle()).not.toBeNull()
+    await f.dom.act(async () => toggle().click())
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), { ...run(), version: 1 })
+    await f.render(<WorkflowRunPanel stream={{ ...stream }} />)
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    await f.render(<WorkflowRunPanel stream={other} />)
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    await f.dom.act(async () => toggle().click())
+    await f.render()
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    await f.dom.act(async () => toggle().click())
+    await f.render(<></>)
+    await f.render()
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+  } finally {
+    await f.cleanup()
+  }
+})
