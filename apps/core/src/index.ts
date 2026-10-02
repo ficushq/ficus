@@ -43,6 +43,7 @@ import { squadsRouter } from './routes/squads'
 import { slotResourcesRouter, slotsRouter } from './routes/slots'
 import { activityRouter } from './routes/activity'
 import { deploymentsRouter } from './routes/deployments'
+import { createGitHubIdentityRouter } from './routes/github-identity'
 import { channelLinksRouter } from './routes/channel-links'
 import { channelInstancesRouter } from './routes/channel-instances'
 import { terminalRouter } from './routes/terminal'
@@ -60,6 +61,7 @@ import { createIntegrationsRouter, createSquadIntegrationsRouter } from './route
 import {
   exportConsentService,
   integrationRoutesService,
+  githubIdentityRoutesService,
   squadIntegrationRoutesService,
 } from './services/integrations/runtime'
 import { createExternalExportRouter } from './routes/external-export'
@@ -316,6 +318,7 @@ app.route('/api/integrations', createIntegrationsRouter(integrationRoutesService
 app.route('/api/squads', createSquadIntegrationsRouter(squadIntegrationRoutesService))
 app.route('/api', deploymentsRouter)
 app.route('/api/channel-links', channelLinksRouter)
+app.route('/api/github-identity', createGitHubIdentityRouter(githubIdentityRoutesService))
 app.route('/api/channel-instances', channelInstancesRouter)
 app.route('/api/squad-relationships', squadRelationshipsRouter)
 app.route('/api/workstreams', workStreamsRouter)

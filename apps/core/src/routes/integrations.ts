@@ -130,7 +130,10 @@ export interface IntegrationRoutesService extends Pick<
     resolvePurpose?(input: {
       providerKey: string
       userId: string
-      source: { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string }
+      source:
+        | { kind: 'callback'; state: string }
+        | { kind: 'complete'; localFlowId: string }
+        | { kind: 'device'; id: string }
     }): Promise<OAuthAuthorizationPurpose | null>
     start(input: {
       providerKey: string
@@ -138,8 +141,12 @@ export interface IntegrationRoutesService extends Pick<
       returnTo: string
       connectionId?: string
     }): Promise<IntegrationAuthorizationStart>
-    pollDevice?(input: { id: string; userId: string }): Promise<IntegrationDeviceAuthorizationStatus>
-    cancelDevice?(input: { id: string; userId: string }): Promise<void>
+    pollDevice?(input: {
+      id: string
+      userId: string
+      identity?: Identity
+    }): Promise<IntegrationDeviceAuthorizationStatus>
+    cancelDevice?(input: { id: string; userId: string; identity?: Identity }): Promise<void>
     callback(input: {
       providerKey: string
       userId: string
@@ -206,7 +213,10 @@ async function completionAccess(
   c: Context,
   service: IntegrationRoutesService,
   provider: string,
-  source: { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string }
+  source:
+    | { kind: 'callback'; state: string }
+    | { kind: 'complete'; localFlowId: string }
+    | { kind: 'device'; id: string }
 ): Promise<Response | { identity: Extract<Identity, { type: 'user' }>; personal: boolean }> {
   const identity = c.get('identity') as Identity | undefined
   if (identity?.type !== 'user') {
@@ -226,7 +236,7 @@ async function completionAccess(
     } catch (error) {
       if (error instanceof GitHubFeedbackError)
         return c.json({ error: 'Enabled human session required', code: error.code }, 403)
-      return authorizationFailure(c, error, provider, source.kind)
+      return authorizationFailure(c, error, provider, source.kind === 'device' ? 'poll' : source.kind)
     }
   }
   const denied = await authorize(c, `integrations:write:${provider}`)
@@ -453,29 +463,35 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       }
     })
     .post('/providers/github/authorization/device/:id/poll', async (c) => {
-      const denied = await authorize(c, 'integrations:write:github')
-      if (denied) return denied
-      const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return userSessionRequired(c, identity, 'connect GitHub')
       const id = z.string().uuid().safeParse(c.req.param('id'))
       if (!id.success) return c.json({ error: 'Invalid authorization' }, 400)
+      const access = await completionAccess(c, service, 'github', { kind: 'device', id: id.data })
+      if (access instanceof Response) return access
       if (!service.authorization?.pollDevice) return c.json({ error: 'Authorization unavailable' }, 503)
       try {
-        return c.json(await service.authorization.pollDevice({ id: id.data, userId: identity.userId }))
+        return c.json(
+          await service.authorization.pollDevice({
+            id: id.data,
+            userId: access.identity.userId,
+            ...(access.personal ? { identity: access.identity } : {}),
+          })
+        )
       } catch (error) {
         return authorizationFailure(c, error, 'github', 'poll')
       }
     })
     .post('/providers/github/authorization/device/:id/cancel', async (c) => {
-      const denied = await authorize(c, 'integrations:write:github')
-      if (denied) return denied
-      const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return userSessionRequired(c, identity, 'connect GitHub')
       const id = z.string().uuid().safeParse(c.req.param('id'))
       if (!id.success) return c.json({ error: 'Invalid authorization' }, 400)
+      const access = await completionAccess(c, service, 'github', { kind: 'device', id: id.data })
+      if (access instanceof Response) return access
       if (!service.authorization?.cancelDevice) return c.json({ error: 'Authorization unavailable' }, 503)
       try {
-        await service.authorization.cancelDevice({ id: id.data, userId: identity.userId })
+        await service.authorization.cancelDevice({
+          id: id.data,
+          userId: access.identity.userId,
+          ...(access.personal ? { identity: access.identity } : {}),
+        })
         return c.json({ canceled: true })
       } catch (error) {
         return authorizationFailure(c, error, 'github', 'cancel')

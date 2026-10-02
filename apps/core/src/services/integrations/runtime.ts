@@ -1,3 +1,5 @@
+import { GitHubIdentityAuthorization } from './github/identity-authorization'
+import { GitHubPersonalOAuthFinalizer } from './github/personal-oauth-finalizer'
 import { notifyDeliverySnapshotChanged } from './github/delivery-presentation-store'
 import { credentialSetupStatus, connectionSetupStatus } from './setup-status'
 import {
@@ -52,7 +54,7 @@ import { isIntegrationEnabled, setIntegrationEnabled } from './provider-state'
 import { configureGitHubWebhook, getGitHubWebhookSettings } from './github/webhook-settings'
 import { publishIntegrationOutputs } from './outputs/runtime'
 import { resolveGitHubConnection } from './github/resolve-connection'
-import { DeviceAuthorizationService } from './authorization/device-service'
+import type { DeviceAuthorizationDependencies } from './authorization/device-service'
 import {
   DbDeviceAuthorizationRepository,
   deleteExpiredDeviceAuthorizations,
@@ -67,7 +69,7 @@ import { join } from 'path'
 import { getHomeDir } from '../../lib/utils/home'
 import { getSecretStore } from '../secrets'
 import { IntegrationRegistry } from './registry'
-import { resolveOAuthAuthority } from './authorization/authority'
+import { resolveOAuthAuthority, requireBrokerConfig } from './authorization/authority'
 import { firstPartyIntegrationPlugins } from './first-party-plugins'
 import { oauthPluginView } from './oauth-plugin-view'
 import { channelConnections } from './channels/connections'
@@ -109,11 +111,7 @@ import { DbOAuthStateRepository } from './authorization/db-state-repository'
 import { DbAuthorizationFlowReceiptRepository } from './authorization/flow-repository'
 import { AuthorizationFlowRecoveryWorker } from './authorization/flow-recovery-worker'
 import { sendOAuthControlPlaneAlert } from './authorization/oauth-operational-alert'
-import {
-  IntegrationAuthorizationService,
-  AuthorizationFlowError,
-  type AuthorizationServiceDependencies,
-} from './authorization/service'
+import { AuthorizationFlowError, type AuthorizationServiceDependencies } from './authorization/service'
 import {
   configureOAuthApp,
   getOAuthAppSettings,
@@ -430,7 +428,7 @@ const installOAuthGrant: AuthorizationServiceDependencies['installGrant'] = asyn
   // a managed Slack install should take effect as soon as it lands.
   if (plugin.key === 'slack') await channelConnections.refresh()
 }
-export const integrationAuthorizationService = new IntegrationAuthorizationService({
+const browserAuthorizationDependencies: AuthorizationServiceDependencies = {
   states: oauthStates,
   flowReceipts: authorizationFlowReceipts,
   resolvePlugin: (providerKey) => integrationRegistry.plugin(providerKey),
@@ -438,8 +436,8 @@ export const integrationAuthorizationService = new IntegrationAuthorizationServi
   callbackUrl: resolveIntegrationOAuthCallbackUrl,
   installGrant: installOAuthGrant,
   audit: integrationAuditRecorder,
-})
-export const integrationDeviceAuthorizationService = new DeviceAuthorizationService({
+}
+const deviceAuthorizationDependencies: DeviceAuthorizationDependencies = {
   repository: new DbDeviceAuthorizationRepository(),
   receipts: authorizationFlowReceipts,
   client: new GitHubOAuthClient(),
@@ -455,7 +453,36 @@ export const integrationDeviceAuthorizationService = new DeviceAuthorizationServ
       userId,
       exchange: async () => grant,
     }),
+}
+const githubIdentityAuthorization = new GitHubIdentityAuthorization({
+  authorization: browserAuthorizationDependencies,
+  device: deviceAuthorizationDependencies,
+  finalizer: new GitHubPersonalOAuthFinalizer({
+    secrets: getSecretStore(),
+    receipts: authorizationFlowReceipts,
+    client: new GitHubOAuthClient(),
+    lease: connectionAuthorizationLease,
+  }),
+  configuration: () => {
+    const authority = resolveOAuthAuthority()
+    if (authority === 'platform_broker') {
+      let configured = false
+      try {
+        requireBrokerConfig()
+        configured = true
+      } catch {
+        /* No local fallback. */
+      }
+      return { authority, configured, mode: 'browser' }
+    }
+    const app = resolveGitHubAppCredentials(getSecretStore())
+    return { authority, configured: Boolean(app), mode: app?.clientSecret ? 'browser' : 'device' }
+  },
+  initializeIntegrationDefaults,
 })
+export const integrationAuthorizationService = githubIdentityAuthorization.integrationAuthorization
+export const integrationDeviceAuthorizationService = githubIdentityAuthorization.integrationDevice
+export const githubIdentityRoutesService = githubIdentityAuthorization.personal
 const githubPrWatchPolicy = new GitHubPrWatchPolicy({
   resolveConnection: async (squadId, connectionId) =>
     (await resolveGitHubConnection(squadId, connectionId))?.connection,
@@ -717,22 +744,7 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
           : { kind: 'connect' },
       })
     },
-    async pollDevice(input: { id: string; userId: string }) {
-      const result = await integrationDeviceAuthorizationService.poll(input)
-      if (result.status === 'complete') await initializeIntegrationDefaults()
-      return result
-    },
-    cancelDevice: (input: { id: string; userId: string }) => integrationDeviceAuthorizationService.cancel(input),
-    async callback(input: { providerKey: string; userId: string; state: string; code?: string; denied?: true }) {
-      const result = await integrationAuthorizationService.callback(input)
-      await initializeIntegrationDefaults()
-      return result
-    },
-    async complete(input: { providerKey: string; userId: string; localFlowId: string; handle: string }) {
-      const result = await integrationAuthorizationService.complete(input)
-      await initializeIntegrationDefaults()
-      return result
-    },
+    ...githubIdentityAuthorization.common,
   },
 })
 

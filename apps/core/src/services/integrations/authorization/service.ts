@@ -1,4 +1,5 @@
 import { createHash, randomBytes as cryptoRandomBytes, randomUUID as cryptoRandomUUID } from 'node:crypto'
+import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 import { getOAuthProviderAdapter } from '@ficus/shared/oauth-providers'
 import type { IntegrationAuditRecorder } from '../audit'
 import type { AuthorizationGrant, IntegrationPluginV1 } from '../plugin'
@@ -202,7 +203,10 @@ export class IntegrationAuthorizationService {
     try {
       await this.#installGrant({ plugin, state, exchange, userId: input.userId })
     } catch (error) {
-      if (state.purpose === 'github_identity' && error instanceof GitHubFeedbackError) {
+      if (
+        state.purpose === 'github_identity' &&
+        (error instanceof GitHubFeedbackError || error instanceof GitHubOAuthError)
+      ) {
         await this.#audit(input.userId, input.providerKey, 'callback', 'failed', error.code)
         throw error
       }
@@ -294,7 +298,10 @@ export class IntegrationAuthorizationService {
     try {
       await this.#installGrant({ plugin, state, exchange, userId: input.userId })
     } catch (error) {
-      if (state.purpose === 'github_identity' && error instanceof GitHubFeedbackError) {
+      if (
+        state.purpose === 'github_identity' &&
+        (error instanceof GitHubFeedbackError || error instanceof GitHubOAuthError)
+      ) {
         await this.#audit(input.userId, input.providerKey, 'complete', 'failed', error.code)
         throw error
       }
