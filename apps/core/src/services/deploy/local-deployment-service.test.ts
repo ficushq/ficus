@@ -355,6 +355,29 @@ describe('localDeployment service', () => {
     expect(stopped.keepSandboxAlive).toBe(false)
   })
 
+  it.each(['starting', 'running', 'restarting'] as const)(
+    'ignores archived deployments with stale %s keepalive state',
+    async (status) => {
+      const squad = await createTestSquad('archived-keepalive')
+      const archived = await createLocalDeployment(squad, { name: 'old-web', port: 5173, command: 'bun run dev' })
+      await archiveLocalDeploymentRecord(archived.id)
+
+      // A late status update must not make an archived app keep the sandbox alive.
+      await db
+        .update(localDeployments)
+        .set({ status, keepSandboxAlive: true })
+        .where(eq(localDeployments.id, archived.id))
+      expect(await hasActiveLocalDeployments(squad.sandboxId)).toBe(false)
+
+      const live = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+      await updateLocalDeploymentRecord(live.id, { status })
+      expect(await hasActiveLocalDeployments(squad.sandboxId)).toBe(true)
+
+      await updateLocalDeploymentRecord(live.id, { keepSandboxAlive: false })
+      expect(await hasActiveLocalDeployments(squad.sandboxId)).toBe(false)
+    }
+  )
+
   it('returns active localDeployments for idle suppression', async () => {
     const squad = await createTestSquad('active')
     const active = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
