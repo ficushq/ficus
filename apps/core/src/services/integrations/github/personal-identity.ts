@@ -30,11 +30,14 @@ export async function beginGitHubIdentityLink(identity: Identity | undefined): P
 }
 
 /** Internal OAuth finalizer boundary. Never expose profile/state as an HTTP mutation body. */
-export async function saveGitHubIdentityProof(input: {
-  identity: Identity | undefined
-  state: OAuthStateRecord
-  profile: unknown
-}) {
+export async function saveGitHubIdentityProof(
+  input: {
+    identity: Identity | undefined
+    state: OAuthStateRecord
+    profile: unknown
+  },
+  onVerified?: (tx: DbTx, proof: typeof githubIdentityProofs.$inferSelect) => Promise<void>
+) {
   const userId = await requireGitHubHuman(db, input.identity)
   const { state } = input
   if (
@@ -91,6 +94,8 @@ export async function saveGitHubIdentityProof(input: {
       proof.expiresAt <= now
     )
       throw new GitHubFeedbackError('identity_proof_changed', 409)
+    // OAuth finalization commits its token-disposal obligation alongside this immutable proof.
+    await onVerified?.(tx, proof)
     return {
       id: proof.id,
       accountId: proof.accountId,

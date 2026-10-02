@@ -15,6 +15,7 @@ import { OAuthTransportError } from './transport'
 import type { OAuthRevocationTransportResolver } from './revocation-transport'
 import { PlatformRequestError } from '../../platform/instance-client'
 import { BrokerUnconfiguredError } from './authority'
+import { isGitHubIdentityTokenShared } from '../github/personal-oauth-finalizer'
 
 const LEASE_MS = 60_000
 const MAX_BACKOFF_MS = 15 * 60_000
@@ -278,6 +279,30 @@ export class IntegrationRevocationWorker {
       credential = parseOAuthCredential(raw)
     } catch {
       return this.#finish(job, 'credential_invalid')
+    }
+    if (job.providerKey === 'github' && job.authorizationFlowId) {
+      try {
+        const [receipt] = await db
+          .select({ purpose: integrationAuthorizationFlowReceipts.purpose })
+          .from(integrationAuthorizationFlowReceipts)
+          .where(
+            and(
+              eq(integrationAuthorizationFlowReceipts.localFlowId, job.authorizationFlowId),
+              eq(integrationAuthorizationFlowReceipts.artifactCredentialRef, job.credentialRef),
+              eq(integrationAuthorizationFlowReceipts.authority, job.clientAuthority),
+              eq(integrationAuthorizationFlowReceipts.providerKey, 'github')
+            )
+          )
+        if (!receipt) return this.#retry(job, 'identity_flow_mismatch')
+        if (
+          receipt.purpose === 'github_identity' &&
+          (await isGitHubIdentityTokenShared(credential, job.credentialRef, this.#dependencies.credentials))
+        )
+          return this.#finish(job, 'shared_token_retained')
+      } catch {
+        // Uncertain sharing must never become authority to remotely invalidate another connection.
+        return this.#retry(job, 'shared_token_check_failed')
+      }
     }
     if (!plugin || plugin.authorization.kind !== 'oauth2') return this.#retry(job, 'provider_unavailable')
 
