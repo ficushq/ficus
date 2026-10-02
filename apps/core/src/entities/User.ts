@@ -182,8 +182,11 @@ export class User {
     return Number(result[0].count)
   }
 
-  async update(input: { email?: string; displayName?: string | null; disabledAt?: Date | null }): Promise<User> {
-    const [row] = await db
+  async update(
+    input: { email?: string; displayName?: string | null; disabledAt?: Date | null },
+    executor: UserExecutor = db
+  ): Promise<User> {
+    const [row] = await executor
       .update(users)
       .set({ ...input, updatedAt: new Date() })
       .where(eq(users.id, this.id))
@@ -192,28 +195,28 @@ export class User {
     return this
   }
 
-  async disable(): Promise<User> {
-    return this.update({ disabledAt: new Date() })
+  async disable(executor: UserExecutor = db): Promise<User> {
+    return this.update({ disabledAt: new Date() }, executor)
   }
 
-  async enable(): Promise<User> {
-    return this.update({ disabledAt: null })
+  async enable(executor: UserExecutor = db): Promise<User> {
+    return this.update({ disabledAt: null }, executor)
   }
 
-  async delete(): Promise<void> {
+  async delete(executor: UserExecutor = db): Promise<void> {
     // Revoke any agent tokens this user owns (e.g. system-manager tokens) before
     // deleting. The agent_tokens.user_id FK is ON DELETE SET NULL, which would
     // otherwise silently downgrade the token to a plain agent identity instead
     // of invalidating it; setting revokedAt makes resolveToken fail closed.
-    await db
+    await executor
       .update(agentTokens)
       .set({ revokedAt: new Date() })
       .where(and(eq(agentTokens.userId, this.id), isNull(agentTokens.revokedAt)))
-    await db
+    await executor
       .delete(roleAssignments)
       .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.subjectId, this.id)))
     invalidatePermissionCache()
-    await db.delete(users).where(eq(users.id, this.id))
+    await executor.delete(users).where(eq(users.id, this.id))
   }
 
   async createSession(opts?: {

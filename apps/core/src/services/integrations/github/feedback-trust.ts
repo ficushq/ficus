@@ -2,6 +2,7 @@ import { githubAccountIdSchema, type GitHubAccountIdentity, type GitHubTrustOrig
 import { and, eq, isNull } from 'drizzle-orm'
 import { db, type DbTx } from '../../../db'
 import { githubPersonalIdentities, githubTrustedAuthors, integrationAuditEvents, users } from '../../../db/schema'
+import { lockGitHubTrustAuthority } from './trust-authority-lock'
 import { hasUserPermissionWithExecutor, type Identity } from '../../rbac/permissions'
 
 export class GitHubFeedbackError extends Error {
@@ -108,13 +109,15 @@ export async function resolveGitHubAuthorTrust(
   return origins
 }
 
-/** Shared lock order for human mutations and identity/RBAC changes: users before squad trust rows. */
+/** Shared lock order: authority mutex, then users, then proof/identity/squad trust rows. */
 export async function lockGitHubHuman(tx: DbTx, identity: Identity | undefined): Promise<void> {
   if (identity?.type !== 'user') throw new GitHubFeedbackError('human_required', 403)
+  await lockGitHubTrustAuthority(tx)
   await tx.select({ id: users.id }).from(users).where(eq(users.id, identity.userId)).for('update')
 }
 
-function actorKey(identity: Identity | undefined): string {
+/** Stable literal principal label; delegated userId never becomes human authorship. */
+export function githubAuthorityActor(identity: Identity | undefined): string {
   switch (identity?.type) {
     case 'user':
       return `user:${identity.userId}`
@@ -137,7 +140,7 @@ async function auditFailure(
 ): Promise<never> {
   // No raw provider response or caller content in audit. Rejected attempts remain visible after rollback.
   await db.insert(integrationAuditEvents).values({
-    actorKey: actorKey(identity),
+    actorKey: githubAuthorityActor(identity),
     targetKind: 'squad',
     targetId: squadId,
     action,

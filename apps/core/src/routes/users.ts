@@ -19,6 +19,7 @@ import { Squad } from '../entities/Squad'
 import { AmbiguousPrefixError } from '../db/prefix-match'
 import {
   sendInviteEmail,
+  isEmailConfigured,
   issueEmailChallenge,
   supersedeRegistrationChallenges,
   recentVerificationCount,
@@ -32,6 +33,12 @@ import { notifyOnboardingChanged } from '../services/onboarding/events'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import { endLiveActivitiesForUser } from '../services/push/live-activity'
 
+import { withGitHubTrustMutation } from '../services/integrations/github/trust-mutation-guard'
+import { GitHubFeedbackError } from '../services/integrations/github/feedback-trust'
+import { z } from 'zod'
+import { hasReservedGitHubAuthorityMetadata } from '@ficus/shared'
+import { listLiveActivityTokens } from '../services/push/live-activity-tokens'
+
 const log = createLogger('users-routes')
 
 /**
@@ -44,6 +51,10 @@ const log = createLogger('users-routes')
 const DEFAULT_INVITE_ROLE_SLUG = 'operator'
 
 export const usersRouter = new Hono()
+usersRouter.onError((error, c) => {
+  if (error instanceof GitHubFeedbackError) return c.json({ error: error.code }, error.status)
+  throw error
+})
 
 /**
  * Privilege-escalation guard: a caller may only grant permissions they themselves
@@ -190,13 +201,17 @@ interface IssuedInvite {
  * already been retired — throwing would leave the caller with a broken invite and
  * no way to see it. Delivery is the LAST step of sendInviteEmail, so in practice
  * `inviteEmailFailed` means "issued but undelivered", which is what both call
- * sites report to the admin.
+ * sites report to the admin. No-mail automation reports undelivered without
+ * minting or exposing a human registration credential.
  */
-async function deliverInvite(email: string): Promise<IssuedInvite> {
+async function deliverInvite(email: string, exposeCredentials = true): Promise<IssuedInvite> {
+  // No-mail credentials are shown only to literal humans. Do not even mint/log
+  // one for automation, while preserving ordinary mailed invites/user creation.
+  if (!exposeCredentials && !isEmailConfigured()) return { inviteEmailFailed: true }
   try {
     const sent = await sendInviteEmail(email, { ttlMs: INVITE_CHALLENGE_TTL_MS })
     if (sent.mailed) return {}
-    return { inviteCode: sent.code, inviteUrl: sent.link }
+    return exposeCredentials ? { inviteCode: sent.code, inviteUrl: sent.link } : { inviteEmailFailed: true }
   } catch (err) {
     log.error(`Invite email failed for ${email}: ${(err as Error).message}`)
     return { inviteEmailFailed: true }
@@ -307,7 +322,7 @@ usersRouter.post('/', requirePermission('users:create'), async (c) => {
   // the invitee heard nothing at all. A mail failure leaves the account and its
   // roles committed and reports `inviteEmailFailed` — the admin can then use
   // POST /:id/invite below instead of deleting and re-inviting.
-  const invite = await deliverInvite(email)
+  const invite = await deliverInvite(email, c.get('identity')?.type === 'user')
 
   // `roles`: the system-wide ones (as before); `assignments`: everything the invite gave.
   const roleSlugs = resolved.assignments.filter((a) => a.scope === 'system').map((a) => a.role.slug)
@@ -328,6 +343,8 @@ usersRouter.post('/', requirePermission('users:create'), async (c) => {
  * already accepted. It is not a `users:update`-shaped profile edit.
  */
 usersRouter.post('/:id/invite', requirePermission('users:create'), async (c) => {
+  // Registration links/codes confer actual HUMAN sessions, not delegated agent authority.
+  await withGitHubTrustMutation(c.get('identity'), c.req.param('id'), async () => undefined, { credentials: true })
   const delivery = c.req.query('delivery') ?? 'email'
   if (delivery !== 'email' && delivery !== 'link') return c.json({ error: 'Unknown invitation delivery mode' }, 400)
   const user = await User.findById(c.req.param('id'))
@@ -385,12 +402,19 @@ usersRouter.patch('/:id', requirePermission('users:update'), async (c) => {
   if (!user) return c.json({ error: 'User not found' }, 404)
 
   const body = await c.req.json()
+  const parsed = z
+    .object({ displayName: z.string().nullable().optional(), email: z.string().email().optional() })
+    .passthrough()
+    .safeParse(body)
+  if (!parsed.success || hasReservedGitHubAuthorityMetadata(body)) return c.json({ error: 'Invalid user profile' }, 400)
   // Whitelist only safe profile fields — explicitly exclude disabledAt, id,
   // createdAt, updatedAt. Disable/enable must go through the guarded endpoints.
-  const allowed: { displayName?: string; email?: string } = {}
+  const allowed: { displayName?: string | null; email?: string } = {}
   if (body.displayName !== undefined) allowed.displayName = body.displayName
   if (body.email !== undefined) allowed.email = body.email
-  await user.update(allowed)
+  if (allowed.email !== undefined && allowed.email !== user.email)
+    await withGitHubTrustMutation(c.get('identity'), user.id, (tx) => user.update(allowed, tx), { credentials: true })
+  else await user.update(allowed)
   return c.json(user.toJSON())
 })
 
@@ -427,8 +451,10 @@ usersRouter.delete('/:id', requirePermission('users:delete'), async (c) => {
     return c.json({ error: 'Cannot delete the last admin user' }, 400)
   }
 
-  await endLiveActivitiesForUser(userId)
-  await user.delete()
+  // Capture the registry before FK cascade, but send nothing until authorization commits.
+  const liveTokens = await listLiveActivityTokens([userId])
+  await withGitHubTrustMutation(c.get('identity'), user.id, (tx) => user.delete(tx))
+  await endLiveActivitiesForUser(userId, { listTokens: async () => liveTokens })
   wsManager.invalidateAccessCache()
   invalidatePermissionCache()
   // Deletion is the inverse of the create path above — it can flip the
@@ -451,7 +477,7 @@ usersRouter.patch('/:id/disable', requirePermission('users:update'), async (c) =
     return c.json({ error: 'Cannot disable the last active admin user' }, 400)
   }
 
-  await user.disable()
+  await withGitHubTrustMutation(c.get('identity'), user.id, (tx) => user.disable(tx))
   wsManager.invalidateAccessCache()
   invalidatePermissionCache()
   eventEmitter.emit('liveActivity.interestChanged', { userId: user.id })
@@ -462,7 +488,7 @@ usersRouter.patch('/:id/enable', requirePermission('users:update'), async (c) =>
   const user = await User.findById(c.req.param('id'))
   if (!user) return c.json({ error: 'User not found' }, 404)
   if (!user.isDisabled) return c.json({ error: 'User is not disabled' }, 400)
-  await user.enable()
+  await withGitHubTrustMutation(c.get('identity'), user.id, (tx) => user.enable(tx))
   wsManager.invalidateAccessCache()
   invalidatePermissionCache()
   eventEmitter.emit('liveActivity.interestChanged', { userId: user.id })
@@ -562,16 +588,18 @@ usersRouter.post('/:id/roles', requirePermission('users:update'), async (c) => {
   }
 
   try {
-    const [assignment] = await db
-      .insert(roleAssignments)
-      .values({
-        subjectType: 'user',
-        subjectId: userId,
-        roleId,
-        scope,
-        squadId: squadId ?? null,
-      })
-      .returning()
+    const [assignment] = await withGitHubTrustMutation(c.get('identity'), userId, (tx) =>
+      tx
+        .insert(roleAssignments)
+        .values({
+          subjectType: 'user',
+          subjectId: userId,
+          roleId,
+          scope,
+          squadId: squadId ?? null,
+        })
+        .returning()
+    )
 
     wsManager.invalidateAccessCache()
     invalidatePermissionCache()
@@ -600,7 +628,13 @@ usersRouter.delete('/:id/roles/:assignmentId', requirePermission('users:update')
     })
     .from(roleAssignments)
     .innerJoin(roles, eq(roleAssignments.roleId, roles.id))
-    .where(eq(roleAssignments.id, assignmentId))
+    .where(
+      and(
+        eq(roleAssignments.id, assignmentId),
+        eq(roleAssignments.subjectType, 'user'),
+        eq(roleAssignments.subjectId, c.req.param('id'))
+      )
+    )
 
   if (!assignment) return c.json({ error: 'Assignment not found' }, 404)
 
@@ -627,7 +661,9 @@ usersRouter.delete('/:id/roles/:assignmentId', requirePermission('users:update')
     }
   }
 
-  await db.delete(roleAssignments).where(eq(roleAssignments.id, assignmentId))
+  await withGitHubTrustMutation(c.get('identity'), assignment.subjectId, (tx) =>
+    tx.delete(roleAssignments).where(eq(roleAssignments.id, assignmentId))
+  )
   wsManager.invalidateAccessCache()
   invalidatePermissionCache()
   if (assignment.subjectType === 'user') {
