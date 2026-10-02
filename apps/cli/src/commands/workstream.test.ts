@@ -570,6 +570,8 @@ describe('workstream CLI commands', () => {
         '/tmp/ficus-feature',
         '--base-branch',
         'main',
+        '--base-source',
+        'local',
         '--workflow',
         'solo-coding',
       ])
@@ -584,6 +586,7 @@ describe('workstream CLI commands', () => {
           branch: 'feature/workstream',
           worktree: '/tmp/ficus-feature',
           baseBranch: 'main',
+          baseSource: 'local',
         })
       )
     })
@@ -1080,6 +1083,8 @@ describe('workstream CLI commands', () => {
         '/tmp/ficus-feature',
         '--base-branch',
         'main',
+        '--base-source',
+        'local',
         '--completion-mode',
         'direct-merge',
       ])
@@ -1094,6 +1099,7 @@ describe('workstream CLI commands', () => {
           branch: 'feature/workstream',
           worktree: '/tmp/ficus-feature',
           baseBranch: 'main',
+          baseSource: 'local',
         })
       )
     })

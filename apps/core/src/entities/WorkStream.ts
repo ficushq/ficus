@@ -678,6 +678,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       if (handled) throw new WorkStreamEventAlreadyHandledError(handled)
     }
     if (input.gitRemote && !input.repository) throw new RepositorySetupError('gitRemote requires repository')
+    if (input.baseSource && !input.repository) throw new RepositorySetupError('baseSource requires repository')
     const streamId = crypto.randomUUID()
     let ownership: WorktreeOwnership | undefined
     if (input.repository)
@@ -1051,6 +1052,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     }
 
     if (input.gitRemote && !input.repository) throw new RepositorySetupError('gitRemote requires repository')
+    if (input.baseSource && !input.repository) throw new RepositorySetupError('baseSource requires repository')
     const assertSetupAllowed = (stream: {
       agentIds: string[] | null
       assigneeAgentId: string | null
@@ -1092,6 +1094,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     const {
       repository: _repository,
       gitRemote: _gitRemote,
+      baseSource: _baseSource,
       nextSteps: _nextSteps,
       completionMode: _completionMode,
       branch: _branch,

@@ -50,7 +50,7 @@ beforeEach(async () => {
   metadata = await prepareRepository(
     exec,
     root,
-    { repository: repo, baseBranch: 'main', branch: 'feature' },
+    { repository: repo, baseBranch: 'main', baseSource: 'local', branch: 'feature' },
     'owned',
     {},
     (value) => {
