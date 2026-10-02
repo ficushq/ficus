@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, spyOn } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import { createWorkflowRun, resolveWorkflow } from '@ficus/shared'
+import { createWorkflowRun, resolveWorkflow, workflowPresetSchema } from '@ficus/shared'
 import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'
 import { openWait } from './waits'
 import {
@@ -459,7 +459,11 @@ for (const association of ['assignee', 'crew', 'binding', 'origin'] as const) {
 for (const unsettled of ['attempt', 'pending-start'] as const) {
   test(`terminal dependent with an unsettled ${unsettled} retains protection`, async () => {
     const other = await dependent('canceled')
-    const definition = Bun.YAML.parse(await Bun.file('config/workflows/solo-coding.yaml').text()).definition
+    const { definition } = workflowPresetSchema.parse(
+      Bun.YAML.parse(
+        await Bun.file(new URL('../../../../../config/workflows/solo-coding.yaml', import.meta.url)).text()
+      )
+    )
     const source = resolveWorkflow({ kind: 'inline', definition })
     const state = createWorkflowRun(definition)
     if (unsettled === 'pending-start') {
