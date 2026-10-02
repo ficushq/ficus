@@ -570,7 +570,7 @@ test('workflow name is a focusable disclosure that hides only the preview', asyn
     const doc = f.dom.window.document
     const toggle = doc.querySelector<HTMLButtonElement>('button[aria-expanded]')!
     expect(toggle).not.toBeNull()
-    expect(toggle.textContent).toBe(value.state.definition.name)
+    expect(toggle.textContent).toBe(`Workflow · ${value.state.definition.name}`)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(toggle.type).toBe('button')
     toggle.focus()
@@ -615,6 +615,52 @@ test('preview survives refreshes but resets on stream switches and reopening', a
     await f.render(<></>)
     await f.render()
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+for (const name of ['Focused mobile picker visual follow-up', preset.definition.name, '', '   ', undefined]) {
+  test(`disclosure visibly identifies the workflow with honest name handling: ${name}`, async () => {
+    const value = run()
+    value.state.definition.name = name as string
+    value.attemptAgents = { '1': 'builder-agent' }
+    const f = await fixture(value)
+    let opened = 0
+    try {
+      await f.render(<WorkflowRunPanel stream={stream} onOpenAgent={() => opened++} />)
+      const doc = f.dom.window.document
+      const toggle = doc.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+      expect(toggle.textContent).toBe(name?.trim() ? `Workflow · ${name}` : 'Workflow')
+      expect(toggle.getAttribute('aria-label')).toBe(name?.trim() ? `Workflow preview: ${name}` : 'Workflow preview')
+      expect(toggle.querySelector('svg')).not.toBeNull()
+      await f.dom.act(async () => toggle.click())
+      const graph = doc.querySelector('[aria-label="Workflow visual preview"]')!
+      expect(graph).not.toBeNull()
+      const step = graph.querySelector<HTMLButtonElement>('button[aria-label="execute: Active"]')!
+      expect(step).not.toBeNull()
+      await f.dom.act(async () => step.click())
+      const chat = graph.querySelector<HTMLAnchorElement>('a[aria-label="Open execute attempt 1 agent chat"]')!
+      expect(chat).not.toBeNull()
+      await f.dom.act(async () => chat.click())
+      expect(opened).toBe(1)
+    } finally {
+      await f.cleanup()
+    }
+  })
+}
+
+test('initial workflow loading stays quiet and a failed load reports the workflow error', async () => {
+  const f = await fixture(null)
+  try {
+    const query = f.queryClient.getQueryCache().find({ queryKey: queryKeys.workflows.run(stream.id) })!
+    query.setState({ data: undefined, status: 'pending', fetchStatus: 'fetching' })
+    await f.render()
+    expect(f.dom.window.document.body.textContent).toBe('')
+    query.setState({ status: 'error', error: new Error('Offline'), fetchStatus: 'idle' })
+    await f.render()
+    expect(f.dom.window.document.body.textContent).toBe('Could not load the workflow.')
+    expect(f.dom.window.document.querySelector('button[aria-expanded]')).toBeNull()
   } finally {
     await f.cleanup()
   }

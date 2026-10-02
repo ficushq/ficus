@@ -69,6 +69,7 @@ function WorkflowRunPanelContent({
   })
   if (error) return <p className="text-sm text-status-danger-400">Could not load the workflow.</p>
   if (!run) return null
+  const workflowName = run.state.definition.name?.trim() ? run.state.definition.name : undefined
   const activeAttempts = activeWorkflowAttempts(run.state)
   const focusedAttempt = (run.openWaits ?? stream.openWaits ?? []).find(
     (wait) => wait.id === focusWaitId
@@ -133,7 +134,7 @@ function WorkflowRunPanelContent({
         <h3 className="min-w-0 flex-1 text-sm font-medium">
           <button
             type="button"
-            aria-label={`Workflow preview: ${run.state.definition.name}`}
+            aria-label={workflowName ? `Workflow preview: ${workflowName}` : 'Workflow preview'}
             aria-expanded={previewExpanded}
             aria-controls={previewId}
             onClick={() => setPreviewExpanded((expanded) => !expanded)}
@@ -142,7 +143,7 @@ function WorkflowRunPanelContent({
             <span aria-hidden="true" className="shrink-0">
               {previewExpanded ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
             </span>
-            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{run.state.definition.name}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">Workflow{workflowName && ` · ${workflowName}`}</span>
           </button>
         </h3>
         <span className="text-xs text-secondary">

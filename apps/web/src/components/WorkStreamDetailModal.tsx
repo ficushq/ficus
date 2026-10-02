@@ -694,7 +694,7 @@ export function WorkStreamDetailModal({
 
         {/* Description */}
         {workStream.description && (
-          <div>
+          <div className="min-w-0 [overflow-wrap:anywhere]">
             <label className="text-xs font-medium text-secondary">Description</label>
             <div className="mt-3 text-sm leading-relaxed text-secondary">
               <MarkdownContent className="prose-xs">{workStream.description}</MarkdownContent>
