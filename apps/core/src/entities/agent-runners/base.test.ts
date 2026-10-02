@@ -59,12 +59,7 @@ function persistAssistant(mockSession: MockAgentSession, text: string, entryId =
   mockSession.pi.emit({ type: 'session_message_persisted', message, entryId, sessionFile: 'test.jsonl' } as any)
 }
 
-function persistUser(
-  mockSession: MockAgentSession,
-  content: string,
-  entryId = `entry-${Date.now()}`,
-  deliveryId = content
-): void {
+function persistUser(mockSession: MockAgentSession, content: string, entryId: string, deliveryId: string): void {
   const message = { role: 'user', content: [{ type: 'text', text: content }] }
   mockSession.pi.emit({ type: 'message_end', message } as any)
   mockSession.pi.emit({
@@ -703,11 +698,18 @@ describe('AgentRunner (base class)', () => {
         pending: true,
         createdAt: new Date(),
       } as Message
-      claimInitialPendingMessagesForSessionDeliverySpy.mockResolvedValue([currentPrompt, queuedMessage])
+      const deliveryId = crypto.randomUUID()
+      claimInitialPendingMessagesForSessionDeliverySpy.mockImplementation(
+        async (owner: NonNullable<Parameters<Agent['claimInitialPendingMessagesForSessionDelivery']>[0]>) =>
+          [currentPrompt, queuedMessage].map((message) => ({
+            ...message,
+            metadata: { sessionDelivery: { id: deliveryId, ...owner } },
+          }))
+      )
 
       await runner.run()
-      persistUser(mockSession, 'test\n\nqueued after prompt')
-      await new Promise((r) => setTimeout(r, 50))
+      mockSession.pi.persistUserPrompt('entry-initial-batch')
+      await runner.waitForPersistence()
 
       expect(claimInitialPendingMessagesForSessionDeliverySpy).toHaveBeenCalledTimes(1)
       expect(claimPendingInterventionForSessionDeliverySpy).not.toHaveBeenCalled()
@@ -715,7 +717,7 @@ describe('AgentRunner (base class)', () => {
       expect(mockSession.pi.promptCalls[0].text).toBe('test\n\nqueued after prompt')
       expect(mockSession.pi.steerCalls).toEqual([])
       expect(confirmDeliverySpy).toHaveBeenCalledTimes(1)
-      expect(confirmDeliverySpy.mock.calls[0][0]).toBe('test\n\nqueued after prompt')
+      expect(confirmDeliverySpy.mock.calls[0][0]).toBe(deliveryId)
       expect(confirmDeliverySpy.mock.calls[0][3]).toEqual({
         executionId: 'exec-test-1',
         streamGroupId: expect.any(String),
@@ -1233,7 +1235,7 @@ describe('AgentRunner (base class)', () => {
       expect(turnSave).toBeTruthy()
 
       // User message delivered (steer) → confirms the pending human message.
-      persistUser(mockSession, 'do this instead')
+      persistUser(mockSession, 'do this instead', 'entry-steer', 'steer-claim')
 
       // Second turn: assistant responds again, then the session settles
       mockSession.pi.emit({
@@ -1280,7 +1282,9 @@ describe('AgentRunner (base class)', () => {
       persistUser(mockSession, 'identical', 'entry-2', 'steer-2')
       persistUser(mockSession, 'identical', 'entry-3', 'follow-1')
       await runner.waitForPersistence()
-      expect(confirmDeliverySpy.mock.calls.map((call) => call[0])).toEqual(['steer-1', 'steer-2', 'follow-1'])
+      expect(confirmDeliverySpy.mock.calls.map((call: Parameters<Agent['confirmSessionDelivery']>) => call[0])).toEqual(
+        ['steer-1', 'steer-2', 'follow-1']
+      )
     })
 
     it('keeps follow-ups pending on first output, then confirms them when Pi persists the user turn', async () => {

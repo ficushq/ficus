@@ -1,5 +1,5 @@
 import type { AgentStatus, AgentType } from '@ficus/shared'
-import type { AgentSessionEvent, SessionStats } from '@earendil-works/pi-coding-agent'
+import type { AgentSession as PiAgentSession, AgentSessionEvent, SessionStats } from '@earendil-works/pi-coding-agent'
 
 import type { SessionUsage, MessageMetadata } from '@ficus/shared'
 import { Execution } from '../../entities/Execution'
@@ -12,11 +12,12 @@ import { Agent } from '../../entities/Agent'
 // ---------------------------------------------------------------------------
 
 type EventListener = (event: AgentSessionEvent) => void
+type PromptOptions = NonNullable<Parameters<PiAgentSession['prompt']>[1]>
 
 export class MockPiAgentSession {
   private listeners: EventListener[] = []
   sessionManager = { getEntries: () => [], getPersistedEntries: () => [] }
-  promptCalls: Array<{ text: string; options?: any }> = []
+  promptCalls: Array<{ text: string; options?: PromptOptions }> = []
   steerCalls: string[] = []
   followUpCalls: string[] = []
   abortCalled = false
@@ -38,7 +39,7 @@ export class MockPiAgentSession {
     }
   }
 
-  async prompt(text: string, options?: any): Promise<void> {
+  async prompt(text: string, options?: PromptOptions): Promise<void> {
     this.promptCalls.push({ text, options })
     for (const waiter of this.promptWaiters) {
       if (this.promptCalls.length >= waiter.count) waiter.resolve()
@@ -104,6 +105,23 @@ export class MockPiAgentSession {
 
   emit(event: AgentSessionEvent): void {
     for (const l of this.listeners) l(event)
+  }
+
+  /** Emit a real-SDK-shaped user receipt for the exact host-captured prompt claim. */
+  persistUserPrompt(entryId: string, promptIndex = 0): { deliveryId: string; entryId: string } {
+    const call = this.promptCalls[promptIndex]
+    const deliveryId = call?.options?.deliveryId
+    if (!call || !deliveryId || !entryId) {
+      throw new Error('User prompt fixture requires captured deliveryId and SDK entryId')
+    }
+    const message = {
+      role: 'user' as const,
+      content: [{ type: 'text' as const, text: call.text }],
+      timestamp: Date.now(),
+    }
+    this.emit({ type: 'message_end', message })
+    this.emit({ type: 'session_message_persisted', message, entryId, deliveryId, sessionFile: 'test.jsonl' })
+    return { deliveryId, entryId }
   }
 
   /** Simulate a normal agent end with optional text */
@@ -226,6 +244,7 @@ export class MockAgentSession {
 export class TestAgentRunner extends AgentRunner {
   mockSession: MockAgentSession
   private readonly errorHandled = Promise.withResolvers<void>()
+  private readonly completionHandled = Promise.withResolvers<void>()
   private failoverAttempts = 0
   private failoverWaiters: Array<{ count: number; resolve: () => void }> = []
 
@@ -241,6 +260,11 @@ export class TestAgentRunner extends AgentRunner {
   /** Wait for session-file events already emitted by a test to finish persisting. */
   async waitForPersistence(): Promise<void> {
     await this.persistence.waitForAll()
+  }
+
+  /** Await all normal-settlement work, not just the earlier terminal DB status flip. */
+  async waitForCompletion(): Promise<void> {
+    await this.completionHandled.promise
   }
 
   /** Wait until the requested number of runtime failover attempts have fully completed. */
@@ -274,7 +298,11 @@ export class TestAgentRunner extends AgentRunner {
     metadata: MessageMetadata | undefined,
     sessionUsage: SessionUsage
   ): Promise<void> {
-    await this.completeNormally(response, metadata, sessionUsage)
+    try {
+      await this.completeNormally(response, metadata, sessionUsage)
+    } finally {
+      this.completionHandled.resolve()
+    }
   }
 }
 

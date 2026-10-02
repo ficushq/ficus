@@ -1,9 +1,6 @@
 import { describe, it, expect, spyOn } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import type { SessionUsage, MessageMetadata } from '@ficus/shared'
-import { AgentRunner } from './base'
-import { MockAgentSession } from '../../services/execution/test-helpers'
-import { AgentSession } from '../AgentSession'
+import { MockAgentSession, TestAgentRunner as TestRunner } from '../../services/execution/test-helpers'
 import { Agent } from '../Agent'
 import { AgentType } from '../AgentType'
 import { Execution } from '../Execution'
@@ -11,42 +8,6 @@ import { db } from '../../db'
 import { agents, agentTypes as agentTypeRows, executions } from '../../db/schema'
 import { turnHooks } from '../../services/turn-hooks'
 import { isSessionActive, isSessionHeldFor } from '../../services/execution/session-state'
-
-function persistUser(mockSession: MockAgentSession, content: string, entryId = `entry-${Date.now()}`): void {
-  const message = { role: 'user', content }
-  mockSession.pi.emit({ type: 'message_end', message } as any)
-  mockSession.pi.emit({ type: 'session_message_persisted', message, entryId, sessionFile: 'test.jsonl' } as any)
-}
-
-async function waitForTerminalExecution(id: string): Promise<Execution> {
-  const deadline = Date.now() + 10_000
-  for (;;) {
-    const execution = await Execution.mustFind(id)
-    if (execution.status !== 'running' || Date.now() > deadline) return execution
-    await new Promise((r) => setTimeout(r, 10))
-  }
-}
-
-class TestRunner extends AgentRunner {
-  constructor(
-    execution: Execution,
-    agent: Agent,
-    agentType: AgentType,
-    private readonly mockSession: MockAgentSession
-  ) {
-    super(execution, agent, agentType)
-  }
-  protected async createSession(): Promise<AgentSession> {
-    return this.mockSession as any
-  }
-  protected async onComplete(
-    response: string,
-    metadata: MessageMetadata | undefined,
-    sessionUsage: SessionUsage
-  ): Promise<void> {
-    await this.completeNormally(response, metadata, sessionUsage)
-  }
-}
 
 // ---------------------------------------------------------------------------
 // The abandoned-lease sweep spares only executions THIS process holds
@@ -86,24 +47,38 @@ describe('AgentRunner.completeNormally() keeps the execution held until it is te
 
     try {
       await runner.run()
-      persistUser(mockSession, 'trigger')
-      await new Promise((r) => setTimeout(r, 0))
+      const pending = await agent.listPendingHumanMessages()
+      expect(pending).toHaveLength(1)
+      const receipt = mockSession.pi.persistUserPrompt('initial-user-entry')
+      expect(pending[0]!.metadata?.sessionDelivery?.id).toBe(receipt.deliveryId)
+      await runner.waitForPersistence()
+      // Assert consumption before settlement; otherwise an idle/retry branch can
+      // accidentally satisfy the hook/hold assertions without acknowledging input.
+      expect(await Agent.findMessage(pending[0]!.id)).toMatchObject({
+        pending: false,
+        metadata: {
+          executionId: execution.id,
+          sessionEntryId: receipt.entryId,
+          streamGroupId: `${execution.id}:session:${receipt.entryId}:0`,
+          sessionDelivery: { id: receipt.deliveryId, executionId: execution.id },
+        },
+      })
+      expect(await agent.listPendingHumanMessages()).toHaveLength(0)
       mockSession.pi.simulateNormalEnd('done')
 
-      const after = await waitForTerminalExecution(execution.id)
+      await runner.waitForCompletion()
+      const after = await Execution.mustFind(execution.id)
       expect(after.status).toBe('completed')
       expect(sessionActiveDuringHooks).toBe(false) // the session really was gone…
       expect(heldDuringHooks).toBe(true) // …but the execution stayed held (the sweep must skip it)
-      // Released once settlement is DONE. The hold is cleared in completeNormally's
-      // finally, i.e. after the terminal CAS AND the post-terminal work that
-      // follows it (inbox retry, backoff resets), so it can lag the row's status
-      // flip by a beat — poll for it rather than asserting the exact instant.
-      const clearedBy = Date.now() + 5_000
-      while (isSessionHeldFor(agent.id, execution.id) && Date.now() < clearedBy) {
-        await new Promise((r) => setTimeout(r, 10))
-      }
+      // The completion barrier includes the settling-hold finally block.
       expect(isSessionHeldFor(agent.id, execution.id)).toBe(false)
     } finally {
+      // Also drain settlement on assertion failures before deleting fixture rows.
+      if (isSessionActive(agent.id)) {
+        mockSession.pi.simulateNormalEnd('fixture cleanup')
+        await runner.waitForCompletion()
+      }
       runSpy.mockRestore()
       await db.delete(executions).where(eq(executions.agentId, agent.id))
       await db.delete(agents).where(eq(agents.id, agent.id))

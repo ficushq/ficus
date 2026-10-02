@@ -163,7 +163,9 @@ it('closing during claim prevents SDK enqueue and waits for the fenced claim res
         await gate
         return { id: 'U', content: 'same', metadata: { sessionDelivery: claim } } as any
       },
-      resetPendingInterventionSessionDelivery: async (...args) => {
+      resetPendingInterventionSessionDelivery: async (
+        ...args: Parameters<PendingInterventionQueueDeps['agent']['resetPendingInterventionSessionDelivery']>
+      ) => {
         resets.push(args)
       },
     } as any,
