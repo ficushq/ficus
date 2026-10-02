@@ -7,6 +7,7 @@ const root = resolve(import.meta.dir, '..')
 const overlayRoot = resolve(root, 'patches/pi-coding-agent-0.99.1-source')
 const expectedSources = [
   'packages/coding-agent/src/core/agent-session.ts',
+  'packages/coding-agent/src/core/session-manager.ts',
   'packages/coding-agent/src/core/extensions/loader.ts',
   'packages/coding-agent/src/core/index.ts',
   'packages/coding-agent/src/core/sdk.ts',
@@ -18,6 +19,10 @@ const expectedBuildOutputs = [
   'dist/core/agent-session.d.ts.map',
   'dist/core/agent-session.js',
   'dist/core/agent-session.js.map',
+  'dist/core/session-manager.d.ts',
+  'dist/core/session-manager.d.ts.map',
+  'dist/core/session-manager.js',
+  'dist/core/session-manager.js.map',
   'dist/core/extensions/loader.d.ts.map',
   'dist/core/extensions/loader.js',
   'dist/core/extensions/loader.js.map',
@@ -145,8 +150,23 @@ describe('Pi patch no-drift CI gate', () => {
     ['sanitize wrong value', 'await this._eventSanitizer(event)', 'await this._eventSanitizer(unsafeEvent)'],
     [
       'persist unsafe input',
-      'this.sessionManager.appendMessage(event.message)',
-      'this.sessionManager.appendMessage(unsafeEvent.message)',
+      'this.sessionManager.appendMessage(event.message, this._deliveryIds.get(event.message))',
+      'this.sessionManager.appendMessage(unsafeEvent.message, this._deliveryIds.get(event.message))',
+    ],
+    [
+      'persist forgeable delivery identity',
+      'this.sessionManager.appendMessage(event.message, this._deliveryIds.get(event.message))',
+      'this.sessionManager.appendMessage(event.message, event.message.deliveryId)',
+    ],
+    [
+      'report forgeable delivery identity',
+      'deliveryId: this._deliveryIds.get(event.message),',
+      'deliveryId: event.message.deliveryId,',
+    ],
+    [
+      'drop awaited sanitizer result inside correlation wrapper',
+      'const event = sanitizer ? await sanitizer(original) : original;',
+      'const event = original;',
     ],
     ['report unsafe input', 'message: event.message', 'message: unsafeEvent.message'],
     ['emit unsafe input', 'this._emit(event.type', 'this._emit(unsafeEvent.type'],

@@ -12,10 +12,11 @@ import { AgentType } from '../AgentType'
 function makeDeps(overrides: Partial<SessionMessagePersistenceDeps> = {}): SessionMessagePersistenceDeps {
   return {
     executionId: 'exec-1',
+    deliveryOwner: { generation: 'session-1', executionId: 'exec-1' },
     agent: {
       id: 'agent-1',
       recordMessage: async (input: any) => ({ id: `msg-${Math.random().toString(36).slice(2, 8)}`, ...input }),
-      tryConfirmPendingMessage: async () => null,
+      confirmSessionDelivery: async () => [],
       update: async () => ({}),
     } as any,
     ...overrides,
@@ -124,7 +125,6 @@ describe('SessionMessagePersistence chain', () => {
 function makeBound(depsOverrides: Partial<SessionMessagePersistenceDeps> = {}, savedMessageId?: string) {
   const recorded: any[] = []
   const updates: any[] = []
-  let confirmInitialPromptResult = false
   const deps = makeDeps({
     agent: {
       id: 'agent-1',
@@ -133,9 +133,9 @@ function makeBound(depsOverrides: Partial<SessionMessagePersistenceDeps> = {}, s
         recorded.push(saved)
         return saved
       },
-      tryConfirmPendingMessage: async (content?: string, identity?: unknown) => {
-        updates.push({ confirmed: content, identity })
-        return null
+      confirmSessionDelivery: async (deliveryId: string, owner: unknown, entryId: string, identity: unknown) => {
+        updates.push({ confirmed: deliveryId, owner, entryId, identity })
+        return []
       },
       update: async (patch: any) => {
         updates.push({ update: patch })
@@ -151,10 +151,6 @@ function makeBound(depsOverrides: Partial<SessionMessagePersistenceDeps> = {}, s
     collector,
     buffer,
     captureUsage: () => ({ inputTokens: 1, outputTokens: 2 }) as any,
-    confirmInitialPrompt: async (content, identity) => {
-      updates.push({ initialPrompt: content, identity })
-      return confirmInitialPromptResult
-    },
   })
   return {
     p,
@@ -162,14 +158,11 @@ function makeBound(depsOverrides: Partial<SessionMessagePersistenceDeps> = {}, s
     collector,
     recorded,
     updates,
-    setConfirmInitialPrompt(v: boolean) {
-      confirmInitialPromptResult = v
-    },
   }
 }
 
 function persistedEvent(message: any) {
-  return { type: 'session_message_persisted', message } as any
+  return { type: 'session_message_persisted', message, entryId: 'entry-user', deliveryId: 'claim-1' } as any
 }
 
 describe('SessionMessagePersistence persisted events', () => {
@@ -213,32 +206,40 @@ describe('SessionMessagePersistence persisted events', () => {
     expect(p.lastAssistant()?.messageId).toBe('msg-1')
   })
 
-  it('a user message rotates the stream group and confirms via the pending path when it is not the initial prompt', async () => {
+  it('uses out-of-band identity for real SDK multi-block arrays and image attachments', async () => {
     const { p, updates } = makeBound()
     const before = p.currentStreamGroupId
-    p.enqueuePersistedEvent(persistedEvent({ role: 'user', content: 'follow-up' }))
+    p.enqueuePersistedEvent(
+      persistedEvent({
+        role: 'user',
+        content: [
+          { type: 'text', text: 'decorated' },
+          { type: 'text', text: ' prompt' },
+          { type: 'image', data: 'fixture', mimeType: 'image/png' },
+        ],
+      })
+    )
     await p.waitForAll()
-
     expect(p.currentStreamGroupId).not.toBe(before)
+    expect(p.currentStreamGroupId).toBe('exec-1:session:entry-user:0')
     expect(updates).toContainEqual({
-      confirmed: 'follow-up',
+      confirmed: 'claim-1',
+      owner: { generation: 'session-1', executionId: 'exec-1' },
+      entryId: 'entry-user',
       identity: { executionId: 'exec-1', streamGroupId: p.currentStreamGroupId },
     })
-    // session usage persisted after the user message
     expect(updates.some((u) => u.update?.sessionUsage)).toBe(true)
   })
 
-  it('a user message that IS the initial prompt short-circuits pending confirmation', async () => {
-    const { p, updates, setConfirmInitialPrompt } = makeBound()
-    setConfirmInitialPrompt(true)
-    p.enqueuePersistedEvent(persistedEvent({ role: 'user', content: 'the prompt' }))
+  it('never acknowledges an identity-free user message, including absent content', async () => {
+    const { p, updates } = makeBound()
+    p.enqueuePersistedEvent({
+      type: 'session_message_persisted',
+      message: { role: 'user', content: [] },
+      entryId: 'neutral',
+    } as any)
     await p.waitForAll()
-
-    expect(updates.some((u) => u.confirmed === 'the prompt')).toBe(false)
-    expect(updates).toContainEqual({
-      initialPrompt: 'the prompt',
-      identity: { executionId: 'exec-1', streamGroupId: p.currentStreamGroupId },
-    })
+    expect(updates.some((u) => u.confirmed)).toBe(false)
   })
 
   it('an aborted assistant message marks its tool calls errored in metadata', async () => {
@@ -299,7 +300,7 @@ describe('SessionMessagePersistence persisted events', () => {
           agent: {
             id: ownerId,
             recordMessage: async (input: any) => ({ id: messageId, ...input }),
-            tryConfirmPendingMessage: async () => null,
+            confirmSessionDelivery: async () => [],
             update: async () => ({}),
           } as any,
         },
@@ -393,7 +394,7 @@ describe('SessionMessagePersistence persisted events', () => {
           agent: {
             id: ownerId,
             recordMessage: async (input: any) => ({ id: messageId, ...input }),
-            tryConfirmPendingMessage: async () => null,
+            confirmSessionDelivery: async () => [],
             update: async () => ({}),
           } as any,
         },
@@ -455,7 +456,7 @@ describe('SessionMessagePersistence persisted events', () => {
           agent: {
             id: ownerId,
             recordMessage: async (input: any) => ({ id: nonmatchingMessageId, ...input }),
-            tryConfirmPendingMessage: async () => null,
+            confirmSessionDelivery: async () => [],
             update: async () => ({}),
           } as any,
         },
@@ -505,7 +506,7 @@ describe('SessionMessagePersistence persisted events', () => {
         agent: {
           id: ownerId,
           recordMessage: async (input: any) => ({ id: missingMessageId, ...input }),
-          tryConfirmPendingMessage: async () => null,
+          confirmSessionDelivery: async () => [],
           update: async () => ({}),
         } as any,
       },
@@ -543,7 +544,7 @@ describe('SessionMessagePersistence persisted events', () => {
         agent: {
           id: ownerId,
           recordMessage: async (input: any) => ({ id: missingMessageId, ...input }),
-          tryConfirmPendingMessage: async () => null,
+          confirmSessionDelivery: async () => [],
           update: async () => ({}),
         } as any,
       },

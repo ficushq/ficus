@@ -56,7 +56,7 @@ import { WorkStream } from '../../entities/WorkStream'
 import { deliverInboxMessagesToAgent, prepareInboxDelivery } from '../inbox/inboxDelivery'
 import { listTrustedContinuationExecutionIds } from './execution-provenance'
 import { MockAgentSession, TestAgentRunner, makeAgentType } from '../execution/test-helpers'
-import { removeSession } from '../execution/session-state'
+import { isSessionActive, removeSession } from '../execution/session-state'
 import * as workStreamNotifications from '../squad/work-stream-notifications'
 
 describe('work stream continuation', () => {
@@ -958,30 +958,46 @@ describe('work stream continuation', () => {
       makeAgentType({ id: agentTypeId }),
       continuationSession
     )
-    await continuationRunner.run()
-    expect(continuationSession.pi.promptCalls).toHaveLength(1)
-    expect(continuationSession.pi.promptCalls[0]?.text).toContain(
-      `Continue working on work stream ${workStream.id}: ${workStream.title}.`
-    )
-    expect(continuationSession.pi.promptCalls[0]?.text).not.toContain('Query the work stream with')
-    continuationSession.pi.emit({
-      type: 'session_message_persisted',
-      message: { role: 'user', content: continuationSession.pi.promptCalls[0]!.text },
-      entryId: 'continuation-user-entry',
-      sessionFile: 'test.jsonl',
-    } as any)
-    continuationSession.pi.simulateNormalEnd('Recovered successfully')
-    await waitFor(async () => (await Execution.mustFind(continuationExecution.id)).status === 'completed')
+    try {
+      await continuationRunner.run()
+      expect(continuationSession.pi.promptCalls).toHaveLength(1)
+      expect(continuationSession.pi.promptCalls[0]?.text).toContain(
+        `Continue working on work stream ${workStream.id}: ${workStream.title}.`
+      )
+      expect(continuationSession.pi.promptCalls[0]?.text).not.toContain('Query the work stream with')
+      const pending = await agent.listPendingHumanMessages()
+      expect(pending).toHaveLength(1)
+      const receipt = continuationSession.pi.persistUserPrompt('continuation-user-entry')
+      expect(pending[0]!.metadata?.sessionDelivery?.id).toBe(receipt.deliveryId)
+      await continuationRunner.waitForPersistence()
+      expect(await Agent.findMessage(pending[0]!.id)).toMatchObject({
+        pending: false,
+        metadata: {
+          executionId: continuationExecution.id,
+          sessionEntryId: receipt.entryId,
+          streamGroupId: `${continuationExecution.id}:session:${receipt.entryId}:0`,
+          sessionDelivery: { id: receipt.deliveryId, executionId: continuationExecution.id },
+        },
+      })
+      expect(await agent.listPendingHumanMessages()).toHaveLength(0)
+      continuationSession.pi.simulateNormalEnd('Recovered successfully')
+      await continuationRunner.waitForCompletion()
 
-    expect((await Execution.mustFind(continuationExecution.id)).status).toBe('completed')
-    expect(
-      await db
-        .select()
-        .from(executions)
-        .where(and(eq(executions.agentId, agent.id), eq(executions.status, 'queued')))
-    ).toHaveLength(0)
-    expect(await db.select().from(inbox).where(eq(inbox.id, assignmentInbox!.id))).toHaveLength(1)
-    removeSession(agent.id)
+      expect((await Execution.mustFind(continuationExecution.id)).status).toBe('completed')
+      expect(
+        await db
+          .select()
+          .from(executions)
+          .where(and(eq(executions.agentId, agent.id), eq(executions.status, 'queued')))
+      ).toHaveLength(0)
+      expect(await db.select().from(inbox).where(eq(inbox.id, assignmentInbox!.id))).toHaveLength(1)
+    } finally {
+      if (isSessionActive(agent.id)) {
+        continuationSession.pi.simulateNormalEnd('fixture cleanup')
+        await continuationRunner.waitForCompletion()
+      }
+      removeSession(agent.id)
+    }
   })
 
   for (const excludedError of [

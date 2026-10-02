@@ -12,7 +12,7 @@ import * as accountStore from '../../services/agent/account-store'
 import { getModelRuntime, refreshModelRuntime } from '../../services/agent/auth-backend'
 import * as AgentModule from '../Agent'
 import { providerHealth } from '../../services/provider-health/registry'
-import { Image } from '../Image'
+import { Image, type ImageContent } from '../Image'
 import { AgentSession } from '../AgentSession'
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import { Agent } from '../Agent'
@@ -59,10 +59,16 @@ function persistAssistant(mockSession: MockAgentSession, text: string, entryId =
   mockSession.pi.emit({ type: 'session_message_persisted', message, entryId, sessionFile: 'test.jsonl' } as any)
 }
 
-function persistUser(mockSession: MockAgentSession, content: string, entryId = `entry-${Date.now()}`): void {
-  const message = { role: 'user', content }
+function persistUser(mockSession: MockAgentSession, content: string, entryId: string, deliveryId: string): void {
+  const message = { role: 'user', content: [{ type: 'text', text: content }] }
   mockSession.pi.emit({ type: 'message_end', message } as any)
-  mockSession.pi.emit({ type: 'session_message_persisted', message, entryId, sessionFile: 'test.jsonl' } as any)
+  mockSession.pi.emit({
+    type: 'session_message_persisted',
+    message,
+    entryId,
+    deliveryId,
+    sessionFile: 'test.jsonl',
+  } as any)
 }
 
 async function waitForCondition(check: () => Promise<boolean>, attempts = 100): Promise<void> {
@@ -356,6 +362,9 @@ describe('AgentRunner (base class)', () => {
   let registerSessionSpy: any
   let removeSessionSpy: any
   let isSessionActiveSpy: any
+  let getSessionSpy: any
+  let reconcileDeliveriesSpy: any
+  let confirmDeliverySpy: any
   let createBufferSpy: any
   let recordMessageSpy: any
   let listMessagesSpy: any
@@ -387,6 +396,11 @@ describe('AgentRunner (base class)', () => {
     registerSessionSpy = spyOn(sessionState, 'registerSession').mockImplementation(() => {})
     removeSessionSpy = spyOn(sessionState, 'removeSession').mockImplementation(() => {})
     isSessionActiveSpy = spyOn(sessionState, 'isSessionActive').mockReturnValue(true)
+    getSessionSpy = spyOn(sessionState, 'getSession').mockImplementation(() =>
+      sessionState.isSessionActive(agent.id) ? ({ session: mockSession } as any) : undefined
+    )
+    reconcileDeliveriesSpy = spyOn(agent, 'reconcileSessionDeliveries').mockResolvedValue()
+    confirmDeliverySpy = spyOn(agent, 'confirmSessionDelivery').mockResolvedValue([])
 
     // Mock agent messages methods
     recordMessageSpy = spyOn(agent, 'recordMessage').mockResolvedValue({
@@ -443,6 +457,9 @@ describe('AgentRunner (base class)', () => {
     registerSessionSpy?.mockRestore()
     removeSessionSpy?.mockRestore()
     isSessionActiveSpy?.mockRestore()
+    getSessionSpy?.mockRestore()
+    reconcileDeliveriesSpy?.mockRestore()
+    confirmDeliverySpy?.mockRestore()
     createBufferSpy?.mockRestore()
     recordMessageSpy?.mockRestore()
     listMessagesSpy?.mockRestore()
@@ -548,7 +565,13 @@ describe('AgentRunner (base class)', () => {
         settlePersistence()
         expect(await fallback).toBe(true)
 
-        expect(order).toEqual(['active-tool-aborted', 'persistence-wait-started', 'persistence-settled'])
+        expect(order).toEqual([
+          'active-tool-aborted',
+          'persistence-wait-started',
+          'persistence-settled',
+          'persistence-wait-started',
+          'persistence-settled',
+        ])
         // Persistence settlement alone cannot remove the lifecycle while the
         // original runner/setup path is still alive.
         expect(executionLifecycleRegistry.get(execution.id)).toBe(lifecycle)
@@ -675,24 +698,30 @@ describe('AgentRunner (base class)', () => {
         pending: true,
         createdAt: new Date(),
       } as Message
-      claimInitialPendingMessagesForSessionDeliverySpy.mockResolvedValue([currentPrompt, queuedMessage])
-      const confirmByIdSpy = spyOn(agent, 'confirmPendingMessage').mockResolvedValue(null as any)
+      const deliveryId = crypto.randomUUID()
+      claimInitialPendingMessagesForSessionDeliverySpy.mockImplementation(
+        async (owner: NonNullable<Parameters<Agent['claimInitialPendingMessagesForSessionDelivery']>[0]>) =>
+          [currentPrompt, queuedMessage].map((message) => ({
+            ...message,
+            metadata: { sessionDelivery: { id: deliveryId, ...owner } },
+          }))
+      )
 
       await runner.run()
-      persistUser(mockSession, 'test\n\nqueued after prompt')
-      await new Promise((r) => setTimeout(r, 50))
+      mockSession.pi.persistUserPrompt('entry-initial-batch')
+      await runner.waitForPersistence()
 
       expect(claimInitialPendingMessagesForSessionDeliverySpy).toHaveBeenCalledTimes(1)
       expect(claimPendingInterventionForSessionDeliverySpy).not.toHaveBeenCalled()
       expect(mockSession.pi.promptCalls).toHaveLength(1)
       expect(mockSession.pi.promptCalls[0].text).toBe('test\n\nqueued after prompt')
       expect(mockSession.pi.steerCalls).toEqual([])
-      expect(confirmByIdSpy).toHaveBeenCalledTimes(2)
-      const identities = confirmByIdSpy.mock.calls.map(([, identity]) => identity)
-      expect(identities[0]).toEqual({ executionId: 'exec-test-1', streamGroupId: expect.any(String) })
-      expect(identities[1]).toEqual(identities[0])
-      expect(confirmByIdSpy.mock.calls.map(([messageId]) => messageId)).toEqual(['current-prompt', 'queued-message'])
-      confirmByIdSpy.mockRestore()
+      expect(confirmDeliverySpy).toHaveBeenCalledTimes(1)
+      expect(confirmDeliverySpy.mock.calls[0][0]).toBe(deliveryId)
+      expect(confirmDeliverySpy.mock.calls[0][3]).toEqual({
+        executionId: 'exec-test-1',
+        streamGroupId: expect.any(String),
+      })
     })
 
     it('drains newly-created pending interventions from the DB queue while the session is active', async () => {
@@ -786,8 +815,8 @@ describe('AgentRunner (base class)', () => {
       await runner.run()
       await new Promise((r) => setTimeout(r, 0))
 
-      expect(resetPendingInterventionSessionDeliverySpy).toHaveBeenCalledWith('pending-steer')
-      expect(mockSession.pi.steer).toHaveBeenCalledWith('queued steer', undefined)
+      expect(resetPendingInterventionSessionDeliverySpy).toHaveBeenCalledWith('pending-steer', undefined)
+      expect(mockSession.pi.steer).toHaveBeenCalledWith('queued steer', undefined, { deliveryId: undefined })
     })
 
     it('skips pending intervention queue delivery when the session is no longer active', async () => {
@@ -1022,7 +1051,7 @@ describe('AgentRunner (base class)', () => {
     })
 
     it('attaches claimed pending-row images to the initial prompt', async () => {
-      const fakeImages = [{ type: 'image', data: 'abc', mimeType: 'image/png' }]
+      const fakeImages: ImageContent[] = [{ type: 'image', data: 'abc', mimeType: 'image/png' }]
       const pendingImageMessage = {
         id: 'pending-image-message',
         agentId: agent.id,
@@ -1081,7 +1110,7 @@ describe('AgentRunner (base class)', () => {
       await runner.run()
 
       expect(markImagesFailedSpy).toHaveBeenCalledWith(['img-1'])
-      expect(resetPendingInterventionSessionDeliverySpy).toHaveBeenCalledWith('pending-image-message')
+      expect(resetPendingInterventionSessionDeliverySpy).toHaveBeenCalledWith('pending-image-message', undefined)
     })
   })
 
@@ -1206,7 +1235,7 @@ describe('AgentRunner (base class)', () => {
       expect(turnSave).toBeTruthy()
 
       // User message delivered (steer) → confirms the pending human message.
-      persistUser(mockSession, 'do this instead')
+      persistUser(mockSession, 'do this instead', 'entry-steer', 'steer-claim')
 
       // Second turn: assistant responds again, then the session settles
       mockSession.pi.emit({
@@ -1224,40 +1253,38 @@ describe('AgentRunner (base class)', () => {
       expect(runner.completeCalls[0].response).toBe('second part')
     })
 
-    it('tries to confirm the pending message at the SDK persisted user event boundary', async () => {
-      const tryConfirmSpy = spyOn(agent, 'tryConfirmPendingMessage').mockResolvedValue(null as any)
-      const confirmByIdSpy = spyOn(agent, 'confirmPendingMessage')
-
+    it('confirms trusted delivery identity at the SDK persisted user boundary, not content', async () => {
       await runner.run()
-      persistUser(mockSession, 'serialized differently')
-      await new Promise((r) => setTimeout(r, 50))
-
-      expect(tryConfirmSpy).toHaveBeenCalledWith('serialized differently', {
-        executionId: 'exec-test-1',
-        streamGroupId: expect.any(String),
-      })
-      expect(confirmByIdSpy).not.toHaveBeenCalled()
-
-      tryConfirmSpy.mockRestore()
-      confirmByIdSpy.mockRestore()
+      persistUser(mockSession, 'serialized differently', 'entry-user', 'claim-1')
+      await runner.waitForPersistence()
+      expect(confirmDeliverySpy).toHaveBeenCalledWith(
+        'claim-1',
+        expect.objectContaining({ executionId: 'exec-test-1' }),
+        'entry-user',
+        { executionId: 'exec-test-1', streamGroupId: 'exec-test-1:session:entry-user:0' }
+      )
     })
 
-    it('confirms each persisted queued user message in Pi session order', async () => {
-      const tryConfirmSpy = spyOn(agent, 'tryConfirmPendingMessage').mockResolvedValue(null as any)
-
+    it('ignores late SDK events once another session owns the agent', async () => {
       await runner.run()
-      persistUser(mockSession, 'batched steer one')
-      persistUser(mockSession, 'batched steer two')
-      persistUser(mockSession, 'queued follow-up one')
-      await new Promise((r) => setTimeout(r, 50))
+      getSessionSpy.mockReturnValue({ session: new MockAgentSession() } as any)
+      persistUser(mockSession, 'same', 'late-entry', 'old-claim')
+      mockSession.pi.simulateNormalEnd('late output')
+      await runner.waitForPersistence()
+      expect(confirmDeliverySpy).not.toHaveBeenCalled()
+      expect(recordMessageSpy).not.toHaveBeenCalled()
+      expect(runner.completeCalls).toEqual([])
+    })
 
-      expect(tryConfirmSpy.mock.calls.map((call) => call[0])).toEqual([
-        'batched steer one',
-        'batched steer two',
-        'queued follow-up one',
-      ])
-
-      tryConfirmSpy.mockRestore()
+    it('confirms each queued source identity in Pi session order', async () => {
+      await runner.run()
+      persistUser(mockSession, 'identical', 'entry-1', 'steer-1')
+      persistUser(mockSession, 'identical', 'entry-2', 'steer-2')
+      persistUser(mockSession, 'identical', 'entry-3', 'follow-1')
+      await runner.waitForPersistence()
+      expect(confirmDeliverySpy.mock.calls.map((call: Parameters<Agent['confirmSessionDelivery']>) => call[0])).toEqual(
+        ['steer-1', 'steer-2', 'follow-1']
+      )
     })
 
     it('keeps follow-ups pending on first output, then confirms them when Pi persists the user turn', async () => {
@@ -1323,7 +1350,12 @@ describe('AgentRunner (base class)', () => {
         expect((await Agent.findMessage(steer.id))?.pending).toBe(true)
         expect((await Agent.findMessage(followUp.id))?.pending).toBe(true)
 
-        persistUser(mockSession, 'Interrupt: change priority')
+        persistUser(
+          mockSession,
+          'Interrupt: change priority',
+          'entry-steer',
+          (await Agent.findMessage(steer.id))!.metadata!.sessionDelivery!.id
+        )
         await dbRunner.waitForPersistence()
         expect((await Agent.findMessage(steer.id))?.pending).toBe(false)
         expect((await Agent.findMessage(followUp.id))?.pending).toBe(true)
@@ -1335,7 +1367,12 @@ describe('AgentRunner (base class)', () => {
         )
         expect(assistant).toBeTruthy()
 
-        persistUser(mockSession, 'Follow-up: after this response')
+        persistUser(
+          mockSession,
+          'Follow-up: after this response',
+          'entry-follow',
+          (await Agent.findMessage(followUp.id))!.metadata!.sessionDelivery!.id
+        )
         await dbRunner.waitForPersistence()
 
         const confirmedFollowUp = await Agent.findMessage(followUp.id)
@@ -1432,6 +1469,7 @@ describe('AgentRunner (base class)', () => {
         queuedExecution.setAgent(dbAgent)
         const retrySession = new MockAgentSession()
         retryRunner = new TestRunner(queuedExecution, dbAgent, makeAgentType({ id: testAgentTypeId }), retrySession)
+        getSessionSpy.mockReturnValue({ session: retrySession } as any)
         await retryRunner.run()
         await waitForCondition(async () => Boolean((await Agent.findMessage(followUp.id))?.injectedAt))
 
@@ -1441,7 +1479,12 @@ describe('AgentRunner (base class)', () => {
         } as any)
         expect((await Agent.findMessage(followUp.id))?.pending).toBe(true)
 
-        persistUser(retrySession, 'Stranded follow-up')
+        persistUser(
+          retrySession,
+          'Stranded follow-up',
+          'entry-retry',
+          (await Agent.findMessage(followUp.id))!.metadata!.sessionDelivery!.id
+        )
         await retryRunner.waitForPersistence()
 
         const confirmedFollowUp = await Agent.findMessage(followUp.id)

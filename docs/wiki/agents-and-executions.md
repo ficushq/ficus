@@ -191,6 +191,8 @@ If session setup encounters a recoverable sandbox provisioning refusal, the same
 4. `PendingInterventionQueue` drains at runner start and on `message.created`, claims the durable row, then invokes `session.pi.steer()` or `session.pi.followUp()`.
 5. The execution remains `running`.
 
+Both the initial prompt batch and live interventions carry an opaque, server-generated delivery claim ID. The patched Pi SDK retains that identity outside the model message and appends it to the session entry. Only a matching claim ID, runner generation, and execution may acknowledge a pending row; text equality, missing content, and FIFO position are never consumption evidence. The acknowledgment retains the SDK entry ID and its response group. Text-block arrays, image attachments, and decorated prompts use the same identity path.
+
 A missed nudge does not lose the row. Settlement makes bounded requeue attempts while pending human messages remain. After that retry budget is exhausted, rows stay pending until another message wakes the agent. The `/steer` and `/follow-up` routes are deprecated compatibility surfaces; they use this same path, and neither delivery mode travels over `agent_control`.
 
 ### Stop / Continue
@@ -198,6 +200,10 @@ A missed nudge does not lose the row. Settlement makes bounded requeue attempts 
 1. **Stop:** persist `running → stopping`, then send a best-effort `agent_control` hint. The worker aborts on receipt. If the hint is missed, the runner detects the stored intent when the turn settles, worker startup completes stale stopping rows, and force-stop remains available for an immediate hard stop.
 2. **Continue:** a later normal message creates a fresh queued execution on the same agent/session.
 3. The agent remains available for future work.
+
+Stop remains quiet: after draining in-flight queue admission and persistence, the runner reconciles its claims with persisted session entries and releases unappended inputs without creating another execution. The next authorized wake opens the persisted history in a fresh SDK session and reconciles abandoned claims before claiming new work. Normal settlement uses the same reconciliation before deciding whether to retry pending work. This also repairs the crash gap between session append and DB acknowledgment, including a later SDK rejection that released the claim before acknowledgment. Reconciliation reads verified, complete JSONL entries from disk, including entries omitted from compacted model context—not the SDK's in-memory context view, which can contain failed filesystem appends. Incomplete host-identified tails are not acknowledgment receipts, even on fresh SDK reopen. Claim release uses the unique identity fence for modern claims and a lossless database timestamp snapshot for legacy claims, preserving PostgreSQL microseconds and concurrent successor claims. Healthy turns and legacy-only recovery skip the receipt file entirely. When identity claims need recovery, an asynchronous scan retains only matching receipt IDs, not transcript bodies. Settlement rechecks exact session ownership before teardown, so a delayed old runner cannot dispose a replacement after a stop timeout. Explicit queue cancellation deletes the pending rows and is never undone by recovery; late old-session events cannot acknowledge successor claims.
+
+Delivery is **at least once**, not exactly-once model execution. An append receipt proves durable session history, not that the model completed that input. Legacy claims lacking an identity, or claims whose original session file is no longer available after reset/rotation, are conservatively retried rather than acknowledged by guessing.
 
 ### Worker restart
 

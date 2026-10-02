@@ -143,6 +143,14 @@ export function removeSession(agentId: string): void {
   sessionReservations.delete(agentId)
 }
 
+/** A delayed runner must never dispose a successor or clear its reservation. */
+export function removeSessionIfCurrent(agentId: string, expected: AgentSession): boolean {
+  const active = getSession(agentId)
+  if (!active || active.session !== expected) return false
+  removeSession(agentId)
+  return true
+}
+
 export function setSessionCompacting(agentId: string, isCompacting: boolean): void {
   const session = activeSessions.get(agentId)
   if (session) {
