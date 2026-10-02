@@ -125,7 +125,8 @@ export interface BoxUnitControl extends BoxUnitNames {
    * its host, as ONE remote shell command. The legacy names are used only when
    * the box's legacy server unit is loaded and its Ficus one is not (a box not
    * re-provisioned since the rename); otherwise the Ficus names. `fn`'s command
-   * keeps its own exit status.
+   * keeps its own exit status. Failed/empty LoadState readbacks fail closed
+   * rather than selecting a possibly unrelated naming.
    */
   onHost: (fn: (names: BoxUnitNames) => string) => string
   /**
@@ -178,7 +179,7 @@ export function boxUnitControl(input: { sandboxId: string; unixUser: string }): 
     mode === 'system'
       ? (unit: string) => `sudo systemctl is-active ${unit}`
       : (unit: string) => `${asBoxUser} systemctl --user is-active ${unit}`
-  const loaded = (unit: string) => `[ "$(${systemctl} show -p LoadState --value ${unit} 2>/dev/null)" = loaded ]`
+  const loadState = (unit: string) => `${systemctl} show -p LoadState --value ${unit}`
   return {
     mode,
     ...names,
@@ -191,7 +192,10 @@ export function boxUnitControl(input: { sandboxId: string; unixUser: string }): 
     isActiveCommandOf,
     isActiveCommand: () => isActiveCommandOf(names.unit),
     socketIsActiveCommand: () => isActiveCommandOf(names.socket),
-    onHost: (fn) => `if ${loaded(legacy.unit)} && ! ${loaded(names.unit)}; then ${fn(legacy)}; else ${fn(names)}; fi`,
+    onHost: (fn) =>
+      `legacy_load=$(${loadState(legacy.unit)}) && current_load=$(${loadState(names.unit)}) && ` +
+      `[ -n "$legacy_load" ] && [ -n "$current_load" ] && ` +
+      `if [ "$legacy_load" = loaded ] && [ "$current_load" != loaded ]; then ${fn(legacy)}; else ${fn(names)}; fi`,
     legacyIsActiveCommand:
       mode === 'system'
         ? () =>

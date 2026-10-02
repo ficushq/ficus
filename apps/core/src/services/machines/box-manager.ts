@@ -1145,21 +1145,17 @@ export async function startBoxAndAwaitHealth(
   // light `agent_*` box, the box user's own manager otherwise) — the same
   // derivation box-provision.sh is handed as --unit-mode.
   const ctl = boxUnitControlFor({ sandboxId, unixUser })
-  // Start the SOCKET first, then restart the server. The socket start is what
-  // resumes a PARKED box (stopBox takes all three units down), and is an
-  // idempotent no-op on a box whose socket is already listening. It is
-  // deliberately tolerant of failure — a box that has not been re-provisioned
-  // since this deploy has no socket unit at all, and must still restart — so
-  // the compound command's exit code is the RESTART's, which is what decides
-  // whether the box came up.
-  // reset-failed first: the socket is enabled --now at provision, so a stray
-  // connection in the window before server.env lands can crash-loop the server
-  // into start-limit-hit, which a plain `restart` cannot clear. Best-effort —
-  // a unit that is not failed makes it a no-op.
-  // onHost: a box not re-provisioned since the rename still runs its legacy units.
+  // Persistent parking disables the socket. Pair it with enable --now on
+  // BOTH stamped resumes and full provisioning, under the actual unit names.
+  // Never let a healthy server hide a disabled/failed activation socket.
+  // A pre-socket legacy box cannot take this fast path; ensureBox falls back
+  // to provisioning the complete chain instead.
   const restartCmd = ctl.onHost(
     (u) =>
-      `${ctl.systemctl} reset-failed ${u.unit} 2>/dev/null || true; ${ctl.systemctl} start ${u.socket} 2>/dev/null || true; ${ctl.systemctl} restart ${u.unit}`
+      `( ${ctl.systemctl} reset-failed ${u.unit} 2>/dev/null || true; ` +
+      `${ctl.systemctl} enable --now ${u.socket} && ${ctl.systemctl} restart ${u.unit} && ` +
+      `enabled=$(${ctl.systemctl} show -p UnitFileState --value ${u.socket}) && [ "$enabled" = enabled ] && ` +
+      `active=$(${ctl.systemctl} show -p ActiveState --value ${u.socket}) && [ "$active" = active ] )`
   )
   const restartRes = await runner.run(machine, restartCmd)
   if (restartRes.exitCode !== 0) {
@@ -2521,7 +2517,8 @@ export async function removeBox(
 }
 
 /**
- * Park a box: stop its systemd unit and cancel its tunnel, marking the box row
+ * Park a box: persistently disable its socket, stop the activation chain, and
+ * cancel its tunnel, marking the box row
  * `stopped`. On-disk state (home, workspace, .private) persists so a later
  * ensure resumes it (spec §8). No-op when the box row is absent.
  */
@@ -2537,8 +2534,6 @@ export async function stopBox(sandboxId: string, deps: BoxManagerDeps = {}): Pro
 
   const box = await getBox(sandboxId)
   if (!box) return { kind: 'not-found' }
-
-  const alreadyStopped = box.status === 'stopped'
 
   const machine = await getMachine(box.machineId)
   if (!machine) {
@@ -2573,35 +2568,52 @@ export async function stopBox(sandboxId: string, deps: BoxManagerDeps = {}): Pro
     return { kind: 'unverified' }
   }
 
-  // Best-effort stop (the units may already be down), through the unit-control
-  // seam so a light box's system units are stopped rather than user units that
-  // do not exist. ALL THREE go down, socket first: parking a box that left its
-  // socket listening would let the next stray connection re-activate the proxy
-  // and bring the server straight back up under a `stopped` row. onHost: a box
-  // not re-provisioned since the rename still runs its legacy units.
+  // Retrying a stopped row still performs the physical effects: older parks
+  // left the socket enabled, and a reboot could have reactivated the chain.
+  // Disable first to close the boot activation path; stop all three even if
+  // disable fails. Readbacks must succeed, not merely print a plausible state.
   const ctl = boxUnitControlFor(box)
-  const stopCmd = ctl.onHost((u) => `${ctl.systemctl} stop ${u.allUnits}`)
-  await runner.run(machine, stopCmd)
-  await tunnels.removeForward(machine, box.port)
-
-  await upsert({
-    sandboxId: box.sandboxId,
-    machineId: box.machineId,
-    unixUser: box.unixUser,
-    port: box.port,
-    status: 'stopped',
-  })
-  // Skip the emit when the box was already stopped — the stop itself stays
-  // idempotent/best-effort, but a repeat call must not re-announce a status
-  // that never changed.
-  if (!alreadyStopped) {
-    eventEmitter.emit('box.status', {
+  const stopCmd = ctl.onHost(
+    (u) =>
+      `( rc=0; ${ctl.systemctl} disable ${u.socket} || rc=1; ` +
+      `${ctl.systemctl} stop ${u.allUnits} || rc=1; [ "$rc" = 0 ] && ` +
+      `enabled=$(${ctl.systemctl} show -p UnitFileState --value ${u.socket}) && [ "$enabled" = disabled ] && ` +
+      `for unit in ${u.allUnits}; do ` +
+      `state=$(${ctl.systemctl} show -p ActiveState --value "$unit") || exit 1; ` +
+      `case "$state" in inactive|failed) ;; *) exit 1 ;; esac; done )`
+  )
+  const persist = async (status: 'stopped' | 'stop_unverified') => {
+    await upsert({
       sandboxId: box.sandboxId,
       machineId: box.machineId,
-      status: 'stopped',
+      unixUser: box.unixUser,
       port: box.port,
+      status,
     })
+    if (box.status !== status) {
+      eventEmitter.emit('box.status', {
+        sandboxId: box.sandboxId,
+        machineId: box.machineId,
+        status,
+        port: box.port,
+      })
+    }
   }
+  let verified: boolean
+  try {
+    const result = await runner.run(machine, stopCmd)
+    verified = result.exitCode === 0
+    await tunnels.removeForward(machine, box.port)
+  } catch (error) {
+    // SSH/tunnel exceptions must not leave an old stopped row claiming proof.
+    if (box.status !== 'stop_unverified') await persist('stop_unverified')
+    throw error
+  }
+  if (!verified) {
+    if (box.status !== 'stop_unverified') await persist('stop_unverified')
+    return { kind: 'unverified' }
+  }
+  await persist('stopped')
   return { kind: 'verified' }
 }
 
