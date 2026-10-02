@@ -1,5 +1,3 @@
-import type { WorkflowSource } from '@ficus/shared'
-import { WorkflowPicker } from './WorkflowPicker'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -25,7 +23,6 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
   const [purpose, setPurpose] = useState('')
   const [context, setContext] = useState('')
   const [squadPresetId, setSquadPresetId] = useState('')
-  const [workflow, setWorkflow] = useState<WorkflowSource>({ kind: 'preset', id: 'solo', customizations: [] })
   const [hostWorkspacePath, setHostWorkspacePath] = useState('')
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
@@ -48,7 +45,6 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
   function handleTypeChange(typeId: string) {
     setSquadPresetId(typeId)
     const type = squadPresets?.find((t) => t.id === typeId)
-    setWorkflow(type?.workflows?.default ?? { kind: 'preset', id: 'solo', customizations: [] })
     if (type) {
       // Pre-fill purpose from squad preset if purpose is empty
       if (!purpose.trim() && type.purpose) {
@@ -65,7 +61,9 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
         context: context.trim() || undefined,
         squadPresetId: squadPresetId || undefined,
         defaultAgents: selectedType?.defaultAgents,
-        ...(workflow ? { metadata: { workflow } } : {}),
+        metadata: {
+          workflow: selectedType?.workflows?.default ?? { kind: 'preset', id: 'solo', customizations: [] },
+        },
         hostWorkspacePath: hostWorkspacePath.trim() || undefined,
       })
       // Squad created — upload the avatar if one was picked (non-fatal if it fails).
@@ -84,7 +82,6 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
       setPurpose('')
       setContext('')
       setSquadPresetId('')
-      setWorkflow({ kind: 'preset', id: 'solo', customizations: [] })
       setHostWorkspacePath('')
       setAvatarFile(null)
       setAvatarPreview(null)
@@ -193,7 +190,7 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
             aria-busy={squadPresetsLoading || undefined}
             className="ficus-field w-full px-3 py-2 border border-th-border bg-surface text-primary rounded-md  focus:ring-2 focus:ring-accent"
           >
-            <option value="">Build your own squad</option>
+            <option value="">No preset</option>
             {squadPresets
               ?.filter((type) => !type.disabled)
               .map((type) => (
@@ -225,8 +222,6 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
             </div>
           </div>
         )}
-
-        <WorkflowPicker value={workflow} onChange={setWorkflow} />
 
         {createOptions?.runtime === 'host' && createOptions.defaultHostWorkspaceRoot && (
           <CreateHostWorkspaceField

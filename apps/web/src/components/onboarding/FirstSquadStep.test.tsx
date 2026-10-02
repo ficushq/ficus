@@ -220,6 +220,8 @@ describe('FirstSquadStep', () => {
     await dom.act(async () => {
       const select = findByLabelText('Preset') as HTMLSelectElement
       expect(select.value).toBe('engineering')
+      expect(select.options[0]!.textContent).toBe('No preset')
+      expect(collectByTag(container, 'select')).toHaveLength(1)
       select.value = ''
       select.dispatchEvent(new Event('change', { bubbles: true }))
       setValue(findByLabelText('Squad name'), 'Research')
@@ -255,7 +257,7 @@ describe('FirstSquadStep', () => {
     })
   })
 
-  test('returning to build your own clears the preset and restores Solo', async () => {
+  test('returning to No preset clears the preset and restores Solo', async () => {
     await renderStep(todoItem())
     await flush()
     for (const value of ['engineering', '']) {
