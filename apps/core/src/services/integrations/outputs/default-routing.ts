@@ -21,7 +21,7 @@ import {
 import { InboxMessage } from '../../../entities/InboxMessage'
 import { findOrCreateConsultant } from '../../chat/consultant'
 import { integrationOutputRegistry } from './registry'
-import { eventTrackedResource, streamTracksEvent } from './tracked-match'
+import { eventTrackedResource, defaultStreamMatches, preFlowRecipient } from './tracked-match'
 import { consultantAgentId } from '../../chat/consultant-idempotency'
 export { matchesGitHubRouting } from '@ficus/shared'
 import { ciNotificationSchema, settleCiNotification } from '../../work-streams/ci-notifications'
@@ -30,13 +30,7 @@ type Event = typeof integrationOutputEvents.$inferSelect
 const record = (value: unknown): Record<string, any> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
 export function eventRuleTrigger(metadata: unknown, event: Event, login: string): WorkflowEventTrigger | undefined {
-  const rule = selectSquadEventRule(
-    metadata,
-    event.integration,
-    event.fact,
-    login,
-    event.authority.kind === 'connection' ? event.authority.connectionId : undefined
-  )
+  const rule = selectOutputRule(metadata, event, login)
   if (rule?.action.type !== 'start-workstream') return
   if (
     event.fact.output === 'dependabot_alert.updated' &&
@@ -66,16 +60,19 @@ export function eventRuleTrigger(metadata: unknown, event: Event, login: string)
     },
   }
 }
-export function shouldNotifyManager(metadata: unknown, event: Event, login: string): boolean {
-  return (
-    selectSquadEventRule(
-      metadata,
-      event.integration,
-      event.fact,
-      login,
-      event.authority.kind === 'connection' ? event.authority.connectionId : undefined
-    )?.action.type === 'notify-manager'
+/** Status facts are bookkeeping only: they never execute content rules or metadata bindings. */
+export function selectOutputRule(metadata: unknown, event: Event, login: string) {
+  if (event.integration === 'github' && event.fact.data.projection === 'status') return undefined
+  return selectSquadEventRule(
+    metadata,
+    event.integration,
+    event.fact,
+    login,
+    event.authority.kind === 'connection' ? event.authority.connectionId : undefined
   )
+}
+export function shouldNotifyManager(metadata: unknown, event: Event, login: string): boolean {
+  return selectOutputRule(metadata, event, login)?.action.type === 'notify-manager'
 }
 
 /** Native routing for squad metadata and pre-flow streams. Flow subscriptions always own their consumers. */
@@ -112,17 +109,7 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
     .where(and(eq(workStreams.squadId, squadId), inArray(workStreams.status, ['active', 'queued'])))
   let matchedStream = false
   for (const { stream, runId } of candidates) {
-    const origin = record(integrationValueAt(stream.metadata, 'integrationSource'))
-    const matches =
-      (origin.integration === event.integration &&
-        origin.resourceKey === event.fact.resourceKey &&
-        origin.connectionId === event.authority.connectionId) ||
-      (event.integration === 'linear' &&
-        !origin.integration &&
-        typeof integrationValueAt(event.fact.data, 'issue.id') === 'string' &&
-        integrationValueAt(stream.metadata, 'linear.issueId') === integrationValueAt(event.fact.data, 'issue.id')) ||
-      // Every provider identifies its own resources; tracking is not a GitHub privilege.
-      streamTracksEvent(stream.metadata, event)
+    const matches = defaultStreamMatches(stream.metadata, event)
     if (!matches) continue
     matchedStream = true
     // An inactive/retained subscription still owns routing. Never bypass its wait or pause policy.
@@ -132,12 +119,7 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
       .select()
       .from(agents)
       .where(and(eq(agents.squadId, squadId), inArray(agents.status, [...ADDRESSABLE_AGENT_STATUSES])))
-    const preferred = integrationValueAt(stream.metadata, 'github.pr.recipientAgentId')
-    const recipient =
-      available.find((agent) => agent.id === preferred) ??
-      available.find((agent) => stream.agentIds?.includes(agent.id) && agent.agentTypeId === 'reviewer') ??
-      available.find((agent) => agent.id === stream.assigneeAgentId) ??
-      available.find((agent) => agent.id === squad.managerAgentId)
+    const recipient = preFlowRecipient(stream, available, squad.managerAgentId)
     if (!recipient) continue
     if (event.fact.output === 'pull_request.ci_completed') {
       const input = ciNotificationSchema.safeParse({
@@ -162,7 +144,7 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
     .where(and(eq(integrationOutputDeliveries.eventId, event.id), eq(workStreams.squadId, squadId)))
     .limit(1)
   if (matchedStream || delivery || latest?.handled.includes(squadId)) return
-  const rule = selectSquadEventRule(squad.metadata, event.integration, event.fact, login, event.authority.connectionId)
+  const rule = selectOutputRule(squad.metadata, event, login)
   if (rule?.action.type === 'notify-manager' && squad.managerAgentId)
     await send(event, squad.managerAgentId, undefined, rule.action.additionalContext, squadId)
   if (rule?.action.type === 'notify-consultant') {

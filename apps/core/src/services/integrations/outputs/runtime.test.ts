@@ -2988,3 +2988,21 @@ test('event-created work uses compact presentation and a retrieval link without 
     await db.update(squads).set({ metadata: {} }).where(eq(squads.id, squadId))
   }
 })
+
+test('recording a relevant source fact alone has no routing, inbox or trigger side effects', async () => {
+  const runtime = await import('./runtime')
+  expect(runtime.recordIntegrationOutput).toBeDefined()
+  const id = await create(987)
+  const agentId = (await getFlow(id))!.attemptAgents['1']!
+  const before = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+  const event = await runtime.recordIntegrationOutput('github', fact(987), { kind: 'instance' })
+  eventIds.push(event.id)
+  expect(await db.select().from(inbox).where(eq(inbox.recipientId, agentId))).toEqual(before)
+  expect(
+    await db.select().from(integrationOutputDeliveries).where(eq(integrationOutputDeliveries.eventId, event.id))
+  ).toHaveLength(0)
+  expect(
+    await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.eventId, event.id))
+  ).toHaveLength(0)
+  expect(event.matchedAt).toBeNull()
+})

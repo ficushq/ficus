@@ -94,13 +94,13 @@ export function matchStreamBranch(metadata: unknown, head: ChangeRequestHead): S
  * connection never binds another squad's stream. Returns the stream this call bound (empty when
  * nothing bound, including when a stream already carried this pull request).
  */
-export async function bindChangeRequestFromEvent(
+export async function planChangeRequestBinding(
   integration: string,
   fact: IntegrationOutputFact,
   authorize: (squadId: string) => Promise<boolean>
-): Promise<string[]> {
+) {
   const head = changeRequestHeadFromFact(integration, fact)
-  if (!head) return []
+  if (!head) return null
   const rows = await db
     .select({ id: workStreams.id, squadId: workStreams.squadId, metadata: workStreams.metadata })
     .from(workStreamFlowRuns)
@@ -121,29 +121,37 @@ export async function bindChangeRequestFromEvent(
     if (match.kind !== 'none' && (await authorize(row.squadId))) matches.push({ id: row.id, match })
   }
   const alreadyBound = matches.filter(({ match }) => match.kind === 'bound' && match.number === head.number)
-  if (alreadyBound.length) return []
-  if (matches.length !== 1) {
-    if (matches.length > 1)
-      log.warn(
-        `Pull request ${head.repository}#${head.number} from branch '${head.headBranch}' matches ${matches.length} work streams; leaving it unbound for finish-time resolution`
-      )
-    return []
-  }
+  if (alreadyBound.length) return null
+  if (matches.length !== 1) return null
   const [{ id, match }] = matches as [(typeof matches)[number]]
-  if (match.kind !== 'unbound') return []
+  if (match.kind !== 'unbound') return null
   const resolution = resolveBranchChangeRequest({
     branch: head.headBranch,
     baseBranch: head.baseBranch,
     repository: match.reference.repository,
     candidates: [{ ...head, baseBranch: head.baseBranch ?? '' }],
   })
-  if (resolution.status !== 'chosen') return []
+  if (resolution.status !== 'chosen') return null
+  return { workStreamId: id, reference: match.reference, candidate: resolution.candidate, head }
+}
+
+/** Query-only discovery above is also used by relevance planning before any admission effects. */
+export async function bindChangeRequestFromEvent(
+  integration: string,
+  fact: IntegrationOutputFact,
+  authorize: (squadId: string) => Promise<boolean>
+): Promise<string[]> {
+  const plan = await planChangeRequestBinding(integration, fact, authorize)
+  if (!plan) return []
   const bound = await recordChangeRequestBinding(
-    id,
-    match.reference,
-    resolution.candidate,
-    (metadata) => matchStreamBranch(metadata, head).kind === 'unbound'
+    plan.workStreamId,
+    plan.reference,
+    plan.candidate,
+    (metadata) => matchStreamBranch(metadata, plan.head).kind === 'unbound'
   )
-  if (bound) log.info(`Bound ${head.repository}#${head.number} to work stream ${id} from branch '${head.headBranch}'`)
-  return bound ? [id] : []
+  if (bound)
+    log.info(
+      `Bound ${plan.head.repository}#${plan.head.number} to work stream ${plan.workStreamId} from branch '${plan.head.headBranch}'`
+    )
+  return bound ? [plan.workStreamId] : []
 }

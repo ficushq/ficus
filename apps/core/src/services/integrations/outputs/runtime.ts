@@ -34,6 +34,7 @@ import type { IntegrationOutputAuthority } from './types'
 import type { VerifiedIngressEvent } from '../types'
 import { eventRuleTrigger, routeDefaultNotifications } from './default-routing'
 import { eventTrackedResource, streamTracksEvent } from './tracked-match'
+import { outputSourceMatches as sourceMatches, findOutputTriggerRun, outputTriggerSourceKey } from './routing-plan'
 import { bindChangeRequestFromEvent } from './delivery-binding'
 import { recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
 import { createLogger } from '../../../lib/infra/logger'
@@ -101,15 +102,6 @@ async function shouldNotifyEvent(store: Store, event: Event): Promise<boolean> {
   return adapter.shouldNotify(event.fact, connection?.configuration)
 }
 
-function sourceMatches(subscription: IntegrationSubscription, event: Event) {
-  return (
-    subscription.source.integration === event.integration &&
-    subscription.source.output === event.fact.output &&
-    subscription.source.version === event.fact.version &&
-    (!subscription.source.connectionId ||
-      (event.authority.kind === 'connection' && event.authority.connectionId === subscription.source.connectionId))
-  )
-}
 function sameSubscription(a: IntegrationSubscription, b: IntegrationSubscription | undefined) {
   return !!b && workflowFingerprint(a) === workflowFingerprint(b)
 }
@@ -211,7 +203,8 @@ export async function publishIntegrationOutputs(
     .where(inArray(integrationOutputEvents.id, eventIds))
   return [...new Set([...deliveries.map((row) => row.squadId), ...claimed.flatMap((row) => row.ids)])]
 }
-export async function publishIntegrationOutput(
+/** Record authenticated source evidence only; admission can plan/capture before routing effects. */
+export async function recordIntegrationOutput(
   integration: string,
   fact: IntegrationOutputFact,
   authority: IntegrationOutputAuthority
@@ -274,6 +267,15 @@ export async function publishIntegrationOutput(
     event =
       refined ?? (await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, event.id)))[0]!
   }
+  return event
+}
+
+export async function publishIntegrationOutput(
+  integration: string,
+  fact: IntegrationOutputFact,
+  authority: IntegrationOutputAuthority
+) {
+  const event = await recordIntegrationOutput(integration, fact, authority)
   let triggerError: unknown
   try {
     await applyOutputTriggers(event)
@@ -915,22 +917,8 @@ async function applyOutputTriggers(event: Event) {
             .where(eq(integrationOutputEvents.id, event.id))
           // A rule handles a resource once even when several assigned accounts or a
           // refreshed credential observe it. Account selection still gates authorization.
-          const sourceKey = `${event.integration}:${trigger.source.connectionId ?? 'any-account'}`
-          const [prior] = await tx
-            .select()
-            .from(integrationOutputTriggerRuns)
-            .where(
-              and(
-                eq(integrationOutputTriggerRuns.squadId, id),
-                eq(integrationOutputTriggerRuns.triggerId, trigger.id),
-                or(
-                  eq(integrationOutputTriggerRuns.sourceKey, sourceKey),
-                  // Keep receipts written by the earlier connection/revision-specific router.
-                  sql`${integrationOutputTriggerRuns.sourceKey} LIKE ${`${event.integration}:${trigger.source.connectionId ? `connection:${trigger.source.connectionId}:` : ''}%`}`
-                ),
-                eq(integrationOutputTriggerRuns.resourceKey, event.fact.resourceKey)
-              )
-            )
+          const sourceKey = outputTriggerSourceKey(event, trigger)
+          const prior = await findOutputTriggerRun(tx, id, trigger, event)
           if (prior) continue
           const metadata: Record<string, unknown> = {
             integrationSource: {
