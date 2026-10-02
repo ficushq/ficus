@@ -16,6 +16,7 @@ WRITE_MODE=0
 
 SOURCE_FILES=(
   packages/coding-agent/src/core/agent-session.ts
+  packages/coding-agent/src/core/session-manager.ts
   packages/coding-agent/src/core/extensions/loader.ts
   packages/coding-agent/src/core/index.ts
   packages/coding-agent/src/core/sdk.ts
@@ -27,6 +28,10 @@ OUTPUT_FILES=(
   dist/core/agent-session.d.ts.map
   dist/core/agent-session.js
   dist/core/agent-session.js.map
+  dist/core/session-manager.d.ts
+  dist/core/session-manager.d.ts.map
+  dist/core/session-manager.js
+  dist/core/session-manager.js.map
   dist/core/extensions/loader.d.ts.map
   dist/core/extensions/loader.js
   dist/core/extensions/loader.js.map

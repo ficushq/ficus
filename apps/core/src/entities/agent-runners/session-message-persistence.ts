@@ -11,7 +11,7 @@ import { executions, messages } from '../../db/schema'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { refreshChatActivity } from '../../services/squad-activity/event-handlers'
 import { eventEmitter } from '../../lib/infra/event-emitter'
-import type { ResponseGroupIdentity } from '../../services/agent/pending-delivery'
+import { sessionDeliveryStreamGroup, type SessionDeliveryOwner } from '../../services/agent/pending-delivery'
 import { messageEventData } from '../message-event'
 
 const log = createLogger('runner')
@@ -20,19 +20,14 @@ type PersistedMessageEvent = Extract<AgentSessionEvent, { type: 'session_message
 
 export interface SessionMessagePersistenceDeps {
   executionId: string
-  agent: Pick<Agent, 'id' | 'recordMessage' | 'tryConfirmPendingMessage' | 'update'>
+  deliveryOwner: SessionDeliveryOwner
+  agent: Pick<Agent, 'id' | 'recordMessage' | 'confirmSessionDelivery' | 'update'>
 }
 
 export interface SessionMessagePersistenceBindings {
   collector: StreamEventCollector
   buffer: StreamBuffer
   captureUsage: () => SessionUsage
-  /**
-   * Runner-side seam for initial-prompt confirmation (the delivery record
-   * lives with sendPrompt). Returns true when the persisted user message was
-   * the initial prompt and has been fully handled.
-   */
-  confirmInitialPrompt: (content: string | undefined, identity: ResponseGroupIdentity) => Promise<boolean>
 }
 
 /**
@@ -50,6 +45,7 @@ export interface SessionMessagePersistenceBindings {
 export class SessionMessagePersistence {
   private readonly streamGroupRunId = randomUUID()
   private streamGroupCounter = 1
+  private userEntryId: string | undefined
   /** Persisted assistant row ids per streamGroupId, enumerated on `done`. */
   private readonly turnRowIds = new Map<string, string[]>()
   private chain: Promise<void> = Promise.resolve()
@@ -68,7 +64,9 @@ export class SessionMessagePersistence {
   }
 
   get currentStreamGroupId(): string {
-    return `${this.deps.executionId}:${this.streamGroupRunId}:${this.streamGroupCounter}`
+    return this.userEntryId
+      ? sessionDeliveryStreamGroup(this.deps.executionId, this.userEntryId, this.streamGroupCounter)
+      : `${this.deps.executionId}:${this.streamGroupRunId}:${this.streamGroupCounter}`
   }
 
   rotateStreamGroup(): void {
@@ -193,16 +191,18 @@ export class SessionMessagePersistence {
   private async handleSessionMessagePersisted(event: PersistedMessageEvent): Promise<void> {
     const { message } = event
     if (message.role === 'user') {
-      const content = typeof message.content === 'string' ? message.content : undefined
       this.bound.buffer.push({ type: 'flush_agent' })
       this.bound.collector.reset()
-      this.rotateStreamGroup()
+      this.userEntryId = event.entryId
+      this.streamGroupCounter = 0
+      this.rotateBeforeNextOutput = false
       const identity = {
         executionId: this.deps.executionId,
         streamGroupId: this.currentStreamGroupId,
       }
-      if (await this.bound.confirmInitialPrompt(content, identity)) return
-      await this.deps.agent.tryConfirmPendingMessage(content, identity)
+      if (event.deliveryId) {
+        await this.deps.agent.confirmSessionDelivery(event.deliveryId, this.deps.deliveryOwner, event.entryId, identity)
+      }
       await this.persistSessionUsage('user message persisted')
       return
     }

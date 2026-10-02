@@ -38,7 +38,7 @@ import { META_COUNT, META_LAST_AT } from '../../services/sandbox/restart/types'
 import {
   createBuffer,
   registerSession,
-  isSessionActive,
+  getSession,
   isTransitionalOperationInProgress,
   removeSession,
   setSessionCompacting,
@@ -130,7 +130,8 @@ export abstract class AgentRunner {
   protected buffer!: StreamBuffer
   protected collector!: StreamEventCollector
   private pendingConfirmed = false
-  private initialPromptDelivery: { text: string; messageIds: string[]; confirmed: boolean } | undefined
+  protected readonly deliveryOwner: { generation: string; executionId: string }
+  private deliveriesReconciled = false
   protected readonly persistence: SessionMessagePersistence
   private readonly interventionQueue: PendingInterventionQueue
   private admissionStore: AdmissionReservationStore | null = null
@@ -222,8 +223,10 @@ export abstract class AgentRunner {
     protected readonly agent: Agent,
     protected readonly agentType: AgentType
   ) {
+    this.deliveryOwner = { generation: crypto.randomUUID(), executionId: execution.id }
     this.persistence = new SessionMessagePersistence({
       executionId: execution.id,
+      deliveryOwner: this.deliveryOwner,
       agent,
     })
     this.failover = new ModelFailoverCoordinator({
@@ -240,7 +243,8 @@ export abstract class AgentRunner {
       agent,
       targetAgent: agent,
       getSession: () => this.session,
-      isActive: () => isSessionActive(this.agent.id),
+      deliveryOwner: this.deliveryOwner,
+      isActive: () => getSession(this.agent.id)?.session === this.session,
     })
     this.storedSecretToolContainment = new StoredSecretToolContainment({
       agentId: agent.id,
@@ -703,6 +707,7 @@ export abstract class AgentRunner {
     maintenanceLifecycle?.attachFallbackSettlement(async () => {
       await this.persistence.markActiveToolAborted()
       await this.persistence.waitForAll()
+      await this.reconcileTerminatingDeliveries()
       await this.storedSecretToolContainment.waitForAuditWrites()
       removeSession(this.agent.id)
       maintenanceLifecycle.settle()
@@ -717,7 +722,6 @@ export abstract class AgentRunner {
       collector: this.collector,
       buffer: this.buffer,
       captureUsage: () => this.captureUsage(),
-      confirmInitialPrompt: (content, identity) => this.tryConfirmInitialPromptMessage(content, identity),
     })
 
     try {
@@ -848,7 +852,7 @@ export abstract class AgentRunner {
 
     // Subscribe to session events — shared streaming + settled-run logic
     this.session.pi.subscribe((event: AgentSessionEvent) => {
-      if (!isSessionActive(this.agent.id)) return
+      if (getSession(this.agent.id)?.session !== this.session) return
 
       // A live failover can resend the same prompt only while this execution has
       // produced no assistant or tool output. Mark progress before any normal
@@ -999,7 +1003,7 @@ export abstract class AgentRunner {
    * Process settled agent run: save usage, check errors, check stop, then onComplete.
    */
   private async handleAgentEnd(): Promise<void> {
-    if (!isSessionActive(this.agent.id)) return
+    if (getSession(this.agent.id)?.session !== this.session) return
 
     // Pi emits agent_settled before prompt() resolves, i.e. before the
     // agent-session write phase has finished. Settlement (and a failover
@@ -1009,7 +1013,7 @@ export abstract class AgentRunner {
     await this.agentSessionPhase
     // The phase may have closed by failing the run (lease lost); that path
     // already tore the session down and settled the row.
-    if (!isSessionActive(this.agent.id)) return
+    if (getSession(this.agent.id)?.session !== this.session) return
 
     const maintenanceLifecycle = executionLifecycleRegistry.get(this.execution.id)
     if (maintenanceLifecycle?.interruptRequested) {
@@ -1126,7 +1130,7 @@ export abstract class AgentRunner {
    * This handles the case where stop was issued during compaction.
    */
   private async checkTransitionalStateAfterAbort(): Promise<void> {
-    if (!isSessionActive(this.agent.id)) return
+    if (getSession(this.agent.id)?.session !== this.session) return
 
     await this.execution.reload()
 
@@ -1167,7 +1171,7 @@ export abstract class AgentRunner {
     response = this.persistence.lastAssistant()?.response ?? response
     metadata = this.persistence.lastAssistant()?.metadata ?? metadata
 
-    this.interventionQueue.clear()
+    await this.reconcileTerminatingDeliveries()
     removeSession(this.agent.id)
     await this.agent.recordMessage({
       role: 'assistant',
@@ -1248,8 +1252,9 @@ export abstract class AgentRunner {
     // "[System] Agent recovered after a process restart." (observed live: 8 in
     // 10 minutes on one worker with no restart).
     markExecutionSettling(this.agent.id, this.execution.id)
-    removeSession(this.agent.id)
     try {
+      await this.reconcileTerminatingDeliveries()
+      removeSession(this.agent.id)
       return await this.completeNormallyHeld(response, metadata, sessionUsage)
     } finally {
       clearExecutionSettling(this.agent.id, this.execution.id)
@@ -1393,22 +1398,14 @@ export abstract class AgentRunner {
     return { imageIds, images }
   }
 
-  private async tryConfirmInitialPromptMessage(
-    content: string | undefined,
-    identity: { executionId: string; streamGroupId: string }
-  ): Promise<boolean> {
-    const delivery = this.initialPromptDelivery
-    if (!delivery || delivery.confirmed) return false
-
-    const matchesPersistedPrompt = content === undefined || content === delivery.text
-    if (!matchesPersistedPrompt) return false
-
-    delivery.confirmed = true
-    for (const messageId of delivery.messageIds) {
-      await this.agent.confirmPendingMessage(messageId, identity)
-    }
-    await this.persistence.persistSessionUsage('initial prompt persisted')
-    return true
+  private async reconcileTerminatingDeliveries(): Promise<void> {
+    await this.interventionQueue.close()
+    await this.persistence.waitForAll()
+    if (!this.session) return
+    await this.agent.reconcileSessionDeliveries(
+      this.session.pi.sessionManager.getEntries(),
+      this.deliveryOwner.generation
+    )
   }
 
   /**
@@ -1418,22 +1415,23 @@ export abstract class AgentRunner {
    * first prompt.
    */
   protected async sendPrompt(): Promise<void> {
-    const claimed = await this.agent.claimInitialPendingMessagesForSessionDelivery()
+    // Exclusive runner ownership is established before dispatch. Reconcile the dead
+    // generation once, including the append-before-ack gap, without scheduling a wake.
+    if (!this.deliveriesReconciled) {
+      await this.agent.reconcileSessionDeliveries(this.session.pi.sessionManager.getEntries())
+      this.deliveriesReconciled = true
+    }
+    const claimed = await this.agent.claimInitialPendingMessagesForSessionDelivery(this.deliveryOwner)
     const text =
       claimed.length > 0 ? this.buildInitialPromptText(claimed) : this.execution.message?.trim() || 'Continue.'
     const { imageIds, images } = await this.loadPendingMessageImages(claimed)
 
-    if (claimed.length > 0) {
-      this.initialPromptDelivery = {
-        text,
-        messageIds: claimed.map((message) => message.id),
-        confirmed: false,
-      }
-    }
-
     try {
       this.activeHealthAttempt = this.failover.captureActiveAttempt()
-      const promptPromise = this.session.pi.prompt(text, { images })
+      const promptPromise = this.session.pi.prompt(text, {
+        images,
+        deliveryId: claimed[0]?.metadata?.sessionDelivery?.id,
+      })
       this.interventionQueue.start()
       await promptPromise
       if (imageIds.length > 0) {
@@ -1443,9 +1441,8 @@ export abstract class AgentRunner {
       }
       if (this._timing) logRunnerMilestone(this._timing, 'prompt-sent')
     } catch (err) {
-      this.initialPromptDelivery = undefined
       for (const message of claimed) {
-        await this.agent.resetPendingInterventionSessionDelivery(message.id)
+        await this.agent.resetPendingInterventionSessionDelivery(message.id, message.metadata?.sessionDelivery)
       }
       const errorMsg = err instanceof Error ? err.message : String(err)
       // The re-queued run sends this prompt again, images included.

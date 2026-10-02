@@ -1,6 +1,6 @@
 /**
  * DB state machine for pending human/steer/follow-up message delivery — the
- * durable exactly-once queue behind both the initial-prompt claim and the
+ * durable at-least-once queue behind both the initial-prompt claim and the
  * live-session intervention drain.
  */
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
@@ -29,67 +29,163 @@ function pendingSessionDeliveryOrder() {
   ] as const
 }
 
-/**
- * Try to confirm a pending human message already claimed by the DB-backed
- * drain (injectedAt != null) and then processed by the SDK.
- * If content is provided, first looks for a claimed pending message with exact
- * content. If no content match is found and content is omitted (for example,
- * an image-only persisted SDK user message), falls back to DB-backed SDK
- * processing order: steer first, then follow-up, then other pending messages;
- * FIFO within each group. A neutral prompt persisted by the SDK must not
- * confirm unrelated unclaimed rows.
- * Returns the confirmed message, or null if none found.
- * @param content - Optional SDK user message content to match exactly.
- * @returns The confirmed message, or null if none found.
- */
+/** Identity of the response owning this consumption. */
 export interface ResponseGroupIdentity {
   executionId: string
   streamGroupId: string
 }
 
+export interface SessionDeliveryOwner {
+  generation: string
+  executionId: string
+}
+
+/** Content is not evidence of source identity, even when it is an exact match. */
 export async function tryConfirmPendingMessage(
-  agentId: string,
-  content?: string,
-  identity?: ResponseGroupIdentity
+  _agentId: string,
+  _content?: string,
+  _identity?: ResponseGroupIdentity
 ): Promise<Message | null> {
-  const ordering = pendingSessionDeliveryOrder()
+  return null
+}
 
-  const baseCondition = and(
-    eq(messages.agentId, agentId),
-    eq(messages.role, 'human'),
-    eq(messages.pending, true),
-    isNotNull(messages.injectedAt)
+export function sessionDeliveryStreamGroup(executionId: string, entryId: string, rotation = 0): string {
+  return `${executionId}:session:${entryId}:${rotation}`
+}
+
+function claimFence(deliveryId: string, owner: SessionDeliveryOwner) {
+  return and(
+    sql`${jsonbObjectRecovered(messages.metadata)}->'sessionDelivery'->>'id' = ${deliveryId}`,
+    sql`${jsonbObjectRecovered(messages.metadata)}->'sessionDelivery'->>'generation' = ${owner.generation}`,
+    sql`${jsonbObjectRecovered(messages.metadata)}->'sessionDelivery'->>'executionId' = ${owner.executionId}`
   )
+}
 
-  const [contentMatch] =
-    content === undefined
-      ? []
-      : await db
-          .select()
-          .from(messages)
-          .where(and(baseCondition, eq(messages.content, content)))
-          .orderBy(...ordering)
-          .limit(1)
+/** A persisted SDK entry can acknowledge only the exact host claim, in its generation. */
+export async function confirmSessionDelivery(
+  agentId: string,
+  deliveryId: string,
+  owner: SessionDeliveryOwner,
+  entryId: string,
+  identity: ResponseGroupIdentity
+): Promise<Message[]> {
+  return acknowledgeSessionDelivery(agentId, deliveryId, owner, entryId, identity, false)
+}
 
-  if (content !== undefined) {
-    return contentMatch ? confirmPendingMessage(agentId, contentMatch.id, db, identity) : null
-  }
+/** Recovery may acknowledge a released claim only from the durable entry witness.
+ * Live events cannot: release revoked their right to confirm, even before a new claim.
+ */
+async function acknowledgeSessionDelivery(
+  agentId: string,
+  deliveryId: string,
+  owner: SessionDeliveryOwner,
+  entryId: string,
+  identity: ResponseGroupIdentity,
+  recovering: boolean
+): Promise<Message[]> {
+  if (!deliveryId || !entryId || identity.executionId !== owner.executionId) return []
+  const updated = await db
+    .update(messages)
+    .set({
+      pending: false,
+      metadata: sql<MessageMetadata>`${jsonbObjectRecovered(messages.metadata)} || ${JSON.stringify({
+        executionId: identity.executionId,
+        streamGroupId: identity.streamGroupId,
+        sessionEntryId: entryId,
+      })}::jsonb || jsonb_build_object('consumedAt', statement_timestamp())`,
+    })
+    .where(
+      and(
+        eq(messages.agentId, agentId),
+        eq(messages.role, 'human'),
+        eq(messages.pending, true),
+        recovering ? undefined : isNotNull(messages.injectedAt),
+        claimFence(deliveryId, owner)
+      )
+    )
+    .returning()
+  const confirmed = updated.map(mapMessage)
+  for (const message of confirmed) eventEmitter.emit('message.updated', messageEventData(message))
+  return confirmed
+}
 
-  const [pending] = await db
+export interface PersistedDeliveryEntry {
+  type: string
+  id: string
+  deliveryId?: string
+  message?: { role: string }
+}
+
+/** Call only after obtaining exclusive runner ownership, or settling this exact session.
+ * Read all entries, not just the compacted branch: append-before-DB-ack survives compaction.
+ * Legacy claims have no durable identity; conservatively release them, never guess an ack.
+ */
+export async function reconcileSessionDeliveries(
+  agentId: string,
+  entries: readonly PersistedDeliveryEntry[],
+  generation?: string
+): Promise<void> {
+  const persisted = new Map(
+    entries
+      .filter((e) => e.type === 'message' && e.message?.role === 'user' && e.deliveryId)
+      .map((e) => [e.deliveryId!, e.id])
+  )
+  const claimed = await db
     .select()
     .from(messages)
-    .where(baseCondition)
-    .orderBy(...ordering)
-    .limit(1)
-  if (!pending) return null
-
-  return confirmPendingMessage(agentId, pending.id, db, identity)
+    .where(
+      and(
+        eq(messages.agentId, agentId),
+        eq(messages.role, 'human'),
+        eq(messages.pending, true),
+        or(
+          isNotNull(messages.injectedAt),
+          sql`${jsonbObjectRecovered(messages.metadata)}->'sessionDelivery'->>'id' IS NOT NULL`
+        )
+      )
+    )
+  for (const row of claimed) {
+    const claim = (row.metadata as MessageMetadata | null)?.sessionDelivery
+    if (generation && claim?.generation !== generation) continue
+    const entryId = claim && persisted.get(claim.id)
+    if (claim && entryId) {
+      await acknowledgeSessionDelivery(
+        agentId,
+        claim.id,
+        claim,
+        entryId,
+        {
+          executionId: claim.executionId,
+          streamGroupId: sessionDeliveryStreamGroup(claim.executionId, entryId),
+        },
+        true
+      )
+    } else {
+      if (!row.injectedAt) continue // Already released and no append witness: leave available.
+      // CAS on both claim and timestamp fences a concurrent reset/reclaim (including legacy rows).
+      const updated = await db
+        .update(messages)
+        .set({ injectedAt: null })
+        .where(
+          and(
+            eq(messages.id, row.id),
+            eq(messages.pending, true),
+            eq(messages.injectedAt, row.injectedAt!),
+            claim
+              ? claimFence(claim.id, claim)
+              : sql`${jsonbObjectRecovered(messages.metadata)}->'sessionDelivery' IS NULL`
+          )
+        )
+        .returning()
+      if (updated[0]) eventEmitter.emit('message.updated', messageEventData(mapMessage(updated[0])))
+    }
+  }
 }
 
 /**
  * Confirm a specific pending human message for this agent.
- * Active-session control messages use this with the persisted message id so
- * steer/follow-up confirmation follows SDK processing order, not DB creation order.
+ * Explicit non-SDK consumption only. SDK events must use confirmSessionDelivery
+ * so stale generation callbacks cannot bypass claim ownership.
  * Returns the confirmed message, or null if the message is not pending for this agent.
  * @param messageId - The pending message id to confirm.
  * @param executor - Optional caller-owned transaction for composing the state transition.
@@ -157,7 +253,7 @@ export async function confirmPendingMessage(
 
 /**
  * Confirm all pending human messages for the agent.
- * Called after sendPrompt when multiple messages may have been queued.
+ * @deprecated Explicit legacy bulk consumption only; never call from SDK delivery.
  * @returns The number of messages confirmed.
  */
 export async function confirmAllPendingMessages(agentId: string): Promise<number> {
@@ -213,7 +309,11 @@ export async function listPendingHumanMessages(agentId: string): Promise<Message
  * row locks plus the injectedAt CAS marker so two workers cannot deliver the
  * same pending row.
  */
-export async function claimInitialPendingMessagesForSessionDelivery(agentId: string): Promise<Message[]> {
+export async function claimInitialPendingMessagesForSessionDelivery(
+  agentId: string,
+  owner?: SessionDeliveryOwner
+): Promise<Message[]> {
+  const claim = owner ? { id: crypto.randomUUID(), ...owner } : undefined
   const rows = (await db.execute(sql`
     WITH agent_lock AS MATERIALIZED (
       SELECT pg_advisory_xact_lock(${PENDING_CLAIM_LOCK_NAMESPACE}, hashtext(${agentId}))
@@ -249,7 +349,9 @@ export async function claimInitialPendingMessagesForSessionDelivery(agentId: str
     ),
     updated AS (
       UPDATE ${messages} m
-      SET injected_at = NOW()
+      SET injected_at = NOW(), metadata = CASE WHEN ${!!claim} THEN
+        ${jsonbObjectRecovered(sql`m.metadata`)} || jsonb_build_object('sessionDelivery', ${JSON.stringify(claim ?? null)}::jsonb)
+        ELSE m.metadata END
       FROM selected
       WHERE m.id = selected.id
         AND m.agent_id = ${agentId}
@@ -314,11 +416,19 @@ export async function listPendingInterventionsForSessionDelivery(agentId: string
  */
 export async function claimPendingInterventionForSessionDelivery(
   agentId: string,
-  messageId: string
+  messageId: string,
+  owner?: SessionDeliveryOwner
 ): Promise<Message | null> {
   const [updated] = await db
     .update(messages)
-    .set({ injectedAt: new Date() })
+    .set({
+      injectedAt: new Date(),
+      ...(owner
+        ? {
+            metadata: sql<MessageMetadata>`${jsonbObjectRecovered(messages.metadata)} || ${JSON.stringify({ sessionDelivery: { id: crypto.randomUUID(), ...owner } })}::jsonb`,
+          }
+        : {}),
+    })
     .where(
       and(
         eq(messages.id, messageId),
@@ -341,7 +451,11 @@ export async function claimPendingInterventionForSessionDelivery(
  * Reset a claimed pending message so a future queue drain can retry it.
  * Used when the SDK rejects delivery after the injectedAt CAS claim.
  */
-export async function resetPendingInterventionSessionDelivery(agentId: string, messageId: string): Promise<void> {
+export async function resetPendingInterventionSessionDelivery(
+  agentId: string,
+  messageId: string,
+  claim?: MessageMetadata['sessionDelivery']
+): Promise<void> {
   const updated = await db
     .update(messages)
     .set({ injectedAt: null })
@@ -350,7 +464,8 @@ export async function resetPendingInterventionSessionDelivery(agentId: string, m
         eq(messages.id, messageId),
         eq(messages.agentId, agentId),
         eq(messages.role, 'human'),
-        eq(messages.pending, true)
+        eq(messages.pending, true),
+        claim ? claimFence(claim.id, claim) : undefined
       )
     )
     .returning()

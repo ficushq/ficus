@@ -120,11 +120,27 @@ describe('pending delivery FIFO', () => {
     ])
   })
 
-  it('drains already claimed tied rows by delivery priority and FIFO', async () => {
+  it('never acknowledges claimed work from content or an identity-free SDK event', async () => {
+    const [row] = await insertTiedSteers()
+    await agent.claimPendingInterventionForSessionDelivery(row!.id)
+    expect(await agent.tryConfirmPendingMessage()).toBeNull()
+    expect(await agent.tryConfirmPendingMessage(row!.content)).toBeNull()
+  })
+
+  it('confirms tied claimed rows by source identity, never by their order', async () => {
     const inserted = await insertTiedSteers()
-    for (const row of inserted) await agent.claimPendingInterventionForSessionDelivery(row.id)
-    const drained = [await agent.tryConfirmPendingMessage(), await agent.tryConfirmPendingMessage()]
-    expect(drained.map((row) => row?.id)).toEqual(inserted.map((row) => row.id))
+    const owner = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
+    const claims = []
+    for (const row of inserted) claims.push(await agent.claimPendingInterventionForSessionDelivery(row.id, owner))
+    const drained = []
+    for (const claim of claims.toReversed())
+      drained.push(
+        ...(await agent.confirmSessionDelivery(claim!.metadata!.sessionDelivery!.id, owner, `entry-${claim!.id}`, {
+          executionId: owner.executionId,
+          streamGroupId: `group-${claim!.id}`,
+        }))
+      )
+    expect(drained.map((row) => row.id)).toEqual(inserted.toReversed().map((row) => row.id))
   })
 
   it('serializes concurrent initial claims without duplicate delivery', async () => {

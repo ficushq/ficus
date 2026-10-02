@@ -134,6 +134,10 @@ export type DeliveryMode = 'steer' | 'follow-up'
 export type MonitorMessageKind = 'lines' | 'exited' | 'canceled' | 'timed-out' | 'overload' | 'failed'
 
 export interface MessageMetadata {
+  /** Server-owned SDK claim fence. Never accepted from chat clients. */
+  sessionDelivery?: { id: string; generation: string; executionId: string }
+  /** Session entry proving append (not exactly-once model execution). */
+  sessionEntryId?: string
   /** Original task updates consumed in this exact response group. */
   assistantUpdateIds?: string[]
   assistantTaskIds?: string[]

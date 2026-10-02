@@ -19,6 +19,7 @@ function makeQueue(opts: {
   const recorded: Recorded = { steers: [], followUps: [], resets: [] }
   const pending = opts.pending ?? []
   const deps: PendingInterventionQueueDeps = {
+    deliveryOwner: { generation: 'session-1', executionId: 'exec-1' },
     agentId: 'agent-1',
     agent: {
       listPendingInterventionsForSessionDelivery: async () => pending as any,
@@ -137,4 +138,50 @@ describe('PendingInterventionQueue', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(recorded.steers.length).toBe(before)
   })
+})
+
+it('closing during claim prevents SDK enqueue and waits for the fenced claim reset', async () => {
+  let started!: () => void
+  let release!: () => void
+  const claimed = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const resets: any[] = []
+  const delivered: any[] = []
+  const owner = { generation: 'A', executionId: 'exec-A' }
+  const claim = { id: 'claim-A', ...owner }
+  const queue = new PendingInterventionQueue({
+    agentId: 'agent',
+    deliveryOwner: owner,
+    agent: {
+      listPendingInterventionsForSessionDelivery: async () => [{ id: 'U' }] as any,
+      claimPendingInterventionForSessionDelivery: async () => {
+        started()
+        await gate
+        return { id: 'U', content: 'same', metadata: { sessionDelivery: claim } } as any
+      },
+      resetPendingInterventionSessionDelivery: async (...args) => {
+        resets.push(args)
+      },
+    } as any,
+    getSession: () =>
+      ({
+        pi: {
+          steer: (...args: any[]) => {
+            delivered.push(args)
+          },
+        },
+      }) as any,
+    isActive: () => true,
+  })
+  queue.start()
+  await claimed
+  const closed = queue.close()
+  release()
+  await closed
+  expect(delivered).toEqual([])
+  expect(resets).toEqual([['U', claim]])
 })
