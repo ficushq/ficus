@@ -15,7 +15,6 @@ import { OAuthTransportError } from './transport'
 import type { OAuthRevocationTransportResolver } from './revocation-transport'
 import { PlatformRequestError } from '../../platform/instance-client'
 import { BrokerUnconfiguredError } from './authority'
-import { isGitHubIdentityTokenShared } from '../github/personal-oauth-finalizer'
 
 const LEASE_MS = 60_000
 const MAX_BACKOFF_MS = 15 * 60_000
@@ -270,16 +269,6 @@ export class IntegrationRevocationWorker {
     const leaseToken = this.#uuid()
     const job = await this.#dependencies.repository.claim(now, new Date(now.getTime() + LEASE_MS), leaseToken)
     if (!job) return false
-    const plugin = this.#dependencies.resolvePlugin(job.providerKey, job.adapterVersion, job.clientAuthority)
-    await this.#dependencies.credentials.refreshKey(job.credentialRef)
-    const raw = this.#dependencies.credentials.get(job.credentialRef)
-    if (!raw) return this.#finish(job, 'credential_already_removed')
-    let credential: ReturnType<typeof parseOAuthCredential>
-    try {
-      credential = parseOAuthCredential(raw)
-    } catch {
-      return this.#finish(job, 'credential_invalid')
-    }
     if (job.providerKey === 'github' && job.authorizationFlowId) {
       try {
         const [receipt] = await db
@@ -294,15 +283,22 @@ export class IntegrationRevocationWorker {
             )
           )
         if (!receipt) return this.#retry(job, 'identity_flow_mismatch')
-        if (
-          receipt.purpose === 'github_identity' &&
-          (await isGitHubIdentityTokenShared(credential, job.credentialRef, this.#dependencies.credentials))
-        )
-          return this.#finish(job, 'shared_token_retained')
+        // Local reference absence is not token-exclusivity proof for a shared OAuth client.
+        if (receipt.purpose === 'github_identity') return this.#finish(job, 'identity_token_local_disposal')
       } catch {
-        // Uncertain sharing must never become authority to remotely invalidate another connection.
-        return this.#retry(job, 'shared_token_check_failed')
+        // Uncertain purpose/ownership must never authorize a remote revoke.
+        return this.#retry(job, 'identity_disposition_check_failed')
       }
+    }
+    const plugin = this.#dependencies.resolvePlugin(job.providerKey, job.adapterVersion, job.clientAuthority)
+    await this.#dependencies.credentials.refreshKey(job.credentialRef)
+    const raw = this.#dependencies.credentials.get(job.credentialRef)
+    if (!raw) return this.#finish(job, 'credential_already_removed')
+    let credential: ReturnType<typeof parseOAuthCredential>
+    try {
+      credential = parseOAuthCredential(raw)
+    } catch {
+      return this.#finish(job, 'credential_invalid')
     }
     if (!plugin || plugin.authorization.kind !== 'oauth2') return this.#retry(job, 'provider_unavailable')
 

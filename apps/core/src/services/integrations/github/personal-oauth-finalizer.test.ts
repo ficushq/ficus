@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { db } from '../../../db'
+import { getPostgresError } from '../../../db/errors'
 import {
   githubIdentityProofs,
   integrationAuthorizationFlowReceipts,
@@ -17,11 +18,16 @@ import { DbOAuthStateRepository } from '../authorization/db-state-repository'
 import {
   DbAuthorizationFlowReceiptRepository,
   authorizationCredentialReference,
+  sweepExpiredAuthorizationFlows,
 } from '../authorization/flow-repository'
 import { ConnectionAuthorizationLease } from '../authorization/connection-lease'
 import { beginGitHubIdentityLink, getGitHubPersonalIdentity, unlinkGitHubIdentity } from './personal-identity'
 import { serializeOAuthCredential } from '../authorization/credential-bundle'
 import { DbIntegrationRevocationRepository, IntegrationRevocationWorker } from '../authorization/revocation-worker'
+import {
+  DbIntegrationCredentialCleanupRepository,
+  IntegrationCredentialCleanupWorker,
+} from '../credential-cleanup-worker'
 
 const finalizerModule = await import('./personal-oauth-finalizer').catch(() => null)
 
@@ -105,10 +111,10 @@ async function fixture(shared = false) {
       transient = value
     },
     async close() {
-      await db.delete(integrationRevocationJobs).where(eq(integrationRevocationJobs.authorizationFlowId, flowId))
+      await db.delete(integrationRevocationJobs).where(eq(integrationRevocationJobs.credentialRef, credentialRef))
       await db
         .delete(integrationCredentialCleanupJobs)
-        .where(eq(integrationCredentialCleanupJobs.authorizationFlowId, flowId))
+        .where(eq(integrationCredentialCleanupJobs.credentialRef, credentialRef))
       await db.delete(integrationOauthStates).where(eq(integrationOauthStates.localFlowId, flowId))
       await db
         .delete(integrationAuthorizationFlowReceipts)
@@ -132,7 +138,8 @@ test('personal OAuth uses authenticated /user, stages disposal durably, and neve
       .from(integrationAuthorizationFlowReceipts)
       .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
     expect(typeof receipt!.identityProofId).toBe('string')
-    expect(receipt!.revocationRequiredAt).toBeInstanceOf(Date)
+    expect(receipt!.cleanupRequiredAt).toBeInstanceOf(Date)
+    expect(receipt!.revocationRequiredAt).toBeNull()
     expect(receipt).toMatchObject({ installedConnectionId: null, installKind: null, terminalAt: null })
     const [proof] = await db
       .select()
@@ -148,8 +155,13 @@ test('personal OAuth uses authenticated /user, stages disposal durably, and neve
       .select()
       .from(integrationRevocationJobs)
       .where(eq(integrationRevocationJobs.authorizationFlowId, h.flowId))
-    expect(jobs).toHaveLength(1)
-    expect(jobs[0]!.credentialRef).toBe(h.credentialRef)
+    expect(jobs).toHaveLength(0)
+    const cleanup = await db
+      .select()
+      .from(integrationCredentialCleanupJobs)
+      .where(eq(integrationCredentialCleanupJobs.authorizationFlowId, h.flowId))
+    expect(cleanup).toHaveLength(1)
+    expect(cleanup[0]!.credentialRef).toBe(h.credentialRef)
   } finally {
     await h.close()
   }
@@ -210,7 +222,8 @@ test('unlink during provider verification cannot resurrect a proof and persists 
       .from(integrationAuthorizationFlowReceipts)
       .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
     expect(receipt!.identityProofId).toBeNull()
-    expect(receipt!.revocationRequiredAt).toBeInstanceOf(Date)
+    expect(receipt!.cleanupRequiredAt).toBeInstanceOf(Date)
+    expect(receipt!.revocationRequiredAt).toBeNull()
     expect(receipt!.terminalCode).toBe('identity_generation_changed')
     expect(await getGitHubPersonalIdentity(h.identity)).toBeNull()
     const proofs = await db
@@ -223,7 +236,7 @@ test('unlink during provider verification cannot resurrect a proof and persists 
   }
 })
 
-test('the revocation worker rechecks a newly shared personal token before any remote revoke', async () => {
+test('legacy personal revocation obligations are locally disposed even if another integration adopts the token', async () => {
   const h = await fixture()
   try {
     await h.finalizer.install(h.input)
@@ -235,8 +248,12 @@ test('the revocation worker rechecks a newly shared personal token before any re
       expiresAt: null,
       tokenRevision: 1,
     })
-    // Model an integration adopting the token after proof creation but before the queued disposal runs.
-    await store.set(h.connection.credentialRef, raw, 'test')
+    // Model an old/reaper-produced revocation obligation and an adoption after proof creation.
+    await new DbAuthorizationFlowReceiptRepository().requireRevocation({
+      localFlowId: h.flowId,
+      adapterVersion: 1,
+      code: 'legacy_proof_disposal',
+    })
     let revokes = 0
     const worker = new IntegrationRevocationWorker({
       repository: new DbIntegrationRevocationRepository([h.credentialRef]),
@@ -256,13 +273,42 @@ test('the revocation worker rechecks a newly shared personal token before any re
     })
     expect(await worker.runOnce()).toBe(true)
     expect(revokes).toBe(0)
-    expect(store.get(h.connection.credentialRef)).toBe(raw)
     const cleanup = await db
       .select()
       .from(integrationCredentialCleanupJobs)
       .where(eq(integrationCredentialCleanupJobs.authorizationFlowId, h.flowId))
     expect(cleanup).toHaveLength(1)
     expect(cleanup[0]!.credentialRef).toBe(h.credentialRef)
+    let entered!: () => void, release!: () => void
+    const atCleanup = new Promise<void>((done) => {
+      entered = done
+    })
+    const continueCleanup = new Promise<void>((done) => {
+      release = done
+    })
+    const cleanupWorker = new IntegrationCredentialCleanupWorker(
+      new DbIntegrationCredentialCleanupRepository([h.credentialRef]),
+      {
+        deleteWithDurableMutation: async (key, mutation) => {
+          expect(key).toBe(h.credentialRef)
+          entered()
+          await continueCleanup
+          await store.deleteWithDurableMutation(key, mutation)
+        },
+      }
+    )
+    const cleaning = cleanupWorker.runOnce()
+    await atCleanup
+    try {
+      await store.set(h.connection.credentialRef, raw, 'test')
+    } finally {
+      release()
+    }
+    expect(await cleaning).toBe(true)
+    expect(store.get(h.credentialRef)).toBeUndefined()
+    expect(store.get(h.connection.credentialRef)).toBe(raw)
+    await h.finalizer.install(h.input)
+    expect(h.counters()).toEqual({ exchanges: 1, profiles: 1 })
   } finally {
     await h.close()
   }
@@ -283,6 +329,224 @@ test('an owner-bound personal callback still requires the literal human requeste
       .from(integrationAuthorizationFlowReceipts)
       .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
     expect(receipt!.stagingStartedAt).toBeNull()
+  } finally {
+    await h.close()
+  }
+})
+
+test.each(['local', 'platform_broker'] as const)(
+  'failed %s proof disposal cannot revoke a token reused outside this database',
+  async (authority) => {
+    const h = await fixture()
+    try {
+      if (authority === 'local') {
+        // The same receipt semantics are used by local device coordination; broker ownership is not assumed.
+        await db
+          .update(integrationAuthorizationFlowReceipts)
+          .set({ authority })
+          .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
+        h.input.state.authority = authority
+      }
+      h.transient(true)
+      await expect(h.finalizer.install(h.input)).rejects.toMatchObject({ code: 'provider_unavailable' })
+      await new DbAuthorizationFlowReceiptRepository().requireRevocation({
+        localFlowId: h.flowId,
+        adapterVersion: 1,
+        code: 'flow_expired',
+      })
+      const store = getSecretStore()
+      const integrationBefore = store.get(h.connection.credentialRef)
+      let externalConsumerActive = true,
+        revokes = 0
+      const worker = new IntegrationRevocationWorker({
+        repository: new DbIntegrationRevocationRepository([h.credentialRef]),
+        credentials: store,
+        resolvePlugin: () => ({
+          authorization: { kind: 'oauth2', adapter: 'github' },
+          classifyError: () => ({ code: 'provider_error', retryable: true }),
+        }),
+        revocationTransports: {
+          resolve: () => ({
+            authority,
+            revoke: async () => {
+              revokes++
+              externalConsumerActive = false
+            },
+          }),
+        },
+      })
+      expect(await worker.runOnce()).toBe(true)
+      expect(revokes).toBe(0)
+      expect(externalConsumerActive).toBe(true)
+      const cleanupWorker = new IntegrationCredentialCleanupWorker(
+        new DbIntegrationCredentialCleanupRepository([h.credentialRef]),
+        store
+      )
+      expect(await cleanupWorker.runOnce()).toBe(true)
+      expect(store.get(h.credentialRef)).toBeUndefined()
+      expect(store.get(h.connection.credentialRef)).toBe(integrationBefore)
+      const [receipt] = await db
+        .select()
+        .from(integrationAuthorizationFlowReceipts)
+        .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
+      expect(receipt!.revocationSettledAt).toBeInstanceOf(Date)
+      expect(receipt!.cleanupSettledAt).toBeInstanceOf(Date)
+      expect(receipt!.identityProofId).toBeNull()
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test('expiry sweeping of a staged personal grant cannot indirectly call provider or broker revocation', async () => {
+  const h = await fixture()
+  try {
+    h.transient(true)
+    await expect(h.finalizer.install(h.input)).rejects.toMatchObject({ code: 'provider_unavailable' })
+    await db
+      .update(integrationAuthorizationFlowReceipts)
+      .set({ recoveryExpiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
+    await sweepExpiredAuthorizationFlows()
+    let resolves = 0
+    const worker = new IntegrationRevocationWorker({
+      repository: new DbIntegrationRevocationRepository([h.credentialRef]),
+      credentials: getSecretStore(),
+      resolvePlugin: () => undefined,
+      revocationTransports: {
+        resolve: () => {
+          resolves++
+          throw new Error('must not resolve an external revocation transport')
+        },
+      },
+    })
+    expect(await worker.runOnce()).toBe(true)
+    expect(resolves).toBe(0)
+    const cleanup = new IntegrationCredentialCleanupWorker(
+      new DbIntegrationCredentialCleanupRepository([h.credentialRef]),
+      getSecretStore()
+    )
+    expect(await cleanup.runOnce()).toBe(true)
+    expect(getSecretStore().get(h.credentialRef)).toBeUndefined()
+    const [receipt] = await db
+      .select()
+      .from(integrationAuthorizationFlowReceipts)
+      .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
+    expect(receipt!.terminalCode).toBe('flow_expired')
+    expect(receipt!.cleanupSettledAt).toBeInstanceOf(Date)
+  } finally {
+    await h.close()
+  }
+})
+
+test('a pending personal disposal obligation retains its purpose receipt until locally settled', async () => {
+  const h = await fixture()
+  try {
+    h.transient(true)
+    await expect(h.finalizer.install(h.input)).rejects.toMatchObject({ code: 'provider_unavailable' })
+    await new DbAuthorizationFlowReceiptRepository().requireRevocation({
+      localFlowId: h.flowId,
+      adapterVersion: 1,
+      code: 'flow_expired',
+    })
+    const deletionCode = await db
+      .delete(integrationAuthorizationFlowReceipts)
+      .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
+      .execute()
+      .then(
+        () => 'deleted',
+        (error) => getPostgresError(error)?.code
+      )
+    expect(deletionCode).toBe('23001') // PostgreSQL restrict_violation: retained disposal provenance.
+    let revokes = 0
+    const worker = new IntegrationRevocationWorker({
+      repository: new DbIntegrationRevocationRepository([h.credentialRef]),
+      credentials: getSecretStore(),
+      resolvePlugin: () => ({
+        authorization: { kind: 'oauth2', adapter: 'github' },
+        classifyError: () => ({ code: 'provider_error', retryable: true }),
+      }),
+      revocationTransports: {
+        resolve: () => ({
+          authority: 'platform_broker',
+          revoke: async () => {
+            revokes++
+          },
+        }),
+      },
+    })
+    expect(await worker.runOnce()).toBe(true)
+    expect(revokes).toBe(0)
+    const jobs = await db
+      .select()
+      .from(integrationRevocationJobs)
+      .where(eq(integrationRevocationJobs.credentialRef, h.credentialRef))
+    expect(jobs).toHaveLength(0)
+    const [receipt] = await db
+      .select()
+      .from(integrationAuthorizationFlowReceipts)
+      .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
+    expect(receipt!.purpose).toBe('github_identity')
+    expect(receipt!.revocationSettledAt).toBeInstanceOf(Date)
+    const cleanup = new IntegrationCredentialCleanupWorker(
+      new DbIntegrationCredentialCleanupRepository([h.credentialRef]),
+      getSecretStore()
+    )
+    expect(await cleanup.runOnce()).toBe(true)
+    expect(getSecretStore().get(h.credentialRef)).toBeUndefined()
+  } finally {
+    await h.close()
+  }
+})
+
+test('ordinary GitHub integration revocation still invokes its persisted-authority transport', async () => {
+  const h = await fixture()
+  try {
+    await db
+      .update(integrationAuthorizationFlowReceipts)
+      .set({ purpose: 'integration', linkGeneration: null })
+      .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
+    const receipts = new DbAuthorizationFlowReceiptRepository()
+    await receipts.beginStaging(h.flowId, 1)
+    const store = getSecretStore()
+    const credential = {
+      version: 1 as const,
+      accessToken: `integration-access-${h.flowId}`,
+      refreshToken: null,
+      expiresAt: null,
+      tokenRevision: 1,
+    }
+    await store.set(h.credentialRef, serializeOAuthCredential(credential), 'test')
+    await receipts.requireRevocation({ localFlowId: h.flowId, adapterVersion: 1, code: 'grant_abandoned' })
+    let revokes = 0
+    const worker = new IntegrationRevocationWorker({
+      repository: new DbIntegrationRevocationRepository([h.credentialRef]),
+      credentials: store,
+      resolvePlugin: () => ({
+        authorization: { kind: 'oauth2', adapter: 'github' },
+        classifyError: () => ({ code: 'provider_error', retryable: true }),
+      }),
+      revocationTransports: {
+        resolve: (authority) => {
+          expect(authority).toBe('platform_broker')
+          return {
+            authority,
+            revoke: async (input) => {
+              expect(input.token).toBe(credential.accessToken)
+              revokes++
+            },
+          }
+        },
+      },
+    })
+    expect(await worker.runOnce()).toBe(true)
+    expect(revokes).toBe(1)
+    const cleanup = new IntegrationCredentialCleanupWorker(
+      new DbIntegrationCredentialCleanupRepository([h.credentialRef]),
+      store
+    )
+    expect(await cleanup.runOnce()).toBe(true)
+    expect(store.get(h.credentialRef)).toBeUndefined()
   } finally {
     await h.close()
   }

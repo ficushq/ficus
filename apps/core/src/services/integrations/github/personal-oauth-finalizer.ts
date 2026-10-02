@@ -1,13 +1,8 @@
-import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { classifyGitHubOAuthError } from '@ficus/shared/oauth-providers'
 import type { GitHubOAuthClient } from '@ficus/shared/oauth-providers/github/client'
 import { db } from '../../../db'
-import {
-  integrationAuthorizationFlowReceipts,
-  integrationConnections,
-  integrationCredentialCleanupJobs,
-  integrationRevocationJobs,
-} from '../../../db/schema'
+import { integrationAuthorizationFlowReceipts, integrationCredentialCleanupJobs } from '../../../db/schema'
 import type { SecretStore } from '../../secrets/store'
 import type { Identity } from '../../rbac/permissions'
 import {
@@ -22,48 +17,6 @@ import { AuthorizationFlowError } from '../authorization/service'
 import { GitHubFeedbackError, requireGitHubHuman } from './feedback-trust'
 import { saveGitHubIdentityProof } from './personal-identity'
 
-/** Recheck at both scheduling and revocation. A personal grant may coincide with an integration token. */
-export async function isGitHubIdentityTokenShared(
-  credential: OAuthCredentialBundleV1,
-  excludedRef: string,
-  store: Pick<SecretStore, 'refreshKey' | 'get'>
-): Promise<boolean> {
-  const connections = await db
-    .select({ ref: integrationConnections.credentialRef })
-    .from(integrationConnections)
-    .where(eq(integrationConnections.providerKey, 'github'))
-  const staged = await db
-    .select({ ref: integrationAuthorizationFlowReceipts.artifactCredentialRef })
-    .from(integrationAuthorizationFlowReceipts)
-    .where(
-      and(
-        eq(integrationAuthorizationFlowReceipts.providerKey, 'github'),
-        eq(integrationAuthorizationFlowReceipts.purpose, 'integration'),
-        isNotNull(integrationAuthorizationFlowReceipts.stagingStartedAt),
-        isNull(integrationAuthorizationFlowReceipts.terminalAt),
-        ne(integrationAuthorizationFlowReceipts.artifactCredentialRef, excludedRef)
-      )
-    )
-  for (const ref of new Set([...connections, ...staged].map((row) => row.ref))) {
-    if (ref === excludedRef) continue
-    await store.refreshKey(ref)
-    const raw = store.get(ref)
-    if (raw === undefined) continue
-    let other: OAuthCredentialBundleV1
-    try {
-      other = parseOAuthCredential(raw)
-    } catch {
-      throw new AuthorizationFlowError('shared_token_check_failed')
-    }
-    if (
-      other.accessToken === credential.accessToken ||
-      (credential.refreshToken && other.refreshToken === credential.refreshToken)
-    )
-      return true
-  }
-  return false
-}
-
 interface FinalizerDependencies {
   secrets: Pick<SecretStore, 'setWithDurableObligation' | 'refreshKey' | 'get'>
   receipts: AuthorizationFlowReceiptRepository
@@ -76,7 +29,11 @@ type PersonalInstall = Pick<
   'state' | 'userId' | 'exchange'
 >
 
-/** Ownership proof only. Deliberately has no integration installer, signing, assignment, or projection dependency. */
+/**
+ * Ownership proof only: no integration installer, signing, assignment, or projection dependency.
+ * Dispose the staged copy locally. Neither broker nor local app credentials prove token exclusivity
+ * across other Core instances/consumers, so this flow must never authorize a remote token/grant revoke.
+ */
 export class GitHubPersonalOAuthFinalizer {
   constructor(private readonly dependencies: FinalizerDependencies) {}
 
@@ -140,7 +97,6 @@ export class GitHubPersonalOAuthFinalizer {
         try {
           // Never derive the proof from the exchange configuration, connected integration, or a caller profile.
           const profile = await this.dependencies.client.currentIdentity({ accessToken: credential.accessToken })
-          const shared = await isGitHubIdentityTokenShared(credential, receipt.artifactCredentialRef, store)
           await saveGitHubIdentityProof({ identity, state, profile }, async (tx, proof) => {
             const [current] = await tx
               .select()
@@ -161,47 +117,25 @@ export class GitHubPersonalOAuthFinalizer {
                 identityProofId: proof.id,
                 identityVerifiedAt: sql`clock_timestamp()`,
                 updatedAt: sql`clock_timestamp()`,
-                ...(shared
-                  ? { cleanupRequiredAt: sql`clock_timestamp()` }
-                  : { revocationRequiredAt: sql`clock_timestamp()` }),
+                cleanupRequiredAt: sql`clock_timestamp()`,
               })
               .where(eq(integrationAuthorizationFlowReceipts.localFlowId, receipt.localFlowId))
-            if (shared)
-              await tx
-                .insert(integrationCredentialCleanupJobs)
-                .values({ authorizationFlowId: receipt.localFlowId, credentialRef: receipt.artifactCredentialRef })
-                .onConflictDoNothing()
-            else
-              await tx
-                .insert(integrationRevocationJobs)
-                .values({
-                  authorizationFlowId: receipt.localFlowId,
-                  providerKey: 'github',
-                  adapterVersion: 1,
-                  clientAuthority: receipt.authority,
-                  credentialRef: receipt.artifactCredentialRef,
-                })
-                .onConflictDoNothing()
+            // Core cannot prove provider-token exclusivity across tenants/consumers. Dispose only this copy.
+            await tx
+              .insert(integrationCredentialCleanupJobs)
+              .values({ authorizationFlowId: receipt.localFlowId, credentialRef: receipt.artifactCredentialRef })
+              .onConflictDoNothing()
           })
         } catch (error) {
           const code = (error as { code?: string })?.code
           if (
-            code === 'shared_token_check_failed' ||
-            (!(error instanceof GitHubFeedbackError) &&
-              !(error instanceof AuthorizationFlowError) &&
-              classifyGitHubOAuthError(error).retryable)
+            !(error instanceof GitHubFeedbackError) &&
+            !(error instanceof AuthorizationFlowError) &&
+            classifyGitHubOAuthError(error).retryable
           )
             throw error
-          // Terminal proof errors dispose only the owned staged copy; never revoke shared integration material.
-          const shared = await isGitHubIdentityTokenShared(credential, receipt.artifactCredentialRef, store)
-          if (shared)
-            await this.dependencies.receipts.requireCleanup(receipt.localFlowId, code ?? 'identity_verification_failed')
-          else
-            await this.dependencies.receipts.requireRevocation({
-              localFlowId: receipt.localFlowId,
-              adapterVersion: 1,
-              code: code ?? 'identity_verification_failed',
-            })
+          // No proof failure/unlink/expiry may remotely invalidate an out-of-domain shared token.
+          await this.dependencies.receipts.requireCleanup(receipt.localFlowId, code ?? 'identity_verification_failed')
           throw error
         }
       }
