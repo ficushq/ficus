@@ -1,4 +1,4 @@
-import { agentSlotWaitQueryKeys } from './queryKeys'
+import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
 import { desktopQueryKeys } from './queryKeys'
 import { desktopBridge, type DesktopNotificationBatch } from './lib/desktop'
 import { apiFetch } from './api/client'
@@ -24,6 +24,7 @@ import { getGlobalActivityPresence, listGlobalActivity } from './api/activity'
 import {
   listAgents,
   getAgentSlotWaits,
+  getAgentSlotHolds,
   getAgent,
   getActiveExecution,
   getAgentContext,
@@ -161,6 +162,13 @@ export const queries = {
       queryOptions({ queryKey: themePresetQueryKeys.list(scope), queryFn: () => client.themePresets.list(scope) }),
   },
   agents: {
+    slotHolds: (squadId: string, agentId: string) =>
+      queryOptions({
+        queryKey: agentSlotHoldQueryKeys.agent(squadId, agentId),
+        queryFn: () => getAgentSlotHolds(agentId),
+        // Optional on older servers. Failure hides only held context, not waits.
+        retry: false,
+      }),
     slotWaits: (squadId: string, agentId: string) =>
       queryOptions({
         queryKey: agentSlotWaitQueryKeys.agent(squadId, agentId),

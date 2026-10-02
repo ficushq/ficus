@@ -1,4 +1,4 @@
-import { agentSlotWaitQueryKeys, assistantQueryKeys } from '../queryKeys'
+import { agentSlotHoldQueryKeys, agentSlotWaitQueryKeys, assistantQueryKeys } from '../queryKeys'
 import { desktopQueryKeys } from '../queryKeys'
 import { parseAssistantInboxConversationId } from '@ficus/shared'
 import { hashKey } from '@tanstack/react-query'
@@ -229,7 +229,10 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
           event === 'artifact.updated'
         ) {
           invalidateForAgent(invalidate, data.agentId)
-          if (data.squadId) slotCoalescer.queue(agentSlotWaitQueryKeys.agent(data.squadId, data.agentId))
+          if (data.squadId) {
+            slotCoalescer.queue(agentSlotWaitQueryKeys.agent(data.squadId, data.agentId))
+            slotCoalescer.queue(agentSlotHoldQueryKeys.agent(data.squadId, data.agentId))
+          }
           invalidate(queryKeys.artifacts.all)
           if (event !== 'artifact.updated') invalidate(queryKeys.activity.presence())
 
@@ -320,10 +323,12 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
           // Stream slot context changes without a stored work-stream mutation.
           slotCoalescer.queue(queryKeys.squads.all)
           slotCoalescer.queue(agentSlotWaitQueryKeys.squad(data.squadId))
+          slotCoalescer.queue(agentSlotHoldQueryKeys.squad(data.squadId))
           return
         }
         if (event === 'squad.updated' || event === 'squad.archived') {
           slotCoalescer.queue(agentSlotWaitQueryKeys.squad(data.squadId))
+          slotCoalescer.queue(agentSlotHoldQueryKeys.squad(data.squadId))
         }
         // A sandbox-status tick is not squad-data churn — refetch only the
         // squad's sandbox status, not all squad queries.
@@ -456,6 +461,7 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
     const coalescer = coalescerRef.current
     if (!coalescer) return
     slotCoalescerRef.current?.queue(agentSlotWaitQueryKeys.all)
+    slotCoalescerRef.current?.queue(agentSlotHoldQueryKeys.all)
     slotCoalescerRef.current?.queue(queryKeys.squads.all)
     // A reconnect may have missed activity events; badges must not stay stale until the fallback
     // interval. This rides the independent repair coalescer so it never delays the Action Center.
