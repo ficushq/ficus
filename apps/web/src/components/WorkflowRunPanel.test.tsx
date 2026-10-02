@@ -62,6 +62,10 @@ async function fixture(value: WorkflowRunDetail | null, permissions: string[] = 
     },
   }
 }
+async function expandWorkflow(f: Awaited<ReturnType<typeof fixture>>) {
+  await f.dom.act(async () => f.dom.window.document.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+}
+
 test('legacy streams render no flow controls; queued flows label the current step without claiming it is working', async () => {
   const f = await fixture(null)
   try {
@@ -69,6 +73,7 @@ test('legacy streams render no flow controls; queued flows label the current ste
     expect(f.dom.window.document.body.textContent).toBe('')
     f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run())
     await f.render(<WorkflowRunPanel stream={{ ...stream, status: 'queued' }} />)
+    await expandWorkflow(f)
     expect(f.dom.window.document.body.textContent).toContain('Queued')
     expect(f.dom.window.document.body.textContent).not.toContain('Complete delivery')
   } finally {
@@ -124,6 +129,7 @@ test('read-only viewers can inspect human work without approval or revision cont
   const f = await fixture(run(true))
   try {
     await f.render()
+    await expandWorkflow(f)
     expect(f.dom.window.document.querySelector('textarea')).toBeNull()
     expect(f.dom.window.document.body.textContent).toContain('Human approval')
     expect(f.dom.window.document.body.textContent).not.toContain('Revise flow')
@@ -225,6 +231,7 @@ test('assigned reviewer filters restrict a nonempty list and allow reviewers whe
   const f = await fixture(value, ['workstreams:review'])
   try {
     await f.render()
+    await expandWorkflow(f)
     expect(f.dom.window.document.body.textContent).toContain('anyone with review permission can decide.')
     await f.render(<WorkflowReviewCallout stream={stream} />)
     expect(f.dom.window.document.querySelector('[aria-label="Decision and evidence"]') !== null).toBe(true)
@@ -247,6 +254,7 @@ test('step details and attempt history link to bound agents without guessing upc
   let opened = 0
   try {
     await f.render(<WorkflowRunPanel stream={stream} onOpenAgent={() => opened++} />)
+    await expandWorkflow(f)
     const links = [
       ...f.dom.window.document.querySelectorAll<HTMLAnchorElement>('a[aria-label="Open execute attempt 1 agent chat"]'),
     ]
@@ -280,6 +288,7 @@ test('an action-center wait opens the matching parallel human attempt', async ()
   const f = await fixture(value, ['workstreams:review'])
   try {
     await f.render(<WorkflowRunPanel stream={stream} focusWaitId="focused" />)
+    await expandWorkflow(f)
     expect(f.dom.window.document.querySelector('select')?.value).toBe('2')
     await f.render(<WorkflowReviewCallout stream={stream} focusWaitId="focused" />)
     const gates = [...f.dom.window.document.querySelectorAll('section')]
@@ -353,6 +362,7 @@ for (const humanGateCount of [1, 2]) {
     const f = await fixture(value, ['workstreams:update'])
     try {
       await f.render()
+      await expandWorkflow(f)
       expect(f.dom.window.document.querySelector('[aria-label="Assigned reviewers"]')).not.toBeNull()
       expect(f.dom.window.document.querySelector('[aria-label="Assign reviewer"]')).not.toBeNull()
       expect(f.dom.window.document.body.textContent).toContain('No reviewers assigned')
@@ -370,6 +380,7 @@ test('reviewer visibility follows effective definition revisions without changin
   const reviewers = () => f.dom.window.document.querySelector('[aria-label="Assigned reviewers"]')
   try {
     await f.render(<WorkflowRunPanel stream={{ ...stream, assignedReviewerIds }} />)
+    await expandWorkflow(f)
     expect(reviewers()).not.toBeNull()
     // Retain the old human attempt snapshot; only the effective definition changes.
     for (const [definition, visible] of [
@@ -558,38 +569,29 @@ test('kept human gates show only the effective outcomes and retain their initial
   }
 })
 
-test('workflow name is a focusable disclosure that hides only the preview', async () => {
+test('workflow disclosure has keyboard focus and hides the whole secondary section', async () => {
   const value = run(true)
   value.state.definition.name = 'A very long workflow name '.repeat(8)
-  value.state.status = 'completion-ready'
-  value.openWaits = [{ id: 'wait', message: 'Please check the result' }] as WorkflowRunDetail['openWaits']
-  const f = await fixture(value, ['workstreams:update', 'workstreams:revise-flow'])
-  const finish = spyOn(client.workflows, 'finish').mockResolvedValue(undefined as never)
+  const f = await fixture(value, ['workstreams:revise-flow'])
   try {
     await f.render()
     const doc = f.dom.window.document
     const toggle = doc.querySelector<HTMLButtonElement>('button[aria-expanded]')!
-    expect(toggle).not.toBeNull()
     expect(toggle.textContent).toBe(`Workflow · ${value.state.definition.name}`)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(toggle.type).toBe('button')
     toggle.focus()
     expect(doc.activeElement).toBe(toggle)
     expect(doc.querySelector('[aria-label="Workflow visual preview"]')).toBeNull()
-    expect(doc.querySelector('[aria-label="Assigned reviewers"]')).not.toBeNull()
-    expect(doc.body.textContent).toContain('Please check the result')
-    expect(doc.body.textContent).toContain('Revise flow')
+    expect(doc.body.textContent).not.toContain('Revise flow')
     await f.dom.act(async () => toggle.click())
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(doc.querySelector('[aria-label="Workflow visual preview"]')).not.toBeNull()
-    expect(doc.getElementById(toggle.getAttribute('aria-controls')!)?.textContent).toContain('execute')
+    expect(doc.querySelector('[aria-label="Assigned reviewers"]')).not.toBeNull()
+    expect(doc.body.textContent).toContain('Revise flow')
     await f.dom.act(async () => toggle.click())
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(doc.querySelector('[aria-label="Workflow visual preview"]')).toBeNull()
-    await click(f, 'Complete delivery · deliverable')
-    expect(finish).toHaveBeenCalledWith(stream.id, 0)
+    expect(doc.body.textContent).not.toContain('Revise flow')
   } finally {
-    finish.mockRestore()
     await f.cleanup()
   }
 })
@@ -661,6 +663,82 @@ test('initial workflow loading stays quiet and a failed load reports the workflo
     await f.render()
     expect(f.dom.window.document.body.textContent).toBe('Could not load the workflow.')
     expect(f.dom.window.document.querySelector('button[aria-expanded]')).toBeNull()
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('collapsed workflow is a compact summary; expansion groups secondary details without duplicating totals', async () => {
+  const value = run()
+  value.attemptAgents = { '1': 'builder-agent' }
+  const usage = { tokens: 1234, cost: 0.25, executions: 1, measuredExecutions: 1 }
+  value.usage = { total: usage, unattributed: usage, steps: { execute: usage }, attempts: { '1': usage } }
+  const f = await fixture(value, ['workstreams:revise-flow', 'workflows:create'])
+  try {
+    await f.render()
+    const doc = f.dom.window.document
+    for (const text of ['Open chat', 'Handoff history', 'Revise flow', 'Unattributed usage', 'Save as', 'worker']) {
+      expect(doc.body.textContent).not.toContain(text)
+    }
+    const toggle = doc.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+    await f.dom.act(async () => toggle.click())
+    expect(doc.querySelector('[aria-label="Workflow visual preview"]')).not.toBeNull()
+    expect(doc.body.textContent).toContain('Steps')
+    const details = [...doc.querySelectorAll('details')]
+    for (const label of ['Step usage', 'Handoff history', 'Manage workflow']) {
+      expect(details.find((node) => node.querySelector('summary')?.textContent === label)?.open).toBe(false)
+    }
+    expect(doc.body.textContent).toContain('Revise flow')
+    expect(doc.body.textContent).toContain('Unattributed usage')
+    // The enclosing detail owns overall totals; this panel owns step/attempt attribution only.
+    expect(doc.querySelector('[aria-label="Workflow total usage"]')).toBeNull()
+    await f.dom.act(async () => toggle.click())
+    expect(doc.body.textContent).not.toContain('Open chat')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+for (const mode of ['deliverable', 'pr-merge', 'pr-auto-merge', 'direct-merge'] as const) {
+  test(`delivery action stays in the leading attention callout with truthful copy: ${mode}`, async () => {
+    const value = deliveryRun()
+    value.state.definition.completion.mode = mode
+    const f = await fixture(value, ['workstreams:respond'])
+    const finish = spyOn(client.workflows, 'finish').mockRejectedValue(new Error('Required delivery is not merged'))
+    try {
+      await f.render(<WorkflowReviewCallout stream={stream} />)
+      const label = mode === 'deliverable' ? 'Mark complete' : 'Check delivery'
+      const button = [...f.dom.window.document.querySelectorAll('button')].find((node) => node.textContent === label)!
+      expect(button).toBeDefined()
+      expect(button.className).toContain('ficus-button-primary')
+      expect(f.dom.window.document.body.textContent).not.toContain(mode)
+      await click(f, label)
+      expect(finish).toHaveBeenCalledWith(stream.id, value.version)
+      expect(f.dom.window.document.querySelector('[role="alert"]')?.textContent).toContain(
+        'Required delivery is not merged'
+      )
+      for (const next of [
+        { ...stream, status: 'done' },
+        { ...stream, status: 'canceled' },
+        { ...stream, pause: { reason: 'Hold' } },
+      ]) {
+        await f.render(<WorkflowReviewCallout stream={next as WorkStream} />)
+        expect(f.dom.window.document.body.textContent).toBe('')
+      }
+    } finally {
+      finish.mockRestore()
+      await f.cleanup()
+    }
+  })
+}
+
+test('terminal unassigned human workflows have no empty management section', async () => {
+  const f = await fixture(run(true))
+  try {
+    await f.render(<WorkflowRunPanel stream={{ ...stream, status: 'done' }} />)
+    await expandWorkflow(f)
+    expect(f.dom.window.document.body.textContent).not.toContain('Manage workflow')
+    expect(f.dom.window.document.body.textContent).toContain('Handoff history')
   } finally {
     await f.cleanup()
   }

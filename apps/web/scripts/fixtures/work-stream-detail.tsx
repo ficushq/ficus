@@ -27,21 +27,36 @@ const stream = {
 const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, enabled: false } } })
 const definition = createBlankWorkflow()
 definition.name = 'Focused mobile picker visual follow-up'
+const usage = { tokens: 1234, cost: 0.25, executions: 1, measuredExecutions: 1 }
 const run = {
   workStreamId: stream.id,
   source: { kind: 'inline', definition },
   state: createWorkflowRun(definition),
   version: 0,
   attemptAgents: { '1': 'builder-agent' },
+  usage: { total: usage, unattributed: usage, steps: { execute: usage }, attempts: { '1': usage } },
+}
+if (new URLSearchParams(location.search).has('delivery')) {
+  stream.completionMode = 'pr-auto-merge'
+  run.state.definition.completion.mode = 'pr-auto-merge'
+  run.state.status = 'completion-ready'
+  run.state.attempts[0]!.status = 'completed'
+  run.state.completedStepIds = ['execute']
 }
 cache.setQueryData(queryKeys.squads.workStreamDetail(stream.id), stream)
 cache.setQueryData(queryKeys.workflows.run(stream.id), run)
 cache.setQueryData(queryKeys.squads.list(), [])
+cache.setQueryData(queryKeys.workStreamSubscription.detail(stream.id), { inherited: true })
 cache.setQueryData(queryKeys.auth.permissions(stream.squadId), {
-  permissions: [],
+  permissions: ['workstreams:respond', 'workstreams:revise-flow', 'workflows:create'],
   identity: { type: 'user', userId: 'fixture' },
 })
-cache.setQueryData(queryKeys.squads.workStreamMetrics(stream.id), null)
+cache.setQueryData(queryKeys.squads.workStreamMetrics(stream.id), {
+  cost: 0.25,
+  tokens: { total: 1234, input: 1000, output: 234, cacheRead: 0, cacheWrite: 0 },
+  executions: { completed: 1, total: 1 },
+  byAgent: {},
+})
 cache.setQueryData(queryKeys.squads.workStreamTracked(stream.id), { resources: [], subscriptions: 'not-following' })
 function App() {
   const [open, setOpen] = React.useState(true)

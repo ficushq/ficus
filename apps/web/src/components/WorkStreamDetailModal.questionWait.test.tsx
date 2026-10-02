@@ -244,7 +244,8 @@ describe('WorkStreamDetailModal question waits', () => {
     const section = getByRole(body, 'region', { name: 'Pending questions' })
     const topDetails = getByText(body, 'Completion').parentElement!.parentElement!
     expect(topDetails.nextElementSibling).toBe(section)
-    expect(section.nextElementSibling?.contains(getByText(body, 'Cost:'))).toBe(true)
+    expect(section.nextElementSibling).toBe(getByText(body, 'Open Waits').parentElement!)
+    expect(section.nextElementSibling?.nextElementSibling?.contains(getByText(body, 'Cost:'))).toBe(true)
     expect(
       section.compareDocumentPosition(getByText(body, 'Open Waits')) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
@@ -282,7 +283,8 @@ describe('WorkStreamDetailModal question waits', () => {
     expect(queryByRole(body, 'region', { name: 'Pending questions' })).toBeNull()
     expect(queryByRole(body, 'button', { name: 'Submit Answer' })).toBeNull()
     const topDetails = getByText(body, 'Completion').parentElement!.parentElement!
-    expect(topDetails.nextElementSibling?.contains(getByText(body, 'Cost:'))).toBe(true)
+    expect(topDetails.nextElementSibling).toBe(getByText(body, 'Open Waits').parentElement!)
+    expect(topDetails.nextElementSibling?.nextElementSibling?.contains(getByText(body, 'Cost:'))).toBe(true)
     expect(getByText(body, 'Open Waits').parentElement!.textContent).toContain('Prerequisite')
     expect(getByText(body, 'Wait history (1)').parentElement!.textContent).toContain('Answered')
   })

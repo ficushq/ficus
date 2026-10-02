@@ -41,7 +41,14 @@ try {
   await server.listen()
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })
   const page = await browser.newPage()
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   const errors: string[] = []
+  await page.route('**/api/**', (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (!path.startsWith('/api/')) return route.continue()
+    errors.push(`Unexpected API request: ${path}`)
+    return route.abort()
+  })
   page.on('pageerror', (error) => errors.push(error.message))
   const measurements = []
   for (const width of [390, 1280]) {
@@ -51,11 +58,24 @@ try {
     await toggle.waitFor()
     assert.equal(await toggle.textContent(), 'Workflow · Focused mobile picker visual follow-up')
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
+    assert.equal(await page.getByRole('link', { name: 'Open execute attempt 1 agent chat' }).count(), 0)
+    assert.equal(await page.getByText('Step usage', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('Handoff history', { exact: true }).count(), 0)
     await toggle.scrollIntoViewIfNeeded()
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `workflow-collapsed-${width}.png`) })
     await toggle.focus()
     await page.keyboard.press('Enter')
     await page.getByLabel('Workflow visual preview').waitFor()
+    assert.equal(await page.getByRole('region', { name: 'Workflow steps' }).count(), 1)
+    for (const label of ['Step usage', 'Handoff history', 'Manage workflow']) {
+      const summary = page.locator('summary').filter({ hasText: new RegExp(`^${label}$`) })
+      assert.equal(await summary.evaluate((el) => el.parentElement!.hasAttribute('open')), false)
+    }
+    await toggle.evaluate((el) => {
+      const body = el.closest('[data-modal-size]')!.lastElementChild!
+      body.scrollTop += el.getBoundingClientRect().top - body.getBoundingClientRect().top - 12
+    })
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `workflow-overview-${width}.png`) })
     await page.getByRole('button', { name: 'execute: Active', exact: true }).click()
     await page.getByRole('link', { name: 'Open execute attempt 1 agent chat' }).first().waitFor()
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `workflow-expanded-${width}.png`) })
@@ -106,6 +126,13 @@ try {
       'Wide table retains contained horizontal scrolling'
     )
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `description-${width}.png`) })
+    await page.goto(server.resolvedUrls!.local[0]! + 'detail-fixture?delivery')
+    const delivery = page.getByRole('region', { name: 'Delivery requirements' })
+    await delivery.waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Check delivery', exact: true }).count(), 1)
+    assert.equal(await page.getByRole('button', { name: 'Workflow preview:' }).getAttribute('aria-expanded'), 'false')
+    assert.equal(await page.getByText('Unattributed usage:', { exact: false }).count(), 0)
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `delivery-collapsed-${width}.png`) })
   }
   assert.deepEqual(errors, [], 'No browser runtime errors')
   console.log(JSON.stringify(measurements, null, 2))

@@ -44,8 +44,8 @@ export function outcomeEffect(run: WorkflowRun, transition: WorkflowTransition):
 }
 
 /**
- * The review surface for workflow gates that wait on a person: a human-approval
- * step or final delivery approval. It sits at the top of the work stream detail
+ * The attention surface for human gates, delivery approval and delivery checks.
+ * It sits at the top of the work stream detail
  * so the reviewer sees what to review and how to decide without scrolling
  * through the flow graph.
  */
@@ -70,6 +70,8 @@ export function WorkflowReviewCallout({
       : []
   const deliveryApproval =
     run.state.status === 'completion-ready' && run.state.definition.completion.mode === 'review-approval'
+  const deliveryCheck = run.state.status === 'completion-ready' && !deliveryApproval
+  if (deliveryCheck) return <DeliveryCheck stream={stream} run={run} />
   if (!gates.length && !deliveryApproval) return null
   return (
     <div className="space-y-3">
@@ -89,6 +91,41 @@ function useRefresh(stream: WorkStream) {
     queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreamDetail(stream.id) })
     queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })
   }
+}
+
+/** Finishing verifies the existing server policy; it never promises a merge or approves a review. */
+function DeliveryCheck({ stream, run }: { stream: WorkStream; run: RunDetail }) {
+  const { can } = usePermissions(stream.squadId)
+  const refresh = useRefresh(stream)
+  const finish = useMutation({
+    mutationFn: () => client.workflows.finish(stream.id, run.version),
+    onSuccess: refresh,
+  })
+  if (!can('workstreams:update') && !can('workstreams:respond')) return null
+  const isDeliverable = run.state.definition.completion.mode === 'deliverable'
+  return (
+    <section aria-label="Delivery requirements" className="p-4 rounded-xl bg-surface-secondary space-y-3">
+      <h3 className="text-sm font-medium text-primary">Ready for delivery</h3>
+      <p className="text-sm text-secondary">
+        {isDeliverable
+          ? 'The workflow has finished. Mark the work stream complete when the result is ready.'
+          : 'Delivery requirements must be satisfied before this work stream can be marked complete. Checking does not merge or approve a pull request.'}
+      </p>
+      <button
+        type="button"
+        className="ficus-button ficus-button-primary px-3 py-2 text-sm disabled:opacity-50"
+        disabled={finish.isPending}
+        onClick={() => finish.mutate()}
+      >
+        {finish.isPending ? 'Checking…' : isDeliverable ? 'Mark complete' : 'Check delivery'}
+      </button>
+      {finish.error && (
+        <p role="alert" className="text-sm text-status-danger-400">
+          {actionErrorMessage(finish.error)}
+        </p>
+      )}
+    </section>
+  )
 }
 
 function HumanGate({

@@ -111,8 +111,12 @@ Target WCAG 2.2 AA, without treating this guide as a compliance certification. N
 
 Workflow previews start collapsed. The disclosure visibly says **Workflow · actual name**
 (including custom inline names); missing names show **Workflow**, not a guessed preset.
-Expanding exposes the interactive graph, while statuses, usage and actions remain outside
-it. Refreshes preserve expansion; switching streams or reopening details resets it.
+Expanding exposes the interactive graph and grouped steps. Step usage, handoff history and
+management tools are secondary disclosures inside that section, not loose text below the
+collapsed summary. Overall usage stays in the enclosing detail view without a duplicate
+workflow total. Critical waits, human decisions and delivery checks remain in the leading
+attention callouts; checking delivery does not claim a merge or review has completed.
+Refreshes preserve expansion; switching streams or reopening details resets it.
 Descriptions wrap long paths, URLs and inline code within the modal; wide tables and code
 blocks retain contained scrolling. The focused, DB-free browser regression can be run from
 `apps/web` with `CHROMIUM_PATH=/path/to/chromium bun scripts/check-work-stream-detail-layout.ts`.
