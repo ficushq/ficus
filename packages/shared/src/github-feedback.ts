@@ -45,3 +45,28 @@ export interface GitHubPersonalIdentityStatus {
   confirmation: { id: string; accountId: string; login: string; expiresAt: string } | null
   authorization: { configured: boolean; authority: 'local' | 'platform_broker'; mode: 'browser' | 'device' }
 }
+
+/** Immutable review input. `delivery` contains only this content object's text, never its parent. */
+export interface GitHubFeedbackContent {
+  normalizationVersion: 1
+  repositoryId: string | null
+  objectKind: 'issue' | 'pull_request' | 'issue_comment' | 'review' | 'review_comment'
+  nativeId: string | null
+  providerVersion: string | null
+  author: GitHubAccountIdentity | null
+  editor: GitHubAccountIdentity | null
+  attribution: 'creation' | 'verified_edit' | 'unknown'
+  contentHash: string
+  byteCount: number
+  reason: 'content_unavailable' | null
+  delivery: import('./integration-outputs').IntegrationOutputFact | null
+}
+export interface GitHubFeedbackEnvelope {
+  /** Checked against the source association table, never trusted as an approval hint. */
+  revisionId?: string
+  /** Provenance assigned by verified ingress, not provider text/metadata. */
+  observation?: { kind: 'webhook' | 'poll'; deliveryId?: string }
+  content: GitHubFeedbackContent | null
+  /** Explicit content-free lifecycle projection. Never executes squad content rules/bindings. */
+  status: import('./integration-outputs').IntegrationOutputFact | null
+}

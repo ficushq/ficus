@@ -1,4 +1,5 @@
 import { normalizeDependabot, DEPENDABOT_OUTPUT, DEPENDABOT_ACTIONS } from '../github/dependabot-output'
+import { normalizeGitHubFeedback } from '../github/feedback-envelope'
 import { createHash } from 'node:crypto'
 import { githubOutputCatalog, isGitHubSelfComment, type IntegrationOutputFact } from '@ficus/shared'
 import type { IntegrationOutputAdapter } from './types'
@@ -108,7 +109,8 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
     )
   },
   normalize(event) {
-    if (event.type === 'dependabot_alert') return normalizeDependabot(event)
+    if (event.type === 'dependabot_alert')
+      return normalizeDependabot(event).map((fact) => ({ ...fact, github: normalizeGitHubFeedback(event, fact) }))
     const payload = record(event.payload)
     const repository = payload?.repository?.full_name
     if (typeof repository !== 'string' || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) return []
@@ -149,7 +151,7 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
               : 'pull_request.closed'
             : 'pull_request.updated'
     } else if (event.type === 'pull_request_review') {
-      if (action !== 'submitted') return []
+      if (!['submitted', 'edited', 'dismissed'].includes(action)) return []
       output = 'pull_request.reviewed'
       item = record(payload!.review)
     } else if (event.type === 'pull_request_review_comment') {
@@ -175,7 +177,8 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
       item.completed_at ??
       item.created_at
     if (typeof timestamp !== 'string' || !Number.isFinite(Date.parse(timestamp))) return []
-    const actor = payload!.sender?.login ?? item.user?.login ?? ''
+    const contentObject = ['issue_comment', 'pull_request_review', 'pull_request_review_comment'].includes(event.type)
+    const actor = contentObject ? (item.user?.login ?? '') : (payload!.sender?.login ?? item.user?.login ?? '')
     const url =
       typeof item.html_url === 'string' && item.html_url.startsWith('https://github.com/') ? item.html_url : undefined
     const body = typeof item.body === 'string' ? item.body.slice(0, 24000) : ''
@@ -227,7 +230,7 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
           : {}),
         requestedReviewer: String(payload!.requested_reviewer?.login ?? ''),
         requestedTeam: String(payload!.requested_team?.slug ?? ''),
-        actorType: String(payload!.sender?.type ?? item!.user?.type ?? ''),
+        actorType: String(contentObject ? (item!.user?.type ?? '') : (payload!.sender?.type ?? item!.user?.type ?? '')),
         labels: Array.isArray(native?.labels)
           ? native.labels.map((label: any) => String(label?.name ?? label)).slice(0, 100)
           : [],
@@ -275,38 +278,40 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
             .filter(Boolean)
             .join('\n')
         : ''
-      return [
-        {
+      const fact: IntegrationOutputFact = {
+        output,
+        version: 1,
+        resourceKey: `${repo}#${number}`,
+        occurredAt: new Date(timestamp).toISOString(),
+        eventKey: digest([
           output,
-          version: 1,
-          resourceKey: `${repo}#${number}`,
-          occurredAt: new Date(timestamp).toISOString(),
-          eventKey: digest([
-            output,
-            repo,
-            number,
-            action,
-            item!.id,
-            output === 'pull_request.updated' && action === 'synchronize'
-              ? (native?.head?.sha ?? timestamp)
-              : timestamp,
-            data.state,
-            data.requestedReviewer,
-            data.assignee,
-            ordering,
-            ...(data.requestedTeam ? [data.requestedTeam] : []),
-          ]),
-          data,
-          subject: ci
-            ? `CI ${data.state}: ${repo}#${number} · ${workflow}`
-            : `${outputTitles[output]}: ${repo}#${number}`,
-          body: ci
-            ? ciDetails
-            : `${outputTitles[output]}${actor ? ` by ${actor}` : ''}${data.state ? ` (${data.state})` : ''}.${data.mergeConflict ? '\nMerge conflicts need resolution.' : ''}${output === 'pull_request.review_comment' ? `\n${data.path}:${data.line ?? '?'} — reply in this review thread.` : ''}${url ? `\n${url}` : ''}${body ? `\n\n${body}` : ''}`,
-          ...(url ? { url } : {}),
-          ...(ordering ? { ordering } : {}),
-        },
-      ]
+          repo,
+          number,
+          action,
+          item!.id,
+          output === 'pull_request.updated' && action === 'synchronize' ? (native?.head?.sha ?? timestamp) : timestamp,
+          data.state,
+          data.requestedReviewer,
+          data.assignee,
+          ordering,
+          ...(data.requestedTeam ? [data.requestedTeam] : []),
+        ]),
+        data,
+        subject: ci
+          ? `CI ${data.state}: ${repo}#${number} · ${workflow}`
+          : `${outputTitles[output]}: ${repo}#${number}`,
+        body: ci
+          ? ciDetails
+          : `${outputTitles[output]}${actor ? ` by ${actor}` : ''}${data.state ? ` (${data.state})` : ''}.${data.mergeConflict ? '\nMerge conflicts need resolution.' : ''}${output === 'pull_request.review_comment' ? `\n${data.path}:${data.line ?? '?'} — reply in this review thread.` : ''}${url ? `\n${url}` : ''}${body ? `\n\n${body}` : ''}`,
+        ...(url ? { url } : {}),
+        ...(ordering ? { ordering } : {}),
+      }
+      fact.github = {
+        ...normalizeGitHubFeedback(event, fact),
+        ...(event.githubObservation ? { observation: event.githubObservation } : {}),
+      }
+      if (contentObject && fact.github.content) fact.eventKey = digest([fact.eventKey, fact.github.content.contentHash])
+      return [fact]
     })
   },
 }

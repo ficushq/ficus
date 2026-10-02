@@ -500,11 +500,15 @@ export const integrationEventPollingRuntime = new EventPollingRunner({
   resolveCapability: (watch) =>
     integrationRegistry.capability(watch.providerKey, watch.connection.adapterVersion, 'event_polling'),
   observe: async (event, watch) => {
-    const handled = await publishIntegrationOutputs(watch.providerKey, event, {
-      kind: 'connection',
-      connectionId: watch.connection.id,
-      squadId: watch.connection.squadId,
-    })
+    const handled = await publishIntegrationOutputs(
+      watch.providerKey,
+      watch.providerKey === 'github' ? { ...event, githubObservation: { kind: 'poll' } } : event,
+      {
+        kind: 'connection',
+        connectionId: watch.connection.id,
+        squadId: watch.connection.squadId,
+      }
+    )
     observedPollingSquads.set(event, handled)
   },
   dispatch: (event, watch) =>
