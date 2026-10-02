@@ -1209,14 +1209,16 @@ describe('personal GitHub OAuth purpose fencing', () => {
       })
       const stored = [...h.states.rows.values()][0]!
       expect(stored).toMatchObject({ purpose: 'github_identity', linkGeneration: 3, userId: 'human-1', authority })
-      if (authority === 'local')
+      if (authority === 'local') {
+        expect(stored.localFlowId).toBe('80000000-0000-4000-8000-000000000199')
+        expect(new URL(start.authorizationUrl).searchParams.get('state')).not.toBe(stored.localFlowId)
         await h.service.callback({
           providerKey: 'github',
           userId: 'human-1',
           state: new URL(start.authorizationUrl).searchParams.get('state')!,
           code: 'code',
         })
-      else
+      } else
         await h.service.complete({
           providerKey: 'github',
           userId: 'human-1',

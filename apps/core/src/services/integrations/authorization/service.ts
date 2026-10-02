@@ -90,10 +90,16 @@ export class IntegrationAuthorizationService {
     const localState = Buffer.from(this.#randomBytes(32)).toString('base64url')
     if (!STATE_PATTERN.test(localState)) throw new AuthorizationFlowError('state_generation_failed')
     const localFlowId = this.#dependencies.transport.authority === 'platform_broker' ? this.#uuid() : localState
+    const persistedFlowId =
+      this.#dependencies.transport.authority === 'platform_broker'
+        ? localFlowId
+        : input.purpose === 'github_identity'
+          ? this.#uuid()
+          : null
     const now = this.#now()
     await this.#dependencies.states.create({
       stateHash: hashState(localFlowId),
-      localFlowId: this.#dependencies.transport.authority === 'platform_broker' ? localFlowId : null,
+      localFlowId: persistedFlowId,
       authority: this.#dependencies.transport.authority,
       providerKey: plugin.key,
       userId: input.userId,

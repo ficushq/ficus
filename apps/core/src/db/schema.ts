@@ -3670,7 +3670,7 @@ export const integrationOauthStates = pgTable(
     ),
     check(
       'integration_oauth_states_authority_flow_check',
-      sql`(${table.authority} = 'local' AND ${table.localFlowId} IS NULL) OR (${table.authority} = 'platform_broker' AND ${table.localFlowId} IS NOT NULL)`
+      sql`(${table.authority} = 'local' AND ((${table.purpose} = 'integration' AND ${table.localFlowId} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.localFlowId} IS NOT NULL))) OR (${table.authority} = 'platform_broker' AND ${table.localFlowId} IS NOT NULL)`
     ),
     check(
       'integration_oauth_states_intent_context',
