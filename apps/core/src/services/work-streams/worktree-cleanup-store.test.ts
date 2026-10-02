@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, expect, test, spyOn } from 'bun:test'
 import { eq } from 'drizzle-orm'
+import { createWorkflowRun, resolveWorkflow, workflowPresetSchema } from '@ficus/shared'
+import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'
+import { openWait } from './waits'
 import {
   db,
   squads,
@@ -9,6 +12,8 @@ import {
   agents,
   agentTypes,
   executions,
+  workflowBindings,
+  workStreamFlowRuns,
 } from '../../db'
 import * as store from './worktree-cleanup-store'
 import type { WorktreeOwnership } from './repository-setup'
@@ -355,4 +360,219 @@ test('retain and cleanup claim serialize: no successful retain can leave an in-f
     expect(job.status).toBe('removing')
     expect(removal.status === 'fulfilled' && removal.value).toBeTruthy()
   }
+})
+
+const dependent = async (status: 'done' | 'canceled' | 'active' | 'queued' = 'done') =>
+  (
+    await db
+      .insert(workStreams)
+      .values({ squadId, title: 'dependent', status, dependsOn: [streamId] })
+      .returning()
+  )[0]!
+
+for (const status of ['done', 'canceled'] as const) {
+  test(`settled ${status} dependent releases cleanup without deleting its dependency record`, async () => {
+    const other = await dependent(status)
+    await db.insert(executions).values({
+      agentId,
+      status: 'completed',
+      flowContext: { workStreamId: other.id, attemptId: 1, stepId: 'implement' },
+    })
+    expect(await claim()).not.toBeNull()
+    expect((await db.select().from(workStreams).where(eq(workStreams.id, other.id)))[0]!.dependsOn).toEqual([streamId])
+  })
+
+  for (const executionStatus of ACTIVE_EXECUTION_STATUSES) {
+    test(`${status} dependent with ${executionStatus} execution protects cleanup until settlement`, async () => {
+      const other = await dependent(status)
+      // No assignment or binding: immutable flow provenance must still protect use.
+      await db.update(workStreams).set({ agentIds: [] }).where(eq(workStreams.id, streamId))
+      const [execution] = await db
+        .insert(executions)
+        .values({
+          agentId,
+          status: executionStatus,
+          flowContext: { workStreamId: other.id, attemptId: 1, stepId: 'implement' },
+        })
+        .returning()
+      expect(await claim()).toBeNull()
+      await db.update(executions).set({ status: 'stopped' }).where(eq(executions.id, execution.id))
+      expect(await claim()).not.toBeNull()
+    })
+  }
+}
+
+for (const kind of ['active', 'queued', 'paused', 'parked', 'external-wait'] as const) {
+  test(`${kind} dependent continues to protect cleanup`, async () => {
+    const other = await dependent(kind === 'queued' || kind === 'parked' ? 'queued' : 'active')
+    if (kind === 'paused' || kind === 'parked')
+      await db
+        .update(workStreams)
+        .set({
+          pause: {
+            id: crypto.randomUUID(),
+            pausedAt: new Date().toISOString(),
+            reason: null,
+            parkAt: null,
+            agentIds: [],
+          },
+        })
+        .where(eq(workStreams.id, other.id))
+    if (kind === 'external-wait') await openWait(db, { workStreamId: other.id, type: 'manual', actor: 'owner' })
+    expect(await claim()).toBeNull()
+  })
+}
+
+for (const association of ['assignee', 'crew', 'binding', 'origin'] as const) {
+  test(`terminal dependent ${association} remains execution-fenced after removal is claimed`, async () => {
+    await db.update(workStreams).set({ agentIds: [] }).where(eq(workStreams.id, streamId))
+    const other = await dependent()
+    if (association === 'assignee' || association === 'crew')
+      await db
+        .update(workStreams)
+        .set(association === 'assignee' ? { assigneeAgentId: agentId } : { agentIds: [agentId] })
+        .where(eq(workStreams.id, other.id))
+    if (association === 'binding') {
+      const [snapshot] = await db.select().from(agentTypes).where(eq(agentTypes.id, typeId))
+      await db.insert(workflowBindings).values({
+        workStreamId: other.id,
+        agentId,
+        participantId: 'engineer',
+        bindingKey: 'main',
+        agentSnapshot: snapshot!,
+      })
+    }
+    if (association === 'origin')
+      await db.insert(executions).values({
+        agentId,
+        status: 'completed',
+        flowContext: { workStreamId: other.id, attemptId: 1, stepId: 'implement' },
+      })
+    const [running] = await db.insert(executions).values({ agentId, status: 'running' }).returning()
+    expect(await claim()).toBeNull()
+    await db.update(executions).set({ status: 'completed' }).where(eq(executions.id, running.id))
+    expect(await claim()).not.toBeNull()
+    expect(await store.cleanupWorktreeForAgent(agentId)).toBe(streamId)
+  })
+}
+
+for (const unsettled of ['attempt', 'pending-start'] as const) {
+  test(`terminal dependent with an unsettled ${unsettled} retains protection`, async () => {
+    const other = await dependent('canceled')
+    const { definition } = workflowPresetSchema.parse(
+      Bun.YAML.parse(
+        await Bun.file(new URL('../../../../../config/workflows/solo-coding.yaml', import.meta.url)).text()
+      )
+    )
+    const source = resolveWorkflow({ kind: 'inline', definition })
+    const state = createWorkflowRun(definition)
+    if (unsettled === 'pending-start') {
+      state.attempts[0]!.status = 'canceled'
+      state.activeAttemptId = null
+      state.pendingStarts = [{ stepId: 'implement' }]
+    }
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: other.id,
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'a'.repeat(64),
+      source,
+      state,
+      createdBy: 'fixture',
+    })
+    expect(await claim()).toBeNull()
+    state.attempts[0]!.status = 'canceled'
+    state.activeAttemptId = null
+    state.pendingStarts = []
+    await db.update(workStreamFlowRuns).set({ state }).where(eq(workStreamFlowRuns.workStreamId, other.id))
+    expect(await claim()).not.toBeNull()
+  })
+}
+
+test('multiple dependents release protection only after the last live one settles', async () => {
+  await dependent('done')
+  const last = await dependent('active')
+  await db.insert(workStreams).values({ squadId, title: 'unrelated live stream', status: 'active' })
+  expect(await claim()).toBeNull()
+  await db.update(workStreams).set({ status: 'canceled' }).where(eq(workStreams.id, last.id))
+  expect(await claim()).not.toBeNull()
+})
+
+for (const key of ['worktree', 'repository'] as const) {
+  test(`settled dependency does not release explicit ${key} sharing`, async () => {
+    const other = await dependent()
+    await db
+      .update(workStreams)
+      .set({ metadata: { git: { [key]: ownership.worktree } } })
+      .where(eq(workStreams.id, other.id))
+    expect(await claim()).toBeNull()
+  })
+}
+
+test('another squad cannot retain this resource through a dependency', async () => {
+  const [otherSquad] = await db.insert(squads).values({ name: 'isolated-cleanup-squad', purpose: 'test' }).returning()
+  try {
+    await db.insert(workStreams).values({ squadId: otherSquad.id, title: 'foreign dependency', dependsOn: [streamId] })
+    expect(await claim()).not.toBeNull()
+  } finally {
+    await db.delete(workStreams).where(eq(workStreams.squadId, otherSquad.id))
+    await db.delete(squads).where(eq(squads.id, otherSquad.id))
+  }
+})
+
+test('a settled dependent cannot reopen during an uncertain predecessor removal', async () => {
+  const { WorkStream } = await import('../../entities/WorkStream')
+  const other = await dependent()
+  expect(await claim()).not.toBeNull()
+  await expect((await WorkStream.mustFind(other.id)).reopen()).rejects.toThrow(/cleanup|removal/i)
+  expect((await WorkStream.mustFind(other.id)).status).toBe('done')
+})
+
+for (const action of ['unlink', 'delete'] as const) {
+  test(`a dependent cannot ${action} to evade an uncertain removal fence`, async () => {
+    const { WorkStream } = await import('../../entities/WorkStream')
+    const other = await dependent()
+    expect(await claim()).not.toBeNull()
+    const stream = await WorkStream.mustFind(other.id)
+    await expect(action === 'unlink' ? stream.update({ dependsOn: [] }) : stream.delete()).rejects.toThrow(
+      /cleanup|removal/i
+    )
+    expect((await WorkStream.mustFind(other.id)).dependsOn).toEqual([streamId])
+  })
+}
+
+test('reopen and claim serialize: a live dependent always wins or sees the removal fence', async () => {
+  const { WorkStream } = await import('../../entities/WorkStream')
+  const other = await dependent()
+  const stream = await WorkStream.mustFind(other.id)
+  const [reopening, removal] = await Promise.allSettled([stream.reopen(), claim()])
+  if (reopening.status === 'fulfilled') {
+    expect(['active', 'queued']).toContain((await WorkStream.mustFind(other.id)).status)
+    expect(removal).toMatchObject({ status: 'fulfilled', value: null })
+  } else {
+    expect(String(reopening.reason)).toMatch(/cleanup|removal/i)
+    expect(removal.status === 'fulfilled' && removal.value).toBeTruthy()
+    expect((await WorkStream.mustFind(other.id)).status).toBe('done')
+  }
+})
+
+test('dependent fences retain uncertain errors but release after terminal removal proof', async () => {
+  const { WorkStream } = await import('../../entities/WorkStream')
+  await db.update(workStreams).set({ agentIds: [] }).where(eq(workStreams.id, streamId))
+  const other = await dependent()
+  await db
+    .update(workStreams)
+    .set({ agentIds: [agentId] })
+    .where(eq(workStreams.id, other.id))
+  expect(await claim()).not.toBeNull()
+  await db.update(worktreeCleanupJobs).set({ status: 'error' }).where(eq(worktreeCleanupJobs.workStreamId, streamId))
+  expect(await store.cleanupWorktreeForAgent(agentId)).toBe(streamId)
+  await expect((await WorkStream.mustFind(other.id)).reopen()).rejects.toThrow(/cleanup|removal/i)
+  await db
+    .update(worktreeCleanupJobs)
+    .set({ status: 'succeeded' })
+    .where(eq(worktreeCleanupJobs.workStreamId, streamId))
+  expect(await store.cleanupWorktreeForAgent(agentId)).toBeNull()
+  // Dependency history is still valid; explicit sharing would need a new tree.
+  await (await WorkStream.mustFind(other.id)).reopen()
+  expect(['active', 'queued']).toContain((await WorkStream.mustFind(other.id)).status)
 })
