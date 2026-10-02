@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, waitFor } from '@testing-library/dom'
+import { waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../test/domHarness'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { AgentSlotWaitStatus } from './AgentSlotWaitStatus'
@@ -91,25 +91,39 @@ describe('AgentSlotWaitStatus', () => {
     })
   }
 
-  test('shows compact accessible queued pool keys including multiple waits', async () => {
-    responses.set('agent-a', [queued('shared-box-intensive'), queued('production-change')])
+  test('always shows distinct names inline without disclosure, counts or pool language', async () => {
+    responses.set('agent-a', [
+      queued('shared-box-intensive'),
+      queued('production-change'),
+      { ...queued('shared-box-intensive'), waiterId: 'duplicate' },
+    ])
     await render()
-    await eventually(() => expect(text()).toContain('shared-box-intensive'))
-    expect(text()).toContain('production-change')
-    expect(text()).toContain('Waiting for slot')
-    const details = dom.window.document.querySelector('details')!
-    expect(details.open).toBe(false)
-    await dom.act(async () => {
-      fireEvent.click(details.querySelector('summary')!)
-    })
-    expect(details.open).toBe(true)
-    expect(dom.window.document.querySelector('[role="status"]')?.getAttribute('aria-live')).toBe('polite')
-    expect(text()).not.toMatch(/position|ETA|only reason|idle because/i)
+    await eventually(() => expect(text()).toBe('Waiting for slot: shared-box-intensive · production-change'))
+    expect(dom.window.document.querySelector('details, summary, button, ul')).toBeNull()
+    const status = dom.window.document.querySelector('[role="status"]')!
+    expect(status.getAttribute('aria-live')).toBe('polite')
+    expect(status.getAttribute('aria-atomic')).toBe('true')
+    expect(status.outerHTML).not.toMatch(/pool|position|ETA|only reason|idle because/i)
+    expect(status.className).toContain('text-secondary')
+    expect(status.className).not.toContain('status-queue')
+    const dot = status.querySelector('[aria-hidden="true"]')!
+    expect(dot.className).toContain('motion-safe:animate-pulse')
+    expect(dot.className).toContain('bg-status-progress-solid')
+  })
+
+  test('keeps a single long name visible and wrappable at narrow widths', async () => {
+    const name = 'shared-box-intensive-'.repeat(20)
+    responses.set('agent-a', [queued(name)])
+    await render()
+    await eventually(() => expect(text()).toBe(`Waiting for slot: ${name}`))
+    const label = dom.window.document.querySelector('[role="status"] span:last-child')!
+    expect(label.className).toContain('[overflow-wrap:anywhere]')
+    expect(label.className).not.toMatch(/truncate|line-clamp|overflow-hidden/)
   })
 
   test('running agent keeps secondary context without claiming it is waiting', async () => {
     await render('agent-a', false, false)
-    await eventually(() => expect(text()).toContain('Slot queue'))
+    await eventually(() => expect(text()).toBe('Slot queue: shared-box-intensive'))
     expect(text()).not.toContain('Waiting for slot')
   })
 
