@@ -14,6 +14,7 @@ import { registerAuthCommands } from './commands/auth'
 import { registerChannelInstanceCommands } from './commands/channel-instance'
 import { registerChatCommands } from './commands/chat'
 import { registerDemoCommands } from './commands/demo'
+import { registerDesktopCommands } from './commands/desktop'
 import { registerDeployCommands } from './commands/deploy'
 import { registerDiscordCommands } from './commands/discord'
 import { registerAmtpCommands, registerRemoteCommands } from './commands/amtp'
@@ -73,6 +74,7 @@ registerAuthCommands(program)
 registerChannelInstanceCommands(program)
 registerChatCommands(program)
 registerDemoCommands(program)
+registerDesktopCommands(program)
 registerDeployCommands(program)
 registerDiscordCommands(program)
 registerAmtpCommands(program)

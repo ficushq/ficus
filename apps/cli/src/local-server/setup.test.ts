@@ -912,3 +912,25 @@ describe('supervisor migration safety', () => {
     expect(existsSync(join(root, '.env'))).toBe(false)
   })
 })
+
+it('macOS setup offers Desktop after success and non-interactive setup prints the command', async () => {
+  const interactive = deps()
+  interactive.d.desktopPlatform = 'darwin'
+  interactive.d.isTTY = true
+  let installed = 0
+  interactive.d.installDesktopApp = async () => {
+    installed++
+  }
+  await runSetup(opts({ yes: false }), interactive.d)
+  expect(interactive.confirms.at(-1)).toMatch(/^Install Ficus Desktop now\? @/)
+  expect(installed).toBe(1)
+
+  const headless = deps()
+  headless.d.desktopPlatform = 'darwin'
+  headless.d.isTTY = false
+  headless.d.installDesktopApp = async () => {
+    throw new Error('must not install')
+  }
+  await runSetup(opts({ yes: true }), headless.d)
+  expect(headless.lines).toContain('Install the macOS app any time with: ficus desktop')
+})
