@@ -12,7 +12,7 @@ import * as accountStore from '../../services/agent/account-store'
 import { getModelRuntime, refreshModelRuntime } from '../../services/agent/auth-backend'
 import * as AgentModule from '../Agent'
 import { providerHealth } from '../../services/provider-health/registry'
-import { Image } from '../Image'
+import { Image, type ImageContent } from '../Image'
 import { AgentSession } from '../AgentSession'
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import { Agent } from '../Agent'
@@ -1051,7 +1051,7 @@ describe('AgentRunner (base class)', () => {
     })
 
     it('attaches claimed pending-row images to the initial prompt', async () => {
-      const fakeImages = [{ type: 'image', data: 'abc', mimeType: 'image/png' }]
+      const fakeImages: ImageContent[] = [{ type: 'image', data: 'abc', mimeType: 'image/png' }]
       const pendingImageMessage = {
         id: 'pending-image-message',
         agentId: agent.id,
