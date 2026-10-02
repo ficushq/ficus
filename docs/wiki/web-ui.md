@@ -107,6 +107,22 @@ Respect `prefers-reduced-motion` and `prefers-reduced-transparency`. Skeleton pu
 
 Target WCAG 2.2 AA, without treating this guide as a compliance certification. Normal text requires 4.5:1 contrast and qualifying large text 3:1; check the composited result for glass. See [W3C contrast guidance](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html). Keep focus visible and aim for comfortable touch targets; WCAG's [minimum target size criterion](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) is 24 CSS pixels subject to its exceptions, while 44px is a useful product target for primary phone controls.
 
+## Work stream details
+
+Workflow previews start collapsed. The disclosure visibly says **Workflow · actual name**
+(including custom inline names); missing names show **Workflow**, not a guessed preset.
+Expanding exposes the interactive graph and grouped steps. Step usage, handoff history and
+management tools are secondary disclosures inside that section, not loose text below the
+collapsed summary. Overall usage stays in the enclosing detail view without a duplicate
+workflow total. Critical waits, human decisions and delivery checks remain in the leading
+attention callouts; checking delivery does not claim a merge or review has completed.
+Refreshes preserve expansion; switching streams or reopening details resets it.
+Descriptions wrap long paths, URLs and inline code within the modal; wide tables and code
+blocks retain contained scrolling. The focused, DB-free browser regression can be run from
+`apps/web` with `CHROMIUM_PATH=/path/to/chromium bun scripts/check-work-stream-detail-layout.ts`.
+Set `SCREENSHOT_DIR` to save narrow/wide screenshots and measurements. This uses synthetic
+query data and the real modal, markdown renderer and styles, without contacting a backend.
+
 ## Specialized content
 
 Terminal themes, ANSI colors, syntax highlighting, code/diff meaning, graph canvases, voice visualization, and user-authored artifacts retain functional conventions. Their application framing, menus, and buttons use the shared language. Do not rewrite embedded user content or recolor semantic outputs merely to match the canvas.

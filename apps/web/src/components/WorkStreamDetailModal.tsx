@@ -595,6 +595,32 @@ export function WorkStreamDetailModal({
           </section>
         )}
 
+        {/* Open waits not already shown in the respond panel or question section above */}
+        {remainingWaits.length > 0 && (
+          <div>
+            <label className="text-xs font-medium text-secondary">Open Waits</label>
+            <ul className="mt-1 space-y-1.5">
+              {remainingWaits.map((wait) => (
+                <li key={wait.id} className={clsx('text-xs rounded-lg p-3 bg-surface-secondary')}>
+                  <div className="flex items-center gap-2">
+                    <WaitBadge wait={wait} />
+                    {wait.flowAttemptId != null && <span className="text-muted">Attempt {wait.flowAttemptId}</span>}
+                    {wait.type === 'review' && workStream.reviewRounds != null && (
+                      <span className="text-muted">Round {workStream.reviewRounds + 1}</span>
+                    )}
+                    <span className="text-muted ml-auto shrink-0">{new Date(wait.openedAt).toLocaleString()}</span>
+                  </div>
+                  {wait.message && (
+                    <div className="mt-1 text-primary">
+                      <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Metrics */}
         {metrics && (
           <div className="border-t border-panel-border pt-4">
@@ -694,7 +720,7 @@ export function WorkStreamDetailModal({
 
         {/* Description */}
         {workStream.description && (
-          <div>
+          <div className="min-w-0 [overflow-wrap:anywhere]">
             <label className="text-xs font-medium text-secondary">Description</label>
             <div className="mt-3 text-sm leading-relaxed text-secondary">
               <MarkdownContent className="prose-xs">{workStream.description}</MarkdownContent>
@@ -810,32 +836,6 @@ export function WorkStreamDetailModal({
               ))}
             </dl>
           </details>
-        )}
-
-        {/* Open waits not already shown in the respond panel or question section above */}
-        {remainingWaits.length > 0 && (
-          <div>
-            <label className="text-xs font-medium text-secondary">Open Waits</label>
-            <ul className="mt-1 space-y-1.5">
-              {remainingWaits.map((wait) => (
-                <li key={wait.id} className={clsx('text-xs rounded-lg p-3 bg-surface-secondary')}>
-                  <div className="flex items-center gap-2">
-                    <WaitBadge wait={wait} />
-                    {wait.flowAttemptId != null && <span className="text-muted">Attempt {wait.flowAttemptId}</span>}
-                    {wait.type === 'review' && workStream.reviewRounds != null && (
-                      <span className="text-muted">Round {workStream.reviewRounds + 1}</span>
-                    )}
-                    <span className="text-muted ml-auto shrink-0">{new Date(wait.openedAt).toLocaleString()}</span>
-                  </div>
-                  {wait.message && (
-                    <div className="mt-1 text-primary">
-                      <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
         )}
 
         {/* Wait history — the full auditable trail of EVERY resolved wait (all
