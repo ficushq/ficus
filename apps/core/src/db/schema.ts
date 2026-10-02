@@ -4083,6 +4083,10 @@ export const integrationAuditEvents = pgTable(
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     capability: varchar('capability', { length: 64 }),
+    // Literal authenticated principal and content-free target for security-sensitive mutations.
+    actorKey: text('actor_key'),
+    targetKind: varchar('target_kind', { length: 64 }),
+    targetId: text('target_id'),
     action: varchar('action', { length: 64 }).notNull(),
     outcome: varchar('outcome', { length: 32 }).notNull(),
     requestId: uuid('request_id'),
