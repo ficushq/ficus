@@ -31,7 +31,7 @@ import {
 
 const finalizerModule = await import('./personal-oauth-finalizer').catch(() => null)
 
-async function fixture(shared = false) {
+async function fixture(shared = false, local = false) {
   const connection = await createTestGitHubConnection()
   const userId = crypto.randomUUID()
   const flowId = crypto.randomUUID()
@@ -42,10 +42,12 @@ async function fixture(shared = false) {
   await db.insert(users).values({ id: userId, email: `${userId}@identity-finalizer.test` })
   const identity = { type: 'user' as const, userId }
   const generation = await beginGitHubIdentityLink(identity)
+  const nonce = new Bun.CryptoHasher('sha256').update(flowId).digest('base64url')
+  const stateHash = new Bun.CryptoHasher('sha256').update(local ? nonce : flowId).digest('hex')
   await states.create({
-    stateHash: new Bun.CryptoHasher('sha256').update(flowId).digest('hex'),
+    stateHash,
     localFlowId: flowId,
-    authority: 'platform_broker',
+    authority: local ? 'local' : 'platform_broker',
     providerKey: 'github',
     userId,
     purpose: 'github_identity',
@@ -57,13 +59,17 @@ async function fixture(shared = false) {
     returnTo: '/settings',
     expiresAt: new Date(Date.now() + 60_000),
   })
-  const state = (await states.claimByFlow({
-    localFlowId: flowId,
-    providerKey: 'github',
-    userId,
-    authority: 'platform_broker',
-    handleHash: 'a'.repeat(64),
-  }))!
+  const state = (
+    local
+      ? await states.consume({ stateHash, providerKey: 'github', userId })
+      : await states.claimByFlow({
+          localFlowId: flowId,
+          providerKey: 'github',
+          userId,
+          authority: 'platform_broker',
+          handleHash: 'a'.repeat(64),
+        })
+  )!
   const token = shared ? `test-access-${connection.id}` : `proof-access-${flowId}`
   let exchanges = 0,
     profiles = 0,
@@ -98,6 +104,7 @@ async function fixture(shared = false) {
   }
   return {
     finalizer,
+    nonce,
     receipts,
     input,
     identity,
@@ -592,6 +599,143 @@ test('preflight failure cannot claim terminal settlement if its durable write is
     await expect(h.finalizer.install(h.input)).rejects.toMatchObject({ code: 'flow_finalization_failed' })
     expect(h.counters()).toEqual({ exchanges: 0, profiles: 0 })
   } finally {
+    await h.close()
+  }
+})
+
+test('local personal callback resumes the staged proof and replays results without reexchanging a consumed code', async () => {
+  const context = await import('./authorization-context').catch(() => null)
+  expect(context?.resumeLocalGitHubIdentity).toBeDefined()
+  const h = await fixture(false, true)
+  const otherUserId = crypto.randomUUID()
+  try {
+    h.transient(true)
+    await expect(h.finalizer.install(h.input)).rejects.toMatchObject({ code: 'provider_unavailable' })
+    await db.insert(users).values({ id: otherUserId, email: `${otherUserId}@local-replay.test` })
+    expect(
+      await context!.resumeLocalGitHubIdentity({
+        identity: { type: 'user', userId: otherUserId },
+        nonce: h.nonce,
+        finalizer: h.finalizer,
+        receipts: h.receipts,
+      })
+    ).toBeNull()
+    await expect(
+      context!.resumeLocalGitHubIdentity({
+        identity: {
+          type: 'agent',
+          agentId: crypto.randomUUID(),
+          squadId: crypto.randomUUID(),
+          userId: h.identity.userId,
+        },
+        nonce: h.nonce,
+        finalizer: h.finalizer,
+        receipts: h.receipts,
+      })
+    ).rejects.toMatchObject({ code: 'human_required' })
+    h.transient(false)
+    const input = { identity: h.identity, nonce: h.nonce, finalizer: h.finalizer, receipts: h.receipts }
+    expect(
+      await Promise.all([context!.resumeLocalGitHubIdentity(input), context!.resumeLocalGitHubIdentity(input)])
+    ).toEqual([{ returnTo: '/settings' }, { returnTo: '/settings' }])
+    expect(h.counters()).toEqual({ exchanges: 1, profiles: 2 })
+    const cleanup = new IntegrationCredentialCleanupWorker(
+      new DbIntegrationCredentialCleanupRepository([h.credentialRef]),
+      getSecretStore()
+    )
+    expect(await cleanup.runOnce()).toBe(true)
+    expect(getSecretStore().get(h.credentialRef)).toBeUndefined()
+    expect(await context!.resumeLocalGitHubIdentity(input)).toEqual({ returnTo: '/settings' })
+    expect(h.counters()).toEqual({ exchanges: 1, profiles: 2 })
+  } finally {
+    await db.delete(users).where(eq(users.id, otherUserId))
+    await h.close()
+  }
+})
+
+test('local recovery with no staged grant requires restart and never mints/reexchanges provider credentials', async () => {
+  const context = await import('./authorization-context').catch(() => null)
+  expect(context?.resumeLocalGitHubIdentity).toBeDefined()
+  const h = await fixture(false, true)
+  try {
+    await expect(
+      context!.resumeLocalGitHubIdentity({
+        identity: h.identity,
+        nonce: h.nonce,
+        finalizer: h.finalizer,
+        receipts: h.receipts,
+      })
+    ).rejects.toMatchObject({ code: 'local_authorization_restart_required' })
+    expect(h.counters()).toEqual({ exchanges: 0, profiles: 0 })
+    expect((await h.receipts.get(h.flowId))!.terminalCode).toBe('local_authorization_restart_required')
+  } finally {
+    await h.close()
+  }
+})
+
+test.each(['expired', 'broker', 'integration'] as const)(
+  'local proof recovery excludes %s receipts even with the correct human and nonce hash',
+  async (excluded) => {
+    const context = await import('./authorization-context')
+    const h = await fixture(false, true)
+    try {
+      await db
+        .update(integrationAuthorizationFlowReceipts)
+        .set(
+          excluded === 'expired'
+            ? { recoveryExpiresAt: new Date(Date.now() - 1) }
+            : excluded === 'broker'
+              ? { authority: 'platform_broker' }
+              : { purpose: 'integration', linkGeneration: null }
+        )
+        .where(eq(integrationAuthorizationFlowReceipts.localFlowId, h.flowId))
+      expect(
+        await context.resumeLocalGitHubIdentity({
+          identity: h.identity,
+          nonce: h.nonce,
+          finalizer: h.finalizer,
+          receipts: h.receipts,
+        })
+      ).toBeNull()
+      expect(h.counters()).toEqual({ exchanges: 0, profiles: 0 })
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test('local recovery serializes with an in-flight original callback rather than verifying twice', async () => {
+  const context = await import('./authorization-context')
+  const h = await fixture(false, true)
+  let entered!: () => void, release!: () => void
+  const atProfile = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const continueProfile = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let first: Promise<void> | undefined
+  let recovered: Promise<{ returnTo: string } | null> | undefined
+  try {
+    h.beforeProfile(async () => {
+      entered()
+      await continueProfile
+    })
+    first = h.finalizer.install(h.input)
+    await atProfile
+    recovered = context.resumeLocalGitHubIdentity({
+      identity: h.identity,
+      nonce: h.nonce,
+      finalizer: h.finalizer,
+      receipts: h.receipts,
+    })
+    release()
+    await first
+    expect(await recovered).toEqual({ returnTo: '/settings' })
+    expect(h.counters()).toEqual({ exchanges: 1, profiles: 1 })
+  } finally {
+    release()
+    await Promise.allSettled([first, recovered])
     await h.close()
   }
 })

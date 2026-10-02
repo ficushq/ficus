@@ -79,7 +79,16 @@ export class GitHubPersonalOAuthFinalizer {
         await store.refreshKey(receipt.artifactCredentialRef)
         let raw = store.get(receipt.artifactCredentialRef)
         if (raw === undefined) {
-          const grant = await input.exchange()
+          let grant: Awaited<ReturnType<PersonalInstall['exchange']>>
+          try {
+            grant = await input.exchange()
+          } catch (error) {
+            if (error instanceof AuthorizationFlowError && error.code === 'local_authorization_restart_required') {
+              const disposition = await this.dependencies.receipts.requireCleanup(receipt.localFlowId, error.code)
+              if (!disposition?.terminalAt) throw new AuthorizationFlowError('flow_finalization_failed')
+            }
+            throw error
+          }
           raw = serializeOAuthCredential(grant.credential as OAuthCredentialBundleV1)
           await store.setWithDurableObligation(
             receipt.artifactCredentialRef,
