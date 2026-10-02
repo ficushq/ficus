@@ -125,6 +125,7 @@ function harness() {
         return { version: 1, userId: 123, login: 'octocat' }
       },
     },
+    verifyPersonal: async () => {},
     install: async ({ grant }) => {
       calls.push('install')
       expect(grant.credential).toBe(credential!)
@@ -361,4 +362,22 @@ test('a personal device start without a valid generation or with a reconnect tar
     })
     expect(h.calls).toEqual([])
   }
+})
+
+test('retired personal device generation is checked before polling or reading a staged credential, but not immutable replay', async () => {
+  const { GitHubFeedbackError } = await import('../github/feedback-trust')
+  const h = harness()
+  const failure = new GitHubFeedbackError('identity_generation_changed', 409)
+  h.dependencies.verifyPersonal = async () => {
+    throw failure
+  }
+  await h.service.start({ ...start, purpose: 'github_identity', linkGeneration: 7 })
+  h.advance(5)
+  h.outcomes.push(authorized)
+  await expect(h.service.poll({ id: h.id, userId: 'user' })).rejects.toBe(failure)
+  expect(h.calls).toEqual(['start'])
+  expect(h.receipt.terminalCode).toBe('identity_generation_changed')
+  h.receipt.identityProofId = 'immutable-proof'
+  h.receipt.identityVerifiedAt = new Date()
+  expect(await h.service.poll({ id: h.id, userId: 'user' })).toEqual({ status: 'complete', returnTo: start.returnTo })
 })

@@ -6,6 +6,7 @@ import type { AuthorizationFlowReceipt, AuthorizationFlowReceiptRepository } fro
 import type { OAuthCredentialBundleV1 } from './credential-bundle'
 import type { OAuthAuthorizationPurpose, OAuthStateRecord } from './state-repository'
 import type { AuthorizationGrant } from '../plugin'
+import { GitHubFeedbackError } from '../github/feedback-trust'
 import { AuthorizationFlowError, isSafeReturnTarget } from './service'
 
 export interface DeviceAuthorizationRecord {
@@ -52,6 +53,8 @@ export interface DeviceAuthorizationDependencies {
     userId: string
     grant: AuthorizationGrant<GitHubConnectionConfiguration, OAuthCredentialBundleV1>
   }): Promise<void>
+  /** Per-request literal-human/generation preflight. Finalization rechecks after provider I/O. */
+  verifyPersonal?(record: DeviceAuthorizationRecord): Promise<void>
   installIdentity?(input: {
     state: OAuthStateRecord
     userId: string
@@ -127,6 +130,20 @@ export class DeviceAuthorizationService {
         let record = await this.#requireRecord(input)
         const settled = this.#settled(record.receipt)
         if (settled) return { result: settled }
+        if (record.receipt.purpose === 'github_identity') {
+          if (!this.dependencies.verifyPersonal) throw new AuthorizationFlowError('identity_installer_unavailable')
+          try {
+            await this.dependencies.verifyPersonal(record)
+          } catch (error) {
+            if (error instanceof GitHubFeedbackError) {
+              const disposition = record.receipt.stagingStartedAt
+                ? await this.dependencies.receipts.requireCleanup(record.id, error.code)
+                : await this.dependencies.receipts.markTerminal(record.id, error.code)
+              if (!disposition?.terminalAt) throw new AuthorizationFlowError('flow_finalization_failed')
+            }
+            throw error
+          }
+        }
         if (record.status === 'authorized' && record.receipt.recoveryExpiresAt <= this.#now()) {
           await this.dependencies.receipts.requireRevocation({
             localFlowId: record.id,
