@@ -146,5 +146,6 @@ describe('activity subject identity', () => {
     ).toBe('Issue #12')
     expect(activitySubjectLabel({ ...item('70:a'), ref: { type: 'future' } as never })).toBe('Activity')
     expect(activitySubjectLabel({ ...item('70:a'), ref: null as never })).toBe('Activity')
+    expect(activitySubjectLabel({ ...item('30:a'), ref: { type: 'workstream' } as never })).toBe('Work stream')
   })
 })

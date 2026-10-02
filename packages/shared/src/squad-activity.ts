@@ -83,7 +83,9 @@ export function activitySubjectLabel(item: SquadActivityItem): string {
   if (ref.type === 'workstream')
     return ref.workStreamNumber !== undefined
       ? `Work stream #${ref.workStreamNumber}`
-      : `Work stream ${ref.workStreamId.slice(0, 8)}`
+      : ref.workStreamId
+        ? `Work stream ${ref.workStreamId.slice(0, 8)}`
+        : 'Work stream'
   if (ref.type === 'pr') {
     const number = /\/pull\/(\d+)(?:[/?#]|$)/.exec(ref.url)?.[1]
     return number ? `PR #${number}` : 'Pull request'
