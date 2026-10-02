@@ -2089,6 +2089,7 @@ test('event-created streams preserve their default or explicit opt-out through r
   const workspace = await mkdtemp(join(tmpdir(), 'ficus-event-cleanup-'))
   const repo = join(workspace, 'repo')
   const exec = async (args: string[]) => {
+    if (args.includes('fetch')) throw new Error('Local event fixture must not contact its invented GitHub remote')
     const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe' })
     const [output, error, code] = await Promise.all([
       new Response(proc.stdout).text(),
@@ -2139,7 +2140,7 @@ test('event-created streams preserve their default or explicit opt-out through r
           const stream = await WorkStream.mustFind(run!.workStreamId!)
           expect(stream.autoCleanupWorktree).toBe(true)
           if (optOut) await stream.update({ autoCleanupWorktree: false })
-          await stream.update({ repository: 'repo', baseBranch: 'main' })
+          await stream.update({ repository: 'repo', baseBranch: 'main', baseSource: 'local' })
           const { workStreamWorktrees } = await import('../../../db')
           const [owned] = await db
             .select()

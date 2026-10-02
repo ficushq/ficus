@@ -245,6 +245,7 @@ for (const cached of [false, true]) {
     expect(receipts[0]).toMatchObject({ baseCommit: fresh, baseSource: 'remote' })
     expect(await oid(repo)).toBe(stale)
     if (cached) {
+      if (fetchHeadBefore === undefined) throw new Error('Cached fixture must capture FETCH_HEAD before provisioning')
       expect(await oid(repo, 'refs/remotes/origin/main')).toBe(stale)
       expect(await Bun.file(join(repo, '.git/FETCH_HEAD')).text()).toBe(fetchHeadBefore)
     } else {
