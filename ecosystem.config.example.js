@@ -53,8 +53,9 @@ module.exports = {
         FORCE_COLOR: 1,
       },
     },
+    // Uncomment this optional process before using `bun run reload:web`.
     // {
-    //   name: 'tau-web',
+    //   name: 'ficus-web',
     //   cwd: './apps/web',
     //   script: 'node_modules/.bin/vite',
     //   args: 'preview --port 5173',

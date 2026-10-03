@@ -108,7 +108,7 @@ in-agent usage guide this document backs.
   over the same trusted paths already used for `identity.pem` and squad SSH
   keys:
   - **docker/k8s**: no transit at all — the squad's SSH directory is
-    live-mounted at `/home/tau/.ssh` inside every running sandbox
+    live-mounted at `/home/ficus/.ssh` inside every running sandbox
     (`apps/core/src/services/sandbox/ensure.ts`), so a materialized change
     is visible immediately.
   - **VM boxes**: pushed over the box server's `/write` channel by

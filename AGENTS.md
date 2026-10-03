@@ -300,5 +300,5 @@ or weakening authentication.
 ## Home Directory & Paths
 
 Use `getHomeDir` from `apps/core/src/lib/utils/home.ts` to get the home
-directory path (typically `~/.tau`). Do not use `os.homedir()` or
+directory path (typically `~/.ficus`). Do not use `os.homedir()` or
 `process.env.HOME` directly.

@@ -307,7 +307,7 @@ bun run k3d:setup
 # Add to your .env:
 FICUS_SANDBOX_RUNTIME=k8s
 FICUS_K8S_LOCAL=true
-FICUS_K8S_NAMESPACE=tau-sandboxes-dev
+FICUS_K8S_NAMESPACE=ficus-sandboxes-dev
 FICUS_K8S_RUNTIME_CLASS=
 # Optional: override sandbox pod memory limit (local default is 8Gi)
 # FICUS_SANDBOX_MEMORY_LIMIT=8Gi
@@ -339,7 +339,7 @@ bun run k3d:kill        # Kill running pods so they pick up the new image
 ### How it works
 
 - **k3d** runs a single-node k3s cluster inside a Docker container
-- **`~/.tau/`** is mounted into the k3d node via hostPath, so the host API and sandbox pods share workspace/memory/SSH data through a static PV/PVC
+- **`~/.ficus/`** is mounted into the k3d node via hostPath, so the host API and sandbox pods share workspace/memory/SSH data through a static PV/PVC
 - **`kubectl port-forward`** bridges host → pod networking (managed automatically by `K8sPodManager`)
 - Sandbox pods use **`host.k3d.internal`** to reach the API running on the host
 - The local build script derives its Linux image architecture from the host (`amd64` or `arm64`); it does not always force x64 emulation on Apple Silicon.
@@ -357,7 +357,7 @@ full list).
 bun run docker:gc               # One-shot: orphaned test DBs, registry GC,
                                 # dangling images/build cache, k3d node prune
 bun run docker:gc -- --install  # Install/refresh a daily 13:00 launchd agent
-                                # (dev.ficus.docker-gc, logs to /tmp/ficus-docker-gc.log)
+                                # (dev.tau.docker-gc, retained launchd label; logs to /tmp/ficus-docker-gc.log)
 ```
 
 Normal test runs do not sweep other worktrees' database projects. Orphan
@@ -380,5 +380,5 @@ bunx pm2 save                              # persist across pm2 resurrections
 ### Teardown
 
 ```bash
-bun run k3d:teardown    # Delete cluster entirely (data in ~/.tau/ preserved)
+bun run k3d:teardown    # Delete cluster entirely (data in ~/.ficus/ preserved)
 ```

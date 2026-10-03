@@ -105,7 +105,7 @@ After the initial scan, chokidar watches for changes:
 
 ## Authentication
 
-The sandbox reads `FICUS_PASSWORD` from the environment or `/etc/tau/password` (K8s mounted secret) and sends it as a `Bearer` token on all callbacks to core.
+The sandbox watcher prefers `SANDBOX_CALLBACK_SECRET` from its environment or the mounted `/etc/ficus/sandbox-callback-secret` file and sends it as a `Bearer` token on callbacks to Core. A legacy `FICUS_PASSWORD` value remains a fallback during transition.
 
 ## Implementation
 

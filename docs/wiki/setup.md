@@ -133,7 +133,7 @@ headless use; the flag wins when both are set.
 | `--app-url <origin>`                                  | `FICUS_SETUP_APP_URL`      | `http://localhost:<port>`                                        | must be a bare origin (`scheme://host[:port]`, no path) — a path breaks passkeys                                                     |
 | `--database-url <dsn>`                                | `FICUS_SETUP_DATABASE_URL` | the managed container                                            | use an existing PostgreSQL; no container is then created or started                                                                  |
 | `--db-name <name>`                                    | `FICUS_SETUP_DB_NAME`      | `ficus`                                                          | managed container only, created if missing; mutually exclusive with `--database-url`                                                 |
-| `--db-port <n>`                                       | `FICUS_SETUP_DB_PORT`      | `5432` for `tau`, else the first free port from 5433             | host port the managed PostgreSQL container publishes on loopback                                                                     |
+| `--db-port <n>`                                       | `FICUS_SETUP_DB_PORT`      | `5432` for `ficus`, else the first free port from 5433           | host port the managed PostgreSQL container publishes on loopback                                                                     |
 | `--default`                                           | —                          | off                                                              | make this instance the fallback for bare `ficus server …` commands run outside any checkout (inside a checkout, that checkout wins)  |
 | `--no-start`                                          | —                          | starts                                                           | write configuration/registry only; do not register or start a supervisor                                                             |
 | `--dry-run`                                           | —                          | off                                                              | print the plan (secrets redacted), change nothing, exit 0                                                                            |
@@ -310,9 +310,10 @@ To change supervisors safely, first run `ficus server uninstall --root <checkout
 
 Several ficus installs can run on one machine at once. Each one is an **instance**
 with a label, and the label names every resource the instance owns, so nothing
-is shared by accident. The label of an existing install is `tau`, and the `tau`
-label keeps today's names exactly — installing a second instance changes nothing
-about the first.
+is shared by accident. The current default label is `ficus`. An install still
+registered under the pre-rename `tau` identity must be migrated with the bridge
+release before this CLI manages it; the current CLI refuses to guess its process
+or data names.
 
 An instance is a checkout: `.env` and `ecosystem.config.js` belong to one label,
 so give the second instance its own clone.

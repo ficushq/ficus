@@ -5,13 +5,13 @@
 # via the CMD override. This keeps images in sync and simplifies CI.
 #
 # Usage:
-#   docker build -t tau-core:latest .
+#   docker build -t ficus-core:latest .
 #   bun run core:build  (shortcut)
 #
 # Run as:
-#   docker run tau-core:latest bun run apps/core/dist/index.js   # API server
-#   docker run tau-core:latest bun run apps/core/dist/worker.js  # Worker
-#   docker run tau-core:latest                                    # API (default)
+#   docker run ficus-core:latest bun run apps/core/dist/index.js   # API server
+#   docker run ficus-core:latest bun run apps/core/dist/worker.js  # Worker
+#   docker run ficus-core:latest                                    # API (default)
 #
 # In K8s, each Deployment sets a different command — see k8s/core-deployment.yaml.
 
