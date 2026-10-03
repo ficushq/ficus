@@ -15,7 +15,10 @@ import { CORE_ROOT_PACKAGE_NAMES, type CoreRootPackageName } from '@ficus/shared
 import { expandTilde } from '@ficus/shared/node'
 import { CURRENT_IDENTITY, normalizeLabel } from './instance'
 import { LOCAL_SUPERVISORS, type LocalSupervisor } from './types'
-import { cliHome, LEGACY_CLI_HOME_LINK } from './home-move'
+import { cliHome } from './home-move'
+
+/** Refusal-only path: never silently hide an unmigrated local installation. */
+export const RETIRED_CLI_HOME = '.tau' // ficus-legacy-refusal: inspect only; no migration or writes
 
 /** Refusal-only label for a registry written before local instances had identities. */
 export const RETIRED_DEFAULT_INSTANCE = 'tau' // ficus-p5-bridge: refuses older local registrations
@@ -116,7 +119,7 @@ export function assertDefaultRegistryReady(
       })
     }
   }
-  const retired = join(home, LEGACY_CLI_HOME_LINK, 'cli', 'local-server.json') // ficus-p5-apple
+  const retired = join(home, RETIRED_CLI_HOME, 'cli', 'local-server.json')
   if (!present(retired)) return
   if (present(canonical)) {
     // A migrated home link (or another path to the same inode) is one registry, not a hidden instance.
