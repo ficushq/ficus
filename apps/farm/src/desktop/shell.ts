@@ -3,9 +3,7 @@ import { useEffect } from 'react'
 /**
  * The slice of Ficus Desktop's page bridge the farm uses: whether the window
  * draws its traffic lights over the page (an inset title bar) and whether
- * it's fullscreen. Mirrors apps/web/src/lib/desktop.ts, including its kept
- * D1 bridge (K5, Ruling 56): `ficusDesktopApp`, falling back to the D1 app's
- * older name until Ficus Desktop (D2) ships; remove it with the web's.
+ * it's fullscreen. Mirrors the `ficusDesktopApp` bridge in apps/web/src/lib/desktop.ts.
  */
 export interface DesktopShell {
   insetTitleBar: boolean

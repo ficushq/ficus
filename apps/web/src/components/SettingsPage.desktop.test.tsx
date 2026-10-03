@@ -53,7 +53,6 @@ function seedAccountQueries(queryClient: QueryClient) {
 
 afterEach(() => {
   delete window.ficusDesktopApp
-  delete window.ficusDesktopApp
 })
 
 test('a paired remote instance shows Disconnect and calls disconnect, never logout', async () => {
