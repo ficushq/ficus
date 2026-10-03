@@ -3,14 +3,25 @@
 Source SVGs for the Ficus mark, and a generator that renders every icon Core
 web, Platform web, Core docs, Desktop and Mobile need.
 
-**Nothing here is wired into any app yet.** These are sources and generated
-outputs only; swapping an app over to them is a separate, later change.
+The apps use the generated icons below. The social preview has its own editable
+SVG and ready-to-upload PNG in this folder.
 
 ## Sources
 
 - `ficus-mark.svg` — the full mark (leaf + pot), light palette. 64×64 viewBox, transparent background.
 - `ficus-mark-dark.svg` — the same mark, dark-mode palette.
 - `ficus-favicon-16.svg` — a simplified single-leaf mark for use at ≤16px, where the full mark's detail doesn't survive.
+
+## Social preview
+
+- [`social-preview.svg`](social-preview.svg) — editable source for the current card.
+- [`social-preview.png`](social-preview.png) — 1280×640 export for website link previews and GitHub.
+
+Render the SVG at 1280×640 with device scale 1 in Chrome after fonts are ready.
+Use the PNG in GitHub repository **Settings → General → Social preview**;
+committing it does not update GitHub’s uploaded preview automatically. The website
+serves a copy at `/social-preview.png`. Keep published copies in sync when changing
+the card. This card is separate from `bun run brand:generate`, which renders icons.
 
 ## Palette
 
