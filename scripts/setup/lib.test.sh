@@ -9,6 +9,10 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 source "${SCRIPT_DIR}/lib.sh"
 # The pre-Ficus encryption key the naming guards look for (from lib.sh).
 PFK="${PRE_FICUS_ENV_PREFIX}_ENCRYPTION_KEY"
+# Historical names used only to prove retired release artifacts are rejected.
+RETIRED_RELEASE_MARKER=.tau-release-complete
+RETIRED_BUILD_STAMP=.tau-build-stamp
+RETIRED_ARTIFACT_ROOT_PREFIX=tau-core-
 
 PASS=0 FAIL=0
 
@@ -299,25 +303,25 @@ source "${SCRIPT_DIR}/lib.sh"
 # .env-file pointer is printed) — piping setup-host.sh's output to a log
 # must never leak the plaintext bootstrap credential.
 is_stdout_tty() { return 1; }
-out=$(render_bootstrap_token_block 1 'sekrit-value' 'generated (openssl rand -hex 32)' '/opt/tau-core/.env')
+out=$(render_bootstrap_token_block 1 'sekrit-value' 'generated (openssl rand -hex 32)' '/opt/ficus-core/.env')
 expect_eq 'render_bootstrap_token_block: generated + no stdout TTY -> value withheld' \
   "$([[ ${out} == *sekrit-value* ]] && echo leaked || echo withheld)" 'withheld'
 expect_match 'render_bootstrap_token_block: generated + no stdout TTY -> points at the .env file' \
-  "${out}" 'Bootstrap token withheld .* /opt/tau-core/\.env'
+  "${out}" 'Bootstrap token withheld .* /opt/ficus-core/\.env'
 source "${SCRIPT_DIR}/lib.sh"
 
 # TTY stdout: a freshly-generated token IS printed, same as before.
 is_stdout_tty() { return 0; }
-out=$(render_bootstrap_token_block 1 'sekrit-value' 'generated (openssl rand -hex 32)' '/opt/tau-core/.env')
+out=$(render_bootstrap_token_block 1 'sekrit-value' 'generated (openssl rand -hex 32)' '/opt/ficus-core/.env')
 expect_match 'render_bootstrap_token_block: generated + stdout TTY -> value printed' "${out}" 'sekrit-value'
 source "${SCRIPT_DIR}/lib.sh"
 
 # Not generated (pre-existing FICUS_PASSWORD): never printed either way, TTY or not.
 is_stdout_tty() { return 1; }
-out=$(render_bootstrap_token_block 0 'sekrit-value' 'existing /opt/tau-core/.env' '/opt/tau-core/.env')
+out=$(render_bootstrap_token_block 0 'sekrit-value' 'existing /opt/ficus-core/.env' '/opt/ficus-core/.env')
 expect_eq 'render_bootstrap_token_block: not generated -> value never printed (no TTY)' \
   "$([[ ${out} == *sekrit-value* ]] && echo leaked || echo withheld)" 'withheld'
-expect_match 'render_bootstrap_token_block: not generated -> shows the source' "${out}" 'existing /opt/tau-core/\.env'
+expect_match 'render_bootstrap_token_block: not generated -> shows the source' "${out}" 'existing /opt/ficus-core/\.env'
 source "${SCRIPT_DIR}/lib.sh"
 
 # --- envfile_get ------------------------------------------------------------
@@ -1158,7 +1162,7 @@ EOF
   cat >"${cfg_set_tmp}" <<'EOF'
 source:
   repo: git@example.com:acme/ficus.git
-  dest: /opt/tau-core
+  dest: /opt/ficus-core
 core:
   origin: https://old.ficus.sh
   port: 3000
@@ -1180,7 +1184,7 @@ EOF
   expect_eq 'cfg_set: touched NOTHING else — source.repo untouched' \
     "$(cfg_get '.source.repo')" 'git@example.com:acme/ficus.git'
   expect_eq 'cfg_set: touched NOTHING else — source.dest untouched' \
-    "$(cfg_get '.source.dest')" '/opt/tau-core'
+    "$(cfg_get '.source.dest')" '/opt/ficus-core'
   expect_eq 'cfg_set: touched NOTHING else — core.port untouched' "$(cfg_get '.core.port')" '3000'
   cfg_set '.core.origin' 'https://acme.ficus.sh'
   cfg_set '.ingress.tls_cert_path' '/etc/caddy/tls/new.crt'
@@ -2124,70 +2128,6 @@ EOF
   unset -f fake_do_http_reuse
   unset PROV_DO_CREATE_COUNT_FILE
 
-  # -- digitalocean lookup under BOTH tags: a tenant droplet created before the
-  # Ficus rename carries only the legacy tag until the DigitalOcean rename job
-  # retags it, and the retag deletes the legacy tag. The lookup asks for the
-  # Ficus tag first, then the legacy one, and reuses a droplet found under
-  # either — never creating a duplicate. (The fake answers every tag except
-  # ficus-tenant with the droplet, so no old name is retyped here.)
-  export PROV_DO_CREATE_COUNT_FILE="${PROV_TMP}/do-create-count-dual"
-  export PROV_DO_TAGS_FILE="${PROV_TMP}/do-tags-dual"
-  printf '0' >"${PROV_DO_CREATE_COUNT_FILE}"
-  : >"${PROV_DO_TAGS_FILE}"
-  _fake_do_http_dual() { # FOUND_UNDER (ficus|legacy) ...ARGV
-    local found_under=$1
-    shift
-    _prov_parse_http_argv "$@"
-    local body code tag
-    case "${_url}" in
-      *'?tag_name='*)
-        tag=${_url##*tag_name=}
-        printf '%s\n' "${tag}" >>"${PROV_DO_TAGS_FILE}"
-        if { [[ ${tag} == ficus-tenant && ${found_under} == ficus ]] || [[ ${tag} != ficus-tenant && ${found_under} == legacy ]]; }; then
-          body='{"droplets":[{"id":888,"name":"acme-do","status":"active","networks":{"v4":[{"ip_address":"198.51.100.9","type":"public"}]}}]}'
-        else
-          body='{"droplets":[]}'
-        fi
-        code=200
-        ;;
-      *'/droplets/'*)
-        body='{"droplet":{"id":888,"status":"active","networks":{"v4":[{"ip_address":"198.51.100.9","type":"public"}]}}}'
-        code=200
-        ;;
-      *)
-        printf '%s' "$(($(cat "${PROV_DO_CREATE_COUNT_FILE}") + 1))" >"${PROV_DO_CREATE_COUNT_FILE}"
-        body='{"droplet":{"id":999,"status":"new","networks":{"v4":[]}}}'
-        code=202
-        ;;
-    esac
-    [[ -n ${_outfile} ]] && printf '%s' "${body}" >"${_outfile}"
-    printf '%s' "${code}"
-  }
-  fake_do_http_dual_legacy() { _fake_do_http_dual legacy "$@"; }
-  fake_do_http_dual_ficus() { _fake_do_http_dual ficus "$@"; }
-  export -f _fake_do_http_dual fake_do_http_dual_legacy fake_do_http_dual_ficus
-
-  dual_out=$(DIGITALOCEAN_TOKEN=dummy-do-token FICUS_SETUP_HTTP_CMD=fake_do_http_dual_legacy \
-    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/digitalocean.yaml")
-  expect_eq 'digitalocean dual tag: a droplet found only under the legacy tag is reused' \
-    "$(printf '%s\n' "${dual_out}" | tail -n1)" 'SERVER_IP=198.51.100.9'
-  expect_eq 'digitalocean dual tag: no duplicate droplet is created' "$(cat "${PROV_DO_CREATE_COUNT_FILE}")" '0'
-  expect_eq 'digitalocean dual tag: the Ficus tag is asked first' "$(head -n1 "${PROV_DO_TAGS_FILE}")" 'ficus-tenant'
-  expect_eq 'digitalocean dual tag: then exactly one other (legacy) tag' \
-    "$(sed -n 2p "${PROV_DO_TAGS_FILE}" | grep -cv '^ficus-tenant$' || true)|$(wc -l <"${PROV_DO_TAGS_FILE}" | tr -d ' ')" '1|2'
-
-  : >"${PROV_DO_TAGS_FILE}"
-  dual_out=$(DIGITALOCEAN_TOKEN=dummy-do-token FICUS_SETUP_HTTP_CMD=fake_do_http_dual_ficus \
-    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/digitalocean.yaml")
-  expect_eq 'digitalocean dual tag: a droplet under the Ficus tag is reused' \
-    "$(printf '%s\n' "${dual_out}" | tail -n1)" 'SERVER_IP=198.51.100.9'
-  expect_eq 'digitalocean dual tag: found under the Ficus tag, the legacy tag is not asked' \
-    "$(cat "${PROV_DO_TAGS_FILE}")" 'ficus-tenant'
-  expect_eq 'digitalocean dual tag: still no create' "$(cat "${PROV_DO_CREATE_COUNT_FILE}")" '0'
-
-  unset -f _fake_do_http_dual fake_do_http_dual_legacy fake_do_http_dual_ficus
-  unset PROV_DO_CREATE_COUNT_FILE PROV_DO_TAGS_FILE
-
   # -- digitalocean VPC pinning + project assignment.
   #
   # vpc_uuid must be PASSED, not left to the region's default VPC: the default
@@ -2827,7 +2767,7 @@ expect_eq 'phase_restore: ...after pg_restore and the workspace copy' \
 
 # Ruling 84: the HOME a restored backup was taken with. phase_restore records
 # it (the archived .env's HOME_DIR, else the workspace dir's name under the run
-# user's home, else the legacy default), and on layout 2 a legacy one becomes
+# user's home, else the canonical default), and on layout 2 a legacy one becomes
 # the compat link to the Ficus HOME the tree was restored into.
 PR_RH="${RESTORE_TMP}/pr-runhome"
 PR_TARGET="${PR_RH}/${HL_NEW_HOME_NAME}"
@@ -2856,7 +2796,7 @@ unset -f pr_archive pr_run
 
 rm -rf "${RESTORE_TMP}"
 
-# --- restore_archived_home / restore_rebase_home / restore_link_legacy_home --
+# --- restore_archived_home / restore_rebase_home ---
 # (Ruling 84) The HOME a restored backup was taken with, the rebase of its
 # stored paths to this host's HOME, and the legacy-HOME compat link.
 RH_TMP=$(mktemp -d)
@@ -2871,8 +2811,8 @@ expect_eq 'restore_archived_home: ...quoted, and over the workspace dir'"'"'s na
 expect_eq 'restore_archived_home: no HOME_DIR — the workspace dir'"'"'s name under the run user'"'"'s home (legacy)' \
   "$(restore_archived_home "${RH_TMP}/a2" /root)" "/root/${HL_LEGACY_HOME_NAME}"
 expect_eq 'restore_archived_home: ...(Ficus)' "$(restore_archived_home "${RH_TMP}/a3" /home/u)" "/home/u/${HL_NEW_HOME_NAME}"
-expect_eq 'restore_archived_home: no HOME_DIR and no workspace dir — the legacy default' \
-  "$(restore_archived_home "${RH_TMP}/a4" /root)" "/root/${HL_LEGACY_HOME_NAME}"
+expect_eq 'restore_archived_home: no HOME_DIR and no workspace dir — the canonical default' \
+  "$(restore_archived_home "${RH_TMP}/a4" /root)" "/root/${HL_NEW_HOME_NAME}"
 
 # restore_rebase_home, with the program run stubbed (_hl_rebase_home runs the
 # release's rebase-home.js; host-layout.test.sh and the e2e cover that).
@@ -2910,40 +2850,6 @@ expect_match '...naming both HOMEs and the override' "${rr_out}" \
 rr_out=$(rr_run 5 /d/.env /rel "/root/${HL_LEGACY_HOME_NAME}" "/root/${HL_NEW_HOME_NAME}")
 expect_match 'restore_rebase_home: any other failure fails the restore' "${rr_out}" "HOME paths from /root/${HL_LEGACY_HOME_NAME} to /root/${HL_NEW_HOME_NAME} failed \\(5\\)"
 unset -f rr_run
-
-# restore_link_legacy_home: only on layout 2, only legacy → Ficus under the
-# run user's home, never over something already there.
-rl_run() { # LAYOUT ARCHIVED CURRENT RUN_HOME — prints the output, then `rc=N`
-  local rc=0
-  (HL_LAYOUT=$1 restore_link_legacy_home "$2" "$3" "$4") 2>&1 || rc=$?
-  echo "rc=${rc}"
-}
-RL="${RH_TMP}/rl"
-rl_legacy="${RL}/${HL_LEGACY_HOME_NAME}" rl_ficus="${RL}/${HL_NEW_HOME_NAME}"
-mkdir -p "${rl_ficus}"
-rl_out=$(rl_run 2 "${rl_legacy}" "${rl_ficus}" "${RL}")
-expect_eq 'restore_link_legacy_home: layout 2, legacy → Ficus: the legacy HOME links to the Ficus one' \
-  "$(readlink "${rl_legacy}"):${rl_out##*$'\n'}" "${rl_ficus}:rc=0"
-rl_out=$(rl_run 2 "${rl_legacy}" "${rl_ficus}" "${RL}")
-expect_eq 'restore_link_legacy_home: ...again: kept as it is, quietly' "$(readlink "${rl_legacy}"):${rl_out}" "${rl_ficus}:rc=0"
-rm -f "${rl_legacy}"
-mkdir -p "${rl_legacy}/sessions"
-rl_out=$(rl_run 2 "${rl_legacy}" "${rl_ficus}" "${RL}")
-expect_eq 'restore_link_legacy_home: a real legacy dir is left as it is' \
-  "$([[ -d ${rl_legacy}/sessions && ! -L ${rl_legacy} ]] && echo real):${rl_out##*$'\n'}" 'real:rc=0'
-expect_match '...with a warning' "${rl_out}" "${rl_legacy} already exists and is not the compat link"
-rm -rf "${rl_legacy}"
-rl_out=$(rl_run 1 "${rl_legacy}" "${rl_ficus}" "${RL}")
-expect_eq 'restore_link_legacy_home: layout 1 — nothing is linked' \
-  "$([[ -e ${rl_legacy} || -L ${rl_legacy} ]] && echo linked || echo none):${rl_out}" 'none:rc=0'
-rl_out=$(rl_run 2 "${rl_ficus}" "${rl_legacy}" "${RL}")
-expect_eq 'restore_link_legacy_home: Ficus → legacy — nothing is linked' \
-  "$([[ -L ${rl_ficus} || -L ${rl_legacy} ]] && echo linked || echo none):${rl_out}" 'none:rc=0'
-rl_out=$(rl_run 2 /srv/other "${rl_ficus}" "${RL}")
-expect_eq 'restore_link_legacy_home: a custom archived HOME — nothing is linked' \
-  "$([[ -e ${rl_legacy} || -L ${rl_legacy} ]] && echo linked || echo none):${rl_out}" 'none:rc=0'
-unset -f rl_run
-unset RL rl_legacy rl_ficus rl_out rr_out
 
 # setup-host.sh's git mode: the rebase runs right after the migrations, from
 # the HOME the restore recorded to the one the .env names now; nothing without
@@ -2984,11 +2890,7 @@ rt_run() { # RESTORE_URL NEEDED — prints the output, then `rc=N`
   ) 2>&1 || rc=$?
   echo "rc=${rc}"
 }
-rt_out=$(rt_run 'https://s3.invalid/a' 'e2emark,host_layout')
-expect_match 'setup-host.sh: a restore on a host the same run moves to layout 2 is refused' "${rt_out}" 'rc=1$'
-expect_match '...saying how to get there' "${rt_out}" 'this run would also move this host to the Ficus host layout — restore onto a fresh host, or upgrade this host first'
-expect_eq 'setup-host.sh: a restore with no layout move goes ahead' "$(rt_run 'https://s3.invalid/a' 'e2emark')" "$(printf 'passed\nrc=0')"
-expect_eq 'setup-host.sh: a layout move without a restore goes ahead' "$(rt_run '' 'host_layout')" "$(printf 'passed\nrc=0')"
+expect_eq 'setup-host.sh: a canonical restore goes ahead' "$(rt_run 'https://s3.invalid/a' 'e2emark')" "$(printf 'passed\nrc=0')"
 unset -f rt_run
 unset rt_out
 rm -rf "${RH_TMP}"
@@ -3099,8 +3001,6 @@ expect_eq 'render_core_unit: .env is read from <dest>, never from the run root' 
   "$(printf '%s\n' "${cu_api}" | grep -Fxc "EnvironmentFile=${CU_TMP}/.env")" '1'
 expect_eq "render_core_unit: the optional platform-managed env file survives the split (the layout's etc dir)" \
   "$(printf '%s\n' "${cu_api}" | grep -Fxc "EnvironmentFile=-${HL_ETC#"${FICUS_HOST_ROOT:-}"}/managed.env")" '1'
-expect_eq 'render_core_unit on layout 1: managed.env under the legacy etc dir, no Alias=, the legacy name in the comments' \
-  "$( (host_layout_resolve 1 && render_core_unit "${SCRIPT_DIR}/systemd/ficus-api.service.tmpl") | grep -Ec "^EnvironmentFile=-${HL_LEGACY_ETC}/managed.env\$|^Alias=|^# Logs: journalctl -u ${HL_LEGACY_UNIT_PREFIX}-api -f\$")" '2'
 expect_eq 'render_core_unit: no @PLACEHOLDER@ survives (install_rendered would refuse it)' \
   "$(printf '%s\n' "${cu_api}" | grep -c '@[A-Z_]*@' || true)" '0'
 expect_eq 'render_core_unit: a container database adds the docker ordering' \
@@ -3475,6 +3375,7 @@ EOF
   mkdir -p "${SH_TMP}/dest"
   printf 'FICUS_ENCRYPTION_KEY=cur-key\nFICUS_PASSWORD=cur-pw\nFICUS_INTERNAL_EVENT_TOKEN=cur-tok\n' >"${SH_TMP}/dest/.env"
   yq -i ".source.dest = \"${SH_TMP}/dest\"" "${SH_TMP}/restore.yaml"
+  printf '{"ficusHostLayout":2}\n' >"${SH_TMP}/dest/package.json"
   sh_cur_out=$(FICUS_SETUP_DATABASE_DSN='postgres://u:p@h:5432/db' \
     bash "${SCRIPT_DIR}/setup-host.sh" --config "${SH_TMP}/restore.yaml" --dry-run 2>/dev/null)
   expect_eq 'setup-host --dry-run: an existing FICUS_ encryption key is "existing", not generated' \
@@ -3545,18 +3446,6 @@ EOF
   expect_match 'setup-host --dry-run (fresh host): the .env names HOME_DIR explicitly (layout 2)' "${hld_out}" "\\| HOME_DIR=[^ ]*/${HL_NEW_HOME_NAME//./\\.}"
   expect_match 'setup-host --dry-run (fresh host): the backup HOME_DIR is .ficus, the unit ficus-backup' \
     "${hld_out}" "HOME_DIR resolved to: [^ ]*/\\.ficus.*install ficus-backup\\.service \\+ ficus-backup\\.timer"
-  expect_eq 'setup-host --dry-run (fresh host): no legacy install root, etc dir or unit name anywhere' \
-    "$([[ ${hld_out} == *"${HL_LEGACY_DEST}"* || ${hld_out} == *"${HL_LEGACY_ETC}/"* || ${hld_out} == *" ${HL_LEGACY_UNIT_PREFIX}-api"* || ${hld_out} == *"${HL_LEGACY_DB_CONTAINER}"* ]] && echo legacy || echo none)" 'none'
-
-  # A layout-1 host (only the legacy api unit installed) keeps its names.
-  mkdir -p "${HLD_TMP}/legacy/etc/systemd/system"
-  printf '[Unit]\n' >"${HLD_TMP}/legacy/etc/systemd/system/${HL_LEGACY_UNIT_PREFIX}-api.service"
-  hld_out=$(hld_run "${HLD_TMP}/legacy" "${HLD_TMP}/fresh.yaml") || true
-  expect_match 'setup-host --dry-run (layout-1 host): refuses before phases' \
-    "${hld_out}" 'ficus-host-layout-bridge'
-  expect_eq 'setup-host --dry-run (layout-1 host): its units carry no Alias=' "$([[ ${hld_out} == *'Alias='* ]] && echo alias || echo none)" 'none'
-  expect_eq 'setup-host --dry-run (layout-1 host): the .env leaves HOME_DIR to the default' "$([[ ${hld_out} == *'| HOME_DIR='* ]] && echo explicit || echo default)" 'default'
-
   # A fresh host, external DSN naming the CA under the legacy etc dir (URL-encoded).
   hld_dsn="postgresql://tenant_x:pw@db.example:25060/x?sslmode=verify-full&sslrootcert=$(printf '%s/database-ca.crt' "${HL_LEGACY_ETC}" | sed 's:/:%2F:g')"
   printf 'ca\n' >"${HLD_TMP}/ca.crt"
@@ -3607,7 +3496,7 @@ expect_eq 'setup-host.sh: resolve_layout_globals follows its host_migrate' \
   "$(grep -A1 -F 'host_migrate "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}"' "${SCRIPT_DIR}/setup-host.sh" | tail -n 1)" 'resolve_layout_globals'
 expect_eq 'the hooks: the host layout wrappers in upgrade-host.sh and setup-host.sh (whose pre-flip hook is the restore rebase)' \
   "$(grep -hoE 'ARTIFACT_(PREFLIP|ROLLBACK)_HOOK=[a-z_]+' "${SCRIPT_DIR}/upgrade-host.sh" "${SCRIPT_DIR}/setup-host.sh" | tr '\n' ' ')" \
-  'ARTIFACT_PREFLIP_HOOK=host_layout_preflip ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook ARTIFACT_PREFLIP_HOOK=restore_rebase_stored_home '
+  'ARTIFACT_PREFLIP_HOOK=host_migrate_for ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook ARTIFACT_PREFLIP_HOOK=restore_rebase_stored_home '
 # setup-host.sh's resolve_layout_globals, lifted out of the file: every
 # layout-derived global follows the layout resolved last.
 hla_globals() { # LAYOUT
@@ -3641,8 +3530,6 @@ hla_sudoers() { # LAYOUT
     update_sudoers_content
   )
 }
-expect_eq 'setup-host.sh update_sudoers_content on layout 1: the legacy units only' "$(hla_sudoers 1)" \
-  "svc ALL=(root) NOPASSWD: /usr/bin/systemctl restart ${HL_LEGACY_UNIT_PREFIX}-api, /usr/bin/systemctl restart ${HL_LEGACY_UNIT_PREFIX}-worker"
 expect_eq 'setup-host.sh update_sudoers_content on layout 2: the ficus units and the legacy spellings' "$(hla_sudoers 2)" \
   "$(host_layout_sudoers_content svc)"
 expect_eq 'finalized sudoers names canonical units only' "$(hla_sudoers 2)" 'svc ALL=(root) NOPASSWD: /usr/bin/systemctl restart ficus-api, /usr/bin/systemctl restart ficus-worker'
@@ -4018,8 +3905,8 @@ fi
 
 # --- pure helpers (no toolchain needed) ---
 expect_eq 'artifact_release_dir: <dest>/releases/<sha>-<digest12>' \
-  "$(artifact_release_dir /opt/tau-core 1111111111111111111111111111111111111111 0123456789ab)" \
-  '/opt/tau-core/releases/1111111111111111111111111111111111111111-0123456789ab'
+  "$(artifact_release_dir /opt/ficus-core 1111111111111111111111111111111111111111 0123456789ab)" \
+  '/opt/ficus-core/releases/1111111111111111111111111111111111111111-0123456789ab'
 expect_eq 'artifact_digest12: the first 12 hex of a sha256: digest' \
   "$(artifact_digest12 "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")" '0123456789ab'
 expect_eq 'artifact_emit_release_trailer: the two lines the control plane parses' \
@@ -4131,7 +4018,7 @@ PYEOF
   # "any well-formed signature passes".
   "${ART_OPENSSL}" genpkey -algorithm ed25519 -out "${ART_TMP}/other-key.pem" 2>/dev/null
 
-  # The tarball root: the Ficus prefix unless a case sets the legacy one.
+  # The tarball root: the Ficus prefix unless a refusal case sets another.
   ART_ROOT_PREFIX=${HL_NEW_ARTIFACT_ROOT_PREFIX}
   art_tree() { printf '%s/staging/%s%s\n' "$1" "${ART_ROOT_PREFIX}" "$2"; }
 
@@ -4159,9 +4046,8 @@ JSEOF
   # about bsdtar — the guards below are written to not depend on either one's
   # extraction quirks, which is the point of listing members before extracting.
   art_tar() { # WORK SHA
-    # The tarball's FILE name stays the builder's legacy one (the cases below
-    # fetch it by that name); its ROOT is ART_ROOT_PREFIX.
-    tar -C "${1}/staging" -czf "${1}/dist/${HL_LEGACY_ARTIFACT_ROOT_PREFIX}${2}-linux-x64.tar.gz" "${ART_ROOT_PREFIX}${2}"
+    # The archive name is independent of its rooted tree name.
+    tar -C "${1}/staging" -czf "${1}/dist/${HL_NEW_ARTIFACT_ROOT_PREFIX}${2}-linux-x64.tar.gz" "${ART_ROOT_PREFIX}${2}"
   }
 
   # Repack a tarball with one extra member under an arbitrary (hostile) name.
@@ -4204,7 +4090,7 @@ PYREPACK
   }
 
   # --- the box under test ---
-  ART_DEST=$(mktemp -d)/tau-core
+  ART_DEST=$(mktemp -d)/ficus-core
   mkdir -p "${ART_DEST}"
   ART_PROOF="${ART_TMP}/migrate-proof.txt"
   # FICUS_ROOT in the .env is deliberate: activate must pin the CANDIDATE, not
@@ -4230,7 +4116,7 @@ PYREPACK
   art_publish "${ART_WORK_A}" "${ART_SHA_A}" "${ART_BUN}"
   ART_RC=0
   ART_OUT_A=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_A}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_A}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_A}/dist/artifact.json" \
     "file://${ART_WORK_A}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4257,7 +4143,7 @@ PYREPACK
   expect_match 'artifact_stage: the marker records what was staged' \
     "$(<"${ART_RELEASE_A}/${HL_NEW_RELEASE_MARKER}")" "\"sha\":\"${ART_SHA_A}\".*\"digest\":\"sha256:[0-9a-f]{64}\""
   expect_eq 'artifact_stage: never recreates a legacy marker after finalization' \
-    "$([[ -e ${ART_RELEASE_A}/${HL_LEGACY_RELEASE_MARKER} ]] && echo present || echo absent)" 'absent'
+    "$([[ -e ${ART_RELEASE_A}/${RETIRED_RELEASE_MARKER} ]] && echo present || echo absent)" 'absent'
   expect_eq 'artifact_stage: no marker staging file is left behind' \
     "$(find "${ART_RELEASE_A}" -maxdepth 1 -name '*.tmp' | wc -l | tr -d ' ')" '0'
   expect_eq 'artifact_stage: the incoming session dir is cleaned up' \
@@ -4292,7 +4178,7 @@ PYREPACK
   art_publish "${ART_WORK_B}" "${ART_SHA_B}" "${ART_BUN}"
   ART_RC=0
   ART_OUT_B=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_B}/dist/tau-core-${ART_SHA_B}-linux-x64.tar.gz" \
+    "file://${ART_WORK_B}/dist/ficus-core-${ART_SHA_B}-linux-x64.tar.gz" \
     "file://${ART_WORK_B}/dist/artifact.json" \
     "file://${ART_WORK_B}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4312,7 +4198,7 @@ PYREPACK
   printf 'sentinel\n' >"${ART_RELEASE_B}/.sentinel"
   ART_RC=0
   ART_OUT_B2=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_B}/dist/tau-core-${ART_SHA_B}-linux-x64.tar.gz" \
+    "file://${ART_WORK_B}/dist/ficus-core-${ART_SHA_B}-linux-x64.tar.gz" \
     "file://${ART_WORK_B}/dist/artifact.json" \
     "file://${ART_WORK_B}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4332,7 +4218,7 @@ PYREPACK
   art_publish "${ART_WORK_C}" "${ART_SHA_C}" "${ART_BUN}"
   ART_RC=0
   ART_OUT_C=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_C}/dist/tau-core-${ART_SHA_C}-linux-x64.tar.gz" \
+    "file://${ART_WORK_C}/dist/ficus-core-${ART_SHA_C}-linux-x64.tar.gz" \
     "file://${ART_WORK_C}/dist/artifact.json" \
     "file://${ART_WORK_C}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4456,7 +4342,7 @@ PYREPACK
   printf 'DATABASE_URL=postgres://fixture/db\nMIGRATE_PROOF=%s\n' "${ART_PROOF}" >"${ART_DEST2}/.env"
   ART_RC=0
   ART_OUT_A2=$(artifact_acquire "${ART_DEST2}" \
-    "file://${ART_WORK_A}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_A}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_A}/dist/artifact.json" \
     "file://${ART_WORK_A}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4478,7 +4364,7 @@ PYREPACK
   # link the failed activation created.
   ART_RC=0
   ART_OUT_B3=$(artifact_acquire "${ART_DEST2}" \
-    "file://${ART_WORK_B}/dist/tau-core-${ART_SHA_B}-linux-x64.tar.gz" \
+    "file://${ART_WORK_B}/dist/ficus-core-${ART_SHA_B}-linux-x64.tar.gz" \
     "file://${ART_WORK_B}/dist/artifact.json" \
     "file://${ART_WORK_B}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4562,7 +4448,7 @@ PYREPACK
   } >"${ART_DEST3}/.env"
   ART_RC=0
   ART_OUT_A3=$(artifact_acquire "${ART_DEST3}" \
-    "file://${ART_WORK_A}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_A}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_A}/dist/artifact.json" \
     "file://${ART_WORK_A}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4587,7 +4473,7 @@ PYREPACK
   # …while a release staged before the host migration (the legacy marker) is
   # complete: activation goes on to the migrations (which fail here: no tree).
   printf '{"hostLayout":2}\n' >"${ART_DEST3}/releases/unmarked/artifact.json"
-  : >"${ART_DEST3}/releases/unmarked/${HL_LEGACY_RELEASE_MARKER}"
+  : >"${ART_DEST3}/releases/unmarked/${RETIRED_RELEASE_MARKER}"
   ART_ERR=$( (
     sleep() { :; }
     artifact_activate "${ART_DEST3}" "${ART_DEST3}/releases/unmarked" 3000
@@ -4595,7 +4481,7 @@ PYREPACK
   expect_match 'artifact_activate: a legacy-only completion marker is not accepted' \
     "${ART_ERR}" 'refusing to activate an unverified tree'
   expect_not_match 'artifact_activate: refusal precedes database migrations' "${ART_ERR}" 'database migrations failed'
-  rm -f "${ART_DEST3}/releases/unmarked/${HL_LEGACY_RELEASE_MARKER}"
+  rm -f "${ART_DEST3}/releases/unmarked/${RETIRED_RELEASE_MARKER}"
   artifact_stage "${ART_DEST3}" "${ART_TREE_A3}" "${ART_SHA_A}" "${ART_DIGEST12_A}" 2>/dev/null
   ART_RC=0
   artifact_activate "${ART_DEST3}" "${ART_RELEASE_A3}" 3000 >/dev/null 2>&1 || ART_RC=$?
@@ -4613,7 +4499,7 @@ PYREPACK
   printf 'leaked 70MB tarball stand-in\n' >"${ART_DEST}/releases/.incoming/stale-session/artifact.tar.gz"
   ART_RC=0
   artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_A}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_A}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_A}/dist/artifact.json" \
     "file://${ART_WORK_A}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" >/dev/null 2>&1 || ART_RC=$?
@@ -4627,7 +4513,7 @@ PYREPACK
   art_tar "${ART_WORK_T}" "${ART_SHA_A}" # re-tar WITHOUT re-signing
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_T}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_T}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_T}/dist/artifact.json" \
     "file://${ART_WORK_T}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4641,7 +4527,7 @@ PYREPACK
   art_tar "${ART_WORK_X}" "${ART_SHA_A}"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_X}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_X}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_X}/dist/artifact.json" \
     "file://${ART_WORK_X}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4656,7 +4542,7 @@ PYREPACK
   mv -f "${ART_WORK_M}/dist/artifact.json.new" "${ART_WORK_M}/dist/artifact.json"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_M}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_M}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_M}/dist/artifact.json" \
     "file://${ART_WORK_M}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4671,7 +4557,7 @@ PYREPACK
   base64 <"${ART_WORK_K}/dist/artifact.sig.raw" >"${ART_WORK_K}/dist/artifact.sig"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_K}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_K}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_K}/dist/artifact.json" \
     "file://${ART_WORK_K}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4683,7 +4569,7 @@ PYREPACK
   art_publish "${ART_WORK_BUN}" "${ART_SHA_A}" '0.0.0-not-the-hosts-bun'
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_BUN}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_BUN}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_BUN}/dist/artifact.json" \
     "file://${ART_WORK_BUN}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4713,7 +4599,7 @@ PYREPACK
         chmod 755 "${HOME}/.bun/bin/bun"
       }
       artifact_acquire "${ART_DEST}" \
-        "file://${ART_WORK_BUN2}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+        "file://${ART_WORK_BUN2}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
         "file://${ART_WORK_BUN2}/dist/artifact.json" \
         "file://${ART_WORK_BUN2}/dist/artifact.sig" \
         "${ART_TMP}/pub.pem"
@@ -4733,7 +4619,7 @@ PYREPACK
       RUN_USER=''
       bun_official_install() { return 1; }
       artifact_acquire "${ART_DEST}" \
-        "file://${ART_WORK_BUN2}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+        "file://${ART_WORK_BUN2}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
         "file://${ART_WORK_BUN2}/dist/artifact.json" \
         "file://${ART_WORK_BUN2}/dist/artifact.sig" \
         "${ART_TMP}/pub.pem"
@@ -4756,12 +4642,12 @@ PYREPACK
   ART_WORK_ESC="${ART_TMP}/work-escape"
   art_publish "${ART_WORK_ESC}" "${ART_SHA_A}" "${ART_BUN}"
   python3 "${ART_TMP}/repack.py" \
-    "${ART_WORK_ESC}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "${ART_WORK_ESC}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "${ART_WORK_ESC}/dist/escaped.tar.gz" "${ART_ROOT_PREFIX}${ART_SHA_A}/../escape.txt"
-  mv -f "${ART_WORK_ESC}/dist/escaped.tar.gz" "${ART_WORK_ESC}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz"
+  mv -f "${ART_WORK_ESC}/dist/escaped.tar.gz" "${ART_WORK_ESC}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_ESC}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_ESC}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_ESC}/dist/artifact.json" \
     "file://${ART_WORK_ESC}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4773,19 +4659,19 @@ PYREPACK
   ART_WORK_ROOT="${ART_TMP}/work-second-root"
   art_publish "${ART_WORK_ROOT}" "${ART_SHA_A}" "${ART_BUN}"
   python3 "${ART_TMP}/repack.py" \
-    "${ART_WORK_ROOT}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "${ART_WORK_ROOT}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "${ART_WORK_ROOT}/dist/second-root.tar.gz" 'not-the-artifact-root/x.txt'
-  mv -f "${ART_WORK_ROOT}/dist/second-root.tar.gz" "${ART_WORK_ROOT}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz"
+  mv -f "${ART_WORK_ROOT}/dist/second-root.tar.gz" "${ART_WORK_ROOT}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_ROOT}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_ROOT}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_ROOT}/dist/artifact.json" \
     "file://${ART_WORK_ROOT}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
-  expect_eq 'artifact_acquire: a member outside tau-core-<sha>/ reports download_failed' \
+  expect_eq 'artifact_acquire: a member outside ficus-core-<sha>/ reports download_failed' \
     "${ART_ERR}" 'FICUS_ARTIFACT_ERROR=download_failed'
 
-  # The root: ficus-core-<sha>/ (above) or the legacy one; nothing else.
+  # Only ficus-core-<sha>/ is accepted; retired and unrelated roots are refused.
   art_acquire_rooted() { # WORK PREFIX -> acquire's stdout (its tree on line 2, or its error)
     local tarball
     ART_ROOT_PREFIX=$2 art_publish "$1" "${ART_SHA_A}" "${ART_BUN}"
@@ -4796,7 +4682,7 @@ PYREPACK
       "file://$1/dist/artifact.sig" \
       "${ART_TMP}/pub.pem" 2>/dev/null
   }
-  ART_OUT=$(art_acquire_rooted "${ART_TMP}/work-legacy-root" "${HL_LEGACY_ARTIFACT_ROOT_PREFIX}") || true
+  ART_OUT=$(art_acquire_rooted "${ART_TMP}/work-legacy-root" "${RETIRED_ARTIFACT_ROOT_PREFIX}") || true
   expect_eq 'artifact_acquire: a signed archive with a legacy root is refused' \
     "${ART_OUT}" 'FICUS_ARTIFACT_ERROR=download_failed'
   ART_ERR=$(art_acquire_rooted "${ART_TMP}/work-other-root" 'other-core-') || true
@@ -4816,7 +4702,7 @@ PYREPACK
   art_tar "${ART_WORK_IT}" "${ART_SHA_A}" # re-tar; the SIGNED manifest is untouched
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_IT}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_IT}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_IT}/dist/artifact.json" \
     "file://${ART_WORK_IT}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -5217,7 +5103,7 @@ file_mtime() { stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1"; }
 expect_eq 'build_stamp_path lives next to the checkout' \
   "$(build_stamp_path /srv/core)" "/srv/core/${HL_NEW_BUILD_STAMP}"
 BS_LEGACY=$(mktemp -d)
-: >"${BS_LEGACY}/${HL_LEGACY_BUILD_STAMP}"
+: >"${BS_LEGACY}/${RETIRED_BUILD_STAMP}"
 expect_eq 'build_stamp_path: a legacy-only stamp is not read' \
   "$(build_stamp_path "${BS_LEGACY}")" "${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
 expect_eq 'build_stamp_path --write: always the Ficus name' \
@@ -5226,7 +5112,7 @@ expect_eq 'build_stamp_path --write: always the Ficus name' \
 expect_eq 'build_stamp_path: with both, the Ficus one' \
   "$(build_stamp_path "${BS_LEGACY}")" "${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
 build_stamp_clear "${BS_LEGACY}"
-expect_eq 'build_stamp_clear: leaves legacy record for journaled finalization' "$(find "${BS_LEGACY}" -mindepth 1 -printf '%f')" "${HL_LEGACY_BUILD_STAMP}"
+expect_eq 'build_stamp_clear: leaves an unrelated retired record untouched' "$(find "${BS_LEGACY}" -mindepth 1 -printf '%f')" "${RETIRED_BUILD_STAMP}"
 rm -rf "${BS_LEGACY}"
 
 BS_TMP=$(mktemp -d)
@@ -5287,7 +5173,7 @@ expect_eq 'build_stamp_is_current: no stamp on disk -> not current' \
 
 build_stamp_write "${BS_GIT}" true
 expect_eq 'build_stamp_write: only writes the canonical stamp' \
-  "$([[ -f ${BS_GIT}/${HL_NEW_BUILD_STAMP} && ! -e ${BS_GIT}/${HL_LEGACY_BUILD_STAMP} ]] && echo canonical)" canonical
+  "$([[ -f ${BS_GIT}/${HL_NEW_BUILD_STAMP} && ! -e ${BS_GIT}/${RETIRED_BUILD_STAMP} ]] && echo canonical)" canonical
 expect_eq 'build_stamp_is_current: fresh stamp, commit+lock+outputs all match -> current (skip)' \
   "$(build_stamp_is_current "${BS_GIT}" false && echo yes || echo no)" 'yes'
 
@@ -5766,7 +5652,7 @@ _legacy_render_backup_script() {
     -e "s|@S3_BUCKET@|${BACKUP_S3_BUCKET}|g" \
     -e "s|@S3_PREFIX@|${BACKUP_S3_PREFIX}|g" \
     -e "s|@BACKUP_ENV_FILE@|${BACKUP_ENV_TARGET_LEGACY}|g" \
-    -e "s|@DB_NAME@|${HL_LEGACY_DB_NAME}|g" \
+    -e "s|@DB_NAME@|${HL_NEW_DB_NAME}|g" \
     "${SCRIPT_DIR}/ficus-backup.sh.tmpl"
 }
 for rbs_mode in container external; do
@@ -5774,11 +5660,11 @@ for rbs_mode in container external; do
     unset BACKUP_SCRIPT_PATH BACKUP_ENV_TARGET
     source "${SCRIPT_DIR}/lib.sh"
     # setup-host.sh's old literals are the layout-1 names.
-    host_layout_resolve 1
-    SRC_DEST=/opt/tau-core BACKUP_HOME_DIR=/home/tau/.tau DB_MODE=${rbs_mode} DB_CONTAINER=tau-postgres
+    host_layout_resolve 2
+    SRC_DEST=/opt/ficus-core BACKUP_HOME_DIR=/home/ficus/.ficus DB_MODE=${rbs_mode} DB_CONTAINER=ficus-postgres
     BACKUP_S3_ENDPOINT=https://nyc3.digitaloceanspaces.com BACKUP_S3_REGION=nyc3
     BACKUP_S3_BUCKET=ficus-backups BACKUP_S3_PREFIX=tenants/acct-1/acme
-    BACKUP_ENV_TARGET_LEGACY='/etc/tau/backup.env' # setup-host.sh's old literal
+    BACKUP_ENV_TARGET_LEGACY='/etc/ficus/backup.env' # setup-host.sh's old literal
     eval "$(sed -n '/^render_backup_script() {$/,/^}$/p' "${SCRIPT_DIR}/setup-host.sh")"
     declare -F render_backup_script >/dev/null && : >"${RBS_TMP}/${rbs_mode}.found"
     _legacy_render_backup_script >"${RBS_TMP}/${rbs_mode}.legacy"
@@ -5795,9 +5681,9 @@ expect_eq 'backup paths default to what setup-host.sh always used' \
   "$(
     unset BACKUP_SCRIPT_PATH BACKUP_ENV_TARGET
     source "${SCRIPT_DIR}/lib.sh"
-    host_layout_resolve 1
+    host_layout_resolve 2
     printf '%s %s' "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}"
-  )" '/usr/local/bin/tau-backup.sh /etc/tau/backup.env'
+  )" '/usr/local/bin/ficus-backup.sh /etc/ficus/backup.env'
 expect_eq 'setup-host.sh no longer defines the backup paths itself (one definition, in lib.sh)' \
   "$(grep -cE '^BACKUP_(SCRIPT_PATH|ENV_TARGET)=' "${SCRIPT_DIR}/setup-host.sh" || true)" '0'
 # phase_backup's backup.env render is unchanged (render_backup_env_content was
@@ -5817,7 +5703,7 @@ source:
 core:
   origin: https://acme.ficus.sh
   env:
-    HOME_DIR: /home/tau/.tau
+    HOME_DIR: /home/ficus/.ficus
 database:
   mode: external
 runtime:
@@ -6892,6 +6778,7 @@ rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
 if yq_is_mikefarah; then
   hm_host entry
   printf '%s=old-secret\nFICUS_SANDBOX_RUNTIME=host\n' "${PFK}" >"${SRC_DEST}/.env"
+  printf '{"ficusHostLayout":2}\n' >"${SRC_DEST}/releases/old/package.json"
   mkdir -p "${SRC_DEST}/.git"
   cat >"${HM}/entry.yaml" <<EOF
 source:

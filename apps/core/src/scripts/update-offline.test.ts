@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import { OfflineUpdateBlockedError, STALE_RUN_MS, planOfflineUpdate, runOfflineUpdate } from './update-offline'
 import { migrationListFingerprint } from '../db/migration-journal'
 import type { DeploymentFlavor } from '../services/updates/deployment-flavor'
@@ -137,7 +136,7 @@ describe('runOfflineUpdate', () => {
     expect(persisted.commands[0].status).toBe('failed')
   })
   it('keeps the status file in a pre-rename status dir while the checkout has only that one', async () => {
-    mkdirSync(join(root, LEGACY_HOME_DIR_NAME))
+    mkdirSync(join(root, '.other-settings'))
     const run = await runOfflineUpdate({
       repoRoot: root,
       fromSha: 'a'.repeat(40),
@@ -149,7 +148,7 @@ describe('runOfflineUpdate', () => {
     expect(persisted.id).toBe(run.id)
   })
   it('reads the .ficus status file first when both status dirs exist', async () => {
-    mkdirSync(join(root, LEGACY_HOME_DIR_NAME))
+    mkdirSync(join(root, '.other-settings'))
     mkdirSync(join(root, '.ficus'))
     const running = {
       id: 'x',

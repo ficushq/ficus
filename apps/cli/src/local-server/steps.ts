@@ -160,10 +160,8 @@ export function buildSteps(opts: SetupOptions, deps: StepDeps): Step[] {
       // A checkout that already carries a label belongs to that instance:
       // relabelling it would orphan the pm2 apps, container and data directory
       // the old label owns. A checkout with no label yet (hand-copied .env, or
-      // an install made before labels existed) may take one. The one relabel
-      // the CLI performs itself — the pre-rename default instance to `ficus` —
-      // is `ficus server rename-identity` (relabelInstance), which moves those
-      // resources with the label; runSetup sends such a checkout there first.
+      // an install made before labels existed) may take one. runSetup refuses
+      // retired registrations before reaching this step.
       const current = persistedLabel()
       if (current && opts.explicit.has('instance') && current !== opts.instance) {
         // `ficus server uninstall` drops the registry entry and the pm2 apps but

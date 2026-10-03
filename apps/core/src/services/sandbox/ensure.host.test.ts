@@ -12,8 +12,6 @@ import { ensureSquadSandbox, ensureWorkspaceSandbox, type EnsureWorkspaceDeps } 
 import * as sandboxFactory from './factory'
 import * as localDeploymentHealth from '../deploy/local-deployment-health'
 import { spyOn } from 'bun:test'
-import { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } from '../workspace/dot-dir'
-import { generateInstanceKeyPair } from '../amtp/crypto'
 
 describe('ensure — host runtime', () => {
   let home: string
@@ -92,30 +90,6 @@ describe('ensure — host runtime', () => {
     expect(existsSync(root)).toBe(true)
     expect(existsSync(join(home, 'private', sandboxId, '.ficus', 'identity.pem'))).toBe(true)
     expect(manager.hasSandbox(sandboxId)).toBe(true)
-  })
-
-  it('ensureSquadSandbox fails closed for a squad whose storage workspace settings dir needs a manual fix', async () => {
-    const storage = join(home, 'workspaces', 'squads', squad.id)
-    mkdirSync(join(storage, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
-    mkdirSync(join(storage, WORKSPACE_DOT_DIR))
-
-    await expect(ensureSquadSandbox(squad.id)).rejects.toBeInstanceOf(WorkspaceDotDirConflictError)
-    expect(manager.hasSandbox(Squad.getSandboxId(squad.id))).toBe(false)
-  })
-
-  it('an agent with a recorded key and a private dir that needs a manual fix fails closed, never degraded', async () => {
-    const agent = await Agent.create({ agentTypeId: 'manager', squadId: squad.id })
-    createdAgentIds.push(agent.id)
-    await agent.update({ identityPublicKey: generateInstanceKeyPair().publicKeyPem })
-    const sandboxId = `agent_${agent.id}`
-    mkdirSync(join(home, 'private', sandboxId, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
-    mkdirSync(join(home, 'private', sandboxId, WORKSPACE_DOT_DIR))
-
-    await expect(
-      ensureWorkspaceSandbox({ sandboxId, workspaceId: 'w', squadId: squad.id }, hostDeps())
-    ).rejects.toBeInstanceOf(WorkspaceDotDirConflictError)
-    expect(manager.hasSandbox(sandboxId)).toBe(false)
-    expect(existsSync(join(home, 'private', sandboxId, WORKSPACE_DOT_DIR, 'identity.pem'))).toBe(false)
   })
 
   it('ensureWorkspaceSandbox (solo) returns the private dir', async () => {

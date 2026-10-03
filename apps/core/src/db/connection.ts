@@ -204,7 +204,7 @@ export function createBunTlsSafeSocketFactory(connect: typeof net.connect = net.
     // hangs on a dead socket: idle_timeout can't reclaim it and max_lifetime
     // (30-60min) doesn't preempt it — that needs a client-side query deadline,
     // tracked separately. This was the /api/auth/status hang that blanked the
-    // web UI until a manual `pm2 restart tau-api`.
+    // web UI until a manual `pm2 restart ficus-api`.
     socket.setKeepAlive(true, KEEPALIVE_INITIAL_DELAY_MS)
     // postgres.js reads these off the socket (servername for TLS, error text).
     Object.assign(socket, { host, port })

@@ -7,13 +7,8 @@
 set -eu
 
 INSTALLER_URL="${FICUS_INSTALL_URL:-https://ficus.sh/cli/install.sh}"
-# Where install.sh puts the CLI: FICUS_INSTALL_DIR, else ~/.ficus/bin — or the bin
-# of a legacy CLI home that has not been moved yet (install.sh's own rule).
-LEGACY_HOME_NAME=.tau # ficus-p5-bridge
+# Match install.sh: FICUS_INSTALL_DIR, otherwise the canonical CLI home.
 CLI_HOME="$HOME/.ficus"
-if [ ! -e "$CLI_HOME" ] && [ ! -L "$CLI_HOME" ] && { [ -e "$HOME/$LEGACY_HOME_NAME" ] || [ -L "$HOME/$LEGACY_HOME_NAME" ]; }; then
-  CLI_HOME="$HOME/$LEGACY_HOME_NAME" # ficus-p5-bridge
-fi
 FICUS_BIN="${FICUS_INSTALL_DIR:-$CLI_HOME/bin}/ficus"
 
 err() { printf '\n✗ error: %s\n' "$*" >&2; exit 1; }

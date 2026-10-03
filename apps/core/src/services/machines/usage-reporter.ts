@@ -164,7 +164,7 @@ const COMMIT_SHA_RE = /^[0-9a-f]{40}$/
  *
  *   1. Cost — spawning two `git` processes on every 5-minute tick to re-read a
  *      value that cannot change without a restart is pure waste.
- *   2. HONESTY — and this is the load-bearing one. `tau-api` runs
+ *   2. HONESTY — and this is the load-bearing one. `ficus-api` runs
  *      `bun run dist/index.js`, so the code actually serving requests is the
  *      BUILD, not the checkout. Re-reading git per tick would report a moved
  *      checkout as the running version the instant someone fetched, even

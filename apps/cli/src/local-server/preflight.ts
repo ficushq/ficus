@@ -282,11 +282,11 @@ export async function runPreflight(opts: SetupOptions, deps: PreflightDeps): Pro
       if (!deps.which(cmd))
         failures.push(`${cmd} is required for the k3d runtime (macOS: \`brew install ${cmd}\`; see https://k3d.io).`)
     }
-    // One cluster (`tau-dev`) with `~/.tau` bind-mounted into it: neither is
+    // One cluster (`ficus-dev`) with `~/.ficus` bind-mounted into it: neither is
     // per-instance, so a labelled instance would share the default's workspace.
     if (opts.instance !== DEFAULT_INSTANCE) {
       failures.push(
-        `the k3d runtime shares ~/.tau with the cluster (k3d bind-mounts it), so it is only available on the default instance — set up k3d without --instance, or pick host/docker-socket for "${opts.instance}"`
+        `the k3d runtime shares ~/.ficus with the cluster (k3d bind-mounts it), so it is only available on the default instance — set up k3d without --instance, or pick host/docker-socket for "${opts.instance}"`
       )
     }
   }

@@ -6,7 +6,7 @@
  * An instance that guessed either number could tell an admin their next invite
  * costs $10/month while the subscription actually moved by something else — so
  * the two facts are DELIVERED to the instance the same way every other
- * platform-owned value is: as environment variables in /etc/tau/managed.env
+ * platform-owned value is: as environment variables in /etc/ficus/managed.env
  * (see ../secrets/managed.ts).
  *
  *   FICUS_MANAGED_SEAT_PRICE_USD_CENTS=1000   — USD minor units per billed seat / month

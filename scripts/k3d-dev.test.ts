@@ -51,22 +51,4 @@ describe('k3d-dev.sh local image safeguards', () => {
     expect(script).toMatch(/grep -c .*SANDBOX_IMAGE.*\|\| true/)
     expect(script).toContain('image_loaded=${image_loaded:-0}')
   })
-
-  // I2 (fix round 1): a pre-rename legacy-named cluster is a SEPARATE k3d
-  // cluster this script can no longer see by name — it must say so
-  // explicitly, with the exact commands to migrate or delete it, rather than
-  // silently leaving it running.
-  test('setup and status both warn when the legacy dev cluster is still present', () => {
-    expect(script).toContain('LEGACY_CLUSTER_NAME="tau-dev"') // ficus-p5-bridge
-    expect(script).toContain('legacy_cluster_exists()')
-    expect(script).toContain('warn_legacy_cluster_if_present()')
-    // The exact migrate/delete commands name the legacy cluster via the
-    // marked constant, not a retyped literal.
-    expect(script).toMatch(/k3d cluster delete \$\{LEGACY_CLUSTER_NAME\}/)
-    expect(script).toMatch(/rsync -a \$\{LEGACY_HOME\}/)
-    // Wired into both the fresh-setup path and a routine status check —
-    // not just one of the two places a developer would notice it.
-    expect(script).toMatch(/cmd_setup\(\)[\s\S]*warn_legacy_cluster_if_present/)
-    expect(script).toMatch(/cmd_status\(\)[\s\S]*warn_legacy_cluster_if_present/)
-  })
 })

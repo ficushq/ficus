@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Opt-in, disposable-host proof that systemd restarts tau-api after cgroup OOM.
+# Opt-in, disposable-host proof that systemd restarts ficus-api after cgroup OOM.
 set -euo pipefail
 
 [[ ${FICUS_API_MEMORY_E2E:-0} == 1 ]] || { echo 'Refusing: set FICUS_API_MEMORY_E2E=1 on a disposable host' >&2; exit 2; }

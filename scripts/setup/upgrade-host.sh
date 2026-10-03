@@ -54,15 +54,9 @@
 # rolls back or is killed. See lib.sh's `host migrations` section, and
 # --restore-host-backup below for the manual way back.
 #
-# HOST LAYOUT. Where this host keeps its install root, /etc dir, setup dir,
-# units, backup script, HOME and container database is resolved from what is
-# installed (lib.sh's host layout section): layout 1 (the names from before
-# the Ficus host migration) or layout 2 (the Ficus names). A release that
-# declares `hostLayout: 2` moves a layout-1 host there through the host_layout
-# migration, right before the flip; after its commit point the move is kept
-# even if the release is rolled back (the older release runs through the
-# compat links and Alias= names). --reverse-host-layout below is the manual way
-# back. The last trailer line reports the layout: FICUS_HOST_LAYOUT=<1|2>.
+# HOST LAYOUT. This updater requires the canonical Ficus host layout before
+# changing a release. It refuses a pre-rename host or target release in
+# preflight. The last trailer line reports FICUS_HOST_LAYOUT=2.
 
 set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
@@ -73,8 +67,6 @@ usage() {
   cat <<'EOF'
 Usage: upgrade-host.sh --config ficus-setup.yaml [--ref REF]
        upgrade-host.sh [--config ficus-setup.yaml] --restore-host-backup SET
-       upgrade-host.sh [--config ficus-setup.yaml] --reverse-host-layout SET
-                       [--accept-file-revert] [--accept-database-revert]
 
 Upgrades the Ficus instance ON THIS HOST to a source ref: source sync → build
 (core AND web) → migrations → service restart + health wait.
@@ -92,43 +84,16 @@ Options:
                   for byte and exit. It also reverts any secret changed since
                   that set was taken. A set taken during a git->artifact
                   conversion re-renders the units, which needs --config.
-                  A set taken for the host layout migration is refused: it
-                  must be reversed (--reverse-host-layout), not restored.
-  --reverse-host-layout SET
-                  move this host back from the Ficus host layout to the one
-                  it had before, from the host_layout migration's backup SET
-                  (the latest one whose MANIFEST starts with
-                  `#requires-reverse<TAB>host_layout`), and exit. Only once
-                  the release serving is from before that migration again
-                  (roll back first). It puts back the directories, links,
-                  units, HOME and the stored HOME paths, then the set's files
-                  byte for byte. Refused when any of those files changed
-                  since the migration (unless --accept-file-revert), when a
-                  newer migration of another kind is still in effect, and
-                  while another run's journal is pending. Root-only.
-  --accept-file-revert
-                  with --reverse-host-layout: accept that the files changed
-                  since the migration (a synced managed.env, a rotated key, a
-                  rewritten DSN) go back to their pre-migration bytes — re-apply
-                  those changes afterwards.
-  --accept-database-revert
-                  with --reverse-host-layout on a host with a container
-                  database: accept that the database goes back to the copy
-                  taken at the migration, losing every write since.
-  -h, --help      show this help
-
-Private-repo source.mode=git-https needs $GH_TOKEN in the environment (same as
-setup-host.sh); nothing is ever passed on the command line.
-
-Artifact mode is selected by the environment, not by a flag: when ALL of
-$FICUS_ARTIFACT_TARBALL_URL, $FICUS_ARTIFACT_MANIFEST_URL, $FICUS_ARTIFACT_SIG_URL
-and $FICUS_ARTIFACT_PUBKEY_B64 are set, the host is moved to that prebuilt
-release instead of being rebuilt from source (--ref is then ignored: the
-artifact names its own commit). Any missing input = git mode.
+                  A set taken for an old host-layout migration is refused.
+  Artifact mode   when FICUS_ARTIFACT_TARBALL_URL,
+                  FICUS_ARTIFACT_MANIFEST_URL, FICUS_ARTIFACT_SIG_URL and
+                  FICUS_ARTIFACT_PUBKEY_B64 are all set, install that signed
+                  prebuilt release instead of building from source. Its
+                  manifest identifies the commit; --ref is ignored.
 EOF
 }
 
-CONFIG='' REF_OVERRIDE='' RESTORE_HOST_SET='' REVERSE_LAYOUT_SET='' ACCEPT_DB_REVERT=0 ACCEPT_FILE_REVERT=0
+CONFIG='' REF_OVERRIDE='' RESTORE_HOST_SET=''
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)
@@ -143,18 +108,6 @@ while [[ $# -gt 0 ]]; do
       RESTORE_HOST_SET=${2:?--restore-host-backup needs a backup set directory}
       shift 2
       ;;
-    --reverse-host-layout)
-      REVERSE_LAYOUT_SET=${2:?--reverse-host-layout needs a backup set directory}
-      shift 2
-      ;;
-    --accept-database-revert)
-      ACCEPT_DB_REVERT=1
-      shift
-      ;;
-    --accept-file-revert)
-      ACCEPT_FILE_REVERT=1
-      shift
-      ;;
     -h | --help)
       usage
       exit 0
@@ -162,11 +115,6 @@ while [[ $# -gt 0 ]]; do
     *) die "unknown argument: $1 (see --help)" ;;
   esac
 done
-
-[[ -z ${RESTORE_HOST_SET} || -z ${REVERSE_LAYOUT_SET} ]] ||
-  die "--restore-host-backup and --reverse-host-layout are separate actions — pass one"
-[[ ${ACCEPT_DB_REVERT}${ACCEPT_FILE_REVERT} == 00 || -n ${REVERSE_LAYOUT_SET} ]] ||
-  die "--accept-database-revert and --accept-file-revert go with --reverse-host-layout"
 
 # ====================================================== --restore-host-backup
 #
@@ -201,52 +149,6 @@ if [[ -n ${RESTORE_HOST_SET} ]]; then
     3) die "--restore-host-backup: ${RESTORE_HOST_SET} needs the unit templates next to this script (systemd/*.service.tmpl) — nothing was changed" ;;
     *) die "--restore-host-backup: restoring ${RESTORE_HOST_SET} failed (see above)" ;;
   esac
-  exit 0
-fi
-
-# ====================================================== --reverse-host-layout
-#
-# The manual way back from the host layout migration after its commit point:
-# once the release serving is from before that migration again, lib.sh's
-# host_layout_reverse_committed moves the directories, links, units, HOME and
-# the stored HOME paths back and restores the set's files — journaled, so a
-# reverse that is killed half way is finished by the next toolkit run (or by
-# this command again). Nothing else in this script runs.
-if [[ -n ${REVERSE_LAYOUT_SET} ]]; then
-  [[ ${EUID} -eq 0 ]] ||
-    die "--reverse-host-layout is root-only (it moves root-owned directories and units back, from a root 0700 set) — re-run this as root"
-  [[ -d ${REVERSE_LAYOUT_SET} ]] || die "--reverse-host-layout: '${REVERSE_LAYOUT_SET}' is not a directory"
-  REVERSE_LAYOUT_SET=$(readlink -f -- "${REVERSE_LAYOUT_SET}") || die "--reverse-host-layout: could not resolve the set path"
-  if [[ -n ${CONFIG} ]]; then
-    [[ -f ${CONFIG} ]] || die "config file '${CONFIG}' not found"
-    ensure_yq
-    cfg_load "${CONFIG}"
-    SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
-    # shellcheck disable=SC2034 # caller globals: lib.sh's render_core_unit reads them
-    RUN_USER=$(cfg_get '.core.run_user' "$(id -un)")
-    # shellcheck disable=SC2034
-    DB_MODE=$(cfg_get '.database.mode' 'container')
-    # shellcheck disable=SC2034
-    BUN_BIN=/usr/local/bin/bun
-  fi
-  host_migrate_lock
-  # The toolkit's traps, `trap '' PIPE` above all: the reverse stops the
-  # services and runs for a while, and a dropped SSH session must not end it
-  # half way (a kill still leaves its journal for the next run).
-  host_migrate_install_traps
-  # shellcheck disable=SC2034 # read by lib.sh's host_layout_reverse_committed
-  HL_REVERSE_ACCEPT_DB_REVERT=${ACCEPT_DB_REVERT} HL_REVERSE_ACCEPT_FILE_REVERT=${ACCEPT_FILE_REVERT}
-  case $(_hm_set_reverse_names "${REVERSE_LAYOUT_SET}") in
-    host_layout) host_layout_reverse_committed "${REVERSE_LAYOUT_SET}" ;;
-    host_layout_fin)
-      host_layout_fin_reverse_committed "${REVERSE_LAYOUT_SET}"
-      ;;
-    *) die '--reverse-host-layout: the set is neither a host layout nor a finalize migration' ;;
-  esac
-  log_info "host layout reverse completed (${HL_DEST}, ${HL_UNIT_API}/${HL_UNIT_WORKER})"
-  # `|| true`: with SIGPIPE ignored, a write to a dropped session fails — the
-  # reverse is done, and that must not turn into a non-zero exit.
-  printf 'FICUS_HOST_LAYOUT=%s\n' "${HL_LAYOUT}" || true
   exit 0
 fi
 
@@ -347,10 +249,7 @@ host_migrate_reconcile || reconcile_rc=$?
 host_migrate_install_traps
 # The host layout as the reconcile left it — BEFORE anything reads a path:
 # this process resolved its layout when lib.sh was sourced, and a reconcile
-# may since have finished the host layout migration (in a subshell) or
-# reversed it. host_layout_adopt resolves again and relocates the config and
-# install root it names (and repairs what an older toolkit wrote over the
-# bridges); the install root is then read again from the config.
+# may have settled an older journal. Read the canonical paths again.
 host_layout_adopt --no-repair
 SRC_DEST=$(cfg_source_dest)
 # A host whose settings predate the Ficus naming stops HERE, before either
@@ -399,15 +298,12 @@ artifact_upgrade() {
   require_root_capability
   id -u "${RUN_USER}" >/dev/null 2>&1 || die "core.run_user '${RUN_USER}' does not exist"
   # The templates are NOT part of this script: an artifact upgrade re-renders
-  # the api/worker units, and the host layout migration renders the backup
-  # units and script too, so whoever pushes upgrade-host.sh + lib.sh to the
-  # box must push all five alongside them. Checked HERE, before a single byte
-  # on the box moves — discovering it after the conversion would leave the box
-  # mid-migration with stale units.
+  # the api/worker units. Require the complete toolkit before changing the
+  # release so a partial upload cannot leave stale units.
   for tmpl in systemd/ficus-api.service.tmpl systemd/ficus-worker.service.tmpl systemd/ficus-backup.service.tmpl \
     systemd/ficus-backup.timer.tmpl ficus-backup.sh.tmpl; do
     [[ -f ${SCRIPT_DIR}/${tmpl} ]] ||
-      die "missing ${SCRIPT_DIR}/${tmpl} — an artifact upgrade re-renders the systemd units (and the host layout migration the backup units and script), so the caller must push scripts/setup/systemd/*.tmpl and scripts/setup/ficus-backup.sh.tmpl to the box alongside lib.sh and upgrade-host.sh"
+      die "missing ${SCRIPT_DIR}/${tmpl} — upload the complete scripts/setup toolkit before an artifact upgrade"
   done
   # The services this run will restart read <dest>/.env (EnvironmentFile in
   # both units), and an upgrade renders no .env — so if that file never named
@@ -510,7 +406,7 @@ artifact_upgrade() {
   # before settling (stop-the-world: the two sides of the migration's release
   # use different admission keys).
   # shellcheck disable=SC2034 # read by lib.sh's artifact_activate
-  ARTIFACT_PREFLIP_HOOK=host_layout_preflip
+  ARTIFACT_PREFLIP_HOOK=host_migrate_for
   # shellcheck disable=SC2034 # read by lib.sh's artifact_activate
   ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook
   artifact_activate "${SRC_DEST}" "${release_dir}" "${CORE_PORT}"
@@ -570,13 +466,6 @@ git_target_check() { # REV
   require_host_layout_ready '' "$(git_rev_host_layout "${SRC_DEST}" "$1")"
   git_rev_is_ficus "${SRC_DEST}" "$1" ||
     die "refusing revision $1: it is a pre-Ficus Core release (its package.json is not named ficus) — choose a Ficus release"
-  # The host layout migration this revision would need runs only after the
-  # checkout, build and database migrations: a non-root run must be refused
-  # HERE, while the checkout has not moved (the check below it looks at the
-  # tree as it is now, which declares nothing new).
-  if ! _hm_is_root && [[ $(git_rev_host_layout "${SRC_DEST}" "$1") == 2 && $(host_layout_detect) == 1 ]]; then
-    die "refusing revision $1: this revision moves the host to the Ficus layout, which is root-only — re-run as root"
-  fi
   host_migrate_require_privilege "${SRC_DEST}"
   prepare_upgrade_host
 }

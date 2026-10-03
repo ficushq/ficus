@@ -431,6 +431,16 @@ describe('MonitorSupervisor', () => {
     expect(sandbox.streams).toHaveLength(1)
   })
 
+  it('relaunches with the exact recorded pre-rename session identity', async () => {
+    const processId = 'tau-monitor-persisted' // Existing recorded identity, not a new writer.
+    const monitor = await createMonitor({ status: 'running', processId })
+    const supervisor = makeSupervisor(sandbox, async () => {})
+    await supervisor.recoverOnStartup()
+    await monitor.reload()
+    expect(monitor.processId).toBe(processId)
+    expect(sandbox.execs.some((args) => args.join(' ').includes(`tmux new-session -d -s '${processId}'`))).toBe(true)
+  })
+
   it('re-attaches a monitor whose tmux session is still alive on recovery', async () => {
     const monitor = await createMonitor({ status: 'running' })
     const supervisor = makeSupervisor(sandbox, async () => {})

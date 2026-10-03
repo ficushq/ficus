@@ -65,6 +65,19 @@ function getK8sStatusCode(err: unknown): number | undefined {
   return e?.response?.statusCode ?? e?.statusCode ?? e?.code
 }
 
+/** Refuse a second pod while a pre-rename pod still owns the sandbox ID.
+ * This is a read-only guard, not legacy discovery or adoption. */
+async function requireRetiredPodAbsent(coreApi: k8s.CoreV1Api, namespace: string, sandboxId: string): Promise<void> {
+  const name = sandboxPodName(sandboxId, 'tau-sb-') // ficus-p5-bridge: exact retired-name refusal only
+  try {
+    await coreApi.readNamespacedPod({ name, namespace })
+  } catch (err) {
+    if (getK8sStatusCode(err) === 404) return
+    throw err
+  }
+  throw new Error('Retired sandbox pod still exists; drain it with the bridge release before creating a Ficus pod')
+}
+
 /** Interval for checking idle pods (60 seconds) */
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000
 
@@ -305,10 +318,7 @@ export class K8sPodManager {
       return this.getPodEndpoint(existing.podName)
     }
 
-    // Discover an existing pod under ANY read name (write name first) before
-    // settling on where to create — a pod this release did not name (e.g. one
-    // built under the legacy `tau-sb-` prefix) is adopted here, never left
-    // running beside a freshly created one under the new name.
+    // Discover an existing pod under the canonical read name before creating.
     let podName = this.getPodName(sandboxId)
     let podExists = false
     for (const candidate of sandboxPodNames(sandboxId)) {
@@ -382,6 +392,9 @@ export class K8sPodManager {
       if (pendingState) pendingState.podName = podName
 
       if (!podExists) {
+        // Never create a canonical pod beside an untracked pre-rename pod.
+        // Unknown API outcomes refuse as well; only an explicit 404 permits creation.
+        await requireRetiredPodAbsent(this.coreApi, this.namespace, sandboxId)
         // Ensure auth secret is current before creating the pod
         await this.syncAuthSecret()
         const podSpec = await this.createPodSpec(sandboxId, podName, config)

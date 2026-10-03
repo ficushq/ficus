@@ -197,10 +197,13 @@ describe('K8sPodManager', () => {
       // A restart deletes the pod (graceful) then immediately re-ensures. K8s still
       // reports the old pod as Running with a deletionTimestamp; adopting it would
       // make us wait on a corpse forever. We must drain it, then create fresh.
-      const readNamespacedPod = mock(async () => ({
-        metadata: { name: 'ficus-sb-agent-x', deletionTimestamp: '2026-06-29T00:00:00Z' },
-        status: { phase: 'Running' },
-      }))
+      const readNamespacedPod = mock(async ({ name }: { name: string }) => {
+        if (name === sandboxPodName('agent_x', 'tau-sb-')) throw { response: { statusCode: 404 } }
+        return {
+          metadata: { name: 'ficus-sb-agent-x', deletionTimestamp: '2026-06-29T00:00:00Z' },
+          status: { phase: 'Running' },
+        }
+      })
       const createNamespacedPod = mock(async () => ({}))
       const waitForPodDeletion = mock(async () => {})
       const waitForPodReady = mock(async () => {})
@@ -231,14 +234,11 @@ describe('K8sPodManager', () => {
     })
   })
 
-  // I1 (fix round 1): a pod built under the legacy `tau-sb-` prefix (every pod
-  // running before this release) must still be found, adopted, and never
-  // double-created beside a fresh pod under the write (`ficus-sb-`) name.
-  describe('ensurePod pod-name discovery (I1)', () => {
-    test('ignores retired pod names and creates only under the canonical name', async () => {
+  describe('ensurePod canonical discovery and retired-name refusal', () => {
+    test('refuses to create beside an existing retired pod', async () => {
       const sandboxId = 'agent_x'
       const writeName = sandboxPodName(sandboxId)
-      const legacyName = sandboxPodName(sandboxId, SANDBOX_IDENTITY_LEGACY.k8sPodNamePrefix)
+      const legacyName = sandboxPodName(sandboxId, 'tau-sb-')
       expect(writeName).not.toBe(legacyName)
 
       const readNamespacedPod = mock(async ({ name }: { name: string; namespace: string }) => {
@@ -247,6 +247,7 @@ describe('K8sPodManager', () => {
       })
       const createNamespacedPod = mock(async () => ({}))
       const waitForPodReady = mock(async () => {})
+      const syncAuthSecret = mock(async () => {})
       const getPodEndpoint = mock((name: string) => `${name}.endpoint:50051`)
 
       const fakeThis = {
@@ -256,25 +257,22 @@ describe('K8sPodManager', () => {
         coreApi: { readNamespacedPod, createNamespacedPod },
         getPodName: () => writeName,
         waitForPodReady,
-        syncAuthSecret: mock(async () => {}),
+        syncAuthSecret,
         createPodSpec: mock(async () => ({ metadata: {}, spec: {} })),
         updatePodState: () => {},
         getPodEndpoint,
         touchPod: () => {},
       }
 
-      const endpoint = await K8sPodManager.prototype['ensurePod'].call(fakeThis as any, sandboxId, {
-        sandboxType: 'agent',
-      } as any)
+      await expect(
+        K8sPodManager.prototype['ensurePod'].call(fakeThis as any, sandboxId, { sandboxType: 'agent' } as any)
+      ).rejects.toThrow('Retired sandbox pod still exists')
 
-      // Only the canonical name is queried.
       const readNames = readNamespacedPod.mock.calls.map((call) => (call[0] as { name: string }).name)
-      expect(readNames.slice(0, 2)).toEqual(sandboxPodNames(sandboxId))
-      // The retired pod is neither adopted nor deleted.
-      expect(createNamespacedPod).toHaveBeenCalledTimes(1)
-      expect(waitForPodReady).toHaveBeenCalledWith(writeName)
-      expect(endpoint).toBe(`${writeName}.endpoint:50051`)
-      expect((fakeThis.pods.get(sandboxId) as any)?.podName).toBe(writeName)
+      expect(readNames).toEqual([...sandboxPodNames(sandboxId), legacyName])
+      expect(createNamespacedPod).not.toHaveBeenCalled()
+      expect(syncAuthSecret).not.toHaveBeenCalled()
+      expect(waitForPodReady).not.toHaveBeenCalled()
     })
 
     test('creates under the write name when no pod exists under any read name', async () => {

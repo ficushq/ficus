@@ -126,15 +126,7 @@ FICUS_BROWSER_VERIFY_JS="${FICUS_BROWSER_ROOT}/service/verify-sandbox.js"
 FICUS_BROWSER_UNIT="${FICUS_HOST_ROOT}/etc/systemd/system/ficus-browser.service"
 FICUS_BROWSER_APPARMOR="${FICUS_HOST_ROOT}/etc/apparmor.d/ficus-browser-chromium"
 
-# Bridge (phase 5, U4): the machine root and the browser's user, group, unit,
-# runtime dir and AppArmor profile before the Ficus rename. migrate_machine_root
-# retains its explicit recovery contract, including old unit and socket links.
-# Normal C-FIN bootstrap refuses that layout and finalizes exact bridges only.
-LEGACY_MACHINE_ROOT=/opt/tau             # ficus-p5-bridge
-LEGACY_BROWSER_NAME=tau-browser          # ficus-p5-bridge
-LEGACY_SYSTEM_UNIT_PREFIX='tau-box'             # ficus-p5-bridge
-LEGACY_USER_UNIT_PREFIX='tau-sandbox-server'    # ficus-p5-bridge
-LEGACY_HOME_DOT_DIR='.tau'                      # ficus-p5-bridge
+# Bootstrap requires the finalized machine layout before changing services.
 # Durable, machine-readable availability markers written by verify_browser. On a
 # host that CAN run the sandboxed browser: READY (timestamp), UNAVAILABLE removed.
 # On a host that CANNOT: UNAVAILABLE (reason token + timestamp + detail), READY
@@ -1172,7 +1164,7 @@ BROWSER_APPARMOR
 # The unit body is fully static (all paths are fixed /opt/ficus constants), so it
 # is embedded verbatim — byte-identical to scripts/machine/browser/ficus-browser.service
 # (which the machine image COPYs), asserted by bootstrap.test.ts. C-FIN writes
-# only the canonical unit; recovery restores old bytes from migration journals.
+# only the canonical unit.
 write_browser_unit() {
   "${SUDO[@]}" tee "${FICUS_BROWSER_UNIT}" >/dev/null <<'BROWSER_UNIT'
 [Unit]
@@ -1196,10 +1188,6 @@ RestartSec=2
 [Install]
 WantedBy=multi-user.target
 BROWSER_UNIT
-  # Explicit bridge recovery retains its original compatibility contract.
-  if [ "${1:-}" = --bridge-recovery ]; then
-    printf 'Alias=%s.service\n' "${LEGACY_BROWSER_NAME}" | "${SUDO[@]}" tee -a "${FICUS_BROWSER_UNIT}" >/dev/null
-  fi
   "${SUDO[@]}" chmod 0644 "${FICUS_BROWSER_UNIT}"
 }
 
@@ -1870,715 +1858,28 @@ print_capabilities() {
     "${arch}" "${cpus}" "${mem_mb}" "${disk_gb}" "${kernel}" "${docker}" "${forwarding}" "${browser_json}"
 }
 
-# ---------------------------------------------------------------------------
-# migrate_machine_root: move a machine bootstrapped before the Ficus rename onto
-# the Ficus layout. Runs FIRST in main, before anything reads or writes the root.
-#
-# A legacy machine has its root at LEGACY_MACHINE_ROOT and its browser under the
-# LEGACY_BROWSER_NAME user, group, unit, runtime dir and AppArmor profile. Every
-# step below is state-checked (it acts only on what is still legacy), so a fresh
-# host or an already-migrated one journals nothing, and a re-run is a no-op.
-#
-# The journal is $MR_BACKUP_ROOT/machine-<ts>-<pid>/ (the same backup root and
-# the same step semantics as the tenant host-migration framework in
-# scripts/setup/lib.sh, which is not present on a machine host — bootstrap.sh is
-# streamed here alone):
-#   STEPS     intent first: `S<n>` is appended and flushed BEFORE step n acts,
-#             so a step killed half-way is still reversed; every inverse is
-#             state-checked and idempotent
-#   state/    one file per recorded fact (what was enabled, what was written)
-#   EXTRA/    byte copies of the legacy files a step removes
-#   LINKS     `path<TAB>old<TAB>new` of every link S3b re-pointed
-#   MERGE     `N|R<TAB>rel` per file S4 moved in (R: it replaced one, kept in
-#             <stray>.replaced), `D<TAB>rel` per directory it created
-#   DONE      the commit point, written and flushed last (S10)
-#   state/UNDONE_S<n>  flushed after each inverse; later inverses may move roots
-#   REVERSED  written only after files AND prior runtime state are restored
-# A failing step (or TERM/INT/HUP) reverses the journal at once and fails
-# bootstrap; a run killed outright is reversed by the next run (_mr_reconcile)
-# before it migrates again. After DONE nothing is reversed.
-#
-#   S1   stop the legacy browser service (recording enabled/active) and wait
-#        until its user has no processes (usermod refuses a busy user)
-#   S2   set aside a real /opt/ficus — files a new Core pushed before this
-#        re-bootstrap — as /opt/.ficus-stray-<journal>
-#   S3   mv the legacy root to /opt/ficus, then link the legacy path to it
-#   S3b  re-point every absolute link into the legacy root (/opt/ficus/bin/bun,
-#        /usr/local/bin/bun) to the new path
-#   S4   merge the set-aside tree into /opt/ficus, newest wins: each file it
-#        replaces is kept in <stray>.replaced (moved into the journal after DONE)
-#   S5   usermod -l / groupmod -n the browser user and group (UID/GID unchanged,
-#        so every box user's group membership survives)
-#   S6   unload and remove the legacy AppArmor profile; write the Ficus one
-#   S7   disable and remove the legacy unit; move its drop-ins; write and
-#        (if the legacy one was) enable ficus-browser.service, whose Alias is
-#        the legacy name
-#   S8   write ficus-browser.js (and verify-sandbox.js); remove the legacy program
-#   S9   /run/<legacy> -> ficus-browser (and a tmpfiles.d line that recreates it
-#        at boot) for boxes still running on their legacy units
-#   S10  DONE
-# ---------------------------------------------------------------------------
-MR_BACKUP_ROOT="${FICUS_HOST_ROOT}/var/backups/ficus-host-migrate"
-MR_STOP_WAIT_SECS=30
-
-_mr() { "${SUDO[@]}" "$@"; }
-_mr_log() { echo "bootstrap.sh: migrate_machine_root: $*" >&2; }
-
-_mr_paths() {
-  MR_O="${FICUS_HOST_ROOT}${LEGACY_MACHINE_ROOT}"
-  MR_N="${FICUS_ROOT}"
-  MR_UNITDIR="${FICUS_HOST_ROOT}/etc/systemd/system"
-  MR_O_UNIT="${MR_UNITDIR}/${LEGACY_BROWSER_NAME}.service"
-  MR_O_APPARMOR="${FICUS_HOST_ROOT}/etc/apparmor.d/${LEGACY_BROWSER_NAME}-chromium"
-  MR_O_APPARMOR_LOCAL="${FICUS_HOST_ROOT}/etc/apparmor.d/local/${LEGACY_BROWSER_NAME}-chromium"
-  MR_N_APPARMOR_LOCAL="${FICUS_HOST_ROOT}/etc/apparmor.d/local/${FICUS_BROWSER_USER}-chromium"
-  MR_O_RUNDIR="${FICUS_HOST_ROOT}/run/${LEGACY_BROWSER_NAME}"
-  MR_TMPFILES="${FICUS_HOST_ROOT}/etc/tmpfiles.d/${FICUS_BROWSER_USER}-bridge.conf"
-  MR_USR_BUN="${FICUS_HOST_ROOT}/usr/local/bin/bun"
-}
-
-_mr_sync() { # FILE
-  if sync --version >/dev/null 2>&1; then
-    _mr sync -f -- "$1" 2>/dev/null || sync
-  else
-    sync
-  fi
-}
-
-_mr_append() { # FILE LINE — append one line and flush it
-  printf '%s\n' "$2" | _mr tee -a "$1" >/dev/null && _mr_sync "$1"
-}
-_mr_intent() { _mr_append "$1/STEPS" "$2"; } # J STEP
-_mr_set() {                                   # J KEY VALUE
-  printf '%s\n' "$3" | _mr tee "$1/state/$2" >/dev/null && _mr_sync "$1/state/$2"
-}
-_mr_get() { _mr cat "$1/state/$2" 2>/dev/null || true; } # J KEY
-
-# Test seams, honoured only under FICUS_HOST_ROOT: MR_FAIL_AT=<step> fails step
-# <step> after its first action; MR_KILL_IN=<step> SIGKILLs the run there.
-_mr_seam() { # STEP
-  [ -n "${FICUS_HOST_ROOT}" ] || return 0
-  if [ "${MR_FAIL_AT:-}" = "$1" ]; then
-    _mr_log "S$1: injected failure"
-    return 1
-  fi
-  if [ "${MR_KILL_IN:-}" = "$1" ]; then kill -KILL "${BASHPID:-$$}"; fi
-  return 0
-}
-
-# rename(2) of a directory onto a path that must not exist: `mv -T` refuses to
-# move INTO an existing directory, which a plain mv would silently do.
-_mr_rename() { _mr mv -T -- "$1" "$2"; } # SRC DST
-
-_mr_restore_file() { # SRC DST — an interrupted copy cannot become the restored file
-  _mr cp -p -- "$1" "$2.ficus-restore" || return 1
-  _mr_sync "$2.ficus-restore" || return 1
-  _mr mv -T -- "$2.ficus-restore" "$2"
-}
-
-_mr_root_moves() { [ -d "${MR_O}" ] && [ ! -L "${MR_O}" ]; }
-_mr_user_renames() {
-  getent passwd "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1 && ! getent passwd "${FICUS_BROWSER_USER}" >/dev/null 2>&1
-}
-_mr_group_renames() {
-  getent group "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1 && ! getent group "${FICUS_BROWSER_USER}" >/dev/null 2>&1
-}
-_mr_legacy_program() {
-  if _mr_root_moves; then
-    printf '%s' "${MR_O}/browser/service/${LEGACY_BROWSER_NAME}.js"
-  else
-    printf '%s' "${MR_N}/browser/service/${LEGACY_BROWSER_NAME}.js"
-  fi
-}
-
-# Whether anything on this host is still on the legacy layout.
-_mr_needed() {
-  _mr_root_moves && return 0
-  _mr_user_renames && return 0
-  _mr_group_renames && return 0
-  [ -f "${MR_O_UNIT}" ] && [ ! -L "${MR_O_UNIT}" ] && return 0
-  [ -f "${MR_O_APPARMOR}" ] && return 0
-  [ -f "$(_mr_legacy_program)" ] && return 0
-  return 1
-}
-
-_mr_s1() { # J
-  local j=$1 unit=0 was_enabled=0 was_active=0 waited=0
-  [ -f "${MR_O_UNIT}" ] && [ ! -L "${MR_O_UNIT}" ] && unit=1
-  [ "${unit}" = 1 ] || _mr_user_renames || return 0
-  _mr_intent "${j}" S1 || return 1
-  if [ "${unit}" = 1 ]; then
-    _mr systemctl is-enabled --quiet "${LEGACY_BROWSER_NAME}.service" >/dev/null 2>&1 && was_enabled=1
-    _mr systemctl is-active --quiet "${LEGACY_BROWSER_NAME}.service" >/dev/null 2>&1 && was_active=1
-  fi
-  _mr_set "${j}" BROWSER_WAS_ENABLED "${was_enabled}" || return 1
-  _mr_set "${j}" BROWSER_WAS_ACTIVE "${was_active}" || return 1
-  if [ "${unit}" = 1 ]; then
-    _mr_log "S1: stopping ${LEGACY_BROWSER_NAME}.service"
-    _mr systemctl stop "${LEGACY_BROWSER_NAME}.service" || return 1
-  fi
-  _mr_seam 1 || return 1
-  while getent passwd "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1 && _mr pgrep -u "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1; do
-    if [ "${waited}" -ge "${MR_STOP_WAIT_SECS}" ]; then
-      _mr_log "S1: ${LEGACY_BROWSER_NAME} still has processes after ${MR_STOP_WAIT_SECS}s"
-      return 1
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-}
-
-_mr_undo_s1() { # J — files are restored; runtime restoration must succeed too
-  local j=$1
-  _mr systemctl daemon-reload || return 1
-  if [ "$(_mr_get "${j}" APPARMOR_UNLOAD_INTENT)" = 1 ] || [ "$(_mr_get "${j}" APPARMOR_UNLOADED)" = 1 ]; then
-    _mr apparmor_parser -r -W "${MR_O_APPARMOR}" || return 1
-    _mr_apparmor_loaded || return 1
-  fi
-  if [ "$(_mr_get "${j}" BROWSER_WAS_ENABLED)" = 1 ]; then
-    _mr systemctl enable "${LEGACY_BROWSER_NAME}.service" || return 1
-    _mr systemctl is-enabled --quiet "${LEGACY_BROWSER_NAME}.service" || return 1
-  fi
-  if [ "$(_mr_get "${j}" BROWSER_WAS_ACTIVE)" = 1 ]; then
-    _mr_log "S1⁻¹: starting ${LEGACY_BROWSER_NAME}.service"
-    _mr systemctl reset-failed "${LEGACY_BROWSER_NAME}.service" || return 1
-    _mr systemctl start "${LEGACY_BROWSER_NAME}.service" || return 1
-    _mr systemctl is-active --quiet "${LEGACY_BROWSER_NAME}.service" || return 1
-  fi
-}
-
-_mr_apparmor_loaded() {
-  _mr awk -v profile="${LEGACY_BROWSER_NAME}-chromium" '$1 == profile { found=1 } END { exit !found }' \
-    "${FICUS_HOST_ROOT}/sys/kernel/security/apparmor/profiles"
-}
-
-_mr_s2() { # J
-  local j=$1 stray
-  _mr_root_moves || return 0
-  [ -e "${MR_N}" ] || [ -L "${MR_N}" ] || return 0
-  if [ -L "${MR_N}" ] || [ ! -d "${MR_N}" ]; then
-    _mr_log "S2: ${MR_N} exists and is not a directory — refusing"
-    return 1
-  fi
-  stray="$(dirname -- "${MR_N}")/.ficus-stray-$(basename -- "${j}")"
-  _mr_set "${j}" STRAY "${stray}" || return 1
-  _mr_intent "${j}" S2 || return 1
-  _mr_log "S2: setting aside ${MR_N} (files pushed before this re-bootstrap) as ${stray}"
-  _mr_rename "${MR_N}" "${stray}" || return 1
-  _mr_seam 2 || return 1
-}
-
-_mr_undo_s2() { # J
-  local stray
-  stray=$(_mr_get "$1" STRAY)
-  [ -n "${stray}" ] && [ -d "${stray}" ] || return 0
-  if [ -e "${MR_N}" ] || [ -L "${MR_N}" ]; then
-    # Another push recreated it meanwhile. Keep both (nothing is lost, and the
-    # next run merges the new one); never block every later bootstrap on it.
-    _mr_log "S2⁻¹: ${MR_N} was recreated meanwhile; ${stray} is kept beside it"
-    return 0
-  fi
-  _mr_log "S2⁻¹: putting ${stray} back at ${MR_N}"
-  _mr_rename "${stray}" "${MR_N}"
-}
-
-_mr_s3() { # J
-  local j=$1
-  _mr_root_moves || return 0
-  _mr_intent "${j}" S3 || return 1
-  _mr_log "S3: moving ${LEGACY_MACHINE_ROOT} to ${MR_N#"${FICUS_HOST_ROOT}"}"
-  _mr_rename "${MR_O}" "${MR_N}" || return 1
-  _mr_seam 3 || return 1
-  _mr ln -s -- "$(basename -- "${MR_N}")" "${MR_O}"
-}
-
-_mr_undo_s3() {
-  if [ -L "${MR_O}" ] && [ "$(readlink -- "${MR_O}")" = "$(basename -- "${MR_N}")" ]; then
-    _mr rm -f -- "${MR_O}" || return 1
-  fi
-  if [ ! -e "${MR_O}" ] && [ ! -L "${MR_O}" ] && [ -d "${MR_N}" ] && [ ! -L "${MR_N}" ]; then
-    _mr_log "S3⁻¹: moving ${MR_N#"${FICUS_HOST_ROOT}"} back to ${LEGACY_MACHINE_ROOT}"
-    _mr_rename "${MR_N}" "${MR_O}" || return 1
-  fi
-  [ -d "${MR_O}" ] && [ ! -L "${MR_O}" ]
-}
-
-_mr_s3b() { # J
-  local j=$1 link target new first=1
-  local new_root="${MR_N#"${FICUS_HOST_ROOT}"}"
-  [ -d "${MR_N}" ] || return 0
-  _mr bash -c 'find "$1" -type l -print0 >"$2"' -- "${MR_N}" "${j}/LINK_FILES" || return 1
-  if [ -L "${MR_USR_BUN}" ]; then
-    printf '%s\0' "${MR_USR_BUN}" | _mr tee -a "${j}/LINK_FILES" >/dev/null || return 1
-  fi
-  while IFS= read -r -d '' link; do
-    target=$(readlink -- "${link}") || continue
-    case "${target}" in
-      "${LEGACY_MACHINE_ROOT}"/*) ;;
-      *) continue ;;
-    esac
-    case "${link}" in *$'\t'* | *$'\n'*) continue ;; esac
-    new="${new_root}${target#"${LEGACY_MACHINE_ROOT}"}"
-    if [ "${first}" = 1 ]; then
-      _mr_intent "${j}" S3b || return 1
-      _mr_log "S3b: re-pointing links into ${LEGACY_MACHINE_ROOT} at ${new_root}"
-      first=0
-    fi
-    _mr_append "${j}/LINKS" "${link}"$'\t'"${target}"$'\t'"${new}" || return 1
-    _mr ln -sfn -- "${new}" "${link}" || return 1
-    _mr_seam 3b || return 1
-  done < <(_mr cat "${j}/LINK_FILES")
-  return 0
-}
-
-_mr_undo_s3b() { # J
-  local link old new entries
-  _mr test -f "$1/LINKS" || return 0
-  entries=$(_mr tac "$1/LINKS") || return 1
-  while IFS=$'\t' read -r link old new; do
-    [ -n "${link}" ] || continue
-    if [ -L "${link}" ] && [ "$(readlink -- "${link}")" = "${new}" ]; then
-      _mr ln -sfn -- "${old}" "${link}" || return 1
-    fi
-  done <<<"${entries}"
-}
-
-# Whether PATH exists (or is a link), seen with the privilege bootstrap runs
-# with: a merged tree may hold root-only directories a sudoer cannot stat.
-_mr_exists() { _mr test -e "$1" || _mr test -L "$1"; }
-
-_mr_s4() { # J
-  local j=$1 stray f rel dst dir part rest d first=1
-  stray=$(_mr_get "${j}" STRAY)
-  [ -n "${stray}" ] && [ -d "${stray}" ] || return 0
-  _mr_intent "${j}" S4 || return 1
-  _mr_log "S4: merging ${stray} into ${MR_N} (newest wins; replaced files kept in the journal)"
-  _mr bash -o pipefail -c 'find "$1" -mindepth 1 \( -type f -o -type l \) -print0 | sort -z >"$2"' -- "${stray}" "${j}/MERGE_FILES" || return 1
-  while IFS= read -r -d '' f; do
-    rel=${f#"${stray}"/}
-    case "${rel}" in *$'\t'* | *$'\n'*)
-      _mr_log "S4: unsupported file name under ${stray}: ${rel}"
-      return 1
-      ;;
-    esac
-    dst="${MR_N}/${rel}"
-    # Create (and journal) any directory the pushed tree has that the root lacks.
-    dir=$(dirname -- "${rel}")
-    if [ "${dir}" != . ] && ! _mr test -d "${MR_N}/${dir}"; then
-      part='' rest=${dir}
-      while [ -n "${rest}" ]; do
-        d=${rest%%/*}
-        if [ "${d}" = "${rest}" ]; then rest=''; else rest=${rest#*/}; fi
-        part=${part:+${part}/}${d}
-        if ! _mr test -d "${MR_N}/${part}"; then
-          _mr_append "${j}/MERGE" "D"$'\t'"${part}" || return 1
-          _mr mkdir -- "${MR_N}/${part}" || return 1
-          _mr chmod --reference="${stray}/${part}" -- "${MR_N}/${part}" || return 1
-        fi
-      done
-    fi
-    if _mr_exists "${dst}"; then
-      if _mr test -d "${dst}" && ! _mr test -L "${dst}"; then
-        _mr_log "S4: ${dst} is a directory where ${stray} has a file — refusing"
-        return 1
-      fi
-      _mr_append "${j}/MERGE" "R"$'\t'"${rel}" || return 1
-      _mr install -d -m 0700 -- "${stray}.replaced" || return 1
-      _mr mkdir -p -- "${stray}.replaced/${dir}" || return 1
-      _mr mv -T -- "${dst}" "${stray}.replaced/${rel}" || return 1
-    else
-      _mr_append "${j}/MERGE" "N"$'\t'"${rel}" || return 1
-    fi
-    _mr mv -T -- "${f}" "${dst}" || return 1
-    if [ "${first}" = 1 ]; then
-      _mr_seam 4 || return 1
-      first=0
-    fi
-  done < <(_mr cat "${j}/MERGE_FILES")
-}
-
-_mr_undo_s4() { # J
-  local j=$1 stray kind rel entries
-  stray=$(_mr_get "${j}" STRAY)
-  _mr test -f "${j}/MERGE" && [ -n "${stray}" ] || return 0
-  entries=$(_mr tac "${j}/MERGE") || return 1
-  while IFS=$'\t' read -r kind rel; do
-    [ -n "${rel}" ] || continue
-    case "${kind}" in
-      N | R)
-        if _mr_exists "${MR_N}/${rel}" && ! _mr_exists "${stray}/${rel}"; then
-          _mr mv -T -- "${MR_N}/${rel}" "${stray}/${rel}" || return 1
-        fi
-        if [ "${kind}" = R ] && _mr_exists "${stray}.replaced/${rel}" && ! _mr_exists "${MR_N}/${rel}"; then
-          _mr mv -T -- "${stray}.replaced/${rel}" "${MR_N}/${rel}" || return 1
-        fi
-        ;;
-      D) _mr rmdir -- "${MR_N}/${rel}" 2>/dev/null || true ;;
-    esac
-  done <<<"${entries}"
-  if _mr test -d "${stray}.replaced"; then
-    _mr find "${stray}.replaced" -depth -type d -empty -delete 2>/dev/null || true
-  fi
-}
-
-# A new image can already have the new account while the old Core populated
-# HOME as the old account. Repair only HOME's owners; preserve bytes and modes,
-# never follow symlinks, and record numeric ownership before each change.
-_mr_mixed_home() { # J
-  local j=$1 entry rel owner mode target
-  _mr test -d "${FICUS_BROWSER_HOME}" || return 0
-  if _mr test -L "${FICUS_BROWSER_HOME}"; then
-    _mr_log 'S5: browser HOME is a symlink; refusing to change an external tree'
-    return 1
-  fi
-  target=$(getent passwd "${FICUS_BROWSER_USER}" | cut -d: -f3,4) || return 1
-  [[ ${target} =~ ^[0-9]+:[0-9]+$ ]] || return 1
-  _mr bash -c 'find "$1" -print0 >"$2"' -- "${FICUS_BROWSER_HOME}" "${j}/HOME_FILES" || return 1
-  while IFS= read -r -d '' entry; do
-    rel=${entry#"${FICUS_BROWSER_HOME}"}
-    case "${rel}" in *$'\t'* | *$'\n'*) return 1 ;; esac
-    owner=$(_mr stat -c '%u:%g' -- "${entry}") || return 1
-    [ "${owner}" != "${target}" ] || continue
-    mode=$(_mr stat -c '%a' -- "${entry}") || return 1
-    _mr_append "${j}/HOME_OWNERS" "${owner}"$'\t'"${mode}"$'\t'"${rel:-/}" || return 1
-    _mr chown -h -- "${target}" "${entry}" || return 1
-    if ! _mr test -L "${entry}"; then _mr chmod "${mode}" -- "${entry}" || return 1; fi
-    _mr_seam 5-home || return 1
-  done < <(_mr cat "${j}/HOME_FILES")
-}
-
-_mr_undo_home() { # J
-  local j=$1 owner mode rel entries entry
-  _mr test -f "${j}/HOME_OWNERS" || return 0
-  entries=$(_mr tac "${j}/HOME_OWNERS") || return 1
-  while IFS=$'\t' read -r owner mode rel; do
-    [ -n "${rel}" ] || continue
-    entry="${FICUS_BROWSER_HOME}${rel}"
-    _mr chown -h -- "${owner}" "${entry}" || return 1
-    if ! _mr test -L "${entry}"; then _mr chmod "${mode}" -- "${entry}" || return 1; fi
-    _mr_seam undo-5-home || return 1
-  done <<<"${entries}"
-}
-
-_mr_s5() { # J
-  local j=$1 renames_user=0 renames_group=0 mixed_home=0 home_field
-  _mr_user_renames && renames_user=1
-  _mr_group_renames && renames_group=1
-  if getent passwd "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1 && [ "${renames_user}" = 0 ]; then
-    _mr_log "S5: both browser accounts exist; keep the old account and repair the new account's HOME ownership"
-    mixed_home=1
-  fi
-  [ "${renames_user}" = 1 ] || [ "${renames_group}" = 1 ] || [ "${mixed_home}" = 1 ] || return 0
-  _mr_intent "${j}" S5 || return 1
-  if [ "${mixed_home}" = 1 ]; then _mr_mixed_home "${j}" || return 1; fi
-  if [ "${renames_user}" = 1 ]; then
-    home_field="${FICUS_BROWSER_HOME#"${FICUS_HOST_ROOT}"}"
-    _mr_set "${j}" USER_HOME_WAS "$(getent passwd "${LEGACY_BROWSER_NAME}" | cut -d: -f6)" || return 1
-    _mr_set "${j}" USER_RENAMED 1 || return 1
-    _mr_log "S5: renaming the user ${LEGACY_BROWSER_NAME} to ${FICUS_BROWSER_USER} (UID kept)"
-    _mr usermod -l "${FICUS_BROWSER_USER}" -d "${home_field}" "${LEGACY_BROWSER_NAME}" || return 1
-  fi
-  _mr_seam 5 || return 1
-  if [ "${renames_group}" = 1 ]; then
-    _mr_set "${j}" GROUP_RENAMED 1 || return 1
-    _mr_log "S5: renaming the group ${LEGACY_BROWSER_NAME} to ${FICUS_BROWSER_USER} (GID kept)"
-    _mr groupmod -n "${FICUS_BROWSER_USER}" "${LEGACY_BROWSER_NAME}" || return 1
-  fi
-}
-
-_mr_undo_s5() { # J
-  local j=$1
-  _mr_undo_home "${j}" || return 1
-  if [ "$(_mr_get "${j}" GROUP_RENAMED)" = 1 ] && getent group "${FICUS_BROWSER_USER}" >/dev/null 2>&1 &&
-    ! getent group "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1; then
-    _mr groupmod -n "${LEGACY_BROWSER_NAME}" "${FICUS_BROWSER_USER}" || return 1
-  fi
-  if [ "$(_mr_get "${j}" USER_RENAMED)" = 1 ] && getent passwd "${FICUS_BROWSER_USER}" >/dev/null 2>&1 &&
-    ! getent passwd "${LEGACY_BROWSER_NAME}" >/dev/null 2>&1; then
-    _mr usermod -l "${LEGACY_BROWSER_NAME}" -d "$(_mr_get "${j}" USER_HOME_WAS)" "${FICUS_BROWSER_USER}" || return 1
-  fi
-}
-
-_mr_s6() { # J
-  local j=$1 loaded=1
-  [ -f "${MR_O_APPARMOR}" ] || [ -f "${MR_O_APPARMOR_LOCAL}" ] || return 0
-  _mr_intent "${j}" S6 || return 1
-  if [ -f "${MR_O_APPARMOR}" ]; then
-    _mr cp -p -- "${MR_O_APPARMOR}" "${j}/EXTRA/apparmor" || return 1
-    _mr_sync "${j}/EXTRA/apparmor" || return 1
-    if _mr test -e "${FICUS_HOST_ROOT}/sys/kernel/security/apparmor/profiles"; then
-      _mr_apparmor_loaded && loaded=0 || loaded=$?
-      case "${loaded}" in 0 | 1) ;; *) return 1 ;; esac
-      if [ "${loaded}" = 0 ]; then
-        _mr_set "${j}" APPARMOR_UNLOAD_INTENT 1 || return 1
-        _mr apparmor_parser -R "${MR_O_APPARMOR}" || return 1
-        _mr_seam 6-unloaded || return 1
-      fi
-    fi
-    _mr_seam 6 || return 1
-    _mr_log "S6: removing the ${LEGACY_BROWSER_NAME}-chromium AppArmor profile"
-    _mr rm -f -- "${MR_O_APPARMOR}" || return 1
-  fi
-  if [ -f "${MR_O_APPARMOR_LOCAL}" ] && [ ! -e "${MR_N_APPARMOR_LOCAL}" ]; then
-    _mr_set "${j}" APPARMOR_LOCAL_MOVED 1 || return 1
-    _mr mv -T -- "${MR_O_APPARMOR_LOCAL}" "${MR_N_APPARMOR_LOCAL}" || return 1
-  fi
-  if [ ! -e "${FICUS_BROWSER_APPARMOR}" ]; then
-    _mr_set "${j}" APPARMOR_WROTE 1 || return 1
-    write_browser_apparmor || return 1
-  fi
-}
-
-_mr_undo_s6() { # J
-  local j=$1
-  if [ "$(_mr_get "${j}" APPARMOR_WROTE)" = 1 ]; then _mr rm -f -- "${FICUS_BROWSER_APPARMOR}" || return 1; fi
-  if [ "$(_mr_get "${j}" APPARMOR_LOCAL_MOVED)" = 1 ] && [ -f "${MR_N_APPARMOR_LOCAL}" ] && [ ! -e "${MR_O_APPARMOR_LOCAL}" ]; then
-    _mr mv -T -- "${MR_N_APPARMOR_LOCAL}" "${MR_O_APPARMOR_LOCAL}" || return 1
-  fi
-  if _mr test -f "${j}/EXTRA/apparmor" && [ ! -e "${MR_O_APPARMOR}" ]; then
-    _mr_restore_file "${j}/EXTRA/apparmor" "${MR_O_APPARMOR}" || return 1
-  fi
-  # Reload the original profile after all filesystem inverses, in S1⁻¹.
-}
-
-_mr_s7() { # J
-  local j=$1 o_dropin="${MR_O_UNIT}.d" n_dropin="${FICUS_BROWSER_UNIT}.d"
-  [ -f "${MR_O_UNIT}" ] && [ ! -L "${MR_O_UNIT}" ] || return 0
-  _mr_intent "${j}" S7 || return 1
-  _mr cp -p -- "${MR_O_UNIT}" "${j}/EXTRA/unit" || return 1
-  _mr_sync "${j}/EXTRA/unit" || return 1
-  _mr_log "S7: replacing ${LEGACY_BROWSER_NAME}.service with ${FICUS_BROWSER_USER}.service"
-  _mr systemctl disable "${LEGACY_BROWSER_NAME}.service" >/dev/null 2>&1 || return 1
-  _mr_seam 7 || return 1
-  _mr rm -f -- "${MR_O_UNIT}" || return 1
-  if [ -d "${o_dropin}" ]; then
-    if [ ! -e "${n_dropin}" ]; then
-      _mr_set "${j}" DROPIN_MOVED 1 || return 1
-      _mr mv -T -- "${o_dropin}" "${n_dropin}" || return 1
-    else
-      _mr cp -a -- "${o_dropin}" "${j}/EXTRA/dropin" || return 1
-      _mr sync || return 1
-      _mr_set "${j}" DROPIN_SAVED 1 || return 1
-      _mr rm -rf -- "${o_dropin}" || return 1
-    fi
-  fi
-  if [ ! -e "${FICUS_BROWSER_UNIT}" ]; then
-    _mr_set "${j}" UNIT_WROTE 1 || return 1
-    write_browser_unit --bridge-recovery || return 1
-  fi
-  _mr systemctl daemon-reload || return 1
-  if [ "$(_mr_get "${j}" BROWSER_WAS_ENABLED)" = 1 ]; then
-    _mr systemctl enable "${FICUS_BROWSER_USER}.service" >/dev/null 2>&1 || return 1
-  fi
-}
-
-_mr_undo_s7() { # J
-  local j=$1 o_dropin="${MR_O_UNIT}.d" n_dropin="${FICUS_BROWSER_UNIT}.d"
-  if [ -e "${FICUS_BROWSER_UNIT}" ]; then
-    _mr systemctl disable "${FICUS_BROWSER_USER}.service" >/dev/null 2>&1 || return 1
-  fi
-  if [ "$(_mr_get "${j}" UNIT_WROTE)" = 1 ]; then _mr rm -f -- "${FICUS_BROWSER_UNIT}" || return 1; fi
-  if [ "$(_mr_get "${j}" DROPIN_MOVED)" = 1 ] && [ -d "${n_dropin}" ] && [ ! -e "${o_dropin}" ]; then
-    _mr mv -T -- "${n_dropin}" "${o_dropin}" || return 1
-  fi
-  if [ "$(_mr_get "${j}" DROPIN_SAVED)" = 1 ]; then
-    # Re-copy even if interrupted cp already created a partial destination.
-    _mr cp -a -- "${j}/EXTRA/dropin/." "${o_dropin}" || return 1
-  fi
-  # A leftover alias link is not the unit: the legacy unit file goes back in its place.
-  if [ -L "${MR_O_UNIT}" ]; then _mr rm -f -- "${MR_O_UNIT}" || return 1; fi
-  if _mr test -f "${j}/EXTRA/unit" && [ ! -e "${MR_O_UNIT}" ]; then
-    _mr_restore_file "${j}/EXTRA/unit" "${MR_O_UNIT}" || return 1
-  fi
-  # Re-enable only after daemon-reload, with verification, in S1⁻¹.
-}
-
-_mr_s8() { # J
-  local j=$1 legacy_js="${MR_N}/browser/service/${LEGACY_BROWSER_NAME}.js"
-  [ -f "${legacy_js}" ] || return 0
-  _mr_intent "${j}" S8 || return 1
-  _mr cp -p -- "${legacy_js}" "${j}/EXTRA/service.js" || return 1
-  _mr_sync "${j}/EXTRA/service.js" || return 1
-  if [ ! -e "${FICUS_BROWSER_SERVICE_JS}" ]; then
-    _mr_set "${j}" JS_WROTE 1 || return 1
-    write_browser_service || return 1
-  fi
-  _mr_seam 8 || return 1
-  if [ -f "${FICUS_BROWSER_VERIFY_JS}" ]; then
-    _mr cp -p -- "${FICUS_BROWSER_VERIFY_JS}" "${j}/EXTRA/verify.js" || return 1
-    _mr_sync "${j}/EXTRA/verify.js" || return 1
-    _mr_set "${j}" VERIFY_WROTE 1 || return 1
-    write_browser_verify || return 1
-  fi
-  _mr_log "S8: ${FICUS_BROWSER_USER}.js replaces ${LEGACY_BROWSER_NAME}.js"
-  _mr rm -f -- "${legacy_js}"
-}
-
-_mr_undo_s8() { # J
-  local j=$1 legacy_js="${MR_N}/browser/service/${LEGACY_BROWSER_NAME}.js"
-  if _mr test -f "${j}/EXTRA/service.js" && [ ! -e "${legacy_js}" ]; then
-    _mr_restore_file "${j}/EXTRA/service.js" "${legacy_js}" || return 1
-  fi
-  if [ "$(_mr_get "${j}" VERIFY_WROTE)" = 1 ] && _mr test -f "${j}/EXTRA/verify.js"; then
-    _mr_restore_file "${j}/EXTRA/verify.js" "${FICUS_BROWSER_VERIFY_JS}" || return 1
-  fi
-  if [ "$(_mr_get "${j}" JS_WROTE)" = 1 ]; then _mr rm -f -- "${FICUS_BROWSER_SERVICE_JS}" || return 1; fi
-}
-
-_mr_s9() { # J
-  local j=$1
-  _mr grep -qx S3 "${j}/STEPS" 2>/dev/null || return 0
-  _mr_intent "${j}" S9 || return 1
-  if [ ! -e "${MR_TMPFILES}" ]; then
-    _mr_set "${j}" TMPFILES_WROTE 1 || return 1
-    printf 'L /run/%s - - - - %s\n' "${LEGACY_BROWSER_NAME}" "${FICUS_BROWSER_USER}" |
-      _mr install -D -m 0644 /dev/stdin "${MR_TMPFILES}" || return 1
-  fi
-  _mr_seam 9 || return 1
-  if [ ! -e "${MR_O_RUNDIR}" ] && [ ! -L "${MR_O_RUNDIR}" ]; then
-    _mr_set "${j}" RUNLINK 1 || return 1
-    _mr ln -s -- "${FICUS_BROWSER_USER}" "${MR_O_RUNDIR}" || return 1
-  elif [ ! -L "${MR_O_RUNDIR}" ]; then
-    _mr_log "S9: ${MR_O_RUNDIR} is still a directory; boxes on their old units reach the browser once it is gone (next boot)"
-  fi
-}
-
-_mr_undo_s9() { # J
-  local j=$1
-  if [ "$(_mr_get "${j}" RUNLINK)" = 1 ] && [ -L "${MR_O_RUNDIR}" ]; then _mr rm -f -- "${MR_O_RUNDIR}" || return 1; fi
-  if [ "$(_mr_get "${j}" TMPFILES_WROTE)" = 1 ]; then _mr rm -f -- "${MR_TMPFILES}" || return 1; fi
-}
-
-_mr_s10() { # J — the commit point
-  _mr_seam 10 || return 1
-  _mr_append "$1/DONE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-
-# After DONE: the set-aside tree is empty but for its directories, and the
-# files it replaced belong with the journal.
-_mr_after_commit() { # J
-  local j=$1 stray
-  stray=$(_mr_get "${j}" STRAY)
-  [ -n "${stray}" ] || return 0
-  if [ -d "${stray}" ]; then
-    _mr find "${stray}" -depth -type d -empty -delete 2>/dev/null || true
-    [ ! -e "${stray}" ] || _mr_log "kept ${stray}: it still holds entries the merge did not move"
-  fi
-  if _mr test -d "${stray}.replaced"; then
-    if _mr cp -a -- "${stray}.replaced" "${j}/REPLACED" && _mr rm -rf -- "${stray}.replaced"; then
-      _mr_log "the files the merge replaced are in ${j}/REPLACED"
-    else
-      _mr_log "kept ${stray}.replaced (could not move it into ${j})"
-    fi
-  fi
-}
-
-# Undo, from J's journal, what a migration that did not reach DONE changed: the
-# inverses in reverse journal order, then S1⁻¹ (restart the legacy browser).
-# Non-zero keeps the journal unmarked, so the next run tries again.
-_mr_reverse() { # J
-  local j=$1 step entries
-  _mr_paths
-  if _mr test -e "${j}/DONE"; then
-    _mr_log "${j} reached its commit point; it is never reversed"
-    return 1
-  fi
-  entries=$(_mr tac "${j}/STEPS") || return 1
-  while IFS= read -r step; do
-    case "${step}" in S1 | '') continue ;; S9 | S8 | S7 | S6 | S5 | S4 | S3b | S3 | S2) ;; *) return 1 ;; esac
-    [ "$(_mr_get "${j}" "UNDONE_${step}")" = 1 ] && continue
-    case "${step}" in
-      S9) _mr_undo_s9 "${j}" || return 1 ;;
-      S8) _mr_undo_s8 "${j}" || return 1 ;;
-      S7) _mr_undo_s7 "${j}" || return 1 ;;
-      S6) _mr_undo_s6 "${j}" || return 1 ;;
-      S5) _mr_undo_s5 "${j}" || return 1 ;;
-      S4) _mr_undo_s4 "${j}" || return 1 ;;
-      S3b) _mr_undo_s3b "${j}" || return 1 ;;
-      S3) _mr_undo_s3 || return 1 ;;
-      S2) _mr_undo_s2 "${j}" || return 1 ;;
-      S1 | '') ;;
-      *)
-        _mr_log "${j}/STEPS has an unknown step '${step}'"
-        return 1
-        ;;
-    esac
-    # Every inverse is replay-safe within its own boundary. Once complete,
-    # skip it on later retries so root moves cannot invalidate earlier paths.
-    _mr_seam "undo-${step}" || return 1
-    # Root and journal can be on different mounts: persist the filesystem
-    # inverse before its durable completion record.
-    _mr sync || return 1
-    _mr_set "${j}" "UNDONE_${step}" 1 || return 1
-  done <<<"${entries}"
-  if _mr grep -qxE 'S1|S6|S7' "${j}/STEPS"; then _mr_undo_s1 "${j}" || return 1; fi
-  _mr_seam undo-runtime || return 1
-  _mr_append "${j}/REVERSED" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" || return 1
-  _mr_log "reversed: this machine is on its previous layout again (journal ${j})"
-}
-
-# Reverse every journal a killed run left before its commit point.
-_mr_reconcile() {
-  local j entries
-  _mr_paths
-  _mr test -d "${MR_BACKUP_ROOT}" || return 0
-  entries=$(_mr find "${MR_BACKUP_ROOT}" -mindepth 1 -maxdepth 1 -type d -name 'machine-*' -print) || return 1
-  while IFS= read -r j; do
-    [ -n "${j}" ] || continue
-    _mr test -f "${j}/STEPS" || continue
-    _mr test -e "${j}/DONE" || _mr test -e "${j}/REVERSED" && continue
-    _mr_log "${j} was interrupted before its commit point — reversing it first"
-    _mr_reverse "${j}" || {
-      _mr_log "could not reverse ${j}; nothing else is changed until it is"
-      return 1
-    }
-  done <<<"${entries}"
-}
-
-_mr_on_signal() { # J
-  _mr_log 'interrupted'
-  _mr_reverse "$1" || _mr_log "the reverse did not complete; the journal ${1} is kept for the next run"
-  exit 143
-}
-
-migrate_machine_root() {
-  local j rc=0
-  _mr_paths
-  _mr_reconcile || return 1
-  _mr_needed || return 0
-  j="${MR_BACKUP_ROOT}/machine-$(date -u +%Y%m%dT%H%M%SZ)-$$"
-  # Copies may have been protected by private ancestors in the old tree.
-  # Keep the journal root-only and read it through the same privilege boundary.
-  if ! _mr install -d -m 0755 "${MR_BACKUP_ROOT}" ||
-    ! _mr install -d -m 0700 "${j}" "${j}/state" "${j}/EXTRA" || ! _mr touch "${j}/STEPS" ||
-    ! _mr_sync "${j}/STEPS"; then
-    _mr_log "could not start the journal in ${j} — nothing was changed"
-    return 1
-  fi
-  _mr_log "moving this machine onto the Ficus layout (journal ${j})"
-  # shellcheck disable=SC2064 # the journal path is fixed now, on purpose
-  trap "_mr_on_signal '${j}'" TERM INT HUP
-  _mr_s1 "${j}" && _mr_s2 "${j}" && _mr_s3 "${j}" && _mr_s3b "${j}" && _mr_s4 "${j}" && _mr_s5 "${j}" &&
-    _mr_s6 "${j}" && _mr_s7 "${j}" && _mr_s8 "${j}" && _mr_s9 "${j}" && _mr_s10 "${j}" || rc=1
-  trap - TERM INT HUP
-  if [ "${rc}" -ne 0 ]; then
-    _mr_log 'a step failed before the commit point — reversing'
-    _mr_reverse "${j}" || _mr_log "the reverse did not complete; the journal ${j} is kept for the next run"
-    return 1
-  fi
-  _mr_after_commit "${j}"
-  _mr_log "this machine is on the Ficus layout (journal ${j})"
-}
-
 # C-FIN normal paths refuse old/pending layouts before any host effects.
 # Kept byte-identical to Core's privileged automatic-bootstrap preflight.
 require_machine_layout_ready() {
   local result
-  if ! result=$("${SUDO[@]}" bash -s -- "${LEGACY_MACHINE_ROOT}" "${LEGACY_BROWSER_NAME}" "${FICUS_BROWSER_USER}" "${FICUS_HOST_ROOT}" "${LEGACY_SYSTEM_UNIT_PREFIX}" "${LEGACY_USER_UNIT_PREFIX}" "${LEGACY_HOME_DOT_DIR}" <<'FICUS_LAYOUT_PREFLIGHT'
+  if ! result=$("${SUDO[@]}" bash -s -- "${FICUS_HOST_ROOT}" <<'FICUS_LAYOUT_PREFLIGHT'
 set -eu
-old_root="$4$1" old_browser=$2 new_browser=$3 root=$4 system_prefix=$5 user_prefix=$6 old_dot=$7
-new_root="$root/opt/ficus"
+root=$1
 needs_operator() { printf '%s\n' 'FICUS_MACHINE_LAYOUT=operator-required'; exit 0; }
+for journal in "$root/var/backups/ficus-host-migrate"/machine-*; do
+  [ -f "$journal/STEPS" ] || continue
+  if [ ! -e "$journal/DONE" ] && [ ! -e "$journal/REVERSED" ]; then needs_operator; fi
+done
+# ficus-p5-bridge: refusal-only checks; never migrate or remove these paths.
+old_root="$root/opt/tau"
+if [ -d "$old_root" ] && [ ! -L "$old_root" ]; then needs_operator; fi
+old_browser="$root/etc/systemd/system/tau-browser.service"
+if [ -f "$old_browser" ] && [ ! -L "$old_browser" ]; then needs_operator; fi
+if [ -f "$root/etc/apparmor.d/tau-browser-chromium" ]; then needs_operator; fi
+if [ -f "$root/opt/ficus/browser/service/tau-browser.js" ]; then needs_operator; fi
+for old_unit in "$root/etc/systemd/system/tau-box"-box_*; do
+  if [ -f "$old_unit" ] && [ ! -L "$old_unit" ]; then needs_operator; fi
+done
 account_exists() {
   if getent "$1" "$2" >/dev/null; then return 0; else
     rc=$?
@@ -2586,28 +1887,25 @@ account_exists() {
     exit "$rc"
   fi
 }
-if [ -d "$old_root" ] && [ ! -L "$old_root" ]; then needs_operator; fi
-for journal in "$root/var/backups/ficus-host-migrate"/machine-*; do
-  [ -f "$journal/STEPS" ] || continue
-  if [ ! -e "$journal/DONE" ] && [ ! -e "$journal/REVERSED" ]; then needs_operator; fi
-done
-unit="$root/etc/systemd/system/$old_browser.service"
-if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
-if [ -f "$root/etc/apparmor.d/$old_browser-chromium" ]; then needs_operator; fi
-if [ -f "$new_root/browser/service/$old_browser.js" ]; then needs_operator; fi
-if account_exists passwd "$old_browser" && ! account_exists passwd "$new_browser"; then needs_operator; fi
-if account_exists group "$old_browser" && ! account_exists group "$new_browser"; then needs_operator; fi
-# Finalize cannot remove binary/socket bridges still needed by an old box.
-for unit in "$root/etc/systemd/system/$system_prefix"-box_*; do
-  if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
-done
+if account_exists passwd tau-browser && ! account_exists passwd ficus-browser; then needs_operator; fi
+if account_exists group tau-browser && ! account_exists group ficus-browser; then needs_operator; fi
+if [ -e "$root/opt/ficus" ] || [ -L "$root/opt/ficus" ]; then
+  [ -d "$root/opt/ficus" ] && [ ! -L "$root/opt/ficus" ] || needs_operator
+fi
 for home in "$root"/home/box_*; do
-  [ -d "$home" ] || continue
-  [ ! -L "$home" ] || needs_operator
-  if [ -e "$home/$old_dot" ] && [ ! -L "$home/$old_dot" ]; then needs_operator; fi
-  for unit in "$home/.config/systemd/user/$user_prefix.service" "$home/.config/systemd/user/$user_prefix.socket" "$home/.config/systemd/user/$user_prefix-proxy.service"; do
-    if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
+  [ -e "$home" ] || [ -L "$home" ] || continue
+  [ -d "$home" ] && [ ! -L "$home" ] || needs_operator
+  if [ -e "$home/.tau" ] && [ ! -L "$home/.tau" ]; then needs_operator; fi
+  for old_unit in "$home/.config/systemd/user/tau-sandbox-server.service" "$home/.config/systemd/user/tau-sandbox-server.socket" "$home/.config/systemd/user/tau-sandbox-server-proxy.service"; do
+    if [ -f "$old_unit" ] && [ ! -L "$old_unit" ]; then needs_operator; fi
   done
+  [ -d "$home/.ficus" ] && [ ! -L "$home/.ficus" ] || needs_operator
+  name=$(basename "$home")
+  system="$root/etc/systemd/system/ficus-box-$name.service"
+  user="$home/.config/systemd/user/ficus-sandbox-server.service"
+  if [ -f "$system" ] && [ ! -L "$system" ]; then continue; fi
+  if [ -f "$user" ] && [ ! -L "$user" ]; then continue; fi
+  needs_operator
 done
 printf '%s\n' 'FICUS_MACHINE_LAYOUT=ready'
 FICUS_LAYOUT_PREFLIGHT
@@ -2618,36 +1916,6 @@ FICUS_LAYOUT_PREFLIGHT
   if [ "${result}" != FICUS_MACHINE_LAYOUT=ready ]; then
     echo 'this machine or box predates the finalized Ficus layout — upgrade through the ficus-host-layout-bridge Core release first; interrupted journals require its recovery tools' >&2
     return 3
-  fi
-}
-
-# Remove only the exact compatibility artifacts created by the bridge.
-# Never follow or replace a foreign link, and never move data during finalize.
-finalize_machine_layout() {
-  require_machine_layout_ready || return $?
-  _mr_paths
-  local content expected enabled=0 path target
-  if _mr test -e "${MR_TMPFILES}" || _mr test -L "${MR_TMPFILES}"; then
-    if _mr test -f "${MR_TMPFILES}" && ! _mr test -L "${MR_TMPFILES}"; then
-      content=$(_mr cat "${MR_TMPFILES}" && printf x) || return 1
-      expected=$(printf 'L /run/%s - - - - %s\nx' "${LEGACY_BROWSER_NAME}" "${FICUS_BROWSER_USER}")
-      if [ "${content}" = "${expected}" ]; then _mr rm -- "${MR_TMPFILES}" || return 1
-      else echo "bootstrap.sh: leaving foreign tmpfiles rule ${MR_TMPFILES}" >&2; fi
-    else echo "bootstrap.sh: leaving foreign tmpfiles path ${MR_TMPFILES}" >&2; fi
-  fi
-  for path in "${MR_O}" "${MR_O_RUNDIR}"; do
-    if [ "${path}" = "${MR_O}" ]; then target=ficus; else target=${FICUS_BROWSER_USER}; fi
-    if _mr test -L "${path}" && [ "$(_mr readlink -- "${path}")" = "${target}" ]; then
-      _mr rm -- "${path}" || return 1
-    elif _mr test -e "${path}" || _mr test -L "${path}"; then
-      echo "bootstrap.sh: leaving foreign compatibility path ${path}" >&2
-    fi
-  done
-  if _mr test -f "${FICUS_BROWSER_UNIT}" && ! _mr test -L "${FICUS_BROWSER_UNIT}"; then
-    if _mr systemctl is-enabled --quiet ficus-browser.service; then enabled=1
-    else [ "$?" = 1 ] || return 1; fi
-    write_browser_unit && _mr systemctl daemon-reload && _mr systemctl reenable ficus-browser.service || return 1
-    [ "${enabled}" = 1 ] || _mr systemctl disable ficus-browser.service || return 1
   fi
 }
 
@@ -2667,8 +1935,7 @@ main() {
   # reflecting THIS VM) always runs after main. The non-prebaked (no-marker)
   # branch is the original sequence, unchanged: idempotent installs on a bare host.
   #
-  # Recovery functions remain available until T26b; normal C-FIN bootstrap
-  # must not migrate an old machine then remove paths its boxes still need.
+  # Refuse an old or interrupted machine layout before changing services.
   require_machine_layout_ready || return $?
   if [ -f "${PREBAKED_MARKER}" ]; then
     log_prebaked_decision
@@ -2685,7 +1952,6 @@ main() {
     # bootstrap. The browser NEVER affects bootstrap's exit code.
     install_browser || true
   fi
-  finalize_machine_layout || return $?
   write_manifest
   # Chromium-sandbox check (spec §4.1/§5): loading the AppArmor profile into the
   # running kernel + starting the SYSTEM browser service are per-boot actions, so

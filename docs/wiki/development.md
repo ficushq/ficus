@@ -357,7 +357,7 @@ full list).
 bun run docker:gc               # One-shot: orphaned test DBs, registry GC,
                                 # dangling images/build cache, k3d node prune
 bun run docker:gc -- --install  # Install/refresh a daily 13:00 launchd agent
-                                # (dev.tau.docker-gc, logs to /tmp/tau-docker-gc.log)
+                                # (dev.ficus.docker-gc, logs to /tmp/ficus-docker-gc.log)
 ```
 
 Normal test runs do not sweep other worktrees' database projects. Orphan

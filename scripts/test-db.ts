@@ -5,12 +5,7 @@
  */
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
-import {
-  findFreeTestDbPort,
-  legacyTestDbProjectName,
-  testDbPortFile,
-  testDbProjectName,
-} from '@ficus/shared/testDbPort'
+import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@ficus/shared/testDbPort'
 import { isComposePostgresReady } from '@ficus/shared/testDbReady'
 import { ensureTestDbUp } from '@ficus/shared/testDbUp'
 
@@ -73,14 +68,6 @@ if (command === 'up') {
     stderr: 'inherit',
     env,
   })
-  // Best-effort: also tear down this worktree's project under the pre-rename
-  // prefix, if one is still running from before the rename. A no-op (exits
-  // cleanly) when there is nothing under that name, so it never affects the
-  // exit code above. // ficus-p5-bridge
-  Bun.spawnSync(
-    ['docker', 'compose', '-p', legacyTestDbProjectName(repoRoot), '-f', composeFile, 'down', '--volumes'],
-    { stdout: 'ignore', stderr: 'ignore', env }
-  )
   process.exit(result.exitCode ?? 0)
 } else {
   console.error('Usage: bun run src/test-db.ts up|down')

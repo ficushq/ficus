@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 
 import { getAuthStorePath } from './auth-store'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 
 describe('getAuthStorePath', () => {
   const original = process.env.FICUS_AUTH_STORE

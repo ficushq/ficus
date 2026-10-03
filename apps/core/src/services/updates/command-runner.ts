@@ -116,7 +116,7 @@ export class CommandRunner {
     // target still belongs to this checkout before the first kickstart, so a
     // stale API target cannot be discovered only after the worker was mutated.
     const launchdRestarts = commands.filter((planned) =>
-      /^gui\/\d+\/ai\.hiretau\.tau(?:-[a-z0-9-]+)?-(?:worker|api)$/.test(launchdTarget(planned.command) ?? '')
+      /^gui\/\d+\/sh\.ficus\.ficus(?:-[a-z0-9-]+)?-(?:worker|api)$/.test(launchdTarget(planned.command) ?? '')
     )
     for (const planned of launchdRestarts) {
       const target = launchdTarget(planned.command) as string

@@ -224,7 +224,7 @@ export class MonitorSupervisor {
    * Every terminal path here ends in `markEnded`, which throws when the
    * monitor row is gone — the monitor was deleted while its timeout was still
    * pending. A bare `void this.timeout(id)` turns that into a process-level
-   * UNHANDLED rejection: fatal noise in tau-worker, and in CI it surfaced as
+   * UNHANDLED rejection: fatal noise in ficus-worker, and in CI it surfaced as
    * "Unhandled error between tests" charged to whichever unrelated test
    * happened to be running when a 60s monitor timer finally fired.
    */

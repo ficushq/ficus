@@ -49,11 +49,8 @@ describe('sandboxPodName', () => {
     expect(sandboxPodName(id1)).not.toBe(sandboxPodName(id2))
   })
 
-  // I1 (fix round 1): a pod built under the legacy `tau-sb-` prefix must
-  // still be found by name — sandboxPodNames (used by ensurePod's discovery
-  // loop) must try it.
-  test('accepts an explicit prefix, so a legacy-named pod can still be computed', () => {
-    expect(sandboxPodName('squad_abc123', SANDBOX_IDENTITY_LEGACY.k8sPodNamePrefix)).toBe('tau-sb-squad-abc123')
+  test('computes the exact retired name for the create-time refusal guard', () => {
+    expect(sandboxPodName('squad_abc123', 'tau-sb-')).toBe('tau-sb-squad-abc123')
   })
 })
 

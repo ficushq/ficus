@@ -2,7 +2,7 @@
  * Platform-managed instance markers.
  *
  * On Ficus's hosted platform, the control plane delivers credentials it sets on a
- * tenant's behalf as environment variables in /etc/tau/managed.env (loaded by
+ * tenant's behalf as environment variables in /etc/ficus/managed.env (loaded by
  * systemd via EnvironmentFile). Two control vars ride along in that same file:
  *
  *   FICUS_MANAGED=1                       — this is a platform-managed instance
@@ -55,7 +55,7 @@ const SUPERSEDED_BY: Record<string, string> = {
  * Secret-store key → how its platform-managed VALUE arrives in the environment.
  *
  * Most managed secrets need no entry here: the store key IS the env-var name,
- * and the value is the plaintext. Two properties of `/etc/tau/managed.env` can
+ * and the value is the plaintext. Two properties of `/etc/ficus/managed.env` can
  * break that, and one credential hits both.
  *
  *   NAME. The file is a systemd `EnvironmentFile`, and systemd cannot set a

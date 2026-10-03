@@ -2,30 +2,14 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { mkdirSync } from 'fs'
 
-import { expandTilde, LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 
 /** The default HOME_DIR, under the service user's home: `~/.ficus`. */
 export const HOME_DIR_NAME = '.ficus'
 
-/** Retired spelling retained for negative fixtures and one-shot recovery callers. */
-export { LEGACY_HOME_DIR_NAME }
-
-/**
- * What marks a directory as holding Core's data: the `sessions/` directory Core creates at every
- * boot (`ensureSessionDataDir`). A CLI-only home (`cli/`, `bin/`, `logs/`) does not have it.
- */
-export const HOME_DATA_MARKER = 'sessions'
-
 export interface HomeDirDeps {
   env?: Record<string, string | undefined>
   homedir?: () => string
-  /** Is PATH a symlink (not following it)? */
-  isSymlink?: (path: string) => boolean
-  /** PATH with every symlink resolved, or null when it does not resolve. */
-  realpath?: (path: string) => string | null
-  /** Does the directory PATH hold Core's data (HOME_DATA_MARKER)? */
-  hasData?: (path: string) => boolean
-  warn?: (message: string) => void
 }
 
 /** The configured home, or the canonical default. No filesystem-dependent fallback. */
@@ -59,7 +43,7 @@ const processHomeDir = createHomeDirGetter()
 
 /**
  * The Ficus home directory, decided ONCE per process: the directory Core uses must not change
- * under it mid-run (a CLI creating the legacy dir must not move a running Core).
+ * under it mid-run when other applications create directories.
  */
 export function getHomeDir(): string {
   return processHomeDir.get()

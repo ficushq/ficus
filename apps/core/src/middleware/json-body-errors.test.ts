@@ -1,3 +1,7 @@
+import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { WORKSPACE_DOT_DIR, prepareWorkspaceDotDir } from '../services/workspace/dot-dir'
 import { describe, expect, test } from 'bun:test'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
@@ -10,10 +14,6 @@ import {
   MalformedJsonBodyError,
   parseOptionalJsonObjectBody,
 } from './json-body-errors'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { LEGACY_WORKSPACE_DOT_DIR, prepareWorkspaceDotDir, WORKSPACE_DOT_DIR } from '../services/workspace/dot-dir'
 
 function createApp(onOptionalBody = (_body: unknown) => {}) {
   const app = new Hono()
@@ -267,13 +267,12 @@ describe('JSON body error boundary', () => {
     expect(error.cause).toBe(cause)
     expect(error.message).toBe(INVALID_JSON_BODY_MESSAGE)
   })
-
   test('a workspace settings dir that needs a manual fix answers 409 with the actionable message and no path', async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-dot-dir-409-')))
     const root = join(home, 'workspaces', 'squads', 'squad-1')
     try {
-      mkdirSync(join(root, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
-      mkdirSync(join(root, WORKSPACE_DOT_DIR))
+      mkdirSync(root, { recursive: true })
+      writeFileSync(join(root, WORKSPACE_DOT_DIR), 'not a directory')
       const app = new Hono()
       app.onError(jsonBodyErrorHandler)
       app.get('/env', (c) => {
@@ -286,7 +285,7 @@ describe('JSON body error boundary', () => {
       expect(response.status).toBe(409)
       const body = (await response.json()) as { error: string; code: string }
       expect(body.code).toBe('workspace_dot_dir_conflict')
-      expect(body.error).toStartWith('Workspace squad-1 needs a manual fix to its settings dir: it has both ')
+      expect(body.error).toStartWith('Workspace squad-1 needs a manual fix to its settings dir:')
       expect(body.error).not.toContain(home)
     } finally {
       rmSync(home, { recursive: true, force: true })

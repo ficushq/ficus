@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'bun:test'
-import { LEGACY_LOCAL_INSTANCE } from '@ficus/shared/node'
 import type { SupervisorContext } from './supervisor'
 import { systemdUnit, systemdUserNames } from './systemd-user'
 
@@ -27,7 +26,7 @@ describe('systemdUnit', () => {
       path: '/home/me/.config/systemd/user/ficus-smoke-api.service',
       log: '/home/me/.ficus/logs/ficus-smoke-api.log',
     })
-    expect(systemdUserNames({ ...context, identity: 1 }, 'api').unit).toBe(`${LEGACY_LOCAL_INSTANCE}-smoke-api.service`)
+    expect(() => systemdUserNames({ ...context, identity: 1 }, 'api')).toThrow(/retired/)
     const unit = systemdUnit(context, 'api')
     expect(unit).toContain('WorkingDirectory=/home/me/Ficus\\x20repo%%\\x20“x”')
     expect(unit).toContain('ExecStart="/home/me/bin/bun" "run" "apps/core/dist/index.js"')
@@ -92,7 +91,7 @@ describe('systemd linger', () => {
 })
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { systemdUserSupervisor } from './systemd-user'
@@ -225,4 +224,46 @@ describe('native status vocabulary', () => {
       })
     ).rejects.toThrow(/Failed to connect to bus/)
   })
+})
+
+// ficus-p5-bridge: exact old ownership marker, never a legacy service-name fallback
+const retiredOwnershipPrefix = 'tau-generated-root:'
+describe('supervisor ownership marker upgrade', () => {
+  for (const sameRoot of [true, false]) {
+    it(`rewrites only definitions belonging to this root (same root: ${sameRoot})`, async () => {
+      const root = mkdtempSync(join(tmpdir(), 'ficus-owned-definition-'))
+      const ctx: SupervisorContext = {
+        ...context,
+        root,
+        home: join(root, 'home'),
+        runner: async (command) => ({
+          code: command[0] === 'launchctl' && command[1] === 'print' && command[2]?.split('/').length === 3 ? 113 : 0,
+          stdout: '',
+          stderr: '',
+        }),
+      }
+      try {
+        const library = join(root, 'node_modules/bun-pty/rust-pty/target/release')
+        mkdirSync(library, { recursive: true })
+        writeFileSync(join(library, 'librust_pty.so'), '')
+        const path = systemdUserNames(ctx, 'worker').path
+        mkdirSync(join(path, '..'), { recursive: true })
+        const before = systemdUnit({ ...ctx, root: sameRoot ? root : join(root, 'foreign') }, 'worker').replace(
+          'ficus-generated-root:',
+          retiredOwnershipPrefix
+        )
+        writeFileSync(path, before)
+        if (sameRoot) {
+          await systemdUserSupervisor.start(ctx)
+          expect(readFileSync(path, 'utf8')).toContain('ficus-generated-root:')
+          expect(readFileSync(path, 'utf8')).not.toContain(retiredOwnershipPrefix)
+        } else {
+          await expect(systemdUserSupervisor.start(ctx)).rejects.toThrow(/not owned/)
+          expect(readFileSync(path, 'utf8')).toBe(before)
+        }
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
 })

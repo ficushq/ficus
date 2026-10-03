@@ -35,7 +35,6 @@ import { terminationIntentRegistry } from '../death/intent-registry'
 import { beginSandboxSetupWork, trackSandboxSetupWork, type SandboxSetupWorkReason } from '../setup-progress'
 import {
   dockerExecIdentityForSet,
-  DOCKER_EXEC_IDENTITY_NEW,
   identitySetForLabels,
   readSandboxLabel,
   SANDBOX_IDENTITY_WRITE,
@@ -59,9 +58,11 @@ import {
 export { classifyDockerContainerOwnership, classifyDockerInspectStatus, SPEC_HASH_LABEL } from './lifecycle-contract'
 import { SandboxClient } from '../client/http-client'
 import {
-  LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT,
   parseDockerCommandIdentity,
   resolveDockerCommandIdentity,
+  LEGACY_DOCKER_MANAGED_LABEL,
+  LEGACY_DOCKER_EXEC_IDENTITY,
+  LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT,
 } from './command-identity'
 import { computeDockerSpecDigest, validateDockerHealthContract } from './runtime-contract'
 
@@ -141,9 +142,8 @@ export function sandboxContainerLabelArgs(input: {
 }
 
 /**
- * Ids of the containers that exist for a sandbox under any identity prefix, the
- * write name first. Normally at most one: a release creates under the write name
- * only after this finds (and adopts or removes) the others.
+ * Container IDs found under canonical sandbox names. Retired names are checked
+ * separately by the refusal guard before creation; they are never discovered here.
  */
 function findSandboxContainers(sandboxId: string, lookup: (name: string) => string | null): string[] {
   const ids: string[] = []
@@ -885,6 +885,10 @@ export class DockerSandboxManager implements ISandboxManager {
         await this.removeSandbox(sandboxId, opts.workspacePath)
       }
 
+      // A pre-rename container is not discoverable/adoptable by this release,
+      // but must never be shadowed by a second container for the same sandbox.
+      this.assertNoRetiredContainer(sandboxId)
+
       // No container exists - check if DB thinks it's ready (stale state from deleted container)
       // If so, reset the status so we can reinitialize.
       beginOnce('runtime_start')
@@ -947,6 +951,8 @@ export class DockerSandboxManager implements ISandboxManager {
         }
       }
 
+      // Initialization may have waited on another process; recheck immediately before create.
+      this.assertNoRetiredContainer(sandboxId)
       const runtime = selectRuntime()
       const newSquadId = opts.squadId ?? getSquadIdFromSandbox(sandboxId) ?? undefined
       const newLayout = containerWorkspaceLayout({ squadId: newSquadId })
@@ -1407,7 +1413,7 @@ export class DockerSandboxManager implements ISandboxManager {
     // Mount per-sandbox Nix store directory for devbox package persistence.
     // Each sandbox gets its own directory for isolation — prevents cross-sandbox
     // tampering and ensures clean teardown when sandbox is removed.
-    // Stored in ~/.tau/data/nix/{sandboxId}/ alongside other sandbox data.
+    // Stored in ~/.ficus/data/nix/{sandboxId}/ alongside other sandbox data.
     const sandboxId = containerName.replace(CONTAINER_PREFIX, '')
     const nixStorePath = ensureNixStore(sandboxId)
     args.push('-v', `${nixStorePath}:/nix`)
@@ -1722,8 +1728,7 @@ export class DockerSandboxManager implements ISandboxManager {
   async removeSandbox(sandboxId: string, expectedWorkspacePath?: string): Promise<void> {
     terminationIntentRegistry.record(sandboxId, 'manual')
     const sandbox = this.sandboxes.get(sandboxId)
-    // The tracked container plus every container found under any identity
-    // prefix, so removal never leaves one behind under the other name.
+    // The tracked container plus containers discovered under canonical names.
     const found = findSandboxContainers(sandboxId, (candidate) => this.getExistingContainer(candidate))
     const requestedRefs = [...new Set([...(sandbox ? [sandbox.containerId] : []), ...found])]
     if (requestedRefs.length === 0) requestedRefs.push(this.containerName(sandboxId))
@@ -2045,10 +2050,7 @@ export class DockerSandboxManager implements ISandboxManager {
   }
 
   private async connectExecutor(containerId: string, sandboxId: string): Promise<void> {
-    // The container's OWN baked identity — never assumed. A legacy-labelled
-    // container (adopted, not recreated, because it has an active session —
-    // see connectActiveDrift) has a `tau` user and `/run/tau/...` paths; it // ficus-p5-bridge
-    // has no `/run/ficus/...` executor-token file at all.
+    // Validate the fixed baked identity for this explicitly attached container.
     const dockerIdentity = this.resolveDockerExecIdentity(containerId)
     let portResult = Bun.spawnSync(['docker', 'port', containerId, '50051/tcp'], { stdout: 'pipe', stderr: 'pipe' })
     let portMatch = portResult.stdout
@@ -2094,17 +2096,12 @@ export class DockerSandboxManager implements ISandboxManager {
     const client = new SandboxClient(`127.0.0.1:${portMatch[1]}`, token)
     try {
       await client.waitForReady(30_000)
-      // The expected identity contract follows the SAME container-reported
-      // generation as the token path above: the current release's baked file
-      // for a new-identity container, the fixed pre-release pair (never read
-      // from a file — this release's checkout no longer has one) for a
-      // legacy-identity one.
       const identity =
-        dockerIdentity === DOCKER_EXEC_IDENTITY_NEW
-          ? parseDockerCommandIdentity(
+        dockerIdentity === LEGACY_DOCKER_EXEC_IDENTITY
+          ? LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT
+          : parseDockerCommandIdentity(
               fs.readFileSync(path.join(MONOREPO_ROOT, 'apps/core/docker-sandbox/command-identity.json'), 'utf8')
             )
-          : LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT
       const expectedIdentity = resolveDockerCommandIdentity(identity, {
         uid: process.getuid?.(),
         gid: process.getgid?.(),
@@ -2201,6 +2198,16 @@ export class DockerSandboxManager implements ISandboxManager {
         reason: 'DOCKER_STATE_UNKNOWN',
       })
     return immutableId
+  }
+
+  /** Refusal-only bridge: never adopt, stop, or remove a retired-name container. */
+  private assertNoRetiredContainer(sandboxId: string): void {
+    const state = this.inspectContainerRunning(`tau-sandbox-${sandboxId}`) // ficus-p5-bridge: presence refusal only
+    if (state === 'not_found') return
+    if (state === 'unknown') throw new Error('Cannot verify retired Docker sandbox absence; refusing creation')
+    throw new Error(
+      'A pre-rename Docker sandbox still exists; drain and remove it, or migrate it through the bridge release before creating a canonical sandbox'
+    )
   }
 
   private runLifecycleDocker(args: string[]): { exitCode: number; stdout: Buffer; stderr: Buffer } {
@@ -2321,18 +2328,16 @@ export class DockerSandboxManager implements ISandboxManager {
     return readSandboxLabel(labels, pick) || null
   }
 
-  /**
-   * The in-container exec identity (user/home/token path/docker-proxy socket)
-   * a container ACTUALLY has baked in, read from its own labels — never
-   * assumed to be the current release's. A legacy-labelled container (built
-   * before this release) has a `tau` user and `/run/tau/...` paths; exec'ing // ficus-p5-bridge
-   * into it with the new-only literals fails outright, which is exactly the
-   * bug this resolves (an adopted-not-recreated legacy container must stay
-   * reachable, not just discoverable).
-   */
+  /** Fixed command identity for an explicitly addressed container. Its managed
+   * labels select the expected baked contract; this does not discover old names. */
   private resolveDockerExecIdentity(containerRef: string): DockerExecIdentity {
     const labels = this.getContainerLabels(containerRef)
-    return dockerExecIdentityForSet(labels ? identitySetForLabels(labels) : null)
+    const canonical = labels ? identitySetForLabels(labels) : null
+    if (labels?.[LEGACY_DOCKER_MANAGED_LABEL] === 'true') {
+      if (canonical) throw new Error('Conflicting Docker managed identities')
+      return LEGACY_DOCKER_EXEC_IDENTITY
+    }
+    return dockerExecIdentityForSet(canonical)
   }
 
   /**

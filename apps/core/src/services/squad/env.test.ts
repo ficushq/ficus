@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
-import { existsSync, mkdirSync, readFileSync, lstatSync, statSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 
 // Mock the home module to use a temp directory
 const originalEnv = process.env.HOME_DIR
@@ -66,36 +66,20 @@ describe('squad-env', () => {
       expect(result).toBeNull()
     })
 
-    it('reads a workspace still under the legacy dot dir by moving it to .ficus first', async () => {
-      const { getEnvFile } = await getModule()
-      const { getSquadWorkspacePath } = await import('./workspace')
-      const { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR } = await import('../workspace/dot-dir')
-      const squadId = randomUUID()
-      const root = getSquadWorkspacePath(squadId)
-      mkdirSync(join(root, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
-      writeFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'env.user'), 'KEPT=1')
-
-      expect(getEnvFile(squadId)).toBe('KEPT=1')
-      expect(readFileSync(join(root, WORKSPACE_DOT_DIR, 'env.user'), 'utf-8')).toBe('KEPT=1')
-      expect(() => lstatSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toThrow('ENOENT')
-    })
-
-    it('fails closed with a clear error when the workspace has both dot dirs, and a regeneration skips it', async () => {
+    it('fails closed with a clear error when canonical settings is a file, and a regeneration skips it', async () => {
       const { getEnvFile, regenerateEnvFileForSquad } = await getModule()
       const { getSquadWorkspacePath } = await import('./workspace')
-      const { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } =
-        await import('../workspace/dot-dir')
+      const { WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } = await import('../workspace/dot-dir')
       const squadId = randomUUID()
       const root = getSquadWorkspacePath(squadId)
-      mkdirSync(join(root, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
-      writeFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'env.user'), 'OLD=1')
-      mkdirSync(join(root, WORKSPACE_DOT_DIR))
+      mkdirSync(root, { recursive: true })
+      writeFileSync(join(root, WORKSPACE_DOT_DIR), 'preserved invalid settings')
 
       expect(() => getEnvFile(squadId)).toThrow(WorkspaceDotDirConflictError)
       // A fleet-wide regeneration must not stop on this squad, and writes nothing into it.
       await regenerateEnvFileForSquad(squadId)
       expect(existsSync(join(root, WORKSPACE_DOT_DIR, '.env'))).toBe(false)
-      expect(readFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'env.user'), 'utf-8')).toBe('OLD=1')
+      expect(readFileSync(join(root, WORKSPACE_DOT_DIR), 'utf-8')).toBe('preserved invalid settings')
     })
 
     it('returns content when .ficus/.env exists', async () => {

@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { defaultRunner, type Runner } from './local-server/runner'
 import { verifyDesktopArchive } from './desktop-archive'
 
-export const desktopReleaseRepository = 'ficushq/tau-desktop-releases' // ficus-p5-bridge: public release artifact repository
+export const desktopReleaseRepository = 'ficushq/tau-desktop-releases' // ficus-p5-apple: public release artifact repository pending repo rename
 export const desktopFeed = `https://raw.githubusercontent.com/${desktopReleaseRepository}/main/updates/ficus-darwin-arm64.json`
 const releaseBase = `https://github.com/${desktopReleaseRepository}/releases/download/`
 const teamId = '5S6HE7KE49'

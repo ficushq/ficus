@@ -18,7 +18,7 @@ export function apiBindHost(env: Record<string, string | undefined>, isK8s: bool
 /**
  * The worker stream server's bind host: `FICUS_WORKER_BIND` if set, else `HOST`,
  * else all interfaces inside Kubernetes, else loopback. The worker is not
- * meant to be reached from off-box (tau-api reaches it over loopback, or over
+ * meant to be reached from off-box (ficus-api reaches it over loopback, or over
  * the container network in deployments that set HOST/WORKER_URL), so unlike
  * the API its non-k8s default is loopback-only.
  */

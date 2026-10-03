@@ -17,8 +17,7 @@
 # A fresh host is set up on the Ficus host layout (layout 2: lib.sh's host
 # layout section): /opt/ficus-core, /etc/ficus, the ficus-* units, HOME
 # <run user home>/.ficus and, in container mode, the ficus-postgres container.
-# A re-run on an existing host keeps the layout it is on, and moves a layout-1
-# host to layout 2 when the release it installs declares that (host_migrate).
+# A re-run requires the canonical layout and preserves its existing data.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
@@ -405,7 +404,7 @@ SEC_PW_ENV=$(cfg_get '.secrets.password_env')
 # backup HOME_DIR, the update sudoers file. Set here from the layout resolved
 # when lib.sh was sourced, and set again whenever this run's view of the layout
 # changes: after the reconcile (host_layout_adopt) and after host_migrate
-# moved a layout-1 host to layout 2.
+# reconciled a prior journal.
 resolve_layout_globals() {
   SRC_DEST=$(cfg_source_dest)
   ENV_FILE="${SRC_DEST}/.env"
@@ -572,8 +571,8 @@ if [[ ${DRY_RUN} -eq 0 ]]; then
     die "a journaled host migration could not be reconciled (${reconcile_rc}) — run this from the complete toolkit (systemd/*.service.tmpl)"
   host_migrate_install_traps
   # The host layout as the reconcile left it, BEFORE anything below reads a
-  # path: the reconcile may have finished the host layout migration (in a
-  # subshell) or reversed it since lib.sh resolved the layout at source time.
+  # path: the reconcile may have settled an older journal since lib.sh
+  # resolved the layout at source time.
   host_layout_adopt --no-repair
   resolve_layout_globals
 fi
@@ -710,15 +709,9 @@ render_backup_unit() { # TEMPLATE_FILE
 # refuses to prompt — so without a NOPASSWD rule the restart step fails and every
 # update is recorded as failed. Root installs restart directly and need no rule.
 # The grant is scoped to exactly these commands (no wildcards): the layout's two
-# units (UPDATE_SUDOERS_FILE is the layout's HL_SUDOERS) — and on layout 2, while
-# the legacy unit names are bridged as Alias=, their legacy spellings too (an
-# older release restarts those; lib.sh's host_layout_sudoers_content).
+# canonical units (UPDATE_SUDOERS_FILE is HL_SUDOERS).
 update_sudoers_content() {
-  if [[ ${HL_LAYOUT} == 2 && ${HL_BRIDGE_ALIASES:-0} == 1 ]]; then
-    host_layout_sudoers_content "${RUN_USER}"
-  else
-    printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s\n' "${RUN_USER}" "${HL_UNIT_API}" "${HL_UNIT_WORKER}"
-  fi
+  host_layout_sudoers_content "${RUN_USER}"
 }
 
 install_update_sudoers() {
@@ -789,9 +782,6 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   else
     [[ -n ${DB_CA_PATH} ]] &&
       plan "install ${DB_CA_PATH} → ${FICUS_DB_CA_PATH} (0644 root; a CA certificate is public, and the app/worker/pg_dump all read it)"
-    if host_layout_dsn_needs_legacy_ca_link "${DB_DSN_CFG}"; then
-      plan "link ${FICUS_HOST_ROOT:-}${HL_LEGACY_ETC} -> ${HL_ETC}: the DSN's sslrootcert names the CA under the legacy etc dir (the compat link a migrated host has)"
-    fi
     plan "use external DSN from config/\$FICUS_SETUP_DATABASE_DSN; TCP-probe host before migrating"
   fi
   if [[ -n ${RESTORE_URL} ]]; then
@@ -924,7 +914,6 @@ prepare_source_tools() {
   printf 'DPkg::Lock::Timeout "120";\n' |
     as_root tee /etc/apt/apt.conf.d/99ficus-lock-timeout >/dev/null
   # The same setting under its name from before the Ficus naming: one copy.
-  as_root rm -f /etc/apt/apt.conf.d/99tau-lock-timeout # ficus-p5-bridge
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     log_info "installing missing packages: ${missing[*]}"
@@ -1571,12 +1560,7 @@ require_ficus_target_release() {
   # A non-root (sudo) re-run cannot do a host migration this release needs:
   # refuse before any phase changes the host.
   host_migrate_require_privilege "${tree}"
-  # A restore on a host this same run moves to the Ficus layout would have the
-  # move rebase the restored rows before they are migrated: refuse it before
-  # any phase changes the host (a fresh host, or one upgraded first, is fine).
-  if [[ -n ${RESTORE_URL} && ,$(host_migrate_needed "${tree}"), == *,host_layout,* ]]; then
-    die "refusing to restore: this run would also move this host to the Ficus host layout — restore onto a fresh host, or upgrade this host first (upgrade-host.sh), then restore"
-  fi
+
 }
 
 prepare_source_tools

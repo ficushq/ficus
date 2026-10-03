@@ -31,8 +31,14 @@ import {
 
 class FakeSupervisor {
   sessions = new Map<string, boolean>()
-  starts: Array<{ localDeploymentId: string; sandboxId: string; command: string; cwd?: string | null; port: number }> =
-    []
+  starts: Array<{
+    localDeploymentId: string
+    sandboxId: string
+    command: string
+    cwd?: string | null
+    port: number
+    processId?: string
+  }> = []
 
   async hasSession(_sandboxId: string, processId: string): Promise<boolean> {
     return this.sessions.get(processId) ?? false
@@ -52,10 +58,11 @@ class FakeSupervisor {
     command: string
     cwd?: string | null
     port: number
+    processId?: string
   }): Promise<{ processId: string }> {
     this.starts.push(args)
     if (this.failStartsFor.has(args.localDeploymentId)) throw new LocalDeploymentLaunchFailedError()
-    return { processId: `tau-local-deployment-${args.localDeploymentId.slice(0, 8)}` }
+    return { processId: args.processId ?? `ficus-local-deployment-${args.localDeploymentId.slice(0, 8)}` }
   }
 }
 
@@ -571,7 +578,7 @@ describe('localDeployment health', () => {
     const restarted = await restartManagedLocalDeployment(localDeployment.id)
 
     expect(restarted.status).toBe('restarting')
-    expect(restarted.processId).toBe(`tau-local-deployment-${localDeployment.id.slice(0, 8)}`)
+    expect(restarted.processId).toBe(`ficus-local-deployment-${localDeployment.id.slice(0, 8)}`)
     expect(restarted.restartCount).toBe(1)
     expect(supervisor.starts).toHaveLength(1)
     expect(supervisor.starts[0]).toMatchObject({
@@ -579,6 +586,16 @@ describe('localDeployment health', () => {
       sandboxId: squad.sandboxId,
       command: 'bun run dev',
     })
+  })
+
+  it('preserves the recorded session identity when restarting an existing deployment', async () => {
+    const squad = await createTestSquad('persisted-session')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    const processId = 'tau-local-deployment-existing' // Persisted before the rename.
+    await updateLocalDeploymentRecord(deployment.id, { processId, status: 'unhealthy' })
+    const restarted = await restartManagedLocalDeployment(deployment.id)
+    expect(restarted.processId).toBe(processId)
+    expect(supervisor.starts[0]).toMatchObject({ localDeploymentId: deployment.id, processId })
   })
 
   it('joins a restart already in flight instead of starting the deployment twice', async () => {

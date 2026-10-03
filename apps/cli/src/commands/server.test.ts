@@ -17,7 +17,8 @@ import { isJsonMode, output, outputError, setOutputOptions } from '../output'
 import { EnvNamingError, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
 import { recordingRunner } from '../local-server/runner'
 import { getStatePath, readRegistry, upsertInstance } from '../local-server/state'
-import { LEGACY_HOME_DIR_NAME, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
+import { LEGACY_CLI_HOME_LINK as LEGACY_HOME_DIR_NAME } from '../local-server/home-move'
+import { RETIRED_DEFAULT_INSTANCE as LEGACY_LOCAL_INSTANCE } from '../local-server/state'
 import { cliHome } from '../local-server/home-move'
 import { registerServerCommands, type ServerDeps } from './server'
 
@@ -806,60 +807,9 @@ describe('ficus server and the ficus identity', () => {
       ;(outputError as ReturnType<typeof mock>).mockClear()
       await run(['server', command])
       const error = (outputError as ReturnType<typeof mock>).mock.calls[0]?.[0] as Error
-      expect(error.message).toContain(`ficus server rename-identity --root ${root}`)
+      expect(error.message).toContain('earlier identity move is unfinished')
     }
     expect(calls).toEqual([])
-  })
-
-  it('rename-identity --dry-run prints the plan for the registered checkout and changes nothing', async () => {
-    writeFileSync(
-      statePath,
-      JSON.stringify({
-        version: 3,
-        default: LEGACY_LOCAL_INSTANCE,
-        instances: {
-          [LEGACY_LOCAL_INSTANCE]: { root, port: 3000, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
-        },
-      })
-    )
-    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-rename-home-')))
-    try {
-      writeFileSync(join(root, '.env'), 'PORT=3000\nDATABASE_URL=postgres://app:pw@db.example.com:5432/app\n')
-      // The pm2 process file the pre-rename setup wrote (step 7 renames its apps in place).
-      writeFileSync(
-        join(root, 'ecosystem.config.js'),
-        `module.exports = { apps: [{ name: '${LEGACY_UNITS.api}' }, { name: '${LEGACY_UNITS.worker}' }] }\n`
-      )
-      const before = readFileSync(statePath, 'utf8')
-      const recoveryRegistry = join(home, LEGACY_HOME_DIR_NAME, 'cli', 'local-server.json')
-      mkdirSync(join(home, LEGACY_HOME_DIR_NAME, 'cli'), { recursive: true })
-      writeFileSync(recoveryRegistry, before)
-      mkdirSync(join(root, 'apps/core/dist'), { recursive: true })
-      writeFileSync(join(root, 'apps/core/dist/rebase-home.js'), '// fixture helper')
-      const { run, calls } = make({}, { env: { HOME: home }, statePath: getStatePath({ HOME: home }) })
-      await run(['server', 'rename-identity', '--root', root, '--dry-run'])
-      expect(outputError).not.toHaveBeenCalled()
-      expect(output).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: 'dry-run',
-          from: expect.objectContaining({ label: LEGACY_LOCAL_INSTANCE }),
-        }),
-        expect.stringContaining('ficus')
-      )
-      expect(readFileSync(statePath, 'utf8')).toBe(before)
-      expect(calls).toHaveLength(1)
-      expect(calls[0].command.at(-1)).toBe('--dry-run')
-      expect(readFileSync(recoveryRegistry, 'utf8')).toBe(before)
-      expect(existsSync(join(home, '.ficus'))).toBe(false)
-      // An explicit state override must not be replaced by home discovery.
-      writeFileSync(recoveryRegistry, JSON.stringify({ version: 3, instances: {} }))
-      const explicit = make({}, { env: { HOME: home, FICUS_LOCAL_SERVER_STATE: statePath }, statePath })
-      await explicit.run(['server', 'rename-identity', '--root', root, '--dry-run'])
-      expect(outputError).not.toHaveBeenCalled()
-      expect(readFileSync(statePath, 'utf8')).toBe(before)
-    } finally {
-      rmSync(home, { recursive: true, force: true })
-    }
   })
 
   it('list shows an instance a newer CLI registered instead of hiding or failing on it', async () => {
@@ -901,7 +851,6 @@ describe('ficus server and the ficus identity', () => {
     expect(help).toContain('ficus-lab-api/ficus-lab-worker')
     expect(help).toContain('postgres-ficus-lab')
     expect(help).toContain('~/.ficus-lab')
-    expect(sub('rename-identity').helpInformation()).toContain('--undo')
   })
 })
 

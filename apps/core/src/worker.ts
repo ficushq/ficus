@@ -41,7 +41,7 @@ import { reconcileKeylessAmtpRegistrations } from './services/amtp/registration-
 import { sql } from 'drizzle-orm'
 
 import { eventEmitter } from './lib/infra/event-emitter'
-import { ensureHomeDir, getHomeDir } from './lib/utils/home'
+import { ensureHomeDir } from './lib/utils/home'
 import { initSquadEventHandlers } from './services/squad/event-handlers'
 import { registerCleanupHandlers } from './services/agents/cleanup'
 import { registerSandboxWarmupHandlers } from './services/sandbox/warmup-handlers'
@@ -792,14 +792,6 @@ async function startup(): Promise<void> {
   ensureSessionDataDir()
 
   await waitForDbAndMigrate()
-  // Before any agent session opens: transcripts and memory files move to the Ficus names once (Task 36c).
-  const { rewriteHomeText } = await import('./services/home-text-rewrite')
-  await rewriteHomeText()
-  // Before any sandbox or agent session uses a workspace: every squad workspace and agent private dir
-  // moves its settings dir to `.ficus/` once, leaving the legacy name as a link (P5-T14). It logs the
-  // `migrateWorkspaceDotDirs moved=<n> conflicts=[...]` line operators check, and never throws.
-  const { migrateWorkspaceDotDirs } = await import('./services/workspace/dot-dir')
-  await migrateWorkspaceDotDirs(getHomeDir())
   const reconciled = await reconcileKeylessAmtpRegistrations()
   if (reconciled.length > 0) log.warn('[worker] Closed historical keyless AMTP registrations', reconciled)
 

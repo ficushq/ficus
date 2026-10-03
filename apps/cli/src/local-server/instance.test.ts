@@ -11,7 +11,6 @@ import {
   readInstanceLabel,
 } from './instance'
 import { SetupOptionsError } from './options'
-import { LEGACY_HOME_DIR_NAME, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
 
 const EXAMPLE = readFileSync(join(__dirname, '../../../../ecosystem.config.example.js'), 'utf8')
 
@@ -38,24 +37,8 @@ describe('instanceNames', () => {
       homeDir: '~/.ficus-smoke',
     })
   })
-  it('keeps the pre-rename names for an instance whose registry entry is not yet identity 2', () => {
-    const L = LEGACY_LOCAL_INSTANCE
-    expect(instanceNames(L, 1)).toEqual({
-      label: L,
-      api: LEGACY_UNITS.api,
-      worker: LEGACY_UNITS.worker,
-      container: `postgres-${L}`,
-      volume: `${L}_postgres-data`,
-      homeDir: undefined,
-    })
-    expect(instanceNames('smoke', 1)).toEqual({
-      label: 'smoke',
-      api: `${L}-smoke-api`,
-      worker: `${L}-smoke-worker`,
-      container: `postgres-${L}-smoke`,
-      volume: `${L}-smoke_postgres-data`,
-      homeDir: `~/${LEGACY_HOME_DIR_NAME}-smoke`,
-    })
+  it('refuses to derive names for a retired registration', () => {
+    expect(() => instanceNames('smoke', 1)).toThrow(SetupOptionsError)
   })
 })
 

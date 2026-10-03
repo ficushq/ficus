@@ -1,10 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { boxUnitControl, boxHomeForUser, LEGACY_BOX_DOT_DIR } from './box-paths'
+import { boxUnitControl, boxHomeForUser } from './box-paths'
 import type { Machine, MachineBox } from './queries'
 import type { SshRunner } from './ssh'
-import { LEGACY_MACHINE_ROOT } from './machine-layout-preflight'
 import {
   ReprovisionError,
   parseReprovisionEnv,
@@ -40,8 +39,6 @@ uid=$(id -u "$u")
 mode=${q(ctl.mode)}
 base=${q(ctl.mode === 'system' ? '/etc/systemd/system' : `${home}/.config/systemd/user`)}
 new=${q(ctl.unit)}
-old=${q(ctl.legacy.unit)}
-if [ -f "$base/$new" ] && [ ! -L "$base/$new" ] && [ -f "$base/$old" ] && [ ! -L "$base/$old" ]; then exit 3; fi
 [ -f "$base/$new" ] && [ ! -L "$base/$new" ]
 unit=$new
 stem=\${unit%.service}
@@ -114,16 +111,6 @@ export function verifyInstalledCommand(box: MachineBox): string {
   const ctl = boxUnitControl(box)
   const home = boxHomeForUser(box.unixUser)
   const base = ctl.mode === 'system' ? '/etc/systemd/system' : `${home}/.config/systemd/user`
-  const system = boxUnitControl({ sandboxId: 'agent_fixture', unixUser: box.unixUser })
-  const user = boxUnitControl({ sandboxId: 'squad_fixture', unixUser: box.unixUser })
-  const oldSystem = system.legacy
-  const oldUser = user.legacy
-  const aliases = [
-    ...oldSystem.allUnits.split(' ').map((name, i) => [`/etc/systemd/system/${name}`, system.allUnits.split(' ')[i]!]),
-    ...oldUser.allUnits
-      .split(' ')
-      .map((name, i) => [`${home}/.config/systemd/user/${name}`, user.allUnits.split(' ')[i]!]),
-  ]
   return remote(`u=${q(box.unixUser)}
 home=${q(home)}
 base=${q(base)}
@@ -131,7 +118,6 @@ uid=$(id -u "$u")
 owner=${ctl.mode === 'system' ? '0' : '$uid'}
 [ ! -L "$home/.ficus" ] && [ -d "$home/.ficus" ]
 [ ! -L "$home/.ficus/server.env" ] && [ -f "$home/.ficus/server.env" ]
-if [ -L "$home/${LEGACY_BOX_DOT_DIR}" ] && [ "$(readlink "$home/${LEGACY_BOX_DOT_DIR}")" = .ficus ]; then exit 3; fi
 [ "$(stat -c '%u:%a' "$home/.ficus/server.env")" = "$uid:600" ]
 for name in ${[ctl.unit, ctl.socket, ctl.proxy].map(q).join(' ')}; do
   [ -f "$base/$name" ] && [ ! -L "$base/$name" ]
@@ -140,18 +126,6 @@ for name in ${[ctl.unit, ctl.socket, ctl.proxy].map(q).join(' ')}; do
 done
 grep -Fq 'ExecStart=/opt/ficus/bin/bun /opt/ficus/server/server.js' "$base/${ctl.unit}"
 grep -Fq '/.ficus/server.env' "$base/${ctl.unit}"
-for old in ${[...oldSystem.allUnits.split(' ').map((n) => `/etc/systemd/system/${n}`), ...oldUser.allUnits.split(' ').map((n) => `${home}/.config/systemd/user/${n}`)].map(q).join(' ')}; do
-  if [ -f "$old" ] && [ ! -L "$old" ]; then exit 3; fi
-  if [ -L "$old" ]; then
-    case "$old" in
-${aliases.map(([old, current]) => `      ${q(old!)} ) expected=${q(current!)} ;;`).join('\n')}
-    esac
-    target=$(readlink "$old")
-    if [ "$target" = "$expected" ] || [ "$target" = "\${old%/*}/$expected" ]; then exit 3; fi
-  fi
-done
-old_root=${q(LEGACY_MACHINE_ROOT)}
-if [ -L "$old_root" ] && [ "$(readlink "$old_root")" = ficus ]; then exit 3; fi
 token=${q(`/opt/ficus/browser-tokens/${box.unixUser}.token`)}
 gid=$(getent group ficus-browser | cut -d: -f3)
 [ -n "$gid" ] && [ -f "$token" ] && [ ! -L "$token" ]
@@ -251,7 +225,6 @@ export function createReprovisionJournal(root = '/var/backups/ficus-box-reprovis
 export const REPROVISION_GUARD_NAME = '90-ficus-box-reprovision.conf'
 export const REPROVISION_ALLOW_START = '/run/ficus-box-reprovision.allow-start'
 export const REPROVISION_GUARD_CONTENT = `[Unit]\nConditionPathExists=${REPROVISION_ALLOW_START}\n`
-const LEGACY_CORE_PREFIX = 'tau' // ficus-p5-bridge
 export type LocalRun = (argv: string[]) => Promise<{ exitCode: number; stdout: string; stderr: string }>
 export const runLocal: LocalRun = async (argv) => {
   const child = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe' })
@@ -326,23 +299,6 @@ export async function assertLocalReprovisionMaintenance(run: LocalRun = runLocal
     ])
     if (props.exitCode || conditions.exitCode) throw new ReprovisionError('maintenance-probe-failed')
     validateMaintenanceEvidence(props.stdout, JSON.parse(conditions.stdout), guardPath)
-    const legacy = await run([
-      'systemctl',
-      'show',
-      `${LEGACY_CORE_PREFIX}-${role}.service`,
-      '--property=LoadState,ActiveState,Id',
-    ])
-    const fields = Object.fromEntries(
-      legacy.stdout
-        .trim()
-        .split('\n')
-        .map((line) => line.split('='))
-    )
-    if (
-      fields.LoadState !== 'not-found' &&
-      (legacy.exitCode !== 0 || fields.ActiveState !== 'inactive' || fields.Id !== name)
-    )
-      throw new ReprovisionError('legacy-service-not-guarded')
   }
 }
 

@@ -39,7 +39,7 @@ export const EXPECTED_APNS_BUNDLE_ID = 'sh.ficus.mobile'
  *   1. APNS_KEY_P8   — the PEM inline (self-hosted store/env value).
  *   2. APNS_KEY_P8_FILE — a path to the PEM on disk. This is how the hosted
  *      platform delivers it: the .p8 lands as a FILE artifact under
- *      /etc/tau/artifacts/ (a PEM has newlines, which managed.env env values may
+ *      /etc/ficus/artifacts/ (a PEM has newlines, which managed.env env values may
  *      not span), and the path arrives as a managed env var. get() resolves that
  *      path from process.env without it ever becoming a store entry.
  *

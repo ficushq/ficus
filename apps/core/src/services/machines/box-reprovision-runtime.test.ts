@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { MachineBox } from './queries'
-import { boxUnixUser, LEGACY_BOX_DOT_DIR } from './box-paths'
+import { boxUnixUser } from './box-paths'
 import {
   createReprovisionJournal,
   validateMaintenanceEvidence,
@@ -87,17 +87,17 @@ describe('reprovision remote commands', () => {
   })
   it('requires canonical environment and runtime units without legacy fallback', () => {
     const command = readReprovisionEnvCommand(box)
-    expect(command).not.toContain(`/${LEGACY_BOX_DOT_DIR}/`)
+    expect(command).toContain(`/.ficus/server.env`)
     expect(command).toContain('[ -f "$file" ]')
     expect(captureRuntimeCommand(box)).not.toContain('unit=$old')
   })
-  it('requires alias-free units and rejects exact retained compatibility links after install', () => {
+  it('requires canonical real HOME and alias-free owned units after install', () => {
     for (const sandboxId of ['agent_fixture', 'squad_fixture']) {
       const command = verifyInstalledCommand({ ...box, sandboxId, unixUser: boxUnixUser(sandboxId) })
       expect(command).toContain('^Alias=')
-      expect(command).toContain('"$target" = "$expected"')
-      expect(command).toContain('"$target" = "${old%/*}/$expected"')
-      expect(command).toContain('"$(readlink "$old_root")" = ficus')
+      expect(command).toContain('[ ! -L "$home/.ficus" ]')
+      expect(command).toContain('$owner:644')
+      expect(command).toContain(sandboxId.startsWith('agent_') ? 'owner=0' : 'owner=$uid')
     }
   })
   it('puts show before the unit argument for both system and user controllers', () => {

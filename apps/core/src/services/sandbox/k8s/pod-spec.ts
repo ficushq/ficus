@@ -143,7 +143,7 @@ const SANDBOX_EPHEMERAL_STORAGE_LIMIT = process.env.FICUS_SANDBOX_EPHEMERAL_STOR
  * an IDLE agent, took the node to 97% of CPU requests while 11 further agents
  * sat Pending (one for 52 minutes) on `0/1 nodes are available: 1 Insufficient
  * cpu`. Each blocked sandbox then burns a 5-minute pod-ready timeout, and that
- * retry pile-up leaked memory in tau-api until it stopped serving entirely.
+ * retry pile-up leaked memory in ficus-api until it stopped serving entirely.
  *
  * 100m keeps ~50-100x headroom over the measured idle draw while raising the
  * per-node ceiling to ~140. Under real contention CFS shares are proportional
@@ -275,11 +275,8 @@ export function sandboxPodName(sandboxId: string, prefix: string = SANDBOX_IDENT
 }
 
 /**
- * Every pod name a sandbox may carry: the write name first, then each other
- * read name — mirrors {@link sandboxContainerNames} for Docker. A pod built
- * under a prefix this release does not write (e.g. the legacy `tau-sb-`
- * prefix) is still found, adopted, and cleaned up by trying every name here,
- * never left running beside a freshly created pod under the write name.
+ * Canonical pod names the runtime reads and writes. The retired name is checked
+ * separately as a refusal guard before creating a pod.
  */
 export function sandboxPodNames(sandboxId: string): string[] {
   return sandboxPodNamePrefixes().map((prefix) => sandboxPodName(sandboxId, prefix))
@@ -568,7 +565,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
       restartPolicy: 'OnFailure',
       // Make the pod's volume mounts group-readable by the host API user so
       // the API (running on the host as a non-root user) can read/write
-      // ~/.tau/{memory,ssh,workspaces,nix-cache}/<squadId>. Without this,
+      // ~/.ficus/{memory,ssh,workspaces,nix-cache}/<squadId>. Without this,
       // the kubelet creates subPath dirs as root and container-root writes
       // land as uid 0 on the host, locking the API out.
       securityContext: sharedVolumeGid

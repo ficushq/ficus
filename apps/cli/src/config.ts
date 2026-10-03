@@ -17,7 +17,7 @@ export function setSelectedBackend(label: string | undefined) {
  *
  * On the host runtime an agent runs as the operator's unix user, with the
  * operator's $HOME — so every fallback below (the auth store, the dotenv
- * heuristic, /etc/tau/password) can hand it the HUMAN's login and point it at a
+ * heuristic, /etc/ficus/password) can hand it the HUMAN's login and point it at a
  * DIFFERENT instance. In agent context resolution is therefore env-only and
  * fails closed instead of falling back.
  */
@@ -77,8 +77,8 @@ function webhookAuth(): ResolvedAuth | undefined {
 
 /**
  * Read FICUS_PASSWORD from env var, active auth store backend, or the mounted sandbox
- * secret file (`sandboxPasswordPath()`: the ficus path, else the legacy one, whichever is
- * actually mounted) — auto-updated by K8s when the secret changes.
+ * canonical mounted secret file (`sandboxPasswordPath()`) — auto-updated by K8s
+ * when the secret changes.
  *
  * `deps.secretExists`/`deps.readSecret` override the filesystem for tests only; every
  * production call site (the `config.password` getter below) omits them and gets the real
@@ -149,7 +149,7 @@ export type AuthSource =
   | 'env-password' // FICUS_PASSWORD set explicitly in the environment
   | 'auth-store' // the active `ficus auth login` backend
   | 'dotenv' // FICUS_PASSWORD from a .env file
-  | 'secret-file' // /etc/tau/password (mounted K8s Secret)
+  | 'secret-file' // /etc/ficus/password (mounted K8s Secret)
   | 'none'
 
 export interface ResolvedAuth {

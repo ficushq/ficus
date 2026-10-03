@@ -5,13 +5,13 @@
  * to make the OrbStack VM self-stop (killing every sandbox).
  *
  * What it cleans, and why each thing grows:
- *  1. Orphaned test-DB compose projects (tau-test-*): each worktree that runs
+ *  1. Orphaned test-DB compose projects (ficus-test-*): each worktree that runs
  *     `bun test` leaves its postgres running for reuse; deleting the worktree
  *     orphans the project forever (test-db-sweep.ts, shared with test-setup).
- *  2. Exited tau-test containers: OrbStack restarts previously-running
+ *  2. Exited ficus-test containers: OrbStack restarts previously-running
  *     containers on VM boot, but crash-exited ones linger holding volumes.
  *     The harness recreates its DB on demand, so removing these is free.
- *  3. Local registry (tau-registry) untagged blobs: every `bun run k3d:import`
+ *  3. Local registry (ficus-registry) untagged blobs: every `bun run k3d:import`
  *     re-tags `latest`, orphaning the previous image's manifest+blobs. The
  *     registry never GCs itself — this was 14 GB (2 live images ≈ 1.4 GB)
  *     when first cleaned on 2026-07-10.
@@ -21,8 +21,7 @@
  *
  * Safe by construction: never touches running containers of live worktrees,
  * tagged images, named volumes of other projects, or anything outside this
- * project's test-DB/registry/buildx/k3d-node resources (recognised under
- * both the current Ficus name and the pre-rename one — see the arrays below)
+ * project's test-DB/registry/buildx/k3d-node resources
  * plus docker's own dangling-only prunes.
  *
  * Run manually: bun run docker:gc
@@ -36,12 +35,12 @@ import { sweepOrphanTestDbs } from '../apps/core/src/test-db-sweep'
 const repoRoot = join(import.meta.dir, '..')
 const composeFile = join(repoRoot, 'docker-compose.test.yml')
 
-// Each dev resource is recognised under its Ficus name and its old one, so a
-// machine that still has the old-named resource keeps getting cleaned.
-const TEST_CONTAINER_PREFIXES = ['ficus-test-', 'tau-test-'] // ficus-p5-bridge
-const REGISTRY_CONTAINERS = ['ficus-registry', 'tau-registry'] // ficus-p5-bridge
-const BUILDX_BUILDERS = ['ficusbuilder', 'taubuilder'] // ficus-p5-bridge
-const K3D_NODES = ['k3d-ficus-dev-server-0', 'k3d-tau-dev-server-0'] // ficus-p5-bridge
+const TEST_CONTAINER_PREFIXES = ['ficus-test-']
+const REGISTRY_CONTAINERS = ['ficus-registry']
+const BUILDX_BUILDERS = ['ficusbuilder']
+const K3D_NODES = ['k3d-ficus-dev-server-0']
+// ficus-p5-bridge: keep one installed schedule until the owner migrates the exact local job
+const GC_LAUNCHD_LABEL = 'dev.tau.docker-gc'
 
 function run(cmd: string[], timeoutMs = 120_000): { ok: boolean; out: string } {
   try {
@@ -59,12 +58,12 @@ function log(msg: string) {
 // --- --install: write + load a daily launchd agent, then exit ---
 if (process.argv.includes('--install')) {
   const bunPath = process.execPath
-  const plistPath = join(homedir(), 'Library/LaunchAgents/dev.tau.docker-gc.plist')
+  const plistPath = join(homedir(), 'Library/LaunchAgents', `${GC_LAUNCHD_LABEL}.plist`)
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>dev.tau.docker-gc</string>
+  <key>Label</key><string>${GC_LAUNCHD_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
     <string>${bunPath}</string>
@@ -72,8 +71,8 @@ if (process.argv.includes('--install')) {
   </array>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
-  <key>StandardOutPath</key><string>/tmp/tau-docker-gc.log</string>
-  <key>StandardErrorPath</key><string>/tmp/tau-docker-gc.log</string>
+  <key>StandardOutPath</key><string>/tmp/ficus-docker-gc.log</string>
+  <key>StandardErrorPath</key><string>/tmp/ficus-docker-gc.log</string>
 </dict>
 </plist>
 `
@@ -147,7 +146,7 @@ run(['docker', 'image', 'prune', '-f'])
 run(['docker', 'builder', 'prune', '-f', '--keep-storage=2GB'], 300_000)
 log('pruned dangling images + build cache (kept 2GB)')
 
-// --- 4b. buildx builder cache (taubuilder) — grows unbounded across sandbox
+// --- 4b. buildx builder cache — grows unbounded across sandbox
 // image builds (hit 6.5 GB before first being pruned on 2026-07-18); cap it
 // like the classic builder cache. Builder may not exist on a fresh machine.
 for (const builder of BUILDX_BUILDERS) {
@@ -160,7 +159,7 @@ for (const builder of BUILDX_BUILDERS) {
   )
 }
 
-// --- 4c. unused networks — tau-test compose networks accumulate (containers
+// --- 4c. unused networks — test compose networks accumulate (containers
 // are removed above but their networks linger) until docker's address pools
 // are fully subnetted and every new test DB fails with "all predefined
 // address pools have been fully subnetted". Prune only touches networks with

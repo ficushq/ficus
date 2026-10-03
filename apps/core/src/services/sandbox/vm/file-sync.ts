@@ -26,11 +26,8 @@
  *     server ship together, so we rely on it unconditionally (no legacy fallback).
  *
  * ## push order (deterministic)
- *   0. best-effort `rm -f ~/bin/tau` — an earlier revision pushed a per-box copy
- *      of the pre-ficus CLI there (`~/bin` precedes `/usr/local/bin` on the box
- *      PATH); removing it keeps that stale copy off the box PATH. Idempotent when absent
- *   0b. move the box's legacy workspace dot dirs (`~/workspace`, `~/.private`) to
- *      `.ficus` with a relative legacy link left behind ({@link boxWorkspaceDotDirCommand})
+ *   0. prepare canonical workspace settings under `~/workspace` and `~/.private`,
+ *      refusing settings symlinks before any managed asset changes
  *   1. materialized skills tree → `~/.ficus/skills/<materializer layout>`
  *   2. squad `.env` → `~/workspace/.ficus/.env`   (mode 0600; squad-scoped only)
  *   3. identity key → `~/.private/identity.pem`  (mode 0600; per-agent only)
@@ -57,8 +54,8 @@
  * stamped (all-or-nothing, mirroring machine-artifacts' `ensureArtifact`): a
  * failure mid-asset leaves no stamp, so the next ensure re-pushes that asset.
  * The stamp is a DB-side jsonb merge ({@link stampBoxSyncedHash}), independent
- * of the in-memory box snapshot's age. The `rm -f ~/bin/tau` shadow removal is
- * NOT an asset (one cheap idempotent bash call) and stays UNCONDITIONAL.
+ * of the in-memory box snapshot's age. Canonical workspace preparation always runs
+ * before the per-asset content-hash checks.
  *
  * ## squad ssh delivery (step 5) + on-demand refresh
  * The squad ssh dir (`services/squad/ssh.ts` `getSquadSshPath`) is where
@@ -94,7 +91,7 @@ import type { Machine, MachineBox } from '../../machines/queries'
 import { getSquadSshPath, RESERVED_REMOTE_HOST_KEY_PREFIXES } from '../../squad/ssh'
 import { materializeSquadRemoteHosts as materializeSquadRemoteHostsReal } from '../../remote-hosts/materialize'
 import { createLogger } from '../../../lib/infra/logger'
-import { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR } from '../../workspace/dot-dir'
+import { WORKSPACE_DOT_DIR } from '../../workspace/dot-dir'
 import {
   resolveSandboxAssets,
   SANDBOX_ASSETS,
@@ -299,42 +296,23 @@ async function bestEffortRemove(client: SandboxClient, path: string, fence?: Set
   }
 }
 
-/**
- * Finalize each real box work root before writing assets. Move remaining real
- * legacy directories without merging, remove only the exact relative bridge,
- * and refuse foreign links or conflicting directories. No bridge is recreated.
- */
+/** Refuse non-directory canonical workspaces before pushing managed assets. */
 export function boxWorkspaceDotDirCommand(roots: string[]): string {
-  const legacy = LEGACY_WORKSPACE_DOT_DIR
-  const next = WORKSPACE_DOT_DIR
   return [
-    'rc=0',
+    'set -eu',
     'dot_dir() {',
-    '  if [ -L "$1" ]; then echo "$1 is a symlink, not followed" >&2; rc=1; return 0; fi',
+    '  [ ! -L "$1" ] || { echo "workspace root is a symlink" >&2; return 1; }',
     '  [ -d "$1" ] || return 0',
-    `  o="$1/${legacy}"; n="$1/${next}"`,
-    '  if [ -L "$o" ]; then',
-    `    [ "$(readlink -- "$o")" = ${shellQuote(next)} ] || { echo "$o is a link elsewhere" >&2; rc=1; return 0; }`,
-    '    [ -d "$n" ] && [ ! -L "$n" ] || { echo "$n is not a real directory" >&2; rc=1; return 0; }',
-    '    rm -- "$o" || rc=1',
-    '    return 0',
-    '  fi',
-    '  if [ -e "$n" ] || [ -L "$n" ]; then',
-    '    if [ -L "$n" ] || [ ! -d "$n" ]; then echo "$n is not a directory" >&2; rc=1; return 0; fi',
-    '    if [ -e "$o" ]; then echo "both $o and $n exist" >&2; rc=1; return 0; fi',
-    '  elif [ -e "$o" ]; then',
-    '    if [ ! -d "$o" ]; then echo "$o is not a directory" >&2; rc=1; return 0; fi',
-    '    mv -T -- "$o" "$n" || { rc=1; return 0; }',
-    '  fi',
-    '  mkdir -p -- "$n" || rc=1',
+    `  n="$1/${WORKSPACE_DOT_DIR}"`,
+    '  [ ! -L "$n" ] && { [ ! -e "$n" ] || [ -d "$n" ]; } || { echo "workspace settings must be a real directory" >&2; return 1; }',
+    '  mkdir -p -- "$n"',
     '}',
     ...roots.map((root) => `dot_dir ${shellQuote(root)}`),
-    'exit $rc',
   ].join('\n')
 }
 
-async function migrateBoxWorkspaceDotDirs(client: SandboxClient, home: string, fence?: SetupBashFence): Promise<void> {
-  // No files or manifests may change when finalization fails or its outcome is unknown.
+async function prepareBoxWorkspaceDotDirs(client: SandboxClient, home: string, fence?: SetupBashFence): Promise<void> {
+  // No files or manifests may change when canonical workspace preparation fails or its outcome is unknown.
   await runBash(
     client,
     boxWorkspaceDotDirCommand([`${home}/workspace`, `${home}/.private`]),
@@ -347,7 +325,8 @@ async function migrateBoxWorkspaceDotDirs(client: SandboxClient, home: string, f
 /** A recorded workspace path follows the directory move even when its source was revoked. */
 function canonicalManagedPath(assetName: string, relPath: string): string {
   const dest = SANDBOX_ASSETS.find((asset) => asset.name === assetName)?.dest
-  const legacyPrefix = `${LEGACY_WORKSPACE_DOT_DIR}/`
+  // Refusal/revocation-only compatibility: do not leave a revoked secret at its moved destination.
+  const legacyPrefix = '.tau/' // ficus-p5-bridge: retained manifest revocation safety
   if (
     dest?.base === 'workspace' &&
     dest.relPath.startsWith(`${WORKSPACE_DOT_DIR}/`) &&
@@ -675,18 +654,8 @@ export async function syncBoxFiles(
     await (deps.trackSetupWork ? deps.trackSetupWork(mutate) : mutate())
   }
 
-  // 0. Best-effort remove the legacy per-box CLI at ~/bin/tau. The CLI is now a
-  //    machine-level artifact (/usr/local/bin/ficus); a stale per-box copy from an
-  //    earlier revision (~/bin precedes /usr/local/bin on the box PATH) would be a
-  //    second, outdated CLI. `rm -f` is idempotent when the file is absent,
-  //    and a removal failure never fails the sync. Not an asset — unconditional.
-  await bestEffortRemove(client, `${home}/bin/tau`, deps.bashFence)
-
-  // 0b. Bring the box's work roots to the `.ficus` dot dir BEFORE any asset lands
-  //     in one, so a push never creates `.ficus` beside a legacy dir that still
-  //     holds the box's monitors, deployments and setup script. Unconditional
-  //     (a no-op once done); any refusal stops the sync before file writes.
-  await migrateBoxWorkspaceDotDirs(client, home, deps.bashFence)
+  // Verify canonical work roots before any managed asset changes.
+  await prepareBoxWorkspaceDotDirs(client, home, deps.bashFence)
 
   // Resolve the applicable assets for this box (manifest order, scope-filtered).
   // `squadId` matches the manifest's own derivation, so passing opts.squadId

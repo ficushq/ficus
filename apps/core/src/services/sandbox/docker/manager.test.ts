@@ -36,7 +36,12 @@ import {
   type SandboxIdentitySet,
 } from '../identity-names'
 import { computeDockerSpecDigest } from './runtime-contract'
-import { LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT, resolveDockerCommandIdentity } from './command-identity'
+import {
+  resolveDockerCommandIdentity,
+  LEGACY_DOCKER_MANAGED_LABEL,
+  LEGACY_DOCKER_EXEC_IDENTITY,
+  LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT,
+} from './command-identity'
 import { buildBashrcContent } from '../bashrc'
 import type { SandboxOptions } from '../types'
 import { observeSandboxSetupProgress, type SandboxSetupProgressEvent } from '../setup-progress'
@@ -849,6 +854,8 @@ describe('ensureSandbox spec-hash drift detection', () => {
         executorProtocolVersion: 1,
         commandContractVersion: 1,
       }),
+      assertNoRetiredContainer: (DockerSandboxManager.prototype as any).assertNoRetiredContainer,
+      inspectContainerRunning: () => 'not_found',
       resetStaleSandboxStatus: async () => {},
       tryAcquireSandboxLock: async () => true,
       waitForSandboxReady: async () => {},
@@ -873,6 +880,49 @@ describe('ensureSandbox spec-hash drift detection', () => {
 
   const ensure = (self: unknown, id: string, o: SandboxOptions) =>
     DockerSandboxManager.prototype.ensureSandbox.call(self as DockerSandboxManager, id, o)
+
+  for (const state of ['running', 'stopped', 'unknown'] as const) {
+    it(`refuses creation when the exact pre-rename container is ${state}`, async () => {
+      const calls: string[][] = []
+      const { self, created, removed } = fakeManager({
+        inspectContainerRunning: (DockerSandboxManager.prototype as any).inspectContainerRunning,
+        runLifecycleDocker: (args: string[]) => {
+          calls.push(args)
+          return {
+            exitCode: state === 'unknown' ? 1 : 0,
+            stdout: Buffer.from(state === 'running' ? 'true' : 'false'),
+            stderr: Buffer.from(state === 'unknown' ? 'Docker unavailable' : ''),
+          }
+        },
+        resetStaleSandboxStatus: async () => {
+          throw new Error('must not mutate DB')
+        },
+      })
+      await expect(ensure(self, 'agent_exact', opts)).rejects.toThrow(
+        state === 'unknown' ? 'refusing creation' : 'bridge release'
+      )
+      expect(calls).toEqual([['inspect', '-f', '{{.State.Running}}', 'tau-sandbox-agent_exact']])
+      expect(created).toEqual([])
+      expect(removed).toEqual([])
+    })
+  }
+
+  it('rechecks retired presence after waiting for initialization, before creating', async () => {
+    let calls = 0
+    let admissions = 0
+    let waited = false
+    const { self, created } = fakeManager({
+      inspectContainerRunning: () => (++calls === 1 ? 'not_found' : 'running'),
+      tryAcquireSandboxLock: async () => ++admissions > 1,
+      waitForSandboxReady: async () => {
+        waited = true
+      },
+    })
+    await expect(ensure(self, 'agent_exact', opts)).rejects.toThrow('bridge release')
+    expect(calls).toBe(2)
+    expect(waited).toBe(true)
+    expect(created).toEqual([])
+  })
 
   it('(a) reuses an in-memory container with matching spec-hash — no recreate', async () => {
     const hash = computeDockerSpecHash(opts)
@@ -1222,6 +1272,8 @@ describe('ensureSandbox: a container created without the /usr/local/bin/ficus mo
         executorProtocolVersion: 1,
         commandContractVersion: 1,
       }),
+      assertNoRetiredContainer: (DockerSandboxManager.prototype as any).assertNoRetiredContainer,
+      inspectContainerRunning: () => 'not_found',
       resetStaleSandboxStatus: async () => {},
       tryAcquireSandboxLock: async () => true,
       waitForSandboxReady: async () => {},
@@ -1858,7 +1910,7 @@ describe('docker-sandbox-manager', () => {
 })
 
 // C1 (fix round 1 — review finding): an adopted container that was built
-// under the LEGACY identity (user `tau`, `/run/tau/...` paths — every // ficus-p5-bridge
+// under a foreign identity (different user and runtime paths — every
 // container running before this release) has no `ficus` user and no
 // `/run/ficus/...` paths. connectExecutor and getSandboxUserArgs must read
 // the container's OWN label set to decide which paths/user to use — not
@@ -1905,6 +1957,25 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
       expect(args).not.toContain(DOCKER_EXEC_IDENTITY_LEGACY.user)
     })
 
+    it('uses the fixed pre-rename identity only for an explicitly attached old container', () => {
+      const self = fakeThisForLabels({ [LEGACY_DOCKER_MANAGED_LABEL]: 'true' })
+      const args: string[] = proto.getSandboxUserArgs.call(self, 'persisted-old-container')
+      expect(args).toContain(LEGACY_DOCKER_EXEC_IDENTITY.user)
+      expect(args).toContain(`HOME=${LEGACY_DOCKER_EXEC_IDENTITY.home}`)
+      expect(args).not.toContain(DOCKER_EXEC_IDENTITY_NEW.user)
+      expect(SANDBOX_IDENTITY_READ.map((set) => set.managedLabel)).not.toContain(LEGACY_DOCKER_MANAGED_LABEL)
+    })
+
+    it('refuses conflicting canonical and pre-rename managed labels', () => {
+      const self = fakeThisForLabels({
+        [SANDBOX_IDENTITY_NEW.managedLabel]: 'true',
+        [LEGACY_DOCKER_MANAGED_LABEL]: 'true',
+      })
+      expect(() => proto.getSandboxUserArgs.call(self, 'conflicting-container')).toThrow(
+        'Conflicting Docker managed identities'
+      )
+    })
+
     it('falls back to the Ficus (write) identity when a container has no managed label at all', () => {
       const self = fakeThisForLabels({})
       const args: string[] = proto.getSandboxUserArgs.call(self, 'container-unlabelled')
@@ -1917,14 +1988,16 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
     /** Each identity's expected health-contract payload, computed via the REAL resolveDockerCommandIdentity. */
     function expectedHealthIdentity(execIdentity: DockerExecIdentity) {
       const contract =
-        execIdentity === DOCKER_EXEC_IDENTITY_NEW
-          ? { version: 1 as const, user: 'ficus', home: '/home/ficus', uid: 1000, gid: 1000 }
-          : LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT
+        execIdentity === LEGACY_DOCKER_EXEC_IDENTITY
+          ? LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT
+          : { version: 1 as const, user: 'ficus', home: '/home/ficus', uid: 1000, gid: 1000 }
       return resolveDockerCommandIdentity(contract, { uid: process.getuid?.(), gid: process.getgid?.() })
     }
 
-    for (const [label, identitySet, execIdentity] of [
-      ['new', SANDBOX_IDENTITY_NEW, DOCKER_EXEC_IDENTITY_NEW],
+    for (const [label, identitySet, execIdentity, healthMatches] of [
+      ['new', SANDBOX_IDENTITY_NEW, DOCKER_EXEC_IDENTITY_NEW, true],
+      ['pre-rename', { managedLabel: LEGACY_DOCKER_MANAGED_LABEL }, LEGACY_DOCKER_EXEC_IDENTITY, true],
+      ['pre-rename-wrong-health', { managedLabel: LEGACY_DOCKER_MANAGED_LABEL }, LEGACY_DOCKER_EXEC_IDENTITY, false],
     ] as const) {
       it(`reads the executor token from the ${label} path and validates the ${label} identity for a ${label}-labelled container`, async () => {
         const sandboxId = `agent_${label}`
@@ -1932,7 +2005,7 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
         const self = fakeThisForLabels({ [identitySet.managedLabel]: 'true' })
         self.sandboxes.set(sandboxId, {})
 
-        const resolved = expectedHealthIdentity(execIdentity)
+        const resolved = expectedHealthIdentity(healthMatches ? execIdentity : DOCKER_EXEC_IDENTITY_NEW)
         const tokenCalls: string[] = []
         const otherIdentityTokenPath =
           execIdentity === DOCKER_EXEC_IDENTITY_NEW
@@ -1986,7 +2059,8 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
         })) as unknown as typeof fetch
 
         try {
-          await proto.connectExecutor.call(self, containerId, sandboxId)
+          if (healthMatches) await proto.connectExecutor.call(self, containerId, sandboxId)
+          else await expect(proto.connectExecutor.call(self, containerId, sandboxId)).rejects.toThrow()
         } finally {
           spawnSpy.mockRestore()
           sleepSpy.mockRestore()
@@ -1998,7 +2072,8 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
         // unconditionally means a legacy container's token is never found).
         expect(tokenCalls).toContain(execIdentity.executorTokenPath)
         expect(tokenCalls).not.toContain(otherIdentityTokenPath)
-        expect(self.sandboxes.get(sandboxId)?.client).toBeDefined()
+        if (healthMatches) expect(self.sandboxes.get(sandboxId)?.client).toBeDefined()
+        else expect(self.sandboxes.get(sandboxId)?.client).toBeUndefined()
       })
     }
   })

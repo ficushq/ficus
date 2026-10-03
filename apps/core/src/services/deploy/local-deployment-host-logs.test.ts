@@ -98,7 +98,7 @@ describe('local deployment logs on the host runtime', () => {
 
   test('a managed local deployment streams its launcher banner and app output', async () => {
     const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01'
-    await supervisor.startManagedLocalDeployment({
+    const { processId } = await supervisor.startManagedLocalDeployment({
       localDeploymentId: id,
       sandboxId: SANDBOX,
       command: 'echo hello; sleep 30',
@@ -118,7 +118,7 @@ describe('local deployment logs on the host runtime', () => {
       await waitFor(() => lines.some((l) => l.includes('[ficus] starting')) && lines.some((l) => l.includes('hello')))
     } finally {
       tail.cancel()
-      await supervisor.stopLocalDeployment(SANDBOX, `tau-local-deployment-${id.slice(0, 8)}`)
+      await supervisor.stopLocalDeployment(SANDBOX, processId)
     }
     expect(errors).toEqual([])
     expect(lines.some((l) => l.includes('[ficus] starting'))).toBe(true)

@@ -160,8 +160,8 @@ When a release needs this host's config files changed (`<dest>/.env`,
 the backup service and timer, the installed backup script), `lib.sh`'s
 journaled host-migration framework
 does it: right before the `current` symlink moves (artifact mode) or before
-the restart (git mode). This release registers one migration, `host_layout`:
-the move to the Ficus host layout.
+the restart (git mode). This release registers no new one-shot migration.
+The journal resolver remains so an interrupted older run is not ignored.
 
 - **Backup sets.** Before the first change, every host config file is copied
   byte for byte (`cp -p`, verified with `cmp`, sha256 recorded in a
@@ -209,103 +209,20 @@ was taken**, and it is root-only.
 
 ### The host layout
 
-Where a host keeps its install root, `/etc` dir, setup dir, units, backup
-script, `HOME_DIR` and container database is resolved once per run from what
-is installed (`lib.sh`'s host layout section), never assumed:
+Current setup and upgrade require the canonical Ficus layout: `/opt/ficus-core`,
+`/etc/ficus`, `/root/ficus-setup/ficus-setup.yaml`, `ficus-api` and
+`ficus-worker` units, `<run user home>/.ficus`, and (in container mode)
+`ficus-postgres` with the `ficus-pgdata` volume and `ficus` database.
+`upgrade-host.sh` reports `FICUS_HOST_LAYOUT=2` when it completes.
 
-|                                                            | layout 1 (before the Ficus host migration) | layout 2 (Ficus)                                            |
-| ---------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------- |
-| install root                                               | the legacy `/opt/<old>-core`               | `/opt/ficus-core`                                           |
-| `/etc` dir (CA, `managed.env`, `artifacts/`, `backup.env`) | the legacy one                             | `/etc/ficus`                                                |
-| setup dir, config                                          | the legacy ones                            | `/root/ficus-setup/ficus-setup.yaml`                        |
-| units                                                      | the legacy names                           | `ficus-api`, `ficus-worker`, `ficus-backup.{service,timer}` |
-| backup script                                              | the legacy name                            | `/usr/local/bin/ficus-backup.sh`                            |
-| `HOME_DIR` default                                         | `<run user home>/.<old>`                   | `<run user home>/.ficus`                                    |
-| container database                                         | the legacy container, volume and name      | `ficus-postgres`, `ficus-pgdata`, `ficus`                   |
-
-A host is on layout 2 once `/etc/systemd/system/ficus-api.service` is a
-regular file, on layout 1 while only the legacy api unit exists; a fresh host
-is set up on layout 2. The unit templates carry the layout as tokens
-(`@ETC_DIR@`, `@UNIT_API@`, `@UNIT_WORKER@`, `@UNIT_BACKUP@`, `@ALIAS@`, and
-`@DB_NAME@` in the backup script), so a layout-1 host renders exactly the
-units it always had.
-
-**The move.** A release that declares `hostLayout: 2` (`artifact.json`; a git
-checkout: root `package.json` `ficusHostLayout: 2`) moves a layout-1 host to
-layout 2 through the `host_layout` host migration, right before the flip
-(git mode: before the restart; `setup-host.sh`: before its `.env` phase). It
-stops the backup timer and both units, moves the install root, `/etc` dir,
-setup dir and `HOME_DIR` (leaving a compat symlink at each legacy path),
-rebases the database rows that store absolute `HOME_DIR` paths (the release's
-`dist/rebase-home.js`, which refuses — and the move with it — when the
-database already holds paths under the new `HOME_DIR` too, since rewriting
-would merge the two; `FICUS_REBASE_HOME_FORCE=1` rewrites anyway), renames the
-units (each keeps its legacy name as an
-`Alias=`), the backup script (a compat link), the update sudoers rule and, in
-container mode, the database container, volume and name. Every step is
-journaled in the framework's backup set (`<set>/hl/`), intent first, and
-logged as `host_layout S<n>: …`. The last trailer line of `upgrade-host.sh` is
-`FICUS_HOST_LAYOUT=<1|2>`.
-
-- **Before its commit point** (`hl/DONE`), any failure, signal or `SIGKILL` is
-  reversed: the host is put back byte for byte and the legacy units are
-  started again.
-- **After it, the move is kept** — also when the release is rolled back: the
-  older release runs on layout 2 through the compat links and `Alias=` names.
-  Both units are stopped before any flip across the layouts (they use
-  different admission-lock keys).
-- A git mode run as non-root on a layout-1 host refuses a revision that
-  declares layout 2 before its checkout moves (the move is root-only).
-- A host set up fresh on layout 2 whose external database DSN still names the
-  CA under the legacy `/etc` dir (a stored tenant DSN; the control plane
-  rewrites it to `/etc/ficus` when it renames the tenant database) gets the
-  same compat link a migrated host has (legacy `/etc` dir → `/etc/ficus`), so
-  the DSN resolves until it is rewritten.
-- A restore (`FICUS_SETUP_RESTORE_URL`) of a backup taken with another
-  `HOME_DIR` than this host's — a layout-1 backup on a host set up fresh on
-  layout 2, or the reverse — rebases the restored database's stored paths
-  from the backup's `HOME_DIR` (its `.env`'s, else its workspace directory's
-  name under the run user's home) to this host's, with the release's
-  `dist/rebase-home.js` once the database is migrated and before anything
-  starts on it. It refuses the same way (`FICUS_REBASE_HOME_FORCE=1` rewrites
-  anyway). On layout 2, a legacy `HOME_DIR` becomes the same compat link a
-  migrated host has.
-- An older toolkit that writes over the bridges (a regular legacy unit file
-  where the `Alias=` link was) is repaired by the next run of this one.
-
-**`--reverse-host-layout <set>`** is the manual way back after the commit
-point, once the release serving is from before the move again (roll back
-first):
-
-```bash
-# the set: the newest one taken for host_layout that committed and was not reversed
-sudo bash -c 'for s in /var/backups/ficus-host-migrate/*/; do
-  [ -f "$s/hl/DONE" ] && [ ! -e "$s/hl/REVERSED" ] && echo "$s"; done | tail -n 1'
-sudo bash scripts/setup/upgrade-host.sh --config /root/ficus-setup/ficus-setup.yaml \
-  --reverse-host-layout /var/backups/ficus-host-migrate/<set>
-```
-
-It takes only the latest set that reached its commit point and was not
-reversed since (`hl/DONE` without `hl/REVERSED`), and it is root-only. It
-refuses:
-
-- while another run's journal is pending;
-- while a newer set of another migration is still in effect (reversing would
-  overwrite what that migration changed);
-- when any file the set restores changed since the move committed (a synced
-  `managed.env`, a rotated key, a rewritten DSN — the move journals their
-  state in `hl/LIVE_SHAS`) — it names them, and `--accept-file-revert` goes
-  ahead: those files get their pre-move bytes back, so re-apply the changes
-  afterwards (re-run the artifact sync);
-- on a container database, without `--accept-database-revert`: it returns to
-  the legacy volume as it was at the move, losing every write since.
-
-It moves everything back and rebases the stored `HOME_DIR` paths back, then
-restores the set's files byte for byte. It runs under the toolkit's traps (a
-dropped SSH session does not end it) and is journaled before it stops the
-services: a reverse that is killed half way is finished by the next toolkit
-run, or by running it again. A set marked `#requires-reverse` is never
-byte-restored by `--restore-host-backup`.
+The setup tools refuse a host or release that predates this layout before
+installing anything. An interrupted migration journal must be settled with
+the earlier bridge release; `--restore-host-backup` refuses a set that
+requires its separate reverse procedure. The current tools do not recreate
+old path links or unit aliases. A restored backup from another `HOME_DIR`
+rebases registered database paths before services start, while a legacy
+backup whose unregistered paths require an old home link is refused before
+restore.
 
 ### What you end up with (the contract)
 
