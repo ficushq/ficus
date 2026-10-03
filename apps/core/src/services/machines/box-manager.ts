@@ -2515,7 +2515,10 @@ export async function removeBox(
  * `stopped`. On-disk state (home, workspace, .private) persists so a later
  * ensure resumes it (spec §8). No-op when the box row is absent.
  */
-export type BoxStopResult = { kind: 'verified' } | { kind: 'unverified' } | { kind: 'not-found' }
+export type BoxStopResult =
+  | { kind: 'verified' }
+  | { kind: 'unverified'; machineStatus?: string }
+  | { kind: 'not-found' }
 
 export async function stopBox(sandboxId: string, deps: BoxManagerDeps = {}): Promise<BoxStopResult> {
   const runner = deps.runner ?? defaultSshRunner
@@ -2558,7 +2561,7 @@ export async function stopBox(sandboxId: string, deps: BoxManagerDeps = {}): Pro
         port: box.port,
       })
     }
-    return { kind: 'unverified' }
+    return { kind: 'unverified', machineStatus: machine.status }
   }
 
   // Retrying a stopped row still performs the physical effects: older parks

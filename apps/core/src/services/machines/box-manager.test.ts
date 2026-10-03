@@ -3424,23 +3424,26 @@ describe('stopBox', () => {
     )
   })
 
-  it('marks an unreachable-machine stop unverified without attempting SSH or tunnel mutation', async () => {
-    const box = makeBox({ status: 'ready' })
-    const machine = makeMachine({ status: 'unreachable' })
-    const upserts: string[] = []
-    const result = await stopBox('sb-1', {
-      runner: { run: async () => Promise.reject(new Error('must not SSH')) } as any,
-      tunnels: { removeForward: async () => Promise.reject(new Error('must not mutate tunnel')) } as any,
-      getMachineBox: async () => box,
-      getMachine: async () => machine,
-      upsertMachineBox: async (update: { status?: string }) => {
-        upserts.push(update.status ?? '')
-        return { ...box, status: update.status } as MachineBox
-      },
-    })
-    expect(result).toEqual({ kind: 'unverified' })
-    expect(upserts).toEqual(['stop_unverified'])
-  })
+  it.each(['registered', 'bootstrapping', 'unreachable', 'reaping', 'terminated'])(
+    'preserves observed %s machine status without attempting SSH or tunnel mutation',
+    async (status) => {
+      const box = makeBox({ status: 'ready' })
+      const machine = makeMachine({ status })
+      const upserts: string[] = []
+      const result = await stopBox('sb-1', {
+        runner: { run: async () => Promise.reject(new Error('must not SSH')) } as any,
+        tunnels: { removeForward: async () => Promise.reject(new Error('must not mutate tunnel')) } as any,
+        getMachineBox: async () => box,
+        getMachine: async () => machine,
+        upsertMachineBox: async (update: { status?: string }) => {
+          upserts.push(update.status ?? '')
+          return { ...box, status: update.status } as MachineBox
+        },
+      })
+      expect(result).toEqual({ kind: 'unverified', machineStatus: status })
+      expect(upserts).toEqual(['stop_unverified'])
+    }
+  )
 
   it('deletes a stale box row when its recorded machine row is already gone', async () => {
     const box = makeBox({ status: 'stop_unverified' })

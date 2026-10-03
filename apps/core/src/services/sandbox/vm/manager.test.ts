@@ -19,7 +19,8 @@ import {
   type EnsureBoxOpts,
 } from '../../machines/box-manager'
 import type { BoxStepTimings } from '../../machines/box-timing'
-import type { PlacementRequest } from '../../machines/placement'
+import { MachineUnavailableError, type PlacementRequest } from '../../machines/placement'
+import { startupRetryCode } from '../../execution/startup-retry'
 import { MachineNotReadyError } from '../../machines/queries'
 import type { SandboxOptions, SandboxRuntime } from '../types'
 import type { VmSetupState } from './setup-state'
@@ -2046,18 +2047,49 @@ describe('VmSandboxManager', () => {
     expect(first.closed).toBe(1)
   })
 
-  test('recreate never re-ensures over an unverified physical stop', async () => {
+  test.each([
+    ['registered', 'machine_registered'],
+    ['bootstrapping', 'machine_bootstrapping'],
+    ['unreachable', 'machine_unreachable'],
+    ['reaping', null],
+    ['terminated', null],
+    ['unknown', null],
+    ['ready', null],
+    [undefined, null],
+  ])('recreate preserves an unverified %s stop and its retry classification', async (machineStatus, retryCode) => {
     const h = makeHarness()
-    let unverified = false
+    let unverified = true
     const stopBox = h.deps.stopBox!
-    h.deps.stopBox = async (sandboxId) => (unverified ? { kind: 'unverified' } : stopBox(sandboxId))
+    h.deps.stopBox = async (sandboxId) =>
+      unverified ? { kind: 'unverified', ...(machineStatus ? { machineStatus } : {}) } : stopBox(sandboxId)
     const manager = new VmSandboxManager(h.deps)
     await manager.ensureSandbox('squad_s1', squadOpts)
+    h.setMachineBoxRow({ machineId: 'm1', port: 50100, status: 'stop_unverified' })
     h.log.length = 0
-    unverified = true
 
-    await expect(manager.recreateSandbox('squad_s1', squadOpts)).rejects.toThrow('until its stop is verified')
+    const error = await manager.recreateSandbox('squad_s1', squadOpts).then(
+      () => {
+        throw new Error('recreate unexpectedly succeeded')
+      },
+      (error: unknown) => error
+    )
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toContain('until its stop is verified')
+    expect(startupRetryCode(error)).toBe(retryCode)
+    if (machineStatus && machineStatus !== 'ready') {
+      expect(error).toBeInstanceOf(MachineUnavailableError)
+      expect((error as MachineUnavailableError).machineStatus).toBe(machineStatus)
+    } else {
+      expect(error).not.toBeInstanceOf(MachineUnavailableError)
+    }
     expect(h.log).not.toContain('ensureBox:squad_s1')
+    expect(h.removeCalls).toHaveLength(0)
+
+    // Recovery still requires a new, verified physical stop before ensuring.
+    unverified = false
+    await manager.recreateSandbox('squad_s1', squadOpts)
+    expect(h.log[0]).toBe('stopBox:squad_s1')
+    expect(h.log).toContain('ensureBox:squad_s1')
   })
 
   test('spec drift detection and recreate = stop + re-ensure', async () => {
