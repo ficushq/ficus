@@ -280,7 +280,10 @@ require_root_capability() {
 # actually installed, and read by every toolkit path below through HL_*:
 #
 # Only the canonical layout is supported. Historical layouts must use the bridge release.
-# These two retired paths are refusal-only protections for old backup/HOME and DSN inputs.
+# Retired paths are refusal-only protections. A real old install or service
+# must never be treated as a fresh host and installed beside canonical units.
+HL_LEGACY_DEST=/opt/tau-core # ficus-p5-bridge: refusal-only old install root
+HL_LEGACY_UNIT_PREFIX=tau # ficus-p5-bridge: refusal-only old service identity
 HL_LEGACY_ETC=/etc/tau # ficus-p5-bridge: refusal-only CA safety pending canonical backup identity
 HL_LEGACY_HOME_NAME=.tau # ficus-p5-bridge: refusal-only HOME safety pending canonical backup identity
 
@@ -321,6 +324,24 @@ fi
 # Canonical service definitions distinguish an installed host from a fresh one.
 host_layout_detect() {
   local api="${FICUS_SYSTEMD_UNIT_DIR}/${HL_NEW_UNIT_PREFIX}-api.service"
+  local role old_unit canonical_unit old_root="${FICUS_HOST_ROOT:-}${HL_LEGACY_DEST}"
+  # A retired symlink is safe only when it resolves to the canonical unit/root.
+  # A real retired file or root is a separate installation, even when the new
+  # API unit already exists; the unsupported-layout path must refuse it.
+  for role in api worker; do
+    old_unit="${FICUS_SYSTEMD_UNIT_DIR}/${HL_LEGACY_UNIT_PREFIX}-${role}.service"
+    canonical_unit="${FICUS_SYSTEMD_UNIT_DIR}/${HL_NEW_UNIT_PREFIX}-${role}.service"
+    if [[ -L ${old_unit} ]]; then
+      [[ -f ${canonical_unit} && $(readlink -f -- "${old_unit}") == "$(readlink -f -- "${canonical_unit}")" ]] || { printf '1\n'; return; }
+    elif [[ -e ${old_unit} ]]; then
+      printf '1\n'; return
+    fi
+  done
+  if [[ -L ${old_root} ]]; then
+    [[ -d ${FICUS_HOST_ROOT:-}${HL_NEW_DEST} && $(readlink -f -- "${old_root}") == "$(readlink -f -- "${FICUS_HOST_ROOT:-}${HL_NEW_DEST}")" ]] || { printf '1\n'; return; }
+  elif [[ -e ${old_root} ]]; then
+    printf '1\n'; return
+  fi
   if [[ -f ${api} && ! -L ${api} ]]; then printf '2\n'; else printf 'fresh\n'; fi
 }
 
