@@ -383,27 +383,63 @@ export async function listDueVmSetups(now = new Date(), limit = 8): Promise<VmSe
   return rows.map(mapState)
 }
 
-export async function withVmSetupLease<T>(sandboxId: string, reconcile: () => Promise<T>): Promise<T> {
-  return withDedicatedConnectionSlot(async () => {
-    const connection = createPostgresConnection(getConnectionString(), { max: 1, idle_timeout: 0 })
-    const key = `vm-box-setup:${sandboxId}`
-    try {
-      // reserve() inside the try: a connect failure must still end() the instance.
-      const session = await connection.reserve()
+/** Acquisition budget exceeds the ten-minute streamed devbox install budget. */
+const VM_SETUP_LEASE_WAIT_TIMEOUT_MS = 15 * 60_000
+
+type VmSetupLeaseWait = {
+  signal?: AbortSignal
+  /** Injectable acquisition clock/sleep for deterministic contention tests. */
+  now?: () => number
+  sleep?: (ms: number) => Promise<void>
+}
+
+export async function withVmSetupLease<T>(
+  sandboxId: string,
+  reconcile: () => Promise<T>,
+  wait: VmSetupLeaseWait = {}
+): Promise<T> {
+  const now = wait.now ?? Date.now
+  const deadline = now() + VM_SETUP_LEASE_WAIT_TIMEOUT_MS
+  const sleep = wait.sleep ?? ((ms: number) => Bun.sleep(ms))
+  const checkWaiting = () => {
+    wait.signal?.throwIfAborted()
+    if (now() >= deadline) throw new Error('VM setup lease acquisition timed out')
+  }
+  const key = `vm-box-setup:${sandboxId}`
+  let delayMs = 250
+  for (;;) {
+    checkWaiting()
+    const attempt = await withDedicatedConnectionSlot(async () => {
+      // The global slot queue can itself be busy; never start stale work after it drains.
+      checkWaiting()
+      const connection = createPostgresConnection(getConnectionString(), { max: 1, idle_timeout: 0 })
       try {
-        await session`select pg_advisory_lock(hashtextextended(${key}, 0))`
+        const session = await connection.reserve()
         try {
-          return await reconcile()
+          const [lock] = await session<
+            { acquired: boolean }[]
+          >`select pg_try_advisory_lock(hashtextextended(${key}, 0)) as acquired`
+          if (!lock?.acquired) return { acquired: false } as const
+          try {
+            checkWaiting()
+            return { acquired: true, value: await reconcile() } as const
+          } finally {
+            await session`select pg_advisory_unlock(hashtextextended(${key}, 0))`
+          }
         } finally {
-          await session`select pg_advisory_unlock(hashtextextended(${key}, 0))`
+          session.release()
         }
       } finally {
-        session.release()
+        await connection.end({ timeout: 5 })
       }
-    } finally {
-      await connection.end({ timeout: 5 })
-    }
-  })
+    })
+    if (attempt.acquired) return attempt.value
+    // A contended box must not occupy either of the two shared dedicated slots
+    // while waiting for its owner. The callback runs only once, under the lock.
+    checkWaiting()
+    await sleep(Math.min(delayMs, deadline - now()))
+    delayMs = Math.min(delayMs * 2, 1_000)
+  }
 }
 
 export function projectVmSetupIncidents(
