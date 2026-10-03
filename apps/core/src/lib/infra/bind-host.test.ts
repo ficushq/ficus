@@ -38,11 +38,11 @@ describe('beyondLoopback', () => {
 })
 
 describe('docker-compose.core.yml keeps the worker reachable on the container network', () => {
-  it('sets HOST=0.0.0.0 on tau-worker (the loopback default would strand tau-api)', () => {
+  it('sets HOST=0.0.0.0 on ficus-worker (the loopback default would strand ficus-api)', () => {
     const file = join(repoRoot, 'docker-compose.core.yml')
     expect(existsSync(file)).toBe(true)
     const compose = readFileSync(file, 'utf8')
-    const worker = compose.split('  tau-worker:')[1] ?? ''
+    const worker = compose.split('  ficus-worker:')[1] ?? ''
     expect(worker).toMatch(/^\s+HOST: 0\.0\.0\.0$/m)
   })
 })
