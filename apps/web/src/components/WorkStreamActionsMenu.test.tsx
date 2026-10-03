@@ -12,7 +12,9 @@ function Surface({ stream }: { stream: WorkStream }) {
   const controls = useWorkStreamPauseControls(stream)
   return (
     <>
-      <WorkStreamActionsMenu stream={stream} controls={controls} />
+      <div role="dialog" tabIndex={-1}>
+        <WorkStreamActionsMenu stream={stream} controls={controls} />
+      </div>
       <WorkStreamPauseControls stream={stream} controls={controls} />
     </>
   )
@@ -48,7 +50,7 @@ test('overflow keeps pause secondary, preserves attention, copies a canonical li
     await dom.act(async () => trigger.click())
     expect(button('Pause work…')).toBeDefined()
     expect(root.container.textContent).toContain('Notifications…')
-    expect(root.container.textContent).toContain('Custom')
+    expect(root.container.querySelector('summary')!.textContent).toBe('Notifications…')
     await dom.act(async () => button('Copy link')!.click())
     expect(copy).toHaveBeenCalledWith('https://example.test/tau/squads/squad-id/work?ws=451')
     expect(root.container.textContent).toContain('Link copied')
@@ -132,12 +134,25 @@ test('notification changes preserve the other kind and reset the stream override
     )
     await dom.act(async () => root.container.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!.click())
     await dom.act(async () => root.container.querySelector('summary')!.click())
+    // A press on the visible label first focuses the nearest focusable ancestor (the dialog),
+    // then the label's click forwards focus/activation to its radio. Don't unmount in between.
+    await dom.act(async () => root.container.querySelector('summary')!.focus())
+    await dom.act(async () => root.container.querySelector<HTMLElement>('[role="dialog"]')!.focus())
+    expect(root.container.querySelector('[aria-label="More actions"]')!.getAttribute('aria-expanded')).toBe('true')
     await dom.act(async () => root.container.querySelector<HTMLInputElement>('[aria-label="Progress: Show"]')!.click())
     expect(subscribe).toHaveBeenCalledWith(stream.id, { decisions: 'notify', progress: 'show' })
     await dom.act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
     expect(root.container.querySelector<HTMLInputElement>('[aria-label="Progress: Show"]')!.checked).toBe(true)
+    subscribe.mockRejectedValueOnce(new Error('Offline'))
+    await dom.act(async () => root.container.querySelector<HTMLInputElement>('[aria-label="Decisions: Show"]')!.click())
+    await dom.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    expect(root.container.querySelector('[role="alert"]')!.textContent).toContain('Could not update attention')
+    expect(root.container.querySelector('details')!.open).toBe(true)
+    expect(root.container.querySelector<HTMLInputElement>('[aria-label="Decisions: Notify"]')!.checked).toBe(true)
     const resetButton = [...root.container.querySelectorAll('button')].find((b) => b.textContent === 'Reset to squad')!
     expect(Boolean(resetButton)).toBe(true)
     await dom.act(async () => resetButton.click())

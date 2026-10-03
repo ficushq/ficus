@@ -152,7 +152,7 @@ export function AttentionMenu({
         )}
       >
         {inline ? <span>Notifications…</span> : <SummaryIcon summary={summary} />}
-        <span>{SUMMARY_LABEL[summary]}</span>
+        {!inline && <span>{SUMMARY_LABEL[summary]}</span>}
       </summary>
       {/* `ficus-overlay` + `bg-surface` is the repo's popover surface (AgentViewTabs,
           AgentConversationBody). The previous `bg-surface-primary` is not a defined token — there

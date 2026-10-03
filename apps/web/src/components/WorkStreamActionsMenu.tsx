@@ -44,7 +44,11 @@ export function WorkStreamActionsMenu({
       ref={container}
       className="relative"
       onBlur={(event) => {
-        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) close()
+        const next = event.relatedTarget
+        // Pressing a non-focusable label first focuses the dialog ancestor, before its click
+        // forwards focus to the radio. Keep the editor mounted through that intermediate blur.
+        // Outside presses still dismiss via useDismissOnOutside; Tab to a sibling dismisses here.
+        if (next && !event.currentTarget.contains(next) && !next.contains(event.currentTarget)) close()
       }}
     >
       <button

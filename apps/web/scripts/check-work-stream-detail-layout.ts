@@ -40,12 +40,29 @@ let browser: Browser | undefined
 try {
   await server.listen()
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })
-  const page = await browser.newPage()
+  const page = await browser.newPage({ hasTouch: true })
+  page.setDefaultTimeout(5000)
+  page.setDefaultNavigationTimeout(30000)
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const errors: string[] = []
+  const writes: unknown[] = []
+  let subscription = { inherited: true, attention: { decisions: 'notify', progress: 'mute' } }
+
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname
     if (!path.startsWith('/api/')) return route.continue()
+    if (path === '/api/workstreams/fixture/subscribe') {
+      if (route.request().method() === 'DELETE') {
+        writes.push('reset')
+        subscription = { inherited: true, attention: { decisions: 'notify', progress: 'mute' } }
+      } else {
+        const { attention } = route.request().postDataJSON()
+        writes.push(attention)
+        subscription = { inherited: false, attention }
+      }
+      return route.fulfill({ json: subscription })
+    }
+    if (path === '/api/workstreams/fixture/subscription') return route.fulfill({ json: subscription })
     errors.push(`Unexpected API request: ${path}`)
     return route.abort()
   })
@@ -87,6 +104,72 @@ try {
       radioBounds && radioBounds.x >= 0 && radioBounds.x + radioBounds.width <= width,
       'Notification options remain inside narrow viewport'
     )
+    // Activate the visible labels, not the clipped inputs: exercise real pointer/focus defaults.
+    const activate = async (locator: ReturnType<typeof page.locator>) =>
+      width === 390 ? locator.tap() : locator.click()
+    const decisionsShow = page
+      .locator('label')
+      .filter({ has: page.getByRole('radio', { name: 'Decisions: Show', exact: true }) })
+    await activate(decisionsShow)
+    assert.equal(
+      await more.getAttribute('aria-expanded'),
+      'true',
+      'Tapping a visible preference label must keep the menu mounted'
+    )
+    await page.waitForFunction(
+      () => document.querySelector<HTMLInputElement>('[aria-label="Decisions: Show"]')?.checked
+    )
+    assert.equal(await more.getAttribute('aria-expanded'), 'true', 'Preference activation must not dismiss the editor')
+    assert.deepEqual(writes.at(-1), { decisions: 'show', progress: 'mute' })
+    const progressShow = page
+      .locator('label')
+      .filter({ has: page.getByRole('radio', { name: 'Progress: Show', exact: true }) })
+    await activate(progressShow)
+    await page.waitForFunction(() => document.querySelector<HTMLInputElement>('[aria-label="Progress: Show"]')?.checked)
+    assert.deepEqual(writes.at(-1), { decisions: 'show', progress: 'show' })
+    await activate(page.getByRole('button', { name: 'Reset to squad', exact: true }))
+    await page.getByText('Inherits from squad', { exact: true }).waitFor()
+    assert.equal(writes.at(-1), 'reset')
+    assert.equal(await more.getAttribute('aria-expanded'), 'true')
+    assert.equal(await page.locator('summary').filter({ hasText: 'Notifications…' }).textContent(), 'Notifications…')
+    // Native radio keyboard activation also preserves the editor for sequential changes.
+    await page.getByRole('radio', { name: 'Decisions: Notify', exact: true }).focus()
+    await page.keyboard.press('ArrowLeft')
+    await page.waitForFunction(
+      () => document.querySelector<HTMLInputElement>('[aria-label="Decisions: Show"]')?.checked
+    )
+    assert.deepEqual(writes.at(-1), { decisions: 'show', progress: 'mute' })
+    await page.keyboard.press('Tab')
+    assert.equal(
+      await page
+        .getByRole('radio', { name: 'Progress: Mute', exact: true })
+        .evaluate((el) => el === document.activeElement),
+      true
+    )
+    await page.keyboard.press('ArrowRight')
+    await page.waitForFunction(() => document.querySelector<HTMLInputElement>('[aria-label="Progress: Show"]')?.checked)
+    assert.deepEqual(writes.at(-1), { decisions: 'show', progress: 'show' })
+    await page.keyboard.press('Tab')
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Reset to squad', exact: true })
+        .evaluate((el) => el === document.activeElement),
+      true
+    )
+    await page.keyboard.press('Enter')
+    await page.getByText('Inherits from squad', { exact: true }).waitFor()
+    assert.equal(writes.at(-1), 'reset')
+    assert.equal(await more.getAttribute('aria-expanded'), 'true')
+    // An actual outside press must still close, even when it focuses the same dialog ancestor.
+    await activate(page.getByRole('heading', { name: /Workflow and description verification/ }))
+    assert.equal(await more.getAttribute('aria-expanded'), 'false')
+    await activate(more)
+    await activate(page.locator('summary').filter({ hasText: 'Notifications…' }))
+    await page.getByRole('button', { name: 'Copy link', exact: true }).focus()
+    await page.keyboard.press('Tab')
+    assert.equal(await more.getAttribute('aria-expanded'), 'false', 'Tab outside dismisses the menu')
+    await activate(more)
+    await activate(page.locator('summary').filter({ hasText: 'Notifications…' }))
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `notifications-${width}.png`) })
     await page.keyboard.press('Escape')
     assert.equal(await more.getAttribute('aria-expanded'), 'false')
@@ -184,7 +267,9 @@ try {
   assert.deepEqual(errors, [], 'No browser runtime errors')
   console.log(JSON.stringify(measurements, null, 2))
   if (screenshotDir) await writeFile(resolve(screenshotDir, 'measurements.json'), JSON.stringify(measurements, null, 2))
-  console.log('Passed workflow keyboard interactions and description layout at 390px and 1280px.')
+  console.log(
+    'Passed notification touch/mouse/keyboard mutations, reset and dismissal; workflow and layout at 390px and 1280px.'
+  )
 } finally {
   await browser?.close()
   await server.close()
