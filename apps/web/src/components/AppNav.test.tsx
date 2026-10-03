@@ -357,26 +357,11 @@ describe('desktop instance label', () => {
   })
 
   afterEach(() => {
-    delete window.tauDesktopApp
     delete window.ficusDesktopApp
   })
 
   test('shows the paired instance name in the inset title bar', () => {
     window.ficusDesktopApp = {
-      version: 1,
-      notificationsEnabled: async () => false,
-      deliverNotifications: async () => {},
-      instance: { kind: 'remote', name: 'noah' },
-    }
-
-    const html = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)
-
-    expect(html).toContain('data-testid="desktop-instance-label"')
-    expect(html).toMatch(/data-testid="desktop-instance-label"[^>]*>noah</)
-  })
-
-  test('shows the paired instance name via the legacy window.tauDesktopApp (D1 and older Desktop builds)', () => {
-    window.tauDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},

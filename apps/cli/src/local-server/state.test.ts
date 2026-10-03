@@ -12,7 +12,7 @@ import {
 } from 'fs'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
-import { LEGACY_CLI_HOME_LINK as LEGACY_HOME_DIR_NAME } from './home-move'
+import { RETIRED_CLI_HOME as LEGACY_HOME_DIR_NAME } from './state'
 import {
   RETIRED_DEFAULT_INSTANCE,
   assertDefaultRegistryReady,

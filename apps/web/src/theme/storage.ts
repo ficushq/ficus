@@ -91,8 +91,8 @@ function hostDefaultAppearance(): AppearanceSetting | undefined {
   try {
     if (typeof window === 'undefined') return undefined
     type Bridge = { version?: unknown }
-    const w = window as unknown as { ficusDesktopApp?: Bridge; tauDesktopApp?: Bridge } // K5: until Ficus Desktop (D2) ships (ficus-p5-apple)
-    const bridge = w.ficusDesktopApp ?? w.tauDesktopApp // K5: until Ficus Desktop (D2) ships (ficus-p5-apple)
+    const w = window as unknown as { ficusDesktopApp?: Bridge }
+    const bridge = w.ficusDesktopApp
     return bridge?.version === 1 ? 'system' : undefined
   } catch {
     return undefined

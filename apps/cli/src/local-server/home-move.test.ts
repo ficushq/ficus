@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { cliHome, finalizeCliHome, LEGACY_CLI_HOME_LINK } from './home-move'
+import { cliHome } from './home-move'
 
 let home: string
 let ficus: string
@@ -10,7 +10,7 @@ let legacy: string
 beforeEach(() => {
   home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-home-move-')))
   ficus = join(home, '.ficus')
-  legacy = join(home, LEGACY_CLI_HOME_LINK)
+  legacy = join(home, '.tau')
 })
 afterEach(() => rmSync(home, { recursive: true, force: true }))
 
@@ -40,40 +40,9 @@ describe('cliHome', () => {
     const seen: string[] = []
     const exists = (p: string) => {
       seen.push(p)
-      return p === join('/nowhere', LEGACY_CLI_HOME_LINK)
+      return p === join('/nowhere', '.tau')
     }
     expect(cliHome({ homedir: '/nowhere', exists })).toBe(join('/nowhere', '.ficus'))
     expect(seen).toEqual([])
-  })
-})
-
-describe('finalizeCliHome', () => {
-  let link: string
-  beforeEach(() => {
-    link = join(home, LEGACY_CLI_HOME_LINK)
-  })
-  it('retains the old-home link name until Apple finalization', () => {
-    expect(LEGACY_CLI_HOME_LINK).toBe('.tau') // ficus-p5-apple
-  })
-  it('keeps the link while ~/.ficus/bin is not on PATH', async () => {
-    mkdirSync(ficus)
-    symlinkSync('.ficus', link)
-    expect(await finalizeCliHome({ homedir: home, path: '/usr/bin:/bin' })).toBe('kept-not-on-path')
-    expect(lstatSync(link).isSymbolicLink()).toBe(true)
-  })
-  it('removes the link once ~/.ficus/bin is on PATH', async () => {
-    mkdirSync(ficus)
-    symlinkSync('.ficus', link)
-    expect(await finalizeCliHome({ homedir: home, path: `/usr/bin:${join(ficus, 'bin')}/:/bin` })).toBe('removed')
-    expect(existsSync(link)).toBe(false)
-    expect(lstatSync(ficus).isDirectory()).toBe(true)
-  })
-  it('reports absent when there is no legacy home', async () => {
-    expect(await finalizeCliHome({ homedir: home, path: join(ficus, 'bin') })).toBe('absent')
-  })
-  it('never removes a legacy home that is not the link a move left', async () => {
-    mkdirSync(link)
-    await expect(finalizeCliHome({ homedir: home, path: join(ficus, 'bin') })).rejects.toThrow(/not the link/)
-    expect(lstatSync(link).isDirectory()).toBe(true)
   })
 })

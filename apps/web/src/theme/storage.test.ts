@@ -79,20 +79,10 @@ describe('readThemeSelection (localStorage migration)', () => {
   describe('inside Ficus Desktop, with no stored appearance choice', () => {
     afterEach(() => {
       delete window.ficusDesktopApp
-      delete window.tauDesktopApp
     })
 
     test('follows the OS appearance via window.ficusDesktopApp', () => {
       window.ficusDesktopApp = {
-        version: 1,
-        notificationsEnabled: async () => false,
-        deliverNotifications: async () => {},
-      }
-      expect(readThemeSelection(memoryStorage())).toEqual({ themeId: 'ficus', appearance: 'system' })
-    })
-
-    test('follows the OS appearance via the legacy window.tauDesktopApp (D1 and older Desktop builds)', () => {
-      window.tauDesktopApp = {
         version: 1,
         notificationsEnabled: async () => false,
         deliverNotifications: async () => {},
