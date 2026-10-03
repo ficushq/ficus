@@ -16,7 +16,7 @@ Ficus itself supports three common serving topologies:
 
 1. **Single-origin built-in:** build `apps/web/dist` and run Core with `FICUS_SERVE_WEB=1` so `/`, `/api/*`, `/ws`, and `/ws/terminal` share port `3000`. This is best for self-hosted VMs and simple Docker deployments.
 2. **Split web/API:** serve the web UI separately (Vite, static files, or CDN) and route `/api/*`, `/ws`, and `/ws/*` to Core on `3000`.
-3. **Kubernetes/CDN:** use the dedicated `tau-api`, `tau-worker`, and `tau-web` deployments; leave `FICUS_SERVE_WEB` unset unless intentionally changing that topology.
+3. **Kubernetes/CDN:** use the `ficus-api` and `ficus-worker` deployments with a separately hosted web build; leave `FICUS_SERVE_WEB` unset unless intentionally changing that topology.
 
 In topologies 1–2 the worker's stream server (`WORKER_PORT`) binds `127.0.0.1`
 by default — the API reaches it over loopback on the same host. Reaching it from

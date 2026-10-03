@@ -40,5 +40,5 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: Relevant output from `tau-api`, `tau-worker` or the CLI. Remove tokens and secrets first.
+      description: Relevant output from `ficus-api`, `ficus-worker` or the CLI. Remove tokens and secrets first.
       render: text
