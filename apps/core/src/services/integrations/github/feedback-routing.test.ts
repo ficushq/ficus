@@ -7,6 +7,8 @@ import {
   agents,
   agentTypes,
   users,
+  roles,
+  roleAssignments,
   workStreams,
   workStreamFlowRuns,
   inbox,
@@ -48,7 +50,8 @@ async function fixture(action: 'notify-manager' | 'notify-consultant' | 'start-w
   const squadId = crypto.randomUUID(),
     typeId = crypto.randomUUID(),
     userId = crypto.randomUUID(),
-    revision = crypto.randomUUID()
+    revision = crypto.randomUUID(),
+    moderatorRole = crypto.randomUUID()
   await db.insert(users).values({ id: userId, email: `${userId}@routing.test` })
   await db
     .insert(agentTypes)
@@ -150,6 +153,21 @@ async function fixture(action: 'notify-manager' | 'notify-consultant' | 'start-w
         .insert(githubTrustedAuthors)
         .values({ squadId, accountId: '2', login: 'author', accountType, addedByUserId: userId })
     },
+    async allow(revisionId: string) {
+      await db
+        .insert(roles)
+        .values({ id: moderatorRole, slug: moderatorRole, name: moderatorRole, permissions: ['squads:update'] })
+      await db
+        .insert(roleAssignments)
+        .values({ subjectType: 'user', subjectId: userId, roleId: moderatorRole, scope: 'squad', squadId })
+      const [row] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, revisionId))
+      const { moderateGitHubFeedback } = await import('./feedback-moderation')
+      await moderateGitHubFeedback({ type: 'user', userId }, squadId, {
+        requestId: crypto.randomUUID(),
+        action: 'allow_once',
+        selections: [{ revisionId, contentHash: row!.contentHash, decisionVersion: row!.decisionVersion }],
+      })
+    },
     async stream(flow = false, output = 'pull_request.comment', branch = false) {
       const [stream] = await db
         .insert(workStreams)
@@ -229,6 +247,8 @@ async function fixture(action: 'notify-manager' | 'notify-consultant' | 'start-w
     async close() {
       read.mockRestore()
       send.mockRestore()
+      await db.delete(roleAssignments).where(eq(roleAssignments.roleId, moderatorRole))
+      await db.delete(roles).where(eq(roles.id, moderatorRole))
       const owned = await db.select({ id: agents.id }).from(agents).where(eq(agents.squadId, squadId))
       for (const { id } of owned)
         await (await Agent.mustFind(id)).getActiveExecution().then(async (execution) => execution?.stop())
@@ -1718,5 +1738,355 @@ test('a different source material cannot first materialize an approval captured 
   } finally {
     await h.close()
     await other.dispose()
+  }
+})
+
+test('one root pass shares renewal limits across calls and retries, without duplicate provider reads', async () => {
+  const pass = await import('./feedback-pass')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const ids: string[] = []
+    h.read.mockImplementation(
+      async <T>(path: string): Promise<T | null> =>
+        (path === '/repositories/10'
+          ? { id: 10, full_name: 'acme/project' }
+          : { ...h.native, id: Number(path.split('/').at(-1)) }) as T
+    )
+    for (let i = 0; i < 10; i++) {
+      h.native.id = 30 + i
+      ids.push((await publishIntegrationOutput('github', h.fact(), h.authority))!)
+    }
+    await db
+      .update(githubOutputProofs)
+      .set({ expiresAt: new Date(0) })
+      .where(inArray(githubOutputProofs.eventId, ids))
+    h.read.mockClear()
+    await pass.withGitHubOutputPass(async () => {
+      await renewal.renewKnownGitHubOutputs(ids.slice(0, 5))
+      await renewal.renewKnownGitHubOutputs(ids.slice(0, 5))
+      await renewal.renewKnownGitHubOutputs(ids.slice(5))
+    })
+    expect(h.read.mock.calls.length).toBeLessThanOrEqual(24)
+    expect(
+      await db
+        .select()
+        .from(githubOutputProofs)
+        .where(sql`${githubOutputProofs.eventId} IN ${ids} AND ${githubOutputProofs.expiresAt} > clock_timestamp()`)
+    ).toHaveLength(8)
+  } finally {
+    await h.close()
+  }
+}, 20_000)
+
+test('production root reconcile releases a selected held revision to its original ordinary agent once', async () => {
+  const { reconcileFlows } = await import('../../workflows/execution')
+  const h = await fixture()
+  h.useRealSend()
+  try {
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const [held] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    expect(held!.decision).toBe('pending')
+    expect((await h.effects()).inbox).toBe(0)
+    await h.allow(held!.id)
+    await reconcileFlows()
+    const receipts = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))
+    expect(receipts).toHaveLength(1)
+    const [released] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, held!.id))
+    expect(released!.releaseState).toBe('delivered')
+    expect(receipts[0]!.acceptedAt).toBeTruthy()
+    await reconcileFlows()
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(1)
+    expect((await h.effects()).agents).toBe(1)
+  } finally {
+    await h.close()
+  }
+}, 20_000)
+
+test('root reconcile shares one provider budget across many paused streams and eventually visits the tail', async () => {
+  const { reconcileFlows } = await import('../../workflows/execution')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const ids: string[] = [],
+      streamIds: string[] = []
+    h.read.mockImplementation(
+      async <T>(path: string): Promise<T | null> =>
+        (path === '/repositories/10'
+          ? { id: 10, full_name: 'acme/project' }
+          : { ...h.native, id: Number(path.split('/').at(-1)) }) as T
+    )
+    for (let i = 0; i < 10; i++) {
+      const streamId = await h.stream(true)
+      streamIds.push(streamId)
+      await db
+        .update(workStreams)
+        .set({ pause: { reason: 'Test', pausedAt: new Date().toISOString(), pausedBy: 'test' } as any })
+        .where(eq(workStreams.id, streamId))
+      h.native.id = 30 + i
+      ids.push((await publishIntegrationOutput('github', h.fact(), h.authority))!)
+    }
+    await db
+      .update(githubOutputProofs)
+      .set({ expiresAt: new Date(0) })
+      .where(inArray(githubOutputProofs.eventId, ids))
+    h.read.mockClear()
+    await reconcileFlows()
+    expect(h.read.mock.calls.length).toBeLessThanOrEqual(24)
+    await reconcileFlows()
+    const tail = await db
+      .select()
+      .from(githubOutputProofs)
+      .where(eq(githubOutputProofs.eventId, ids.at(-1)!))
+    expect(tail[0]!.expiresAt.getTime()).toBeGreaterThan(Date.now())
+    expect((await h.effects()).inbox).toBe(0)
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(0)
+  } finally {
+    await h.close()
+  }
+}, 120_000)
+
+test('unmatched raw status aliases with existing safe proofs cost zero renewal work', async () => {
+  const h = await fixture()
+  try {
+    await h.stream()
+    await db
+      .update(squads)
+      .set({
+        metadata: {
+          integrationRules: {
+            github: [
+              {
+                id: 'rule',
+                enabled: true,
+                source: { integration: 'github', output: 'pull_request.closed', version: 1 },
+                filters: { audience: 'any' },
+                predicates: [],
+                action: { type: 'notify-manager' },
+              },
+            ],
+          },
+        },
+      })
+      .where(eq(squads.id, h.squadId))
+    const fact = githubOutputAdapter.normalize({
+      type: 'pull_request',
+      githubObservation: { kind: 'webhook' },
+      payload: {
+        action: 'closed',
+        repository: { id: 10, full_name: 'acme/project' },
+        pull_request: {
+          ...parent,
+          state: 'closed',
+          html_url: 'https://github.com/acme/project/pull/3',
+          user: { id: 99, login: 'unknown', type: 'User' },
+          title: 'UNREVIEWED_TITLE',
+          body: 'UNREVIEWED_BODY',
+          updated_at: '2026-10-02T10:00:00Z',
+          closed_at: '2026-10-02T10:00:00Z',
+        },
+      },
+    })[0]!
+    h.read.mockImplementation(
+      async <T>(path: string): Promise<T | null> =>
+        (path === '/repositories/10'
+          ? { id: 10, full_name: 'acme/project' }
+          : { id: 20, number: 3, html_url: 'https://github.com/acme/project/pull/3' }) as T
+    )
+    const id = await publishIntegrationOutput('github', fact, h.authority)
+    const [proof] = await db.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, id!))
+    expect(proof).toBeTruthy()
+    h.read.mockClear()
+    await reconcileUnmatchedOutputs()
+    await reconcileUnmatchedOutputs()
+    expect(h.read.mock.calls).toHaveLength(0)
+  } finally {
+    await h.close()
+  }
+})
+
+test('ambiguous current-content reads also consume the aggregate fixed provider budget', async () => {
+  const { withGitHubOutputPass } = await import('./feedback-pass')
+  const { prepareGitHubOutput } = await import('./feedback-routing')
+  const h = await fixture()
+  try {
+    await h.trust()
+    h.read.mockImplementation(
+      async <T>(path: string): Promise<T | null> =>
+        (path === '/repositories/10'
+          ? { id: 10, full_name: 'acme/project' }
+          : { ...h.native, id: Number(path.split('/').at(-1)) }) as T
+    )
+    const sources = []
+    for (let i = 0; i < 8; i++) {
+      h.native.id = 30 + i
+      h.native.body = 'ORIGINAL'
+      await publishIntegrationOutput('github', h.fact(), h.authority)
+      h.native.body = 'EDITED AT SAME CLOCK'
+      sources.push(await recordIntegrationOutput('github', h.fact(), h.authority))
+    }
+    h.read.mockClear()
+    await withGitHubOutputPass(async () => {
+      for (const source of sources) await prepareGitHubOutput(source)
+    })
+    expect(h.read.mock.calls.length).toBeLessThanOrEqual(24)
+  } finally {
+    await h.close()
+  }
+}, 30_000)
+
+for (const changed of ['manager', 'rule', 'material', 'resource'] as const) {
+  test(`mounted selected release fails closed after original ${changed} revocation`, async () => {
+    const { reconcileFlows } = await import('../../workflows/execution')
+    const h = await fixture()
+    h.useRealSend()
+    try {
+      await publishIntegrationOutput('github', h.fact(), h.authority)
+      const [held] = await db
+        .select()
+        .from(githubFeedbackRevisions)
+        .where(eq(githubFeedbackRevisions.squadId, h.squadId))
+      await h.allow(held!.id)
+      if (changed === 'manager') await db.update(squads).set({ managerAgentId: null }).where(eq(squads.id, h.squadId))
+      if (changed === 'rule') await db.update(squads).set({ metadata: {} }).where(eq(squads.id, h.squadId))
+      if (changed === 'material')
+        await db
+          .update(integrationConnections)
+          .set({ materialRevision: crypto.randomUUID() })
+          .where(eq(integrationConnections.id, h.authority.connectionId))
+      if (changed === 'resource') h.read.mockResolvedValue(null)
+      h.read.mockClear()
+      await reconcileFlows()
+      expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(0)
+      expect((await h.effects()).inbox).toBe(0)
+      const [after] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, held!.id))
+      expect(after!.releaseState).toBe(changed === 'rule' || changed === 'manager' ? 'obsolete' : 'retained')
+      if (changed !== 'resource') expect(h.read.mock.calls).toHaveLength(0)
+    } finally {
+      await h.close()
+    }
+  })
+}
+
+test('mounted release never substitutes later provider text for the exact human-approved snapshot', async () => {
+  const { reconcileFlows } = await import('../../workflows/execution')
+  const h = await fixture()
+  h.useRealSend()
+  try {
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const [held] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    await h.allow(held!.id)
+    h.native.body = 'LATER_UNREVIEWED_TEXT'
+    h.native.updated_at = '2026-10-02T10:01:00Z'
+    await reconcileFlows()
+    const notices = await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.content).toContain('HELD_SENTINEL')
+    expect(notices[0]!.content).not.toContain('LATER_UNREVIEWED_TEXT')
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(1)
+  } finally {
+    await h.close()
+  }
+})
+
+test('mounted factory prepares provider evidence before authority locking and refuses expiry behind that lock', async () => {
+  const { reconcileFlows } = await import('../../workflows/execution')
+  const h = await fixture(),
+    entered = barrier(),
+    unblock = barrier(),
+    waiting = barrier()
+  h.useRealSend()
+  let owner: Promise<unknown> | undefined, tick: Promise<unknown> | undefined
+  try {
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const [held] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    await h.allow(held!.id)
+    h.read.mockClear()
+    owner = db.transaction(async (tx) => {
+      await lockGitHubTrustAuthority(tx)
+      entered.resolve()
+      await unblock.promise
+    })
+    await entered.promise
+    setDatabaseQueryObserverForTest((query) => {
+      if (query.includes('pg_advisory_xact_lock(438, 5)')) waiting.resolve()
+    })
+    tick = reconcileFlows()
+    await waiting.promise
+    // Both native reads finished while the factory was still waiting to acquire authority.
+    expect(h.read.mock.calls).toHaveLength(2)
+    setSystemTime(new Date(Date.now() + 90_000))
+    unblock.resolve()
+    await owner
+    await tick
+    expect(h.read.mock.calls).toHaveLength(2)
+    expect((await h.effects()).inbox).toBe(0)
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(0)
+    const [after] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, held!.id))
+    expect(after!.releaseState).toBe('retry')
+  } finally {
+    unblock.resolve()
+    await Promise.allSettled([owner, tick].filter(Boolean))
+    setDatabaseQueryObserverForTest(undefined)
+    setSystemTime()
+    await h.close()
+  }
+})
+
+test('mounted release accepts newly routed feedback through the original actual flow participant in the same tick', async () => {
+  const { reconcileFlows, getFlow } = await import('../../workflows/execution')
+  const h = await fixture()
+  try {
+    const streamId = await h.stream(true)
+    const [manager] = await db.select().from(agents).where(eq(agents.id, h.managerId))
+    await db.transaction(async (tx) => {
+      const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, streamId))
+      const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, streamId))
+      const definition = run!.state.definition
+      definition.participants.worker!.agentTypeId = manager!.agentTypeId
+      await tx.delete(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, streamId))
+      const attached = await attachFlow(tx, stream!, { kind: 'inline', definition })
+      await dispatchFlow(tx, stream!, attached, [])
+    })
+    const original = (await getFlow(streamId))!.attemptAgents['1']!
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const [held] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    await h.allow(held!.id)
+    h.useRealSend()
+    await reconcileFlows()
+    const receipts = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, original))
+    expect(receipts.filter((row) => row.clientId.startsWith('integration-output:'))).toHaveLength(1)
+    const run = await getFlow(streamId)
+    expect(run!.attemptAgents['1']).toBe(original)
+    const [after] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, held!.id))
+    expect(after!.releaseState).toBe('delivered')
+    await reconcileFlows()
+    expect(
+      (await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, original))).filter((row) =>
+        row.clientId.startsWith('integration-output:')
+      )
+    ).toHaveLength(1)
+  } finally {
+    await h.close()
+  }
+})
+
+test('mounted retained canonical work with a fresh native proof does not reread its raw alias', async () => {
+  const { reconcileFlows } = await import('../../workflows/execution')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const id = await publishIntegrationOutput('github', h.fact(), h.authority)
+    expect(await hasAcceptedGitHubFeedbackReceipts(id!)).toBe(false)
+    h.read.mockClear()
+    await reconcileFlows()
+    expect(h.read.mock.calls).toHaveLength(0)
+    const [revision] = await db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    expect(revision!.releaseState).toBe('retained')
+  } finally {
+    await h.close()
   }
 })

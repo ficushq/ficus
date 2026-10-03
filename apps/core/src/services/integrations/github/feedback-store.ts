@@ -225,7 +225,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
 export async function recordCanonicalGitHubFeedback(
   revisionId: string,
   sourceEventId: string,
-  authorizeSource: (event: Event) => Promise<boolean>
+  authorizeSource: (event: Event, store?: typeof db | DbTx) => Promise<boolean>
 ) {
   const [source] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, sourceEventId))
   const [association] = await db
@@ -242,7 +242,10 @@ export async function recordCanonicalGitHubFeedback(
   )
     throw new Error('feedback_source_unavailable')
   return db.transaction(async (tx) => {
-    await lockGitHubTrustAuthority(tx)
+    const { lockGitHubOutputAuthority } = await import('./feedback-routing')
+    await lockGitHubOutputAuthority(tx, source)
+    // The callback is LOCAL-only; native preparation belongs outside this transaction.
+    if (!(await authorizeSource(source, tx))) throw new Error('feedback_source_unavailable')
     const [revision] = await tx
       .select()
       .from(githubFeedbackRevisions)

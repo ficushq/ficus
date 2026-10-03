@@ -9,6 +9,7 @@ import {
   inbox,
   chatSendReceipts,
 } from '../../../db'
+import { githubContentHash } from './feedback-envelope'
 import { recordCanonicalGitHubFeedback } from './feedback-store'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
@@ -28,7 +29,9 @@ const reasons = [
 ] as const
 export interface GitHubFeedbackReleaseDependencies {
   /** Live material revision AND exact native resource. No I/O while holding moderation/claim locks. */
-  authorizeSource(event: Event): Promise<boolean>
+  authorizeSource(event: Event, store?: typeof db | import('../../../db').DbTx): Promise<boolean>
+  /** Optional for primitive callers; production must prepare native witnesses OUTSIDE all locks. */
+  prepareSource?(event: Event): Promise<boolean | { state: 'retained' | 'obsolete'; reason: (typeof reasons)[number] }>
   /** Must enforce stored audience provenance and recheck every effect and final acceptance seam. */
   route(
     event: Event,
@@ -133,7 +136,7 @@ export async function releaseGitHubFeedback(
     .select({ id: githubFeedbackRevisions.id })
     .from(githubFeedbackRevisions)
     .where(due())
-    .orderBy(githubFeedbackRevisions.firstObservedAt, githubFeedbackRevisions.id)
+    .orderBy(githubFeedbackRevisions.updatedAt, githubFeedbackRevisions.id)
     .limit(limit)
   let claimed = 0
   for (const { id } of candidates) {
@@ -153,6 +156,17 @@ export async function releaseGitHubFeedback(
     let state: 'retained' | 'retry' | 'obsolete' | 'delivered' = 'retained'
     let reason: string | null = 'source_unavailable'
     let canonical: Event | undefined
+    // Preparation may change settlement state; keep the check outside caller control-flow narrowing.
+    const isObsolete = () => state === 'obsolete'
+    async function prepared(event: Event) {
+      const outcome = await deps.prepareSource?.(event)
+      if (outcome && typeof outcome === 'object') {
+        state = outcome.state
+        reason = outcome.reason
+        return false
+      }
+      return outcome !== false
+    }
     try {
       ;[canonical] = await db
         .select()
@@ -169,25 +183,33 @@ export async function releaseGitHubFeedback(
         state = 'delivered'
         reason = null
       } else {
-        const sources = await db
-          .select({ event: integrationOutputEvents })
-          .from(githubFeedbackSources)
-          .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, githubFeedbackSources.eventId))
-          .where(
-            and(
-              eq(githubFeedbackSources.revisionId, id),
-              sql`${integrationOutputEvents.sourceKey} NOT LIKE 'github-feedback:%'`
+        if (!canonical) {
+          const sources = await db
+            .select({ event: integrationOutputEvents })
+            .from(githubFeedbackSources)
+            .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, githubFeedbackSources.eventId))
+            .where(
+              and(
+                eq(githubFeedbackSources.revisionId, id),
+                sql`${integrationOutputEvents.sourceKey} NOT LIKE 'github-feedback:%'`
+              )
             )
-          )
-          .orderBy(githubFeedbackSources.observedAt)
-          .limit(8)
-        for (const { event } of sources) {
-          if (!(await deps.authorizeSource(event))) continue
-          canonical = await recordCanonicalGitHubFeedback(revision.id, event.id, deps.authorizeSource)
-          break
+            .orderBy(githubFeedbackSources.observedAt)
+            .limit(1) // original first observation only; never probe/swap another credential
+          for (const { event } of sources) {
+            if (
+              revision.routingProvenance.some((route) => route.authorityHash) &&
+              !revision.routingProvenance.some((route) => route.authorityHash === githubContentHash(event.authority))
+            )
+              continue
+            if (!(await prepared(event))) continue
+            if (!(await deps.authorizeSource(event))) continue
+            canonical = await recordCanonicalGitHubFeedback(revision.id, event.id, deps.authorizeSource)
+            break
+          }
         }
         // Another currently-readable source never blesses the canonical event's retained original authority.
-        if (canonical && (await deps.authorizeSource(canonical))) {
+        if (canonical && !isObsolete() && (await prepared(canonical)) && (await deps.authorizeSource(canonical))) {
           if (!(await isGitHubFeedbackAdmitted(db, canonical))) reason = 'feedback_not_admitted'
           else {
             const outcome = await deps.route(canonical, revision.routingProvenance)

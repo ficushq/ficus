@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { db, integrationOutputEvents } from '../../../db'
 import { authorized } from '../outputs/authority'
+import { withGitHubOutputPass, reserveGitHubEvent, githubOutputPass } from './feedback-pass'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
 import { isGitHubOutputAdmitted, isOriginalGitHubRoute, prepareGitHubOutput } from './feedback-routing'
 
@@ -18,16 +19,24 @@ export const GITHUB_RENEWAL_PROVIDER_CALL_LIMIT = 24
  * committing the 60s witness. Failure/expiry is withheld, not an authorization fallback.
  */
 export async function renewKnownGitHubOutputs(eventIds: string[]) {
+  return withGitHubOutputPass(() => renewKnownInPass(eventIds))
+}
+
+async function renewKnownInPass(eventIds: string[]) {
   const ids = [...new Set(eventIds)]
   if (ids.length > GITHUB_RENEWAL_READ_LIMIT || ids.some((id) => !z.string().uuid().safeParse(id).success))
     throw new Error('invalid_github_renewal_batch')
   const result = { renewed: [] as string[], withheld: [] as string[], deferred: [] as string[] }
-  if (!ids.length) return result
+  const selected = ids.filter((id) => {
+    if (reserveGitHubEvent(id)) return true
+    result.deferred.push(id)
+    return false
+  })
+  if (!selected.length) return result
   const events = await db
     .select()
     .from(integrationOutputEvents)
-    .where(and(eq(integrationOutputEvents.integration, 'github'), inArray(integrationOutputEvents.id, ids)))
-  let resources = 0
+    .where(and(eq(integrationOutputEvents.integration, 'github'), inArray(integrationOutputEvents.id, selected)))
   for (const event of events) {
     if (
       event.authority.kind !== 'connection' ||
@@ -40,11 +49,10 @@ export async function renewKnownGitHubOutputs(eventIds: string[]) {
       continue
     }
     if (await isGitHubOutputAdmitted(db, event)) continue // fresh known proof costs no provider work
-    if (resources >= GITHUB_RENEWAL_RESOURCE_LIMIT) {
+    if (githubOutputPass()!.resources >= GITHUB_RENEWAL_RESOURCE_LIMIT) {
       result.deferred.push(event.id)
       continue
     }
-    resources++
     try {
       if (await prepareGitHubOutput(event, { reverifyAdopted: false })) result.renewed.push(event.id)
       else result.withheld.push(event.id)

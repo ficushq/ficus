@@ -6,7 +6,7 @@ import { codeHostingRegistry } from '../code-hosting'
 import { isDeliveryFeedbackSubscription } from '../code-hosting/registry'
 import { isIntegrationEnabled } from '../provider-state'
 import { authorized } from './authority'
-import { and, eq, gte, inArray, isNull, lte, ne, desc, sql, or } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, lte, ne, desc, sql, or, gt, asc } from 'drizzle-orm'
 import {
   integrationValueAt,
   integrationSubscriptionMatches,
@@ -52,6 +52,8 @@ import {
   isOriginalGitHubRoute,
   lockGitHubOutputAuthority,
 } from '../github/feedback-routing'
+import { withGitHubOutputPass, githubOutputPass, reserveGitHubEvent } from '../github/feedback-pass'
+import { reconcileGitHubFeedbackRelease } from '../github/feedback-release-runtime'
 import { renewKnownGitHubOutputs } from '../github/feedback-renewal'
 
 import { outputRecipients } from './routing-audience'
@@ -336,6 +338,7 @@ async function routeOutputEvent(event: Event, only?: string[]) {
       )
     )
   for (const { id } of runs) {
+    const committedIntents: string[] = []
     const result = await db.transaction(async (tx) => {
       if (event.integration === 'github') await lockGitHubOutputAuthority(tx, event)
       if (!(await isGitHubOutputAdmitted(tx, event))) return false
@@ -362,6 +365,7 @@ async function routeOutputEvent(event: Event, only?: string[]) {
           .values({ eventId: event.id, workStreamId: id, subscriptionId: subscription.id, subscription })
           .onConflictDoNothing()
           .returning({ id: integrationOutputDeliveries.id })
+        committedIntents.push(...inserted.map((row) => row.id))
         if (
           inserted.length &&
           run?.activated &&
@@ -374,6 +378,19 @@ async function routeOutputEvent(event: Event, only?: string[]) {
       const observationChanged = await recordDeliveryObservation(tx, stream, event)
       return observationChanged || presentationChanged ? { workStreamId: stream.id, squadId: stream.squadId } : false
     })
+    // A new original intent may join this pass only AFTER commit and within its global row cap.
+    // Otherwise it remains pending for the next fair selection, never accepted with stale evidence.
+    const cohort = githubOutputPass()?.deliveries
+    if (event.integration === 'github' && cohort && reserveGitHubEvent(event.id)) {
+      let count = [...cohort.values()].reduce((total, rows) => total + rows.length, 0)
+      for (const deliveryId of committedIntents) {
+        if (count >= 25) break
+        const rows = cohort.get(id) ?? []
+        rows.push({ event, deliveryId })
+        cohort.set(id, rows)
+        count++
+      }
+    }
     // Outside the transaction, and immediately: the watcher-facing event fires only once the
     // state it describes has committed, and a later stream's transaction throwing must not
     // swallow a notification for a stream whose write already committed. New delivery evidence
@@ -436,6 +453,10 @@ async function hasLaterOutputObservation(store: Store, delivery: Delivery, event
 }
 
 export async function reconcileOutputDeliveries(workStreamId: string) {
+  return withGitHubOutputPass(() => reconcileOutputDeliveriesInPass(workStreamId))
+}
+
+async function reconcileOutputDeliveriesInPass(workStreamId: string) {
   const pending = await db
     .select({ id: integrationOutputDeliveries.id })
     .from(integrationOutputDeliveries)
@@ -447,18 +468,22 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
     )
     .limit(1)
   if (!pending.length) return
-  const candidates = await db
+  const cohort = githubOutputPass()?.deliveries
+  const queried = await db
     .select({ event: integrationOutputEvents, deliveryId: integrationOutputDeliveries.id })
     .from(integrationOutputDeliveries)
     .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
     .where(
       and(
         eq(integrationOutputDeliveries.workStreamId, workStreamId),
-        inArray(integrationOutputDeliveries.status, ['pending', 'queued'])
+        inArray(integrationOutputDeliveries.status, ['pending', 'queued']),
+        cohort ? ne(integrationOutputEvents.integration, 'github') : undefined
       )
     )
-    .orderBy(integrationOutputDeliveries.createdAt, integrationOutputDeliveries.id)
+    .orderBy(integrationOutputDeliveries.updatedAt, integrationOutputDeliveries.id)
     .limit(25)
+  const candidates = [...queried, ...(cohort?.get(workStreamId) ?? [])]
+  if (!candidates.length) return
   await renewKnownGitHubOutputs(
     candidates.filter(({ event }) => event.integration === 'github').map(({ event }) => event.id)
   )
@@ -489,6 +514,11 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
       )
     for (const { delivery, event } of rows) {
       if (['delivered', 'superseded'].includes(delivery.status)) continue
+      // Touch even withheld/paused rows: bounded oldest-attempt selection cannot starve the tail.
+      await tx
+        .update(integrationOutputDeliveries)
+        .set({ updatedAt: new Date() })
+        .where(eq(integrationOutputDeliveries.id, delivery.id))
       if (!(await shouldNotifyEvent(tx, event))) {
         await tx
           .update(integrationOutputDeliveries)
@@ -700,17 +730,30 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
 
 /** Parked flows are excluded from worker dispatch, but their owner notices still retry. */
 export async function reconcileParkedOutputDeliveries() {
+  return withGitHubOutputPass(async () => {
+    if (!githubOutputPass()?.deliveries) {
+      await prepareOutputDeliveryPass()
+      await reconcileSelectedOutputDeliveries()
+    }
+    await reconcileParkedOutputDeliveriesInPass()
+  })
+}
+async function reconcileParkedOutputDeliveriesInPass() {
   const streams = await db
     .selectDistinct({ id: integrationOutputDeliveries.workStreamId })
     .from(integrationOutputDeliveries)
     .innerJoin(workStreams, eq(workStreams.id, integrationOutputDeliveries.workStreamId))
+    .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
     .where(
       and(
+        ne(integrationOutputEvents.integration, 'github'),
         eq(workStreams.status, 'queued'),
         isNull(workStreams.pause),
         inArray(integrationOutputDeliveries.status, ['pending', 'queued'])
       )
     )
+    .orderBy(integrationOutputDeliveries.workStreamId)
+    .limit(25)
   for (const stream of streams) {
     try {
       await reconcileOutputDeliveries(stream.id)
@@ -952,17 +995,26 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
   )
 }
 
+// Only a single bounded cursor; no per-squad/stream cache or retained-history sweep.
+let unmatchedCursor: string | undefined
 export async function reconcileUnmatchedOutputs() {
+  return withGitHubOutputPass(reconcileUnmatchedOutputsInPass)
+}
+async function reconcileUnmatchedOutputsInPass() {
   const events = await db
     .select()
     .from(integrationOutputEvents)
     .where(
       and(
         isNull(integrationOutputEvents.matchedAt),
-        sql`(${integrationOutputEvents.sourceKey} LIKE 'github-feedback:%' OR NOT EXISTS (SELECT 1 FROM github_feedback_sources WHERE event_id = ${integrationOutputEvents.id}))`
+        unmatchedCursor ? gt(integrationOutputEvents.id, unmatchedCursor) : undefined,
+        sql`(${integrationOutputEvents.sourceKey} LIKE 'github-feedback:%' OR NOT EXISTS (SELECT 1 FROM github_feedback_sources WHERE event_id = ${integrationOutputEvents.id}))`,
+        sql`NOT EXISTS (SELECT 1 FROM github_output_proofs WHERE source_event_id = ${integrationOutputEvents.id} AND event_id <> ${integrationOutputEvents.id})`
       )
     )
-    .limit(100)
+    .orderBy(asc(integrationOutputEvents.id))
+    .limit(25)
+  unmatchedCursor = events.at(-1)?.id // empty page wraps; seek pagination never grows with history
   for (const source of events) {
     try {
       const event = await prepareGitHubOutput(source)
@@ -1293,4 +1345,51 @@ async function applyOutputTriggers(event: Event) {
     else await notifyWorkStreamOwnerOfNewStream(stream, { retryOnFailure: true })
   }
   if (errors.length) throw errors[0]
+}
+
+/** The existing tick uses exactly the existing effect/router/Agent receipt paths. */
+export async function reconcileApprovedGitHubFeedback() {
+  return reconcileGitHubFeedbackRelease(async (event) => {
+    if (!(await isOriginalGitHubRoute(db, event))) return { state: 'obsolete', reason: 'routing_changed' }
+    await applyOutputTriggers(event)
+    const bound = await matchOutputEvent(event)
+    const deliveries = await db
+      .select({ id: integrationOutputDeliveries.workStreamId })
+      .from(integrationOutputDeliveries)
+      .where(eq(integrationOutputDeliveries.eventId, event.id))
+    for (const id of new Set([...bound, ...deliveries.map((row) => row.id)])) await reconcileOutputDeliveries(id)
+    await finalizeOutputRouting(event)
+  })
+}
+
+/** Read a GLOBAL known-delivery cohort once, not 25 events for every active/parked stream. */
+export async function prepareOutputDeliveryPass() {
+  const pass = githubOutputPass()
+  if (!pass || pass.deliveries) return
+  const rows = await db
+    .select({
+      event: integrationOutputEvents,
+      deliveryId: integrationOutputDeliveries.id,
+      workStreamId: integrationOutputDeliveries.workStreamId,
+    })
+    .from(integrationOutputDeliveries)
+    .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
+    .where(
+      and(
+        eq(integrationOutputEvents.integration, 'github'),
+        inArray(integrationOutputDeliveries.status, ['pending', 'queued'])
+      )
+    )
+    .orderBy(integrationOutputDeliveries.updatedAt, integrationOutputDeliveries.id)
+    .limit(25)
+  pass.deliveries = new Map()
+  for (const { workStreamId, ...row } of rows) {
+    const group = pass.deliveries.get(workStreamId) ?? []
+    group.push(row)
+    pass.deliveries.set(workStreamId, group)
+  }
+}
+
+export async function reconcileSelectedOutputDeliveries() {
+  for (const id of githubOutputPass()?.deliveries?.keys() ?? []) await reconcileOutputDeliveries(id)
 }

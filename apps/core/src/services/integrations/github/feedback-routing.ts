@@ -17,7 +17,7 @@ import { captureRelevantGitHubFeedback, isGitHubFeedbackAdmitted } from './feedb
 import { captureGitHubFeedback, recordCanonicalGitHubFeedback } from './feedback-store'
 import { githubContentHash } from './feedback-envelope'
 import { buildGitHubStatus } from './feedback-status'
-import { verifyGitHubOutputResource } from './feedback-resource'
+import { readGitHubResource, readGitHubCurrent, reserveGitHubEvent, withGitHubOutputPass } from './feedback-pass'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 
 type Store = typeof db | DbTx
@@ -139,9 +139,24 @@ export async function isOriginalGitHubRoute(
     !(await authorized(store, 'github', event.authority, event.authority.squadId))
   )
     return false
-  const originals = await originalGitHubRoutes(store, event)
-  if (!originals.length) return false
-  const raw = await githubMatchingEvent(store, event)
+  return matchesOriginalGitHubRoutes(
+    store,
+    event,
+    await originalGitHubRoutes(store, event),
+    await githubMatchingEvent(store, event),
+    selection
+  )
+}
+
+/** Query-only original provenance check for a stored raw source before canonical creation. */
+export async function matchesOriginalGitHubRoutes(
+  store: Store,
+  event: Event,
+  originals: import('@ficus/shared').GitHubFeedbackRoute[],
+  raw: Event,
+  selection?: Parameters<typeof isOriginalGitHubRoute>[2]
+): Promise<boolean> {
+  if (!originals.length || event.authority.kind !== 'connection') return false
   const matching = raw.fact.github?.status ? { ...raw, fact: raw.fact.github.status } : raw
   const current = await planOutputRouting(
     matching,
@@ -211,7 +226,12 @@ export async function prepareGitHubOutput(
   input: Event,
   options: { reverifyAdopted?: boolean } = {}
 ): Promise<Event | null> {
+  return withGitHubOutputPass(() => prepareGitHubOutputInPass(input, options))
+}
+
+async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopted?: boolean }): Promise<Event | null> {
   if (input.integration !== 'github') return input
+  if (!reserveGitHubEvent(input.id)) return null
   if (
     input.authority.kind !== 'connection' ||
     !input.authority.connectionRevision ||
@@ -278,9 +298,9 @@ export async function prepareGitHubOutput(
     if (known && known.decision !== 'automatic') return null
   }
   if ((prior || input.fact.github?.revisionId) && !(await isOriginalGitHubRoute(db, input))) return null
-  const access = await verifyGitHubOutputResource(source)
-  if (!access.repositoryAuthorized) return null
-  const checkedAt = new Date(),
+  const access = await readGitHubResource(source)
+  if (!access?.repositoryAuthorized) return null
+  const checkedAt = access.checkedAt,
     expiresAt = new Date(checkedAt.getTime() + TTL)
   const native = access.nativeAuthorized
   if (!(await local(source))) return null
@@ -292,6 +312,7 @@ export async function prepareGitHubOutput(
       // trusted. This path is STORAGE ONLY; no native witness means no materialization/effects.
       const deps = {
         authorizeSource: local,
+        readCurrent: readGitHubCurrent,
         routingProvenance: plan.routes,
         ...(!native ? { holdReason: 'source_unverified' as const } : {}),
       }

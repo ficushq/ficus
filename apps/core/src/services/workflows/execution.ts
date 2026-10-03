@@ -747,8 +747,24 @@ export async function finishFlow(id: string, version: number, identity: Identity
 }
 
 export async function reconcileFlows() {
-  const { reconcileUnmatchedOutputs, reconcileParkedOutputDeliveries } = await import('../integrations/outputs/runtime')
-  await reconcileUnmatchedOutputs()
+  const { withGitHubOutputPass } = await import('../integrations/github/feedback-pass')
+  return withGitHubOutputPass(reconcileFlowsInPass)
+}
+
+let githubReconcilePhase = 0
+async function reconcileFlowsInPass() {
+  const {
+    reconcileUnmatchedOutputs,
+    reconcileParkedOutputDeliveries,
+    reconcileApprovedGitHubFeedback,
+    prepareOutputDeliveryPass,
+    reconcileSelectedOutputDeliveries,
+  } = await import('../integrations/outputs/runtime')
+  await prepareOutputDeliveryPass()
+  const phases = [reconcileApprovedGitHubFeedback, reconcileSelectedOutputDeliveries, reconcileUnmatchedOutputs]
+  // Rotate priority as well as candidates: perpetually held releases cannot monopolize every pass.
+  const start = githubReconcilePhase++ % phases.length
+  for (let offset = 0; offset < phases.length; offset++) await phases[(start + offset) % phases.length]!()
   await reconcileParkedOutputDeliveries()
   const rows = await db
     .select({ id: workStreamFlowRuns.workStreamId })
