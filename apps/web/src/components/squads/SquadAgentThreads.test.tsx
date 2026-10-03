@@ -1717,6 +1717,69 @@ describe('SquadAgentThreads consultant recency', () => {
     expect(html).not.toContain('Loading agent conversations')
   })
 
+  test.each(['chat-0', 'chat-11'])(
+    'retains selected %s when reducing to recents without duplicates',
+    async (selectedId) => {
+      initialSearchParams = `agent=${selectedId}`
+      const dom = await installDom()
+      try {
+        const { root } = dom.createRoot()
+        await dom.act(async () => renderThreadsDom(root, makeQueryClient(), [agent(), ...history()]))
+        const section = dom.window.document.querySelector<HTMLElement>('[data-agent-type-section="consultant"]')!
+        const rows = () => Array.from(section.querySelectorAll<HTMLButtonElement>('.squad-chat-agent > button'))
+        const recentNames = ['Chat 11', 'Chat 10', 'Chat 09', 'Chat 08', 'Chat 07']
+        const expectedNames = selectedId === 'chat-0' ? [...recentNames, 'Chat 00'] : recentNames
+        const names = () => rows().map((row) => row.title.split(' · ')[0])
+        expect(names()).toEqual(expectedNames)
+        expect(rows().filter((row) => row.getAttribute('aria-pressed') === 'true')).toHaveLength(1)
+        await dom.act(async () => getByRole(section, 'button', { name: 'View all (12)' }).click())
+        expect(rows()).toHaveLength(12)
+        expect(new Set(names()).size).toBe(12)
+        await dom.act(async () => getByRole(section, 'button', { name: 'Show recent' }).click())
+        expect(names()).toEqual(expectedNames)
+        await dom.act(async () => getByRole(dom.window.document.body, 'button', { name: /Manager \(Pearl\)/ }).click())
+        expect(names()).toEqual(recentNames)
+        expect(rows().every((row) => row.getAttribute('aria-pressed') === 'false')).toBe(true)
+      } finally {
+        await dom.cleanup()
+      }
+    }
+  )
+
+  test('stored collapse retains an older selected chat until composing or archiving it', async () => {
+    initialSearchParams = 'agent=chat-0'
+    const dom = await installDom()
+    try {
+      dom.window.localStorage.setItem('ficus-squad-chat-consultants-collapsed', '1')
+      const { root } = dom.createRoot()
+      const client = makeQueryClient()
+      await dom.act(async () => renderThreadsDom(root, client, [agent(), ...history()]))
+      const section = dom.window.document.querySelector<HTMLElement>('[data-agent-type-section="consultant"]')!
+      const toggle = getByRole(section, 'button', { name: 'Expand Recent chats' })
+      expect(getByRole(section, 'button', { name: /Chat 00/ }).getAttribute('aria-pressed')).toBe('true')
+      expect(section.querySelectorAll('.squad-chat-agent')).toHaveLength(1)
+      await dom.act(async () => getByRole(dom.window.document.body, 'button', { name: 'New consultant chat' }).click())
+      expect(section.querySelectorAll('.squad-chat-agent')).toHaveLength(0)
+      await dom.act(async () => toggle.click())
+      await dom.act(async () => getByRole(section, 'button', { name: 'View all (12)' }).click())
+      await dom.act(async () => getByRole(section, 'button', { name: /Chat 00/ }).click())
+      await dom.act(async () => toggle.click())
+      expect(toggle.getAttribute('aria-label')).toBe('Expand Consultant chats')
+      expect(section.querySelectorAll('.squad-chat-agent')).toHaveLength(1)
+      await dom.act(async () =>
+        renderThreadsDom(root, client, [
+          agent(),
+          ...history().map((chat) => (chat.id === 'chat-0' ? { ...chat, status: 'dormant' as const } : chat)),
+        ])
+      )
+      expect(section.querySelectorAll('.squad-chat-agent')).toHaveLength(0)
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    } finally {
+      dom.window.localStorage.removeItem('ficus-squad-chat-consultants-collapsed')
+      await dom.cleanup()
+    }
+  })
+
   test('collapses only consultant contents, retaining selection, worker nodes and focus', async () => {
     includeIdleAgents = false
     initialSearchParams = 'agent=chat-11'
@@ -1751,8 +1814,10 @@ describe('SquadAgentThreads consultant recency', () => {
       getByRole(contents, 'button', { name: /Chat 11/ }).focus()
       await dom.act(async () => toggle.click())
       expect(toggle.getAttribute('aria-expanded')).toBe('false')
-      expect(contents.hidden).toBe(true)
-      expect(queryAllByRole(contents, 'button')).toHaveLength(0)
+      expect(contents.hidden).toBe(false)
+      expect(queryAllByRole(contents, 'button')).toHaveLength(1)
+      expect(getByRole(contents, 'button', { name: /Chat 11/ }).getAttribute('aria-pressed')).toBe('true')
+      expect(contents.querySelectorAll('.squad-chat-agent')).toHaveLength(1)
       expect(doc.activeElement).toBe(toggle)
       expect(header.textContent).toContain('Chat 11')
       expect(doc.body.textContent).toContain('Agent chat body')
@@ -1772,6 +1837,7 @@ describe('SquadAgentThreads consultant recency', () => {
   })
 
   test('search reveals older chats while collapsed and restores the disclosure on clearing', async () => {
+    initialSearchParams = 'agent=chat-11'
     const dom = await installDom()
     try {
       const { root } = dom.createRoot()
@@ -1781,12 +1847,18 @@ describe('SquadAgentThreads consultant recency', () => {
       await dom.act(async () => toggle.click())
       const search = dom.window.document.querySelector<HTMLInputElement>('input[type="search"]')!
       await dom.act(async () => changeSearchInput(dom.window, search, 'Chat 00'))
+      expect(queryAllByRole(section, 'button', { name: /Chat 11/ })).toHaveLength(0)
       const older = getByRole(section, 'button', { name: /Chat 00/ })
       await dom.act(async () => older.click())
       expect(dom.window.document.querySelector('[data-testid="agent-picker-static"]')?.textContent).toContain('Chat 00')
       await dom.act(async () => changeSearchInput(dom.window, search, ''))
       expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(getByRole(section, 'button', { name: /Chat 00/ }).getAttribute('aria-pressed')).toBe('true')
+      expect(section.querySelectorAll('.squad-chat-agent')).toHaveLength(1)
       expect(dom.window.document.querySelector('[data-testid="agent-picker-static"]')?.textContent).toContain('Chat 00')
+      await dom.act(async () => getByRole(dom.window.document.body, 'button', { name: /Manager \(Pearl\)/ }).click())
+      expect(section.querySelectorAll('.squad-chat-agent')).toHaveLength(0)
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
     } finally {
       await dom.cleanup()
     }
@@ -1794,6 +1866,7 @@ describe('SquadAgentThreads consultant recency', () => {
 
   test('the responsive panel picker has its own disclosure target, but the standalone page keeps ten recents', async () => {
     for (const layout of ['panel', 'page'] as const) {
+      initialSearchParams = 'agent=chat-0'
       const dom = await installDom()
       try {
         const { root } = dom.createRoot()
@@ -1803,7 +1876,7 @@ describe('SquadAgentThreads consultant recency', () => {
         )
         const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"]')!
         const section = dialog.querySelector<HTMLElement>('[data-agent-type-section="consultant"]')!
-        expect(section.querySelectorAll('button[title*=" · consultant · "]')).toHaveLength(layout === 'page' ? 10 : 5)
+        expect(section.querySelectorAll('button[title*=" · consultant · "]')).toHaveLength(layout === 'page' ? 11 : 6)
         const toggle = section.querySelector<HTMLButtonElement>('button[aria-controls]')
         if (layout === 'page') {
           expect(toggle).toBeNull()
@@ -1816,6 +1889,8 @@ describe('SquadAgentThreads consultant recency', () => {
           expect(dialog.contains(dom.window.document.getElementById(targetId))).toBe(true)
           await dom.act(async () => toggle!.click())
           expect(toggle!.getAttribute('aria-expanded')).toBe('false')
+          expect(getByRole(section, 'button', { name: /Chat 00/ }).getAttribute('aria-pressed')).toBe('true')
+          expect(section.querySelectorAll('.squad-chat-agent')).toHaveLength(1)
         }
       } finally {
         await dom.cleanup()

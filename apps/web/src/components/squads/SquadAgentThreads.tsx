@@ -504,8 +504,13 @@ export function SquadAgentThreads({
 
   const managerAgentTypeGroups = agentTypeGroups.filter((group) => group.agentTypeId === 'manager')
   const consultantAgents = filteredAgents.filter((agent) => agent.agentTypeId === 'consultant')
-  const visibleConsultants =
-    showAllConsultants || isSearching ? consultantAgents : consultantAgents.slice(0, recentConsultantLimit)
+  // Like collapsed worker groups, keep the selected eligible row without expanding
+  // the section. The recent limit also must not hide an older open conversation.
+  const visibleConsultants = consultantAgents.filter((agent, index) =>
+    consultantsCollapsed
+      ? agent.id === listSelectedAgentId
+      : showAllConsultants || isSearching || index < recentConsultantLimit || agent.id === listSelectedAgentId
+  )
   const otherAgentTypeGroups = agentTypeGroups.filter(
     (group) => group.agentTypeId !== 'manager' && group.agentTypeId !== 'consultant'
   )
@@ -793,11 +798,11 @@ export function SquadAgentThreads({
             </div>
             <div
               id={`${consultantSectionId}-${inPicker ? 'picker' : 'sidebar'}`}
-              hidden={consultantsCollapsed}
+              hidden={consultantsCollapsed && visibleConsultants.length === 0}
               className="space-y-1"
             >
               {visibleConsultants.map((agent) => renderAgentRow(agent))}
-              {!isSearching && consultantAgents.length > recentConsultantLimit && (
+              {!isSearching && !consultantsCollapsed && consultantAgents.length > recentConsultantLimit && (
                 <button
                   type="button"
                   onClick={() => setShowAllConsultants(!showAllConsultants)}
