@@ -43,6 +43,7 @@ import {
   isTransitionalOperationInProgress,
   removeSession,
   removeSessionIfCurrent,
+  removeSessionForExecution,
   setSessionCompacting,
   isWorkerShuttingDown,
   isWorkerStopping,
@@ -831,7 +832,7 @@ export abstract class AgentRunner {
       // createSession threw (e.g. sandbox ensure failed) — fail through the existing path below.
       // No sandbox_ready is emitted: the ensure did not succeed.
       this.interventionQueue.clear()
-      removeSession(this.agent.id)
+      removeSessionForExecution(this.agent.id, this.execution.id)
       this.session?.dispose?.()
       try {
         await this.revokeAdmissionLease()

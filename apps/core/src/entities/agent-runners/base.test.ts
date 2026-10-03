@@ -360,6 +360,7 @@ describe('AgentRunner (base class)', () => {
 
   // Spies
   let registerSessionSpy: any
+  let removeSessionForExecutionSpy: any
   let removeSessionSpy: any
   let isSessionActiveSpy: any
   let getSessionSpy: any
@@ -395,6 +396,7 @@ describe('AgentRunner (base class)', () => {
     createBufferSpy = spyOn(sessionState, 'createBuffer').mockReturnValue(buffer)
     registerSessionSpy = spyOn(sessionState, 'registerSession').mockImplementation(() => {})
     removeSessionSpy = spyOn(sessionState, 'removeSession').mockImplementation(() => {})
+    removeSessionForExecutionSpy = spyOn(sessionState, 'removeSessionForExecution').mockImplementation(() => {})
     isSessionActiveSpy = spyOn(sessionState, 'isSessionActive').mockReturnValue(true)
     getSessionSpy = spyOn(sessionState, 'getSession').mockImplementation(() =>
       sessionState.isSessionActive(agent.id) ? ({ session: mockSession } as any) : undefined
@@ -456,6 +458,7 @@ describe('AgentRunner (base class)', () => {
     // Restore all spies
     registerSessionSpy?.mockRestore()
     removeSessionSpy?.mockRestore()
+    removeSessionForExecutionSpy?.mockRestore()
     isSessionActiveSpy?.mockRestore()
     getSessionSpy?.mockRestore()
     reconcileDeliveriesSpy?.mockRestore()
@@ -850,7 +853,7 @@ describe('AgentRunner (base class)', () => {
       await expect(runner.run()).rejects.toThrow('model selection failed')
 
       expect(registerSessionSpy).not.toHaveBeenCalled()
-      expect(removeSessionSpy).toHaveBeenCalledWith(agent.id)
+      expect(removeSessionForExecutionSpy).toHaveBeenCalledWith(agent.id, execution.id)
       expect(disposed).toBe(true)
     })
 
@@ -1187,7 +1190,7 @@ describe('AgentRunner (base class)', () => {
       await expect(runner.run()).rejects.toThrow('sandbox ensure failed')
 
       expect(phaseNames(events)).toEqual(['waiting_sandbox'])
-      expect(removeSessionSpy).toHaveBeenCalledWith(agent.id)
+      expect(removeSessionForExecutionSpy).toHaveBeenCalledWith(agent.id, execution.id)
     })
   })
 

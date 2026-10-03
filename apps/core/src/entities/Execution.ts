@@ -761,6 +761,9 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
               )
             }
             if (options?.admissionLease) {
+              // A late startup failure cannot overwrite a stop or another terminal outcome.
+              if (outcome.kind === 'failed')
+                executionPredicates.push(inArray(executions.status, ['running', 'stopping']))
               executionPredicates.push(
                 eq(executions.runnerClaimToken, options.admissionLease.token),
                 eq(executions.runnerClaimGeneration, options.admissionLease.generation)
@@ -1207,6 +1210,23 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     return this.parkForMaintenance(generation)
   }
 
+  private async startupStoppedWithExactLease(lease: AdmissionLease | undefined): Promise<boolean> {
+    if (!lease || lease.executionId !== this.id) return false
+    return db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({ status: executions.status })
+        .from(executions)
+        .where(
+          and(
+            eq(executions.id, this.id),
+            eq(executions.runnerClaimToken, lease.token),
+            eq(executions.runnerClaimGeneration, lease.generation)
+          )
+        )
+      return current?.status === 'stopped' && (await isExactAdmissionLeaseTerminal(tx, lease))
+    })
+  }
+
   // ---------------------------------------------------------------------------
   // Run
   // ---------------------------------------------------------------------------
@@ -1220,7 +1240,8 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
    * Requires the agent relation to be loaded (via setAgent or mustGetAgent).
    */
   async run(): Promise<void> {
-    const { reserveSession, removeSession } = await import('../services/execution/session-state')
+    const { reserveSession, removeSessionForExecution } = await import('../services/execution/session-state')
+    const removeOwnSession = () => removeSessionForExecution(this.agentId, this.id)
 
     if (!reserveSession(this.agentId, this.id)) {
       log.info(`Execution ${this.id} skipped because agent ${this.agentId} already has active capacity`)
@@ -1263,7 +1284,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
       } catch (err) {
         const { MaintenanceAdmissionPaused } = await import('../services/maintenance/admission')
         if (err instanceof MaintenanceAdmissionPaused) {
-          removeSession(this.agentId)
+          removeOwnSession()
           await this.parkForMaintenance(err.generation)
           const { streamManager } = await import('../services/streaming/buffer')
           let buffer = streamManager.get(this.id)
@@ -1276,7 +1297,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
         const { isSessionActive } = await import('../services/execution/session-state')
         const recoveryDisposition = getProvisionRecoveryDisposition(err)
         if (recoveryDisposition && !isSessionActive(this.agentId)) {
-          removeSession(this.agentId)
+          removeOwnSession()
           const now = Date.now()
           try {
             const suspended = await this.transitionTo({
@@ -1315,7 +1336,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
         }
 
         const errorMsg = err instanceof Error ? err.message : String(err)
-        removeSession(this.agentId)
+        removeOwnSession()
         const admissionLease = admissionLeaseFromError(err)
         const failedVersion = this.executionVersion
         const startupFailure = !runnerCreated || isExecutionStartupFailure(err)
@@ -1337,21 +1358,29 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
           // a retry budget must not terminalize that newer state.
           if (this.status !== 'running' || this.executionVersion !== failedVersion) return
         }
-        log.error(`Failed to spawn session for execution ${this.id}:`, err)
-
-        // Push the error to the SSE stream so the frontend shows it instead of hanging.
         const { streamManager } = await import('../services/streaming/buffer')
+        const closeStoppedStartup = async () => {
+          if (!startupFailure || !(await this.startupStoppedWithExactLease(admissionLease))) return false
+          streamManager.get(this.id)?.close()
+          return true
+        }
+        if (await closeStoppedStartup()) return
+
+        // Commit the fenced failure before presenting it. A stop can win between
+        // the read above and this CAS; in that case close only this old stream.
+        const terminalized = await this.fail(errorMsg, admissionLease, classifySetupFailure(err))
+        if (admissionLease && !terminalized) {
+          if (await closeStoppedStartup()) return
+          throw err
+        }
+        log.error(`Failed to spawn session for execution ${this.id}:`, err)
         let buffer = streamManager.get(this.id)
         if (!buffer) buffer = streamManager.create(this.id)
         buffer.push({ type: 'error', message: errorMsg })
         buffer.fail()
-
-        removeSession(this.agentId)
-        const terminalized = await this.fail(errorMsg, admissionLease, classifySetupFailure(err))
-        if (admissionLease && !terminalized) throw err
       }
     } catch (err) {
-      removeSession(this.agentId)
+      removeOwnSession()
       const errorMsg = err instanceof Error ? err.message : String(err)
       log.error(`Failed to run agent (${agent.id}) execution ${this.id}:`, err)
       if (admissionLeaseFromError(err)) throw err
