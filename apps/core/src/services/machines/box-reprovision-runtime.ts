@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { boxUnitControl, boxHomeForUser, LEGACY_BOX_DOT_DIR } from './box-paths'
 import type { Machine, MachineBox } from './queries'
 import type { SshRunner } from './ssh'
+import { LEGACY_MACHINE_ROOT } from './machine-layout-preflight'
 import {
   ReprovisionError,
   parseReprovisionEnv,
@@ -23,13 +24,9 @@ export function readReprovisionEnvCommand(box: MachineBox): string {
   return remote(`home=${q(home)}
 [ ! -L "$home" ] && [ "$(realpath -e "$home")" = "$home" ]
 [ ! -L "$home/.ficus" ]
-a=${q(`${home}/.ficus/server.env`)}
-b=${q(`${home}/${LEGACY_BOX_DOT_DIR}/server.env`)}
-if [ -f "$a" ] && [ -f "$b" ] && ! [ "$a" -ef "$b" ]; then exit 3; fi
-if [ -f "$a" ]; then file=$a; elif [ -f "$b" ]; then file=$b; else exit 3; fi
-[ ! -L "$file" ]
-resolved=$(realpath -e "$file")
-case "$resolved" in "$home/.ficus/server.env"|"$home/${LEGACY_BOX_DOT_DIR}/server.env") ;; *) exit 3;; esac
+file=${q(`${home}/.ficus/server.env`)}
+[ -f "$file" ] && [ ! -L "$file" ]
+[ "$(realpath -e "$file")" = "$home/.ficus/server.env" ]
 cat -- "$file"`)
 }
 
@@ -45,7 +42,8 @@ base=${q(ctl.mode === 'system' ? '/etc/systemd/system' : `${home}/.config/system
 new=${q(ctl.unit)}
 old=${q(ctl.legacy.unit)}
 if [ -f "$base/$new" ] && [ ! -L "$base/$new" ] && [ -f "$base/$old" ] && [ ! -L "$base/$old" ]; then exit 3; fi
-if [ -f "$base/$new" ]; then unit=$new; elif [ -f "$base/$old" ]; then unit=$old; else exit 3; fi
+[ -f "$base/$new" ] && [ ! -L "$base/$new" ]
+unit=$new
 stem=\${unit%.service}
 socket=$stem.socket
 proxy=$stem-proxy.service
@@ -116,8 +114,16 @@ export function verifyInstalledCommand(box: MachineBox): string {
   const ctl = boxUnitControl(box)
   const home = boxHomeForUser(box.unixUser)
   const base = ctl.mode === 'system' ? '/etc/systemd/system' : `${home}/.config/systemd/user`
-  const oldSystem = boxUnitControl({ sandboxId: 'agent_fixture', unixUser: box.unixUser }).legacy
-  const oldUser = boxUnitControl({ sandboxId: 'squad_fixture', unixUser: box.unixUser }).legacy
+  const system = boxUnitControl({ sandboxId: 'agent_fixture', unixUser: box.unixUser })
+  const user = boxUnitControl({ sandboxId: 'squad_fixture', unixUser: box.unixUser })
+  const oldSystem = system.legacy
+  const oldUser = user.legacy
+  const aliases = [
+    ...oldSystem.allUnits.split(' ').map((name, i) => [`/etc/systemd/system/${name}`, system.allUnits.split(' ')[i]!]),
+    ...oldUser.allUnits
+      .split(' ')
+      .map((name, i) => [`${home}/.config/systemd/user/${name}`, user.allUnits.split(' ')[i]!]),
+  ]
   return remote(`u=${q(box.unixUser)}
 home=${q(home)}
 base=${q(base)}
@@ -125,16 +131,27 @@ uid=$(id -u "$u")
 owner=${ctl.mode === 'system' ? '0' : '$uid'}
 [ ! -L "$home/.ficus" ] && [ -d "$home/.ficus" ]
 [ ! -L "$home/.ficus/server.env" ] && [ -f "$home/.ficus/server.env" ]
+if [ -L "$home/${LEGACY_BOX_DOT_DIR}" ] && [ "$(readlink "$home/${LEGACY_BOX_DOT_DIR}")" = .ficus ]; then exit 3; fi
 [ "$(stat -c '%u:%a' "$home/.ficus/server.env")" = "$uid:600" ]
 for name in ${[ctl.unit, ctl.socket, ctl.proxy].map(q).join(' ')}; do
   [ -f "$base/$name" ] && [ ! -L "$base/$name" ]
   [ "$(stat -c '%u:%a' "$base/$name")" = "$owner:644" ]
+  if grep -q '^Alias=' "$base/$name"; then exit 3; fi
 done
 grep -Fq 'ExecStart=/opt/ficus/bin/bun /opt/ficus/server/server.js' "$base/${ctl.unit}"
 grep -Fq '/.ficus/server.env' "$base/${ctl.unit}"
 for old in ${[...oldSystem.allUnits.split(' ').map((n) => `/etc/systemd/system/${n}`), ...oldUser.allUnits.split(' ').map((n) => `${home}/.config/systemd/user/${n}`)].map(q).join(' ')}; do
   if [ -f "$old" ] && [ ! -L "$old" ]; then exit 3; fi
+  if [ -L "$old" ]; then
+    case "$old" in
+${aliases.map(([old, current]) => `      ${q(old!)} ) expected=${q(current!)} ;;`).join('\n')}
+    esac
+    target=$(readlink "$old")
+    if [ "$target" = "$expected" ] || [ "$target" = "\${old%/*}/$expected" ]; then exit 3; fi
+  fi
 done
+old_root=${q(LEGACY_MACHINE_ROOT)}
+if [ -L "$old_root" ] && [ "$(readlink "$old_root")" = ficus ]; then exit 3; fi
 token=${q(`/opt/ficus/browser-tokens/${box.unixUser}.token`)}
 gid=$(getent group ficus-browser | cut -d: -f3)
 [ -n "$gid" ] && [ -f "$token" ] && [ ! -L "$token" ]

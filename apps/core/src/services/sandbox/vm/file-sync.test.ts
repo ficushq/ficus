@@ -190,9 +190,11 @@ describe('syncBoxFiles', () => {
 
   test('a ~/bin/tau removal failure does NOT fail the sync (best-effort)', async () => {
     const client = new FakeClient()
-    client.bashExit = 1
-    // Solo agent with no artifacts: the only /bash issued is the rm -f, so the
-    // nonzero exit exercises exactly the removal's failure path.
+    client.bash = (req: { command: string }) => {
+      client.calls.push({ kind: 'bash', command: req.command })
+      return makeBashStream(req.command.startsWith('rm -f ') ? 1 : 0)
+    }
+    // Only obsolete CLI removal fails; workspace finalization must succeed.
     await syncBoxFiles(
       client as any,
       'agent_a1',
@@ -551,8 +553,7 @@ describe('syncBoxFiles content-hash skip', () => {
     )
     expect(client.writePaths()).toEqual([])
     expect(client.bashes().map((b) => b.command)).toContain(`rm -f -- '${home}/workspace/.ficus/.env'`)
-    // A bare hash while the workspace dot dir bridge lasts (see stampsHashOnlyDuringBridge).
-    expect(stamp.stamped['squad-env']).toBeString()
+    expect(stamp.stamped['squad-env']).toMatchObject({ files: [] })
   })
 
   test('removes only a revoked SSH key from the prior managed manifest', async () => {
@@ -664,8 +665,7 @@ describe('syncBoxFiles content-hash skip', () => {
     const commands = client.bashes().map((b) => b.command)
     expect(commands).toContain(`rm -f -- '${home}/workspace/.ficus/.env'`)
     expect(commands).toContain(`rm -f -- '${home}/.ssh/config' '${home}/.ssh/ficus_remote_prod'`)
-    // A bare hash while the workspace dot dir bridge lasts (see stampsHashOnlyDuringBridge).
-    expect(stamps.stamped['squad-env']).toBeString()
+    expect(stamps.stamped['squad-env']).toMatchObject({ files: [] })
     expect(stamps.stamped['squad-ssh']).toMatchObject({ files: [] })
   })
 
@@ -1444,7 +1444,7 @@ describe('resolveBoxApiUrl', () => {
 // rename reads <root>/<legacy>/.env and .bashrc until it is recycled.
 // ---------------------------------------------------------------------------
 
-describe('syncBoxFiles workspace dot dir bridge', () => {
+describe('syncBoxFiles workspace finalization', () => {
   const SQUAD_BOX = 'squad_11111111-1111-4111-8111-111111111111'
 
   test('moves the box work roots before the first asset write', async () => {
@@ -1478,10 +1478,10 @@ describe('syncBoxFiles workspace dot dir bridge', () => {
     const commands = client.bashes().map((b) => b.command)
     // `rm` through the legacy link would delete the .env just pushed.
     expect(commands.some((command) => command.includes(`/workspace/${LEGACY_WORKSPACE_DOT_DIR}/.env`))).toBe(false)
-    expect(stamp.stamped['squad-env']).toBeString()
+    expect(stamp.stamped['squad-env']).toMatchObject({ files: ['.ficus/.env'] })
   })
 
-  test('stamps the squad env as a bare hash, and never upgrades it to a file list on a hash match', async () => {
+  test('records exact squad env files and upgrades an old hash-only stamp without rewriting bytes', async () => {
     const first = recordingStamp()
     await syncBoxFiles(
       new FakeClient() as any,
@@ -1489,7 +1489,7 @@ describe('syncBoxFiles workspace dot dir bridge', () => {
       squadOpts,
       fullDeps({ box: syncBox(), stampBoxSyncedHash: first.fn })
     )
-    expect(first.stamped['squad-env']).toBeString()
+    expect(first.stamped['squad-env']).toMatchObject({ files: ['.ficus/.env'] })
     // Other assets keep their exact manifests.
     expect(first.stamped.skills).toMatchObject({ files: expect.any(Array) })
 
@@ -1499,13 +1499,54 @@ describe('syncBoxFiles workspace dot dir bridge', () => {
       client as any,
       SQUAD_BOX,
       squadOpts,
-      fullDeps({ box: syncBox(first.stamped), stampBoxSyncedHash: second.fn })
+      fullDeps({
+        box: syncBox({ ...first.stamped, 'squad-env': (first.stamped['squad-env'] as { hash: string }).hash }),
+        stampBoxSyncedHash: second.fn,
+      })
     )
-    expect(second.stamped['squad-env']).toBeUndefined()
+    expect(second.stamped['squad-env']).toMatchObject({ files: ['.ficus/.env'] })
     expect(client.writePaths().some((path) => path.endsWith('/.env'))).toBe(false)
   })
 
-  test('a Core rolled back to the previous release prunes nothing from the stamp this Core records', async () => {
+  test('revoking an old manifest removes canonical secret bytes after link finalization', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'ficus-revoke-finalized-'))
+    try {
+      const root = join(home, 'workspace')
+      mkdirSync(join(root, WORKSPACE_DOT_DIR), { recursive: true })
+      const file = join(root, WORKSPACE_DOT_DIR, '.env')
+      writeFileSync(file, 'SYNTHETIC_REVOKED=fixture\n')
+      symlinkSync(WORKSPACE_DOT_DIR, join(root, LEGACY_WORKSPACE_DOT_DIR))
+      const client = new FakeClient()
+      client.bash = (req: { command: string }) => {
+        client.calls.push({ kind: 'bash', command: req.command })
+        const result = Bun.spawnSync(['bash', '-c', req.command], { stderr: 'pipe' })
+        expect(result.exitCode).toBe(0)
+        return makeBashStream(result.exitCode)
+      }
+      const stamp = recordingStamp()
+      await syncBoxFiles(
+        client as any,
+        SQUAD_BOX,
+        squadOpts,
+        fullDeps({
+          boxHome: () => home,
+          box: syncBox({ 'squad-env': { hash: 'old-manifest', files: [`${LEGACY_WORKSPACE_DOT_DIR}/.env`] } }),
+          readSquadEnv: () => null,
+          listSkillFiles: async () => [],
+          listMemoryFiles: async () => [],
+          listSquadSshFiles: async () => [],
+          stampBoxSyncedHash: stamp.fn,
+        })
+      )
+      expect(() => lstatSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toThrow()
+      expect(existsSync(file)).toBe(false)
+      expect(stamp.stamped['squad-env']).toMatchObject({ files: [] })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  test('revoking a finalized squad env prunes exactly its recorded file', async () => {
     const stamp = recordingStamp()
     await syncBoxFiles(
       new FakeClient() as any,
@@ -1513,25 +1554,16 @@ describe('syncBoxFiles workspace dot dir bridge', () => {
       squadOpts,
       fullDeps({ box: syncBox(), stampBoxSyncedHash: stamp.fn })
     )
-
-    // The previous release's prune (941d9ff5 file-sync.ts syncAsset), for its own squad-env dest:
-    // previous.files ?? (previous ? [dest] : []), minus what it just pushed. After step 0b its dest
-    // resolves through the legacy link to .ficus/.env, so anything this returns is deleted there.
-    const legacyDest = `${LEGACY_WORKSPACE_DOT_DIR}/.env`
-    const previousReleasePrune = (recorded: unknown): string[] => {
-      const previous =
-        typeof recorded === 'string'
-          ? { hash: recorded, files: undefined as string[] | undefined }
-          : (recorded as { hash: string; files?: string[] })
-      const current = new Set([legacyDest])
-      return (previous.files ?? (previous ? [legacyDest] : [])).filter((path) => !current.has(path))
-    }
-
-    expect(previousReleasePrune(stamp.stamped['squad-env'])).toEqual([])
-    // The file-list stamp this bridge avoids is exactly the one that would have deleted .ficus/.env.
-    expect(previousReleasePrune({ hash: 'h', files: [`${WORKSPACE_DOT_DIR}/.env`] })).toEqual([
-      `${WORKSPACE_DOT_DIR}/.env`,
-    ])
+    const client = new FakeClient()
+    const revoked = recordingStamp()
+    await syncBoxFiles(
+      client as any,
+      SQUAD_BOX,
+      squadOpts,
+      fullDeps({ box: syncBox(stamp.stamped), stampBoxSyncedHash: revoked.fn, readSquadEnv: () => null })
+    )
+    expect(client.bashes().map((b) => b.command)).toContain(`rm -f -- '${HOME(SQUAD_BOX)}/workspace/.ficus/.env'`)
+    expect(revoked.stamped['squad-env']).toMatchObject({ files: [] })
   })
 
   test("this Core's revoke still removes the env from a bare-hash stamp", async () => {
@@ -1576,11 +1608,11 @@ describe('syncBoxFiles workspace dot dir bridge', () => {
     }
   })
 
-  test('a refused move does not fail the sync; an ambiguous bash outcome still stops it', async () => {
+  test('a refused finalization or ambiguous outcome stops all asset writes', async () => {
     const refused = new FakeClient()
     refused.bashExit = 1
-    await syncBoxFiles(refused as any, 'agent_a1', soloAgentOpts, fullDeps())
-    expect(refused.writePaths()).toContain(`${HOME('agent_a1')}/.private/identity.pem`)
+    await expect(syncBoxFiles(refused as any, 'agent_a1', soloAgentOpts, fullDeps())).rejects.toThrow()
+    expect(refused.writePaths()).toEqual([])
 
     const ambiguous = new FakeClient()
     ambiguous.bash = (req: { command: string }) => {
@@ -1632,7 +1664,7 @@ describe.skipIf(!gnuMv || !gnuLn)('boxWorkspaceDotDirCommand, run for real again
     }
   }
 
-  test('a legacy dir moves with its bytes and leaves a relative link; a second run is a no-op', () => {
+  test('a legacy dir moves with its bytes and no bridge; a second run is a no-op', () => {
     withBoxHome((home) => {
       mkdirSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
       writeFileSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR, '.env'), 'A=1\n')
@@ -1641,20 +1673,53 @@ describe.skipIf(!gnuMv || !gnuLn)('boxWorkspaceDotDirCommand, run for real again
       expect(runOnBox(home)).toBe(0)
       expect(readFileSync(join(home, 'workspace', WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe('A=1\n')
       expect(existsSync(join(home, 'workspace', WORKSPACE_DOT_DIR, 'monitors', 'm1'))).toBe(true)
-      expect(readlinkSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+      expect(() => lstatSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR))).toThrow()
 
       expect(runOnBox(home)).toBe(0)
-      expect(readlinkSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+      expect(() => lstatSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR))).toThrow()
     })
   })
 
-  test('a fresh root gets .ficus and the link; a missing root is skipped', () => {
+  test('removes an exact relative bridge without changing canonical data', () => {
+    withBoxHome((home) => {
+      const root = join(home, 'workspace')
+      mkdirSync(join(root, WORKSPACE_DOT_DIR), { recursive: true })
+      const file = join(root, WORKSPACE_DOT_DIR, '.env')
+      writeFileSync(file, 'PRESERVE=1\n', { mode: 0o600 })
+      const before = lstatSync(file)
+      symlinkSync(WORKSPACE_DOT_DIR, join(root, LEGACY_WORKSPACE_DOT_DIR))
+      expect(runOnBox(home)).toBe(0)
+      expect(() => lstatSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toThrow()
+      expect(lstatSync(file).ino).toBe(before.ino)
+      expect(lstatSync(file).mode).toBe(before.mode)
+      expect(readFileSync(file, 'utf8')).toBe('PRESERVE=1\n')
+    })
+  })
+
+  test('a dangling bridge or symlinked canonical directory is refused untouched', () => {
+    withBoxHome((home) => {
+      const root = join(home, 'workspace')
+      mkdirSync(root)
+      symlinkSync(WORKSPACE_DOT_DIR, join(root, LEGACY_WORKSPACE_DOT_DIR))
+      expect(runOnBox(home)).toBe(1)
+      expect(readlinkSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+      const outside = join(home, 'outside')
+      mkdirSync(outside)
+      writeFileSync(join(outside, '.env'), 'UNCHANGED')
+      symlinkSync(outside, join(root, WORKSPACE_DOT_DIR))
+      expect(runOnBox(home)).toBe(1)
+      expect(readlinkSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+      expect(readFileSync(join(outside, '.env'), 'utf8')).toBe('UNCHANGED')
+    })
+  })
+
+  test('a fresh root gets only .ficus; a missing root is skipped', () => {
     withBoxHome((home) => {
       mkdirSync(join(home, '.private'))
 
       expect(runOnBox(home)).toBe(0)
       expect(lstatSync(join(home, '.private', WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
-      expect(readlinkSync(join(home, '.private', LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+      expect(() => lstatSync(join(home, '.private', LEGACY_WORKSPACE_DOT_DIR))).toThrow()
       expect(existsSync(join(home, 'workspace'))).toBe(false)
     })
   })

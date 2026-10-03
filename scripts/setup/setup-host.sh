@@ -324,6 +324,7 @@ case "${DB_MODE}" in
   container) ;;
   external)
     [[ -n ${DB_DSN_CFG} ]] || die "config: database.mode=external needs database.dsn (or \$FICUS_SETUP_DATABASE_DSN)"
+    require_canonical_database_ca "${DB_DSN_CFG}"
     # verify-full has no fallback: with no CA to verify against, EVERY
     # connection fails closed. Say so here, while it is still a config error
     # with an obvious fix, instead of letting it surface later as an opaque
@@ -414,7 +415,9 @@ resolve_layout_globals() {
   UPDATE_SUDOERS_FILE=${HL_SUDOERS}
   LAYOUT_HOME_DIR=''
   # Where Core itself looks (lib.sh home_dir_default: by where its data is).
-  [[ -n ${CORE_ENV_HOME_DIR} || -z ${RUN_USER_HOME} ]] || LAYOUT_HOME_DIR=$(home_dir_default "${RUN_USER_HOME}")
+  if [[ -z ${CORE_ENV_HOME_DIR} && -n ${RUN_USER_HOME} ]]; then
+    LAYOUT_HOME_DIR=$(home_dir_default "${RUN_USER_HOME}") || die "Core HOME requires the ficus-host-layout-bridge release before this setup"
+  fi
   BACKUP_HOME_DIR=''
   if [[ ${BACKUP_ENABLE} == true ]]; then
     BACKUP_HOME_DIR=${CORE_ENV_HOME_DIR:-${LAYOUT_HOME_DIR}}
@@ -557,6 +560,8 @@ resolve_secrets() {
 # left behind match the release that is serving (finish or restore), then
 # installs the traps that settle THIS run's migration if the run fails or is
 # signalled. A dry run changes nothing, so neither.
+require_host_layout_ready
+[[ ${SRC_MODE} != artifact ]] || require_artifact_conversion_ready "${SRC_DEST}"
 if [[ ${DRY_RUN} -eq 0 ]]; then
   # One toolkit run at a time may migrate, restore or reconcile this host
   # (the lock, like those steps, is root-only).
@@ -569,13 +574,14 @@ if [[ ${DRY_RUN} -eq 0 ]]; then
   # The host layout as the reconcile left it, BEFORE anything below reads a
   # path: the reconcile may have finished the host layout migration (in a
   # subshell) or reversed it since lib.sh resolved the layout at source time.
-  host_layout_adopt
+  host_layout_adopt --no-repair
   resolve_layout_globals
 fi
 
 # A host whose settings predate the Ficus naming (a re-run of this script on
 # it) is refused HERE, before a single phase downloads, stages, migrates or
 # writes anything — and before resolve_secrets could generate a key.
+require_host_layout_ready
 require_host_env_ready
 
 resolve_secrets
@@ -796,7 +802,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
     plan "decrypt (openssl aes-256-cbc/pbkdf2, passphrase via \$FICUS_SETUP_RESTORE_PASSPHRASE, never argv) + untar to a 0700 temp dir"
     plan "pg_restore --clean --if-exists --no-owner the db.dump into the tenant database — BEFORE the migrate phase, which then fast-forwards if the code is newer"
     plan "unpack the archived HOME_DIR tree into ${BACKUP_HOME_DIR:-<run_user home>/${HL_HOME_NAME}} (before services start)"
-    plan "when the backup was taken with another HOME_DIR (its .env's, else its workspace dir's name under the run user's home): rebase the restored rows' stored paths to this host's (dist/rebase-home.js, after the migrations; refuses when rows already name both), and on layout 2 link the legacy HOME to the Ficus one"
+    plan "refuse legacy HOME backups before database/workspace restoration; canonical/custom HOME backups rebase declared stored paths after migrations without creating legacy links"
     plan "carry FICUS_ENCRYPTION_KEY forward from the archived .env (else the restored DB's encrypted secrets are unreadable)"
     [[ ${RESTORE_STRIP_CREDENTIALS} == 1 ]] &&
       plan "cross-subdomain restore: DELETE FROM user_credentials (WebAuthn passkeys are origin-bound; users are kept)"
@@ -874,8 +880,7 @@ fi
 
 # ============================================================== phases
 
-phase_preflight() {
-  phase_step preflight "phase 0/8: preflight"
+prepare_source_tools() {
   [[ $(uname -s) == Linux ]] || die "setup-host.sh runs ON the Linux target — from a control machine use provision.sh"
   [[ -d /run/systemd/system ]] || die "systemd is required (is this a container?)"
   if [[ -r /etc/os-release ]]; then
@@ -927,10 +932,6 @@ phase_preflight() {
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}" ca-certificates
   fi
 
-  # Must precede the build phase — see ensure_swapfile's comment for why a
-  # 2GB tenant VM cannot bundle the web app without it.
-  ensure_swapfile
-
   # Shared with upgrade-host.sh so the two paths cannot disagree about where
   # bun lives; only setup falls through to installing it.
   bun_path_prepend
@@ -968,6 +969,13 @@ phase_preflight() {
     die "bun version $(bun --version) still does not match pinned ${FICUS_BUN_VERSION} after install"
   fi
   log_info "bun: $(command -v bun) ($(bun --version))"
+}
+
+# Source acquisition requires packages/Bun first on a fresh host. Delay host
+# runtime provisioning until the acquired target has passed the layout gate.
+phase_preflight() {
+  phase_step preflight "phase 0/8: preflight"
+  ensure_swapfile
   id -u "${RUN_USER}" >/dev/null 2>&1 ||
     die "core.run_user '${RUN_USER}' does not exist on this host — create it first (useradd) or leave core.run_user empty"
   ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
@@ -1095,8 +1103,15 @@ phase_source() {
     ARTIFACT_RELEASE_DIR=$(artifact_release_dir "${SRC_DEST}" "${sha}" "${digest12}")
     ARTIFACT_RELEASE_ID="${sha}-${digest12}"
   else
+    GIT_PRE_CHECKOUT_HOOK=setup_git_target_check
     git_source_sync
   fi
+}
+
+setup_git_target_check() { # REV, before an existing checkout changes
+  git_rev_is_ficus "${SRC_DEST}" "$1" || die "refusing a pre-Ficus Core revision — use the bridge release first"
+  require_host_layout_ready '' "$(git_rev_host_layout "${SRC_DEST}" "$1")"
+  host_migrate_require_privilege "${SRC_DEST}"
 }
 
 phase_build() {
@@ -1139,7 +1154,7 @@ phase_database() {
     # under the legacy etc dir (a stored tenant DSN the control plane has not
     # rewritten yet) gets the compat link a migrated host has.
     [[ -z ${DB_CA_PATH} ]] || install_database_ca "${DB_CA_PATH}"
-    host_layout_link_legacy_ca_dir "${DB_DSN_CFG}"
+    require_canonical_database_ca "${DB_DSN_CFG}"
     # Best-effort reachability probe before we try to migrate.
     if [[ ${DB_DSN_CFG} =~ @([^:/@]+):([0-9]+)/ ]]; then
       local host=${BASH_REMATCH[1]} port=${BASH_REMATCH[2]}
@@ -1258,6 +1273,8 @@ phase_restore() {
   # hand-rename.)
   local archived_key=''
   archived_encryption_key archived_key "${workdir}/.env"
+  RESTORE_HOME_FROM=$(restore_archived_home "${workdir}" "${run_home:-${target_home%/*}}")
+  require_finalized_restore_home "${workdir}" "${RESTORE_HOME_FROM}" "${target_home}"
 
   # (a) pg_restore the dump. --clean --if-exists makes a retried provision
   # idempotent (a prior run's objects are dropped-then-recreated); --no-owner
@@ -1288,14 +1305,12 @@ phase_restore() {
   # The HOME the backup was taken with: its database stores absolute paths
   # under it. When it is not target_home (a backup from a layout-1 host on a
   # layout-2 one, or the reverse), restore_rebase_stored_home rebases them once
-  # the database is on this release's schema, and a legacy HOME becomes the
-  # compat link to the Ficus one a moved host has.
-  RESTORE_HOME_FROM=$(restore_archived_home "${workdir}" "${run_home:-${target_home%/*}}")
+  # the database is on this release's schema, without creating a legacy HOME link. Legacy envelopes were refused before
+  # pg_restore because their unregistered stored paths depended on that link.
   if [[ ${RESTORE_HOME_FROM} == "${target_home}" ]]; then
     log_info "restore: the backup was taken with HOME ${RESTORE_HOME_FROM}, as this host's — its stored paths stay as they are"
   else
     log_info "restore: the backup was taken with HOME ${RESTORE_HOME_FROM}, this host's is ${target_home} — its stored paths are rebased after the migrations"
-    restore_link_legacy_home "${RESTORE_HOME_FROM}" "${target_home}" "${run_home:-${target_home%/*}}"
   fi
 
   # (c) carry FICUS_ENCRYPTION_KEY forward from the archived .env (read and
@@ -1550,6 +1565,7 @@ EOF
 # package.json), the checkout in git mode.
 require_ficus_target_release() {
   local tree=${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}
+  require_host_layout_ready "${tree}"
   core_release_is_ficus "${tree}" ||
     die "refusing ${tree}: it is a pre-Ficus Core release — this toolkit installs Ficus releases only; use the toolkit from the release you are installing"
   # A non-root (sudo) re-run cannot do a host migration this release needs:
@@ -1563,9 +1579,10 @@ require_ficus_target_release() {
   fi
 }
 
-phase_preflight
+prepare_source_tools
 phase_source
 require_ficus_target_release
+phase_preflight
 phase_build
 phase_database
 [[ -n ${RESTORE_URL} ]] && phase_restore

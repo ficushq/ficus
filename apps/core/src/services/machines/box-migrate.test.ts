@@ -6,7 +6,7 @@ import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from '../../entities/agent-runners/con
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { BoxArchiveStreamError } from './box-manager'
 import type { ArchiveCodec, StateDirFacts } from './box-manager'
-import { LEGACY_BOX_DOT_DIR, boxUnixUser } from './box-paths'
+import { boxUnixUser } from './box-paths'
 import { migrateBox, sandboxHasActiveExecution } from './box-migrate'
 import type { MigrateDeps } from './box-migrate'
 import { createMigrationManifest } from './migration-manifest'
@@ -530,9 +530,7 @@ describe('migrateBox', () => {
     await migrateBox(h.sandboxId, h.targetMachineId, h.deps)
     const read = h.runnerCommands.find((c) => c.includes('server.env'))!
     const home = `/home/${boxUnixUser(h.sandboxId)}`
-    expect(read).toBe(
-      `sudo cat '${home}/.ficus/server.env' 2>/dev/null || sudo cat '${home}/${LEGACY_BOX_DOT_DIR}/server.env'`
-    )
+    expect(read).toBe(`sudo cat '${home}/.ficus/server.env'`)
   })
 
   it('re-resolves a reverse-tunnel FICUS_API_URL against the TARGET machine', async () => {

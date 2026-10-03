@@ -1,8 +1,9 @@
+import { SANDBOX_IDENTITY_LEGACY } from '../retired-identity.fixture'
 import { describe, test, expect, mock, spyOn } from 'bun:test'
 import * as k8s from '@kubernetes/client-node'
 import { K8sPodManager, podDeathSignal, type PodState } from './pod-manager'
 import { reconcilableSpecHash, sandboxPodName, sandboxPodNames } from './pod-spec'
-import { SANDBOX_IDENTITY_LEGACY, SANDBOX_IDENTITY_NEW, sandboxPodLabelSelector } from '../identity-names'
+import { SANDBOX_IDENTITY_NEW, sandboxPodLabelSelector } from '../identity-names'
 import * as secretStoreModule from '../../secrets/store'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { resourceDiagnostics } from '../../../lib/infra/resource-diagnostics'
@@ -234,7 +235,7 @@ describe('K8sPodManager', () => {
   // running before this release) must still be found, adopted, and never
   // double-created beside a fresh pod under the write (`ficus-sb-`) name.
   describe('ensurePod pod-name discovery (I1)', () => {
-    test('adopts a pod found only under the legacy pod-name prefix — no duplicate create', async () => {
+    test('ignores retired pod names and creates only under the canonical name', async () => {
       const sandboxId = 'agent_x'
       const writeName = sandboxPodName(sandboxId)
       const legacyName = sandboxPodName(sandboxId, SANDBOX_IDENTITY_LEGACY.k8sPodNamePrefix)
@@ -266,14 +267,14 @@ describe('K8sPodManager', () => {
         sandboxType: 'agent',
       } as any)
 
-      // Every read name was tried (write first) before settling on the legacy one.
+      // Only the canonical name is queried.
       const readNames = readNamespacedPod.mock.calls.map((call) => (call[0] as { name: string }).name)
       expect(readNames.slice(0, 2)).toEqual(sandboxPodNames(sandboxId))
-      // Adopted the legacy pod — no create, and the tracked/returned name is the legacy one.
-      expect(createNamespacedPod).not.toHaveBeenCalled()
-      expect(waitForPodReady).toHaveBeenCalledWith(legacyName)
-      expect(endpoint).toBe(`${legacyName}.endpoint:50051`)
-      expect((fakeThis.pods.get(sandboxId) as any)?.podName).toBe(legacyName)
+      // The retired pod is neither adopted nor deleted.
+      expect(createNamespacedPod).toHaveBeenCalledTimes(1)
+      expect(waitForPodReady).toHaveBeenCalledWith(writeName)
+      expect(endpoint).toBe(`${writeName}.endpoint:50051`)
+      expect((fakeThis.pods.get(sandboxId) as any)?.podName).toBe(writeName)
     })
 
     test('creates under the write name when no pod exists under any read name', async () => {
@@ -360,30 +361,30 @@ describe('K8sPodManager', () => {
       }
     }
 
-    test('queryPodStatus finds a legacy-named pod after a restart (untracked sandbox)', async () => {
+    test('queryPodStatus ignores a retired-name pod after a restart (untracked sandbox)', async () => {
       const coreApi = fakeCoreApi({ [legacyName]: runningPod(legacyName) })
       const fakeThis = baseFakeThis(coreApi)
 
       const result = await K8sPodManager.prototype.queryPodStatus.call(fakeThis as any, sandboxId)
 
-      expect(result.status).toBe('running')
+      expect(result.status).toBe('not_found')
       const triedNames = coreApi.readNamespacedPod.mock.calls.map((c) => (c[0] as any).name)
-      expect(triedNames).toEqual([writeName, legacyName]) // write name tried first, then legacy
+      expect(triedNames).toEqual([writeName]) // write name tried first, then legacy
     })
 
-    test('attachExistingSandbox (via resolvePodName) finds a legacy-named pod after a restart', async () => {
+    test('attachExistingSandbox (via resolvePodName) ignores a retired-name pod after a restart', async () => {
       const coreApi = fakeCoreApi({ [legacyName]: runningPod(legacyName) })
       const fakeThis = baseFakeThis(coreApi)
 
       const resolved = await K8sPodManager.prototype.resolvePodName.call(fakeThis as any, sandboxId)
-      expect(resolved).toBe(legacyName)
+      expect(resolved).toBe(writeName)
       const status = await K8sPodManager.prototype.queryPodStatus.call(fakeThis as any, sandboxId, resolved)
-      expect(status.status).toBe('running')
-      expect(status.containerReady).toBe(true)
+      expect(status.status).toBe('not_found')
+      expect(status.containerReady).toBeUndefined()
     })
 
-    test('streamPodLogs resolves a legacy-named pod after a restart and streams from it', async () => {
-      const coreApi = fakeCoreApi({ [legacyName]: runningPod(legacyName) })
+    test('streamPodLogs resolves a canonical pod after a restart and streams from it', async () => {
+      const coreApi = fakeCoreApi({ [writeName]: runningPod(writeName) })
       const logSpy = spyOn(k8s.Log.prototype, 'log').mockResolvedValue({ abort: () => {} } as any)
       const fakeThis = {
         ...baseFakeThis(coreApi),
@@ -405,18 +406,18 @@ describe('K8sPodManager', () => {
       }
       expect(logSpy.mock.calls.length).toBeGreaterThan(0)
       const [, podArg] = logSpy.mock.calls[0] as any[]
-      expect(podArg).toBe(legacyName)
+      expect(podArg).toBe(writeName)
       logSpy.mockRestore()
     })
 
-    test('terminatePod actually deletes a legacy-named pod after a restart (does not 404-and-leak)', async () => {
-      const coreApi = fakeCoreApi({ [legacyName]: runningPod(legacyName) })
+    test('terminatePod actually deletes a canonical pod after a restart (does not 404-and-leak)', async () => {
+      const coreApi = fakeCoreApi({ [writeName]: runningPod(writeName) })
       const fakeThis = baseFakeThis(coreApi)
 
       await K8sPodManager.prototype['terminatePod'].call(fakeThis as any, sandboxId, 'manual')
 
       expect(coreApi.deleteNamespacedPod).toHaveBeenCalledWith({
-        name: legacyName,
+        name: writeName,
         namespace: 'ficus-sandboxes',
         gracePeriodSeconds: 0,
       })
@@ -447,10 +448,7 @@ describe('K8sPodManager', () => {
   describe('spec hash under either identity set', () => {
     const desired = reconcilableSpecHash({ ephemeralStorageLimitGi: 25 })
 
-    for (const [label, key] of [
-      ['new', SANDBOX_IDENTITY_NEW.k8sSpecHashAnnotation],
-      ['legacy', SANDBOX_IDENTITY_LEGACY.k8sSpecHashAnnotation],
-    ] as const) {
+    for (const [label, key] of [['new', SANDBOX_IDENTITY_NEW.k8sSpecHashAnnotation]] as const) {
       test(`an adopted pod carrying only the ${label} annotation is compared by that hash, not treated as drifted`, async () => {
         const readNamespacedPod = mock(async () => ({
           metadata: { name: 'sb-squad-abc', annotations: { [key]: desired } },

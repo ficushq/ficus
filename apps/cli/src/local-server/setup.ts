@@ -205,7 +205,7 @@ export async function runSetup(
   // now, it would come up beside itself under the new names.
   if (rootOwner && recordIdentity(rootOwner[1]) !== CURRENT_IDENTITY) {
     throw new SetupFailure(
-      `this checkout is instance "${rootOwner[0]}" under its pre-rename names; run \`ficus server rename-identity --root ${root}\` first, then re-run setup`
+      `this checkout is instance "${rootOwner[0]}" under its pre-rename names — upgrade through the ficus-host-layout-bridge Core release first`
     )
   }
   if (!rootOwner && persistedLabel(root) === LEGACY_LOCAL_INSTANCE) {

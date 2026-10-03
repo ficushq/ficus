@@ -1,3 +1,4 @@
+import { SANDBOX_IDENTITY_LEGACY } from '../retired-identity.fixture'
 import { describe, test, expect, spyOn } from 'bun:test'
 import { createHash } from 'crypto'
 import {
@@ -15,7 +16,7 @@ import {
   type SquadSandboxConfig,
 } from './pod-spec'
 import { getSandboxSkillsDir } from '../../agent/skill-materializer'
-import { SANDBOX_IDENTITY_LEGACY, SANDBOX_IDENTITY_READ, SANDBOX_IDENTITY_WRITE } from '../identity-names'
+import { SANDBOX_IDENTITY_WRITE } from '../identity-names'
 import * as workspaceLayoutModule from '../workspace-layout'
 
 /** Build a spec with the env seam stubbed out (no secret store / git identity). */
@@ -60,8 +61,8 @@ describe('sandboxPodNames', () => {
   test('lists the write name first, then every other read name', () => {
     const names = sandboxPodNames('squad_abc123')
     expect(names[0]).toBe('ficus-sb-squad-abc123')
-    expect(names).toContain('tau-sb-squad-abc123')
-    expect(names).toHaveLength(2)
+    expect(names).not.toContain('tau-sb-squad-abc123')
+    expect(names).toHaveLength(1)
   })
 })
 
@@ -238,7 +239,7 @@ describe('buildSandboxPodSpec', () => {
       podName: 'sb-squad-11111111-1111-4111-8111-111111111111',
       config,
     })
-    const other = SANDBOX_IDENTITY_READ.find((set) => set !== SANDBOX_IDENTITY_WRITE)!
+    const other = SANDBOX_IDENTITY_LEGACY
     expect(podSpec.metadata?.labels?.app).toBe(SANDBOX_IDENTITY_WRITE.k8sAppLabelValue)
     expect(podSpec.metadata?.annotations?.[SANDBOX_IDENTITY_WRITE.k8sSpecHashAnnotation]).toBe(
       reconcilableSpecHash(config)

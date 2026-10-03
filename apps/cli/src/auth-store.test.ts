@@ -22,7 +22,7 @@ describe('getAuthStorePath', () => {
       process.env.HOME = home
       expect(getAuthStorePath()).toBe(join(home, '.ficus', 'cli', 'auth.json'))
       mkdirSync(join(home, LEGACY_HOME_DIR_NAME))
-      expect(getAuthStorePath()).toBe(join(home, LEGACY_HOME_DIR_NAME, 'cli', 'auth.json'))
+      expect(getAuthStorePath()).toBe(join(home, '.ficus', 'cli', 'auth.json'))
     } finally {
       if (originalHome === undefined) delete process.env.HOME
       else process.env.HOME = originalHome

@@ -14,6 +14,7 @@ import { tmpdir } from 'os'
 import { join, resolve } from 'path'
 import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import {
+  assertDefaultRegistryReady,
   NoRootError,
   UnknownInstanceError,
   canonicalRoot,
@@ -67,7 +68,7 @@ describe('state file', () => {
   })
   it('keeps reading the registry from a legacy CLI home that has not moved yet', () => {
     mkdirSync(join(tmp, LEGACY_HOME_DIR_NAME))
-    expect(getStatePath({ HOME: tmp })).toBe(join(tmp, LEGACY_HOME_DIR_NAME, 'cli', 'local-server.json'))
+    expect(getStatePath({ HOME: tmp })).toBe(join(tmp, '.ficus', 'cli', 'local-server.json'))
   })
   it('round-trips an instance through a directory it has to create, and removes it', () => {
     const path = join(tmp, 'nested', 'state.json')
@@ -398,4 +399,43 @@ describe('mutation-red registry guards', () => {
     // Read-only listing still answers (empty), never throws.
     expect(readRegistry(path).instances).toEqual({})
   })
+})
+
+describe('default registry layout refusal', () => {
+  it('allows a fresh home without creating either directory', () => {
+    expect(() => assertDefaultRegistryReady({ HOME: tmp })).not.toThrow()
+    expect(readdirSync(tmp)).toEqual([])
+  })
+  it('refuses even an unreadable-schema old registry without parsing or adopting it', () => {
+    const old = join(tmp, LEGACY_HOME_DIR_NAME, 'cli')
+    mkdirSync(old, { recursive: true })
+    writeFileSync(join(old, 'local-server.json'), 'not-json')
+    expect(() => assertDefaultRegistryReady({ HOME: tmp })).toThrow('ficus-host-layout-bridge')
+    expect(() =>
+      assertDefaultRegistryReady({ HOME: tmp, FICUS_LOCAL_SERVER_STATE: getStatePath({ HOME: tmp }) })
+    ).toThrow('ficus-host-layout-bridge')
+  })
+  it('allows the exact migrated home link with its canonical registry', () => {
+    const canonical = join(tmp, '.ficus', 'cli')
+    mkdirSync(canonical, { recursive: true })
+    writeFileSync(join(canonical, 'local-server.json'), JSON.stringify({ version: 3, instances: {} }))
+    symlinkSync('.ficus', join(tmp, LEGACY_HOME_DIR_NAME))
+    expect(() => assertDefaultRegistryReady({ HOME: tmp })).not.toThrow()
+  })
+  it('honors an explicitly selected registry independently of home inventory', () => {
+    const old = join(tmp, LEGACY_HOME_DIR_NAME, 'cli')
+    mkdirSync(old, { recursive: true })
+    writeFileSync(join(old, 'local-server.json'), 'not-json')
+    expect(() =>
+      assertDefaultRegistryReady({ HOME: tmp, FICUS_LOCAL_SERVER_STATE: join(tmp, 'selected.json') })
+    ).not.toThrow()
+  })
+})
+
+it('refuses two separate default registries before hiding the old instance', () => {
+  for (const dir of ['.ficus', LEGACY_HOME_DIR_NAME]) {
+    mkdirSync(join(tmp, dir, 'cli'), { recursive: true })
+    writeFileSync(join(tmp, dir, 'cli', 'local-server.json'), JSON.stringify({ version: 3, instances: {} }))
+  }
+  expect(() => assertDefaultRegistryReady({ HOME: tmp })).toThrow('ficus-host-layout-bridge')
 })

@@ -6,7 +6,7 @@ import { assertEnvFileNaming, expandTilde } from '@ficus/shared/node'
 import { applyUpdate, type UpdateDeps } from './update'
 import { bootstrap, defaultInstallDir, DEFAULT_REPO } from '../local-server/bootstrap'
 import { parseEnvFile } from '../local-server/env-file'
-import { cliHome } from '../local-server/home-move'
+import { recoveryCliHome, cliHome } from '../local-server/home-move'
 import { runOfflineUpdate } from '../local-server/offline-update'
 import { resolveSetupOptions, type Prompter, type RawSetupFlags, SetupOptionsError } from '../local-server/options'
 import { defaultSysboxHostDeps, runSysboxBootstrap, type SysboxHostDeps } from '../local-server/sysbox'
@@ -17,7 +17,13 @@ import {
   parseDatabaseUrl,
   waitForPostgres,
 } from '../local-server/postgres'
-import { instanceNames, normalizeLabel, recordIdentity, type InstanceIdentity } from '../local-server/instance'
+import {
+  instanceNames,
+  normalizeLabel,
+  recordIdentity,
+  requireCurrentIdentity,
+  type InstanceIdentity,
+} from '../local-server/instance'
 import {
   assertNoRenameInFlight,
   RENAME_JOURNAL,
@@ -38,6 +44,7 @@ import { canPrompt, terminalPrompter } from '../local-server/prompt'
 import { defaultRunner, type Runner } from '../local-server/runner'
 import { defaultSetupDeps, runSetup, type SetupDeps } from '../local-server/setup'
 import {
+  assertDefaultRegistryReady,
   canonicalRoot,
   defaultLabel,
   findInstanceByRoot,
@@ -146,7 +153,7 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
   // are in, never the one that happens to be installed. See resolveSetupRoot.
   const setupRoot = (opts: { root?: string }) => resolveSetupRoot({ flag: opts.root, env: deps.env, cwd: deps.cwd })
   // The default instance's data dir when neither the checkout's .env nor its label names one:
-  // the CLI home (`~/.ficus`, or a legacy home that has not moved yet), shown with a `~`.
+  // the canonical CLI home (`~/.ficus`), shown with a `~`.
   const defaultDataDir = () => join('~', basename(cliHome({ homedir: deps.env.HOME ?? homedir() })))
   const managed = (opts: { root?: string; instance?: string }) => {
     const selected = root(opts)
@@ -157,7 +164,7 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
     // the canonical registry-owned root so aliases cannot break ownership
     // markers or make subprocess cwd drift from setup's persisted identity.
     const dir = canonicalRoot(registered.record.root)
-    // An entry rename-identity has not moved yet keeps the names it was installed under.
+    requireCurrentIdentity(registered.record)
     const identity = recordIdentity(registered.record)
     const context =
       deps.supervisorContext?.(dir, registered.label, registered.record.supervisor, identity) ??
@@ -184,7 +191,7 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
     const record = readRegistryStrict(deps.statePath).instances[label]
     return record && !isCheckout(record.root) ? { label, record } : undefined
   }
-  const guarded =
+  const caught =
     (fn: (...args: unknown[]) => Promise<void>) =>
     async (...args: unknown[]) => {
       try {
@@ -197,6 +204,12 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
         outputError(error as Error, exitCode)
       }
     }
+
+  const guarded = (fn: (...args: unknown[]) => Promise<void>) =>
+    caught(async (...args: unknown[]) => {
+      assertDefaultRegistryReady(deps.env, deps.statePath)
+      await fn(...args)
+    })
 
   server
     .command('install')
@@ -237,6 +250,8 @@ Examples:
         readRegistryStrict(deps.statePath)
         const home = deps.env.HOME ?? homedir()
         const root = resolve(expandTilde((opts.root as string | undefined) ?? defaultInstallDir(home, deps.statePath)))
+        const registered = findInstanceByRoot(root, deps.statePath)
+        if (registered) requireCurrentIdentity(registered.record)
         await bootstrap(
           { root, repo: opts.repo as string, ref: opts.ref as string, setupArgs },
           { runner: deps.runner, which: deps.which, env: deps.env, home, log: narrate }
@@ -273,6 +288,7 @@ Examples:
         const persistedEnv = rootEnv(dir)
         const persistedPort = Number(persistedEnv.PORT)
         const registered = findInstanceByRoot(dir, deps.statePath)?.record
+        if (registered) requireCurrentIdentity(registered)
         const marked = persistedEnv.FICUS_UPDATE_SUPERVISOR
         const markedSupervisor = (LOCAL_SUPERVISORS as readonly string[]).includes(marked ?? '')
           ? (marked as LocalSupervisor)
@@ -327,6 +343,7 @@ Examples:
         // Written even when it already IS the default: a registry whose
         // `default` line was lost or hand-edited to a stale label resolves to
         // the alphabetically-first instance, so `use` is also the repair.
+        requireCurrentIdentity(registry.instances[label])
         registry.default = label
         writeRegistry(registry, deps.statePath)
         narrate(`Default instance: ${label} (${registry.instances[label].root})`)
@@ -361,7 +378,7 @@ Examples:
           unsupportedIdentity?: number
         }[] = []
         for (const [label, record] of entries) {
-          if (unsupported.has(label)) {
+          if (unsupported.has(label) || record.identity !== 2) {
             rows.push({
               label,
               root: record.root,
@@ -370,7 +387,7 @@ Examples:
               default: label === def,
               supervisor: record.supervisor,
               processes: [],
-              unsupportedIdentity: record.identity,
+              unsupportedIdentity: record.identity ?? 1,
             })
             continue
           }
@@ -419,7 +436,7 @@ Examples:
             : rows
                 .map((r) => {
                   if (r.unsupportedIdentity !== undefined)
-                    return `${r.default ? '*' : ' '} ${r.label.padEnd(labelW)}  ${r.supervisor}  ${r.root.padEnd(rootW)}  ${r.url.padEnd(urlW)}  identity ${r.unsupportedIdentity}: registered by a newer CLI — update this one to manage it`
+                    return `${r.default ? '*' : ' '} ${r.label.padEnd(labelW)}  ${r.supervisor}  ${r.root.padEnd(rootW)}  ${r.url.padEnd(urlW)}  identity ${r.unsupportedIdentity}: ${r.unsupportedIdentity === 1 ? 'upgrade through ficus-host-layout-bridge first' : 'registered by a newer CLI — update this one to manage it'}`
                   const names = instanceNames(r.label, recordIdentity(registry.instances[r.label]))
                   const state = (name: string) => r.processes.find((p) => p.name === name)?.status ?? 'not registered'
                   const procs = `api: ${state(names.api)}  worker: ${state(names.worker)}`
@@ -558,15 +575,26 @@ Examples:
     .option('--dry-run', 'Print the plan and change nothing')
     .option('--undo', 'Undo a completed rename of this instance (back to the old names)')
     .action(
-      guarded(async (opts) => {
+      caught(async (opts) => {
         const o = opts as { root?: string; instance?: string; dryRun?: boolean; undo?: boolean }
-        const dir = root(o)
+        const recoveryStatePath =
+          !deps.env.FICUS_LOCAL_SERVER_STATE && deps.statePath === getStatePath(deps.env)
+            ? join(recoveryCliHome(home()), 'cli', 'local-server.json')
+            : deps.statePath
+        const recoveryJournal = () => deps.renameJournalPath ?? join(recoveryCliHome(home()), RENAME_JOURNAL)
+        const dir = resolveRoot({
+          flag: o.root,
+          instance: o.instance,
+          env: deps.env,
+          cwd: deps.cwd,
+          statePath: recoveryStatePath,
+        })
         const result: RenameReport = await renameIdentity(
           { root: dir, dryRun: o.dryRun === true, undo: o.undo === true },
           {
             runner: deps.runner,
-            statePath: deps.statePath,
-            journalPath: renameJournal,
+            statePath: recoveryStatePath,
+            journalPath: recoveryJournal,
             home: home(),
             fetch: deps.fetch,
             sleep: deps.sleep,
@@ -654,6 +682,7 @@ Examples:
         const stale = o.instance !== undefined ? staleRegistration(o.instance) : undefined
         if (stale) {
           const { label, record } = stale
+          requireCurrentIdentity(record)
           if (
             !o.yes &&
             !(await deps.prompter.confirm(

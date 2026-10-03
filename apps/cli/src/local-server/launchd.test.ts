@@ -70,7 +70,7 @@ describe('nativeLogPath', () => {
     try {
       mkdirSync(join(home, LEGACY_HOME_DIR_NAME))
       expect(nativeLogPath({ home, label: 'Smoke' }, 'worker')).toBe(
-        join(home, LEGACY_HOME_DIR_NAME, 'logs', launchdNames({ home, label: 'Smoke' }, 'worker').process + '.log')
+        join(home, '.ficus', 'logs', launchdNames({ home, label: 'Smoke' }, 'worker').process + '.log')
       )
     } finally {
       rmSync(home, { recursive: true, force: true })

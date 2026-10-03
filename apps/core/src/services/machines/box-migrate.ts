@@ -4,7 +4,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { isVmRuntime as isVmRuntimeReal } from '../sandbox/runtime'
 import { resolveBoxApiUrl as resolveBoxApiUrlReal } from '../sandbox/vm/file-sync'
-import { LEGACY_BOX_DOT_DIR, boxDotDir, boxHomeForUser, boxUnitControl, boxUnixUser } from './box-paths'
+import { boxDotDir, boxHomeForUser, boxUnitControl, boxUnixUser } from './box-paths'
 import {
   BoxArchiveStreamError,
   durableStateDirsForRole,
@@ -743,12 +743,8 @@ export async function migrateBox(
     let port: number | undefined
     progress('provision')
     try {
-      // The source may not have been re-provisioned since the rename: its server.env
-      // is then still under the legacy dot dir (bridge, phase 5 U4).
-      const envRes = await runner.run(
-        oldMachine,
-        `sudo cat ${shellQuote(`${boxDotDir(home)}/server.env`)} 2>/dev/null || sudo cat ${shellQuote(`${home}/${LEGACY_BOX_DOT_DIR}/server.env`)}`
-      )
+      // Finalized sources keep the environment only in the canonical box home.
+      const envRes = await runner.run(oldMachine, `sudo cat ${shellQuote(`${boxDotDir(home)}/server.env`)}`)
       if (envRes.exitCode !== 0) {
         throw new Error(`server.env read failed (exit ${envRes.exitCode}): ${envRes.stderr.trim()}`)
       }

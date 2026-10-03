@@ -35,7 +35,7 @@ describe('bootstrap', () => {
   })
   it('puts the checkout in a legacy CLI home that has not moved yet', () => {
     mkdirSync(join(tmp, LEGACY_HOME_DIR_NAME))
-    expect(defaultInstallDir(tmp, join(tmp, 'no-registry.json'))).toBe(join(tmp, LEGACY_HOME_DIR_NAME, 'ficus'))
+    expect(defaultInstallDir(tmp, join(tmp, 'no-registry.json'))).toBe(join(tmp, '.ficus', 'ficus'))
   })
   it("reuses the registered default instance's root, whatever its directory is called", () => {
     const statePath = join(tmp, 'state.json')

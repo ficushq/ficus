@@ -183,13 +183,13 @@ HOME_DOT_DIR=".ficus"
 
 # Bridge (phase 5, U4): the names a box provisioned before the Ficus rename
 # carries — its units (system and user mode), its HOME dot dir — and the machine
-# root bootstrap.sh moves. Provisioning such a box tears its legacy units down,
-# moves the dot dir (leaving the old name as a relative link) and installs the
-# Ficus units, which carry the old names as Alias=.
+# root the retained one-shot recovery tools move. Normal C-FIN provisioning
+# refuses those real layouts and removes only exact compatibility links.
 LEGACY_SYSTEM_UNIT_PREFIX='tau-box'             # ficus-p5-bridge
 LEGACY_USER_UNIT_PREFIX='tau-sandbox-server'    # ficus-p5-bridge
 LEGACY_HOME_DOT_DIR='.tau'                      # ficus-p5-bridge
 LEGACY_ROOT='/opt/tau'                          # ficus-p5-bridge
+LEGACY_BROWSER_NAME='tau-browser'              # ficus-p5-bridge
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -1390,7 +1390,6 @@ render_unit() {
       ''
       '[Install]'
       'WantedBy=multi-user.target'
-      "Alias=$(legacy_unit_name)"
     )
   else
     unit=(
@@ -1418,7 +1417,6 @@ render_unit() {
       ''
       '[Install]'
       'WantedBy=default.target'
-      "Alias=$(legacy_unit_name)"
     )
   fi
   printf '%s\n' "${unit[@]}"
@@ -1440,8 +1438,7 @@ render_socket_unit() {
     "Service=$(proxy_name)" \
     '' \
     '[Install]' \
-    'WantedBy=sockets.target' \
-    "Alias=$(legacy_socket_name)"
+    'WantedBy=sockets.target'
 }
 
 # The PROXY unit: socket-activated, forwards the accepted TCP connection to the
@@ -1659,9 +1656,83 @@ reconcile_unit_mode() {
   fi
 }
 
+# C-FIN normal paths refuse old/pending layouts before any host effects.
+# Kept byte-identical to Core's privileged automatic-bootstrap preflight.
+require_machine_layout_ready() {
+  local result
+  if ! result=$("${SUDO[@]}" bash -s -- "${LEGACY_ROOT}" "${LEGACY_BROWSER_NAME}" ficus-browser "${FICUS_HOST_ROOT}" "${LEGACY_SYSTEM_UNIT_PREFIX}" "${LEGACY_USER_UNIT_PREFIX}" "${LEGACY_HOME_DOT_DIR}" <<'FICUS_LAYOUT_PREFLIGHT'
+set -eu
+old_root="$4$1" old_browser=$2 new_browser=$3 root=$4 system_prefix=$5 user_prefix=$6 old_dot=$7
+new_root="$root/opt/ficus"
+needs_operator() { printf '%s\n' 'FICUS_MACHINE_LAYOUT=operator-required'; exit 0; }
+account_exists() {
+  if getent "$1" "$2" >/dev/null; then return 0; else
+    rc=$?
+    [ "$rc" = 2 ] && return 1
+    exit "$rc"
+  fi
+}
+if [ -d "$old_root" ] && [ ! -L "$old_root" ]; then needs_operator; fi
+for journal in "$root/var/backups/ficus-host-migrate"/machine-*; do
+  [ -f "$journal/STEPS" ] || continue
+  if [ ! -e "$journal/DONE" ] && [ ! -e "$journal/REVERSED" ]; then needs_operator; fi
+done
+unit="$root/etc/systemd/system/$old_browser.service"
+if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
+if [ -f "$root/etc/apparmor.d/$old_browser-chromium" ]; then needs_operator; fi
+if [ -f "$new_root/browser/service/$old_browser.js" ]; then needs_operator; fi
+if account_exists passwd "$old_browser" && ! account_exists passwd "$new_browser"; then needs_operator; fi
+if account_exists group "$old_browser" && ! account_exists group "$new_browser"; then needs_operator; fi
+# Finalize cannot remove binary/socket bridges still needed by an old box.
+for unit in "$root/etc/systemd/system/$system_prefix"-box_*; do
+  if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
+done
+for home in "$root"/home/box_*; do
+  [ -d "$home" ] || continue
+  [ ! -L "$home" ] || needs_operator
+  if [ -e "$home/$old_dot" ] && [ ! -L "$home/$old_dot" ]; then needs_operator; fi
+  for unit in "$home/.config/systemd/user/$user_prefix.service" "$home/.config/systemd/user/$user_prefix.socket" "$home/.config/systemd/user/$user_prefix-proxy.service"; do
+    if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
+  done
+done
+printf '%s\n' 'FICUS_MACHINE_LAYOUT=ready'
+FICUS_LAYOUT_PREFLIGHT
+  ); then
+    echo 'machine layout inventory failed; nothing was changed' >&2
+    return 3
+  fi
+  if [ "${result}" != FICUS_MACHINE_LAYOUT=ready ]; then
+    echo 'this machine or box predates the finalized Ficus layout — upgrade through the ficus-host-layout-bridge Core release first; interrupted journals require its recovery tools' >&2
+    return 3
+  fi
+}
+
+# Canonical box homes are prepared as the box user. The old merge function
+# remains available for explicit bridge recovery, never normal C-FIN provision.
+finalize_box_home() {
+  run_as_box bash -c 'set -eu
+home=$1 old_name=$2
+new="$home/.ficus" old="$home/$old_name"
+[ ! -L "$new" ] && { [ ! -e "$new" ] || [ -d "$new" ]; } || exit 3
+if [ -e "$old" ] && [ ! -L "$old" ]; then exit 3; fi
+mkdir -p -- "$new"
+if [ -L "$old" ] && [ "$(readlink -- "$old")" = .ficus ]; then rm -- "$old"
+elif [ -e "$old" ] || [ -L "$old" ]; then echo "box-provision.sh: leaving foreign home compatibility path" >&2; fi' box-home-finalize "$1" "${LEGACY_HOME_DOT_DIR}"
+}
+
+finalize_box_machine_link() {
+  local old="${FICUS_HOST_ROOT}${LEGACY_ROOT}"
+  if "${SUDO[@]}" test -L "${old}" && [ "$("${SUDO[@]}" readlink -- "${old}")" = ficus ]; then
+    "${SUDO[@]}" rm -- "${old}"
+  elif "${SUDO[@]}" test -e "${old}" || "${SUDO[@]}" test -L "${old}"; then
+    echo "box-provision.sh: leaving foreign machine compatibility path ${old}" >&2
+  fi
+}
+
 provision_box() {
+  require_machine_layout_ready || return $?
   assert_socket_proxyd
-  refuse_unmigrated_machine_root
+  finalize_box_machine_link
   ensure_user
 
   local home
@@ -1671,11 +1742,8 @@ provision_box() {
     exit 1
   fi
 
-  # Tear down the units from before the rename, then the OTHER mode's layout
-  # (no-op for a box already in this mode, or a brand-new one), so no two
-  # layouts ever coexist and an outgoing server can never hold the port the
-  # incoming unit binds.
-  teardown_legacy_units "${home}"
+  # Reconcile the other canonical unit mode. Pre-rename layouts were refused
+  # before any effects; their explicit recovery functions remain above.
   reconcile_unit_mode "${home}"
 
   if [ "${UNIT_MODE}" = "user" ]; then
@@ -1686,8 +1754,8 @@ provision_box() {
     "${SUDO[@]}" loginctl enable-linger "${UNIX_USER}"
   fi
 
-  # With every old unit down, the box HOME's dot dir can move.
-  migrate_home_dot_dir "${home}"
+  # Preserve canonical data and remove only the exact old home link.
+  finalize_box_home "${home}"
   ensure_dirs "${home}"
   init_shared_nix_cache
   install_slice_limits
@@ -1718,8 +1786,8 @@ provision_box() {
   # reclaims. Nothing else in the system enables it.
   # Failure here is recoverable by reprovision, but is NOT a provisioned box.
   # Keep command failures and empty/failed readbacks out of the success marker.
-  sysbox disable "$(unit_name)"
-  sysbox enable --now "$(socket_name)"
+  sysbox disable "$(unit_name)" || return 1
+  sysbox reenable --now "$(socket_name)" || return 1
   local server_enabled socket_enabled socket_active
   server_enabled="$(sysbox show -p UnitFileState --value "$(unit_name)")" || return $?
   socket_enabled="$(sysbox show -p UnitFileState --value "$(socket_name)")" || return $?

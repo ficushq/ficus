@@ -128,12 +128,13 @@ FICUS_BROWSER_APPARMOR="${FICUS_HOST_ROOT}/etc/apparmor.d/ficus-browser-chromium
 
 # Bridge (phase 5, U4): the machine root and the browser's user, group, unit,
 # runtime dir and AppArmor profile before the Ficus rename. migrate_machine_root
-# moves a machine off them; the ficus-browser unit carries the old unit name as
-# its Alias (the @ALIAS@ line of the unit, filled by write_browser_unit), and
-# /run/<old> stays a link to /run/ficus-browser for boxes still running on their
-# old units until they are re-provisioned.
+# retains its explicit recovery contract, including old unit and socket links.
+# Normal C-FIN bootstrap refuses that layout and finalizes exact bridges only.
 LEGACY_MACHINE_ROOT=/opt/tau             # ficus-p5-bridge
 LEGACY_BROWSER_NAME=tau-browser          # ficus-p5-bridge
+LEGACY_SYSTEM_UNIT_PREFIX='tau-box'             # ficus-p5-bridge
+LEGACY_USER_UNIT_PREFIX='tau-sandbox-server'    # ficus-p5-bridge
+LEGACY_HOME_DOT_DIR='.tau'                      # ficus-p5-bridge
 # Durable, machine-readable availability markers written by verify_browser. On a
 # host that CAN run the sandboxed browser: READY (timestamp), UNAVAILABLE removed.
 # On a host that CANNOT: UNAVAILABLE (reason token + timestamp + detail), READY
@@ -1170,11 +1171,10 @@ BROWSER_APPARMOR
 # a different-sized builder, still gets THIS VM's cap).
 # The unit body is fully static (all paths are fixed /opt/ficus constants), so it
 # is embedded verbatim — byte-identical to scripts/machine/browser/ficus-browser.service
-# (which the machine image COPYs), asserted by bootstrap.test.ts. Its one token
-# line, @ALIAS@, becomes `Alias=<the pre-rename unit name>` (the image fills it
-# the same way).
+# (which the machine image COPYs), asserted by bootstrap.test.ts. C-FIN writes
+# only the canonical unit; recovery restores old bytes from migration journals.
 write_browser_unit() {
-  sed "s|^@ALIAS@\$|Alias=${LEGACY_BROWSER_NAME}.service|" <<'BROWSER_UNIT' | "${SUDO[@]}" tee "${FICUS_BROWSER_UNIT}" >/dev/null
+  "${SUDO[@]}" tee "${FICUS_BROWSER_UNIT}" >/dev/null <<'BROWSER_UNIT'
 [Unit]
 Description=Ficus shared browser service (per-box contexts, token auth, caps)
 After=network-online.target
@@ -1195,8 +1195,11 @@ RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
-@ALIAS@
 BROWSER_UNIT
+  # Explicit bridge recovery retains its original compatibility contract.
+  if [ "${1:-}" = --bridge-recovery ]; then
+    printf 'Alias=%s.service\n' "${LEGACY_BROWSER_NAME}" | "${SUDO[@]}" tee -a "${FICUS_BROWSER_UNIT}" >/dev/null
+  fi
   "${SUDO[@]}" chmod 0644 "${FICUS_BROWSER_UNIT}"
 }
 
@@ -2361,7 +2364,7 @@ _mr_s7() { # J
   fi
   if [ ! -e "${FICUS_BROWSER_UNIT}" ]; then
     _mr_set "${j}" UNIT_WROTE 1 || return 1
-    write_browser_unit || return 1
+    write_browser_unit --bridge-recovery || return 1
   fi
   _mr systemctl daemon-reload || return 1
   if [ "$(_mr_get "${j}" BROWSER_WAS_ENABLED)" = 1 ]; then
@@ -2567,6 +2570,87 @@ migrate_machine_root() {
   _mr_log "this machine is on the Ficus layout (journal ${j})"
 }
 
+# C-FIN normal paths refuse old/pending layouts before any host effects.
+# Kept byte-identical to Core's privileged automatic-bootstrap preflight.
+require_machine_layout_ready() {
+  local result
+  if ! result=$("${SUDO[@]}" bash -s -- "${LEGACY_MACHINE_ROOT}" "${LEGACY_BROWSER_NAME}" "${FICUS_BROWSER_USER}" "${FICUS_HOST_ROOT}" "${LEGACY_SYSTEM_UNIT_PREFIX}" "${LEGACY_USER_UNIT_PREFIX}" "${LEGACY_HOME_DOT_DIR}" <<'FICUS_LAYOUT_PREFLIGHT'
+set -eu
+old_root="$4$1" old_browser=$2 new_browser=$3 root=$4 system_prefix=$5 user_prefix=$6 old_dot=$7
+new_root="$root/opt/ficus"
+needs_operator() { printf '%s\n' 'FICUS_MACHINE_LAYOUT=operator-required'; exit 0; }
+account_exists() {
+  if getent "$1" "$2" >/dev/null; then return 0; else
+    rc=$?
+    [ "$rc" = 2 ] && return 1
+    exit "$rc"
+  fi
+}
+if [ -d "$old_root" ] && [ ! -L "$old_root" ]; then needs_operator; fi
+for journal in "$root/var/backups/ficus-host-migrate"/machine-*; do
+  [ -f "$journal/STEPS" ] || continue
+  if [ ! -e "$journal/DONE" ] && [ ! -e "$journal/REVERSED" ]; then needs_operator; fi
+done
+unit="$root/etc/systemd/system/$old_browser.service"
+if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
+if [ -f "$root/etc/apparmor.d/$old_browser-chromium" ]; then needs_operator; fi
+if [ -f "$new_root/browser/service/$old_browser.js" ]; then needs_operator; fi
+if account_exists passwd "$old_browser" && ! account_exists passwd "$new_browser"; then needs_operator; fi
+if account_exists group "$old_browser" && ! account_exists group "$new_browser"; then needs_operator; fi
+# Finalize cannot remove binary/socket bridges still needed by an old box.
+for unit in "$root/etc/systemd/system/$system_prefix"-box_*; do
+  if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
+done
+for home in "$root"/home/box_*; do
+  [ -d "$home" ] || continue
+  [ ! -L "$home" ] || needs_operator
+  if [ -e "$home/$old_dot" ] && [ ! -L "$home/$old_dot" ]; then needs_operator; fi
+  for unit in "$home/.config/systemd/user/$user_prefix.service" "$home/.config/systemd/user/$user_prefix.socket" "$home/.config/systemd/user/$user_prefix-proxy.service"; do
+    if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
+  done
+done
+printf '%s\n' 'FICUS_MACHINE_LAYOUT=ready'
+FICUS_LAYOUT_PREFLIGHT
+  ); then
+    echo 'machine layout inventory failed; nothing was changed' >&2
+    return 3
+  fi
+  if [ "${result}" != FICUS_MACHINE_LAYOUT=ready ]; then
+    echo 'this machine or box predates the finalized Ficus layout — upgrade through the ficus-host-layout-bridge Core release first; interrupted journals require its recovery tools' >&2
+    return 3
+  fi
+}
+
+# Remove only the exact compatibility artifacts created by the bridge.
+# Never follow or replace a foreign link, and never move data during finalize.
+finalize_machine_layout() {
+  require_machine_layout_ready || return $?
+  _mr_paths
+  local content expected enabled=0 path target
+  if _mr test -e "${MR_TMPFILES}" || _mr test -L "${MR_TMPFILES}"; then
+    if _mr test -f "${MR_TMPFILES}" && ! _mr test -L "${MR_TMPFILES}"; then
+      content=$(_mr cat "${MR_TMPFILES}" && printf x) || return 1
+      expected=$(printf 'L /run/%s - - - - %s\nx' "${LEGACY_BROWSER_NAME}" "${FICUS_BROWSER_USER}")
+      if [ "${content}" = "${expected}" ]; then _mr rm -- "${MR_TMPFILES}" || return 1
+      else echo "bootstrap.sh: leaving foreign tmpfiles rule ${MR_TMPFILES}" >&2; fi
+    else echo "bootstrap.sh: leaving foreign tmpfiles path ${MR_TMPFILES}" >&2; fi
+  fi
+  for path in "${MR_O}" "${MR_O_RUNDIR}"; do
+    if [ "${path}" = "${MR_O}" ]; then target=ficus; else target=${FICUS_BROWSER_USER}; fi
+    if _mr test -L "${path}" && [ "$(_mr readlink -- "${path}")" = "${target}" ]; then
+      _mr rm -- "${path}" || return 1
+    elif _mr test -e "${path}" || _mr test -L "${path}"; then
+      echo "bootstrap.sh: leaving foreign compatibility path ${path}" >&2
+    fi
+  done
+  if _mr test -f "${FICUS_BROWSER_UNIT}" && ! _mr test -L "${FICUS_BROWSER_UNIT}"; then
+    if _mr systemctl is-enabled --quiet ficus-browser.service; then enabled=1
+    else [ "$?" = 1 ] || return 1; fi
+    write_browser_unit && _mr systemctl daemon-reload && _mr systemctl reenable ficus-browser.service || return 1
+    [ "${enabled}" = 1 ] || _mr systemctl disable ficus-browser.service || return 1
+  fi
+}
+
 main() {
   # Prebaked ficus-machine image: when its /opt/ficus/prebaked marker is PRESENT, the
   # install_* steps are already baked, so skip them and use the baked tooling —
@@ -2583,14 +2667,9 @@ main() {
   # reflecting THIS VM) always runs after main. The non-prebaked (no-marker)
   # branch is the original sequence, unchanged: idempotent installs on a bare host.
   #
-  # FIRST, before anything reads or writes the machine root: move a machine
-  # bootstrapped before the rename onto the Ficus layout. A failure is reversed
-  # (journaled; see migrate_machine_root) and fails bootstrap with the machine
-  # on its previous layout.
-  if ! migrate_machine_root; then
-    echo "bootstrap.sh: ERROR moving this machine onto the Ficus layout failed — see the log for reversal status; incomplete journals are retried" >&2
-    exit 1
-  fi
+  # Recovery functions remain available until T26b; normal C-FIN bootstrap
+  # must not migrate an old machine then remove paths its boxes still need.
+  require_machine_layout_ready || return $?
   if [ -f "${PREBAKED_MARKER}" ]; then
     log_prebaked_decision
     make_dirs
@@ -2606,6 +2685,7 @@ main() {
     # bootstrap. The browser NEVER affects bootstrap's exit code.
     install_browser || true
   fi
+  finalize_machine_layout || return $?
   write_manifest
   # Chromium-sandbox check (spec §4.1/§5): loading the AppArmor profile into the
   # running kernel + starting the SYSTEM browser service are per-boot actions, so

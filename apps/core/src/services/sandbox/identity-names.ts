@@ -1,15 +1,4 @@
-/**
- * Every name that marks a sandbox as Core's own: the docker container prefix and
- * labels, the image-contract label namespace, and the k8s spec-hash annotation
- * and `app` label value.
- *
- * Adoption and GC recognise a sandbox under ANY set in {@link SANDBOX_IDENTITY_READ};
- * create and label paths write only {@link SANDBOX_IDENTITY_WRITE}. Reading both
- * sets one release before writing the new one means a rollback target always
- * recognises what the newer release created, so a sandbox is never orphaned
- * (left running under a name nobody looks for) or double-created (a second box
- * started beside one that was not found).
- */
+/** Canonical sandbox identity. Retired names and labels are never discovered or adopted. */
 
 export interface SandboxIdentitySet {
   /** Docker container name prefix; the sandbox id follows it. */
@@ -47,24 +36,11 @@ export const SANDBOX_IDENTITY_NEW: SandboxIdentitySet = {
   k8sPodNamePrefix: 'ficus-sb-',
 }
 
-export const SANDBOX_IDENTITY_LEGACY: SandboxIdentitySet = {
-  containerPrefix: 'tau-sandbox-', // ficus-p5-bridge
-  managedLabel: 'tau.managed', // ficus-p5-bridge
-  sandboxIdLabel: 'tau.sandbox-id', // ficus-p5-bridge
-  specHashLabel: 'tau.spec-hash', // ficus-p5-bridge
-  lifecycleGenerationLabel: 'tau.lifecycle-generation', // ficus-p5-bridge
-  imageIdLabel: 'tau.image-id', // ficus-p5-bridge
-  imageLabelNamespace: 'io.hiretau.sandbox', // ficus-p5-bridge
-  k8sSpecHashAnnotation: 'tau.io/spec-hash', // ficus-p5-bridge
-  k8sAppLabelValue: 'tau-sandbox', // ficus-p5-bridge
-  k8sPodNamePrefix: 'tau-sb-', // ficus-p5-bridge
-}
-
 /** The set new sandboxes are created and labelled with. The new set as of this release. */
 export const SANDBOX_IDENTITY_WRITE: SandboxIdentitySet = SANDBOX_IDENTITY_NEW
 
 /** Every set a sandbox is recognised under, new first. */
-export const SANDBOX_IDENTITY_READ: readonly SandboxIdentitySet[] = [SANDBOX_IDENTITY_NEW, SANDBOX_IDENTITY_LEGACY]
+export const SANDBOX_IDENTITY_READ: readonly SandboxIdentitySet[] = [SANDBOX_IDENTITY_NEW]
 
 /** Label value for a key under any read set; undefined when absent. */
 export function readSandboxLabel(
@@ -99,18 +75,7 @@ export function sandboxPodNamePrefixes(): string[] {
   return [...new Set(prefixes)]
 }
 
-/**
- * In-container exec identity for a Docker-mode sandbox: the OS user `docker
- * exec` runs sandbox commands as, that user's home, the authenticated
- * executor's token path, and the DOCKER_HOST docker-proxy socket path. This
- * sits OUTSIDE {@link SandboxIdentitySet} (k8s sandboxes run as root behind no
- * analogous user/paths), but a container built under a given label
- * generation only ever has ONE of these two pairs baked into its image — a
- * legacy-labelled container has a `tau` user and `/run/tau/...` paths, never // ficus-p5-bridge
- * `ficus`/`/run/ficus/...`. Using the new-only values unconditionally when
- * exec'ing into an adopted (not recreated) legacy container leaves it
- * impossible to connect to or exec into: see {@link identitySetForLabels}.
- */
+/** User and paths baked into the canonical Docker sandbox image. */
 export interface DockerExecIdentity {
   /** OS user `docker exec` runs sandbox commands as. */
   user: string
@@ -129,29 +94,13 @@ export const DOCKER_EXEC_IDENTITY_NEW: DockerExecIdentity = {
   dockerProxySocketPath: '/run/ficus-docker/docker.sock',
 }
 
-export const DOCKER_EXEC_IDENTITY_LEGACY: DockerExecIdentity = {
-  user: 'tau', // ficus-p5-bridge
-  home: '/home/tau', // ficus-p5-bridge
-  executorTokenPath: '/run/tau/executor-token', // ficus-p5-bridge
-  dockerProxySocketPath: '/run/tau-docker/docker.sock', // ficus-p5-bridge
-}
-
-/**
- * Which identity set labelled a container, from its labels (by the same
- * `managedLabel` check {@link readSandboxLabel} walks); `null` when neither
- * set's managed label is present (a container predating even the legacy
- * label scheme — callers fall back to the write identity for these).
- */
+/** Canonical managed identity, or null when the required label is absent. */
 export function identitySetForLabels(labels: Record<string, string>): SandboxIdentitySet | null {
   return SANDBOX_IDENTITY_READ.find((set) => labels[set.managedLabel] === 'true') ?? null
 }
 
-/**
- * The {@link DockerExecIdentity} a container built under the given identity
- * set actually has baked in: NEW labels mean a `ficus`-identity container,
- * LEGACY labels mean a `tau`-identity one. `null` (no managed label found)
- * falls back to NEW, matching {@link SANDBOX_IDENTITY_WRITE}.
- */
+/** Canonical exec paths; unknown identity objects fail closed. */
 export function dockerExecIdentityForSet(set: SandboxIdentitySet | null): DockerExecIdentity {
-  return set === SANDBOX_IDENTITY_LEGACY ? DOCKER_EXEC_IDENTITY_LEGACY : DOCKER_EXEC_IDENTITY_NEW
+  if (set !== null && set !== SANDBOX_IDENTITY_NEW) throw new Error('unsupported sandbox identity')
+  return DOCKER_EXEC_IDENTITY_NEW
 }

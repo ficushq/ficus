@@ -56,12 +56,59 @@ function legacyWorkspace(root: string, file = '.env', content = ENV_BYTES): void
   writeFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, file), content, { mode: 0o600 })
 }
 
-function expectBridgeLink(root: string): void {
-  const legacy = join(root, LEGACY_WORKSPACE_DOT_DIR)
-  expect(lstatSync(legacy).isSymbolicLink()).toBe(true)
-  // Relative, so it resolves the same from inside a container that mounts the workspace elsewhere.
-  expect(readlinkSync(legacy)).toBe(WORKSPACE_DOT_DIR)
+function expectNoBridge(root: string): void {
+  expect(() => lstatSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toThrow()
 }
+
+describe('workspace finalization', () => {
+  test('removes only the exact bridge and preserves canonical file identity', () => {
+    const root = squadRoot()
+    mkdirSync(join(root, WORKSPACE_DOT_DIR), { recursive: true })
+    const file = join(root, WORKSPACE_DOT_DIR, '.env')
+    writeFileSync(file, ENV_BYTES, { mode: 0o600 })
+    const before = lstatSync(file)
+    symlinkSync(WORKSPACE_DOT_DIR, join(root, LEGACY_WORKSPACE_DOT_DIR))
+    expect(migrateWorkspaceDotDir(root)).toEqual({ moved: false })
+    expect(() => lstatSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toThrow()
+    expect(lstatSync(file).ino).toBe(before.ino)
+    expect(lstatSync(file).mode).toBe(before.mode)
+    expect(readFileSync(file, 'utf8')).toBe(ENV_BYTES)
+    expect(migrateWorkspaceDotDir(root)).toEqual({ moved: false })
+  })
+
+  test('a dangling compatibility link refuses creation of replacement settings', () => {
+    mkdirSync(squadRoot(), { recursive: true })
+    symlinkSync(WORKSPACE_DOT_DIR, join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR))
+    expect(() => ensureWorkspaceDotDir(squadRoot())).toThrow(WorkspaceDotDirConflictError)
+    expect(readlinkSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+    expect(existsSync(join(squadRoot(), WORKSPACE_DOT_DIR))).toBe(false)
+  })
+
+  test.skipIf(process.getuid?.() === 0)('a failed bridge removal blocks dependent writers', () => {
+    const root = squadRoot()
+    mkdirSync(join(root, WORKSPACE_DOT_DIR), { recursive: true })
+    const file = join(root, WORKSPACE_DOT_DIR, '.env')
+    writeFileSync(file, ENV_BYTES, { mode: 0o600 })
+    symlinkSync(WORKSPACE_DOT_DIR, join(root, LEGACY_WORKSPACE_DOT_DIR))
+    chmodSync(root, 0o500)
+    try {
+      expect(() => ensureWorkspaceDotDir(root)).toThrow(WorkspaceDotDirConflictError)
+      expect(readlinkSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
+      expect(readFileSync(file, 'utf8')).toBe(ENV_BYTES)
+    } finally {
+      chmodSync(root, 0o700)
+    }
+    expect(ensureWorkspaceDotDir(root)).toBe(join(root, WORKSPACE_DOT_DIR))
+    expectNoBridge(root)
+  })
+
+  test('fresh creation never recreates a retired bridge', () => {
+    mkdirSync(squadRoot(), { recursive: true })
+    ensureWorkspaceDotDir(squadRoot())
+    ensureWorkspaceDotDir(squadRoot())
+    expect(() => lstatSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR))).toThrow()
+  })
+})
 
 describe('workspaceDotPath', () => {
   test('joins segments under the work root dot dir', () => {
@@ -73,7 +120,7 @@ describe('workspaceDotPath', () => {
 })
 
 describe('migrateWorkspaceDotDirs', () => {
-  test('a legacy dot dir moves to .ficus with the same bytes and a relative legacy link left behind', async () => {
+  test('a legacy dot dir moves to .ficus with the same bytes and no legacy link', async () => {
     legacyWorkspace(squadRoot())
 
     const result = await migrateWorkspaceDotDirs(home)
@@ -83,9 +130,7 @@ describe('migrateWorkspaceDotDirs', () => {
     expect(lstatSync(join(squadRoot(), WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
     expect(readFileSync(envPath, 'utf8')).toBe(ENV_BYTES)
     expect(lstatSync(envPath).mode & 0o777).toBe(0o600)
-    expectBridgeLink(squadRoot())
-    // A reader still on the legacy name (a rolled-back Core, a running agent) finds the same file.
-    expect(readFileSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe(ENV_BYTES)
+    expectNoBridge(squadRoot())
   })
 
   test('a second run moves nothing and changes nothing', async () => {
@@ -96,7 +141,7 @@ describe('migrateWorkspaceDotDirs', () => {
 
     expect(second).toEqual({ moved: 0, conflicts: [] })
     expect(readFileSync(join(squadRoot(), WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe(ENV_BYTES)
-    expectBridgeLink(squadRoot())
+    expectNoBridge(squadRoot())
   })
 
   test('a workspace with both dirs is reported and neither dir is touched', async () => {
@@ -115,7 +160,7 @@ describe('migrateWorkspaceDotDirs', () => {
     expect(readFileSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe('OLD=1\n')
     expect(readFileSync(join(squadRoot(), WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe('NEW=1\n')
     // The conflict does not stop the other workspaces.
-    expectBridgeLink(squadRoot(OTHER_SQUAD))
+    expectNoBridge(squadRoot(OTHER_SQUAD))
   })
 
   test('a fresh workspace (neither dir) is left as it is', async () => {
@@ -126,19 +171,19 @@ describe('migrateWorkspaceDotDirs', () => {
     expect(() => lstatSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR))).toThrow()
   })
 
-  test('a workspace that has only .ficus gets the legacy link, and is not counted as moved', async () => {
+  test('a workspace that has only .ficus stays canonical and is not counted as moved', async () => {
     mkdirSync(join(squadRoot(), WORKSPACE_DOT_DIR), { recursive: true })
 
     expect(await migrateWorkspaceDotDirs(home)).toEqual({ moved: 0, conflicts: [] })
-    expectBridgeLink(squadRoot())
+    expectNoBridge(squadRoot())
   })
 
-  test('a legacy link that already points at .ficus is accepted as migrated', async () => {
+  test('an exact legacy link is removed', async () => {
     mkdirSync(join(squadRoot(), WORKSPACE_DOT_DIR), { recursive: true })
     symlinkSync(WORKSPACE_DOT_DIR, join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR))
 
     expect(await migrateWorkspaceDotDirs(home)).toEqual({ moved: 0, conflicts: [] })
-    expectBridgeLink(squadRoot())
+    expectNoBridge(squadRoot())
   })
 
   test('a legacy link pointing anywhere else is reported and never followed', async () => {
@@ -198,7 +243,7 @@ describe('migrateWorkspaceDotDirs', () => {
 
     expect(await migrateWorkspaceDotDirs(home)).toEqual({ moved: 1, conflicts: [] })
     expect(readFileSync(join(privateRoot('agent_a1'), WORKSPACE_DOT_DIR, 'identity.pem'), 'utf8')).toBe('PEM')
-    expectBridgeLink(privateRoot('agent_a1'))
+    expectNoBridge(privateRoot('agent_a1'))
   })
 
   test('a HOME with no workspaces yet is a no-op', async () => {
@@ -221,11 +266,11 @@ describe('migrateWorkspaceDotDirs', () => {
         chmodSync(squadRoot(), 0o755)
       }
       expect(await migrateWorkspaceDotDirs(home)).toEqual({ moved: 1, conflicts: [] })
-      expectBridgeLink(squadRoot())
+      expectNoBridge(squadRoot())
     }
   )
 
-  test('a writer holding an open file, or writing by the legacy path afterwards, lands in .ficus', async () => {
+  test('a writer holding an open file keeps writing after the directory move', async () => {
     legacyWorkspace(squadRoot(), 'current.log', 'line 1\n')
     const fd = openSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR, 'current.log'), 'a')
     try {
@@ -234,7 +279,7 @@ describe('migrateWorkspaceDotDirs', () => {
     } finally {
       closeSync(fd)
     }
-    writeFileSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR, 'later.txt'), 'by path\n')
+    writeFileSync(join(squadRoot(), WORKSPACE_DOT_DIR, 'later.txt'), 'by path\n')
 
     expect(readFileSync(join(squadRoot(), WORKSPACE_DOT_DIR, 'current.log'), 'utf8')).toBe('line 1\nline 2\n')
     expect(readFileSync(join(squadRoot(), WORKSPACE_DOT_DIR, 'later.txt'), 'utf8')).toBe('by path\n')
@@ -270,7 +315,7 @@ describe('migrateWorkspaceDotDir (one work root, used lazily by Core before it t
 
     expect(migrateWorkspaceDotDir(squadRoot(), { rename })).toEqual({ moved: false })
     expect(readFileSync(join(target, '.env'), 'utf8')).toBe(ENV_BYTES)
-    expectBridgeLink(squadRoot())
+    expectNoBridge(squadRoot())
   })
 
   test('a rename that keeps failing after the re-read is still reported', () => {
@@ -286,23 +331,22 @@ describe('migrateWorkspaceDotDir (one work root, used lazily by Core before it t
     expect(lstatSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
   })
 
-  test('a link deleted after the move (a crash between rename and link) is recreated', () => {
+  test('a later pass never recreates the removed link', () => {
     legacyWorkspace(squadRoot())
     migrateWorkspaceDotDir(squadRoot())
-    rmSync(join(squadRoot(), LEGACY_WORKSPACE_DOT_DIR))
 
     expect(migrateWorkspaceDotDir(squadRoot())).toEqual({ moved: false })
-    expectBridgeLink(squadRoot())
+    expectNoBridge(squadRoot())
   })
 })
 
 describe('ensureWorkspaceDotDir', () => {
-  test('creates .ficus and the legacy link in a fresh work root and returns the dir', () => {
+  test('creates only .ficus in a fresh work root and returns the dir', () => {
     mkdirSync(squadRoot(), { recursive: true })
 
     expect(ensureWorkspaceDotDir(squadRoot())).toBe(join(squadRoot(), WORKSPACE_DOT_DIR))
     expect(lstatSync(join(squadRoot(), WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
-    expectBridgeLink(squadRoot())
+    expectNoBridge(squadRoot())
   })
 
   test('moves a legacy dir first instead of creating a second one beside it', () => {
@@ -311,7 +355,7 @@ describe('ensureWorkspaceDotDir', () => {
     const dir = ensureWorkspaceDotDir(squadRoot())
 
     expect(readFileSync(join(dir, '.env'), 'utf8')).toBe(ENV_BYTES)
-    expectBridgeLink(squadRoot())
+    expectNoBridge(squadRoot())
   })
 })
 

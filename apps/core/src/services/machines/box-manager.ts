@@ -786,13 +786,7 @@ export function buildMachineSnapshotCommand(box: { sandboxId: string; unixUser: 
   // socket-activated box whose server has idle-exited is `idle` — healthy, and
   // the steady state of an unused box — while only a missing socket (or a
   // server unit that has genuinely `failed`, i.e. exhausted Restart=on-failure)
-  // means the box is down. The socket and server are probed under whichever
-  // names the box runs (onHost: a box not re-provisioned since the rename keeps
-  // its legacy units). The `legacy` leg covers a box this deploy has not
-  // re-provisioned yet, whose port is held by the server itself with no socket
-  // unit at all; without it every not-yet-migrated box would read `exited` and
-  // be condemned.
-  const legacyIsActive = ctl.legacyIsActiveCommand?.()
+  // means the box is down. Finalized hosts are observed by canonical names.
   return [
     `uid=$(id -u ${shellQuote(unixUser)} 2>/dev/null || true)`,
     `box_live() { case "$1" in active|activating|reloading|listening|running) return 0 ;; *) return 1 ;; esac; }`,
@@ -800,12 +794,11 @@ export function buildMachineSnapshotCommand(box: { sandboxId: string; unixUser: 
       (u) =>
         `sock=$(${ctl.isActiveCommandOf(u.socket)} 2>/dev/null || true); state=$(${ctl.isActiveCommandOf(u.unit)} 2>/dev/null || true)`
     ),
-    legacyIsActive ? `legacy=$(${legacyIsActive} 2>/dev/null || true)` : 'legacy=',
     'if box_live "$sock"; then ' +
       'if box_live "$state"; then echo FICUS_BOX_LIVENESS=running; ' +
       'elif [ "$state" = failed ]; then echo FICUS_BOX_LIVENESS=exited; ' +
       'else echo FICUS_BOX_LIVENESS=idle; fi; ' +
-      'elif box_live "$state" || box_live "$legacy"; then echo FICUS_BOX_LIVENESS=running; ' +
+      'elif box_live "$state"; then echo FICUS_BOX_LIVENESS=running; ' +
       'else echo FICUS_BOX_LIVENESS=exited; fi',
     'echo FICUS_CONTAINER_STATES_BEGIN',
     // Rootless docker is user-manager-only by construction, so this probe keeps

@@ -10,13 +10,16 @@ import { FICUS_HOME_DIR_NAME, LEGACY_HOME_DIR_NAME, ficusOrLegacyDir } from '@fi
  */
 export const LEGACY_CLI_HOME_LINK = '.tau' // ficus-p5-apple
 
-/**
- * The CLI home: ~/.ficus when it exists (dir or link) or when no legacy home exists; else the
- * legacy home (not yet moved). Holds `bin/`, `share/`, `cli/` (auth store, instance registry),
- * `logs/` and the default checkout. `scripts/install.sh` applies the same rule.
- */
+/** Canonical CLI home for all normal reads and writes. */
 export function cliHome(opts?: { homedir?: string; exists?: (p: string) => boolean }): string {
-  return ficusOrLegacyDir(opts?.homedir ?? osHomedir(), opts?.exists)
+  return ficusOrLegacyDir(opts?.homedir ?? osHomedir())
+}
+
+/** Recovery-only locator for explicit rename/undo; never used by normal management. */
+export function recoveryCliHome(home: string): string {
+  const canonical = join(home, FICUS_HOME_DIR_NAME)
+  const legacy = join(home, LEGACY_HOME_DIR_NAME)
+  return lstatOrNull(canonical) || !lstatOrNull(legacy) ? canonical : legacy
 }
 
 function lstatOrNull(path: string): Stats | null {

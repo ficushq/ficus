@@ -145,10 +145,13 @@ expect_eq 'tar exit 1 is logged' "$(grep -c 'changed while they were archived' "
 expect_eq 'tar exit 2 fails the backup' "$([[ $(tar_run 2 "${SCRATCH}/work-tar2") -ne 0 ]] && echo yes || echo no)" 'yes'
 expect_eq 'tar exit 2 names the failure' "$(grep -c 'tar archive failed (2)' "${SCRATCH}/work-tar2.log")" '1'
 
-# --- a wrong passphrase must NOT decrypt (encryption is doing something) ----
-wrong_rc=0
-openssl enc -d -aes-256-cbc -pbkdf2 -pass 'pass:wrong-passphrase' -in "${ENC_FILE}" -out "${SCRATCH}/should-fail.tar.gz" >/dev/null 2>&1 || wrong_rc=$?
-expect_eq 'decryption with the WRONG passphrase fails (non-zero exit)' "$([[ ${wrong_rc} -ne 0 ]] && echo yes || echo no)" 'yes'
+# --- a wrong passphrase must NOT recover the archive -----------------------
+# CBC can accidentally accept padding under a wrong key and exit 0. Verify
+# the backup cannot be recovered, rather than relying on that random padding.
+WRONG_TAR="${SCRATCH}/should-fail.tar.gz"
+openssl enc -d -aes-256-cbc -pbkdf2 -pass 'pass:wrong-passphrase' -in "${ENC_FILE}" -out "${WRONG_TAR}" >/dev/null 2>&1 || true
+expect_eq 'wrong passphrase does not recover the original archive' "$(cmp -s "${WRONG_TAR}" "${DECRYPTED_TAR}" && echo yes || echo no)" 'no'
+expect_eq 'wrong passphrase does not recover a valid gzip archive' "$(gzip -t "${WRONG_TAR}" >/dev/null 2>&1 && echo yes || echo no)" 'no'
 
 # --- Finding 1 (review): a mid-run failure (e.g. the S3 upload step dying)
 # must leave NO workdir/artifact behind — only FICUS_BACKUP_DRY_RUN=1 may do

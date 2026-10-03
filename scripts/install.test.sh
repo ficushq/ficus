@@ -100,7 +100,8 @@ expect_not_contains() { # DESCRIPTION HAYSTACK NEEDLE
   fi
 }
 
-T=$(mktemp -d)
+# An owned path may contain the old brand; prose assertions must not scan it.
+T=$(mktemp -d "${TMPDIR:-/tmp}/ficus-installer-Tau.XXXXXX")
 trap 'rm -rf "${T}"' EXIT
 REL="${T}/release"
 build_fixture "${REL}"
@@ -152,7 +153,7 @@ expect_contains 'fresh install: downloads the ficus-* asset' "$(cat "${C}/curl.l
 expect_contains 'fresh install: closing hint names the ficus memory skill' "${OUT}" \
   'ficus skill install ficus-memory --agent pi'
 expect_contains 'fresh install: closing hint runs ficus' "${OUT}" 'Run: ficus --help'
-expect_not_contains 'fresh install: no "Tau" copy in the output' "${OUT}" 'Tau'
+expect_not_contains 'fresh install: no "Tau" copy in the output' "${OUT//"${T}"/<fixture>}" 'Tau'
 
 # 2. FICUS_INSTALL_AUTH=1 takes the auth branch with the FICUS_ auth inputs.
 C="${T}/c2"

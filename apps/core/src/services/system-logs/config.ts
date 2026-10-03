@@ -25,6 +25,14 @@ const targets = (env: NodeJS.ProcessEnv, prefix: string, fallback?: Targets): Ta
   worker: clean(env[`${prefix}_WORKER`], `${prefix}_WORKER`, fallback?.worker),
 })
 
+/** Explicit log overrides take precedence over the CLI's supervisor names. */
+export function pm2LogTargets(env: NodeJS.ProcessEnv = process.env): Targets {
+  return {
+    api: clean(env.FICUS_PM2_API ?? env.FICUS_PM2_API_NAME, 'FICUS_PM2_API_NAME', 'ficus-api'),
+    worker: clean(env.FICUS_PM2_WORKER ?? env.FICUS_PM2_WORKER_NAME, 'FICUS_PM2_WORKER_NAME', 'ficus-worker'),
+  }
+}
+
 export function loadExplicitSystemLogConfig(
   env: NodeJS.ProcessEnv = process.env,
   opts?: { unitDir?: string }
@@ -37,7 +45,7 @@ export function loadExplicitSystemLogConfig(
   const provider = configuredProvider as Exclude<SystemLogProviderId, 'unavailable'>
   switch (provider) {
     case 'pm2':
-      return { provider, targets: targets(env, 'FICUS_PM2', { api: 'tau-api', worker: 'tau-worker' }) }
+      return { provider, targets: pm2LogTargets(env) }
     case 'systemd':
       return { provider, targets: targets(env, 'FICUS_SYSTEMD', hostSystemdUnits({ unitDir: opts?.unitDir })) }
     case 'docker':

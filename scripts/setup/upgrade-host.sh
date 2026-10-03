@@ -236,8 +236,14 @@ if [[ -n ${REVERSE_LAYOUT_SET} ]]; then
   host_migrate_install_traps
   # shellcheck disable=SC2034 # read by lib.sh's host_layout_reverse_committed
   HL_REVERSE_ACCEPT_DB_REVERT=${ACCEPT_DB_REVERT} HL_REVERSE_ACCEPT_FILE_REVERT=${ACCEPT_FILE_REVERT}
-  host_layout_reverse_committed "${REVERSE_LAYOUT_SET}"
-  log_info "this host is back on its legacy host layout (${HL_DEST}, ${HL_UNIT_API}/${HL_UNIT_WORKER})"
+  case $(_hm_set_reverse_names "${REVERSE_LAYOUT_SET}") in
+    host_layout) host_layout_reverse_committed "${REVERSE_LAYOUT_SET}" ;;
+    host_layout_fin)
+      host_layout_fin_reverse_committed "${REVERSE_LAYOUT_SET}"
+      ;;
+    *) die '--reverse-host-layout: the set is neither a host layout nor a finalize migration' ;;
+  esac
+  log_info "host layout reverse completed (${HL_DEST}, ${HL_UNIT_API}/${HL_UNIT_WORKER})"
   # `|| true`: with SIGPIPE ignored, a write to a dropped session fails — the
   # reverse is done, and that must not turn into a non-zero exit.
   printf 'FICUS_HOST_LAYOUT=%s\n' "${HL_LAYOUT}" || true
@@ -331,6 +337,8 @@ BUN_BIN=/usr/local/bin/bun
 # hence the explicit TERM/HUP/INT ones). One toolkit run at a time may
 # migrate, restore or reconcile this host (the lock, like those steps, is
 # root-only).
+require_host_layout_ready
+[[ ${ARTIFACT_MODE} -eq 0 ]] || require_artifact_conversion_ready "${SRC_DEST}"
 host_migrate_lock
 reconcile_rc=0
 host_migrate_reconcile || reconcile_rc=$?
@@ -343,10 +351,11 @@ host_migrate_install_traps
 # reversed it. host_layout_adopt resolves again and relocates the config and
 # install root it names (and repairs what an older toolkit wrote over the
 # bridges); the install root is then read again from the config.
-host_layout_adopt
+host_layout_adopt --no-repair
 SRC_DEST=$(cfg_source_dest)
 # A host whose settings predate the Ficus naming stops HERE, before either
 # mode's preflight, conversion, download, staging or candidate migration.
+require_host_layout_ready
 require_host_env_ready
 
 # ============================================================== caddy ingress
@@ -358,9 +367,13 @@ require_host_env_ready
 # fails the upgrade with Core untouched, and the host keeps serving its
 # previous Caddyfile (caddy_write_and_reload restores it). An unchanged file
 # is left alone and caddy is not reloaded. A host without ingress.caddy skips.
-log_step 'caddy ingress: re-render the Caddyfile'
-upgrade_caddy_prepare "${SRC_DEST}/.env"
-upgrade_caddy_apply
+prepare_upgrade_host() {
+  ensure_swapfile
+  ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
+  log_step 'caddy ingress: re-render the Caddyfile'
+  upgrade_caddy_prepare "${SRC_DEST}/.env"
+  upgrade_caddy_apply
+}
 
 # ============================================================== artifact mode
 
@@ -396,8 +409,6 @@ artifact_upgrade() {
     [[ -f ${SCRIPT_DIR}/${tmpl} ]] ||
       die "missing ${SCRIPT_DIR}/${tmpl} — an artifact upgrade re-renders the systemd units (and the host layout migration the backup units and script), so the caller must push scripts/setup/systemd/*.tmpl and scripts/setup/ficus-backup.sh.tmpl to the box alongside lib.sh and upgrade-host.sh"
   done
-  ensure_swapfile
-  ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
   # The services this run will restart read <dest>/.env (EnvironmentFile in
   # both units), and an upgrade renders no .env — so if that file never named
   # a sandbox runtime, the flip at step 5 brings
@@ -473,7 +484,9 @@ artifact_upgrade() {
     die "refusing ${release_dir}: it is a pre-Ficus Core release (its artifact.json has no \"envPrefix\": \"FICUS\") — choose a Ficus release"
   # A non-root (sudo) run cannot do a host migration this release needs:
   # refuse now, before the candidate migration.
+  require_host_layout_ready "${release_dir}"
   host_migrate_require_privilege "${release_dir}"
+  prepare_upgrade_host
 
   log_step "artifact upgrade 4/5: host migrations and systemd units are prepared right before the flip"
   # Both happen inside artifact_activate's pre-flip hook (host_layout_preflip,
@@ -540,8 +553,6 @@ require_cmd bun "setup-host.sh installs bun at \${HOME}/.bun/bin — was this ho
 require_cmd curl
 require_root_capability
 id -u "${RUN_USER}" >/dev/null 2>&1 || die "core.run_user '${RUN_USER}' does not exist"
-ensure_swapfile
-ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
 # Same reasoning as artifact mode's preflight: phase 4 restarts the api and
 # worker units against <dest>/.env, which this script never renders. An .env
 # with no (or a retired) sandbox runtime means both
@@ -556,6 +567,7 @@ BEFORE_SHA=$(git -C "${SRC_DEST}" rev-parse HEAD)
 # named ficus) cannot read this host's settings, so it is refused with the
 # checkout, the build and the database untouched.
 git_target_check() { # REV
+  require_host_layout_ready '' "$(git_rev_host_layout "${SRC_DEST}" "$1")"
   git_rev_is_ficus "${SRC_DEST}" "$1" ||
     die "refusing revision $1: it is a pre-Ficus Core release (its package.json is not named ficus) — choose a Ficus release"
   # The host layout migration this revision would need runs only after the
@@ -566,6 +578,7 @@ git_target_check() { # REV
     die "refusing revision $1: this revision moves the host to the Ficus layout, which is root-only — re-run as root"
   fi
   host_migrate_require_privilege "${SRC_DEST}"
+  prepare_upgrade_host
 }
 
 log_step "phase 1/4: source → ${SRC_REF}"

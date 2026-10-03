@@ -3,7 +3,7 @@ import { basename, dirname, isAbsolute, join } from 'path'
 import { parseLaunchdJobIdentity } from '@ficus/shared'
 import { FICUS_LAUNCHD_PREFIX, LEGACY_LAUNCHD_PREFIX } from '@ficus/shared/node'
 import type { SupervisorAdapter, SupervisorContext, SupervisorProcess } from './supervisor'
-import { cliHome } from './home-move'
+import { cliHome, recoveryCliHome } from './home-move'
 import { CURRENT_IDENTITY, instanceNames } from './instance'
 
 export type NativeComponent = 'api' | 'worker'
@@ -50,7 +50,9 @@ function processName(context: Pick<SupervisorContext, 'label' | 'identity'>, com
 }
 
 export function nativeLogPath(context: NamedContext, component: NativeComponent): string {
-  return join(cliHome({ homedir: context.home }), 'logs', processName(context, component) + '.log')
+  // Identity1 is reachable only through the retained explicit rename/undo tool.
+  const home = context.identity === 1 ? recoveryCliHome(context.home) : cliHome({ homedir: context.home })
+  return join(home, 'logs', processName(context, component) + '.log')
 }
 
 /** `sh.ficus.<process>`; an identity-1 instance keeps the prefix its jobs were registered under. */

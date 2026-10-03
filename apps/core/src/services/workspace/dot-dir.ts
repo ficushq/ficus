@@ -1,27 +1,10 @@
 /**
- * The per-workspace settings dir, `<work root>/.ficus/`.
- *
- * A work root is a squad workspace (`<HOME_DIR>/workspaces/squads/<id>`, `/workspace[/<id>]` in a
- * container, `~/workspace` on a vm box) or an agent's private dir (`<HOME_DIR>/private/<sandboxId>`,
- * `/private`, `~/.private`). Its dot dir holds the squad env (`env.user`, the generated `.env`), the
- * agent identity key (`identity.pem`), the managed toolchain, the interactive `.bashrc`, the
- * workspace `setup.sh`, and the monitor and local-deployment run dirs.
- *
- * Before the rename the dir had the legacy name. Bridge (phase 5, U4): the worker moves every legacy
- * dir once at start ({@link migrateWorkspaceDotDirs}), and Core moves one lazily before it reads or
- * writes a work root ({@link migrateWorkspaceDotDir}), so an api process that serves a request before
- * the worker has run never creates a second, empty `.ficus` beside the legacy dir. The legacy name
- * stays behind as a RELATIVE symlink to `.ficus`: a Core rolled back past this release, an agent
- * whose shell still has the legacy path, and a sandbox image that predates the rename all keep
- * finding the same files. The relative target resolves the same inside a container that mounts the
- * work root somewhere else.
- *
- * The move is one `rename(2)` of the directory entry, so every file keeps its inode, bytes and mode,
- * and an open file descriptor keeps writing into the moved dir. Nothing is ever merged, and no
- * symlink is followed: a work root, legacy dir or `.ficus` that is not a real directory is reported
- * and left alone.
+ * Canonical per-workspace settings live under `.ficus`. During finalization,
+ * retained migration helpers move old real directories without merging data,
+ * and remove only the exact relative compatibility link. Foreign links and
+ * conflicting directories remain untouched and block dependent writes.
  */
-import { lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, symlinkSync, type Stats } from 'node:fs'
+import { lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, unlinkSync, type Stats } from 'node:fs'
 import { basename, join } from 'node:path'
 import { createLogger } from '../../lib/infra/logger'
 
@@ -53,36 +36,10 @@ function lstatOrNull(path: string): Stats | null {
   }
 }
 
-/** Leaves `<root>/<legacy> -> .ficus`. Returns a conflict when something else took the name. */
-function ensureBridgeLink(root: string): string | undefined {
-  const legacy = join(root, LEGACY_WORKSPACE_DOT_DIR)
-  try {
-    symlinkSync(WORKSPACE_DOT_DIR, legacy)
-    return undefined
-  } catch (error) {
-    if (errorCode(error) !== 'EEXIST') return `could not link ${LEGACY_WORKSPACE_DOT_DIR}: ${errorCode(error)}`
-  }
-  // Another process got there first. Accept it only when it is the same link.
-  const existing = lstatOrNull(legacy)
-  if (existing?.isSymbolicLink() && readlinkSync(legacy) === WORKSPACE_DOT_DIR) return undefined
-  return `both ${LEGACY_WORKSPACE_DOT_DIR} and ${WORKSPACE_DOT_DIR} exist`
-}
-
 /**
- * Brings one work root to the Ficus shape, synchronously and idempotently:
- *
- * - legacy is a real dir, `.ficus` absent → rename it to `.ficus`, leave the legacy link (`moved`).
- * - `.ficus` is a real dir, legacy absent → add the legacy link (a crash between the rename and the
- *   link, or a dir Core created fresh).
- * - legacy is already the link to `.ficus`, or neither exists → nothing.
- * - both are real dirs; legacy is a link to anything else; either name is not a directory; the work
- *   root itself is a symlink; a rename or link the OS refuses (permissions) → a `conflict`, and
- *   nothing is changed. A later call retries.
- *
- * Two callers racing on the same root both converge: the loser's rename fails (ENOENT when the dir
- * is gone, EISDIR when the winner's link already took the legacy name) and any rename failure
- * re-reads the state once before it is classified; an EEXIST on the link is accepted when it is the
- * same link. `options.rename` is a test seam for that race.
+ * Moves a remaining real directory without merging or recreating a bridge.
+ * An exact relative bridge is removed only beside a real canonical directory.
+ * Conflicts are reported without overwriting paths; racing callers re-read once.
  */
 export function migrateWorkspaceDotDir(
   root: string,
@@ -103,7 +60,15 @@ export function migrateWorkspaceDotDir(
     if (current && !current.isDirectory()) return { moved: false, conflict: `${WORKSPACE_DOT_DIR} is not a directory` }
     if (old?.isSymbolicLink()) {
       const pointsAt = readlinkSync(legacy)
-      if (pointsAt === WORKSPACE_DOT_DIR) return { moved: false }
+      if (pointsAt === WORKSPACE_DOT_DIR) {
+        if (!current) return { moved: false, conflict: `${WORKSPACE_DOT_DIR} is missing behind the compatibility link` }
+        try {
+          unlinkSync(legacy)
+        } catch (error) {
+          if (errorCode(error) !== 'ENOENT') throw error
+        }
+        return { moved: false }
+      }
       return {
         moved: false,
         conflict: `${LEGACY_WORKSPACE_DOT_DIR} is a link to ${pointsAt}, not to ${WORKSPACE_DOT_DIR}`,
@@ -113,10 +78,7 @@ export function migrateWorkspaceDotDir(
     if (old && current)
       return { moved: false, conflict: `both ${LEGACY_WORKSPACE_DOT_DIR} and ${WORKSPACE_DOT_DIR} exist` }
 
-    if (current) {
-      const conflict = ensureBridgeLink(root)
-      return conflict ? { moved: false, conflict } : { moved: false }
-    }
+    if (current) return { moved: false }
     if (!old) return { moved: false }
 
     try {
@@ -131,8 +93,7 @@ export function migrateWorkspaceDotDir(
         return { moved: false, conflict: `both ${LEGACY_WORKSPACE_DOT_DIR} and ${WORKSPACE_DOT_DIR} exist` }
       return { moved: false, conflict: `could not move ${LEGACY_WORKSPACE_DOT_DIR}: ${code}` }
     }
-    const conflict = ensureBridgeLink(root)
-    return conflict ? { moved: true, conflict } : { moved: true }
+    return { moved: true }
   } catch (error) {
     return { moved: false, conflict: `could not inspect: ${errorCode(error)}` }
   }
@@ -146,6 +107,7 @@ export type WorkspaceDotDirConflictKind =
   | 'ficus-not-a-directory'
   | 'symlinked-workspace'
   | 'legacy-not-moved'
+  | 'legacy-link-not-removed'
   | 'uninspectable'
 
 /** What a person does to resolve each kind. Names only the dot dirs, never a path or a link target. */
@@ -163,6 +125,8 @@ function conflictAdvice(kind: WorkspaceDotDirConflictKind): string {
       return `its ${WORKSPACE_DOT_DIR} is not a real directory (a file or a symlink). Replace it with a directory`
     case 'symlinked-workspace':
       return `the workspace is a symlink and its target still holds ${legacy}. In the target, move ${legacy} to ${next}`
+    case 'legacy-link-not-removed':
+      return `its compatibility link could not be removed. Fix the workspace directory permissions and retry`
     case 'legacy-not-moved':
       return `its ${legacy} could not be moved to ${next}, usually because of permissions. Fix the permissions (or move it by hand) and retry`
     case 'uninspectable':
@@ -192,7 +156,7 @@ export class WorkspaceDotDirConflictError extends Error {
 /**
  * Why `.ficus` in `root` cannot be used safely, or undefined when it can: the root is missing or a
  * real dir (or a symlink holding no legacy dir), `.ficus` is absent or a real dir, and the legacy
- * name is absent or exactly the bridge link. Read-only.
+ * name is absent. Read-only.
  */
 function unusableReason(root: string): { kind: WorkspaceDotDirConflictKind; detail: string } | undefined {
   const rootStat = lstatOrNull(root)
@@ -202,7 +166,12 @@ function unusableReason(root: string): { kind: WorkspaceDotDirConflictKind; deta
     return { kind: 'ficus-not-a-directory', detail: `${WORKSPACE_DOT_DIR} is not a directory` }
   const legacy = join(root, LEGACY_WORKSPACE_DOT_DIR)
   const old = lstatOrNull(legacy)
-  if (!old || (old.isSymbolicLink() && readlinkSync(legacy) === WORKSPACE_DOT_DIR)) return undefined
+  if (!old) return undefined
+  if (old.isSymbolicLink() && readlinkSync(legacy) === WORKSPACE_DOT_DIR) {
+    return current
+      ? { kind: 'legacy-link-not-removed', detail: 'the compatibility link remains after finalization' }
+      : { kind: 'ficus-not-a-directory', detail: `${WORKSPACE_DOT_DIR} is missing` }
+  }
   if (rootStat.isSymbolicLink())
     return {
       kind: 'symlinked-workspace',
@@ -227,8 +196,8 @@ const warnedRoots = new Set<string>()
  * root is left in a state where using `.ficus` would split the settings (a legacy dir that could not
  * be moved, a legacy link elsewhere) or write through a non-directory `.ficus`, it throws
  * {@link WorkspaceDotDirConflictError} instead of letting the caller create `.ficus`, mint a new
- * identity key, or read an empty env. A harmless conflict (only the link could not be made) is
- * logged once per root per process; the worker's start-up pass reports every conflict.
+ * identity key, or read an empty env. Cleanup failures are logged once per root per process;
+ * the worker's start-up pass reports every conflict.
  */
 export function prepareWorkspaceDotDir(root: string): void {
   const outcome = migrateWorkspaceDotDir(root)
@@ -246,13 +215,11 @@ export function prepareWorkspaceDotDir(root: string): void {
   if (unusable) throw new WorkspaceDotDirConflictError(root, unusable.kind, unusable.detail)
 }
 
-/** Moves a legacy dir if there is one, creates `<root>/.ficus` if needed, links the legacy name, and returns the dir. */
+/** Moves a legacy dir if there is one, creates `<root>/.ficus` if needed and returns the dir. */
 export function ensureWorkspaceDotDir(root: string): string {
   prepareWorkspaceDotDir(root)
   const dir = workspaceDotPath(root)
   mkdirSync(dir, { recursive: true })
-  // Link the legacy name to the dir just created, for an image or a rolled-back Core that reads it.
-  prepareWorkspaceDotDir(root)
   return dir
 }
 
@@ -264,8 +231,8 @@ export function workspaceDotDirsLogLine(result: { moved: number; conflicts: stri
 /**
  * The worker's one start-up pass. For each squad workspace under `<homeDir>/workspaces/squads/*` and
  * each agent private dir under `<homeDir>/private/*` (the identity key lives there), a legacy dot dir
- * that is a real dir while `.ficus` is absent is renamed to `.ficus`, and a RELATIVE symlink
- * `<legacy> -> .ficus` is left (the bridge for a rolled-back Core and for running agents). Both
+ * that is a real dir while `.ficus` is absent is renamed to `.ficus`. Exact relative
+ * compatibility links are removed. Both
  * present → untouched and reported. Idempotent. Never throws: every problem is a `conflicts` entry
  * (`<work root>: <reason>`), and the other roots still run.
  */
