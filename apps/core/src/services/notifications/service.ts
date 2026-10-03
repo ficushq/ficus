@@ -1,3 +1,4 @@
+import { pushPreview } from '../push/preview'
 import { pushCategoryFor } from './push-category'
 import { enqueueDesktopNotifications } from '../push/desktop'
 import type { PushCategory } from '@ficus/shared'
@@ -278,6 +279,7 @@ export class NotificationService {
     }
     log.info(`Sending web push to ${subscriptions.length} subscription(s)`)
 
+    const preview = pushPreview(event)
     const work = event.workStreamId ? await WorkStream.find(event.workStreamId) : null
     const routing = {
       url: event.url,
@@ -297,7 +299,7 @@ export class NotificationService {
           const text = pushAlertText({
             eventType: pushEventType(event.notificationKind ?? event.type),
             workStreamNumber: event.workStreamNumber ?? work?.number,
-            ...(prefs.showPreviews ? { preview: { title: event.title, body: event.body } } : {}),
+            ...(prefs.showPreviews ? { preview } : {}),
           })
           // The service worker maps `tag` to Notification.tag, so a later push for the same
           // work replaces the earlier one instead of stacking.
@@ -340,6 +342,7 @@ export class NotificationService {
     // the right one before deep-linking. Omitted when APP_URL isn't configured.
     const origin = getAppOrigin()
 
+    const preview = pushPreview(event)
     const work = event.workStreamId ? await WorkStream.find(event.workStreamId) : null
     const workStreamNumber = event.workStreamNumber ?? work?.number
     await Promise.all(
@@ -348,15 +351,7 @@ export class NotificationService {
         const presentation = {
           eventType: pushEventType(event.notificationKind ?? event.type),
           workStreamNumber,
-          ...(prefs.showPreviews
-            ? {
-                preview: {
-                  title: event.title.slice(0, 200),
-                  body: event.body.slice(0, 500),
-                  ...(event.subtitle ? { subtitle: event.subtitle.slice(0, 80) } : {}),
-                },
-              }
-            : {}),
+          ...(prefs.showPreviews ? { preview } : {}),
         }
         const alert = pushAlertText(presentation)
         if (pushRelayConfig()) {
@@ -385,7 +380,7 @@ export class NotificationService {
             body: alert.body,
             // Grouping, replacement, and urgency are structure, not content: they apply even when
             // previews are off. The subtitle is content (the squad name), so it follows the preview rule.
-            ...(prefs.showPreviews && event.subtitle ? { subtitle: event.subtitle } : {}),
+            ...(prefs.showPreviews && preview.subtitle ? { subtitle: preview.subtitle } : {}),
             ...(event.threadKey ? { threadId: event.threadKey } : {}),
             ...(event.collapseKey ? { collapseId: event.collapseKey } : {}),
             ...(event.interruptionLevel ? { interruptionLevel: event.interruptionLevel } : {}),

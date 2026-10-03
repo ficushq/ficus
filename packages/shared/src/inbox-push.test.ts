@@ -22,6 +22,12 @@ describe('parseInboxPushPresentation', () => {
     })
   })
 
+  test('retains optional original Markdown for rendering before preview limits', () => {
+    const source = { title: '[Title](ficus:ws:454)', body: `[PR](https://example.com/${'x'.repeat(600)})` }
+    expect(parseInboxPushPresentation({ title: 'Clipped', body: 'Clipped', source })?.source).toEqual(source)
+    expect(parseInboxPushPresentation({ title: 'T', body: 'B', source: { url: '/other' } })).toBeUndefined()
+  })
+
   test('requires a non-empty title and body and rejects unknown or oversized fields', () => {
     expect(parseInboxPushPresentation({ title: '', body: 'x' })).toBeUndefined()
     expect(parseInboxPushPresentation({ title: 'T', body: '  ' })).toBeUndefined()

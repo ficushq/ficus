@@ -32,6 +32,18 @@ function claim(overrides: Partial<FleetIncidentNotificationClaim>): FleetInciden
 }
 
 describe('fleet incident messages', () => {
+  test('retains complete source when clipping a push presentation', () => {
+    const squadName = `[**Ficus**](https://example.com/${'x'.repeat(350)})`
+    const message = renderFleetIncidentMessage(claim({}), { squadName }, NOW)
+    expect(message.push).toMatchObject({
+      source: {
+        title: message.subject,
+        body: `Work in squad ${squadName} has been stalled for 45m.`,
+        subtitle: squadName,
+      },
+    })
+  })
+
   test('formats durations in the largest readable units', () => {
     expect(formatFleetDuration(20_000)).toBe('1m')
     expect(formatFleetDuration(45 * 60_000)).toBe('45m')

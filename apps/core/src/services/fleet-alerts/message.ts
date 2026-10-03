@@ -199,6 +199,9 @@ export function renderFleetIncidentMessage(
     push: {
       title: subject.slice(0, 120),
       body: headline.slice(0, 300),
+      ...(subject.length > 120 || headline.length > 300 || (names.squadName?.length ?? 0) > 80
+        ? { source: { title: subject, body: headline, ...(names.squadName ? { subtitle: names.squadName } : {}) } }
+        : {}),
       ...(names.squadName ? { subtitle: names.squadName.slice(0, 80) } : {}),
       // A recovery replaces its alert on the device instead of stacking a second notification.
       collapseKey: `fleet:${claim.incidentId}`,

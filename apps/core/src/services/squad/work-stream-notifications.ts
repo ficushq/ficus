@@ -311,9 +311,12 @@ function buildWatcherPush(
   detail: string | undefined
 ): InboxPushPresentation | undefined {
   const copy = PUSH_COPY[event]
+  const title = `${copy.label}: ${workStreamTitle(workStream)}`
+  const body = detail?.trim() || copy.fallbackBody
   return parseInboxPushPresentation({
-    title: clip(`${copy.label}: ${workStreamTitle(workStream)}`, 120),
-    body: clip(detail?.trim() || copy.fallbackBody, 300),
+    title: clip(title, 120),
+    body: clip(body, 300),
+    ...(title.length > 120 || body.length > 300 ? { source: { title, body } } : {}),
     collapseKey: `ws:${workStream.id}`,
     threadKey: `squad:${workStream.squadId}`,
     interruptionLevel: copy.interruptionLevel,
@@ -353,7 +356,7 @@ async function notifyWorkStreamSubscribers(
         )
     )
     if (subscriberIds.length === 0) return
-    const description = workStream.description?.trim() ? workStream.description.slice(0, 200) : undefined
+    const description = workStream.description?.trim() ? workStream.description : undefined
     const detail = event === 'done' ? pushDetail || nextSteps || description : workStream.handoffMessage || description
     const push = buildWatcherPush(workStream, event as 'review' | 'blocked' | 'done', detail ?? undefined)
     for (const userId of subscriberIds) {
