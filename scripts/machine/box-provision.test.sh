@@ -206,10 +206,15 @@ case "$verb" in
       [ ! -f "$STUB_R/fakedb/fail-manager-stop" ] || exit 89
       rm -f "$STUB_R/fakedb/manager-groups" ;;
     esac ;;
+  start)
+    [ ! -f "$STUB_R/fakedb/fail-start" ] || exit 86
+    for u in $units; do
+      [ -e "$dir/$u" ] || exit 1
+      touch "$STUB_R/fakedb/active-$u"
+    done ;;
   reenable) "$0" "${manager_args[@]}" disable $units || exit $?; "$0" "${manager_args[@]}" enable $units ;;
   enable) [ ! -f "$STUB_R/fakedb/fail-enable" ] || exit 87
     for u in $units; do [ -e "$dir/$u" ] || exit 1
-      touch "$STUB_R/fakedb/active-$u"
       for t in $(installs WantedBy "$u"); do mkdir -p "$dir/$t.wants"; ln -sfn "$dir/$u" "$dir/$t.wants/$u"; done
       for al in $(installs Alias "$u"); do if [ -e "$dir/$al" ] && [ ! -L "$dir/$al" ]; then exit 1; fi; ln -sfn "$dir/$u" "$dir/$al"; done
     done ;;
@@ -331,7 +336,7 @@ exit 0'
   for mode in system user; do
     sandbox_id=agent_park
     [ "$mode" = system ] || sandbox_id=squad_park
-    for failure in enable disable readback empty-readback; do
+    for failure in enable disable start readback empty-readback; do
       make_host
       case "$failure" in
         empty-readback) touch "${R}/fakedb/empty-readback" ;;
@@ -394,7 +399,9 @@ exit 0'
   expect_eq 'fresh user box: ficus-sandbox-server.socket is enabled in the user manager' \
     "$(is_link_to "${U}/sockets.target.wants/ficus-sandbox-server.socket" "${U}/ficus-sandbox-server.socket")" 'yes'
   expect_eq 'fresh user box: the enable went to the box user manager' \
-    "$(grep -c "^systemctl --machine=${BOX}@.host --user reenable --now ficus-sandbox-server.socket$" "${R}/calls.log")" '1'
+    "$(grep -c "^systemctl --machine=${BOX}@.host --user reenable ficus-sandbox-server.socket$" "${R}/calls.log")" '1'
+  expect_eq 'fresh user box: the socket was explicitly started by the box user manager' \
+    "$(grep -c "^systemctl --machine=${BOX}@.host --user start ficus-sandbox-server.socket$" "${R}/calls.log")" '1'
   expect_eq 'fresh user box: no legacy alias remains' \
     "$(is_link_to "${U}/${L_USER}.socket" "${U}/ficus-sandbox-server.socket")" 'no'
   expect_eq 'fresh user box: its first manager inherits browser membership' \
