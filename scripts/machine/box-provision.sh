@@ -1787,7 +1787,11 @@ provision_box() {
   # Failure here is recoverable by reprovision, but is NOT a provisioned box.
   # Keep command failures and empty/failed readbacks out of the success marker.
   sysbox disable "$(unit_name)" || return 1
-  sysbox reenable --now "$(socket_name)" || return 1
+  # reenable refreshes the install links but does not reliably start the socket
+  # (including with --now on the deployed systemd). Start it explicitly before
+  # accepting the active-state readback.
+  sysbox reenable "$(socket_name)" || return 1
+  sysbox start "$(socket_name)" || return 1
   local server_enabled socket_enabled socket_active
   server_enabled="$(sysbox show -p UnitFileState --value "$(unit_name)")" || return $?
   socket_enabled="$(sysbox show -p UnitFileState --value "$(socket_name)")" || return $?
