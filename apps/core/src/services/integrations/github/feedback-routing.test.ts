@@ -2090,3 +2090,141 @@ test('mounted retained canonical work with a fresh native proof does not reread 
     await h.close()
   }
 })
+
+test('exhausted root work slots select no GitHub delivery bodies before reservation', async () => {
+  const { withGitHubOutputPass, reserveGitHubEvent, githubOutputPass } = await import('./feedback-pass')
+  const { prepareOutputDeliveryPass } = await import('../outputs/runtime')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const streamId = await h.stream(true)
+    await db
+      .update(workStreams)
+      .set({ pause: { reason: 'Test', pausedAt: new Date().toISOString() } as any })
+      .where(eq(workStreams.id, streamId))
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    await withGitHubOutputPass(async () => {
+      for (let i = 0; i < 25; i++) expect(reserveGitHubEvent(crypto.randomUUID())).toBe(true)
+      const reads: string[] = []
+      setDatabaseQueryObserverForTest((query) => {
+        if (query.startsWith('select') && query.split(' from ')[0]!.includes('"fact"')) reads.push(query)
+      })
+      await prepareOutputDeliveryPass()
+      expect(reads).toHaveLength(0)
+      expect([...(githubOutputPass()!.deliveries?.values() ?? [])].flat()).toHaveLength(0)
+    })
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await h.close()
+  }
+})
+
+test('repeated known renewal in one root pass bounds body reads but rechecks source mutations', async () => {
+  const { withGitHubOutputPass } = await import('./feedback-pass')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const id = (await publishIntegrationOutput('github', h.fact(), h.authority))!
+    const [proof] = await db.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, id))
+    await withGitHubOutputPass(async () => {
+      let bodies = 0
+      setDatabaseQueryObserverForTest((query) => {
+        if (
+          query.startsWith('select') &&
+          query.split(' from ')[0]!.includes('"fact"') &&
+          query.includes('from "integration_output_events"')
+        )
+          bodies++
+      })
+      for (let i = 0; i < 20; i++) await renewal.renewKnownGitHubOutputs([id])
+      expect(bodies).toBeLessThanOrEqual(25)
+      await db
+        .update(integrationOutputEvents)
+        .set({ fact: { ...h.fact(), body: 'CHANGED_AFTER_CACHE' } })
+        .where(eq(integrationOutputEvents.id, proof!.sourceEventId))
+      const { isGitHubOutputAdmitted } = await import('./feedback-routing')
+      const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, id))
+      expect(await isGitHubOutputAdmitted(db, event!)).toBe(false)
+    })
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await h.close()
+  }
+})
+
+test('exhausted root body budget withholds history before any full event row read', async () => {
+  const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const streamId = await h.stream(true)
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    await withGitHubOutputPass(async () => {
+      githubOutputPass()!.bodyRows = 25
+      const bodies: string[] = []
+      setDatabaseQueryObserverForTest((query) => {
+        if (query.startsWith('select') && query.split(' from ')[0]!.includes('"fact"')) bodies.push(query)
+      })
+      expect(await outputDeliveryHistory(streamId)).toHaveLength(0)
+      expect(bodies).toHaveLength(0)
+    })
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await h.close()
+  }
+})
+
+test('more than 25 paused delivery heads cannot consume all body slots before source authorization', async () => {
+  const { reconcileFlows } = await import('../../workflows/execution')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const streamId = await h.stream(true)
+    await db
+      .update(workStreams)
+      .set({ pause: { reason: 'Test', pausedAt: new Date().toISOString() } as any })
+      .where(eq(workStreams.id, streamId))
+    h.read.mockImplementation(
+      async <T>(path: string): Promise<T | null> =>
+        (path === '/repositories/10'
+          ? { id: 10, full_name: 'acme/project' }
+          : { ...h.native, id: Number(path.split('/').at(-1)) }) as T
+    )
+    const ids: string[] = []
+    for (let i = 0; i < 26; i++) {
+      h.native.id = 30 + i
+      ids.push((await publishIntegrationOutput('github', h.fact(), h.authority))!)
+    }
+    await db
+      .update(githubOutputProofs)
+      .set({ expiresAt: new Date(0) })
+      .where(inArray(githubOutputProofs.eventId, ids))
+    h.read.mockClear()
+    const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+    for (let tick = 0; tick < 4; tick++) {
+      h.read.mockClear()
+      let bodySelects = 0
+      setDatabaseQueryObserverForTest((query) => {
+        if (query.startsWith('select') && query.split(' from ')[0]!.includes('"fact"')) bodySelects++
+      })
+      await withGitHubOutputPass(async () => {
+        await reconcileFlows()
+        expect(githubOutputPass()!.bodyRows).toBeLessThanOrEqual(25)
+      })
+      setDatabaseQueryObserverForTest(undefined)
+      // Every event SELECT in this tick is scalar or a single-ID body read; no hidden batch.
+      expect(bodySelects).toBeLessThanOrEqual(25)
+      if (tick === 0) expect(h.read.mock.calls.length).toBeGreaterThan(0)
+      expect(h.read.mock.calls.length).toBeLessThanOrEqual(24)
+    }
+    const [tail] = await db
+      .select()
+      .from(githubOutputProofs)
+      .where(eq(githubOutputProofs.eventId, ids.at(-1)!))
+    expect(tail!.expiresAt.getTime()).toBeGreaterThan(Date.now())
+    expect((await h.effects()).inbox).toBe(0)
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await h.close()
+  }
+}, 120_000)

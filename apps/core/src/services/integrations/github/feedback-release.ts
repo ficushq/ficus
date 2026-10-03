@@ -9,6 +9,7 @@ import {
   inbox,
   chatSendReceipts,
 } from '../../../db'
+import { readOutputEvent } from './feedback-pass-read'
 import { githubContentHash } from './feedback-envelope'
 import { recordCanonicalGitHubFeedback } from './feedback-store'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
@@ -168,8 +169,8 @@ export async function releaseGitHubFeedback(
       return outcome !== false
     }
     try {
-      ;[canonical] = await db
-        .select()
+      const [canonicalId] = await db
+        .select({ id: integrationOutputEvents.id })
         .from(integrationOutputEvents)
         .where(
           and(
@@ -178,6 +179,7 @@ export async function releaseGitHubFeedback(
             eq(integrationOutputEvents.eventKey, revision.id)
           )
         )
+      canonical = canonicalId ? await readOutputEvent(db, canonicalId.id) : undefined
       // Irreversible accepted evidence is settlement, not a new effect or revocation bypass.
       if (canonical && (await hasAcceptedGitHubFeedbackReceipts(canonical.id))) {
         state = 'delivered'
@@ -185,7 +187,7 @@ export async function releaseGitHubFeedback(
       } else {
         if (!canonical) {
           const sources = await db
-            .select({ event: integrationOutputEvents })
+            .select({ eventId: integrationOutputEvents.id })
             .from(githubFeedbackSources)
             .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, githubFeedbackSources.eventId))
             .where(
@@ -196,7 +198,9 @@ export async function releaseGitHubFeedback(
             )
             .orderBy(githubFeedbackSources.observedAt)
             .limit(1) // original first observation only; never probe/swap another credential
-          for (const { event } of sources) {
+          for (const { eventId } of sources) {
+            const event = await readOutputEvent(db, eventId)
+            if (!event) continue
             if (
               revision.routingProvenance.some((route) => route.authorityHash) &&
               !revision.routingProvenance.some((route) => route.authorityHash === githubContentHash(event.authority))

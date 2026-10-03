@@ -8,6 +8,8 @@ import { verifyGitHubOutputResource } from './feedback-resource'
 /** One budget is inherited by every await/queue/release nested in a root reconcile pass. */
 export interface GitHubOutputPass {
   events: Set<string>
+  bodyRows: number
+  bodies: Map<string, typeof integrationOutputEvents.$inferSelect>
   current: Map<string, Promise<{ contentHash: string } | null>>
   resources: number
   deliveries?: Map<string, Array<{ event: typeof integrationOutputEvents.$inferSelect; deliveryId: string }>>
@@ -18,7 +20,10 @@ export const githubOutputPass = () => passes.getStore()
 export async function withGitHubOutputPass<T>(work: () => Promise<T>): Promise<T> {
   return passes.getStore()
     ? work()
-    : passes.run({ events: new Set(), resources: 0, native: new Map(), current: new Map() }, work)
+    : passes.run(
+        { events: new Set(), bodyRows: 0, bodies: new Map(), resources: 0, native: new Map(), current: new Map() },
+        work
+      )
 }
 
 export const GITHUB_PASS_READ_LIMIT = 25

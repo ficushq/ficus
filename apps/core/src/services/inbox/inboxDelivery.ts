@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
-import { db, integrationOutputEvents, chatSendReceipts } from '../../db'
+import { db, chatSendReceipts } from '../../db'
 import type { DeliveryMode } from '@ficus/shared'
 import { Agent } from '../../entities/Agent'
 import {
@@ -96,10 +96,9 @@ export async function deliverInboxMessagesToAgent(agentId: string): Promise<void
     }
     if (message.metadata?.source === 'integration-notification') {
       const id = message.metadata.integrationEventId
-      const [event] =
-        typeof id === 'string' && z.string().uuid().safeParse(id).success
-          ? await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, id))
-          : []
+      const { readOutputEvent } = await import('../integrations/github/feedback-pass-read')
+      const event =
+        typeof id === 'string' && z.string().uuid().safeParse(id).success ? await readOutputEvent(db, id) : undefined
       if (event?.integration === 'github') {
         // One immutable event per accepted send. Never pre-claim, batch, or change payload/mode
         // on replay: a committed receipt recovers the acceptance-before-ack crash window.

@@ -1,6 +1,7 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { db, integrationOutputEvents } from '../../../db'
+import { db } from '../../../db'
+import { readOutputEvent } from './feedback-pass-read'
 import { authorized } from '../outputs/authority'
 import { withGitHubOutputPass, reserveGitHubEvent, githubOutputPass } from './feedback-pass'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
@@ -33,11 +34,12 @@ async function renewKnownInPass(eventIds: string[]) {
     return false
   })
   if (!selected.length) return result
-  const events = await db
-    .select()
-    .from(integrationOutputEvents)
-    .where(and(eq(integrationOutputEvents.integration, 'github'), inArray(integrationOutputEvents.id, selected)))
-  for (const event of events) {
+  for (const id of selected) {
+    const event = await readOutputEvent(db, id)
+    if (!event || event.integration !== 'github') {
+      result.deferred.push(id)
+      continue
+    }
     if (
       event.authority.kind !== 'connection' ||
       !(await authorized(db, 'github', event.authority, event.authority.squadId)) ||
@@ -72,7 +74,7 @@ export async function withholdRevokedAutomaticGitHubOutput(eventId: string) {
   const { hasAcceptedGitHubFeedbackReceipts } = await import('./feedback-release')
   await db.transaction(async (tx) => {
     await lockGitHubTrustAuthority(tx)
-    const [event] = await tx.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+    const event = await readOutputEvent(tx, eventId)
     if (event?.integration !== 'github' || !event.fact.github?.revisionId || event.authority.kind !== 'connection')
       return
     const [revision] = await tx

@@ -8,6 +8,7 @@ import {
   type DbTx,
 } from '../../../db'
 import type { GitHubFeedbackContent } from '@ficus/shared'
+import { readOutputEvent } from './feedback-pass-read'
 import { githubContentHash } from './feedback-envelope'
 import { readCurrentGitHubFeedback } from './feedback-provider'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
@@ -34,7 +35,7 @@ export interface FeedbackCaptureDependencies {
  * Does not send, wake, route, or claim triggers. The revision key is stable across source transports.
  */
 export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptureDependencies) {
-  const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+  const event = await readOutputEvent(db, eventId)
   const content = event?.fact.github?.content
   if (
     !event ||
@@ -227,7 +228,7 @@ export async function recordCanonicalGitHubFeedback(
   sourceEventId: string,
   authorizeSource: (event: Event, store?: typeof db | DbTx) => Promise<boolean>
 ) {
-  const [source] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, sourceEventId))
+  const source = await readOutputEvent(db, sourceEventId)
   const [association] = await db
     .select()
     .from(githubFeedbackSources)
@@ -262,7 +263,7 @@ export async function recordCanonicalGitHubFeedback(
       throw new Error('feedback_not_admitted')
     const sourceKey = `github-feedback:${revision.squadId}:${revision.id}`
     const [existing] = await tx
-      .select()
+      .select({ id: integrationOutputEvents.id })
       .from(integrationOutputEvents)
       .where(
         and(

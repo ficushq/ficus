@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db, githubFeedbackRevisions, githubFeedbackSources, integrationOutputEvents, type DbTx } from '../../../db'
+import { outputSnapshotMatches } from './feedback-pass-read'
 import { githubContentHash } from './feedback-envelope'
 import { captureGitHubFeedback, type FeedbackCaptureDependencies } from './feedback-store'
 import { isTrustedGitHubFeedbackContent } from './feedback-trust'
@@ -21,19 +22,20 @@ export async function isGitHubFeedbackAdmitted(store: typeof db | DbTx, event: E
   const revisionId = event.fact.github?.revisionId
   if (!revisionId || event.authority.kind !== 'connection') return false
   const [row] = await store
-    .select({ revision: githubFeedbackRevisions, source: githubFeedbackSources, storedEvent: integrationOutputEvents })
+    .select({ revision: githubFeedbackRevisions, source: githubFeedbackSources })
     .from(githubFeedbackSources)
     .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.id, githubFeedbackSources.revisionId))
     .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, githubFeedbackSources.eventId))
-    .where(and(eq(githubFeedbackSources.eventId, event.id), eq(githubFeedbackSources.revisionId, revisionId)))
+    .where(
+      and(
+        eq(githubFeedbackSources.eventId, event.id),
+        eq(githubFeedbackSources.revisionId, revisionId),
+        outputSnapshotMatches(event)
+      )
+    )
   if (!row) return false
-  const { revision, source, storedEvent } = row
+  const { revision, source } = row
   if (
-    storedEvent.integration !== event.integration ||
-    storedEvent.sourceKey !== event.sourceKey ||
-    storedEvent.eventKey !== event.eventKey ||
-    githubContentHash(storedEvent.fact) !== githubContentHash(event.fact) ||
-    githubContentHash(storedEvent.authority) !== githubContentHash(event.authority) ||
     revision.squadId !== event.authority.squadId ||
     source.squadId !== revision.squadId ||
     githubContentHash(source.authority) !== githubContentHash(event.authority) ||

@@ -18,6 +18,7 @@ import { captureGitHubFeedback, recordCanonicalGitHubFeedback } from './feedback
 import { githubContentHash } from './feedback-envelope'
 import { buildGitHubStatus } from './feedback-status'
 import { readGitHubResource, readGitHubCurrent, reserveGitHubEvent, withGitHubOutputPass } from './feedback-pass'
+import { readOutputEvent } from './feedback-pass-read'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 
 type Store = typeof db | DbTx
@@ -58,10 +59,7 @@ export async function isGitHubOutputAdmitted(store: Store, event: Event): Promis
     .from(githubOutputProofs)
     .where(and(eq(githubOutputProofs.eventId, event.id), gt(githubOutputProofs.expiresAt, new Date())))
   if (!proof || proof.effectHash !== hash(event.fact) || proof.authorityHash !== hash(event.authority)) return false
-  const [source] = await store
-    .select()
-    .from(integrationOutputEvents)
-    .where(eq(integrationOutputEvents.id, proof.sourceEventId))
+  const source = await readOutputEvent(store, proof.sourceEventId)
   if (
     !source ||
     source.integration !== 'github' ||
@@ -84,12 +82,10 @@ export async function isGitHubOutputAdmitted(store: Store, event: Event): Promis
 export async function githubMatchingEvent(store: Store, event: Event): Promise<Event> {
   if (event.integration !== 'github') return event
   const [proof] = await store.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, event.id))
-  let [source] = proof
-    ? await store.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, proof.sourceEventId))
-    : []
+  let source = proof ? await readOutputEvent(store, proof.sourceEventId) : undefined
   if (!proof && event.fact.github?.revisionId && (await isGitHubFeedbackAdmitted(store, event))) {
     const [association] = await store
-      .select({ source: integrationOutputEvents })
+      .select({ sourceId: integrationOutputEvents.id })
       .from(githubFeedbackSources)
       .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, githubFeedbackSources.eventId))
       .where(
@@ -102,7 +98,7 @@ export async function githubMatchingEvent(store: Store, event: Event): Promise<E
       )
       .orderBy(githubFeedbackSources.observedAt)
       .limit(1)
-    source = association?.source
+    source = association ? await readOutputEvent(store, association.sourceId) : undefined
     return source ? { ...event, fact: source.fact } : event
   }
   return source && sourceHash(source) === proof?.sourceHash ? { ...event, fact: source.fact } : event
@@ -241,10 +237,7 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
   let source = input
   const [prior] = await db.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, input.id))
   if (prior) {
-    const [stored] = await db
-      .select()
-      .from(integrationOutputEvents)
-      .where(eq(integrationOutputEvents.id, prior.sourceEventId))
+    const stored = await readOutputEvent(db, prior.sourceEventId)
     if (!stored || sourceHash(stored) !== prior.sourceHash || hash(stored.authority) !== hash(input.authority))
       return null
     source = stored
@@ -253,7 +246,7 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
     // a guessed source, marker, other account's access or provider replacement content.
     if (!(await isGitHubFeedbackAdmitted(db, input))) return null
     const [row] = await db
-      .select({ source: integrationOutputEvents })
+      .select({ sourceId: integrationOutputEvents.id })
       .from(githubFeedbackSources)
       .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, githubFeedbackSources.eventId))
       .where(
@@ -267,7 +260,9 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
       .orderBy(githubFeedbackSources.observedAt)
       .limit(1)
     if (!row) return null
-    source = row.source
+    const stored = await readOutputEvent(db, row.sourceId)
+    if (!stored) return null
+    source = stored
   } else if (input.sourceKey.startsWith('github-status:')) return null
   const envelope = source.fact.github
   if (!envelope || (!envelope.content && !envelope.status)) return null
@@ -368,7 +363,7 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
     await lockGitHubTrustAuthority(tx)
     const [lockedProof] = await tx.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, effect.id))
     if (lockedProof && lockedProof.sourceEventId !== source.id) return null
-    const [current] = await tx.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, source.id))
+    const current = await readOutputEvent(tx, source.id)
     if (
       expiresAt.getTime() <= Date.now() ||
       !current ||

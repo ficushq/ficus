@@ -54,6 +54,7 @@ import {
 } from '../github/feedback-routing'
 import { withGitHubOutputPass, githubOutputPass, reserveGitHubEvent } from '../github/feedback-pass'
 import { reconcileGitHubFeedbackRelease } from '../github/feedback-release-runtime'
+import { readOutputEvent, readOutputCandidate } from '../github/feedback-pass-read'
 import { renewKnownGitHubOutputs } from '../github/feedback-renewal'
 
 import { outputRecipients } from './routing-audience'
@@ -470,7 +471,7 @@ async function reconcileOutputDeliveriesInPass(workStreamId: string) {
   if (!pending.length) return
   const cohort = githubOutputPass()?.deliveries
   const queried = await db
-    .select({ event: integrationOutputEvents, deliveryId: integrationOutputDeliveries.id })
+    .select({ eventId: integrationOutputEvents.id, deliveryId: integrationOutputDeliveries.id })
     .from(integrationOutputDeliveries)
     .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
     .where(
@@ -482,11 +483,20 @@ async function reconcileOutputDeliveriesInPass(workStreamId: string) {
     )
     .orderBy(integrationOutputDeliveries.updatedAt, integrationOutputDeliveries.id)
     .limit(25)
-  const candidates = [...queried, ...(cohort?.get(workStreamId) ?? [])]
+  let candidates = [...(cohort?.get(workStreamId) ?? [])]
+  for (const { eventId, deliveryId } of queried) {
+    const event = await readOutputCandidate(db, eventId)
+    if (event) candidates.push({ event, deliveryId })
+  }
   if (!candidates.length) return
-  await renewKnownGitHubOutputs(
+  const renewal = await renewKnownGitHubOutputs(
     candidates.filter(({ event }) => event.integration === 'github').map(({ event }) => event.id)
   )
+  // Capacity deferral is not an attempted recipient delivery. Keep its ordering position;
+  // touching these rows would repeatedly bury the tail behind the same eight native reads.
+  const deferred = new Set(renewal.deferred)
+  candidates = candidates.filter(({ event }) => !deferred.has(event.id))
+  if (!candidates.length) return
   const afterCommit: Array<() => void> = []
   const wake = new Map<string, { deliveryId: string; target: Delivery['targets'][number] }>()
   await db.transaction(async (tx) => {
@@ -500,7 +510,7 @@ async function reconcileOutputDeliveriesInPass(workStreamId: string) {
       .from(squads)
       .where(eq(squads.id, stream.squadId))
     const rows = await tx
-      .select({ delivery: integrationOutputDeliveries, event: integrationOutputEvents })
+      .select({ delivery: integrationOutputDeliveries, eventId: integrationOutputEvents.id })
       .from(integrationOutputDeliveries)
       .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
       .where(
@@ -512,8 +522,10 @@ async function reconcileOutputDeliveriesInPass(workStreamId: string) {
           )
         )
       )
-    for (const { delivery, event } of rows) {
+    for (const { delivery, eventId } of rows) {
       if (['delivered', 'superseded'].includes(delivery.status)) continue
+      const event = await readOutputEvent(tx, eventId)
+      if (!event) continue
       // Touch even withheld/paused rows: bounded oldest-attempt selection cannot starve the tail.
       await tx
         .update(integrationOutputDeliveries)
@@ -809,10 +821,7 @@ export async function isCurrentIntegrationDelivery(store: Store, deliveryId: str
     .select()
     .from(workStreamFlowRuns)
     .where(eq(workStreamFlowRuns.workStreamId, delivery.workStreamId))
-  const [event] = await store
-    .select()
-    .from(integrationOutputEvents)
-    .where(eq(integrationOutputEvents.id, delivery.eventId))
+  const event = await readOutputEvent(store, delivery.eventId)
   if (
     !stream ||
     !run?.activated ||
@@ -907,10 +916,7 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
     !z.string().uuid().safeParse(message.metadata.integrationEventId).success
   )
     return false
-  const [event] = await store
-    .select()
-    .from(integrationOutputEvents)
-    .where(eq(integrationOutputEvents.id, message.metadata.integrationEventId))
+  const event = await readOutputEvent(store, message.metadata.integrationEventId)
   if (!event) return false
   // Other providers retain their existing notification behavior. GitHub connection authority
   // and the immutable canonical decision are independent; neither can replace the other.
@@ -1002,7 +1008,7 @@ export async function reconcileUnmatchedOutputs() {
 }
 async function reconcileUnmatchedOutputsInPass() {
   const events = await db
-    .select()
+    .select({ id: integrationOutputEvents.id })
     .from(integrationOutputEvents)
     .where(
       and(
@@ -1015,7 +1021,9 @@ async function reconcileUnmatchedOutputsInPass() {
     .orderBy(asc(integrationOutputEvents.id))
     .limit(25)
   unmatchedCursor = events.at(-1)?.id // empty page wraps; seek pagination never grows with history
-  for (const source of events) {
+  for (const { id } of events) {
+    const source = await readOutputEvent(db, id)
+    if (!source) continue
     try {
       const event = await prepareGitHubOutput(source)
       if (!event) continue
@@ -1032,9 +1040,14 @@ async function reconcileUnmatchedOutputsInPass() {
 }
 
 export async function outputDeliveryHistory(workStreamId: string) {
+  return withGitHubOutputPass(() => outputDeliveryHistoryInPass(workStreamId))
+}
+async function outputDeliveryHistoryInPass(workStreamId: string) {
+  // Select metadata first. A history request cannot materialize 100 GitHub bodies before
+  // discovering that the root's 25-row body budget is exhausted.
   const rows = await db
     .select({
-      event: integrationOutputEvents,
+      eventId: integrationOutputEvents.id,
       squadId: workStreams.squadId,
       id: integrationOutputDeliveries.id,
       subscriptionId: integrationOutputDeliveries.subscriptionId,
@@ -1042,7 +1055,6 @@ export async function outputDeliveryHistory(workStreamId: string) {
       reason: integrationOutputDeliveries.reason,
       targets: integrationOutputDeliveries.targets,
       createdAt: integrationOutputDeliveries.createdAt,
-      fact: integrationOutputEvents.fact,
       integration: integrationOutputEvents.integration,
     })
     .from(integrationOutputDeliveries)
@@ -1052,10 +1064,13 @@ export async function outputDeliveryHistory(workStreamId: string) {
     .orderBy(desc(integrationOutputDeliveries.createdAt))
     .limit(100)
   await renewKnownGitHubOutputs(
-    [...new Set(rows.filter((row) => row.integration === 'github').map((row) => row.event.id))].slice(0, 25)
+    [...new Set(rows.filter((row) => row.integration === 'github').map((row) => row.eventId))].slice(0, 25)
   )
-  const visible: Array<Omit<(typeof rows)[number], 'event' | 'squadId'>> = []
-  for (const { event, squadId, ...history } of rows) {
+  const visible: Array<Omit<(typeof rows)[number], 'eventId' | 'squadId'> & { fact: Event['fact'] }> = []
+  for (const { eventId, squadId, ...history } of rows) {
+    if (history.integration === 'github' && !reserveGitHubEvent(eventId)) continue
+    const event = await readOutputEvent(db, eventId)
+    if (!event) continue
     if (
       event.integration === 'github' &&
       (!(await authorized(db, event.integration, event.authority, squadId)) ||
@@ -1063,7 +1078,7 @@ export async function outputDeliveryHistory(workStreamId: string) {
         !(await isOriginalGitHubRoute(db, event, { id: history.subscriptionId, workStreamId })))
     )
       continue
-    visible.push(history)
+    visible.push({ ...history, fact: event.fact })
   }
   return visible
 }
@@ -1368,7 +1383,7 @@ export async function prepareOutputDeliveryPass() {
   if (!pass || pass.deliveries) return
   const rows = await db
     .select({
-      event: integrationOutputEvents,
+      eventId: integrationOutputEvents.id,
       deliveryId: integrationOutputDeliveries.id,
       workStreamId: integrationOutputDeliveries.workStreamId,
     })
@@ -1383,9 +1398,18 @@ export async function prepareOutputDeliveryPass() {
     .orderBy(integrationOutputDeliveries.updatedAt, integrationOutputDeliveries.id)
     .limit(25)
   pass.deliveries = new Map()
-  for (const { workStreamId, ...row } of rows) {
+  const selected = rows.filter((row) => reserveGitHubEvent(row.eventId))
+  if (!selected.length) return
+  const byId = new Map<string, Event>()
+  for (const id of new Set(selected.map((row) => row.eventId))) {
+    const event = await readOutputCandidate(db, id)
+    if (event) byId.set(id, event)
+  }
+  for (const { workStreamId, eventId, deliveryId } of selected) {
+    const event = byId.get(eventId)
+    if (!event) continue
     const group = pass.deliveries.get(workStreamId) ?? []
-    group.push(row)
+    group.push({ event, deliveryId })
     pass.deliveries.set(workStreamId, group)
   }
 }

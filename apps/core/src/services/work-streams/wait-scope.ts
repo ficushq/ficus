@@ -228,9 +228,12 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
         ? [row.metadata.integrationDeliveryId]
         : []
     )
-    const events = eventIds.length
-      ? await store.select().from(integrationOutputEvents).where(inArray(integrationOutputEvents.id, eventIds))
-      : []
+    const { readOutputEvent } = await import('../integrations/github/feedback-pass-read')
+    const events = []
+    for (const id of new Set(eventIds)) {
+      const event = await readOutputEvent(store, id)
+      if (event) events.push(event)
+    }
     const deliveries = deliveryIds.length
       ? await store
           .select({ id: integrationOutputDeliveries.id, integration: integrationOutputEvents.integration })

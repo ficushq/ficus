@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db, githubFeedbackRevisions, githubFeedbackSources, integrationOutputEvents, type DbTx } from '../../../db'
+import { readOutputEvent } from './feedback-pass-read'
 import { authorized } from '../outputs/authority'
 import { githubContentHash } from './feedback-envelope'
 import { isGitHubOutputAdmitted, isOriginalGitHubRoute, matchesOriginalGitHubRoutes } from './feedback-routing'
@@ -67,10 +68,7 @@ export async function reconcileGitHubFeedbackRelease(route: GitHubFeedbackReleas
           return (await isGitHubOutputAdmitted(store, event)) && (await isOriginalGitHubRoute(store, event))
         const witness = witnesses.get(event.id)
         if (!witness || witness.expiresAt <= Date.now() || witness.hash !== snapshot(event)) return false
-        const [current] = await store
-          .select()
-          .from(integrationOutputEvents)
-          .where(eq(integrationOutputEvents.id, event.id))
+        const current = await readOutputEvent(store, event.id)
         return !!current && snapshot(current) === witness.hash && (await sourceReason(current, store)) === null
       },
       route,
