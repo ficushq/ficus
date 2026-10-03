@@ -28,9 +28,9 @@
  * Install daily launchd job: bun run docker:gc -- --install
  */
 import { join } from 'path'
-import { writeFileSync, mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { sweepOrphanTestDbs } from '../apps/core/src/test-db-sweep'
+import { installDockerGcLaunchd } from './docker-gc-launchd'
 
 const repoRoot = join(import.meta.dir, '..')
 const composeFile = join(repoRoot, 'docker-compose.test.yml')
@@ -39,15 +39,12 @@ const TEST_CONTAINER_PREFIXES = ['ficus-test-']
 const REGISTRY_CONTAINERS = ['ficus-registry']
 const BUILDX_BUILDERS = ['ficusbuilder']
 const K3D_NODES = ['k3d-ficus-dev-server-0']
-// ficus-p5-bridge: keep one installed schedule until the owner migrates the exact local job
-const GC_LAUNCHD_LABEL = 'dev.tau.docker-gc'
-
-function run(cmd: string[], timeoutMs = 120_000): { ok: boolean; out: string } {
+function run(cmd: string[], timeoutMs = 120_000): { ok: boolean; out: string; exitCode: number | null } {
   try {
     const res = Bun.spawnSync(cmd, { stdout: 'pipe', stderr: 'pipe', timeout: timeoutMs })
-    return { ok: res.exitCode === 0, out: res.stdout.toString() + res.stderr.toString() }
+    return { ok: res.exitCode === 0, out: res.stdout.toString() + res.stderr.toString(), exitCode: res.exitCode }
   } catch (err) {
-    return { ok: false, out: String(err) }
+    return { ok: false, out: String(err), exitCode: null }
   }
 }
 
@@ -57,31 +54,21 @@ function log(msg: string) {
 
 // --- --install: write + load a daily launchd agent, then exit ---
 if (process.argv.includes('--install')) {
-  const bunPath = process.execPath
-  const plistPath = join(homedir(), 'Library/LaunchAgents', `${GC_LAUNCHD_LABEL}.plist`)
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>${GC_LAUNCHD_LABEL}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>${bunPath}</string>
-    <string>${join(repoRoot, 'scripts/docker-gc.ts')}</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
-  <key>StandardOutPath</key><string>/tmp/ficus-docker-gc.log</string>
-  <key>StandardErrorPath</key><string>/tmp/ficus-docker-gc.log</string>
-</dict>
-</plist>
-`
-  mkdirSync(join(homedir(), 'Library/LaunchAgents'), { recursive: true })
-  writeFileSync(plistPath, plist)
-  run(['launchctl', 'bootout', `gui/${process.getuid!()}`, plistPath]) // idempotent reinstall
-  const load = run(['launchctl', 'bootstrap', `gui/${process.getuid!()}`, plistPath])
-  log(load.ok ? `installed launchd agent (daily 13:00): ${plistPath}` : `launchctl bootstrap failed: ${load.out}`)
-  process.exit(load.ok ? 0 : 1)
+  if (!process.getuid) throw new Error('launchd installation requires a Unix user ID')
+  try {
+    const plistPath = installDockerGcLaunchd({
+      home: homedir(),
+      repoRoot,
+      bunPath: process.execPath,
+      uid: process.getuid(),
+      run: (args) => run(args),
+    })
+    log(`installed launchd agent (daily 13:00): ${plistPath}`)
+    process.exit(0)
+  } catch (error) {
+    log(error instanceof Error ? error.message : 'launchd installation failed')
+    process.exit(1)
+  }
 }
 
 // --- 0. docker reachable? ---
