@@ -2452,3 +2452,381 @@ test('persisted notification caching rejects edited payload instead of substitut
     await h.close()
   }
 })
+
+test('recording repeated GitHub sources charges root WORK before any insert or authority read', async () => {
+  const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+  const h = await fixture()
+  try {
+    const fact = h.fact()
+    await withGitHubOutputPass(async () => {
+      for (let i = 0; i < 25; i++) await recordIntegrationOutput('github', fact, h.authority)
+      const queries: string[] = []
+      setDatabaseQueryObserverForTest((query) => queries.push(query))
+      await expect(recordIntegrationOutput('github', fact, h.authority)).rejects.toThrow('github_output_pass_exhausted')
+      expect(queries).toEqual([])
+      expect(githubOutputPass()!.work).toBe(25)
+    })
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await db.delete(integrationOutputEvents).where(sql`${integrationOutputEvents.authority}->>'squadId' = ${h.squadId}`)
+    await h.close()
+  }
+})
+
+test('recording sources reserves every returned logical image and uses only ID RETURNING', async () => {
+  const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+  const { reserveOutputBody } = await import('./feedback-pass-read')
+  const h = await fixture()
+  try {
+    await withGitHubOutputPass(async () => {
+      const images: string[] = []
+      setDatabaseQueryObserverForTest((query) => {
+        if (!query.includes('integration_output_events')) return
+        if (
+          (query.startsWith('select') && /"fact"(?:,|$)/.test(query.split(' from ')[0]!)) ||
+          (query.includes('returning') && query.split('returning')[1]!.includes('"fact"'))
+        )
+          images.push(query)
+      })
+      const first = await recordIntegrationOutput('github', h.fact(), h.authority)
+      expect(first.fact.body).toContain('HELD_SENTINEL')
+      const again = await recordIntegrationOutput('github', h.fact(), h.authority)
+      expect(again.id).toBe(first.id)
+      expect(images).toHaveLength(1)
+      expect(githubOutputPass()!.bodyRows).toBe(1)
+      while (reserveOutputBody()) {
+        /* Exhaust remaining logical body capacity. */
+      }
+      images.length = 0
+      h.native.id++
+      await expect(recordIntegrationOutput('github', h.fact(), h.authority)).rejects.toThrow(
+        'github_output_pass_exhausted'
+      )
+      expect(images).toEqual([])
+      expect(githubOutputPass()!.bodyRows).toBe(25)
+    })
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await db.delete(integrationOutputEvents).where(sql`${integrationOutputEvents.authority}->>'squadId' = ${h.squadId}`)
+    await h.close()
+  }
+})
+
+test('history pagination traverses withheld equal-clock heads without skipping body-deferred records', async () => {
+  const runtime = await import('../outputs/runtime')
+  const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const streamId = await h.stream(true)
+    await db
+      .update(workStreams)
+      .set({ pause: { reason: 'Test', pausedAt: new Date().toISOString() } as any })
+      .where(eq(workStreams.id, streamId))
+    h.read.mockImplementation(
+      async <T>(path: string): Promise<T | null> =>
+        (path === '/repositories/10'
+          ? { id: 10, full_name: 'acme/project' }
+          : { ...h.native, id: Number(path.split('/').at(-1)) }) as T
+    )
+    const ids: string[] = []
+    for (let i = 0; i < 26; i++) {
+      h.native.id = 500 + i
+      ids.push((await publishIntegrationOutput('github', h.fact(), h.authority))!)
+    }
+    await db
+      .update(integrationOutputDeliveries)
+      .set({ createdAt: new Date('2026-10-03T00:00:00Z') })
+      .where(eq(integrationOutputDeliveries.workStreamId, streamId))
+    // Only one tail review remains admitted after trust revocation. Held history must not
+    // disappear silently merely because every item in the first visible page is filtered.
+    const ordered = await db
+      .select({ eventId: integrationOutputDeliveries.eventId })
+      .from(integrationOutputDeliveries)
+      .where(eq(integrationOutputDeliveries.workStreamId, streamId))
+      .orderBy(sql`${integrationOutputDeliveries.id} DESC`)
+    const tailId = ordered.at(-1)!.eventId
+    const [tail] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, tailId))
+    const revisionId = tail!.fact.github!.revisionId!
+    await db
+      .update(githubFeedbackRevisions)
+      .set({ decision: 'pending', releaseState: 'held' })
+      .where(eq(githubFeedbackRevisions.id, revisionId))
+    await h.allow(revisionId)
+    await db.delete(githubTrustedAuthors).where(eq(githubTrustedAuthors.squadId, h.squadId))
+    let cursor: string | undefined
+    const seen: string[] = []
+    let pages = 0
+    do {
+      const page = await withGitHubOutputPass(async () => {
+        const page = await runtime.outputDeliveryHistoryPage(streamId, { cursor })
+        expect(githubOutputPass()!.work).toBeLessThanOrEqual(25)
+        expect(githubOutputPass()!.bodyRows).toBeLessThanOrEqual(25)
+        expect(githubOutputPass()!.lookaheadQueries).toBeLessThanOrEqual(12)
+        return page
+      })
+      if (pages === 0) {
+        expect(page.items).toEqual([])
+        expect(page.hasMore).toBe(true)
+      }
+      seen.push(...page.items.map((item) => item.fact.eventKey))
+      if (!page.hasMore) break
+      expect(page.nextCursor).toBeDefined()
+      expect(page.nextCursor).not.toBe(cursor)
+      cursor = page.nextCursor
+      pages++
+    } while (pages < 10)
+    expect(pages).toBeLessThan(10)
+    expect(seen).toEqual([revisionId])
+    expect((await h.effects()).inbox).toBe(0)
+    expect(h.read.mock.calls.length).toBe(52) // original 26 native verifications, no pagination sweeps
+    const queries: string[] = []
+    setDatabaseQueryObserverForTest((query) => queries.push(query))
+    await expect(runtime.outputDeliveryHistoryPage(crypto.randomUUID(), { cursor })).rejects.toThrow(
+      'invalid_output_history_cursor'
+    )
+    expect(queries).toEqual([])
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await h.close()
+  }
+}, 120_000)
+
+test('production poll runner/plugin/durable cursor publisher holds feedback then releases the original real Agent once', async () => {
+  // Isolate the HTTP preload so the singleton's captured transport cannot call a provider
+  // or contaminate any other test. No runner/plugin/DB/Agent method is replaced.
+  if (process.env.FICUS_TEST_GITHUB_POLL_CHILD !== '1') {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        'test',
+        '--preload',
+        './src/test-utils/github-poll-http-preload.ts',
+        'src/services/integrations/github/feedback-routing.test.ts',
+        '--test-name-pattern',
+        'production poll runner',
+      ],
+      { env: { ...process.env, FICUS_TEST_GITHUB_POLL_CHILD: '1' }, stdout: 'pipe', stderr: 'pipe' }
+    )
+    try {
+      const [out, err, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ])
+      if (code !== 0) console.error(out + err)
+      else console.info(err.trim().split('\n').slice(-8).join('\n'))
+      expect(code).toBe(0)
+    } finally {
+      child.kill()
+      await child.exited
+    }
+    return
+  }
+  expect((globalThis as typeof globalThis & { __githubPollHttpFenced?: boolean }).__githubPollHttpFenced).toBe(true)
+  const { integrationEventPollingRuntime } = await import('../runtime')
+  const { createTestGitHubConnection } = await import('../../../test-utils/github-connection')
+  const { integrationEventPollingCursors, integrationEventPollingDispatches } = await import('../../../db')
+  const { reconcileFlows } = await import('../../workflows/execution')
+  const h = await fixture()
+  let connection: Awaited<ReturnType<typeof createTestGitHubConnection>> | undefined
+  let transport: ReturnType<typeof spyOn<typeof globalThis, 'fetch'>> | undefined
+  const resourceKey = () => `${h.squadId}:${connection!.id}:acme/project#3`
+  try {
+    // Real watch discovery and plugin resolve the encrypted assigned account; only HTTP is fake.
+    h.native.id = 100_000 + Math.floor(Math.random() * 100_000_000)
+    h.native.html_url = `https://github.com/acme/project/pull/3#issuecomment-${h.native.id}`
+    h.read.mockRestore()
+    await db.delete(integrationConnectionAssignments).where(eq(integrationConnectionAssignments.squadId, h.squadId))
+    connection = await createTestGitHubConnection({ squadId: h.squadId })
+    await h.stream(false)
+    let comments: (typeof h.native)[] = []
+    let serverDate = 'Fri, 02 Oct 2026 09:59:00 GMT'
+    const paths: string[] = []
+    transport = spyOn(globalThis, 'fetch').mockImplementation((async (
+      input: Parameters<typeof fetch>[0],
+      init?: RequestInit
+    ) => {
+      const path = new URL(String(input)).pathname
+      paths.push(path)
+      expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer test-access-${connection!.id}`)
+      const repo = { id: 10, full_name: 'acme/project' }
+      const body =
+        path === '/repositories/10' || path === '/repos/acme/project'
+          ? repo
+          : path === '/repos/acme/project/pulls/3'
+            ? {
+                id: 20,
+                number: 3,
+                state: 'open',
+                merged: false,
+                head: { sha: 'a'.repeat(40) },
+                base: { repo },
+                user: { id: 9, login: 'parent' },
+                title: 'PARENT_SENTINEL',
+                body: 'PARENT_BODY_SENTINEL',
+              }
+            : path === '/repos/acme/project/issues/3'
+              ? { id: 20, number: 3, pull_request: {}, title: 'PARENT_SENTINEL' }
+              : path === '/repos/acme/project/issues/3/comments'
+                ? comments
+                : path === `/repos/acme/project/issues/comments/${h.native.id}`
+                  ? h.native
+                  : path.endsWith('/reviews') || path.endsWith('/comments')
+                    ? []
+                    : undefined
+      if (body === undefined) throw new Error(`Unexpected GitHub HTTP endpoint: ${path}`)
+      return Response.json(body, { headers: { date: serverDate } })
+    }) as typeof fetch)
+    const transportState = globalThis as typeof globalThis & { __githubPollTestHttp?: typeof fetch }
+    transportState.__githubPollTestHttp = globalThis.fetch
+    const due = async () => {
+      await db
+        .update(integrationEventPollingCursors)
+        .set({ nextPollAt: new Date(0) })
+        .where(eq(integrationEventPollingCursors.resourceKey, resourceKey()))
+      await integrationEventPollingRuntime.runOnce()
+    }
+    await integrationEventPollingRuntime.runOnce() // empty baseline, no backfill
+    expect(paths).toHaveLength(5)
+    expect((await h.effects()).inbox).toBe(0)
+    comments = [h.native]
+    serverDate = 'Fri, 02 Oct 2026 10:01:00 GMT'
+    await due()
+    const revisions = await db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    expect(revisions).toHaveLength(1)
+    expect(revisions[0]!.decision).toBe('pending')
+    expect(revisions[0]!.envelope!.body).toBe(`${h.native.html_url}\n\nHELD_SENTINEL`)
+    expect((await h.effects()).inbox).toBe(0)
+    const [cursor] = await db
+      .select()
+      .from(integrationEventPollingCursors)
+      .where(eq(integrationEventPollingCursors.resourceKey, resourceKey()))
+    expect(cursor!.leaseToken).toBeNull()
+    expect(cursor!.cursor!.issueComments).toBeDefined()
+    await due() // duplicate scan cannot create a second reviewed version
+    expect(
+      await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    ).toHaveLength(1)
+    await h.allow(revisions[0]!.id)
+    h.useRealSend()
+    await reconcileFlows()
+    await reconcileFlows()
+    const receipts = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0]!.messageId).toBeTruthy()
+    expect(receipts[0]!.executionId).toBeTruthy()
+    expect(receipts[0]!.acceptedAt).toBeTruthy()
+    const [notice] = await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))
+    expect(notice!.content).toContain('HELD_SENTINEL')
+    expect(notice!.content).not.toContain('PARENT_SENTINEL')
+    h.native.body = 'UNAPPROVED_EDIT_SENTINEL'
+    h.native.updated_at = '2026-10-02T10:02:00Z'
+    serverDate = 'Fri, 02 Oct 2026 10:03:00 GMT'
+    await due()
+    expect(
+      await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    ).toHaveLength(2)
+    await reconcileFlows()
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(1)
+    expect(JSON.stringify(await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId)))).not.toContain(
+      'UNAPPROVED_EDIT_SENTINEL'
+    )
+    await h.trust() // future trust must NOT replay the held edit
+    await reconcileFlows()
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(1)
+    // Poll edits lack verified editor identity even when the original author is trusted.
+    // A genuinely NEW native comment with an unchanged creation clock is unambiguous.
+    h.native.id++
+    h.native.html_url = `https://github.com/acme/project/pull/3#issuecomment-${h.native.id}`
+    h.native.body = 'TRUSTED_FRESH_FEEDBACK'
+    h.native.created_at = '2026-10-02T10:04:00Z'
+    h.native.updated_at = h.native.created_at
+    serverDate = 'Fri, 02 Oct 2026 10:05:00 GMT'
+    await due()
+    await reconcileFlows()
+    const resumed = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))
+    expect(resumed).toHaveLength(2)
+    expect(resumed.every((receipt) => receipt.executionId === receipts[0]!.executionId)).toBe(true)
+    expect((await h.effects()).agents).toBe(1)
+    await due()
+    await reconcileFlows()
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(2)
+  } finally {
+    delete (globalThis as typeof globalThis & { __githubPollTestHttp?: typeof fetch }).__githubPollTestHttp
+    transport?.mockRestore()
+    if (connection) {
+      // Poll logical-event keys differ from output normalization keys. Delete only dispatches
+      // owned by this isolated fixture squad, never all provider dispatch history.
+      await db
+        .delete(integrationEventPollingDispatches)
+        .where(sql`${h.squadId}::uuid = ANY(${integrationEventPollingDispatches.activitySquadIds})`)
+      await db
+        .delete(integrationEventPollingCursors)
+        .where(eq(integrationEventPollingCursors.resourceKey, resourceKey()))
+      await db
+        .delete(integrationOutputEvents)
+        .where(sql`${integrationOutputEvents.authority}->>'connectionId' = ${connection.id}`)
+      await connection.dispose()
+    }
+    await h.close()
+  }
+}, 120_000)
+
+test('native webhook refinement charges a new full image and exhausted capacity cannot alter the source', async () => {
+  const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+  const { reserveOutputBody } = await import('./feedback-pass-read')
+  const h = await fixture()
+  try {
+    const native = githubOutputAdapter.normalize({
+      type: 'dependabot_alert',
+      githubObservation: { kind: 'webhook' },
+      payload: {
+        action: 'created',
+        repository: { id: 10, full_name: 'acme/project' },
+        alert: {
+          number: 7,
+          state: 'open',
+          updated_at: '2026-10-02T10:00:00Z',
+          dependency: { package: { name: 'widget', ecosystem: 'npm' } },
+          security_advisory: { ghsa_id: 'GHSA-abcd-efgh-ijkl', severity: 'high' },
+        },
+      },
+    })[0]!
+    const observed = { ...native, data: { ...native.data, action: 'observed' } }
+    let sourceId = ''
+    await withGitHubOutputPass(async () => {
+      sourceId = (await recordIntegrationOutput('github', observed, h.authority)).id
+      while (reserveOutputBody()) {
+        /* No capacity for a changed immutable source image. */
+      }
+      const mutations: string[] = []
+      setDatabaseQueryObserverForTest((query) => {
+        if (query.startsWith('update "integration_output_events"')) mutations.push(query)
+      })
+      await expect(recordIntegrationOutput('github', native, h.authority)).rejects.toThrow(
+        'github_output_pass_exhausted'
+      )
+      expect(mutations).toEqual([])
+    })
+    setDatabaseQueryObserverForTest(undefined)
+    const [unchanged] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, sourceId))
+    expect(unchanged!.fact.data.action).toBe('observed')
+    await withGitHubOutputPass(async () => {
+      await recordIntegrationOutput('github', observed, h.authority)
+      const refined = await recordIntegrationOutput('github', native, h.authority)
+      expect(refined.id).toBe(sourceId)
+      expect(refined.fact.data.action).toBe('created')
+      expect(githubOutputPass()!.bodyRows).toBe(2)
+      expect(githubOutputPass()!.work).toBe(2)
+    })
+    expect(h.read.mock.calls).toHaveLength(0) // recording is not a polling or native-discovery path
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await db.delete(integrationOutputEvents).where(sql`${integrationOutputEvents.authority}->>'squadId' = ${h.squadId}`)
+    await h.close()
+  }
+})

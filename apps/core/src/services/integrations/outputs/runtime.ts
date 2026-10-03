@@ -57,6 +57,8 @@ import {
   githubOutputPass,
   reserveGitHubEvent,
   withGitHubCandidate,
+  inGitHubCandidate,
+  GITHUB_PASS_READ_LIMIT,
   reserveGitHubLookahead,
 } from '../github/feedback-pass'
 import { reconcileGitHubFeedbackRelease } from '../github/feedback-release-runtime'
@@ -162,6 +164,19 @@ export async function recordIntegrationOutput(
   fact: IntegrationOutputFact,
   authority: IntegrationOutputAuthority
 ) {
+  if (integration !== 'github') return recordIntegrationOutputInPass(integration, fact, authority)
+  return withGitHubOutputPass(async () => {
+    const event = await inGitHubCandidate(() => recordIntegrationOutputInPass(integration, fact, authority), null)
+    if (!event) throw new Error('github_output_pass_exhausted')
+    return event
+  })
+}
+
+async function recordIntegrationOutputInPass(
+  integration: string,
+  fact: IntegrationOutputFact,
+  authority: IntegrationOutputAuthority
+) {
   if (!(await isIntegrationEnabled(integration))) throw new Error('Integration is disabled')
   integrationOutputRegistry.validateFact(integration, fact)
   if (authority.kind === 'connection' && !authority.connectionRevision) {
@@ -188,12 +203,11 @@ export async function recordIntegrationOutput(
         integrationOutputEvents.eventKey,
       ],
     })
-    .returning()
-  let event =
-    inserted ??
-    (
-      await db
-        .select()
+    .returning({ id: integrationOutputEvents.id })
+  const [identity] = inserted
+    ? [inserted]
+    : await db
+        .select({ id: integrationOutputEvents.id })
         .from(integrationOutputEvents)
         .where(
           and(
@@ -202,12 +216,18 @@ export async function recordIntegrationOutput(
             eq(integrationOutputEvents.eventKey, fact.eventKey)
           )
         )
-    )[0]!
+  let event = identity ? await readOutputEvent(db, identity.id) : undefined
+  // Recording evidence is not delivery. Capacity exhaustion leaves it unmatched for retry;
+  // it must never return an uncharged full INSERT/SELECT image or a synthetic settled flag.
+  if (!event) throw new Error('github_output_pass_exhausted')
   // A provider can refine a snapshot into native lifecycle evidence. Keep the same
   // event ID/key: notification, subscription and stream receipts remain idempotent.
   // Compare-and-set prevents stale pollers from replacing a concurrent native fact.
   if (!inserted && adapterShouldRefine(integration, event.fact, fact)) {
-    const [refined] = await db
+    const pass = githubOutputPass()
+    if (integration === 'github' && pass && pass.bodyRows >= GITHUB_PASS_READ_LIMIT)
+      throw new Error('github_output_pass_exhausted')
+    await db
       .update(integrationOutputEvents)
       .set({ fact, authority, matchedAt: null, lastErrorCode: null })
       .where(
@@ -216,9 +236,12 @@ export async function recordIntegrationOutput(
           sql`${integrationOutputEvents.fact} = ${JSON.stringify(event.fact)}::jsonb`
         )
       )
-      .returning()
-    event =
-      refined ?? (await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, event.id)))[0]!
+      .returning({ id: integrationOutputEvents.id })
+    // Only this compare-and-set producer may discard its pass-local payload snapshot. A
+    // reread reserves another image even when the CAS lost; no native/permission cache changes.
+    if (integration === 'github') pass?.bodies.delete(`event:${event.id}`)
+    event = await readOutputEvent(db, event.id)
+    if (!event) throw new Error('github_output_pass_exhausted')
   }
   return event
 }
@@ -1079,70 +1102,129 @@ async function reconcileUnmatchedOutputsInPass() {
   }
 }
 
-export async function outputDeliveryHistory(workStreamId: string) {
-  return withGitHubOutputPass(() => outputDeliveryHistoryInPass(workStreamId))
+function historyQuery() {
+  return db
+    .select({
+      eventId: integrationOutputEvents.id,
+      squadId: workStreams.squadId,
+      id: integrationOutputDeliveries.id,
+      subscriptionId: integrationOutputDeliveries.subscriptionId,
+      status: integrationOutputDeliveries.status,
+      reason: integrationOutputDeliveries.reason,
+      targets: integrationOutputDeliveries.targets,
+      createdAt: integrationOutputDeliveries.createdAt,
+      integration: integrationOutputEvents.integration,
+    })
+    .from(integrationOutputDeliveries)
+    .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
+    .innerJoin(workStreams, eq(workStreams.id, integrationOutputDeliveries.workStreamId))
 }
-async function outputDeliveryHistoryInPass(workStreamId: string) {
-  const limit = reserveGitHubLookahead(25)
-  // Select metadata first. A history request cannot materialize 100 GitHub bodies before
-  // discovering that the root's 25-row body budget is exhausted.
-  const query = () =>
-    db
-      .select({
-        eventId: integrationOutputEvents.id,
-        squadId: workStreams.squadId,
-        id: integrationOutputDeliveries.id,
-        subscriptionId: integrationOutputDeliveries.subscriptionId,
-        status: integrationOutputDeliveries.status,
-        reason: integrationOutputDeliveries.reason,
-        targets: integrationOutputDeliveries.targets,
-        createdAt: integrationOutputDeliveries.createdAt,
-        integration: integrationOutputEvents.integration,
-      })
-      .from(integrationOutputDeliveries)
-      .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
-      .innerJoin(workStreams, eq(workStreams.id, integrationOutputDeliveries.workStreamId))
-      .orderBy(desc(integrationOutputDeliveries.createdAt))
-  const rows = [
-    ...(limit
-      ? await query()
+type HistoryRow = Awaited<ReturnType<typeof historyQuery>>[number]
+type HistoryItem = Omit<HistoryRow, 'eventId' | 'squadId'> & { fact: Event['fact'] }
+const historyCursorSchema = z
+  .object({ streamId: z.string().uuid(), at: z.string().datetime(), id: z.string().uuid() })
+  .strict()
+function decodeHistoryCursor(streamId: string, cursor?: string) {
+  if (cursor === undefined) return undefined
+  try {
+    if (cursor.length > 400) throw new Error('oversized')
+    const value = historyCursorSchema.parse(JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')))
+    if (value.streamId !== streamId) throw new Error('wrong_stream')
+    return value
+  } catch {
+    throw new Error('invalid_output_history_cursor')
+  }
+}
+function historyCursor(streamId: string, row: HistoryRow) {
+  return Buffer.from(JSON.stringify({ streamId, at: row.createdAt.toISOString(), id: row.id })).toString('base64url')
+}
+
+/** GitHub-only keyset page. The cursor advances over INSPECTED held/denied rows, never over
+ * unvisited or body/provider/work-deferred rows. An empty visible page is not end-of-history.
+ * Cursor values select position only, never permission; every image and authority is rechecked.
+ * Millisecond ordering matches the Date precision used in the cursor; ID breaks equal-clock ties.
+ */
+export async function outputDeliveryHistoryPage(workStreamId: string, options: { cursor?: string } = {}) {
+  const position = decodeHistoryCursor(workStreamId, options.cursor)
+  return withGitHubOutputPass(async () => {
+    const limit = reserveGitHubLookahead(25)
+    const clock = sql`date_trunc('milliseconds', ${integrationOutputDeliveries.createdAt})`
+    const rows = limit
+      ? await historyQuery()
           .where(
             and(
               eq(integrationOutputDeliveries.workStreamId, workStreamId),
-              eq(integrationOutputEvents.integration, 'github')
+              eq(integrationOutputEvents.integration, 'github'),
+              position
+                ? or(
+                    sql`${clock} < ${position.at}::timestamptz`,
+                    and(
+                      sql`${clock} = ${position.at}::timestamptz`,
+                      sql`${integrationOutputDeliveries.id} < ${position.id}::uuid`
+                    )
+                  )
+                : undefined
             )
           )
+          .orderBy(desc(clock), desc(integrationOutputDeliveries.id))
           .limit(limit)
-      : []),
-    ...(await query()
+      : []
+    const items: HistoryItem[] = []
+    let nextCursor = options.cursor
+    let budgetDeferred = !limit
+    for (const row of rows) {
+      const inspected = await withGitHubCandidate(async () => {
+        if (!reserveGitHubEvent(row.eventId)) return false
+        const event = await readOutputCandidate(db, row.eventId)
+        if (!event) return false
+        const renewal = await renewKnownGitHubOutputs([row.eventId])
+        if (renewal.deferred.length) return false
+        if (
+          !renewal.withheld.length &&
+          (await authorized(db, event.integration, event.authority, row.squadId)) &&
+          (await isGitHubOutputAdmitted(db, event)) &&
+          (await isOriginalGitHubRoute(db, event, { id: row.subscriptionId, workStreamId }))
+        ) {
+          const { eventId: _eventId, squadId: _squadId, ...history } = row
+          items.push({ ...history, fact: event.fact })
+        }
+        return true
+      }, false)
+      if (!inspected) {
+        budgetDeferred = true
+        break
+      }
+      nextCursor = historyCursor(workStreamId, row)
+    }
+    // Conservatively advertise another page on an exactly-full selection, without an extra
+    // uncharged lookahead query. That final page may be empty; it will report hasMore=false.
+    const hasMore = budgetDeferred || rows.length === limit
+    return { items, nextCursor: hasMore ? nextCursor : undefined, hasMore, budgetDeferred }
+  })
+}
+
+/** Compatibility view: the first bounded GitHub page plus unchanged non-GitHub history.
+ * Callers that browse beyond this preview must use outputDeliveryHistoryPage and its cursor.
+ */
+export async function outputDeliveryHistory(workStreamId: string) {
+  return withGitHubOutputPass(async () => {
+    const github = await outputDeliveryHistoryPage(workStreamId)
+    const other = await historyQuery()
       .where(
         and(
           eq(integrationOutputDeliveries.workStreamId, workStreamId),
           ne(integrationOutputEvents.integration, 'github')
         )
       )
-      .limit(100)),
-  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-  const visible: Array<Omit<(typeof rows)[number], 'eventId' | 'squadId'> & { fact: Event['fact'] }> = []
-  for (const { eventId, squadId, ...history } of rows) {
-    const process = async () => {
-      if (history.integration === 'github' && !reserveGitHubEvent(eventId)) return
-      if (history.integration === 'github') await renewKnownGitHubOutputs([eventId])
+      .orderBy(desc(integrationOutputDeliveries.createdAt))
+      .limit(100)
+    const visible = [...github.items]
+    for (const { eventId, squadId: _squadId, ...history } of other) {
       const event = await readOutputEvent(db, eventId)
-      if (!event) return
-      if (
-        event.integration === 'github' &&
-        (!(await authorized(db, event.integration, event.authority, squadId)) ||
-          !(await isGitHubOutputAdmitted(db, event)) ||
-          !(await isOriginalGitHubRoute(db, event, { id: history.subscriptionId, workStreamId })))
-      )
-        return
-      visible.push({ ...history, fact: event.fact })
+      if (event) visible.push({ ...history, fact: event.fact })
     }
-    if (history.integration === 'github') await withGitHubCandidate(process, undefined)
-    else await process()
-  }
-  return visible
+    return visible.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+  })
 }
 
 /**

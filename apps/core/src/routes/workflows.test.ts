@@ -405,3 +405,19 @@ test('flow inspection exposes effective active outcomes separately from the init
     await db.delete(workStreams).where(eq(workStreams.id, stream!.id))
   }
 })
+
+test('GitHub history pagination is stream-read authorized and reports an explicit empty final page', async () => {
+  const [stream] = await db.insert(workStreams).values({ squadId, title: 'History page', status: 'active' }).returning()
+  try {
+    const path = `/runs/${stream!.id}/integration-deliveries`
+    expect((await request(path)).status).toBe(401)
+    expect((await request(path, outsider)).status).toBe(403)
+    expect((await request(`${path}?cursor=bad`, outsider)).status).toBe(403)
+    expect((await request(`${path}?cursor=bad`, admin)).status).toBe(400)
+    const page = await request(path, admin)
+    expect(page.status).toBe(200)
+    expect(await page.json()).toEqual({ items: [], hasMore: false, budgetDeferred: false })
+  } finally {
+    await db.delete(workStreams).where(eq(workStreams.id, stream!.id))
+  }
+})
