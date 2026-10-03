@@ -114,6 +114,7 @@ describe('auto-merge enabling versus delivery', () => {
       {
         id: 'human',
         kind: 'human-approval',
+        approver: 'assigned-reviewers',
         instructions: 'Approve the reviewed change.',
         output: 'Human approval.',
         outcomes: { approved: { next: 'finish' } },
