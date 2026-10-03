@@ -94,33 +94,6 @@ Options:
                   conversion re-renders the units, which needs --config.
                   A set taken for the host layout migration is refused: it
                   must be reversed (--reverse-host-layout), not restored.
-  --reverse-host-layout SET
-                  move this host back from the Ficus host layout to the one
-                  it had before, from the host_layout migration's backup SET
-                  (the latest one whose MANIFEST starts with
-                  `#requires-reverse<TAB>host_layout`), and exit. Only once
-                  the release serving is from before that migration again
-                  (roll back first). It puts back the directories, links,
-                  units, HOME and the stored HOME paths, then the set's files
-                  byte for byte. Refused when any of those files changed
-                  since the migration (unless --accept-file-revert), when a
-                  newer migration of another kind is still in effect, and
-                  while another run's journal is pending. Root-only.
-  --accept-file-revert
-                  with --reverse-host-layout: accept that the files changed
-                  since the migration (a synced managed.env, a rotated key, a
-                  rewritten DSN) go back to their pre-migration bytes — re-apply
-                  those changes afterwards.
-  --accept-database-revert
-                  with --reverse-host-layout on a host with a container
-                  database: accept that the database goes back to the copy
-                  taken at the migration, losing every write since.
-  -h, --help      show this help
-
-Private-repo source.mode=git-https needs $GH_TOKEN in the environment (same as
-setup-host.sh); nothing is ever passed on the command line.
-
-Artifact mode is selected by the environment, not by a flag: when ALL of
 $FICUS_ARTIFACT_TARBALL_URL, $FICUS_ARTIFACT_MANIFEST_URL, $FICUS_ARTIFACT_SIG_URL
 and $FICUS_ARTIFACT_PUBKEY_B64 are set, the host is moved to that prebuilt
 release instead of being rebuilt from source (--ref is then ignored: the
@@ -128,7 +101,7 @@ artifact names its own commit). Any missing input = git mode.
 EOF
 }
 
-CONFIG='' REF_OVERRIDE='' RESTORE_HOST_SET='' REVERSE_LAYOUT_SET='' ACCEPT_DB_REVERT=0 ACCEPT_FILE_REVERT=0
+CONFIG='' REF_OVERRIDE='' RESTORE_HOST_SET=''
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)
@@ -143,18 +116,6 @@ while [[ $# -gt 0 ]]; do
       RESTORE_HOST_SET=${2:?--restore-host-backup needs a backup set directory}
       shift 2
       ;;
-    --reverse-host-layout)
-      REVERSE_LAYOUT_SET=${2:?--reverse-host-layout needs a backup set directory}
-      shift 2
-      ;;
-    --accept-database-revert)
-      ACCEPT_DB_REVERT=1
-      shift
-      ;;
-    --accept-file-revert)
-      ACCEPT_FILE_REVERT=1
-      shift
-      ;;
     -h | --help)
       usage
       exit 0
@@ -162,11 +123,6 @@ while [[ $# -gt 0 ]]; do
     *) die "unknown argument: $1 (see --help)" ;;
   esac
 done
-
-[[ -z ${RESTORE_HOST_SET} || -z ${REVERSE_LAYOUT_SET} ]] ||
-  die "--restore-host-backup and --reverse-host-layout are separate actions — pass one"
-[[ ${ACCEPT_DB_REVERT}${ACCEPT_FILE_REVERT} == 00 || -n ${REVERSE_LAYOUT_SET} ]] ||
-  die "--accept-database-revert and --accept-file-revert go with --reverse-host-layout"
 
 # ====================================================== --restore-host-backup
 #
@@ -201,52 +157,6 @@ if [[ -n ${RESTORE_HOST_SET} ]]; then
     3) die "--restore-host-backup: ${RESTORE_HOST_SET} needs the unit templates next to this script (systemd/*.service.tmpl) — nothing was changed" ;;
     *) die "--restore-host-backup: restoring ${RESTORE_HOST_SET} failed (see above)" ;;
   esac
-  exit 0
-fi
-
-# ====================================================== --reverse-host-layout
-#
-# The manual way back from the host layout migration after its commit point:
-# once the release serving is from before that migration again, lib.sh's
-# host_layout_reverse_committed moves the directories, links, units, HOME and
-# the stored HOME paths back and restores the set's files — journaled, so a
-# reverse that is killed half way is finished by the next toolkit run (or by
-# this command again). Nothing else in this script runs.
-if [[ -n ${REVERSE_LAYOUT_SET} ]]; then
-  [[ ${EUID} -eq 0 ]] ||
-    die "--reverse-host-layout is root-only (it moves root-owned directories and units back, from a root 0700 set) — re-run this as root"
-  [[ -d ${REVERSE_LAYOUT_SET} ]] || die "--reverse-host-layout: '${REVERSE_LAYOUT_SET}' is not a directory"
-  REVERSE_LAYOUT_SET=$(readlink -f -- "${REVERSE_LAYOUT_SET}") || die "--reverse-host-layout: could not resolve the set path"
-  if [[ -n ${CONFIG} ]]; then
-    [[ -f ${CONFIG} ]] || die "config file '${CONFIG}' not found"
-    ensure_yq
-    cfg_load "${CONFIG}"
-    SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
-    # shellcheck disable=SC2034 # caller globals: lib.sh's render_core_unit reads them
-    RUN_USER=$(cfg_get '.core.run_user' "$(id -un)")
-    # shellcheck disable=SC2034
-    DB_MODE=$(cfg_get '.database.mode' 'container')
-    # shellcheck disable=SC2034
-    BUN_BIN=/usr/local/bin/bun
-  fi
-  host_migrate_lock
-  # The toolkit's traps, `trap '' PIPE` above all: the reverse stops the
-  # services and runs for a while, and a dropped SSH session must not end it
-  # half way (a kill still leaves its journal for the next run).
-  host_migrate_install_traps
-  # shellcheck disable=SC2034 # read by lib.sh's host_layout_reverse_committed
-  HL_REVERSE_ACCEPT_DB_REVERT=${ACCEPT_DB_REVERT} HL_REVERSE_ACCEPT_FILE_REVERT=${ACCEPT_FILE_REVERT}
-  case $(_hm_set_reverse_names "${REVERSE_LAYOUT_SET}") in
-    host_layout) host_layout_reverse_committed "${REVERSE_LAYOUT_SET}" ;;
-    host_layout_fin)
-      host_layout_fin_reverse_committed "${REVERSE_LAYOUT_SET}"
-      ;;
-    *) die '--reverse-host-layout: the set is neither a host layout nor a finalize migration' ;;
-  esac
-  log_info "host layout reverse completed (${HL_DEST}, ${HL_UNIT_API}/${HL_UNIT_WORKER})"
-  # `|| true`: with SIGPIPE ignored, a write to a dropped session fails — the
-  # reverse is done, and that must not turn into a non-zero exit.
-  printf 'FICUS_HOST_LAYOUT=%s\n' "${HL_LAYOUT}" || true
   exit 0
 fi
 
@@ -510,7 +420,7 @@ artifact_upgrade() {
   # before settling (stop-the-world: the two sides of the migration's release
   # use different admission keys).
   # shellcheck disable=SC2034 # read by lib.sh's artifact_activate
-  ARTIFACT_PREFLIP_HOOK=host_layout_preflip
+  ARTIFACT_PREFLIP_HOOK=host_migrate_for
   # shellcheck disable=SC2034 # read by lib.sh's artifact_activate
   ARTIFACT_ROLLBACK_HOOK=host_layout_rollback_hook
   artifact_activate "${SRC_DEST}" "${release_dir}" "${CORE_PORT}"

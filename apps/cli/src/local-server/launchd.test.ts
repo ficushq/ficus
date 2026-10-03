@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LEGACY_HOME_DIR_NAME, LEGACY_LAUNCHD_PREFIX, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 import { launchdDefinition, launchdNames, launchdSupervisor, nativeLogPath } from './launchd'
 import type { SupervisorContext } from './supervisor'
 
@@ -43,17 +43,8 @@ describe('launchdDefinition', () => {
     expect(xml).not.toContain('FORCE_COLOR')
   })
 
-  it('keeps the pre-rename label and process names for an identity-1 instance', () => {
-    const L = LEGACY_LOCAL_INSTANCE
-    expect(launchdNames({ ...context, identity: 1 }, 'api')).toEqual({
-      process: `${L}-smoke-api`,
-      label: `${LEGACY_LAUNCHD_PREFIX}.${L}-smoke-api`,
-      plist: `/Users/me/Library/LaunchAgents/${LEGACY_LAUNCHD_PREFIX}.${L}-smoke-api.plist`,
-      log: `/Users/me/.ficus/logs/${L}-smoke-api.log`,
-    })
-    expect(launchdNames({ ...context, label: L, identity: 1 }, 'worker').label).toBe(
-      `${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.worker}`
-    )
+  it('refuses to render a retired instance identity', () => {
+    expect(() => launchdNames({ ...context, identity: 1 }, 'api')).toThrow(/retired/)
   })
 
   it('rejects control characters in rendered fields', () => {

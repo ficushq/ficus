@@ -6,7 +6,7 @@ import { assertEnvFileNaming, expandTilde } from '@ficus/shared/node'
 import { applyUpdate, type UpdateDeps } from './update'
 import { bootstrap, defaultInstallDir, DEFAULT_REPO } from '../local-server/bootstrap'
 import { parseEnvFile } from '../local-server/env-file'
-import { recoveryCliHome, cliHome } from '../local-server/home-move'
+import { cliHome } from '../local-server/home-move'
 import { runOfflineUpdate } from '../local-server/offline-update'
 import { resolveSetupOptions, type Prompter, type RawSetupFlags, SetupOptionsError } from '../local-server/options'
 import { defaultSysboxHostDeps, runSysboxBootstrap, type SysboxHostDeps } from '../local-server/sysbox'
@@ -24,12 +24,7 @@ import {
   requireCurrentIdentity,
   type InstanceIdentity,
 } from '../local-server/instance'
-import {
-  assertNoRenameInFlight,
-  RENAME_JOURNAL,
-  renameIdentity,
-  type RenameReport,
-} from '../local-server/supervisor-rename'
+import { assertNoRenameInFlight, RENAME_JOURNAL } from '../local-server/rename-guard'
 import {
   logsSupervisor,
   makeSupervisorContext,
@@ -181,9 +176,9 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
     return { dir, registered, context, names: instanceNames(registered.label, identity) }
   }
   const home = () => deps.env.HOME ?? homedir()
-  // Resolved on every call: rename-identity moves the CLI home while it runs.
+  // Resolved on every call so a caller-specific HOME selects its own journal.
   const renameJournal = () => deps.renameJournalPath ?? join(cliHome({ homedir: home() }), RENAME_JOURNAL)
-  /** Starting anything while a rename-identity run is unfinished would start the half-moved instance. */
+  /** Starting anything while an earlier identity move is unfinished could start a half-moved instance. */
   const assertNoRename = () => assertNoRenameInFlight(renameJournal())
   /** The registry record behind an --instance label whose checkout is gone, or undefined when it resolves normally. */
   const staleRegistration = (instance: string) => {
@@ -562,68 +557,6 @@ Examples:
           log: narrate,
         }
         await applyUpdate({ offline: true, ref: (opts as { ref?: string }).ref }, updateDeps)
-      })
-    )
-
-  withRoot(
-    server
-      .command('rename-identity')
-      .description(
-        'Move an instance installed before the Ficus rename to the ficus names: supervisor labels and processes, ~/.ficus, its Postgres, .env and the registry'
-      )
-  )
-    .option('--dry-run', 'Print the plan and change nothing')
-    .option('--undo', 'Undo a completed rename of this instance (back to the old names)')
-    .action(
-      caught(async (opts) => {
-        const o = opts as { root?: string; instance?: string; dryRun?: boolean; undo?: boolean }
-        const recoveryStatePath =
-          !deps.env.FICUS_LOCAL_SERVER_STATE && deps.statePath === getStatePath(deps.env)
-            ? join(recoveryCliHome(home()), 'cli', 'local-server.json')
-            : deps.statePath
-        const recoveryJournal = () => deps.renameJournalPath ?? join(recoveryCliHome(home()), RENAME_JOURNAL)
-        const dir = resolveRoot({
-          flag: o.root,
-          instance: o.instance,
-          env: deps.env,
-          cwd: deps.cwd,
-          statePath: recoveryStatePath,
-        })
-        const result: RenameReport = await renameIdentity(
-          { root: dir, dryRun: o.dryRun === true, undo: o.undo === true },
-          {
-            runner: deps.runner,
-            statePath: recoveryStatePath,
-            journalPath: recoveryJournal,
-            home: home(),
-            fetch: deps.fetch,
-            sleep: deps.sleep,
-            now: () => new Date(),
-            env: deps.env,
-            log: isJsonMode() ? () => {} : narrate,
-            supervisorContext: (id, checkout) =>
-              deps.supervisorContext?.(checkout, id.label, id.supervisor, id.identity) ??
-              makeSupervisorContext({
-                supervisor: id.supervisor,
-                root: checkout,
-                label: id.label,
-                identity: id.identity,
-                runner: deps.runner,
-                log: narrate,
-                env: deps.env,
-                which: deps.which,
-              }),
-          }
-        )
-        const summary =
-          result.status === 'dry-run'
-            ? `Dry run complete: "${result.from.label}" would become "${result.to.label}" (${result.to.api}, ${result.to.worker})`
-            : result.status === 'already'
-              ? `Instance "${result.from.label}" already runs under the ficus names`
-              : result.status === 'undone'
-                ? `Instance "${result.from.label}" runs under its old names again (${result.from.api}, ${result.from.worker})`
-                : `Instance "${result.from.label}" is now "${result.to.label}" (${result.to.api}, ${result.to.worker})`
-        output(result, summary)
       })
     )
 

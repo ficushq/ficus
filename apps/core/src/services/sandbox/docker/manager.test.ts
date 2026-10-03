@@ -36,7 +36,7 @@ import {
   type SandboxIdentitySet,
 } from '../identity-names'
 import { computeDockerSpecDigest } from './runtime-contract'
-import { LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT, resolveDockerCommandIdentity } from './command-identity'
+import { resolveDockerCommandIdentity } from './command-identity'
 import { buildBashrcContent } from '../bashrc'
 import type { SandboxOptions } from '../types'
 import { observeSandboxSetupProgress, type SandboxSetupProgressEvent } from '../setup-progress'
@@ -1858,7 +1858,7 @@ describe('docker-sandbox-manager', () => {
 })
 
 // C1 (fix round 1 — review finding): an adopted container that was built
-// under the LEGACY identity (user `tau`, `/run/tau/...` paths — every // ficus-p5-bridge
+// under a foreign identity (different user and runtime paths — every
 // container running before this release) has no `ficus` user and no
 // `/run/ficus/...` paths. connectExecutor and getSandboxUserArgs must read
 // the container's OWN label set to decide which paths/user to use — not
@@ -1915,11 +1915,8 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
 
   describe('connectExecutor', () => {
     /** Each identity's expected health-contract payload, computed via the REAL resolveDockerCommandIdentity. */
-    function expectedHealthIdentity(execIdentity: DockerExecIdentity) {
-      const contract =
-        execIdentity === DOCKER_EXEC_IDENTITY_NEW
-          ? { version: 1 as const, user: 'ficus', home: '/home/ficus', uid: 1000, gid: 1000 }
-          : LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT
+    function expectedHealthIdentity(_execIdentity: DockerExecIdentity) {
+      const contract = { version: 1 as const, user: 'ficus', home: '/home/ficus', uid: 1000, gid: 1000 }
       return resolveDockerCommandIdentity(contract, { uid: process.getuid?.(), gid: process.getgid?.() })
     }
 

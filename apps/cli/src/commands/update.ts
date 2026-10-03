@@ -12,7 +12,7 @@ import { narrate } from '../local-server/log'
 import { makeSupervisorContext } from '../local-server/supervisor'
 import { recordIdentity, requireCurrentIdentity } from '../local-server/instance'
 import { cliHome } from '../local-server/home-move'
-import { assertNoRenameInFlight, RENAME_JOURNAL } from '../local-server/supervisor-rename'
+import { assertNoRenameInFlight, RENAME_JOURNAL } from '../local-server/rename-guard'
 import { ficusOrLegacyDir } from '@ficus/shared/node'
 
 export interface UpdateDeps {

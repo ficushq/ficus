@@ -1,10 +1,10 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { basename, dirname, isAbsolute, join } from 'path'
 import { parseLaunchdJobIdentity } from '@ficus/shared'
-import { FICUS_LAUNCHD_PREFIX, LEGACY_LAUNCHD_PREFIX } from '@ficus/shared/node'
+import { FICUS_LAUNCHD_PREFIX } from '@ficus/shared/node'
 import type { SupervisorAdapter, SupervisorContext, SupervisorProcess } from './supervisor'
-import { cliHome, recoveryCliHome } from './home-move'
-import { CURRENT_IDENTITY, instanceNames } from './instance'
+import { cliHome } from './home-move'
+import { instanceNames } from './instance'
 
 export type NativeComponent = 'api' | 'worker'
 const COMPONENTS_WORKER_FIRST: NativeComponent[] = ['worker', 'api']
@@ -50,17 +50,14 @@ function processName(context: Pick<SupervisorContext, 'label' | 'identity'>, com
 }
 
 export function nativeLogPath(context: NamedContext, component: NativeComponent): string {
-  // Identity1 is reachable only through the retained explicit rename/undo tool.
-  const home = context.identity === 1 ? recoveryCliHome(context.home) : cliHome({ homedir: context.home })
+  const home = cliHome({ homedir: context.home })
   return join(home, 'logs', processName(context, component) + '.log')
 }
 
-/** `sh.ficus.<process>`; an identity-1 instance keeps the prefix its jobs were registered under. */
+/** `sh.ficus.<process>`. */
 export function launchdNames(context: NamedContext, component: NativeComponent) {
   const process = processName(context, component)
-  const prefix =
-    (context.identity ?? CURRENT_IDENTITY) === CURRENT_IDENTITY ? FICUS_LAUNCHD_PREFIX : LEGACY_LAUNCHD_PREFIX
-  const label = `${prefix}.${process}`
+  const label = `${FICUS_LAUNCHD_PREFIX}.${process}`
   return {
     process,
     label,
@@ -198,8 +195,7 @@ function parseStatus(context: SupervisorContext, component: NativeComponent, std
 
 /**
  * The same log file: equal paths, or the same name in directories that resolve to one place — a
- * job loaded before `ficus server rename-identity` moved the CLI home still names its log
- * through the legacy home, which is now a link to the moved one.
+ * an already-loaded job may name its log through the old-home link until Apple finalization.
  */
 function sameLogFile(a: string, b: string): boolean {
   if (a === b) return true

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { generateKeyPairSync, verify } from 'crypto'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 import {
   readIdentityPrivateKeyPem,
   signAgentSig,

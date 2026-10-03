@@ -5,7 +5,6 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { EnvNamingError, RENAME_BRIDGE_TAG, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import { CommandRunner } from './command-runner'
 import {
   LocalUpdateManager,
@@ -152,7 +151,7 @@ describe('LocalUpdateManager', () => {
   // The same status file `bun run update:offline` writes: <root>/.ficus, or the pre-rename dir while only it exists.
   for (const [where, dirName] of [
     ['.ficus', '.ficus'],
-    ['the legacy dir', LEGACY_HOME_DIR_NAME],
+    ['the legacy dir', '.other-settings'],
   ] as const) {
     it(`reads the persisted run from ${where} under the repo root by default`, () => {
       const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))

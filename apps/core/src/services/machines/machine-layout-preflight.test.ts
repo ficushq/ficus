@@ -3,10 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, w
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Machine } from './queries'
-import { LEGACY_BOX_UNIT_PREFIX, LEGACY_USER_UNIT_PREFIX, LEGACY_BOX_DOT_DIR } from './box-paths'
 import {
-  LEGACY_BROWSER_NAME,
-  LEGACY_MACHINE_ROOT,
   MACHINE_LAYOUT_PREFLIGHT_PROGRAM,
   machineLayoutPreflightCommand,
   requiresMachineLayoutMigration,
@@ -71,63 +68,30 @@ describe('machine layout automatic-bootstrap preflight', () => {
     expect(await f.run()).toEqual({ exitCode: 0, stdout: ready, stderr: '' })
   })
 
-  it('allows the migrated root and browser alias, completed and reversed journals', async () => {
+  it('allows canonical machine/box layouts and settled journals', async () => {
     const f = fixture()
     f.put('opt/ficus/prebaked')
-    symlinkSync('ficus', join(f.root, LEGACY_MACHINE_ROOT))
-    f.put('etc/systemd/system/ficus-browser.service')
-    symlinkSync('ficus-browser.service', join(f.root, `etc/systemd/system/${LEGACY_BROWSER_NAME}.service`))
-    f.put('accounts', 'passwd:ficus-browser\ngroup:ficus-browser\n')
+    f.put('home/box_fixture/.ficus/server.env')
+    f.put('etc/systemd/system/ficus-box-box_fixture.service')
     for (const done of ['DONE', 'REVERSED']) {
       f.put(`var/backups/ficus-host-migrate/machine-${done}/STEPS`, 'S3\n')
       f.put(`var/backups/ficus-host-migrate/machine-${done}/${done}`)
     }
-    expect(await f.run()).toEqual({ exitCode: 0, stdout: ready, stderr: '' })
-  })
-
-  for (const [name, path] of [
-    ['real old root', `${LEGACY_MACHINE_ROOT}/prebaked`],
-    ['old browser unit', `etc/systemd/system/${LEGACY_BROWSER_NAME}.service`],
-    ['old AppArmor profile', `etc/apparmor.d/${LEGACY_BROWSER_NAME}-chromium`],
-    ['old program inside new root', `opt/ficus/browser/service/${LEGACY_BROWSER_NAME}.js`],
-    ['interrupted journal', 'var/backups/ficus-host-migrate/machine-pending/STEPS'],
-    ['legacy system box unit', `etc/systemd/system/${LEGACY_BOX_UNIT_PREFIX}-box_0123456789ab.service`],
-    ['legacy user box unit', `home/box_0123456789ab/.config/systemd/user/${LEGACY_USER_UNIT_PREFIX}.service`],
-    ['real legacy box home', `home/box_0123456789ab/${LEGACY_BOX_DOT_DIR}/server.env`],
-  ]) {
-    it(`defers a host with ${name}`, async () => {
-      const f = fixture()
-      f.put(path)
-      expect(await f.run()).toEqual({ exitCode: 0, stdout: required, stderr: '' })
-    })
-  }
-
-  for (const db of ['passwd', 'group']) {
-    it(`defers a renameable browser ${db} entry even without an old root`, async () => {
-      const f = fixture()
-      f.put('accounts', `${db}:${LEGACY_BROWSER_NAME}\n`)
-      expect((await f.run()).stdout).toBe(required)
-    })
-  }
-
-  it('allows duplicate old accounts only when no migration step would rename them', async () => {
-    const f = fixture()
-    f.put(
-      'accounts',
-      `passwd:${LEGACY_BROWSER_NAME}\npasswd:ficus-browser\ngroup:${LEGACY_BROWSER_NAME}\ngroup:ficus-browser\n`
-    )
     expect((await f.run()).stdout).toBe(ready)
   })
-
-  it('does not declare readiness when the privileged shell cannot start', async () => {
-    const f = fixture()
-    f.put('bin/sudo', '#!/bin/sh\nexit 77\n')
-    expect(await f.run()).toEqual({ exitCode: 77, stdout: '', stderr: '' })
+  it('refuses pending journals and existing boxes without canonical identity', async () => {
+    for (const path of ['var/backups/ficus-host-migrate/machine-pending/STEPS', 'home/box_fixture/unknown']) {
+      const f = fixture()
+      f.put(path)
+      expect((await f.run()).stdout).toBe(required)
+    }
   })
-
-  it('does not declare readiness when account lookup fails unexpectedly', async () => {
+  it('refuses symlinked canonical roots and settings', async () => {
     const f = fixture()
-    expect((await f.run({ PROBE_GETENT_FAIL: '3' })).exitCode).toBe(3)
+    f.put('target/file')
+    f.put('opt/placeholder')
+    symlinkSync('../target', join(f.root, 'opt/ficus'))
+    expect((await f.run()).stdout).toBe(required)
   })
 
   it('interprets only explicit successful probe results; SSH and malformed results fail closed', async () => {

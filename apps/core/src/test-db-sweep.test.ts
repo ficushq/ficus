@@ -1,7 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import {
   findOrphanProjects,
-  legacyProjectNameForPath,
   listTestDbContainers,
   listLiveWorktreePaths,
   projectNameForPath,
@@ -26,7 +25,7 @@ describe('findOrphanProjects', () => {
     expect(orphans).toEqual([projectNameForPath(WT_GONE)])
   })
 
-  test('legacy (unlabeled) container is an orphan iff no live worktree hashes to it', () => {
+  test('unlabeled container is an orphan iff no live worktree hashes to it', () => {
     const orphans = findOrphanProjects({
       containers: [
         { project: projectNameForPath(WT_A), repoRoot: '' },
@@ -59,26 +58,6 @@ describe('findOrphanProjects', () => {
     })
     expect(orphans).toEqual([])
   })
-
-  test('a legacy-prefixed labeled container is still found and reaped when its worktree is gone', () => {
-    const orphans = findOrphanProjects({
-      containers: [{ project: legacyProjectNameForPath(WT_GONE), repoRoot: WT_GONE }],
-      liveWorktreePaths: [ROOT],
-      currentProject: projectNameForPath(ROOT),
-      pathExists: (p) => p !== WT_GONE,
-    })
-    expect(orphans).toEqual([legacyProjectNameForPath(WT_GONE)])
-  })
-
-  test('a legacy-prefixed unlabeled container is kept, not reaped, when its worktree is still live', () => {
-    const orphans = findOrphanProjects({
-      containers: [{ project: legacyProjectNameForPath(WT_A), repoRoot: '' }],
-      liveWorktreePaths: [ROOT, WT_A],
-      currentProject: projectNameForPath(ROOT),
-      pathExists: () => true,
-    })
-    expect(orphans).toEqual([])
-  })
 })
 
 describe('docker/git output parsing', () => {
@@ -87,7 +66,7 @@ describe('docker/git output parsing', () => {
       [
         `ficus-test-aaaaaaaa\t${WT_A}`,
         'ficus-test-aaaaaaaa\t' + WT_A, // duplicate service container
-        'ficus-test-bbbbbbbb\t', // legacy: no label
+        'ficus-test-bbbbbbbb\t', // no label
         'unrelated-project\t/x',
         '',
       ].join('\n')
@@ -95,11 +74,6 @@ describe('docker/git output parsing', () => {
       { project: 'ficus-test-aaaaaaaa', repoRoot: WT_A },
       { project: 'ficus-test-bbbbbbbb', repoRoot: '' },
     ])
-  })
-
-  test('listTestDbContainers also matches legacy-prefixed containers', () => {
-    const exec = () => [`${legacyProjectNameForPath(WT_A)}\t${WT_A}`, 'unrelated-project\t/x', ''].join('\n')
-    expect(listTestDbContainers(exec)).toEqual([{ project: legacyProjectNameForPath(WT_A), repoRoot: WT_A }])
   })
 
   test('listLiveWorktreePaths parses porcelain output', () => {
@@ -134,27 +108,5 @@ describe('sweepOrphanTestDbs', () => {
       throw new Error('docker exploded')
     }
     expect(sweepOrphanTestDbs({ composeFile: 'x', currentRepoRoot: ROOT, deps: { exec: throwing } })).toEqual([])
-  })
-
-  test('also tears down a legacy-prefixed orphan left from before the rename', () => {
-    const downs: string[] = []
-    const exec = (cmd: string[]) => {
-      if (cmd[0] === 'docker' && cmd[1] === 'ps') {
-        return `${legacyProjectNameForPath(WT_GONE)}\t${WT_GONE}\n${projectNameForPath(ROOT)}\t${ROOT}\n`
-      }
-      if (cmd[0] === 'git') return `worktree ${ROOT}\n`
-      if (cmd[0] === 'docker' && cmd[1] === 'compose') {
-        downs.push(cmd[cmd.indexOf('-p') + 1])
-        return ''
-      }
-      return ''
-    }
-    const removed = sweepOrphanTestDbs({
-      composeFile: '/repo/main/docker-compose.test.yml',
-      currentRepoRoot: ROOT,
-      deps: { exec },
-    })
-    expect(removed).toEqual([legacyProjectNameForPath(WT_GONE)])
-    expect(downs).toEqual([legacyProjectNameForPath(WT_GONE)])
   })
 })

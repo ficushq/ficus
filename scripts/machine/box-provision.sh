@@ -185,11 +185,6 @@ HOME_DOT_DIR=".ficus"
 # carries — its units (system and user mode), its HOME dot dir — and the machine
 # root the retained one-shot recovery tools move. Normal C-FIN provisioning
 # refuses those real layouts and removes only exact compatibility links.
-LEGACY_SYSTEM_UNIT_PREFIX='tau-box'             # ficus-p5-bridge
-LEGACY_USER_UNIT_PREFIX='tau-sandbox-server'    # ficus-p5-bridge
-LEGACY_HOME_DOT_DIR='.tau'                      # ficus-p5-bridge
-LEGACY_ROOT='/opt/tau'                          # ficus-p5-bridge
-LEGACY_BROWSER_NAME='tau-browser'              # ficus-p5-bridge
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -451,9 +446,6 @@ system_slice_dropin_dir() {
   printf '%s/ficus-box-%s.slice.d' "${SYSTEMD_SYSTEM_DIR}" "${UNIX_USER}"
 }
 
-legacy_system_slice_dropin_dir() {
-  printf '%s/%s-%s.slice.d' "${SYSTEMD_SYSTEM_DIR}" "${LEGACY_SYSTEM_UNIT_PREFIX}" "${UNIX_USER}"
-}
 
 slice_dropin_dir() {
   if [ "${UNIT_MODE}" = "system" ]; then
@@ -473,14 +465,13 @@ install_slice_limits() {
     | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "${dir}/50-ficus-box.conf"
   # A user-mode box keeps its user-<uid>.slice across the rename; drop the
   # drop-in it carried under the old name so the limits are set once.
-  "${SUDO[@]}" rm -f "${dir}/50-${LEGACY_SYSTEM_UNIT_PREFIX}.conf"
   "${SUDO[@]}" systemctl daemon-reload
 }
 
 # Removal drops BOTH modes' drop-ins: the box is going away entirely, and a box
 # that was migrated between modes at some point may carry the other one.
 remove_slice_limits() {
-  "${SUDO[@]}" rm -rf "$(user_slice_dropin_dir)" "$(system_slice_dropin_dir)" "$(legacy_system_slice_dropin_dir)"
+  "${SUDO[@]}" rm -rf "$(user_slice_dropin_dir)" "$(system_slice_dropin_dir)"
   "${SUDO[@]}" systemctl daemon-reload >/dev/null 2>&1 || true
 }
 
@@ -640,21 +631,8 @@ system_slice_name() {
 # Bridge (phase 5, U4): this box's units under their pre-rename names, for this
 # --unit-mode. The Ficus units carry them as Alias=; teardown_legacy_units
 # removes them where they are still real unit files.
-legacy_unit_prefix() {
-  if [ "${UNIT_MODE}" = "system" ]; then
-    printf '%s-%s' "${LEGACY_SYSTEM_UNIT_PREFIX}" "${UNIX_USER}"
-  else
-    printf '%s' "${LEGACY_USER_UNIT_PREFIX}"
-  fi
-}
 
-legacy_unit_name() {
-  printf '%s.service' "$(legacy_unit_prefix)"
-}
 
-legacy_socket_name() {
-  printf '%s.socket' "$(legacy_unit_prefix)"
-}
 
 user_unit_path() {
   printf '%s/.config/systemd/user/%s' "$1" "${USER_UNIT_NAME}"
@@ -948,7 +926,6 @@ remove_box() {
   "${SUDO[@]}" rm -f "$(system_unit_path)" "$(system_socket_path)" "$(system_proxy_path)"
   # ...and both modes' units under their pre-rename names (a box not
   # re-provisioned since the rename).
-  teardown_legacy_units "$(user_home)"
   "${SUDO[@]}" loginctl disable-linger "${UNIX_USER}" >/dev/null 2>&1 || true
   remove_slice_limits
   # Give the per-user manager a moment to exit so its files aren't in the tar.
@@ -1521,111 +1498,6 @@ assert_socket_proxyd() {
 # ficus-sandbox-server still holds FICUS_BOX_PORT, and the incoming unit binds the
 # same port. Belt-and-braces — the caller starts the unit only after this
 # returns — but a lingering manager would otherwise survive indefinitely.
-# Bridge (phase 5, U4): stop, disable and remove this box's units under their
-# PRE-RENAME names, in both managers — whatever is still a real unit file there
-# (a link of that name is the Ficus unit's own Alias, and is left alone). Socket
-# first, so it cannot re-activate the proxy mid-stop. Its slice drop-in goes
-# with it. Idempotent: a box with no legacy units is untouched.
-teardown_legacy_units() {
-  local home="$1" sys_prefix="${LEGACY_SYSTEM_UNIT_PREFIX}-${UNIX_USER}" f found=false
-  local -a sys_units=("${sys_prefix}.socket" "${sys_prefix}-proxy.service" "${sys_prefix}.service")
-  for f in "${sys_units[@]}"; do
-    if "${SUDO[@]}" test -f "${SYSTEMD_SYSTEM_DIR}/${f}" && ! "${SUDO[@]}" test -L "${SYSTEMD_SYSTEM_DIR}/${f}"; then
-      found=true
-    fi
-  done
-  if [ "${found}" = true ]; then
-    echo "box-provision.sh: removing ${UNIX_USER}'s system units from before the rename (${sys_prefix}.*)" >&2
-    "${SUDO[@]}" systemctl stop "${sys_units[@]}" >/dev/null 2>&1 || true
-    "${SUDO[@]}" systemctl disable "${sys_prefix}.socket" "${sys_prefix}.service" >/dev/null 2>&1 || true
-    for f in "${sys_units[@]}"; do
-      if ! "${SUDO[@]}" test -L "${SYSTEMD_SYSTEM_DIR}/${f}"; then "${SUDO[@]}" rm -f "${SYSTEMD_SYSTEM_DIR}/${f}"; fi
-    done
-    "${SUDO[@]}" rm -rf "$(legacy_system_slice_dropin_dir)"
-    "${SUDO[@]}" systemctl daemon-reload >/dev/null 2>&1 || true
-  fi
-
-  [ -n "${home}" ] || return 0
-  local user_dir="${home}/.config/systemd/user"
-  local -a user_units=("${LEGACY_USER_UNIT_PREFIX}.socket" "${LEGACY_USER_UNIT_PREFIX}-proxy.service" "${LEGACY_USER_UNIT_PREFIX}.service")
-  found=false
-  for f in "${user_units[@]}"; do
-    if "${SUDO[@]}" test -f "${user_dir}/${f}" && ! "${SUDO[@]}" test -L "${user_dir}/${f}"; then found=true; fi
-  done
-  if [ "${found}" = true ]; then
-    echo "box-provision.sh: removing ${UNIX_USER}'s user units from before the rename (${LEGACY_USER_UNIT_PREFIX}.*)" >&2
-    sysu stop "${user_units[@]}" >/dev/null 2>&1 || true
-    sysu disable "${LEGACY_USER_UNIT_PREFIX}.socket" "${LEGACY_USER_UNIT_PREFIX}.service" >/dev/null 2>&1 || true
-    for f in "${user_units[@]}"; do
-      if ! "${SUDO[@]}" test -L "${user_dir}/${f}"; then "${SUDO[@]}" rm -f "${user_dir}/${f}"; fi
-    done
-    sysu daemon-reload >/dev/null 2>&1 || true
-  fi
-}
-
-# Bridge (phase 5, U4): move the box HOME's pre-rename dot dir to .ficus and
-# leave the old name as a RELATIVE link to it, so anything that still says the
-# old path (a box server or a Core from before the rename) reads the same files.
-# Runs AS THE BOX USER — never traverse a box-controlled tree as root — after its
-# units are down. A .ficus a newer box server already created beside the old dir
-# is merged: every entry only the old dir has moves over; an entry both have is
-# kept from .ficus, and the old one is set aside under .ficus/.before-rename-<ts>
-# (never deleted). Idempotent: once the old name is the link, nothing happens.
-HOME_DOT_DIR_PROGRAM='set -u
-home=$1 old_name=$2 new_name=$3
-old="${home}/${old_name}" new="${home}/${new_name}" clash=""
-if [ -L "${old}" ]; then
-  [ "$(readlink -- "${old}")" = "${new_name}" ] || echo "box-provision.sh: ${old} links elsewhere; left alone" >&2
-  exit 0
-fi
-if [ -L "${new}" ] || { [ -e "${new}" ] && [ ! -d "${new}" ]; }; then
-  echo "box-provision.sh: ${new} is not a directory" >&2
-  exit 1
-fi
-if [ -e "${old}" ] && [ ! -d "${old}" ]; then
-  echo "box-provision.sh: ${old} is not a directory" >&2
-  exit 1
-fi
-if [ -d "${old}" ]; then
-  if [ ! -e "${new}" ]; then
-    mv -T -- "${old}" "${new}" || exit 1
-  else
-    for entry in "${old}"/* "${old}"/.[!.]* "${old}"/..?*; do
-      [ -e "${entry}" ] || [ -L "${entry}" ] || continue
-      target="${new}/${entry##*/}"
-      if [ -e "${target}" ] || [ -L "${target}" ]; then
-        clash=1
-        continue
-      fi
-      mv -T -- "${entry}" "${target}" || exit 1
-    done
-    if [ -n "${clash}" ]; then
-      keep="${new}/.before-rename-$(date -u +%Y%m%dT%H%M%SZ)"
-      mv -T -- "${old}" "${keep}" || exit 1
-      echo "box-provision.sh: ${old} and ${new} both had some entries; the old ones are kept in ${keep}" >&2
-    else
-      rmdir -- "${old}" || exit 1
-    fi
-  fi
-fi
-mkdir -p -- "${new}" && chmod 700 -- "${new}" && ln -sT -- "${new_name}" "${old}"'
-
-migrate_home_dot_dir() {
-  local home="$1"
-  run_as_box bash -c "${HOME_DOT_DIR_PROGRAM}" box-home-dot-dir "${home}" "${LEGACY_HOME_DOT_DIR}" "${HOME_DOT_DIR}"
-}
-
-# Bridge (phase 5, U4): bootstrap.sh moves the machine root to /opt/ficus. Until
-# a machine has been re-bootstrapped, the units this script writes would run a
-# bun and a server bundle that are not there, so provisioning refuses (Core's
-# operator explicitly migrates the machine after tenant activation succeeds).
-refuse_unmigrated_machine_root() {
-  if [ -d "${FICUS_HOST_ROOT}${LEGACY_ROOT}" ] && [ ! -L "${FICUS_HOST_ROOT}${LEGACY_ROOT}" ]; then
-    echo "box-provision.sh: this machine still has its root at ${LEGACY_ROOT}; re-bootstrap it before provisioning boxes" >&2
-    exit 3
-  fi
-}
-
 reconcile_unit_mode() {
   local home="$1"
   if [ "${UNIT_MODE}" = "system" ]; then
@@ -1660,40 +1532,27 @@ reconcile_unit_mode() {
 # Kept byte-identical to Core's privileged automatic-bootstrap preflight.
 require_machine_layout_ready() {
   local result
-  if ! result=$("${SUDO[@]}" bash -s -- "${LEGACY_ROOT}" "${LEGACY_BROWSER_NAME}" ficus-browser "${FICUS_HOST_ROOT}" "${LEGACY_SYSTEM_UNIT_PREFIX}" "${LEGACY_USER_UNIT_PREFIX}" "${LEGACY_HOME_DOT_DIR}" <<'FICUS_LAYOUT_PREFLIGHT'
+  if ! result=$("${SUDO[@]}" bash -s -- "${FICUS_HOST_ROOT}" <<'FICUS_LAYOUT_PREFLIGHT'
 set -eu
-old_root="$4$1" old_browser=$2 new_browser=$3 root=$4 system_prefix=$5 user_prefix=$6 old_dot=$7
-new_root="$root/opt/ficus"
+root=$1
 needs_operator() { printf '%s\n' 'FICUS_MACHINE_LAYOUT=operator-required'; exit 0; }
-account_exists() {
-  if getent "$1" "$2" >/dev/null; then return 0; else
-    rc=$?
-    [ "$rc" = 2 ] && return 1
-    exit "$rc"
-  fi
-}
-if [ -d "$old_root" ] && [ ! -L "$old_root" ]; then needs_operator; fi
 for journal in "$root/var/backups/ficus-host-migrate"/machine-*; do
   [ -f "$journal/STEPS" ] || continue
   if [ ! -e "$journal/DONE" ] && [ ! -e "$journal/REVERSED" ]; then needs_operator; fi
 done
-unit="$root/etc/systemd/system/$old_browser.service"
-if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
-if [ -f "$root/etc/apparmor.d/$old_browser-chromium" ]; then needs_operator; fi
-if [ -f "$new_root/browser/service/$old_browser.js" ]; then needs_operator; fi
-if account_exists passwd "$old_browser" && ! account_exists passwd "$new_browser"; then needs_operator; fi
-if account_exists group "$old_browser" && ! account_exists group "$new_browser"; then needs_operator; fi
-# Finalize cannot remove binary/socket bridges still needed by an old box.
-for unit in "$root/etc/systemd/system/$system_prefix"-box_*; do
-  if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
-done
+if [ -e "$root/opt/ficus" ] || [ -L "$root/opt/ficus" ]; then
+  [ -d "$root/opt/ficus" ] && [ ! -L "$root/opt/ficus" ] || needs_operator
+fi
 for home in "$root"/home/box_*; do
-  [ -d "$home" ] || continue
-  [ ! -L "$home" ] || needs_operator
-  if [ -e "$home/$old_dot" ] && [ ! -L "$home/$old_dot" ]; then needs_operator; fi
-  for unit in "$home/.config/systemd/user/$user_prefix.service" "$home/.config/systemd/user/$user_prefix.socket" "$home/.config/systemd/user/$user_prefix-proxy.service"; do
-    if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
-  done
+  [ -e "$home" ] || [ -L "$home" ] || continue
+  [ -d "$home" ] && [ ! -L "$home" ] || needs_operator
+  [ -d "$home/.ficus" ] && [ ! -L "$home/.ficus" ] || needs_operator
+  name=$(basename "$home")
+  system="$root/etc/systemd/system/ficus-box-$name.service"
+  user="$home/.config/systemd/user/ficus-sandbox-server.service"
+  if [ -f "$system" ] && [ ! -L "$system" ]; then continue; fi
+  if [ -f "$user" ] && [ ! -L "$user" ]; then continue; fi
+  needs_operator
 done
 printf '%s\n' 'FICUS_MACHINE_LAYOUT=ready'
 FICUS_LAYOUT_PREFLIGHT
@@ -1709,30 +1568,17 @@ FICUS_LAYOUT_PREFLIGHT
 
 # Canonical box homes are prepared as the box user. The old merge function
 # remains available for explicit bridge recovery, never normal C-FIN provision.
-finalize_box_home() {
+prepare_box_home() {
   run_as_box bash -c 'set -eu
-home=$1 old_name=$2
-new="$home/.ficus" old="$home/$old_name"
+new="$1/.ficus"
 [ ! -L "$new" ] && { [ ! -e "$new" ] || [ -d "$new" ]; } || exit 3
-if [ -e "$old" ] && [ ! -L "$old" ]; then exit 3; fi
-mkdir -p -- "$new"
-if [ -L "$old" ] && [ "$(readlink -- "$old")" = .ficus ]; then rm -- "$old"
-elif [ -e "$old" ] || [ -L "$old" ]; then echo "box-provision.sh: leaving foreign home compatibility path" >&2; fi' box-home-finalize "$1" "${LEGACY_HOME_DOT_DIR}"
+mkdir -p -- "$new"' box-home-prepare "$1"
 }
 
-finalize_box_machine_link() {
-  local old="${FICUS_HOST_ROOT}${LEGACY_ROOT}"
-  if "${SUDO[@]}" test -L "${old}" && [ "$("${SUDO[@]}" readlink -- "${old}")" = ficus ]; then
-    "${SUDO[@]}" rm -- "${old}"
-  elif "${SUDO[@]}" test -e "${old}" || "${SUDO[@]}" test -L "${old}"; then
-    echo "box-provision.sh: leaving foreign machine compatibility path ${old}" >&2
-  fi
-}
 
 provision_box() {
   require_machine_layout_ready || return $?
   assert_socket_proxyd
-  finalize_box_machine_link
   ensure_user
 
   local home
@@ -1755,7 +1601,7 @@ provision_box() {
   fi
 
   # Preserve canonical data and remove only the exact old home link.
-  finalize_box_home "${home}"
+  prepare_box_home "${home}"
   ensure_dirs "${home}"
   init_shared_nix_cache
   install_slice_limits

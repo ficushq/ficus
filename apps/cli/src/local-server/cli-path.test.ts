@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 import { checkCliOnPath, cliInstallDir, cliPathHintLines, detectShell, type CliPathDeps } from './cli-path'
 
 const HOME = '/home/fixture'

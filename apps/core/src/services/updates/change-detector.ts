@@ -1,14 +1,7 @@
 import type { DeploymentFlavor, ProcessSupervisor } from './deployment-flavor'
 import type { PlannedCommand, UpdateTask } from './types'
 import { localProcessNames } from '@ficus/shared'
-import {
-  hostSystemdUnits,
-  launchdLabel,
-  LEGACY_LOCAL_INSTANCE,
-  legacyLocalProcessNames,
-  renamedLocalInstanceLabel,
-  systemdUserUnit,
-} from '@ficus/shared/node'
+import { hostSystemdUnits, launchdLabel, systemdUserUnit } from '@ficus/shared/node'
 import { DEPENDENCY_INSTALL_COMMAND, DEPENDENCY_PATHS } from './dependency-install'
 
 type PathMatcher = {
@@ -140,14 +133,10 @@ export function restartCommandsFor(
       [...prefix, 'systemctl', 'restart', units.api],
     ]
   }
-  // An install without FICUS_INSTANCE predates labels: it is the legacy default instance. Its
-  // targets are the pre-rename ones until `ficus server rename-identity` re-registers them.
-  const label = options.instance ?? process.env.FICUS_INSTANCE ?? LEGACY_LOCAL_INSTANCE
-  const legacy = legacyLocalProcessNames(label)
-  const names = localProcessNames(renamedLocalInstanceLabel(legacy.label))
+  const names = localProcessNames(options.instance ?? process.env.FICUS_INSTANCE ?? 'ficus')
   if (supervisor === 'systemd-user') {
     const unit = (component: 'api' | 'worker') =>
-      systemdUserUnit({ legacy: legacy[component], new: names[component] }, { unitDir: options.userUnitDir })
+      systemdUserUnit({ legacy: names[component], new: names[component] }, { unitDir: options.userUnitDir })
     return [
       ['systemctl', '--user', 'restart', unit('worker')],
       ['systemctl', '--user', '--no-block', 'restart', unit('api')],
@@ -162,7 +151,7 @@ export function restartCommandsFor(
         'kickstart',
         '-k',
         `gui/${uid}/${launchdLabel(
-          { legacy: legacy.worker, new: names.worker },
+          { legacy: names.worker, new: names.worker },
           { launchAgentsDir: options.launchAgentsDir }
         )}`,
       ],
@@ -171,7 +160,7 @@ export function restartCommandsFor(
         'kickstart',
         '-k',
         `gui/${uid}/${launchdLabel(
-          { legacy: legacy.api, new: names.api },
+          { legacy: names.api, new: names.api },
           { launchAgentsDir: options.launchAgentsDir }
         )}`,
       ],
@@ -182,7 +171,7 @@ export function restartCommandsFor(
 
 /**
  * True when this planned command restarts the API process (the process running the
- * updater). Both pm2's `reload:api` wrapper and systemd's `systemctl restart tau-api`
+ * updater). Both pm2's `reload:api` wrapper and systemd's `systemctl restart ficus-api`
  * (optionally prefixed with `sudo -n`) restart the same process, so command-runner's
  * fire-and-forget dispatch and local-updater's boot-time reconciliation both key off
  * this single predicate.
@@ -192,8 +181,7 @@ export function isApiRestartCommand(command: string[]): boolean {
   return (
     joined.includes('reload:api') ||
     joined.includes('reload:core') ||
-    // Phase-5 dual-reader: the target can still be a legacy tau-* unit until every host moves.
-    /(?:^|[./-])(?:tau|ficus)(?:-[a-z0-9-]+)?-api(?:\.service)?$/.test(command.at(-1) ?? '') // ficus-p5-bridge
+    /(?:^|[./-])ficus(?:-[a-z0-9-]+)?-api(?:\.service)?$/.test(command.at(-1) ?? '')
   )
 }
 
@@ -210,7 +198,7 @@ export function isServiceRestartCommand(command: string[]): boolean {
   return (
     isApiRestartCommand(command) ||
     joined.includes('reload:worker') ||
-    /(?:^|[./-])(?:tau|ficus)(?:-[a-z0-9-]+)?-worker(?:\.service)?$/.test(target) // ficus-p5-bridge
+    /(?:^|[./-])ficus(?:-[a-z0-9-]+)?-worker(?:\.service)?$/.test(target)
   )
 }
 

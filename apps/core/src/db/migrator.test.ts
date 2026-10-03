@@ -334,12 +334,9 @@ describe('applyMigrations', () => {
   }, 30_000)
 })
 
-// Migration history: the intents table was named for Tau before the rename. These fixtures build that
-// pre-rename table so the adoption below is exercised against the name it exists to retire.
-const PRE_RENAME_INTENTS = '__tau_online_migration_intents'
 const INTENTS = '__ficus_online_migration_intents'
 
-describe('intents table adoption', () => {
+describe('canonical intents table', () => {
   const withSchema = async (run: (connection: import('postgres').ReservedSql, schema: string) => Promise<void>) => {
     const client = createPostgresConnection(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} })
     const connection = await client.reserve()
@@ -400,39 +397,12 @@ describe('intents table adoption', () => {
     })
   })
 
-  test('renames a pre-rename table in place, keeping its rows and naming its key', async () => {
-    await withSchema(async (connection, schema) => {
-      await createIntents(connection, schema, PRE_RENAME_INTENTS)
-      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 10, 'crashed-build')
-      await applyMigrations(connection, [], { migrationsSchema: schema })
-      expect(await tables(connection, schema)).toEqual([INTENTS])
-      expectFicusConstraints(await constraints(connection, schema))
-      expect(await intents(connection, schema)).toEqual([
-        { created_at: '10', hash: 'crashed-build', index_name: 'idx_10', started_at: '1767323045' },
-      ])
-    })
-  })
 
-  test('merges a table a rollback recreated: copies missing rows, keeps existing ones, drops the old table', async () => {
-    await withSchema(async (connection, schema) => {
-      await createIntents(connection, schema, INTENTS)
-      await createIntents(connection, schema, PRE_RENAME_INTENTS)
-      await insertIntent(connection, schema, INTENTS, 20, 'ficus-intent')
-      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 20, 'conflicting-copy')
-      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 30, 'rollback-intent')
-      await applyMigrations(connection, [], { migrationsSchema: schema })
-      expect(await tables(connection, schema)).toEqual([INTENTS])
-      expect((await intents(connection, schema)).map((row) => [row.created_at, row.hash])).toEqual([
-        ['20', 'ficus-intent'],
-        ['30', 'rollback-intent'],
-      ])
-    })
-  })
 
   test('a re-run is a no-op', async () => {
     await withSchema(async (connection, schema) => {
-      await createIntents(connection, schema, PRE_RENAME_INTENTS)
-      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 40, 'kept')
+      await createIntents(connection, schema, INTENTS)
+      await insertIntent(connection, schema, INTENTS, 40, 'kept')
       await applyMigrations(connection, [], { migrationsSchema: schema })
       const before = await intents(connection, schema)
       await applyMigrations(connection, [], { migrationsSchema: schema })
@@ -442,7 +412,7 @@ describe('intents table adoption', () => {
     })
   })
 
-  test('an adopted pre-rename intent still recovers its crashed concurrent index', async () => {
+  test('a canonical intent still recovers its crashed concurrent index', async () => {
     await withSchema(async (connection, schema) => {
       const suffix = crypto.randomUUID().replaceAll('-', '')
       const table = `adopted_probe_${suffix}`
@@ -457,9 +427,9 @@ describe('intents table adoption', () => {
         await connection.unsafe(`CREATE TABLE "${table}" ("value" text NOT NULL)`)
         // The crash left the index built and the intent recorded, but no ledger row.
         await connection.unsafe(item.sql[0]!)
-        await createIntents(connection, schema, PRE_RENAME_INTENTS)
+        await createIntents(connection, schema, INTENTS)
         await connection.unsafe(
-          `INSERT INTO "${schema}"."${PRE_RENAME_INTENTS}" (created_at, hash, table_schema, index_name)
+          `INSERT INTO "${schema}"."${INTENTS}" (created_at, hash, table_schema, index_name)
            VALUES (50, 'adopted-hash', 'public', $1)`,
           [index]
         )
@@ -488,28 +458,5 @@ describe('intents table adoption', () => {
     })
   })
 
-  test('survives a rollback replaying the previous release bootstrap, then adopts again', async () => {
-    await withSchema(async (connection, schema) => {
-      await createIntents(connection, schema, PRE_RENAME_INTENTS)
-      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 60, 'before-upgrade')
-      await applyMigrations(connection, [], { migrationsSchema: schema })
-      // The previous release's own bootstrap DDL, verbatim: it must not collide with the adopted table.
-      await connection.unsafe(`
-        CREATE TABLE IF NOT EXISTS "${schema}"."${PRE_RENAME_INTENTS}" (
-          created_at bigint PRIMARY KEY,
-          hash text NOT NULL,
-          table_schema text NOT NULL,
-          index_name text NOT NULL,
-          started_at timestamptz NOT NULL DEFAULT now()
-        )`)
-      await insertIntent(connection, schema, PRE_RENAME_INTENTS, 70, 'during-rollback')
-      await applyMigrations(connection, [], { migrationsSchema: schema })
-      expect(await tables(connection, schema)).toEqual([INTENTS])
-      expectFicusConstraints(await constraints(connection, schema))
-      expect((await intents(connection, schema)).map((row) => [row.created_at, row.hash])).toEqual([
-        ['60', 'before-upgrade'],
-        ['70', 'during-rollback'],
-      ])
-    })
-  })
+
 })

@@ -1,3 +1,4 @@
+import { foreignUnits, FOREIGN_BOX_UNIT_PREFIX, FOREIGN_USER_UNIT_PREFIX } from './foreign-unit.fixture'
 import { afterEach, describe, expect, it } from 'bun:test'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -11,9 +12,6 @@ import {
 import type { MachineBox } from './queries'
 import {
   BOX_DOT_DIR,
-  LEGACY_BOX_DOT_DIR,
-  LEGACY_BOX_UNIT_PREFIX,
-  LEGACY_USER_UNIT_PREFIX,
   boxDotDir,
   boxUnitControl,
   boxUnixUser,
@@ -28,9 +26,9 @@ describe('box unit names', () => {
     expect(ctl.socket).toBe(`ficus-box-${unixUser}.socket`)
     expect(ctl.proxy).toBe(`ficus-box-${unixUser}-proxy.service`)
     expect(ctl.allUnits).toBe(`${ctl.socket} ${ctl.proxy} ${ctl.unit}`)
-    expect(ctl.legacy.unit).toBe(`${LEGACY_BOX_UNIT_PREFIX}-${unixUser}.service`)
-    expect(ctl.legacy.allUnits).toBe(
-      `${LEGACY_BOX_UNIT_PREFIX}-${unixUser}.socket ${LEGACY_BOX_UNIT_PREFIX}-${unixUser}-proxy.service ${LEGACY_BOX_UNIT_PREFIX}-${unixUser}.service`
+    expect(foreignUnits(ctl).unit).toBe(`${FOREIGN_BOX_UNIT_PREFIX}-${unixUser}.service`)
+    expect(foreignUnits(ctl).allUnits).toBe(
+      `${FOREIGN_BOX_UNIT_PREFIX}-${unixUser}.socket ${FOREIGN_BOX_UNIT_PREFIX}-${unixUser}-proxy.service ${FOREIGN_BOX_UNIT_PREFIX}-${unixUser}.service`
     )
   })
 
@@ -41,7 +39,7 @@ describe('box unit names', () => {
       expect(ctl.unit).toBe('ficus-sandbox-server.service')
       expect(ctl.socket).toBe('ficus-sandbox-server.socket')
       expect(ctl.proxy).toBe('ficus-sandbox-server-proxy.service')
-      expect(ctl.legacy.unit).toBe(`${LEGACY_USER_UNIT_PREFIX}.service`)
+      expect(foreignUnits(ctl).unit).toBe(`${FOREIGN_USER_UNIT_PREFIX}.service`)
     }
   })
 
@@ -56,10 +54,9 @@ describe('box unit names', () => {
     expect('legacyIsActiveCommand' in ctl).toBe(false)
   })
 
-  it('the box HOME dot dir is .ficus, and the legacy name is a separate bridge constant', () => {
+  it('the box HOME dot dir is .ficus', () => {
     expect(BOX_DOT_DIR).toBe('.ficus')
     expect(boxDotDir('/home/box_0123456789ab')).toBe('/home/box_0123456789ab/.ficus')
-    expect(LEGACY_BOX_DOT_DIR).not.toBe(BOX_DOT_DIR)
   })
 })
 
@@ -116,11 +113,11 @@ describe('box unit commands on the host (executed)', () => {
     const ran = (units: string) => `RAN ${`${ctl.systemctl} stop ${units}`.replace(/^sudo systemctl /, '')}`
 
     it(`${ctl.mode} mode: drives the Ficus units when they are loaded`, async () => {
-      expect(await run(stop, { LOADED: `${ctl.unit} ${ctl.legacy.unit}` })).toBe(ran(ctl.allUnits))
+      expect(await run(stop, { LOADED: `${ctl.unit} ${foreignUnits(ctl).unit}` })).toBe(ran(ctl.allUnits))
     })
 
     it(`${ctl.mode} mode: does not adopt a legacy-only unit set`, async () => {
-      expect(await run(stop, { LOADED: ctl.legacy.unit })).toBe(ran(ctl.allUnits))
+      expect(await run(stop, { LOADED: foreignUnits(ctl).unit })).toBe(ran(ctl.allUnits))
     })
 
     it(`${ctl.mode} mode: defaults to the Ficus units when neither is loaded`, async () => {
@@ -172,7 +169,7 @@ describe('box unit commands on the host (executed)', () => {
     for (const sandboxId of ['agent_x', 'squad_x']) {
       const ctl = boxUnitControl({ sandboxId, unixUser: boxUnixUser(sandboxId) })
       const command = ctl.onHost((u) => `${ctl.systemctl} restart ${u.unit}`)
-      expect(command).not.toContain(ctl.legacy.unit)
+      expect(command).not.toContain(foreignUnits(ctl).unit)
       expect(command).not.toContain('LoadState')
     }
   })

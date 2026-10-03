@@ -33,12 +33,9 @@ export function boxHome(sandboxId: string): string {
 /**
  * The dot dir in a box user's HOME that holds its `server.env`, `host.env`,
  * devbox, toolchain and skills. Normal provisioning requires a canonical
- * layout and removes only its exact old compatibility link.
+ * layout.
  */
 export const BOX_DOT_DIR = '.ficus'
-/** Bridge (phase 5, U4): the box HOME dot dir before the rename. */
-export const LEGACY_BOX_DOT_DIR = '.tau' // ficus-p5-bridge
-
 /** A box's HOME dot dir (`<home>/.ficus`). */
 export function boxDotDir(home: string): string {
   return `${home}/${BOX_DOT_DIR}`
@@ -46,13 +43,6 @@ export function boxDotDir(home: string): string {
 
 /** The machine root every box runs from (box-provision.sh, the server bundle, bun). */
 export const MACHINE_ROOT = '/opt/ficus'
-
-/**
- * One-shot recovery and refusal checks retain the pre-rename unit spellings.
- * Runtime control and observation use canonical names only.
- */
-export const LEGACY_BOX_UNIT_PREFIX = 'tau-box' // ficus-p5-bridge
-export const LEGACY_USER_UNIT_PREFIX = 'tau-sandbox-server' // ficus-p5-bridge
 
 const BOX_UNIT_PREFIX = 'ficus-box'
 const USER_UNIT_PREFIX = 'ficus-sandbox-server'
@@ -103,8 +93,6 @@ export interface BoxUnitNames {
 /** The unit + the command prefixes that drive it. See {@link boxUnitControl}. */
 export interface BoxUnitControl extends BoxUnitNames {
   mode: BoxUnitMode
-  /** Old names retained only for one-shot recovery and refusal checks. */
-  legacy: BoxUnitNames
   /** Full systemctl command prefix INCLUDING sudo: `${systemctl} restart ${unit}`. */
   systemctl: string
   /** Canonical journalctl command through `-u <unit>`; callers append limits. */
@@ -148,7 +136,6 @@ export function boxUnitControl(input: { sandboxId: string; unixUser: string }): 
   const mode = boxUnitMode(input.sandboxId)
   const asBoxUser = `sudo -u ${shellQuoteBoxPath(unixUser)} env XDG_RUNTIME_DIR=/run/user/$uid`
   const names = unitNames(mode === 'system' ? `${BOX_UNIT_PREFIX}-${unixUser}` : USER_UNIT_PREFIX)
-  const legacy = unitNames(mode === 'system' ? `${LEGACY_BOX_UNIT_PREFIX}-${unixUser}` : LEGACY_USER_UNIT_PREFIX)
   const systemctl = mode === 'system' ? 'sudo systemctl' : `sudo systemctl --machine=${unixUser}@.host --user`
   const isActiveCommandOf =
     mode === 'system'
@@ -157,7 +144,6 @@ export function boxUnitControl(input: { sandboxId: string; unixUser: string }): 
   return {
     mode,
     ...names,
-    legacy,
     systemctl,
     journalctl:
       mode === 'system' ? `sudo journalctl -u ${names.unit}` : `${asBoxUser} journalctl --user -u ${names.unit}`,

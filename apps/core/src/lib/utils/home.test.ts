@@ -3,14 +3,7 @@ import { mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 
-import {
-  getHomeDir,
-  HOME_DATA_MARKER,
-  HOME_DIR_NAME,
-  LEGACY_HOME_DIR_NAME,
-  createHomeDirGetter,
-  resolveHomeDir,
-} from './home'
+import { getHomeDir, HOME_DATA_MARKER, HOME_DIR_NAME, createHomeDirGetter, resolveHomeDir } from './home'
 
 describe('getHomeDir', () => {
   const original = process.env.HOME_DIR
@@ -47,7 +40,7 @@ describe('getHomeDir', () => {
 describe('resolveHomeDir default (no HOME_DIR): always canonical', () => {
   const home = '/srv/home/svc'
   const ficus = join(home, HOME_DIR_NAME)
-  const legacy = join(home, LEGACY_HOME_DIR_NAME)
+  const legacy = join(home, '.other-settings')
   const resolve = (
     fs: { links?: Record<string, string>; data?: string[] },
     env: Record<string, string | undefined> = {}
@@ -126,21 +119,21 @@ describe('the HOME default on a real filesystem', () => {
   const data = (dir: string) => mkdirSync(join(home, dir, HOME_DATA_MARKER), { recursive: true })
 
   it('follows the migration: legacy data → ~/.ficus with the legacy name as its link', () => {
-    data(LEGACY_HOME_DIR_NAME)
+    data('.other-settings')
     expect(resolveIn()).toBe(join(home, HOME_DIR_NAME))
-    renameSync(join(home, LEGACY_HOME_DIR_NAME), join(home, HOME_DIR_NAME))
-    symlinkSync(join(home, HOME_DIR_NAME), join(home, LEGACY_HOME_DIR_NAME))
+    renameSync(join(home, '.other-settings'), join(home, HOME_DIR_NAME))
+    symlinkSync(join(home, HOME_DIR_NAME), join(home, '.other-settings'))
     expect(resolveIn()).toBe(join(home, HOME_DIR_NAME))
   })
 
   it('a fresh ~/.ficus with data stays put when the CLI later creates a real legacy dir (cli/ only)', () => {
     data(HOME_DIR_NAME)
-    mkdirSync(join(home, LEGACY_HOME_DIR_NAME, 'cli'), { recursive: true })
+    mkdirSync(join(home, '.other-settings', 'cli'), { recursive: true })
     expect(resolveIn()).toBe(join(home, HOME_DIR_NAME))
   })
 
   it('retired data does not change the canonical default', () => {
-    data(LEGACY_HOME_DIR_NAME)
+    data('.other-settings')
     mkdirSync(join(home, HOME_DIR_NAME))
     expect(resolveIn()).toBe(join(home, HOME_DIR_NAME))
   })
@@ -149,7 +142,7 @@ describe('the HOME default on a real filesystem', () => {
     const getter = createHomeDirGetter({ env: {}, homedir: () => home, warn: () => {} })
     const first = getter.get()
     expect(first).toBe(join(home, HOME_DIR_NAME)) // nothing yet: a fresh install
-    data(LEGACY_HOME_DIR_NAME) // something writes a legacy data dir mid-process
+    data('.other-settings') // something writes a legacy data dir mid-process
     expect(getter.get()).toBe(first)
     getter.reset()
     expect(getter.get()).toBe(join(home, HOME_DIR_NAME)) // the next process would see it

@@ -12,10 +12,13 @@ import {
 import { homedir } from 'os'
 import { dirname, isAbsolute, join, resolve } from 'path'
 import { CORE_ROOT_PACKAGE_NAMES, type CoreRootPackageName } from '@ficus/shared/identity'
-import { expandTilde, LEGACY_HOME_DIR_NAME, LEGACY_LOCAL_INSTANCE } from '@ficus/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { CURRENT_IDENTITY, normalizeLabel } from './instance'
 import { LOCAL_SUPERVISORS, type LocalSupervisor } from './types'
-import { cliHome } from './home-move'
+import { cliHome, LEGACY_CLI_HOME_LINK } from './home-move'
+
+/** Refusal-only label for a registry written before local instances had identities. */
+const RETIRED_DEFAULT_INSTANCE = 'tau'
 
 /** One installed instance: the checkout it lives in and the port it serves on. */
 export interface InstanceRecord {
@@ -25,8 +28,7 @@ export interface InstanceRecord {
   createdAt: string
   updatedAt: string
   /**
-   * `2`: the instance runs under the ficus names (setup registers it so, `ficus server
-   * rename-identity` moves an older one). Absent: it still has the names it was installed under.
+   * `2`: the instance runs under the ficus names (setup registers it so). Absent: a retired identity.
    * Every read → write keeps it; the registry `version` stays 3 either way. Any other number was
    * written by a newer CLI: the lenient read (`list`) keeps and shows it, mutating reads refuse.
    */
@@ -114,7 +116,7 @@ export function assertDefaultRegistryReady(
       })
     }
   }
-  const retired = join(home, LEGACY_HOME_DIR_NAME, 'cli', 'local-server.json')
+  const retired = join(home, LEGACY_CLI_HOME_LINK, 'cli', 'local-server.json') // ficus-p5-apple
   if (!present(retired)) return
   if (present(canonical)) {
     // A migrated home link (or another path to the same inode) is one registry, not a hidden instance.
@@ -240,8 +242,8 @@ function parseRegistryFile(path: string): {
       return {
         registry: {
           version: REGISTRY_VERSION,
-          default: LEGACY_LOCAL_INSTANCE,
-          instances: { [LEGACY_LOCAL_INSTANCE]: v1 },
+          default: RETIRED_DEFAULT_INSTANCE,
+          instances: { [RETIRED_DEFAULT_INSTANCE]: v1 },
         },
       }
     if (Object.keys(object).length === 0) return { registry: emptyRegistry() }

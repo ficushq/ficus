@@ -12,7 +12,7 @@ import {
 } from 'fs'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 import {
   assertDefaultRegistryReady,
   NoRootError,

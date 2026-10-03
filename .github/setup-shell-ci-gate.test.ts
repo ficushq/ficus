@@ -101,17 +101,6 @@ describe('setup helper CI gate', () => {
     expect(step).not.toContain('if:')
   })
 
-  test('runs the finalize recovery suite as root with a positive completion gate', () => {
-    const start = workflow.indexOf('- name: Run host layout finalize suite (root)')
-    expect(start).toBeGreaterThan(-1)
-    const end = workflow.indexOf('\n      - name:', start + 1)
-    const step = workflow.slice(start, end)
-    expect(step).toContain('sudo env "PATH=$PATH" bash scripts/setup/host-layout-fin.test.sh')
-    expect(step).toContain('host-layout-fin: [1-9][0-9]* passed, 0 failed')
-    expect(step).toContain('if (( status != 0 ))')
-    expect(step).not.toContain('continue-on-error')
-  })
-
   test('runs the host-migration e2e suite AS ROOT after the host layout suite, gated on its summary line and marker', () => {
     const start = workflow.indexOf('- name: Run host-migration e2e suite (root)')
     expect(start).toBeGreaterThan(-1)

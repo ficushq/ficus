@@ -59,7 +59,6 @@ import {
 export { classifyDockerContainerOwnership, classifyDockerInspectStatus, SPEC_HASH_LABEL } from './lifecycle-contract'
 import { SandboxClient } from '../client/http-client'
 import {
-  LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT,
   parseDockerCommandIdentity,
   resolveDockerCommandIdentity,
 } from './command-identity'
@@ -2045,10 +2044,7 @@ export class DockerSandboxManager implements ISandboxManager {
   }
 
   private async connectExecutor(containerId: string, sandboxId: string): Promise<void> {
-    // The container's OWN baked identity — never assumed. A legacy-labelled
-    // container (adopted, not recreated, because it has an active session —
-    // see connectActiveDrift) has a `tau` user and `/run/tau/...` paths; it // ficus-p5-bridge
-    // has no `/run/ficus/...` executor-token file at all.
+    // Runtime identity is canonical and validated against the baked contract.
     const dockerIdentity = this.resolveDockerExecIdentity(containerId)
     let portResult = Bun.spawnSync(['docker', 'port', containerId, '50051/tcp'], { stdout: 'pipe', stderr: 'pipe' })
     let portMatch = portResult.stdout
@@ -2094,17 +2090,9 @@ export class DockerSandboxManager implements ISandboxManager {
     const client = new SandboxClient(`127.0.0.1:${portMatch[1]}`, token)
     try {
       await client.waitForReady(30_000)
-      // The expected identity contract follows the SAME container-reported
-      // generation as the token path above: the current release's baked file
-      // for a new-identity container, the fixed pre-release pair (never read
-      // from a file — this release's checkout no longer has one) for a
-      // legacy-identity one.
-      const identity =
-        dockerIdentity === DOCKER_EXEC_IDENTITY_NEW
-          ? parseDockerCommandIdentity(
-              fs.readFileSync(path.join(MONOREPO_ROOT, 'apps/core/docker-sandbox/command-identity.json'), 'utf8')
-            )
-          : LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT
+      const identity = parseDockerCommandIdentity(
+        fs.readFileSync(path.join(MONOREPO_ROOT, 'apps/core/docker-sandbox/command-identity.json'), 'utf8')
+      )
       const expectedIdentity = resolveDockerCommandIdentity(identity, {
         uid: process.getuid?.(),
         gid: process.getgid?.(),
@@ -2325,7 +2313,7 @@ export class DockerSandboxManager implements ISandboxManager {
    * The in-container exec identity (user/home/token path/docker-proxy socket)
    * a container ACTUALLY has baked in, read from its own labels — never
    * assumed to be the current release's. A legacy-labelled container (built
-   * before this release) has a `tau` user and `/run/tau/...` paths; exec'ing // ficus-p5-bridge
+   * before this release) may have a different command identity; exec'ing
    * into it with the new-only literals fails outright, which is exactly the
    * bug this resolves (an adopted-not-recreated legacy container must stay
    * reachable, not just discoverable).

@@ -1,3 +1,4 @@
+import { foreignUnits, FOREIGN_BOX_UNIT_PREFIX, FOREIGN_USER_UNIT_PREFIX } from './foreign-unit.fixture'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { createHash, randomBytes, randomUUID } from 'crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
@@ -55,7 +56,6 @@ import {
   roleWantsDocker,
   tarCodecFlag,
 } from './box-manager'
-import { LEGACY_BOX_UNIT_PREFIX, LEGACY_USER_UNIT_PREFIX } from './box-paths'
 import { insertMachine, deleteMachine, listMachines, upsertMachineBox } from './queries'
 import type { Machine, MachineBox } from './queries'
 import type { SshResult, SshRunner, SshStreamer } from './ssh'
@@ -3559,7 +3559,7 @@ describe('persistent park/resume (executed remote shell)', () => {
 
   function fixture(sandboxId: string, legacy: boolean) {
     const ctl = boxUnitControl({ sandboxId, unixUser: boxUnixUser(sandboxId) })
-    const names = legacy ? ctl.legacy : ctl
+    const names = legacy ? foreignUnits(ctl) : ctl
     const dir = mkdtempSync(join(tmpdir(), 'box-park-'))
     dirs.push(dir)
     const manager = ctl.systemctl.replace('sudo systemctl', '').trim()
@@ -3695,7 +3695,7 @@ done
         expect(f.value(f.names.socket, 'active')).toBe('active')
         expect(f.value(f.names.unit, 'enabled')).toBe('disabled')
         expect(f.calls()).not.toContain('*')
-        const other = legacy ? f.ctl.socket : f.ctl.legacy.socket
+        const other = legacy ? f.ctl.socket : foreignUnits(f.ctl).socket
         expect(f.calls()).not.toMatch(new RegExp(`(?:disable|enable|stop|restart) .*${other.replaceAll('.', '\\.')}`))
       })
 
@@ -3944,7 +3944,7 @@ describe('machine snapshot liveness (executed)', () => {
   async function legacyNamedLiveness(states: { sock: string; service: string }): Promise<string> {
     const sandboxId = 'agent_live2'
     const unixUser = boxUnixUser(sandboxId)
-    const legacy = `${LEGACY_BOX_UNIT_PREFIX}-${unixUser}`
+    const legacy = `${FOREIGN_BOX_UNIT_PREFIX}-${unixUser}`
     const command = buildMachineSnapshotCommand({ sandboxId, unixUser })
     const dir = mkdtempSync(join(tmpdir(), 'box-liveness-legacy-'))
     stubs.push(dir)
@@ -4178,7 +4178,7 @@ describe('box unit commands by mode', () => {
     expect(provCall.command).not.toContain('--with-docker')
     // Resuming pairs persistent parking with enable --now; failure is not
     // hidden by a successful server restart.
-    const legacy = `${LEGACY_BOX_UNIT_PREFIX}-${unixUser}`
+    const legacy = `${FOREIGN_BOX_UNIT_PREFIX}-${unixUser}`
     const restart = calls.find((c) => c.command.includes('systemctl'))!.command
     expect(restart).toContain(
       `sudo systemctl reset-failed ${unit} 2>/dev/null || true; sudo systemctl enable --now ficus-box-${unixUser}.socket && sudo systemctl restart ${unit}`
@@ -4197,7 +4197,7 @@ describe('box unit commands by mode', () => {
     expect(snapshot).toContain(`state=$(sudo systemctl is-active ${unit} 2>/dev/null || true)`)
     expect(snapshot).not.toContain(`sock=$(sudo systemctl is-active ${legacy}.socket 2>/dev/null || true)`)
     // Old unit activity cannot make a finalized canonical box appear alive.
-    expect(snapshot).not.toContain(`systemctl --user is-active ${LEGACY_USER_UNIT_PREFIX}.service`)
+    expect(snapshot).not.toContain(`systemctl --user is-active ${FOREIGN_USER_UNIT_PREFIX}.service`)
     expect(snapshot).toContain(`sudo journalctl -u ${unit} -n 200 --no-pager`)
   })
 
@@ -4214,14 +4214,14 @@ describe('box unit commands by mode', () => {
     expect(restart).toContain(
       `${userCtl} reset-failed ficus-sandbox-server.service 2>/dev/null || true; ${userCtl} enable --now ficus-sandbox-server.socket && ${userCtl} restart ficus-sandbox-server.service`
     )
-    expect(restart).not.toContain(`${userCtl} restart ${LEGACY_USER_UNIT_PREFIX}.service`)
+    expect(restart).not.toContain(`${userCtl} restart ${FOREIGN_USER_UNIT_PREFIX}.service`)
 
     const stop = await stopCommand(sandboxId)
     expect(stop).toContain(
       `${userCtl} stop ficus-sandbox-server.socket ficus-sandbox-server-proxy.service ficus-sandbox-server.service`
     )
     expect(stop).not.toContain(
-      `${userCtl} stop ${LEGACY_USER_UNIT_PREFIX}.socket ${LEGACY_USER_UNIT_PREFIX}-proxy.service ${LEGACY_USER_UNIT_PREFIX}.service`
+      `${userCtl} stop ${FOREIGN_USER_UNIT_PREFIX}.socket ${FOREIGN_USER_UNIT_PREFIX}-proxy.service ${FOREIGN_USER_UNIT_PREFIX}.service`
     )
 
     const snapshot = await snapshotCommand(sandboxId, 'squad')

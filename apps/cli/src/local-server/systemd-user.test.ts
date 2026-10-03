@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'bun:test'
-import { LEGACY_LOCAL_INSTANCE } from '@ficus/shared/node'
 import type { SupervisorContext } from './supervisor'
 import { systemdUnit, systemdUserNames } from './systemd-user'
 
@@ -27,7 +26,7 @@ describe('systemdUnit', () => {
       path: '/home/me/.config/systemd/user/ficus-smoke-api.service',
       log: '/home/me/.ficus/logs/ficus-smoke-api.log',
     })
-    expect(systemdUserNames({ ...context, identity: 1 }, 'api').unit).toBe(`${LEGACY_LOCAL_INSTANCE}-smoke-api.service`)
+    expect(() => systemdUserNames({ ...context, identity: 1 }, 'api')).toThrow(/retired/)
     const unit = systemdUnit(context, 'api')
     expect(unit).toContain('WorkingDirectory=/home/me/Ficus\\x20repo%%\\x20“x”')
     expect(unit).toContain('ExecStart="/home/me/bin/bun" "run" "apps/core/dist/index.js"')
@@ -92,7 +91,7 @@ describe('systemd linger', () => {
 })
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { systemdUserSupervisor } from './systemd-user'

@@ -19,7 +19,7 @@ import { recordingRunner } from './runner'
 import { handoffLines, runSetup, type SetupDeps } from './setup'
 import { readRegistry, upsertInstance } from './state'
 import type { SetupOptions } from './types'
-import { LEGACY_LOCAL_INSTANCE } from '@ficus/shared/node'
+const LEGACY_LOCAL_INSTANCE = 'tau'
 
 /** The two `docker inspect` calls the installer makes, as recordingRunner prefixes. */
 const PORT_INSPECT = 'docker inspect -f {{json .}}'
@@ -767,7 +767,7 @@ describe('canonical checkout identity', () => {
     }
   })
 
-  it('finds a migrated v2 registration through its alias: a pre-rename instance, sent to rename-identity', async () => {
+  it('finds a retired v2 registration through its alias and refuses setup', async () => {
     const { d, calls } = deps()
     const alias = join(root, '..', 'ficus-v2-alias')
     symlinkSync(root, alias)
@@ -872,7 +872,7 @@ describe('end-of-setup CLI PATH check', () => {
 })
 
 describe('instances installed before the Ficus rename', () => {
-  it('refuses a checkout registered under its pre-rename names and points at rename-identity', async () => {
+  it('refuses a checkout registered under retired names', async () => {
     const { d, calls } = deps()
     upsertInstance(
       LEGACY_LOCAL_INSTANCE,
@@ -888,10 +888,7 @@ describe('instances installed before the Ficus rename', () => {
     const { d, calls } = deps()
     writeFileSync(join(root, '.env'), `FICUS_INSTANCE=${LEGACY_LOCAL_INSTANCE}\n`)
     const error = await runSetup(opts({ instance: LEGACY_LOCAL_INSTANCE }), d).catch((e: Error) => e)
-    // The recipe: the registry entry to add by hand, where, and the command to run next.
-    expect((error as Error).message).toContain(`"${LEGACY_LOCAL_INSTANCE}": {"root":"${root}","port":3000`)
-    expect((error as Error).message).toContain(d.statePath)
-    expect((error as Error).message).toContain(`ficus server rename-identity --root ${root}`)
+    expect((error as Error).message).toContain('ficus-host-layout-bridge')
     expect(calls).toEqual([])
   })
 })

@@ -1,3 +1,4 @@
+import { foreignUnits } from './foreign-unit.fixture'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir, userInfo } from 'node:os'
@@ -72,9 +73,9 @@ describe('buildBoxControlCommand', () => {
       expect(restart).toBe(ctl.onHost((u) => `${ctl.systemctl} restart ${u.unit}`))
       // Runtime control uses only the canonical units after finalization.
       expect(stop).toContain(`${ctl.systemctl} stop ${ctl.allUnits}`)
-      expect(stop).not.toContain(`${ctl.systemctl} stop ${ctl.legacy.allUnits}`)
+      expect(stop).not.toContain(`${ctl.systemctl} stop ${foreignUnits(ctl).allUnits}`)
       expect(restart).toContain(`${ctl.systemctl} restart ${ctl.unit}`)
-      expect(restart).not.toContain(`${ctl.systemctl} restart ${ctl.legacy.unit}`)
+      expect(restart).not.toContain(`${ctl.systemctl} restart ${foreignUnits(ctl).unit}`)
     }
   })
 

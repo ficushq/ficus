@@ -243,40 +243,19 @@ else
   echo 'SKIP: windows case (zip/unzip not installed)' >&2
 fi
 
-# 11. No FICUS_INSTALL_DIR and no legacy CLI home: the CLI home is ~/.ficus.
+# 11. No FICUS_INSTALL_DIR: the CLI home is ~/.ficus.
 C="${T}/c11"
 run_install "${C}" "FICUS_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=0
-expect_eq 'no legacy home: exit 0' "${RC}" 0
-expect_eq 'no legacy home: ficus lands in ~/.ficus/bin' "$([[ -x ${C}/home/.ficus/bin/ficus ]] && echo yes || echo no)" yes
-expect_eq 'no legacy home: skills land in ~/.ficus/share' \
+expect_eq 'default home: exit 0' "${RC}" 0
+expect_eq 'default home: ficus lands in ~/.ficus/bin' "$([[ -x ${C}/home/.ficus/bin/ficus ]] && echo yes || echo no)" yes
+expect_eq 'default home: skills land in ~/.ficus/share' \
   "$([[ -f ${C}/home/.ficus/share/skills/ficus-memory/SKILL.md ]] && echo yes || echo no)" yes
-expect_not_contains 'no legacy home: no move notice' "${OUT}" 'rename-identity'
-
-# 12. Only a legacy CLI home (not moved yet): the CLI stays in it, and the
-#     installer says how to move it. Its name comes from install.sh's own marked
-#     constant, never retyped here.
-LEGACY_NAME=$(sed -n 's/^LEGACY_HOME_NAME=\([^ ]*\) .*/\1/p' "${INSTALLER}")
-expect_eq 'install.sh names its legacy CLI home once' "$([[ -n ${LEGACY_NAME} ]] && echo yes || echo no)" yes
+# 12. Reinstall into an existing canonical home.
 C="${T}/c12"
-mkdir -p "${C}/home/${LEGACY_NAME}"
-run_install "${C}" "FICUS_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=0
-expect_eq 'legacy home only: exit 0' "${RC}" 0
-expect_eq 'legacy home only: ficus lands in <legacy>/bin' \
-  "$([[ -x ${C}/home/${LEGACY_NAME}/bin/ficus ]] && echo yes || echo no)" yes
-expect_eq 'legacy home only: skills land in <legacy>/share' \
-  "$([[ -f ${C}/home/${LEGACY_NAME}/share/skills/ficus-memory/SKILL.md ]] && echo yes || echo no)" yes
-expect_eq 'legacy home only: ~/.ficus is not created' "$([[ -e ${C}/home/.ficus ]] && echo present || echo absent)" absent
-expect_contains 'legacy home only: says how to move it' "${OUT}" \
-  "run \`ficus server rename-identity\` to move ${C}/home/${LEGACY_NAME} to ~/.ficus"
-
-# 13. Both homes (a moved install: the legacy one is the link left behind): ~/.ficus wins.
-C="${T}/c13"
 mkdir -p "${C}/home/.ficus"
-ln -s .ficus "${C}/home/${LEGACY_NAME}"
 run_install "${C}" "FICUS_DOWNLOAD_BASE_URL=${BASE}" FICUS_INSTALL_AUTH=0
-expect_eq 'moved home: exit 0' "${RC}" 0
-expect_eq 'moved home: ficus lands in ~/.ficus/bin' "$([[ -x ${C}/home/.ficus/bin/ficus ]] && echo yes || echo no)" yes
-expect_not_contains 'moved home: no move notice' "${OUT}" 'rename-identity'
+expect_eq 'existing home: exit 0' "${RC}" 0
+expect_eq 'existing home: ficus lands in ~/.ficus/bin' "$([[ -x ${C}/home/.ficus/bin/ficus ]] && echo yes || echo no)" yes
 
 printf '%d passed, %d failed\n' "${PASS}" "${FAIL}"
 [[ ${FAIL} -eq 0 ]]

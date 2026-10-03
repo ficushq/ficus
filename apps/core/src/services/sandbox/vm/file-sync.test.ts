@@ -1,20 +1,9 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { EventEmitter } from 'events'
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readlinkSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'fs'
+import { mkdtempSync, rmSync, symlinkSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LEGACY_WORKSPACE_DOT_DIR, WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } from '../../workspace/dot-dir'
-import { getHomeDir } from '../../../lib/utils/home'
+import { WORKSPACE_DOT_DIR } from '../../workspace/dot-dir'
 import * as factory from '../factory'
 import {
   boxWorkspaceDotDirCommand,
@@ -1458,29 +1447,6 @@ describe('syncBoxFiles workspace finalization', () => {
     expect(migrateIndex).toBeLessThan(firstWrite)
   })
 
-  test('a squad env stamped under the legacy dot dir is re-pushed to .ficus and NOT pruned through the link', async () => {
-    const client = new FakeClient()
-    const home = HOME(SQUAD_BOX)
-    const stamp = recordingStamp()
-    await syncBoxFiles(
-      client as any,
-      SQUAD_BOX,
-      squadOpts,
-      fullDeps({
-        box: syncBox({
-          'squad-env': { hash: 'stamped-before-the-rename', files: [`${LEGACY_WORKSPACE_DOT_DIR}/.env`] },
-        }),
-        stampBoxSyncedHash: stamp.fn,
-      })
-    )
-
-    expect(client.writePaths()).toContain(`${home}/workspace/${WORKSPACE_DOT_DIR}/.env`)
-    const commands = client.bashes().map((b) => b.command)
-    // `rm` through the legacy link would delete the .env just pushed.
-    expect(commands.some((command) => command.includes(`/workspace/${LEGACY_WORKSPACE_DOT_DIR}/.env`))).toBe(false)
-    expect(stamp.stamped['squad-env']).toMatchObject({ files: ['.ficus/.env'] })
-  })
-
   test('records exact squad env files and upgrades an old hash-only stamp without rewriting bytes', async () => {
     const first = recordingStamp()
     await syncBoxFiles(
@@ -1506,44 +1472,6 @@ describe('syncBoxFiles workspace finalization', () => {
     )
     expect(second.stamped['squad-env']).toMatchObject({ files: ['.ficus/.env'] })
     expect(client.writePaths().some((path) => path.endsWith('/.env'))).toBe(false)
-  })
-
-  test('revoking an old manifest removes canonical secret bytes after link finalization', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'ficus-revoke-finalized-'))
-    try {
-      const root = join(home, 'workspace')
-      mkdirSync(join(root, WORKSPACE_DOT_DIR), { recursive: true })
-      const file = join(root, WORKSPACE_DOT_DIR, '.env')
-      writeFileSync(file, 'SYNTHETIC_REVOKED=fixture\n')
-      symlinkSync(WORKSPACE_DOT_DIR, join(root, LEGACY_WORKSPACE_DOT_DIR))
-      const client = new FakeClient()
-      client.bash = (req: { command: string }) => {
-        client.calls.push({ kind: 'bash', command: req.command })
-        const result = Bun.spawnSync(['bash', '-c', req.command], { stderr: 'pipe' })
-        expect(result.exitCode).toBe(0)
-        return makeBashStream(result.exitCode)
-      }
-      const stamp = recordingStamp()
-      await syncBoxFiles(
-        client as any,
-        SQUAD_BOX,
-        squadOpts,
-        fullDeps({
-          boxHome: () => home,
-          box: syncBox({ 'squad-env': { hash: 'old-manifest', files: [`${LEGACY_WORKSPACE_DOT_DIR}/.env`] } }),
-          readSquadEnv: () => null,
-          listSkillFiles: async () => [],
-          listMemoryFiles: async () => [],
-          listSquadSshFiles: async () => [],
-          stampBoxSyncedHash: stamp.fn,
-        })
-      )
-      expect(() => lstatSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toThrow()
-      expect(existsSync(file)).toBe(false)
-      expect(stamp.stamped['squad-env']).toMatchObject({ files: [] })
-    } finally {
-      rmSync(home, { recursive: true, force: true })
-    }
   })
 
   test('revoking a finalized squad env prunes exactly its recorded file', async () => {
@@ -1582,32 +1510,6 @@ describe('syncBoxFiles workspace finalization', () => {
     expect(client.bashes().map((b) => b.command)).toContain(`rm -f -- '${home}/workspace/${WORKSPACE_DOT_DIR}/.env'`)
   })
 
-  test('an agent whose private dir needs a manual fix fails the sync closed and never prunes the box identity key', async () => {
-    const sandboxId = `agent_dotdir${Date.now()}${Math.random().toString(36).slice(2, 8)}`
-    const root = join(getHomeDir(), 'private', sandboxId)
-    mkdirSync(join(root, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
-    writeFileSync(join(root, LEGACY_WORKSPACE_DOT_DIR, 'identity.pem'), 'KEY STILL IN THE LEGACY DIR')
-    mkdirSync(join(root, WORKSPACE_DOT_DIR))
-    try {
-      const client = new FakeClient()
-      await expect(
-        syncBoxFiles(
-          client as any,
-          sandboxId,
-          soloAgentOpts,
-          fullDeps({
-            box: syncBox({ identity: { hash: 'pushed-before', files: ['identity.pem'] } }),
-            stampBoxSyncedHash: async () => {},
-            readIdentityPem: undefined, // the real manifest reader
-          })
-        )
-      ).rejects.toBeInstanceOf(WorkspaceDotDirConflictError)
-      expect(client.bashes().some((b) => b.command.includes('identity.pem'))).toBe(false)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
   test('a refused finalization or ambiguous outcome stops all asset writes', async () => {
     const refused = new FakeClient()
     refused.bashExit = 1
@@ -1632,123 +1534,30 @@ describe('syncBoxFiles workspace finalization', () => {
   })
 })
 
-/** GNU `mv -T` / `ln -sT` (a box is Linux); on macOS the coreutils `gmv` / `gln` stand in. */
-const gnuMv = Bun.which('gmv') ?? (process.platform === 'linux' ? Bun.which('mv') : null)
-const gnuLn = Bun.which('gln') ?? (process.platform === 'linux' ? Bun.which('ln') : null)
-
-describe.skipIf(!gnuMv || !gnuLn)('boxWorkspaceDotDirCommand, run for real against a temp box home', () => {
-  function runOnBox(home: string): number {
-    const bin = mkdtempSync(join(tmpdir(), 'ficus-box-bin-'))
-    try {
-      symlinkSync(gnuMv!, join(bin, 'mv'))
-      symlinkSync(gnuLn!, join(bin, 'ln'))
-      const result = Bun.spawnSync(
-        ['bash', '-c', boxWorkspaceDotDirCommand([`${home}/workspace`, `${home}/.private`])],
-        {
-          env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
-          stderr: 'pipe',
-        }
-      )
-      return result.exitCode
-    } finally {
-      rmSync(bin, { recursive: true, force: true })
-    }
+describe('canonical box workspace settings (executed remote shell)', () => {
+  function run(home: string) {
+    return Bun.spawnSync(['bash', '-c', boxWorkspaceDotDirCommand([`${home}/workspace`, `${home}/.private`])], { stderr: 'pipe' }).exitCode
   }
-
-  function withBoxHome(run: (home: string) => void): void {
+  it('creates only canonical real directories and preserves existing data on repeat', () => {
     const home = mkdtempSync(join(tmpdir(), 'ficus-box-home-'))
     try {
-      run(home)
-    } finally {
-      rmSync(home, { recursive: true, force: true })
-    }
-  }
-
-  test('a legacy dir moves with its bytes and no bridge; a second run is a no-op', () => {
-    withBoxHome((home) => {
-      mkdirSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
-      writeFileSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR, '.env'), 'A=1\n')
-      mkdirSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR, 'monitors', 'm1'), { recursive: true })
-
-      expect(runOnBox(home)).toBe(0)
-      expect(readFileSync(join(home, 'workspace', WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe('A=1\n')
-      expect(existsSync(join(home, 'workspace', WORKSPACE_DOT_DIR, 'monitors', 'm1'))).toBe(true)
-      expect(() => lstatSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR))).toThrow()
-
-      expect(runOnBox(home)).toBe(0)
-      expect(() => lstatSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR))).toThrow()
-    })
-  })
-
-  test('removes an exact relative bridge without changing canonical data', () => {
-    withBoxHome((home) => {
-      const root = join(home, 'workspace')
-      mkdirSync(join(root, WORKSPACE_DOT_DIR), { recursive: true })
-      const file = join(root, WORKSPACE_DOT_DIR, '.env')
-      writeFileSync(file, 'PRESERVE=1\n', { mode: 0o600 })
-      const before = lstatSync(file)
-      symlinkSync(WORKSPACE_DOT_DIR, join(root, LEGACY_WORKSPACE_DOT_DIR))
-      expect(runOnBox(home)).toBe(0)
-      expect(() => lstatSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toThrow()
-      expect(lstatSync(file).ino).toBe(before.ino)
-      expect(lstatSync(file).mode).toBe(before.mode)
-      expect(readFileSync(file, 'utf8')).toBe('PRESERVE=1\n')
-    })
-  })
-
-  test('a dangling bridge or symlinked canonical directory is refused untouched', () => {
-    withBoxHome((home) => {
-      const root = join(home, 'workspace')
-      mkdirSync(root)
-      symlinkSync(WORKSPACE_DOT_DIR, join(root, LEGACY_WORKSPACE_DOT_DIR))
-      expect(runOnBox(home)).toBe(1)
-      expect(readlinkSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
-      const outside = join(home, 'outside')
-      mkdirSync(outside)
-      writeFileSync(join(outside, '.env'), 'UNCHANGED')
-      symlinkSync(outside, join(root, WORKSPACE_DOT_DIR))
-      expect(runOnBox(home)).toBe(1)
-      expect(readlinkSync(join(root, LEGACY_WORKSPACE_DOT_DIR))).toBe(WORKSPACE_DOT_DIR)
-      expect(readFileSync(join(outside, '.env'), 'utf8')).toBe('UNCHANGED')
-    })
-  })
-
-  test('a fresh root gets only .ficus; a missing root is skipped', () => {
-    withBoxHome((home) => {
+      mkdirSync(join(home, 'workspace'), { recursive: true })
       mkdirSync(join(home, '.private'))
-
-      expect(runOnBox(home)).toBe(0)
-      expect(lstatSync(join(home, '.private', WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
-      expect(() => lstatSync(join(home, '.private', LEGACY_WORKSPACE_DOT_DIR))).toThrow()
-      expect(existsSync(join(home, 'workspace'))).toBe(false)
-    })
+      expect(run(home)).toBe(0)
+      writeFileSync(join(home, 'workspace', '.ficus', 'data'), 'preserved')
+      expect(run(home)).toBe(0)
+      expect(readFileSync(join(home, 'workspace', '.ficus', 'data'), 'utf8')).toBe('preserved')
+    } finally { rmSync(home, { recursive: true, force: true }) }
   })
-
-  test('a symlinked work root is reported and not followed', () => {
-    withBoxHome((home) => {
-      const elsewhere = join(home, 'elsewhere')
-      mkdirSync(join(elsewhere, LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
-      symlinkSync(elsewhere, join(home, 'workspace'))
-
-      expect(runOnBox(home)).toBe(1)
-      expect(lstatSync(join(elsewhere, LEGACY_WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
-      expect(existsSync(join(elsewhere, WORKSPACE_DOT_DIR))).toBe(false)
-    })
-  })
-
-  test('both dirs present, or a legacy link elsewhere, is reported and left untouched while other roots still run', () => {
-    withBoxHome((home) => {
-      mkdirSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR), { recursive: true })
-      writeFileSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR, '.env'), 'OLD=1\n')
-      mkdirSync(join(home, 'workspace', WORKSPACE_DOT_DIR))
-      mkdirSync(join(home, '.private'))
-      symlinkSync('/etc', join(home, '.private', LEGACY_WORKSPACE_DOT_DIR))
-
-      expect(runOnBox(home)).toBe(1)
-      expect(readFileSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR, '.env'), 'utf8')).toBe('OLD=1\n')
-      expect(lstatSync(join(home, 'workspace', LEGACY_WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
-      expect(readlinkSync(join(home, '.private', LEGACY_WORKSPACE_DOT_DIR))).toBe('/etc')
-      expect(existsSync(join(home, '.private', WORKSPACE_DOT_DIR))).toBe(false)
-    })
+  it('refuses a settings symlink without touching its target', () => {
+    const home = mkdtempSync(join(tmpdir(), 'ficus-box-home-'))
+    try {
+      mkdirSync(join(home, 'workspace'))
+      mkdirSync(join(home, 'target'))
+      writeFileSync(join(home, 'target', 'sentinel'), 'preserved')
+      symlinkSync(join(home, 'target'), join(home, 'workspace', '.ficus'))
+      expect(run(home)).not.toBe(0)
+      expect(readFileSync(join(home, 'target', 'sentinel'), 'utf8')).toBe('preserved')
+    } finally { rmSync(home, { recursive: true, force: true }) }
   })
 })

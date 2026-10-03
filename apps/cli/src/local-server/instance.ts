@@ -7,13 +7,7 @@ import {
   localProcessNames,
   normalizeLocalInstanceLabel,
 } from '@ficus/shared'
-import {
-  FICUS_HOME_DIR_NAME,
-  LEGACY_HOME_DIR_NAME,
-  LEGACY_LOCAL_INSTANCE,
-  legacyLocalProcessNames,
-} from '@ficus/shared/node'
-import { localPostgresNames } from './postgres-rename'
+import { FICUS_HOME_DIR_NAME } from '@ficus/shared/node'
 import { SetupOptionsError } from './types'
 
 /** The label of the default instance: `ficus-api`/`ficus-worker`, `postgres-ficus`, `~/.ficus`. */
@@ -21,9 +15,7 @@ export const DEFAULT_INSTANCE = DEFAULT_INSTANCE_LABEL
 
 /**
  * Which names a registered instance runs under. 2: the ficus names (`ficus-*`, `sh.ficus.*`),
- * what setup registers and `ficus server rename-identity` moves an instance to — its registry
- * entry says `identity: 2`. 1: the names from before the rename (an entry without the field),
- * which every command keeps using until rename-identity moves the instance.
+ * what setup registers. 1 is a retired registration and is refused by management commands.
  */
 export type InstanceIdentity = 1 | 2
 export const CURRENT_IDENTITY = 2
@@ -33,7 +25,7 @@ export function recordIdentity(record: { identity?: number }): InstanceIdentity 
   return record.identity === CURRENT_IDENTITY ? CURRENT_IDENTITY : 1
 }
 
-/** Normal management requires the identity written by the bridge release. */
+/** Normal management requires the current identity. */
 export function requireCurrentIdentity(record: { identity?: number }): void {
   if (record.identity !== CURRENT_IDENTITY)
     throw new SetupOptionsError(
@@ -66,22 +58,20 @@ export function normalizeLabel(raw: string): string {
 /**
  * Every per-instance resource name, derived from one label by inserting `-<label>` after the
  * name stem: `ficus-<label>-api`, `postgres-ficus-<label>`, `~/.ficus-<label>`; the default label
- * gets the bare names. An identity-1 instance (not yet moved by `ficus server rename-identity`)
- * keeps the names it was installed under, so every command still finds its processes,
- * container and data.
+ * gets the bare names. Retired registrations are refused rather than guessed from a label.
  */
 export function instanceNames(raw: string, identity: InstanceIdentity = CURRENT_IDENTITY): InstanceNames {
-  const legacy = identity !== CURRENT_IDENTITY
-  const { label, api, worker } = legacy ? legacyLocalProcessNames(raw) : localProcessNames(raw)
-  const isDefault = label === (legacy ? LEGACY_LOCAL_INSTANCE : DEFAULT_INSTANCE)
-  const postgres = localPostgresNames(legacy ? LEGACY_LOCAL_INSTANCE : DEFAULT_INSTANCE, label, isDefault)
+  if (identity !== CURRENT_IDENTITY) throw new SetupOptionsError('retired local instance identity is not manageable')
+  const { label, api, worker } = localProcessNames(raw)
+  const isDefault = label === DEFAULT_INSTANCE
+  const project = isDefault ? DEFAULT_INSTANCE : `${DEFAULT_INSTANCE}-${label}`
   return {
     label,
     api,
     worker,
-    container: postgres.container,
-    volume: postgres.volume,
-    homeDir: isDefault ? undefined : `~/${legacy ? LEGACY_HOME_DIR_NAME : FICUS_HOME_DIR_NAME}-${label}`,
+    container: `postgres-${project}`,
+    volume: `${project}_postgres-data`,
+    homeDir: isDefault ? undefined : `~/${FICUS_HOME_DIR_NAME}-${label}`,
   }
 }
 

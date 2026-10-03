@@ -1,4 +1,4 @@
-const LEGACY_MIGRATION_MANIFEST_SCHEMA = 'tau-box-migration/v1' as const // ficus-p5-bridge
+const LEGACY_MIGRATION_MANIFEST_SCHEMA = 'foreign-box-migration/v1' as const
 import { describe, expect, it } from 'bun:test'
 import { createHash } from 'crypto'
 import {

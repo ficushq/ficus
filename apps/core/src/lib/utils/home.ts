@@ -2,13 +2,10 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { mkdirSync } from 'fs'
 
-import { expandTilde, LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 
 /** The default HOME_DIR, under the service user's home: `~/.ficus`. */
 export const HOME_DIR_NAME = '.ficus'
-
-/** Retired spelling retained for negative fixtures and one-shot recovery callers. */
-export { LEGACY_HOME_DIR_NAME }
 
 /**
  * What marks a directory as holding Core's data: the `sessions/` directory Core creates at every
