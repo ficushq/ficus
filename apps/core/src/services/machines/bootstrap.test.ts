@@ -1172,35 +1172,51 @@ describe('browser tools Phase 2 — machine plumbing (group membership, socket e
 
 describe('box-provision.sh validation (unprivileged — must exit BEFORE any sudo call)', () => {
   const boxProvisionPath = join(repoRoot, 'scripts/machine/box-provision.sh')
+  // Resolve before adding the fixture's bash shim: only the nested inventory
+  // shell is refused, not the real script under test.
+  const bash = Bun.which('bash')!
+  const fixtureRoots: string[] = []
+  afterEach(() => {
+    for (const dir of fixtureRoots.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
 
-  // These run the real script on real bash as the (non-root) test user. Every
-  // case below must decide its fate purely from arg validation, so no sudo /
-  // privileged command is ever reached — hence they are safe (and fast) in CI.
+  // Run the real script with real bash. Invalid arguments must fail before
+  // privilege; the valid-input cases below explicitly refuse that boundary.
   async function runBoxProvision(
     args: string[],
     options: { env?: Record<string, string> } = {}
-  ): Promise<{ exitCode: number; stderr: string }> {
-    const proc = Bun.spawn(['bash', boxProvisionPath, ...args], {
+  ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    const proc = Bun.spawn([bash, boxProvisionPath, ...args], {
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
       ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
     })
-    const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited])
-    return { exitCode, stderr }
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    return { exitCode, stdout, stderr }
   }
 
   /**
-   * A PATH whose `sudo` refuses every call with a marker and exit 77. The
-   * "gets past validation" case must stop at the FIRST privileged call, but
-   * that only happens naturally where sudo prompts; on hosts with passwordless
-   * sudo (GitHub-hosted runners, most dev boxes) the script would really start
-   * provisioning a box user and overrun the test timeout instead.
+   * Refuse the inventory boundary with exit 77, before any host access/effects.
+   * Simulate both caller UIDs on every platform: non-root reaches sudo, while
+   * root invokes the inventory bash directly. Neither shim runs its arguments.
    */
-  function refusingSudoPath(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'ficus-refusing-sudo-'))
-    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\necho "ficus-test: sudo refused: $*" >&2\nexit 77\n', { mode: 0o755 })
-    return `${dir}:${process.env.PATH ?? ''}`
+  function refusingInventoryEnv(uid: number): Record<string, string> {
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-refusing-inventory-'))
+    fixtureRoots.push(dir)
+    writeFileSync(join(dir, 'id'), `#!/bin/sh\n[ "$#" = 1 ] && [ "$1" = -u ] || exit 78\nprintf '%s\\n' '${uid}'\n`, {
+      mode: 0o755,
+    })
+    for (const command of ['sudo', 'bash']) {
+      writeFileSync(join(dir, command), `#!/bin/sh\necho "ficus-test: ${command} refused: $*" >&2\nexit 77\n`, {
+        mode: 0o755,
+      })
+    }
+    return { PATH: `${dir}:${process.env.PATH ?? ''}`, FICUS_HOST_ROOT: dir }
   }
 
   it('rejects an invalid --unix-user charset (exit 2)', async () => {
@@ -1411,25 +1427,41 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
     expect(stderr).toContain('unknown argument: --port=50100')
   })
 
-  it('lets a valid box user + port PAST validation (fails later at the first privileged call, never with the validation exit 2)', async () => {
-    const { exitCode, stderr } = await runBoxProvision(
+  it.each([1000, 0])('lets valid box user + port reach the refused layout inventory (caller UID %s)', async (uid) => {
+    const { exitCode, stdout, stderr } = await runBoxProvision(
       ['--sandbox-id', 'x', '--unix-user', 'box_0123456789ab', '--port', '50100'],
-      { env: { PATH: refusingSudoPath() } }
+      { env: refusingInventoryEnv(uid) }
     )
-    // It gets past validation and then trips on the first privileged call —
-    // anything but the validation exit code proves validation passed. As a
-    // non-root user that call goes through the refusing sudo above, which is
-    // the proof it got that far rather than dying somewhere else.
-    expect(exitCode).not.toBe(2)
-    // The privileged layout preflight wraps a failed sudo lookup as exit 3.
-    // Its marker still proves argument validation reached the first privileged
-    // call without provisioning anything. Other platforms stop earlier.
-    if (process.platform === 'linux' && process.getuid?.() !== 0) {
-      expect(exitCode).toBe(3)
-      expect(stderr).toContain('ficus-test: sudo refused')
-      expect(stderr).toContain('machine layout inventory failed')
+    // The first privileged call is now the layout inventory. Its failure is
+    // deliberately normalized to exit 3, NOT the shim's exit 77. Require both
+    // the exact boundary and the fail-closed diagnostic, not just "not exit 2".
+    expect(exitCode).toBe(3)
+    const boundary = uid === 0 ? 'bash refused: -s -- ' : 'sudo refused: bash -s -- '
+    expect(stderr).toContain(`ficus-test: ${boundary}`)
+    expect(stderr.match(/ficus-test:/g)).toHaveLength(1)
+    expect(stderr).toContain('machine layout inventory failed; nothing was changed')
+    expect(stdout).toBe('')
+  })
+
+  it.each([1000, 0])('rejects invalid user/port before the inventory boundary (caller UID %s)', async (uid) => {
+    const env = refusingInventoryEnv(uid)
+    for (const [user, port, diagnostic] of [
+      ['bad;name', '50100', 'invalid --unix-user'],
+      ['box_0123456789ab', 'abc', 'invalid --port'],
+      ['box_0123456789ab', '1023', 'invalid --port'],
+      ['box_0123456789ab', '65536', 'invalid --port'],
+    ]) {
+      const { exitCode, stdout, stderr } = await runBoxProvision(
+        ['--sandbox-id', 'x', '--unix-user', user, '--port', port],
+        { env }
+      )
+      expect(exitCode).toBe(2)
+      expect(stderr).toContain(diagnostic)
+      expect(stderr).not.toContain('ficus-test:')
+      expect(stderr).not.toContain('machine layout inventory failed')
+      expect(stdout).toBe('')
     }
-  }, 30_000)
+  })
 })
 
 // The subuid/subgid overlap-scan allocation (Fix 3) is exercised through the
