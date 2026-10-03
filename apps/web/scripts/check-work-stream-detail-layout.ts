@@ -54,6 +54,43 @@ try {
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 })
     await page.goto(server.resolvedUrls!.local[0]! + 'detail-fixture')
+    const more = page.getByRole('button', { name: 'More actions', exact: true })
+    await more.waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Pause work…', exact: true }).count(), 0)
+    await more.focus()
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('Tab')
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Pause work…', exact: true })
+        .evaluate((el) => el === document.activeElement),
+      true
+    )
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `actions-${width}.png`) })
+    await page.keyboard.press('Enter')
+    assert.equal(await page.getByLabel('Reason', { exact: true }).evaluate((el) => el === document.activeElement), true)
+    assert.equal(await more.getAttribute('aria-expanded'), 'false')
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `pause-form-${width}.png`) })
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    assert.equal(
+      await more.evaluate((el) => el === document.activeElement),
+      true,
+      'Cancel returns focus to More actions'
+    )
+    await more.click()
+    await page.locator('summary').filter({ hasText: 'Notifications…' }).click()
+    await page.getByRole('radio', { name: 'Decisions: Notify', exact: true }).waitFor({ state: 'visible' })
+    assert.equal(await page.getByRole('radio', { name: 'Decisions: Notify', exact: true }).isChecked(), true)
+    assert.equal(await page.getByText('Inherits from squad', { exact: true }).isVisible(), true)
+    const radioBounds = await page.getByRole('radiogroup').last().boundingBox()
+    assert.ok(
+      radioBounds && radioBounds.x >= 0 && radioBounds.x + radioBounds.width <= width,
+      'Notification options remain inside narrow viewport'
+    )
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `notifications-${width}.png`) })
+    await page.keyboard.press('Escape')
+    assert.equal(await more.getAttribute('aria-expanded'), 'false')
+    assert.equal(await more.evaluate((el) => el === document.activeElement), true)
     const toggle = page.getByRole('button', { name: 'Workflow preview:' })
     await toggle.waitFor()
     assert.equal(await toggle.textContent(), 'Workflow · Focused mobile picker visual follow-up')
@@ -126,6 +163,16 @@ try {
       'Wide table retains contained horizontal scrolling'
     )
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `description-${width}.png`) })
+    await page.goto(server.resolvedUrls!.local[0]! + 'detail-fixture?paused')
+    await page.getByRole('button', { name: 'Resume work', exact: true }).waitFor()
+    assert.equal(
+      await page
+        .getByText('Paused · Holding its slot · Waiting for the maintenance window', { exact: true })
+        .isVisible(),
+      true
+    )
+    assert.equal(await page.getByRole('button', { name: 'Park while paused', exact: true }).count(), 0)
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `paused-${width}.png`) })
     await page.goto(server.resolvedUrls!.local[0]! + 'detail-fixture?delivery')
     const delivery = page.getByRole('region', { name: 'Delivery requirements' })
     await delivery.waitFor()

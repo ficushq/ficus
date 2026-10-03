@@ -4,7 +4,18 @@ import type { WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { client } from '../api/clientInstance'
 import { queryKeys } from '../queryKeys'
-import { WorkStreamPauseControls } from './WorkStreamPauseControls'
+import { WorkStreamPauseControls, useWorkStreamPauseControls } from './WorkStreamPauseControls'
+
+function Surface({ stream }: { stream: WorkStream }) {
+  const controls = useWorkStreamPauseControls(stream)
+  return (
+    <>
+      <button onClick={controls.openPause}>Menu pause</button>
+      <button onClick={controls.park}>Menu park</button>
+      <WorkStreamPauseControls stream={stream} controls={controls} />
+    </>
+  )
+}
 
 test('pause controls retain the slot by default and expose resume/park only while paused', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/pause' })
@@ -19,7 +30,7 @@ test('pause controls retain the slot by default and expose resume/park only whil
     dom.act(async () =>
       root.root.render(
         <QueryClientProvider client={cache}>
-          <WorkStreamPauseControls stream={value} />
+          <Surface stream={value} />
         </QueryClientProvider>
       )
     )
@@ -27,7 +38,10 @@ test('pause controls retain the slot by default and expose resume/park only whil
     [...dom.window.document.querySelectorAll('button')].find((b) => b.textContent === label)!
   try {
     await render(stream)
-    await dom.act(async () => button('Pause work').click())
+    expect(button('Pause work')).toBeUndefined()
+    expect(Boolean(dom.window.document.querySelector('section'))).toBe(false)
+    await dom.act(async () => button('Menu pause').click())
+    expect(pause).not.toHaveBeenCalled()
     await dom.act(async () =>
       dom.window.document
         .querySelector('form')!
@@ -40,7 +54,7 @@ test('pause controls retain the slot by default and expose resume/park only whil
     }
     await render(paused)
     expect(dom.window.document.body.textContent).toContain('Holding its slot')
-    await dom.act(async () => button('Park while paused').click())
+    await dom.act(async () => button('Menu park').click())
     expect(park).toHaveBeenCalledWith(stream.id)
     await render({ ...paused, status: 'queued' })
     expect(dom.window.document.body.textContent).toContain('Parked; no slot held')

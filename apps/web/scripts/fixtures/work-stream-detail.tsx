@@ -43,12 +43,26 @@ if (new URLSearchParams(location.search).has('delivery')) {
   run.state.attempts[0]!.status = 'completed'
   run.state.completedStepIds = ['execute']
 }
+if (new URLSearchParams(location.search).has('paused')) {
+  Object.assign(stream, {
+    pause: {
+      id: 'p',
+      reason: 'Waiting for the maintenance window',
+      pausedAt: new Date().toISOString(),
+      parkAt: null,
+      agentIds: [],
+    },
+  })
+}
 cache.setQueryData(queryKeys.squads.workStreamDetail(stream.id), stream)
 cache.setQueryData(queryKeys.workflows.run(stream.id), run)
 cache.setQueryData(queryKeys.squads.list(), [])
-cache.setQueryData(queryKeys.workStreamSubscription.detail(stream.id), { inherited: true })
+cache.setQueryData(queryKeys.workStreamSubscription.detail(stream.id), {
+  inherited: true,
+  attention: { decisions: 'notify', progress: 'mute' },
+})
 cache.setQueryData(queryKeys.auth.permissions(stream.squadId), {
-  permissions: ['workstreams:respond', 'workstreams:revise-flow', 'workflows:create'],
+  permissions: ['workstreams:update', 'workstreams:respond', 'workstreams:revise-flow', 'workflows:create'],
   identity: { type: 'user', userId: 'fixture' },
 })
 cache.setQueryData(queryKeys.squads.workStreamMetrics(stream.id), {
