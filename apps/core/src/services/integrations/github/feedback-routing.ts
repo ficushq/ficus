@@ -17,8 +17,14 @@ import { captureRelevantGitHubFeedback, isGitHubFeedbackAdmitted } from './feedb
 import { captureGitHubFeedback, recordCanonicalGitHubFeedback } from './feedback-store'
 import { githubContentHash } from './feedback-envelope'
 import { buildGitHubStatus } from './feedback-status'
-import { readGitHubResource, readGitHubCurrent, reserveGitHubEvent, withGitHubOutputPass } from './feedback-pass'
-import { readOutputEvent } from './feedback-pass-read'
+import {
+  readGitHubResource,
+  readGitHubCurrent,
+  reserveGitHubEvent,
+  withGitHubOutputPass,
+  inGitHubCandidate,
+} from './feedback-pass'
+import { readOutputEvent, readFeedbackRevision } from './feedback-pass-read'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 
 type Store = typeof db | DbTx
@@ -107,10 +113,7 @@ export async function githubMatchingEvent(store: Store, event: Event): Promise<E
 /** Original review audiences are immutable. Replanning can only retain or remove them. */
 export async function originalGitHubRoutes(store: Store, event: Event) {
   if (event.fact.github?.revisionId) {
-    const [revision] = await store
-      .select()
-      .from(githubFeedbackRevisions)
-      .where(eq(githubFeedbackRevisions.id, event.fact.github.revisionId))
+    const revision = await readFeedbackRevision(store, event.fact.github.revisionId)
     return revision?.routingProvenance ?? []
   }
   const [proof] = await store.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, event.id))
@@ -222,7 +225,11 @@ export async function prepareGitHubOutput(
   input: Event,
   options: { reverifyAdopted?: boolean } = {}
 ): Promise<Event | null> {
-  return withGitHubOutputPass(() => prepareGitHubOutputInPass(input, options))
+  return withGitHubOutputPass(() =>
+    input.integration === 'github'
+      ? inGitHubCandidate(() => prepareGitHubOutputInPass(input, options), null)
+      : prepareGitHubOutputInPass(input, options)
+  )
 }
 
 async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopted?: boolean }): Promise<Event | null> {
@@ -331,12 +338,12 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
         createdAt: source.createdAt,
       })
       .onConflictDoNothing()
-      .returning()
-    effect =
+      .returning({ id: integrationOutputEvents.id })
+    const identity =
       inserted ??
       (
         await db
-          .select()
+          .select({ id: integrationOutputEvents.id })
           .from(integrationOutputEvents)
           .where(
             and(
@@ -345,6 +352,9 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
             )
           )
       )[0]!
+    const storedEffect = await readOutputEvent(db, identity.id)
+    if (!storedEffect) return null
+    effect = storedEffect
     if (hash(effect.fact) !== hash(fact)) return null // refinement must be deliberately reconciled, not substitute unseen text
   }
   if (!native) return null

@@ -757,11 +757,15 @@ async function reconcileFlowsInPass() {
     reconcileUnmatchedOutputs,
     reconcileParkedOutputDeliveries,
     reconcileApprovedGitHubFeedback,
-    prepareOutputDeliveryPass,
     reconcileSelectedOutputDeliveries,
   } = await import('../integrations/outputs/runtime')
-  await prepareOutputDeliveryPass()
-  const phases = [reconcileApprovedGitHubFeedback, reconcileSelectedOutputDeliveries, reconcileUnmatchedOutputs]
+  const { reconcileGitHubInboxNotifications } = await import('../integrations/github/feedback-inbox')
+  const phases = [
+    reconcileApprovedGitHubFeedback,
+    reconcileSelectedOutputDeliveries,
+    reconcileUnmatchedOutputs,
+    reconcileGitHubInboxNotifications,
+  ]
   // Rotate priority as well as candidates: perpetually held releases cannot monopolize every pass.
   const start = githubReconcilePhase++ % phases.length
   for (let offset = 0; offset < phases.length; offset++) await phases[(start + offset) % phases.length]!()

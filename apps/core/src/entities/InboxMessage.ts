@@ -34,6 +34,8 @@ import type { InferSelectModel } from 'drizzle-orm'
 import { Agent, AgentTargetUnavailableError, AgentTerminatedError } from './Agent'
 import { acquireAgentQueueLock } from '../services/execution/agent-admission'
 import { InboxAttachment } from './InboxAttachment'
+import { githubInboxCondition, readOutputInbox } from '../services/integrations/github/feedback-pass-read'
+import { githubOutputPass } from '../services/integrations/github/feedback-pass'
 import { createLogger } from '../lib/infra/logger'
 
 const log = createLogger('inbox')
@@ -194,7 +196,12 @@ export class InboxMessage
   /** Look up one durable inbox winner by its exact full idempotency key. */
   static async findByIdempotencyKey(idempotencyKey: string): Promise<InboxMessage | null> {
     if (!idempotencyKey) return null
-    const [row] = await db.select().from(inbox).where(eq(inbox.idempotencyKey, idempotencyKey)).limit(1)
+    const [identity] = await db
+      .select({ id: inbox.id })
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, idempotencyKey))
+      .limit(1)
+    const row = identity ? await readOutputInbox(db, identity.id) : undefined
     return row ? new InboxMessage(row) : null
   }
 
@@ -251,10 +258,11 @@ export class InboxMessage
       .insert(inbox)
       .values(values)
       .onConflictDoNothing({ target: inbox.idempotencyKey })
-      .returning()
-    const [row] = inserted
+      .returning({ id: inbox.id })
+    const [identity] = inserted
       ? [inserted]
-      : await tx.select().from(inbox).where(eq(inbox.idempotencyKey, idempotencyKey)).limit(1)
+      : await tx.select({ id: inbox.id }).from(inbox).where(eq(inbox.idempotencyKey, idempotencyKey)).limit(1)
+    const row = identity ? await readOutputInbox(tx, identity.id) : undefined
     if (!row) throw new Error(`Idempotent inbox message ${idempotencyKey} has no durable winner`)
     if (
       row.recipientType !== values.recipientType ||
@@ -468,14 +476,20 @@ export class InboxMessage
         }
       }
       const [created] = idempotencyKey
-        ? await tx.insert(inbox).values(values).onConflictDoNothing({ target: inbox.idempotencyKey }).returning()
-        : await tx.insert(inbox).values(values).returning()
-      const [winner] = created
+        ? await tx
+            .insert(inbox)
+            .values(values)
+            .onConflictDoNothing({ target: inbox.idempotencyKey })
+            .returning({ id: inbox.id })
+        : await tx.insert(inbox).values(values).returning({ id: inbox.id })
+      const [identity] = created
         ? [created]
-        : await tx.select().from(inbox).where(eq(inbox.idempotencyKey, idempotencyKey!)).limit(1)
+        : await tx.select({ id: inbox.id }).from(inbox).where(eq(inbox.idempotencyKey, idempotencyKey!)).limit(1)
+      const winner = identity ? await readOutputInbox(tx, identity.id) : undefined
+      if (!winner) throw new Error('feedback_capacity_deferred')
       // Task/update state is projected in the same transaction as the row it describes, and only
       // for the durable winner: an idempotent retry must not allocate a second task or sequence.
-      const projected = created ? await projectAssistantInboxMessage(tx, created) : null
+      const projected = created ? await projectAssistantInboxMessage(tx, winner) : null
       return {
         inserted: created,
         row: projected?.row ?? winner,
@@ -587,6 +601,16 @@ export class InboxMessage
    */
   static async find(id: string): Promise<InboxMessage | null> {
     if (id.length >= 36) {
+      if (githubOutputPass()) {
+        const [github] = await db
+          .select({ id: inbox.id })
+          .from(inbox)
+          .where(and(eq(inbox.id, id), githubInboxCondition()))
+        if (github) {
+          const message = await readOutputInbox(db, github.id)
+          return message ? new InboxMessage(message) : null
+        }
+      }
       const [row] = await db
         .select()
         .from(inbox)
@@ -644,7 +668,11 @@ export class InboxMessage
    * Delivery is independent of read state: delivered messages remain unread until
    * an agent explicitly marks them read, but they are not repeatedly injected into turns.
    */
-  static async listUndeliveredUnread(recipientType: InboxRecipientType, recipientId: string): Promise<InboxMessage[]> {
+  static async listUndeliveredUnread(
+    recipientType: InboxRecipientType,
+    recipientId: string,
+    excludeGitHub = false
+  ): Promise<InboxMessage[]> {
     const recipientCondition =
       recipientType === 'agent'
         ? varcharPrefixCondition(inbox.recipientId, recipientId)
@@ -662,7 +690,8 @@ export class InboxMessage
           isNull(inbox.readAt),
           isNull(inbox.deliveredAt),
           sql`${inbox.metadata}->>'source' IS DISTINCT FROM 'agent-question-answer'`,
-          sql`${inbox.metadata}->>'source' IS DISTINCT FROM 'integration-output'`
+          sql`${inbox.metadata}->>'source' IS DISTINCT FROM 'integration-output'`,
+          excludeGitHub ? sql`NOT (${githubInboxCondition()})` : undefined
         )
       )
       .orderBy(desc(inbox.createdAt))

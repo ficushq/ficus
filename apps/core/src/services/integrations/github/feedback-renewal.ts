@@ -1,9 +1,9 @@
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../../../db'
-import { readOutputEvent } from './feedback-pass-read'
+import { readOutputEvent, readOutputCandidate, readFeedbackRevision } from './feedback-pass-read'
 import { authorized } from '../outputs/authority'
-import { withGitHubOutputPass, reserveGitHubEvent, githubOutputPass } from './feedback-pass'
+import { withGitHubOutputPass, reserveGitHubEvent, githubOutputPass, inGitHubCandidate } from './feedback-pass'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
 import { isGitHubOutputAdmitted, isOriginalGitHubRoute, prepareGitHubOutput } from './feedback-routing'
 
@@ -35,33 +35,38 @@ async function renewKnownInPass(eventIds: string[]) {
   })
   if (!selected.length) return result
   for (const id of selected) {
-    const event = await readOutputEvent(db, id)
-    if (!event || event.integration !== 'github') {
-      result.deferred.push(id)
-      continue
-    }
-    if (
-      event.authority.kind !== 'connection' ||
-      !(await authorized(db, 'github', event.authority, event.authority.squadId)) ||
-      (event.fact.github?.revisionId && !(await isGitHubFeedbackAdmitted(db, event))) ||
-      !(await isOriginalGitHubRoute(db, event))
-    ) {
-      await withholdRevokedAutomaticGitHubOutput(event.id)
-      result.withheld.push(event.id)
-      continue
-    }
-    if (await isGitHubOutputAdmitted(db, event)) continue // fresh known proof costs no provider work
-    if (githubOutputPass()!.resources >= GITHUB_RENEWAL_RESOURCE_LIMIT) {
-      result.deferred.push(event.id)
-      continue
-    }
-    try {
-      if (await prepareGitHubOutput(event, { reverifyAdopted: false })) result.renewed.push(event.id)
-      else result.withheld.push(event.id)
-    } catch {
-      result.withheld.push(event.id)
-    }
+    const processed = await inGitHubCandidate(async () => {
+      const event = await readOutputCandidate(db, id)
+      if (!event || event.integration !== 'github') {
+        result.deferred.push(id)
+        return true
+      }
+      if (
+        event.authority.kind !== 'connection' ||
+        !(await authorized(db, 'github', event.authority, event.authority.squadId)) ||
+        (event.fact.github?.revisionId && !(await isGitHubFeedbackAdmitted(db, event))) ||
+        !(await isOriginalGitHubRoute(db, event))
+      ) {
+        await withholdRevokedAutomaticGitHubOutput(event.id)
+        result.withheld.push(event.id)
+        return true
+      }
+      if (await isGitHubOutputAdmitted(db, event)) return true // fresh known proof costs no provider work
+      if (githubOutputPass()!.resources >= GITHUB_RENEWAL_RESOURCE_LIMIT) {
+        result.deferred.push(event.id)
+        return true
+      }
+      try {
+        if (await prepareGitHubOutput(event, { reverifyAdopted: false })) result.renewed.push(event.id)
+        else result.withheld.push(event.id)
+      } catch {
+        result.withheld.push(event.id)
+      }
+      return true
+    }, false)
+    if (!processed) result.deferred.push(id)
   }
+
   return result
 }
 
@@ -77,11 +82,7 @@ export async function withholdRevokedAutomaticGitHubOutput(eventId: string) {
     const event = await readOutputEvent(tx, eventId)
     if (event?.integration !== 'github' || !event.fact.github?.revisionId || event.authority.kind !== 'connection')
       return
-    const [revision] = await tx
-      .select()
-      .from(githubFeedbackRevisions)
-      .where(eq(githubFeedbackRevisions.id, event.fact.github.revisionId))
-      .for('update')
+    const revision = await readFeedbackRevision(tx, event.fact.github.revisionId, true)
     if (
       !revision ||
       revision.decision !== 'automatic' ||

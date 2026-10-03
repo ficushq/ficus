@@ -1196,7 +1196,9 @@ test('known-record renewal deduplicates and caps provider work; revoked authorit
     h.read.mockClear()
     const revoked = await renewal.renewKnownGitHubOutputs(ids)
     expect(revoked.renewed).toHaveLength(0)
-    expect(revoked.withheld).toHaveLength(9)
+    expect(revoked.withheld).toHaveLength(8)
+    expect(revoked.deferred).toHaveLength(1)
+    expect((await renewal.renewKnownGitHubOutputs(revoked.deferred)).withheld).toHaveLength(1)
     expect(h.read.mock.calls).toHaveLength(0)
   } finally {
     await h.close()
@@ -2107,7 +2109,7 @@ test('exhausted root work slots select no GitHub delivery bodies before reservat
       for (let i = 0; i < 25; i++) expect(reserveGitHubEvent(crypto.randomUUID())).toBe(true)
       const reads: string[] = []
       setDatabaseQueryObserverForTest((query) => {
-        if (query.startsWith('select') && query.split(' from ')[0]!.includes('"fact"')) reads.push(query)
+        if (query.startsWith('select') && /"fact"(?:,|$)/.test(query.split(' from ')[0]!)) reads.push(query)
       })
       await prepareOutputDeliveryPass()
       expect(reads).toHaveLength(0)
@@ -2131,7 +2133,7 @@ test('repeated known renewal in one root pass bounds body reads but rechecks sou
       setDatabaseQueryObserverForTest((query) => {
         if (
           query.startsWith('select') &&
-          query.split(' from ')[0]!.includes('"fact"') &&
+          /"fact"(?:,|$)/.test(query.split(' from ')[0]!) &&
           query.includes('from "integration_output_events"')
         )
           bodies++
@@ -2163,7 +2165,7 @@ test('exhausted root body budget withholds history before any full event row rea
       githubOutputPass()!.bodyRows = 25
       const bodies: string[] = []
       setDatabaseQueryObserverForTest((query) => {
-        if (query.startsWith('select') && query.split(' from ')[0]!.includes('"fact"')) bodies.push(query)
+        if (query.startsWith('select') && /"fact"(?:,|$)/.test(query.split(' from ')[0]!)) bodies.push(query)
       })
       expect(await outputDeliveryHistory(streamId)).toHaveLength(0)
       expect(bodies).toHaveLength(0)
@@ -2205,7 +2207,7 @@ test('more than 25 paused delivery heads cannot consume all body slots before so
       h.read.mockClear()
       let bodySelects = 0
       setDatabaseQueryObserverForTest((query) => {
-        if (query.startsWith('select') && query.split(' from ')[0]!.includes('"fact"')) bodySelects++
+        if (query.startsWith('select') && /"fact"(?:,|$)/.test(query.split(' from ')[0]!)) bodySelects++
       })
       await withGitHubOutputPass(async () => {
         await reconcileFlows()
@@ -2228,3 +2230,225 @@ test('more than 25 paused delivery heads cannot consume all body slots before so
     await h.close()
   }
 }, 120_000)
+
+test('exhausted candidate WORK stops root selection before revision/source/history queries', async () => {
+  const { withGitHubOutputPass, withGitHubCandidate, githubOutputPass } = await import('./feedback-pass')
+  const { prepareOutputDeliveryPass, reconcileApprovedGitHubFeedback } = await import('../outputs/runtime')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const streamId = await h.stream(true)
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    await withGitHubOutputPass(async () => {
+      for (let i = 0; i < 25; i++) await withGitHubCandidate(async () => {}, undefined)
+      const queries: string[] = []
+      setDatabaseQueryObserverForTest((query) => queries.push(query))
+      await prepareOutputDeliveryPass()
+      await reconcileApprovedGitHubFeedback()
+      await reconcileUnmatchedOutputs()
+      expect(await outputDeliveryHistory(streamId)).toEqual([])
+      // Only the unchanged non-GitHub history query may run after GitHub exhaustion.
+      expect(queries.filter((query) => !query.includes('"integration" <>'))).toEqual([])
+      expect(githubOutputPass()!.lookaheadQueries).toBe(0)
+    })
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await h.close()
+  }
+})
+
+test('standalone cache-hit renewal attempts still exhaust root WORK and stop predicate reads', async () => {
+  const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const id = (await publishIntegrationOutput('github', h.fact(), h.authority))!
+    await withGitHubOutputPass(async () => {
+      for (let i = 0; i < 25; i++) await renewal.renewKnownGitHubOutputs([id])
+      expect(githubOutputPass()!.work).toBe(25)
+      const queries: string[] = []
+      setDatabaseQueryObserverForTest((query) => queries.push(query))
+      expect((await renewal.renewKnownGitHubOutputs([id])).deferred).toEqual([id])
+      expect(queries).toEqual([])
+    })
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await h.close()
+  }
+})
+
+test('root materialization counts reviewed revision images as well as canonical/source event bodies', async () => {
+  const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+  const { reconcileFlows } = await import('../../workflows/execution')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const streamId = await h.stream(true)
+    await db
+      .update(workStreams)
+      .set({ pause: { reason: 'Test', pausedAt: new Date().toISOString() } as any })
+      .where(eq(workStreams.id, streamId))
+    h.read.mockImplementation(
+      async <T>(path: string): Promise<T | null> =>
+        (path === '/repositories/10'
+          ? { id: 10, full_name: 'acme/project' }
+          : { ...h.native, id: Number(path.split('/').at(-1)) }) as T
+    )
+    for (let i = 0; i < 9; i++) {
+      h.native.id = 50 + i
+      await publishIntegrationOutput('github', h.fact(), h.authority)
+    }
+    const images: string[] = []
+    setDatabaseQueryObserverForTest((query) => {
+      const projection = query.split(' from ')[0]!
+      if (
+        (query.startsWith('select') && (projection.includes('"envelope"') || /"fact"(?:,|$)/.test(projection))) ||
+        (query.includes('returning') &&
+          (query.split('returning')[1]!.includes('"envelope"') || query.split('returning')[1]!.includes('"fact"')))
+      )
+        images.push(query)
+    })
+    await withGitHubOutputPass(async () => {
+      await reconcileFlows()
+      expect(images.length).toBeGreaterThan(0)
+      expect(images.length).toBeLessThanOrEqual(25)
+      expect(githubOutputPass()!.bodyRows).toBeGreaterThanOrEqual(images.length)
+      expect(githubOutputPass()!.work).toBeLessThanOrEqual(25)
+      expect(githubOutputPass()!.lookaheadRows).toBeLessThanOrEqual(100)
+      expect(githubOutputPass()!.lookaheadQueries).toBeLessThanOrEqual(12)
+    })
+    expect((await h.effects()).inbox).toBe(0)
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await h.close()
+  }
+}, 120_000)
+
+test('ordinary GitHub mail drains charge per message before materializing a bounded page', async () => {
+  const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const id = (await publishIntegrationOutput('github', h.fact(), h.authority))!
+    const [notice] = await db
+      .select()
+      .from(inbox)
+      .where(sql`${inbox.metadata}->>'integrationEventId' = ${id}`)
+    expect(notice).toBeDefined()
+    const { id: _id, ...copy } = notice!
+    await db
+      .insert(inbox)
+      .values(Array.from({ length: 26 }, () => ({ ...copy, id: crypto.randomUUID(), idempotencyKey: null })))
+    const mailboxQueries: string[] = []
+    setDatabaseQueryObserverForTest((query) => {
+      if (
+        query.startsWith('select') &&
+        query.split(' from ')[0]!.includes('"content"') &&
+        query.includes('from "inbox"') &&
+        query.includes('"recipient_type" =')
+      )
+        mailboxQueries.push(query)
+    })
+    await withGitHubOutputPass(async () => {
+      await deliverInboxMessagesToAgent(h.managerId)
+      expect(
+        mailboxQueries.every((query) => query.includes('limit') || query.includes('integration_output_events'))
+      ).toBe(true)
+      expect(githubOutputPass()!.work).toBeGreaterThan(0)
+      expect(githubOutputPass()!.work).toBeLessThanOrEqual(25)
+      expect(githubOutputPass()!.lookaheadRows).toBeLessThanOrEqual(100)
+      expect(githubOutputPass()!.bodyRows).toBeLessThanOrEqual(25)
+    })
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+    await h.close()
+  }
+}, 120_000)
+
+test('GitHub work exhaustion does not change Linear history behavior', async () => {
+  const { withGitHubOutputPass, withGitHubCandidate } = await import('./feedback-pass')
+  const h = await fixture()
+  try {
+    const streamId = await h.stream(true)
+    const [event] = await db
+      .insert(integrationOutputEvents)
+      .values({
+        integration: 'linear',
+        sourceKey: crypto.randomUUID(),
+        eventKey: crypto.randomUUID(),
+        fact: { ...h.fact(), body: 'LINEAR_HISTORY' },
+        authority: { kind: 'instance' },
+      })
+      .returning()
+    await db.insert(integrationOutputDeliveries).values({
+      eventId: event!.id,
+      workStreamId: streamId,
+      subscriptionId: 'linear',
+      subscription: {
+        id: 'linear',
+        source: { integration: 'linear', output: 'issue.comment', version: 1 },
+        deliver: { to: 'active', whenInactive: 'retain' },
+      },
+    })
+    await withGitHubOutputPass(async () => {
+      for (let i = 0; i < 25; i++) await withGitHubCandidate(async () => {}, undefined)
+      expect((await outputDeliveryHistory(streamId)).map((row) => row.fact.body)).toContain('LINEAR_HISTORY')
+    })
+  } finally {
+    await h.close()
+  }
+})
+
+test('reviewed payload caching refreshes decisions and rejects retention edits in the same pass', async () => {
+  const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+  const { readFeedbackRevision } = await import('./feedback-pass-read')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const eventId = (await publishIntegrationOutput('github', h.fact(), h.authority))!
+    const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+    const revisionId = event!.fact.github!.revisionId!
+    await withGitHubOutputPass(async () => {
+      const original = await readFeedbackRevision(db, revisionId)
+      expect(original!.decision).toBe('automatic')
+      await db
+        .update(githubFeedbackRevisions)
+        .set({ decision: 'pending', releaseState: 'held' })
+        .where(eq(githubFeedbackRevisions.id, revisionId))
+      expect((await readFeedbackRevision(db, revisionId))!.decision).toBe('pending')
+      expect(
+        await isCurrentIntegrationNotification(
+          db,
+          h.managerId,
+          (await db.select({ id: inbox.id }).from(inbox).where(eq(inbox.recipientId, h.managerId)))[0]!.id
+        )
+      ).toBe(false)
+      await db.update(githubFeedbackRevisions).set({ envelope: null }).where(eq(githubFeedbackRevisions.id, revisionId))
+      expect(await readFeedbackRevision(db, revisionId)).toBeUndefined()
+      expect(githubOutputPass()!.bodyRows).toBeLessThanOrEqual(25)
+    })
+  } finally {
+    await h.close()
+  }
+})
+
+test('persisted notification caching rejects edited payload instead of substituting it into acceptance', async () => {
+  const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+  const { readOutputInbox } = await import('./feedback-pass-read')
+  const h = await fixture()
+  try {
+    await h.trust()
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const [notice] = await db.select({ id: inbox.id }).from(inbox).where(eq(inbox.recipientId, h.managerId))
+    await withGitHubOutputPass(async () => {
+      expect(await readOutputInbox(db, notice!.id)).toBeDefined()
+      expect(await isCurrentIntegrationNotification(db, h.managerId, notice!.id)).toBe(true)
+      await db.update(inbox).set({ content: 'UNSEEN_EDIT' }).where(eq(inbox.id, notice!.id))
+      expect(await readOutputInbox(db, notice!.id)).toBeUndefined()
+      expect(await isCurrentIntegrationNotification(db, h.managerId, notice!.id)).toBe(false)
+      expect(githubOutputPass()!.bodyRows).toBeLessThanOrEqual(25)
+    })
+  } finally {
+    await h.close()
+  }
+})

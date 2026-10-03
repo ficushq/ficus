@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db, githubFeedbackRevisions, githubFeedbackSources, integrationOutputEvents, type DbTx } from '../../../db'
-import { readOutputEvent } from './feedback-pass-read'
+import { readOutputEvent, readFeedbackRevision } from './feedback-pass-read'
 import { authorized } from '../outputs/authority'
 import { githubContentHash } from './feedback-envelope'
 import { isGitHubOutputAdmitted, isOriginalGitHubRoute, matchesOriginalGitHubRoutes } from './feedback-routing'
@@ -24,13 +24,13 @@ export async function reconcileGitHubFeedbackRelease(route: GitHubFeedbackReleas
       )
         return 'source_unavailable' as const
       const [row] = await store
-        .select({ revision: githubFeedbackRevisions })
+        .select({ revisionId: githubFeedbackRevisions.id })
         .from(githubFeedbackSources)
         .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.id, githubFeedbackSources.revisionId))
         .where(
           and(eq(githubFeedbackSources.eventId, event.id), eq(githubFeedbackSources.squadId, event.authority.squadId))
         )
-      const revision = row?.revision
+      const revision = row ? await readFeedbackRevision(store, row.revisionId) : undefined
       if (
         !revision ||
         !['automatic', 'allow_once', 'allow_trust'].includes(revision.decision) ||

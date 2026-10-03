@@ -1,7 +1,10 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db, chatSendReceipts } from '../../db'
 import type { DeliveryMode } from '@ficus/shared'
+import { githubOutputPass, withGitHubOutputPass, withGitHubCandidate } from '../integrations/github/feedback-pass'
+import { readOutputCandidate, readOutputInbox } from '../integrations/github/feedback-pass-read'
+import { selectGitHubInboxPage } from '../integrations/github/feedback-inbox'
 import { Agent } from '../../entities/Agent'
 import {
   formatInboxMessageSender,
@@ -11,47 +14,51 @@ import {
 } from '../../entities/InboxMessage'
 
 export async function deliverInboxMessagesToAgent(agentId: string): Promise<void> {
+  return withGitHubOutputPass(() => deliverInboxInPass(agentId))
+}
+
+async function deliverInboxInPass(agentId: string): Promise<void> {
   const { pausedWorkStreamForAgent } = await import('../work-streams/pause')
-  if (await pausedWorkStreamForAgent(agentId)) return
+  const paused = await pausedWorkStreamForAgent(agentId)
   const agent = await Agent.mustFind(agentId)
-  const pending = await InboxMessage.listUndeliveredUnread('agent', agent.id)
-  const knownMessages = pending
-    .filter(
-      (message) =>
-        message.metadata?.source === 'integration-notification' &&
-        typeof message.metadata.integrationEventId === 'string' &&
-        z.string().uuid().safeParse(message.metadata.integrationEventId).success
-    )
-    .slice(0, 25)
-  const knownClientIds = knownMessages.map(
-    (message) => `github-feedback:${message.metadata!.integrationEventId}:${message.id}`
-  )
-  const receipts = knownClientIds.length
-    ? await db
-        .select()
+  const cohort = githubOutputPass()?.ordinary
+  const ids = cohort ? (cohort.get(agent.id) ?? []) : (await selectGitHubInboxPage(agent.id)).map((row) => row.id)
+  cohort?.delete(agent.id)
+  const { renewKnownGitHubOutputs } = await import('../integrations/github/feedback-renewal')
+  for (const id of ids) {
+    await withGitHubCandidate(async () => {
+      if (paused) return
+      const row = await readOutputInbox(db, id)
+      if (!row || row.recipientId !== agent.id || row.readAt || row.deliveredAt) return
+      const eventId = row.metadata?.integrationEventId
+      if (typeof eventId !== 'string' || !z.string().uuid().safeParse(eventId).success) return
+      const clientId = `github-feedback:${eventId}:${id}`
+      const [receipt] = await db
+        .select({
+          messageId: chatSendReceipts.messageId,
+          executionId: chatSendReceipts.executionId,
+          acceptedAt: chatSendReceipts.acceptedAt,
+        })
         .from(chatSendReceipts)
         .where(
           and(
             eq(chatSendReceipts.agentId, agent.id),
-            inArray(chatSendReceipts.clientId, knownClientIds),
+            eq(chatSendReceipts.clientId, clientId),
             eq(chatSendReceipts.state, 'accepted')
           )
         )
-    : []
-  const accepted = new Set(
-    receipts
-      .filter((receipt) => receipt.messageId && receipt.executionId && receipt.acceptedAt)
-      .map((receipt) => receipt.clientId)
-  )
-  const knownIds = [
-    ...new Set(
-      knownMessages
-        .filter((message) => !accepted.has(`github-feedback:${message.metadata!.integrationEventId}:${message.id}`))
-        .map((message) => String(message.metadata!.integrationEventId))
-    ),
-  ]
-  const { renewKnownGitHubOutputs } = await import('../integrations/github/feedback-renewal')
-  await renewKnownGitHubOutputs(knownIds)
+      if (!receipt?.messageId || !receipt.executionId || !receipt.acceptedAt) {
+        const event = await readOutputCandidate(db, eventId)
+        if (!event || event.integration !== 'github') return
+        await renewKnownGitHubOutputs([eventId])
+      }
+      await acceptGitHubNotification(agent, new InboxMessage(row), eventId)
+    }, undefined)
+  }
+  // Ordinary non-GitHub mail keeps its existing batching/lifecycle behavior. GitHub bodies
+  // must never be materialized by this unbounded legacy mailbox query.
+  if (paused) return
+  const pending = await InboxMessage.listUndeliveredUnread('agent', agent.id, true)
   const { isCurrentFlowMessage } = await import('../workflows/execution')
   const messages: InboxMessage[] = []
   // Observer mail is informational, never a lifecycle wake. Recheck at delivery:
@@ -93,19 +100,6 @@ export async function deliverInboxMessagesToAgent(agentId: string): Promise<void
         // The committed inbox row remains pending; receipt replay is safe.
       }
       continue
-    }
-    if (message.metadata?.source === 'integration-notification') {
-      const id = message.metadata.integrationEventId
-      const { readOutputEvent } = await import('../integrations/github/feedback-pass-read')
-      const event =
-        typeof id === 'string' && z.string().uuid().safeParse(id).success ? await readOutputEvent(db, id) : undefined
-      if (event?.integration === 'github') {
-        // One immutable event per accepted send. Never pre-claim, batch, or change payload/mode
-        // on replay: a committed receipt recovers the acceptance-before-ack crash window.
-        if (knownMessages.some((known) => known.id === message.id))
-          await acceptGitHubNotification(agent, message, event.id)
-        continue
-      }
     }
     if (await isCurrentFlowMessage(message)) messages.push(message)
   }

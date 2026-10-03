@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db, githubFeedbackRevisions, githubFeedbackSources, integrationOutputEvents, type DbTx } from '../../../db'
-import { outputSnapshotMatches } from './feedback-pass-read'
+import { outputSnapshotMatches, readFeedbackRevision } from './feedback-pass-read'
 import { githubContentHash } from './feedback-envelope'
 import { captureGitHubFeedback, type FeedbackCaptureDependencies } from './feedback-store'
 import { isTrustedGitHubFeedbackContent } from './feedback-trust'
@@ -22,7 +22,7 @@ export async function isGitHubFeedbackAdmitted(store: typeof db | DbTx, event: E
   const revisionId = event.fact.github?.revisionId
   if (!revisionId || event.authority.kind !== 'connection') return false
   const [row] = await store
-    .select({ revision: githubFeedbackRevisions, source: githubFeedbackSources })
+    .select({ source: githubFeedbackSources })
     .from(githubFeedbackSources)
     .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.id, githubFeedbackSources.revisionId))
     .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, githubFeedbackSources.eventId))
@@ -34,7 +34,9 @@ export async function isGitHubFeedbackAdmitted(store: typeof db | DbTx, event: E
       )
     )
   if (!row) return false
-  const { revision, source } = row
+  const { source } = row
+  const revision = await readFeedbackRevision(store, revisionId)
+  if (!revision) return false
   if (
     revision.squadId !== event.authority.squadId ||
     source.squadId !== revision.squadId ||

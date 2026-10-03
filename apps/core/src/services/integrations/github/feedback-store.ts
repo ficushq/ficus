@@ -8,7 +8,7 @@ import {
   type DbTx,
 } from '../../../db'
 import type { GitHubFeedbackContent } from '@ficus/shared'
-import { readOutputEvent } from './feedback-pass-read'
+import { readOutputEvent, readFeedbackRevision } from './feedback-pass-read'
 import { githubContentHash } from './feedback-envelope'
 import { readCurrentGitHubFeedback } from './feedback-provider'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
@@ -88,9 +88,8 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
     await tx.insert(githubFeedbackObjects).values(identity).onConflictDoNothing()
     const [object] = await tx.select().from(githubFeedbackObjects).where(condition).for('update')
     if (!object) throw new Error('feedback_capture_failed')
-    const [head] = object.currentRevisionId
-      ? await tx.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, object.currentRevisionId))
-      : []
+    const head = object.currentRevisionId ? await readFeedbackRevision(tx, object.currentRevisionId) : undefined
+    if (object.currentRevisionId && !head) throw new Error('feedback_capacity_deferred')
     let revision =
       head?.contentHash === content.contentHash && head.providerVersion === content.providerVersion ? head : undefined
     let disposition: 'created' | 'replay' | 'held' = revision ? 'replay' : 'created'
@@ -104,10 +103,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
         )
         .limit(1)
       if (receipts.length) {
-        const [prior] = await tx
-          .select()
-          .from(githubFeedbackRevisions)
-          .where(eq(githubFeedbackRevisions.id, receipts[0]!.revisionId))
+        const prior = await readFeedbackRevision(tx, receipts[0]!.revisionId)
         // A transport identity cannot be reused with different content, even if someone approves it.
         if (!prior || prior.contentHash !== content.contentHash) throw new Error('feedback_transport_conflict')
         revision = prior
@@ -148,11 +144,11 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
                       ? 'unknown_author'
                       : 'untrusted_author')
       // Retries of a held ambiguous/stale observation stay pending; never strengthen history.
-      revision =
+      const priorIdentity =
         stale || ambiguous
           ? (
               await tx
-                .select()
+                .select({ id: githubFeedbackRevisions.id })
                 .from(githubFeedbackRevisions)
                 .where(
                   and(
@@ -165,6 +161,8 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
                 .limit(1)
             )[0]
           : undefined
+      revision = priorIdentity ? await readFeedbackRevision(tx, priorIdentity.id) : undefined
+      if (priorIdentity && !revision) throw new Error('feedback_capacity_deferred')
       if (revision) disposition = 'replay'
       else {
         const sequence = object.sequence + 1
@@ -190,8 +188,9 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
             decision: automatic ? 'automatic' : 'pending',
             releaseState: automatic ? 'ready' : 'held',
           })
-          .returning()
-        revision = created!
+          .returning({ id: githubFeedbackRevisions.id })
+        revision = await readFeedbackRevision(tx, created!.id)
+        if (!revision) throw new Error('feedback_capacity_deferred')
         await tx
           .update(githubFeedbackObjects)
           .set({
@@ -247,11 +246,7 @@ export async function recordCanonicalGitHubFeedback(
     await lockGitHubOutputAuthority(tx, source)
     // The callback is LOCAL-only; native preparation belongs outside this transaction.
     if (!(await authorizeSource(source, tx))) throw new Error('feedback_source_unavailable')
-    const [revision] = await tx
-      .select()
-      .from(githubFeedbackRevisions)
-      .where(eq(githubFeedbackRevisions.id, revisionId))
-      .for('update')
+    const revision = await readFeedbackRevision(tx, revisionId, true)
     if (
       !revision ||
       revision.squadId !== association.squadId ||
@@ -296,12 +291,12 @@ export async function recordCanonicalGitHubFeedback(
         },
       })
       .onConflictDoNothing()
-      .returning()
-    const event =
+      .returning({ id: integrationOutputEvents.id })
+    const identity =
       inserted ??
       (
         await tx
-          .select()
+          .select({ id: integrationOutputEvents.id })
           .from(integrationOutputEvents)
           .where(
             and(
@@ -311,6 +306,8 @@ export async function recordCanonicalGitHubFeedback(
             )
           )
       )[0]!
+    const event = await readOutputEvent(tx, identity.id)
+    if (!event) throw new Error('feedback_capacity_deferred')
     await tx
       .insert(githubFeedbackSources)
       .values({ revisionId: revision.id, eventId: event.id, squadId: revision.squadId, authority: event.authority })
