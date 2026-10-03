@@ -5061,8 +5061,8 @@ wizard_write_config() { # OUT_FILE
   prompt_value "source mode (git-ssh | git-https) [git-ssh]" src_mode
   src_mode=${src_mode:-git-ssh}
   [[ ${src_mode} == git-ssh || ${src_mode} == git-https ]] || die "unsupported source mode '${src_mode}' (artifact is not implemented yet)"
-  local default_repo='git@github.com:ficushq/tau.git'
-  [[ ${src_mode} == git-https ]] && default_repo='https://github.com/ficushq/tau.git'
+  local default_repo='git@github.com:ficushq/ficus.git'
+  [[ ${src_mode} == git-https ]] && default_repo='https://github.com/ficushq/ficus.git'
   prompt_value "repo [${default_repo}]" src_repo
   src_repo=${src_repo:-${default_repo}}
   prompt_value "ref (branch/tag/sha) [main]" src_ref

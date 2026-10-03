@@ -514,7 +514,7 @@ describe('a known required human review survives stale or superseding non-review
     occurredAt: minutesAgo(minutes),
     observedAt: minutesAgo(minutes),
   })
-  // Ficus #362 / tau-mobile#42: auto-merge enabled, ruleset requires one approval,
+  // Ficus #362 / ficus-mobile#42: auto-merge enabled, ruleset requires one approval,
   // no explicit reviewer request, required CI pending and then green.
   const autoMergeEnabled = observed(
     event('pull_request.updated', { action: 'auto_merge_enabled', mergeState: 'blocked', pendingHumanReview: false }),

@@ -34,7 +34,7 @@ const ENTRIES: Record<string, Entry[]> = {
       'w-dee',
       'pr',
       'Opened pull request #412: rate limit the public search API.',
-      { type: 'pr', url: 'https://github.com/ficushq/tau/pull/412' },
+      { type: 'pr', url: 'https://github.com/ficushq/ficus/pull/412' },
     ],
     [
       47,
@@ -70,7 +70,7 @@ const ENTRIES: Record<string, Entry[]> = {
       'w-ivy',
       'issue',
       'Linked issue #88: the share sheet crash on iOS 26.',
-      { type: 'issue', url: 'https://github.com/ficushq/tau-mobile/issues/88' },
+      { type: 'issue', url: 'https://github.com/ficushq/ficus-mobile/issues/88' },
     ],
     [31, 'w-hal', 'execution', 'Started a run: grouping notifications by work stream.', chat('w-hal')],
   ],

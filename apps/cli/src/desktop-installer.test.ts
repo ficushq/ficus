@@ -81,6 +81,13 @@ async function fixture() {
 
 test('feed accepts only the public version-matched release URL and digest', () => {
   expect(parseDesktopFeed(feed)).toEqual({ version, url, sha256: digest, size: archive.length })
+  const previouslyPublishedUrl = url.replace('ficushq/ficus-desktop-releases', 'ficushq/tau-desktop-releases')
+  expect(
+    parseDesktopFeed({
+      ...feed,
+      releases: [{ version, updateTo: { ...feed.releases[0]!.updateTo, url: previouslyPublishedUrl } }],
+    })
+  ).toEqual({ version, url: previouslyPublishedUrl, sha256: digest, size: archive.length })
   expect(() =>
     parseDesktopFeed({
       ...feed,

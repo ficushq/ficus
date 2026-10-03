@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util'
 
 const { values } = parseArgs({
   options: {
-    repo: { type: 'string', default: 'ficushq/tau' },
+    repo: { type: 'string', default: 'ficushq/ficus' },
     branch: { type: 'string', default: 'main' },
     limit: { type: 'string', default: '200' },
   },

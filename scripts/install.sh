@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-REPO="${FICUS_INSTALL_REPO:-ficushq/tau}"
+REPO="${FICUS_INSTALL_REPO:-ficushq/ficus}"
 CLI_HOME="$HOME/.ficus"
 INSTALL_DIR=${FICUS_INSTALL_DIR:-}
 [ -n "$INSTALL_DIR" ] || INSTALL_DIR="$CLI_HOME/bin"

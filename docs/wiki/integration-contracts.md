@@ -174,8 +174,7 @@ Dev servers use it for hot reload (Next.js `/_next/webpack-hmr`, Vite).
 - **Tenant Caddy** needs no change: `reverse_proxy` passes upgrades, and the
   `@app_bridge` rule treats a handshake like any other `/api/app/*` request.
   A Caddy config reload closes open sockets, and HMR clients reconnect.
-- **Platform Caddy** (`render_platform_caddyfile` in tau-platform
-  `scripts/setup/platform-lib.sh`): on the apps-domain site, the `@app_socket`
+- **Platform Caddy**: on the apps-domain site, the `@app_socket`
   matcher (a `GET` whose `Upgrade` is `websocket` and whose `Connection`
   names `upgrade`) sends handshakes to the app socket listener. Everything
   else goes to the HTTP port as before. Both routes set the same
@@ -183,7 +182,7 @@ Dev servers use it for hot reload (Next.js `/_next/webpack-hmr`, Vite).
   routes; the listener checks the handshake itself.
 - **Platform bridge** (per-app origin): `Bun.serve` cannot hand over a raw
   socket, so handshakes have their own loopback `node:http` listener in the
-  Platform process (`apps/platform/src/routes/app-socket.ts`). It listens on
+  Platform process. It listens on
   `PLATFORM_APP_SOCKET_PORT` (default `4101`, from `platform.app_socket_port`,
   which must differ from `platform.port`) and starts only when the apps
   domain is configured. If it cannot bind, Platform logs the error and keeps
@@ -223,13 +222,10 @@ Dev servers use it for hot reload (Next.js `/_next/webpack-hmr`, Vite).
      well above Core's 120-second ping timeout. Logs follow the HTTP rule: no
      tokens or full URLs.
 
-  Rollout: after deploying a Platform release with the listener, rerun
-  tau-platform `scripts/setup/setup-platform.sh` on the control-plane host.
-  That renders `PLATFORM_APP_SOCKET_PORT` into the env file and the
-  `@app_socket` route into the apps-domain Caddy site. Until then, handshakes
-  reach the HTTP port and are not upgraded. A tenant also needs a Core release
-  that includes the Core side of this contract (tau PR #370), or Core will not
-  upgrade the socket.
+  Rollout: the control plane must configure `PLATFORM_APP_SOCKET_PORT` and the
+  `@app_socket` route on the apps-domain Caddy site. Until both are active,
+  handshakes reach the HTTP port and are not upgraded. The tenant also needs a
+  Core release with the matching WebSocket bridge support.
 
 - **Cloudflare**: WebSockets must be enabled (the default) on both the Ficus
   zone and the apps-domain zone.

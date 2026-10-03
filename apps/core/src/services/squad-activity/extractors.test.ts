@@ -286,11 +286,11 @@ describe('GitHub PR row copy (operator report 2026-08-27)', () => {
     eventType: 'pull_request',
     action: 'merged',
     occurredAt: '2026-08-27T12:00:00.000Z',
-    repository: 'ficushq/tau',
+    repository: 'ficushq/ficus',
     prNumber: 1215,
     nativeId: '99',
     logicalRowId: 'c1a2b3d4-0000-4000-8000-0000000000f1',
-    url: 'https://github.com/ficushq/tau/pull/1215',
+    url: 'https://github.com/ficushq/ficus/pull/1215',
     actorLogin: null,
     ...overrides,
   })
@@ -332,8 +332,8 @@ describe('GitHub PR row copy (operator report 2026-08-27)', () => {
     expect(rows.map((row) => row.id)).toEqual([`70:${rows[0].rowId}`, `70:${rows[1].rowId}`])
     // The shared PR ref type names no stream, so both rows point at the PR itself.
     expect(rows.map((row) => row.ref)).toEqual([
-      { type: 'pr', url: 'https://github.com/ficushq/tau/pull/1215' },
-      { type: 'pr', url: 'https://github.com/ficushq/tau/pull/1215' },
+      { type: 'pr', url: 'https://github.com/ficushq/ficus/pull/1215' },
+      { type: 'pr', url: 'https://github.com/ficushq/ficus/pull/1215' },
     ])
     expect(rows[0].summary).toBe(rows[1].summary)
     expect(rows[0].at).toBe(rows[1].at)
@@ -358,14 +358,14 @@ describe('GitHub issue row copy', () => {
       action: 'closed',
       occurredAt: '2026-08-27T12:00:00.000Z',
       actorLogin: 'noahsaso',
-      repository: 'ficushq/tau',
+      repository: 'ficushq/ficus',
       issueNumber: 12,
       issueTitle: 'Track issues in Activity',
       detail: null,
       nativeId: '99',
       providerDeliveryId: null,
       logicalRowId: 'c1a2b3d4-0000-4000-8000-0000000000f2',
-      url: 'https://github.com/ficushq/tau/issues/12',
+      url: 'https://github.com/ficushq/ficus/issues/12',
       ...factOverrides,
     } as never,
   })
@@ -402,7 +402,7 @@ describe('GitHub issue row copy', () => {
     })
     expect(row.ref).toEqual({
       type: 'issue',
-      url: 'https://github.com/ficushq/tau/issues/12',
+      url: 'https://github.com/ficushq/ficus/issues/12',
       workStreamId: 'b2cc0a94-0000-4000-8000-000000000002',
     })
   })
@@ -417,8 +417,8 @@ describe('GitHub issue row copy', () => {
     expect(rows[1].rowId).toBe(derivedRowId('c1a2b3d4-0000-4000-8000-0000000000f2', streams[1]))
     expect(rows[1].rowId).toMatch(UUID)
     expect(rows.map((row) => row.ref)).toEqual([
-      { type: 'issue', url: 'https://github.com/ficushq/tau/issues/12', workStreamId: streams[0] },
-      { type: 'issue', url: 'https://github.com/ficushq/tau/issues/12', workStreamId: streams[1] },
+      { type: 'issue', url: 'https://github.com/ficushq/ficus/issues/12', workStreamId: streams[0] },
+      { type: 'issue', url: 'https://github.com/ficushq/ficus/issues/12', workStreamId: streams[1] },
     ])
     expect(rows[0].summary).toBe(rows[1].summary)
   })

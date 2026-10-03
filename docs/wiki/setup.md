@@ -50,7 +50,7 @@ What the one-liner does, in order:
    `FICUS_SETUP_SKIP_CLI_INSTALL=1`; the installer URL comes from
    `FICUS_INSTALL_URL`, default `https://ficus.sh/cli/install.sh`.
 2. Runs `ficus server install`, which installs bun with the official installer if
-   it is missing, then clones `https://github.com/ficushq/tau.git` into
+   it is missing, then clones `https://github.com/ficushq/ficus.git` into
    `~/.ficus/ficus` (`--root <dir>` to clone elsewhere). Without `--root`, the
    registered default instance's checkout is reused wherever it lives. An
    existing checkout at the target is reused untouched, and a non-empty
@@ -75,8 +75,8 @@ flags).
 ### From a checkout
 
 ```bash
-git clone --recurse-submodules https://github.com/ficushq/tau.git
-cd tau
+git clone --recurse-submodules https://github.com/ficushq/ficus.git
+cd ficus
 bun install
 bun run setup
 ```
@@ -319,7 +319,7 @@ An instance is a checkout: `.env` and `ecosystem.config.js` belong to one label,
 so give the second instance its own clone.
 
 ```bash
-git clone --recurse-submodules https://github.com/ficushq/tau.git ficus-smoke
+git clone --recurse-submodules https://github.com/ficushq/ficus.git ficus-smoke
 cd ficus-smoke && bun install
 bun run setup -- --instance smoke --runtime host --port 3100
 ```

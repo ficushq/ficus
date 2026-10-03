@@ -2,7 +2,7 @@ enabled: true
 
 document:
   version: v1
-  url: https://github.com/ficushq/tau/blob/main/CLA.md
+  url: https://github.com/ficushq/ficus/blob/main/CLA.md
 
 signing:
   mode: comment
@@ -47,6 +47,6 @@ templates:
       {{signing_comment_pattern}}
       ```
 
-      If you are contributing on behalf of your employer, your employer also needs to sign the Corporate CLA (Part B of the CLA document). See [CONTRIBUTING.md](https://github.com/ficushq/tau/blob/main/CONTRIBUTING.md) for details.
+      If you are contributing on behalf of your employer, your employer also needs to sign the Corporate CLA (Part B of the CLA document). See [CONTRIBUTING.md](https://github.com/ficushq/ficus/blob/main/CONTRIBUTING.md) for details.
     success_comment: |
       CLA requirements are satisfied for this pull request.
