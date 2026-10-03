@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { monitorWorkRoot } from './launcher'
+import { monitorWorkRoot, sessionNameForMonitor } from './launcher'
 import { setHostWorkspaceOverride, clearHostWorkspaceOverrides } from '../sandbox/host/workspace-overrides'
 import { boxHome } from '../machines/box-paths'
 
@@ -54,4 +54,8 @@ describe('monitorWorkRoot', () => {
     process.env.FICUS_SANDBOX_RUNTIME = 'host'
     expect(monitorWorkRoot({ sandboxId: 'agent_solo' })).toBe(join(home, 'private', 'agent_solo'))
   })
+})
+
+it('gives new monitors canonical session identities', () => {
+  expect(sessionNameForMonitor('abcdef12-1234-1234-1234-123456789abc')).toBe('ficus-monitor-abcdef12')
 })

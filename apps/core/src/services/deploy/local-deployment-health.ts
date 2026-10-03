@@ -375,6 +375,7 @@ async function restartManagedLocalDeploymentOnce(
         command: current.command!,
         cwd: current.cwd,
         port: current.port,
+        processId: current.processId ?? undefined,
       }))
     } catch (error) {
       const confirmedFailure = error instanceof LocalDeploymentLaunchFailedError
@@ -407,7 +408,10 @@ async function restartManagedLocalDeploymentOnce(
         // An unknown stream may have launched before disconnecting. Stop intent
         // still owns this stable session, even without a returned processId.
         try {
-          await supervisor.stopLocalDeployment(current.sandboxId, managedLocalDeploymentSessionName(current.id))
+          await supervisor.stopLocalDeployment(
+            current.sandboxId,
+            current.processId ?? managedLocalDeploymentSessionName(current.id)
+          )
         } catch {
           log.warn(`LocalDeployment ${current.id}: stop cleanup unverified; check box connectivity`)
         }

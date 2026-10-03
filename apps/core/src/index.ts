@@ -245,7 +245,7 @@ const readiness = new RuntimeReadiness('api', process.env.FICUS_RUNTIME_INSTANCE
 app.get('/ready', () => readiness.response())
 app.get('/health', (c) => c.json({ status: 'ok' }))
 
-// Cross-process events from tau-worker (see lib/infra/local-events.ts). Not
+// Cross-process events from ficus-worker (see lib/infra/local-events.ts). Not
 // under /api, so it carries none of the browser auth middleware below — it is
 // authenticated inside the handler with the resolved internal event token
 // (explicit, encryption-key-derived, or random fail-closed fallback).
@@ -747,7 +747,7 @@ if (import.meta.main) {
   const host = apiBindHost(process.env, isRunningInK8s)
   const port = Number(process.env.PORT) || 3000
 
-  // Point the cross-process event transport at tau-worker's loopback listener.
+  // Point the cross-process event transport at ficus-worker's loopback listener.
   // Done before the boot chain so the very first secret write or emitted event
   // already forwards (the peer being down is a logged no-op, not an error).
   configureLocalEvents('api')

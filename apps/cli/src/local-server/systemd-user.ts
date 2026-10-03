@@ -19,7 +19,7 @@ function directivePath(value: string): string {
   return escaped(value).replaceAll(' ', '\\x20')
 }
 function marker(root: string): string {
-  return `tau-generated-root:${Buffer.from(root).toString('base64url')}`
+  return `ficus-generated-root:${Buffer.from(root).toString('base64url')}`
 }
 
 /** `<process>.service`, with the process named in the era the instance runs under. */
@@ -73,11 +73,15 @@ WantedBy=default.target
 `
 }
 
+const RETIRED_OWNERSHIP_PREFIX = 'tau-generated-root:' // ficus-p5-bridge: recognize exact-root ownership until local definitions are rewritten
 function assertOwned(path: string, root: string): void {
   if (!existsSync(path)) return
-  if (!readFileSync(path, 'utf8').includes(`# ${marker(root)}`))
+  const definition = readFileSync(path, 'utf8')
+  const markers = [marker(root), RETIRED_OWNERSHIP_PREFIX + Buffer.from(root).toString('base64url')]
+  if (!markers.some((value) => definition.split('\n').includes(`# ${value}`)))
     throw new Error(`Refusing to replace supervisor definition not owned by this checkout: ${path}`)
 }
+
 function prepareLogs(context: SupervisorContext): void {
   // The directory of the log files themselves, so the two can never disagree.
   const dir = dirname(nativeLogPath(context, 'api'))

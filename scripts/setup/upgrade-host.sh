@@ -54,15 +54,9 @@
 # rolls back or is killed. See lib.sh's `host migrations` section, and
 # --restore-host-backup below for the manual way back.
 #
-# HOST LAYOUT. Where this host keeps its install root, /etc dir, setup dir,
-# units, backup script, HOME and container database is resolved from what is
-# installed (lib.sh's host layout section): layout 1 (the names from before
-# the Ficus host migration) or layout 2 (the Ficus names). A release that
-# declares `hostLayout: 2` moves a layout-1 host there through the host_layout
-# migration, right before the flip; after its commit point the move is kept
-# even if the release is rolled back (the older release runs through the
-# compat links and Alias= names). --reverse-host-layout below is the manual way
-# back. The last trailer line reports the layout: FICUS_HOST_LAYOUT=<1|2>.
+# HOST LAYOUT. This updater requires the canonical Ficus host layout before
+# changing a release. It refuses a pre-rename host or target release in
+# preflight. The last trailer line reports FICUS_HOST_LAYOUT=2.
 
 set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
@@ -73,8 +67,6 @@ usage() {
   cat <<'EOF'
 Usage: upgrade-host.sh --config ficus-setup.yaml [--ref REF]
        upgrade-host.sh [--config ficus-setup.yaml] --restore-host-backup SET
-       upgrade-host.sh [--config ficus-setup.yaml] --reverse-host-layout SET
-                       [--accept-file-revert] [--accept-database-revert]
 
 Upgrades the Ficus instance ON THIS HOST to a source ref: source sync → build
 (core AND web) → migrations → service restart + health wait.
@@ -92,12 +84,12 @@ Options:
                   for byte and exit. It also reverts any secret changed since
                   that set was taken. A set taken during a git->artifact
                   conversion re-renders the units, which needs --config.
-                  A set taken for the host layout migration is refused: it
-                  must be reversed (--reverse-host-layout), not restored.
-$FICUS_ARTIFACT_TARBALL_URL, $FICUS_ARTIFACT_MANIFEST_URL, $FICUS_ARTIFACT_SIG_URL
-and $FICUS_ARTIFACT_PUBKEY_B64 are set, the host is moved to that prebuilt
-release instead of being rebuilt from source (--ref is then ignored: the
-artifact names its own commit). Any missing input = git mode.
+                  A set taken for an old host-layout migration is refused.
+  Artifact mode   when FICUS_ARTIFACT_TARBALL_URL,
+                  FICUS_ARTIFACT_MANIFEST_URL, FICUS_ARTIFACT_SIG_URL and
+                  FICUS_ARTIFACT_PUBKEY_B64 are all set, install that signed
+                  prebuilt release instead of building from source. Its
+                  manifest identifies the commit; --ref is ignored.
 EOF
 }
 
@@ -257,10 +249,7 @@ host_migrate_reconcile || reconcile_rc=$?
 host_migrate_install_traps
 # The host layout as the reconcile left it — BEFORE anything reads a path:
 # this process resolved its layout when lib.sh was sourced, and a reconcile
-# may since have finished the host layout migration (in a subshell) or
-# reversed it. host_layout_adopt resolves again and relocates the config and
-# install root it names (and repairs what an older toolkit wrote over the
-# bridges); the install root is then read again from the config.
+# may have settled an older journal. Read the canonical paths again.
 host_layout_adopt --no-repair
 SRC_DEST=$(cfg_source_dest)
 # A host whose settings predate the Ficus naming stops HERE, before either
@@ -309,15 +298,12 @@ artifact_upgrade() {
   require_root_capability
   id -u "${RUN_USER}" >/dev/null 2>&1 || die "core.run_user '${RUN_USER}' does not exist"
   # The templates are NOT part of this script: an artifact upgrade re-renders
-  # the api/worker units, and the host layout migration renders the backup
-  # units and script too, so whoever pushes upgrade-host.sh + lib.sh to the
-  # box must push all five alongside them. Checked HERE, before a single byte
-  # on the box moves — discovering it after the conversion would leave the box
-  # mid-migration with stale units.
+  # the api/worker units. Require the complete toolkit before changing the
+  # release so a partial upload cannot leave stale units.
   for tmpl in systemd/ficus-api.service.tmpl systemd/ficus-worker.service.tmpl systemd/ficus-backup.service.tmpl \
     systemd/ficus-backup.timer.tmpl ficus-backup.sh.tmpl; do
     [[ -f ${SCRIPT_DIR}/${tmpl} ]] ||
-      die "missing ${SCRIPT_DIR}/${tmpl} — an artifact upgrade re-renders the systemd units (and the host layout migration the backup units and script), so the caller must push scripts/setup/systemd/*.tmpl and scripts/setup/ficus-backup.sh.tmpl to the box alongside lib.sh and upgrade-host.sh"
+      die "missing ${SCRIPT_DIR}/${tmpl} — upload the complete scripts/setup toolkit before an artifact upgrade"
   done
   # The services this run will restart read <dest>/.env (EnvironmentFile in
   # both units), and an upgrade renders no .env — so if that file never named
@@ -480,13 +466,6 @@ git_target_check() { # REV
   require_host_layout_ready '' "$(git_rev_host_layout "${SRC_DEST}" "$1")"
   git_rev_is_ficus "${SRC_DEST}" "$1" ||
     die "refusing revision $1: it is a pre-Ficus Core release (its package.json is not named ficus) — choose a Ficus release"
-  # The host layout migration this revision would need runs only after the
-  # checkout, build and database migrations: a non-root run must be refused
-  # HERE, while the checkout has not moved (the check below it looks at the
-  # tree as it is now, which declares nothing new).
-  if ! _hm_is_root && [[ $(git_rev_host_layout "${SRC_DEST}" "$1") == 2 && $(host_layout_detect) == 1 ]]; then
-    die "refusing revision $1: this revision moves the host to the Ficus layout, which is root-only — re-run as root"
-  fi
   host_migrate_require_privilege "${SRC_DEST}"
   prepare_upgrade_host
 }

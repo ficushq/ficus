@@ -174,11 +174,8 @@ async function inTransaction<T>(connection: postgres.ReservedSql, callback: () =
 
 /** Crash-recovery intents for concurrent index migrations; owned by this migrator. */
 const INTENTS_TABLE = '__ficus_online_migration_intents'
-/** The intents table's name before the Ficus rename, adopted (or merged) on the first run. */
 /** Temp shadow tables that capture a concurrent index's intended definition. */
 const SHADOW_PREFIX = '__ficus_index_definition_'
-
-const quoteLiteral = (value: string): string => `'${value.replaceAll("'", "''")}'`
 
 /**
  * Drop shadow tables a crashed run left behind. They are TEMP tables, so a dead session's are already

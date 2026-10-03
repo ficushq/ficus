@@ -33,12 +33,11 @@
 #     point is reversed; after it (a signal, a rollback) it is finished
 #     forward; --restore-host-backup refuses a set that must be reversed first;
 #   * normal setup/upgrade of a legacy host is refused without changes;
-#     the retained original migration API still produces bridge aliases and
-#     the explicit --reverse-host-layout entrypoint can reverse its real set;
+#     the retained generic journal resolver settles interrupted migrations;
 #   * normal restore rejects a legacy HOME backup before pg_restore/copy;
 #     canonical HOME backups retain the existing restore path (EHL15);
-#   * the real registry finalizes bridge hosts, restores unhealthy activations,
-#     and reverses committed finalization with release parents retained.
+#   * the generic registry restores unhealthy activations with release parents
+#     retained.
 #
 # Every path the toolkit writes is pointed at the scratch directory through
 # its seams (FICUS_HOST_ROOT, FICUS_SYSTEMD_UNIT_DIR, FICUS_MANAGED_ENV_PATH,

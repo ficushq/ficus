@@ -44,7 +44,7 @@ async function invoke(
     operationId: input.operationId,
     ownership: Object.fromEntries(Object.entries(input.ownership).sort(([a], [b]) => a.localeCompare(b))),
   })
-  const raw = await exec(['sh', '-c', runner, 'tau-worktree-cleanup', serialized, mode])
+  const raw = await exec(['sh', '-c', runner, 'ficus-worktree-cleanup', serialized, mode])
   const receipt = JSON.parse(raw) as WorktreeRemovalReceipt
   if (
     !receipt ||

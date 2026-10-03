@@ -173,7 +173,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
       })
 
       const command = manager.execCalls[0].args[2]
-      const tmuxPrefix = "tmux new-session -d -s 'tau-local-deployment-abcdef12' "
+      const tmuxPrefix = "tmux new-session -d -s 'ficus-local-deployment-abcdef12' "
       const tmuxInvocation = command.split('\n').at(-1)!
       expect(tmuxInvocation.startsWith(tmuxPrefix)).toBe(true)
 
@@ -274,9 +274,9 @@ describe('LocalDeploymentProcessSupervisor', () => {
     })
 
     const command = manager.execCalls[0].args[2]
-    expect(command).toContain("tmux kill-session -t 'tau-local-deployment-abcdef12' 2>/dev/null || true")
-    expect(command).toContain("tmux has-session -t 'tau-local-deployment-abcdef12' 2>/dev/null || break")
-    expect(command).toContain("tmux new-session -d -s 'tau-local-deployment-abcdef12'")
+    expect(command).toContain("tmux kill-session -t 'ficus-local-deployment-abcdef12' 2>/dev/null || true")
+    expect(command).toContain("tmux has-session -t 'ficus-local-deployment-abcdef12' 2>/dev/null || break")
+    expect(command).toContain("tmux new-session -d -s 'ficus-local-deployment-abcdef12'")
   })
 
   it('records the caller PATH beside run.sh before starting the tmux session', async () => {
@@ -298,7 +298,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     expect(record).toBeLessThan(command.indexOf('tmux new-session'))
   })
 
-  it('starts managed localDeployments in tmux session tau-local-deployment-<short-id>', async () => {
+  it('starts managed localDeployments in tmux session ficus-local-deployment-<short-id>', async () => {
     const manager = new FakeSandboxManager()
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
 
@@ -310,10 +310,28 @@ describe('LocalDeploymentProcessSupervisor', () => {
     })
 
     const command = manager.execCalls[0].args.join(' ')
-    expect(result.processId).toBe('tau-local-deployment-abcdef12')
-    expect(command).toContain("tmux new-session -d -s 'tau-local-deployment-abcdef12'")
+    expect(result.processId).toBe('ficus-local-deployment-abcdef12')
+    expect(command).toContain("tmux new-session -d -s 'ficus-local-deployment-abcdef12'")
     // The launch command is itself single-quoted for tmux, so each quote is escaped.
     expect(command).toContain(`FICUS_LOCAL_DEPLOYMENT_PORT='"'"'5173'"'"'`)
+  })
+
+  it('restarts an existing app with its recorded session identity', async () => {
+    const manager = new FakeSandboxManager()
+    const supervisor = new LocalDeploymentProcessSupervisor(manager)
+    const processId = 'tau-local-deployment-persisted' // Existing recorded identity, not a new writer.
+    const result = await supervisor.startManagedLocalDeployment({
+      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+      sandboxId: 'squad_1',
+      command: 'echo ready',
+      port: 5173,
+      processId,
+    })
+    expect(result.processId).toBe(processId)
+    const command = manager.execCalls[0].args.join(' ')
+    expect(command).toContain(`tmux kill-session -t '${processId}'`)
+    expect(command).toContain(`tmux new-session -d -s '${processId}'`)
+    expect(command).not.toContain('ficus-local-deployment-abcdef12')
   })
 
   it('kills the tmux session when stopping', async () => {

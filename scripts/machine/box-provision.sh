@@ -181,10 +181,7 @@ LINGER_DIR="${FICUS_HOST_ROOT}/var/lib/systemd/linger"
 # the box's devbox and toolchain, its skills.
 HOME_DOT_DIR=".ficus"
 
-# Bridge (phase 5, U4): the names a box provisioned before the Ficus rename
-# carries — its units (system and user mode), its HOME dot dir — and the machine
-# root the retained one-shot recovery tools move. Normal C-FIN provisioning
-# refuses those real layouts and removes only exact compatibility links.
+# Provisioning requires the finalized machine and box layout.
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -628,12 +625,6 @@ system_slice_name() {
   printf 'ficus-box-%s.slice' "${UNIX_USER}"
 }
 
-# Bridge (phase 5, U4): this box's units under their pre-rename names, for this
-# --unit-mode. The Ficus units carry them as Alias=; teardown_legacy_units
-# removes them where they are still real unit files.
-
-
-
 user_unit_path() {
   printf '%s/.config/systemd/user/%s' "$1" "${USER_UNIT_NAME}"
 }
@@ -924,8 +915,6 @@ remove_box() {
   "${SUDO[@]}" systemctl stop "$(system_socket_name)" "$(system_proxy_name)" "$(system_unit_name)" >/dev/null 2>&1 || true
   "${SUDO[@]}" systemctl disable "$(system_socket_name)" "$(system_unit_name)" >/dev/null 2>&1 || true
   "${SUDO[@]}" rm -f "$(system_unit_path)" "$(system_socket_path)" "$(system_proxy_path)"
-  # ...and both modes' units under their pre-rename names (a box not
-  # re-provisioned since the rename).
   "${SUDO[@]}" loginctl disable-linger "${UNIX_USER}" >/dev/null 2>&1 || true
   remove_slice_limits
   # Give the per-user manager a moment to exit so its files aren't in the tar.
@@ -1566,8 +1555,7 @@ FICUS_LAYOUT_PREFLIGHT
   fi
 }
 
-# Canonical box homes are prepared as the box user. The old merge function
-# remains available for explicit bridge recovery, never normal C-FIN provision.
+# Canonical box homes are prepared as the box user.
 prepare_box_home() {
   run_as_box bash -c 'set -eu
 new="$1/.ficus"
@@ -1589,7 +1577,7 @@ provision_box() {
   fi
 
   # Reconcile the other canonical unit mode. Pre-rename layouts were refused
-  # before any effects; their explicit recovery functions remain above.
+  # before any effects.
   reconcile_unit_mode "${home}"
 
   if [ "${UNIT_MODE}" = "user" ]; then
@@ -1600,7 +1588,7 @@ provision_box() {
     "${SUDO[@]}" loginctl enable-linger "${UNIX_USER}"
   fi
 
-  # Preserve canonical data and remove only the exact old home link.
+  # Preserve the canonical home data.
   prepare_box_home "${home}"
   ensure_dirs "${home}"
   init_shared_nix_cache

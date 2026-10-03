@@ -96,7 +96,8 @@ describe('reprovision remote commands', () => {
       const command = verifyInstalledCommand({ ...box, sandboxId, unixUser: boxUnixUser(sandboxId) })
       expect(command).toContain('^Alias=')
       expect(command).toContain('[ ! -L "$home/.ficus" ]')
-      expect(command).toContain('root:root:644')
+      expect(command).toContain('$owner:644')
+      expect(command).toContain(sandboxId.startsWith('agent_') ? 'owner=0' : 'owner=$uid')
     }
   })
   it('puts show before the unit argument for both system and user controllers', () => {

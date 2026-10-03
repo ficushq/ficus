@@ -66,6 +66,22 @@ describe('squad-env', () => {
       expect(result).toBeNull()
     })
 
+    it('fails closed with a clear error when canonical settings is a file, and a regeneration skips it', async () => {
+      const { getEnvFile, regenerateEnvFileForSquad } = await getModule()
+      const { getSquadWorkspacePath } = await import('./workspace')
+      const { WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } = await import('../workspace/dot-dir')
+      const squadId = randomUUID()
+      const root = getSquadWorkspacePath(squadId)
+      mkdirSync(root, { recursive: true })
+      writeFileSync(join(root, WORKSPACE_DOT_DIR), 'preserved invalid settings')
+
+      expect(() => getEnvFile(squadId)).toThrow(WorkspaceDotDirConflictError)
+      // A fleet-wide regeneration must not stop on this squad, and writes nothing into it.
+      await regenerateEnvFileForSquad(squadId)
+      expect(existsSync(join(root, WORKSPACE_DOT_DIR, '.env'))).toBe(false)
+      expect(readFileSync(join(root, WORKSPACE_DOT_DIR), 'utf-8')).toBe('preserved invalid settings')
+    })
+
     it('returns content when .ficus/.env exists', async () => {
       const { getEnvFile, setEnvFile } = await getModule()
       const squadId = randomUUID()

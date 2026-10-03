@@ -39,6 +39,8 @@ const TEST_CONTAINER_PREFIXES = ['ficus-test-']
 const REGISTRY_CONTAINERS = ['ficus-registry']
 const BUILDX_BUILDERS = ['ficusbuilder']
 const K3D_NODES = ['k3d-ficus-dev-server-0']
+// ficus-p5-bridge: keep one installed schedule until the owner migrates the exact local job
+const GC_LAUNCHD_LABEL = 'dev.tau.docker-gc'
 
 function run(cmd: string[], timeoutMs = 120_000): { ok: boolean; out: string } {
   try {
@@ -56,12 +58,12 @@ function log(msg: string) {
 // --- --install: write + load a daily launchd agent, then exit ---
 if (process.argv.includes('--install')) {
   const bunPath = process.execPath
-  const plistPath = join(homedir(), 'Library/LaunchAgents/dev.ficus.docker-gc.plist')
+  const plistPath = join(homedir(), 'Library/LaunchAgents', `${GC_LAUNCHD_LABEL}.plist`)
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>dev.ficus.docker-gc</string>
+  <key>Label</key><string>${GC_LAUNCHD_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
     <string>${bunPath}</string>

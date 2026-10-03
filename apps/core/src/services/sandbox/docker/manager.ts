@@ -35,7 +35,6 @@ import { terminationIntentRegistry } from '../death/intent-registry'
 import { beginSandboxSetupWork, trackSandboxSetupWork, type SandboxSetupWorkReason } from '../setup-progress'
 import {
   dockerExecIdentityForSet,
-  DOCKER_EXEC_IDENTITY_NEW,
   identitySetForLabels,
   readSandboxLabel,
   SANDBOX_IDENTITY_WRITE,
@@ -58,10 +57,7 @@ import {
 } from './lifecycle-runtime'
 export { classifyDockerContainerOwnership, classifyDockerInspectStatus, SPEC_HASH_LABEL } from './lifecycle-contract'
 import { SandboxClient } from '../client/http-client'
-import {
-  parseDockerCommandIdentity,
-  resolveDockerCommandIdentity,
-} from './command-identity'
+import { parseDockerCommandIdentity, resolveDockerCommandIdentity } from './command-identity'
 import { computeDockerSpecDigest, validateDockerHealthContract } from './runtime-contract'
 
 // Re-export types for backwards compatibility
@@ -1406,7 +1402,7 @@ export class DockerSandboxManager implements ISandboxManager {
     // Mount per-sandbox Nix store directory for devbox package persistence.
     // Each sandbox gets its own directory for isolation — prevents cross-sandbox
     // tampering and ensures clean teardown when sandbox is removed.
-    // Stored in ~/.tau/data/nix/{sandboxId}/ alongside other sandbox data.
+    // Stored in ~/.ficus/data/nix/{sandboxId}/ alongside other sandbox data.
     const sandboxId = containerName.replace(CONTAINER_PREFIX, '')
     const nixStorePath = ensureNixStore(sandboxId)
     args.push('-v', `${nixStorePath}:/nix`)

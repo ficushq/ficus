@@ -197,7 +197,7 @@ async function signalWorkerRestart(): Promise<void> {
  * Restart BOTH Ficus processes. Useful after updating secrets that are read once
  * at startup (e.g., Discord gateway token).
  *
- * tau-api and tau-worker are separate units with no coupling, so this handler
+ * ficus-api and ficus-worker are separate units with no coupling, so this handler
  * first signals the worker over local-events (`SYSTEM_RESTART_CHANNEL`; the
  * worker runs its graceful shutdown and exits non-zero — see
  * `lib/infra/system-restart.ts`), then exits this process. The exit is delayed

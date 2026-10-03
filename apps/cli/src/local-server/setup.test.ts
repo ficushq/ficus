@@ -19,7 +19,7 @@ import { recordingRunner } from './runner'
 import { handoffLines, runSetup, type SetupDeps } from './setup'
 import { readRegistry, upsertInstance } from './state'
 import type { SetupOptions } from './types'
-const LEGACY_LOCAL_INSTANCE = 'tau'
+import { RETIRED_DEFAULT_INSTANCE as LEGACY_LOCAL_INSTANCE } from './state'
 
 /** The two `docker inspect` calls the installer makes, as recordingRunner prefixes. */
 const PORT_INSPECT = 'docker inspect -f {{json .}}'
@@ -664,7 +664,7 @@ describe('runSetup', () => {
   it('a second instance keeps the existing default unless it asks for it, and keeps its own createdAt', async () => {
     const statePath = join(root, 'state.json')
     upsertInstance(
-      'tau',
+      'sample',
       { root: '/elsewhere', port: 3000, supervisor: 'pm2', createdAt: 'c', updatedAt: 'u' },
       {},
       statePath
@@ -680,8 +680,8 @@ describe('runSetup', () => {
       })
     const first = deps()
     await runSetup(smoke(), first.d)
-    expect(readRegistry(statePath).default).toBe('tau')
-    expect(Object.keys(readRegistry(statePath).instances).sort()).toEqual(['smoke', 'tau'])
+    expect(readRegistry(statePath).default).toBe('sample')
+    expect(Object.keys(readRegistry(statePath).instances).sort()).toEqual(['sample', 'smoke'])
 
     const second = deps()
     second.d.now = () => 'later'
@@ -696,7 +696,7 @@ describe('runSetup', () => {
       updatedAt: 'later',
       identity: 2,
     })
-    expect(registry.instances.tau).toEqual({
+    expect(registry.instances.sample).toEqual({
       root: '/elsewhere',
       port: 3000,
       supervisor: 'pm2',

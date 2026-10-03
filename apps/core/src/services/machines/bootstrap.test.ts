@@ -1663,7 +1663,7 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
   it('requires operation staging and never falls back to extracting into HOME', async () => {
     const fixture = makeFixture()
     try {
-      const { exitCode, stderr } = await runRestoreStream(fixture, {
+      const { exitCode } = await runRestoreStream(fixture, {
         codec: 'gzip',
         stateDirs: 'workspace .private',
         stagingId: '',

@@ -10,12 +10,7 @@ import {
   verifyInstalledCommand,
 } from './box-reprovision-runtime'
 import type { MachineBox } from './queries'
-import {
-  BOX_DOT_DIR,
-  boxDotDir,
-  boxUnitControl,
-  boxUnixUser,
-} from './box-paths'
+import { BOX_DOT_DIR, boxDotDir, boxUnitControl, boxUnixUser } from './box-paths'
 
 describe('box unit names', () => {
   it('puts an agent_* box on ficus-box-<user> system units', () => {

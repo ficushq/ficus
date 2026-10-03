@@ -67,7 +67,7 @@ export function launchdNames(context: NamedContext, component: NativeComponent) 
 }
 
 function ownershipMarker(root: string): string {
-  return `tau-generated-root:${Buffer.from(root).toString('base64url')}`
+  return `ficus-generated-root:${Buffer.from(root).toString('base64url')}`
 }
 
 export function launchdDefinition(context: SupervisorContext, component: NativeComponent): string {
@@ -104,11 +104,13 @@ export function launchdDefinition(context: SupervisorContext, component: NativeC
 `
 }
 
+const RETIRED_OWNERSHIP_PREFIX = 'tau-generated-root:' // ficus-p5-bridge: recognize exact-root ownership until local definitions are rewritten
 function assertOwned(path: string, root: string): void {
   if (!existsSync(path)) return
-  if (!readFileSync(path, 'utf8').includes(`<!-- ${ownershipMarker(root)} -->`)) {
+  const definition = readFileSync(path, 'utf8')
+  const markers = [ownershipMarker(root), RETIRED_OWNERSHIP_PREFIX + Buffer.from(root).toString('base64url')]
+  if (!markers.some((value) => definition.split('\n').includes(`<!-- ${value} -->`)))
     throw new Error(`Refusing to replace supervisor definition not owned by this checkout: ${path}`)
-  }
 }
 
 function prepareLogs(context: SupervisorContext): void {
@@ -194,8 +196,8 @@ function parseStatus(context: SupervisorContext, component: NativeComponent, std
 }
 
 /**
- * The same log file: equal paths, or the same name in directories that resolve to one place — a
- * an already-loaded job may name its log through the old-home link until Apple finalization.
+ * The same log file: equal paths, or the same name in directories that resolve to one place — an
+ * already-loaded job may name its log through the old-home link until Apple finalization.
  */
 function sameLogFile(a: string, b: string): boolean {
   if (a === b) return true

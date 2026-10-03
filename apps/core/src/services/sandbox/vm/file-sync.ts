@@ -26,11 +26,8 @@
  *     server ship together, so we rely on it unconditionally (no legacy fallback).
  *
  * ## push order (deterministic)
- *   0. best-effort `rm -f ~/bin/tau` — an earlier revision pushed a per-box copy
- *      of the pre-ficus CLI there (`~/bin` precedes `/usr/local/bin` on the box
- *      PATH); removing it keeps that stale copy off the box PATH. Idempotent when absent
- *   0b. move the box's legacy workspace dot dirs (`~/workspace`, `~/.private`) to
- *      `.ficus` with a relative legacy link left behind ({@link boxWorkspaceDotDirCommand})
+ *   0. prepare canonical workspace settings under `~/workspace` and `~/.private`,
+ *      refusing settings symlinks before any managed asset changes
  *   1. materialized skills tree → `~/.ficus/skills/<materializer layout>`
  *   2. squad `.env` → `~/workspace/.ficus/.env`   (mode 0600; squad-scoped only)
  *   3. identity key → `~/.private/identity.pem`  (mode 0600; per-agent only)
@@ -57,8 +54,8 @@
  * stamped (all-or-nothing, mirroring machine-artifacts' `ensureArtifact`): a
  * failure mid-asset leaves no stamp, so the next ensure re-pushes that asset.
  * The stamp is a DB-side jsonb merge ({@link stampBoxSyncedHash}), independent
- * of the in-memory box snapshot's age. The `rm -f ~/bin/tau` shadow removal is
- * NOT an asset (one cheap idempotent bash call) and stays UNCONDITIONAL.
+ * of the in-memory box snapshot's age. Canonical workspace preparation always runs
+ * before the per-asset content-hash checks.
  *
  * ## squad ssh delivery (step 5) + on-demand refresh
  * The squad ssh dir (`services/squad/ssh.ts` `getSquadSshPath`) is where
@@ -315,7 +312,7 @@ export function boxWorkspaceDotDirCommand(roots: string[]): string {
 }
 
 async function prepareBoxWorkspaceDotDirs(client: SandboxClient, home: string, fence?: SetupBashFence): Promise<void> {
-  // No files or manifests may change when finalization fails or its outcome is unknown.
+  // No files or manifests may change when canonical workspace preparation fails or its outcome is unknown.
   await runBash(
     client,
     boxWorkspaceDotDirCommand([`${home}/workspace`, `${home}/.private`]),

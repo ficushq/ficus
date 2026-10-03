@@ -397,8 +397,6 @@ describe('canonical intents table', () => {
     })
   })
 
-
-
   test('a re-run is a no-op', async () => {
     await withSchema(async (connection, schema) => {
       await createIntents(connection, schema, INTENTS)
@@ -457,6 +455,4 @@ describe('canonical intents table', () => {
       expect(remaining.map((row) => row.name)).toEqual([`keep_${suffix}`])
     })
   })
-
-
 })

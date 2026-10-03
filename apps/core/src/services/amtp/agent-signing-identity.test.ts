@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { rmSync, writeFileSync } from 'fs'
-import { dirname } from 'path'
+import { dirname, join } from 'path'
+import { getHomeDir } from '../../lib/utils/home'
+import { WORKSPACE_DOT_DIR } from '../workspace/dot-dir'
 import { generateKeyPairSync } from 'crypto'
 import { mkdirSync } from 'fs'
 import { eq } from 'drizzle-orm'
@@ -36,6 +38,30 @@ describe('inspectAgentSigningIdentity', () => {
       status: 'ready',
       reason: null,
     })
+  })
+
+  test('reports unavailable, not a server error, when the private settings dir needs a manual fix', async () => {
+    const sandboxId = `agent_dotdir${Date.now()}${Math.random().toString(36).slice(2, 8)}`
+    const root = join(getHomeDir(), 'private', sandboxId)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(join(root, WORKSPACE_DOT_DIR), 'invalid settings file')
+    // A plain stand-in: the inspection reads only these fields, so no database row is needed.
+    const agent = {
+      agentTypeId: 'manager',
+      parentAgentId: null,
+      squadId: null,
+      identityPublicKey: generateInstanceKeyPair().publicKeyPem,
+      getSandboxId: async () => sandboxId,
+    } as unknown as Agent
+    try {
+      expect(await inspectAgentSigningIdentity(agent)).toMatchObject({
+        status: 'unavailable',
+        reason: 'workspace_dot_dir_conflict',
+        identityPublicKey: null,
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   test('reports a missing recorded public key', async () => {

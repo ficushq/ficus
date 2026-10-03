@@ -19,7 +19,7 @@ import {
 import { defaultPreflightDeps, runPreflight, type PreflightDeps } from './preflight'
 import { canPrompt, terminalPrompter } from './prompt'
 import { defaultRunner, type Runner } from './runner'
-import { canonicalRoot, getStatePath, readRegistryStrict, upsertInstance } from './state'
+import { RETIRED_DEFAULT_INSTANCE, canonicalRoot, getStatePath, readRegistryStrict, upsertInstance } from './state'
 import { buildSteps, SetupFailure, type Secrets, type StepDeps } from './steps'
 import type { ExplicitKey, SetupOptions } from './types'
 import { narrate } from './log'
@@ -213,7 +213,7 @@ export async function runSetup(
       `this checkout is instance "${rootOwner[0]}" under its pre-rename names — upgrade through the ficus-host-layout-bridge Core release first`
     )
   }
-  if (!rootOwner && persistedLabel(root) === 'tau') {
+  if (!rootOwner && persistedLabel(root) === RETIRED_DEFAULT_INSTANCE) {
     throw new SetupFailure(
       `this checkout's .env names a retired local instance, so setup could start a second copy beside it — upgrade through the ficus-host-layout-bridge Core release first, or use a fresh checkout`
     )

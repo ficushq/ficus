@@ -258,7 +258,11 @@ describe('CommandRunner', () => {
     // start stopping the unit — and kill this whole cgroup, child included — before it
     // returns. The child then exits 143, which is the restart working, not a rejection.
     const commands: PlannedCommand[] = [
-      { task: 'core', command: ['systemctl', '--user', '--no-block', 'restart', 'ficus-api.service'], status: 'pending' },
+      {
+        task: 'core',
+        command: ['systemctl', '--user', '--no-block', 'restart', 'ficus-api.service'],
+        status: 'pending',
+      },
     ]
     const runner = new CommandRunner({
       cwd: '/repo',
@@ -291,7 +295,11 @@ describe('CommandRunner', () => {
     })
 
     await expect(runner.runAll(commands)).rejects.toThrow(/restart ficus-api.service/)
-    expect(commands[0]).toMatchObject({ status: 'failed', exitCode: 1, outputTail: 'Unit ficus-api.service not loaded' })
+    expect(commands[0]).toMatchObject({
+      status: 'failed',
+      exitCode: 1,
+      outputTail: 'Unit ficus-api.service not loaded',
+    })
   })
 
   it('stops after the first failing command', async () => {

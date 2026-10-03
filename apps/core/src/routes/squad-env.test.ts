@@ -1,3 +1,7 @@
+import { getSquadWorkspacePath } from '../services/squad/workspace'
+import { WORKSPACE_DOT_DIR } from '../services/workspace/dot-dir'
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'bun:test'
 import { like } from 'drizzle-orm'
 import { Hono } from 'hono'
@@ -271,6 +275,50 @@ describe('squad-env routes', () => {
       expect(res.status).toBe(200)
       const getRes = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
       expect((await getRes.json()).content).toBe(content)
+    })
+
+    it('writes the env under the workspace .ficus dir as real canonical settings', async () => {
+      const content = 'ON_DISK=1'
+      const res = await app.request(`/api/squads/workspace/${squadId}/env`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+        body: JSON.stringify({ content }),
+      })
+
+      expect(res.status).toBe(200)
+      const root = getSquadWorkspacePath(squadId)
+      expect(readFileSync(join(root, WORKSPACE_DOT_DIR, 'env.user'), 'utf8')).toBe(content)
+      expect(readFileSync(join(root, WORKSPACE_DOT_DIR, '.env'), 'utf8')).toContain(content)
+      expect(lstatSync(join(root, WORKSPACE_DOT_DIR)).isDirectory()).toBe(true)
+    })
+
+    it('answers 409 with the actionable message when the workspace settings dir needs a manual fix', async () => {
+      const root = getSquadWorkspacePath(squadId)
+      mkdirSync(root, { recursive: true })
+      writeFileSync(join(root, WORKSPACE_DOT_DIR), 'preserved invalid settings')
+
+      for (const init of [
+        undefined,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: 'NEW=1' }),
+        },
+      ]) {
+        const res = await app.request(`/api/squads/workspace/${squadId}/env`, {
+          ...init,
+          headers: { ...(init?.headers ?? {}), ...authHeaders(admin.token) },
+        })
+        expect(res.status).toBe(409)
+        const data = await res.json()
+        expect(data.code).toBe('workspace_dot_dir_conflict')
+        expect(data.error).toStartWith(`Workspace ${squadId} needs a manual fix to its settings dir:`)
+        expect(data.error).not.toContain(root)
+      }
+      // Fail closed: invalid canonical settings remain untouched.
+      expect(readFileSync(join(root, WORKSPACE_DOT_DIR), 'utf8')).toBe('preserved invalid settings')
+      expect(existsSync(join(root, WORKSPACE_DOT_DIR, 'env.user'))).toBe(false)
+      rmSync(root, { recursive: true, force: true })
     })
 
     it('handles empty content', async () => {

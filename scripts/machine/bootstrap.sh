@@ -126,10 +126,7 @@ FICUS_BROWSER_VERIFY_JS="${FICUS_BROWSER_ROOT}/service/verify-sandbox.js"
 FICUS_BROWSER_UNIT="${FICUS_HOST_ROOT}/etc/systemd/system/ficus-browser.service"
 FICUS_BROWSER_APPARMOR="${FICUS_HOST_ROOT}/etc/apparmor.d/ficus-browser-chromium"
 
-# Bridge (phase 5, U4): the machine root and the browser's user, group, unit,
-# runtime dir and AppArmor profile before the Ficus rename. migrate_machine_root
-# retains its explicit recovery contract, including old unit and socket links.
-# Normal C-FIN bootstrap refuses that layout and finalizes exact bridges only.
+# Bootstrap requires the finalized machine layout before changing services.
 # Durable, machine-readable availability markers written by verify_browser. On a
 # host that CAN run the sandboxed browser: READY (timestamp), UNAVAILABLE removed.
 # On a host that CANNOT: UNAVAILABLE (reason token + timestamp + detail), READY
@@ -1167,7 +1164,7 @@ BROWSER_APPARMOR
 # The unit body is fully static (all paths are fixed /opt/ficus constants), so it
 # is embedded verbatim — byte-identical to scripts/machine/browser/ficus-browser.service
 # (which the machine image COPYs), asserted by bootstrap.test.ts. C-FIN writes
-# only the canonical unit; recovery restores old bytes from migration journals.
+# only the canonical unit.
 write_browser_unit() {
   "${SUDO[@]}" tee "${FICUS_BROWSER_UNIT}" >/dev/null <<'BROWSER_UNIT'
 [Unit]
@@ -1915,8 +1912,7 @@ main() {
   # reflecting THIS VM) always runs after main. The non-prebaked (no-marker)
   # branch is the original sequence, unchanged: idempotent installs on a bare host.
   #
-  # Recovery functions remain available until T26b; normal C-FIN bootstrap
-  # must not migrate an old machine then remove paths its boxes still need.
+  # Refuse an old or interrupted machine layout before changing services.
   require_machine_layout_ready || return $?
   if [ -f "${PREBAKED_MARKER}" ]; then
     log_prebaked_decision

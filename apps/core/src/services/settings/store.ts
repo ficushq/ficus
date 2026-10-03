@@ -197,7 +197,7 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
       `A value stored here overrides the MAX_CONCURRENT_AGENTS environment variable; ` +
       `clear it to fall back to that variable.`,
     validate: (value) => maxConcurrentAgentsError(value),
-    // Written by tau-api, consumed by execution pickup in tau-worker. Without
+    // Written by ficus-api, consumed by execution pickup in ficus-worker. Without
     // the broadcast the worker keeps admitting at the OLD cap for up to 60s
     // after the operator saves — which is the whole promise of "takes effect
     // without a restart".
@@ -265,7 +265,7 @@ export class SettingsStore {
 
   /**
    * Subscribe to cross-process setting changes (mirrors the secret store's
-   * invalidation). `tau-api` and `tau-worker` are separate OS processes, so a
+   * invalidation). `ficus-api` and `ficus-worker` are separate OS processes, so a
    * value written by the API is otherwise invisible to the worker — which is
    * where execution pickup runs — until the next periodic refresh.
    *

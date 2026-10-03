@@ -41,7 +41,7 @@ import { reconcileKeylessAmtpRegistrations } from './services/amtp/registration-
 import { sql } from 'drizzle-orm'
 
 import { eventEmitter } from './lib/infra/event-emitter'
-import { ensureHomeDir, getHomeDir } from './lib/utils/home'
+import { ensureHomeDir } from './lib/utils/home'
 import { initSquadEventHandlers } from './services/squad/event-handlers'
 import { registerCleanupHandlers } from './services/agents/cleanup'
 import { registerSandboxWarmupHandlers } from './services/sandbox/warmup-handlers'

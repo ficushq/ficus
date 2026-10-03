@@ -53,7 +53,7 @@ describe('finalizeCliHome', () => {
     link = join(home, LEGACY_CLI_HOME_LINK)
   })
   it('retains the old-home link name until Apple finalization', () => {
-    expect(LEGACY_CLI_HOME_LINK).toBe('.tau')
+    expect(LEGACY_CLI_HOME_LINK).toBe('.tau') // ficus-p5-apple
   })
   it('keeps the link while ~/.ficus/bin is not on PATH', async () => {
     mkdirSync(ficus)

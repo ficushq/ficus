@@ -18,7 +18,7 @@ import { LOCAL_SUPERVISORS, type LocalSupervisor } from './types'
 import { cliHome, LEGACY_CLI_HOME_LINK } from './home-move'
 
 /** Refusal-only label for a registry written before local instances had identities. */
-const RETIRED_DEFAULT_INSTANCE = 'tau'
+export const RETIRED_DEFAULT_INSTANCE = 'tau' // ficus-p5-bridge: refuses older local registrations
 
 /** One installed instance: the checkout it lives in and the port it serves on. */
 export interface InstanceRecord {

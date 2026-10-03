@@ -143,7 +143,7 @@ const SANDBOX_EPHEMERAL_STORAGE_LIMIT = process.env.FICUS_SANDBOX_EPHEMERAL_STOR
  * an IDLE agent, took the node to 97% of CPU requests while 11 further agents
  * sat Pending (one for 52 minutes) on `0/1 nodes are available: 1 Insufficient
  * cpu`. Each blocked sandbox then burns a 5-minute pod-ready timeout, and that
- * retry pile-up leaked memory in tau-api until it stopped serving entirely.
+ * retry pile-up leaked memory in ficus-api until it stopped serving entirely.
  *
  * 100m keeps ~50-100x headroom over the measured idle draw while raising the
  * per-node ceiling to ~140. Under real contention CFS shares are proportional
@@ -568,7 +568,7 @@ export async function buildSandboxPodSpec(input: BuildPodSpecInput, deps: BuildP
       restartPolicy: 'OnFailure',
       // Make the pod's volume mounts group-readable by the host API user so
       // the API (running on the host as a non-root user) can read/write
-      // ~/.tau/{memory,ssh,workspaces,nix-cache}/<squadId>. Without this,
+      // ~/.ficus/{memory,ssh,workspaces,nix-cache}/<squadId>. Without this,
       // the kubelet creates subPath dirs as root and container-root writes
       // land as uid 0 on the host, locking the API out.
       securityContext: sharedVolumeGid

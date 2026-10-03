@@ -1334,25 +1334,14 @@ dsn_sslrootcert() { # DSN
   printf '%b' "${v//%/\\x}"
 }
 
-# The CA path a stored tenant DSN names can lag behind the host layout: the
-# control plane writes the Ficus etc dir into a DSN only when it renames the
-# tenant database, and until then a migrated host resolves the legacy path
-# through its compat link (legacy etc dir -> the Ficus one). A host set up
-# fresh on layout 2 gets that same link when its DSN names the legacy etc dir
-# (a restore or re-provision reuses the stored DSN), so the two kinds of
-# layout-2 host look alike and finalize removes the link from both. Is DSN
-# such a case on this host right now (layout 2, sslrootcert under the legacy
-# etc dir, nothing at that path yet)?
-
-# Normal setup/activation must not recreate the retired CA bridge.
+# Normal setup/activation must not recreate the retired CA bridge. Refuse a
+# stored DSN that still names the old CA path before changing the host.
 require_canonical_database_ca() { # DSN (never log the credential)
   local cert
   cert=$(dsn_sslrootcert "$1")
   [[ ${cert} != "${HL_LEGACY_ETC}" && ${cert} != "${HL_LEGACY_ETC}/"* ]] ||
     die 'database sslrootcert still names the legacy host path — update it through the ficus-host-layout-bridge procedure before finalizing this upgrade'
 }
-
-# Create that compat link (see above) when DSN needs it; a no-op otherwise.
 
 # ------------------------------------------------------ managed artifacts
 #
@@ -1538,12 +1527,10 @@ ensure_managed_env_dropins() {
 #               it lives (a release tree carries no secrets of its own)
 #   @RUN_ROOT@  the tree the services actually run FROM: <dest>/current under
 #               the artifact layout, <dest> itself for a git checkout
-# and the host layout's names (see the host layout section), so a layout-1
-# host rendering from them still gets the unit it always had:
+# and the canonical host layout's names:
 #   @ETC_DIR@   the /etc dir managed.env lives in (HL_ETC)
 #   @UNIT_API@ / @UNIT_WORKER@   the units' own names (in comments)
-#   @ALIAS@     the legacy name as an Alias= line on layout 2 while the bridge
-#               lasts, else nothing (the line is dropped)
+#   @ALIAS@     empty; retained in the template renderer for its stable format
 #
 # Caller globals (the toolkit's established convention — see git_source_sync):
 # SRC_DEST, RUN_USER, BUN_BIN, DB_MODE, and optionally CORE_LAYOUT.
@@ -1794,14 +1781,6 @@ restore_rebase_home() { # ENV_FILE RELEASE ARCHIVED CURRENT
   ((rc == 0)) || die "restore: rebasing the restored database's HOME paths from ${from} to ${to} failed (${rc})"
   log_info "restore: the stored HOME paths now name ${to}"
 }
-
-# After a restore onto a layout-2 host of a backup taken with the legacy HOME
-# under RUN_HOME, into the Ficus one: the legacy HOME becomes the compat link
-# to the Ficus one, exactly as a host the host layout moved has it (paths the
-# rebase does not own — a git worktree's gitdir file, a path in free text —
-# still resolve). Nothing else is ever linked: never on layout 1 (a link to
-# the Ficus HOME there would make Core pick it), never over anything already
-# at the legacy path (it is left, with a warning when it is not that link).
 
 # Cloudflare's published edge ranges (https://www.cloudflare.com/ips-v4 and
 # /ips-v6, fetched 2026-09-30). The ingress host is always proxied by
@@ -2312,8 +2291,7 @@ EOF
 # one setup-host.sh has always used: values are spliced in verbatim, so a
 # value containing '|', '&' or '\' would corrupt the output — callers that
 # take values from outside the toolkit validate them first.
-# @DB_NAME@ (the container database the script dumps) is this layout's
-# (HL_DB_NAME): the host layout migration renames it with the container.
+# @DB_NAME@ is the canonical container database this script dumps (HL_DB_NAME).
 render_backup_script_content() { # TEMPLATE DEST HOME_DIR DB_MODE DB_CONTAINER S3_ENDPOINT S3_REGION S3_BUCKET S3_PREFIX BACKUP_ENV_FILE
   sed -e "s|@DEST@|${2}|g" \
     -e "s|@DB_NAME@|${HL_DB_NAME}|g" \
@@ -3244,7 +3222,7 @@ restart_core_services() { # CORE_PORT
 # that does anything get staged.
 #
 # The artifact format is P1's and frozen: tarball root `<prefix><sha>/`, the
-# prefix either HL_NEW_ARTIFACT_ROOT_PREFIX or the legacy one (both accepted),
+# prefix HL_NEW_ARTIFACT_ROOT_PREFIX,
 # `artifact.json` at that root (schema 1, files map keyed by POSIX relpath ->
 # `sha256:<hex>`, the root artifact.json excluded from its own map), digest =
 # sha256 over the canonical (key-sorted) files map, `artifact.sig` = base64
@@ -3959,8 +3937,8 @@ envfile_read() { # VAR FILE KEY
 # A generic way to change this host's root-owned config files — <dest>/.env,
 # managed.env, backup.env, the config yaml, the core units and their drop-ins,
 # the backup units, the installed backup script — as part of moving it to a
-# release, with a way back. This release registers one migration, host_layout
-# (the move to the Ficus host layout; see its section below).
+# release, with a way back. No one-shot migration is registered by this
+# release, but the journal resolver remains for an interrupted older run.
 #
 # A migration NAME ([a-z0-9_]+) is three functions:
 #   host_migration_NAME_needed RELEASE_DIR  0 when this host needs it for that
@@ -4421,7 +4399,6 @@ host_migrate_backup_restore() { # SETDIR
     # checkout that no longer exists. Render the CURRENT layout's units. A
     # subshell, so a die in the render is contained to this restore.
     if ! (
-      HL_BRIDGE_ALIASES=1
       install_core_units "${SCRIPT_DIR}/systemd"
       ensure_api_memory_guardrail
     ); then
@@ -4576,8 +4553,6 @@ host_migrate() { # RELEASE_DIR
 # needs, then render the units that release runs under, right before the flip.
 host_migrate_for() { # RELEASE_DIR
   host_migrate "$1"
-  local HL_BRIDGE_ALIASES=${HL_BRIDGE_ALIASES}
-  [[ ,${HOST_MIGRATE_NAMES:-}, != *,host_layout,* ]] || HL_BRIDGE_ALIASES=1
   install_core_units "${SCRIPT_DIR}/systemd"
   ensure_api_memory_guardrail
 }

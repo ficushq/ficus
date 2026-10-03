@@ -17,8 +17,7 @@
 # A fresh host is set up on the Ficus host layout (layout 2: lib.sh's host
 # layout section): /opt/ficus-core, /etc/ficus, the ficus-* units, HOME
 # <run user home>/.ficus and, in container mode, the ficus-postgres container.
-# A re-run on an existing host keeps the layout it is on, and moves a layout-1
-# host to layout 2 when the release it installs declares that (host_migrate).
+# A re-run requires the canonical layout and preserves its existing data.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
@@ -405,7 +404,7 @@ SEC_PW_ENV=$(cfg_get '.secrets.password_env')
 # backup HOME_DIR, the update sudoers file. Set here from the layout resolved
 # when lib.sh was sourced, and set again whenever this run's view of the layout
 # changes: after the reconcile (host_layout_adopt) and after host_migrate
-# moved a layout-1 host to layout 2.
+# reconciled a prior journal.
 resolve_layout_globals() {
   SRC_DEST=$(cfg_source_dest)
   ENV_FILE="${SRC_DEST}/.env"
@@ -572,8 +571,8 @@ if [[ ${DRY_RUN} -eq 0 ]]; then
     die "a journaled host migration could not be reconciled (${reconcile_rc}) — run this from the complete toolkit (systemd/*.service.tmpl)"
   host_migrate_install_traps
   # The host layout as the reconcile left it, BEFORE anything below reads a
-  # path: the reconcile may have finished the host layout migration (in a
-  # subshell) or reversed it since lib.sh resolved the layout at source time.
+  # path: the reconcile may have settled an older journal since lib.sh
+  # resolved the layout at source time.
   host_layout_adopt --no-repair
   resolve_layout_globals
 fi
@@ -710,15 +709,9 @@ render_backup_unit() { # TEMPLATE_FILE
 # refuses to prompt — so without a NOPASSWD rule the restart step fails and every
 # update is recorded as failed. Root installs restart directly and need no rule.
 # The grant is scoped to exactly these commands (no wildcards): the layout's two
-# units (UPDATE_SUDOERS_FILE is the layout's HL_SUDOERS) — and on layout 2, while
-# the legacy unit names are bridged as Alias=, their legacy spellings too (an
-# older release restarts those; lib.sh's host_layout_sudoers_content).
+# canonical units (UPDATE_SUDOERS_FILE is HL_SUDOERS).
 update_sudoers_content() {
-  if [[ ${HL_LAYOUT} == 2 && ${HL_BRIDGE_ALIASES:-0} == 1 ]]; then
-    host_layout_sudoers_content "${RUN_USER}"
-  else
-    printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s\n' "${RUN_USER}" "${HL_UNIT_API}" "${HL_UNIT_WORKER}"
-  fi
+  host_layout_sudoers_content "${RUN_USER}"
 }
 
 install_update_sudoers() {

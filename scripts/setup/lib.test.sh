@@ -9,6 +9,10 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 source "${SCRIPT_DIR}/lib.sh"
 # The pre-Ficus encryption key the naming guards look for (from lib.sh).
 PFK="${PRE_FICUS_ENV_PREFIX}_ENCRYPTION_KEY"
+# Historical names used only to prove retired release artifacts are rejected.
+RETIRED_RELEASE_MARKER=.tau-release-complete
+RETIRED_BUILD_STAMP=.tau-build-stamp
+RETIRED_ARTIFACT_ROOT_PREFIX=tau-core-
 
 PASS=0 FAIL=0
 
@@ -2792,7 +2796,7 @@ unset -f pr_archive pr_run
 
 rm -rf "${RESTORE_TMP}"
 
-# --- restore_archived_home / restore_rebase_home / restore_link_legacy_home --
+# --- restore_archived_home / restore_rebase_home ---
 # (Ruling 84) The HOME a restored backup was taken with, the rebase of its
 # stored paths to this host's HOME, and the legacy-HOME compat link.
 RH_TMP=$(mktemp -d)
@@ -4014,7 +4018,7 @@ PYEOF
   # "any well-formed signature passes".
   "${ART_OPENSSL}" genpkey -algorithm ed25519 -out "${ART_TMP}/other-key.pem" 2>/dev/null
 
-  # The tarball root: the Ficus prefix unless a case sets the legacy one.
+  # The tarball root: the Ficus prefix unless a refusal case sets another.
   ART_ROOT_PREFIX=${HL_NEW_ARTIFACT_ROOT_PREFIX}
   art_tree() { printf '%s/staging/%s%s\n' "$1" "${ART_ROOT_PREFIX}" "$2"; }
 
@@ -4042,9 +4046,8 @@ JSEOF
   # about bsdtar — the guards below are written to not depend on either one's
   # extraction quirks, which is the point of listing members before extracting.
   art_tar() { # WORK SHA
-    # The tarball's FILE name stays the builder's legacy one (the cases below
-    # fetch it by that name); its ROOT is ART_ROOT_PREFIX.
-    tar -C "${1}/staging" -czf "${1}/dist/${HL_LEGACY_ARTIFACT_ROOT_PREFIX}${2}-linux-x64.tar.gz" "${ART_ROOT_PREFIX}${2}"
+    # The archive name is independent of its rooted tree name.
+    tar -C "${1}/staging" -czf "${1}/dist/${HL_NEW_ARTIFACT_ROOT_PREFIX}${2}-linux-x64.tar.gz" "${ART_ROOT_PREFIX}${2}"
   }
 
   # Repack a tarball with one extra member under an arbitrary (hostile) name.
@@ -4087,7 +4090,7 @@ PYREPACK
   }
 
   # --- the box under test ---
-  ART_DEST=$(mktemp -d)/tau-core
+  ART_DEST=$(mktemp -d)/ficus-core
   mkdir -p "${ART_DEST}"
   ART_PROOF="${ART_TMP}/migrate-proof.txt"
   # FICUS_ROOT in the .env is deliberate: activate must pin the CANDIDATE, not
@@ -4113,7 +4116,7 @@ PYREPACK
   art_publish "${ART_WORK_A}" "${ART_SHA_A}" "${ART_BUN}"
   ART_RC=0
   ART_OUT_A=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_A}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_A}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_A}/dist/artifact.json" \
     "file://${ART_WORK_A}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4140,7 +4143,7 @@ PYREPACK
   expect_match 'artifact_stage: the marker records what was staged' \
     "$(<"${ART_RELEASE_A}/${HL_NEW_RELEASE_MARKER}")" "\"sha\":\"${ART_SHA_A}\".*\"digest\":\"sha256:[0-9a-f]{64}\""
   expect_eq 'artifact_stage: never recreates a legacy marker after finalization' \
-    "$([[ -e ${ART_RELEASE_A}/${HL_LEGACY_RELEASE_MARKER} ]] && echo present || echo absent)" 'absent'
+    "$([[ -e ${ART_RELEASE_A}/${RETIRED_RELEASE_MARKER} ]] && echo present || echo absent)" 'absent'
   expect_eq 'artifact_stage: no marker staging file is left behind' \
     "$(find "${ART_RELEASE_A}" -maxdepth 1 -name '*.tmp' | wc -l | tr -d ' ')" '0'
   expect_eq 'artifact_stage: the incoming session dir is cleaned up' \
@@ -4175,7 +4178,7 @@ PYREPACK
   art_publish "${ART_WORK_B}" "${ART_SHA_B}" "${ART_BUN}"
   ART_RC=0
   ART_OUT_B=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_B}/dist/tau-core-${ART_SHA_B}-linux-x64.tar.gz" \
+    "file://${ART_WORK_B}/dist/ficus-core-${ART_SHA_B}-linux-x64.tar.gz" \
     "file://${ART_WORK_B}/dist/artifact.json" \
     "file://${ART_WORK_B}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4195,7 +4198,7 @@ PYREPACK
   printf 'sentinel\n' >"${ART_RELEASE_B}/.sentinel"
   ART_RC=0
   ART_OUT_B2=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_B}/dist/tau-core-${ART_SHA_B}-linux-x64.tar.gz" \
+    "file://${ART_WORK_B}/dist/ficus-core-${ART_SHA_B}-linux-x64.tar.gz" \
     "file://${ART_WORK_B}/dist/artifact.json" \
     "file://${ART_WORK_B}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4215,7 +4218,7 @@ PYREPACK
   art_publish "${ART_WORK_C}" "${ART_SHA_C}" "${ART_BUN}"
   ART_RC=0
   ART_OUT_C=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_C}/dist/tau-core-${ART_SHA_C}-linux-x64.tar.gz" \
+    "file://${ART_WORK_C}/dist/ficus-core-${ART_SHA_C}-linux-x64.tar.gz" \
     "file://${ART_WORK_C}/dist/artifact.json" \
     "file://${ART_WORK_C}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4339,7 +4342,7 @@ PYREPACK
   printf 'DATABASE_URL=postgres://fixture/db\nMIGRATE_PROOF=%s\n' "${ART_PROOF}" >"${ART_DEST2}/.env"
   ART_RC=0
   ART_OUT_A2=$(artifact_acquire "${ART_DEST2}" \
-    "file://${ART_WORK_A}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_A}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_A}/dist/artifact.json" \
     "file://${ART_WORK_A}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4361,7 +4364,7 @@ PYREPACK
   # link the failed activation created.
   ART_RC=0
   ART_OUT_B3=$(artifact_acquire "${ART_DEST2}" \
-    "file://${ART_WORK_B}/dist/tau-core-${ART_SHA_B}-linux-x64.tar.gz" \
+    "file://${ART_WORK_B}/dist/ficus-core-${ART_SHA_B}-linux-x64.tar.gz" \
     "file://${ART_WORK_B}/dist/artifact.json" \
     "file://${ART_WORK_B}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4445,7 +4448,7 @@ PYREPACK
   } >"${ART_DEST3}/.env"
   ART_RC=0
   ART_OUT_A3=$(artifact_acquire "${ART_DEST3}" \
-    "file://${ART_WORK_A}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_A}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_A}/dist/artifact.json" \
     "file://${ART_WORK_A}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4470,7 +4473,7 @@ PYREPACK
   # …while a release staged before the host migration (the legacy marker) is
   # complete: activation goes on to the migrations (which fail here: no tree).
   printf '{"hostLayout":2}\n' >"${ART_DEST3}/releases/unmarked/artifact.json"
-  : >"${ART_DEST3}/releases/unmarked/${HL_LEGACY_RELEASE_MARKER}"
+  : >"${ART_DEST3}/releases/unmarked/${RETIRED_RELEASE_MARKER}"
   ART_ERR=$( (
     sleep() { :; }
     artifact_activate "${ART_DEST3}" "${ART_DEST3}/releases/unmarked" 3000
@@ -4478,7 +4481,7 @@ PYREPACK
   expect_match 'artifact_activate: a legacy-only completion marker is not accepted' \
     "${ART_ERR}" 'refusing to activate an unverified tree'
   expect_not_match 'artifact_activate: refusal precedes database migrations' "${ART_ERR}" 'database migrations failed'
-  rm -f "${ART_DEST3}/releases/unmarked/${HL_LEGACY_RELEASE_MARKER}"
+  rm -f "${ART_DEST3}/releases/unmarked/${RETIRED_RELEASE_MARKER}"
   artifact_stage "${ART_DEST3}" "${ART_TREE_A3}" "${ART_SHA_A}" "${ART_DIGEST12_A}" 2>/dev/null
   ART_RC=0
   artifact_activate "${ART_DEST3}" "${ART_RELEASE_A3}" 3000 >/dev/null 2>&1 || ART_RC=$?
@@ -4496,7 +4499,7 @@ PYREPACK
   printf 'leaked 70MB tarball stand-in\n' >"${ART_DEST}/releases/.incoming/stale-session/artifact.tar.gz"
   ART_RC=0
   artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_A}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_A}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_A}/dist/artifact.json" \
     "file://${ART_WORK_A}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" >/dev/null 2>&1 || ART_RC=$?
@@ -4510,7 +4513,7 @@ PYREPACK
   art_tar "${ART_WORK_T}" "${ART_SHA_A}" # re-tar WITHOUT re-signing
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_T}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_T}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_T}/dist/artifact.json" \
     "file://${ART_WORK_T}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4524,7 +4527,7 @@ PYREPACK
   art_tar "${ART_WORK_X}" "${ART_SHA_A}"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_X}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_X}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_X}/dist/artifact.json" \
     "file://${ART_WORK_X}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4539,7 +4542,7 @@ PYREPACK
   mv -f "${ART_WORK_M}/dist/artifact.json.new" "${ART_WORK_M}/dist/artifact.json"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_M}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_M}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_M}/dist/artifact.json" \
     "file://${ART_WORK_M}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4554,7 +4557,7 @@ PYREPACK
   base64 <"${ART_WORK_K}/dist/artifact.sig.raw" >"${ART_WORK_K}/dist/artifact.sig"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_K}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_K}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_K}/dist/artifact.json" \
     "file://${ART_WORK_K}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4566,7 +4569,7 @@ PYREPACK
   art_publish "${ART_WORK_BUN}" "${ART_SHA_A}" '0.0.0-not-the-hosts-bun'
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_BUN}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_BUN}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_BUN}/dist/artifact.json" \
     "file://${ART_WORK_BUN}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4596,7 +4599,7 @@ PYREPACK
         chmod 755 "${HOME}/.bun/bin/bun"
       }
       artifact_acquire "${ART_DEST}" \
-        "file://${ART_WORK_BUN2}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+        "file://${ART_WORK_BUN2}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
         "file://${ART_WORK_BUN2}/dist/artifact.json" \
         "file://${ART_WORK_BUN2}/dist/artifact.sig" \
         "${ART_TMP}/pub.pem"
@@ -4616,7 +4619,7 @@ PYREPACK
       RUN_USER=''
       bun_official_install() { return 1; }
       artifact_acquire "${ART_DEST}" \
-        "file://${ART_WORK_BUN2}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+        "file://${ART_WORK_BUN2}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
         "file://${ART_WORK_BUN2}/dist/artifact.json" \
         "file://${ART_WORK_BUN2}/dist/artifact.sig" \
         "${ART_TMP}/pub.pem"
@@ -4639,12 +4642,12 @@ PYREPACK
   ART_WORK_ESC="${ART_TMP}/work-escape"
   art_publish "${ART_WORK_ESC}" "${ART_SHA_A}" "${ART_BUN}"
   python3 "${ART_TMP}/repack.py" \
-    "${ART_WORK_ESC}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "${ART_WORK_ESC}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "${ART_WORK_ESC}/dist/escaped.tar.gz" "${ART_ROOT_PREFIX}${ART_SHA_A}/../escape.txt"
-  mv -f "${ART_WORK_ESC}/dist/escaped.tar.gz" "${ART_WORK_ESC}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz"
+  mv -f "${ART_WORK_ESC}/dist/escaped.tar.gz" "${ART_WORK_ESC}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_ESC}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_ESC}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_ESC}/dist/artifact.json" \
     "file://${ART_WORK_ESC}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -4656,19 +4659,19 @@ PYREPACK
   ART_WORK_ROOT="${ART_TMP}/work-second-root"
   art_publish "${ART_WORK_ROOT}" "${ART_SHA_A}" "${ART_BUN}"
   python3 "${ART_TMP}/repack.py" \
-    "${ART_WORK_ROOT}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "${ART_WORK_ROOT}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "${ART_WORK_ROOT}/dist/second-root.tar.gz" 'not-the-artifact-root/x.txt'
-  mv -f "${ART_WORK_ROOT}/dist/second-root.tar.gz" "${ART_WORK_ROOT}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz"
+  mv -f "${ART_WORK_ROOT}/dist/second-root.tar.gz" "${ART_WORK_ROOT}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz"
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_ROOT}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_ROOT}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_ROOT}/dist/artifact.json" \
     "file://${ART_WORK_ROOT}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
-  expect_eq 'artifact_acquire: a member outside tau-core-<sha>/ reports download_failed' \
+  expect_eq 'artifact_acquire: a member outside ficus-core-<sha>/ reports download_failed' \
     "${ART_ERR}" 'FICUS_ARTIFACT_ERROR=download_failed'
 
-  # The root: ficus-core-<sha>/ (above) or the legacy one; nothing else.
+  # Only ficus-core-<sha>/ is accepted; retired and unrelated roots are refused.
   art_acquire_rooted() { # WORK PREFIX -> acquire's stdout (its tree on line 2, or its error)
     local tarball
     ART_ROOT_PREFIX=$2 art_publish "$1" "${ART_SHA_A}" "${ART_BUN}"
@@ -4679,7 +4682,7 @@ PYREPACK
       "file://$1/dist/artifact.sig" \
       "${ART_TMP}/pub.pem" 2>/dev/null
   }
-  ART_OUT=$(art_acquire_rooted "${ART_TMP}/work-legacy-root" "${HL_LEGACY_ARTIFACT_ROOT_PREFIX}") || true
+  ART_OUT=$(art_acquire_rooted "${ART_TMP}/work-legacy-root" "${RETIRED_ARTIFACT_ROOT_PREFIX}") || true
   expect_eq 'artifact_acquire: a signed archive with a legacy root is refused' \
     "${ART_OUT}" 'FICUS_ARTIFACT_ERROR=download_failed'
   ART_ERR=$(art_acquire_rooted "${ART_TMP}/work-other-root" 'other-core-') || true
@@ -4699,7 +4702,7 @@ PYREPACK
   art_tar "${ART_WORK_IT}" "${ART_SHA_A}" # re-tar; the SIGNED manifest is untouched
   ART_RC=0
   ART_ERR=$(artifact_acquire "${ART_DEST}" \
-    "file://${ART_WORK_IT}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+    "file://${ART_WORK_IT}/dist/ficus-core-${ART_SHA_A}-linux-x64.tar.gz" \
     "file://${ART_WORK_IT}/dist/artifact.json" \
     "file://${ART_WORK_IT}/dist/artifact.sig" \
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
@@ -5100,7 +5103,7 @@ file_mtime() { stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1"; }
 expect_eq 'build_stamp_path lives next to the checkout' \
   "$(build_stamp_path /srv/core)" "/srv/core/${HL_NEW_BUILD_STAMP}"
 BS_LEGACY=$(mktemp -d)
-: >"${BS_LEGACY}/${HL_LEGACY_BUILD_STAMP}"
+: >"${BS_LEGACY}/${RETIRED_BUILD_STAMP}"
 expect_eq 'build_stamp_path: a legacy-only stamp is not read' \
   "$(build_stamp_path "${BS_LEGACY}")" "${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
 expect_eq 'build_stamp_path --write: always the Ficus name' \
@@ -5109,7 +5112,7 @@ expect_eq 'build_stamp_path --write: always the Ficus name' \
 expect_eq 'build_stamp_path: with both, the Ficus one' \
   "$(build_stamp_path "${BS_LEGACY}")" "${BS_LEGACY}/${HL_NEW_BUILD_STAMP}"
 build_stamp_clear "${BS_LEGACY}"
-expect_eq 'build_stamp_clear: leaves legacy record for journaled finalization' "$(find "${BS_LEGACY}" -mindepth 1 -printf '%f')" "${HL_LEGACY_BUILD_STAMP}"
+expect_eq 'build_stamp_clear: leaves an unrelated retired record untouched' "$(find "${BS_LEGACY}" -mindepth 1 -printf '%f')" "${RETIRED_BUILD_STAMP}"
 rm -rf "${BS_LEGACY}"
 
 BS_TMP=$(mktemp -d)
@@ -5170,7 +5173,7 @@ expect_eq 'build_stamp_is_current: no stamp on disk -> not current' \
 
 build_stamp_write "${BS_GIT}" true
 expect_eq 'build_stamp_write: only writes the canonical stamp' \
-  "$([[ -f ${BS_GIT}/${HL_NEW_BUILD_STAMP} && ! -e ${BS_GIT}/${HL_LEGACY_BUILD_STAMP} ]] && echo canonical)" canonical
+  "$([[ -f ${BS_GIT}/${HL_NEW_BUILD_STAMP} && ! -e ${BS_GIT}/${RETIRED_BUILD_STAMP} ]] && echo canonical)" canonical
 expect_eq 'build_stamp_is_current: fresh stamp, commit+lock+outputs all match -> current (skip)' \
   "$(build_stamp_is_current "${BS_GIT}" false && echo yes || echo no)" 'yes'
 
@@ -6775,6 +6778,7 @@ rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
 if yq_is_mikefarah; then
   hm_host entry
   printf '%s=old-secret\nFICUS_SANDBOX_RUNTIME=host\n' "${PFK}" >"${SRC_DEST}/.env"
+  printf '{"ficusHostLayout":2}\n' >"${SRC_DEST}/releases/old/package.json"
   mkdir -p "${SRC_DEST}/.git"
   cat >"${HM}/entry.yaml" <<EOF
 source:

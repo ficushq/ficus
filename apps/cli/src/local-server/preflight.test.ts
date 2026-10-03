@@ -152,7 +152,7 @@ describe('runPreflight', () => {
     const { d } = deps()
     const labelled = await runPreflight(opts({ runtime: 'k3d', instance: 'smoke' }), d)
     expect(labelled.failures.join('\n')).toMatch(
-      /k3d runtime shares ~\/\.tau with the cluster.*only available on the default instance.*host\/docker-socket for "smoke"/s
+      /k3d runtime shares ~\/\.ficus with the cluster.*only available on the default instance.*host\/docker-socket for "smoke"/s
     )
     // The default label is what k3d:setup's cluster and bind mount assume.
     expect((await runPreflight(opts({ runtime: 'k3d', instance: 'ficus' }), d)).failures).toEqual([])

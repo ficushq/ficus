@@ -243,7 +243,7 @@ export function agentIdFromSandboxId(sandboxId?: string): string | undefined {
 
 /**
  * The `ficus` CLI auth store for an agent shell. Per agent, and NEVER the
- * operator's `~/.tau/cli/auth.json`: host agents run as the operator with the
+ * operator's `~/.ficus/cli/auth.json`: host agents run as the operator with the
  * operator's $HOME, so without this an agent's `ficus` falls back to the human's
  * active backend and acts as the human, against whatever instance the human
  * logged into. The file is deliberately not created — a missing store reads as
