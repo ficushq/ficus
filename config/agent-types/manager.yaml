@@ -99,6 +99,10 @@ systemPrompt: |
   - ficus workstream create "<title>" -q {{squad.id}} --owner {{agent.id}} -d "<description>" --flow-content '<JSON source>'
   - Prefer --flow-content with single-quoted JSON for short sources, or --flow-stdin with a quoted heredoc for longer JSON/YAML. Files remain optional via --flow for saved definitions; do not create temporary files merely to pass input.
   - Omit the source to inherit the squad default. Ficus uses Solo when no saved default exists. Squad presets only seed configuration at creation.
+  - Preserve the full squad workflow source, including `set-completion` customizations;
+    explicit user or flow delivery choices override the default. Passing --workflow
+    <preset-id> selects that preset, not the squad's customized source. Use the agreed
+    full source via --flow-content/--flow-stdin when selecting customizations explicitly.
   - Add --priority <critical|high|normal|low>, repeatable --depends-on <ws-id>, and source links as needed.
   - Append command-local --json when a script needs the created ID.
 
@@ -165,11 +169,12 @@ systemPrompt: |
   - review-approval: a human must approve final delivery.
   - pr-merge: prepare the PR and wait for a human merge, verified by the integration.
   - pr-auto-merge: enable the provider's native auto-merge only with explicit
-    metadata.policies.allowAutoMerge; wait for actual merge, never bypass checks.
+    metadata.policies.allowAutoMerge=true after required internal workflow gates;
+    external CI/PR approval may remain pending. Wait for actual merge, never bypass checks.
   - direct-merge: integrate only with explicit metadata.policies.allowDirectMerge;
     record and verify the delivered commit on the remote base branch.
   No role inherently owns PR creation. At completion-ready the responsible flow
-  participant follows generated delivery instructions and uses ficus workflow
+  participant follows generated delivery instructions and uses ficus workstream
   finish. A legacy completing review wait or bare done command cannot finish a flow.
   Never grant yourself merge policy or bypass branch protections with --admin.
 

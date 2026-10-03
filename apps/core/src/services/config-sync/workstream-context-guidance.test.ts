@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
+import type { WorkflowSource } from '@ficus/shared'
+import { creationWorkflow } from '../workflows/creation-source'
 
 const repoRoot = join(import.meta.dir, '../../../../../')
 
@@ -32,6 +34,7 @@ describe('work stream context guidance', () => {
     expect(manager).toContain('metadata.policies.allowAutoMerge')
     expect(manager).toContain('metadata.policies.allowDirectMerge')
     expect(manager).toContain('bare done command cannot finish a flow')
+    expect(manager).not.toContain('ficus workflow finish')
   })
 
   test('scheduled work respects flow steps and does not introduce a no-code bypass', async () => {
@@ -140,4 +143,90 @@ test('consultant observation guidance distinguishes observers from owners withou
   expect(observation).not.toContain('fast completion')
   expect(observation).not.toContain('These commands authenticate')
   expect(observation).not.toContain('USER subscribe/unsubscribe')
+})
+
+describe('role-independent delivery guidance', () => {
+  for (const role of ['engineer', 'reviewer', 'manager', 'consultant']) {
+    test(`${role} composes the same generated delivery policy without role-owned merge authority`, async () => {
+      const config = Bun.YAML.parse(await readRepoFile(`config/agent-types/${role}.yaml`)) as {
+        includes: string[]
+        systemPrompt: string
+      }
+      expect(config.includes.filter((id) => id === 'squad-rules')).toHaveLength(1)
+      const parts = await Promise.all(config.includes.map((id) => readRepoFile(`config/agent-types/shared/${id}.md`)))
+      const base = [config.systemPrompt, ...parts].join('\n\n')
+      expect(base).toContain('no role may grant itself that authority')
+      expect(base).toContain('A PR link, passing CI, or review approval is')
+      const { flowCompletionInstructions } = await import('../workflows/completion-prompt')
+      for (const mode of ['deliverable', 'review-approval', 'pr-merge', 'pr-auto-merge', 'direct-merge'] as const) {
+        const generated = flowCompletionInstructions(mode)
+        const composed = `${base}\n\n${generated}`
+        expect(composed.split(`Delivery policy: ${mode}.`)).toHaveLength(2)
+        expect(generated).toContain('no agent role intrinsically owns PR creation or completion')
+        expect(generated.includes('metadata.policies.allowAutoMerge')).toBe(mode === 'pr-auto-merge')
+        expect(generated.includes('metadata.policies.allowDirectMerge')).toBe(mode === 'direct-merge')
+        if (mode === 'pr-auto-merge') {
+          expect(composed).toContain('enable native auto-merge now')
+          expect(composed).toContain('GitHub required CI and external PR approvals may still be pending')
+          expect(composed).toContain('Do not add an independent reviewer to a Solo flow or skip a declared gate')
+        }
+      }
+    })
+  }
+
+  test('creation guidance retains the entire squad source and explicit mode overrides', async () => {
+    for (const path of [
+      'config/agent-types/manager.yaml',
+      'config/agent-types/consultant.yaml',
+      'config/skills/work-stream-driven-development/SKILL.md',
+      'config/skills/setup-workflows/SKILL.md',
+    ]) {
+      const text = (await readRepoFile(path)).replace(/\s+/g, ' ')
+      expect(text).toContain('Preserve the full squad workflow source, including `set-completion` customizations')
+      expect(text).toContain('explicit user or flow delivery choices override the default')
+    }
+    for (const preset of ['solo-coding', 'reviewed-coding', 'engineering']) {
+      const config = Bun.YAML.parse(await readRepoFile(`config/workflows/${preset}.yaml`)) as {
+        definition: { completion: { mode: string } }
+      }
+      expect(config.definition.completion.mode).toBe('pr-merge')
+    }
+  })
+
+  test('creation retains customized squad completion but does not override an explicit delivery choice', () => {
+    const configured: WorkflowSource = {
+      kind: 'preset',
+      id: 'solo-coding',
+      customizations: [{ op: 'set-completion', completion: { mode: 'pr-auto-merge', followChanges: true } }],
+    }
+    expect(creationWorkflow(undefined, configured)).toEqual(configured)
+    for (const mode of ['pr-merge', 'direct-merge', 'review-approval', 'deliverable'] as const) {
+      const explicit: WorkflowSource = {
+        kind: 'preset',
+        id: 'solo-coding',
+        customizations: [{ op: 'set-completion', completion: { mode, followChanges: true } }],
+      }
+      expect(creationWorkflow(explicit, configured)).toEqual(explicit)
+    }
+    expect(configured.customizations[0]).toEqual({
+      op: 'set-completion',
+      completion: { mode: 'pr-auto-merge', followChanges: true },
+    })
+  })
+
+  test('canonical lazy procedure and editor contract distinguish enabling from provider merge', async () => {
+    const procedure = (await readRepoFile('config/skills/work-stream-driven-development/SKILL.md')).replace(/\s+/g, ' ')
+    expect(procedure).toContain(
+      'gh pr merge <pr-url> --auto --<configured-merge-method> --match-head-commit <validated-head-sha>'
+    )
+    expect(procedure).toContain('Do not wait for external GitHub CI or PR approval before enabling')
+    expect(procedure).toContain('autoMergeRequest can be null after an immediate merge')
+    expect(procedure).toContain('generated delivery instructions remain authoritative')
+    const editor = await readRepoFile('apps/core/src/services/assistant-editors/index.ts')
+    expect(editor).not.toContain('pr-auto-merge enables auto-merge after checks')
+    expect(editor).toContain(
+      'after required internal workflow validation/review and explicit current allowAutoMerge=true'
+    )
+    expect(editor).toContain('external CI/PR approval gates may remain pending until the provider merges')
+  })
 })

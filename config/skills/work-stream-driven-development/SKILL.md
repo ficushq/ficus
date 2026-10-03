@@ -17,6 +17,10 @@ guidance in `metadata.workflowSetup`. Inspect `ficus workflow list` and relevant
 presets with `ficus workflow get`. Choose the smallest suitable process: Solo
 Coding, Reviewed Coding, Planned Coding, or an authorized custom flow. An
 engineering squad does not require three agents on every task.
+Preserve the full squad workflow source, including `set-completion` customizations;
+explicit user or flow delivery choices override the default. Omit a source to
+inherit it, or pass the full agreed source via --flow-content/--flow-stdin. A bare
+--workflow <preset-id> selects that preset without the squad's customizations.
 
 Clarify the goal, current and desired behavior, constraints, acceptance criteria,
 and authority for external changes. Put them in a self-contained description;
@@ -86,8 +90,9 @@ work; a multi-step flow can assign that responsibility elsewhere.
 - `deliverable`: finish the requested result with evidence.
 - `review-approval`: a human approves delivery through flow finish.
 - `pr-merge`: create or reuse the PR; a human merges it.
-- `pr-auto-merge`: use native auto-merge only with explicit squad policy. Never
-  bypass branch protections or required approvals. Wait for actual merge.
+- `pr-auto-merge`: after required internal workflow validation/review and explicit
+  current `allowAutoMerge=true`, enable provider-native auto-merge while external
+  CI/PR approval may remain pending. Never bypass protections; wait for actual merge.
 - `direct-merge`: requires explicit squad policy and verified inclusion of the
   delivered commit in the remote base branch.
 
@@ -122,6 +127,28 @@ workstream tracked <ws-id>` lists everything tracked, which pull requests
 count toward delivery, their observed merge state, and whether subscriptions
 are active. A tracked issue closing, or any non-delivery resource's activity,
 is information, not completion: it never finishes the stream or clears a wait.
+
+### PR auto-merge procedure (any delivery role)
+
+The generated delivery instructions remain authoritative. At completion-ready,
+check the selected mode, current squad policy, internal workflow evidence, and
+live PR base/head against the validated deliverable. Solo uses self-review;
+independent/human gates apply only when declared. Do not wait for external GitHub
+CI or PR approval before enabling authorized auto-merge: GitHub enforces those
+requirements at merge time.
+
+For GitHub, use the squad-authorized integration and configured merge method:
+`gh pr merge <pr-url> --auto --<configured-merge-method> --match-head-commit <validated-head-sha>`.
+Replace the method placeholder with an allowed method (e.g. `squash`); never use
+`--admin`, approve as a human, or change protections. If permission is missing or
+the provider rejects the request, leave the PR for a human merge and tell the owner.
+
+Inspect live provider state after the command: autoMergeRequest can be null after
+an immediate merge. A pending request is not delivery; use integration events for
+waiting, not polling. New-head failures/conflicts require tracked rework and
+review of affected changes. Finish with the current version only after the primary
+and every designated secondary delivery PR are verified merged. This procedure
+confers no application publication/deployment authority.
 
 Existing non-flow streams have a legacy lifecycle. Do not copy it into new flow
 work or silently reinterpret in-flight work. Inspect the stored policy and ask
