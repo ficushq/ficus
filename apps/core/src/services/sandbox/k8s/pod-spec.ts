@@ -275,11 +275,8 @@ export function sandboxPodName(sandboxId: string, prefix: string = SANDBOX_IDENT
 }
 
 /**
- * Every pod name a sandbox may carry: the write name first, then each other
- * read name — mirrors {@link sandboxContainerNames} for Docker. A pod built
- * under a prefix this release does not write (e.g. the legacy `tau-sb-`
- * prefix) is still found, adopted, and cleaned up by trying every name here,
- * never left running beside a freshly created pod under the write name.
+ * Canonical pod names the runtime reads and writes. The retired name is checked
+ * separately as a refusal guard before creating a pod.
  */
 export function sandboxPodNames(sandboxId: string): string[] {
   return sandboxPodNamePrefixes().map((prefix) => sandboxPodName(sandboxId, prefix))

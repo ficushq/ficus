@@ -1,4 +1,5 @@
 import { createHash } from 'crypto'
+import type { DockerExecIdentity } from '../identity-names'
 
 export interface DockerCommandIdentityContract {
   version: 1
@@ -15,6 +16,23 @@ export interface ResolvedDockerCommandIdentity {
   resolvedUid: number
   resolvedGid: number
   contractDigest: string
+}
+
+/** Read-only identity for an explicitly attached, still-running pre-rename container.
+ * Never used to create an image or broaden container discovery. Remove after those containers drain. */
+export const LEGACY_DOCKER_MANAGED_LABEL = 'tau.managed' // ficus-p5-bridge: active-container identity validation only
+export const LEGACY_DOCKER_EXEC_IDENTITY: DockerExecIdentity = {
+  user: 'tau',
+  home: '/home/tau',
+  executorTokenPath: '/run/tau/executor-token',
+  dockerProxySocketPath: '/run/tau-docker/docker.sock',
+}
+export const LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT: DockerCommandIdentityContract = {
+  version: 1,
+  user: 'tau',
+  home: '/home/tau',
+  uid: 1000,
+  gid: 1000,
 }
 
 const MAX_UID = 2 ** 31 - 1

@@ -19,12 +19,35 @@ for journal in "$root/var/backups/ficus-host-migrate"/machine-*; do
   [ -f "$journal/STEPS" ] || continue
   if [ ! -e "$journal/DONE" ] && [ ! -e "$journal/REVERSED" ]; then needs_operator; fi
 done
+# ficus-p5-bridge: refusal-only checks; never migrate or remove these paths.
+old_root="$root/opt/tau"
+if [ -d "$old_root" ] && [ ! -L "$old_root" ]; then needs_operator; fi
+old_browser="$root/etc/systemd/system/tau-browser.service"
+if [ -f "$old_browser" ] && [ ! -L "$old_browser" ]; then needs_operator; fi
+if [ -f "$root/etc/apparmor.d/tau-browser-chromium" ]; then needs_operator; fi
+if [ -f "$root/opt/ficus/browser/service/tau-browser.js" ]; then needs_operator; fi
+for old_unit in "$root/etc/systemd/system/tau-box"-box_*; do
+  if [ -f "$old_unit" ] && [ ! -L "$old_unit" ]; then needs_operator; fi
+done
+account_exists() {
+  if getent "$1" "$2" >/dev/null; then return 0; else
+    rc=$?
+    [ "$rc" = 2 ] && return 1
+    exit "$rc"
+  fi
+}
+if account_exists passwd tau-browser && ! account_exists passwd ficus-browser; then needs_operator; fi
+if account_exists group tau-browser && ! account_exists group ficus-browser; then needs_operator; fi
 if [ -e "$root/opt/ficus" ] || [ -L "$root/opt/ficus" ]; then
   [ -d "$root/opt/ficus" ] && [ ! -L "$root/opt/ficus" ] || needs_operator
 fi
 for home in "$root"/home/box_*; do
   [ -e "$home" ] || [ -L "$home" ] || continue
   [ -d "$home" ] && [ ! -L "$home" ] || needs_operator
+  if [ -e "$home/.tau" ] && [ ! -L "$home/.tau" ]; then needs_operator; fi
+  for old_unit in "$home/.config/systemd/user/tau-sandbox-server.service" "$home/.config/systemd/user/tau-sandbox-server.socket" "$home/.config/systemd/user/tau-sandbox-server-proxy.service"; do
+    if [ -f "$old_unit" ] && [ ! -L "$old_unit" ]; then needs_operator; fi
+  done
   [ -d "$home/.ficus" ] && [ ! -L "$home/.ficus" ] || needs_operator
   name=$(basename "$home")
   system="$root/etc/systemd/system/ficus-box-$name.service"

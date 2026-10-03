@@ -79,6 +79,44 @@ describe('machine layout automatic-bootstrap preflight', () => {
     }
     expect((await f.run()).stdout).toBe(ready)
   })
+  it('refuses a real pre-rename machine root even when no box has been registered', async () => {
+    const f = fixture()
+    f.put('opt/tau/server/server.js')
+    expect(await f.run()).toEqual({ exitCode: 0, stdout: required, stderr: '' })
+  })
+  it('refuses real pre-rename browser and box units beside canonical services', async () => {
+    for (const oldPath of [
+      'etc/systemd/system/tau-browser.service',
+      'etc/systemd/system/tau-box-box_fixture.service',
+      'home/box_fixture/.config/systemd/user/tau-sandbox-server.service',
+      'home/box_fixture/.tau/server.env',
+    ]) {
+      const f = fixture()
+      f.put('opt/ficus/prebaked')
+      f.put('home/box_fixture/.ficus/server.env')
+      f.put('etc/systemd/system/ficus-box-box_fixture.service')
+      f.put(oldPath)
+      expect((await f.run()).stdout).toBe(required)
+    }
+  })
+  it('allows old-name compatibility symlinks while canonical files remain real', async () => {
+    const f = fixture()
+    f.put('opt/ficus/prebaked')
+    f.put('home/box_fixture/.ficus/server.env')
+    f.put('etc/systemd/system/ficus-box-box_fixture.service')
+    symlinkSync('ficus', join(f.root, 'opt/tau'))
+    symlinkSync('ficus-box-box_fixture.service', join(f.root, 'etc/systemd/system/tau-box-box_fixture.service'))
+    symlinkSync('.ficus', join(f.root, 'home/box_fixture/.tau'))
+    expect((await f.run()).stdout).toBe(ready)
+  })
+  it('refuses a stranded old browser account and fails closed on account lookup errors', async () => {
+    const f = fixture()
+    f.put('accounts', 'passwd:tau-browser\n')
+    expect((await f.run()).stdout).toBe(required)
+    const failed = await f.run({ PROBE_GETENT_FAIL: '1' })
+    expect(failed.exitCode).not.toBe(0)
+    expect(failed.stdout).not.toContain(ready)
+  })
   it('refuses pending journals and existing boxes without canonical identity', async () => {
     for (const path of ['var/backups/ficus-host-migrate/machine-pending/STEPS', 'home/box_fixture/unknown']) {
       const f = fixture()

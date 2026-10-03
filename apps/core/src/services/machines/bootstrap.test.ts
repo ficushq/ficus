@@ -1421,12 +1421,13 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
     // non-root user that call goes through the refusing sudo above, which is
     // the proof it got that far rather than dying somewhere else.
     expect(exitCode).not.toBe(2)
-    // Only Linux hosts get as far as sudo: elsewhere the script stops at its
-    // systemd preflight (still not exit 2, which is all the assertion above
-    // needs). Root has no sudo call to refuse.
+    // The privileged layout preflight wraps a failed sudo lookup as exit 3.
+    // Its marker still proves argument validation reached the first privileged
+    // call without provisioning anything. Other platforms stop earlier.
     if (process.platform === 'linux' && process.getuid?.() !== 0) {
-      expect(exitCode).toBe(77)
+      expect(exitCode).toBe(3)
       expect(stderr).toContain('ficus-test: sudo refused')
+      expect(stderr).toContain('machine layout inventory failed')
     }
   }, 30_000)
 })
