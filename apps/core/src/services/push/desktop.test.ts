@@ -66,10 +66,19 @@ test('enqueue targets managed desktop homes and users with a paired desktop devi
 
     const paired = await createDeviceToken({ userId: user.id, name: 'Mac', platform: 'desktop' })
     await createDeviceToken({ userId: other.id, name: 'CLI', platform: 'cli' })
-    const once = event('Paired')
+    const once = Object.freeze({
+      ...event('**Paired**'),
+      body: '[#454](ficus:ws:454) delivered',
+      url: '/squads/s1/work?ws=454',
+    })
     await enqueueDesktopNotifications([user.id, other.id], once, 'inbox.messageReceived', 'message')
     await enqueueDesktopNotifications([user.id], once, 'inbox.messageReceived', 'message')
     expect((await titles(user.id)).filter((t) => t === 'Paired')).toHaveLength(1)
+    expect((await listDesktopNotifications(user.id)).find((row) => row.title === 'Paired')).toMatchObject({
+      body: '#454 delivered',
+      url: once.url,
+    })
+    expect(once.body).toBe('[#454](ficus:ws:454) delivered')
     expect(await titles(other.id)).not.toContain('Paired')
 
     await revokeDeviceToken(user.id, paired.id)

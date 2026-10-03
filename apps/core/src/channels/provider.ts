@@ -155,6 +155,8 @@ export interface NotificationEvent {
   messageId?: string
   title: string
   body: string
+  /** Complete Markdown source for push conversion before clipping; other channels keep title/body. */
+  pushSource?: { title?: string; body?: string; subtitle?: string }
   /** Push-only presentation hints (see InboxPushPresentation); external channels ignore them. */
   subtitle?: string
   collapseKey?: string

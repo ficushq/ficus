@@ -12,6 +12,12 @@ export const inboxPushPresentationSchema = z
   .object({
     title: z.string().trim().min(1).max(120),
     body: z.string().trim().min(1).max(300),
+    /** Original Markdown when a producer clips its presentation. Only push renderers
+     * consume this source, converting to plain text before applying payload limits. */
+    source: z
+      .object({ title: z.string().optional(), body: z.string().optional(), subtitle: z.string().optional() })
+      .strict()
+      .optional(),
     /** Rendered under the title on iOS; typically the squad name. */
     subtitle: z.string().trim().min(1).max(80).optional(),
     /** A later push with the same key replaces this one on the device. */

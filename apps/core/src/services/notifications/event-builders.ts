@@ -95,7 +95,6 @@ export const eventBuilders: Record<string, EventBuilder> = {
       .map((item) => item.question.trim())
       .filter(Boolean)
       .join('\n')
-      .slice(0, 300)
 
     return {
       type: 'agent-question.created',
@@ -107,7 +106,8 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadId: question.squadId ?? undefined,
       squadName: squad?.name,
       title: `❓ ${agentLabel} has a question`,
-      body: questionText || 'Open Ficus to respond',
+      body: questionText.slice(0, 300) || 'Open Ficus to respond',
+      pushSource: { body: questionText || 'Open Ficus to respond' },
       url: question.squadId ? buildUrl(`/squads/${question.squadId}?agent=${agent.id}`) : buildUrl(`/chat/${agent.id}`),
       timestamp: new Date(),
     }
@@ -163,6 +163,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       ...(target ? { waitId: target.waitId, actionId: target.actionId } : {}),
       title: `👀 Ready for review: ${workStreamTitle(ws)}`,
       body: target?.message || ws.handoffMessage || ws.description?.slice(0, 200) || 'No description',
+      pushSource: { body: target?.message || ws.handoffMessage || ws.description || 'No description' },
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
@@ -186,6 +187,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       workStreamNumber: ws.number,
       title: `✅ Completed: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
+      pushSource: { body: ws.description || 'No description' },
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
@@ -232,6 +234,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       workStreamNumber: ws.number,
       title: `📋 New work stream: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
+      pushSource: { body: ws.description || 'No description' },
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
@@ -255,6 +258,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       workStreamNumber: ws.number,
       title: `📝 Updated: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
+      pushSource: { body: ws.description || 'No description' },
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
@@ -322,6 +326,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadName: fleetSquad?.name,
       title: push?.title ?? (message.subject || 'New message'),
       body: push?.body ?? message.content.slice(0, 300),
+      pushSource: push?.source ?? { body: push?.body ?? message.content },
       ...(push?.subtitle ? { subtitle: push.subtitle } : {}),
       ...(push?.collapseKey ? { collapseKey: push.collapseKey } : {}),
       ...(push?.threadKey ? { threadKey: push.threadKey } : {}),
@@ -411,6 +416,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       agentId: agent.id,
       title: `❌ Execution failed`,
       body: `${agentLabel} agent failed: ${errorMsg.slice(0, 200)}`,
+      pushSource: { body: `${agentLabel} agent failed: ${errorMsg}` },
       url,
       timestamp: new Date(),
     }

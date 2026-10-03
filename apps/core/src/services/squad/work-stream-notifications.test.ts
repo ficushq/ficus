@@ -1,3 +1,6 @@
+import { WorkStream } from '../../entities/WorkStream'
+import { buildNotificationEvent } from '../notifications/event-builders'
+import { pushPreview } from '../push/preview'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { workStreamTitle } from '@ficus/shared'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
@@ -368,6 +371,32 @@ describe('work-stream notifications', () => {
     )
     expect(ownerDone?.subject).toBe(`Work Stream done: ${workStreamTitle(workStream)}`)
     expect((ownerDone?.metadata as Record<string, unknown>).push).toBeUndefined()
+  })
+
+  it('retains complete Markdown through persisted watcher presentation clipping', async () => {
+    const destination = `https://example.com/${'x'.repeat(600)}`
+    const detail = `Delivered [#454](ficus:ws:454) via [PR #1591](${destination}).`
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `[**Release**](https://example.com/${'x'.repeat(130)})`,
+      description: detail,
+      ownerAgentId: agentId,
+    })
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+    await notifyWorkStreamDone(workStream)
+    const [notice] = await db
+      .select()
+      .from(inbox)
+      .where(and(eq(inbox.recipientId, streamWatcher.id), sql`${inbox.metadata}->>'workStreamId' = ${workStream.id}`))
+    const sourceContent = notice.content
+    const event = await buildNotificationEvent('inbox.messageReceived', { messageId: notice.id })
+    expect(pushPreview(event!)).toMatchObject({
+      title: `Completed: #${workStream.number} · Release`,
+      body: 'Delivered #454 via PR #1591.',
+    })
+    expect((await WorkStream.find(workStream.id))?.description).toBe(detail)
+    const [unchanged] = await db.select().from(inbox).where(eq(inbox.id, notice.id))
+    expect(unchanged.content).toBe(sourceContent)
   })
 
   it('push bodies fall back to next steps, then the description, then a state line; never the squad name', async () => {
