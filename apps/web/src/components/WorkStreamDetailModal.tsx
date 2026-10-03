@@ -6,7 +6,7 @@ import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { getWsDisplayState, workStreamStatusLabel, workStreamWaitBadge } from '../lib/workStreamStatusPresentation'
 export { getWsDisplayState, WS_STATUS_LABELS, WS_STATUS_BADGE_COLORS } from '../lib/workStreamStatusPresentation'
 import { workStreamGithubRepository, workStreamPullRequests } from '../lib/workStreamGithub'
-import { WorkStreamPauseControls } from './WorkStreamPauseControls'
+import { WorkStreamPauseControls, useWorkStreamPauseControls } from './WorkStreamPauseControls'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
 import { WorkflowReviewCallout } from './WorkflowReviewCallout'
 import { WorkStreamDeliverySetupCallout } from './WorkStreamDeliverySetupCallout'
@@ -23,7 +23,7 @@ import { Modal } from './Modal'
 import { Badge, type BadgeColor } from './Badge'
 import { WorkStreamFileList } from './WorkStreamFileCard'
 import { GitHubIcon, PullRequestIcon } from './icons'
-import { AttentionMenu } from './AttentionMenu'
+import { WorkStreamActionsMenu } from './WorkStreamActionsMenu'
 import type { WorkStream, WorkStreamPriority, WorkStreamWait, Squad, Agent } from '@ficus/shared'
 import { getAgentPrimaryLabel } from '../lib/agentDisplay'
 import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
@@ -162,6 +162,7 @@ export function WorkStreamDetailModal({
     ...queries.squads.workStreamDetail(selectedWorkStream.id),
     placeholderData: selectedWorkStream,
   })
+  const pauseControls = useWorkStreamPauseControls(workStream)
   const { slugFor } = useSquadSlugs()
   const squad = squadMap.get(workStream.squadId)
   const metadata = workStream.metadata ?? {}
@@ -291,12 +292,12 @@ export function WorkStreamDetailModal({
       onClose={onClose}
       title={workStreamTitle(workStream)}
       headerExtra={headerExtra}
-      headerActions={<AttentionMenu target={{ kind: 'workStream', id: workStream.id }} align="right" />}
+      headerActions={<WorkStreamActionsMenu key={workStream.id} stream={workStream} controls={pauseControls} />}
       maxWidth="readable"
     >
       <div className="space-y-6 text-sm [&>details:not([open])+div:last-child]:!mt-3">
         {workStream.status !== 'done' && workStream.status !== 'canceled' && (
-          <WorkStreamPauseControls stream={workStream} />
+          <WorkStreamPauseControls stream={workStream} controls={pauseControls} />
         )}
 
         {/* Review/manual wait respond panel */}

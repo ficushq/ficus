@@ -57,8 +57,11 @@ export function AttentionMenu({
   target,
   className,
   align = 'left',
+  inline = false,
 }: {
   target: AttentionTarget
+  /** Expand inside a secondary-actions disclosure instead of floating another popover. */
+  inline?: boolean
   className?: string
   /**
    * Which edge of the trigger the panel hangs from. Defaults to `left`, because most triggers sit
@@ -143,9 +146,12 @@ export function AttentionMenu({
       <summary
         ref={summaryRef}
         title="Choose what this notifies you about"
-        className="ficus-button inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium text-secondary hover:bg-surface-hover"
+        className={clsx(
+          'ficus-button cursor-pointer list-none items-center gap-1.5 rounded-md text-secondary hover:bg-surface-hover',
+          inline ? 'flex w-full px-3 py-2 text-sm' : 'inline-flex px-2 py-0.5 text-xs font-medium'
+        )}
       >
-        <SummaryIcon summary={summary} />
+        {inline ? <span>Notifications…</span> : <SummaryIcon summary={summary} />}
         <span>{SUMMARY_LABEL[summary]}</span>
       </summary>
       {/* `ficus-overlay` + `bg-surface` is the repo's popover surface (AgentViewTabs,
@@ -154,7 +160,9 @@ export function AttentionMenu({
           panel rendered with no background at all and the page showed through it. */}
       <div
         className={clsx(
-          'ficus-overlay absolute top-full z-30 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-th-border bg-surface p-3 shadow-theme-lg',
+          inline
+            ? 'p-3'
+            : 'ficus-overlay absolute top-full z-30 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-th-border bg-surface p-3 shadow-theme-lg',
           align === 'right' ? 'right-0' : 'left-0'
         )}
       >
