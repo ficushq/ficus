@@ -56,7 +56,13 @@ import {
   roleWantsDocker,
   tarCodecFlag,
 } from './box-manager'
-import { insertMachine, deleteMachine, listMachines, upsertMachineBox } from './queries'
+import {
+  insertMachine,
+  deleteMachine,
+  listMachines,
+  upsertMachineBox,
+  queryTransientSharedMachineStatus,
+} from './queries'
 import type { Machine, MachineBox } from './queries'
 import type { SshResult, SshRunner, SshStreamer } from './ssh'
 
@@ -2234,9 +2240,12 @@ describe('resolveMachineForBox', () => {
   })
 
   it('throws MachineUnavailableError with the documented message when no shared machine is ready', async () => {
-    await expect(resolveMachineForBox(null, { queryReadySharedMachines: async () => [] })).rejects.toThrow(
-      'no ready shared machine registered'
-    )
+    await expect(
+      resolveMachineForBox(null, {
+        queryReadySharedMachines: async () => [],
+        queryTransientSharedMachineStatus: async () => null,
+      })
+    ).rejects.toThrow('no ready shared machine registered')
   })
 
   it('returns the sole ready shared machine', async () => {
@@ -3424,23 +3433,26 @@ describe('stopBox', () => {
     )
   })
 
-  it('marks an unreachable-machine stop unverified without attempting SSH or tunnel mutation', async () => {
-    const box = makeBox({ status: 'ready' })
-    const machine = makeMachine({ status: 'unreachable' })
-    const upserts: string[] = []
-    const result = await stopBox('sb-1', {
-      runner: { run: async () => Promise.reject(new Error('must not SSH')) } as any,
-      tunnels: { removeForward: async () => Promise.reject(new Error('must not mutate tunnel')) } as any,
-      getMachineBox: async () => box,
-      getMachine: async () => machine,
-      upsertMachineBox: async (update: { status?: string }) => {
-        upserts.push(update.status ?? '')
-        return { ...box, status: update.status } as MachineBox
-      },
-    })
-    expect(result).toEqual({ kind: 'unverified' })
-    expect(upserts).toEqual(['stop_unverified'])
-  })
+  it.each(['registered', 'bootstrapping', 'unreachable', 'reaping', 'terminated'])(
+    'preserves observed %s machine status without attempting SSH or tunnel mutation',
+    async (status) => {
+      const box = makeBox({ status: 'ready' })
+      const machine = makeMachine({ status })
+      const upserts: string[] = []
+      const result = await stopBox('sb-1', {
+        runner: { run: async () => Promise.reject(new Error('must not SSH')) } as any,
+        tunnels: { removeForward: async () => Promise.reject(new Error('must not mutate tunnel')) } as any,
+        getMachineBox: async () => box,
+        getMachine: async () => machine,
+        upsertMachineBox: async (update: { status?: string }) => {
+          upserts.push(update.status ?? '')
+          return { ...box, status: update.status } as MachineBox
+        },
+      })
+      expect(result).toEqual({ kind: 'unverified', machineStatus: status })
+      expect(upserts).toEqual(['stop_unverified'])
+    }
+  )
 
   it('deletes a stale box row when its recorded machine row is already gone', async () => {
     const box = makeBox({ status: 'stop_unverified' })
@@ -4712,6 +4724,20 @@ describe('queryReadySharedMachines (DB)', () => {
   }
   beforeEach(cleanup)
   afterEach(cleanup)
+
+  it('observes only transient general-shared machine status, never dedicated/squad/commons or permanent hosts', async () => {
+    for (const status of ['parked', 'disabled', 'ready', 'reaping', 'terminated'])
+      await insertMachine(machineValues(status, { status }))
+    for (const purpose of ['dedicated', 'squad', 'commons'])
+      await insertMachine(machineValues(purpose, { status: 'bootstrapping', purpose }))
+    await insertMachine(machineValues('ded-scope', { status: 'bootstrapping', scope: 'dedicated' }))
+    expect(await queryTransientSharedMachineStatus()).toBeNull()
+    for (const status of ['registered', 'bootstrapping', 'unreachable']) {
+      const machine = await insertMachine(machineValues('eligible-' + status, { status }))
+      expect(await queryTransientSharedMachineStatus()).toBe(status)
+      await deleteMachine(machine.id)
+    }
+  })
 
   it('counts boxes per ready shared machine and excludes non-ready/non-shared', async () => {
     const ready = await insertMachine(machineValues('ready', { status: 'ready', scope: 'shared' }))

@@ -16,6 +16,7 @@ import {
   insertMachine as insertMachineReal,
   queryReadySharedMachineLoads as queryReadySharedMachineLoadsReal,
   queryReadySharedMachines as queryReadySharedMachinesReal,
+  queryTransientSharedMachineStatus as queryTransientSharedMachineStatusReal,
 } from './queries'
 import type { Machine, MachineBox } from './queries'
 
@@ -157,6 +158,7 @@ export interface PlacementDeps {
   getMachineByName?: (name: string) => Promise<Machine | null>
   getMachineBox?: (sandboxId: string) => Promise<MachineBox | null>
   queryReadySharedMachines?: () => Promise<Array<{ machine: Machine; boxCount: number }>>
+  queryTransientSharedMachineStatus?: () => Promise<string | null>
   /** The packer's load input: every ready shared machine with its hosted box
    *  sandboxIds (weighed in placement, not SQL). */
   queryReadyMachineLoads?: () => Promise<Array<{ machine: Machine; boxSandboxIds: string[] }>>
@@ -483,14 +485,20 @@ export async function provisionCapped(deps: PlacementDeps, opts: ProvisionMachin
   return provisionInflight.run(opts.name, () => provisionOrAdopt(deps, opts))
 }
 
-/** The BYO/least-loaded default path — byte-identical to the pre-slice-5
- *  resolveMachineForBox: sole ready shared machine, else least-loaded with a
+/** The BYO/least-loaded default path: sole ready shared machine, else least-loaded with a
  *  deterministic (createdAt, id) tie-break; zero ready shared machines is an
  *  error. */
 async function resolveLeastLoaded(deps: PlacementDeps): Promise<Machine> {
   const query = deps.queryReadySharedMachines ?? queryReadySharedMachinesReal
-  const rows = await query()
-  if (rows.length === 0) throw new MachineUnavailableError('no ready shared machine registered')
+  let rows = await query()
+  if (rows.length === 0) {
+    const status = await (deps.queryTransientSharedMachineStatus ?? queryTransientSharedMachineStatusReal)()
+    if (status) throw new MachineUnavailableError(`no ready shared machine registered (status ${status})`, status)
+    // A host may have become ready between the two snapshots. Select only
+    // through the normal ready query; never route to the observed non-ready host.
+    rows = await query()
+    if (rows.length === 0) throw new MachineUnavailableError('no ready shared machine registered')
+  }
   if (rows.length === 1) return rows[0].machine
 
   const sorted = [...rows].sort(
@@ -640,7 +648,7 @@ export async function resolvePlacement(req: PlacementRequest, deps: PlacementDep
   }
 
   // 4. No cloud provider (BYO-only) → the legacy least-loaded shared path,
-  //    byte-identical to pre-slice-5 behavior regardless of role/squad.
+  //    Preserve observed transient readiness when no eligible host is ready.
   if (!exeProvider) {
     return resolveLeastLoaded(deps)
   }
