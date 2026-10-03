@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="Ficus — Keep work moving while you're away">
+  <defs>
+    <linearGradient id="linen" x2="1" y2="1">
+      <stop stop-color="#f8f3e9"/>
+      <stop offset="1" stop-color="#eae3d5"/>
+    </linearGradient>
+    <linearGradient id="garden" x2="0" y2="1">
+      <stop stop-color="#e2e8d2"/>
+      <stop offset="1" stop-color="#c5d2ad"/>
+    </linearGradient>
+    <clipPath id="arch"><path d="M850 84h320v450H790V144a60 60 0 0 1 60-60z"/></clipPath>
+  </defs>
+  <rect width="1280" height="640" fill="url(#linen)"/>
+  <path d="M80 566h1120" stroke="#cbbfb0" stroke-width="2"/>
+  <g transform="translate(70 65) scale(.75)">
+    <g transform="translate(0 -2.5)">
+      <g transform="translate(32 39) rotate(-36) scale(.78 .84)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#8a9a5b"/></g>
+      <g transform="translate(32 39) rotate(36) scale(.78 .84)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#8a9a5b"/></g>
+      <g transform="translate(32 39)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#3f6b4f"/></g>
+      <rect x="18" y="39" width="28" height="5" rx="2.5" fill="#b0582f"/>
+      <path d="M20 44 H44 L41 59 Q40.6 60 39.5 60 H24.5 Q23.4 60 23 59 Z" fill="#b0582f"/>
+    </g>
+  </g>
+  <text x="126" y="111" fill="#1c1a17" font-family="Georgia,serif" font-size="54" font-weight="bold" letter-spacing="-3">ficus</text>
+  <text x="78" y="286" fill="#1c1a17" font-family="Georgia,serif" font-size="71" letter-spacing="-3">Keep work moving</text>
+  <text x="78" y="370" fill="#3f6b4f" font-family="Georgia,serif" font-size="71" letter-spacing="-3">while you're away.</text>
+  <text x="84" y="439" fill="#53584c" font-family="Arial,sans-serif" font-size="25">A home for teams of AI agents.</text>
+  <text x="84" y="478" fill="#53584c" font-family="Arial,sans-serif" font-size="25">Multiplayer, by design.</text>
+  <text x="84" y="607" fill="#31533e" font-family="Arial,sans-serif" font-size="20" font-weight="bold">ficus.sh</text>
+  <text x="1170" text-anchor="end" y="607" fill="#53584c" font-family="Arial,sans-serif" font-size="18">Self-hosted · Cloud optional</text>
+  <g clip-path="url(#arch)">
+    <rect x="790" y="84" width="380" height="450" fill="url(#garden)"/>
+    <g fill="none" stroke="#8a9a5b" stroke-opacity=".35" stroke-width="2">
+      <ellipse cx="980" cy="566" rx="115" ry="140"/><ellipse cx="980" cy="566" rx="160" ry="196"/>
+      <ellipse cx="980" cy="566" rx="210" ry="254"/><ellipse cx="980" cy="566" rx="270" ry="320"/>
+    </g>
+    <path d="M730 520Q980 376 1230 520v160H730z" fill="#c28b68"/>
+    <path d="M730 547Q980 403 1230 547v160H730z" fill="#b0582f"/>
+  </g>
+  <path d="M850 84h320v450H790V144a60 60 0 0 1 60-60z" fill="none" stroke="#adc097" stroke-width="2"/>
+  <g transform="translate(822 156) scale(5)">
+    <g transform="translate(0 -2.5)">
+      <g transform="translate(32 39) rotate(-36) scale(.78 .84)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#8a9a5b"/></g>
+      <g transform="translate(32 39) rotate(36) scale(.78 .84)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#8a9a5b"/></g>
+      <g transform="translate(32 39)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#3f6b4f"/></g>
+      <rect x="18" y="39" width="28" height="5" rx="2.5" fill="#b0582f"/>
+      <path d="M20 44 H44 L41 59 Q40.6 60 39.5 60 H24.5 Q23.4 60 23 59 Z" fill="#b0582f"/>
+    </g>
+  </g>
+</svg>

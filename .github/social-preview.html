@@ -1,175 +1,28 @@
 <!doctype html>
-<!--
-  Source for .github/social-preview.png (GitHub → Settings → Social preview).
-  Render at exactly 1280×640, device scale 1, after fonts load:
-    playwright: page.goto(file://…/social-preview.html); page.screenshot({clip:{0,0,1280,640}})
-  The mark is the dark-mode Ficus mark artwork (brand/ficus-mark-dark.svg, Core
-  repo), the same source apps/web/src/components/FicusLogo.tsx inlines.
--->
-<html>
+<!-- The canonical editable card lives in brand/social-preview.svg. -->
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Schibsted+Grotesk:wght@700&family=Geist:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <title>Ficus social preview</title>
     <style>
       html,
       body {
         margin: 0;
         width: 1280px;
         height: 640px;
-        background: #0a0a12;
         overflow: hidden;
       }
-      .card {
-        position: relative;
+      img {
+        display: block;
         width: 1280px;
         height: 640px;
-        color: #edeaf5;
-        font-family: Geist, system-ui, sans-serif;
-      }
-      .stars span {
-        position: absolute;
-        width: 2px;
-        height: 2px;
-        border-radius: 50%;
-        background: #c4b5fd;
-        opacity: 0.55;
-      }
-      .stars span:nth-child(3n) {
-        width: 1px;
-        height: 1px;
-      }
-      .glow {
-        position: absolute;
-        left: -200px;
-        top: -260px;
-        width: 900px;
-        height: 900px;
-        border-radius: 50%;
-        background: radial-gradient(closest-side, rgba(124, 58, 237, 0.28), rgba(124, 58, 237, 0));
-      }
-      .brand {
-        position: absolute;
-        left: 96px;
-        top: 118px;
-        display: flex;
-        align-items: center;
-        gap: 36px;
-      }
-      .brand .mark {
-        width: 150px;
-        height: 150px;
-        filter: drop-shadow(0 20px 40px rgba(94, 127, 78, 0.45));
-      }
-      .brand .word {
-        display: block;
-        height: 150px;
-      }
-      .brand .word text {
-        font-family: 'Fraunces', serif;
-        font-weight: 600;
-        font-size: 132px;
-        letter-spacing: -0.02em;
-        fill: none;
-        stroke: #edeaf5;
-        stroke-width: 2.5px;
-      }
-      .tag {
-        position: absolute;
-        left: 96px;
-        top: 326px;
-        font-family: 'Schibsted Grotesk', system-ui, sans-serif;
-        font-weight: 700;
-        font-size: 56px;
-        letter-spacing: -0.03em;
-        line-height: 1.12;
-        max-width: 1080px;
-      }
-      .tag em {
-        font-style: normal;
-        color: #c4b5fd;
-      }
-      .sub {
-        position: absolute;
-        left: 96px;
-        top: 468px;
-        font-size: 27px;
-        color: #aaa6bb;
-        font-weight: 400;
-      }
-      .foot {
-        position: absolute;
-        left: 96px;
-        right: 96px;
-        bottom: 44px;
-        display: flex;
-        justify-content: space-between;
-        font-size: 22px;
-        color: #aaa6bb;
-      }
-      .foot b {
-        color: #edeaf5;
-        font-weight: 500;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="glow"></div>
-      <div class="stars" id="stars"></div>
-      <div class="brand">
-        <svg class="mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-          <g transform="translate(0 -2.5)">
-            <g transform="translate(32 39) rotate(-36) scale(0.78 0.84)">
-              <path
-                d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
-                fill="#87945a"
-              />
-            </g>
-            <g transform="translate(32 39) rotate(36) scale(0.78 0.84)">
-              <path
-                d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
-                fill="#87945a"
-              />
-            </g>
-            <g transform="translate(32 39)">
-              <path
-                d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"
-                fill="#5e7f4e"
-              />
-            </g>
-            <rect x="18" y="39" width="28" height="5" rx="2.5" fill="#c46a3c" />
-            <path d="M20 44 H44 L41 59 Q40.6 60 39.5 60 H24.5 Q23.4 60 23 59 Z" fill="#c46a3c" />
-          </g>
-        </svg>
-        <svg class="word" width="380" height="150" viewBox="0 0 380 150" xmlns="http://www.w3.org/2000/svg">
-          <text x="0" y="122.5">ficus</text>
-        </svg>
-      </div>
-      <div class="tag">A workspace for <em>teams of AI agents.</em></div>
-      <div class="sub">Self-hosted on your machine, with an optional cloud.</div>
-      <div class="foot">
-        <span><b>ficus.sh</b></span
-        ><span>github.com/ficushq/ficus &nbsp;·&nbsp; AGPL-3.0</span>
-      </div>
-    </div>
-    <script>
-      // deterministic starfield
-      let s = 42
-      const r = () => {
-        s = (s * 16807) % 2147483647
-        return s / 2147483647
-      }
-      const el = document.getElementById('stars')
-      for (let i = 0; i < 70; i++) {
-        const d = document.createElement('span')
-        d.style.left = r() * 1280 + 'px'
-        d.style.top = r() * 640 + 'px'
-        el.appendChild(d)
-      }
-    </script>
+    <img
+      src="../brand/social-preview.svg"
+      alt="Ficus — Keep work moving while you're away. A home for teams of AI agents. Multiplayer, by design."
+    />
   </body>
 </html>
