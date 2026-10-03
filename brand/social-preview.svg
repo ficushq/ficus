@@ -22,10 +22,10 @@
     </g>
   </g>
   <text x="126" y="111" fill="#1c1a17" font-family="Georgia,serif" font-size="54" font-weight="bold" letter-spacing="-3">ficus</text>
-  <text x="78" y="286" fill="#1c1a17" font-family="Georgia,serif" font-size="71" letter-spacing="-3">Keep work moving</text>
-  <text x="78" y="370" fill="#3f6b4f" font-family="Georgia,serif" font-size="71" letter-spacing="-3">while you're away.</text>
-  <text x="84" y="439" fill="#53584c" font-family="Arial,sans-serif" font-size="25">A home for teams of AI agents.</text>
-  <text x="84" y="478" fill="#53584c" font-family="Arial,sans-serif" font-size="25">Multiplayer, by design.</text>
+  <text x="78" y="246" fill="#1c1a17" font-family="Georgia,serif" font-size="71" letter-spacing="-3">Keep work moving</text>
+  <text x="78" y="330" fill="#3f6b4f" font-family="Georgia,serif" font-size="71" letter-spacing="-3">while you're away.</text>
+  <text x="84" y="399" fill="#53584c" font-family="Arial,sans-serif" font-size="25">A home for teams of AI agents.</text>
+  <text x="84" y="438" fill="#53584c" font-family="Arial,sans-serif" font-size="25">Multiplayer, by design.</text>
   <text x="84" y="607" fill="#31533e" font-family="Arial,sans-serif" font-size="20" font-weight="bold">ficus.sh</text>
   <text x="1170" text-anchor="end" y="607" fill="#53584c" font-family="Arial,sans-serif" font-size="18">Self-hosted · Cloud optional</text>
   <g clip-path="url(#arch)">
