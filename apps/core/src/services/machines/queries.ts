@@ -510,6 +510,24 @@ export async function queryReadySharedMachines(): Promise<Array<{ machine: Machi
   return rows.map((r) => ({ machine: r.machine, boxCount: Number(r.boxCount) }))
 }
 
+/** Observed startup status only, never a placement target. Match the general
+ * shared pool's scope AND purpose boundary; other hosts cannot justify waiting. */
+export async function queryTransientSharedMachineStatus(): Promise<string | null> {
+  const [row] = await db
+    .select({ status: machines.status })
+    .from(machines)
+    .where(
+      and(
+        eq(machines.scope, 'shared'),
+        eq(machines.purpose, 'shared'),
+        inArray(machines.status, ['registered', 'bootstrapping', 'unreachable'])
+      )
+    )
+    .orderBy(machines.createdAt, machines.id)
+    .limit(1)
+  return row?.status ?? null
+}
+
 /**
  * All ready, general-shared machines with the sandboxIds of the boxes they host —
  * the packed-pool placement input (one LEFT JOIN aggregate). Same

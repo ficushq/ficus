@@ -56,7 +56,13 @@ import {
   roleWantsDocker,
   tarCodecFlag,
 } from './box-manager'
-import { insertMachine, deleteMachine, listMachines, upsertMachineBox } from './queries'
+import {
+  insertMachine,
+  deleteMachine,
+  listMachines,
+  upsertMachineBox,
+  queryTransientSharedMachineStatus,
+} from './queries'
 import type { Machine, MachineBox } from './queries'
 import type { SshResult, SshRunner, SshStreamer } from './ssh'
 
@@ -2234,9 +2240,12 @@ describe('resolveMachineForBox', () => {
   })
 
   it('throws MachineUnavailableError with the documented message when no shared machine is ready', async () => {
-    await expect(resolveMachineForBox(null, { queryReadySharedMachines: async () => [] })).rejects.toThrow(
-      'no ready shared machine registered'
-    )
+    await expect(
+      resolveMachineForBox(null, {
+        queryReadySharedMachines: async () => [],
+        queryTransientSharedMachineStatus: async () => null,
+      })
+    ).rejects.toThrow('no ready shared machine registered')
   })
 
   it('returns the sole ready shared machine', async () => {
@@ -4715,6 +4724,20 @@ describe('queryReadySharedMachines (DB)', () => {
   }
   beforeEach(cleanup)
   afterEach(cleanup)
+
+  it('observes only transient general-shared machine status, never dedicated/squad/commons or permanent hosts', async () => {
+    for (const status of ['parked', 'disabled', 'ready', 'reaping', 'terminated'])
+      await insertMachine(machineValues(status, { status }))
+    for (const purpose of ['dedicated', 'squad', 'commons'])
+      await insertMachine(machineValues(purpose, { status: 'bootstrapping', purpose }))
+    await insertMachine(machineValues('ded-scope', { status: 'bootstrapping', scope: 'dedicated' }))
+    expect(await queryTransientSharedMachineStatus()).toBeNull()
+    for (const status of ['registered', 'bootstrapping', 'unreachable']) {
+      const machine = await insertMachine(machineValues('eligible-' + status, { status }))
+      expect(await queryTransientSharedMachineStatus()).toBe(status)
+      await deleteMachine(machine.id)
+    }
+  })
 
   it('counts boxes per ready shared machine and excludes non-ready/non-shared', async () => {
     const ready = await insertMachine(machineValues('ready', { status: 'ready', scope: 'shared' }))

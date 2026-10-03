@@ -7,7 +7,7 @@ import { AgentType } from '../../entities/AgentType'
 import { Execution } from '../../entities/Execution'
 import * as runners from '../../entities/agent-runners'
 import { MACHINE_STARTUP_RETRY_DELAYS_MS, STARTUP_RETRY_DELAYS_MS, startupRetryCode } from './startup-retry'
-import { MachineUnavailableError } from '../machines/placement'
+import { MachineUnavailableError, resolvePlacement } from '../machines/placement'
 import { MachineNotReadyError } from '../machines/queries'
 import { removeSession } from './session-state'
 import { AdmissionReservationStore, attachAdmissionLeaseToError } from '../maintenance/admission-reservation'
@@ -134,43 +134,58 @@ describe('durable startup retry', () => {
     }
   })
 
-  it('waits out a machine that is still bootstrapping on its own longer schedule, then fails', async () => {
-    const bootstrapping = () =>
-      new MachineUnavailableError('machine host-noah is not ready (status bootstrapping)', 'bootstrapping')
-    const runner = spyOn(runners, 'createRunner').mockImplementation(async () => {
-      throw bootstrapping()
-    })
-    try {
-      let execution = await agent.queueExecution({ message: 'Keep this request' })
-      const id = execution.id
-      for (const [index, delay] of MACHINE_STARTUP_RETRY_DELAYS_MS.entries()) {
+  it.each(['explicit', 'shared'])(
+    'waits out a %s machine that is still bootstrapping on its own longer schedule, then fails',
+    async (placement) => {
+      const bootstrapping = () =>
+        new MachineUnavailableError('machine host-noah is not ready (status bootstrapping)', 'bootstrapping')
+      const runner = spyOn(runners, 'createRunner').mockImplementation(async () => {
+        if (placement === 'shared') {
+          await resolvePlacement(
+            { sandboxId: 'agent_retry', role: 'agent' },
+            {
+              getExeProvider: () => null,
+              getMachineBox: async () => null,
+              queryReadySharedMachines: async () => [],
+              queryTransientSharedMachineStatus: async () => 'bootstrapping',
+            }
+          )
+          throw new Error('Shared placement unexpectedly succeeded')
+        }
+        throw bootstrapping()
+      })
+      try {
+        let execution = await agent.queueExecution({ message: 'Keep this request' })
+        const id = execution.id
+        for (const [index, delay] of MACHINE_STARTUP_RETRY_DELAYS_MS.entries()) {
+          expect(await execution.start()).toBe(true)
+          const [before] = await db.execute<{ now: Date }>(sql`select clock_timestamp() as now`)
+          await execution.run()
+          execution = await Execution.mustFind(id)
+          expect(execution.status).toBe('queued')
+          expect(execution.startupRetryCount).toBe(index + 1)
+          expect(execution.message).toBe('Keep this request')
+          expect(execution.failureClass).toBeNull()
+          expect(execution.startupRetryAt!.getTime()).toBeGreaterThanOrEqual(new Date(before.now).getTime() + delay)
+          await db
+            .update(executions)
+            .set({ startupRetryAt: new Date(0) })
+            .where(eq(executions.id, id))
+        }
+        // The machine schedule outlasts the database one, and still ends.
+        expect(MACHINE_STARTUP_RETRY_DELAYS_MS.length).toBeGreaterThan(STARTUP_RETRY_DELAYS_MS.length)
         expect(await execution.start()).toBe(true)
-        const [before] = await db.execute<{ now: Date }>(sql`select clock_timestamp() as now`)
         await execution.run()
-        execution = await Execution.mustFind(id)
-        expect(execution.status).toBe('queued')
-        expect(execution.startupRetryCount).toBe(index + 1)
-        expect(execution.message).toBe('Keep this request')
-        expect(execution.failureClass).toBeNull()
-        expect(execution.startupRetryAt!.getTime()).toBeGreaterThanOrEqual(new Date(before.now).getTime() + delay)
-        await db
-          .update(executions)
-          .set({ startupRetryAt: new Date(0) })
-          .where(eq(executions.id, id))
+        const failed = await Execution.mustFind(id)
+        expect(failed.status).toBe('failed')
+        expect(failed.startupRetryCount).toBe(MACHINE_STARTUP_RETRY_DELAYS_MS.length)
+        expect(failed.error).toContain('status bootstrapping')
+        expect(runner).toHaveBeenCalledTimes(MACHINE_STARTUP_RETRY_DELAYS_MS.length + 1)
+      } finally {
+        runner.mockRestore()
       }
-      // The machine schedule outlasts the database one, and still ends.
-      expect(MACHINE_STARTUP_RETRY_DELAYS_MS.length).toBeGreaterThan(STARTUP_RETRY_DELAYS_MS.length)
-      expect(await execution.start()).toBe(true)
-      await execution.run()
-      const failed = await Execution.mustFind(id)
-      expect(failed.status).toBe('failed')
-      expect(failed.startupRetryCount).toBe(MACHINE_STARTUP_RETRY_DELAYS_MS.length)
-      expect(failed.error).toContain('status bootstrapping')
-      expect(runner).toHaveBeenCalledTimes(MACHINE_STARTUP_RETRY_DELAYS_MS.length + 1)
-    } finally {
-      runner.mockRestore()
     }
-  })
+  )
 
   it.each(['provider overloaded', 'provider exhausted', 'unexpected setup bug'])(
     'does not retry other startup failures: %s',

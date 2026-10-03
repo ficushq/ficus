@@ -17,6 +17,7 @@ import {
   type ProvisionMachineOpts,
 } from './placement'
 import type { Machine, MachineBox } from './queries'
+import { startupRetryCode } from '../execution/startup-retry'
 import type { MachineProvider } from './provider'
 import { EXE_PROVIDER_SSH_KEY } from './provider-credentials'
 
@@ -78,7 +79,16 @@ function makeStore(seed: Machine[] = [], boxes: Record<string, string[]> = {}) {
     getMachine: async (id) => machines.find((m) => m.id === id) ?? null,
     getMachineBox: async () => null,
     queryReadySharedMachines: async () =>
-      machines.filter((m) => m.status === 'ready' && m.scope === 'shared').map((machine) => ({ machine, boxCount: 0 })),
+      machines
+        .filter((m) => m.status === 'ready' && m.scope === 'shared' && m.purpose === 'shared')
+        .map((machine) => ({ machine, boxCount: 0 })),
+    queryTransientSharedMachineStatus: async () =>
+      machines.find(
+        (m) =>
+          m.scope === 'shared' &&
+          m.purpose === 'shared' &&
+          ['registered', 'bootstrapping', 'unreachable'].includes(m.status)
+      )?.status ?? null,
     queryReadyMachineLoads: async () =>
       machines
         .filter((m) => m.status === 'ready' && m.scope === 'shared' && m.purpose === 'shared')
@@ -495,9 +505,62 @@ describe('resolvePlacement — BYO-only (no exe provider)', () => {
     await expect(
       resolvePlacement(
         { sandboxId: 'sb-1', role: 'agent' },
-        { getExeProvider: () => null, getMachineBox: async () => null, queryReadySharedMachines: async () => [] }
+        {
+          getExeProvider: () => null,
+          getMachineBox: async () => null,
+          queryReadySharedMachines: async () => [],
+          queryTransientSharedMachineStatus: async () => null,
+        }
       )
     ).rejects.toThrow('no ready shared machine registered')
+  })
+
+  it.each(['registered', 'bootstrapping', 'unreachable'])(
+    'waits for eligible shared status %s without placing or provisioning',
+    async (status) => {
+      const store = makeStore([makeMachine({ status })])
+      store.deps.getExeProvider = () => null
+      const error = await resolvePlacement({ sandboxId: 'sb-1', role: 'agent' }, store.deps).catch((error) => error)
+      expect(error).toBeInstanceOf(MachineUnavailableError)
+      expect(error.machineStatus).toBe(status)
+      expect(startupRetryCode(error)).toBe(`machine_${status}`)
+      expect(store.provisioned).toHaveLength(0)
+    }
+  )
+
+  it.each([
+    { status: 'parked' },
+    { status: 'disabled' },
+    { status: 'reaping' },
+    { status: 'terminated' },
+    { status: 'bootstrapping', scope: 'dedicated' },
+    { status: 'bootstrapping', purpose: 'dedicated' },
+    { status: 'bootstrapping', purpose: 'squad' },
+    { status: 'bootstrapping', purpose: 'commons' },
+  ])('does not wait for ineligible shared host %j', async (fields) => {
+    const store = makeStore([makeMachine(fields)])
+    store.deps.getExeProvider = () => null
+    const error = await resolvePlacement({ sandboxId: 'sb-1', role: 'agent' }, store.deps).catch((error) => error)
+    expect(error).toBeInstanceOf(MachineUnavailableError)
+    expect(startupRetryCode(error)).toBeNull()
+    expect(store.provisioned).toHaveLength(0)
+  })
+
+  it('rechecks normal ready selection after a host becomes ready between snapshots', async () => {
+    const machine = makeMachine()
+    let calls = 0
+    expect(
+      await resolvePlacement(
+        { sandboxId: 'sb-1', role: 'agent' },
+        {
+          getExeProvider: () => null,
+          getMachineBox: async () => null,
+          queryReadySharedMachines: async () => (++calls === 1 ? [] : [{ machine, boxCount: 0 }]),
+          queryTransientSharedMachineStatus: async () => null,
+        }
+      )
+    ).toBe(machine)
+    expect(calls).toBe(2)
   })
 
   it('returns the sole ready shared machine', async () => {

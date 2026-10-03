@@ -308,6 +308,7 @@ export interface BoxManagerDeps {
   getMachineBox?: (sandboxId: string) => Promise<MachineBox | null>
   deleteMachineBox?: (sandboxId: string) => Promise<void>
   queryReadySharedMachines?: () => Promise<Array<{ machine: Machine; boxCount: number }>>
+  queryTransientSharedMachineStatus?: () => Promise<string | null>
   /** Exact old-machine remnant fence for a fresh logical sandbox placement. */
   findUnverifiedStopRemnant?: (machineId: string, unixUser: string) => Promise<MachineBox | null>
   /** Inline retirement seam for a remnant on the only returning machine. */
