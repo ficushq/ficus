@@ -143,6 +143,16 @@ export function removeSession(agentId: string): void {
   sessionReservations.delete(agentId)
 }
 
+/** Startup may finish after a stop and a replacement pickup. Release only its own slot. */
+export function removeSessionForExecution(agentId: string, executionId: string): void {
+  const active = activeSessions.get(agentId)
+  if (active?.executionId === executionId) {
+    active.session.dispose?.()
+    activeSessions.delete(agentId)
+  }
+  releaseSessionReservation(agentId, executionId)
+}
+
 /** A delayed runner must never dispose a successor or clear its reservation. */
 export function removeSessionIfCurrent(agentId: string, expected: AgentSession): boolean {
   const active = getSession(agentId)
