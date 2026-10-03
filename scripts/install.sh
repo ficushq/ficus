@@ -343,3 +343,6 @@ esac
 say ""
 say "Run: ${BOLD}ficus --help${RESET}"
 say "Project memory skill: ${BOLD}ficus skill install ficus-memory --agent pi${RESET}"
+if [ "$PLATFORM" = "macos" ]; then
+  say "Desktop app: ${BOLD}ficus desktop${RESET}"
+fi

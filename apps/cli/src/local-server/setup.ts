@@ -1,6 +1,6 @@
 import { randomBytes } from 'crypto'
 import { existsSync, readFileSync } from 'fs'
-import { homedir } from 'os'
+import { homedir, platform } from 'os'
 import { join } from 'path'
 import { checkCliOnPath, cliPathHintLines, detectShell, safeRealpath } from './cli-path'
 import { parseEnvFile } from './env-file'
@@ -23,6 +23,7 @@ import { canonicalRoot, getStatePath, readRegistryStrict, upsertInstance } from 
 import { buildSteps, SetupFailure, type Secrets, type StepDeps } from './steps'
 import type { ExplicitKey, SetupOptions } from './types'
 import { narrate } from './log'
+import { defaultDesktopDeps, installDesktop } from '../desktop-installer'
 
 export { SetupFailure }
 
@@ -37,6 +38,8 @@ export interface SetupDeps extends StepDeps {
   which(cmd: string): string | null
   env: Record<string, string | undefined>
   home: string
+  desktopPlatform?: string
+  installDesktopApp?(): Promise<void>
 }
 
 export function defaultSetupDeps(root: string, runner: Runner = defaultRunner): SetupDeps {
@@ -58,6 +61,10 @@ export function defaultSetupDeps(root: string, runner: Runner = defaultRunner): 
     which: (cmd) => Bun.which(cmd),
     env: process.env,
     home: process.env.HOME ?? homedir(),
+    desktopPlatform: platform(),
+    installDesktopApp: async () => {
+      await installDesktop(defaultDesktopDeps())
+    },
   }
 }
 
@@ -320,5 +327,15 @@ export async function runSetup(
     ? handoffLines(opts, password, cliHint)
     : ['', `Setup complete (not started). Start it with: ficus server start --root ${opts.root}`]
   for (const line of handoff) deps.log(line)
+  if (deps.desktopPlatform === 'darwin') {
+    const hint = 'Install the macOS app any time with: ficus desktop'
+    if (deps.isTTY && !opts.yes && (await deps.confirm('Install Ficus Desktop now?'))) {
+      try {
+        await deps.installDesktopApp?.()
+      } catch {
+        deps.log('Desktop installation did not complete. ' + hint)
+      }
+    } else deps.log(hint)
+  }
   return { handoff, cliOnPath: cliStatus.onPath }
 }
