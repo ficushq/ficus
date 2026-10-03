@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { deliveryBindingSelfCheck, deliveryInstructionsForRun, flowCompletionInstructions } from './completion-prompt'
-import { createBlankWorkflow, createWorkflowRun } from '@ficus/shared'
+import { advanceWorkflowRun, createBlankWorkflow, createWorkflowRun, type WorkflowRun } from '@ficus/shared'
 
 const stream = (id: string, metadata?: unknown) => ({ id, metadata })
 const run = (mode: 'pr-merge' | 'pr-auto-merge' | 'deliverable') => {
@@ -93,5 +93,118 @@ describe('delivery instructions composition', () => {
     expect(
       deliveryInstructionsForRun({ id, status: 'active', pause: { reason: 'hold' } }, run('pr-merge'), 4)
     ).toBeUndefined()
+  })
+})
+
+describe('auto-merge enabling versus delivery', () => {
+  test('generated enabling instructions stay unavailable until all declared internal gates complete', () => {
+    const definition = createBlankWorkflow()
+    definition.completion.mode = 'pr-auto-merge'
+    definition.participants.reviewer = { agentTypeId: 'reviewer', session: 'fresh-per-attempt' }
+    definition.steps[0]!.outcomes.completed = { next: 'review' }
+    definition.steps.push(
+      {
+        id: 'review',
+        kind: 'agent',
+        participant: 'reviewer',
+        instructions: 'Independently review the change.',
+        output: 'Review evidence.',
+        outcomes: { approved: { next: 'human' } },
+      },
+      {
+        id: 'human',
+        kind: 'human-approval',
+        instructions: 'Approve the reviewed change.',
+        output: 'Human approval.',
+        outcomes: { approved: { next: 'finish' } },
+      }
+    )
+    const activeStream = { id: 'internal-gates', status: 'active' }
+    let state = createWorkflowRun(definition)
+    const complete = (current: WorkflowRun, outcome: string) =>
+      advanceWorkflowRun(current, {
+        action: 'complete',
+        expectedVersion: current.version,
+        attemptId: current.activeAttemptId,
+        outcome,
+        evidence: 'Verified internal step.',
+      })
+    expect(deliveryInstructionsForRun(activeStream, state, state.version)).toBeUndefined()
+    state = complete(state, 'completed')
+    expect(state.attempts.at(-1)!.stepId).toBe('review')
+    expect(deliveryInstructionsForRun(activeStream, state, state.version)).toBeUndefined()
+    state = complete(state, 'approved')
+    expect(state.attempts.at(-1)!.stepId).toBe('human')
+    expect(deliveryInstructionsForRun(activeStream, state, state.version)).toBeUndefined()
+    // The pure runtime routes gates; the server separately authorizes the human actor.
+    state = complete(state, 'approved')
+    expect(deliveryInstructionsForRun(activeStream, state, state.version)).toContain('enable native auto-merge now')
+  })
+
+  test('Solo reaches delivery through its own evidence without inserting an independent review', () => {
+    const definition = createBlankWorkflow()
+    definition.completion.mode = 'pr-auto-merge'
+    const initial = createWorkflowRun(definition)
+    const ready = advanceWorkflowRun(initial, {
+      action: 'complete',
+      expectedVersion: initial.version,
+      attemptId: initial.activeAttemptId,
+      outcome: 'completed',
+      evidence: 'Implementation, validation, and self-review verified.',
+    })
+    expect(ready.attempts).toHaveLength(1)
+    expect(deliveryInstructionsForRun({ id: 'solo', status: 'active' }, ready, ready.version)).toContain(
+      'Do not add an independent reviewer to a Solo flow or skip a declared gate'
+    )
+  })
+
+  test('internal workflow prerequisites precede enabling, not external GitHub gates', () => {
+    const instructions = flowCompletionInstructions('pr-auto-merge')
+    expect(instructions).toContain(
+      'required validation, self-review, and any declared independent review or human-approval gates'
+    )
+    expect(instructions).toContain('Do not add an independent reviewer to a Solo flow or skip a declared gate')
+    expect(instructions).toContain(
+      'GitHub required CI and external PR approvals may still be pending when you enable auto-merge'
+    )
+    expect(instructions).toContain('the provider must enforce them before the actual merge')
+    expect(instructions.indexOf('After completing')).toBeLessThan(instructions.indexOf('enable native auto-merge now'))
+    expect(instructions.indexOf('enable native auto-merge now')).toBeLessThan(
+      instructions.indexOf('Enabling auto-merge is not completion')
+    )
+  })
+
+  test('explicit current policy and exact reviewed head do not grant human or bypass authority', () => {
+    const instructions = flowCompletionInstructions('pr-auto-merge')
+    for (const text of [
+      'current squad metadata.policies.allowAutoMerge',
+      'explicitly true',
+      'a missing flag means permission is not granted',
+      'Do not enable that policy yourself',
+      'live PR base and exact head match the configured base and validated/reviewed deliverable',
+      'new commits require authorized rework and affected checks/reviews again',
+      'not authority to approve as a human or change branch protections',
+      'leave the PR open for a human merge',
+      'Never use --admin or bypass required checks and approvals',
+      'integration confirms the PR is merged',
+      'finish verifies every designated delivery PR is merged',
+    ])
+      expect(instructions).toContain(text)
+  })
+
+  test('provider state, not a historical autoMergeRequest, proves delivery', () => {
+    const instructions = flowCompletionInstructions('pr-auto-merge')
+    expect(instructions).toContain('autoMergeRequest can be null after an immediate merge')
+    expect(instructions).toContain('inspect the live merged state rather than treating null as a failed enable')
+  })
+
+  test('explicit other modes retain their distinct authority and delivery conditions', () => {
+    expect(flowCompletionInstructions('pr-merge')).toContain('Leave merging to the human; do not merge it yourself')
+    expect(flowCompletionInstructions('direct-merge')).toContain('metadata.policies.allowDirectMerge')
+    expect(flowCompletionInstructions('direct-merge')).toContain('commit is included in the remote base branch')
+    expect(flowCompletionInstructions('review-approval')).toContain('A human must invoke flow finish')
+    expect(flowCompletionInstructions('deliverable')).toContain('No PR, repository mutation, or additional reviewer')
+    for (const mode of ['pr-merge', 'direct-merge', 'review-approval', 'deliverable'] as const)
+      expect(flowCompletionInstructions(mode)).not.toContain('enable native auto-merge now')
   })
 })
