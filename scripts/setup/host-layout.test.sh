@@ -15,7 +15,27 @@ check test "${#HOST_MIGRATIONS[@]}" = 0
 check test "$(host_migrate_needed "$R/release")" = ''
 check test "$(host_layout_detect)" = fresh
 mkdir -p "$FICUS_SYSTEMD_UNIT_DIR" "$R/release"
+printf '[Service]\n' >"$FICUS_SYSTEMD_UNIT_DIR/tau-api.service"
+check test "$(host_layout_detect)" = 1
+if (host_layout_adopt) >/dev/null 2>&1; then FAIL=$((FAIL+1)); else PASS=$((PASS+1)); fi
+if (source "$SCRIPT_DIR/lib.sh") >/dev/null 2>&1; then FAIL=$((FAIL+1)); else PASS=$((PASS+1)); fi
+rm "$FICUS_SYSTEMD_UNIT_DIR/tau-api.service"
+printf '[Service]\n' >"$FICUS_SYSTEMD_UNIT_DIR/tau-worker.service"
+check test "$(host_layout_detect)" = 1
+rm "$FICUS_SYSTEMD_UNIT_DIR/tau-worker.service"
+mkdir -p "$R/opt/tau-core"
+check test "$(host_layout_detect)" = 1
+rmdir "$R/opt/tau-core"
 printf '[Service]\n' >"$FICUS_SYSTEMD_UNIT_DIR/ficus-api.service"
+check test "$(host_layout_detect)" = 2
+printf '[Service]\n' >"$FICUS_SYSTEMD_UNIT_DIR/tau-worker.service"
+check test "$(host_layout_detect)" = 1
+rm "$FICUS_SYSTEMD_UNIT_DIR/tau-worker.service"
+printf '[Service]\n' >"$FICUS_SYSTEMD_UNIT_DIR/ficus-worker.service"
+ln -s ficus-api.service "$FICUS_SYSTEMD_UNIT_DIR/tau-api.service"
+ln -s ficus-worker.service "$FICUS_SYSTEMD_UNIT_DIR/tau-worker.service"
+mkdir -p "$R/opt/ficus-core"
+ln -s ficus-core "$R/opt/tau-core"
 check test "$(host_layout_detect)" = 2
 if declare -F host_migration_host_layout_apply >/dev/null; then FAIL=$((FAIL+1)); else PASS=$((PASS+1)); fi
 check test "$(host_layout_sudoers_content svc)" = 'svc ALL=(root) NOPASSWD: /usr/bin/systemctl restart ficus-api, /usr/bin/systemctl restart ficus-worker'
