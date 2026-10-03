@@ -92,17 +92,25 @@ test('reconciles a durable intent into actual removal without changing delivered
 })
 
 test('lost remote response remains fenced and restart recovers the immutable receipt', async () => {
+  let lostResponses = 0
   await processJob({
     execForSquad: async () => async (args: string[]) => {
       const result = await exec(args)
-      if (args[3] === 'tau-worktree-cleanup') throw new Error('lost response')
+      if (args[3] === 'ficus-worktree-cleanup') {
+        lostResponses++
+        throw new Error('lost response')
+      }
       return result
     },
   })
-  expect((await job()).status).toBe('removing')
+  expect(lostResponses).toBe(1)
+  const uncertain = await job()
+  expect(uncertain.status).toBe('removing')
+  expect(uncertain.operationId).not.toBeNull()
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(false)
   await expect((await WorkStream.mustFind(streamId)).reopen()).rejects.toThrow(/cleanup|removal/i)
   await processJob()
-  expect((await job()).status).toBe('succeeded')
+  expect(await job()).toMatchObject({ status: 'succeeded', operationId: uncertain.operationId })
 })
 
 test('restart redelivers the exact persisted operation after a crash before dispatch', async () => {
