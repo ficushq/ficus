@@ -442,7 +442,7 @@ function deliveryRun(): WorkflowRunDetail {
 const deliveredStream = {
   ...stream,
   metadata: {
-    codeHost: { integration: 'github', repository: 'ficushq/tau', changeRequest: { number: 12 } },
+    codeHost: { integration: 'github', repository: 'ficushq/ficus', changeRequest: { number: 12 } },
   },
 } as unknown as WorkStream
 
@@ -459,7 +459,7 @@ test('delivery approval sits in the review callout with the pull request, the de
     expect(text).toContain('Approve delivery')
     expect(text).toContain('Built the export; the full suite passes.')
     const pr = f.dom.window.document.querySelector<HTMLAnchorElement>(
-      'a[href="https://github.com/ficushq/tau/pull/12"]'
+      'a[href="https://github.com/ficushq/ficus/pull/12"]'
     )
     expect(pr?.textContent).toContain('Pull request #12')
     expect(f.dom.window.document.querySelector('a[aria-label="Open execute attempt 1 agent chat"]')).not.toBeNull()

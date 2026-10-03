@@ -293,8 +293,8 @@ it('delivers available result links and notes without modifying ownership or mem
       metadata: {
         codeHost: {
           integration: 'github',
-          repository: 'ficushq/tau',
-          changeRequest: { number: 123, url: 'https://github.com/ficushq/tau/pull/123' },
+          repository: 'ficushq/ficus',
+          changeRequest: { number: 123, url: 'https://github.com/ficushq/ficus/pull/123' },
         },
         nextSteps: 'Verified result',
       },
@@ -306,7 +306,7 @@ it('delivers available result links and notes without modifying ownership or mem
   expect(after.agentIds).toEqual(before.agentIds)
   expect(after.assigneeAgentId).toBe(before.assigneeAgentId)
   const [notice] = await notices()
-  expect(notice.content).toContain('https://github.com/ficushq/tau/pull/123')
+  expect(notice.content).toContain('https://github.com/ficushq/ficus/pull/123')
   expect(notice.content).toContain('Verified result')
   expect(notice.deliveryMode).toBe('follow-up')
   expect(await db.select().from(executions).where(eq(executions.agentId, observer.id))).toHaveLength(1)

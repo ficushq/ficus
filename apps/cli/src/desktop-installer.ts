@@ -6,9 +6,11 @@ import { join } from 'node:path'
 import { defaultRunner, type Runner } from './local-server/runner'
 import { verifyDesktopArchive } from './desktop-archive'
 
-export const desktopReleaseRepository = 'ficushq/tau-desktop-releases' // ficus-p5-apple: public release artifact repository pending repo rename
+export const desktopReleaseRepository = 'ficushq/ficus-desktop-releases'
 export const desktopFeed = `https://raw.githubusercontent.com/${desktopReleaseRepository}/main/updates/ficus-darwin-arm64.json`
-const releaseBase = `https://github.com/${desktopReleaseRepository}/releases/download/`
+// Signed feeds already published before the repository rename retain their
+// original asset URL. Both exact repositories remain eligible during cutover.
+const legacyDesktopReleaseRepository = 'ficushq/tau-desktop-releases'
 const teamId = '5S6HE7KE49'
 const bundleId = 'sh.ficus.desktop'
 const maxArchiveSize = 2 * 1024 * 1024 * 1024
@@ -64,11 +66,15 @@ export function parseDesktopFeed(value: unknown): DesktopRelease {
   if (!Array.isArray(releases) || releases.length !== 1) throw new Error('Invalid Desktop release feed')
   const entry = releases[0] as { version?: unknown; updateTo?: Record<string, unknown> }
   const update = entry?.updateTo
-  const expected = `${releaseBase}v${version}/Ficus-${version}-darwin-arm64.zip`
+  const asset = `v${version}/Ficus-${version}-darwin-arm64.zip`
+  const allowedUrls = [desktopReleaseRepository, legacyDesktopReleaseRepository].map(
+    (repository) => `https://github.com/${repository}/releases/download/${asset}`
+  )
   if (
     entry?.version !== version ||
     update?.version !== version ||
-    update?.url !== expected ||
+    typeof update?.url !== 'string' ||
+    !allowedUrls.includes(update.url) ||
     typeof update.sha256 !== 'string' ||
     !/^[a-f0-9]{64}$/.test(update.sha256) ||
     typeof update.size !== 'number' ||
@@ -77,7 +83,7 @@ export function parseDesktopFeed(value: unknown): DesktopRelease {
     update.size > maxArchiveSize
   )
     throw new Error('Invalid Desktop release feed')
-  return { version, url: expected, sha256: update.sha256, size: update.size }
+  return { version, url: update.url, sha256: update.sha256, size: update.size }
 }
 export async function latestDesktop(deps: DesktopDeps): Promise<DesktopRelease> {
   macOnly(deps)

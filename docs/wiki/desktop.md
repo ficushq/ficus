@@ -1,6 +1,6 @@
 # Ficus Desktop runtime contract
 
-The private `ficushq/tau-desktop` repository owns Electron, onboarding and native process supervision. Core remains a separately built, pinned artifact; Desktop never starts a mutable checkout for a managed installation.
+Ficus Desktop provides the Electron shell, onboarding and native process supervision. Core remains a separately built, pinned artifact; Desktop never starts a mutable checkout for a managed installation.
 
 The native artifact builder supports `linux-x64` and `darwin-arm64` on their matching build hosts. It includes API, worker, migrations, web assets, CLI, configuration and runtime dependencies, including `playwright-core` and the native `bun-pty` distribution. Linux machine bundles remain Linux artifacts for remote machine use.
 

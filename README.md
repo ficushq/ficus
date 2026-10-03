@@ -38,8 +38,8 @@ choices, headless installation, and troubleshooting. Prefer managed hosting?
 **From source**
 
 ```bash
-git clone --recurse-submodules https://github.com/ficushq/tau.git
-cd tau
+git clone --recurse-submodules https://github.com/ficushq/ficus.git
+cd ficus
 bun install
 bun run setup
 ```

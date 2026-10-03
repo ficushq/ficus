@@ -810,7 +810,7 @@ describe('ActionItem code-host delivery gate', () => {
       squadName: 'Ficus',
       deliveryKind: 'review',
       pullRequests: [
-        { repository: 'ficushq/tau-mobile', number: 42, url: 'https://github.com/ficushq/tau-mobile/pull/42' },
+        { repository: 'ficushq/ficus-mobile', number: 42, url: 'https://github.com/ficushq/ficus-mobile/pull/42' },
       ],
       focus: { kind: 'workstream', workStreamId: 'ws-2' },
     },
@@ -836,8 +836,8 @@ describe('ActionItem code-host delivery gate', () => {
       await dom.act(async () => expand[0]!.click())
       expect(document.body.textContent).toContain('needs an approving human review')
       expect(document.body.textContent).not.toContain('do not have permission to respond')
-      const link = document.querySelector('a[href="https://github.com/ficushq/tau-mobile/pull/42"]')
-      expect(link?.textContent).toBe('Review ficushq/tau-mobile#42')
+      const link = document.querySelector('a[href="https://github.com/ficushq/ficus-mobile/pull/42"]')
+      expect(link?.textContent).toBe('Review ficushq/ficus-mobile#42')
     } finally {
       await dom.cleanup()
     }

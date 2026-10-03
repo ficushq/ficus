@@ -90,12 +90,7 @@ Widget summary `top[]` rows carry the same optional boolean, including explicit 
 
 Widget summaries add an authoritative optional `bucket`, boolean `pause` (never private pause reasons), and typed `delivery`. Prefer `bucket` when present; older payloads can fall back to the shared selector. This also preserves the omitted-waits compatibility projection without fabricating waits. `openWaitTypes` remains an explicit array for existing native decoders. New `bucketCounts.paused` and `bucketCounts.externalWait` keys are optional in the consumer type, and should default to zero against older servers. Interest authorization, uncapped counts, title privacy and attention-first ordering remain unchanged. Foreground snapshots and APNs use the same builder.
 
-Source compatibility was inspected at `ficushq/tau-mobile` commit `c84b39e57de916a7acfeda2987e01c8d529c98e1`:
-
-- Both copies of `FicusWorkAttributes.swift` decode bucket as `String`, not a closed Codable enum.
-- `WorkStreamsClient.swift` likewise decodes Live Activity buckets as strings and ignores additive summary/count fields.
-- `StatusPalette.swift` maps unknown strings to neutral `.unknown`; an older Live Activity therefore shows neutral “Unknown” for the new buckets rather than rejecting its entire update.
-- Older widget rows recompute their own buckets and cannot adopt the new semantics until updated; server totals remain authoritative. This is source verification, not a claim about every installed binary.
+Native clients should decode `bucket` as extensible text, ignore additive summary/count fields, and show an unknown value neutrally rather than rejecting the whole update. Older widgets that compute their own buckets may retain their previous labels until updated; server totals remain authoritative.
 
 ### Mobile adoption
 

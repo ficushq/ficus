@@ -3331,7 +3331,7 @@ if yq_is_mikefarah; then
   cat >"${SH_TMP}/restore.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/ficushq/tau.git
+  repo: https://github.com/ficushq/ficus.git
   ref: main
 core:
   origin: https://acme.ficus.sh
@@ -3548,7 +3548,7 @@ if yq_is_mikefarah; then
   cat >"${AH_TMP}/base.yaml" <<EOF
 source:
   mode: git-https
-  repo: https://github.com/ficushq/tau.git
+  repo: https://github.com/ficushq/ficus.git
   ref: main
 core:
   origin: https://acme.ficus.sh
@@ -3610,7 +3610,7 @@ if yq_is_mikefarah; then
   cat >"${SEED_TMP}/full.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/ficushq/tau.git
+  repo: https://github.com/ficushq/ficus.git
   ref: main
 core:
   origin: https://acme.ficus.sh
@@ -3636,7 +3636,7 @@ EOF
   cat >"${SEED_TMP}/minimal.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/ficushq/tau.git
+  repo: https://github.com/ficushq/ficus.git
   ref: main
 core:
   origin: https://acme.ficus.sh
@@ -3737,7 +3737,7 @@ EOF
   cat >"${SEED_TMP}/partial-ai.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/ficushq/tau.git
+  repo: https://github.com/ficushq/ficus.git
   ref: main
 core:
   origin: https://acme.ficus.sh
@@ -3777,7 +3777,7 @@ EOF
   cat >"${SEED_TMP}/squad-only.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/ficushq/tau.git
+  repo: https://github.com/ficushq/ficus.git
   ref: main
 core:
   origin: https://acme.ficus.sh
@@ -3812,7 +3812,7 @@ EOF
   cat >"${SEED_TMP}/codex-openai-mismatch.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/ficushq/tau.git
+  repo: https://github.com/ficushq/ficus.git
   ref: main
 core:
   origin: https://acme.ficus.sh
@@ -3852,7 +3852,7 @@ if yq_is_mikefarah; then
   cat >"${UH_TMP}/tau-setup.yaml" <<EOF
 source:
   mode: git-https
-  repo: https://github.com/ficushq/tau.git
+  repo: https://github.com/ficushq/ficus.git
   ref: main
   dest: ${UH_TMP}/no-such-checkout
 core:
@@ -5698,7 +5698,7 @@ if yq_is_mikefarah; then
   cat >"${RBS_TMP}/backup.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/ficushq/tau.git
+  repo: https://github.com/ficushq/ficus.git
   ref: main
 core:
   origin: https://acme.ficus.sh

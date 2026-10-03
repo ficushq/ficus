@@ -1,7 +1,7 @@
 blank_issues_enabled: true
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/ficushq/tau/security/advisories/new
+    url: https://github.com/ficushq/ficus/security/advisories/new
     about: Report privately. Please do not file security problems as public issues.
   - name: Ficus Cloud support
     url: https://ficus.sh/support

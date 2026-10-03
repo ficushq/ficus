@@ -261,7 +261,7 @@ describe('actionable squad demand', () => {
     await db
       .update(workStreams)
       .set({
-        metadata: { codeHost: { integration: 'github', repository: 'ficushq/tau', changeRequest: { number: 1 } } },
+        metadata: { codeHost: { integration: 'github', repository: 'ficushq/ficus', changeRequest: { number: 1 } } },
       })
       .where(eq(workStreams.id, id))
     expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
