@@ -50,7 +50,7 @@ async function due() {
     .set({ nextAttemptAt: new Date(0) })
     .where(eq(rows.activationId, activationId))
 }
-function update(key = crypto.randomUUID(), generation = 2): CoreLiveActivityRegistration {
+function update(key: string = crypto.randomUUID(), generation = 2): CoreLiveActivityRegistration {
   return {
     ...start,
     kind: 'update',
