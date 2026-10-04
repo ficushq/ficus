@@ -42,6 +42,7 @@ export const relayLiveActivityRegistrationSchema = z.discriminatedUnion('kind', 
       bindingToken: liveActivityBindingTokenSchema,
       deviceToken: apnsTokenSchema,
       environment: z.enum(['production', 'sandbox']),
+      previews: z.boolean().optional(),
       kind: z.literal('start'),
     })
     .strict(),
@@ -52,6 +53,7 @@ export const relayLiveActivityRegistrationSchema = z.discriminatedUnion('kind', 
       bindingToken: liveActivityBindingTokenSchema,
       deviceToken: apnsTokenSchema,
       environment: z.enum(['production', 'sandbox']),
+      previews: z.boolean().optional(),
       kind: z.literal('update'),
       activityKey: uuid,
       activityId: z.string().min(1).max(256),
@@ -73,6 +75,7 @@ export function liveActivityRegistrationPayload(value: RelayLiveActivityRegistra
     input.kind,
     input.kind === 'update' ? input.activityKey : null,
     input.kind === 'update' ? input.activityId : null,
+    input.previews === true,
   ])
 }
 
@@ -202,3 +205,43 @@ export function buildRelayLiveActivityPayload(
     throw new Error('Live Activity payload too large')
   return payload
 }
+
+/** Separate proof domain from alert/enrollment operations. Verify operationDigest against
+ * the locally requested registration before signing; never sign a server-selected operation. */
+export const liveActivityRegistrationChallengeSchema = z
+  .object({
+    version: z.literal(1),
+    id: uuid,
+    instanceId: uuid,
+    activationId: uuid,
+    origin: z.string().url().max(512),
+    nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    expiresAt: z.string().datetime(),
+    operationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    generation: z.number().int().nonnegative().max(2147483646),
+  })
+  .strict()
+export type LiveActivityRegistrationChallenge = z.infer<typeof liveActivityRegistrationChallengeSchema>
+export function liveActivityRegistrationProofMessage(value: LiveActivityRegistrationChallenge): string {
+  const c = liveActivityRegistrationChallengeSchema.parse(value)
+  return JSON.stringify([
+    'ficus-live-activity-proof-v1',
+    c.id,
+    c.instanceId,
+    c.activationId,
+    c.origin,
+    c.nonce,
+    c.expiresAt,
+    c.operationDigest,
+    c.generation,
+  ])
+}
+export const liveActivityRegistrationReceiptSchema = z
+  .object({
+    version: z.literal(1),
+    activationId: uuid,
+    destinationId: uuid,
+    generation: z.number().int().positive().max(2147483647),
+  })
+  .strict()
+export type LiveActivityRegistrationReceipt = z.infer<typeof liveActivityRegistrationReceiptSchema>

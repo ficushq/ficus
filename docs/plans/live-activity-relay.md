@@ -115,3 +115,25 @@ destination, not the device's ordinary alert subscription.
 Do not enable commercial native gates or claim background relay support until
 these pieces and device acceptance pass. Public self-hosted Core remains usable
 without this optional relay.
+
+### Signed registration wire contract
+
+Registration uses `liveActivityRegistrationChallengeSchema` and
+`liveActivityRegistrationProofMessage`, a separate `ficus-live-activity-proof-v1`
+domain. Before signing, the app verifies the returned activation/instance/origin
+against its selected server and compares `operationDigest` with the SHA-256 of
+its own `liveActivityRegistrationPayload`. The signature includes the digest,
+nonce, expiry and registration generation. Preview consent is included in the
+canonical operation and defaults off.
+
+`POST /api/push-relay/live-activities/registration-challenges` accepts the strict
+registration schema; `registration-proofs` accepts `{challengeId, signature}`
+(the Ed25519 signature is 128 lowercase hex characters) and returns the strict
+registration receipt. A stale pending generation fails; replaying a completed
+proof can return its existing receipt but cannot overwrite a newer destination.
+The app retries a rotation with a fresh challenge after a generation conflict.
+
+Send protocol outcomes, including `in_flight` and `delivery_unknown`, use the
+versioned JSON response envelope with HTTP 200. HTTP failures are ingress or
+transport errors. This preserves the transport's distinction between an exact
+retryable event and a provider outcome that must not be replayed.
