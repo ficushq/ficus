@@ -1408,6 +1408,13 @@
       "when": 1790812178296,
       "tag": "0200_tricky_boomerang",
       "breakpoints": true
+    },
+    {
+      "idx": 201,
+      "version": "7",
+      "when": 1791093052235,
+      "tag": "0201_curved_thaddeus_ross",
+      "breakpoints": true
     }
   ]
 }

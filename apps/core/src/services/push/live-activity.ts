@@ -1,3 +1,4 @@
+import { startActivityRelayRunner } from './live-activity-outbox'
 import {
   buildLiveActivityState,
   shouldShowLiveActivity,
@@ -403,7 +404,7 @@ export function registerLiveActivityFanout(
     ...deps,
   })
 
-  const unsubscribes: Array<() => void> = []
+  const unsubscribes: Array<() => void> = [startActivityRelayRunner()]
   for (const event of LIVE_ACTIVITY_EVENTS) {
     const unsubscribe = emitter.on(event, (payload) => {
       void fanout.onWorkStreamEvent(payload ?? {})

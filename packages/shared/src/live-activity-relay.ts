@@ -245,3 +245,38 @@ export const liveActivityRegistrationReceiptSchema = z
   })
   .strict()
 export type LiveActivityRegistrationReceipt = z.infer<typeof liveActivityRegistrationReceiptSchema>
+
+/** Native-to-Core routing metadata. APNs tokens never cross this boundary in relay mode. */
+export const coreLiveActivityRegistrationSchema = z.discriminatedUnion('kind', [
+  liveActivityRegistrationReceiptSchema
+    .extend({
+      kind: z.literal('start'),
+      bindingToken: liveActivityBindingTokenSchema,
+    })
+    .strict(),
+  liveActivityRegistrationReceiptSchema
+    .extend({
+      kind: z.literal('update'),
+      bindingToken: liveActivityBindingTokenSchema,
+      activityKey: uuid,
+      activityId: z.string().min(1).max(256),
+    })
+    .strict(),
+])
+export type CoreLiveActivityRegistration = z.infer<typeof coreLiveActivityRegistrationSchema>
+
+/** Idempotent revocation is safe to replay indefinitely: a revoked capability cannot be reused. */
+export const liveActivityRevocationSchema = z
+  .object({
+    activationId: uuid,
+    bindingToken: liveActivityBindingTokenSchema,
+    signature: z.string().regex(/^[a-f0-9]{128}$/i),
+  })
+  .strict()
+export function liveActivityRevocationMessage(input: { activationId: string; bindingToken: string }) {
+  return JSON.stringify([
+    'ficus-live-activity-revoke-v1',
+    uuid.parse(input.activationId),
+    liveActivityBindingTokenSchema.parse(input.bindingToken),
+  ])
+}
