@@ -1415,6 +1415,13 @@
       "when": 1791093052235,
       "tag": "0201_curved_thaddeus_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 202,
+      "version": "7",
+      "when": 1791098452552,
+      "tag": "0202_lonely_hawkeye",
+      "breakpoints": true
     }
   ]
 }

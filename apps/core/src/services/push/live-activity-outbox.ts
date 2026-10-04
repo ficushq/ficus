@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { and, eq, lte, or, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { liveActivityRelayInstallations as rows } from '../../db/schema'
+import { users, liveActivityRelayInstallations as rows } from '../../db/schema'
 import { encrypt, decrypt, getEncryptionKey } from '../secrets/crypto'
 import { shouldShowLiveActivity, type LiveActivityState } from '@ficus/shared'
 import {
@@ -25,6 +25,7 @@ interface State {
   lastState?: LiveActivityState
   blocked?: string
   attempts: number
+  cleanupExpiresAt?: number
 }
 const encode = (state: State) => JSON.stringify(encrypt(JSON.stringify(state), getEncryptionKey()))
 const decode = (value: string): State => {
@@ -40,6 +41,8 @@ export const liveActivityRelayEnabled = () => process.env.FICUS_LIVE_ACTIVITY_RE
 export async function registerActivityRelay(userId: string, raw: CoreLiveActivityRegistration) {
   const input = coreLiveActivityRegistrationSchema.parse(raw)
   return db.transaction(async (tx) => {
+    const [owner] = await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('key share')
+    if (!owner) throw new Error('User not found')
     // Serializes first insert too; the installation UUID is already validated.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${input.activationId}, 927))`)
     const [row] = await tx.select().from(rows).where(eq(rows.activationId, input.activationId)).for('update')
@@ -97,11 +100,66 @@ export async function unregisterActivityRelay(userId: string, activationId: stri
   await db.delete(rows).where(and(eq(rows.activationId, activationId), eq(rows.userId, userId)))
 }
 
+/** Remove all cached content and start authority; retain only an exact content-free end. */
+function retirement(state: State, at: Date): State {
+  const pending =
+    state.pending?.event === 'end'
+      ? state.pending
+      : state.update && state.activityKey && !state.ended
+        ? {
+            version: 1 as const,
+            bindingToken: state.update.bindingToken,
+            activityKey: state.activityKey,
+            sequence: state.sequence + 1,
+            eventId: randomUUID(),
+            event: 'end' as const,
+          }
+        : undefined
+  return {
+    sequence: pending?.sequence ?? state.sequence,
+    attempts: state.attempts,
+    pending,
+    cleanupExpiresAt: state.cleanupExpiresAt ?? at.getTime() + 24 * 3600_000,
+  }
+}
+/** Called in the same transaction as user erasure; invalidates every pre-delete delivery lease. */
+export async function prepareActivityRelayUserDeletion(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  userId: string
+) {
+  const owned = await tx.select().from(rows).where(eq(rows.userId, userId)).for('update')
+  const at = await clock(tx)
+  for (const row of owned) {
+    let state: State
+    try {
+      state = retirement(decode(row.stateEnc), at)
+    } catch {
+      // A corrupt capability must not prevent erasing the user. Cloud expiry still bounds its lifecycle.
+      await tx.delete(rows).where(eq(rows.activationId, row.activationId))
+      continue
+    }
+    if (!state.pending) await tx.delete(rows).where(eq(rows.activationId, row.activationId))
+    else
+      await tx
+        .update(rows)
+        .set({
+          userId: null,
+          stateEnc: encode(state),
+          leaseId: null,
+          leaseUntil: null,
+          nextAttemptAt: at,
+          updatedAt: at,
+        })
+        .where(eq(rows.activationId, row.activationId))
+  }
+}
+
 /** Each invocation claims one installation. Leases fence late completions; payloads survive restarts. */
 export async function pumpActivityRelay(
   deps: {
     send?: (input: RelayLiveActivitySend) => Promise<LiveActivityRelayResult>
     snapshot?: (userId: string) => Promise<LiveActivityState>
+    cleanupOnly?: boolean
   } = {}
 ): Promise<boolean> {
   const claim = await db.transaction(async (tx) => {
@@ -109,7 +167,13 @@ export async function pumpActivityRelay(
     const [row] = await tx
       .select()
       .from(rows)
-      .where(and(lte(rows.nextAttemptAt, at), or(isNull(rows.leaseUntil), lte(rows.leaseUntil, at))))
+      .where(
+        and(
+          lte(rows.nextAttemptAt, at),
+          or(isNull(rows.leaseUntil), lte(rows.leaseUntil, at)),
+          deps.cleanupOnly ? isNull(rows.userId) : undefined
+        )
+      )
       .orderBy(rows.nextAttemptAt)
       .limit(1)
       .for('update', { skipLocked: true })
@@ -122,11 +186,23 @@ export async function pumpActivityRelay(
     return { ...row, leaseId }
   })
   if (!claim) return false
-  const state = decode(claim.stateEnc)
+  let state = decode(claim.stateEnc)
+  const retiring = claim.userId === null
+  if (retiring) {
+    state = retirement(state, new Date())
+    if (!state.pending || state.cleanupExpiresAt! <= Date.now()) {
+      await db.delete(rows).where(and(eq(rows.activationId, claim.activationId), eq(rows.leaseId, claim.leaseId)))
+      return true
+    }
+  }
   let delay = 30_000
   try {
     const fresh = projectRelayLiveActivityState(
-      deps.snapshot ? await deps.snapshot(claim.userId) : (await loadWorkInterestSnapshot(claim.userId)).liveActivity,
+      retiring
+        ? { activeCount: 0, needsYouCount: 0, top: [] }
+        : deps.snapshot
+          ? await deps.snapshot(claim.userId!)
+          : (await loadWorkInterestSnapshot(claim.userId!)).liveActivity,
       true
     )
     const show = shouldShowLiveActivity(fresh)
@@ -215,6 +291,10 @@ export async function pumpActivityRelay(
     // Snapshot/DB errors are retryable, without leaking capabilities or rendered content into logs.
     delay = 60_000
   }
+  if (retiring && !state.pending) {
+    await db.delete(rows).where(and(eq(rows.activationId, claim.activationId), eq(rows.leaseId, claim.leaseId)))
+    return true
+  }
   await db
     .update(rows)
     .set({
@@ -233,11 +313,12 @@ export function startActivityRelayRunner() {
   let stopped = false
   let running = false
   const tick = async () => {
-    if (stopped || running || !liveActivityRelayEnabled()) return
+    if (stopped || running) return
     running = true
     try {
       if (!pushRelayConfig()) return
-      for (let i = 0; i < 8 && !stopped; i++) if (!(await pumpActivityRelay())) break
+      for (let i = 0; i < 8 && !stopped; i++)
+        if (!(await pumpActivityRelay({ cleanupOnly: !liveActivityRelayEnabled() }))) break
     } catch {
       /* Retry next tick; no provider diagnostics or capabilities in logs. */
     } finally {

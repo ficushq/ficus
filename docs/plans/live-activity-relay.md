@@ -1,7 +1,8 @@
 # Live Activity relay transport
 
-Status: contract and Core HTTP adapter prepared; registration storage, relay
-endpoints and runtime fan-out wiring are not enabled. Tracked by Core #442.
+Status: the contract, signed registration, durable delivery, bounded cleanup and
+device recovery are implemented in staged changes, with delivery default off.
+Tracked by Core #442; real APNs/device acceptance is still required.
 Ordinary APNs alerts, direct APNs Live Activities and PWA Web Push are unchanged.
 
 ## Trust and ownership
@@ -97,24 +98,22 @@ only the persisted event, with bounded backoff, and stop on terminal denial,
 revocation, conflict or unknown delivery. A 410 revokes only the affected activity
 destination, not the device's ordinary alert subscription.
 
-## Remaining implementation and acceptance
+## Implementation and release acceptance
 
-1. Durable relay tables, signed registration/rotation endpoints, lifecycle
-   admission and provider worker with fenced completion, retention and cleanup.
-2. Native immutable lifecycle attribute/token registration and foreground
-   recovery, preserving per-instance ownership across account/server switches.
-3. Core capability storage and durable fan-out sequencing; choose relay only
-   for relay registrations. Keep direct APNs registration and transport intact.
-4. Wire the prepared provider payload builder to the fixed ActivityKit topic
-   and registered environment; add receipt/result redaction and rate limits.
-5. Real-device remote start/update/end and token rotation; app closed/offline;
-   expiry/refund/opt-out; response loss; restarts; concurrent workers; 410; wrong
-   instance/capability; privacy previews; stale update after end. Record the app
-   and server versions. Ordinary alert delivery is not this acceptance test.
+The staged runtime now persists Core capabilities and exact delivery identities,
+uses device-signed registration and revocation, enforces originating-instance
+coverage and preview privacy, and fences concurrent provider sends. Native
+recovery replaces an uncertain update lifecycle rather than replaying it. A
+start rejected because an old lifecycle is still closing retries the same event
+with bounded backoff. `resetRequired` asks the client to replace an ambiguous
+update lifecycle; rotating its token cannot establish delivery proof.
 
-Do not enable commercial native gates or claim background relay support until
-these pieces and device acceptance pass. Public self-hosted Core remains usable
-without this optional relay.
+Before enabling delivery, validate real-device remote start/update/end and token
+rotation; app closed/offline; expiry/refund/opt-out; response loss; restarts;
+concurrent workers; 410; wrong instance/capability; privacy previews; and stale
+updates after end. Record app and server versions. Ordinary alert delivery is
+not this acceptance test. Public self-hosted Core remains usable without this
+optional relay.
 
 ### Signed registration wire contract
 
@@ -155,3 +154,19 @@ activity advances a pending start without pretending later updates were delivere
 Unknown delivery and protocol denials wait for device reconciliation. There is no
 fallback to direct APNs. Device-signed Cloud revocation is required in addition to
 Core removal, including when a removed account's Core credentials no longer work.
+
+
+## User deletion cleanup
+
+User deletion transactionally removes cached activity content and start authority,
+invalidates any worker lease, and retains only an encrypted, content-free end
+request without a user identity. The cleanup runner works even with new relay
+admission disabled. Retries preserve the exact end identity; definite completion,
+terminal denial, or the original 24-hour deadline removes the tombstone. A new
+user cannot adopt an orphaned installation. Unreadable capability state is erased
+rather than blocking user deletion; relay-side expiry remains the fallback.
+
+A provider request already in flight cannot be recalled. Relay ordering prevents
+it from overwriting an accepted newer end; uncertain delivery remains subject to
+relay cleanup and device reconciliation. Device-signed Cloud revocation remains
+necessary for client opt-out/removal, including when Core credentials have expired.

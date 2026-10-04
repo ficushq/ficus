@@ -2716,9 +2716,7 @@ export const liveActivityRelayInstallations = pgTable(
   'live_activity_relay_installations',
   {
     activationId: uuid('activation_id').primaryKey(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     generation: integer('generation').notNull(),
     stateEnc: text('state_enc').notNull(),
     leaseId: uuid('lease_id'),
