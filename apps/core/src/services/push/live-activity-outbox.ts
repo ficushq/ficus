@@ -195,7 +195,9 @@ export async function pumpActivityRelay(
           state.update = undefined
           state.lastState = undefined
         } else state.lastState = event.contentState
-      } else if (result.retryable) {
+      } else if (result.retryable || (event.event === 'start' && result.reason === 'conflict')) {
+        // A prior lifecycle may still be closing in Cloud. A rejected start was not admitted;
+        // retry its exact durable identity after cleanup rather than strand this installation.
         state.attempts++
         delay = Math.min(30 * 60_000, 5000 * 2 ** Math.min(state.attempts, 9))
       } else {

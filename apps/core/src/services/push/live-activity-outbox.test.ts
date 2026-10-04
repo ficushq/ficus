@@ -197,3 +197,27 @@ test('ownership, stale generation and idempotent replay checks protect existing 
   await unregisterActivityRelay(userId, activationId)
   expect(await row()).toBeUndefined()
 })
+
+test('an unadmitted start waits for old lifecycle cleanup without changing its delivery identity', async () => {
+  await registerActivityRelay(userId, start)
+  const events: RelayLiveActivitySend[] = []
+  await pumpActivityRelay({
+    snapshot: async () => active,
+    send: async (event) => {
+      events.push(event)
+      return { ok: false, reason: 'conflict', retryable: false }
+    },
+  })
+  expect((await state()).blocked).toBeUndefined()
+  expect((await state()).pending).toEqual(events[0])
+  await due()
+  await pumpActivityRelay({
+    snapshot: async () => active,
+    send: async (event) => {
+      events.push(event)
+      return { ok: true, status: 'sent' }
+    },
+  })
+  expect(events[1]).toEqual(events[0])
+  expect((await state()).pending).toBeUndefined()
+})
