@@ -50,7 +50,7 @@ async function due() {
     .set({ nextAttemptAt: new Date(0) })
     .where(eq(rows.activationId, activationId))
 }
-function update(key = crypto.randomUUID(), generation = 2): CoreLiveActivityRegistration {
+function update(key: string = crypto.randomUUID(), generation = 2): CoreLiveActivityRegistration {
   return {
     ...start,
     kind: 'update',
@@ -220,4 +220,34 @@ test('an unadmitted start waits for old lifecycle cleanup without changing its d
   })
   expect(events[1]).toEqual(events[0])
   expect((await state()).pending).toBeUndefined()
+})
+
+test('uncertain updates request lifecycle replacement rather than treating token rotation as delivery proof', async () => {
+  const registration = update()
+  await registerActivityRelay(userId, registration)
+  await pumpActivityRelay({
+    snapshot: async () => active,
+    send: async () => ({ ok: false, reason: 'delivery_unknown', retryable: false }),
+  })
+  expect(await registerActivityRelay(userId, registration)).toEqual({ id: activationId, resetRequired: true })
+  expect(await registerActivityRelay(userId, { ...registration, generation: 3 })).toEqual({
+    id: activationId,
+    resetRequired: true,
+  })
+  expect((await state()).blocked).toBe('delivery_unknown')
+  expect(await registerActivityRelay(userId, update(crypto.randomUUID(), 4))).toEqual({ id: activationId })
+  expect((await state()).blocked).toBeUndefined()
+})
+test('device observation can resolve an uncertain start without replacing its lifecycle', async () => {
+  await registerActivityRelay(userId, start)
+  let key = ''
+  await pumpActivityRelay({
+    snapshot: async () => active,
+    send: async (event) => {
+      key = event.activityKey
+      return { ok: false, reason: 'delivery_unknown', retryable: false }
+    },
+  })
+  expect(await registerActivityRelay(userId, update(key))).toEqual({ id: activationId })
+  expect((await state()).blocked).toBeUndefined()
 })
