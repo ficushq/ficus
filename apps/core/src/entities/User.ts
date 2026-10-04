@@ -1,3 +1,4 @@
+import { prepareActivityRelayUserDeletion } from '../services/push/live-activity-outbox'
 import { eq, and, sql, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { users, userCredentials, sessions, roleAssignments, agentTokens, emailVerifications } from '../db/schema'
@@ -201,19 +202,23 @@ export class User {
   }
 
   async delete(): Promise<void> {
-    // Revoke any agent tokens this user owns (e.g. system-manager tokens) before
-    // deleting. The agent_tokens.user_id FK is ON DELETE SET NULL, which would
-    // otherwise silently downgrade the token to a plain agent identity instead
-    // of invalidating it; setting revokedAt makes resolveToken fail closed.
-    await db
-      .update(agentTokens)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(agentTokens.userId, this.id), isNull(agentTokens.revokedAt)))
-    await db
-      .delete(roleAssignments)
-      .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.subjectId, this.id)))
+    await db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, this.id)).for('update')
+      await prepareActivityRelayUserDeletion(tx, this.id)
+      // Revoke any agent tokens this user owns (e.g. system-manager tokens) before
+      // deleting. The agent_tokens.user_id FK is ON DELETE SET NULL, which would
+      // otherwise silently downgrade the token to a plain agent identity instead
+      // of invalidating it; setting revokedAt makes resolveToken fail closed.
+      await tx
+        .update(agentTokens)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(agentTokens.userId, this.id), isNull(agentTokens.revokedAt)))
+      await tx
+        .delete(roleAssignments)
+        .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.subjectId, this.id)))
+      await tx.delete(users).where(eq(users.id, this.id))
+    })
     invalidatePermissionCache()
-    await db.delete(users).where(eq(users.id, this.id))
   }
 
   async createSession(opts?: {

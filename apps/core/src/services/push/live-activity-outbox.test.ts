@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { users, liveActivityRelayInstallations as rows } from '../../db/schema'
-import { decrypt, getEncryptionKey } from '../secrets/crypto'
+import { encrypt, decrypt, getEncryptionKey } from '../secrets/crypto'
 import { registerActivityRelay, pumpActivityRelay, unregisterActivityRelay } from './live-activity-outbox'
 import type { CoreLiveActivityRegistration, RelayLiveActivitySend } from '@ficus/shared/live-activity-relay'
 
@@ -189,7 +189,15 @@ test('updates use fresh projections while an unknown delivery remains blocked wi
 
 test('ownership, stale generation and idempotent replay checks protect existing registrations', async () => {
   await registerActivityRelay(userId, start)
-  await expect(registerActivityRelay(crypto.randomUUID(), start)).rejects.toThrow('another user')
+  const [other] = await db
+    .insert(users)
+    .values({ email: `${crypto.randomUUID()}@example.test` })
+    .returning()
+  try {
+    await expect(registerActivityRelay(other!.id, start)).rejects.toThrow('another user')
+  } finally {
+    await db.delete(users).where(eq(users.id, other!.id))
+  }
   expect(await registerActivityRelay(userId, start)).toEqual({ id: activationId })
   await expect(registerActivityRelay(userId, { ...start, bindingToken: token() })).rejects.toThrow('Stale')
   await unregisterActivityRelay(crypto.randomUUID(), activationId)
@@ -250,4 +258,105 @@ test('device observation can resolve an uncertain start without replacing its li
   })
   expect(await registerActivityRelay(userId, update(key))).toEqual({ id: activationId })
   expect((await state()).blocked).toBeUndefined()
+})
+
+test('user erasure retains only a content-free end and retries it without reading a user snapshot', async () => {
+  const { User } = await import('../../entities/User')
+  await registerActivityRelay(userId, update())
+  await pumpActivityRelay({ snapshot: async () => active, send: async () => ({ ok: true, status: 'sent' }) })
+  await (await User.findById(userId))!.delete()
+  expect((await row()).userId).toBeNull()
+  const retired = await state()
+  expect(retired.pending.event).toBe('end')
+  expect(retired.start).toBeUndefined()
+  expect(retired.update).toBeUndefined()
+  expect(retired.lastState).toBeUndefined()
+  expect(retired.pending.contentState).toBeUndefined()
+  const events: RelayLiveActivitySend[] = []
+  const snapshot = async () => {
+    throw new Error('deleted user snapshot must not be loaded')
+  }
+  await pumpActivityRelay({
+    cleanupOnly: true,
+    snapshot,
+    send: async (event) => {
+      events.push(event)
+      return { ok: false, reason: 'relay_unavailable', retryable: true }
+    },
+  })
+  await due()
+  await pumpActivityRelay({
+    cleanupOnly: true,
+    snapshot,
+    send: async (event) => {
+      events.push(event)
+      return { ok: true, status: 'sent' }
+    },
+  })
+  expect(events).toEqual([retired.pending, retired.pending])
+  expect(await row()).toBeUndefined()
+})
+test('deletion invalidates a worker snapshot lease before it can send cached content', async () => {
+  const { User } = await import('../../entities/User')
+  await registerActivityRelay(userId, update())
+  let resolveSnapshot!: () => void
+  let snapshotStarted!: () => void
+  const started = new Promise<void>((resolve) => {
+    snapshotStarted = resolve
+  })
+  let sent = 0
+  const pump = pumpActivityRelay({
+    snapshot: async () => {
+      snapshotStarted()
+      await new Promise<void>((resolve) => {
+        resolveSnapshot = resolve
+      })
+      return active
+    },
+    send: async () => {
+      sent++
+      return { ok: true, status: 'sent' }
+    },
+  })
+  await started
+  await (await User.findById(userId))!.delete()
+  resolveSnapshot()
+  await pump
+  expect(sent).toBe(0)
+  expect((await state()).pending.event).toBe('end')
+  await expect(registerActivityRelay(userId, start)).rejects.toThrow('User not found')
+})
+test('cleanup-only pumps ignore live users; deleted start-only registrations cannot restart activities', async () => {
+  const { User } = await import('../../entities/User')
+  await registerActivityRelay(userId, start)
+  expect(await pumpActivityRelay({ cleanupOnly: true })).toBe(false)
+  await (await User.findById(userId))!.delete()
+  expect(await row()).toBeUndefined()
+})
+
+test('orphan cleanup expires without sending and corrupt state never blocks user erasure', async () => {
+  const { User } = await import('../../entities/User')
+  await registerActivityRelay(userId, update())
+  await (await User.findById(userId))!.delete()
+  const retired = await state()
+  retired.cleanupExpiresAt = Date.now() - 1
+  await db
+    .update(rows)
+    .set({ stateEnc: JSON.stringify(encrypt(JSON.stringify(retired), getEncryptionKey())) })
+    .where(eq(rows.activationId, activationId))
+  let sends = 0
+  await pumpActivityRelay({
+    cleanupOnly: true,
+    send: async () => {
+      sends++
+      return { ok: true, status: 'sent' }
+    },
+  })
+  expect(sends).toBe(0)
+  expect(await row()).toBeUndefined()
+  await db.insert(users).values({ id: userId, email: `${crypto.randomUUID()}@example.test` })
+  await registerActivityRelay(userId, update())
+  await db.update(rows).set({ stateEnc: 'unreadable' }).where(eq(rows.activationId, activationId))
+  await (await User.findById(userId))!.delete()
+  expect(await row()).toBeUndefined()
 })
