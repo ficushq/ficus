@@ -45,10 +45,14 @@ export async function registerActivityRelay(userId: string, raw: CoreLiveActivit
     const [row] = await tx.select().from(rows).where(eq(rows.activationId, input.activationId)).for('update')
     if (row && row.userId !== userId) throw new Error('Registration belongs to another user')
     const state: State = row ? decode(row.stateEnc) : { sequence: 0, attempts: 0 }
+    const resetRequired =
+      state.blocked === 'delivery_unknown' &&
+      Boolean(state.update) &&
+      (input.kind === 'start' || state.activityKey === input.activityKey)
     if (row && input.generation <= row.generation) {
       const previous = input.kind === 'start' ? state.start : state.update
       if (JSON.stringify(previous) !== JSON.stringify(input)) throw new Error('Stale registration')
-      return { id: input.activationId }
+      return { id: input.activationId, ...(resetRequired ? { resetRequired: true } : {}) }
     }
     if (input.kind === 'start') state.start = input
     else {
@@ -66,7 +70,8 @@ export async function registerActivityRelay(userId: string, raw: CoreLiveActivit
       }
       state.update = input
     }
-    state.blocked = undefined
+    // A new token cannot prove an uncertain update/end was received. Require a new lifecycle.
+    if (!resetRequired) state.blocked = undefined
     state.attempts = 0
     const at = await clock(tx)
     await tx
@@ -83,7 +88,7 @@ export async function registerActivityRelay(userId: string, raw: CoreLiveActivit
           updatedAt: at,
         },
       })
-    return { id: input.activationId }
+    return { id: input.activationId, ...(resetRequired ? { resetRequired: true } : {}) }
   })
 }
 

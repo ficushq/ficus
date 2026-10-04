@@ -43,7 +43,8 @@ export function pushResource(t: Transport) {
 
     registerLiveActivityRelay: (
       input: import('@ficus/shared/live-activity-relay').CoreLiveActivityRegistration
-    ): Promise<RegisteredDevice> => t.request('/push/live-activity/relay', { method: 'POST', body: input }),
+    ): Promise<RegisteredDevice & { resetRequired?: boolean }> =>
+      t.request('/push/live-activity/relay', { method: 'POST', body: input }),
     unregisterLiveActivityRelay: (activationId: string): Promise<void> =>
       t.request(`/push/live-activity/relay/${encodeURIComponent(activationId)}`, { method: 'DELETE' }),
 
