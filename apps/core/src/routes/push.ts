@@ -1,3 +1,10 @@
+import { z } from 'zod'
+import { coreLiveActivityRegistrationSchema } from '@ficus/shared/live-activity-relay'
+import {
+  registerActivityRelay,
+  unregisterActivityRelay,
+  liveActivityRelayEnabled,
+} from '../services/push/live-activity-outbox'
 import { getSettingsStore } from '../services/settings'
 import { listDesktopNotifications } from '../services/push/desktop'
 import { pushRelayConfig, enrollInstancePro } from '../services/push/relay'
@@ -41,7 +48,11 @@ pushRouter.get('/relay-config', (c) => {
   c.set('authzChecked', true)
   try {
     const config = pushRelayConfig()
-    return c.json(config ? { enabled: true, instanceId: config.instanceId } : { enabled: false })
+    return c.json(
+      config
+        ? { enabled: true, instanceId: config.instanceId, liveActivities: liveActivityRelayEnabled() }
+        : { enabled: false }
+    )
   } catch {
     return c.json({ error: 'Relay configuration is invalid' }, 503)
   }
@@ -223,5 +234,29 @@ pushRouter.delete('/device/:id', async (c) => {
   c.set('authzChecked', true)
   const deleted = await deleteApnsDeviceForUser(c.req.param('id'), userId)
   if (!deleted) return c.json({ error: 'Device not found' }, 404)
+  return c.json({ success: true })
+})
+
+// Human-owned relay capabilities are separate from direct APNs registrations.
+pushRouter.post('/live-activity/relay', async (c) => {
+  if (c.get('identity')?.type !== 'user') return c.json({ error: 'User identity required' }, 401)
+  c.set('authzChecked', true)
+  if (!liveActivityRelayEnabled()) return c.json({ error: 'Relay activities are unavailable' }, 404)
+  const input = coreLiveActivityRegistrationSchema.safeParse(await c.req.json())
+  if (!input.success) return c.json({ error: 'Invalid relay registration' }, 400)
+  try {
+    if (!pushRelayConfig()) return c.json({ error: 'Relay activities are not configured' }, 503)
+    return c.json(await registerActivityRelay(getPushUserId(c)!, input.data), 201)
+  } catch {
+    return c.json({ error: 'Relay registration could not be applied' }, 409)
+  }
+})
+pushRouter.delete('/live-activity/relay/:activationId', async (c) => {
+  if (c.get('identity')?.type !== 'user') return c.json({ error: 'User identity required' }, 401)
+  c.set('authzChecked', true)
+  const activationId = c.req.param('activationId')
+  if (!z.string().uuid().safeParse(activationId).success) return c.json({ error: 'Invalid registration' }, 400)
+  // Cleanup remains available with delivery disabled.
+  await unregisterActivityRelay(getPushUserId(c)!, activationId)
   return c.json({ success: true })
 })

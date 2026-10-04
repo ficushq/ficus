@@ -137,3 +137,21 @@ Send protocol outcomes, including `in_flight` and `delivery_unknown`, use the
 versioned JSON response envelope with HTTP 200. HTTP failures are ingress or
 transport errors. This preserves the transport's distinction between an exact
 retryable event and a provider outcome that must not be replayed.
+
+## Durable Core runtime
+
+`FICUS_LIVE_ACTIVITY_RELAY_ENABLED=true` explicitly enables the prepared relay
+registration endpoint and bounded delivery runner. It remains off by default.
+Human users submit strict capability receipts to `/api/push/live-activity/relay`;
+raw APNs tokens remain on the independent direct endpoint. Cleanup is allowed
+with delivery disabled. The client library exposes both modes separately.
+
+Encrypted installation state contains destination capabilities, lifecycle key,
+sequence, exact pending payload and retry state. Database leases serialize API
+processes, recover abandoned sends and fence completions after registration or
+removal. Core polls authoritative privacy-scoped work snapshots; changed content
+never causes the old payload to be replayed. Native proof of a matching started
+activity advances a pending start without pretending later updates were delivered.
+Unknown delivery and protocol denials wait for device reconciliation. There is no
+fallback to direct APNs. Device-signed Cloud revocation is required in addition to
+Core removal, including when a removed account's Core credentials no longer work.
