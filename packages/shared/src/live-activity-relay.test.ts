@@ -198,3 +198,51 @@ describe('relay-owned ActivityKit payload', () => {
     ).toThrow('too large')
   })
 })
+
+describe('installation registration proof', () => {
+  test('binds every challenge field and uses a separate proof domain', async () => {
+    const { liveActivityRegistrationProofMessage } = await import('./live-activity-relay')
+    const { activationProofMessage } = await import('./push-relay')
+    const challenge = {
+      version: 1 as const,
+      id: randomUUID(),
+      instanceId: randomUUID(),
+      activationId: randomUUID(),
+      origin: 'https://home.example.test',
+      nonce: 'a'.repeat(43),
+      expiresAt: '2030-01-01T00:00:00.000Z',
+      operationDigest: 'b'.repeat(64),
+      generation: 0,
+    }
+    const message = liveActivityRegistrationProofMessage(challenge)
+    expect(message).not.toBe(activationProofMessage(challenge))
+    for (const change of [
+      { id: randomUUID() },
+      { instanceId: randomUUID() },
+      { activationId: randomUUID() },
+      { origin: 'https://other.example.test' },
+      { nonce: 'b'.repeat(43) },
+      { expiresAt: '2030-01-02T00:00:00.000Z' },
+      { operationDigest: 'c'.repeat(64) },
+      { generation: 1 },
+    ])
+      expect(liveActivityRegistrationProofMessage({ ...challenge, ...change })).not.toBe(message)
+    expect(() => liveActivityRegistrationProofMessage({ ...challenge, generation: -1 })).toThrow()
+  })
+  test('preview consent is part of the signed registration payload and defaults off', () => {
+    const registration = {
+      version: 1 as const,
+      activationId: randomUUID(),
+      bindingToken,
+      deviceToken: 'a'.repeat(64),
+      environment: 'sandbox' as const,
+      kind: 'start' as const,
+    }
+    expect(liveActivityRegistrationPayload(registration)).toBe(
+      liveActivityRegistrationPayload({ ...registration, previews: false })
+    )
+    expect(liveActivityRegistrationPayload(registration)).not.toBe(
+      liveActivityRegistrationPayload({ ...registration, previews: true })
+    )
+  })
+})
