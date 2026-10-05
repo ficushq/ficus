@@ -1,3 +1,4 @@
+import { relayInstanceTokenPattern } from '@ficus/shared/push-relay'
 import { existsSync } from 'node:fs'
 import { createPrivateKey } from 'node:crypto'
 import { z } from 'zod'
@@ -126,10 +127,11 @@ export async function initializePushIntegrationStates() {
   const store = getSecretStore()
   const configured = {
     'apple-push':
-      !!(store.get('APNS_KEY_P8') || store.get('APNS_KEY_P8_FILE')) &&
-      !!store.get('APNS_KEY_ID') &&
-      !!store.get('APNS_TEAM_ID') &&
-      !!store.get('APNS_BUNDLE_ID'),
+      relayInstanceTokenPattern.test(store.get('FICUS_PUSH_RELAY_TOKEN')?.trim() ?? '') ||
+      (!!(store.get('APNS_KEY_P8') || store.get('APNS_KEY_P8_FILE')) &&
+        !!store.get('APNS_KEY_ID') &&
+        !!store.get('APNS_TEAM_ID') &&
+        !!store.get('APNS_BUNDLE_ID')),
     'web-push': !!store.get('VAPID_SUBJECT') || !!store.get('VAPID_PUBLIC_KEY') || existsSync(getVapidKeysPath()),
   }
   for (const [provider, enabled] of Object.entries(configured)) {
