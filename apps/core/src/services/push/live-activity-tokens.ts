@@ -100,3 +100,9 @@ export async function listLiveActivityTokens(userIds: string[], kind?: LiveActiv
     .from(liveActivityTokens)
     .where(where)
 }
+
+/** Only installations using Live Activities need background snapshot recomputation. */
+export async function listLiveActivityUserIds(): Promise<string[]> {
+  const rows = await db.selectDistinct({ userId: liveActivityTokens.userId }).from(liveActivityTokens)
+  return rows.map((row) => row.userId)
+}

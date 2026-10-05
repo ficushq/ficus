@@ -44,12 +44,8 @@ function loader(options: {
       subscriptionLoads++
       return buildUserAttention(squadRows, streamRows)
     },
-    loadCandidates: async (squadIds, streamIds) =>
-      (options.candidates ?? []).filter(
-        (stream) =>
-          (stream.status === 'active' || stream.status === 'queued') &&
-          (squadIds.includes(stream.squadId) || streamIds.includes(stream.id))
-      ),
+    loadCandidates: async () =>
+      (options.candidates ?? []).filter((stream) => stream.status === 'active' || stream.status === 'queued'),
     canReadSquad: async (_userId, squadId) => {
       checked.push(squadId)
       return !(options.deniedSquads ?? []).includes(squadId)
@@ -78,20 +74,20 @@ function loader(options: {
 }
 
 describe('work interest selector', () => {
-  test('includes active work from watched squads only', async () => {
+  test('includes watched and default-Show active work', async () => {
     const { load } = loader({
       watchedSquads: ['watched'],
       candidates: [candidate('watched-stream', 'watched'), candidate('other-stream', 'other')],
     })
-    expect((await load('user-1')).top.map(({ id }) => id)).toEqual(['watched-stream'])
+    expect((await load('user-1')).top.map(({ id }) => id)).toEqual(['other-stream', 'watched-stream'])
   })
 
-  test('includes a directly subscribed stream without its unwatched siblings', async () => {
+  test('includes directly subscribed work and default-Show siblings', async () => {
     const { load } = loader({
       directStreams: ['direct'],
       candidates: [candidate('direct', 'unwatched'), candidate('sibling', 'unwatched')],
     })
-    expect((await load('user-1')).top.map(({ id }) => id)).toEqual(['direct'])
+    expect((await load('user-1')).top.map(({ id }) => id)).toEqual(['direct', 'sibling'])
   })
 
   test('unions watched and direct interest with exact-id dedupe', async () => {
@@ -106,10 +102,10 @@ describe('work interest selector', () => {
     expect(snapshot.top.map(({ id }) => id).sort()).toEqual(['direct', 'same'])
   })
 
-  test('mere RBAC accessibility without explicit interest is excluded', async () => {
+  test('default Show includes readable work without explicit subscriptions', async () => {
     const { load, checked } = loader({ candidates: [candidate('accessible-only', 'squad')] })
-    expect((await load('user-1')).totalCount).toBe(0)
-    expect(checked).toEqual([])
+    expect((await load('user-1')).totalCount).toBe(1)
+    expect(checked).toEqual(['squad'])
   })
 
   test('fails closed when current permission is revoked', async () => {
@@ -123,16 +119,16 @@ describe('work interest selector', () => {
     expect(snapshot.top.map(({ id }) => id)).toEqual(['allowed'])
   })
 
-  test('unsubscribe removes otherwise readable directly subscribed work', async () => {
+  test('unsubscribe restores default Show for readable directly subscribed work', async () => {
     const candidates = [candidate('direct', 'unwatched')]
     expect((await loader({ directStreams: ['direct'], candidates }).load('user-1')).totalCount).toBe(1)
-    expect((await loader({ candidates }).load('user-1')).totalCount).toBe(0)
+    expect((await loader({ candidates }).load('user-1')).totalCount).toBe(1)
   })
 
-  test('unwatch removes otherwise readable squad work', async () => {
+  test('unwatch restores default Show for readable squad work', async () => {
     const candidates = [candidate('watched', 'watched')]
     expect((await loader({ watchedSquads: ['watched'], candidates }).load('user-1')).totalCount).toBe(1)
-    expect((await loader({ candidates }).load('user-1')).totalCount).toBe(0)
+    expect((await loader({ candidates }).load('user-1')).totalCount).toBe(1)
   })
 
   test('terminal and deleted work are absent from current interest', async () => {
@@ -231,24 +227,29 @@ describe('work interest selector', () => {
     expect((await load('user-1')).top.map(({ id }) => id)).toEqual(['loud'])
   })
 
-  test('show-level rows are not interest: only notify puts work on the lock screen', async () => {
+  test('explicit Show includes widget and Live Activity content without Notify', async () => {
     const { load, checked } = loader({
       squadAttention: { squad: { decisions: 'show', progress: 'show' } },
       candidates: [candidate('shown', 'squad')],
     })
-    expect((await load('user-1')).totalCount).toBe(0)
-    expect(checked).toEqual([])
+    const snapshot = await load('user-1')
+    expect(snapshot.totalCount).toBe(1)
+    expect(snapshot.liveActivity.top.map((row) => row.id)).toEqual(['shown'])
+    expect(checked).toEqual(['squad'])
   })
 
   test('empty interest returns widget empty state and an ending APNs state', async () => {
-    const snapshot = await loader({ candidates: [candidate('accessible-only', 'squad')] }).load('user-1')
+    const snapshot = await loader({
+      squadAttention: { squad: { decisions: 'mute', progress: 'mute' } },
+      candidates: [candidate('muted', 'squad')],
+    }).load('user-1')
     expect(snapshot.totalCount).toBe(0)
     expect(snapshot.top).toEqual([])
     expect(snapshot.liveActivity).toEqual({ activeCount: 0, needsYouCount: 0, top: [] })
   })
 })
 
-test('authorized widget snapshots carry current slot facts for direct and squad interest, not unrelated work', async () => {
+test('authorized widget snapshots carry current slot facts for direct and squad interest, including default Show but not forbidden work', async () => {
   const { load } = loader({
     watchedSquads: ['watched'],
     directStreams: ['direct', 'forbidden'],
@@ -262,8 +263,8 @@ test('authorized widget snapshots carry current slot facts for direct and squad 
     slotWaiting: ['direct', 'squad', 'unrelated', 'forbidden'],
   })
   const snapshot = await load('user-1')
-  expect(snapshot.top.map((row) => row.id).sort()).toEqual(['direct', 'squad'])
+  expect(snapshot.top.map((row) => row.id).sort()).toEqual(['direct', 'squad', 'unrelated'])
   expect(snapshot.top.every((row) => row.hasActiveSlotWait === true)).toBe(true)
-  expect(snapshot.bucketCounts.externalWait).toBe(2)
-  expect(snapshot.totalCount).toBe(2)
+  expect(snapshot.bucketCounts.externalWait).toBe(3)
+  expect(snapshot.totalCount).toBe(3)
 })
