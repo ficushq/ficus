@@ -18,6 +18,7 @@ import { getVapidContactSubject, loadOrGenerateVapidKeys } from '../../push/vapi
 import { NotificationService } from '../../notifications/service'
 let tempDir = ''
 const credentialKeys = [
+  'FICUS_PUSH_RELAY_TOKEN',
   'APNS_KEY_P8',
   'APNS_KEY_P8_FILE',
   'APNS_KEY_ID',
@@ -147,4 +148,15 @@ test('Web Push stays unconfigured without a valid contact and rejects clearing a
   await expect(configurePushIntegration('web-push', { VAPID_SUBJECT: '  ' }, 'test')).rejects.toThrow()
   expect(getVapidContactSubject()).toBe('mailto:admin@example.com')
   expect(getPushIntegrationSettings('web-push').fields[0].configured).toBe(true)
+})
+
+// Relay delivery uses Platform's signing key; Core only holds its scoped relay credential.
+test('a relay-only instance starts with native push enabled and preserves an explicit disable', async () => {
+  process.env.FICUS_PUSH_RELAY_TOKEN = `ficus_pri_11111111-1111-4111-8111-111111111111_${'a'.repeat(43)}`
+  await initializePushIntegrationStates()
+  expect(getSettingsStore().getStoredValue('__integration-enabled:apple-push')).toBe('true')
+  expect(getApnsConfig()).toBeNull()
+  await setPushIntegrationEnabled('apple-push', false, 'test')
+  await initializePushIntegrationStates()
+  expect(getSettingsStore().getStoredValue('__integration-enabled:apple-push')).toBe('false')
 })
