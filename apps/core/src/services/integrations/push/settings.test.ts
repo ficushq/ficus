@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { inArray } from 'drizzle-orm'
 import { db, secrets, settings } from '../../../db'
 import { getSecretStore, resetSecretStore } from '../../secrets'
@@ -152,11 +152,22 @@ test('Web Push stays unconfigured without a valid contact and rejects clearing a
 
 // Relay delivery uses Platform's signing key; Core only holds its scoped relay credential.
 test('a relay-only instance starts with native push enabled and preserves an explicit disable', async () => {
-  process.env.FICUS_PUSH_RELAY_TOKEN = `ficus_pri_11111111-1111-4111-8111-111111111111_${'a'.repeat(43)}`
-  await initializePushIntegrationStates()
-  expect(getSettingsStore().getStoredValue('__integration-enabled:apple-push')).toBe('true')
-  expect(getApnsConfig()).toBeNull()
-  await setPushIntegrationEnabled('apple-push', false, 'test')
-  await initializePushIntegrationStates()
-  expect(getSettingsStore().getStoredValue('__integration-enabled:apple-push')).toBe('false')
+  const token = `ficus_pri_11111111-1111-4111-8111-111111111111_${'a'.repeat(43)}`
+  // The hermetic SecretStore deliberately refuses runtime-only environment keys
+  // in tests. Supply this owned fixture at the reader boundary instead.
+  const store = getSecretStore()
+  const read = store.get.bind(store)
+  const fixture = spyOn(store, 'get').mockImplementation((key) =>
+    key === 'FICUS_PUSH_RELAY_TOKEN' ? token : read(key)
+  )
+  try {
+    await initializePushIntegrationStates()
+    expect(getSettingsStore().getStoredValue('__integration-enabled:apple-push')).toBe('true')
+    expect(getApnsConfig()).toBeNull()
+    await setPushIntegrationEnabled('apple-push', false, 'test')
+    await initializePushIntegrationStates()
+    expect(getSettingsStore().getStoredValue('__integration-enabled:apple-push')).toBe('false')
+  } finally {
+    fixture.mockRestore()
+  }
 })
