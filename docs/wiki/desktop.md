@@ -31,3 +31,33 @@ The bridge's presence also changes some web app behavior:
 - `instance.kind` decides how Settings → Updates behaves: only `local` (or a build too old to report `instance` at all) gets the native Desktop update panel; `attached` and `remote` instances keep the ordinary git updater section, because they update like any other server.
 - A `remote` instance with `disconnect` swaps the Settings → Account **Logout** row for **Disconnect this Mac from `<name>`**, which calls `instance.disconnect()` instead of signing out. Any other instance kind, or a `remote` instance without `disconnect`, keeps the normal Logout row.
 - When `instance` is present, its `name` appears next to the logo in the app header, visible only in the desktop inset title bar, so a person can tell which instance a given window is showing.
+
+## Desktop navigation history
+
+The existing app header includes **Go back** and **Go forward** arrows after the
+macOS window controls. **Cmd+[** and **Cmd+]** use the same history, in windowed
+and fullscreen mode. Disabled directions are safe no-ops. Editor handlers that
+consume a shortcut take precedence; the web handler prevents the native default
+for handled keys. The desktop menu does not register competing bracket accelerators.
+Ordinary browser/mobile headers and keyboard handling are unchanged.
+
+The web app uses Chromium's Navigation API to inspect real session-history
+entries, then traverses with `history.go` so React Router receives its normal
+pop events. Paths, queries, and hashes participate; replacements do not add an
+entry, and new navigation after going back discards the forward branch. There is
+no separate route stack and no new preload bridge requirement.
+
+Only adjacent entries observed by this app/window are reachable. Entry keys and
+IDs (not URLs or chat contents) are saved in origin-scoped session storage under
+the app's base path, preserving availability on reload. Unknown entries, other
+origins/base paths, and entries replaced by unrelated documents form boundaries.
+If storage is unavailable, history still works within the current document but
+reload starts a new boundary. Desktop clients without the Navigation API show
+disabled arrows rather than guessing from `history.length`; current Desktop's
+Chromium provides the API. New windows start their own session history.
+
+Focused verification: from `apps/web`, run `bun test src/lib/desktopHistory.test.ts`
+and `CHROMIUM_PATH=/path/to/chromium bun scripts/check-desktop-history.ts`.
+The latter exercises the real header, stylesheet, Router, and Chromium history
+without a backend. It simulates the desktop bridge; actual macOS traffic lights,
+window dragging, and native keyboard delivery still require a Desktop check.
