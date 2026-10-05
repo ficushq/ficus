@@ -1772,7 +1772,7 @@ export function ChatView({
         {afterMessages}
       </div>
 
-      {beforeComposer && <div className="shrink-0 px-3 pb-2 md:px-4">{beforeComposer}</div>}
+      {beforeComposer && <div className="shrink-0 px-3 pb-2 md:px-4 empty:hidden">{beforeComposer}</div>}
 
       {/* Input */}
       {!shouldHideComposer && (

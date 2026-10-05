@@ -178,10 +178,12 @@ export function AgentChat({
   const isActive = agent?.status === 'active' || isWaitingInput
 
   // Open async questions this agent asked (rendered near the input; the agent isn't blocked on them).
-  const { data: openQuestions = [] } = useQuery({
-    ...queries.agentQuestions.byAgent(conv.agentId ?? '', 'open'),
-    queryFn: () => api.getAgentQuestions(conv.agentId ?? '', 'open'),
-    enabled: !!conv.agentId,
+  // The conversation hook resolves prop navigation in an effect; prefer the requested chat immediately.
+  const questionAgentId = agentId ?? conv.agentId
+  const { data: openQuestions, isPlaceholderData: questionsArePlaceholder } = useQuery({
+    ...queries.agentQuestions.byAgent(questionAgentId ?? '', 'open'),
+    queryFn: () => api.getAgentQuestions(questionAgentId ?? '', 'open'),
+    enabled: !!questionAgentId,
     // Personal-agent questions normally invalidate through owner-authorized `agents` events.
     // Retain a narrow polling safety net for a dropped frame or suspended socket.
     refetchInterval: agent?.squadId === null ? (dependencies?.pendingQuestionsFallbackIntervalMs ?? 60_000) : false,
@@ -315,10 +317,18 @@ export function AgentChat({
       </>
     ) : undefined
 
-  const pendingQuestionsBanner =
-    openQuestions.length > 0 ? (
-      <PendingQuestionsBanner questions={openQuestions} agentName={(agent && getAgentName(agent)) || 'Agent'} />
-    ) : undefined
+  const pendingQuestionsBanner = questionAgentId ? (
+    // Stay mounted through empty/loading results, but reset all local UI/history on navigation.
+    <PendingQuestionsBanner
+      key={questionAgentId}
+      questions={
+        !questionsArePlaceholder && openQuestions?.every((question) => question.agentId === questionAgentId)
+          ? openQuestions
+          : undefined
+      }
+      agentName={(agent?.id === questionAgentId && getAgentName(agent)) || 'Agent'}
+    />
+  ) : undefined
 
   return (
     <ChatViewComponent

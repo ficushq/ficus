@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentType } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import type { AgentQuestion } from '@ficus/shared'
 import { AgentQuestionCard } from './AgentQuestionCard'
 import { Modal } from './Modal'
@@ -11,7 +11,8 @@ interface QuestionCardProps {
 }
 
 interface PendingQuestionsBannerProps {
-  questions: AgentQuestion[]
+  /** Undefined until this chat has real query data; an empty array is a loaded baseline. */
+  questions: AgentQuestion[] | undefined
   agentName: string
   dependencies?: { QuestionCardComponent?: ComponentType<QuestionCardProps> }
 }
@@ -21,9 +22,25 @@ export function PendingQuestionsBanner({ questions, agentName, dependencies }: P
   const QuestionCardComponent = dependencies?.QuestionCardComponent ?? AgentQuestionCard
   const [collapsed, setCollapsed] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
+  const seenQuestionIds = useRef<Set<string> | null>(null)
   const [optimisticallyAnswered, setOptimisticallyAnswered] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
+    if (!questions) return
+    const ids = questions.map((question) => question.id)
+    const seen = seenQuestionIds.current
+    if (seen === null) {
+      // Initial history is not a live arrival. Keep the manual-open behavior on hydration.
+      seenQuestionIds.current = new Set(ids)
+    } else {
+      if (ids.some((id) => !seen.has(id))) setIsOpen(true)
+      // Retain IDs across removals/optimistic answers so stale refetches cannot reopen them.
+      for (const id of ids) seen.add(id)
+    }
+  }, [questions])
+
+  useEffect(() => {
+    if (!questions) return
     setOptimisticallyAnswered((current) => {
       const currentQuestionIds = new Set(questions.map((question) => question.id))
       const next = new Set([...current].filter((id) => currentQuestionIds.has(id)))
@@ -32,7 +49,7 @@ export function PendingQuestionsBanner({ questions, agentName, dependencies }: P
   }, [questions])
 
   const visibleQuestions = useMemo(
-    () => questions.filter((question) => !optimisticallyAnswered.has(question.id)),
+    () => questions?.filter((question) => !optimisticallyAnswered.has(question.id)) ?? [],
     [optimisticallyAnswered, questions]
   )
 
