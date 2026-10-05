@@ -15,6 +15,7 @@ import { registerServiceWorker } from './lib/serviceWorker'
 import { DevBackendBar } from './components/DevBackendBar'
 import { prepareOAuthCallbackHistory } from './lib/oauthCallbackBootstrap'
 import { resumeLastApp } from './lib/appSurface'
+import { initializeDesktopHistory } from './lib/desktopHistory'
 
 // OAuth callback capabilities and codes must leave the URL before service
 // worker registration, auth bootstrap, or any other network-capable work.
@@ -25,6 +26,7 @@ prepareOAuthCallbackHistory()
 if (!resumeLastApp()) boot()
 
 function boot() {
+  initializeDesktopHistory()
   // Register service worker as early as possible
   if ('serviceWorker' in navigator) {
     registerServiceWorker().catch(console.error)

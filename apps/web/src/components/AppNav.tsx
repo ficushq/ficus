@@ -1,3 +1,4 @@
+import { DesktopHistoryControls } from './DesktopHistoryControls'
 import { SparklesIcon } from './icons'
 import { Presence } from './Presence'
 import clsx from 'clsx'
@@ -103,6 +104,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
     <>
       <header className="ficus-app-header ficus-glass relative border-b border-panel-border shrink-0 z-10 safe-area-pt safe-area-status-bar-scrim">
         <div className="ficus-app-header-bar max-w-7xl mx-auto py-2.5 md:py-3 px-4 md:px-6 flex items-center gap-4">
+          <DesktopHistoryControls />
           {/* Left: Logo */}
           <h1 className="ficus-app-header-logo text-xl md:text-2xl font-bold text-primary">
             <Link to="/" className="flex items-center gap-2 hover:text-link-hover transition-colors">
