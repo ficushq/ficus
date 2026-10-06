@@ -2,8 +2,7 @@ interface IconProps {
   className?: string
 }
 
-/** A phone/handheld device outline — Settings' App (installation/offline
- * cache) section, distinct from MonitorIcon's desktop screen (Paired Devices). */
+/** A handheld device outline for Mobile, distinct from Paired Devices’ desktop screen. */
 export function DeviceIcon({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
