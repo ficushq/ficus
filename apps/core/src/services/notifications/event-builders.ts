@@ -291,20 +291,25 @@ export const eventBuilders: Record<string, EventBuilder> = {
     // chat in its squad; non-agent senders (system/user/voice) fall back to Feed.
     const senderMeta = message.metadata?.sender as { squadId?: string } | undefined
     const isAgentSender = message.senderType === 'agent' && !!message.senderId
-    const fleetSquadId =
+    const metadataSquadId =
       typeof message.metadata?.squadId === 'string' && UUID_PATTERN.test(message.metadata.squadId)
         ? message.metadata.squadId
         : undefined
     const isFleetAlert =
       message.senderType === 'system' &&
       message.metadata?.source === 'fleet-alert' &&
-      (message.metadata.squadId === undefined || fleetSquadId !== undefined)
-    const fleetSquad = isFleetAlert && fleetSquadId ? await Squad.find(fleetSquadId) : null
+      (message.metadata.squadId === undefined || metadataSquadId !== undefined)
+    const fleetSquad = isFleetAlert && metadataSquadId ? await Squad.find(metadataSquadId) : null
     const trustedMetadata = message.senderType === 'system' ? message.metadata : null
     const trustedString = (key: 'workStreamId' | 'waitId' | 'questionId' | 'actionId') => {
       const value = trustedMetadata?.[key]
       return typeof value === 'string' && value ? value : undefined
     }
+    // Lifecycle inbox notifications already store their squad, but are not fleet alerts.
+    // Preserve that trusted context so mobile can open completed work outside the active Feed.
+    const workStreamSquad =
+      trustedString('workStreamId') && metadataSquadId ? (fleetSquad ?? (await Squad.find(metadataSquadId))) : null
+    const inboxSquad = workStreamSquad ?? fleetSquad
     // A system-authored message may carry copy written for the phone; the row's subject and
     // content were written for its recipient. Agents and users cannot restyle their own alerts.
     const push = parseInboxPushPresentation(trustedMetadata?.push)
@@ -322,8 +327,8 @@ export const eventBuilders: Record<string, EventBuilder> = {
       questionId: trustedString('questionId'),
       actionId: trustedString('actionId'),
       agentId: isAgentSender ? message.senderId! : undefined,
-      squadId: isAgentSender ? senderMeta?.squadId : fleetSquad?.id,
-      squadName: fleetSquad?.name,
+      squadId: isAgentSender ? senderMeta?.squadId : inboxSquad?.id,
+      squadName: inboxSquad?.name,
       title: push?.title ?? (message.subject || 'New message'),
       body: push?.body ?? message.content.slice(0, 300),
       pushSource: push?.source ?? { body: push?.body ?? message.content },
