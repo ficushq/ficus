@@ -1,4 +1,4 @@
-import { RelayConnectionSettings } from './RelayConnectionSettings'
+import { Link } from 'react-router-dom'
 import { IntegrationCredentialSettings } from '../integrations/IntegrationCredentialSettings'
 import { IntegrationLogo } from '../integrations/IntegrationLogo'
 import { useEffect, useState } from 'react'
@@ -166,7 +166,7 @@ export function IntegrationDirectoryCard({
               />
               <p className="text-sm text-muted">
                 {entry.key === 'apple-push'
-                  ? 'For a custom native app build, configure its own Apple push signing key here. The official Ficus app uses the Ficus mobile & Pro connection above; Ficus Cloud configures delivery automatically.'
+                  ? 'For a custom native app build, configure its own Apple push signing key here. The official Ficus app uses Settings → Mobile; Ficus Cloud configures delivery automatically.'
                   : 'Ficus generates and stores browser push signing keys automatically. Set an email address or HTTPS contact URL for the push service. Devices subscribe in personal Notifications settings.'}
               </p>
             </div>
@@ -248,7 +248,14 @@ export function IntegrationsSection() {
           Connect the apps your squads use. Enable or disable them across Ficus without losing their settings.
         </p>
       </header>
-      <RelayConnectionSettings />
+      {permissions.identity?.type === 'user' && permissions.can('settings:read') && (
+        <p className="text-sm text-muted">
+          Taking Ficus with you?{' '}
+          <Link to="/settings?section=mobile" className="text-accent-light hover:underline">
+            Set up the mobile app and Pro coverage →
+          </Link>
+        </p>
+      )}
       <div className="relative">
         <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted">
           <SearchIcon className="h-4 w-4" />

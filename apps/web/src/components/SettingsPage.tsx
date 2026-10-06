@@ -1,3 +1,4 @@
+import { MobileSection } from './settings/MobileSection'
 import { SETTINGS_SEARCH_ENTRIES } from './settings/settingsSearch'
 import { LinkedChatAccounts } from './settings/LinkedChatAccounts'
 import { SECTION_GROUPS, isSectionAllowed, isValidSection, type SectionId } from './settings/settingsSections'
@@ -101,21 +102,23 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
   })
   const catalog = useQuery(integrationQueries.catalog())
   const hideUpdates = updateSettings.data?.managed === true
-  const mobileSetupAllowed = identity?.type === 'user' && can('settings:read')
+  const mobilePageAllowed = identity?.type === 'user'
+  const mobileSetupAllowed = mobilePageAllowed && can('settings:read')
   const integrationAllowed =
-    mobileSetupAllowed ||
-    (catalog.isSuccess &&
-      Array.isArray(catalog.data?.integrations) &&
-      catalog.data.integrations.some((entry) => can(`integrations:read:${entry.key}`) || can('integrations:read')))
+    catalog.isSuccess &&
+    Array.isArray(catalog.data?.integrations) &&
+    catalog.data.integrations.some((entry) => can(`integrations:read:${entry.key}`) || can('integrations:read'))
   const sectionVisible = useCallback(
     (section: SectionId) =>
       isSectionAllowed(
         section,
         can,
-        permissionsLoading || (section === 'integrations' && !mobileSetupAllowed && catalog.isPending),
+        permissionsLoading || (section === 'integrations' && catalog.isPending),
         integrationAllowed
-      ) && !(section === 'updates' && hideUpdates),
-    [can, permissionsLoading, catalog.isPending, mobileSetupAllowed, integrationAllowed, hideUpdates]
+      ) &&
+      !(section === 'updates' && hideUpdates) &&
+      !(section === 'mobile' && !mobilePageAllowed),
+    [can, permissionsLoading, catalog.isPending, mobilePageAllowed, integrationAllowed, hideUpdates]
   )
   const legacySection = searchParams.get('section')
   const target = searchParams.get('setting') ?? ''
@@ -183,6 +186,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
           {activeSection === 'squad-presets' && <SquadPresetsSection />}
           {activeSection === 'workflows' && <WorkflowsSection />}
           {activeSection === 'integrations' && <IntegrationsSection />}
+          {activeSection === 'mobile' && <MobileSection />}
           {activeSection === 'notification-rules' && <NotificationsConfigSection />}
           {activeSection === 'providers' && <ProviderAuthSection />}
           {activeSection === 'git' && <SecretsSection />}

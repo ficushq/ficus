@@ -88,24 +88,21 @@ export function RelayConnectionSettings() {
   const error = start.error ?? disconnect.error ?? connection.error
   const busy = start.isPending || disconnect.isPending || !!request
   return (
-    <section
-      data-setting-target="mobile-pro"
-      tabIndex={-1}
-      className="ficus-section scroll-mt-6 space-y-4 border-b border-th-border pb-6"
-    >
+    <section data-setting-target="mobile-pro" tabIndex={-1} className="ficus-section scroll-mt-6 space-y-4">
       <div>
-        <h4 className="text-sm font-semibold text-primary">Ficus mobile & Pro</h4>
-        <p className="mt-1 text-sm text-muted">
-          Bring your servers to the Ficus mobile app, with push notifications, widgets and Live Activities.
-        </p>
+        <h4 className="text-sm font-semibold text-primary">Connection & Pro coverage</h4>
       </div>
       {connection.isPending ? (
         <p className="text-sm text-muted">Checking mobile connection…</p>
       ) : data?.managed ? (
-        <p className="text-sm text-muted">
-          Mobile Pro features are included with paid Ficus Cloud access. Push delivery is managed automatically; no
-          account connection or relay setup is needed here.
-        </p>
+        <div className="space-y-3 text-sm text-muted">
+          <p>
+            Mobile Pro features are included with paid Ficus Cloud access. Push delivery is managed automatically; no
+            account connection or relay setup is needed here.
+          </p>
+          <p>Add this server in the Ficus mobile app and sign in to your instance account.</p>
+          {data.origin && <p className="break-all text-xs">Server address: {data.origin}</p>}
+        </div>
       ) : (
         data && (
           <>

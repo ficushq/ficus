@@ -29,6 +29,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         label: 'Notifications',
         description: 'Your notification delivery and sound preferences.',
       },
+      { id: 'mobile', label: 'Mobile', description: 'Mobile app, Pro coverage, and relay setup.' },
       { id: 'devices', label: 'Paired Devices', description: 'Pair and manage linked devices.' },
       { id: 'sessions', label: 'Sessions', description: 'Active sign-in sessions and revocation.' },
     ],
@@ -39,7 +40,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'workflows',
         label: 'Workflows',
-        description: 'Reusable flows: participants, steps, handoffs, reviews, limits, and delivery policies.',
+        description: 'Flows, participants, handoffs, approvals, limits and delivery.',
       },
       {
         id: 'agent-types',
@@ -54,7 +55,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'integrations',
         label: 'Integrations',
-        description: 'Enable apps, connect accounts, and configure integration credentials and services.',
+        description: 'Apps, accounts, credentials and services.',
       },
     ],
   },
@@ -97,7 +98,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'providers',
         label: 'AI Providers',
-        description: 'Connect model provider accounts and configure custom local providers.',
+        description: 'Model accounts and local providers.',
       },
       {
         id: 'memory',
