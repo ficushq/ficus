@@ -343,6 +343,65 @@ describe('notification event builders', () => {
     expect(spoofed?.actionId).toBeUndefined()
   })
 
+  test.each(['done', 'canceled', 'review'])(
+    'preserves squad routing for system work-stream %s inbox pushes',
+    async (event) => {
+      const squadId = '00000000-0000-4000-8000-000000000002'
+      track(
+        spyOn(InboxMessage, 'find').mockResolvedValue({
+          id: 'lifecycle-message',
+          senderType: 'system',
+          metadata: { workStreamId: 'ws1', squadId, event },
+          subject: 'Work stream update',
+          content: 'Open the work stream.',
+        } as any)
+      )
+      track(spyOn(Squad, 'find').mockResolvedValue({ id: squadId, name: 'Engineering' } as any))
+      expect(await buildNotificationEvent('inbox.messageReceived', { messageId: 'lifecycle-message' })).toMatchObject({
+        type: 'inbox.messageReceived',
+        notificationKind: `workStream.${event}`,
+        messageId: 'lifecycle-message',
+        workStreamId: 'ws1',
+        squadId,
+        squadName: 'Engineering',
+      })
+    }
+  )
+
+  test('does not infer work-stream squad routing from user-authored metadata', async () => {
+    track(
+      spyOn(InboxMessage, 'find').mockResolvedValue({
+        id: 'spoofed',
+        senderType: 'user',
+        senderId: 'user1',
+        metadata: { workStreamId: 'ws1', squadId: '00000000-0000-4000-8000-000000000002', event: 'done' },
+        subject: 'Update',
+        content: 'Body',
+      } as any)
+    )
+    const lookup = track(spyOn(Squad, 'find').mockResolvedValue(null))
+    const event = await buildNotificationEvent('inbox.messageReceived', { messageId: 'spoofed' })
+    expect(event?.squadId).toBeUndefined()
+    expect(event?.workStreamId).toBeUndefined()
+    expect(lookup).not.toHaveBeenCalled()
+  })
+
+  test('keeps the inbox target when a work-stream squad no longer exists', async () => {
+    track(
+      spyOn(InboxMessage, 'find').mockResolvedValue({
+        id: 'orphaned',
+        senderType: 'system',
+        metadata: { workStreamId: 'ws1', squadId: '00000000-0000-4000-8000-000000000002', event: 'done' },
+        subject: 'Update',
+        content: 'Body',
+      } as any)
+    )
+    track(spyOn(Squad, 'find').mockResolvedValue(null))
+    const event = await buildNotificationEvent('inbox.messageReceived', { messageId: 'orphaned' })
+    expect(event?.messageId).toBe('orphaned')
+    expect(event?.squadId).toBeUndefined()
+  })
+
   test('uses the stored push presentation for system inbox messages and ignores it from other senders', async () => {
     const push = {
       title: 'Completed: #197 · Validate deletion',
