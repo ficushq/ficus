@@ -213,20 +213,32 @@ export class RelayServerConnection {
       }
       const verifier = this.deps.read(verifierKey(id))
       if (!verifier) throw new RelayConnectionError('This connection request expired. Start again.', 409)
+      const exchange = async (path: string, body?: unknown, token?: string) => {
+        try {
+          return await this.request(p.baseUrl, path, body, token)
+        } catch (error) {
+          // Revocation/expiry is definitive; resuming it would strand Connect for ten minutes.
+          // Transient transport and persistence failures retain the recovery capability.
+          if (error instanceof RelayConnectionError && error.status === 409) await this.clearPending(userId)
+          throw error
+        }
+      }
       const result = z
         .union([
           z.object({ status: z.enum(['pending', 'denied']) }),
           z.object({ status: z.literal('connected'), token: z.string().regex(relayInstanceTokenPattern) }),
         ])
-        .parse(await this.request(p.baseUrl, 'token', { id, codeVerifier: verifier }))
+        .parse(await exchange('token', { id, codeVerifier: verifier }))
       if (result.status === 'denied') await this.clearPending(userId)
       if (result.status !== 'connected') return { status: result.status }
-      const status = statusSchema.parse(await this.request(p.baseUrl, 'status', undefined, result.token))
+      const status = statusSchema.parse(await exchange('status', undefined, result.token))
       if (
         publicOrigin(status.origin) !== p.origin ||
         relayInstanceTokenPattern.exec(result.token)?.[1] !== status.instanceId
-      )
+      ) {
+        await this.clearPending(userId)
         throw new RelayConnectionError('The approved credential belongs to a different server. Start again.', 409)
+      }
       await this.deps.save(p.key, result.token, userId)
       // Keep the request until token persistence succeeds, allowing recovery after a lost response/restart.
       await this.clearPending(userId)

@@ -16,6 +16,7 @@ function fixture() {
   const storage = new Map<string, string>()
   let failSave = false
   let now = 0
+  let tokenError: number | undefined
   let reply: 'pending' | 'denied' | 'connected' = 'pending'
   let challenge = ''
   let origin = env.PUBLIC_URL!
@@ -43,6 +44,7 @@ function fixture() {
         return Response.json({ id, expiresIn: 600 })
       }
       if (url.endsWith('/token')) {
+        if (tokenError) return new Response('provider-private-diagnostics', { status: tokenError })
         expect(createHash('sha256').update(input.codeVerifier).digest('base64url')).toBe(challenge)
         return Response.json({ status: reply, ...(reply === 'connected' ? { token } : {}) })
       }
@@ -63,6 +65,9 @@ function fixture() {
     service,
     storage,
     restart: () => new RelayServerConnection(deps),
+    tokenError: (status: number | undefined) => {
+      tokenError = status
+    },
     failSave: (value: boolean) => {
       failSave = value
     },
@@ -161,6 +166,26 @@ describe('self-hosted server connection', () => {
     f.failSave(false)
     await f.restart().disconnect('admin')
     expect(f.saved).toEqual([[relayConnectionSecretKey(f.env), '', 'admin']])
+  })
+  test('terminal revocation allows an immediate fresh approval but transport failure retains recovery', async () => {
+    const revoked = fixture()
+    await revoked.service.start('admin', 'Example')
+    revoked.tokenError(401)
+    await expect(revoked.service.poll('admin', id)).rejects.toThrow('expired or was revoked')
+    expect(revoked.storage.get('__push-relay-pending')).toBe('')
+    await revoked.restart().start('admin', 'Example')
+    expect(revoked.calls.filter((call) => call.url.endsWith('/authorize'))).toHaveLength(2)
+
+    const transient = fixture()
+    await transient.service.start('admin', 'Example')
+    transient.tokenError(503)
+    await expect(transient.service.poll('admin', id)).rejects.toThrow('Could not reach Ficus Cloud')
+    expect(transient.storage.get('__push-relay-pending')).not.toBe('')
+    await transient.restart().start('admin', 'Example')
+    expect(transient.calls.filter((call) => call.url.endsWith('/authorize'))).toHaveLength(1)
+    transient.tokenError(undefined)
+    transient.setReply('connected')
+    expect(await transient.restart().poll('admin', id)).toEqual({ status: 'connected' })
   })
   test('managed Cloud needs no request and cannot be overridden', async () => {
     const f = fixture()
