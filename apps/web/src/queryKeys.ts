@@ -89,3 +89,5 @@ export const agentSlotHoldQueryKeys = {
   squad: (squadId: string) => ['agent-slot-holds', squadId] as const,
   agent: (squadId: string, agentId: string) => ['agent-slot-holds', squadId, agentId] as const,
 }
+
+export const serverConnectionQueryKeys = { status: () => ['push-server-connection'] as const }

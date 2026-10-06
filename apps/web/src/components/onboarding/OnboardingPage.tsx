@@ -151,6 +151,16 @@ export function OnboardingPage() {
                 Make Ficus your own. You can also set these up later in Settings.
               </p>
               <OptionalSetup />
+              <p className="mt-4 text-sm text-muted">
+                Taking Ficus with you? Paid Cloud access includes mobile Pro features. For self-hosted servers,{' '}
+                <Link
+                  to="/settings?section=integrations&setting=mobile-pro"
+                  className="text-accent-light hover:underline"
+                >
+                  connect the mobile relay and explore Ficus Pro or Instance Pro
+                </Link>
+                .
+              </p>
             </section>
           </div>
         )

@@ -77,7 +77,8 @@ describe('OnboardingPage — static rendering', () => {
     expect(html).toContain('Connect an AI provider')
     expect(html).not.toContain('/settings?section=providers')
     expect(html).toContain('Connect GitHub')
-    expect(html).not.toContain('/settings?section=integrations')
+    expect(html).not.toContain('href="/settings?section=integrations"')
+    expect(html).toContain('/settings?section=integrations&amp;setting=mobile-pro')
     expect(html).toContain('Squad name')
 
     // Optional headers are discoverable from the start; their forms stay closed.
@@ -93,7 +94,8 @@ describe('OnboardingPage — static rendering', () => {
 
     expect(html).toContain('Invite your team')
     expect(html).not.toContain('/settings?section=users')
-    expect(html).not.toContain('/settings?section=integrations')
+    expect(html).not.toContain('href="/settings?section=integrations"')
+    expect(html).toContain('/settings?section=integrations&amp;setting=mobile-pro')
     expect(html).not.toContain('/settings?section=remote-hosts')
     expect(html).toContain('Connect a chat channel')
     expect(html).not.toContain('Add a remote host')
@@ -534,7 +536,7 @@ describe('OnboardingPage — skip/unskip interactions', () => {
     await dom.act(async () => fireEvent.submit(container.querySelector('#setup-step-chat_channel form')!))
     await dom.act(async () => waitFor(() => expect(credentials).toEqual({ DISCORD_BOT_TOKEN: 'test-bot-token' })))
     expect(entry.enabled).toBe(true)
-    expect(container.querySelector('a[href*="section=integrations"]')).toBeNull()
+    expect(container.querySelector('#setup-step-chat_channel a[href*="section=integrations"]')).toBeNull()
     expect(container.querySelector('[data-optional-setup]')!.textContent).not.toMatch(/Skip|Unskip|Continue/)
   })
 

@@ -31,7 +31,7 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   workflows: 'flows presets participants handoffs loops parallel branches review solo engineering completion policy',
 
   integrations:
-    'bigbrain github linear notion discord slack telegram cloudflare digitalocean netlify railway supabase vercel apple apns p8 web push vapid google cloud openai realtime transcription embeddings speech text-to-speech service account deployment hosting tokens bot channels oauth connections pool assignment authorization',
+    'mobile pro relay instance allowance connect account bigbrain github linear notion discord slack telegram cloudflare digitalocean netlify railway supabase vercel apple apns p8 web push vapid google cloud openai realtime transcription embeddings speech text-to-speech service account deployment hosting tokens bot channels oauth connections pool assignment authorization',
   'notification-rules': 'outbound alerts delivery channels event rules',
   amtp: 'federation peers identity public key allow rules trust',
   machines: 'register hardware cpu memory capacity ssh sandbox workers exe.dev private key',
@@ -46,6 +46,12 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
 }
 
 export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
+  {
+    section: 'integrations',
+    id: 'mobile-pro',
+    label: 'Ficus mobile & Pro',
+    keywords: 'self-hosted mobile relay push connect account instance pro device allowance widgets live activity',
+  },
   {
     section: 'memory',
     id: 'voice-dictation',

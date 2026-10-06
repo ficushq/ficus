@@ -193,7 +193,7 @@ line2"`
       expect(rendered).toContain("export NOTION_API_TOKEN='oauth-'\"'\"'value'")
     })
 
-    it('does not treat a non-managed double-underscore environment name as platform-managed', async () => {
+    it('keeps internal secret names out of squad environments on self-hosted servers', async () => {
       const { renderEnvForSecrets } = await getModule()
       const rendered = renderEnvForSecrets(
         'APP_ENV=x',
@@ -204,7 +204,7 @@ line2"`
             DEPLOY_VERCEL_TOKEN: 'vercel-secret',
           })[key]
       )
-      expect(rendered).toContain("export __internal_token='self-hosted-client-secret'")
+      expect(rendered).not.toContain('self-hosted-client-secret')
       expect(rendered).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
     })
 

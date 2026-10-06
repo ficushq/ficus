@@ -1,3 +1,4 @@
+import { SETTINGS_SEARCH_ENTRIES } from './settings/settingsSearch'
 import { LinkedChatAccounts } from './settings/LinkedChatAccounts'
 import { SECTION_GROUPS, isSectionAllowed, isValidSection, type SectionId } from './settings/settingsSections'
 import { SettingsSearchDestination } from './settings/SettingsSearchDestination'
@@ -82,7 +83,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
     dependencies
   )
   const [searchParams, setSearchParams] = useSearchParams()
-  const { can, isLoading: permissionsLoading, isError: permissionsError } = usePermissions()
+  const { can, identity, isLoading: permissionsLoading, isError: permissionsError } = usePermissions()
   // Same audience the /onboarding page and its nag banner serve — admins
   // (settings:read), never a plain teammate — so this link doesn't offer a
   // route non-admins can't act on. useOnboarding() already runs app-wide via
@@ -100,19 +101,21 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
   })
   const catalog = useQuery(integrationQueries.catalog())
   const hideUpdates = updateSettings.data?.managed === true
+  const mobileSetupAllowed = identity?.type === 'user' && can('settings:read')
   const integrationAllowed =
-    catalog.isSuccess &&
-    Array.isArray(catalog.data?.integrations) &&
-    catalog.data.integrations.some((entry) => can(`integrations:read:${entry.key}`) || can('integrations:read'))
+    mobileSetupAllowed ||
+    (catalog.isSuccess &&
+      Array.isArray(catalog.data?.integrations) &&
+      catalog.data.integrations.some((entry) => can(`integrations:read:${entry.key}`) || can('integrations:read')))
   const sectionVisible = useCallback(
     (section: SectionId) =>
       isSectionAllowed(
         section,
         can,
-        permissionsLoading || (section === 'integrations' && catalog.isPending),
+        permissionsLoading || (section === 'integrations' && !mobileSetupAllowed && catalog.isPending),
         integrationAllowed
       ) && !(section === 'updates' && hideUpdates),
-    [can, permissionsLoading, catalog.isPending, integrationAllowed, hideUpdates]
+    [can, permissionsLoading, catalog.isPending, mobileSetupAllowed, integrationAllowed, hideUpdates]
   )
   const legacySection = searchParams.get('section')
   const target = searchParams.get('setting') ?? ''
@@ -165,6 +168,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
     <div className="h-full min-h-0 flex flex-col md:flex-row grow gap-4 md:gap-6">
       <SettingsNavigation
         groups={visibleGroups}
+        searchEntries={SETTINGS_SEARCH_ENTRIES.filter((entry) => entry.id !== 'mobile-pro' || mobileSetupAllowed)}
         activeSection={activeSection}
         onSectionChange={setActiveSection}
         showOnboardingLink={showOnboardingLink}

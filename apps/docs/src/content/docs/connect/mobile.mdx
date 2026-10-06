@@ -1,0 +1,112 @@
+---
+title: Mobile app and Ficus Pro
+description: Connect self-hosted servers to the mobile app and choose personal or instance coverage.
+---
+
+The [Ficus mobile app](https://ficus.sh/mobile) brings your Feed, squads and chats
+with you. Connect more than one server and switch between them in the app.
+
+Ficus Pro adds push delivery for self-hosted servers, background Live Activities,
+Home and Lock Screen widgets, notification filters and quiet hours. It does not
+include server hosting.
+
+## Cloud or self-hosted?
+
+**Paid Ficus Cloud access includes mobile Pro features on that Cloud instance.**
+Add the server to the app and sign in to your instance account. Your administrator
+does not need to connect a relay, paste a credential or buy a separate device
+allowance. This included access does not cover your other self-hosted servers.
+
+**Self-hosted servers connect to the Ficus push relay once**, then each device
+uses either personal Ficus Pro or the server’s Instance Pro allowance:
+
+- **Ficus Pro** follows one Ficus account across its connected self-hosted
+  servers. Connect that account under **Settings → Pro** in the mobile app.
+  Personally covered devices do not consume an Instance Pro slot.
+- **Instance Pro** covers a device allowance on one self-hosted server. App users
+  can use an available slot without connecting a personal Ficus Cloud account.
+  An administrator manages the subscription and devices from the Ficus account
+  that connected the server. Capacity is never increased or billed automatically.
+
+Both kinds of coverage enable the same mobile Pro features. Connecting a server
+is separate from buying coverage and does not start a subscription.
+
+## Connect a self-hosted server
+
+You need administrator access to the self-hosted instance and a Ficus Cloud
+account to own its relay connection. The mobile app still signs in to each
+instance separately; connecting the relay does not grant access to your squads.
+
+1. Ensure the server has a public HTTPS address and its `PUBLIC_URL` is set to
+   that address. The app must be able to reach it. Use the same address when
+   adding the server in the app.
+2. Open the server’s webapp and go to **Settings → Integrations → Ficus mobile &
+   Pro**.
+3. Give the server a recognizable name and choose **Connect Ficus account**.
+4. Sign in to Ficus Cloud in the approval page. Check that its server address and
+   connection code match the ones shown in your instance, then approve.
+5. Keep the instance’s settings page open until it reports **Connected**. The
+   server receives and saves its scoped relay credential automatically. You do
+   not need to copy a token or supply a push signing key for the official app.
+6. Choose **Manage Pro and devices** to review coverage. Buy Instance Pro for
+   shared device coverage, or have app users connect their own Ficus Pro accounts.
+7. Add the server to the mobile app and sign in. Allow notifications when
+   prompted, then check **Settings → Pro** for coverage and **Settings →
+   Notifications** for device preferences.
+
+If the browser blocks the approval window, use **Open approval page** in the
+instance settings. A request expires after ten minutes; start a new connection
+if it expires. A connection error does not purchase a subscription.
+
+The saved credential is for this server’s relay delivery and enrollment. It is
+not a general Cloud API token and is not shared with squad agents.
+
+## Check coverage and device slots
+
+The instance settings show its connection status, Instance Pro coverage,
+registered devices, and slots in use. **Manage Pro and devices** opens the Cloud
+account page where the server owner can change coverage and remove old devices.
+Match the short **Device ID** in the mobile app’s Pro page with the ID in the
+server’s device list before revoking a device.
+
+A device covered by personal Ficus Pro does not use an instance slot. An
+uncovered device can use an available Instance Pro slot. When the allowance is
+full, remove an old device or explicitly increase the allowance; adding another
+device does not silently change the bill.
+
+## Notifications, widgets and Live Activities
+
+In the mobile app, open **Settings → Notifications** to choose event filters,
+muted squads and quiet hours. **Allow Cloud notification previews** lets delivery
+include work titles and message previews; leave previews off for generic alerts.
+Enabled previews pass through the Ficus relay and your device’s push service.
+Your instance account’s preview preference also applies, so a disabled account
+preview setting can keep alerts generic.
+
+Under **Settings → Pro → Widgets & Live Activity**, choose which servers to
+include and whether to show ongoing work on the Lock Screen. Widgets and Live
+Activity combine work from included servers with active Pro or Cloud coverage.
+Turning off Lock Screen display does not disable push notifications or Home
+Screen widgets.
+
+On a squad or work stream, **Show** includes eligible work in the Feed, widgets
+and Live Activity without sending an alert. **Notify** also sends alerts. See
+[notification settings](/connect/notifications/) for how attention and event
+filters work together.
+
+## Reconnect or disconnect
+
+Use **Reconnect Ficus account** if you need to replace the server’s credential.
+Approving the same server address in the same Cloud account preserves its
+registered devices and allowance while replacing the old credential. Check the
+address and account carefully before approving.
+
+**Disconnect server** removes this instance’s saved connection and stops its
+relay delivery. It does not cancel a subscription. To revoke the credential in
+Cloud, archive an old server, manage billing or cancel coverage, choose **Manage
+Pro and devices**. Revoking a credential stops delivery that uses it; reconnect
+before expecting push or background updates again.
+
+Browser push is separate from the mobile relay and does not require Pro. Custom
+native app builds can configure their own push signing credentials; that is not
+part of the official app’s setup.
