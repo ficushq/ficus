@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { PlatformRequestError } from '../platform/instance-client'
 import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { sendRelayLiveActivity } from './live-activity-relay'
@@ -109,5 +111,40 @@ test('unbounded/malformed/provider error responses never disclose payloads or cr
       reason: 'relay_unavailable',
       retryable: true,
     })
+  }
+})
+
+test('managed Cloud contributions use the control-plane client and never fall back to direct APNs', async () => {
+  const requests: string[] = []
+  const result = await sendRelayLiveActivity(input, {
+    config: null,
+    managed: true,
+    request: async <T>(request: { path: string; body: unknown; schema: z.ZodType<T> }): Promise<T> => {
+      requests.push(request.path)
+      expect(request.body).toEqual(input)
+      return request.schema.parse({ version: 1, status: 'queued' })
+    },
+    fetch: async () => {
+      throw new Error('Scoped relay transport must not be used')
+    },
+  })
+  expect(result).toEqual({ ok: true, status: 'queued' })
+  expect(requests).toEqual(['/api/cloud-mobile-pro/live-activities/send'])
+  for (const [status, reason, retryable] of [
+    [401, 'unauthorized', false],
+    [403, 'pro_required', false],
+    [410, 'destination_revoked', false],
+    [429, 'rate_limited', true],
+    [503, 'relay_unavailable', true],
+  ] as const) {
+    expect(
+      await sendRelayLiveActivity(input, {
+        config: null,
+        managed: true,
+        request: async () => {
+          throw new PlatformRequestError('fixture', retryable, status)
+        },
+      })
+    ).toEqual({ ok: false, reason, retryable })
   }
 })

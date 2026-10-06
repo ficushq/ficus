@@ -360,3 +360,81 @@ test('orphan cleanup expires without sending and corrupt state never blocks user
   await (await User.findById(userId))!.delete()
   expect(await row()).toBeUndefined()
 })
+
+test('aggregate sources heartbeat unchanged and empty snapshots without ending other servers', async () => {
+  const aggregateKey = crypto.randomUUID()
+  await registerActivityRelay(userId, { ...update(), aggregateKey })
+  const events: RelayLiveActivitySend[] = []
+  const send = async (event: RelayLiveActivitySend) => {
+    events.push(event)
+    return { ok: true as const, status: 'queued' as const }
+  }
+  for (const snapshot of [active, active, empty, empty]) {
+    await due()
+    await pumpActivityRelay({ snapshot: async () => snapshot, send })
+    expect((await state()).pending).toBeUndefined()
+    expect((await state()).ended).toBe(false)
+  }
+  expect(events.map((event) => event.event)).toEqual(['update', 'update', 'update', 'update'])
+  expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4])
+  expect(events[2]).toMatchObject({ contentState: empty })
+  expect(events[3]).toMatchObject({ contentState: empty })
+  // Turning off a source still retires it, even though an ordinary empty snapshot does not.
+  const { prepareActivityRelayUserDeletion } = await import('./live-activity-outbox')
+  await db.transaction((tx) => prepareActivityRelayUserDeletion(tx, userId))
+  await due()
+  await pumpActivityRelay({ send })
+  expect(events.at(-1)?.event).toBe('end')
+  expect(await row()).toBeUndefined()
+})
+
+test('aggregate privacy change replaces a pending contribution with fresh empty state', async () => {
+  await registerActivityRelay(userId, { ...update(), aggregateKey: crypto.randomUUID() })
+  await pumpActivityRelay({
+    snapshot: async () => active,
+    send: async () => ({ ok: false, reason: 'relay_unavailable', retryable: true }),
+  })
+  await due()
+  await pumpActivityRelay({
+    snapshot: async () => empty,
+    send: async (event) => {
+      expect(event).toMatchObject({ event: 'update', sequence: 2, contentState: empty })
+      return { ok: true, status: 'queued' }
+    },
+  })
+  expect((await state()).lastState).toEqual(empty)
+})
+
+test('aggregate push-to-start contributions stay fresh before native update registration arrives', async () => {
+  await registerActivityRelay(userId, { ...start, aggregateKey: crypto.randomUUID() })
+  const events: RelayLiveActivitySend[] = []
+  for (const snapshot of [empty, active, active, empty]) {
+    await due()
+    await pumpActivityRelay({
+      snapshot: async () => snapshot,
+      send: async (event) => {
+        events.push(event)
+        return { ok: true, status: 'queued' }
+      },
+    })
+  }
+  expect(events.map((event) => event.event)).toEqual(['start', 'start', 'start', 'start'])
+  expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4])
+  expect(new Set(events.map((event) => event.activityKey)).size).toBe(1)
+  expect(events[3]).toMatchObject({ contentState: empty })
+})
+
+test('deleting an aggregate start-only source retires its contribution without native observation', async () => {
+  await registerActivityRelay(userId, { ...start, aggregateKey: crypto.randomUUID() })
+  await pumpActivityRelay({ snapshot: async () => active, send: async () => ({ ok: true, status: 'queued' }) })
+  const { prepareActivityRelayUserDeletion } = await import('./live-activity-outbox')
+  await db.transaction((tx) => prepareActivityRelayUserDeletion(tx, userId))
+  await due()
+  await pumpActivityRelay({
+    send: async (event) => {
+      expect(event).toMatchObject({ event: 'end', sequence: 2, bindingToken: start.bindingToken })
+      return { ok: true, status: 'queued' }
+    },
+  })
+  expect(await row()).toBeUndefined()
+})

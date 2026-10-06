@@ -6,9 +6,11 @@ import {
   type RelayLiveActivitySend,
 } from '@ficus/shared/live-activity-relay'
 import { pushRelayConfig } from './relay'
+import { isPlatformManaged } from '../secrets/managed'
+import { platformRequest, PlatformRequestError } from '../platform/instance-client'
 
 export type LiveActivityRelayResult =
-  | { ok: true; status: 'sent' | 'duplicate' | 'superseded' }
+  | { ok: true; status: 'sent' | 'queued' | 'duplicate' | 'superseded' }
   | {
       ok: false
       reason:
@@ -26,6 +28,8 @@ const rejected = (reason: Extract<LiveActivityRelayResult, { ok: false }>['reaso
   retryable: ['rate_limited', 'in_flight', 'provider_unavailable', 'relay_unavailable'].includes(reason),
 })
 
+export const liveActivityRelayConfigured = () => Boolean(pushRelayConfig()) || isPlatformManaged()
+
 /** Explicit ActivityKit transport. Does not mutate tokens, generate retry identities or fall
  * back to direct APNs. Wiring requires durable registration and delivery lifecycle storage. */
 export async function sendRelayLiveActivity(
@@ -33,6 +37,8 @@ export async function sendRelayLiveActivity(
   deps: {
     fetch?: (url: string, init: RequestInit) => Promise<Response>
     config?: ReturnType<typeof pushRelayConfig>
+    managed?: boolean
+    request?: typeof platformRequest
   } = {}
 ): Promise<LiveActivityRelayResult> {
   const parsed = relayLiveActivitySendSchema.safeParse(input)
@@ -41,7 +47,16 @@ export async function sendRelayLiveActivity(
   if (new TextEncoder().encode(body).byteLength > LIVE_ACTIVITY_RELAY_MAX_BODY_BYTES) return rejected('invalid_request')
   try {
     const config = deps.config === undefined ? pushRelayConfig() : deps.config
-    if (!config) return rejected('not_configured')
+    if (!config) {
+      if (!(deps.managed ?? (deps.config === undefined && isPlatformManaged()))) return rejected('not_configured')
+      const result = await (deps.request ?? platformRequest)({
+        path: '/api/cloud-mobile-pro/live-activities/send',
+        body: parsed.data,
+        schema: relayLiveActivityResponseSchema,
+        maxResponseBytes: 1024,
+      })
+      return result.status === 'rejected' ? rejected(result.reason) : { ok: true, status: result.status }
+    }
     const response = await (deps.fetch ?? fetch)(`${config.baseUrl}/api/push-relay/live-activities/send`, {
       method: 'POST',
       redirect: 'error',
@@ -85,7 +100,15 @@ export async function sendRelayLiveActivity(
     const result = relayLiveActivityResponseSchema.safeParse(JSON.parse(new TextDecoder().decode(bytes)))
     if (!result.success) return rejected('relay_unavailable')
     return result.data.status === 'rejected' ? rejected(result.data.reason) : { ok: true, status: result.data.status }
-  } catch {
+  } catch (error) {
+    if (error instanceof PlatformRequestError) {
+      if (error.status === 401) return rejected('unauthorized')
+      if (error.status === 403) return rejected('pro_required')
+      if (error.status === 409) return rejected('conflict')
+      if (error.status === 410) return rejected('destination_revoked')
+      if (error.status === 429) return rejected('rate_limited')
+      if (!error.retryable) return rejected('invalid_request')
+    }
     // Transport failure is ambiguous; retries MUST preserve the event for relay deduplication.
     // Provider errors, URLs, tokens and payloads never enter logs or user-facing error text.
     return rejected('relay_unavailable')
