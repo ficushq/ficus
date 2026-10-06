@@ -11,9 +11,8 @@ import {
   type CoreLiveActivityRegistration,
   type RelayLiveActivitySend,
 } from '@ficus/shared/live-activity-relay'
-import { sendRelayLiveActivity, type LiveActivityRelayResult } from './live-activity-relay'
+import { liveActivityRelayConfigured, sendRelayLiveActivity, type LiveActivityRelayResult } from './live-activity-relay'
 import { loadWorkInterestSnapshot } from './work-interest'
-import { pushRelayConfig } from './relay'
 
 interface State {
   start?: CoreLiveActivityRegistration & { kind: 'start' }
@@ -102,13 +101,14 @@ export async function unregisterActivityRelay(userId: string, activationId: stri
 
 /** Remove all cached content and start authority; retain only an exact content-free end. */
 function retirement(state: State, at: Date): State {
+  const destination = state.update ?? (state.start?.aggregateKey ? state.start : undefined)
   const pending =
     state.pending?.event === 'end'
       ? state.pending
-      : state.update && state.activityKey && !state.ended
+      : destination && state.activityKey && !state.ended
         ? {
             version: 1 as const,
-            bindingToken: state.update.bindingToken,
+            bindingToken: destination.bindingToken,
             activityKey: state.activityKey,
             sequence: state.sequence + 1,
             eventId: randomUUID(),
@@ -206,6 +206,7 @@ export async function pumpActivityRelay(
       true
     )
     const show = shouldShowLiveActivity(fresh)
+    const aggregate = Boolean(state.update?.aggregateKey ?? state.start?.aggregateKey)
     if (
       state.pending &&
       state.pending.event !== 'end' &&
@@ -220,7 +221,17 @@ export async function pumpActivityRelay(
           activityKey: state.activityKey,
           sequence: ++state.sequence,
           eventId: randomUUID(),
-          ...(show ? { event: 'update', contentState: fresh } : { event: 'end' }),
+          ...(show || aggregate ? { event: 'update', contentState: fresh } : { event: 'end' }),
+        }
+      } else if (state.start?.aggregateKey && state.activityKey) {
+        state.pending = {
+          version: 1,
+          bindingToken: state.start.bindingToken,
+          activityKey: state.activityKey,
+          sequence: ++state.sequence,
+          eventId: randomUUID(),
+          event: 'start',
+          contentState: fresh,
         }
       } else {
         state.blocked = 'state_changed'
@@ -229,15 +240,30 @@ export async function pumpActivityRelay(
     }
     if (!state.pending && !state.blocked) {
       if (state.update && !state.ended && state.activityKey) {
-        if (!show || JSON.stringify(fresh) !== JSON.stringify(state.lastState)) {
+        // Aggregate sources heartbeat every 30 seconds, including authoritative empty
+        // snapshots. One idle source must never end the other servers’ activity.
+        if (aggregate || !show || JSON.stringify(fresh) !== JSON.stringify(state.lastState)) {
           state.pending = {
             version: 1,
             bindingToken: state.update.bindingToken,
             activityKey: state.activityKey,
             sequence: ++state.sequence,
             eventId: randomUUID(),
-            ...(show ? { event: 'update', contentState: fresh } : { event: 'end' }),
+            ...(show || aggregate ? { event: 'update', contentState: fresh } : { event: 'end' }),
           }
+        }
+      } else if (state.start?.aggregateKey) {
+        // A push-to-start capability also contributes while the native activity is
+        // absent or its update token has not arrived. Platform owns aggregate starts.
+        state.activityKey ??= randomUUID()
+        state.pending = {
+          version: 1,
+          bindingToken: state.start.bindingToken,
+          activityKey: state.activityKey,
+          sequence: ++state.sequence,
+          eventId: randomUUID(),
+          event: 'start',
+          contentState: fresh,
         }
       } else if (state.start && show && (!state.activityKey || state.ended)) {
         state.activityKey = randomUUID()
@@ -316,7 +342,7 @@ export function startActivityRelayRunner() {
     if (stopped || running) return
     running = true
     try {
-      if (!pushRelayConfig()) return
+      if (!liveActivityRelayConfigured()) return
       for (let i = 0; i < 8 && !stopped; i++)
         if (!(await pumpActivityRelay({ cleanupOnly: !liveActivityRelayEnabled() }))) break
     } catch {

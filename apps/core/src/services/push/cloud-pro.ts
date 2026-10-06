@@ -15,11 +15,27 @@ const activationChallengeSchema = z.object({
 })
 const configSchema = z.union([
   z.object({ enabled: z.literal(false) }),
-  z.object({ enabled: z.literal(true), instanceId: z.string().uuid(), delivery: z.literal('direct') }),
+  z.object({
+    enabled: z.literal(true),
+    instanceId: z.string().uuid(),
+    delivery: z.literal('direct'),
+    liveActivities: z.boolean().optional(),
+  }),
 ])
-export async function managedCloudProConfig() {
+export async function managedCloudProConfig(request = platformRequest) {
   if (!isPlatformManaged()) return { enabled: false as const }
-  return platformRequest({ path: '/api/cloud-mobile-pro/config', body: {}, schema: configSchema, timeoutMs: 20000 })
+  const config = await request({
+    path: '/api/cloud-mobile-pro/config',
+    body: {},
+    schema: configSchema,
+    timeoutMs: 20000,
+  })
+  return config.enabled
+    ? {
+        ...config,
+        liveActivities: config.liveActivities === true && process.env.FICUS_LIVE_ACTIVITY_RELAY_ENABLED === 'true',
+      }
+    : config
 }
 export async function enrollManagedCloudPro(input: { publicKey: string; label: string }) {
   if (!isPlatformManaged()) throw new Error('Managed Cloud coverage unavailable')

@@ -2,7 +2,10 @@ import { afterEach, expect, test } from 'bun:test'
 import { sendManagedCloudAlert, managedCloudProConfig, enrollManagedCloudPro } from './cloud-pro'
 import { z } from 'zod'
 const oldManaged = process.env.FICUS_MANAGED
+const oldActivities = process.env.FICUS_LIVE_ACTIVITY_RELAY_ENABLED
 afterEach(() => {
+  if (oldActivities === undefined) delete process.env.FICUS_LIVE_ACTIVITY_RELAY_ENABLED
+  else process.env.FICUS_LIVE_ACTIVITY_RELAY_ENABLED = oldActivities
   if (oldManaged === undefined) delete process.env.FICUS_MANAGED
   else process.env.FICUS_MANAGED = oldManaged
 })
@@ -91,4 +94,18 @@ test('approved previews preserve subtitle, urgency and grouping', async () => {
     collapseId: 'work:5',
     interruptionLevel: 'passive',
   })
+})
+
+test('managed discovery advertises aggregate activity transport only with both capability gates', async () => {
+  process.env.FICUS_MANAGED = '1'
+  const instanceId = crypto.randomUUID()
+  for (const enabled of [false, true]) {
+    for (const local of [false, true]) {
+      process.env.FICUS_LIVE_ACTIVITY_RELAY_ENABLED = String(local)
+      const config = await managedCloudProConfig(async <T>(request: { schema: z.ZodType<T> }) =>
+        request.schema.parse({ enabled: true, instanceId, delivery: 'direct', liveActivities: enabled })
+      )
+      expect(config).toEqual({ enabled: true, instanceId, delivery: 'direct', liveActivities: enabled && local })
+    }
+  }
 })

@@ -76,6 +76,7 @@ describe('closed ActivityKit relay protocol', () => {
       { ...state, top: Array(4).fill(state.top[0]) },
       { ...state, extra: true },
       { ...state, top: [{ ...state.top[0], title: 'x'.repeat(201) }] },
+      { ...state, top: [{ ...state.top[0], origin: 'https://another-server.test' }] },
     ])
       expect(relayLiveActivitySendSchema.safeParse({ ...input, contentState }).success).toBe(false)
   })
@@ -98,6 +99,22 @@ describe('closed ActivityKit relay protocol', () => {
       activityId: 'native-opaque-id',
     }
     const canonical = liveActivityRegistrationPayload(registration)
+    expect(JSON.parse(canonical)).toEqual([
+      'ficus-live-activity-registration-v1',
+      registration.activationId,
+      bindingToken,
+      registration.deviceToken,
+      registration.environment,
+      'update',
+      activityKey,
+      registration.activityId,
+      false,
+    ])
+    const aggregateKey = randomUUID()
+    expect(JSON.parse(liveActivityRegistrationPayload({ ...registration, aggregateKey }))).toEqual([
+      ...JSON.parse(canonical),
+      aggregateKey,
+    ])
     expect(
       liveActivityRegistrationPayload({ ...registration, deviceToken: registration.deviceToken.toUpperCase() })
     ).toBe(canonical)
@@ -108,6 +125,7 @@ describe('closed ActivityKit relay protocol', () => {
       { environment: 'production' as const },
       { bindingToken: `ficus_pla_${'b'.repeat(43)}` },
       { activationId: randomUUID() },
+      { aggregateKey: randomUUID() },
     ])
       expect(liveActivityRegistrationPayload({ ...registration, ...change })).not.toBe(canonical)
     expect(relayLiveActivityRegistrationSchema.safeParse({ ...registration, kind: 'start' }).success).toBe(false)

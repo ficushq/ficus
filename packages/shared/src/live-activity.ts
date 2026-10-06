@@ -33,6 +33,8 @@ export function workBucket(stream: WorkBucketFacts): WorkBucket {
 
 /** One row in the activity's short list. Mirrors `StreamLite` in FicusWorkAttributes.swift. */
 export interface StreamLite {
+  /** Assigned by the trusted aggregator, never accepted from a relay source. */
+  origin?: string
   number?: number
   id: string
   title: string

@@ -1,3 +1,4 @@
+import { liveActivityRelayConfigured } from '../services/push/live-activity-relay'
 import { managedCloudProConfig } from '../services/push/cloud-pro'
 import { z } from 'zod'
 import { coreLiveActivityRegistrationSchema } from '@ficus/shared/live-activity-relay'
@@ -246,7 +247,7 @@ pushRouter.post('/live-activity/relay', async (c) => {
   const input = coreLiveActivityRegistrationSchema.safeParse(await c.req.json())
   if (!input.success) return c.json({ error: 'Invalid relay registration' }, 400)
   try {
-    if (!pushRelayConfig()) return c.json({ error: 'Relay activities are not configured' }, 503)
+    if (!liveActivityRelayConfigured()) return c.json({ error: 'Relay activities are not configured' }, 503)
     return c.json(await registerActivityRelay(getPushUserId(c)!, input.data), 201)
   } catch {
     return c.json({ error: 'Relay registration could not be applied' }, 409)
