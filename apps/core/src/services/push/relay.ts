@@ -1,3 +1,4 @@
+import { enrollManagedCloudPro } from './cloud-pro'
 import { getSecretStore } from '../secrets'
 import { randomUUID } from 'node:crypto'
 import { createLogger } from '../../lib/infra/logger'
@@ -124,7 +125,7 @@ export async function sendRelayAlert(
 /** Human-user enrollment approval is forwarded with the scoped server credential. */
 export async function enrollInstancePro(input: { publicKey: string; label: string }) {
   const config = pushRelayConfig()
-  if (!config) throw new Error('Instance Pro is not configured on this server')
+  if (!config) return enrollManagedCloudPro(input)
   const response = await fetch(`${config.baseUrl}/api/push-relay/enrollments`, {
     method: 'POST',
     redirect: 'error',

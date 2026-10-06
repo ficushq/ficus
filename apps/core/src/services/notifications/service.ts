@@ -1,3 +1,5 @@
+import { sendManagedCloudAlert } from '../push/cloud-pro'
+import { isPlatformManaged } from '../secrets/managed'
 import { pushPreview } from '../push/preview'
 import { pushCategoryFor } from './push-category'
 import { enqueueDesktopNotifications } from '../push/desktop'
@@ -373,6 +375,28 @@ export class NotificationService {
           return
         }
         const environment: ApnsEnvironment = device.environment === 'sandbox' ? 'sandbox' : 'production'
+        if (isPlatformManaged() && device.relayBindingToken) {
+          const result = await sendManagedCloudAlert({
+            bindingToken: device.relayBindingToken,
+            deviceToken: device.apnsToken,
+            environment,
+            routing: {
+              ...presentation,
+              collapseKey: event.collapseKey,
+              threadKey: event.threadKey,
+              interruptionLevel: event.interruptionLevel,
+              squadId: event.squadId,
+              agentId: event.agentId,
+              workStreamId: event.workStreamId,
+              waitId: event.waitId,
+              questionId: event.questionId,
+              messageId: event.messageId,
+              actionId: event.actionId,
+            },
+          })
+          if (result.status === 410 || result.reason === 'Unregistered') await deleteApnsDeviceByToken(device.apnsToken)
+          return
+        }
         const result = await sendApnsNotification(
           device.apnsToken,
           {

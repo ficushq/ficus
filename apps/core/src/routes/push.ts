@@ -1,3 +1,4 @@
+import { managedCloudProConfig } from '../services/push/cloud-pro'
 import { z } from 'zod'
 import { coreLiveActivityRegistrationSchema } from '@ficus/shared/live-activity-relay'
 import {
@@ -43,7 +44,7 @@ function getPushUserId(c: Context): string | null {
 }
 
 // Authenticated discovery exposes only the relay identity, never its credential.
-pushRouter.get('/relay-config', (c) => {
+pushRouter.get('/relay-config', async (c) => {
   if (!getPushUserId(c)) return c.json({ error: 'User identity required' }, 401)
   c.set('authzChecked', true)
   try {
@@ -51,7 +52,7 @@ pushRouter.get('/relay-config', (c) => {
     return c.json(
       config
         ? { enabled: true, instanceId: config.instanceId, liveActivities: liveActivityRelayEnabled() }
-        : { enabled: false }
+        : await managedCloudProConfig()
     )
   } catch {
     return c.json({ error: 'Relay configuration is invalid' }, 503)
