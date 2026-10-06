@@ -1,3 +1,5 @@
+import { serverConnectionQueryKeys } from './queryKeys'
+import { getServerConnection } from './api/serverConnection'
 import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
 import { desktopQueryKeys } from './queryKeys'
 import { desktopBridge, type DesktopNotificationBatch } from './lib/desktop'
@@ -1102,4 +1104,9 @@ export const feedQueries = {
       queryFn: () => listDoneWorkStreams({ completedAfter: after, squadIds, statuses: ['done'], limit: 5 }),
       staleTime: 30_000,
     }),
+}
+
+export const serverConnectionQueries = {
+  status: () =>
+    queryOptions({ queryKey: serverConnectionQueryKeys.status(), queryFn: getServerConnection, staleTime: 15_000 }),
 }
