@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { classifyCaughtProviderError } from '../../../lib/error'
 import { describeClaudeCodeFailure } from './failures'
 import { routeFailure } from '../../execution/failure-routing'
+import { isRetryableAssistantError } from '@earendil-works/pi-ai'
 
 test('an expired Claude Code sign-in fails the account over as an expired login', () => {
   const text = describeClaudeCodeFailure('Failed to authenticate: OAuth session expired and could not be refreshed')
@@ -50,4 +51,17 @@ test('a hard Claude Code window keeps the no-fallback waiting-input route', () =
       disposition: { status: 'waiting-input', questionData: { questions: [{ id: 'rate_limit' }] } },
     })
   }
+})
+
+test('a busy sign-in refresh is retried as a transient failure, not a sign-in to fix', () => {
+  const raw =
+    'Failed to refresh OAuth token: another Claude Code process is refreshing it or exited mid-refresh. This is usually transient; retry in a minute, and if it persists close other Claude Code processes or sign in again'
+  const text = describeClaudeCodeFailure(raw, undefined, '/root/.local/bin/claude')
+  expect(text).toStartWith('Claude Code sign-in refresh was busy (connection lost) (ran /root/.local/bin/claude): ')
+  expect(text).not.toContain('Claude Code sign-in failed')
+  // pi retries it with backoff instead of failing the turn.
+  expect(isRetryableAssistantError({ stopReason: 'error', errorMessage: text } as never)).toBe(true)
+  expect(isRetryableAssistantError({ stopReason: 'error', errorMessage: raw } as never)).toBe(false)
+  // Not an expired login: the account is not marked as needing a new sign-in.
+  expect(classifyCaughtProviderError(text)).not.toEqual({ kind: 'expired-oauth' })
 })
