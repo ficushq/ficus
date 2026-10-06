@@ -1,3 +1,4 @@
+import { createPushServerConnectionRouter } from './push-server-connection'
 import { liveActivityRelayConfigured } from '../services/push/live-activity-relay'
 import { managedCloudProConfig } from '../services/push/cloud-pro'
 import { z } from 'zod'
@@ -28,6 +29,7 @@ import {
 } from '../services/push/live-activity-tokens'
 
 export const pushRouter = new Hono()
+pushRouter.route('/server-connection', createPushServerConnectionRouter())
 
 pushRouter.get('/desktop', async (c) => {
   const identity = c.get('identity')

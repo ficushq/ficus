@@ -17,6 +17,7 @@ import {
   type TestUser,
 } from '../test-utils'
 import { parseJsonBody } from './json-body'
+import { pushRelayConfig, relayConnectionSecretKey } from '../services/push/relay'
 
 const app = new Hono()
 app.use('*', identityMiddleware)
@@ -305,6 +306,36 @@ describe('B14 secrets and settings RBAC', () => {
       else process.env.FICUS_PUSH_RELAY_TOKEN = prior
       if (managed === undefined) delete process.env.FICUS_MANAGED_SECRET_KEYS
       else process.env.FICUS_MANAGED_SECRET_KEYS = managed
+    }
+  })
+
+  test('connected relay credential stays encrypted and invisible across reload and disconnect', async () => {
+    const key = relayConnectionSecretKey()
+    const token = `ficus_pri_${crypto.randomUUID()}_${'a'.repeat(43)}`
+    await getSecretStore().set(key, token, admin.id)
+    expect(JSON.stringify(await db.select().from(secrets))).not.toContain(token)
+    resetSecretStore()
+    await getSecretStore().initialize()
+    expect(pushRelayConfig()?.token).toBe(token)
+    expect(await (await app.request('/secrets', req())).text()).not.toContain(key)
+    for (const method of ['GET', 'PUT', 'DELETE']) {
+      const response = await app.request(
+        `/secrets/${encodeURIComponent(key)}`,
+        req(method, method === 'PUT' ? { value: 'replacement' } : undefined)
+      )
+      expect(response.status).toBe(404)
+      expect(await response.text()).not.toContain(token)
+    }
+    const old = process.env.FICUS_PUSH_RELAY_TOKEN
+    try {
+      process.env.FICUS_PUSH_RELAY_TOKEN = token
+      await getSecretStore().set(key, '', admin.id)
+      resetSecretStore()
+      await getSecretStore().initialize()
+      expect(pushRelayConfig()).toBeNull()
+    } finally {
+      if (old === undefined) delete process.env.FICUS_PUSH_RELAY_TOKEN
+      else process.env.FICUS_PUSH_RELAY_TOKEN = old
     }
   })
 

@@ -1,6 +1,6 @@
 import { enrollManagedCloudPro } from './cloud-pro'
 import { getSecretStore } from '../secrets'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createLogger } from '../../lib/infra/logger'
 import {
   PUSH_RELAY_BASE_URL,
@@ -57,9 +57,23 @@ export function resolvePushRelayBaseUrl(env: NodeJS.ProcessEnv = process.env): s
   return PUSH_RELAY_BASE_URL
 }
 
-/** Runtime-only credential; never a Secret Store value or squad environment input. */
+/** Private persisted credentials are bound to both this server and the Cloud authority. */
+export function relayConnectionSecretKey(env: NodeJS.ProcessEnv = process.env) {
+  return `__push-relay-connection:${createHash('sha256')
+    .update(`${resolvePushRelayBaseUrl(env)}\n${env.PUBLIC_URL?.trim().replace(/\/+$/, '') ?? ''}`)
+    .digest('hex')}`
+}
+
+export function savedRelayCredential() {
+  if (process.env.FICUS_MANAGED === '1') return undefined
+  return getSecretStore().get(relayConnectionSecretKey())
+}
+
+/** The credential stays private to Core and is never exposed to squad environments. */
 export function pushRelayConfig(env?: NodeJS.ProcessEnv) {
-  const token = (env ? env.FICUS_PUSH_RELAY_TOKEN : getSecretStore().get('FICUS_PUSH_RELAY_TOKEN'))?.trim()
+  const token = (
+    env ? env.FICUS_PUSH_RELAY_TOKEN : (savedRelayCredential() ?? getSecretStore().get('FICUS_PUSH_RELAY_TOKEN'))
+  )?.trim()
   if (!token) return null
   const match = relayInstanceTokenPattern.exec(token)
   if (!match) throw new Error('FICUS_PUSH_RELAY_TOKEN must be a push-only instance credential')

@@ -1,3 +1,4 @@
+import { savedRelayCredential } from './relay'
 import { randomUUID } from 'node:crypto'
 import { and, eq, lte, or, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -35,7 +36,9 @@ const clock = async (tx: Pick<typeof db, 'execute'>) => {
   const [row] = await tx.execute<{ now: Date }>(sql`select clock_timestamp() as now`)
   return new Date(row!.now)
 }
-export const liveActivityRelayEnabled = () => process.env.FICUS_LIVE_ACTIVITY_RELAY_ENABLED === 'true'
+export const liveActivityRelayEnabled = () =>
+  process.env.FICUS_LIVE_ACTIVITY_RELAY_ENABLED === 'true' ||
+  (process.env.FICUS_LIVE_ACTIVITY_RELAY_ENABLED === undefined && !!savedRelayCredential())
 
 export async function registerActivityRelay(userId: string, raw: CoreLiveActivityRegistration) {
   const input = coreLiveActivityRegistrationSchema.parse(raw)
