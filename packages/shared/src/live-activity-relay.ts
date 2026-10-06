@@ -43,6 +43,7 @@ export const relayLiveActivityRegistrationSchema = z.discriminatedUnion('kind', 
       deviceToken: apnsTokenSchema,
       environment: z.enum(['production', 'sandbox']),
       previews: z.boolean().optional(),
+      aggregateKey: uuid.optional(),
       kind: z.literal('start'),
     })
     .strict(),
@@ -54,6 +55,7 @@ export const relayLiveActivityRegistrationSchema = z.discriminatedUnion('kind', 
       deviceToken: apnsTokenSchema,
       environment: z.enum(['production', 'sandbox']),
       previews: z.boolean().optional(),
+      aggregateKey: uuid.optional(),
       kind: z.literal('update'),
       activityKey: uuid,
       activityId: z.string().min(1).max(256),
@@ -76,6 +78,8 @@ export function liveActivityRegistrationPayload(value: RelayLiveActivityRegistra
     input.kind === 'update' ? input.activityKey : null,
     input.kind === 'update' ? input.activityId : null,
     input.previews === true,
+    // Preserve the exact v1 signature domain for older single-server clients.
+    ...(input.aggregateKey ? [input.aggregateKey] : []),
   ])
 }
 
@@ -97,6 +101,8 @@ export type RelayLiveActivitySend = z.infer<typeof relayLiveActivitySendSchema>
 
 export const relayLiveActivityResponseSchema = z.discriminatedUnion('status', [
   z.object({ version: z.literal(1), status: z.literal('sent') }).strict(),
+  // Aggregate contribution is durable; provider delivery is asynchronous.
+  z.object({ version: z.literal(1), status: z.literal('queued') }).strict(),
   // Duplicate means the original provider acceptance is recorded, not merely admission.
   z.object({ version: z.literal(1), status: z.literal('duplicate') }).strict(),
   z.object({ version: z.literal(1), status: z.literal('superseded') }).strict(),
@@ -241,6 +247,7 @@ export const liveActivityRegistrationReceiptSchema = z
     version: z.literal(1),
     activationId: uuid,
     destinationId: uuid,
+    aggregateKey: uuid.optional(),
     generation: z.number().int().positive().max(2147483647),
   })
   .strict()
