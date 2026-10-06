@@ -62,6 +62,9 @@ test('self-hosted setup presents connection as primary action and does not imply
   const container = await render(selfHosted)
   expect(getByRole(container, 'button', { name: 'Connect Ficus account' }).className).toContain('ficus-button-primary')
   expect(container.textContent).toContain('Connecting does not start a subscription')
+  expect(getByRole(container, 'link', { name: 'Mobile setup guide →' }).getAttribute('href')).toBe(
+    'https://ficus.example.com/docs/connect/mobile/'
+  )
   expect(getByRole(container, 'textbox', { name: 'Server name' })).toBeTruthy()
 })
 

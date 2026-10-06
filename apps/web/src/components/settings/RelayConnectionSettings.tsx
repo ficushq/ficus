@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError } from '../../api/client'
+import { ApiError, getApiUrl } from '../../api/client'
 import { usePermissions } from '../../hooks/usePermissions'
 import { serverConnectionQueries } from '../../queryOptions'
 import { serverConnectionQueryKeys, integrationQueryKeys } from '../../queryKeys'
@@ -246,7 +246,7 @@ export function RelayConnectionSettings() {
         </p>
       )}
       <a
-        href="https://docs.ficus.sh/connect/mobile/"
+        href={getApiUrl('/docs/connect/mobile/')}
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex text-sm text-accent-light hover:underline"

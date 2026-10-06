@@ -1,3 +1,4 @@
+import { getApiUrl } from '../../api/client'
 import { usePermissions } from '../../hooks/usePermissions'
 import { ActivityIcon, BellIcon, WindowLayoutIcon } from '../icons'
 import { RelayConnectionSettings } from './RelayConnectionSettings'
@@ -66,7 +67,7 @@ export function MobileSection() {
             available slot from the server’s Instance Pro allowance.
           </p>
           <a
-            href="https://docs.ficus.sh/connect/mobile/"
+            href={getApiUrl('/docs/connect/mobile/')}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex text-accent-light hover:underline"
