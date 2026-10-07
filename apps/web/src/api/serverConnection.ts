@@ -24,6 +24,17 @@ export interface ServerConnectionRequest {
   approvalUrl: string
   expiresIn: number
 }
+/**
+ * Member-readable relay availability (GET /push/relay-config), the same answer
+ * the mobile app reads. `delivery: 'direct'` marks Ficus Cloud's own delivery.
+ */
+export interface RelayAvailability {
+  enabled: boolean
+  instanceId?: string
+  delivery?: 'direct'
+  liveActivities?: boolean
+}
+export const getRelayAvailability = () => apiFetch<RelayAvailability>('/push/relay-config')
 export const getServerConnection = () => apiFetch<ServerConnection>('/push/server-connection')
 export const startServerConnection = (name: string) =>
   apiFetch<ServerConnectionRequest>('/push/server-connection', { method: 'POST', body: JSON.stringify({ name }) })

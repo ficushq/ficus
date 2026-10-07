@@ -90,4 +90,7 @@ export const agentSlotHoldQueryKeys = {
   agent: (squadId: string, agentId: string) => ['agent-slot-holds', squadId, agentId] as const,
 }
 
-export const serverConnectionQueryKeys = { status: () => ['push-server-connection'] as const }
+export const serverConnectionQueryKeys = {
+  status: () => ['push-server-connection'] as const,
+  availability: () => ['push-relay-availability'] as const,
+}

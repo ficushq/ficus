@@ -6,7 +6,7 @@ export function MobileProSection() {
       <header>
         <h3 className="text-lg font-semibold text-primary">Mobile & Pro</h3>
         <p className="mt-1 text-sm text-muted">
-          Manage this server’s mobile relay connection and Instance Pro coverage.
+          Connect this server to a Ficus account for mobile push and Live Activities, and see its Instance Pro coverage.
         </p>
       </header>
       <RelayConnectionSettings />

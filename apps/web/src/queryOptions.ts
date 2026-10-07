@@ -1,5 +1,5 @@
 import { serverConnectionQueryKeys } from './queryKeys'
-import { getServerConnection } from './api/serverConnection'
+import { getRelayAvailability, getServerConnection } from './api/serverConnection'
 import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
 import { desktopQueryKeys } from './queryKeys'
 import { desktopBridge, type DesktopNotificationBatch } from './lib/desktop'
@@ -1109,4 +1109,11 @@ export const feedQueries = {
 export const serverConnectionQueries = {
   status: () =>
     queryOptions({ queryKey: serverConnectionQueryKeys.status(), queryFn: getServerConnection, staleTime: 15_000 }),
+  availability: () =>
+    queryOptions({
+      queryKey: serverConnectionQueryKeys.availability(),
+      queryFn: getRelayAvailability,
+      staleTime: 60_000,
+      retry: false,
+    }),
 }
