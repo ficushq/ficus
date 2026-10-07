@@ -20,10 +20,19 @@ function fixture() {
   let reply: 'pending' | 'denied' | 'connected' = 'pending'
   let challenge = ''
   let origin = env.PUBLIC_URL!
+  let approval: Record<string, unknown> = {}
+  let localUser: () => Promise<string | undefined> = async () => 'Noah'
   const deps: NonNullable<ConstructorParameters<typeof RelayServerConnection>[0]> = {
     env: () => env,
     now: () => now,
-    config: () => null,
+    config: () => {
+      const saved = storage.get(relayConnectionSecretKey(env))
+      return saved ? { token: saved, instanceId, baseUrl: 'https://cloud.example.com' } : null
+    },
+    describeUser: (userId) => {
+      expect(userId).toBe('admin')
+      return localUser()
+    },
     read: (key) => storage.get(key),
     remove: async (key) => {
       storage.delete(key)
@@ -46,7 +55,7 @@ function fixture() {
       if (url.endsWith('/token')) {
         if (tokenError) return new Response('provider-private-diagnostics', { status: tokenError })
         expect(createHash('sha256').update(input.codeVerifier).digest('base64url')).toBe(challenge)
-        return Response.json({ status: reply, ...(reply === 'connected' ? { token } : {}) })
+        return Response.json({ status: reply, ...(reply === 'connected' ? { token, ...approval } : {}) })
       }
       expect(init.headers).toEqual({ Authorization: `Bearer ${token}` })
       return Response.json({
@@ -83,8 +92,120 @@ function fixture() {
     setOrigin: (value: string) => {
       origin = value
     },
+    setApproval: (value: Record<string, unknown>) => {
+      approval = value
+    },
+    setLocalUser: (value: () => Promise<string | undefined>) => {
+      localUser = value
+    },
   }
 }
+
+const recordKey = (env: NodeJS.ProcessEnv) =>
+  relayConnectionSecretKey(env).replace('__push-relay-connection:', '__push-relay-connection-record:')
+
+describe('connection record', () => {
+  async function connect(f: ReturnType<typeof fixture>) {
+    await f.service.start('admin', 'Example')
+    f.setReply('connected')
+    expect(await f.service.poll('admin', id)).toEqual({ status: 'connected' })
+  }
+
+  test('records the local time and connecting person when Cloud sends no approval details', async () => {
+    const f = fixture()
+    f.advance(Date.parse('2026-10-06T18:02:00.000Z'))
+    await connect(f)
+    expect(JSON.parse(f.storage.get(recordKey(f.env))!)).toEqual({
+      connectedAt: '2026-10-06T18:02:00.000Z',
+      connectedBy: 'Noah',
+    })
+    expect(await f.service.status()).toMatchObject({
+      connected: true,
+      connection: { connectedAt: '2026-10-06T18:02:00.000Z', connectedBy: 'Noah' },
+    })
+    expect((await f.service.status()).connection).not.toHaveProperty('accountEmail')
+  })
+
+  test('prefers Cloud’s approval time and records the approving account email', async () => {
+    const f = fixture()
+    f.advance(Date.parse('2026-10-07T00:00:00.000Z'))
+    f.setApproval({ connectedAt: '2026-10-06T18:02:00.000Z', accountEmail: 'owner@example.com' })
+    await connect(f)
+    expect((await f.service.status()).connection).toEqual({
+      connectedAt: '2026-10-06T18:02:00.000Z',
+      connectedBy: 'Noah',
+      accountEmail: 'owner@example.com',
+    })
+  })
+
+  test('ignores malformed approval details and a missing local name without failing the connection', async () => {
+    const f = fixture()
+    f.advance(Date.parse('2026-10-07T00:00:00.000Z'))
+    f.setApproval({ connectedAt: 'yesterday', accountEmail: 42 })
+    f.setLocalUser(async () => {
+      throw new Error('lookup failed')
+    })
+    await connect(f)
+    expect((await f.service.status()).connection).toEqual({ connectedAt: '2026-10-07T00:00:00.000Z' })
+  })
+
+  test('reconnecting overwrites the record', async () => {
+    const f = fixture()
+    f.setApproval({ connectedAt: '2026-10-01T00:00:00.000Z', accountEmail: 'old@example.com' })
+    await connect(f)
+    f.setReply('pending')
+    f.setApproval({ connectedAt: '2026-10-06T18:02:00.000Z' })
+    f.setLocalUser(async () => 'Second Admin')
+    await connect(f)
+    expect((await f.service.status()).connection).toEqual({
+      connectedAt: '2026-10-06T18:02:00.000Z',
+      connectedBy: 'Second Admin',
+    })
+  })
+
+  test('disconnect clears the record', async () => {
+    const f = fixture()
+    f.setApproval({ connectedAt: '2026-10-06T18:02:00.000Z', accountEmail: 'owner@example.com' })
+    await connect(f)
+    await f.service.disconnect('admin')
+    expect(f.storage.get(recordKey(f.env))).toBe('')
+    expect(await f.service.status()).toMatchObject({ configured: false, connected: false, connection: null })
+  })
+
+  test('a connection made before records existed reports no record', async () => {
+    const f = fixture()
+    f.storage.set(relayConnectionSecretKey(f.env), token)
+    expect(await f.service.status()).toMatchObject({ connected: true, connection: null })
+  })
+
+  test('an unverifiable connection still reports its record', async () => {
+    const f = fixture()
+    await connect(f)
+    f.setOrigin('https://other.example.com')
+    expect(await f.service.status()).toMatchObject({
+      connected: false,
+      configured: true,
+      connection: { connectedBy: 'Noah' },
+    })
+  })
+
+  test('a failed record write keeps the approval recoverable', async () => {
+    const f = fixture()
+    await f.service.start('admin', 'Example')
+    f.setReply('connected')
+    const save = f.storage.set.bind(f.storage)
+    let fail = true
+    f.storage.set = (key, value) => {
+      if (fail && key.startsWith('__push-relay-connection-record:')) throw new Error('record persistence failure')
+      return save(key, value)
+    }
+    await expect(f.service.poll('admin', id)).rejects.toThrow('record persistence failure')
+    expect(f.storage.get('__push-relay-pending')).not.toBe('')
+    fail = false
+    expect(await f.restart().poll('admin', id)).toEqual({ status: 'connected' })
+    expect(JSON.parse(f.storage.get(recordKey(f.env))!)).toMatchObject({ connectedBy: 'Noah' })
+  })
+})
 
 describe('self-hosted server connection', () => {
   test('holds verifier on server, validates origin, saves only scoped token and returns no credential', async () => {
