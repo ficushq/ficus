@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act } from 'react'
 import { ThemeProvider, useTheme, useThemePreview } from './ThemeProvider'
 import { acquireDomHarness } from '../test/domHarness'
@@ -240,6 +242,66 @@ test('a storage-driven rerender never writes an older selection over another tab
     dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'ficus-theme-id', newValue: 'iris' }))
   })
   expect(document.documentElement.dataset.theme).toBe('iris')
+})
+
+/** The real `html` and `body` rules from index.css, so the test exercises what ships. */
+function baseBackgroundRules() {
+  const css = readFileSync(join(import.meta.dir, '..', 'index.css'), 'utf8')
+  const rule = (selector: string) => {
+    const start = css.indexOf(`\n  ${selector} {\n`)
+    expect(start).toBeGreaterThan(-1)
+    return css.slice(start, css.indexOf('\n  }\n', start) + 4)
+  }
+  return rule('html') + rule('body')
+}
+
+test('everything behind the app shell follows the active theme: html the surface, body the page', async () => {
+  const { dom } = await installThemeDom()
+  const sheet = document.createElement('style')
+  sheet.textContent =
+    ':root { --color-bg-surface: 245 240 230; --color-bg-page: 241 233 219; }' +
+    ' .dark { --color-bg-surface: 47 42 36; --color-bg-page: 28 26 23; }' +
+    baseBackgroundRules()
+  document.head.append(sheet)
+  let theme!: ReturnType<typeof useTheme>
+  function Controls() {
+    theme = useTheme()
+    return null
+  }
+  const { root } = dom.createRoot()
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <Controls />
+      </ThemeProvider>
+    )
+  })
+  const body = () => window.getComputedStyle(document.body).backgroundColor
+  const meta = () => document.querySelector('meta[name="theme-color"]')?.getAttribute('content')
+  // The body (what shows between the keyboard-pinned shell and the keyboard) is the shell's page
+  // color; the html canvas and the browser chrome tint stay on the header surface.
+  expect(body()).toBe('rgb(241 233 219)')
+  expect(document.documentElement.style.backgroundColor).toBe('rgb(245, 240, 230)')
+  expect(meta()).toBe('rgb(245, 240, 230)')
+  await act(async () => theme.setAppearance('dark'))
+  expect(body()).toBe('rgb(28 26 23)')
+  expect(document.documentElement.style.backgroundColor).toBe('rgb(47, 42, 36)')
+  expect(meta()).toBe('rgb(47, 42, 36)')
+  await act(async () => {
+    theme.applyCustom({
+      format: 'ficus-custom-theme',
+      version: 2,
+      name: 'Backdrop',
+      base: 'ficus',
+      variants: {
+        light: {},
+        dark: { '--color-bg-page': '#0a141e', '--color-bg-surface': '#14283c' },
+      },
+    })
+  })
+  expect(body()).toBe('rgb(10 20 30)')
+  expect(document.documentElement.style.backgroundColor).toBe('rgb(20, 40, 60)')
+  expect(meta()).toBe('rgb(20, 40, 60)')
 })
 
 test('live custom surface alpha is serialized consistently for root, metadata and reload snapshot', async () => {
