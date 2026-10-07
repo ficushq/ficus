@@ -53,8 +53,8 @@ export const SEED_SHED = { i: -7, j: 2 } as const
 export const PORCH = { i: -4.15, j: 0.35 } as const
 /** Between the seed shed and the porch, where the path to the house starts. */
 export const MAILBOX = { i: -6, j: 0.2 } as const
-/** Top-left tile of the first yard, below the homestead. */
-export const GRID_ORIGIN = { i: 1, j: 4 } as const
+/** Top-left tile of the first yard. */
+export const GRID_ORIGIN = { i: 1, j: -4 } as const
 /** How far out in front of the yard a sign stands, and how far along from the gate's middle (tiles; left is -). */
 const SIGN_OUT = 1.9
 const SIGN_ASIDE = -1
@@ -62,9 +62,9 @@ const SIGN_ASIDE = -1
 const FARMER_OUT = 0.45
 /** Tiles of lane between neighbouring yards. */
 export const LANE = 4
-/** Between rows of yards, one more: a yard's front is its entrance (its sign, farmer and visitors), across from the
+/** Between rows of yards, two more: a yard's front is its entrance (its sign, farmer and visitors), across from the
  *  charging hut and rack behind the next row's yards. */
-export const ROW_LANE = LANE + 1
+export const ROW_LANE = LANE + 2
 /**
  * Soil squares sit on a 1.5-tile pitch inside a yard, so there's a walking path
  * between them for the robots tending them.
@@ -239,22 +239,21 @@ export function layoutFarm(input: FarmInput): FarmLayout {
   const squads = [...new Map(input.squads.map((squad) => [squad.id, squad])).values()].sort(compareSquads)
   const grids = squads.map((squad) => yardSize(streamsBySquad.get(squad.id)?.length ?? 0))
   const sizes = grids.map((g) => ({ w: g.w * PLOT_PITCH, h: g.h * PLOT_PITCH }))
-  const columns = Math.max(1, Math.ceil(Math.sqrt(squads.length)))
+  // Fill along j first: neighbouring yards share their long sides, keeping
+  // small farms compact beside the homestead instead of extending down-right.
+  const rows = Math.max(1, Math.ceil(Math.sqrt(squads.length)))
   const columnWidths: number[] = []
-  const columnDepths: number[] = []
   const rowHeights: number[] = []
   sizes.forEach((size, index) => {
-    const column = index % columns
-    const row = Math.floor(index / columns)
+    const column = Math.floor(index / rows)
+    const row = index % rows
     columnWidths[column] = Math.max(columnWidths[column] ?? 0, size.w)
-    columnDepths[column] = Math.max(columnDepths[column] ?? 0, size.h)
-    rowHeights[row] = Math.max(rowHeights[row] ?? 0, (size.w + size.h) / 2)
+    rowHeights[row] = Math.max(rowHeights[row] ?? 0, size.h)
   })
   const columnStarts: number[] = []
   for (let c = 0, i = GRID_ORIGIN.i; c < columnWidths.length; c++) {
-    // A yard extends right with its width and left with its depth on screen.
-    if (c > 0) i += (columnWidths[c - 1]! + columnDepths[c]!) / 2 + LANE
     columnStarts.push(i)
+    i += columnWidths[c]! + LANE
   }
   const rowStarts: number[] = []
   for (let r = 0, j = GRID_ORIGIN.j; r < rowHeights.length; r++) {
@@ -265,12 +264,8 @@ export function layoutFarm(input: FarmInput): FarmLayout {
   const drawn = new Set<string>()
   const yards: YardLayout[] = squads.map((squad, index) => {
     const { w, h } = sizes[index]!
-    const column = columnStarts[index % columns]!
-    const rowOffset = rowStarts[Math.floor(index / columns)]! - GRID_ORIGIN.j
-    // Opposite tile offsets move horizontally; equal offsets move vertically.
-    // Keep each screen row level and its entrances clear of the row below.
-    const i0 = column + rowOffset
-    const j0 = GRID_ORIGIN.j + rowOffset - (column - GRID_ORIGIN.i)
+    const i0 = columnStarts[Math.floor(index / rows)]!
+    const j0 = rowStarts[index % rows]!
     const members = membersBySquad.get(squad.id) ?? []
 
     const manager =
