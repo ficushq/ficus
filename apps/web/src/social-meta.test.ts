@@ -1,10 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 
 // The app shell advertises a link-preview card whose absolute URLs the server
 // fills in from __FICUS_ORIGIN__ (apps/core/src/lib/web-serve.ts). Pinned so a
 // head rewrite cannot drop the card or hard-code one deployment's origin.
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+// Changing the card changes its URL, so link-preview and CDN caches refresh right away.
+// `bun run brand:generate` stamps this hash; this test fails if it goes stale.
+const version = createHash('sha256')
+  .update(readFileSync(new URL('../public/social-preview.png', import.meta.url)))
+  .digest('hex')
+  .slice(0, 12)
+const IMAGE = `__FICUS_ORIGIN__/social-preview.png?v=${version}`
 
 function meta(attr: 'property' | 'name', key: string): string | undefined {
   return html.match(new RegExp(`<meta\\s+${attr}="${key}"\\s+content="([^"]*)"`))?.[1]
@@ -12,7 +20,7 @@ function meta(attr: 'property' | 'name', key: string): string | undefined {
 
 describe('social preview metadata', () => {
   test('carries the Open Graph and Twitter card against the origin placeholder', () => {
-    expect(meta('property', 'og:image')).toBe('__FICUS_ORIGIN__/social-preview.png')
+    expect(meta('property', 'og:image')).toBe(IMAGE)
     expect(meta('property', 'og:url')).toBe('__FICUS_ORIGIN__/')
     expect(meta('property', 'og:image:width')).toBe('1280')
     expect(meta('property', 'og:image:height')).toBe('640')
@@ -22,7 +30,7 @@ describe('social preview metadata', () => {
     )
     expect(meta('property', 'og:title')).toBe('Ficus')
     expect(meta('name', 'twitter:card')).toBe('summary_large_image')
-    expect(meta('name', 'twitter:image')).toBe('__FICUS_ORIGIN__/social-preview.png')
+    expect(meta('name', 'twitter:image')).toBe(IMAGE)
     expect(html).not.toMatch(/https?:\/\/[^"]*social-preview\.png/)
   })
 

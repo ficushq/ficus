@@ -15,6 +15,7 @@
  * only the PNG step needs Chrome.
  */
 
+import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import sharp from 'sharp'
@@ -40,6 +41,19 @@ export const CARD_FILES: Record<CardVariant, { svg: string; png: string }> = {
  * from `brand/` by hand; see brand/README.md.
  */
 export const PUBLISHED_COPIES = ['.github/social-preview.png', 'apps/web/public/social-preview.png'] as const
+
+/** Pages whose og:image / twitter:image URLs carry the card's content hash, so caches refresh on change. */
+export const VERSIONED_META_PAGES = ['apps/web/index.html'] as const
+
+/** The cache-busting version for a card PNG: the first 12 hex digits of its SHA-256. */
+export function socialPreviewVersion(png: Uint8Array): string {
+  return createHash('sha256').update(png).digest('hex').slice(0, 12)
+}
+
+/** Points every `social-preview.png` URL in `html` at `version`. */
+export function stampSocialPreviewVersion(html: string, version: string): string {
+  return html.replace(/social-preview\.png(\?v=[^"]*)?(?=")/g, `social-preview.png?v=${version}`)
+}
 
 export const HEADLINE = ['Keep work moving', 'while you’re away.'] as const
 /**
@@ -399,6 +413,11 @@ export async function generateSocialPreviews(root: string = REPO_ROOT): Promise<
   for (const copy of PUBLISHED_COPIES) {
     await mkdir(dirname(join(root, copy)), { recursive: true })
     await copyFile(join(root, CARD_FILES.light.png), join(root, copy))
+  }
+  const version = socialPreviewVersion(await readFile(join(root, CARD_FILES.light.png)))
+  for (const page of VERSIONED_META_PAGES) {
+    const path = join(root, page)
+    await writeFile(path, stampSocialPreviewVersion(await readFile(path, 'utf8'), version))
   }
   console.log(
     'Ficus social preview cards generated:',

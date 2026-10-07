@@ -10,6 +10,9 @@ import {
   FONT_SUBSET_DIR,
   PUBLISHED_COPIES,
   REPO_ROOT,
+  VERSIONED_META_PAGES,
+  socialPreviewVersion,
+  stampSocialPreviewVersion,
 } from './social-preview'
 
 // These compare committed files only. Rendering the PNGs needs Chrome, which
@@ -60,4 +63,25 @@ describe('social preview card', () => {
       expect(svg.length).toBeLessThan(600 * 1024)
     })
   }
+})
+
+describe('social preview cache versioning', () => {
+  it('stamps or replaces the card version in preview URLs', () => {
+    const html = '<meta content="__FICUS_ORIGIN__/social-preview.png" /><meta content="/social-preview.png?v=0ld" />'
+    expect(stampSocialPreviewVersion(html, 'abc123def456')).toBe(
+      '<meta content="__FICUS_ORIGIN__/social-preview.png?v=abc123def456" /><meta content="/social-preview.png?v=abc123def456" />'
+    )
+  })
+
+  it('every versioned page carries the committed card hash', () => {
+    const version = socialPreviewVersion(read(CARD_FILES.light.png))
+    for (const page of VERSIONED_META_PAGES) {
+      const urls =
+        read(page)
+          .toString('utf8')
+          .match(/social-preview\.png[^"]*/g) ?? []
+      expect(urls.length).toBeGreaterThan(0)
+      for (const url of urls) expect(url).toBe(`social-preview.png?v=${version}`)
+    }
+  })
 })
