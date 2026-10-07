@@ -124,6 +124,18 @@ describe('yard sizing', () => {
   })
 })
 
+describe('yard framing', () => {
+  it('places the first two squads side by side beneath the farmhouse and seed shed', () => {
+    const layout = layoutFarm(busyFarm(2, 3, 3))
+    const [left, right] = layout.yards.map((yard) => iso(yard.i0 + yard.w / 2, yard.j0 + yard.h / 2))
+    expect(right![0]).toBeGreaterThan(left![0])
+    expect(right![1]).toBe(left![1])
+    for (const building of [layout.farmhouse, layout.seedShed]) {
+      expect(iso(building.i, building.j)[1]).toBeLessThan(left![1])
+    }
+  })
+})
+
 describe('layout determinism', () => {
   it('returns deep-equal output for the same input', () => {
     const input = busyFarm(6, 9, 12)
