@@ -23,3 +23,16 @@ export async function renderPairing(value: PairingCodeValue): Promise<RenderedPa
   const deepLink = `ficus://pair?url=${encodeURIComponent(value.serverUrl)}&code=${encodeURIComponent(value.code)}`
   return { dataUrl, deepLink, expiresAt: new Date(value.expiresAt).getTime() }
 }
+
+// The deep link only resolves on a phone with the Ficus app installed. Offer it where the
+// person can't scan their own screen: a phone browser, or any narrow or touch viewport.
+const APP_LINK_QUERY = '(max-width: 639px), (pointer: coarse)'
+
+export function canOpenFicusApp(): boolean {
+  if (typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) return true
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(APP_LINK_QUERY).matches
+  )
+}
