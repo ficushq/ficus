@@ -16,6 +16,10 @@ describe('social preview metadata', () => {
     expect(meta('property', 'og:url')).toBe('__FICUS_ORIGIN__/')
     expect(meta('property', 'og:image:width')).toBe('1280')
     expect(meta('property', 'og:image:height')).toBe('640')
+    // Describes what the card (brand/social-preview.svg) actually says.
+    expect(meta('property', 'og:image:alt')).toBe(
+      'Ficus: Keep work moving while you’re away. Self-organizing agents that check in when they need you.'
+    )
     expect(meta('property', 'og:title')).toBe('Ficus')
     expect(meta('name', 'twitter:card')).toBe('summary_large_image')
     expect(meta('name', 'twitter:image')).toBe('__FICUS_ORIGIN__/social-preview.png')

@@ -10,6 +10,9 @@
  * Usage: bun run brand:generate   (from repo root)
  *     or: bun run scripts/brand/generate.ts
  *
+ * Run as a script, it then also renders the social preview cards
+ * (scripts/brand/social-preview.ts, `bun run brand:social` on its own).
+ *
  * Determinism: every raster target is built by rasterizing a single
  * composite SVG (background shape + the source mark's own path data,
  * positioned with a computed affine transform) in one pass with sharp, then
@@ -89,9 +92,21 @@ const FARM_STANDARD_SIZES = [192, 512]
 const FARM_HORIZON = { mark: 49, favicon16: 50 } as const
 const WEB_MASKABLE_SIZES = [192, 512]
 
+// Apple's macOS app icon template: an 824 continuous-corner tile centered in a
+// 1024 canvas, over a soft drop shadow (28px blur, 12px down, 30% black).
 const DESKTOP_CANVAS = 1024
-const DESKTOP_TILE = 824
+export const DESKTOP_TILE = 824
 const DESKTOP_CORNER_RADIUS = 185
+// Figma-style corner smoothing; 0.6 approximates Apple's continuous corners.
+const DESKTOP_CORNER_SMOOTHING = 0.6
+export const DESKTOP_SHADOW = { blur: 28, offsetY: 12, opacity: 0.3 } as const
+
+const DESKTOP_TILE_SPEC = {
+  size: DESKTOP_TILE,
+  cornerRadius: DESKTOP_CORNER_RADIUS,
+  smoothing: DESKTOP_CORNER_SMOOTHING,
+  shadow: DESKTOP_SHADOW,
+}
 
 const PNG_OPTIONS = {
   compressionLevel: 9,
@@ -122,6 +137,48 @@ function toDark(markup: string): string {
 /** Forces every fill color in the markup to pure white (for monochrome silhouettes). */
 function toWhiteSilhouette(markup: string): string {
   return markup.replace(/fill="#[0-9a-fA-F]{3,6}"/g, 'fill="#ffffff"')
+}
+
+/**
+ * A continuous-corner ("squircle") square of side `size` at (x, y): each corner
+ * eases from the straight edge into a circular arc through two cubic Béziers,
+ * so curvature changes gradually instead of jumping as a plain rounded rect's
+ * does. This is the corner-smoothing construction Figma uses (and that Apple's
+ * icon templates approximate); `smoothing` 0 is an ordinary rounded corner.
+ */
+export function squirclePath(x: number, y: number, size: number, radius: number, smoothing: number): string {
+  const rad = (deg: number) => (deg * Math.PI) / 180
+  const p = Math.min((1 + smoothing) * radius, size / 2)
+  const arcMeasure = 90 * (1 - smoothing)
+  const arc = Math.sin(rad(arcMeasure / 2)) * radius * Math.SQRT2
+  const angleAlpha = (90 - arcMeasure) / 2
+  const p3ToP4 = radius * Math.tan(rad(angleAlpha / 2))
+  const angleBeta = 45 * smoothing
+  const c = p3ToP4 * Math.cos(rad(angleBeta))
+  const d = c * Math.tan(rad(angleBeta))
+  const b = (p - arc - c - d) / 3
+  const a = 2 * b
+  const n = (v: number) => Number(v.toFixed(3)).toString()
+  const [ab, abc, bc] = [a + b, a + b + c, b + c]
+  return [
+    `M${n(x + size - p)} ${n(y)}`,
+    `c${n(a)} 0 ${n(ab)} 0 ${n(abc)} ${n(d)}`,
+    `a${n(radius)} ${n(radius)} 0 0 1 ${n(arc)} ${n(arc)}`,
+    `c${n(d)} ${n(c)} ${n(d)} ${n(bc)} ${n(d)} ${n(abc)}`,
+    `L${n(x + size)} ${n(y + size - p)}`,
+    `c0 ${n(a)} 0 ${n(ab)} ${n(-d)} ${n(abc)}`,
+    `a${n(radius)} ${n(radius)} 0 0 1 ${n(-arc)} ${n(arc)}`,
+    `c${n(-c)} ${n(d)} ${n(-bc)} ${n(d)} ${n(-abc)} ${n(d)}`,
+    `L${n(x + p)} ${n(y + size)}`,
+    `c${n(-a)} 0 ${n(-ab)} 0 ${n(-abc)} ${n(-d)}`,
+    `a${n(radius)} ${n(radius)} 0 0 1 ${n(-arc)} ${n(-arc)}`,
+    `c${n(-d)} ${n(-c)} ${n(-d)} ${n(-bc)} ${n(-d)} ${n(-abc)}`,
+    `L${n(x)} ${n(y + p)}`,
+    `c0 ${n(-a)} 0 ${n(-ab)} ${n(d)} ${n(-abc)}`,
+    `a${n(radius)} ${n(radius)} 0 0 1 ${n(arc)} ${n(-arc)}`,
+    `c${n(c)} ${n(-d)} ${n(bc)} ${n(-d)} ${n(abc)} ${n(-d)}`,
+    'Z',
+  ].join(' ')
 }
 
 interface BBox {
@@ -191,7 +248,7 @@ type FillSpec =
 
 /**
  * Builds a self-contained composite SVG: an optional background (full-canvas
- * or a centered rounded tile) plus the mark's inner markup, scaled and
+ * or a centered continuous-corner tile) plus the mark's inner markup, scaled and
  * centered on the content's bbox center. Either `fill` (the content's
  * longest bbox dimension, as a fraction of the effective canvas) or
  * `radial` (the content's measured max radius, scaled so its diameter is a
@@ -204,7 +261,13 @@ function buildCompositeSVG(
     markup: string
     bbox: BBox
     background?: string
-    tile?: { size: number; cornerRadius: number }
+    /** A centered continuous-corner tile behind the mark, with an optional drop shadow beneath it. */
+    tile?: {
+      size: number
+      cornerRadius: number
+      smoothing: number
+      shadow?: { blur: number; offsetY: number; opacity: number }
+    }
     /** A two-band backdrop instead of `background`: sky above, ground below `horizon` (in mark units). */
     scene?: { sky: string; ground: string; horizon: number }
   } & FillSpec
@@ -226,9 +289,17 @@ function buildCompositeSVG(
       `<rect x="0" y="0" width="${size}" height="${size}" fill="${scene.sky}"/>` +
       `<rect x="0" y="${horizonY}" width="${size}" height="${size - horizonY}" fill="${scene.ground}"/>`
   } else if (background && tile) {
-    const tileX = (size - tile.size) / 2
-    const tileY = (size - tile.size) / 2
-    backgroundShape = `<rect x="${tileX}" y="${tileY}" width="${tile.size}" height="${tile.size}" rx="${tile.cornerRadius}" ry="${tile.cornerRadius}" fill="${background}"/>`
+    const offset = (size - tile.size) / 2
+    const shape = squirclePath(offset, offset, tile.size, tile.cornerRadius, tile.smoothing)
+    if (tile.shadow) {
+      // Design tools' "blur" is twice the Gaussian standard deviation.
+      const { blur, offsetY, opacity } = tile.shadow
+      backgroundShape =
+        `<defs><filter id="tile-shadow" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">` +
+        `<feGaussianBlur stdDeviation="${blur / 2}"/></filter></defs>` +
+        `<path d="${shape}" transform="translate(0 ${offsetY})" fill="#000000" fill-opacity="${opacity}" filter="url(#tile-shadow)"/>`
+    }
+    backgroundShape += `<path d="${shape}" fill="${background}"/>`
   } else if (background) {
     backgroundShape = `<rect x="0" y="0" width="${size}" height="${size}" fill="${background}"/>`
   }
@@ -435,7 +506,7 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
       bbox: markMetrics,
       fill: FILL.desktopTile,
       background: COLORS.linen,
-      tile: { size: DESKTOP_TILE, cornerRadius: DESKTOP_CORNER_RADIUS },
+      tile: DESKTOP_TILE_SPEC,
     }),
     join(outDir, 'desktop', 'icon-1024.png')
   )
@@ -446,7 +517,7 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
       bbox: markMetrics,
       fill: FILL.desktopTile,
       background: COLORS.soil,
-      tile: { size: DESKTOP_TILE, cornerRadius: DESKTOP_CORNER_RADIUS },
+      tile: DESKTOP_TILE_SPEC,
     }),
     join(outDir, 'desktop', 'icon-1024-dark.png')
   )
@@ -501,8 +572,13 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
 }
 
 if (import.meta.main) {
-  generate().catch((err) => {
-    console.error(err)
-    process.exit(1)
-  })
+  // Icons first, then the social preview cards (which embed the mark and need
+  // Chrome), then the App Store art (Chrome too).
+  generate()
+    .then(async () => (await import('./social-preview')).generateSocialPreviews())
+    .then(async () => (await import('./app-store')).generateAppStoreArt())
+    .catch((err) => {
+      console.error(err)
+      process.exit(1)
+    })
 }
