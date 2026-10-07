@@ -124,6 +124,20 @@ describe('yard sizing', () => {
   })
 })
 
+describe('yard framing', () => {
+  it('places the first two squads along their long sides beside the homestead', () => {
+    const layout = layoutFarm(busyFarm(2, 3, 3))
+    const [first, second] = layout.yards
+    expect(first!.w).toBeGreaterThan(first!.h)
+    expect(second!.i0).toBe(first!.i0)
+    expect(second!.j0).toBeGreaterThan(first!.j0 + first!.h)
+    // Continue down-left beside the homestead, rather than away from it down-right.
+    const [x1] = iso(first!.i0, first!.j0)
+    const [x2] = iso(second!.i0, second!.j0)
+    expect(x2).toBeLessThan(x1)
+  })
+})
+
 describe('layout determinism', () => {
   it('returns deep-equal output for the same input', () => {
     const input = busyFarm(6, 9, 12)
