@@ -20,6 +20,7 @@ import {
   CLAUDE_CODE_SIDE_REQUEST,
   createClaudeCodeStream,
 } from './bridge'
+import { emptyUsage, renderHistoryPrompt } from './convert'
 import { isRetryableAssistantError } from '@earendil-works/pi-ai'
 import { classifyCaughtProviderError } from '../../../lib/error'
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic'
@@ -130,7 +131,7 @@ function textResponse(id: string, text: string) {
     { type: 'result', subtype: 'success', result: text, session_id: 'cc-1', is_error: false },
   ]
 }
-function toolResponse(id: string, toolUseId: string, input: Record<string, unknown>) {
+function toolResponse(id: string, toolUseId: string, input: Record<string, unknown>, name = 'mcp__ficus__bash') {
   return [
     event({
       type: 'message_start',
@@ -139,7 +140,7 @@ function toolResponse(id: string, toolUseId: string, input: Record<string, unkno
     event({
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'tool_use', id: toolUseId, name: 'mcp__ficus__bash', input: {} },
+      content_block: { type: 'tool_use', id: toolUseId, name, input: {} },
     }),
     event({
       type: 'content_block_delta',
@@ -274,6 +275,40 @@ test('a restarted worker resumes the Claude Code session and sends only what is 
   expect((await claude.nextPrompt(1)).message.content).toEqual([{ type: 'text', text: 'again' }])
   claude.emit(...textResponse('msg_2', 'hello again'))
   expect((await next.result()).stopReason).toBe('stop')
+})
+
+test('a tool Claude Code calls without its mcp__ficus__ name is never matched to a real tool', async () => {
+  // Claude Code rejects an unprefixed name itself ("No such tool available"); Core must not run it.
+  const { stream, processes } = harness()
+  const first = stream(model, context([user('list files')]), { sessionId: 's-unknown' })
+  const claude = processes[0]!
+  await claude.nextPrompt(1)
+  claude.emit(...toolResponse('msg_1', 'toolu_1', { command: 'ls' }, 'bash'))
+  const call = await first.result()
+  expect(call.content).toEqual([
+    { type: 'toolCall', id: 'toolu_1', name: 'claude-code-unknown:bash', arguments: { command: 'ls' } },
+  ])
+})
+
+test('a seeded transcript names tool calls the way Claude Code knows them', async () => {
+  const history: Message[] = [
+    user('list files'),
+    {
+      role: 'assistant',
+      content: [{ type: 'toolCall', id: 'toolu_9', name: 'bash', arguments: { command: 'ls' } }],
+      api: 'claude-code',
+      provider: 'claude-code',
+      model: 'claude-opus-5-5',
+      usage: emptyUsage(),
+      stopReason: 'toolUse',
+      timestamp: Date.now(),
+    } as AssistantMessage,
+    toolResult('toolu_9', 'a.txt'),
+    user('and now?'),
+  ]
+  const prompt = renderHistoryPrompt(history)
+  expect(prompt).toContain('<tool_call name="mcp__ficus__bash" id="toolu_9">')
+  expect(prompt).not.toContain('<tool_call name="bash"')
 })
 
 test('a history Claude Code never saw starts a fresh session seeded with the transcript', async () => {
