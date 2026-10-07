@@ -1,7 +1,7 @@
 import { getApiUrl } from '../../api/client'
 import { usePermissions } from '../../hooks/usePermissions'
 import { ActivityIcon, BellIcon, WindowLayoutIcon } from '../icons'
-import { RelayConnectionSettings } from './RelayConnectionSettings'
+import { Link } from 'react-router-dom'
 
 const features = [
   {
@@ -53,29 +53,30 @@ export function MobileSection() {
           </div>
         ))}
       </div>
-      {canManage ? (
-        <RelayConnectionSettings />
-      ) : (
-        <section className="space-y-3 text-sm text-muted">
-          <h4 className="font-medium text-primary">Bring your server along</h4>
-          <p>
-            Add your server in the Ficus mobile app and sign in to your instance account. Paid Ficus Cloud access
-            includes mobile Pro features automatically.
-          </p>
-          <p>
-            For self-hosted relay setup, ask your server administrator. Use your personal Ficus Pro account or an
-            available slot from the server’s Instance Pro allowance.
-          </p>
-          <a
-            href={getApiUrl('/docs/connect/mobile/')}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex text-accent-light hover:underline"
-          >
-            Mobile setup guide →
-          </a>
-        </section>
-      )}
+      <section className="space-y-3 text-sm text-muted">
+        <h4 className="font-medium text-primary">Bring your server along</h4>
+        <p>
+          Add your server in the Ficus mobile app and sign in to your instance account. Paid Ficus Cloud access includes
+          mobile Pro features automatically.
+        </p>
+        <p>
+          For self-hosted relay setup, ask your server administrator. Use your personal Ficus Pro account or an
+          available slot from the server’s Instance Pro allowance.
+        </p>
+        <a
+          href={getApiUrl('/docs/connect/mobile/')}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex text-accent-light hover:underline"
+        >
+          Mobile setup guide →
+        </a>
+        {canManage && (
+          <Link to="/settings?section=mobile-pro" className="inline-flex text-accent-light hover:underline">
+            Manage this server’s Mobile & Pro settings →
+          </Link>
+        )}
+      </section>
     </div>
   )
 }

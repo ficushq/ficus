@@ -13,7 +13,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
   {
     label: 'Personal',
     items: [
-      { id: 'account', label: 'Account', description: 'Your profile, email, password, and passkeys.' },
+      { id: 'account', label: 'Account', description: 'Profile, email and passkeys.' },
       {
         id: 'appearance',
         label: 'Appearance',
@@ -29,7 +29,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         label: 'Notifications',
         description: 'Your notification delivery and sound preferences.',
       },
-      { id: 'mobile', label: 'Mobile', description: 'Mobile app, Pro coverage, and relay setup.' },
+      { id: 'mobile', label: 'Mobile', description: 'Mobile app discovery.' },
       { id: 'devices', label: 'Paired Devices', description: 'Pair and manage linked devices.' },
       { id: 'sessions', label: 'Sessions', description: 'Active sign-in sessions and revocation.' },
     ],
@@ -75,6 +75,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
   {
     label: 'Configuration',
     items: [
+      { id: 'mobile-pro', label: 'Mobile & Pro', description: 'Public URL, relay and Pro device coverage.' },
       {
         id: 'squad-presets',
         label: 'Squad Presets',
@@ -83,7 +84,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'git',
         label: 'Git',
-        description: 'Default commit author identity and GitHub identity overrides.',
+        description: 'Commit author and GitHub identity overrides.',
       },
       {
         id: 'notification-rules',
@@ -111,7 +112,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         label: 'Machines',
         description: 'Machines and capacity used to run squad workloads.',
       },
-      { id: 'remote-hosts', label: 'Remote hosts', description: 'Shared SSH targets squads can access.' },
+      { id: 'remote-hosts', label: 'Remote hosts', description: 'Shared SSH targets.' },
     ],
   },
   {
@@ -127,7 +128,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         label: 'Storage',
         description: 'Disk usage by squad, repositories, worktrees, and tools.',
       },
-      { id: 'system-logs', label: 'Logs', description: 'Search and inspect system logs.' },
+      { id: 'system-logs', label: 'Logs', description: 'System logs.' },
       {
         id: 'ops-insights',
         label: 'Recommendations',
@@ -153,6 +154,7 @@ const SECTION_PERMISSIONS: Partial<Record<SectionId, string>> = {
   // Reading the policy exposes the allowed-domain list, which GET /auth/settings gates on settings:read.
   signup: 'settings:read',
   memory: 'settings:read',
+  'mobile-pro': 'settings:read',
   providers: 'provider-auth:read',
   skills: 'skills:read',
   'agent-types': 'agent-types:read',

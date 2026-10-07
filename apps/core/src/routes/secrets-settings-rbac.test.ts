@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { Hono } from 'hono'
 import secretsRouter from './secrets'
@@ -17,7 +18,7 @@ import {
   type TestUser,
 } from '../test-utils'
 import { parseJsonBody } from './json-body'
-import { pushRelayConfig, relayConnectionSecretKey } from '../services/push/relay'
+import { pushRelayConfig, relayConnectionSecretKey, resolvePushRelayBaseUrl } from '../services/push/relay'
 
 const app = new Hono()
 app.use('*', identityMiddleware)
@@ -336,6 +337,35 @@ describe('B14 secrets and settings RBAC', () => {
     } finally {
       if (old === undefined) delete process.env.FICUS_PUSH_RELAY_TOKEN
       else process.env.FICUS_PUSH_RELAY_TOKEN = old
+    }
+  })
+
+  test('adopts legacy PUBLIC_URL credentials only for the same canonical APP_URL', async () => {
+    const previous = {
+      APP_URL: process.env.APP_URL,
+      PUBLIC_URL: process.env.PUBLIC_URL,
+      FICUS_PUSH_RELAY_TOKEN: process.env.FICUS_PUSH_RELAY_TOKEN,
+    }
+    const token = `ficus_pri_${crypto.randomUUID()}_${'a'.repeat(43)}`
+    try {
+      delete process.env.FICUS_PUSH_RELAY_TOKEN
+      process.env.PUBLIC_URL = 'https://Home.Example.com/ficus/'
+      delete process.env.APP_URL
+      const legacyKey = `__push-relay-connection:${createHash('sha256').update(`${resolvePushRelayBaseUrl()}\nhttps://Home.Example.com/ficus`).digest('hex')}`
+      await getSecretStore().set(legacyKey, token, admin.id)
+      expect(pushRelayConfig()?.token).toBe(token)
+      process.env.APP_URL = 'https://home.example.com/ficus'
+      expect(pushRelayConfig()?.token).toBe(token)
+      process.env.APP_URL = 'https://other.example.com/ficus'
+      expect(pushRelayConfig()).toBeNull()
+      process.env.APP_URL = 'https://home.example.com/ficus'
+      await getSecretStore().set(relayConnectionSecretKey(), '', admin.id)
+      expect(pushRelayConfig()).toBeNull()
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
     }
   })
 

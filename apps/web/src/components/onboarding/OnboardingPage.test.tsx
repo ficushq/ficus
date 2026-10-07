@@ -78,7 +78,7 @@ describe('OnboardingPage — static rendering', () => {
     expect(html).not.toContain('/settings?section=providers')
     expect(html).toContain('Connect GitHub')
     expect(html).not.toContain('href="/settings?section=integrations"')
-    expect(html).toContain('/settings?section=mobile&amp;setting=mobile-pro')
+    expect(html).toContain('/settings?section=mobile-pro&amp;setting=mobile-pro')
     expect(html).toContain('Squad name')
 
     // Optional headers are discoverable from the start; their forms stay closed.
@@ -95,7 +95,7 @@ describe('OnboardingPage — static rendering', () => {
     expect(html).toContain('Invite your team')
     expect(html).not.toContain('/settings?section=users')
     expect(html).not.toContain('href="/settings?section=integrations"')
-    expect(html).toContain('/settings?section=mobile&amp;setting=mobile-pro')
+    expect(html).toContain('/settings?section=mobile-pro&amp;setting=mobile-pro')
     expect(html).not.toContain('/settings?section=remote-hosts')
     expect(html).toContain('Connect a chat channel')
     expect(html).not.toContain('Add a remote host')

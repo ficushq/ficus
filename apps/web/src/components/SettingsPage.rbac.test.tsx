@@ -149,11 +149,12 @@ async function renderSettings(
 }
 
 describe('SettingsPage RBAC tabs', () => {
-  test('Mobile is an independent page for a human settings reader without integration grants', async () => {
+  test('personal Mobile stays discovery-only for administrators', async () => {
     const html = await renderSettings('/settings?section=mobile', ['settings:read'], { human: true })
     expect(html).toContain('Ficus, to go.')
     expect(html).toContain('Pick up the thread')
-    expect(html).toContain('Connection &amp; Pro coverage')
+    expect(html).not.toContain('Connection &amp; Pro coverage')
+    expect(html).toContain('href="/settings?section=mobile-pro"')
     expect(html).not.toContain('Search integrations')
     expect(html).not.toContain('Connect Ficus account</button>')
   })
@@ -174,7 +175,7 @@ describe('SettingsPage RBAC tabs', () => {
   })
 
   test('Cloud Mobile explains adding the server without a relay connection form', async () => {
-    const html = await renderSettings('/settings?section=mobile', ['settings:read', 'settings:write'], {
+    const html = await renderSettings('/settings?section=mobile-pro', ['settings:read', 'settings:write'], {
       human: true,
       managed: true,
     })
@@ -189,9 +190,28 @@ describe('SettingsPage RBAC tabs', () => {
       ['settings:read', 'integrations:read:bigbrain'],
       { human: true }
     )
-    expect(html).toContain('href="/settings?section=mobile"')
-    expect(html).toContain('Set up the mobile app and Pro coverage')
+    expect(html).toContain('href="/settings?section=mobile-pro"')
+    expect(html).toContain('Manage mobile relay and Pro coverage')
     expect(html).not.toContain('Connection &amp; Pro coverage')
+  })
+
+  test('administration Mobile & Pro allows human settings readers without integration grants', async () => {
+    const html = await renderSettings('/settings?section=mobile-pro', ['settings:read'], { human: true })
+    expect(html).toContain('Connection &amp; Pro coverage')
+    expect(html).toContain('Server address')
+    expect(html).not.toContain('Ficus, to go.')
+    expect(html).not.toContain('Connect Ficus account</button>')
+  })
+
+  test('administration Mobile & Pro denies ordinary members and nonhuman identities', async () => {
+    for (const [permissions, human] of [
+      [[], true],
+      [['settings:read'], false],
+    ] as const) {
+      const html = await renderSettings('/settings?section=mobile-pro', [...permissions], { human })
+      expect(html).not.toContain('Connection &amp; Pro coverage')
+      expect(html).not.toContain('Manage Pro and devices')
+    }
   })
 
   beforeEach(() => undefined)

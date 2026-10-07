@@ -1,3 +1,4 @@
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
 import { createHash, randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { relayInstanceTokenPattern } from '@ficus/shared/push-relay'
@@ -27,7 +28,10 @@ function publicOrigin(raw: string | undefined) {
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error()
     return url.toString().replace(/\/+$/, '')
   } catch {
-    throw new RelayConnectionError('Set PUBLIC_URL to this server’s public HTTPS address before connecting.', 400)
+    throw new RelayConnectionError(
+      'Set this server’s application URL (APP_URL) to its public HTTPS address before connecting.',
+      400
+    )
   }
 }
 const unavailable = () => new RelayConnectionError('Could not reach Ficus Cloud. Try again shortly.')
@@ -118,12 +122,12 @@ export class RelayServerConnection {
   async status() {
     const env = this.deps.env()
     const baseUrl = resolvePushRelayBaseUrl(env)
-    const common = { baseUrl, manageUrl: `${baseUrl}/account/push`, origin: env.PUBLIC_URL?.trim() ?? '' }
+    const common = { baseUrl, manageUrl: `${baseUrl}/account/push`, origin: resolvePublicAppUrl(env) ?? '' }
     if (env.FICUS_MANAGED === '1') return { ...common, managed: true, configured: true, connected: true }
     let configured = false
     let setupError: string | undefined
     try {
-      publicOrigin(env.PUBLIC_URL)
+      publicOrigin(resolvePublicAppUrl(env))
     } catch (error) {
       setupError = (error as RelayConnectionError).message
     }
@@ -132,7 +136,10 @@ export class RelayServerConnection {
       configured = Boolean(config)
       if (!config) return { ...common, managed: false, configured, connected: false, setupError }
       const status = statusSchema.parse(await this.request(config.baseUrl, 'status', undefined, config.token))
-      if (status.instanceId !== config.instanceId || publicOrigin(status.origin) !== publicOrigin(env.PUBLIC_URL))
+      if (
+        status.instanceId !== config.instanceId ||
+        publicOrigin(status.origin) !== publicOrigin(resolvePublicAppUrl(env))
+      )
         throw new RelayConnectionError(
           'This connection belongs to a different server address. Connect your Ficus account again.',
           409
@@ -153,7 +160,7 @@ export class RelayServerConnection {
     return this.exclusive(async () => {
       this.assertSelfHosted()
       const env = this.deps.env()
-      const origin = publicOrigin(env.PUBLIC_URL)
+      const origin = publicOrigin(resolvePublicAppUrl(env))
       const baseUrl = resolvePushRelayBaseUrl(env)
       const now = this.deps.now()
       const previous = this.pending()
@@ -207,7 +214,7 @@ export class RelayServerConnection {
       if (!p || p.id !== id || p.userId !== userId || p.expires <= this.deps.now())
         throw new RelayConnectionError('This connection request expired. Start again.', 409)
       const env = this.deps.env()
-      if (p.origin !== publicOrigin(env.PUBLIC_URL) || p.baseUrl !== resolvePushRelayBaseUrl(env)) {
+      if (p.origin !== publicOrigin(resolvePublicAppUrl(env)) || p.baseUrl !== resolvePushRelayBaseUrl(env)) {
         await this.clearPending(userId)
         throw new RelayConnectionError('The server address changed. Start the connection again.', 409)
       }

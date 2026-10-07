@@ -166,7 +166,7 @@ export function IntegrationDirectoryCard({
               />
               <p className="text-sm text-muted">
                 {entry.key === 'apple-push'
-                  ? 'For a custom native app build, configure its own Apple push signing key here. The official Ficus app uses Settings → Mobile; Ficus Cloud configures delivery automatically.'
+                  ? 'For a custom native app build, configure its own Apple push signing key here. The official Ficus app uses Settings → Administration → Mobile & Pro; Ficus Cloud configures delivery automatically.'
                   : 'Ficus generates and stores browser push signing keys automatically. Set an email address or HTTPS contact URL for the push service. Devices subscribe in personal Notifications settings.'}
               </p>
             </div>
@@ -251,8 +251,8 @@ export function IntegrationsSection() {
       {permissions.identity?.type === 'user' && permissions.can('settings:read') && (
         <p className="text-sm text-muted">
           Taking Ficus with you?{' '}
-          <Link to="/settings?section=mobile" className="text-accent-light hover:underline">
-            Set up the mobile app and Pro coverage →
+          <Link to="/settings?section=mobile-pro" className="text-accent-light hover:underline">
+            Manage mobile relay and Pro coverage →
           </Link>
         </p>
       )}

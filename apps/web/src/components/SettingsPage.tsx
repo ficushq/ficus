@@ -1,3 +1,4 @@
+import { MobileProSection } from './settings/MobileProSection'
 import { MobileSection } from './settings/MobileSection'
 import { SETTINGS_SEARCH_ENTRIES } from './settings/settingsSearch'
 import { LinkedChatAccounts } from './settings/LinkedChatAccounts'
@@ -117,8 +118,9 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
         integrationAllowed
       ) &&
       !(section === 'updates' && hideUpdates) &&
-      !(section === 'mobile' && !mobilePageAllowed),
-    [can, permissionsLoading, catalog.isPending, mobilePageAllowed, integrationAllowed, hideUpdates]
+      !(section === 'mobile' && !mobilePageAllowed) &&
+      !(section === 'mobile-pro' && !mobileSetupAllowed),
+    [can, permissionsLoading, catalog.isPending, mobilePageAllowed, mobileSetupAllowed, integrationAllowed, hideUpdates]
   )
   const legacySection = searchParams.get('section')
   const target = searchParams.get('setting') ?? ''
@@ -171,7 +173,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
     <div className="h-full min-h-0 flex flex-col md:flex-row grow gap-4 md:gap-6">
       <SettingsNavigation
         groups={visibleGroups}
-        searchEntries={SETTINGS_SEARCH_ENTRIES.filter((entry) => entry.id !== 'mobile-pro' || mobileSetupAllowed)}
+        searchEntries={SETTINGS_SEARCH_ENTRIES.filter((entry) => entry.section !== 'mobile-pro' || mobileSetupAllowed)}
         activeSection={activeSection}
         onSectionChange={setActiveSection}
         showOnboardingLink={showOnboardingLink}
@@ -187,6 +189,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
           {activeSection === 'workflows' && <WorkflowsSection />}
           {activeSection === 'integrations' && <IntegrationsSection />}
           {activeSection === 'mobile' && <MobileSection />}
+          {activeSection === 'mobile-pro' && <MobileProSection />}
           {activeSection === 'notification-rules' && <NotificationsConfigSection />}
           {activeSection === 'providers' && <ProviderAuthSection />}
           {activeSection === 'git' && <SecretsSection />}
