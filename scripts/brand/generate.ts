@@ -572,9 +572,11 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
 }
 
 if (import.meta.main) {
-  // Icons first, then the social preview cards (which embed the mark and need Chrome).
+  // Icons first, then the social preview cards (which embed the mark and need
+  // Chrome), then the App Store art (Chrome too).
   generate()
     .then(async () => (await import('./social-preview')).generateSocialPreviews())
+    .then(async () => (await import('./app-store')).generateAppStoreArt())
     .catch((err) => {
       console.error(err)
       process.exit(1)

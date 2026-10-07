@@ -470,7 +470,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Validate brand rendering with patched native libraries
-        run: bun test ./generate.test.ts ./social-preview.test.ts
+        run: bun test ./generate.test.ts ./social-preview.test.ts ./app-store.test.ts
         working-directory: scripts/brand
 
       - name: Report typecheck memory context

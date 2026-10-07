@@ -78,7 +78,11 @@ describe('brand icon generator', () => {
   })
 
   it('preserves every committed pixel and SVG without depending on PNG compression versions', async () => {
-    const committedFiles = listFiles(OUT_DIR).map((f) => relative(OUT_DIR, f))
+    // brand/generated/app-store/ is rendered by app-store.ts in Chrome, not by
+    // generate(); app-store.test.ts covers it.
+    const committedFiles = listFiles(OUT_DIR)
+      .map((f) => relative(OUT_DIR, f))
+      .filter((rel) => !rel.startsWith('app-store/'))
     expect(listFiles(tmpDir).map((f) => relative(tmpDir, f))).toEqual(committedFiles)
 
     // PNG encoders can produce different bytes for identical pixels after a

@@ -207,9 +207,11 @@ function innerMarkup(svg: string): string {
   return match[1].trim()
 }
 
-async function fontFaces(): Promise<string> {
+/** The embedded subset fonts (all, or just `families`) as base64 `@font-face` rules. */
+export async function fontFaces(families?: readonly string[]): Promise<string> {
   const faces: string[] = []
   for (const font of EMBEDDED_FONTS) {
+    if (families && !families.includes(font.family)) continue
     const data = (await readFile(join(FONT_SUBSET_DIR, font.file))).toString('base64')
     faces.push(
       `@font-face { font-family: '${font.family}'; font-style: normal; font-weight: ${font.weight}; ` +
@@ -219,7 +221,8 @@ async function fontFaces(): Promise<string> {
   return faces.join('\n    ')
 }
 
-const LEAF_PATH =
+/** The hero illustration's leaf, 30 units long, base at the origin, tip up. */
+export const LEAF_PATH =
   'M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z'
 
 function plant(p: Palette): string {
