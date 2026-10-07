@@ -122,7 +122,7 @@ export class RelayServerConnection {
   async status() {
     const env = this.deps.env()
     const baseUrl = resolvePushRelayBaseUrl(env)
-    const common = { baseUrl, manageUrl: `${baseUrl}/account/push`, origin: resolvePublicAppUrl(env) ?? '' }
+    const common = { baseUrl, manageUrl: `${baseUrl}/account/pro`, origin: resolvePublicAppUrl(env) ?? '' }
     if (env.FICUS_MANAGED === '1') return { ...common, managed: true, configured: true, connected: true }
     let configured = false
     let setupError: string | undefined

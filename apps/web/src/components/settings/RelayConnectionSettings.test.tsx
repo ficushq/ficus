@@ -20,7 +20,7 @@ const selfHosted: ServerConnection = {
   configured: false,
   origin: 'https://ficus.example.com',
   baseUrl: 'https://ficus.sh',
-  manageUrl: 'https://ficus.sh/account/push',
+  manageUrl: 'https://ficus.sh/account/pro',
 }
 const connectedStatus = (overrides: Partial<NonNullable<ServerConnection['status']>> = {}): ServerConnection => ({
   ...selfHosted,
@@ -165,7 +165,7 @@ test('connected: the Instance Pro rows show the allowance and slot use', async (
   expect(allowance.container.textContent).toContain('2 of 5 slots used')
   expect(allowance.container.textContent).toContain('Devices using instance slots2')
   const manage = getByRole(allowance.container, 'link', { name: 'Manage Pro and devices on ficus.sh' })
-  expect(manage.getAttribute('href')).toBe('https://ficus.sh/account/push')
+  expect(manage.getAttribute('href')).toBe('https://ficus.sh/account/pro')
   expect(manage.getAttribute('target')).toBe('_blank')
   expect(manage.getAttribute('rel')).toContain('noopener')
 })

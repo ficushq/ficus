@@ -31,7 +31,7 @@ const selfHosted: ServerConnection = {
   configured: false,
   origin: 'https://ficus.example.com',
   baseUrl: 'https://ficus.sh',
-  manageUrl: 'https://ficus.sh/account/push',
+  manageUrl: 'https://ficus.sh/account/pro',
 }
 
 type RenderOptions = {

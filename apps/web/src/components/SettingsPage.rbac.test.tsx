@@ -80,7 +80,7 @@ function seedSettingsQueries(queryClient: QueryClient, permissions: string[], op
     connected: options.managed ?? false,
     origin: 'https://studio.example.com',
     baseUrl: 'https://ficus.sh',
-    manageUrl: 'https://ficus.sh/account/push',
+    manageUrl: 'https://ficus.sh/account/pro',
   })
   queryClient.setQueryData(integrationQueryKeys.catalog(), {
     integrations: [
