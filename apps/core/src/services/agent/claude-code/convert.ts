@@ -19,8 +19,23 @@ export const TOOL_SERVER = 'ficus'
 /** How Claude Code names the agent's tools. */
 export const CLAUDE_TOOL_PREFIX = `mcp__${TOOL_SERVER}__`
 
+/** Marks a tool Claude Code called by a name it doesn't have, so pi can't match it to a real tool. */
+export const UNKNOWN_CLAUDE_TOOL_PREFIX = 'claude-code-unknown:'
+
+/**
+ * The pi tool a Claude Code tool_use names. Claude Code offers the agent's tools only as
+ * `mcp__ficus__<name>`, and rejects any other name itself ("No such tool available") without calling
+ * the MCP server. Such a call must not run in Core either: pi answers it as an unknown tool, matching
+ * what Claude told the model, instead of running a command the model was told failed.
+ */
 export const toolNameFromClaude = (name: string) =>
-  name.startsWith(CLAUDE_TOOL_PREFIX) ? name.slice(CLAUDE_TOOL_PREFIX.length) : name
+  name.startsWith(CLAUDE_TOOL_PREFIX) ? name.slice(CLAUDE_TOOL_PREFIX.length) : `${UNKNOWN_CLAUDE_TOOL_PREFIX}${name}`
+
+/** The name Claude Code knows a pi tool by. */
+export const toolNameForClaude = (name: string) =>
+  name.startsWith(UNKNOWN_CLAUDE_TOOL_PREFIX)
+    ? name.slice(UNKNOWN_CLAUDE_TOOL_PREFIX.length)
+    : `${CLAUDE_TOOL_PREFIX}${name}`
 
 export function emptyUsage(): Usage {
   return {
@@ -259,7 +274,10 @@ export function renderHistoryPrompt(messages: Message[]): string {
       for (const part of message.content) {
         if (part.type === 'text' && part.text) lines.push(`<assistant>\n${part.text}\n</assistant>`)
         else if (part.type === 'toolCall')
-          lines.push(`<tool_call name="${part.name}" id="${part.id}">\n${JSON.stringify(part.arguments)}\n</tool_call>`)
+          // Claude Code's own tool names, so the seeded session calls the tools it actually has.
+          lines.push(
+            `<tool_call name="${toolNameForClaude(part.name)}" id="${part.id}">\n${JSON.stringify(part.arguments)}\n</tool_call>`
+          )
       }
     } else if (message.role === 'toolResult')
       lines.push(
