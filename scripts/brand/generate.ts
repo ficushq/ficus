@@ -10,6 +10,9 @@
  * Usage: bun run brand:generate   (from repo root)
  *     or: bun run scripts/brand/generate.ts
  *
+ * Run as a script, it then also renders the social preview cards
+ * (scripts/brand/social-preview.ts, `bun run brand:social` on its own).
+ *
  * Determinism: every raster target is built by rasterizing a single
  * composite SVG (background shape + the source mark's own path data,
  * positioned with a computed affine transform) in one pass with sharp, then
@@ -569,8 +572,11 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
 }
 
 if (import.meta.main) {
-  generate().catch((err) => {
-    console.error(err)
-    process.exit(1)
-  })
+  // Icons first, then the social preview cards (which embed the mark and need Chrome).
+  generate()
+    .then(async () => (await import('./social-preview')).generateSocialPreviews())
+    .catch((err) => {
+      console.error(err)
+      process.exit(1)
+    })
 }

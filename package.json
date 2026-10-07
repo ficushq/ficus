@@ -107,7 +107,8 @@
     "dev:docs": "bun run --filter @ficus/docs dev",
     "build:docs": "bun run --filter @ficus/docs build",
     "check:docs": "bun run --filter @ficus/docs check",
-    "brand:generate": "bun run scripts/brand/generate.ts"
+    "brand:generate": "bun run scripts/brand/generate.ts",
+    "brand:social": "bun run scripts/brand/social-preview.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9",

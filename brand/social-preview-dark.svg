@@ -10,83 +10,83 @@
     .chip { font: 600 24px 'Instrument Sans', Arial, sans-serif; }
     .url { font: 700 26px 'Instrument Sans', Arial, sans-serif; }
     .rib { fill: none; stroke: #f1e9db; stroke-width: 1.1; stroke-linecap: round; opacity: 0.3; }
-    .leader { fill: none; stroke: #1c1a17; stroke-opacity: 0.4; stroke-width: 2; }
+    .leader { fill: none; stroke: #f1e9db; stroke-opacity: 0.42; stroke-width: 2; }
   </style>
   <defs>
     <radialGradient id="glow-sage" cx="1216" cy="19" r="560" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#e1e5d2"/>
-      <stop offset="1" stop-color="#e1e5d2" stop-opacity="0"/>
+      <stop offset="0" stop-color="#272a21"/>
+      <stop offset="1" stop-color="#272a21" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="glow-clay" cx="13" cy="147" r="460" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#eddbc9"/>
-      <stop offset="1" stop-color="#eddbc9" stop-opacity="0"/>
+      <stop offset="0" stop-color="#29221c"/>
+      <stop offset="1" stop-color="#29221c" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="sun" cx="0.42" cy="0.4" r="0.62">
-      <stop offset="0" stop-color="#9fb57f" stop-opacity="0.46"/>
-      <stop offset="1" stop-color="#9fb57f" stop-opacity="0.34"/>
+      <stop offset="0" stop-color="#9fb57f" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#9fb57f" stop-opacity="0.13"/>
     </radialGradient>
     <radialGradient id="pot-shadow">
-      <stop offset="0" stop-color="#1c1a17" stop-opacity="0.26"/>
-      <stop offset="0.55" stop-color="#1c1a17" stop-opacity="0.1"/>
-      <stop offset="1" stop-color="#1c1a17" stop-opacity="0"/>
+      <stop offset="0" stop-color="#000000" stop-opacity="0.26"/>
+      <stop offset="0.55" stop-color="#000000" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
     </radialGradient>
     <path id="leaf" d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z"/>
   </defs>
-  <rect width="1280" height="640" fill="#f1e9db"/>
+  <rect width="1280" height="640" fill="#1c1a17"/>
   <rect width="1280" height="640" fill="url(#glow-sage)"/>
   <rect width="1280" height="640" fill="url(#glow-clay)"/>
   <g transform="translate(67 56)">
     <g transform="translate(0 -2.5)">
-    <g transform="translate(32 39) rotate(-36) scale(0.78 0.84)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#8a9a5b"/></g>
-    <g transform="translate(32 39) rotate(36) scale(0.78 0.84)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#8a9a5b"/></g>
-    <g transform="translate(32 39)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#3f6b4f"/></g>
-    <rect x="18" y="39" width="28" height="5" rx="2.5" fill="#b0582f"/>
-    <path d="M20 43.25 H44 L41 59 Q40.6 60 39.5 60 H24.5 Q23.4 60 23 59 Z" fill="#b0582f"/>
+    <g transform="translate(32 39) rotate(-36) scale(0.78 0.84)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#87945a"/></g>
+    <g transform="translate(32 39) rotate(36) scale(0.78 0.84)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#87945a"/></g>
+    <g transform="translate(32 39)"><path d="M0 0 C9 -5 12.5 -16 7 -22.5 C4.8 -25.2 2.4 -27.6 0 -30 C-2.4 -27.6 -4.8 -25.2 -7 -22.5 C-12.5 -16 -9 -5 0 0 Z" fill="#5e7f4e"/></g>
+    <rect x="18" y="39" width="28" height="5" rx="2.5" fill="#c46a3c"/>
+    <path d="M20 43.25 H44 L41 59 Q40.6 60 39.5 60 H24.5 Q23.4 60 23 59 Z" fill="#c46a3c"/>
   </g>
   </g>
-  <text class="wordmark" x="136" y="111" fill="#1c1a17">ficus</text>
-  <text class="headline" x="76" y="276" fill="#1c1a17">Keep work moving</text>
-  <text class="headline" x="76" y="370" fill="#3f6b4f">while you’re away.</text>
-  <text class="support" x="80" y="448" fill="#53584c">Bring your agents and your people together.</text>
+  <text class="wordmark" x="136" y="111" fill="#f1e9db">ficus</text>
+  <text class="headline" x="76" y="276" fill="#f1e9db">Keep work moving</text>
+  <text class="headline" x="76" y="370" fill="#9fb57f">while you’re away.</text>
+  <text class="support" x="80" y="448" fill="#bfb9b2">Bring your agents and your people together.</text>
   <g transform="translate(589 74) scale(1.5)">
     <circle cx="262" cy="140" r="112" fill="url(#sun)"/>
     <ellipse cx="166" cy="316" rx="72" ry="7" fill="url(#pot-shadow)"/>
-    <path d="M166 262 C165 230 168.5 186 167 138" fill="none" stroke="#31533e" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M166 262 C165 230 168.5 186 167 138" fill="none" stroke="#4f6d43" stroke-width="3.5" stroke-linecap="round"/>
     <g transform="translate(165.6 220) rotate(-56)">
-      <use href="#leaf" transform="scale(2.5 2.6)" fill="#8a9a5b"/>
+      <use href="#leaf" transform="scale(2.5 2.6)" fill="#87945a"/>
       <path class="rib" d="M0 -4 L0 -60"/>
     </g>
     <g transform="translate(167.2 182) rotate(54)">
-      <use href="#leaf" transform="scale(2.4 2.5)" fill="#8a9a5b"/>
+      <use href="#leaf" transform="scale(2.4 2.5)" fill="#87945a"/>
       <path class="rib" d="M0 -4 L0 -57"/>
     </g>
     <g transform="translate(167 138) rotate(4)">
-      <use href="#leaf" transform="scale(2.9 3)" fill="#3f6b4f"/>
+      <use href="#leaf" transform="scale(2.9 3)" fill="#5e7f4e"/>
       <path class="rib" d="M0 -4 L0 -70"/>
     </g>
-    <rect x="121" y="249" width="90" height="16" rx="8" fill="#b0582f"/>
-    <path d="M127 264.25 H205 L197.6 312 Q197 316 193 316 H139 Q135 316 134.4 312 Z" fill="#b0582f"/>
-    <path d="M127 265 H205 L204.2 270 H127.8 Z" fill="#873f25" fill-opacity="0.35"/>
+    <rect x="121" y="249" width="90" height="16" rx="8" fill="#c46a3c"/>
+    <path d="M127 264.25 H205 L197.6 312 Q197 316 193 316 H139 Q135 316 134.4 312 Z" fill="#c46a3c"/>
+    <path d="M127 265 H205 L204.2 270 H127.8 Z" fill="#6e3219" fill-opacity="0.35"/>
   </g>
-  <path d="M80 548 H1200" stroke="#1c1a17" stroke-opacity="0.2" stroke-width="2"/>
+  <path d="M80 548 H1200" stroke="#f1e9db" stroke-opacity="0.2" stroke-width="2"/>
   <g class="leader">
     <path d="M936.6 281.15 H951.6"/>
     <path d="M848.95 141.3 V118.3"/>
-    <circle cx="931.6" cy="281.15" r="5" fill="#fbf7ef"/>
-    <circle cx="848.95" cy="146.3" r="5" fill="#fbf7ef"/>
+    <circle cx="931.6" cy="281.15" r="5" fill="#2b2825"/>
+    <circle cx="848.95" cy="146.3" r="5" fill="#2b2825"/>
   </g>
   <g>
     <rect x="951.6" y="258.15" width="248" height="52" rx="26" fill="#000000" fill-opacity="0.07"/>
-    <rect x="951.6" y="255.15" width="248" height="52" rx="26" fill="#fbf7ef" stroke="#d4cabc" stroke-width="2"/>
-    <path d="M973.6 281.65 l6.5 6.5 l12.5 -13.5" fill="none" stroke="#3f6b4f" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
-    <text class="chip" x="1005.6" y="289.65" fill="#1c1a17">Checks passed</text>
+    <rect x="951.6" y="255.15" width="248" height="52" rx="26" fill="#2b2825" stroke="#46433f" stroke-width="2"/>
+    <path d="M973.6 281.65 l6.5 6.5 l12.5 -13.5" fill="none" stroke="#9fb57f" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="chip" x="1005.6" y="289.65" fill="#f1e9db">Checks passed</text>
   </g>
   <g>
     <rect x="810.95" y="69.3" width="320" height="52" rx="26" fill="#000000" fill-opacity="0.07"/>
-    <rect x="810.95" y="66.3" width="320" height="52" rx="26" fill="#b0582f"/>
+    <rect x="810.95" y="66.3" width="320" height="52" rx="26" fill="#c46a3c"/>
     <circle cx="840.95" cy="92.3" r="11" fill="#fbf7ef" fill-opacity="0.28"/>
     <circle cx="840.95" cy="92.3" r="5.5" fill="#fbf7ef"/>
     <text class="chip" x="864.95" y="100.8" fill="#fbf7ef">Ready for your review</text>
   </g>
-  <text class="url" x="80" y="602" fill="#3f6b4f">ficus.sh</text>
+  <text class="url" x="80" y="602" fill="#9fb57f">ficus.sh</text>
 </svg>

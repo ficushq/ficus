@@ -3,8 +3,8 @@
 Source SVGs for the Ficus mark, and a generator that renders every icon Core
 web, Platform web, Core docs, Desktop and Mobile need.
 
-The apps use the generated icons below. The social preview has its own editable
-SVG and ready-to-upload PNG in this folder.
+The apps use the generated icons below. The social preview card is generated
+too, from a template, with its fonts embedded.
 
 ## Sources
 
@@ -18,14 +18,62 @@ at large sizes.
 
 ## Social preview
 
-- [`social-preview.svg`](social-preview.svg) — editable source for the current card.
-- [`social-preview.png`](social-preview.png) — 1280×640 export for website link previews and GitHub.
+The 1280×640 link-preview card adapts the ficus.sh hero illustration: the
+"Keep work moving / while you’re away." headline in Fraunces beside the hero
+plant, which stands in its pot on the card's ground rule in front of a sage sun,
+with two status chips ("Checks passed", "Ready for your review") on leader
+lines. It's sized for how cards are seen, 400–600px wide in X, Slack,
+iMessage and GitHub: nothing that matters is set below 24px at full size.
 
-Render the SVG at 1280×640 with device scale 1 in Chrome after fonts are ready.
-Use the PNG in GitHub repository **Settings → General → Social preview**;
-committing it does not update GitHub’s uploaded preview automatically. The website
-serves a copy at `/social-preview.png`. Keep published copies in sync when changing
-the card. This card is separate from `bun run brand:generate`, which renders icons.
+- [`social-preview.svg`](social-preview.svg) / [`social-preview.png`](social-preview.png) — the light card, the one that's published.
+- [`social-preview-dark.svg`](social-preview-dark.svg) / [`social-preview-dark.png`](social-preview-dark.png) — the same card on soil, with the dark mark palette and sage accents.
+
+The SVGs are generated; don't edit them by hand. Change the template in
+`scripts/brand/social-preview.ts`, then run:
+
+```
+bun run brand:social      # just the cards
+bun run brand:generate    # icons, then the cards
+```
+
+It writes both SVGs (embedding the mark from the source SVGs above and the
+fonts below), renders each at 1280×640, device scale 1, in headless Chrome via
+`playwright-core` once `document.fonts.ready` resolves, and copies the light PNG
+to every place that publishes it: `.github/social-preview.png` and
+`apps/web/public/social-preview.png` (served at `/social-preview.png`). It needs
+Google Chrome installed. `scripts/brand/social-preview.test.ts` fails if a copy
+drifts from `brand/social-preview.png`, if a committed SVG differs from its
+template, or if an SVG stops embedding both font families; it compares
+committed files and never launches Chrome.
+
+Two copies live outside this generator's reach:
+
+- **GitHub:** committing the PNG does not change the repository's preview.
+  Upload `brand/social-preview.png` by hand in the repo's
+  **Settings → General → Social preview**.
+- **Platform:** the private ficus-platform repo serves its own copy. Copy
+  `brand/social-preview.png` and `brand/social-preview.svg` to
+  `apps/platform/web/public/social-preview.{png,svg}` there, and update its
+  `og:image:alt` to the card's copy.
+
+## Fonts
+
+The cards embed subset WOFF2 fonts as base64 `@font-face` rules, so they render
+the same wherever the SVG is opened, with no network fetch.
+
+| Font            | Source                                                                                   | License                                      |
+| --------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Fraunces        | `fonts/fraunces/Fraunces[SOFT,WONK,opsz,wght].ttf`, google/fonts `ofl/fraunces`          | SIL OFL 1.1, `fonts/fraunces/OFL.txt`        |
+| Instrument Sans | `fonts/instrument-sans/InstrumentSans[wdth,wght].ttf`, google/fonts `ofl/instrumentsans` | SIL OFL 1.1, `fonts/instrument-sans/OFL.txt` |
+
+Both sources are the upright variable fonts from
+[google/fonts](https://github.com/google/fonts) at commit `5e8a3ba8`, the same
+families ficus.sh loads from Google Fonts. Neither license reserves a font
+name. `scripts/brand/subset-fonts.sh` builds `fonts/subset/fraunces.woff2`
+(semibold, optical size kept variable) and `fonts/subset/instrument-sans.woff2`
+(weights 400–700) from them, limited to Basic Latin plus a little typographic
+punctuation. It needs `fonttools` and `brotli` (dev-only, not a repo
+dependency); rerun it only when the sources or its character set change.
 
 ## Palette
 
