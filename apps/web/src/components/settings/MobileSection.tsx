@@ -25,7 +25,6 @@ export function MobileSection() {
   const phones = (devicesQuery.data ?? []).filter(
     (device) => MOBILE_PLATFORMS.has(device.platform) && !device.revokedAt
   )
-  const serverAddress = getApiUrl()
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -74,16 +73,7 @@ export function MobileSection() {
               {error}
             </p>
           )}
-          <SettingsRow
-            label="Server address"
-            description={
-              <>
-                Or add this server in the app by its address:{' '}
-                <span className="break-all font-mono text-xs text-secondary">{serverAddress}</span>
-              </>
-            }
-            control={<CopyButton value={serverAddress} label="Copy address" />}
-          />
+          {isAdmin ? <AdminServerAddressRow /> : <MemberServerAddressRow />}
           <p className="text-xs text-muted">
             Don’t have the app? <ExternalLink href={FICUS_MOBILE_URL}>Get it from ficus.sh</ExternalLink>
           </p>
@@ -132,6 +122,36 @@ export function MobileSection() {
         </div>
       </section>
     </div>
+  )
+}
+
+/**
+ * Prefer the server's configured public address (APP_URL) over this browser's, which may be
+ * localhost or a LAN IP a phone can't reach. Admins read it from the connection status they
+ * already load; members from the member-safe relay availability, so neither fires the other's request.
+ */
+function AdminServerAddressRow() {
+  const connection = useQuery(serverConnectionQueries.status())
+  return <ServerAddressRow address={connection.data?.origin || getApiUrl()} />
+}
+
+function MemberServerAddressRow() {
+  const availability = useQuery(serverConnectionQueries.availability())
+  return <ServerAddressRow address={availability.data?.serverUrl || getApiUrl()} />
+}
+
+function ServerAddressRow({ address }: { address: string }) {
+  return (
+    <SettingsRow
+      label="Server address"
+      description={
+        <>
+          Or add this server in the app by its address:{' '}
+          <span className="break-all font-mono text-xs text-secondary">{address}</span>
+        </>
+      }
+      control={<CopyButton value={address} label="Copy address" />}
+    />
   )
 }
 

@@ -33,6 +33,8 @@ export interface RelayAvailability {
   instanceId?: string
   delivery?: 'direct'
   liveActivities?: boolean
+  /** The server's configured public address (APP_URL), when set. */
+  serverUrl?: string | null
 }
 export const getRelayAvailability = () => apiFetch<RelayAvailability>('/push/relay-config')
 export const getServerConnection = () => apiFetch<ServerConnection>('/push/server-connection')

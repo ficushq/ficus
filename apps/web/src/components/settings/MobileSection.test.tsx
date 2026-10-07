@@ -180,6 +180,23 @@ test('the server address is shown with a Copy button', async () => {
   expect(getByRole(container, 'button', { name: 'Copy address' })).toBeTruthy()
 })
 
+test("members see the server's configured address, not the browser's", async () => {
+  const { container } = await render({
+    availability: { enabled: true, instanceId: 'server-1', serverUrl: 'https://home.example.net/ficus' },
+  })
+  await waitFor(() => expect(container.textContent).toContain('https://home.example.net/ficus'))
+  expect(container.textContent).not.toContain('by its address: https://ficus.example.com')
+})
+
+test('administrators see the configured address from the connection status', async () => {
+  const { container, requests } = await render({
+    admin: true,
+    connection: { ...selfHosted, origin: 'https://studio.example.net/ficus' },
+  })
+  await waitFor(() => expect(container.textContent).toContain('https://studio.example.net/ficus'))
+  expect(requests).not.toContain('GET /api/push/relay-config')
+})
+
 for (const admin of [false, true]) {
   test(`Cloud-only copy stays hidden on a self-hosted server (${admin ? 'admin' : 'member'})`, async () => {
     const { container } = await render({ admin, connection: selfHosted, availability: { enabled: false } })
