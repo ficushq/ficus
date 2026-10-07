@@ -42,7 +42,12 @@ export const CARD_FILES: Record<CardVariant, { svg: string; png: string }> = {
 export const PUBLISHED_COPIES = ['.github/social-preview.png', 'apps/web/public/social-preview.png'] as const
 
 export const HEADLINE = ['Keep work moving', 'while you’re away.'] as const
-export const SUPPORTING_LINE = 'Bring your agents and your people together.'
+/**
+ * The supporting line under the headline, shared by every generated piece of
+ * art that carries it (this card and the App Store search art in
+ * app-store.ts). Edit it here; `bun run brand:generate` re-renders them all.
+ */
+export const SUPPORTING_LINE = 'Self-organizing agents that check in when they need you.'
 export const CARD_ALT = `Ficus: ${HEADLINE.join(' ')} ${SUPPORTING_LINE}`
 
 /** The embedded font subsets: built by scripts/brand/subset-fonts.sh from brand/fonts/. */
@@ -164,12 +169,37 @@ function plantPoint(x: number, y: number): [number, number] {
   return [PLANT_X + (x - HERO_STEM_X) * PLANT_SCALE, GROUND_Y - (HERO_GROUND_Y - y) * PLANT_SCALE]
 }
 
+/** Baseline-to-baseline distance of the two supporting lines (30px type). */
+const SUPPORT_LEADING = 40
+
 const CHIP_HEIGHT = 52
 /** Chip widths fit their 24px Instrument Sans 600 labels (checked against Chrome renders). */
 const CHECKS_CHIP_WIDTH = 248
 const READY_CHIP_WIDTH = 320
 
 const num = (n: number) => Number(n.toFixed(2)).toString()
+
+/**
+ * Splits copy into `count` lines at word breaks, choosing the breaks that keep
+ * the longest line shortest (by character count), so wrapped copy stays
+ * balanced whatever the wording.
+ */
+export function balanceLines(text: string, count: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean)
+  if (count <= 1 || words.length <= 1) return [words.join(' ')]
+  let best: string[] = [words.join(' ')]
+  let bestLongest = Number.POSITIVE_INFINITY
+  for (let i = 1; i < words.length; i++) {
+    const rest = balanceLines(words.slice(i).join(' '), count - 1)
+    const lines = [words.slice(0, i).join(' '), ...rest]
+    const longest = Math.max(...lines.map((line) => line.length))
+    if (longest < bestLongest) {
+      best = lines
+      bestLongest = longest
+    }
+  }
+  return best
+}
 
 function innerMarkup(svg: string): string {
   const match = svg.match(/<svg[^>]*>([\s\S]*)<\/svg>/)
@@ -251,6 +281,16 @@ function chips(p: Palette): string {
   </g>`
 }
 
+/** The supporting line, wrapped to two balanced lines so it clears the pot. */
+function supportingLines(p: Palette): string {
+  return balanceLines(SUPPORTING_LINE, 2)
+    .map(
+      (line, i) =>
+        `<text class="support" x="${MARGIN_X}" y="${442 + i * SUPPORT_LEADING}" fill="${p.muted}">${line}</text>`
+    )
+    .join('\n  ')
+}
+
 /** Builds one variant's card SVG. Pure: the same inputs always give the same bytes. */
 export async function buildSocialPreviewSvg(variant: CardVariant): Promise<string> {
   const p = PALETTES[variant]
@@ -300,7 +340,7 @@ export async function buildSocialPreviewSvg(variant: CardVariant): Promise<strin
   <text class="wordmark" x="${MARGIN_X + 56}" y="111" fill="${p.ink}">ficus</text>
   <text class="headline" x="${MARGIN_X - 4}" y="276" fill="${p.ink}">${HEADLINE[0]}</text>
   <text class="headline" x="${MARGIN_X - 4}" y="370" fill="${p.green}">${HEADLINE[1]}</text>
-  <text class="support" x="${MARGIN_X}" y="448" fill="${p.muted}">${SUPPORTING_LINE}</text>
+  ${supportingLines(p)}
   ${plant(p)}
   <path d="M${MARGIN_X} ${GROUND_Y} H${CARD_WIDTH - MARGIN_X}" stroke="${p.rule}" stroke-opacity="${p.ruleOpacity}" stroke-width="2"/>
   ${chips(p)}
