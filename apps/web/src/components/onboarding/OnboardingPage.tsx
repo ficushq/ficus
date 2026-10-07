@@ -157,7 +157,7 @@ export function OnboardingPage() {
                   to="/settings?section=mobile-pro&setting=mobile-pro"
                   className="text-accent-light hover:underline"
                 >
-                  connect the mobile relay and explore Ficus Pro or Instance Pro
+                  connect a Ficus account for mobile push and Live Activities
                 </Link>
                 .
               </p>

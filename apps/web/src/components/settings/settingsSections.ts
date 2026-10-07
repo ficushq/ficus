@@ -29,7 +29,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         label: 'Notifications',
         description: 'Your notification delivery and sound preferences.',
       },
-      { id: 'mobile', label: 'Mobile', description: 'Mobile app discovery.' },
+      { id: 'mobile', label: 'Mobile', description: 'Pair your phone and see what Pro adds.' },
       { id: 'devices', label: 'Paired Devices', description: 'Pair and manage linked devices.' },
       { id: 'sessions', label: 'Sessions', description: 'Active sign-in sessions and revocation.' },
     ],
@@ -75,7 +75,11 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
   {
     label: 'Configuration',
     items: [
-      { id: 'mobile-pro', label: 'Mobile & Pro', description: 'Public URL, relay and Pro device coverage.' },
+      {
+        id: 'mobile-pro',
+        label: 'Mobile & Pro',
+        description: 'Ficus account connection, relays and Instance Pro coverage.',
+      },
       {
         id: 'squad-presets',
         label: 'Squad Presets',

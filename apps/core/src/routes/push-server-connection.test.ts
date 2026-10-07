@@ -46,7 +46,7 @@ describe('relay connection authorization', () => {
       configured: false,
       connected: false,
       baseUrl: 'https://ficus.sh',
-      manageUrl: 'https://ficus.sh/account/push',
+      manageUrl: 'https://ficus.sh/account/pro',
       origin: 'https://example.com',
     })
     try {

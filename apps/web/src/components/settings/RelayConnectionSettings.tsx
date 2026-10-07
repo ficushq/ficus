@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, getApiUrl } from '../../api/client'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -10,7 +11,27 @@ import {
   startServerConnection,
   type ServerConnectionRequest,
 } from '../../api/serverConnection'
-import { ConfirmButton } from '../ConfirmButton'
+import { Modal } from '../Modal'
+import { OverflowMenu } from '../OverflowMenu'
+import { ExternalLink, SETTINGS_BUTTON, SETTINGS_HEADING, SettingsRow } from './SettingsRow'
+
+const CONNECT_FORM_ID = 'ficus-account-connect'
+const DANGER_BUTTON =
+  'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50'
+const FIELD = 'ficus-field w-full rounded-lg border border-th-border bg-surface px-3 py-2 text-sm text-primary'
+
+/** The connect form's default name: the name Ficus already knows, else this server's hostname. */
+function defaultServerName(knownName: string | undefined, origin: string | null): string {
+  if (knownName?.trim()) return knownName.trim()
+  for (const candidate of [origin, typeof window === 'undefined' ? null : window.location.origin]) {
+    try {
+      if (candidate) return new URL(candidate).hostname
+    } catch {
+      // Fall through to the next address.
+    }
+  }
+  return ''
+}
 
 export function RelayConnectionSettings() {
   const permissions = usePermissions()
@@ -18,7 +39,8 @@ export function RelayConnectionSettings() {
   const canWrite = canRead && permissions.can('settings:write')
   const client = useQueryClient()
   const connection = useQuery({ ...serverConnectionQueries.status(), enabled: canRead })
-  const [name, setName] = useState('')
+  const [name, setName] = useState<string | null>(null)
+  const [dialog, setDialog] = useState<'reconnect' | 'disconnect' | null>(null)
   const [request, setRequest] = useState<(ServerConnectionRequest & { expiresAt: number }) | null>(null)
   const [message, setMessage] = useState('')
   const [pollError, setPollError] = useState('')
@@ -39,6 +61,7 @@ export function RelayConnectionSettings() {
     mutationFn: disconnectServerConnection,
     onSuccess: async () => {
       setRequest(null)
+      setDialog(null)
       setMessage('Disconnected. Your subscription is unchanged.')
       await refresh()
     },
@@ -87,164 +110,15 @@ export function RelayConnectionSettings() {
   const data = connection.data
   const error = start.error ?? disconnect.error ?? connection.error
   const busy = start.isPending || disconnect.isPending || !!request
-  return (
-    <section data-setting-target="mobile-pro" tabIndex={-1} className="ficus-section scroll-mt-6 space-y-4">
-      <div>
-        <h4 className="text-sm font-semibold text-primary">Connection & Pro coverage</h4>
-      </div>
-      {connection.isPending ? (
-        <p className="text-sm text-muted">Checking mobile connection…</p>
-      ) : data?.managed ? (
-        <div className="space-y-3 text-sm text-muted">
-          <p>
-            Mobile Pro features are included with paid Ficus Cloud access. Push delivery is managed automatically; no
-            account connection or relay setup is needed here.
-          </p>
-          <p>Add this server in the Ficus mobile app and sign in to your instance account.</p>
-          <p data-setting-target="mobile-public-url" tabIndex={-1} className="break-all text-xs">
-            Server address: {data.origin || 'Managed by Ficus Cloud'}
-          </p>
-        </div>
-      ) : (
-        data && (
-          <>
-            <div data-setting-target="mobile-public-url" tabIndex={-1} className="space-y-1">
-              <h5 className="text-sm font-medium text-primary">Server address</h5>
-              <p className="break-all text-sm text-muted">{data.origin || 'Not configured'}</p>
-              <p className="text-xs text-muted">
-                Uses the public address configured during server setup, including any port or installation path.
-              </p>
-            </div>
-            <p className="text-sm text-muted">
-              Connect this self-hosted server to the Ficus push relay. Each device needs Ficus Pro on its personal
-              account or a slot from this server’s Instance Pro allowance. Connecting does not start a subscription.
-            </p>
-            {data.connected && (
-              <div className="space-y-1 text-sm">
-                <p className="font-medium text-primary">
-                  {data.status ? `Connected · ${data.status.name}` : 'Relay credential saved'}
-                </p>
-                {data.status && (
-                  <p className="text-muted">
-                    {data.status.instancePro
-                      ? data.status.allowance === null
-                        ? 'Instance Pro active · unlimited device allowance'
-                        : `Instance Pro active · ${data.status.used} of ${data.status.allowance} device slots in use`
-                      : 'No active Instance Pro allowance. Devices with personal Ficus Pro can still use the relay.'}
-                  </p>
-                )}
-                {data.status && (
-                  <p className="text-xs text-muted">
-                    {data.status.registered} registered devices. Personal Ficus Pro devices do not use instance slots.
-                  </p>
-                )}
-              </div>
-            )}
-            {data.setupError && (
-              <p className="text-sm text-status-attention-600" role="status">
-                {data.setupError}
-              </p>
-            )}
-            {data.error && (
-              <p className="text-sm text-status-attention-600" role="status">
-                {data.error}
-              </p>
-            )}
-            {canWrite && !request && (
-              <form
-                className="space-y-3"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  const popup = window.open('about:blank', '_blank')
-                  if (popup) popup.opener = null
-                  start.mutate(name.trim() || data.status?.name || 'My Ficus server', {
-                    onSuccess: (value) => {
-                      if (popup) popup.location.href = value.approvalUrl
-                    },
-                    onError: () => popup?.close(),
-                  })
-                }}
-              >
-                <label className="block max-w-sm text-sm text-secondary">
-                  Server name
-                  <input
-                    className="ficus-field mt-1 w-full rounded-lg border border-th-border bg-surface px-3 py-2 text-primary"
-                    value={name}
-                    maxLength={80}
-                    disabled={busy || !!data.setupError}
-                    placeholder={data.status?.name ?? 'My Ficus server'}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="ficus-button ficus-button-primary px-4 py-2 text-sm"
-                  disabled={busy || !!data.setupError}
-                >
-                  {start.isPending
-                    ? 'Starting connection…'
-                    : data.configured
-                      ? 'Reconnect Ficus account'
-                      : 'Connect Ficus account'}
-                </button>
-                {data.configured && (
-                  <p className="text-xs text-muted">
-                    Reconnect to replace the saved credential. Approving the same server in the same account preserves
-                    its devices and allowance.
-                  </p>
-                )}
-              </form>
-            )}
-            {request && (
-              <div className="ficus-inset space-y-2 p-4 text-sm" role="status">
-                <p className="font-medium text-primary">Waiting for approval in Ficus Cloud…</p>
-                <p className="text-muted">Check the server address and connection code match before approving.</p>
-                <p className="font-mono text-primary">{request.id.slice(0, 8).toUpperCase()}</p>
-                {data.origin && <p className="break-all text-muted">{data.origin}</p>}
-                <a
-                  href={request.approvalUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex text-accent-light hover:underline"
-                >
-                  Open approval page →
-                </a>
-                <p className="text-xs text-muted">
-                  Keep this page open. The connection is saved here automatically after approval.
-                </p>
-              </div>
-            )}
-            <div className="flex flex-wrap items-center gap-4 text-sm">
-              <a
-                href={data.manageUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent-light hover:underline"
-              >
-                Manage Pro and devices →
-              </a>
-              {canWrite && data.configured && (
-                <ConfirmButton
-                  onConfirm={() => disconnect.mutate()}
-                  label={disconnect.isPending ? 'Disconnecting…' : 'Disconnect server'}
-                  confirmLabel="Stop relay delivery?"
-                  disabled={busy}
-                  className="text-sm text-muted"
-                  confirmClassName="text-sm text-status-danger-600"
-                />
-              )}
-            </div>
-            {canWrite && data.configured && (
-              <p className="text-xs text-muted">
-                Disconnecting stops this server’s relay delivery without cancelling billing. Revoke or archive its
-                credential in Manage Pro to remove Cloud access as well.
-              </p>
-            )}
-          </>
-        )
-      )}
+  const guide = (
+    <ExternalLink href={getApiUrl('/docs/connect/mobile/')} className="inline-flex">
+      Mobile setup guide
+    </ExternalLink>
+  )
+  const feedback = (
+    <>
       {(error || pollError) && (
-        <p role="alert" className="text-sm text-status-danger-600">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {pollError || (error instanceof Error ? error.message : 'Could not load the mobile connection.')}
         </p>
       )}
@@ -253,14 +127,313 @@ export function RelayConnectionSettings() {
           {message}
         </p>
       )}
-      <a
-        href={getApiUrl('/docs/connect/mobile/')}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex text-sm text-accent-light hover:underline"
+    </>
+  )
+
+  if (connection.isPending || !data) {
+    return (
+      <div className="space-y-4">
+        {connection.isPending && <p className="text-sm text-muted">Checking the Ficus account connection…</p>}
+        {feedback}
+        {guide}
+      </div>
+    )
+  }
+
+  if (data.managed) {
+    return (
+      <div className="space-y-6">
+        <section data-setting-target="mobile-pro" tabIndex={-1} className="ficus-section scroll-mt-6 py-5">
+          <SettingsRow
+            label="Ficus Cloud manages this automatically. Nothing to set up."
+            description="Push notifications, Live Activities and Pro are included for everyone on this server."
+          />
+        </section>
+        {feedback}
+        {guide}
+      </div>
+    )
+  }
+
+  const status = data.connected ? data.status : undefined
+  const serverName = name ?? defaultServerName(status?.name, data.origin)
+  const blocked = busy || !!data.setupError
+  // Connected: the only actions are the rare Reconnect… and Disconnect…, behind a menu.
+  // Otherwise connecting (or repairing) is the page's primary action.
+  const showForm = canWrite && !request && !status
+  const connect = (requested: string) => {
+    const popup = window.open('about:blank', '_blank')
+    if (popup) popup.opener = null
+    start.mutate(requested.trim() || defaultServerName(undefined, data.origin), {
+      onSuccess: (value) => {
+        setDialog(null)
+        if (popup) popup.location.href = value.approvalUrl
+      },
+      onError: () => popup?.close(),
+    })
+  }
+
+  return (
+    <div className="space-y-6">
+      <section data-setting-target="mobile-pro" tabIndex={-1} className="ficus-section scroll-mt-6 py-5">
+        <h4 className={SETTINGS_HEADING}>Ficus account</h4>
+        <div className="space-y-4">
+          {status ? (
+            <SettingsRow
+              label={
+                <span className="flex flex-wrap items-center gap-x-2">
+                  <span className="inline-flex items-center gap-1.5 text-status-success-700 dark:text-status-success-400">
+                    <span aria-hidden="true" className="h-2 w-2 rounded-full bg-current" />
+                    Connected
+                  </span>
+                  <span className="font-normal text-secondary">as {status.name}</span>
+                </span>
+              }
+              description="Push notifications and Live Activities are on for phones with Pro."
+              inlineControl
+              control={
+                canWrite && (
+                  <OverflowMenu label="Ficus account actions" itemsMarker="data-ficus-account-actions">
+                    <button type="button" disabled={busy} onClick={() => setDialog('reconnect')}>
+                      Reconnect…
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="text-status-danger-600 dark:text-status-danger-400"
+                      onClick={() => setDialog('disconnect')}
+                    >
+                      Disconnect…
+                    </button>
+                  </OverflowMenu>
+                )
+              }
+            />
+          ) : (
+            <SettingsRow
+              label={data.configured ? 'Connection needs attention' : 'Not connected'}
+              description={
+                data.configured
+                  ? (data.error ?? 'Reconnect to restore push notifications and Live Activities.')
+                  : 'Connect to turn on push notifications and Live Activities for phones with Pro.'
+              }
+              control={
+                canWrite &&
+                (showForm || data.configured) && (
+                  <>
+                    {showForm && (
+                      <button
+                        type="submit"
+                        form={CONNECT_FORM_ID}
+                        className={clsx(SETTINGS_BUTTON, 'ficus-button-primary')}
+                        disabled={blocked}
+                      >
+                        {start.isPending
+                          ? 'Starting connection…'
+                          : data.configured
+                            ? 'Reconnect Ficus account'
+                            : 'Connect Ficus account'}
+                      </button>
+                    )}
+                    {data.configured && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setDialog('disconnect')}
+                        className={clsx(SETTINGS_BUTTON, 'ficus-button-secondary')}
+                      >
+                        Disconnect…
+                      </button>
+                    )}
+                  </>
+                )
+              }
+            />
+          )}
+          <div className="space-y-2 text-sm text-muted">
+            <p>
+              Connecting this server to a Ficus account lets it use the shared relays Ficus runs: push notifications and
+              Live Activities for the Ficus app, and other shared relays, such as for integrations, as Ficus adds them.
+              It doesn’t start a subscription.
+            </p>
+            <p>
+              You don’t need Instance Pro to connect. People with their own Ficus Pro get push notifications and Live
+              Activities from this server once it’s connected. Instance Pro only adds server-provided Pro slots for
+              people who don’t have Pro.
+            </p>
+          </div>
+          {data.setupError && (
+            <p className="text-sm text-status-attention-600" role="status">
+              {data.setupError}
+            </p>
+          )}
+          {request && (
+            <div className="ficus-inset space-y-2 p-4 text-sm" role="status">
+              <p className="font-medium text-primary">Waiting for approval on ficus.sh…</p>
+              <p className="text-muted">Check the server address and connection code match before approving.</p>
+              <p className="font-mono text-primary">{request.id.slice(0, 8).toUpperCase()}</p>
+              {data.origin && <p className="break-all text-muted">{data.origin}</p>}
+              <ExternalLink href={request.approvalUrl} className="inline-flex">
+                Open approval page
+              </ExternalLink>
+              <p className="text-xs text-muted">
+                Keep this page open. The connection is saved here automatically after approval.
+              </p>
+            </div>
+          )}
+          {status ? (
+            <SettingsRow label="Name" value={status.name} />
+          ) : (
+            showForm && (
+              <form
+                id={CONNECT_FORM_ID}
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  connect(serverName)
+                }}
+              >
+                <SettingsRow
+                  label={<label htmlFor={`${CONNECT_FORM_ID}-name`}>Server name</label>}
+                  description="How this server appears in your Ficus account."
+                  control={
+                    <input
+                      id={`${CONNECT_FORM_ID}-name`}
+                      className={clsx(FIELD, 'sm:w-64')}
+                      value={serverName}
+                      maxLength={80}
+                      disabled={blocked}
+                      onChange={(event) => setName(event.target.value)}
+                    />
+                  }
+                />
+              </form>
+            )
+          )}
+          <div data-setting-target="mobile-public-url" tabIndex={-1}>
+            <SettingsRow
+              label="Server address"
+              description="Uses the public address from server setup, including any port or path."
+              value={<span className="break-all font-mono text-xs">{data.origin || 'Not configured'}</span>}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section data-setting-target="instance-pro" tabIndex={-1} className="ficus-section scroll-mt-6 py-5">
+        <h4 className={SETTINGS_HEADING}>Instance Pro</h4>
+        {status ? (
+          <div className="space-y-4">
+            <SettingsRow
+              label="Allowance"
+              value={
+                !status.instancePro
+                  ? 'None'
+                  : status.allowance === null
+                    ? 'Unlimited'
+                    : `${status.used} of ${status.allowance} slots used`
+              }
+            />
+            <SettingsRow label="Devices using instance slots" value={String(status.used)} />
+            <p className="text-xs text-muted">
+              People with their own Ficus Pro get push notifications and Live Activities from this server without using
+              a slot.
+            </p>
+            <ExternalLink href={data.manageUrl} className="inline-flex">
+              Manage Pro and devices on ficus.sh
+            </ExternalLink>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <SettingsRow
+              label={
+                data.configured
+                  ? 'Reconnect the Ficus account to see this server’s Instance Pro allowance.'
+                  : 'Connect a Ficus account to see this server’s Instance Pro allowance.'
+              }
+              description="Instance Pro gives people on this server Pro without their own subscription."
+            />
+            {data.configured && (
+              <ExternalLink href={data.manageUrl} className="inline-flex">
+                Manage Pro and devices on ficus.sh
+              </ExternalLink>
+            )}
+          </div>
+        )}
+      </section>
+
+      {feedback}
+      {guide}
+
+      <Modal
+        isOpen={dialog === 'reconnect'}
+        onClose={() => setDialog(null)}
+        title="Reconnect Ficus account"
+        footer={
+          <div className="flex items-center justify-end gap-3">
+            <button type="button" className="ficus-button text-sm text-muted" onClick={() => setDialog(null)}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form={`${CONNECT_FORM_ID}-reconnect`}
+              disabled={blocked}
+              className={clsx(SETTINGS_BUTTON, 'ficus-button-primary')}
+            >
+              {start.isPending ? 'Starting…' : 'Reconnect'}
+            </button>
+          </div>
+        }
       >
-        Mobile setup guide →
-      </a>
-    </section>
+        <form
+          id={`${CONNECT_FORM_ID}-reconnect`}
+          className="space-y-3 text-sm"
+          onSubmit={(event) => {
+            event.preventDefault()
+            connect(serverName)
+          }}
+        >
+          <p className="text-muted">
+            Reconnecting replaces this server’s saved credential. Approve the same server in the same Ficus account to
+            keep its devices and allowance.
+          </p>
+          <label className="block text-secondary">
+            Server name
+            <input
+              className={clsx(FIELD, 'mt-1')}
+              value={serverName}
+              maxLength={80}
+              disabled={blocked}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={dialog === 'disconnect'}
+        onClose={() => setDialog(null)}
+        title="Disconnect Ficus account?"
+        footer={
+          <div className="flex items-center justify-end gap-3">
+            <button type="button" className="ficus-button text-sm text-muted" onClick={() => setDialog(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={disconnect.isPending}
+              onClick={() => disconnect.mutate()}
+              className={clsx(SETTINGS_BUTTON, DANGER_BUTTON)}
+            >
+              {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          </div>
+        }
+      >
+        <p className="text-sm text-muted">
+          Push notifications and Live Activities from this server stop. Your subscription isn’t cancelled; manage
+          billing and old servers on ficus.sh.
+        </p>
+      </Modal>
+    </div>
   )
 }

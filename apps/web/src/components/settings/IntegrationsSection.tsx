@@ -252,7 +252,7 @@ export function IntegrationsSection() {
         <p className="text-sm text-muted">
           Taking Ficus with you?{' '}
           <Link to="/settings?section=mobile-pro" className="text-accent-light hover:underline">
-            Manage mobile relay and Pro coverage →
+            Connect a Ficus account and manage Pro coverage →
           </Link>
         </p>
       )}

@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { approveDeviceAuthorization, revokeDevice, startPairing } from '../../api/devices'
+import { approveDeviceAuthorization, revokeDevice } from '../../api/devices'
 import { queries } from '../../queryOptions'
 import { getApiUrl } from '../../api/client'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
 import { DeviceAuthorizationApproval } from './DeviceAuthorizationApproval'
 import { PairingCode } from './PairingCode'
-import { renderPairing } from './pairingQr'
+import { usePhonePairing } from './usePhonePairing'
 import {
   approveDeviceRequest,
   deviceApprovalErrorMessage,
@@ -16,51 +16,19 @@ import {
   parseDeviceRequest,
 } from './deviceAuthorizationApprovalLogic'
 
-type PendingQr = Awaited<ReturnType<typeof renderPairing>> & { code: string }
-
 function getDeviceRequest(): string {
   return typeof window === 'undefined' ? '' : parseDeviceRequest(window.location.hash)
 }
 
 export function DevicesSection() {
   const queryClient = useQueryClient()
-  const [qr, setQr] = useState<PendingQr | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [deviceRequest] = useState(getDeviceRequest)
-  // Device ids present when the QR was generated, so we can detect a newly-paired one.
-  const baselineIds = useRef<Set<string>>(new Set())
-
-  const {
-    data: devices = [],
-    isLoading,
-    isSuccess,
-  } = useQuery({
-    ...queries.devices.list(),
-    // While a pairing QR is up, poll so the list reflects a successful pair within ~2.5s.
-    refetchInterval: qr ? 2500 : false,
-  })
+  const { devicesQuery, pairing, error, start, starting, clear } = usePhonePairing()
+  const { data: devices = [], isLoading, isSuccess } = devicesQuery
   const authorization = useQuery(queries.devices.authorization(deviceRequest))
   const deviceSkeletonCount = useLoadingShapeCount('settings:paired-devices', isSuccess ? devices.length : undefined, {
     fallbackCount: 2,
     maxCount: 8,
-  })
-
-  const clearQr = useCallback(() => setQr(null), [])
-
-  // When a new device appears while the QR is up, the phone paired → close the QR.
-  useEffect(() => {
-    if (!qr) return
-    if (devices.some((d) => !baselineIds.current.has(d.id))) setQr(null)
-  }, [qr, devices])
-
-  const startMutation = useMutation({
-    mutationFn: () => startPairing(),
-    onSuccess: async (value) => {
-      setError(null)
-      baselineIds.current = new Set(devices.map((d) => d.id))
-      setQr({ ...(await renderPairing(value)), code: value.code })
-    },
-    onError: (e) => setError(e instanceof Error ? e.message : 'Failed to start pairing'),
   })
 
   const approveMutation = useMutation({
@@ -119,20 +87,15 @@ export function DevicesSection() {
         <h3 data-setting-target="pair-the-ficus-mobile-app" className="text-sm font-medium text-primary">
           Pair the Ficus mobile app
         </h3>
-        {qr ? (
-          <PairingCode
-            pairing={qr}
-            onExpired={clearQr}
-            onRegenerate={() => startMutation.mutate()}
-            regenerating={startMutation.isPending}
-          />
+        {pairing ? (
+          <PairingCode pairing={pairing} onExpired={clear} onRegenerate={start} regenerating={starting} />
         ) : (
           <button
-            onClick={() => startMutation.mutate()}
-            disabled={startMutation.isPending}
+            onClick={start}
+            disabled={starting}
             className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
           >
-            {startMutation.isPending ? 'Generating…' : 'Generate pairing QR'}
+            {starting ? 'Generating…' : 'Generate pairing QR'}
           </button>
         )}
         {error && <p className="text-sm text-status-danger-600 dark:text-status-danger-400">{error}</p>}
