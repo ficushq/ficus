@@ -213,9 +213,9 @@ test('a member on Cloud reads that Pro is included', async () => {
   expect(container.textContent).not.toContain('Ask your server administrator')
 })
 
-test('an administrator sees the Ficus account status row in each state', async () => {
+test('an administrator sees the Ficus account row only when the server is not connected', async () => {
   const notConnected = await render({ admin: true, connection: selfHosted })
-  expect(notConnected.container.textContent).toContain('Ficus account: Not connected')
+  await waitFor(() => expect(notConnected.container.textContent).toContain('Ficus account: Not connected'))
   expect(getByRole(notConnected.container, 'link', { name: 'Set up in Mobile & Pro →' }).getAttribute('href')).toBe(
     '/settings?section=mobile-pro'
   )
@@ -238,7 +238,10 @@ test('an administrator sees the Ficus account status row in each state', async (
       },
     },
   })
-  expect(connected.container.textContent).toContain('Ficus account: Connected as Studio')
+  // Connected: nothing to do here, so the personal page shows no account status at all.
+  expect(connected.container.textContent).not.toContain('Ficus account:')
+  expect(connected.container.textContent).not.toContain('Studio')
+  expect(connected.container.querySelector('a[href="/settings?section=mobile-pro"]')).toBeNull()
 })
 
 test('a member makes no protected request and is asked to contact the administrator', async () => {
