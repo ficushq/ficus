@@ -18,6 +18,17 @@ export interface ServerConnection {
     used: number
     registered: number
   }
+  /**
+   * What this server recorded when its Ficus account was connected (admin-only).
+   * Null for connections made before Core kept a record.
+   */
+  connection?: {
+    connectedAt: string
+    /** The local person who connected it. */
+    connectedBy?: string
+    /** The Ficus account that approved it, when Cloud reported one. */
+    accountEmail?: string
+  } | null
 }
 export interface ServerConnectionRequest {
   id: string

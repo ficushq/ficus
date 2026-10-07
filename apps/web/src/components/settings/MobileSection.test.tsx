@@ -129,15 +129,15 @@ test('personal Mobile is a plain settings page without the marketing grid', asyn
   expect(learnMore.getAttribute('href')).toBe('https://ficus.sh/mobile')
   expect(learnMore.getAttribute('target')).toBe('_blank')
   expect(learnMore.getAttribute('rel')).toContain('noopener')
-  for (const heading of ['Pair your phone', 'Your phones', 'Free and Pro'])
+  for (const heading of ['Pair a mobile device', 'Your mobile devices', 'Free and Pro'])
     expect(getByRole(container, 'heading', { name: heading })).toBeTruthy()
   // Quiet links each stand on their own line; none run together.
   for (const link of container.querySelectorAll('a')) expect(link.parentElement?.querySelectorAll('a').length).toBe(1)
 })
 
-test('Pair your phone starts the shared pairing flow and shows the QR inline', async () => {
+test('Pair a device starts the shared pairing flow and shows the QR inline', async () => {
   const { container, requests, dom } = await render()
-  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Pair your phone' })))
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Pair a device' })))
   await waitFor(() => expect(container.querySelector('img[alt="Pairing QR code"]')).not.toBeNull())
   expect(requests).toContain('POST /api/auth/pair/start')
   expect(container.textContent).toContain('pair-code-1')
@@ -146,7 +146,7 @@ test('Pair your phone starts the shared pairing flow and shows the QR inline', a
 
 test('a narrow or touch viewport also offers the deep link carrying url and code', async () => {
   const { container, dom } = await render({ touch: true })
-  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Pair your phone' })))
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Pair a device' })))
   const open = await waitFor(() => getByRole(container, 'link', { name: 'Open in Ficus app' }))
   const link = new URL(open.getAttribute('href')!)
   expect(link.protocol).toBe('ficus:')
@@ -154,11 +154,11 @@ test('a narrow or touch viewport also offers the deep link carrying url and code
   expect(link.searchParams.get('code')).toBe('pair-code-1')
 })
 
-test('Your phones lists only paired phones and links to all devices', async () => {
+test('Your mobile devices lists only paired mobile devices and links to all devices', async () => {
   const { container } = await render({
     devices: [device('a', 'ios', 'Noah’s iPhone'), device('b', 'cli', 'atlas'), device('c', 'android', 'Pixel')],
   })
-  const list = getByRole(container, 'list', { name: 'Your phones' })
+  const list = getByRole(container, 'list', { name: 'Your mobile devices' })
   expect(list.querySelectorAll('li').length).toBe(2)
   expect(list.textContent).toContain('Noah’s iPhone')
   expect(list.textContent).toContain('iOS')
@@ -169,9 +169,9 @@ test('Your phones lists only paired phones and links to all devices', async () =
   )
 })
 
-test('Your phones has a plain empty state', async () => {
+test('Your mobile devices has a plain empty state', async () => {
   const { container } = await render({ devices: [device('b', 'cli')] })
-  expect(container.textContent).toContain('No phones paired yet.')
+  expect(container.textContent).toContain('No mobile devices paired yet.')
 })
 
 test('the server address is shown with a Copy button', async () => {
@@ -265,4 +265,11 @@ test('a member on a connected server is not asked to contact the administrator',
 test('a member who cannot learn the connection reads conditional copy', async () => {
   const { container } = await render({ availability: 'error' })
   await waitFor(() => expect(container.textContent).toContain('If they don’t arrive, ask your server administrator.'))
+})
+
+test('the pairing heading answers its search target and the pre-rename anchor', async () => {
+  const { container } = await render()
+  const heading = getByRole(container, 'heading', { name: 'Pair a mobile device' })
+  expect(heading.dataset.settingTarget).toBe('pair-mobile-device')
+  expect(heading.dataset.settingFallback?.split(' ')).toContain('pair-your-phone')
 })

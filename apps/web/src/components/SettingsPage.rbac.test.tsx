@@ -151,7 +151,7 @@ async function renderSettings(
 describe('SettingsPage RBAC tabs', () => {
   test('personal Mobile shows administrators the Ficus account status without connection controls', async () => {
     const html = await renderSettings('/settings?section=mobile', ['settings:read'], { human: true })
-    expect(html).toContain('Pair your phone')
+    expect(html).toContain('Pair a mobile device')
     expect(html).toContain('Free and Pro')
     expect(html).not.toContain('Ficus, to go.')
     expect(html).not.toContain('Pick up the thread')
@@ -170,7 +170,7 @@ describe('SettingsPage RBAC tabs', () => {
 
   test('Mobile is available to ordinary members without protected relay details', async () => {
     const html = await renderSettings('/settings?section=mobile', [], { human: true })
-    expect(html).toContain('Pair your phone')
+    expect(html).toContain('Pair a mobile device')
     expect(html).toContain('href="https://ficus.sh/mobile"')
     expect(html).not.toContain('Ficus account:')
     expect(html).not.toContain('href="/settings?section=mobile-pro"')
@@ -179,7 +179,7 @@ describe('SettingsPage RBAC tabs', () => {
 
   test('Mobile stays hidden without a human identity', async () => {
     const html = await renderSettings('/settings?section=mobile', ['settings:read'])
-    expect(html).not.toContain('Pair your phone')
+    expect(html).not.toContain('Pair a mobile device')
     expect(html).not.toContain('Instance Pro')
   })
 
@@ -209,7 +209,7 @@ describe('SettingsPage RBAC tabs', () => {
     expect(html).toContain('Ficus account')
     expect(html).toContain('Instance Pro')
     expect(html).toContain('Server address')
-    expect(html).not.toContain('Pair your phone')
+    expect(html).not.toContain('Pair a mobile device')
     expect(html).not.toContain('Connect Ficus account</button>')
   })
 

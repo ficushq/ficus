@@ -188,3 +188,47 @@ test('a saved credential can be repaired or disconnected when Cloud verification
   expect(getByRole(container, 'button', { name: 'Disconnect…' })).toBeTruthy()
   expect(container.textContent).toContain('Could not reach Ficus Cloud.')
 })
+
+const connectedOct6 = new Date(new Date().getFullYear(), 9, 6, 12).toISOString()
+const withRecord = (connection: ServerConnection['connection']): ServerConnection => ({
+  ...connectedStatus({ name: 'mini4pro' }),
+  connection,
+})
+
+test('connected: the status row shows since when and who connected the Ficus account', async () => {
+  const { container } = await render(
+    withRecord({ connectedAt: connectedOct6, connectedBy: 'Noah', accountEmail: 'owner@example.com' })
+  )
+  const text = container.textContent ?? ''
+  const since = new Date(connectedOct6).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  expect(text).toContain(`as mini4pro· since ${since}`)
+  const time = container.querySelector('time')!
+  expect(time.getAttribute('dateTime')).toBe(connectedOct6)
+  expect(time.getAttribute('title')).toContain(String(new Date().getFullYear()))
+  expect(text).toContain('Ficus account owner@example.com · connected by Noah')
+  expect(text).toContain('Push notifications and Live Activities are on for phones with Pro.')
+})
+
+test('connected: the record shows only the parts it has', async () => {
+  const byOnly = await render(withRecord({ connectedAt: connectedOct6, connectedBy: 'Noah' }))
+  expect(byOnly.container.textContent).toContain('Connected by Noah')
+  expect(byOnly.container.textContent).not.toContain('Ficus account owner')
+
+  await cleanup?.()
+  const emailOnly = await render(withRecord({ connectedAt: connectedOct6, accountEmail: 'owner@example.com' }))
+  expect(emailOnly.container.textContent).toContain('Ficus account owner@example.com')
+  expect(emailOnly.container.textContent).not.toMatch(/connected by/i)
+})
+
+test('connected before records existed: no since, account or connected-by noise', async () => {
+  for (const connection of [null, undefined]) {
+    const { container } = await render(withRecord(connection))
+    const text = container.textContent ?? ''
+    // The status row goes straight from the name to the usual description.
+    expect(text).toContain('as mini4proPush notifications and Live Activities are on')
+    expect(text).not.toMatch(/since|connected by|unknown/i)
+    expect(container.querySelector('time')).toBeNull()
+    await cleanup?.()
+    cleanup = undefined
+  }
+})

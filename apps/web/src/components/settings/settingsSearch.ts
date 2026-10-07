@@ -30,7 +30,7 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   'squad-presets': 'templates manager instructions default agents schedules purpose context',
   workflows: 'flows presets participants handoffs loops parallel branches review solo engineering completion policy',
 
-  mobile: 'mobile app phone pair qr code download server address free pro widgets live activities push',
+  mobile: 'mobile app phone tablet device pair qr code download server address free pro widgets live activities push',
   'mobile-pro':
     'public server url address mobile app pro ficus account connect disconnect relay push self-hosted instance pro slots device allowance live activities',
   integrations:
@@ -69,9 +69,9 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   },
   {
     section: 'mobile',
-    id: 'pair-your-phone',
-    label: 'Pair your phone',
-    keywords: 'mobile app qr code pairing server address download',
+    id: 'pair-mobile-device',
+    label: 'Pair a mobile device',
+    keywords: 'mobile app phone tablet ipad device qr code pairing server address download',
   },
   {
     section: 'mobile',

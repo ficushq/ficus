@@ -13,7 +13,7 @@ const FICUS_MOBILE_URL = 'https://ficus.sh/mobile'
 const MOBILE_PLATFORMS = new Set(['ios', 'android'])
 
 /**
- * Personal Mobile: pair a phone, see your phones, and what Pro adds. Copy is
+ * Personal Mobile: pair a mobile device, see your paired devices, and what Pro adds. Copy is
  * aware of the viewer and the server. Administrators see the Ficus account
  * status from the protected connection query; members only read the
  * member-safe relay availability and never fire the protected request.
@@ -37,8 +37,14 @@ export function MobileSection() {
       </header>
 
       <section className="ficus-section py-5">
-        <h4 data-setting-target="pair-your-phone" tabIndex={-1} className={SETTINGS_HEADING}>
-          Pair your phone
+        {/* `pair-your-phone` keeps links from before the device-neutral copy working. */}
+        <h4
+          data-setting-target="pair-mobile-device"
+          data-setting-fallback="pair-your-phone"
+          tabIndex={-1}
+          className={SETTINGS_HEADING}
+        >
+          Pair a mobile device
         </h4>
         <div className="space-y-4">
           <SettingsRow
@@ -52,7 +58,7 @@ export function MobileSection() {
                   disabled={starting}
                   className={clsx(SETTINGS_BUTTON, 'ficus-button-primary')}
                 >
-                  {starting ? 'Generating…' : 'Pair your phone'}
+                  {starting ? 'Generating…' : 'Pair a device'}
                 </button>
               )
             }
@@ -81,14 +87,14 @@ export function MobileSection() {
       </section>
 
       <section className="ficus-section py-5">
-        <h4 className={SETTINGS_HEADING}>Your phones</h4>
+        <h4 className={SETTINGS_HEADING}>Your mobile devices</h4>
         <div className="space-y-3">
           {devicesQuery.isLoading ? (
-            <p className="text-sm text-muted">Loading phones…</p>
+            <p className="text-sm text-muted">Loading mobile devices…</p>
           ) : phones.length === 0 ? (
-            <p className="text-sm text-muted">No phones paired yet.</p>
+            <p className="text-sm text-muted">No mobile devices paired yet.</p>
           ) : (
-            <ul aria-label="Your phones" className="divide-y divide-panel-border">
+            <ul aria-label="Your mobile devices" className="divide-y divide-panel-border">
               {phones.map((phone) => (
                 <li key={phone.id} className="py-3 first:pt-0">
                   <p className="text-sm font-medium text-primary">{phone.name}</p>

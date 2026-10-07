@@ -1,7 +1,9 @@
 import { resolvePublicAppUrl } from '../../lib/public-app-url'
 import { createHash, randomBytes } from 'node:crypto'
+import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { relayInstanceTokenPattern } from '@ficus/shared/push-relay'
+import { db, users } from '../../db'
 import { getSecretStore } from '../secrets'
 import { pushRelayConfig, relayConnectionSecretKey, resolvePushRelayBaseUrl } from './relay'
 
@@ -34,6 +36,33 @@ function publicOrigin(raw: string | undefined) {
     )
   }
 }
+/**
+ * What this server remembers about its current connection, kept beside the saved
+ * credential. `accountEmail` and Cloud's `connectedAt` come only from the one-time
+ * approval poll (older Clouds send neither); the credential-scoped status never sees account data.
+ */
+const connectionRecordSchema = z.object({
+  connectedAt: z.string().datetime({ offset: true }),
+  connectedBy: z.string().min(1).optional(),
+  accountEmail: z.string().min(1).optional(),
+})
+export type RelayConnectionRecord = z.infer<typeof connectionRecordSchema>
+/** Bound to the same server and Cloud address as the credential it describes. */
+const connectionRecordKey = (credentialKey: string) =>
+  credentialKey.replace(/^__push-relay-connection:/, '__push-relay-connection-record:')
+/** Cloud's optional approval details; a malformed value is dropped rather than failing the connection. */
+const approvalDetails = {
+  connectedAt: z.string().datetime({ offset: true }).optional().catch(undefined),
+  accountEmail: z.string().trim().email().max(320).optional().catch(undefined),
+}
+async function describeUser(userId: string): Promise<string | undefined> {
+  const [user] = await db
+    .select({ email: users.email, displayName: users.displayName })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+  return user?.displayName?.trim() || user?.email
+}
 const unavailable = () => new RelayConnectionError('Could not reach Ficus Cloud. Try again shortly.')
 const dependencies = {
   env: () => process.env,
@@ -43,6 +72,8 @@ const dependencies = {
   save: (key: string, value: string, actor: string) => getSecretStore().set(key, value, actor),
   read: (key: string) => getSecretStore().get(key),
   remove: (key: string) => getSecretStore().delete(key),
+  /** The local person's display name (else email) recorded as who connected the server. */
+  describeUser,
 }
 const pendingKey = '__push-relay-pending'
 const verifierKey = (id: string) => `__push-relay-verifier:${id}`
@@ -119,11 +150,21 @@ export class RelayServerConnection {
       throw unavailable()
     }
   }
+  private connectionRecord(env: NodeJS.ProcessEnv): RelayConnectionRecord | null {
+    const raw = this.deps.read(connectionRecordKey(relayConnectionSecretKey(env)))
+    if (!raw) return null
+    try {
+      return connectionRecordSchema.parse(JSON.parse(raw))
+    } catch {
+      return null
+    }
+  }
   async status() {
     const env = this.deps.env()
     const baseUrl = resolvePushRelayBaseUrl(env)
     const common = { baseUrl, manageUrl: `${baseUrl}/account/pro`, origin: resolvePublicAppUrl(env) ?? '' }
-    if (env.FICUS_MANAGED === '1') return { ...common, managed: true, configured: true, connected: true }
+    let connection: RelayConnectionRecord | null = null
+    if (env.FICUS_MANAGED === '1') return { ...common, managed: true, configured: true, connected: true, connection }
     let configured = false
     let setupError: string | undefined
     try {
@@ -134,7 +175,8 @@ export class RelayServerConnection {
     try {
       const config = this.deps.config()
       configured = Boolean(config)
-      if (!config) return { ...common, managed: false, configured, connected: false, setupError }
+      if (!config) return { ...common, managed: false, configured, connected: false, setupError, connection }
+      connection = this.connectionRecord(env)
       const status = statusSchema.parse(await this.request(config.baseUrl, 'status', undefined, config.token))
       if (
         status.instanceId !== config.instanceId ||
@@ -144,7 +186,7 @@ export class RelayServerConnection {
           'This connection belongs to a different server address. Connect your Ficus account again.',
           409
         )
-      return { ...common, managed: false, configured, connected: true, setupError, status }
+      return { ...common, managed: false, configured, connected: true, setupError, status, connection }
     } catch (error) {
       return {
         ...common,
@@ -152,6 +194,7 @@ export class RelayServerConnection {
         configured,
         connected: false,
         setupError,
+        connection,
         error: error instanceof RelayConnectionError ? error.message : unavailable().message,
       }
     }
@@ -233,7 +276,11 @@ export class RelayServerConnection {
       const result = z
         .union([
           z.object({ status: z.enum(['pending', 'denied']) }),
-          z.object({ status: z.literal('connected'), token: z.string().regex(relayInstanceTokenPattern) }),
+          z.object({
+            status: z.literal('connected'),
+            token: z.string().regex(relayInstanceTokenPattern),
+            ...approvalDetails,
+          }),
         ])
         .parse(await exchange('token', { id, codeVerifier: verifier }))
       if (result.status === 'denied') await this.clearPending(userId)
@@ -246,8 +293,15 @@ export class RelayServerConnection {
         await this.clearPending(userId)
         throw new RelayConnectionError('The approved credential belongs to a different server. Start again.', 409)
       }
+      const connectedBy = await this.deps.describeUser(userId).catch(() => undefined)
+      const record: RelayConnectionRecord = {
+        connectedAt: new Date(result.connectedAt ?? this.deps.now()).toISOString(),
+        ...(connectedBy ? { connectedBy } : {}),
+        ...(result.accountEmail ? { accountEmail: result.accountEmail } : {}),
+      }
       await this.deps.save(p.key, result.token, userId)
-      // Keep the request until token persistence succeeds, allowing recovery after a lost response/restart.
+      await this.deps.save(connectionRecordKey(p.key), JSON.stringify(record), userId)
+      // Keep the request until token and record persistence succeed, allowing recovery after a lost response/restart.
       await this.clearPending(userId)
       return { status: 'connected' as const }
     })
@@ -256,7 +310,9 @@ export class RelayServerConnection {
     return this.exclusive(async () => {
       this.assertSelfHosted()
       await this.clearPending(userId)
-      await this.deps.save(relayConnectionSecretKey(this.deps.env()), '', userId)
+      const key = relayConnectionSecretKey(this.deps.env())
+      await this.deps.save(key, '', userId)
+      await this.deps.save(connectionRecordKey(key), '', userId)
       return { disconnected: true }
     })
   }

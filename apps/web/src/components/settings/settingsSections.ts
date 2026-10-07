@@ -29,7 +29,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         label: 'Notifications',
         description: 'Your notification delivery and sound preferences.',
       },
-      { id: 'mobile', label: 'Mobile', description: 'Pair your phone and see what Pro adds.' },
+      { id: 'mobile', label: 'Mobile', description: 'Pair a device and see what Pro adds.' },
       { id: 'devices', label: 'Paired Devices', description: 'Pair and manage linked devices.' },
       { id: 'sessions', label: 'Sessions', description: 'Active sign-in sessions and revocation.' },
     ],
