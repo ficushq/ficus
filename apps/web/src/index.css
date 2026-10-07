@@ -27,6 +27,12 @@
     position: fixed;
     inset: 0;
     width: 100%;
+    /* The fixed body spans the whole layout viewport. While the keyboard is open the app shell
+       is pinned to the visible height, so the body is what shows below the shell (where Safari
+       pans to a field, behind its floating address bar and AutoFill bar). Paint it the shell's own
+       page color so that area reads as the page and never as a mismatched band. The
+       token cascades from :root, so built-in, custom and previewed themes all follow it live. */
+    background-color: rgb(var(--color-bg-page));
   }
 
   :root,
