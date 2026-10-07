@@ -9,6 +9,7 @@ import {
   disconnectServerConnection,
   pollServerConnection,
   startServerConnection,
+  type ServerConnection,
   type ServerConnectionRequest,
 } from '../../api/serverConnection'
 import { Modal } from '../Modal'
@@ -31,6 +32,44 @@ function defaultServerName(knownName: string | undefined, origin: string | null)
     }
   }
   return ''
+}
+
+/** "since Oct 6" (with the year when it isn't this year), the full date on hover. */
+function ConnectedSince({ at }: { at: string }) {
+  const date = new Date(at)
+  if (Number.isNaN(date.getTime())) return null
+  const sameYear = date.getFullYear() === new Date().getFullYear()
+  const short = date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  })
+  return (
+    <span className="font-normal text-muted">
+      · since{' '}
+      <time dateTime={at} title={date.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}>
+        {short}
+      </time>
+    </span>
+  )
+}
+
+/** "Ficus account owner@example.com · connected by Noah", from whichever parts were recorded. */
+function ConnectionDetails({ connection }: { connection: ServerConnection['connection'] }) {
+  const email = connection?.accountEmail
+  const by = connection?.connectedBy
+  if (!email && !by) return null
+  return (
+    <span className="block">
+      {email && (
+        <>
+          Ficus account <span className="break-all text-secondary">{email}</span>
+        </>
+      )}
+      {email && by && ' · '}
+      {by && `${email ? 'connected' : 'Connected'} by ${by}`}
+    </span>
+  )
 }
 
 export function RelayConnectionSettings() {
@@ -187,9 +226,15 @@ export function RelayConnectionSettings() {
                     Connected
                   </span>
                   <span className="font-normal text-secondary">as {status.name}</span>
+                  {data.connection?.connectedAt && <ConnectedSince at={data.connection.connectedAt} />}
                 </span>
               }
-              description="Push notifications and Live Activities are on for phones with Pro."
+              description={
+                <>
+                  <ConnectionDetails connection={data.connection} />
+                  <span className="block">Push notifications and Live Activities are on for phones with Pro.</span>
+                </>
+              }
               inlineControl
               control={
                 canWrite && (
