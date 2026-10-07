@@ -192,35 +192,26 @@ function MemberProStatus() {
 }
 
 /** Administrators see this server's Ficus account status, pointing to Mobile & Pro. */
+/**
+ * Administrators get a nudge only when the server isn't connected to a Ficus account. Once it is,
+ * there is nothing to do here; the connection lives in Administration → Mobile & Pro.
+ */
 function AdminProStatus() {
   const connection = useQuery(serverConnectionQueries.status())
   const data = connection.data
   if (data?.managed) return <HowToGetPro cloud />
-  const name = data?.connected ? data.status?.name : undefined
-  const connected = name !== undefined
-  const status = connection.isPending
-    ? 'Checking…'
-    : connected
-      ? `Connected as ${name}`
-      : data?.configured
-        ? 'Needs attention'
-        : connection.isError
-          ? 'Couldn’t check'
-          : 'Not connected'
+  if (connection.isPending || (data?.connected && data.status)) return <HowToGetPro cloud={false} />
+  const status = data?.configured ? 'Needs attention' : connection.isError ? 'Couldn’t check' : 'Not connected'
   return (
     <>
       <HowToGetPro cloud={false} />
       <div className="border-t border-th-border pt-4">
         <SettingsRow
           label={`Ficus account: ${status}`}
-          description={
-            connected
-              ? 'Push notifications and Live Activities are on for phones with Pro.'
-              : 'Connect this server to a Ficus account to turn on push notifications and Live Activities for phones with Pro.'
-          }
+          description="Connect this server to a Ficus account to turn on push notifications and Live Activities for mobile devices with Pro."
           control={
             <Link to="/settings?section=mobile-pro" className={QUIET_LINK}>
-              {connected ? 'Mobile & Pro →' : 'Set up in Mobile & Pro →'}
+              Set up in Mobile & Pro →
             </Link>
           }
         />
