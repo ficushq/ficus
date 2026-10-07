@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import sharp from 'sharp'
-import { COLORS, generate, OUT_DIR } from './generate'
+import { COLORS, DESKTOP_SHADOW, DESKTOP_TILE, generate, OUT_DIR, squirclePath } from './generate'
 
 function listFiles(dir: string): string[] {
   const out: string[] = []
@@ -163,17 +163,47 @@ describe('brand icon generator', () => {
     expect(meta.hasAlpha).toBe(false)
   })
 
-  it('desktop/icon-1024.png keeps transparency outside the rounded tile', async () => {
-    const meta = await sharp(join(tmpDir, 'desktop', 'icon-1024.png')).metadata()
-    expect(meta.hasAlpha).toBe(true)
-    const { data, info } = await sharp(join(tmpDir, 'desktop', 'icon-1024.png'))
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true })
-    // The corner pixel must be fully transparent: it's outside the 824x824
-    // rounded tile centered in the 1024 canvas.
-    const idx = (0 * info.width + 0) * info.channels
-    expect(data[idx + 3]).toBe(0)
+  describe("desktop tiles follow Apple's macOS icon template", () => {
+    for (const rel of ['desktop/icon-1024.png', 'desktop/icon-1024-dark.png']) {
+      const pixel = async (x: number, y: number) => {
+        const { data, info } = await sharp(join(tmpDir, rel)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+        const idx = (y * info.width + x) * info.channels
+        return { r: data[idx], g: data[idx + 1], b: data[idx + 2], a: data[idx + 3] }
+      }
+
+      it(`${rel} keeps transparency outside the tile and its shadow`, async () => {
+        const meta = await sharp(join(tmpDir, rel)).metadata()
+        expect(meta.hasAlpha).toBe(true)
+        // The canvas corner sits outside both the 824 tile and its shadow.
+        expect((await pixel(0, 0)).a).toBe(0)
+        expect((await pixel(512, 1020)).a).toBe(0)
+      })
+
+      it(`${rel} uses a continuous-corner tile, not a plain rounded rect`, async () => {
+        // A plain 824 tile with r=185 at (100,100) covers (280,101) fully; the
+        // continuous corner starts curving earlier, so that pixel is not tile.
+        expect((await pixel(280, 101)).a).toBeLessThan(255)
+        // The straight edges still run to the tile's 824 bounds.
+        expect((await pixel(512, 100)).a).toBe(255)
+        expect((await pixel(100, 512)).a).toBe(255)
+      })
+
+      it(`${rel} casts a soft black drop shadow below the tile`, async () => {
+        const below = await pixel(512, 930) // 6px under the tile's bottom edge
+        const above = await pixel(512, 93) // 6px over its top edge
+        expect([below.r, below.g, below.b]).toEqual([0, 0, 0])
+        expect(below.a).toBeGreaterThan(0)
+        expect(below.a).toBeLessThan(255 * DESKTOP_SHADOW.opacity)
+        // Offset downward: more shadow below the tile than above it.
+        expect(below.a).toBeGreaterThan(above.a)
+      })
+    }
+  })
+
+  it('squirclePath with no smoothing is an ordinary rounded square', () => {
+    const path = squirclePath(0, 0, DESKTOP_TILE, 185, 0)
+    expect(path.startsWith(`M${DESKTOP_TILE - 185} 0`)).toBe(true)
+    expect(path).toContain('a185 185 0 0 1 185 185')
   })
 
   it('mobile/notification-icon.png contains only pure white or fully-transparent pixels', async () => {

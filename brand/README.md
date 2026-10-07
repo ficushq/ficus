@@ -91,8 +91,10 @@ it must satisfy sharp's patched minimum (8.18.6 for sharp 0.35.4). Check
   `apple-touch-icon.png` (180), `icon-{192,512}.png` and
   `icon-maskable-{192,512}.png`, for its manifest and home-screen icon.
 - `desktop/` — `icon-1024.png` / `icon-1024-dark.png`: mark on a linen/soil
-  rounded-square tile (824×824, corner radius 185, centered in a
-  transparent 1024 canvas), following Apple's icon grid.
+  tile following Apple's macOS app icon template: an 824×824
+  continuous-corner ("squircle") tile, radius 185 with 60% corner smoothing,
+  centered in a transparent 1024 canvas over a soft drop shadow (28px blur,
+  12px down, 30% black).
 - `mobile/` — `icon.png` (1024, opaque, iOS), `adaptive-icon.png` (1024,
   transparent, Android foreground), `adaptive-background.png` (1024, solid
   linen), `splash-icon.png` (1024, transparent), `notification-icon.png`
