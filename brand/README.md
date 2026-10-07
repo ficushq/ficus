@@ -12,6 +12,10 @@ SVG and ready-to-upload PNG in this folder.
 - `ficus-mark-dark.svg` — the same mark, dark-mode palette.
 - `ficus-favicon-16.svg` — a simplified single-leaf mark for use at ≤16px, where the full mark's detail doesn't survive.
 
+In each, the pot body starts 0.75 units up under the rim so the two shapes
+overlap; where they only touched, antialiasing left a hairline across the pot
+at large sizes.
+
 ## Social preview
 
 - [`social-preview.svg`](social-preview.svg) — editable source for the current card.
