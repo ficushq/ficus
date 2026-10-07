@@ -1,6 +1,7 @@
 import { createPushServerConnectionRouter } from './push-server-connection'
 import { liveActivityRelayConfigured } from '../services/push/live-activity-relay'
 import { managedCloudProConfig } from '../services/push/cloud-pro'
+import { resolvePublicAppUrl } from '../lib/public-app-url'
 import { z } from 'zod'
 import { coreLiveActivityRegistrationSchema } from '@ficus/shared/live-activity-relay'
 import {
@@ -52,10 +53,12 @@ pushRouter.get('/relay-config', async (c) => {
   c.set('authzChecked', true)
   try {
     const config = pushRelayConfig()
+    // The configured public address, so clients show and pair the address phones can reach.
+    const serverUrl = resolvePublicAppUrl() ?? null
     return c.json(
       config
-        ? { enabled: true, instanceId: config.instanceId, liveActivities: liveActivityRelayEnabled() }
-        : await managedCloudProConfig()
+        ? { enabled: true, instanceId: config.instanceId, liveActivities: liveActivityRelayEnabled(), serverUrl }
+        : { ...(await managedCloudProConfig()), serverUrl }
     )
   } catch {
     return c.json({ error: 'Relay configuration is invalid' }, 503)
