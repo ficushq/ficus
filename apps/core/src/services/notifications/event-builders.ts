@@ -1,3 +1,4 @@
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
 import {
   workStreamWaitActor,
   assistantConversationPath,
@@ -60,11 +61,11 @@ function buildUrl(path: string): string | undefined {
 }
 
 /**
- * This instance's own web origin, derived from APP_URL like buildUrl (lowercase scheme+host,
+ * This instance's public app address (APP_URL, with legacy PUBLIC_URL fallback): lowercase scheme+host,
  * optional base path, no trailing slash) so a multi-server mobile app can match it against
- * its paired servers. Undefined when APP_URL isn't set or isn't a URL.
+ * its paired servers. Undefined when no valid public application URL is configured.
  */
-export function getAppOrigin(appUrl: string | undefined = process.env.APP_URL): string | undefined {
+export function getAppOrigin(appUrl: string | undefined = resolvePublicAppUrl()): string | undefined {
   if (!appUrl) return undefined
   try {
     const parsed = new URL(appUrl)

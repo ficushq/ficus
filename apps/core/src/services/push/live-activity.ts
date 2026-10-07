@@ -1,3 +1,4 @@
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
 import { startActivityRelayRunner } from './live-activity-outbox'
 import {
   buildLiveActivityState,
@@ -387,7 +388,7 @@ export function registerLiveActivityFanout(
     // This includes existing cards that must end after a mute or permission revocation.
     resolveUserIds: listLiveActivityUserIds,
     loadSnapshot: loadWorkInterestSnapshot,
-    origin: () => process.env.PUBLIC_URL ?? '',
+    origin: () => resolvePublicAppUrl() ?? '',
     ...deps,
   })
 

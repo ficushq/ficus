@@ -574,6 +574,22 @@ describe('getAppOrigin', () => {
     expect(getAppOrigin('http://localhost:3000/tau/')).toBe('http://localhost:3000/tau')
   })
 
+  test('native routing shares APP_URL authority and legacy PUBLIC_URL fallback', () => {
+    const previous = { APP_URL: process.env.APP_URL, PUBLIC_URL: process.env.PUBLIC_URL }
+    try {
+      process.env.APP_URL = 'https://home.example.com/ficus/'
+      process.env.PUBLIC_URL = 'https://legacy.example.com'
+      expect(getAppOrigin()).toBe('https://home.example.com/ficus')
+      delete process.env.APP_URL
+      expect(getAppOrigin()).toBe('https://legacy.example.com')
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+  })
+
   test('is undefined when APP_URL is unset or not a URL', () => {
     delete process.env.APP_URL
     expect(getAppOrigin()).toBeUndefined()

@@ -103,6 +103,28 @@ describe('self-hosted server connection', () => {
     }
     await expect(f.service.poll('admin', id)).rejects.toThrow('expired')
   })
+  test('connects an APP_URL-only server under a reverse-proxy path', async () => {
+    const f = fixture()
+    delete f.env.PUBLIC_URL
+    f.env.APP_URL = 'https://home.example.com/ficus/'
+    f.env.FICUS_API_URL = 'http://127.0.0.1:3000'
+    f.setOrigin('https://home.example.com/ficus')
+    const before = await f.service.status()
+    expect(before.origin).toBe('https://home.example.com/ficus')
+    expect('setupError' in before ? before.setupError : undefined).toBeUndefined()
+    await f.service.start('admin', 'Home')
+    expect(JSON.parse(String(f.calls[0]?.init.body)).origin).toBe('https://home.example.com/ficus')
+    f.setReply('connected')
+    expect(await f.service.poll('admin', id)).toEqual({ status: 'connected' })
+    expect(f.saved).toEqual([[relayConnectionSecretKey(f.env), token, 'admin']])
+  })
+  test('changing APP_URL invalidates an approval even when legacy PUBLIC_URL remains unchanged', async () => {
+    const f = fixture()
+    await f.service.start('admin', 'Home')
+    f.env.APP_URL = 'https://new.example.com/ficus'
+    await expect(f.service.poll('admin', id)).rejects.toThrow('address changed')
+    expect(f.saved).toHaveLength(0)
+  })
   test('another user cannot redeem a pending request', async () => {
     const f = fixture()
     await f.service.start('admin', 'Example')
