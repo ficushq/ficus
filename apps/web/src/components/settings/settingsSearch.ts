@@ -30,7 +30,9 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   'squad-presets': 'templates manager instructions default agents schedules purpose context',
   workflows: 'flows presets participants handoffs loops parallel branches review solo engineering completion policy',
 
-  mobile: 'mobile app pro relay push connect account self-hosted device allowance widgets live activities',
+  mobile: 'mobile app phone download features widgets live activities push',
+  'mobile-pro':
+    'public server url address mobile app pro relay push connect account self-hosted device allowance widgets live activities',
   integrations:
     'bigbrain github linear notion discord slack telegram cloudflare digitalocean netlify railway supabase vercel apple apns p8 web push vapid google cloud openai realtime transcription embeddings speech text-to-speech service account deployment hosting tokens bot channels oauth connections pool assignment authorization',
   'notification-rules': 'outbound alerts delivery channels event rules',
@@ -48,7 +50,13 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
 
 export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   {
-    section: 'mobile',
+    section: 'mobile-pro',
+    id: 'mobile-public-url',
+    label: 'Public server URL',
+    keywords: 'https public url origin address hostname ip port base path mobile relay',
+  },
+  {
+    section: 'mobile-pro',
     id: 'mobile-pro',
     label: 'Ficus mobile & Pro',
     keywords: 'self-hosted mobile relay push connect account instance pro device allowance widgets live activity',

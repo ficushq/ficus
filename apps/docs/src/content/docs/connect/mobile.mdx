@@ -37,10 +37,13 @@ You need administrator access to the self-hosted instance and a Ficus Cloud
 account to own its relay connection. The mobile app still signs in to each
 instance separately; connecting the relay does not grant access to your squads.
 
-1. Ensure the server has a public HTTPS address and its `PUBLIC_URL` is set to
-   that address. The app must be able to reach it. Use the same address when
-   adding the server in the app.
-2. Open the server’s webapp and go to **Settings → Mobile**.
+1. Open the server’s webapp and go to **Settings → Administration → Mobile & Pro**.
+2. Check the **Server address**. Ficus uses the public `APP_URL` already configured
+   during server setup, including any port and installation path (for example,
+   `https://ficus.example.com:8443/ficus`). You do not need to enter it again for
+   mobile. The app must be able to reach this HTTPS address. If it is missing or
+   incorrect, update your server’s existing `APP_URL` configuration before
+   connecting.
 3. Give the server a recognizable name and choose **Connect Ficus account**.
 4. Sign in to Ficus Cloud in the approval page. Check that its server address and
    connection code match the ones shown in your instance, then approve.
@@ -94,6 +97,10 @@ and Live Activity without sending an alert. **Notify** also sends alerts. See
 filters work together.
 
 ## Reconnect or disconnect
+
+Changing the server’s `APP_URL` requires reconnecting the relay to that
+address. The old Cloud server record and any subscription remain in your account;
+review them in **Manage Pro and devices** before leaving an old server unused.
 
 Use **Reconnect Ficus account** if you need to replace the server’s credential.
 Approving the same server address in the same Cloud account preserves its

@@ -101,11 +101,20 @@ export function RelayConnectionSettings() {
             account connection or relay setup is needed here.
           </p>
           <p>Add this server in the Ficus mobile app and sign in to your instance account.</p>
-          {data.origin && <p className="break-all text-xs">Server address: {data.origin}</p>}
+          <p data-setting-target="mobile-public-url" tabIndex={-1} className="break-all text-xs">
+            Server address: {data.origin || 'Managed by Ficus Cloud'}
+          </p>
         </div>
       ) : (
         data && (
           <>
+            <div data-setting-target="mobile-public-url" tabIndex={-1} className="space-y-1">
+              <h5 className="text-sm font-medium text-primary">Server address</h5>
+              <p className="break-all text-sm text-muted">{data.origin || 'Not configured'}</p>
+              <p className="text-xs text-muted">
+                Uses the public address configured during server setup, including any port or installation path.
+              </p>
+            </div>
             <p className="text-sm text-muted">
               Connect this self-hosted server to the Ficus push relay. Each device needs Ficus Pro on its personal
               account or a slot from this server’s Instance Pro allowance. Connecting does not start a subscription.
@@ -167,7 +176,6 @@ export function RelayConnectionSettings() {
                     onChange={(event) => setName(event.target.value)}
                   />
                 </label>
-                {data.origin && <p className="break-all text-xs text-muted">Server address: {data.origin}</p>}
                 <button
                   type="submit"
                   className="ficus-button ficus-button-primary px-4 py-2 text-sm"
