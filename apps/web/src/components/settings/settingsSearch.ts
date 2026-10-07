@@ -30,9 +30,9 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   'squad-presets': 'templates manager instructions default agents schedules purpose context',
   workflows: 'flows presets participants handoffs loops parallel branches review solo engineering completion policy',
 
-  mobile: 'mobile app phone download features widgets live activities push',
+  mobile: 'mobile app phone pair qr code download server address free pro widgets live activities push',
   'mobile-pro':
-    'public server url address mobile app pro relay push connect account self-hosted device allowance widgets live activities',
+    'public server url address mobile app pro ficus account connect disconnect relay push self-hosted instance pro slots device allowance live activities',
   integrations:
     'bigbrain github linear notion discord slack telegram cloudflare digitalocean netlify railway supabase vercel apple apns p8 web push vapid google cloud openai realtime transcription embeddings speech text-to-speech service account deployment hosting tokens bot channels oauth connections pool assignment authorization',
   'notification-rules': 'outbound alerts delivery channels event rules',
@@ -58,8 +58,26 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   {
     section: 'mobile-pro',
     id: 'mobile-pro',
-    label: 'Ficus mobile & Pro',
-    keywords: 'self-hosted mobile relay push connect account instance pro device allowance widgets live activity',
+    label: 'Connect Ficus account',
+    keywords: 'self-hosted mobile relay push connect disconnect account live activity integrations',
+  },
+  {
+    section: 'mobile-pro',
+    id: 'instance-pro',
+    label: 'Instance Pro',
+    keywords: 'pro slots device allowance coverage subscription manage devices',
+  },
+  {
+    section: 'mobile',
+    id: 'pair-your-phone',
+    label: 'Pair your phone',
+    keywords: 'mobile app qr code pairing server address download',
+  },
+  {
+    section: 'mobile',
+    id: 'mobile-free-and-pro',
+    label: 'Free and Pro',
+    keywords: 'mobile pro features push notifications widgets live activities quiet hours',
   },
   {
     section: 'memory',

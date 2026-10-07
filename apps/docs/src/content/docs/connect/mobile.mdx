@@ -14,11 +14,13 @@ include server hosting.
 
 **Paid Ficus Cloud access includes mobile Pro features on that Cloud instance.**
 Add the server to the app and sign in to your instance account. Your administrator
-does not need to connect a relay, paste a credential or buy a separate device
+does not need to connect a Ficus account, paste a credential or buy a separate device
 allowance. This included access does not cover your other self-hosted servers.
 
-**Self-hosted servers connect to the Ficus push relay once**, then each device
-uses either personal Ficus Pro or the server’s Instance Pro allowance:
+**Self-hosted servers connect a Ficus account once.** That lets the server use the
+shared relays Ficus runs, such as mobile push notifications and Live Activities.
+You don’t need Instance Pro to connect: each device then uses either personal
+Ficus Pro or the server’s Instance Pro allowance:
 
 - **Ficus Pro** follows one Ficus account across its connected self-hosted
   servers. Connect that account under **Settings → Pro** in the mobile app.
@@ -33,9 +35,9 @@ is separate from buying coverage and does not start a subscription.
 
 ## Connect a self-hosted server
 
-You need administrator access to the self-hosted instance and a Ficus Cloud
-account to own its relay connection. The mobile app still signs in to each
-instance separately; connecting the relay does not grant access to your squads.
+You need administrator access to the self-hosted instance and a Ficus account
+to own its connection. The mobile app still signs in to each instance
+separately; connecting a Ficus account does not grant access to your squads.
 
 1. Open the server’s webapp and go to **Settings → Administration → Mobile & Pro**.
 2. Check the **Server address**. Ficus uses the public `APP_URL` already configured
@@ -44,14 +46,16 @@ instance separately; connecting the relay does not grant access to your squads.
    mobile. The app must be able to reach this HTTPS address. If it is missing or
    incorrect, update your server’s existing `APP_URL` configuration before
    connecting.
-3. Give the server a recognizable name and choose **Connect Ficus account**.
+3. Check the **Server name** (it starts as the server’s hostname) and choose
+   **Connect Ficus account**.
 4. Sign in to Ficus Cloud in the approval page. Check that its server address and
    connection code match the ones shown in your instance, then approve.
 5. Keep the instance’s settings page open until it reports **Connected**. The
-   server receives and saves its scoped relay credential automatically. You do
+   server receives and saves its scoped credential automatically. You do
    not need to copy a token or supply a push signing key for the official app.
-6. Choose **Manage Pro and devices** to review coverage. Buy Instance Pro for
-   shared device coverage, or have app users connect their own Ficus Pro accounts.
+6. Choose **Manage Pro and devices on ficus.sh** to review coverage. Buy Instance
+   Pro for shared device coverage, or have app users connect their own Ficus Pro
+   accounts.
 7. Add the server to the mobile app and sign in. Allow notifications when
    prompted, then check **Settings → Pro** for coverage and **Settings →
    Notifications** for device preferences.
@@ -65,9 +69,9 @@ not a general Cloud API token and is not shared with squad agents.
 
 ## Check coverage and device slots
 
-The instance settings show its connection status, Instance Pro coverage,
-registered devices, and slots in use. **Manage Pro and devices** opens the Cloud
-account page where the server owner can change coverage and remove old devices.
+The instance settings show its connection status, its Instance Pro allowance,
+and how many devices use instance slots. **Manage Pro and devices on ficus.sh**
+opens the account page where the server owner can change coverage and remove old devices.
 Match the short **Device ID** in the mobile app’s Pro page with the ID in the
 server’s device list before revoking a device.
 
@@ -98,17 +102,19 @@ filters work together.
 
 ## Reconnect or disconnect
 
-Changing the server’s `APP_URL` requires reconnecting the relay to that
+Changing the server’s `APP_URL` requires reconnecting the Ficus account at that
 address. The old Cloud server record and any subscription remain in your account;
 review them in **Manage Pro and devices** before leaving an old server unused.
 
-Use **Reconnect Ficus account** if you need to replace the server’s credential.
+To replace the server’s credential or rename it, choose **Reconnect…** from the
+Ficus account menu (**Reconnect Ficus account** when the connection needs
+attention).
 Approving the same server address in the same Cloud account preserves its
 registered devices and allowance while replacing the old credential. Check the
 address and account carefully before approving.
 
-**Disconnect server** removes this instance’s saved connection and stops its
-relay delivery. It does not cancel a subscription. To revoke the credential in
+**Disconnect…** removes this instance’s saved connection and stops its push
+notifications and Live Activities. It does not cancel a subscription. To revoke the credential in
 Cloud, archive an old server, manage billing or cancel coverage, choose **Manage
 Pro and devices**. Revoking a credential stops delivery that uses it; reconnect
 before expecting push or background updates again.
