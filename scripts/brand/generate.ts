@@ -4,14 +4,18 @@
  * Renders every icon Core web, Platform web, Core docs, Desktop and Mobile
  * need from the three source SVGs in `brand/` (`ficus-mark.svg`,
  * `ficus-mark-dark.svg`, `ficus-favicon-16.svg`). Outputs are written to
- * `brand/generated/` and are NOT wired into any app by this script — that
- * swap happens in separate, later PRs.
+ * `brand/generated/`. Platform web (a separate, private repo) still needs
+ * its own copy by hand; Core's own copies (apps/web, apps/docs) are kept in
+ * sync automatically — see `publishIconCopies` / `PUBLISHED_ICON_COPIES`
+ * below. The farm app (apps/farm) reads `brand/generated/farm` directly, so
+ * it needs no copy.
  *
  * Usage: bun run brand:generate   (from repo root)
  *     or: bun run scripts/brand/generate.ts
  *
- * Run as a script, it then also renders the social preview cards
- * (scripts/brand/social-preview.ts, `bun run brand:social` on its own).
+ * Run as a script, it then also publishes the icon copies, renders the
+ * social preview cards (scripts/brand/social-preview.ts, `bun run
+ * brand:social` on its own) and the App Store art.
  *
  * Determinism: every raster target is built by rasterizing a single
  * composite SVG (background shape + the source mark's own path data,
@@ -21,12 +25,79 @@
  * byte-identical files (see scripts/brand/generate.test.ts).
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import sharp from 'sharp'
 
-export const BRAND_DIR = join(import.meta.dir, '..', '..', 'brand')
+export const REPO_ROOT = join(import.meta.dir, '..', '..')
+export const BRAND_DIR = join(REPO_ROOT, 'brand')
 export const OUT_DIR = join(BRAND_DIR, 'generated')
+
+/**
+ * Byte-for-byte copies of generated icons (and the two source mark SVGs they
+ * embed) that apps outside `brand/` publish from their own public dirs,
+ * since Core web, Core docs and the farm app each need these files in their
+ * own trees rather than reading `brand/` directly. Paths are relative to the
+ * repo root. `bun run brand:generate` refreshes every copy after
+ * regenerating; `published-icons.test.ts` fails if any copy drifts from its
+ * source (see also PUBLISHED_COPIES in social-preview.ts, the same idea for
+ * the social card).
+ *
+ * The farm app (`apps/farm`) has no copy here: its Vite `publicDir` points at
+ * `brand/generated/farm` directly, so there's nothing to keep in sync.
+ */
+export const PUBLISHED_ICON_COPIES: ReadonlyArray<{ from: string; to: string }> = [
+  // brand/generated/web/** -> apps/web/public/icons/** (Core web), same relative path.
+  ...[
+    'favicon.svg',
+    'favicon-16x16.png',
+    'favicon-32x32.png',
+    'apple-touch-icon.png',
+    'icon-72x72.png',
+    'icon-96x96.png',
+    'icon-128x128.png',
+    'icon-144x144.png',
+    'icon-152x152.png',
+    'icon-192x192.png',
+    'icon-384x384.png',
+    'icon-512x512.png',
+    'icon-maskable-192x192.png',
+    'icon-maskable-512x512.png',
+    'shortcut-chat.png',
+    'shortcut-tasks.png',
+  ].map((file) => ({ from: `brand/generated/web/${file}`, to: `apps/web/public/icons/${file}` })),
+  ...[
+    'apple-touch-icon.png',
+    'favicon-16x16.png',
+    'favicon-32x32.png',
+    'icon-72x72.png',
+    'icon-96x96.png',
+    'icon-128x128.png',
+    'icon-144x144.png',
+    'icon-152x152.png',
+    'icon-192x192.png',
+    'icon-384x384.png',
+    'icon-512x512.png',
+    'icon-maskable-192x192.png',
+    'icon-maskable-512x512.png',
+  ].map((file) => ({ from: `brand/generated/web/dark/${file}`, to: `apps/web/public/icons/dark/${file}` })),
+  // The full-detail source mark, published alongside the generated icons so
+  // apps/web can reference the vector mark directly.
+  { from: 'brand/ficus-mark.svg', to: 'apps/web/public/icons/icon-source.svg' },
+  // Core docs (apps/docs) publishes the web favicon and both source marks.
+  { from: 'brand/generated/web/favicon.svg', to: 'apps/docs/public/favicon.svg' },
+  { from: 'brand/ficus-mark.svg', to: 'apps/docs/src/assets/ficus-mark.svg' },
+  { from: 'brand/ficus-mark-dark.svg', to: 'apps/docs/src/assets/ficus-mark-dark.svg' },
+]
+
+/** Copies every entry in `PUBLISHED_ICON_COPIES` from its brand source to its published path. */
+export async function publishIconCopies(root: string = REPO_ROOT): Promise<void> {
+  for (const { from, to } of PUBLISHED_ICON_COPIES) {
+    const dest = join(root, to)
+    await mkdir(dirname(dest), { recursive: true })
+    await copyFile(join(root, from), dest)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Brand constants (see brand/README.md for the human-readable version)
@@ -572,9 +643,10 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
 }
 
 if (import.meta.main) {
-  // Icons first, then the social preview cards (which embed the mark and need
-  // Chrome), then the App Store art (Chrome too).
+  // Icons first, then their published copies, then the social preview cards
+  // (which embed the mark and need Chrome), then the App Store art (Chrome too).
   generate()
+    .then(() => publishIconCopies())
     .then(async () => (await import('./social-preview')).generateSocialPreviews())
     .then(async () => (await import('./app-store')).generateAppStoreArt())
     .catch((err) => {

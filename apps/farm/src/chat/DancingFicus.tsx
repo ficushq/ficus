@@ -24,7 +24,7 @@ export function DancingFicus() {
           </g>
         </g>
         <rect x="18" y="39" width="28" height="5" rx="2.5" fill="#b0582f" />
-        <path d="M20 44 H44 L41 59 Q40.6 60 39.5 60 H24.5 Q23.4 60 23 59 Z" fill="#b0582f" />
+        <path d="M20 43.25 H44 L41 59 Q40.6 60 39.5 60 H24.5 Q23.4 60 23 59 Z" fill="#b0582f" />
       </g>
     </svg>
   )
