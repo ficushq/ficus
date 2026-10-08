@@ -45,7 +45,7 @@ interface SelectedVersion extends GitHubFeedbackSelection {
 }
 
 const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
 
 export function GitHubFeedbackReviewModal({
   squadId,
@@ -64,13 +64,21 @@ export function GitHubFeedbackReviewModal({
   const [selected, setSelected] = useState<Map<string, SelectedVersion>>(() => new Map())
   const [confirmTrust, setConfirmTrust] = useState(false)
   const [status, setStatus] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
+  // The list's `contentAvailable` only means content was captured; `source_access_unavailable`
+  // (lost GitHub access) can still withhold it. Detail is the only place that tells us, so track
+  // every revision a fetched detail has shown as withheld, independent of whether it's selected.
+  const [withheldIds, setWithheldIds] = useState<Set<string>>(() => new Set())
   // Each opening starts on the requested queue; selections deliberately survive close/reopen.
   const [wasOpen, setWasOpen] = useState(isOpen)
+  // Set whenever the dialog just (re)opened; consumed once the pending list has refetched, so a
+  // selection decided by someone else while this was closed stops counting toward the 50 cap.
+  const pruneOnReopen = useRef(false)
   if (isOpen !== wasOpen) {
     setWasOpen(isOpen)
     if (isOpen) {
       setQueue(initialQueue)
       setFocusedId(null)
+      pruneOnReopen.current = true
     }
   }
   // An unconfirmed (network/5xx) attempt keeps its request ID so a retry is idempotent server-side.
@@ -86,34 +94,77 @@ export function GitHubFeedbackReviewModal({
     enabled: isOpen && !!focusedId,
   })
 
-  // Keyboard: Escape closes (or backs out of the trust confirmation); Tab stays inside the dialog.
+  useEffect(() => {
+    if (!detail.data) return
+    const id = detail.data.id
+    const withheld = !!detail.data.contentWithheld
+    setWithheldIds((current) => {
+      if (current.has(id) === withheld) return current
+      const next = new Set(current)
+      if (withheld) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [detail.data])
+
+  // Reopening re-enables the pending list query; refetch it explicitly (refetch() ignores
+  // `enabled`) and prune against its result rather than guessing when an incidental
+  // refetch-on-mount lands.
+  useEffect(() => {
+    if (!isOpen || queue !== 'pending' || !pruneOnReopen.current) return
+    pruneOnReopen.current = false
+    void list.refetch().then((result) => {
+      const freshRows = result.data?.pages.flatMap((page) => page.items) ?? []
+      const stillPending = new Set(freshRows.map((row) => row.id))
+      setSelected((current) => new Map([...current].filter(([id]) => stillPending.has(id))))
+    })
+    // `list` itself isn't a meaningful dependency (a new object every render); only `refetch`'s
+    // behavior matters here, and it closes over the current queue/squadId already.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, queue])
+
+  // Tab stays inside the dialog. Both "activeElement is the dialog root" (the resting focus right
+  // after open) and "activeElement is outside the dialog entirely" count as wrap cases, in either
+  // direction — not just the usual first/last-element bounce.
   useEffect(() => {
     if (!isOpen) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        if (confirmTrust) setConfirmTrust(false)
-        else onClose()
-        return
-      }
       if (event.key !== 'Tab') return
-      const dialog = dialogRoot.current?.closest('[role="dialog"]')
+      const dialog = dialogRoot.current?.closest<HTMLElement>('[role="dialog"]')
       if (!dialog) return
       const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)]
       if (focusable.length === 0) return
       const first = focusable[0]!
       const last = focusable[focusable.length - 1]!
-      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+      const active = document.activeElement
+      const atEdgeOrOutside = active === dialog || !dialog.contains(active)
+      if (event.shiftKey && (active === first || atEdgeOrOutside)) {
         event.preventDefault()
         last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && (active === last || atEdgeOrOutside)) {
         event.preventDefault()
         first.focus()
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [isOpen, onClose, confirmTrust])
+  }, [isOpen])
+
+  // The shared Modal handles Escape (closeOnEscape below): topmost-dialog, defaultPrevented and
+  // isComposing all apply there. This only intercepts Escape, in the capture phase, to back out of
+  // the trust confirmation instead of closing — the same convention popups use to consume Escape
+  // before Modal's own bubble-phase listener sees it (see Modal.tsx).
+  useEffect(() => {
+    if (!isOpen || !confirmTrust) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.isComposing) return
+      event.preventDefault()
+      event.stopPropagation()
+      setConfirmTrust(false)
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [isOpen, confirmTrust])
 
   const refresh = () => client.invalidateQueries({ queryKey: githubFeedbackQueryKeys.squad(squadId) })
 
@@ -223,7 +274,7 @@ export function GitHubFeedbackReviewModal({
   const trustAuthors = [
     ...new Map(selection.flatMap((s) => (s.author ? [[s.author.accountId, s.author]] : []))).values(),
   ]
-  const allContentAvailable = selection.every((s) => s.contentAvailable)
+  const allContentAvailable = selection.every((s) => s.contentAvailable && !withheldIds.has(s.revisionId))
   const allAuthorsKnown = selection.every((s) => s.author)
   const busy = decide.isPending
   const moderating = canModerate && queue === 'pending'
@@ -250,6 +301,7 @@ export function GitHubFeedbackReviewModal({
       size="viewport"
       mobileFullscreen
       noChildPadding
+      closeOnEscape
       footer={
         moderating ? (
           <div className="space-y-3">
@@ -263,8 +315,8 @@ export function GitHubFeedbackReviewModal({
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className="ficus-button ficus-button-primary px-3 py-2 text-sm"
-                    disabled={busy}
+                    className="ficus-button ficus-button-primary px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={busy || !allContentAvailable || !allAuthorsKnown}
                     onClick={() => decide.mutate('allow_trust')}
                   >
                     Allow and trust {trustAuthors.length} {trustAuthors.length === 1 ? 'author' : 'authors'}
@@ -419,7 +471,10 @@ export function GitHubFeedbackReviewModal({
                         type="checkbox"
                         className="mt-1"
                         data-revision-id={row.id}
-                        aria-label={`Select ${kindLabel(row).toLowerCase()} by ${authorLabel(row.author)}`}
+                        // kind + author alone collide whenever the same person triggers the same
+                        // kind of event twice; target + time (always distinct per revision) keep
+                        // every row's checkbox label unique.
+                        aria-label={`Select ${kindLabel(row).toLowerCase()} by ${authorLabel(row.author)}, ${target(row)}, ${formatTime(row.firstObservedAt)}`}
                         checked={!!chosen}
                         disabled={!chosen && selected.size >= MAX_GITHUB_FEEDBACK_SELECTION}
                         onChange={() => toggle(row)}
@@ -428,7 +483,7 @@ export function GitHubFeedbackReviewModal({
                     <button
                       type="button"
                       className="min-w-0 flex-1 text-left"
-                      aria-label={`Review ${authorLabel(row.author)}`}
+                      data-revision-id={row.id}
                       aria-current={focusedId === row.id ? 'true' : undefined}
                       onClick={() => setFocusedId(row.id)}
                     >

@@ -178,6 +178,74 @@ test('a duplicate link stays visible as an error and the confirmation remains ac
   expect(button(container, 'Link this account')).toBeTruthy()
 })
 
+test('a successful poll clears a stale network-retry error', async () => {
+  const identity = status({ authorization: { configured: true, authority: 'local', mode: 'device' } })
+  let pollCalls = 0
+  serve({
+    'GET /api/github-identity': () => Response.json(identity),
+    'POST /api/github-identity/authorization/start': () =>
+      Response.json({
+        kind: 'device',
+        id: '11111111-1111-4111-8111-111111111111',
+        userCode: 'WXYZ-1234',
+        verificationUri: 'https://github.com/login/device',
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+        intervalSeconds: 0.05,
+      }),
+    'POST /api/github-identity/authorization/device/11111111-1111-4111-8111-111111111111/poll': () => {
+      pollCalls += 1
+      if (pollCalls === 1) return Response.json({ error: 'boom' }, { status: 500 })
+      return Response.json({ status: 'pending', retryAfterSeconds: 0.05 })
+    },
+  })
+  const container = await render(identity)
+  await harness.act(async () => fireEvent.click(button(container, 'Link GitHub account')))
+  await waitFor(() => expect(container.textContent).toContain('WXYZ-1234'))
+  // First poll fails and reports the transient-failure copy.
+  await waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain('Unable to check'), {
+    timeout: 2000,
+  })
+  // The retry backs off at least 5s (the component floors it there); the next poll succeeds
+  // and must clear that stale error even though the device flow is still pending.
+  await waitFor(() => expect(pollCalls).toBeGreaterThanOrEqual(2), { timeout: 8000 })
+  await waitFor(() => expect(container.querySelector('[role="alert"]')).toBeNull(), { timeout: 2000 })
+  // Still mid-flow: the device code stays up, only the stale error cleared.
+  expect(container.textContent).toContain('WXYZ-1234')
+}, 12000)
+
+test('canceling a pending sign-in clears any stale error along with the device code', async () => {
+  const identity = status({ authorization: { configured: true, authority: 'local', mode: 'device' } })
+  let pollCalls = 0
+  serve({
+    'GET /api/github-identity': () => Response.json(identity),
+    'POST /api/github-identity/authorization/start': () =>
+      Response.json({
+        kind: 'device',
+        id: '11111111-1111-4111-8111-111111111111',
+        userCode: 'WXYZ-1234',
+        verificationUri: 'https://github.com/login/device',
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+        intervalSeconds: 0.05,
+      }),
+    'POST /api/github-identity/authorization/device/11111111-1111-4111-8111-111111111111/poll': () => {
+      pollCalls += 1
+      return Response.json({ error: 'boom' }, { status: 500 })
+    },
+    'POST /api/github-identity/authorization/device/11111111-1111-4111-8111-111111111111/cancel': () =>
+      Response.json({ canceled: true }),
+  })
+  const container = await render(identity)
+  await harness.act(async () => fireEvent.click(button(container, 'Link GitHub account')))
+  await waitFor(() => expect(container.textContent).toContain('WXYZ-1234'))
+  await waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain('Unable to check'), {
+    timeout: 2000,
+  })
+  expect(pollCalls).toBeGreaterThanOrEqual(1)
+  await harness.act(async () => fireEvent.click(button(container, 'Cancel')))
+  await waitFor(() => expect(container.textContent).toContain('Link GitHub account'))
+  expect(container.querySelector('[role="alert"]')).toBeNull()
+})
+
 test('unconfigured instances explain why linking is unavailable', async () => {
   const container = await render(status({ authorization: { configured: false, authority: 'local', mode: 'browser' } }))
   expect(container.textContent).toContain('not configured')

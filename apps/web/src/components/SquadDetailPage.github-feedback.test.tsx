@@ -163,6 +163,24 @@ const click = (element: HTMLElement) => dom.act(async () => fireEvent.click(elem
 const tab = (label: string) =>
   [...document.querySelectorAll('[role="tab"]')].find((b) => b.textContent === label) as HTMLElement
 
+function touchEvent(window: Awaited<ReturnType<typeof acquireDomHarness>>['window'], type: string, clientY: number) {
+  const event = new window.Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'touches', { value: type === 'touchend' ? [] : [{ clientY }] })
+  Object.defineProperty(event, 'changedTouches', { value: [{ clientY }] })
+  return event
+}
+
+/** Simulates the native pull-down-to-refresh gesture that drives `onRefresh` on mobile. */
+const pullToRefresh = (testid: string) => {
+  const target = document.querySelector(`[data-testid="${testid}"]`) as HTMLElement
+  return dom.act(async () => {
+    target.dispatchEvent(touchEvent(dom.window, 'touchstart', 10))
+    target.dispatchEvent(touchEvent(dom.window, 'touchmove', 95))
+    target.dispatchEvent(touchEvent(dom.window, 'touchend', 95))
+    await Promise.resolve()
+  })
+}
+
 test('Home and Work both surface pending events and open ONE shared modal that keeps selections', async () => {
   await renderPage()
   await waitFor(() => expect(region()?.textContent).toContain('2'))
@@ -210,6 +228,52 @@ test('squad settings open the same modal instance through the page provider', as
   await click(buttonNamed('Review events'))
   await waitFor(() => expect(dialogs()[0]?.textContent).toContain('@outsider1'))
   expect(dialogs()).toHaveLength(1)
+})
+
+test('pulling to refresh on Home catches up the pending GitHub count', async () => {
+  // Pull-to-refresh on Home also re-fetches squad detail and agents (unrelated to this fix); give
+  // those calls real shapes so the page doesn't choke on the fixture's blanket `[]`.
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input, init) => {
+    const url = new URL(String(input))
+    if (url.pathname === `/api/squads/${SQUAD}`) return Response.json(squad)
+    if (url.pathname === `/api/squads/${SQUAD}/agents`)
+      return Response.json({ agents: [], recentlyTerminated: [], recentlyTerminatedHasMore: false })
+    return originalFetch(input, init)
+  }) as typeof fetch
+  try {
+    await renderPage()
+    await waitFor(() => expect(region()?.textContent).toContain('2'))
+    // A third event lands server-side without the websocket topic firing (e.g. missed/offline).
+    api.pending = [item(1), item(2), item(3)]
+    await pullToRefresh('squad-home-pull-to-refresh')
+    await waitFor(() => expect(region()?.textContent).toContain('3'))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('pulling to refresh on Work catches up the pending GitHub count', async () => {
+  // Pull-to-refresh on Work also re-fetches the work-stream lists (unrelated to this fix); give
+  // those two calls real shapes so WorkStreamList doesn't choke on the fixture's blanket `[]`.
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input, init) => {
+    const url = new URL(String(input))
+    if (url.pathname === '/api/workstreams')
+      return url.searchParams.has('limit')
+        ? Response.json({ items: [], totalCount: 0, hasMore: false, nextCursor: null })
+        : Response.json([])
+    return originalFetch(input, init)
+  }) as typeof fetch
+  try {
+    await renderPage(`/squads/${SQUAD}/work`)
+    await waitFor(() => expect(region()?.textContent).toContain('2'))
+    api.pending = [item(1), item(2), item(3)]
+    await pullToRefresh('squad-work-pull-to-refresh')
+    await waitFor(() => expect(region()?.textContent).toContain('3'))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('users the server refuses see no moderation surface and no counts', async () => {
