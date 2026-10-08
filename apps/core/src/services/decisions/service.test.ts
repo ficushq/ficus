@@ -88,8 +88,8 @@ test('with nothing configured, a decision is unconfigured rather than a guess', 
 test('the first provider that answers wins; one that fails is tried last for a while', async () => {
   const first = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://first:11434' })
   const second = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://second:11434' })
-  // The first provider added becomes the default order; add the second after it.
-  await setDecisionRouting({ ...getDecisionRouting(), default: [first.id, second.id] }, 'test')
+  // Providers join the default order as they're added.
+  expect(getDecisionRouting().default).toEqual([first.id, second.id])
 
   const { fetcher, asked } = servers({ 'first:11434': { status: 503 }, 'second:11434': 0.97 })
   const outcome = await decide('github-firewall', question, { fetcher, skipLog: true })
@@ -351,4 +351,13 @@ test("an image's estimated cost is a fixed token count, not its base64 length", 
   const plain = decisionCost({ kind: 'cloudflare', model: 'clef' }, question, unreported).inputTokens
   const big = { ...question, images: [{ mediaType: 'image/png' as const, base64: 'A'.repeat(400_000) }] }
   expect(decisionCost({ kind: 'cloudflare', model: 'clef' }, big, unreported).inputTokens).toBe(plain + 1_000)
+})
+
+test('each new provider joins the end of the default order, but not a feature with its own order', async () => {
+  const jev = await addDecisionProvider({ kind: 'jev', apiKey: 'k' })
+  await setDecisionRouting({ ...getDecisionRouting(), purposes: { 'event-rules': [jev.id] } }, 'test')
+  const openai = await addDecisionProvider({ kind: 'openai' })
+  expect(getDecisionRouting()).toMatchObject({ default: [jev.id, openai.id], purposes: { 'event-rules': [jev.id] } })
+  // So an image decision (which Jev can't read) reaches OpenAI without the owner reordering anything.
+  expect(decisionChain('workflow-steps').map((p) => p.id)).toEqual([jev.id, openai.id])
 })
