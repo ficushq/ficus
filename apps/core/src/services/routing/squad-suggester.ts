@@ -290,3 +290,36 @@ export async function suggestSquadWithRecommendation(
   const suggestions = await suggestSquad(callerSquadId, question, opts)
   return { suggestions, ...recommendationFor(suggestions) }
 }
+
+/**
+ * The same ranking over squads the caller already holds, by purpose overlap only (no memory search):
+ * for callers without a squad of their own, such as the personal Assistant.
+ */
+export function suggestSquadsByPurpose(
+  candidates: ReadonlyArray<{ id: string; name: string; purpose: string | null }>,
+  question: string,
+  opts: SuggestSquadOptions = {}
+): SuggestSquadResponse {
+  const minScore = opts.minScore ?? 0.05
+  const suggestions = candidates
+    .map((squad, index) => {
+      const purposeScore = scoreKeywordOverlap(question, `${squad.name} ${squad.purpose ?? ''}`)
+      const evidence = buildEvidence(squad.id, purposeScore, new Map(), new Map(), new Set(), 0, 0)
+      const score = evidence.reduce((sum, item) => sum + item.score, 0)
+      return {
+        index,
+        suggestion: {
+          squadId: squad.id,
+          squadName: squad.name,
+          score,
+          evidence,
+          reasons: evidence.map((item) => item.description),
+        },
+      }
+    })
+    .filter(({ suggestion }) => suggestion.score >= minScore)
+    .sort((a, b) => b.suggestion.score - a.suggestion.score || a.index - b.index)
+    .slice(0, opts.limit ?? 3)
+    .map(({ suggestion }) => suggestion)
+  return { suggestions, ...recommendationFor(suggestions) }
+}

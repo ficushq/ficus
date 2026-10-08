@@ -1,6 +1,6 @@
 import { messageTextForModel } from '../../services/chat/message-context'
 import type { SessionDeliveryOwner } from '../../services/agent/pending-delivery'
-import type { MessageMetadata } from '@ficus/shared'
+import type { Message, MessageMetadata } from '@ficus/shared'
 import { Image, type ImageContent } from '../Image'
 import type { Agent } from '../Agent'
 import type { AgentSession } from '../AgentSession'
@@ -25,6 +25,8 @@ export interface PendingInterventionQueueDeps {
   /** Image seams default to the Image entity statics; injectable for unit tests. */
   loadImages?: (imageIds: string[]) => Promise<ImageContent[]>
   markImagesUsed?: (imageIds: string[]) => Promise<unknown>
+  /** Adds server-owned context to a claimed message before the model reads it (see AgentRunner). */
+  prepare?: (message: Message) => Promise<Message>
 }
 
 export class PendingInterventionQueue {
@@ -95,7 +97,7 @@ export class PendingInterventionQueue {
       )
       if (!claimed) continue
       try {
-        await this.deliverClaimed(claimed)
+        await this.deliverClaimed(this.deps.prepare ? await this.deps.prepare(claimed) : claimed)
       } catch (error) {
         await this.deps.agent.resetPendingInterventionSessionDelivery(claimed.id, claimed.metadata?.sessionDelivery)
         log.error(`Failed to deliver pending intervention ${claimed.id} for agent ${this.deps.agentId}:`, error)

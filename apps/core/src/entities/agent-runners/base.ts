@@ -248,6 +248,7 @@ export abstract class AgentRunner {
       getSession: () => this.session,
       deliveryOwner: this.deliveryOwner,
       isActive: () => getSession(this.agent.id)?.session === this.session,
+      prepare: async (message) => (await this.prepareMessagesForModel([message]))[0] ?? message,
     })
     this.storedSecretToolContainment = new StoredSecretToolContainment({
       agentId: agent.id,
@@ -1382,6 +1383,15 @@ export abstract class AgentRunner {
     await this.agent.update({ metadata: rest }).catch(() => {})
   }
 
+  /**
+   * Claimed messages, just before the model reads them (the first prompt and later steers and
+   * follow-ups alike). Runners may add server-owned context to their metadata here; it must not
+   * throw or hold the turn for long. The same messages come back, in order.
+   */
+  protected async prepareMessagesForModel(messages: Message[]): Promise<Message[]> {
+    return messages
+  }
+
   private buildInitialPromptText(messages: Message[]): string {
     return messages
       .map((message) => messageTextForModel(message).trim())
@@ -1431,9 +1441,10 @@ export abstract class AgentRunner {
     }
     if (getSession(this.agent.id)?.session !== this.session) return
     const claimed = await this.agent.claimInitialPendingMessagesForSessionDelivery(this.deliveryOwner)
+    const prepared = claimed.length > 0 ? await this.prepareMessagesForModel(claimed) : claimed
     const text =
-      claimed.length > 0 ? this.buildInitialPromptText(claimed) : this.execution.message?.trim() || 'Continue.'
-    const { imageIds, images } = await this.loadPendingMessageImages(claimed)
+      prepared.length > 0 ? this.buildInitialPromptText(prepared) : this.execution.message?.trim() || 'Continue.'
+    const { imageIds, images } = await this.loadPendingMessageImages(prepared)
 
     try {
       this.activeHealthAttempt = this.failover.captureActiveAttempt()

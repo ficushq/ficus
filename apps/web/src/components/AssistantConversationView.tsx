@@ -2,6 +2,7 @@ import { ToolRenderersContext } from '../lib/ToolRenderersContext'
 import { AssistantConversationContext } from '../voice/AssistantConversationContext'
 import { AssistantConversationLinkRow } from './AssistantConversationLinkRow'
 import { AssistantPageLinkRow } from './AssistantPageLinkRow'
+import { AssistantMessageRouting } from './AssistantRoutingChip'
 import { AssistantSummarySources } from './AssistantSummarySources'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -366,7 +367,14 @@ function DurableConversation(props: AssistantConversationViewProps) {
             pagePath={pagePath}
             initialMessage={props.initialMessage ? { content: props.initialMessage.text } : undefined}
             renderMessageFooter={(item) =>
-              item.message.role === 'assistant' && ownerId ? (
+              item.message.role === 'human' && item.message.metadata?.assistantRouting ? (
+                <AssistantMessageRouting
+                  conversationId={props.id}
+                  messageId={item.message.id}
+                  hint={item.message.metadata.assistantRouting}
+                  api={api}
+                />
+              ) : item.message.role === 'assistant' && ownerId ? (
                 <>
                   {props.onOpenConversation &&
                     durableAssistantConversationLinks(item).map((link) => (

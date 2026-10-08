@@ -8,6 +8,8 @@ import type {
   AssistantEntry,
   AssistantMessageReceipt,
   AssistantMailbox,
+  AssistantRoutingCorrectionRequest,
+  AssistantRoutingHint,
 } from '@ficus/shared'
 import { webTransport as t } from './transport'
 export const assistantApi = {
@@ -36,6 +38,9 @@ export const assistantApi = {
       hasMore: boolean
       before?: number
     }>(`/assistant/${id}${before ? `?before=${before}` : ''}`),
+  /** The user picked a different squad (or none) for one of their messages; the Assistant is told. */
+  correctRouting: (id: string, correction: AssistantRoutingCorrectionRequest) =>
+    t.request<{ hint: AssistantRoutingHint }>(`/assistant/${id}/routing`, { method: 'POST', body: correction }),
   append: (id: string, entries: AssistantEntry[]) =>
     t.request(`/assistant/${id}/entries`, { method: 'POST', body: { entries } }),
   message: (

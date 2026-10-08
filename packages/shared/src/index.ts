@@ -51,6 +51,7 @@ export * from './local-instance'
 
 export type { ModelCatalogEntry } from './model-catalog'
 export * from './assistant'
+export * from './assistant-routing'
 export * from './assistant-activity'
 export * from './search'
 export * from './workflows'

@@ -171,6 +171,7 @@ export const DECISION_PURPOSES = [
   'tool-results',
   'tool-results-shell',
   'github-firewall',
+  'assistant-routing',
   'workflow-steps',
   'event-rules',
   'composer-delivery',
@@ -217,6 +218,12 @@ export const DECISION_PURPOSE_INFO: Record<
     label: 'GitHub firewall',
     description: 'Screens GitHub feedback from untrusted authors, in squads that opt in.',
     scope: 'squad',
+  },
+  'assistant-routing': {
+    label: 'Assistant squad routing',
+    description:
+      'Before the Assistant answers, says whether a message is about Ficus itself, general work, or one squad’s project, so it sends work to the right squad.',
+    scope: 'instance',
   },
   'workflow-steps': { label: 'Workflow decisions', description: 'Decision steps in workflows.', scope: 'authored' },
   'event-rules': {
