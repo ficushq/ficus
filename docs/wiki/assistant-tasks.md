@@ -91,8 +91,9 @@ could reach anyway, its model must accept images, and the images together stay w
 per-message limit.
 
 Screenshot filing uses this: `POST /api/screenshots/file` (`{ imageId, note? }`, the user's own staged
-upload) asks one `screenshot-filing` decision with the image (what it is, which visible squad, what to
-do), then creates a new Assistant conversation whose first message carries the image, the guess with
+upload) asks one `screenshot-filing` decision (what it is, which visible squad, what to do) about a
+small JPEG copy of the image (at most 1024px and 180 KB, a GIF's first frame; see
+`DECISION_IMAGE_MAX_SIDE` in `packages/shared/src/decisions.ts`), then creates a new Assistant conversation whose first message carries the image, the guess with
 its probabilities, and the image ID to forward. With the feature off, or no decision model that reads
 images answering, the conversation is created without a guess. `POST /api/screenshots/correction`
 (`{ conversationId, squadId | null, clientId }`) posts a "Wrong squad?" correction into it.

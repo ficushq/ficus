@@ -166,6 +166,21 @@ export const DECISION_PROVIDER_IMAGE_SUPPORT: Record<DecisionProviderKind, boole
   openai: true,
 }
 
+/**
+ * The copy of an image a decision model is shown. Clef's context fits only small images (about
+ * 190 KB in practice, well under its 4 MB limit), so Core sends decisions a re-encoded copy and
+ * keeps the original for everything else: the longest side scaled to at most
+ * `DECISION_IMAGE_MAX_SIDE`, encoded as JPEG at the first of `DECISION_IMAGE_QUALITIES` that fits in
+ * `DECISION_IMAGE_TARGET_BYTES`; if none fits, the side shrinks by `DECISION_IMAGE_SIDE_STEP` and the
+ * qualities are tried again, down to `DECISION_IMAGE_MIN_SIDE`, below which the image is too small to
+ * judge and the decision is skipped. A GIF is shown as its first frame.
+ */
+export const DECISION_IMAGE_MAX_SIDE = 1024
+export const DECISION_IMAGE_TARGET_BYTES = 180 * 1024
+export const DECISION_IMAGE_QUALITIES = [80, 70, 60, 50] as const
+export const DECISION_IMAGE_SIDE_STEP = 0.8
+export const DECISION_IMAGE_MIN_SIDE = 320
+
 /** Whether a provider's model can be asked a decision that has images. */
 export function decisionModelReadsImages(provider: { kind: DecisionProviderKind; model: string }): boolean {
   const support = DECISION_PROVIDER_IMAGE_SUPPORT[provider.kind]

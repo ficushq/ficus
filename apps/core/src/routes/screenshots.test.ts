@@ -2,13 +2,14 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
-import type { DecisionRequest, FileScreenshotResponse } from '@ficus/shared'
+import { DECISION_IMAGE_TARGET_BYTES, type DecisionRequest, type FileScreenshotResponse } from '@ficus/shared'
 import { agents, assistantConversations, db, images, messages, squads } from '../db'
 import { Image } from '../entities/Image'
 import { Squad } from '../entities/Squad'
 import { identityMiddleware } from '../middleware/identity'
 import type { decide as realDecide, DecisionOutcome } from '../services/decisions/service'
 import { buildScreenshotDecision, squadOptionKey } from '../services/screenshot-filing'
+import { GIF_64x32, png } from '../test-utils/images'
 import { assignRole, authHeaders, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../test-utils'
 import { imagesRouter } from './images'
 import { createScreenshotsRouter } from './screenshots'
@@ -68,13 +69,12 @@ async function post(server: ReturnType<typeof app>, path: string, body: unknown,
 }
 
 /** Upload through the images API with no target: staged for the uploading user only. */
-async function upload(server: ReturnType<typeof app>, token = user.token) {
-  const response = await post(
-    server,
-    '/api/images',
-    { images: [{ type: 'image', data: PNG, mimeType: 'image/png' }] },
-    token
-  )
+async function upload(
+  server: ReturnType<typeof app>,
+  token = user.token,
+  image: { data: string; mimeType: string } = { data: PNG, mimeType: 'image/png' }
+) {
+  const response = await post(server, '/api/images', { images: [{ type: 'image', ...image }] }, token)
   expect(response.status).toBe(200)
   const [id] = (await response.json()).imageIds as string[]
   imageIds.push(id!)
@@ -177,7 +177,10 @@ test('filing asks one decision over visible squads, then starts an Assistant con
   // One decision, for this feature, over the squads the user can see (not archived or hidden ones).
   expect(asked).toHaveLength(1)
   expect(asked[0]!.purpose).toBe('screenshot-filing')
-  expect(asked[0]!.request.images).toEqual([{ mediaType: 'image/png', base64: PNG }])
+  // The decision sees a small JPEG copy; the conversation keeps the original PNG.
+  expect(asked[0]!.request.images).toHaveLength(1)
+  expect(asked[0]!.request.images![0]!.mediaType).toBe('image/jpeg')
+  expect(asked[0]!.request.images![0]!.base64).not.toBe(PNG)
   const squad = asked[0]!.request.questions.squad!
   expect(squad.type === 'choice' && Object.keys(squad.options)).toEqual([squadOptionKey(chlea.id), 'none'])
 
@@ -204,6 +207,29 @@ test('filing asks one decision over visible squads, then starts an Assistant con
   const again = await file(server, { imageId, note: 'Checkout button overlaps' })
   expect(((await again.json()) as FileScreenshotResponse).conversationId).toBe(body.conversationId)
   expect(asked).toHaveLength(1)
+})
+
+test('GIFs and images over 4 MB get a guess from a small JPEG copy, and keep their original', async () => {
+  const { decide, asked } = bugInChlea()
+  const server = app({ decide, isEnabled: () => true })
+  const large = Buffer.from(png(1400, 1150, 'noise'))
+  expect(large.byteLength).toBeGreaterThan(4 * 1024 * 1024)
+  for (const image of [
+    { data: GIF_64x32, mimeType: 'image/gif' },
+    { data: large.toString('base64'), mimeType: 'image/png' },
+  ]) {
+    const imageId = await upload(server, user.token, image)
+    const response = await file(server, { imageId })
+    expect(response.status).toBe(200)
+    expect(((await response.json()) as FileScreenshotResponse).guess?.squad?.id).toBe(chlea.id)
+    const sent = asked.at(-1)!.request.images![0]!
+    expect(sent.mediaType).toBe('image/jpeg')
+    expect(Buffer.from(sent.base64, 'base64').byteLength).toBeLessThanOrEqual(DECISION_IMAGE_TARGET_BYTES)
+    const stored = (await Image.mustFind(imageId))!
+    expect(stored.mimeType).toBe(image.mimeType)
+    expect((await stored.getBuffer()).toString('base64')).toBe(image.data)
+  }
+  expect(asked).toHaveLength(2)
 })
 
 test('with no answer, or the feature off, the screenshot is still filed without a guess', async () => {

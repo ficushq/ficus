@@ -3,7 +3,6 @@ import { and, eq } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
 import {
   DECISION_IMAGE_MEDIA_TYPES,
-  DECISION_MAX_IMAGE_BYTES,
   SCREENSHOT_ACTIONS,
   SCREENSHOT_KINDS,
   screenshotGuessSummary,
@@ -21,6 +20,7 @@ import { Agent } from '../entities/Agent'
 import { Image } from '../entities/Image'
 import { User } from '../entities/User'
 import { ensureAssistantConversationAgent } from './assistant-conversation-agent'
+import { decisionImageCopy } from './images/decision-image'
 import { requireAssistantConversation } from './assistant-task-requests'
 import { InvalidAttachmentError } from './attachments/agent-scope'
 import { ChatIdempotencyConflictError } from './chat/consultant-idempotency'
@@ -233,24 +233,24 @@ export async function fileScreenshot(
     throw filingError(400, "The Assistant's model cannot read images. Choose a vision-capable model.")
 
   let guess: ScreenshotGuess | null = null
-  const decidable =
-    (DECISION_IMAGE_MEDIA_TYPES as readonly string[]).includes(image.mimeType) && image.size <= DECISION_MAX_IMAGE_BYTES
-  if (decidable && (deps.isEnabled ?? (() => isDecisionFeatureEnabled('screenshot-filing')))()) {
-    const squads = await visibleSquads(user)
-    const content = await image.loadContent()
-    const request = buildScreenshotDecision({
-      image: { mediaType: image.mimeType as (typeof DECISION_IMAGE_MEDIA_TYPES)[number], base64: content.data },
-      note: input.note,
-      squads,
+  if ((deps.isEnabled ?? (() => isDecisionFeatureEnabled('screenshot-filing')))()) {
+    // The decision sees a small copy; the conversation keeps the original.
+    const copy = await decisionImageCopy(await image.getBuffer()).catch((error) => {
+      log.warn('Could not prepare a screenshot for the decision model', error)
+      return null
     })
-    try {
-      const outcome = await (deps.decide ?? defaultDecide)('screenshot-filing', request, {
-        source: { kind: 'screenshot', userId: user.userId },
-      })
-      if (outcome.ok) guess = readScreenshotGuess(outcome.result.answers, squads)
-    } catch (error) {
-      // Filing never depends on the guess.
-      log.warn('Screenshot decision failed', error)
+    if (copy) {
+      const squads = await visibleSquads(user)
+      const request = buildScreenshotDecision({ image: copy.image, note: input.note, squads })
+      try {
+        const outcome = await (deps.decide ?? defaultDecide)('screenshot-filing', request, {
+          source: { kind: 'screenshot', userId: user.userId },
+        })
+        if (outcome.ok) guess = readScreenshotGuess(outcome.result.answers, squads)
+      } catch (error) {
+        // Filing never depends on the guess.
+        log.warn('Screenshot decision failed', error)
+      }
     }
   }
 
