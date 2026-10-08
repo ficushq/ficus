@@ -29,6 +29,8 @@ export interface FeedbackCaptureDependencies {
   routingProvenance?: Array<import('@ficus/shared').GitHubFeedbackRoute>
   /** Internal live-trust resolver, only for a new, unambiguous capture; never transported approval. */
   decideFresh?(tx: DbTx, squadId: string, content: GitHubFeedbackContent): Promise<boolean>
+  /** Queue a decision-model screen for a NEW held revision, in the capture transaction. Never releases. */
+  queueScreening?(tx: DbTx, revision: typeof githubFeedbackRevisions.$inferSelect): Promise<unknown>
 }
 
 /**
@@ -198,6 +200,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
           .returning({ id: githubFeedbackRevisions.id })
         revision = await readFeedbackRevision(tx, created!.id)
         if (!revision) throw new Error('feedback_capacity_deferred')
+        if (revision.decision === 'pending' && deps.queueScreening) await deps.queueScreening(tx, revision)
         await tx
           .update(githubFeedbackObjects)
           .set({
@@ -257,7 +260,7 @@ export async function recordCanonicalGitHubFeedback(
     if (
       !revision ||
       revision.squadId !== association.squadId ||
-      !['allow_once', 'allow_trust', 'automatic'].includes(revision.decision) ||
+      !['allow_once', 'allow_trust', 'screened', 'automatic'].includes(revision.decision) ||
       (revision.decision === 'automatic' && !(await isTrustedGitHubFeedbackContent(tx, revision.squadId, revision))) ||
       !revision.envelope ||
       revision.reason === 'content_unavailable'

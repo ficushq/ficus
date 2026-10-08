@@ -1,5 +1,6 @@
 import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import { db, githubFeedbackDecisions, githubFeedbackRevisions, integrationAuditEvents, squads } from '../../../db'
+import { GITHUB_UNTRUSTED_HANDLING, type GitHubUntrustedHandling } from '@ficus/shared'
 import type { Identity } from '../../rbac/permissions'
 import { githubContentHash } from './feedback-envelope'
 import {
@@ -108,6 +109,59 @@ export async function setGitHubAuthorFilter(identity: Identity | undefined, squa
       action: enabled ? 'github.author_filter.enable' : 'github.author_filter.disable',
       outcome: 'denied',
       code: error instanceof GitHubFeedbackError ? error.code : 'author_filter_failed',
+    })
+    throw error
+  }
+}
+
+/**
+ * Human-only squad setting with the same authority as the filter toggle: what the author filter
+ * does with feedback from untrusted authors. 'hold' keeps it for a person; 'screen' asks a decision
+ * model first and releases it once only when confidently safe (see feedback-screening). Changing
+ * it never releases or re-holds anything already captured: it applies to new feedback, and a screen
+ * already queued re-reads it before releasing, so switching back to 'hold' stops pending screens.
+ */
+export async function setGitHubUntrustedHandling(
+  identity: Identity | undefined,
+  squadId: string,
+  handling: GitHubUntrustedHandling
+) {
+  try {
+    if (!GITHUB_UNTRUSTED_HANDLING.includes(handling)) throw new GitHubFeedbackError('invalid_untrusted_handling', 400)
+    await requireGitHubHumanSquadUpdate(db, identity, squadId)
+    return await db.transaction(async (tx) => {
+      await lockGitHubHuman(tx, identity)
+      const userId = await requireGitHubHumanSquadUpdate(tx, identity, squadId)
+      const [squad] = await tx
+        .select({ handling: squads.githubUntrustedHandling })
+        .from(squads)
+        .where(eq(squads.id, squadId))
+        .for('update')
+      if (!squad) throw new GitHubFeedbackError('squad_unavailable', 409)
+      if (squad.handling !== handling)
+        await tx
+          .update(squads)
+          .set({ githubUntrustedHandling: handling, updatedAt: new Date() })
+          .where(eq(squads.id, squadId))
+      await tx.insert(integrationAuditEvents).values({
+        squadId,
+        userId,
+        actorKey: `user:${userId}`,
+        targetKind: 'squad',
+        targetId: squadId,
+        action: `github.untrusted_handling.${handling}`,
+        outcome: 'allowed',
+      })
+      return { handling }
+    })
+  } catch (error) {
+    await db.insert(integrationAuditEvents).values({
+      actorKey: githubAuthorityActor(identity),
+      targetKind: 'squad',
+      targetId: squadId,
+      action: `github.untrusted_handling.${GITHUB_UNTRUSTED_HANDLING.includes(handling) ? handling : 'invalid'}`,
+      outcome: 'denied',
+      code: error instanceof GitHubFeedbackError ? error.code : 'untrusted_handling_failed',
     })
     throw error
   }

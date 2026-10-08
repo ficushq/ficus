@@ -358,6 +358,38 @@ that human for each held revision with readable content, released the same way.
 Held revisions with unavailable content stay pending. Turning it back ON never
 re-holds released events.
 
+**Decision-model screening** (`feedback-screen-policy.ts`, `feedback-screening.ts`)
+is opt-in per squad: `squads.github_untrusted_handling` is `hold` (default for new
+and existing squads) or `screen`, set by `PUT .../github-feedback/untrusted-handling`
+with the same human-only authority as the filter. With the filter ON and `screen`,
+a new revision held only for `untrusted_author` gets a `github_feedback_screenings`
+row in the capture transaction. The screen runs off the webhook path (an
+immediate kick plus the worker's `github-feedback-screening` sweep) and calls
+`decide('github-firewall', …)` with fixed questions; the feedback (title, body,
+path, line, review state, author login) goes only in `state`. It passes only when
+`instructs_agent` is below 0.2 and `intent` is `benign` with confidence of at least
+0.8; state over 24,000 characters is held without asking. A pass is one
+compare-and-set from `pending` at the queued decision version and content hash to
+decision `screened` (`releaseState: ready`, reason `decision_model_allowed`, no
+`decided_by_user_id`), which the release worker delivers exactly like
+`allow_once`; no trust is added. Every other outcome (unsafe, uncertain,
+`unavailable`, `unconfigured`, `too_long`, or `skipped` because a human decided
+first, the content changed or the squad switched back to `hold`) leaves the
+revision pending and records the verdict for the review window. Like a human allow,
+a screen needs current source access (`hasCurrentSourceAccess`): without it the
+feedback is neither sent to a model nor released (`source_unavailable`, rechecked
+under the lock at release). A lease makes
+retries safe; a screen that crashes three times is left held as `unavailable`.
+Audit rows use actor `decision-model` and action `github.feedback.screen`.
+`POST .../github-feedback/screen-pending` (`feedback-screen-pending.ts`, human-only,
+409 `author_filter_off`/`screening_not_enabled` otherwise) queues screens for
+already-held `untrusted_author` revisions, 200 per call (`more` when others
+remain). It re-queues a previous screen only when it ended without a verdict
+(`unavailable`, `unconfigured`, `skipped`, `source_unavailable`); verdicts (`unsafe`, `uncertain`,
+`too_long`) are final for that version, and queued or running screens are left
+alone, so repeating the call is a no-op. The summary's `screenable` counts what it
+would queue.
+
 **Human-only authority.** Trust edits, moderation and the filter setting require a
 literal enabled human identity with effective `squads:update` in the squad.
 Agents are rejected and audited, including delegated user-associated tokens.

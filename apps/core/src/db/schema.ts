@@ -937,6 +937,13 @@ export const squads = pgTable('squads', {
   // OFF routes GitHub events exactly as before the filter existed. New squads default ON;
   // squads that existed at rollout were migrated OFF. Human-only; never part of generic updates.
   githubAuthorFilter: boolean('github_author_filter').notNull().default(true),
+  // With the filter ON, what happens to feedback from untrusted authors: 'hold' it for a person
+  // (default, for new and existing squads) or 'screen' it with a decision model first, holding
+  // anything not confidently safe. Human-only, like the filter; never part of generic updates.
+  githubUntrustedHandling: text('github_untrusted_handling')
+    .$type<import('@ficus/shared').GitHubUntrustedHandling>()
+    .notNull()
+    .default('hold'),
   // Max simultaneously-admitted work streams (status 'active').
   // NULL = unlimited (legacy behavior); excess creations land in 'queued'.
   maxConcurrentWorkStreams: integer('max_concurrent_work_streams'),
@@ -1521,7 +1528,7 @@ export const githubFeedbackRevisions = pgTable(
     ),
     check(
       'github_feedback_revision_decision',
-      sql`${table.decision} in ('pending', 'allow_once', 'allow_trust', 'deny', 'automatic', 'historical')`
+      sql`${table.decision} in ('pending', 'allow_once', 'allow_trust', 'deny', 'automatic', 'historical', 'screened')`
     ),
     check(
       'github_feedback_revision_release_state',
@@ -1529,7 +1536,7 @@ export const githubFeedbackRevisions = pgTable(
     ),
     check(
       'github_feedback_revision_human_decision',
-      sql`(${table.decision} in ('allow_once', 'allow_trust', 'deny') AND ${table.decidedByUserId} is not null AND ${table.decidedAt} is not null) OR (${table.decision} in ('pending', 'automatic', 'historical') AND ${table.decidedByUserId} is null AND ${table.decidedAt} is null)`
+      sql`(${table.decision} in ('allow_once', 'allow_trust', 'deny') AND ${table.decidedByUserId} is not null AND ${table.decidedAt} is not null) OR (${table.decision} in ('pending', 'automatic', 'historical', 'screened') AND ${table.decidedByUserId} is null AND ${table.decidedAt} is null)`
     ),
     check(
       'github_feedback_revision_lease_pair',
@@ -1562,6 +1569,46 @@ export const githubFeedbackSources = pgTable(
     index('github_feedback_source_event').on(table.squadId, table.eventId),
     // Per-event lookups (admission, the unmatched scan, FK cascades) lead on the event alone.
     index('github_feedback_source_by_event').on(table.eventId),
+  ]
+)
+
+/**
+ * Decision-model screening of one held revision, in squads that screen untrusted feedback. One row
+ * per revision (idempotent enqueue). The lease lets a crashed screen be retried a bounded number of
+ * times; the revision stays held throughout, so a person can decide at any point. The verdict holds
+ * the model's answers only, never the screened text.
+ */
+export const githubFeedbackScreenings = pgTable(
+  'github_feedback_screenings',
+  {
+    revisionId: uuid('revision_id')
+      .primaryKey()
+      .references(() => githubFeedbackRevisions.id, { onDelete: 'cascade' }),
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    // The snapshot that was queued; a release requires the revision to still match both.
+    contentHash: varchar('content_hash', { length: 64 }).notNull(),
+    decisionVersion: integer('decision_version').notNull(),
+    state: text('state').$type<import('@ficus/shared').GitHubFeedbackScreening['state']>().notNull().default('queued'),
+    attempts: integer('attempts').notNull().default(0),
+    leaseToken: uuid('lease_token'),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    outcome: varchar('outcome', { length: 32 }).$type<import('@ficus/shared').GitHubFeedbackScreenOutcome>(),
+    verdict: jsonb('verdict').$type<import('../services/integrations/github/feedback-screen-policy').ScreenVerdict>(),
+    screenedAt: timestamp('screened_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('github_feedback_screening_due').on(table.state, table.leaseExpiresAt),
+    index('github_feedback_screening_squad').on(table.squadId),
+    check('github_feedback_screening_state', sql`${table.state} in ('queued', 'running', 'passed', 'held')`),
+    check(
+      'github_feedback_screening_lease_pair',
+      sql`(${table.leaseToken} is null) = (${table.leaseExpiresAt} is null)`
+    ),
+    check('github_feedback_screening_counters', sql`${table.attempts} >= 0 AND ${table.decisionVersion} >= 0`),
   ]
 )
 

@@ -74,6 +74,7 @@ const FEATURE_MIGRATIONS = [
   '0204_github_feedback_trust',
   '0205_github_author_filter',
   '0206_github_author_filter_default_on',
+  '0207_github_untrusted_handling',
 ]
 
 test('feature migrations never rewrite, replay or drop pre-existing data, so rollback only drops new objects', async () => {
@@ -133,6 +134,37 @@ test('author filter migration keeps rollout squads OFF and defaults new squads O
       expect(rows.map((row) => [row.id, row.enabled])).toEqual([
         [1, false],
         [2, true],
+      ])
+      throw rollback
+    })
+  } catch (error) {
+    if (error !== rollback) throw error
+  }
+})
+
+test('untrusted handling migration defaults existing and new squads to hold', async () => {
+  const migration = await Bun.file(new URL('../../drizzle/0207_github_untrusted_handling.sql', import.meta.url)).text()
+  const [statement] = migration
+    .split('--> statement-breakpoint')
+    .filter((part) => part.includes('"github_untrusted_handling"'))
+  expect(statement).toContain(`ADD COLUMN "github_untrusted_handling" text DEFAULT 'hold' NOT NULL`)
+  const namespace = `untrusted_handling_migration_${crypto.randomUUID().replaceAll('-', '')}`
+  const rollback = new Error('owned migration fixture rollback')
+  try {
+    await db.transaction(async (tx) => {
+      // An isolated stand-in resolves the migration's unqualified "squads" before public.squads.
+      await tx.execute(sql.raw(`CREATE SCHEMA "${namespace}"`))
+      await tx.execute(sql.raw(`SET LOCAL search_path TO "${namespace}", public`))
+      await tx.execute(sql.raw(`CREATE TABLE "${namespace}"."squads" (id integer PRIMARY KEY)`))
+      await tx.execute(sql.raw(`INSERT INTO "${namespace}"."squads" (id) VALUES (1)`))
+      await tx.execute(sql.raw(statement!))
+      await tx.execute(sql.raw(`INSERT INTO "${namespace}"."squads" (id) VALUES (2)`))
+      const rows = await tx.execute(
+        sql.raw(`SELECT id, github_untrusted_handling AS handling FROM "${namespace}"."squads" ORDER BY id`)
+      )
+      expect(rows.map((row) => [row.id, row.handling])).toEqual([
+        [1, 'hold'],
+        [2, 'hold'],
       ])
       throw rollback
     })

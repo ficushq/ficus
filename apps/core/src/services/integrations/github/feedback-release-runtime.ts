@@ -33,7 +33,7 @@ export async function reconcileGitHubFeedbackRelease(route: GitHubFeedbackReleas
       const revision = row ? await readFeedbackRevision(store, row.revisionId) : undefined
       if (
         !revision ||
-        !['automatic', 'allow_once', 'allow_trust'].includes(revision.decision) ||
+        !['automatic', 'allow_once', 'allow_trust', 'screened'].includes(revision.decision) ||
         (revision.decision === 'automatic' &&
           !(await isTrustedGitHubFeedbackContent(store, revision.squadId, revision)))
       )

@@ -7,6 +7,7 @@ import {
   githubFeedbackPageQuerySchema,
   githubTrustedAuthorAddSchema,
   githubTrustedAuthorResolveSchema,
+  githubUntrustedHandlingUpdateSchema,
   moderateGitHubFeedbackSchema,
 } from '@ficus/shared'
 import { db, integrationAuditEvents } from '../db'
@@ -23,7 +24,11 @@ import {
   resolveGitHubAccount,
 } from '../services/integrations/github/feedback-trust'
 import { moderateGitHubFeedback } from '../services/integrations/github/feedback-moderation'
-import { setGitHubAuthorFilter } from '../services/integrations/github/author-filter-setting'
+import {
+  setGitHubAuthorFilter,
+  setGitHubUntrustedHandling,
+} from '../services/integrations/github/author-filter-setting'
+import { screenPendingGitHubFeedback } from '../services/integrations/github/feedback-screen-pending'
 import {
   getGitHubFeedbackDetail,
   getGitHubFeedbackSummary,
@@ -37,6 +42,8 @@ export interface GitHubFeedbackRouterOptions {
   lookupAccount?: (login: string) => Promise<unknown>
   /** Per-user provider lookups (resolve + add) allowed per window. */
   lookupLimit?: { max: number; windowMs: number }
+  /** Runs screens queued by "screen what's pending now"; injectable so tests start no model calls. */
+  scheduleScreens?: (revisionIds: string[]) => void
 }
 
 const squadParam = z.object({ squadId: z.string().uuid() })
@@ -196,6 +203,41 @@ export function createGitHubFeedbackRouter(options: GitHubFeedbackRouterOptions 
         const result = await setGitHubAuthorFilter(identityOf(c), squadId, c.req.valid('json').enabled)
         invalidate(squadId)
         return c.json(result)
+      } catch (error) {
+        return failure(c, error)
+      }
+    }
+  )
+
+  // What the author filter does with untrusted feedback: hold it, or screen it with a decision model.
+  app.put(
+    '/:squadId/github-feedback/untrusted-handling',
+    strict('param', squadParam),
+    strict('json', githubUntrustedHandlingUpdateSchema),
+    async (c) => {
+      const { squadId } = c.req.valid('param')
+      try {
+        const result = await setGitHubUntrustedHandling(identityOf(c), squadId, c.req.valid('json').handling)
+        invalidate(squadId)
+        return c.json(result)
+      } catch (error) {
+        return failure(c, error)
+      }
+    }
+  )
+
+  // "Screen what's pending now": queue decision-model screens for already-held untrusted feedback.
+  // 202: screens are queued and run in the background; nothing is released by this call.
+  app.post(
+    '/:squadId/github-feedback/screen-pending',
+    strict('param', squadParam),
+    strict('json', empty),
+    async (c) => {
+      const { squadId } = c.req.valid('param')
+      try {
+        const result = await screenPendingGitHubFeedback(identityOf(c), squadId, { schedule: options.scheduleScreens })
+        invalidate(squadId)
+        return c.json(result, 202)
       } catch (error) {
         return failure(c, error)
       }

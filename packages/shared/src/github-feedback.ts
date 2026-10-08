@@ -29,7 +29,17 @@ export const moderateGitHubFeedbackSchema = z
 
 export type GitHubFeedbackSelection = z.infer<typeof githubFeedbackSelectionSchema>
 export type ModerateGitHubFeedback = z.infer<typeof moderateGitHubFeedbackSchema>
-export type GitHubFeedbackDecision = ModerateGitHubFeedback['action'] | 'pending' | 'automatic' | 'historical'
+/**
+ * `screened`: a decision model judged held content from an untrusted author safe, in a squad that
+ * opted into screening. Like a human "allow once" it releases exactly the screened snapshot and
+ * trusts nobody; unlike it, no person decided.
+ */
+export type GitHubFeedbackDecision =
+  | ModerateGitHubFeedback['action']
+  | 'pending'
+  | 'automatic'
+  | 'historical'
+  | 'screened'
 export type GitHubFeedbackReleaseState = 'held' | 'ready' | 'retry' | 'retained' | 'delivered' | 'obsolete'
 export type GitHubTrustOrigin = { kind: 'manual'; addedByUserId: string } | { kind: 'linked_user'; userId: string }
 
@@ -113,6 +123,50 @@ export const githubFeedbackPageQuerySchema = z
   .strict()
 
 export const githubAuthorFilterUpdateSchema = z.object({ enabled: z.boolean() }).strict()
+
+/**
+ * What the author filter does with feedback from people the squad doesn't trust.
+ * - `hold`: hold it for a person to review (the default).
+ * - `screen`: ask a decision model first; release it once if confidently safe, otherwise hold it.
+ */
+export const GITHUB_UNTRUSTED_HANDLING = ['hold', 'screen'] as const
+export type GitHubUntrustedHandling = (typeof GITHUB_UNTRUSTED_HANDLING)[number]
+export const githubUntrustedHandlingUpdateSchema = z.object({ handling: z.enum(GITHUB_UNTRUSTED_HANDLING) }).strict()
+
+/**
+ * Why a screen ended the way it did. Only `safe` releases anything.
+ * - `unsafe`: the model saw instructions aimed at an agent, or suspicious or malicious intent.
+ * - `uncertain`: neither clearly safe nor clearly unsafe, or the model declined to answer.
+ * - `unavailable` / `unconfigured`: no decision model answered, or none is set up.
+ * - `too_long`: longer than Ficus screens; held without asking.
+ * - `skipped`: a person decided first, the content changed, or the squad stopped screening.
+ * - `source_unavailable`: no squad connection can still read the source, so it was not screened or
+ *   released (the same rule as a human allow).
+ */
+export type GitHubFeedbackScreenOutcome =
+  | 'safe'
+  | 'unsafe'
+  | 'uncertain'
+  | 'unavailable'
+  | 'unconfigured'
+  | 'too_long'
+  | 'skipped'
+  | 'source_unavailable'
+
+/** A decision model's verdict on one held revision, as stored and shown to moderators. */
+export interface GitHubFeedbackScreening {
+  /** `queued`/`running`: waiting for the model. `passed`: released. `held`: left for a person. */
+  state: 'queued' | 'running' | 'passed' | 'held'
+  outcome: GitHubFeedbackScreenOutcome | null
+  /** Probability the text gives instructions to an agent reading it. */
+  instructsAgent: number | null
+  intent: 'benign' | 'suspicious' | 'malicious' | null
+  /** Confidence in `intent`. */
+  intentConfidence: number | null
+  providerId: string | null
+  model: string | null
+  screenedAt: string | null
+}
 export const githubTrustedAuthorResolveSchema = z.object({ login: z.string().min(1).max(100) }).strict()
 /** `accountId` is the account the human confirmed; the server re-resolves and refuses a mismatch. */
 export const githubTrustedAuthorAddSchema = z
@@ -121,12 +175,24 @@ export const githubTrustedAuthorAddSchema = z
 
 export interface GitHubFeedbackSummary {
   authorFilterEnabled: boolean
+  untrustedHandling: GitHubUntrustedHandling
+  /** Some decision model is set up and enabled for the GitHub firewall. */
+  decisionModelConfigured: boolean
+  /** Held untrusted feedback that "screen what's pending now" would queue. */
+  screenable: number
   pending: number
   /** Allowed by a human (or the filter switch) and still waiting for, or retrying, delivery. */
   releasing: number
   /** Subset of `releasing` whose last attempt failed and will be retried. */
   failing: number
   canModerate: boolean
+}
+
+/** Result of "screen what's pending now". `more`: eligible feedback beyond this batch remains. */
+export interface GitHubFeedbackScreenPendingResult {
+  queued: number
+  skipped: number
+  more: boolean
 }
 
 export interface GitHubFeedbackListItem {
@@ -148,6 +214,8 @@ export interface GitHubFeedbackListItem {
   firstObservedAt: string
   updatedAt: string
   attempts: number
+  /** The decision model's verdict, when the squad screens untrusted feedback. */
+  screening: GitHubFeedbackScreening | null
 }
 
 export interface GitHubFeedbackPage {

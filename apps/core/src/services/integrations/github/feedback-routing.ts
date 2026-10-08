@@ -28,6 +28,11 @@ import {
 import { readOutputEvent } from './feedback-pass-read'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 import { isGitHubAuthorFilterEnabled, isUnfilteredGitHubEvent } from './author-filter'
+import {
+  enqueueGitHubFeedbackScreening,
+  isGitHubFeedbackScreenWaiting,
+  scheduleGitHubFeedbackScreening,
+} from './feedback-screening'
 
 type Store = typeof db | DbTx
 type Event = typeof integrationOutputEvents.$inferSelect
@@ -260,7 +265,12 @@ async function prepareGitHubOutputInPass(
         authorizeSource: local,
         readCurrent: readGitHubCurrent,
         routingProvenance: plan.routes,
-        ...(!native ? { holdReason: 'source_unverified' as const } : {}),
+        ...(!native
+          ? { holdReason: 'source_unverified' as const }
+          : {
+              queueScreening: (tx: DbTx, revision: Parameters<typeof enqueueGitHubFeedbackScreening>[0]) =>
+                enqueueGitHubFeedbackScreening(revision, tx),
+            }),
       }
       let captured
       try {
@@ -277,7 +287,12 @@ async function prepareGitHubOutputInPass(
       // Content-free, after the capture transaction committed: the human queue count changed.
       if (captured.revision.decision === 'pending' && captured.disposition !== 'replay')
         eventEmitter.emit('githubFeedback.updated', { squadId: captured.revision.squadId })
-      if (!native || !['automatic', 'allow_once', 'allow_trust'].includes(captured.revision.decision)) return DEFER
+      // Squads that screen untrusted feedback: the capture transaction queued a decision-model
+      // screen for a new held revision. Run it off this path; the revision stays held meanwhile.
+      if (native && captured.disposition !== 'replay' && (await isGitHubFeedbackScreenWaiting(captured.revision.id)))
+        scheduleGitHubFeedbackScreening(captured.revision.id)
+      if (!native || !['automatic', 'allow_once', 'allow_trust', 'screened'].includes(captured.revision.decision))
+        return DEFER
       effect = await recordCanonicalGitHubFeedback(captured.revision.id, source.id, local)
     }
   } else {

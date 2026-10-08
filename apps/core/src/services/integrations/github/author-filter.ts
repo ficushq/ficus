@@ -49,7 +49,7 @@ export async function isUnfilteredGitHubEvent(store: Store, event: Event): Promi
       .limit(1)
     return (
       !!revision &&
-      ['automatic', 'allow_once', 'allow_trust'].includes(revision.decision) &&
+      ['automatic', 'allow_once', 'allow_trust', 'screened'].includes(revision.decision) &&
       revision.releaseState !== 'obsolete'
     )
   }

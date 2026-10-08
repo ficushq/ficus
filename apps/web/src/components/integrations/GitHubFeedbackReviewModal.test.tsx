@@ -344,3 +344,28 @@ test('Escape closes; Enter in the content pane never submits a decision', async 
   await harness.act(async () => fireEvent.keyDown(panel, { key: 'Escape' }))
   expect(closed).toBe(1)
 })
+
+test('held items show the decision model’s verdict in the list and the detail', async () => {
+  const verdict = {
+    state: 'held' as const,
+    outcome: 'unsafe' as const,
+    instructsAgent: 0.94,
+    intent: 'malicious' as const,
+    intentConfidence: 0.91,
+    providerId: 'p1',
+    model: 'clef-flash',
+    screenedAt: '2026-10-08T09:00:00.000Z',
+  }
+  api.pending = [item(1, { screening: verdict }), item(2)]
+  const dialog = await render()
+  await waitFor(() => expect(dialog().textContent).toContain('Decision model: likely prompt injection, 94%'))
+  // Unscreened items show no verdict line.
+  const rows = [...dialog().querySelectorAll('li')]
+  expect(rows.find((row) => row.textContent?.includes('@outsider2'))?.textContent).not.toContain('Decision model')
+  await harness.act(async () => fireEvent.click(openRow(dialog(), 1)))
+  const panel = () => dialog().querySelector('[aria-label="Event details"]') as HTMLElement
+  await waitFor(() => expect(panel()?.textContent).toContain('Screening'))
+  expect(panel().textContent).toContain('Decision model: likely prompt injection, 94% · clef-flash')
+  // The verdict informs; the decision controls are unchanged.
+  expect(buttonIn(dialog(), 'Allow once')).toBeDefined()
+})

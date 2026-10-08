@@ -1168,6 +1168,17 @@ async function startup(): Promise<void> {
       },
     }).start()
   }
+  // Decision-model screens of held GitHub feedback that nobody is running (a lost kick, a restart
+  // mid-screen). The feedback stays held until a screen settles; the release tick above delivers it.
+  createPeriodicRunner({
+    name: 'github-feedback-screening',
+    intervalMs: 15_000,
+    runImmediately: true,
+    task: async () => {
+      const { reconcileGitHubFeedbackScreenings } = await import('./services/integrations/github/feedback-screening')
+      await reconcileGitHubFeedbackScreenings()
+    },
+  }).start()
   {
     const { reconcileWorktreeCleanup } = await import('./services/work-streams/worktree-cleanup-reconciler')
     createPeriodicRunner({
