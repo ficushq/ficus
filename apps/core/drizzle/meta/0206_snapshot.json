@@ -1,6 +1,6 @@
 {
-  "id": "831dae5d-9d36-4800-b314-b94280812af8",
-  "prevId": "f945e162-588b-4ea7-899f-6573fd80c2c0",
+  "id": "53d9dece-632c-44e6-878c-7883c0a0c707",
+  "prevId": "3fd954a7-3797-4d80-a637-9981ce45080b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5504,6 +5504,1106 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.github_feedback_decisions": {
+      "name": "github_feedback_decisions",
+      "schema": "",
+      "columns": {
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision_id": {
+          "name": "revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "squad_id": {
+          "name": "squad_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_hash": {
+          "name": "request_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision_version": {
+          "name": "decision_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "github_feedback_decision_squad_created": {
+          "name": "github_feedback_decision_squad_created",
+          "columns": [
+            {
+              "expression": "squad_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "github_feedback_decisions_request_id_revision_id_pk": {
+          "name": "github_feedback_decisions_request_id_revision_id_pk",
+          "columns": [
+            "request_id",
+            "revision_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "github_feedback_decision_hashes": {
+          "name": "github_feedback_decision_hashes",
+          "value": "\"github_feedback_decisions\".\"content_hash\" ~ '^[0-9a-f]{64}$' AND \"github_feedback_decisions\".\"request_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "github_feedback_decision_action": {
+          "name": "github_feedback_decision_action",
+          "value": "\"github_feedback_decisions\".\"action\" in ('allow_once', 'deny', 'allow_trust')"
+        },
+        "github_feedback_decision_version": {
+          "name": "github_feedback_decision_version",
+          "value": "\"github_feedback_decisions\".\"decision_version\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.github_feedback_objects": {
+      "name": "github_feedback_objects",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "squad_id": {
+          "name": "squad_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "object_kind": {
+          "name": "object_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "native_id": {
+          "name": "native_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "current_revision_id": {
+          "name": "current_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_version": {
+          "name": "provider_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "github_feedback_objects_squad_id_squads_id_fk": {
+          "name": "github_feedback_objects_squad_id_squads_id_fk",
+          "tableFrom": "github_feedback_objects",
+          "tableTo": "squads",
+          "columnsFrom": [
+            "squad_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "github_feedback_objects_current_revision_id_github_feedback_revisions_id_fk": {
+          "name": "github_feedback_objects_current_revision_id_github_feedback_revisions_id_fk",
+          "tableFrom": "github_feedback_objects",
+          "tableTo": "github_feedback_revisions",
+          "columnsFrom": [
+            "current_revision_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "github_feedback_object_identity": {
+          "name": "github_feedback_object_identity",
+          "nullsNotDistinct": false,
+          "columns": [
+            "squad_id",
+            "repository_id",
+            "object_kind",
+            "native_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "github_feedback_object_sequence": {
+          "name": "github_feedback_object_sequence",
+          "value": "\"github_feedback_objects\".\"sequence\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.github_feedback_revisions": {
+      "name": "github_feedback_revisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "object_id": {
+          "name": "object_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "squad_id": {
+          "name": "squad_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalization_version": {
+          "name": "normalization_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "envelope": {
+          "name": "envelope",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "byte_count": {
+          "name": "byte_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "author": {
+          "name": "author",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "editor": {
+          "name": "editor",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attribution": {
+          "name": "attribution",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_version": {
+          "name": "provider_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "routing_provenance": {
+          "name": "routing_provenance",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "decision": {
+          "name": "decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "decision_version": {
+          "name": "decision_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "decided_by_user_id": {
+          "name": "decided_by_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "release_state": {
+          "name": "release_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'held'"
+        },
+        "reason": {
+          "name": "reason",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_token": {
+          "name": "lease_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_observed_at": {
+          "name": "first_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "github_feedback_revision_pending": {
+          "name": "github_feedback_revision_pending",
+          "columns": [
+            {
+              "expression": "squad_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "decision",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "first_observed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "github_feedback_revision_release": {
+          "name": "github_feedback_revision_release",
+          "columns": [
+            {
+              "expression": "release_state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "github_feedback_revisions_object_id_github_feedback_objects_id_fk": {
+          "name": "github_feedback_revisions_object_id_github_feedback_objects_id_fk",
+          "tableFrom": "github_feedback_revisions",
+          "tableTo": "github_feedback_objects",
+          "columnsFrom": [
+            "object_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "github_feedback_revisions_squad_id_squads_id_fk": {
+          "name": "github_feedback_revisions_squad_id_squads_id_fk",
+          "tableFrom": "github_feedback_revisions",
+          "tableTo": "squads",
+          "columnsFrom": [
+            "squad_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "github_feedback_revision_sequence": {
+          "name": "github_feedback_revision_sequence",
+          "nullsNotDistinct": false,
+          "columns": [
+            "object_id",
+            "sequence"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "github_feedback_revision_hash": {
+          "name": "github_feedback_revision_hash",
+          "value": "\"github_feedback_revisions\".\"content_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "github_feedback_revision_sequence_positive": {
+          "name": "github_feedback_revision_sequence_positive",
+          "value": "\"github_feedback_revisions\".\"sequence\" > 0 AND \"github_feedback_revisions\".\"normalization_version\" > 0"
+        },
+        "github_feedback_revision_counters": {
+          "name": "github_feedback_revision_counters",
+          "value": "\"github_feedback_revisions\".\"decision_version\" >= 0 AND \"github_feedback_revisions\".\"byte_count\" >= 0 AND \"github_feedback_revisions\".\"attempts\" >= 0"
+        },
+        "github_feedback_revision_attribution": {
+          "name": "github_feedback_revision_attribution",
+          "value": "\"github_feedback_revisions\".\"attribution\" in ('creation', 'verified_edit', 'unknown')"
+        },
+        "github_feedback_revision_decision": {
+          "name": "github_feedback_revision_decision",
+          "value": "\"github_feedback_revisions\".\"decision\" in ('pending', 'allow_once', 'allow_trust', 'deny', 'automatic', 'historical')"
+        },
+        "github_feedback_revision_release_state": {
+          "name": "github_feedback_revision_release_state",
+          "value": "\"github_feedback_revisions\".\"release_state\" in ('held', 'ready', 'retry', 'retained', 'delivered', 'obsolete')"
+        },
+        "github_feedback_revision_human_decision": {
+          "name": "github_feedback_revision_human_decision",
+          "value": "(\"github_feedback_revisions\".\"decision\" in ('allow_once', 'allow_trust', 'deny') AND \"github_feedback_revisions\".\"decided_by_user_id\" is not null AND \"github_feedback_revisions\".\"decided_at\" is not null) OR (\"github_feedback_revisions\".\"decision\" in ('pending', 'automatic', 'historical') AND \"github_feedback_revisions\".\"decided_by_user_id\" is null AND \"github_feedback_revisions\".\"decided_at\" is null)"
+        },
+        "github_feedback_revision_lease_pair": {
+          "name": "github_feedback_revision_lease_pair",
+          "value": "(\"github_feedback_revisions\".\"lease_token\" is null) = (\"github_feedback_revisions\".\"lease_expires_at\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.github_feedback_sources": {
+      "name": "github_feedback_sources",
+      "schema": "",
+      "columns": {
+        "revision_id": {
+          "name": "revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "squad_id": {
+          "name": "squad_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authority": {
+          "name": "authority",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transport_key": {
+          "name": "transport_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "observed_at": {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "github_feedback_source_event": {
+          "name": "github_feedback_source_event",
+          "columns": [
+            {
+              "expression": "squad_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "github_feedback_source_by_event": {
+          "name": "github_feedback_source_by_event",
+          "columns": [
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "github_feedback_sources_revision_id_github_feedback_revisions_id_fk": {
+          "name": "github_feedback_sources_revision_id_github_feedback_revisions_id_fk",
+          "tableFrom": "github_feedback_sources",
+          "tableTo": "github_feedback_revisions",
+          "columnsFrom": [
+            "revision_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "github_feedback_sources_event_id_integration_output_events_id_fk": {
+          "name": "github_feedback_sources_event_id_integration_output_events_id_fk",
+          "tableFrom": "github_feedback_sources",
+          "tableTo": "integration_output_events",
+          "columnsFrom": [
+            "event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "github_feedback_sources_squad_id_squads_id_fk": {
+          "name": "github_feedback_sources_squad_id_squads_id_fk",
+          "tableFrom": "github_feedback_sources",
+          "tableTo": "squads",
+          "columnsFrom": [
+            "squad_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "github_feedback_sources_revision_id_event_id_pk": {
+          "name": "github_feedback_sources_revision_id_event_id_pk",
+          "columns": [
+            "revision_id",
+            "event_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.github_identity_proofs": {
+      "name": "github_identity_proofs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "flow_key": {
+          "name": "flow_key",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "login": {
+          "name": "login",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invalidated_at": {
+          "name": "invalidated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "github_identity_proof_user": {
+          "name": "github_identity_proof_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "github_identity_proofs_user_id_users_id_fk": {
+          "name": "github_identity_proofs_user_id_users_id_fk",
+          "tableFrom": "github_identity_proofs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "github_identity_proofs_flow_key_unique": {
+          "name": "github_identity_proofs_flow_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "flow_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "github_identity_proof_generation": {
+          "name": "github_identity_proof_generation",
+          "value": "\"github_identity_proofs\".\"generation\" >= 0"
+        },
+        "github_identity_proof_flow_hash": {
+          "name": "github_identity_proof_flow_hash",
+          "value": "\"github_identity_proofs\".\"flow_key\" ~ '^[0-9a-f]{64}$'"
+        },
+        "github_identity_proof_account_id": {
+          "name": "github_identity_proof_account_id",
+          "value": "\"github_identity_proofs\".\"account_id\" ~ '^[1-9][0-9]{0,15}$' AND \"github_identity_proofs\".\"account_id\"::numeric <= 9007199254740991"
+        },
+        "github_identity_proof_lifetime": {
+          "name": "github_identity_proof_lifetime",
+          "value": "\"github_identity_proofs\".\"expires_at\" > \"github_identity_proofs\".\"verified_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.github_output_proofs": {
+      "name": "github_output_proofs",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source_event_id": {
+          "name": "source_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_hash": {
+          "name": "source_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effect_hash": {
+          "name": "effect_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authority_hash": {
+          "name": "authority_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "checked_at": {
+          "name": "checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "github_output_proof_source": {
+          "name": "github_output_proof_source",
+          "columns": [
+            {
+              "expression": "source_event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "github_output_proofs_event_id_integration_output_events_id_fk": {
+          "name": "github_output_proofs_event_id_integration_output_events_id_fk",
+          "tableFrom": "github_output_proofs",
+          "tableTo": "integration_output_events",
+          "columnsFrom": [
+            "event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "github_output_proofs_source_event_id_integration_output_events_id_fk": {
+          "name": "github_output_proofs_source_event_id_integration_output_events_id_fk",
+          "tableFrom": "github_output_proofs",
+          "tableTo": "integration_output_events",
+          "columnsFrom": [
+            "source_event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.github_personal_identities": {
+      "name": "github_personal_identities",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "host": {
+          "name": "host",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'github.com'"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "login": {
+          "name": "login",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "linked_at": {
+          "name": "linked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "unlinked_at": {
+          "name": "unlinked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "github_personal_identity_active_account": {
+          "name": "github_personal_identity_active_account",
+          "columns": [
+            {
+              "expression": "host",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"github_personal_identities\".\"unlinked_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "github_personal_identities_user_id_users_id_fk": {
+          "name": "github_personal_identities_user_id_users_id_fk",
+          "tableFrom": "github_personal_identities",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "github_personal_identity_host": {
+          "name": "github_personal_identity_host",
+          "value": "\"github_personal_identities\".\"host\" = 'github.com'"
+        },
+        "github_personal_identity_account_id": {
+          "name": "github_personal_identity_account_id",
+          "value": "\"github_personal_identities\".\"account_id\" ~ '^[1-9][0-9]{0,15}$' AND \"github_personal_identities\".\"account_id\"::numeric <= 9007199254740991"
+        },
+        "github_personal_identity_generation": {
+          "name": "github_personal_identity_generation",
+          "value": "\"github_personal_identities\".\"generation\" >= 0"
+        },
+        "github_personal_identity_link_tuple": {
+          "name": "github_personal_identity_link_tuple",
+          "value": "(\"github_personal_identities\".\"account_id\" IS NULL AND \"github_personal_identities\".\"login\" IS NULL AND \"github_personal_identities\".\"unlinked_at\" IS NOT NULL) OR (\"github_personal_identities\".\"account_id\" IS NOT NULL AND \"github_personal_identities\".\"login\" IS NOT NULL AND \"github_personal_identities\".\"linked_at\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.github_trusted_authors": {
+      "name": "github_trusted_authors",
+      "schema": "",
+      "columns": {
+        "squad_id": {
+          "name": "squad_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "host": {
+          "name": "host",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'github.com'"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "login": {
+          "name": "login",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_type": {
+          "name": "account_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "added_by_user_id": {
+          "name": "added_by_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "github_trusted_authors_squad_id_squads_id_fk": {
+          "name": "github_trusted_authors_squad_id_squads_id_fk",
+          "tableFrom": "github_trusted_authors",
+          "tableTo": "squads",
+          "columnsFrom": [
+            "squad_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "github_trusted_authors_squad_id_host_account_id_pk": {
+          "name": "github_trusted_authors_squad_id_host_account_id_pk",
+          "columns": [
+            "squad_id",
+            "host",
+            "account_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "github_trusted_author_host": {
+          "name": "github_trusted_author_host",
+          "value": "\"github_trusted_authors\".\"host\" = 'github.com'"
+        },
+        "github_trusted_author_account_id": {
+          "name": "github_trusted_author_account_id",
+          "value": "\"github_trusted_authors\".\"account_id\" ~ '^[1-9][0-9]{0,15}$' AND \"github_trusted_authors\".\"account_id\"::numeric <= 9007199254740991"
+        },
+        "github_trusted_author_type": {
+          "name": "github_trusted_author_type",
+          "value": "\"github_trusted_authors\".\"account_type\" in ('User', 'Bot')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.global_secret_exposures": {
       "name": "global_secret_exposures",
       "schema": "",
@@ -6298,6 +7398,24 @@
           "primaryKey": false,
           "notNull": false
         },
+        "actor_key": {
+          "name": "actor_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_kind": {
+          "name": "target_kind",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_id": {
+          "name": "target_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "action": {
           "name": "action",
           "type": "varchar(64)",
@@ -6441,6 +7559,19 @@
           "primaryKey": true,
           "notNull": true
         },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'integration'"
+        },
+        "link_generation": {
+          "name": "link_generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "provider_key": {
           "name": "provider_key",
           "type": "varchar(64)",
@@ -6527,6 +7658,18 @@
         },
         "installed_at": {
           "name": "installed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "identity_proof_id": {
+          "name": "identity_proof_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "identity_verified_at": {
+          "name": "identity_verified_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -6696,6 +7839,14 @@
       },
       "policies": {},
       "checkConstraints": {
+        "integration_auth_receipts_purpose_context": {
+          "name": "integration_auth_receipts_purpose_context",
+          "value": "(\"integration_authorization_flow_receipts\".\"purpose\" = 'integration' AND \"integration_authorization_flow_receipts\".\"link_generation\" IS NULL) OR (\"integration_authorization_flow_receipts\".\"purpose\" = 'github_identity' AND \"integration_authorization_flow_receipts\".\"provider_key\" = 'github' AND \"integration_authorization_flow_receipts\".\"intent\" = 'connect' AND \"integration_authorization_flow_receipts\".\"link_generation\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"link_generation\" >= 0)"
+        },
+        "integration_auth_receipts_connection_purpose": {
+          "name": "integration_auth_receipts_connection_purpose",
+          "value": "\"integration_authorization_flow_receipts\".\"purpose\" = 'integration' OR (\"integration_authorization_flow_receipts\".\"install_kind\" IS NULL AND \"integration_authorization_flow_receipts\".\"installed_connection_id\" IS NULL AND \"integration_authorization_flow_receipts\".\"installed_material_revision\" IS NULL)"
+        },
         "integration_auth_receipts_authority_check": {
           "name": "integration_auth_receipts_authority_check",
           "value": "\"integration_authorization_flow_receipts\".\"authority\" in ('local', 'platform_broker')"
@@ -6746,7 +7897,11 @@
         },
         "integration_auth_receipts_install_terminal_exclusive": {
           "name": "integration_auth_receipts_install_terminal_exclusive",
-          "value": "\"integration_authorization_flow_receipts\".\"terminal_at\" IS NULL OR \"integration_authorization_flow_receipts\".\"installed_at\" IS NULL"
+          "value": "\"integration_authorization_flow_receipts\".\"terminal_at\" IS NULL OR (\"integration_authorization_flow_receipts\".\"installed_at\" IS NULL AND \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NULL)"
+        },
+        "integration_auth_receipts_identity_result": {
+          "name": "integration_auth_receipts_identity_result",
+          "value": "(\"integration_authorization_flow_receipts\".\"identity_proof_id\" IS NULL AND \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NULL) OR (\"integration_authorization_flow_receipts\".\"purpose\" = 'github_identity' AND \"integration_authorization_flow_receipts\".\"identity_proof_id\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"staging_started_at\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"adapter_version\" IS NOT NULL)"
         },
         "integration_auth_receipts_revocation_settlement": {
           "name": "integration_auth_receipts_revocation_settlement",
@@ -6758,7 +7913,7 @@
         },
         "integration_auth_receipts_obligation_disposition": {
           "name": "integration_auth_receipts_obligation_disposition",
-          "value": "(\"integration_authorization_flow_receipts\".\"revocation_required_at\" IS NULL AND \"integration_authorization_flow_receipts\".\"cleanup_required_at\" IS NULL) OR \"integration_authorization_flow_receipts\".\"terminal_at\" IS NOT NULL OR \"integration_authorization_flow_receipts\".\"installed_at\" IS NOT NULL"
+          "value": "(\"integration_authorization_flow_receipts\".\"revocation_required_at\" IS NULL AND \"integration_authorization_flow_receipts\".\"cleanup_required_at\" IS NULL) OR \"integration_authorization_flow_receipts\".\"terminal_at\" IS NOT NULL OR \"integration_authorization_flow_receipts\".\"installed_at\" IS NOT NULL OR \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NOT NULL"
         },
         "integration_auth_receipts_retention_window": {
           "name": "integration_auth_receipts_retention_window",
@@ -8147,6 +9302,19 @@
           "primaryKey": true,
           "notNull": true
         },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'integration'"
+        },
+        "link_generation": {
+          "name": "link_generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "local_flow_id": {
           "name": "local_flow_id",
           "type": "uuid",
@@ -8293,6 +9461,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "integration_oauth_states_purpose_context": {
+          "name": "integration_oauth_states_purpose_context",
+          "value": "(\"integration_oauth_states\".\"purpose\" = 'integration' AND \"integration_oauth_states\".\"link_generation\" IS NULL) OR (\"integration_oauth_states\".\"purpose\" = 'github_identity' AND \"integration_oauth_states\".\"provider_key\" = 'github' AND \"integration_oauth_states\".\"intent\" = 'connect' AND \"integration_oauth_states\".\"link_generation\" IS NOT NULL AND \"integration_oauth_states\".\"link_generation\" >= 0)"
+        },
         "integration_oauth_states_hash_format": {
           "name": "integration_oauth_states_hash_format",
           "value": "\"integration_oauth_states\".\"state_hash\" ~ '^[0-9a-f]{64}$'"
@@ -8311,7 +9483,7 @@
         },
         "integration_oauth_states_authority_flow_check": {
           "name": "integration_oauth_states_authority_flow_check",
-          "value": "(\"integration_oauth_states\".\"authority\" = 'local' AND \"integration_oauth_states\".\"local_flow_id\" IS NULL) OR (\"integration_oauth_states\".\"authority\" = 'platform_broker' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL)"
+          "value": "(\"integration_oauth_states\".\"authority\" = 'local' AND ((\"integration_oauth_states\".\"purpose\" = 'integration' AND \"integration_oauth_states\".\"local_flow_id\" IS NULL) OR (\"integration_oauth_states\".\"purpose\" = 'github_identity' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL))) OR (\"integration_oauth_states\".\"authority\" = 'platform_broker' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL)"
         },
         "integration_oauth_states_intent_context": {
           "name": "integration_oauth_states_intent_context",
@@ -16410,6 +17582,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "github_author_filter": {
+          "name": "github_author_filter",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         },
         "max_concurrent_work_streams": {
           "name": "max_concurrent_work_streams",

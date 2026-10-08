@@ -260,9 +260,9 @@ Set `github.connectionId` to choose an attached account explicitly. Otherwise th
 
 Public GitHub authors can write prose that reaches fully privileged agents. Each
 squad therefore has an **author filter** (`squads.github_author_filter`, a column
-rather than metadata so generic squad updates cannot change it). Migration
-`0204_github_author_filter` sets it OFF for squads that existed at rollout and ON
-for new squads. User documentation: `apps/docs/src/content/docs/connect/github.mdx`.
+rather than metadata so generic squad updates cannot change it). Migrations
+`0205_github_author_filter` (added OFF, for squads that existed at rollout) and
+`0206_github_author_filter_default_on` (ON for new squads) set it. User documentation: `apps/docs/src/content/docs/connect/github.mdx`.
 
 - **OFF** keeps pre-feature routing: no capture, hold, queue or trust lookup.
   Exact connection and repository authorization still apply. Notices are accepted

@@ -1,2 +1,0 @@
-CREATE INDEX "github_feedback_source_by_event" ON "github_feedback_sources" USING btree ("event_id");--> statement-breakpoint
-CREATE INDEX "github_output_proof_source" ON "github_output_proofs" USING btree ("source_event_id");

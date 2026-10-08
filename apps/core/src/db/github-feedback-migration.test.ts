@@ -5,7 +5,7 @@ import { users } from './schema'
 
 // Apply the generator's SQL, not a push-built table or supplemented preload index.
 // Namespace-only substitutions isolate owned tables without touching other fixtures.
-const migration = await Bun.file(new URL('../../drizzle/0203_github_feedback_trust.sql', import.meta.url)).text()
+const migration = await Bun.file(new URL('../../drizzle/0204_github_feedback_trust.sql', import.meta.url)).text()
 // The consolidated migration also widens existing integration tables; the isolated fixture below
 // applies only the statements that create or constrain this feature's own github_* tables.
 const ownTableStatements = migration
@@ -70,7 +70,11 @@ test('generated migration itself enforces active GitHub ownership without preloa
 
 // Every generated migration this feature adds. Renumbering (e.g. after integrating main) must update
 // this list, so the rollout/rollback audit below cannot silently skip a file.
-const FEATURE_MIGRATIONS = ['0203_github_feedback_trust', '0204_github_author_filter']
+const FEATURE_MIGRATIONS = [
+  '0204_github_feedback_trust',
+  '0205_github_author_filter',
+  '0206_github_author_filter_default_on',
+]
 
 test('feature migrations never rewrite, replay or drop pre-existing data, so rollback only drops new objects', async () => {
   const created = new Set<string>()
@@ -103,7 +107,14 @@ test('feature migrations never rewrite, replay or drop pre-existing data, so rol
 })
 
 test('author filter migration keeps rollout squads OFF and defaults new squads ON', async () => {
-  const filter = await Bun.file(new URL('../../drizzle/0204_github_author_filter.sql', import.meta.url)).text()
+  // Two generated migrations, in order: add the column OFF (existing squads), then default new squads ON.
+  const filter = (
+    await Promise.all(
+      ['0205_github_author_filter', '0206_github_author_filter_default_on'].map((tag) =>
+        Bun.file(new URL(`../../drizzle/${tag}.sql`, import.meta.url)).text()
+      )
+    )
+  ).join('\n--> statement-breakpoint\n')
   const namespace = `author_filter_migration_${crypto.randomUUID().replaceAll('-', '')}`
   const rollback = new Error('owned migration fixture rollback')
   try {
