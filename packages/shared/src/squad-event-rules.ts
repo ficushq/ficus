@@ -1,4 +1,12 @@
-import { eventPredicateSchema, validateEventPredicates, eventPredicateMatches } from './event-predicates'
+import {
+  eventRulePredicateSchema,
+  validateEventPredicates,
+  eventPredicateMatches,
+  eventDecisionPredicateMatches,
+  isEventDecisionPredicate,
+  type EventDecisionOutcome,
+  type EventDecisionPredicate,
+} from './event-predicates'
 import { eventPredicateField } from './event-predicate-catalog'
 import { z } from 'zod'
 import { integrationSubscriptionSchema, integrationValueAt, type IntegrationOutputFact } from './integration-outputs'
@@ -10,7 +18,7 @@ export const squadEventRuleSchema = z
     enabled: z.boolean().default(true),
     source: integrationSubscriptionSchema.shape.source,
     match: workflowEventTriggerSchema.shape.match.optional(),
-    predicates: z.array(eventPredicateSchema).max(16).optional(),
+    predicates: z.array(eventRulePredicateSchema).max(16).optional(),
     filters: z
       .object({
         squadRouting: z.boolean().default(false),
@@ -172,6 +180,7 @@ export interface EventRuleCheck {
     | 'legacy-match'
     | 'predicate'
     | 'audience'
+    | 'decision'
   description: string
   passed: boolean
 }
@@ -179,13 +188,38 @@ export interface SquadEventRulePreview {
   selectedRuleId: string | null
   action: SquadEventRule['action']['type'] | null
   suppression: 'self-comment' | null
+  /** A rule whose other checks passed but whose decision conditions have no outcome yet. */
+  awaitingDecisionRuleId: string | null
   rules: Array<{
     id: string
     position: number
-    status: 'disabled' | 'not-matched' | 'selected' | 'shadowed' | 'suppressed'
+    status:
+      | 'disabled'
+      | 'not-matched'
+      | 'selected'
+      | 'shadowed'
+      | 'suppressed'
+      | 'awaiting-decision'
+      /** After a rule awaiting a decision: whether it is reached depends on that answer. */
+      | 'not-evaluated'
     checks: EventRuleCheck[]
   }>
 }
+
+/**
+ * Supplies the outcomes of a rule's decision conditions (aligned with `predicates`), or undefined when they
+ * have not been asked. Asked only for a rule whose every other check passed, in rule order.
+ */
+export type EventRuleDecisions = (
+  rule: SquadEventRule,
+  predicates: EventDecisionPredicate[]
+) => EventDecisionOutcome[] | undefined
+
+/** Preview helper: answer every decision condition with the same assumption instead of asking a model. */
+export const assumeEventRuleDecisions =
+  (matches: boolean): EventRuleDecisions =>
+  (_rule, predicates) =>
+    predicates.map(() => ({ assumed: matches }))
 
 /** Read-only rule selection, NOT a promise of delivery: runtime authorization, subscriptions and receipts still apply.
  * Reports contain no event values, bodies, configured operands, workflow metadata or additional instructions.
@@ -195,31 +229,50 @@ export function previewSquadEventRules(
   integration: string,
   fact: IntegrationOutputFact,
   login: string,
-  connectionId?: string
+  connectionId?: string,
+  decisions?: EventRuleDecisions
 ): SquadEventRulePreview {
-  return evaluateSquadEventRules(metadata, integration, fact, login, connectionId).preview
+  return evaluateSquadEventRules(metadata, integration, fact, login, connectionId, decisions).preview
 }
+/** Undefined when no rule matches, or when a rule's decision conditions are still unanswered. */
 export function selectSquadEventRule(
   metadata: unknown,
   integration: string,
   fact: IntegrationOutputFact,
   login: string,
-  connectionId?: string
+  connectionId?: string,
+  decisions?: EventRuleDecisions
 ) {
-  return evaluateSquadEventRules(metadata, integration, fact, login, connectionId).selected
+  return evaluateSquadEventRules(metadata, integration, fact, login, connectionId, decisions).selected
 }
 
-/** Stored array order is authoritative. Both preview and live dispatch use this single evaluation path. */
-function evaluateSquadEventRules(
+/**
+ * Stored array order is authoritative. Both preview and live dispatch use this single evaluation path.
+ * Synchronous: a rule whose decision conditions `decisions` cannot answer stops selection and is returned
+ * as `pending`, so an async caller can ask the model and evaluate again (see Core's event-rule decisions).
+ */
+export function evaluateSquadEventRules(
   metadata: unknown,
   integration: string,
   fact: IntegrationOutputFact,
   login: string,
-  connectionId?: string
-) {
+  connectionId?: string,
+  decisions?: EventRuleDecisions
+): {
+  selected: SquadEventRule | undefined
+  preview: SquadEventRulePreview
+  pending?: { rule: SquadEventRule; predicates: EventDecisionPredicate[] }
+} {
   const suppression = integration === 'github' && isGitHubSelfComment(fact, login) ? 'self-comment' : null
-  const preview: SquadEventRulePreview = { selectedRuleId: null, action: null, suppression, rules: [] }
+  const preview: SquadEventRulePreview = {
+    selectedRuleId: null,
+    action: null,
+    suppression,
+    awaitingDecisionRuleId: null,
+    rules: [],
+  }
   let selected: SquadEventRule | undefined
+  let pending: { rule: SquadEventRule; predicates: EventDecisionPredicate[] } | undefined
   const data = record(fact.data)
   for (const [index, rule] of effectiveSquadEventRules(metadata, integration).entries()) {
     const checks: EventRuleCheck[] = []
@@ -236,6 +289,10 @@ function evaluateSquadEventRules(
     }
     if (selected) {
       result.status = 'shadowed'
+      continue
+    }
+    if (pending) {
+      result.status = 'not-evaluated'
       continue
     }
     const check = (kind: EventRuleCheck['kind'], passed: boolean, description: string) => {
@@ -316,6 +373,7 @@ function evaluateSquadEventRules(
         'All saved legacy equality filters must match.'
       )
     for (const predicate of rule.predicates ?? []) {
+      if (isEventDecisionPredicate(predicate)) continue
       const field = eventPredicateField(rule.source, predicate.field)
       check(
         'predicate',
@@ -334,6 +392,25 @@ function evaluateSquadEventRules(
             ? 'Assigned or unassigned login must be the connected account.'
             : 'Connected account must be assigned or @mentioned; self and bot authors do not match.'
     )
+    // Decision conditions cost a model call: asked last, only once every other check has passed.
+    const decisionPredicates = (rule.predicates ?? []).filter(isEventDecisionPredicate)
+    if (decisionPredicates.length && checks.every((check) => check.passed)) {
+      const outcomes = decisions?.(rule, decisionPredicates)
+      if (!outcomes) {
+        pending = { rule, predicates: decisionPredicates }
+        result.status = 'awaiting-decision'
+        preview.awaitingDecisionRuleId = rule.id
+        continue
+      }
+      decisionPredicates.forEach((predicate, index) => {
+        const outcome: EventDecisionOutcome = outcomes[index] ?? { unavailable: 'unavailable' }
+        check(
+          'decision',
+          eventDecisionPredicateMatches(predicate, outcome),
+          decisionCheckDescription(predicate, outcome)
+        )
+      })
+    }
     if (checks.every((check) => check.passed)) {
       selected = rule
       result.status = 'selected'
@@ -341,7 +418,18 @@ function evaluateSquadEventRules(
       preview.action = rule.action.type
     }
   }
-  return { selected, preview }
+  return { selected, preview, ...(pending ? { pending } : {}) }
+}
+
+/** Says how the outcome was reached, never the event's content or the answer's numbers. */
+function decisionCheckDescription(predicate: EventDecisionPredicate, outcome: EventDecisionOutcome) {
+  const asked = `Decision model (${predicate.question.type})`
+  if ('assumed' in outcome) return `${asked}: assumed ${outcome.assumed ? 'to match' : 'not to match'} in this preview.`
+  if ('unavailable' in outcome)
+    return `${asked}: ${outcome.unavailable === 'unconfigured' ? 'no provider configured' : 'no answer in time'}; on unavailable, ${predicate.onUnavailable}.`
+  return outcome.answer.type === 'refusal'
+    ? `${asked}: the model declined to answer.`
+    : `${asked}: answer must satisfy the condition.`
 }
 
 function matchesAudience(

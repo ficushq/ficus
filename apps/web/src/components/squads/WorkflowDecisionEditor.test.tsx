@@ -140,3 +140,30 @@ test('the decision editor shows routes that point at missing outcomes', async ()
     await dom.cleanup()
   }
 })
+
+test('a route without a question name shows the only question and the editor writes its name', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows' })
+  const root = dom.createRoot()
+  let value: WorkflowDecisionStep | undefined
+  try {
+    const unnamed = {
+      ...initial,
+      routes: [{ when: { type: 'yesno' as const, op: 'at-least' as const, probability: 0.8 }, outcome: 'ship' }],
+    }
+    expect(workflowDecisionStepIssues(unnamed)).toEqual([])
+    await dom.act(async () =>
+      root.root.render(<WorkflowDecisionEditor step={unnamed} onChange={(next) => (value = next)} />)
+    )
+    expect(document.querySelector('[role="combobox"][aria-label="Route 1 question"]')?.textContent).toContain('ready')
+    expect(document.querySelector('[role="alert"]')).toBeNull()
+    const instructions = document.querySelector<HTMLTextAreaElement>('textarea')!
+    await dom.act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(instructions), 'value')!.set!
+      setter.call(instructions, 'Decide carefully.')
+      instructions.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    })
+    expect(value?.routes[0]!.when).toEqual({ type: 'yesno', question: 'ready', op: 'at-least', probability: 0.8 })
+  } finally {
+    await dom.cleanup()
+  }
+})

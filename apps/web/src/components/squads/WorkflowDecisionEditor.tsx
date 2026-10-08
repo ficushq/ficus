@@ -4,6 +4,7 @@ import {
   DECISION_NAME_PATTERN,
   WORKFLOW_DECISION_INPUTS,
   WORKFLOW_DECISION_INPUT_INFO,
+  decisionConditionQuestion,
   workflowDecisionStepIssues,
   type DecisionCondition,
   type DecisionQuestion,
@@ -101,6 +102,10 @@ export function WorkflowDecisionEditor({
 }) {
   const edit = (change: (draft: WorkflowDecisionStep) => void) => {
     const draft = structuredClone(step)
+    // A condition may omit its question when the step asks only one; the editor always names it.
+    for (const route of draft.routes)
+      if (route.when.question === undefined)
+        route.when.question = decisionConditionQuestion(route.when, draft.questions)
     change(draft)
     onChange(draft)
   }
@@ -387,7 +392,8 @@ export function WorkflowDecisionEditor({
         </div>
         {step.routes.map((route, index) => {
           const condition = route.when
-          const question = step.questions[condition.question]
+          const name = decisionConditionQuestion(condition, step.questions)
+          const question = name === undefined ? undefined : step.questions[name]
           return (
             <div
               key={index}
@@ -398,7 +404,7 @@ export function WorkflowDecisionEditor({
                 <span className="text-muted">{index + 1}. If</span>
                 <Picker
                   label={`Route ${index + 1} question`}
-                  value={condition.question}
+                  value={name ?? ''}
                   options={questionOptions}
                   disabled={disabled}
                   onChange={(next) =>

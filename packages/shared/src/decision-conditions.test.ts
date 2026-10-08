@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
   answerMatches,
+  DECISION_YESNO_DEFAULT_THRESHOLD,
   decisionConditionIssue,
+  decisionConditionQuestion,
   decisionConditionSchema,
   describeDecisionCondition,
   type DecisionCondition,
@@ -112,4 +114,43 @@ test('describeDecisionCondition reads like the editor shows it', () => {
     'kind = bug (≥ 60%)'
   )
   expect(describeDecisionCondition({ type: 'score', question: 'risk', op: 'at-most', level: 'Low' })).toBe('risk ≤ Low')
+})
+
+describe('an omitted question', () => {
+  const only: DecisionQuestions = { urgent: { type: 'yesno', instructions: 'It is urgent.' } }
+  const unnamed: DecisionCondition = { type: 'yesno', op: 'at-least', probability: DECISION_YESNO_DEFAULT_THRESHOLD }
+
+  test('is valid in the schema and reads the only question', () => {
+    expect(decisionConditionSchema.parse(unnamed)).toEqual(unnamed)
+    expect(decisionConditionSchema.parse({ type: 'choice', equals: 'bug' })).toEqual({ type: 'choice', equals: 'bug' })
+    expect(decisionConditionQuestion(unnamed, only)).toBe('urgent')
+    expect(decisionConditionIssue(unnamed, only)).toBeUndefined()
+    expect(answerMatches({ type: 'yesno', probability: 0.5 }, unnamed)).toBe(true)
+  })
+
+  test('is an issue when there are several questions, or none', () => {
+    expect(decisionConditionQuestion(unnamed, questions)).toBeUndefined()
+    expect(decisionConditionIssue(unnamed, questions)).toBe(
+      'Name the question this condition reads: there are 3 (ready, kind, risk)'
+    )
+    expect(decisionConditionIssue(unnamed, {})).toBe('There is no question for this condition to read')
+  })
+
+  test('issues about the lone question do not invent a name for it', () => {
+    expect(decisionConditionIssue({ type: 'choice', equals: 'bug' }, only)).toBe(
+      'The question is a yesno question, not choice'
+    )
+    expect(decisionConditionIssue({ type: 'choice', equals: 'chore' }, { kind: questions.kind! })).toBe(
+      "The question has no option 'chore'"
+    )
+    expect(decisionConditionIssue({ type: 'score', op: 'at-least', level: 'Severe' }, { risk: questions.risk! })).toBe(
+      "The question has no level 'Severe'"
+    )
+  })
+
+  test('describes as the answer itself', () => {
+    expect(describeDecisionCondition(unnamed)).toBe('yes ≥ 50%')
+    expect(describeDecisionCondition({ type: 'choice', equals: 'bug' })).toBe('answer = bug')
+    expect(describeDecisionCondition({ type: 'score', op: 'at-most', level: 'Low' })).toBe('level ≤ Low')
+  })
 })

@@ -123,7 +123,7 @@ A decision step (`kind: decision`) routes work without an agent or a person. Whe
 
 - `input` chooses what the model sees, as data: the work stream `title`, `description`, the owner's `handoff`, and `incoming-results` (the results or feedback of the steps that handed off to this one).
 - `questions` uses the decision-model question format: `yesno`, `choice` with `options`, or `score` with `levels` (lowest first).
-- A route's `when` tests one answer: a yes/no probability `at-least`/`at-most` a threshold from 0 to 1, a choice that `equals` an option (optionally with `minConfidence`), or a score whose level is `at-least`/`at-most` a level.
+- A route's `when` tests one answer: a yes/no probability `at-least`/`at-most` a threshold from 0 to 1, a choice that `equals` an option (optionally with `minConfidence`), or a score whose level is `at-least`/`at-most` a level. `question` names the question it reads; a step that asks only one question may omit it (the editor always writes it).
 - Every route, `otherwise`, and `unavailable` outcome must be declared in `outcomes`. A decision step has no participant or expected output, and it cannot be the target of a `returnTo`.
 - When `otherwise` or `unavailable` is omitted, the step waits for a person instead of guessing: it opens the same decision wait as a human approval, and any reviewer chooses an outcome from the review controls (or `ficus workstream advance` as a user). The step's instructions and the model's answers are shown with it.
 
