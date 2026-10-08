@@ -29,9 +29,12 @@ import { BRAND_DIR, balanceLines, fontFaces, HEADLINE, LEAF_PATH, REPO_ROOT, SUP
 export const APP_STORE_SOURCE_DIR = join(BRAND_DIR, 'app-store')
 export const APP_STORE_OUT_DIR = join(BRAND_DIR, 'generated', 'app-store')
 
-/** The Feed screen captured from the ficus.sh/mobile/ demo (393×852 CSS px at 3x). */
+/**
+ * A real Ficus app screenshot of the Feed (iPhone 17 Pro Max simulator, 440×956 pt at 3x, seeded
+ * demonstration data). It already includes the status bar and Dynamic Island.
+ */
 export const SCREEN_FILE = 'brand/app-store/feed-screen.png'
-export const SCREEN_SIZE = { width: 393, height: 852, scale: 3 } as const
+export const SCREEN_SIZE = { width: 440, height: 956, scale: 3 } as const
 export const DEMO_URL = 'https://ficus.sh/mobile/'
 
 export type ArtKind = 'header' | 'search'
@@ -292,10 +295,10 @@ const SEARCH_SUPPORT_SIZE = 100
 const SEARCH_SUPPORT_LEADING = 136
 const SEARCH_GROUND_Y = 2290
 
-/** The phone, in screen points (the 393×852 capture), scaled by PHONE_SCALE. */
-const PHONE_SCALE = 2.42
+/** The phone, in screen points (the 440×956 screenshot), scaled by PHONE_SCALE. */
+const PHONE_SCALE = 2.157
 const PHONE_BEZEL = 13
-const PHONE_SCREEN_RADIUS = 55
+const PHONE_SCREEN_RADIUS = 62
 const PHONE_X = 2590
 const PHONE_Y = 190
 
@@ -312,7 +315,6 @@ function phone(screenDataUri: string): string {
   const screenR = PHONE_SCREEN_RADIUS * s
   const sx = x + b
   const sy = y + b
-  const island = { w: 125 * s, h: 37 * s, y: sy + 11 * s }
   const home = { w: 140 * s, h: 5 * s, y: sy + sh - 9 * s }
   // Side buttons: action and volume on the left, power on the right.
   const button = (bx: number, by: number, h: number) =>
@@ -327,7 +329,6 @@ function phone(screenDataUri: string): string {
     <rect x="${num(x + 1.4 * s)}" y="${num(y + 1.4 * s)}" width="${num(bodyW - 2.8 * s)}" height="${num(bodyH - 2.8 * s)}" rx="${num(bodyR - 1.4 * s)}" fill="#0d0c0b" stroke="#5a564e" stroke-width="${num(0.9 * s)}"/>
     <clipPath id="screen-clip"><rect x="${num(sx)}" y="${num(sy)}" width="${num(sw)}" height="${num(sh)}" rx="${num(screenR)}"/></clipPath>
     <image href="${screenDataUri}" x="${num(sx)}" y="${num(sy)}" width="${num(sw)}" height="${num(sh)}" preserveAspectRatio="none" clip-path="url(#screen-clip)"/>
-    <rect x="${num(x + bodyW / 2 - island.w / 2)}" y="${num(island.y)}" width="${num(island.w)}" height="${num(island.h)}" rx="${num(island.h / 2)}" fill="#000000"/>
     <rect x="${num(x + bodyW / 2 - home.w / 2)}" y="${num(home.y)}" width="${num(home.w)}" height="${num(home.h)}" rx="${num(home.h / 2)}" fill="#ede6de" fill-opacity="0.9"/>
   </g>`
 }
@@ -343,7 +344,7 @@ export async function buildSearchSvg(): Promise<string> {
 
   return `${svgOpen(SEARCH_W, SEARCH_H, SEARCH_ALT)}
   <!-- Embedded fonts: Fraunces and Instrument Sans, SIL Open Font License 1.1; see brand/fonts/. -->
-  <!-- The phone screen is brand/app-store/feed-screen.png, captured from the ficus.sh/mobile/ demo (sample data). -->
+  <!-- The phone screen is brand/app-store/feed-screen.png, a real Ficus app screenshot with seeded demonstration data. -->
   <style>
     ${await fontFaces(ART_FONTS.search)}
     .headline { font: 600 ${SEARCH_HEADLINE_SIZE}px 'Fraunces', Georgia, serif; letter-spacing: -0.02em; font-variation-settings: 'opsz' 88; }
@@ -393,7 +394,7 @@ export async function buildArtSvg(source: ArtSource): Promise<string> {
 
 /**
  * Captures the ficus.sh/mobile/ demo's Feed (its default view: "Needs
- * attention" with a question and a "Review needed" card) at 393×852 CSS px,
+ * attention" with a question and a "Review needed" card) at the SCREEN_SIZE viewport,
  * 3x, with the demo's own bezel, shadow and zoom removed so the art can draw
  * its phone around it. The status bar is padded to sit beside the Dynamic
  * Island the art draws on top.
