@@ -71,6 +71,8 @@ import { amtpRouter } from './routes/amtp'
 import { userPreferencesRouter } from './routes/user-preferences'
 import { farmPreferencesRouter } from './routes/farm-preferences'
 import { farmChatRouter } from './routes/farm-chat'
+import { farmRouter } from './routes/farm'
+import { startRobotMoodCache } from './services/robot-moods'
 import { themePresetsRouter } from './routes/theme-presets'
 import { notificationConfigRouter } from './routes/notification-config'
 import secretsRouter from './routes/secrets'
@@ -332,6 +334,7 @@ app.route('/api/notification-config', notificationConfigRouter)
 app.route('/api/user-preferences', userPreferencesRouter)
 app.route('/api/farm-preferences', farmPreferencesRouter)
 app.route('/api/farm-chat', farmChatRouter)
+app.route('/api/farm', farmRouter)
 app.route('/api/theme-presets', themePresetsRouter)
 app.route('/api/secrets', secretsRouter)
 app.route('/api/settings', settingsRouter)
@@ -746,6 +749,8 @@ if (import.meta.main) {
   installPgTeardownRejectionGuard()
   // Set up WebSocket event bridge
   setupEventBridge(wsManager)
+  // The worker's latest robot moods, for farms that open later (POST /api/farm/watching).
+  startRobotMoodCache()
 
   // In Kubernetes, bind to all interfaces so pod-IP readiness/liveness probes
   // and other pods can reach the API. Otherwise default to localhost for security.

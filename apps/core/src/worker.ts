@@ -941,6 +941,10 @@ async function startup(): Promise<void> {
     }
   })
 
+  // Robots the farm shows someone (robot moods): reports from the API, kept for 45s each.
+  const { startRobotMoodWatchingListener } = await import('./services/robot-moods')
+  await startRobotMoodWatchingListener()
+
   // Startup recovery
   log.info('Running startup recovery...')
 

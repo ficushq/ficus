@@ -1249,3 +1249,169 @@ a.g-pr-link:focus-visible {
   flex: none;
   padding: 4px 12px;
 }
+
+/*
+ * Robot moods (moods.ts, MoodMark.tsx): a small mark beside the head in the
+ * style's own ink, and for a few moods a gentle move of the whole robot.
+ * Reduced motion keeps the marks and drops every movement.
+ */
+.g-mood-mark {
+  pointer-events: none;
+}
+.g-mood-ink {
+  stroke: var(--g-ink);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.g-mood-drop-fill {
+  fill: var(--g-mood-drop, #8fd0f4);
+}
+.g-mood-shine {
+  fill: #fff;
+  opacity: 0.8;
+}
+.g-mood-drop {
+  animation: g-mood-drip 2.2s ease-in infinite;
+}
+@keyframes g-mood-drip {
+  0%,
+  60% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  90% {
+    transform: translateY(3px);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.g-mood-arrow {
+  fill: none;
+  stroke: var(--g-ink);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.g-mood-arrow-head {
+  fill: var(--g-ink);
+}
+.g-mood-loop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: g-mood-spin 2.4s linear infinite;
+}
+@keyframes g-mood-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.g-mood-pole {
+  stroke: var(--g-ink);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.g-mood-flag {
+  fill: var(--g-danger);
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  animation: g-mood-wave 1.1s ease-in-out infinite alternate;
+}
+@keyframes g-mood-wave {
+  to {
+    transform: skewY(-8deg) scaleX(0.9);
+  }
+}
+.g-mood-lens {
+  fill: var(--g-card);
+  fill-opacity: 0.85;
+}
+.g-mood-handle {
+  stroke: var(--g-ink);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+.g-mood-shine-line {
+  fill: none;
+  stroke: var(--g-ink);
+  stroke-width: 0.9;
+  stroke-linecap: round;
+  opacity: 0.5;
+}
+.g-mood-spark {
+  fill: var(--g-highlight-strong);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: g-mood-twinkle 0.9s ease-in-out infinite alternate;
+}
+.g-mood-confetti {
+  stroke: var(--g-ink);
+  stroke-width: 0.8;
+}
+.g-mood-confetti-a {
+  fill: var(--g-danger);
+}
+.g-mood-confetti-b {
+  fill: var(--g-accent);
+}
+.g-mood-confetti-c {
+  fill: var(--g-highlight);
+}
+@keyframes g-mood-twinkle {
+  from {
+    transform: scale(0.8) rotate(0deg);
+  }
+  to {
+    transform: scale(1.1) rotate(20deg);
+  }
+}
+.g-mood-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.g-mood-body-pacing {
+  animation: g-mood-pace 2.4s ease-in-out infinite;
+}
+@keyframes g-mood-pace {
+  0%,
+  100% {
+    transform: translateX(-2px);
+  }
+  50% {
+    transform: translateX(2px);
+  }
+}
+.g-mood-body-looking {
+  animation: g-mood-look 3.6s ease-in-out infinite;
+}
+@keyframes g-mood-look {
+  0%,
+  35%,
+  100% {
+    transform: rotate(0deg);
+  }
+  12%,
+  24% {
+    transform: rotate(-4deg);
+  }
+  58%,
+  76% {
+    transform: rotate(4deg);
+  }
+}
+.g-mood-body-hop {
+  animation: g-mood-hop 0.5s ease-out 3;
+}
+@keyframes g-mood-hop {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .g-mood-body,
+  .g-mood-mark,
+  .g-mood-mark * {
+    animation: none;
+  }
+}

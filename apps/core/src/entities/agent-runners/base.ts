@@ -97,6 +97,7 @@ import * as rbacPermissions from '../../services/rbac/permissions'
 import type { RunnerTiming } from '../../services/execution/runner-timing'
 import { logRunnerMilestone } from '../../services/execution/runner-timing'
 import { withUsageDelta, withoutDelta, type UsageBaseline } from '../../services/execution/usage-delta'
+import { observeRobotMood } from '../../services/robot-moods'
 
 const log = createLogger('runner')
 const STRANDED_PENDING_RETRY_BUDGET = 3
@@ -961,6 +962,8 @@ export abstract class AgentRunner {
       }
 
       this.collector.handleEvent(event)
+      // Robot moods for the farm: a no-op unless someone watches this robot. Never throws or waits.
+      observeRobotMood(this.agent.id, this.agent.squadId, event)
 
       if (event.type === 'agent_settled') {
         // Kick the background pre-compaction bake before the turn finalizes and

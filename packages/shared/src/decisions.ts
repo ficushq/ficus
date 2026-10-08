@@ -253,6 +253,7 @@ export const DECISION_PURPOSES = [
   'event-rules',
   'composer-delivery',
   'screenshot-filing',
+  'robot-moods',
 ] as const
 export type DecisionPurpose = (typeof DECISION_PURPOSES)[number]
 
@@ -320,6 +321,15 @@ export const DECISION_PURPOSE_INFO: Record<
     description:
       'Guesses what a screenshot dropped into Ficus shows and which squad it belongs to, so the Assistant can file it. Needs a model that reads images (Clef or OpenAI).',
     scope: 'instance',
+  },
+  'robot-moods': {
+    label: 'Robot moods',
+    description:
+      'Robots on the farm show how their agents are getting on (focused, exploring, struggling, about to do something risky), ' +
+      'asked only while someone watches them and nothing simpler tells. ' +
+      'About 2–5¢ per hour of watching, with about 10 robots on screen, on hosted models; free with a local model.',
+    scope: 'instance',
+    offByDefault: true,
   },
 }
 

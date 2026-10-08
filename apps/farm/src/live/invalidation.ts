@@ -42,6 +42,8 @@ export function keysForEvent(event: LiveEvent): QueryKey[] {
     case 'squads':
       return [queryKeys.squads.all]
     case 'agents': {
+      // A robot's mood changes nothing cached: it goes straight to the mood store (LiveUpdates).
+      if (event.event === 'agent.mood') return []
       const keys: QueryKey[] = [queryKeys.agents.listPrefix(), [...queryKeys.squads.all, 'agents']]
       const id = agentIdOf(event.data)
       if (id) keys.push(queryKeys.agents.detail(id))
