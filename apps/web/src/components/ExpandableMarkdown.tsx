@@ -46,7 +46,7 @@ export function ExpandableMarkdown({
           aria-controls={id}
           aria-label={label ? `${expanded ? 'Show less' : 'Show all'} ${label}` : undefined}
           onClick={() => setExpanded((value) => !value)}
-          className="ficus-button mt-1.5 text-xs font-medium text-accent-light hover:text-link-hover"
+          className="ficus-button ficus-button-link mt-1.5 text-xs font-medium"
         >
           {expanded ? 'Show less' : 'Show all'}
         </button>

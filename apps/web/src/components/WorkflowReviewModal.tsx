@@ -253,7 +253,7 @@ function ReviewSummary({
   const linkClass = 'inline-flex items-center gap-1.5 text-sm text-accent-light hover:text-link-hover hover:underline'
   const workStreamLink = (children: ReactNode) =>
     onOpenWorkStream ? (
-      <button type="button" onClick={onOpenWorkStream} className={clsx('ficus-button', linkClass)}>
+      <button type="button" onClick={onOpenWorkStream} className={clsx('ficus-button ficus-button-link', linkClass)}>
         {children}
       </button>
     ) : (
@@ -408,7 +408,7 @@ function DecisionSheet(state: DecisionState) {
               aria-expanded={expanded}
               aria-controls={`${id}-panel`}
               onClick={toggle}
-              className="ficus-button shrink-0 py-1 text-sm font-medium text-accent-light hover:text-link-hover"
+              className="ficus-button ficus-button-link shrink-0 py-1 text-sm font-medium"
             >
               {expanded ? 'Hide notes' : notes.trim() ? 'Edit notes' : 'Add notes'}
             </button>
@@ -489,8 +489,7 @@ function DecisionButtons({ gate, run, notes, advance }: Omit<DecisionState, 'set
             title={outcomeEffect(run.state, transition)}
             className={clsx(
               'ficus-button block w-full px-4 py-2.5 text-sm disabled:opacity-50',
-              primary ? 'ficus-button-primary' : 'ficus-button-secondary',
-              sendsBack && !primary && 'text-status-danger-600 dark:text-status-danger-400'
+              primary ? 'ficus-button-primary' : sendsBack ? 'ficus-button-danger' : 'ficus-button-secondary'
             )}
             disabled={
               advance.isPending ||

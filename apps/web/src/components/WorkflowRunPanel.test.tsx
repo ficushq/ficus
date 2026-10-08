@@ -567,7 +567,7 @@ test('a human gate shows the handoff it reviews and labels each outcome with whe
     ])
     expect(buttons[0]!.className).toContain('ficus-button-primary')
     expect(buttons[1]!.className).not.toContain('ficus-button-primary')
-    expect(buttons[1]!.className).toContain('text-status-danger-600')
+    expect(buttons[1]!.className).toContain('ficus-button-danger')
   } finally {
     await f.cleanup()
   }
@@ -811,7 +811,7 @@ test('PR completion modes ask for the pull request review; checking delivery sta
     const mergedCard = f.dom.window.document.querySelector('section[aria-label="Review pull request"]')!
     expect(mergedCard.textContent).toContain('Merged')
     const check = [...mergedCard.querySelectorAll('button')].find((button) => button.textContent === 'Check delivery')!
-    expect(check.className).not.toContain('ficus-button-primary')
+    expect(check.className).toContain('ficus-button-secondary')
     await click(f, 'Check delivery')
     expect(finish).toHaveBeenCalledWith(stream.id, value.version)
   } finally {

@@ -175,7 +175,7 @@ function PullRequestDelivery({
           {finish && merged && (
             <button
               type="button"
-              className="ficus-button min-h-10 px-3 py-2 text-sm text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-50"
+              className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
               disabled={finish.isPending}
               onClick={() => finish.mutate()}
             >
@@ -262,11 +262,7 @@ function HumanGateCard({
         <button
           type="button"
           onClick={() => setReviewing(true)}
-          className={
-            gate.canDecide
-              ? 'ficus-button ficus-button-primary min-h-10 px-4 py-2 text-sm'
-              : 'ficus-button ficus-button-secondary min-h-10 px-4 py-2 text-sm'
-          }
+          className="ficus-button ficus-button-secondary min-h-10 px-4 py-2 text-sm"
         >
           {gate.canDecide ? 'Review and decide' : 'Read proposal'}
         </button>

@@ -271,7 +271,7 @@ test('the compact callout card opens the review surface', async () => {
     expect(card.querySelector('a[aria-label="Open execute attempt 3 agent chat"]')).not.toBeNull()
     expect(f.dialog()).toBeNull()
     const open = [...card.querySelectorAll('button')].find((button) => button.textContent === 'Review and decide')!
-    expect(open.className).toContain('ficus-button-primary')
+    expect(open.className).toContain('ficus-button-secondary')
     await f.dom.act(async () => open.click())
     expect(f.dialog()!.querySelector('[data-review-rail] textarea')).not.toBeNull()
   } finally {

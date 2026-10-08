@@ -769,7 +769,7 @@ test('a flow-owned wait opens its decision controls instead of exposing generic 
     const open = [...dom.window.document.querySelectorAll('button')].find(
       (button) => button.textContent === 'Review and decide'
     )!
-    expect(open.className).toContain('ficus-button-primary')
+    expect(open.className).toContain('ficus-button-secondary')
     await dom.act(async () => open.click())
     const dialog = dom.window.document.querySelector('[role="dialog"]')!
     expect(dialog.getAttribute('aria-label')).toBe('Review Design approval')
