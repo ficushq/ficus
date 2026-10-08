@@ -1205,7 +1205,108 @@ describe('WorkStreamDetailModal', async () => {
 
     expect(html).toContain('aria-label="Open dependency missing-"')
     expect(html).toContain('aria-label="Unknown status"')
-    expect(html).toContain('>missing-</button>')
+    expect(html).toContain('A dependency<span class="ml-1 font-mono text-xs">missing-</span>')
+  })
+
+  const blocker = workStream({
+    id: 'blocker-id',
+    number: 489,
+    title: 'Make decision notes optional',
+    status: 'active',
+    derivedState: 'in_progress',
+  })
+  const dependencyWait = workStreamWait({ id: 'dep-wait', type: 'dependency', referenceId: blocker.id })
+  /** Render the detail modal and inspect its live DOM before the harness is released. */
+  async function inspectDetail(stream: WorkStream, workStreams: WorkStream[], inspect: (document: Document) => void) {
+    const dom = await acquireDomHarness({ url: 'http://localhost/work-streams' })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={createTestQueryClient()}>
+              <WorkStreamDetailModal
+                workStream={stream}
+                squadMap={new Map([[squad.id, squad]])}
+                agentMap={new Map()}
+                workStreamMap={new Map(workStreams.map((entry) => [entry.id, entry]))}
+                onSelectWorkStream={() => undefined}
+                onClose={() => undefined}
+              />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      await dom.act(async () => Bun.sleep(10))
+      inspect(dom.window.document as unknown as Document)
+    } finally {
+      await dom.cleanup()
+    }
+  }
+
+  test('a dependency wait shows the blocker once, above the description, with no Open Waits row', async () => {
+    await inspectDetail(workStream({ dependsOn: [blocker.id], openWaits: [dependencyWait] }), [blocker], (document) => {
+      const html = document.body.innerHTML
+      const dependencies = document.querySelector('section[aria-label="Dependencies"]')!
+      const row = dependencies.querySelector('li[data-blocking]')!
+      expect(row.querySelector('button[aria-label="Open dependency Make decision notes optional"]')!.textContent).toBe(
+        '#489 · Make decision notes optional'
+      )
+      expect(row.querySelector('[aria-label="In Progress status"]')).not.toBeNull()
+      expect(row.textContent).toContain('In Progress')
+      expect(row.textContent).toMatch(/Blocking · waiting \d+[smhd]/)
+      expect(row.querySelector('time')!.getAttribute('title')).toBe(now.toLocaleString())
+      expect(html.split('#489 · Make decision notes optional')).toHaveLength(2)
+      expect(html).not.toContain('Open Waits')
+      expect(html.indexOf('aria-label="Dependencies"')).toBeLessThan(html.indexOf('>Description</label>'))
+    })
+  })
+
+  test('a dependency wait beside a review wait lists the blocker once and the review apart from it', async () => {
+    const stream = workStream({
+      dependsOn: [blocker.id],
+      openWaits: [
+        workStreamWait({ id: 'review-wait', type: 'review', message: 'Check the release notes' }),
+        dependencyWait,
+        workStreamWait({ id: 'manual-wait', type: 'manual', message: 'Need the staging key' }),
+      ],
+    })
+    await inspectDetail(stream, [blocker], (document) => {
+      const html = document.body.innerHTML
+      const dependencies = document.querySelector('section[aria-label="Dependencies"]')!
+      expect(dependencies.querySelectorAll('li')).toHaveLength(1)
+      expect(dependencies.textContent).not.toContain('Check the release notes')
+      expect(html.split('#489 · Make decision notes optional')).toHaveLength(2)
+      expect(html).toContain('Check the release notes')
+      const openWaits = [...document.querySelectorAll('label')].find((label) => label.textContent === 'Open Waits')!
+      expect(openWaits.parentElement!.textContent).toContain('Need the staging key')
+      expect(openWaits.parentElement!.textContent).not.toContain('Make decision notes optional')
+    })
+  })
+
+  test('a finished dependency reads as satisfied', async () => {
+    const finished = workStream({ id: 'finished-id', number: 401, title: 'Ship the API', status: 'done' })
+    await inspectDetail(workStream({ dependsOn: [finished.id] }), [finished], (document) => {
+      const row = document.querySelector('section[aria-label="Dependencies"] li')!
+      expect(row.hasAttribute('data-blocking')).toBe(false)
+      expect(row.querySelector('[aria-label="Done status"] svg')).not.toBeNull()
+      expect(row.querySelector('button')!.className).toContain('opacity-70')
+      expect(row.textContent).toContain('#401 · Ship the APIDone')
+    })
+  })
+
+  test('a dependency wait without a resolvable stream says a dependency and its id', async () => {
+    const stream = workStream({
+      openWaits: [
+        workStreamWait({ id: 'ghost', type: 'dependency', referenceId: 'ghost-stream-id', message: 'Upstream' }),
+      ],
+    })
+    await inspectDetail(stream, [], (document) => {
+      const row = document.querySelector('section[aria-label="Dependencies"] li[data-blocking]')!
+      expect(row.textContent).toContain('A dependencyghost-st')
+      expect(row.textContent).toContain('Upstream')
+      expect(row.querySelector('[aria-label="Unknown status"]')).not.toBeNull()
+    })
   })
 
   test('renders dependencies from their selected display state', async () => {
@@ -1227,7 +1328,8 @@ describe('WorkStreamDetailModal', async () => {
     expect(html).toContain('aria-label="Blocked status"')
     expect(html).toContain('bg-status-attention-solid')
     expect(html).not.toContain('aria-label="Active status"')
-    expect(html).toContain('>Blocking stream</button>')
+    expect(html).toContain('>Blocking stream</span>')
+    expect(html).toContain('>Blocked</span>')
   })
 
   test('headline elapsed shows agent runtime, not wall-clock', async () => {

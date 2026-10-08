@@ -672,3 +672,51 @@
   color: inherit;
   background: color-mix(in srgb, currentColor 16%, transparent);
 }
+
+/* Embedded documents (work stream descriptions, handoffs, review proposals). Prose's display sizes make a
+   `# Title` larger than the dialog that holds it; here headings sit on a reading scale relative to the body
+   (an H1 is at most 1.2× the text, so about 1.2rem in the review document) and never outrank the surface
+   title. Chat messages keep the default prose scale. */
+.prose.prose-document h1,
+.prose.prose-document h2,
+.prose.prose-document h3,
+.prose.prose-document h4 {
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+}
+.prose.prose-document h1 {
+  font-size: 1.2em;
+  font-weight: 650;
+  margin-top: 1.75em;
+  margin-bottom: 0.6em;
+}
+.prose.prose-document h2 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-top: 1.6em;
+  margin-bottom: 0.5em;
+}
+.prose.prose-document h3 {
+  font-size: 1em;
+  font-weight: 600;
+  margin-top: 1.4em;
+  margin-bottom: 0.4em;
+}
+.prose.prose-document h4 {
+  font-size: 0.95em;
+  font-weight: 600;
+  margin-top: 1.25em;
+  margin-bottom: 0.35em;
+}
+.prose.prose-document > :first-child {
+  margin-top: 0;
+}
+.prose.prose-document > :last-child {
+  margin-bottom: 0;
+}
+
+/* A collapsed preview that fades out instead of scrolling inside its container. */
+.ficus-fade-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent);
+  mask-image: linear-gradient(to bottom, black 55%, transparent);
+}

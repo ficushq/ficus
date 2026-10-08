@@ -15,6 +15,15 @@
   max-height: calc(var(--modal-viewport-height, 100dvh) * 0.9);
 }
 
+/* A working surface (a review, a long document): nearly the whole viewport, capped on wide screens. */
+.ficus-modal-backdrop > [data-modal-size='workspace'] {
+  height: calc(var(--modal-viewport-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(
+    var(--modal-viewport-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+  );
+  max-width: min(80rem, calc(100vw - 2rem));
+}
+
 @media (max-width: 767px) {
   .mobile-chat-modal > [data-modal-size] {
     width: 100%;

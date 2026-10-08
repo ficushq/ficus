@@ -244,3 +244,62 @@ test('WebKit taps on menu items run them inside a focusable dialog', async () =>
     cache.clear()
   }
 })
+
+test('a PR-mode stream ready for delivery offers Check delivery now in More actions until its PR is merged', async () => {
+  const dom = await acquireDomHarness({ url: 'https://example.test/' })
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const stream = {
+    id: 'pr-stream',
+    number: 452,
+    squadId: 'squad-id',
+    status: 'active',
+    metadata: { codeHost: { integration: 'github', repository: 'ficushq/ficus', changeRequest: { number: 12 } } },
+  } as unknown as WorkStream
+  cache.setQueryData(queryKeys.auth.permissions(stream.squadId), { permissions: ['workstreams:respond'] })
+  cache.setQueryData(queryKeys.workStreamSubscription.detail(stream.id), {
+    attention: { decisions: 'notify', progress: 'mute' },
+    inherited: true,
+  })
+  cache.setQueryData(queryKeys.workflows.run(stream.id), {
+    workStreamId: stream.id,
+    version: 5,
+    state: { status: 'completion-ready', definition: { completion: { mode: 'pr-auto-merge' } } },
+  })
+  const finish = spyOn(client.workflows, 'finish').mockResolvedValue(undefined as never)
+  const root = dom.createRoot()
+  const render = (value: WorkStream) =>
+    dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter>
+            <Surface stream={value} />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+  const item = () =>
+    [...dom.window.document.body.querySelectorAll('button')].find((b) => b.textContent === 'Check delivery now')
+  try {
+    await render(stream)
+    const trigger = dom.window.document.body.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!
+    await dom.act(async () => trigger.click())
+    await dom.act(async () => item()!.click())
+    await dom.act(async () => new Promise<void>((resolve) => setTimeout(resolve, 0)))
+    expect(finish).toHaveBeenCalledWith(stream.id, 5)
+    expect(dom.window.document.body.textContent).toContain('Delivery checked')
+
+    const key = 'github:ficushq/ficus:pull_request:12'
+    await render({
+      ...stream,
+      metadata: { ...stream.metadata, delivery: { pullRequests: { [key]: { state: 'merged', at: 'now' } } } },
+    } as unknown as WorkStream)
+    await dom.act(async () => trigger.click())
+    expect([...dom.window.document.body.querySelectorAll('button')].some((b) => b.textContent === 'Copy link')).toBe(
+      true
+    )
+    expect(item()).toBeUndefined()
+  } finally {
+    finish.mockRestore()
+    await dom.cleanup()
+  }
+})
