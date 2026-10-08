@@ -28,7 +28,7 @@ export function createAgentDeliverySuggestionRouter(deps: DeliverySuggestionDeps
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
       if (!agent) return c.json({ error: 'Agent not found' }, 404)
-      const body = bodySchema.safeParse(await c.req.json().catch(() => null))
+      const body = bodySchema.safeParse(await c.req.json())
       if (!body.success) {
         return c.json({ error: `Send {draft}, at most ${DELIVERY_SUGGESTION_MAX_DRAFT_LENGTH} characters` }, 400)
       }
