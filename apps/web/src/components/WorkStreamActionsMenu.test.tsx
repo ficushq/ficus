@@ -43,26 +43,27 @@ test('overflow keeps pause secondary, preserves attention, copies a canonical li
         </QueryClientProvider>
       )
     )
-  const button = (text: string) => [...root.container.querySelectorAll('button')].find((b) => b.textContent === text)
+  const button = (text: string) =>
+    [...dom.window.document.body.querySelectorAll('button')].find((b) => b.textContent === text)
   try {
     await render(stream)
-    const trigger = root.container.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!
+    const trigger = dom.window.document.body.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!
     expect(button('Pause work…')).toBeUndefined()
     await dom.act(async () => trigger.click())
     expect(button('Pause work…')).toBeDefined()
-    expect(root.container.textContent).toContain('Notifications…')
-    expect(root.container.querySelector('summary')!.textContent).toBe('Notifications…')
+    expect(dom.window.document.body.textContent).toContain('Notifications…')
+    expect(dom.window.document.body.querySelector('summary')!.textContent).toBe('Notifications…')
     await dom.act(async () => button('Copy link')!.click())
     expect(copy).toHaveBeenCalledWith('https://example.test/tau/squads/squad-id/work?ws=451')
-    expect(root.container.textContent).toContain('Link copied')
+    expect(dom.window.document.body.textContent).toContain('Link copied')
     copy.mockRejectedValueOnce(new Error('Clipboard unavailable'))
     await dom.act(async () => trigger.click())
     await dom.act(async () => button('Copy link')!.click())
-    expect(root.container.textContent).toContain('Could not copy link')
+    expect(dom.window.document.body.textContent).toContain('Could not copy link')
     await dom.act(async () => trigger.click())
     await dom.act(async () => button('Pause work…')!.click())
     expect(pause).not.toHaveBeenCalled()
-    expect(root.container.querySelector('form')).not.toBeNull()
+    expect(dom.window.document.body.querySelector('form')).not.toBeNull()
     expect(dom.window.document.activeElement?.tagName).toBe('INPUT')
     await dom.act(async () => trigger.click())
     await dom.act(async () =>
@@ -133,36 +134,52 @@ test('notification changes preserve the other kind and reset the stream override
         </QueryClientProvider>
       )
     )
-    await dom.act(async () => root.container.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!.click())
-    await dom.act(async () => root.container.querySelector('summary')!.click())
+    await dom.act(async () =>
+      dom.window.document.body.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!.click()
+    )
+    await dom.act(async () => dom.window.document.body.querySelector('summary')!.click())
     // A press on the visible label first focuses the nearest focusable ancestor (the dialog),
     // then the label's click forwards focus/activation to its radio. Don't unmount in between.
-    await dom.act(async () => root.container.querySelector('summary')!.focus())
-    await dom.act(async () => root.container.querySelector<HTMLElement>('[role="dialog"]')!.focus())
-    expect(root.container.querySelector('[aria-label="More actions"]')!.getAttribute('aria-expanded')).toBe('true')
-    await dom.act(async () => root.container.querySelector<HTMLInputElement>('[aria-label="Progress: Show"]')!.click())
+    await dom.act(async () => dom.window.document.body.querySelector('summary')!.focus())
+    await dom.act(async () => dom.window.document.body.querySelector<HTMLElement>('[role="dialog"]')!.focus())
+    expect(dom.window.document.body.querySelector('[aria-label="More actions"]')!.getAttribute('aria-expanded')).toBe(
+      'true'
+    )
+    await dom.act(async () =>
+      dom.window.document.body.querySelector<HTMLInputElement>('[aria-label="Progress: Show"]')!.click()
+    )
     expect(subscribe).toHaveBeenCalledWith(stream.id, { decisions: 'notify', progress: 'show' })
     await dom.act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
-    expect(root.container.querySelector<HTMLInputElement>('[aria-label="Progress: Show"]')!.checked).toBe(true)
+    expect(dom.window.document.body.querySelector<HTMLInputElement>('[aria-label="Progress: Show"]')!.checked).toBe(
+      true
+    )
     subscribe.mockRejectedValueOnce(new Error('Offline'))
-    await dom.act(async () => root.container.querySelector<HTMLInputElement>('[aria-label="Decisions: Show"]')!.click())
+    await dom.act(async () =>
+      dom.window.document.body.querySelector<HTMLInputElement>('[aria-label="Decisions: Show"]')!.click()
+    )
     await dom.act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
-    expect(root.container.querySelector('[role="alert"]')!.textContent).toContain('Could not update attention')
-    expect(root.container.querySelector('details')!.open).toBe(true)
-    expect(root.container.querySelector<HTMLInputElement>('[aria-label="Decisions: Notify"]')!.checked).toBe(true)
-    const resetButton = [...root.container.querySelectorAll('button')].find((b) => b.textContent === 'Reset to squad')!
+    expect(dom.window.document.body.querySelector('[role="alert"]')!.textContent).toContain(
+      'Could not update attention'
+    )
+    expect(dom.window.document.body.querySelector('details')!.open).toBe(true)
+    expect(dom.window.document.body.querySelector<HTMLInputElement>('[aria-label="Decisions: Notify"]')!.checked).toBe(
+      true
+    )
+    const resetButton = [...dom.window.document.body.querySelectorAll('button')].find(
+      (b) => b.textContent === 'Reset to squad'
+    )!
     expect(Boolean(resetButton)).toBe(true)
     await dom.act(async () => resetButton.click())
     expect(reset).toHaveBeenCalledWith(stream.id)
     await dom.act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
-    expect(root.container.textContent).toContain('Inherits from squad')
-    expect(root.container.textContent).not.toContain('Reset to squad')
+    expect(dom.window.document.body.textContent).toContain('Inherits from squad')
+    expect(dom.window.document.body.textContent).not.toContain('Reset to squad')
   } finally {
     get.mockRestore()
     subscribe.mockRestore()
@@ -186,7 +203,8 @@ test('WebKit taps on menu items run them inside a focusable dialog', async () =>
   const subscribe = spyOn(api, 'subscribeWorkStream').mockImplementation(async () => subscription as never)
   const copy = spyOn(dom.window.navigator.clipboard, 'writeText').mockResolvedValue()
   const root = dom.createRoot()
-  const button = (text: string) => [...root.container.querySelectorAll('button')].find((b) => b.textContent === text)!
+  const button = (text: string) =>
+    [...dom.window.document.body.querySelectorAll('button')].find((b) => b.textContent === text)!
   try {
     await dom.act(async () =>
       root.root.render(
@@ -197,7 +215,7 @@ test('WebKit taps on menu items run them inside a focusable dialog', async () =>
         </QueryClientProvider>
       )
     )
-    const trigger = root.container.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!
+    const trigger = dom.window.document.body.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!
     await dom.act(async () => trigger.click())
     await dom.act(async () => button('Copy link').focus())
     expect(await webkitTap(button('Copy link'))).toBe(true)
@@ -205,9 +223,9 @@ test('WebKit taps on menu items run them inside a focusable dialog', async () =>
 
     await dom.act(async () => trigger.click())
     await dom.act(async () => button('Pause work…').focus())
-    expect(await webkitTap(root.container.querySelector('summary')!, { touch: true })).toBe(true)
-    expect(root.container.querySelector('details')!.open).toBe(true)
-    const label = root.container.querySelector('[aria-label="Progress: Show"]')!.closest('label')!
+    expect(await webkitTap(dom.window.document.body.querySelector('summary')!, { touch: true })).toBe(true)
+    expect(dom.window.document.body.querySelector('details')!.open).toBe(true)
+    const label = dom.window.document.body.querySelector('[aria-label="Progress: Show"]')!.closest('label')!
     expect(await webkitTap(label)).toBe(true)
     expect(subscribe).toHaveBeenCalledWith(stream.id, { decisions: 'notify', progress: 'show' })
     expect(trigger.getAttribute('aria-expanded')).toBe('true')

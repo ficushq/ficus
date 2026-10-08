@@ -1,9 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { workStreamTitle, type Agent, type WorkStream } from '@ficus/shared'
-import { useLayoutEffect, useRef, useState, type RefObject, type MouseEvent } from 'react'
-import { createPortal } from 'react-dom'
-import { usePopupDismiss } from '../hooks/usePopupDismiss'
-import { useStableRef } from '../hooks/useStableRef'
+import type { RefObject, MouseEvent } from 'react'
 import { getAgentPrimaryLabel, getAgentSecondaryLabel, AGENT_STATUS_LABELS } from '../lib/agentDisplay'
 import { agentChatPath, type EntityReference } from '../lib/entityReference'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
@@ -14,114 +11,44 @@ import { AgentActivityDot } from './AgentActivityDot'
 import { Badge } from './Badge'
 import { LoadingSurface, SkeletonLine } from './loading/Skeleton'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
+import { HoverCard } from './popover/HoverCard'
+import type { HoverCardState } from './popover/useHoverCard'
 
 const staleTime = 30_000
 const quickLinkClass =
   'flex min-w-0 items-center gap-1.5 rounded px-1 py-1 -mx-1 text-xs text-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
+/** The hover card for an `EntityReferenceLink`: a work stream or agent summary with quick links. */
 export function EntityReferencePreview({
   reference,
   anchor,
   id,
-  onEnter,
-  onLeave,
-  onDismiss,
-  onFocus,
-  onBlur,
+  hover,
+  open,
   onOpenAgent,
 }: {
   reference: EntityReference
   anchor: RefObject<HTMLButtonElement | null>
   id: string
-  onEnter: () => void
-  onLeave: () => void
-  onFocus: () => void
-  onBlur: () => void
-  onDismiss: () => void
+  hover: HoverCardState
+  open: boolean
   onOpenAgent?: (agent: Agent) => void
 }) {
-  const card = useRef<HTMLDivElement>(null)
-  const [position, setPosition] = useState<{ left: number; top: number }>()
-  const dismiss = useStableRef(onDismiss)
-  useLayoutEffect(() => {
-    const update = () => {
-      if (!anchor.current || !card.current) return
-      const rect = anchor.current.getBoundingClientRect()
-      const { width, height } = card.current.getBoundingClientRect()
-      const viewport = window.visualViewport
-      const left = viewport?.offsetLeft ?? 0
-      const top = viewport?.offsetTop ?? 0
-      const right = left + (viewport?.width ?? window.innerWidth)
-      const bottom = top + (viewport?.height ?? window.innerHeight)
-      if (rect.bottom < top || rect.top > bottom || rect.right < left || rect.left > right) {
-        dismiss.current()
-        return
-      }
-      setPosition({
-        left: Math.max(left + 8, Math.min(rect.left, right - width - 8)),
-        top: Math.max(
-          top + 8,
-          Math.min(rect.bottom + height + 8 <= bottom ? rect.bottom + 8 : rect.top - height - 8, bottom - height - 8)
-        ),
-      })
-    }
-    update()
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update)
-    if (card.current) observer?.observe(card.current)
-    if (anchor.current) observer?.observe(anchor.current)
-    window.addEventListener('scroll', update, true)
-    window.addEventListener('resize', update)
-    window.visualViewport?.addEventListener('resize', update)
-    window.visualViewport?.addEventListener('scroll', update)
-    return () => {
-      observer?.disconnect()
-      window.removeEventListener('scroll', update, true)
-      window.removeEventListener('resize', update)
-      window.visualViewport?.removeEventListener('resize', update)
-      window.visualViewport?.removeEventListener('scroll', update)
-    }
-  }, [anchor, dismiss])
-  // A hover/focus preview: Escape dismisses it (the caller restores focus only when it was inside);
-  // focus or a press leaving it just releases its focus hold, so hover can still keep it open.
-  usePopupDismiss({
-    open: true,
-    popup: card,
-    trigger: anchor,
-    restoreFocus: false,
-    onDismiss: (reason) => (reason === 'escape' ? onDismiss() : onBlur()),
-  })
-
-  return createPortal(
-    <div
-      ref={card}
+  return (
+    <HoverCard
+      hover={hover}
+      open={open}
+      anchor={anchor}
       id={id}
-      role="dialog"
-      aria-label={reference.kind === 'ws' ? 'Work stream preview' : 'Agent preview'}
-      onFocusCapture={onFocus}
-      onKeyDown={(event) => {
-        if (event.key !== 'Tab') return
-        const links = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>('a[href]')]
-        if (event.shiftKey && event.target === links[0]) {
-          event.preventDefault()
-          anchor.current?.focus()
-        } else if (!event.shiftKey && event.target === links.at(-1)) {
-          // Continue from the reference's place in the document, not the end of the portal.
-          anchor.current?.focus()
-          onDismiss()
-        }
-      }}
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-      className="ficus-overlay fixed z-[80] w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto p-3 text-[13px] leading-5 text-primary"
-      style={{ ...position, visibility: position ? 'visible' : 'hidden' }}
+      label={reference.kind === 'ws' ? 'Work stream preview' : 'Agent preview'}
+      className="ficus-overlay w-64 p-3 text-[13px] leading-5 text-primary"
     >
       {reference.kind === 'ws' ? (
-        <WorkPreview id={reference.id} onNavigate={onDismiss} onOpenAgent={onOpenAgent} />
+        <WorkPreview id={reference.id} onNavigate={hover.hide} onOpenAgent={onOpenAgent} />
       ) : (
-        <AgentPreview id={reference.id} onNavigate={onDismiss} onOpenAgent={onOpenAgent} />
+        <AgentPreview id={reference.id} onNavigate={hover.hide} onOpenAgent={onOpenAgent} />
       )}
-    </div>,
-    document.body
+    </HoverCard>
   )
 }
 

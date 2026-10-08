@@ -1,4 +1,3 @@
-import { useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { ThemePreset } from '@ficus/shared'
 import type { useTheme } from '../providers/ThemeProvider'
@@ -10,11 +9,11 @@ import {
   type WebThemeDefinition,
 } from '../theme/registry'
 import { presetAppearance } from '../theme/custom'
-import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { hasAppearances, useThemeHoverPreview } from '../hooks/useThemeHoverPreview'
 import { PaletteIcon } from './icons'
 import { ThemeSwatch } from './ThemeSwatch'
 import { SegmentedAppearanceControl } from './SegmentedAppearanceControl'
+import { Panel, usePopover } from './popover'
 
 type Circle =
   | { kind: 'builtin'; id: string; label: string; theme: WebThemeDefinition }
@@ -49,11 +48,8 @@ export function ThemeQuickPicker({
   enabled?: boolean
 }) {
   const hover = useThemeHoverPreview(value.preferredTheme)
-  const [open, setOpen] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  const panelId = useId()
+  // However it closes (trigger, outside press, Escape, focus leaving), a hover preview is restored first.
+  const popover = usePopover({ kind: 'dialog', onOpenChange: (open) => !open && hover.end() })
 
   // Phase 2: the currently-active preset (own or a foreign shared one) always
   // gets a circle, even when it isn't in `presets` (the caller's own
@@ -87,24 +83,11 @@ export function ThemeQuickPicker({
 
   const restorePreview = hover.end
 
-  const close = () => {
-    restorePreview()
-    setOpen(false)
-  }
-
   const selectCircle = (circle: Circle) => {
     restorePreview()
     if (circle.kind === 'preset') value.applyPreset(circle.preset)
     else value.setThemeId(circle.id)
   }
-
-  useEffect(() => {
-    if (!open) return
-    const panel = panelRef.current
-    const selected = panel?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')
-    ;(selected ?? panel?.querySelector<HTMLElement>('[role="radio"]'))?.focus()
-  }, [open])
-  usePopupDismiss({ open, popup: containerRef, trigger: triggerRef, onDismiss: close })
 
   if (!enabled) return null
 
@@ -113,80 +96,78 @@ export function ThemeQuickPicker({
   const showAppearance = findWebTheme(value.themeId).kind === 'dual' || (!!previewing && hasAppearances(previewing))
 
   return (
-    <div ref={containerRef} className="relative">
+    <div className="relative">
       <button
-        ref={triggerRef}
+        {...popover.triggerProps}
         type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={panelId}
         title="Theme"
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={popover.toggle}
         className={clsx(
           'hidden md:flex items-center justify-center p-2 rounded-md',
-          open ? 'bg-selection text-accent-light' : 'text-muted hover:text-primary hover:bg-surface-hover'
+          popover.open ? 'bg-selection text-accent-light' : 'text-muted hover:text-primary hover:bg-surface-hover'
         )}
       >
         <PaletteIcon className="w-5 h-5" />
       </button>
-      {open && (
-        <div
-          ref={panelRef}
-          id={panelId}
-          role="dialog"
-          aria-label="Theme"
-          className="ficus-overlay absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-3rem)] rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
-        >
-          {/* The cells touch, so sweeping between circles never crosses a gap that would restore the app for a
+      <Panel
+        {...popover.popoverProps}
+        label="Theme"
+        gap={8}
+        initialFocus={(panel) =>
+          panel.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]') ??
+          panel.querySelector<HTMLElement>('[role="radio"]')
+        }
+        className="ficus-overlay w-72 rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
+      >
+        {/* The cells touch, so sweeping between circles never crosses a gap that would restore the app for a
               frame; the padding inside each cell keeps the circles apart. */}
-          <div role="radiogroup" aria-label="Color theme" className="flex flex-wrap" onMouseLeave={restorePreview}>
-            {circles.map((circle) => {
-              const selected =
-                circle.kind === 'preset' ? value.presetId === circle.id : !value.presetId && value.themeId === circle.id
-              const previewing = hover.hoveredId === circle.id
-              return (
-                <button
-                  key={circle.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  aria-label={circle.label}
-                  className="group flex h-8 w-8 shrink-0 items-center justify-center focus:outline-none"
-                  onMouseEnter={() => hover.start(circle)}
-                  onClick={() => selectCircle(circle)}
-                  onKeyDown={(event) => {
-                    // Explicit, rather than relying on native button default
-                    // action: preventDefault suppresses that default so a real
-                    // browser never double-fires this on the same keypress.
-                    if (event.key !== 'Enter' && event.key !== ' ') return
-                    event.preventDefault()
-                    selectCircle(circle)
-                  }}
-                >
-                  <span className="block h-6 w-6 rounded-full">
-                    <ThemeSwatch
-                      ring={previewing ? 'on' : selected ? (hover.hoveredId ? 'dim' : 'on') : undefined}
-                      spec={
-                        circle.kind === 'builtin'
-                          ? { kind: 'builtin', theme: circle.theme, appearance: value.preferredTheme }
-                          : {
-                              kind: 'preset',
-                              document: circle.preset.document,
-                              appearance: presetAppearance(circle.preset.document, value.preferredTheme),
-                            }
-                      }
-                      className="h-full w-full"
-                    />
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-          {showAppearance && (
-            <SegmentedAppearanceControl value={value.appearance} onChange={value.setAppearance} className="mt-3" />
-          )}
+        <div role="radiogroup" aria-label="Color theme" className="flex flex-wrap" onMouseLeave={restorePreview}>
+          {circles.map((circle) => {
+            const selected =
+              circle.kind === 'preset' ? value.presetId === circle.id : !value.presetId && value.themeId === circle.id
+            const previewing = hover.hoveredId === circle.id
+            return (
+              <button
+                key={circle.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={circle.label}
+                className="group flex h-8 w-8 shrink-0 items-center justify-center focus:outline-none"
+                onMouseEnter={() => hover.start(circle)}
+                onClick={() => selectCircle(circle)}
+                onKeyDown={(event) => {
+                  // Explicit, rather than relying on native button default
+                  // action: preventDefault suppresses that default so a real
+                  // browser never double-fires this on the same keypress.
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  event.preventDefault()
+                  selectCircle(circle)
+                }}
+              >
+                <span className="block h-6 w-6 rounded-full">
+                  <ThemeSwatch
+                    ring={previewing ? 'on' : selected ? (hover.hoveredId ? 'dim' : 'on') : undefined}
+                    spec={
+                      circle.kind === 'builtin'
+                        ? { kind: 'builtin', theme: circle.theme, appearance: value.preferredTheme }
+                        : {
+                            kind: 'preset',
+                            document: circle.preset.document,
+                            appearance: presetAppearance(circle.preset.document, value.preferredTheme),
+                          }
+                    }
+                    className="h-full w-full"
+                  />
+                </span>
+              </button>
+            )
+          })}
         </div>
-      )}
+        {showAppearance && (
+          <SegmentedAppearanceControl value={value.appearance} onChange={value.setAppearance} className="mt-3" />
+        )}
+      </Panel>
     </div>
   )
 }

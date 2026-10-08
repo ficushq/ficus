@@ -226,19 +226,24 @@ Before building a control in `apps/web`, use the shared one. Hand-rolled
 copies drift in look, keyboard behaviour and accessibility. If a shared
 component almost fits, extend it rather than forking it.
 
-| Need                                                                             | Use (`apps/web/src/components/`)                                                                                                                  |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A single choice among a few options in a row (view switcher, mode, scope, range) | `SegmentedControl` (`size="compact"` in toolbars and headers)                                                                                     |
-| A dropdown to pick one value                                                     | `SelectionPopup` (`ThemedPopup.tsx`; see `ThemedPopup.md`) for new pickers, not a custom listbox (some older forms still use a native `<select>`) |
-| A menu of actions, or in-app section navigation from a button                    | `ActionPopup` (`ThemedPopup.tsx`)                                                                                                                 |
-| A "…" overflow of row actions                                                    | `OverflowMenu`                                                                                                                                    |
-| A dialog or sheet                                                                | `Modal` (follows the visual viewport on mobile; never position your own fixed overlay)                                                            |
-| A destructive action that needs a second tap                                     | `ConfirmButton`                                                                                                                                   |
-| A status or label pill                                                           | `Badge` (and `WorkStreamStatusBadges` for work stream state)                                                                                      |
-| Loading placeholders                                                             | `LoadingContent` and the skeletons in `loading/Skeleton.tsx`                                                                                      |
-| Buttons, fields, nav items and tables                                            | the `ficus-button`, `ficus-button-primary`, `ficus-field`, `ficus-nav-item` and `ficus-table` classes                                             |
-| Icons                                                                            | `components/icons` (see Icons below)                                                                                                              |
-| Colors in JS                                                                     | `useThemeColors` / `tokenReader` (see Theme colors above)                                                                                         |
+| Need                                                                                       | Use (`apps/web/src/components/`)                                                                                                                                                |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A single choice among a few options in a row (view switcher, mode, scope, range)           | `SegmentedControl` (`size="compact"` in toolbars and headers)                                                                                                                   |
+| A popup anchored to a button or field (menu, picker, panel, hover card, autocomplete list) | `Popover` and its variants in `popover/` (`Menu`, `Picker`, `Panel`, `HoverCard`, `ComboboxList`; see `popover/Popover.md`), never hand-rolled positioning, portal or dismissal |
+| A dropdown to pick one value                                                               | `SelectionPopup` (`ThemedPopup.tsx`, a trigger + `Picker`) for new pickers, not a custom listbox (some older forms still use a native `<select>`)                               |
+| A menu of actions, or in-app section navigation from a button                              | `ActionPopup` (`ThemedPopup.tsx`, a trigger + `Menu`), or `Menu` + `MenuItem` for custom rows                                                                                   |
+| A "…" overflow of row actions                                                              | `OverflowMenu` (a `Menu` over plain buttons)                                                                                                                                    |
+| A dialog or sheet                                                                          | `Modal` (follows the visual viewport on mobile; never position your own fixed overlay)                                                                                          |
+| A destructive action that needs a second tap                                               | `ConfirmButton`                                                                                                                                                                 |
+| A status or label pill                                                                     | `Badge` (and `WorkStreamStatusBadges` for work stream state)                                                                                                                    |
+| Loading placeholders                                                                       | `LoadingContent` and the skeletons in `loading/Skeleton.tsx`                                                                                                                    |
+| Buttons, fields, nav items and tables                                                      | the `ficus-button`, `ficus-button-primary`, `ficus-field`, `ficus-nav-item` and `ficus-table` classes                                                                           |
+| Icons                                                                                      | `components/icons` (see Icons below)                                                                                                                                            |
+| Colors in JS                                                                               | `useThemeColors` / `tokenReader` (see Theme colors above)                                                                                                                       |
+
+Any new floating UI must dismiss through `usePopupDismiss` (`hooks/usePopupDismiss.ts`) and be tap-tested
+with the WebKit tap helper (`test/webkitTap.ts`); the `Popover` variants already do both. The guard tests
+`components/popover.guard.test.ts` and `components/popupDismissal.guard.test.ts` enforce it.
 
 ### Stable Refs
 
