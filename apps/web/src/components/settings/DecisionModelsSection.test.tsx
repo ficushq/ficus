@@ -11,14 +11,15 @@ import {
   type DecisionFeatureSwitch,
   type DecisionFeatureView,
   type DecisionProviderView,
+  type DecisionSpend,
 } from '@ficus/shared'
-import type { DecisionSettings } from '../../api/decisions'
+import type { DecisionFeature, DecisionSettings } from '../../api/decisions'
 import { PermissionsProvider, type PermissionsResult } from '../../hooks/usePermissions'
 import { decisionQueryKeys } from '../../queryKeys'
 import { acquireDomHarness } from '../../test/domHarness'
 import { DecisionModelsSection } from './DecisionModelsSection'
 import { DEFAULT_TRY_QUESTION, DecisionTryResult } from './DecisionTryPanel'
-import { formatPercent } from './decisionUi'
+import { featureSwitchState, formatPercent, formatPrice, formatUsd } from './decisionUi'
 
 const jev: DecisionProviderView = {
   id: 'jev-1',
@@ -27,6 +28,7 @@ const jev: DecisionProviderView = {
   model: 'jev-latest',
   enabled: true,
   hasApiKey: true,
+  effectivePricePerMillionInput: 0.042,
 }
 const local: DecisionProviderView = {
   id: 'systemone-1',
@@ -36,6 +38,7 @@ const local: DecisionProviderView = {
   enabled: false,
   baseUrl: 'http://localhost:11434',
   hasApiKey: false,
+  effectivePricePerMillionInput: 0,
 }
 
 const features = (toolSwitch: DecisionFeatureSwitch = 'auto', enabled = true): DecisionFeatureView[] =>
@@ -63,11 +66,21 @@ const permissions = (canWrite: boolean) => (): PermissionsResult => ({
   isError: false,
 })
 
-function client(data: DecisionSettings) {
+const noSpend = (days: number): DecisionSpend => ({
+  days,
+  totalUsd: 0,
+  approximate: false,
+  byPurpose: [],
+  byProvider: [],
+})
+
+function client(data: DecisionSettings, spend: Partial<Record<1 | 7 | 30, DecisionSpend>> = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
   })
   queryClient.setQueryData(decisionQueryKeys.settings(), data)
+  for (const [days, value] of Object.entries(spend))
+    queryClient.setQueryData(decisionQueryKeys.spend(Number(days)), value)
   return queryClient
 }
 
@@ -114,6 +127,8 @@ async function mount(
     const response = respond(call)
     if (response) return response
     if (call.method === 'GET' && call.url.endsWith('/decisions')) return Response.json(data)
+    const days = call.url.match(/\/decisions\/spend\?days=(\d+)/)?.[1]
+    if (call.method === 'GET' && days) return Response.json(noSpend(Number(days)))
     throw new Error(`Unexpected request: ${call.method} ${call.url}`)
   }) as typeof fetch
   dom.window.fetch = globalThis.fetch
@@ -457,5 +472,151 @@ describe('Decision models settings', () => {
     expect(formatPercent(0.997)).toBe('>99%')
     expect(formatPercent(0)).toBe('0%')
     expect(formatPercent(1)).toBe('100%')
+  })
+
+  test('features show what they cost, with a total and a month projection marked as estimates', () => {
+    const month: DecisionSpend = {
+      days: 30,
+      totalUsd: 1.2345,
+      approximate: true,
+      byPurpose: [
+        { purpose: 'tool-results', calls: 1204, answered: 1200, inputTokens: 9_000_000, costUsd: 0.42 },
+        { purpose: 'github-firewall', calls: 3, answered: 3, inputTokens: 900, costUsd: 0.00004 },
+        { purpose: 'workflow-steps', calls: 0, answered: 0, inputTokens: 0, costUsd: 0 },
+      ],
+      byProvider: [{ providerId: 'jev-1', calls: 1207, inputTokens: 9_000_900, costUsd: 0.31 }],
+    }
+    const week: DecisionSpend = { ...month, days: 7, totalUsd: 0.7, approximate: false }
+    const html = renderToStaticMarkup(tree(client(settings(), { 30: month, 7: week }), true))
+    expect(html).toContain('≈ $1.23')
+    expect(html).toContain('in the last 30 days')
+    expect(html).toContain('about <span class="tabular-nums">$3.00</span> a month at this rate')
+    expect(html).toContain(
+      'Some providers don&#x27;t report tokens, or a price isn&#x27;t known, so this is an estimate.'
+    )
+    expect(featureRow(html, 'Tool result firewall')).toContain('≈ $0.42 · 1,204 calls')
+    expect(featureRow(html, 'GitHub firewall')).toContain('≈ &lt; $0.01 · 3 calls')
+    expect(featureRow(html, 'Workflow decisions')).not.toContain('calls')
+    expect(featureRow(html, 'Event rule conditions')).not.toContain('$')
+    // The period picker, 30 days by default.
+    expect(html).toMatch(/role="radio" aria-checked="true"[^>]*>30 days</)
+    // Providers: their price, and what they cost this month.
+    expect(featureRow(html, 'Jev')).toContain('$0.042 per million input tokens')
+    expect(featureRow(html, 'Jev')).toContain('≈ $0.31 this month')
+    expect(featureRow(html, 'Clef on the Mac mini')).toContain('Free')
+    expect(featureRow(html, 'Clef on the Mac mini')).not.toContain('this month')
+  })
+
+  test('picking a period fetches its spend', async () => {
+    await mount(
+      settings(),
+      () => undefined,
+      async ({ calls, act, document }) => {
+        const picker = document.querySelector('[aria-label="Spend period"]')!
+        await act(() => fireEvent.click([...picker.querySelectorAll('button')].find((b) => b.textContent === '24h')!))
+        expect(calls.some((call) => call.url.endsWith('/decisions/spend?days=1'))).toBe(true)
+        expect(document.body.textContent).toContain('in the last 24 hours')
+      }
+    )
+  })
+
+  test('amounts and prices read naturally', () => {
+    expect(formatUsd(0)).toBe('$0.00')
+    expect(formatUsd(0.004)).toBe('< $0.01')
+    expect(formatUsd(0.426)).toBe('$0.43')
+    expect(formatUsd(1234.5)).toBe('$1,234.50')
+    expect(formatPrice(0.042)).toBe('$0.042 per million input tokens')
+    expect(formatPrice(0.1)).toBe('$0.10 per million input tokens')
+    expect(formatPrice(0)).toBe('Free')
+    expect(formatPrice(null)).toBe('Price unknown')
+  })
+
+  test('a provider with no known price says so', () => {
+    const custom = { ...jev, id: 'jev-2', label: 'Jev beta', model: 'jev-next', effectivePricePerMillionInput: null }
+    expect(featureRow(render(settings({ providers: [custom] })), 'Jev beta')).toContain('Price unknown')
+  })
+
+  test('the edit dialog sets a price, and clearing it goes back to the list price', async () => {
+    const priced = { ...jev, pricePerMillionInput: 0.05, effectivePricePerMillionInput: 0.05 }
+    await mount(
+      settings({ providers: [priced] }),
+      (call) => (call.method === 'PATCH' ? Response.json(priced) : undefined),
+      async ({ calls, act, button, field, document }) => {
+        expect(featureRow(document.body.innerHTML, 'Jev')).toContain('(your price)')
+        await act(() => fireEvent.click(button('Edit Jev')))
+        const price = field('Price per million input tokens (USD)')
+        expect(price.value).toBe('0.05')
+        expect(price.getAttribute('placeholder')).toBe('0.042')
+        await act(() => fireEvent.input(price, { target: { value: '' } }))
+        await act(() => fireEvent.click(button('Save')))
+        expect(calls.find((call) => call.method === 'PATCH')?.body).toEqual({
+          label: 'Jev',
+          model: 'jev-latest',
+          pricePerMillionInput: null,
+        })
+      }
+    )
+    await mount(
+      settings(),
+      (call) => (call.method === 'PATCH' ? Response.json(jev) : undefined),
+      async ({ calls, act, button, field }) => {
+        await act(() => fireEvent.click(button('Edit Jev')))
+        expect(field('Price per million input tokens (USD)').value).toBe('')
+        await act(() => fireEvent.input(field('Price per million input tokens (USD)'), { target: { value: '0.03' } }))
+        await act(() => fireEvent.click(button('Save')))
+        expect(
+          (calls.find((call) => call.method === 'PATCH')?.body as { pricePerMillionInput?: number })
+            .pricePerMillionInput
+        ).toBe(0.03)
+      }
+    )
+  })
+
+  test('a feature that is off by default reads off under auto, turns on with on, and off with auto', async () => {
+    // Robot moods is not a purpose yet, so it borrows one id; only its flags matter here.
+    const only = (value: DecisionFeatureSwitch): DecisionFeature[] => [
+      {
+        id: 'tool-results',
+        label: 'Robot moods',
+        description: 'Guesses how the agents feel.',
+        scope: 'instance',
+        switch: value,
+        enabled: value === 'on',
+        offByDefault: true,
+      },
+    ]
+    // Core may report it could run (a model exists), but auto still means off for it.
+    expect(featureSwitchState({ ...only('auto')[0]!, enabled: true })).toEqual({
+      on: false,
+      offByDefault: true,
+      turnOn: 'on',
+      turnOff: 'auto',
+    })
+    expect(featureSwitchState(features('auto', true)[0]!)).toEqual({
+      on: true,
+      offByDefault: false,
+      turnOn: 'auto',
+      turnOff: 'off',
+    })
+    await mount(
+      settings({ features: only('auto') }),
+      (call) =>
+        call.method === 'PUT' && call.url.includes('/decisions/features/')
+          ? Response.json(only((call.body as { value: DecisionFeatureSwitch }).value))
+          : undefined,
+      async ({ calls, act, document }) => {
+        const row = () => featureRow(document.body.innerHTML, 'Robot moods')
+        expect(row()).toContain("Off by default; turn on if it's worth the cost.")
+        expect(row()).toContain('>Off<')
+        const toggle = () => document.querySelector('[aria-label="Use the robot moods"]') as HTMLInputElement
+        expect(toggle().checked).toBe(false)
+        await act(() => fireEvent.click(toggle()))
+        expect(calls.filter((call) => call.method === 'PUT')[0]?.body).toEqual({ value: 'on' })
+        expect(toggle().checked).toBe(true)
+        await act(() => fireEvent.click(toggle()))
+        expect(calls.filter((call) => call.method === 'PUT')[1]?.body).toEqual({ value: 'auto' })
+        expect(toggle().checked).toBe(false)
+      }
+    )
   })
 })

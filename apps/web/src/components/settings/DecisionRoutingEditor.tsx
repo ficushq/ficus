@@ -1,22 +1,28 @@
 import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DECISION_TIMEOUT_MAX_MS,
   type DecisionFeatureSwitch,
-  type DecisionFeatureView,
   type DecisionProviderView,
   type DecisionPurpose,
   type DecisionRouting,
 } from '@ficus/shared'
-import { setDecisionFeatureSwitch, setDecisionRouting } from '../../api/decisions'
+import {
+  setDecisionFeatureSwitch,
+  setDecisionRouting,
+  type DecisionFeature,
+  type DecisionSettings,
+  type DecisionSpendDays,
+} from '../../api/decisions'
+import { queries } from '../../queryOptions'
 import { decisionQueryKeys } from '../../queryKeys'
-import type { DecisionSettings } from '../../api/decisions'
 import { Badge, type BadgeColor } from '../Badge'
 import { SegmentedControl } from '../SegmentedControl'
 import { ChevronDownIcon, CloseIcon, PlusIcon } from '../icons'
 import { DECISION_INPUT_CLASS } from './DecisionField'
-import { errorText } from './decisionUi'
+import { errorText, featureSwitchState, formatSpend, SPEND_ESTIMATE_NOTE } from './decisionUi'
+import { DecisionSpendSummary } from './DecisionSpendSummary'
 
 const MIN_TIMEOUT_SECONDS = 0.25
 const MAX_TIMEOUT_SECONDS = DECISION_TIMEOUT_MAX_MS / 1000
@@ -36,10 +42,12 @@ export function DecisionRoutingEditor({
 }: {
   providers: DecisionProviderView[]
   routing: DecisionRouting
-  features: DecisionFeatureView[]
+  features: DecisionFeature[]
   canWrite: boolean
 }) {
   const queryClient = useQueryClient()
+  const [spendDays, setSpendDays] = useState<DecisionSpendDays>(30)
+  const { data: spend } = useQuery(queries.decisions.spend(spendDays))
   const [draft, setDraft] = useState<DecisionRouting | null>(null)
   const [timeoutText, setTimeoutText] = useState<string | null>(null)
   const current = draft ?? routing
@@ -99,15 +107,30 @@ export function DecisionRoutingEditor({
   return (
     <div className="space-y-8">
       <section aria-labelledby="decision-features-heading" className="space-y-3">
-        <div>
-          <h4 id="decision-features-heading" className="text-sm font-medium text-secondary">
-            Features
-          </h4>
-          <p className="mt-0.5 text-xs text-muted">
-            Everything decision models do in Ficus.
-            {hasProviders ? ' Each feature asks the default order unless you give it its own.' : ''}
-          </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0">
+            <h4 id="decision-features-heading" className="text-sm font-medium text-secondary">
+              Features
+            </h4>
+            <p className="mt-0.5 text-xs text-muted">
+              Everything decision models do in Ficus, and what each costs.
+              {hasProviders ? ' Each feature asks the default order unless you give it its own.' : ''}
+            </p>
+          </div>
+          <SegmentedControl
+            size="compact"
+            ariaLabel="Spend period"
+            className="self-start"
+            value={String(spendDays) as '1' | '7' | '30'}
+            onChange={(next) => setSpendDays(Number(next) as DecisionSpendDays)}
+            options={[
+              { value: '1', label: '24h' },
+              { value: '7', label: '7 days' },
+              { value: '30', label: '30 days' },
+            ]}
+          />
         </div>
+        <DecisionSpendSummary spend={spend} />
         <ul className="divide-y divide-th-border border-y border-th-border">
           {features.map((feature) => {
             const ids = current.purposes[feature.id]
@@ -115,6 +138,8 @@ export function DecisionRoutingEditor({
               <DecisionFeatureRow
                 key={feature.id}
                 feature={feature}
+                spend={spend?.byPurpose.find((row) => row.purpose === feature.id)}
+                approximate={spend?.approximate ?? false}
                 hasProviders={hasProviders}
                 canWrite={canWrite}
                 switching={featureSwitch.isPending}
@@ -241,11 +266,14 @@ const SCOPE_STATUS: Record<'squad' | 'authored', { status: string; note?: string
 }
 
 /**
- * One thing decision models power: what it does, whether it runs, and which providers it asks.
- * Only instance features have a switch here; the three-way auto/on/off value stays in Core.
+ * One thing decision models power: what it does, what it cost, whether it runs, and which
+ * providers it asks. Only instance features have a switch here; it shows on/off and
+ * `featureSwitchState` picks the auto/on/off value to save.
  */
 export function DecisionFeatureRow({
   feature,
+  spend,
+  approximate = false,
   hasProviders,
   canWrite,
   switching,
@@ -254,7 +282,10 @@ export function DecisionFeatureRow({
   onCustomChange,
   children,
 }: {
-  feature: DecisionFeatureView
+  feature: DecisionFeature
+  /** This feature's spend over the chosen period. */
+  spend?: { calls: number; costUsd: number }
+  approximate?: boolean
   hasProviders: boolean
   canWrite: boolean
   switching: boolean
@@ -264,13 +295,15 @@ export function DecisionFeatureRow({
   children?: ReactNode
 }) {
   const instance = feature.scope === 'instance'
-  const on = feature.switch === 'on' || (feature.switch === 'auto' && feature.enabled)
+  const { on, offByDefault, turnOn, turnOff } = featureSwitchState(feature)
   const { status, color, note }: { status: string; color: BadgeColor; note?: string } =
     feature.scope === 'instance'
       ? {
           status: !hasProviders ? 'Needs a decision model' : on ? 'On' : 'Off',
           color: !hasProviders ? 'attention' : on ? 'success' : 'neutral',
-          note: 'On by default once a decision model is set up.',
+          note: offByDefault
+            ? "Off by default; turn on if it's worth the cost."
+            : 'On by default once a decision model is set up.',
         }
       : { ...SCOPE_STATUS[feature.scope], color: 'neutral' }
   return (
@@ -280,6 +313,15 @@ export function DecisionFeatureRow({
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-sm font-medium text-primary">{feature.label}</span>
             <Badge color={color}>{status}</Badge>
+            {spend && spend.calls > 0 && (
+              <span
+                className="text-xs tabular-nums text-secondary"
+                title={approximate ? SPEND_ESTIMATE_NOTE : undefined}
+              >
+                {formatSpend(spend.costUsd, approximate)} · {spend.calls.toLocaleString('en-US')}{' '}
+                {spend.calls === 1 ? 'call' : 'calls'}
+              </span>
+            )}
           </div>
           <p className="mt-0.5 text-xs text-muted">
             {feature.description}
@@ -295,7 +337,7 @@ export function DecisionFeatureRow({
                 aria-label={`Use the ${feature.label.toLowerCase()}`}
                 checked={hasProviders && on}
                 disabled={!canWrite || !hasProviders || switching}
-                onChange={(event) => onSwitch(event.target.checked ? 'auto' : 'off')}
+                onChange={(event) => onSwitch(event.target.checked ? turnOn : turnOff)}
                 className="h-4 w-4 accent-current disabled:opacity-50"
               />
               <span className={clsx(!hasProviders && 'opacity-50')}>Enabled</span>

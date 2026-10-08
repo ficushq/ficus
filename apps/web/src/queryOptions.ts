@@ -37,7 +37,7 @@ import {
 import { listAgentTypes } from './api/agentTypes'
 import { getModelTiers, getSquadPresets } from './api/config'
 import { modelTierQueryKeys, decisionQueryKeys } from './queryKeys'
-import { getDecisionSettings } from './api/decisions'
+import { getDecisionSettings, getDecisionSpend, type DecisionSpendDays } from './api/decisions'
 import { schedulesApi, type ListSchedulesParams } from './api/schedules'
 import { monitorsApi, type ListMonitorsParams } from './api/monitors'
 import { getRecommendation, listRecommendations, type ListRecommendationsParams } from './api/recommendations'
@@ -264,6 +264,12 @@ export const queries = {
 
   decisions: {
     settings: () => queryOptions({ queryKey: decisionQueryKeys.settings(), queryFn: getDecisionSettings }),
+    spend: (days: DecisionSpendDays) =>
+      queryOptions({
+        queryKey: decisionQueryKeys.spend(days),
+        queryFn: () => getDecisionSpend(days),
+        staleTime: 60_000,
+      }),
   },
 
   agentTypes: {

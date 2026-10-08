@@ -12,6 +12,7 @@ export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
 export const decisionQueryKeys = {
   all: ['decisions'] as const,
   settings: () => [...decisionQueryKeys.all, 'settings'] as const,
+  spend: (days: number) => [...decisionQueryKeys.all, 'spend', days] as const,
 }
 
 /** A user's theme preset library. Phase 2 adds `scope` ('mine' | 'shared' |

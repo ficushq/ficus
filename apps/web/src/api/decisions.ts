@@ -7,6 +7,7 @@ import type {
   DecisionQuestions,
   DecisionResult,
   DecisionRouting,
+  DecisionSpend,
 } from '@ficus/shared'
 import { apiFetch } from './client'
 
@@ -17,10 +18,19 @@ export interface DecisionSettings {
   kinds: Record<DecisionProviderKind, { label: string; description: string; defaultModel: string; models: string[] }>
   purposes: Array<{ id: DecisionPurpose; label: string; description: string }>
   /** Everything decision models power, with each instance feature's switch. */
-  features: DecisionFeatureView[]
+  features: DecisionFeature[]
   /** Whether the OpenAI API services key is set; OpenAI Decisions has no key of its own. */
   openAIServicesKey: boolean
 }
+
+/** A feature as Core sends it: its purpose info is spread in, including `offByDefault`. */
+export type DecisionFeature = DecisionFeatureView & {
+  /** Nice to have but costs money: off under `auto` until the owner turns it on. */
+  offByDefault?: boolean
+}
+
+/** The periods spend can be added up over. */
+export type DecisionSpendDays = 1 | 7 | 30
 
 export interface DecisionProviderInput {
   kind: DecisionProviderKind
@@ -39,6 +49,8 @@ export interface DecisionProviderPatch {
   accountId?: string
   /** A blank key keeps the stored one. */
   apiKey?: string
+  /** Dollars per million input tokens; null goes back to the list price. */
+  pricePerMillionInput?: number | null
 }
 
 export interface DetectedDecisionServer {
@@ -90,11 +102,16 @@ export function setDecisionRouting(routing: DecisionRouting): Promise<DecisionRo
 export function setDecisionFeatureSwitch(
   id: DecisionPurpose,
   value: DecisionFeatureSwitch
-): Promise<DecisionFeatureView[]> {
-  return apiFetch<DecisionFeatureView[]>(`/decisions/features/${encodeURIComponent(id)}`, {
+): Promise<DecisionFeature[]> {
+  return apiFetch<DecisionFeature[]>(`/decisions/features/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify({ value }),
   })
+}
+
+/** What decision models cost over the last 1, 7 or 30 days, by feature and by provider. */
+export function getDecisionSpend(days: DecisionSpendDays): Promise<DecisionSpend> {
+  return apiFetch<DecisionSpend>(`/decisions/spend?days=${days}`)
 }
 
 export function tryDecision(input: DecisionTryInput): Promise<DecisionTryOutcome> {

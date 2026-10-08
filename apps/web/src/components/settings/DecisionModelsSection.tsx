@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DECISION_PROVIDER_KIND_INFO,
   DECISION_PROVIDER_KINDS,
+  decisionPricePerMillion,
   type DecisionProviderKind,
   type DecisionProviderView,
 } from '@ficus/shared'
@@ -18,7 +20,15 @@ import { DecisionProviderSetup } from './DecisionProviderSetup'
 import { DecisionRoutingEditor } from './DecisionRoutingEditor'
 import { DecisionTryPanel } from './DecisionTryPanel'
 import { ProviderDirectoryCard } from './ProviderDirectoryCard'
-import { DECISION_KIND_FIELDS, DECISION_KIND_LOGOS, errorText, invalidateDecisions } from './decisionUi'
+import {
+  DECISION_KIND_FIELDS,
+  DECISION_KIND_LOGOS,
+  errorText,
+  formatPrice,
+  formatSpend,
+  invalidateDecisions,
+  SPEND_ESTIMATE_NOTE,
+} from './decisionUi'
 
 /**
  * Decision models, apart from the agent model providers above them: fast models that answer
@@ -141,6 +151,7 @@ export function DecisionProviderList({
   canWrite: boolean
 }) {
   const queryClient = useQueryClient()
+  const { data: spend } = useQuery(queries.decisions.spend(30))
   // The last provider opened stays rendered while the dialog animates closed.
   const [editing, setEditing] = useState<{ provider: DecisionProviderView; open: boolean } | null>(null)
   const toggle = useMutation({
@@ -187,6 +198,12 @@ export function DecisionProviderList({
                     {provider.model}
                     {detail ? ` · ${detail}` : ''}
                   </p>
+                  <ProviderCost
+                    price={provider.effectivePricePerMillionInput}
+                    ownPrice={provider.pricePerMillionInput !== undefined}
+                    costUsd={spend?.byProvider.find((row) => row.providerId === provider.id)?.costUsd}
+                    approximate={spend?.approximate ?? false}
+                  />
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-3 pl-12 sm:pl-0">
@@ -243,6 +260,35 @@ export function DecisionProviderList({
   )
 }
 
+/** A provider's price, and what it cost in the last 30 days when it cost anything. */
+function ProviderCost({
+  price,
+  ownPrice,
+  costUsd,
+  approximate,
+}: {
+  price: number | null | undefined
+  ownPrice: boolean
+  costUsd: number | undefined
+  approximate: boolean
+}) {
+  return (
+    <p className="truncate text-xs text-muted">
+      <span className={clsx(price === null && 'text-warning')}>{formatPrice(price ?? null)}</span>
+      {ownPrice ? ' (your price)' : ''}
+      {costUsd !== undefined && costUsd > 0 && (
+        <span
+          className="tabular-nums text-secondary"
+          title={approximate ? SPEND_ESTIMATE_NOTE : 'Spent in the last 30 days'}
+        >
+          {' '}
+          · {formatSpend(costUsd, approximate)} this month
+        </span>
+      )}
+    </p>
+  )
+}
+
 export function EditDecisionProvider({
   provider,
   isOpen,
@@ -268,6 +314,11 @@ function EditDecisionProviderForm({ provider, onClose }: { provider: DecisionPro
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl ?? '')
   const [accountId, setAccountId] = useState(provider.accountId ?? '')
   const [apiKey, setApiKey] = useState('')
+  const [price, setPrice] = useState(provider.pricePerMillionInput?.toString() ?? '')
+  const listPrice = decisionPricePerMillion({ kind: provider.kind, model: model.trim() || provider.model })
+  const parsedPrice = price.trim() === '' ? null : Number(price)
+  const priceValid = parsedPrice === null || (Number.isFinite(parsedPrice) && parsedPrice >= 0 && parsedPrice <= 1000)
+  const priceChanged = (parsedPrice ?? undefined) !== provider.pricePerMillionInput
   const save = useMutation({
     mutationFn: (patch: DecisionProviderPatch) => updateDecisionProvider(provider.id, patch),
     onSuccess: async () => {
@@ -282,13 +333,15 @@ function EditDecisionProviderForm({ provider, onClose }: { provider: DecisionPro
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault()
-        if (save.isPending) return
+        if (save.isPending || !priceValid) return
         save.mutate({
           label: label.trim(),
           model: model.trim(),
           ...(fields.baseUrl ? { baseUrl: baseUrl.trim() } : {}),
           ...(fields.accountId ? { accountId: accountId.trim() } : {}),
           ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+          // Cleared goes back to the list price.
+          ...(priceChanged ? { pricePerMillionInput: parsedPrice } : {}),
         })
       }}
     >
@@ -364,6 +417,30 @@ function EditDecisionProviderForm({ provider, onClose }: { provider: DecisionPro
           )}
         </DecisionField>
       )}
+      <DecisionField
+        label="Price per million input tokens (USD)"
+        hint={
+          priceValid
+            ? `Optional. Leave empty to use the list price (${listPrice === null ? 'not known for this model' : listPrice === 0 ? 'free' : `$${listPrice}`}).`
+            : 'Enter a price from 0 to 1000 dollars.'
+        }
+      >
+        {(id) => (
+          <input
+            id={id}
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={1000}
+            step="any"
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+            placeholder={listPrice === null ? 'Unknown' : String(listPrice)}
+            aria-invalid={!priceValid}
+            className={DECISION_INPUT_CLASS}
+          />
+        )}
+      </DecisionField>
       {provider.kind === 'openai' && (
         <p className="text-xs text-muted">Uses the OpenAI API services key from Integrations.</p>
       )}
@@ -383,7 +460,7 @@ function EditDecisionProviderForm({ provider, onClose }: { provider: DecisionPro
         </button>
         <button
           type="submit"
-          disabled={save.isPending || !model.trim()}
+          disabled={save.isPending || !model.trim() || !priceValid}
           className="ficus-button ficus-button-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
         >
           {save.isPending ? 'Saving…' : 'Save'}
