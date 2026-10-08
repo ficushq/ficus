@@ -1,43 +1,21 @@
 import clsx from 'clsx'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { ChevronDownIcon } from './icons'
 
 export function WorkStreamFiltersPopover({ count, children }: { count: number; children: ReactNode }) {
   const [open, setOpen] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const panelId = useId()
 
   useEffect(() => {
-    if (!open) return
-    panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
-    const onPointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      setOpen(false)
-      triggerRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown, true)
-    }
+    if (open) panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
   }, [open])
+  usePopupDismiss({ open, popup: panelRef, trigger: triggerRef, onDismiss: () => setOpen(false) })
 
   return (
-    <div
-      ref={containerRef}
-      className="relative"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
-      }}
-    >
+    <div className="relative">
       <button
         ref={triggerRef}
         type="button"

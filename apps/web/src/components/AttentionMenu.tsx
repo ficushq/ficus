@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { useDismissOnOutside } from '../hooks/useDismissOnOutside'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import {
   ATTENTION_KIND_COPY,
   ATTENTION_LEVELS,
@@ -82,7 +82,8 @@ export function AttentionMenu({
     if (detailsRef.current) detailsRef.current.open = false
     setOpen(false)
   }, [])
-  useDismissOnOutside(open, detailsRef, summaryRef, close)
+  // Inline, it is an expander inside another popup, which owns keyboard focus-out.
+  usePopupDismiss({ open, popup: detailsRef, trigger: summaryRef, onDismiss: close, focusOut: !inline })
   const isSquad = target.kind === 'squad'
   // Two typed queries with a constant hook order, rather than one query whose options type would
   // be a union: only the one matching this target is enabled, so only it ever fetches.

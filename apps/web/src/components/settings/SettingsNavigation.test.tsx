@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { acquireDomHarness } from '../../test/domHarness'
+import { webkitTap } from '../../test/webkitTap'
 import { SettingsNavigation } from './SettingsNavigation'
 import { SettingsSearchDestination } from './SettingsSearchDestination'
 import { matchesSetting, SETTINGS_SEARCH_ENTRIES } from './settingsSearch'
@@ -282,6 +283,32 @@ test('phone settings chooser stays open across areas and closes on a page select
   expect(mobile.querySelector('[aria-label="Personal settings sections"]')).not.toBeNull()
   await dom!.act(async () => button('Account').click())
   expect(calls.at(-1)).toEqual(['account', undefined])
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+})
+
+// On a phone the search field holds focus when the chooser opens. A Safari/iOS tap on an area tab or a page
+// blurs it to nothing (buttons never take focus), and must still switch the area or choose the page.
+test('phone settings chooser handles WebKit taps, outside taps and Tab out', async () => {
+  const { container, calls } = await setup()
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Choose settings section"]')!
+  const mobile = trigger.parentElement!
+  const button = (label: string) =>
+    [...mobile.querySelectorAll('button')].find((item) => item.textContent?.trim() === label)!
+  await dom!.act(async () => trigger.click())
+  expect(dom!.window.document.activeElement?.tagName).toBe('INPUT')
+  expect(await webkitTap(button('Administration'), { touch: true })).toBe(true)
+  expect(mobile.querySelector('[aria-label="Administration sections"]')).not.toBeNull()
+  expect(await webkitTap(button('Personal'))).toBe(true)
+  expect(await webkitTap(button('Account'))).toBe(true)
+  expect(calls.at(-1)).toEqual(['account', undefined])
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+  await dom!.act(async () => trigger.click())
+  await webkitTap(container.querySelector('aside')!)
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+  await dom!.act(async () => trigger.click())
+  await dom!.act(async () => container.querySelector('aside')!.querySelector('input')!.focus())
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
 })
 

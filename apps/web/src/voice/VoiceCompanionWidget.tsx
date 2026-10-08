@@ -7,6 +7,7 @@ import { siteOperatorVoiceAssistant } from './assistants/siteOperator/siteOperat
 import { VoiceTranscriptInspector } from './VoiceTranscriptInspector'
 import { useRealtimeVoiceAssistant } from './useRealtimeVoiceAssistant'
 import { Presence } from '../components/Presence'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { MicIcon, CloseIcon, ExpandIcon, ChevronDownIcon, StopIcon, RefreshIcon } from '../components/icons'
 import { OPEN_ASSISTANT_EVENT, OPEN_VOICE_EVENT } from '@ficus/shared/browser-keys'
 
@@ -121,34 +122,21 @@ export function VoiceCompanionButton({
     }
   }, [history])
 
-  // Close panel on outside click
-  useEffect(() => {
-    if (!panelOpen) return
-    const handler = (e: MouseEvent) => {
-      if (
-        panelRef.current &&
-        !panelRef.current.contains(e.target as Node) &&
-        buttonRef.current &&
-        !buttonRef.current.contains(e.target as Node)
-      ) {
-        if (isConnected) setCompact(true)
-        else setPanelOpen(false)
-      }
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (isConnected) setCompact(true)
-        else setPanelOpen(false)
-        buttonRef.current?.focus()
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    document.addEventListener('keydown', escape)
-    return () => {
-      document.removeEventListener('mousedown', handler)
-      document.removeEventListener('keydown', escape)
-    }
-  }, [panelOpen, isConnected])
+  // The expanded header panel is a popup: an outside press or Escape compacts a live session and
+  // closes an idle one. Compact-and-live it is a persistent mini player, and embedded it is part of
+  // its host, so neither dismisses (nor claims Escape).
+  usePopupDismiss({
+    open: !embedded && panelOpen && !(isConnected && compact),
+    popup: panelRef,
+    trigger: buttonRef,
+    // A non-modal companion that keeps running while the user works elsewhere: focus moving away
+    // never dismissed it, only a press outside or Escape does.
+    focusOut: false,
+    onDismiss: () => {
+      if (isConnected) setCompact(true)
+      else setPanelOpen(false)
+    },
+  })
 
   const unavailableReason =
     typeof window !== 'undefined' && window.isSecureContext === false

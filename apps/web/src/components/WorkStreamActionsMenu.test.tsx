@@ -3,6 +3,7 @@ import { expect, spyOn, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
+import { webkitTap } from '../test/webkitTap'
 import { queryKeys } from '../queryKeys'
 import { client } from '../api/clientInstance'
 import { WorkStreamActionsMenu } from './WorkStreamActionsMenu'
@@ -166,6 +167,61 @@ test('notification changes preserve the other kind and reset the stream override
     get.mockRestore()
     subscribe.mockRestore()
     reset.mockRestore()
+    await dom.cleanup()
+    cache.clear()
+  }
+})
+
+// Safari/iOS: a tapped button or label is never focused; WebKit focuses the enclosing dialog instead. Every
+// action, including a level inside the inline notifications disclosure, must still run.
+test('WebKit taps on menu items run them inside a focusable dialog', async () => {
+  const api = await import('../api/squads')
+  const dom = await acquireDomHarness({ url: 'https://example.test/' })
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const stream = { id: 'webkit-stream', number: 7, squadId: 'squad', status: 'active' } as WorkStream
+  const subscription = { attention: { decisions: 'notify', progress: 'mute' }, inherited: true, subscribed: false }
+  cache.setQueryData(queryKeys.auth.permissions(stream.squadId), { permissions: ['workstreams:update'] })
+  cache.setQueryData(queryKeys.workStreamSubscription.detail(stream.id), subscription)
+  const get = spyOn(api, 'getWorkStreamSubscription').mockImplementation(async () => subscription as never)
+  const subscribe = spyOn(api, 'subscribeWorkStream').mockImplementation(async () => subscription as never)
+  const copy = spyOn(dom.window.navigator.clipboard, 'writeText').mockResolvedValue()
+  const root = dom.createRoot()
+  const button = (text: string) => [...root.container.querySelectorAll('button')].find((b) => b.textContent === text)!
+  try {
+    await dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter>
+            <Surface stream={stream} />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+    const trigger = root.container.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!
+    await dom.act(async () => trigger.click())
+    await dom.act(async () => button('Copy link').focus())
+    expect(await webkitTap(button('Copy link'))).toBe(true)
+    expect(copy).toHaveBeenCalledWith('https://example.test/squads/squad/work?ws=7')
+
+    await dom.act(async () => trigger.click())
+    await dom.act(async () => button('Pause work…').focus())
+    expect(await webkitTap(root.container.querySelector('summary')!, { touch: true })).toBe(true)
+    expect(root.container.querySelector('details')!.open).toBe(true)
+    const label = root.container.querySelector('[aria-label="Progress: Show"]')!.closest('label')!
+    expect(await webkitTap(label)).toBe(true)
+    expect(subscribe).toHaveBeenCalledWith(stream.id, { decisions: 'notify', progress: 'show' })
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    // Keyboard focus leaving the menu (once the tap has finished) closes it.
+    const outside = dom.window.document.body.appendChild(dom.window.document.createElement('button'))
+    await dom.act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+    await dom.act(async () => button('Copy link').focus())
+    await dom.act(async () => outside.focus())
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  } finally {
+    get.mockRestore()
+    subscribe.mockRestore()
+    copy.mockRestore()
     await dom.cleanup()
     cache.clear()
   }

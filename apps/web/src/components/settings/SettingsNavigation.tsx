@@ -4,6 +4,7 @@ import { matchesSetting, settingMatchRank, SETTINGS_PAGE_KEYWORDS, SETTINGS_SEAR
 import clsx from 'clsx'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { usePopupDismiss } from '../../hooks/usePopupDismiss'
 import { ChevronDownIcon, SettingsIcon } from '../icons'
 import { SETTINGS_SECTION_ICONS as icons } from './settingsIcons'
 
@@ -77,25 +78,9 @@ export function SettingsNavigation({
     }
   }, [mobileOpen])
   useEffect(() => {
-    if (!mobileOpen) return
-    mobileRef.current?.querySelector<HTMLInputElement>('input')?.focus()
-    const dismiss = (event: PointerEvent) => {
-      if (event.target instanceof Node && !mobileRef.current?.contains(event.target)) setMobileOpen(false)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        setMobileOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-    document.addEventListener('pointerdown', dismiss)
-    document.addEventListener('keydown', escape, true)
-    return () => {
-      document.removeEventListener('pointerdown', dismiss)
-      document.removeEventListener('keydown', escape, true)
-    }
+    if (mobileOpen) mobileRef.current?.querySelector<HTMLInputElement>('input')?.focus()
   }, [mobileOpen])
+  usePopupDismiss({ open: mobileOpen, popup: mobileRef, trigger: triggerRef, onDismiss: () => setMobileOpen(false) })
   const sections = groups.flatMap((group) => group.items)
   const inAdministration = !scopeTitle && !PERSONAL_SECTIONS.has(activeSection)
   const personal = sections.filter((section) => PERSONAL_SECTIONS.has(section.id))

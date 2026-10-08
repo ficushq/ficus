@@ -1,6 +1,7 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { DEFAULT_PLACEMENT_KEY, SNAPS, SNAP_INFO, type Snap } from '../lib/assistantWindow'
 import { WindowLayoutIcon } from './icons'
 
@@ -54,6 +55,7 @@ export function AssistantSnapMenu({
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const menu = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
   const menuId = useId()
   // The menu floats over the page (the assistant would clip it), right-aligned below its button.
   const [place, setPlace] = useState<{ top: number; right: number } | null>(null)
@@ -66,15 +68,8 @@ export function AssistantSnapMenu({
         right: Math.max(8, window.innerWidth - button.right),
       })
   }, [open])
-  useEffect(() => {
-    if (!open) return
-    const away = (event: PointerEvent) => {
-      const target = event.target as Node
-      if (!root.current?.contains(target) && !menu.current?.contains(target)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', away)
-    return () => document.removeEventListener('pointerdown', away)
-  }, [open])
+  // Escape at window capture closes the menu, not the assistant (whose Escape is a document listener).
+  usePopupDismiss({ open, popup: menu, trigger, onDismiss: () => setOpen(false) })
   const choose = (action: () => void) => {
     setOpen(false)
     action()
@@ -82,6 +77,7 @@ export function AssistantSnapMenu({
   return (
     <div ref={root} data-assistant-snap-menu className="shrink-0">
       <button
+        ref={trigger}
         type="button"
         className={clsx(
           'ficus-button flex h-8 w-8 items-center justify-center rounded-lg',
@@ -107,13 +103,6 @@ export function AssistantSnapMenu({
             data-assistant-snap-menu
             style={{ top: place.top, right: place.right }}
             className="ficus-overlay fixed z-[70] w-60 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                // Close the menu, not the assistant.
-                event.stopPropagation()
-                setOpen(false)
-              }
-            }}
           >
             <button
               type="button"

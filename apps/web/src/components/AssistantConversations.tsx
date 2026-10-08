@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import type { Agent } from '@ficus/shared'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { getAgentPurpose, getAgentName } from '../lib/agentDisplay'
 import { Presence } from './Presence'
 import { ChevronDownIcon, PlusIcon } from './icons'
@@ -113,25 +114,9 @@ export function AssistantConversationSwitcher({
   const container = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    if (!open) return
-    container.current?.querySelector('input')?.focus()
-    const dismiss = (event: PointerEvent) => {
-      if (event.target instanceof Node && !container.current?.contains(event.target)) setOpen(false)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        setOpen(false)
-        trigger.current?.focus()
-      }
-    }
-    document.addEventListener('pointerdown', dismiss)
-    document.addEventListener('keydown', escape, true)
-    return () => {
-      document.removeEventListener('pointerdown', dismiss)
-      document.removeEventListener('keydown', escape, true)
-    }
+    if (open) container.current?.querySelector('input')?.focus()
   }, [open])
+  usePopupDismiss({ open, popup: container, trigger, onDismiss: () => setOpen(false) })
   const selected = agents.find((agent) => agent.id === selectedId)
   const filtered = agents.filter((agent) =>
     assistantConversationTitle(agent).toLowerCase().includes(filter.trim().toLowerCase())
