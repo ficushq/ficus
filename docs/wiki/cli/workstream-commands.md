@@ -81,9 +81,13 @@ that workspace, including on remote/container runtimes. Defaults are branch
 parent directories are created inside the squad workspace. A path nested inside the
 repository must be Git-ignored to keep its contents out of commits. The base is taken from the
 selected remote's local default-branch ref; supply `--base-branch` if unknown.
-For a **new branch**, setup fetches that base from the selected remote using the
-existing squad-authorized Git environment, resolves it to an exact commit OID,
-and passes that OID to worktree creation. It does not update local branches,
+For a **new branch**, setup fetches that base from the selected remote, resolves it
+to an exact commit OID, and passes that OID to worktree creation. For an HTTPS
+GitHub remote, the fetch authenticates with the squad's default GitHub integration
+account (the same one agents' `git` and `gh` use), so private repositories work.
+The credential is offered only to `github.com`, only for that one fetch, and is never
+written to argv, Git config, remote URLs, logs, or metadata. Other remotes fetch
+with the squad box's existing Git environment. It does not update local branches,
 remote-tracking refs, `FETCH_HEAD`, or existing checkouts. The starting OID and
 source are recorded in `metadata.git.baseCommit` / `baseSource` and the immutable
 server ownership receipt, atomically with the stream metadata.

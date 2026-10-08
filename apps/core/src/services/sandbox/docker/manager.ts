@@ -19,7 +19,13 @@ import { MONOREPO_ROOT } from '../../../lib/paths'
 import { createLogger } from '../../../lib/infra/logger'
 import { getHomeDir } from '../../../lib/utils/home'
 import { getSquadIdFromSandbox } from '../types'
-import type { ISandboxManager, ManagedToolchainRequest, SandboxOptions, SandboxRuntime } from '../types'
+import type {
+  ISandboxManager,
+  ManagedToolchainRequest,
+  SandboxExecOptions,
+  SandboxOptions,
+  SandboxRuntime,
+} from '../types'
 import { requireSandboxRuntime } from '../runtime'
 import { buildBashrcContent } from '../bashrc'
 import { WORKSPACE_DOT_DIR, workspaceDotPath } from '../../workspace/dot-dir'
@@ -1815,16 +1821,21 @@ export class DockerSandboxManager implements ISandboxManager {
    * Execute a command inside the container and return stdout.
    * Throws on non-zero exit code.
    */
-  async exec(sandboxId: string, args: string[]): Promise<Buffer> {
+  async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
     const sandbox = this.sandboxes.get(sandboxId)
     if (!sandbox) throw new Error(`No sandbox found for ${sandboxId}`)
 
     const userArgs = this.getSandboxUserArgs(sandbox.containerId)
+    const env = options?.env ?? {}
+    // `-e NAME` without `=value` makes the Docker CLI forward NAME from its own
+    // environment, so values never appear in the host process listing.
+    const envArgs = Object.keys(env).flatMap((name) => ['-e', name])
     const result = Bun.spawnSync(
-      ['docker', 'exec', ...userArgs, '-w', sandbox.workspaceMount, sandbox.containerId, ...args],
+      ['docker', 'exec', ...userArgs, ...envArgs, '-w', sandbox.workspaceMount, sandbox.containerId, ...args],
       {
         stdout: 'pipe',
         stderr: 'pipe',
+        ...(envArgs.length ? { env: { ...process.env, ...env } } : {}),
       }
     )
 

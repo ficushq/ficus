@@ -158,6 +158,15 @@ describe('HostSandboxManager', () => {
     }
   })
 
+  test('exec adds per-command env only to that command', async () => {
+    await manager.ensureSandbox('agent_a1', { workspacePath: '', squadId: SQUAD })
+    const read = ['bash', '-c', 'printf "%s" "${FIXTURE_SECRET:-absent}"']
+    expect((await manager.exec('agent_a1', read, { env: { FIXTURE_SECRET: 'fixture-value' } })).toString()).toBe(
+      'fixture-value'
+    )
+    expect((await manager.exec('agent_a1', read)).toString()).toBe('absent')
+  })
+
   test('exec returns stdout only, not stderr', async () => {
     await manager.ensureSandbox('agent_a1', { workspacePath: '', squadId: SQUAD })
     const out = await manager.exec('agent_a1', ['bash', '-c', 'echo out; echo err >&2'])

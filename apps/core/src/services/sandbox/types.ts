@@ -138,6 +138,11 @@ export type SandboxStopOutcome =
   | { kind: 'unverified' }
   | { kind: 'generation-mismatch'; actualLifecycleGeneration: string | null }
 
+export interface SandboxExecOptions {
+  /** Per-command environment additions; values are passed out of band, never as argv. */
+  env?: Record<string, string>
+}
+
 export interface ISandboxManager {
   // --- Lifecycle ---
   ensureSandbox(sandboxId: string, opts: SandboxOptions): Promise<string>
@@ -165,7 +170,12 @@ export interface ISandboxManager {
 
   // --- Execution ---
   getSpawnHook(sandboxId: string, workspacePath: string): SpawnHook | null
-  exec(sandboxId: string, args: string[]): Promise<Buffer>
+  /**
+   * Run argv in the sandbox and return stdout. `options.env` adds variables to
+   * this one command only and never appears in argv, so callers can hand a
+   * short-lived secret to a child (for example a Git credential helper).
+   */
+  exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer>
   execStatus(sandboxId: string, args: string[]): Promise<number>
   streamExec?(
     sandboxId: string,

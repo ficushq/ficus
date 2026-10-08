@@ -57,7 +57,7 @@ function makeShellStream() {
 
 interface FakeClient {
   endpoint: string
-  bashCalls: Array<{ command: string; cwd?: string; invocationId?: string }>
+  bashCalls: Array<{ command: string; cwd?: string; invocationId?: string; env?: Record<string, string> }>
   writeCalls: Array<{ path: string; mode?: string }>
   shellCalls: number
   devboxReadyCalls: number
@@ -90,7 +90,7 @@ function makeFakeClient(endpoint: string, bashScript = { stdout: 'ok', exitCode:
     closed: 0,
     uptimeSeconds: 1,
     bash(req: any) {
-      client.bashCalls.push({ command: req.command, cwd: req.cwd, invocationId: req.invocationId })
+      client.bashCalls.push({ command: req.command, cwd: req.cwd, invocationId: req.invocationId, env: req.env })
       return makeBashStream(bashScript)
     },
     async write(req: any) {
@@ -1760,7 +1760,20 @@ describe('VmSandboxManager', () => {
     expect(execCalls[0].command).toBe("'echo' 'hi'")
     const expectedRoot = `/home/${boxUnixUser('squad_s1')}/workspace`
     expect(execCalls[0].cwd).toBe(expectedRoot)
+    expect(execCalls[0].env).toBeUndefined()
     expect(mgr.getLastActivityAt('squad_s1')).toBe(2000)
+  })
+
+  test('exec passes per-command env in the request body, never in the command', async () => {
+    const h = makeHarness({ bashScript: { stdout: 'ok', exitCode: 0 } })
+    const mgr = new VmSandboxManager(h.deps)
+    await mgr.ensureSandbox('squad_s1', squadOpts)
+    const client = [...h.clients.values()][0]
+    const before = client.bashCalls.length
+    await mgr.exec('squad_s1', ['git', 'fetch'], { env: { FIXTURE_SECRET: 'fixture-value' } })
+    const [call] = client.bashCalls.slice(before)
+    expect(call.command).toBe("'git' 'fetch'")
+    expect(call.env).toEqual({ FIXTURE_SECRET: 'fixture-value' })
   })
 
   test('exec and execStatus fail closed when the stream ends without a terminal exit code', async () => {

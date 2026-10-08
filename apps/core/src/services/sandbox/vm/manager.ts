@@ -39,6 +39,7 @@ import type { SandboxPressure } from '@ficus/shared'
 import {
   getSquadIdFromSandbox,
   type ISandboxManager,
+  type SandboxExecOptions,
   type SandboxOptions,
   type SandboxRuntime,
   type SpawnHook,
@@ -1250,7 +1251,7 @@ export class VmSandboxManager implements ISandboxManager {
     return null
   }
 
-  async exec(sandboxId: string, args: string[]): Promise<Buffer> {
+  async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
     const state = this.requireSandbox(sandboxId)
     this.touch(state)
 
@@ -1260,7 +1261,7 @@ export class VmSandboxManager implements ISandboxManager {
       const chunks: Buffer[] = []
       let terminal = false
       let settled = false
-      const stream = launchingClient.bash({ command, cwd: state.workRoot })
+      const stream = launchingClient.bash({ command, cwd: state.workRoot, env: options?.env })
       stream.on('data', (response: BashResponse) => {
         if (response.stdout) chunks.push(Buffer.from(response.stdout, 'base64'))
         if (response.stderr) chunks.push(Buffer.from(response.stderr, 'base64'))
