@@ -67,6 +67,18 @@ describe('WebSocket Event Bridge', () => {
     expect(broadcastSpy).toHaveBeenCalledWith('agents:agent-1', 'agent.updated', data)
   })
 
+  test('broadcasts agent.mood, a label only, to the agents topics under the agent scope', () => {
+    const broadcastSpy = mock(async () => {})
+    manager.broadcast = broadcastSpy
+    setupEventBridge(manager)
+
+    const data = { agentId: 'agent-1', squadId: 'squad-1', mood: 'exploring' as const, source: 'model' as const, at: 1 }
+    eventEmitter.emit('agent.mood', data)
+
+    expect(broadcastSpy).toHaveBeenCalledWith('agents', 'agent.mood', data)
+    expect(broadcastSpy).toHaveBeenCalledWith('agents:agent-1', 'agent.mood', data)
+  })
+
   test.each([
     'agent-question.created',
     'agent-question.answered',

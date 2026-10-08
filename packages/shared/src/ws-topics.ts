@@ -50,6 +50,7 @@ export type TopicEventMap = {
     | 'agent.updated'
     | 'agent.new-message'
     | 'agent.waiting-input'
+    | 'agent.mood'
     | 'agent.queue-cleared'
     | 'agent.terminated'
     | 'agent.deleted'

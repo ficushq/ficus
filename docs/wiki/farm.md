@@ -193,6 +193,33 @@ something (your chat messages, answers to its questions from
 which Core delivers only to people who can see every squad). Reduced motion
 turns these off.
 
+## Robot moods
+
+With **Robot moods** on (Settings → Decision Providers; off by default), a
+working robot shows how its agent's work is going: a sweat drop when it is
+struggling (two when it is stuck on errors), a circling arrow and a little
+pacing when it is going in circles, a raised flag before something risky
+(deleting, pushing, secrets or permissions), a magnifier and a look around
+while it explores, and a tiny celebration as it wraps up. Focused robots keep
+the plain working face. Halted, asking and waiting robots show those instead.
+Hovering a robot, or its card, says the mood in words. Reduced motion keeps the
+marks and drops the movement.
+
+Moods cost nothing while nobody looks. The farm reports the robots on screen
+(`POST /api/farm/watching`, farm:read, only robots you can see) when the view
+settles and every 20 seconds while its tab is visible; each report lasts 45
+seconds, and the API hands it to the worker over the `farm_watching`
+local-events channel. The worker reads each watched robot's stream: the same
+call three times in a row is going in circles, two tool errors or provider
+retries in a row is stuck, a blocking question is waiting, and a turn that
+ended well is wrapping up. Only when the robot is running and none of those
+tells does it ask the `robot-moods` decision model, at a tool or message end,
+at most once per robot every 30 seconds, with the last three tool calls (name,
+a short redacted target, ok or error) and the last 300 characters of text.
+Changes go out live as `agent.mood` on the `agents` topic; the watching
+response carries the current moods for a farm that just opened. Moods live in
+memory only.
+
 ## Development
 
 `?demo` runs the farm on sample data with no Core, including pretend

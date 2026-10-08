@@ -3,6 +3,7 @@ import { createWsClient, type WsClient } from '@ficus/client-core'
 import { useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { client } from '../api/client'
 import { letterForEvent, sendLetter } from '../farm/letters'
+import { moodStore } from '../farm/moods'
 import { dedupeKeys, FARM_TOPICS, isLiveEvent, keysForEvent } from './invalidation'
 
 export type LiveStatus = 'connecting' | 'live' | 'offline'
@@ -84,6 +85,7 @@ export function useLiveUpdates(enabled: boolean): LiveStatus {
           },
           onMessage: (data) => {
             if (!isLiveEvent(data)) return
+            if (data.event === 'agent.mood') return moodStore.apply(data.data)
             schedule(keysForEvent(data))
             // Mail to a robot, or an answer to its question: a letter flies to it.
             const letter = letterForEvent(data)
