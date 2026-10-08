@@ -128,7 +128,7 @@ async function canAccessAttachment(
   const attachment = await InboxAttachment.findById(attachmentId)
   if (!attachment) return { response: forbidden() }
   const message = await InboxMessage.find(attachment.messageId)
-  if (!message) return { response: forbidden() }
+  if (!message || (await InboxMessage.isWithheldGitHubNotification(message.id))) return { response: forbidden() }
   const response = await canAccessRecipientInbox(identity, message.recipientType, message.recipientId, permission)
   return response ? { response, attachment, message } : { attachment, message }
 }
@@ -140,7 +140,9 @@ async function canAccessMessage(
 ) {
   if (!identity) return { response: new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }) }
   const message = await InboxMessage.find(messageId)
-  if (!message) return { response: new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 }) }
+  // Fenced GitHub mail looks exactly like a missing message: no content, existence or receipt.
+  if (!message || (await InboxMessage.isWithheldGitHubNotification(message.id)))
+    return { response: new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 }) }
   const response = await canAccessRecipientInbox(identity, message.recipientType, message.recipientId, permission)
   return response ? { response } : { message }
 }

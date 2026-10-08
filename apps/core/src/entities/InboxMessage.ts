@@ -35,6 +35,7 @@ import { Agent, AgentTargetUnavailableError, AgentTerminatedError } from './Agen
 import { acquireAgentQueueLock } from '../services/execution/agent-admission'
 import { InboxAttachment } from './InboxAttachment'
 import { githubInboxCondition, readOutputInbox } from '../services/integrations/github/feedback-pass-read'
+import { visibleInboxCondition, withheldGitHubInboxCondition } from '../services/integrations/github/feedback-upgrade'
 import { githubOutputPass } from '../services/integrations/github/feedback-pass'
 import { createLogger } from '../lib/infra/logger'
 
@@ -633,6 +634,15 @@ export class InboxMessage
     return InboxMessage.fromJoinedRow(rows[0])
   }
 
+  /** GitHub mail fenced from agent-facing reads until final acceptance (see feedback-upgrade). */
+  static async isWithheldGitHubNotification(id: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: inbox.id })
+      .from(inbox)
+      .where(and(eq(inbox.id, id), withheldGitHubInboxCondition()))
+    return !!row
+  }
+
   /**
    * Find an inbox message by ID, throwing if not found.
    */
@@ -764,6 +774,7 @@ export class InboxMessage
         : eq(inbox.recipientId, recipientId)
 
     const conditions: SQL[] = [eq(inbox.recipientType, recipientType), recipientCondition]
+    if (recipientType === 'agent') conditions.push(visibleInboxCondition())
     if (!includeRead) {
       conditions.push(isNull(inbox.readAt))
     }
@@ -797,6 +808,7 @@ export class InboxMessage
 
     const readState = options.readState ?? 'unread'
     const countConditions: SQL[] = [eq(inbox.recipientType, recipientType), recipientCondition]
+    if (recipientType === 'agent') countConditions.push(visibleInboxCondition())
     if (readState === 'unread') countConditions.push(isNull(inbox.readAt))
     if (readState === 'read') countConditions.push(isNotNull(inbox.readAt))
     const search = options.search?.trim()
@@ -855,7 +867,14 @@ export class InboxMessage
     const [result] = await db
       .select({ count: sql<number>`count(*)` })
       .from(inbox)
-      .where(and(eq(inbox.recipientType, recipientType), recipientCondition, isNull(inbox.readAt)))
+      .where(
+        and(
+          eq(inbox.recipientType, recipientType),
+          recipientCondition,
+          isNull(inbox.readAt),
+          recipientType === 'agent' ? visibleInboxCondition() : undefined
+        )
+      )
 
     return Number(result.count)
   }

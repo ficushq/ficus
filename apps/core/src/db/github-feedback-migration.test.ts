@@ -61,6 +61,49 @@ test('generated migration itself enforces active GitHub ownership without preloa
   expect(removed).toBeUndefined()
 })
 
+// Every generated migration this feature adds. Renumbering (e.g. after integrating main) must update
+// this list, so the rollout/rollback audit below cannot silently skip a file.
+const FEATURE_MIGRATIONS = [
+  '0201_watery_arclight',
+  '0202_romantic_wallop',
+  '0203_mysterious_wrecker',
+  '0204_massive_madripoor',
+  '0205_amused_katie_power',
+  '0206_solid_black_bolt',
+  '0207_conscious_switch',
+  '0208_github_author_filter',
+]
+
+test('feature migrations never rewrite, replay or drop pre-existing data, so rollback only drops new objects', async () => {
+  const created = new Set<string>()
+  for (const tag of FEATURE_MIGRATIONS) {
+    const text = await Bun.file(new URL(`../../drizzle/${tag}.sql`, import.meta.url)).text()
+    for (const match of text.matchAll(/CREATE TABLE "([a-z_]+)"/g)) created.add(match[1]!)
+    // No backfill, replay, release or deletion of historical rows in any table.
+    expect(text).not.toMatch(/\b(?:INSERT\s+INTO|UPDATE\s+"|DELETE\s+FROM|TRUNCATE)\b/i)
+    expect(text).not.toMatch(/\bDROP\s+(?:TABLE|COLUMN|INDEX)\b|\bRENAME\b/i)
+    for (const statement of text.split('--> statement-breakpoint')) {
+      const table = statement.match(/ALTER TABLE "([a-z_]+)"/)?.[1]
+      if (!table || created.has(table)) continue
+      // Pre-existing tables: new NOT NULL columns carry a default, nullability is never tightened.
+      if (/ADD COLUMN/.test(statement) && /NOT NULL/.test(statement)) expect(statement).toMatch(/DEFAULT/)
+      expect(statement).not.toMatch(/SET NOT NULL|DROP NOT NULL/)
+      // A dropped constraint on an existing table is re-added (widened) under the same name.
+      const dropped = statement.match(/DROP CONSTRAINT "([a-z_]+)"/)?.[1]
+      if (dropped) expect(text).toContain(`ADD CONSTRAINT "${dropped}"`)
+    }
+  }
+  // Pre-existing rows satisfy every new or widened constraint with their column defaults.
+  for (const table of ['integration_authorization_flow_receipts', 'integration_oauth_states']) {
+    const invalid = await db.execute(
+      sql.raw(
+        `SELECT conname FROM pg_constraint WHERE conrelid = 'public.${table}'::regclass AND contype = 'c' AND NOT convalidated`
+      )
+    )
+    expect(invalid.map((row) => row.conname)).toEqual([])
+  }
+})
+
 test('author filter migration keeps rollout squads OFF and defaults new squads ON', async () => {
   const filter = await Bun.file(new URL('../../drizzle/0208_github_author_filter.sql', import.meta.url)).text()
   const namespace = `author_filter_migration_${crypto.randomUUID().replaceAll('-', '')}`
