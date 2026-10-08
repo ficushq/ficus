@@ -19,7 +19,7 @@ import { spawn, type ChildProcess } from 'child_process'
 import { mkdirSync } from 'fs'
 import { spawn as ptySpawn, type IPty } from 'bun-pty'
 import { WorkspaceWatcher, isSafeWatchPattern } from '@ficus/sandbox-server/watcher'
-import type { ISandboxManager, SandboxOptions, SandboxRuntime, SpawnHook } from '../types'
+import type { ISandboxManager, SandboxExecOptions, SandboxOptions, SandboxRuntime, SpawnHook } from '../types'
 import { getSquadIdFromSandbox } from '../types'
 import { hostWorkspaceLayout, type WorkspaceLayout, type WorkspaceLayoutContext } from '../workspace-layout'
 import { buildHostCommandEnv, ensureCliShim, getHostBaseEnv } from './env'
@@ -242,7 +242,7 @@ export class HostSandboxManager implements ISandboxManager {
     return state
   }
 
-  private spawnArgv(state: HostSandboxState, args: string[]): ChildProcess {
+  private spawnArgv(state: HostSandboxState, args: string[], extraEnv?: Record<string, string>): ChildProcess {
     if (args.length === 0) throw new Error('exec requires a command')
     const child = spawn(args[0]!, args.slice(1), {
       cwd: state.workRoot,
@@ -251,7 +251,11 @@ export class HostSandboxManager implements ISandboxManager {
       // `/private/...` physical path for anything under the (symlinked)
       // system tmpdir — surprising agents with a path that doesn't match what
       // was configured or displayed anywhere else.
-      env: { ...buildHostCommandEnv({ squadId: state.squadId, base: this.baseEnv() }), PWD: state.workRoot },
+      env: {
+        ...buildHostCommandEnv({ squadId: state.squadId, base: this.baseEnv() }),
+        ...extraEnv,
+        PWD: state.workRoot,
+      },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -267,11 +271,11 @@ export class HostSandboxManager implements ISandboxManager {
   /** Stdout only — like docker/k8s (`docker/manager.ts` `exec` returns `result.stdout`),
    *  because callers (monitor-supervisor.ts, local-deployment-process-supervisor.ts) parse
    *  the returned buffer verbatim and a login shell's profile routinely writes to stderr. */
-  async exec(sandboxId: string, args: string[]): Promise<Buffer> {
+  async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
     const state = this.requireSandbox(sandboxId)
     const outChunks: Buffer[] = []
     const errChunks: Buffer[] = []
-    const child = this.spawnArgv(state, args)
+    const child = this.spawnArgv(state, args, options?.env)
     child.stdout?.on('data', (c: Buffer) => outChunks.push(c))
     child.stderr?.on('data', (c: Buffer) => errChunks.push(c))
     let spawnError: Error | null = null
