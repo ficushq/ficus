@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useId } from 'react'
 import { searchWorkspaceFiles } from '../api/squads'
-import { usePopupDismiss } from '../hooks/usePopupDismiss'
+import { ComboboxList } from './popover'
 import clsx from 'clsx'
 
 interface MentionState {
@@ -190,10 +190,6 @@ export function FileMentionAutocomplete({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [files, selectedIndex, onSelect, onClose])
 
-  // A press outside closes it (the composer included: the caret moves). Focus stays in the
-  // composer and the key handler above owns Escape, so those dismissal paths are off.
-  usePopupDismiss({ open: true, popup: containerRef, onDismiss: onClose, escape: false, focusOut: false })
-
   // Scroll selected item into view
   useEffect(() => {
     const container = containerRef.current
@@ -204,69 +200,65 @@ export function FileMentionAutocomplete({
     }
   }, [selectedIndex])
 
-  // Position the dropdown relative to the textarea
-  const [position, setPosition] = useState({ top: 0, left: 0 })
-  useEffect(() => {
-    if (!textareaRef.current) return
-    const rect = textareaRef.current.getBoundingClientRect()
-    // Position above the textarea
-    setPosition({
-      top: rect.top - 8, // 8px gap
-      left: rect.left,
-    })
-  }, [textareaRef])
-
-  if (files.length === 0 && !isLoading) {
-    return (
-      <div
-        ref={containerRef}
-        className="ficus-overlay fixed z-50 bg-surface border border-th-border rounded-lg shadow-lg p-3 text-sm text-muted"
-        style={{
-          bottom: `calc(100vh - ${position.top}px)`,
-          left: position.left,
-          minWidth: 200,
-          maxWidth: 400,
-        }}
-      >
-        {query ? 'No files found' : 'Type to search files...'}
-      </div>
-    )
-  }
-
+  // A combobox list above the composer: focus stays in the composer, whose key handler (above) owns
+  // the arrows, Enter/Tab and Escape. A press outside closes it (the composer included: the caret moves).
+  const listId = useId()
+  const empty = files.length === 0 && !isLoading
   return (
-    <div
+    <ComboboxList
       ref={containerRef}
-      className="ficus-overlay fixed z-50 bg-surface border border-th-border rounded-lg shadow-lg overflow-hidden"
-      style={{
-        bottom: `calc(100vh - ${position.top}px)`,
-        left: position.left,
-        minWidth: 300,
-        maxWidth: 500,
-        maxHeight: 300,
-      }}
+      open
+      onDismiss={onClose}
+      input={textareaRef}
+      listId={listId}
+      activeId={files.length ? `${listId}-${selectedIndex}` : undefined}
+      maxHeight={300}
+      scroll={false}
+      className={clsx(
+        'ficus-overlay bg-surface border border-th-border rounded-lg shadow-lg',
+        empty ? 'p-3 text-sm text-muted' : 'overflow-hidden'
+      )}
+      style={empty ? { minWidth: 200, maxWidth: 400 } : { minWidth: 300, maxWidth: 500 }}
     >
-      <div className="px-3 py-2 border-b border-th-border">
-        <span className={clsx('text-xs font-medium text-muted', isLoading && 'motion-safe:animate-pulse')}>Files</span>
-      </div>
-      <div className="overflow-y-auto max-h-[250px]">
-        {files.map((file, index) => (
-          <button
-            key={file}
-            data-selected={index === selectedIndex}
-            onClick={() => onSelect(file)}
-            className={clsx(
-              'ficus-button',
-              'w-full text-left px-3 py-2 text-sm font-mono truncate transition-colors',
-              index === selectedIndex ? 'bg-accent/10 text-accent-light' : 'text-primary hover:bg-surface-hover'
-            )}
-          >
-            @{file}
-          </button>
-        ))}
-      </div>
-      <div className="px-3 py-1.5 border-t border-th-border bg-surface-secondary text-xs text-muted">
-        ↑↓ navigate • Enter/Tab select • Esc close • Use <code className="px-0.5">\ </code> for spaces in filenames
-      </div>
-    </div>
+      {empty ? (
+        query ? (
+          'No files found'
+        ) : (
+          'Type to search files...'
+        )
+      ) : (
+        <>
+          <div className="px-3 py-2 border-b border-th-border">
+            <span className={clsx('text-xs font-medium text-muted', isLoading && 'motion-safe:animate-pulse')}>
+              Files
+            </span>
+          </div>
+          <div id={listId} role="listbox" aria-label="Files" className="overflow-y-auto max-h-[250px]">
+            {files.map((file, index) => (
+              <button
+                key={file}
+                id={`${listId}-${index}`}
+                type="button"
+                role="option"
+                tabIndex={-1}
+                aria-selected={index === selectedIndex}
+                data-selected={index === selectedIndex}
+                onClick={() => onSelect(file)}
+                className={clsx(
+                  'ficus-button',
+                  'w-full text-left px-3 py-2 text-sm font-mono truncate transition-colors',
+                  index === selectedIndex ? 'bg-accent/10 text-accent-light' : 'text-primary hover:bg-surface-hover'
+                )}
+              >
+                @{file}
+              </button>
+            ))}
+          </div>
+          <div className="px-3 py-1.5 border-t border-th-border bg-surface-secondary text-xs text-muted">
+            ↑↓ navigate • Enter/Tab select • Esc close • Use <code className="px-0.5">\ </code> for spaces in filenames
+          </div>
+        </>
+      )}
+    </ComboboxList>
   )
 }

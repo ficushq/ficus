@@ -140,14 +140,14 @@ test('connected: the menu actions open confirmations', async () => {
     dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Ficus account actions' })))
 
   await openMenu()
-  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Reconnect…' })))
+  await dom.act(async () => fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Reconnect…' })))
   const reconnect = getByRole(document.body, 'dialog', { name: 'Reconnect Ficus account' })
   expect(reconnect.textContent).toContain('replaces this server’s saved credential')
   expect((getByRole(reconnect, 'textbox', { name: 'Server name' }) as HTMLInputElement).value).toBe('Studio')
   await dom.act(async () => fireEvent.click(getByRole(reconnect, 'button', { name: 'Cancel' })))
 
   await openMenu()
-  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Disconnect…' })))
+  await dom.act(async () => fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Disconnect…' })))
   const disconnect = getByRole(document.body, 'dialog', { name: 'Disconnect Ficus account?' })
   expect(disconnect.textContent).toContain('subscription isn’t cancelled')
   expect(requests).not.toContain('DELETE /api/push/server-connection')
@@ -166,13 +166,13 @@ for (const touch of [false, true]) {
 
     await dom.act(async () => fireEvent.click(trigger))
     expect(document.activeElement?.textContent).toBe('Reconnect…')
-    expect(await webkitTap(getByRole(container, 'button', { name: 'Reconnect…' }), { touch })).toBe(true)
+    expect(await webkitTap(getByRole(document.body, 'menuitem', { name: 'Reconnect…' }), { touch })).toBe(true)
     const reconnect = getByRole(document.body, 'dialog', { name: 'Reconnect Ficus account' })
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     await dom.act(async () => fireEvent.click(getByRole(reconnect, 'button', { name: 'Cancel' })))
 
     await dom.act(async () => fireEvent.click(trigger))
-    expect(await webkitTap(getByRole(container, 'button', { name: 'Disconnect…' }), { touch })).toBe(true)
+    expect(await webkitTap(getByRole(document.body, 'menuitem', { name: 'Disconnect…' }), { touch })).toBe(true)
     expect(getByRole(document.body, 'dialog', { name: 'Disconnect Ficus account?' })).toBeTruthy()
   })
 }

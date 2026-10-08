@@ -271,9 +271,16 @@ test('a field link opens only its declared editor before focusing the field', as
 test('phone settings chooser stays open across areas and closes on a page selection', async () => {
   const { container, calls } = await setup()
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Choose settings section"]')!
-  const mobile = trigger.parentElement!
+  // The chooser panel is portaled; while open it is the one non-closing settings-sections region.
+  const mobile = {
+    querySelector: (selector: string) =>
+      dom!.window.document.querySelector(`[aria-label="Settings sections"][data-state="open"] ${selector}`),
+  }
   const button = (label: string) =>
-    [...mobile.querySelectorAll('button')].find((item) => item.textContent?.trim() === label)!
+    [
+      ...dom!.window.document.querySelectorAll<HTMLButtonElement>('[aria-label="Settings sections"] button'),
+      ...trigger.parentElement!.querySelectorAll('button'),
+    ].find((item) => item.textContent?.trim() === label)!
   await dom!.act(async () => trigger.click())
   await dom!.act(async () => button('Administration').click())
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
@@ -291,9 +298,16 @@ test('phone settings chooser stays open across areas and closes on a page select
 test('phone settings chooser handles WebKit taps, outside taps and Tab out', async () => {
   const { container, calls } = await setup()
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Choose settings section"]')!
-  const mobile = trigger.parentElement!
+  // The chooser panel is portaled; while open it is the one non-closing settings-sections region.
+  const mobile = {
+    querySelector: (selector: string) =>
+      dom!.window.document.querySelector(`[aria-label="Settings sections"][data-state="open"] ${selector}`),
+  }
   const button = (label: string) =>
-    [...mobile.querySelectorAll('button')].find((item) => item.textContent?.trim() === label)!
+    [
+      ...dom!.window.document.querySelectorAll<HTMLButtonElement>('[aria-label="Settings sections"] button'),
+      ...trigger.parentElement!.querySelectorAll('button'),
+    ].find((item) => item.textContent?.trim() === label)!
   await dom!.act(async () => trigger.click())
   expect(dom!.window.document.activeElement?.tagName).toBe('INPUT')
   expect(await webkitTap(button('Administration'), { touch: true })).toBe(true)
@@ -317,23 +331,31 @@ test('phone chooser fits below the squad header and tracks the keyboard viewport
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Choose settings section"]')!
   const chooser = trigger.parentElement!
   const viewport = new dom!.window.EventTarget()
-  Object.assign(viewport, { height: 844, offsetTop: 0 })
+  Object.assign(viewport, { width: 390, height: 844, offsetTop: 0, offsetLeft: 0 })
   Object.defineProperty(dom!.window, 'visualViewport', { configurable: true, value: viewport })
-  container.getBoundingClientRect = () => ({ bottom: 740 }) as DOMRect
-  chooser.getBoundingClientRect = () => ({ bottom: 350 }) as DOMRect
+  const rect = (top: number, bottom: number) => ({ left: 0, right: 390, top, bottom, width: 390, height: bottom - top })
+  container.getBoundingClientRect = () => rect(0, 740) as DOMRect
+  chooser.getBoundingClientRect = () => rect(300, 350) as DOMRect
   await dom!.act(async () => trigger.click())
-  const menu = chooser.querySelector<HTMLElement>('[data-state="open"]')!
-  expect(menu.style.maxHeight).toBe('min(60dvh, 374px)')
+  const menu = dom!.window.document.querySelector<HTMLElement>('[aria-label="Settings sections"][data-state="open"]')!
+  // The settings region ends above the dock: 740 - 350 - 8px gap - 8px margin.
+  expect(menu.style.maxHeight).toBe('374px')
   await dom!.act(async () => {
     Object.assign(viewport, { height: 510 })
     viewport.dispatchEvent(new dom!.window.Event('resize'))
   })
-  expect(menu.style.maxHeight).toBe('min(60dvh, 144px)')
+  // The keyboard shrank the visual viewport below the region: 510 - 350 - 16.
+  expect(menu.style.maxHeight).toBe('144px')
   await dom!.act(async () => {
     Object.assign(viewport, { offsetTop: 100 })
     viewport.dispatchEvent(new dom!.window.Event('scroll'))
   })
-  expect(menu.style.maxHeight).toBe('min(60dvh, 244px)')
+  // Panned down 100px: 610 - 350 - 16.
+  expect(menu.style.maxHeight).toBe('244px')
+  // Never taller than 60% of the visible viewport.
+  chooser.getBoundingClientRect = () => rect(0, 20) as DOMRect
+  await dom!.act(async () => viewport.dispatchEvent(new dom!.window.Event('resize')))
+  expect(menu.style.maxHeight).toBe('306px')
 })
 
 test('exact Agents page ranks ahead of keyword-only field matches', async () => {

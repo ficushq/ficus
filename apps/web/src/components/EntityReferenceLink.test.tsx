@@ -110,7 +110,8 @@ async function fixture(reference: EntityReference, onOpenAgent?: (agent: import(
   const button = container.querySelector('button')!
   const hover = () =>
     dom.act(async () => button.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })))
-  const tooltip = () => dom.window.document.querySelector<HTMLElement>('[role="dialog"]')
+  // A dismissed card stays mounted (inert) only for its exit animation.
+  const tooltip = () => dom.window.document.querySelector<HTMLElement>('[role="dialog"]:not([data-state="closed"])')
   return {
     dom,
     client,
@@ -317,14 +318,17 @@ test('preview clamps to the viewport and moves above references near the bottom'
     await f.hover()
     await f.advance(250)
     const card = f.tooltip()!
-    const cardRect = spyOn(card, 'getBoundingClientRect').mockReturnValue({ width: 320, height: 180 } as DOMRect)
-    try {
-      await f.dom.act(async () => f.dom.window.dispatchEvent(new f.dom.window.Event('resize')))
-      expect(Number.parseFloat(card.style.left)).toBeLessThanOrEqual(f.dom.window.innerWidth - 328)
-      expect(Number.parseFloat(card.style.top)).toBe(552)
-    } finally {
-      cardRect.mockRestore()
-    }
+    // The card measures its layout box (happy-dom has no layout): 320 wide, 180 tall.
+    for (const [name, value] of [
+      ['offsetWidth', 320],
+      ['offsetHeight', 180],
+      ['clientHeight', 180],
+      ['scrollHeight', 180],
+    ] as const)
+      Object.defineProperty(card, name, { configurable: true, value })
+    await f.dom.act(async () => f.dom.window.dispatchEvent(new f.dom.window.Event('resize')))
+    expect(Number.parseFloat(card.style.left)).toBeLessThanOrEqual(f.dom.window.innerWidth - 328)
+    expect(Number.parseFloat(card.style.top)).toBe(552)
   } finally {
     rect.mockRestore()
     await f.cleanup()
@@ -343,7 +347,7 @@ test('opening another reference replaces the existing preview', async () => {
         .dispatchEvent(new f.dom.window.MouseEvent('mouseover', { bubbles: true }))
     )
     await f.advance(250)
-    expect(f.dom.window.document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+    expect(f.dom.window.document.querySelectorAll('[role="dialog"]:not([data-state="closed"])')).toHaveLength(1)
     expect(f.tooltip()?.getAttribute('aria-label')).toBe('Work stream preview')
     expect(f.button.getAttribute('aria-expanded')).toBe('false')
   } finally {

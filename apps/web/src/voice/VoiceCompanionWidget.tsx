@@ -2,12 +2,10 @@ import { siteAssistantToolRenderers } from '../lib/tool-renderers'
 import type { ReactNode } from 'react'
 import { useRef, useEffect, useState, useId } from 'react'
 import clsx from 'clsx'
-import { createPortal } from 'react-dom'
 import { siteOperatorVoiceAssistant } from './assistants/siteOperator/siteOperatorAssistant'
 import { VoiceTranscriptInspector } from './VoiceTranscriptInspector'
 import { useRealtimeVoiceAssistant } from './useRealtimeVoiceAssistant'
-import { Presence } from '../components/Presence'
-import { usePopupDismiss } from '../hooks/usePopupDismiss'
+import { Panel } from '../components/popover'
 import { MicIcon, CloseIcon, ExpandIcon, ChevronDownIcon, StopIcon, RefreshIcon } from '../components/icons'
 import { OPEN_ASSISTANT_EVENT, OPEN_VOICE_EVENT } from '@ficus/shared/browser-keys'
 
@@ -90,7 +88,6 @@ export function VoiceCompanionButton({
     onActivityChange?.(live || status === 'connecting')
   }, [live, status, onActivityChange])
   const unavailableHintId = useId()
-  const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -121,22 +118,6 @@ export function VoiceCompanionButton({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [history])
-
-  // The expanded header panel is a popup: an outside press or Escape compacts a live session and
-  // closes an idle one. Compact-and-live it is a persistent mini player, and embedded it is part of
-  // its host, so neither dismisses (nor claims Escape).
-  usePopupDismiss({
-    open: !embedded && panelOpen && !(isConnected && compact),
-    popup: panelRef,
-    trigger: buttonRef,
-    // A non-modal companion that keeps running while the user works elsewhere: focus moving away
-    // never dismissed it, only a press outside or Escape does.
-    focusOut: false,
-    onDismiss: () => {
-      if (isConnected) setCompact(true)
-      else setPanelOpen(false)
-    },
-  })
 
   const unavailableReason =
     typeof window !== 'undefined' && window.isSecureContext === false
@@ -185,19 +166,8 @@ export function VoiceCompanionButton({
   }
   const statusLabel = statusLabels[status]
 
-  const panel = (
-    <Presence
-      open={embedded || panelOpen}
-      ref={panelRef}
-      data-compact={live && compact}
-      style={embedded ? undefined : { top: (buttonRef.current?.getBoundingClientRect().bottom ?? 56) + 8 }}
-      className={clsx(
-        embedded
-          ? 'p-2 overflow-y-auto min-h-0'
-          : 'ficus-overlay ficus-voice-panel fixed right-3 sm:right-6 z-50 p-2 overflow-y-auto max-h-[calc(100dvh-10rem)] max-w-[calc(100vw-1.5rem)] transition-[width] duration-200 ease-out motion-reduce:transition-none',
-        !embedded && (live && compact ? 'w-72' : 'w-[calc(100vw-1.5rem)] sm:w-96')
-      )}
-    >
+  const content = (
+    <>
       <div
         className="flex items-center justify-between gap-2 px-2 py-2"
         style={embedded && !live ? { display: 'none' } : undefined}
@@ -366,9 +336,15 @@ export function VoiceCompanionButton({
       {!controlsOnly && !hasHistory && isConnected && !compact && !canInterrupt && (
         <div className="px-3 py-6 text-center text-sm text-muted">Speak naturally. You can interrupt at any time.</div>
       )}
-    </Presence>
+    </>
   )
-  if (embedded) return panel
+  // Embedded, it is part of its host (the assistant drawer), not a floating surface.
+  if (embedded)
+    return (
+      <div className="ficus-presence p-2 overflow-y-auto min-h-0" data-state="open" data-compact={live && compact}>
+        {content}
+      </div>
+    )
   return (
     <div className="relative group/voice">
       {/* Header button */}
@@ -402,8 +378,31 @@ export function VoiceCompanionButton({
         </div>
       )}
 
-      {/* Dropdown panel */}
-      {typeof document !== 'undefined' && createPortal(panel, document.body)}
+      {/* The expanded header panel is a popup: an outside press or Escape compacts a live session and closes an
+          idle one. Compact-and-live it is a persistent mini player that never dismisses (nor claims Escape), and
+          a non-modal companion that keeps running while the user works elsewhere: focus moving away never
+          dismisses it. It lives on the companion layer, under modals and the assistant window. */}
+      <Panel
+        open={panelOpen}
+        onDismiss={() => {
+          if (isConnected) setCompact(true)
+          else setPanelOpen(false)
+        }}
+        dismissible={!(isConnected && compact)}
+        trigger={buttonRef}
+        label="Voice assistant"
+        layer="companion"
+        initialFocus="none"
+        focusOut={false}
+        gap={8}
+        data-compact={live && compact}
+        className={clsx(
+          'ficus-overlay ficus-voice-panel p-2 transition-[width] duration-200 ease-out motion-reduce:transition-none',
+          live && compact ? 'w-72' : 'w-[calc(100vw-1.5rem)] sm:w-96'
+        )}
+      >
+        {content}
+      </Panel>
     </div>
   )
 }

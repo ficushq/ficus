@@ -108,7 +108,7 @@ test('Duplicate calls the server-side duplicate endpoint (works identically for 
   try {
     const { container } = await render([mine])
     await openActions(container)
-    await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Duplicate' })))
+    await act(async () => fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Duplicate' })))
     expect(duplicate).toHaveBeenCalledWith('preset-1')
   } finally {
     duplicate.mockRestore()
@@ -124,7 +124,7 @@ test('Rename shows an inline form and sends a PUT with the current revision', as
   try {
     const { container } = await render([mine])
     await openActions(container)
-    await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Rename' })))
+    await act(async () => fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Rename' })))
     const input = container.querySelector('input.ficus-field') as HTMLInputElement
     await act(async () => fireEvent.change(input, { target: { value: 'Renamed' } }))
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Save' })))
@@ -144,7 +144,7 @@ test('Delete asks for confirmation, then sends the revision', async () => {
       return true
     }
     await openActions(container)
-    await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Delete' })))
+    await act(async () => fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Delete' })))
     expect(confirmed).toBe(true)
     expect(remove).toHaveBeenCalledWith('preset-1', 1)
   } finally {
@@ -158,7 +158,7 @@ test('Delete does nothing when the confirmation is declined', async () => {
     const { container } = await render([mine])
     window.confirm = () => false
     await openActions(container)
-    await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Delete' })))
+    await act(async () => fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Delete' })))
     expect(remove).not.toHaveBeenCalled()
   } finally {
     remove.mockRestore()
@@ -187,10 +187,10 @@ test('the row overflow menu (narrow widths) exposes aria-haspopup/expanded and i
     expect(document.activeElement?.textContent).toBe('Rename')
 
     window.confirm = () => true
-    const menu = container.querySelector('[data-theme-preset-actions]')!
+    const menu = document.querySelector<HTMLElement>('[data-theme-preset-actions]')!
     // Menu items are plain rows, not bordered secondary buttons.
     expect(menu.querySelectorAll('button.ficus-button-secondary')).toHaveLength(0)
-    await act(async () => fireEvent.click(getByRole(menu, 'button', { name: 'Delete' })))
+    await act(async () => fireEvent.click(getByRole(menu, 'menuitem', { name: 'Delete' })))
     expect(remove).toHaveBeenCalledWith('preset-1', 1)
     // Selecting an action closes the menu and returns focus to the trigger.
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
@@ -206,12 +206,12 @@ test('tapping a menu action in Safari (focus leaves with no relatedTarget) still
     const { container } = await render([mine])
     const trigger = getByRole(container, 'button', { name: 'More actions for Mine' })
     await act(async () => fireEvent.click(trigger))
-    const menu = container.querySelector('[data-theme-preset-actions]')!
+    const menu = document.querySelector<HTMLElement>('[data-theme-preset-actions]')!
     // Safari doesn't focus a tapped button: the focused first item blurs to nothing.
-    await act(async () => fireEvent.focusOut(getByRole(menu, 'button', { name: 'Rename' }), { relatedTarget: null }))
+    await act(async () => fireEvent.focusOut(getByRole(menu, 'menuitem', { name: 'Rename' }), { relatedTarget: null }))
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     window.confirm = () => true
-    await act(async () => fireEvent.click(getByRole(menu, 'button', { name: 'Delete' })))
+    await act(async () => fireEvent.click(getByRole(menu, 'menuitem', { name: 'Delete' })))
     expect(remove).toHaveBeenCalledWith('preset-1', 1)
   } finally {
     remove.mockRestore()
@@ -222,9 +222,9 @@ test('moving focus outside the row overflow menu closes it', async () => {
   const { container } = await render([mine])
   const trigger = getByRole(container, 'button', { name: 'More actions for Mine' })
   await act(async () => fireEvent.click(trigger))
-  const menu = container.querySelector('[data-theme-preset-actions]')!
+  const menu = document.querySelector<HTMLElement>('[data-theme-preset-actions]')!
   const outside = getByRole(container, 'button', { name: 'Use' })
-  await act(async () => fireEvent.focusOut(getByRole(menu, 'button', { name: 'Rename' }), { relatedTarget: outside }))
+  await act(async () => fireEvent.focusOut(getByRole(menu, 'menuitem', { name: 'Rename' }), { relatedTarget: outside }))
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
 })
 
@@ -313,9 +313,9 @@ test('My themes: Share toggles a private preset to instance visibility; the row 
   })
   try {
     const { container } = await render([mine])
-    expect(queryByRole(container, 'button', { name: 'Unshare' })).toBeNull()
+    expect(queryByRole(document.body, 'menuitem', { name: 'Unshare' })).toBeNull()
     await openActions(container)
-    await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Share' })))
+    await act(async () => fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Share' })))
     expect(setVisibility).toHaveBeenCalledWith('preset-1', 1, 'instance')
   } finally {
     setVisibility.mockRestore()
@@ -331,9 +331,9 @@ test('My themes: an already-shared preset shows Unshare, which reverts to privat
   try {
     const shared = { ...mine, visibility: 'instance' as const }
     const { container } = await render([shared])
-    expect(queryByRole(container, 'button', { name: 'Share' })).toBeNull()
+    expect(queryByRole(document.body, 'menuitem', { name: 'Share' })).toBeNull()
     await openActions(container)
-    await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Unshare' })))
+    await act(async () => fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Unshare' })))
     expect(setVisibility).toHaveBeenCalledWith('preset-1', 1, 'private')
   } finally {
     setVisibility.mockRestore()

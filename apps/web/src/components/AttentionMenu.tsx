@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { usePopupDismiss } from '../hooks/usePopupDismiss'
+import { Panel } from './popover'
 import {
   ATTENTION_KIND_COPY,
   ATTENTION_LEVELS,
@@ -82,8 +83,9 @@ export function AttentionMenu({
     if (detailsRef.current) detailsRef.current.open = false
     setOpen(false)
   }, [])
-  // Inline, it is an expander inside another popup, which owns keyboard focus-out.
-  usePopupDismiss({ open, popup: detailsRef, trigger: summaryRef, onDismiss: close, focusOut: !inline })
+  // Inline, it is an expander inside another popup (not a floating surface), which owns keyboard
+  // focus-out. Floating, the Panel below owns dismissal.
+  usePopupDismiss({ open: inline && open, popup: detailsRef, trigger: summaryRef, onDismiss: close, focusOut: false })
   const isSquad = target.kind === 'squad'
   // Two typed queries with a constant hook order, rather than one query whose options type would
   // be a union: only the one matching this target is enabled, so only it ever fetches.
@@ -132,6 +134,77 @@ export function AttentionMenu({
 
   const setLevel = (kind: AttentionKind, level: AttentionLevel) => mutation.mutate({ ...attention, [kind]: level })
 
+  const panel = (
+    <>
+      {(Object.keys(ATTENTION_KIND_COPY) as AttentionKind[]).map((kind) => (
+        <div key={kind} className="mb-3 last:mb-0">
+          <p className="text-xs font-medium text-primary">{ATTENTION_KIND_COPY[kind].label}</p>
+          <p className="mb-1 text-xs text-muted">{ATTENTION_KIND_COPY[kind].helper}</p>
+          <div
+            role="radiogroup"
+            aria-label={ATTENTION_KIND_COPY[kind].label}
+            aria-busy={mutation.isPending}
+            aria-describedby={`${descriptionId}-${kind}`}
+            className={clsx('flex gap-1', mutation.isPending && 'opacity-60')}
+          >
+            {ATTENTION_LEVELS.map((level) => (
+              <label
+                key={level}
+                onMouseEnter={() => setHoveredOption({ kind, level })}
+                onMouseLeave={() => setHoveredOption(null)}
+                className={clsx(
+                  'flex-1 cursor-pointer rounded border border-th-border px-2 py-1 text-center text-xs',
+                  LABEL_FOCUS_RING,
+                  attention[kind] === level ? 'bg-accent text-on-accent' : 'text-secondary hover:bg-surface-hover'
+                )}
+              >
+                <input
+                  type="radio"
+                  className="sr-only"
+                  name={`${target.kind}-${target.id}-${kind}`}
+                  aria-label={`${ATTENTION_KIND_COPY[kind].label}: ${LEVEL_LABEL[level]}`}
+                  checked={attention[kind] === level}
+                  onChange={() => setLevel(kind, level)}
+                  onFocus={() => setFocusedOption({ kind, level })}
+                  onBlur={() => setFocusedOption(null)}
+                />
+                {LEVEL_LABEL[level]}
+              </label>
+            ))}
+          </div>
+          {/* Preview an option without changing the saved level. Restore the selected
+                description when neither the pointer nor keyboard focus is on an option. */}
+          <p id={`${descriptionId}-${kind}`} className="mt-1 min-h-8 text-[11px] leading-4 text-muted opacity-80">
+            {describeAttentionLevel(
+              kind,
+              hoveredOption?.kind === kind
+                ? hoveredOption.level
+                : focusedOption?.kind === kind
+                  ? focusedOption.level
+                  : attention[kind]
+            )}
+          </p>
+        </div>
+      ))}
+      {inheritance === 'squad' && <p className="text-xs text-muted">Inherits from squad</p>}
+      {inheritance === 'own' && (
+        <button
+          type="button"
+          onClick={() => mutation.mutate(null)}
+          disabled={mutation.isPending}
+          className="ficus-button text-xs text-accent hover:underline"
+        >
+          Reset to squad
+        </button>
+      )}
+      {mutation.isError && (
+        <p role="alert" className="mt-2 text-xs text-danger">
+          Could not update attention. Try again.
+        </p>
+      )}
+    </>
+  )
+
   return (
     <details
       ref={detailsRef}
@@ -155,85 +228,27 @@ export function AttentionMenu({
         {inline ? <span>Notifications…</span> : <SummaryIcon summary={summary} />}
         {!inline && <span>{SUMMARY_LABEL[summary]}</span>}
       </summary>
-      {/* `ficus-overlay` + `bg-surface` is the repo's popover surface (AgentViewTabs,
-          AgentConversationBody). The previous `bg-surface-primary` is not a defined token — there
-          is no `surface.primary` in tailwind.config.js, only DEFAULT/secondary/hover — so the
-          panel rendered with no background at all and the page showed through it. */}
-      <div
-        className={clsx(
-          inline
-            ? 'p-3'
-            : 'ficus-overlay absolute top-full z-30 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-th-border bg-surface p-3 shadow-theme-lg',
-          align === 'right' ? 'right-0' : 'left-0'
-        )}
-      >
-        {(Object.keys(ATTENTION_KIND_COPY) as AttentionKind[]).map((kind) => (
-          <div key={kind} className="mb-3 last:mb-0">
-            <p className="text-xs font-medium text-primary">{ATTENTION_KIND_COPY[kind].label}</p>
-            <p className="mb-1 text-xs text-muted">{ATTENTION_KIND_COPY[kind].helper}</p>
-            <div
-              role="radiogroup"
-              aria-label={ATTENTION_KIND_COPY[kind].label}
-              aria-busy={mutation.isPending}
-              aria-describedby={`${descriptionId}-${kind}`}
-              className={clsx('flex gap-1', mutation.isPending && 'opacity-60')}
-            >
-              {ATTENTION_LEVELS.map((level) => (
-                <label
-                  key={level}
-                  onMouseEnter={() => setHoveredOption({ kind, level })}
-                  onMouseLeave={() => setHoveredOption(null)}
-                  className={clsx(
-                    'flex-1 cursor-pointer rounded border border-th-border px-2 py-1 text-center text-xs',
-                    LABEL_FOCUS_RING,
-                    attention[kind] === level ? 'bg-accent text-on-accent' : 'text-secondary hover:bg-surface-hover'
-                  )}
-                >
-                  <input
-                    type="radio"
-                    className="sr-only"
-                    name={`${target.kind}-${target.id}-${kind}`}
-                    aria-label={`${ATTENTION_KIND_COPY[kind].label}: ${LEVEL_LABEL[level]}`}
-                    checked={attention[kind] === level}
-                    onChange={() => setLevel(kind, level)}
-                    onFocus={() => setFocusedOption({ kind, level })}
-                    onBlur={() => setFocusedOption(null)}
-                  />
-                  {LEVEL_LABEL[level]}
-                </label>
-              ))}
-            </div>
-            {/* Preview an option without changing the saved level. Restore the selected
-                description when neither the pointer nor keyboard focus is on an option. */}
-            <p id={`${descriptionId}-${kind}`} className="mt-1 min-h-8 text-[11px] leading-4 text-muted opacity-80">
-              {describeAttentionLevel(
-                kind,
-                hoveredOption?.kind === kind
-                  ? hoveredOption.level
-                  : focusedOption?.kind === kind
-                    ? focusedOption.level
-                    : attention[kind]
-              )}
-            </p>
-          </div>
-        ))}
-        {inheritance === 'squad' && <p className="text-xs text-muted">Inherits from squad</p>}
-        {inheritance === 'own' && (
-          <button
-            type="button"
-            onClick={() => mutation.mutate(null)}
-            disabled={mutation.isPending}
-            className="ficus-button text-xs text-accent hover:underline"
-          >
-            Reset to squad
-          </button>
-        )}
-        {mutation.isError && (
-          <p role="alert" className="mt-2 text-xs text-danger">
-            Could not update attention. Try again.
-          </p>
-        )}
-      </div>
+      {inline ? (
+        <div className="p-3">{panel}</div>
+      ) : (
+        // `ficus-overlay` + `bg-surface` is the repo's popover surface. (`bg-surface-primary` is not a defined
+        // token — there is no `surface.primary` in tailwind.config.js — and once left the panel transparent.)
+        <Panel
+          open={open}
+          onDismiss={close}
+          trigger={summaryRef}
+          inside={[detailsRef]}
+          role="group"
+          label="Notifications"
+          initialFocus="none"
+          gap={4}
+          // Most triggers sit at the LEFT of their header, so the panel hangs from their left edge.
+          align={align === 'right' ? 'end' : 'start'}
+          className="ficus-overlay w-64 rounded-lg border border-th-border bg-surface p-3 shadow-theme-lg"
+        >
+          {panel}
+        </Panel>
+      )}
     </details>
   )
 }

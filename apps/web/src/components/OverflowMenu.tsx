@@ -1,17 +1,14 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { usePopupDismiss } from '../hooks/usePopupDismiss'
+import type { ReactNode } from 'react'
 import { MoreIcon } from './icons'
-import { Presence } from './Presence'
+import { Menu, usePopover } from './popover'
 
 /**
- * A "…" trigger that opens a small popover of action buttons — the shared
- * shape behind ProviderAccountActions (secret/provider account rows) and the
- * "My themes" library row overflow (Rename/Share/Duplicate/Export/Delete on
- * narrow widths). Dismissal (outside press, Escape, keyboard focus leaving) is
- * `usePopupDismiss`; clicking any action button inside closes it, after the
- * action, and returns focus to the trigger. `itemsMarker` scopes the initial-focus query to this menu's
- * own action buttons so a caller can render arbitrary children (dividers,
- * headings) without every descendant button stealing focus-on-open.
+ * A "…" trigger that opens a small menu of action buttons — the shared shape behind
+ * ProviderAccountActions (secret/provider account rows) and the "My themes" library row overflow
+ * (Rename/Share/Duplicate/Export/Delete). A thin wrapper over the `Menu` popover variant: the caller's
+ * plain `<button>`s become its items (inside the `itemsMarker` wrapper, so arbitrary children such as
+ * dividers never take focus), arrows move between them, and clicking one runs it, then closes the
+ * menu and returns focus to the trigger.
  */
 export function OverflowMenu({
   label,
@@ -24,45 +21,32 @@ export function OverflowMenu({
   itemsMarker: string
   children: ReactNode
 }) {
-  const [open, setOpen] = useState(false)
-  const container = useRef<HTMLDivElement>(null)
-  const trigger = useRef<HTMLButtonElement>(null)
-  const surface = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (open) container.current?.querySelector<HTMLButtonElement>(`[${itemsMarker}] button`)?.focus()
-  }, [open, itemsMarker])
-  usePopupDismiss({ open, popup: surface, trigger, onDismiss: () => setOpen(false) })
+  const popover = usePopover({ kind: 'menu' })
   return (
-    <div ref={container} className="relative shrink-0">
+    <div className="relative shrink-0">
       <button
-        ref={trigger}
+        {...popover.triggerProps}
         type="button"
-        aria-haspopup="menu"
         aria-label={label}
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={popover.toggle}
         className="ficus-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-primary"
       >
         <MoreIcon className="h-4 w-4" />
       </button>
-      <Presence
-        ref={surface}
-        open={open}
-        className="ficus-overlay absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
+      <Menu
+        {...popover.popoverProps}
+        label={label}
+        itemSelector={`[${itemsMarker}] button`}
+        gap={4}
+        className="ficus-overlay w-44 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
       >
         <div
           {...{ [itemsMarker]: '' }}
           className="flex flex-col [&>button]:rounded-md [&>button]:px-3 [&>button]:py-2 [&>button]:text-left [&>button]:text-sm [&>button:hover]:bg-surface-hover"
-          onClick={(event) => {
-            if (event.target instanceof Element && event.target.closest('button')) {
-              trigger.current?.focus()
-              setOpen(false)
-            }
-          }}
         >
           {children}
         </div>
-      </Presence>
+      </Menu>
     </div>
   )
 }

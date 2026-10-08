@@ -11,7 +11,9 @@ test('the layout menu offers the default first, then every region with its short
   try {
     await dom.act(async () => root.render(<AssistantSnapMenu snap="left" onSnap={onSnap} onReset={onReset} />))
     const button = container.querySelector('button[aria-label="Arrange assistant"]') as HTMLButtonElement
-    const menu = () => dom.window.document.querySelector('[role="menu"][aria-label="Arrange assistant"]')
+    // A closed menu stays mounted (inert) only for its exit animation.
+    const menu = () =>
+      dom.window.document.querySelector('[role="menu"][aria-label="Arrange assistant"]:not([data-state="closed"])')
     expect(menu()).toBeNull()
 
     await dom.act(async () => button.click())
@@ -87,7 +89,9 @@ test('a WebKit tap on a region snaps to it; an outside tap and Escape close the 
       )
     )
     const button = container.querySelector('button[aria-label="Arrange assistant"]') as HTMLButtonElement
-    const menu = () => dom.window.document.querySelector('[role="menu"][aria-label="Arrange assistant"]')
+    // A closed menu stays mounted (inert) only for its exit animation.
+    const menu = () =>
+      dom.window.document.querySelector('[role="menu"][aria-label="Arrange assistant"]:not([data-state="closed"])')
     await dom.act(async () => button.focus())
     await dom.act(async () => button.click())
     const items = [...menu()!.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]

@@ -1,8 +1,8 @@
 import { DesktopHistoryControls } from './DesktopHistoryControls'
 import { SparklesIcon } from './icons'
-import { Presence } from './Presence'
+import { Menu, MenuItem, usePopover } from './popover'
 import clsx from 'clsx'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { SettingsIcon, PencilIcon, InboxIcon, MoreIcon, SproutIcon } from './icons'
@@ -13,7 +13,6 @@ import { queries } from '../queryOptions'
 import { VoiceCompanionButton } from '../voice/VoiceCompanionWidget'
 import { getTabNavigationTarget, recordTabPath } from '../hooks/useTabHistory'
 import { usePermissions } from '../hooks/usePermissions'
-import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { AssistantActivityBadge } from './AssistantActivityBadge'
 import { SquadSwitcher } from './SquadSwitcher'
@@ -281,17 +280,14 @@ export function MobileBottomNav({
 
   const dockItems = [...primaryMobileItems, ...(visibleMoreMenuItems.length === 1 ? visibleMoreMenuItems : [])]
 
-  const [moreOpen, setMoreOpen] = useState(false)
+  const more = usePopover({ kind: 'menu' })
+  const { open: moreOpen, setOpen: setMoreOpen } = more
   const isMoreActive = visibleMoreMenuItems.some((item) => location.pathname.startsWith(item.to))
-
-  const moreMenu = useRef<HTMLDivElement>(null)
-  const moreTrigger = useRef<HTMLButtonElement>(null)
-  usePopupDismiss({ open: moreOpen, popup: moreMenu, trigger: moreTrigger, onDismiss: () => setMoreOpen(false) })
 
   // Close menu on navigation
   useEffect(() => {
     setMoreOpen(false)
-  }, [location.pathname])
+  }, [location.pathname, setMoreOpen])
 
   return (
     <nav className="ficus-glass md:hidden shrink-0 border-t border-panel-border safe-area-pb z-10 [[data-keyboard=open]_&]:hidden">
@@ -350,12 +346,11 @@ export function MobileBottomNav({
         {visibleMoreMenuItems.length > 1 && (
           <div className="relative flex-1 h-full min-w-0">
             <button
-              ref={moreTrigger}
-              aria-expanded={moreOpen}
+              {...more.triggerProps}
               data-active={isMoreActive || moreOpen}
               onClick={(e) => {
                 e.stopPropagation()
-                setMoreOpen((v) => !v)
+                more.toggle()
               }}
               className={clsx(
                 'ficus-button ficus-dock-item',
@@ -367,16 +362,20 @@ export function MobileBottomNav({
               <span className="text-xs mt-1">More</span>
             </button>
 
-            <Presence
-              ref={moreMenu}
-              open={moreOpen}
-              className="ficus-overlay absolute bottom-full right-0 mb-2 mr-2 bg-surface rounded-lg shadow-theme-lg border border-th-border py-1 min-w-[160px]"
+            <Menu
+              {...more.popoverProps}
+              label="More"
+              side="above"
+              gap={8}
+              alignOffset={8}
+              className="ficus-overlay bg-surface rounded-lg shadow-theme-lg border border-th-border py-1 min-w-[160px]"
             >
               {visibleMoreMenuItems.map((item) => {
                 const isActive = location.pathname.startsWith(item.to)
                 return (
-                  <button
+                  <MenuItem
                     key={item.to}
+                    aria-current={isActive ? 'page' : undefined}
                     onClick={() => navigate(getTabNavigationTarget(location.pathname + location.search, item.to))}
                     className={clsx(
                       'ficus-button',
@@ -386,10 +385,10 @@ export function MobileBottomNav({
                   >
                     {item.icon}
                     {item.label}
-                  </button>
+                  </MenuItem>
                 )
               })}
-            </Presence>
+            </Menu>
           </div>
         )}
       </div>

@@ -649,7 +649,8 @@ describe('WorkStreamList', () => {
         )
       })
       const trigger = header.querySelector('button')!
-      const panel = () => header.querySelector('[aria-label="Feed filters"]')
+      // The panel is portaled out of the header; a closing panel (exit animation) no longer counts.
+      const panel = () => dom.window.document.querySelector('[aria-label="Feed filters"]:not([data-state="closed"])')
       const button = (label: string) =>
         [...panel()!.querySelectorAll('button')].find((candidate) => candidate.textContent === label)!
       const pageText = () => dom.window.document.body.textContent ?? ''
@@ -659,7 +660,7 @@ describe('WorkStreamList', () => {
       await dom.act(async () => trigger.click())
       expect(trigger.getAttribute('aria-expanded')).toBe('true')
       expect(dom.window.document.activeElement).toBe(button('All'))
-      expect(header.contains(dom.window.document.querySelector('[aria-label="Work stream filters"]'))).toBe(true)
+      expect(panel()!.contains(dom.window.document.querySelector('[aria-label="Work stream filters"]'))).toBe(true)
 
       await dom.act(async () => button('Ficus').click())
       expect(pageText()).toContain('Active Ficus')

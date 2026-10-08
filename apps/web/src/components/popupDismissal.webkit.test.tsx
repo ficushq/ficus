@@ -4,8 +4,9 @@
  * settings-style `<section tabIndex={-1}>` — before the click. Each popup must run the tapped item, and
  * still close on an outside tap, Escape and keyboard Tab out. The popups with richer fixtures are covered
  * beside their own tests (RelayConnectionSettings, ThemedPopup, ThemeQuickPicker, WorkStreamActionsMenu,
- * SettingsNavigation, AssistantSnapMenu, EntityReferenceLink, VoiceCompanionWidget). The mobile dock's More
- * menu (AppNav) is on the primitive too, but unreachable while only one secondary destination is visible.
+ * SettingsNavigation, AssistantSnapMenu, EntityReferenceLink, VoiceCompanionWidget), and every popover
+ * variant in `popover/variants.test.tsx`. The mobile dock's More menu (AppNav, a `Menu`) is unreachable
+ * while only one secondary destination is visible.
  */
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { useRef, useState, type ReactNode } from 'react'

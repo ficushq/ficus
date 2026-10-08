@@ -102,7 +102,7 @@ async function renderPicker({
     .join('\n')
   document.head.append(sheet)
   const storeRef: { current: ThemeSyncStore | null } = { current: null }
-  const { root, container } = dom.createRoot()
+  const { root } = dom.createRoot()
   await act(async () =>
     root.render(
       <ThemeProvider>
@@ -110,7 +110,8 @@ async function renderPicker({
       </ThemeProvider>
     )
   )
-  return { dom, container, storeRef: storeRef as { current: ThemeSyncStore } }
+  // The panel is portaled to the body, so queries cover the whole document, not just the render root.
+  return { dom, container: document.body, storeRef: storeRef as { current: ThemeSyncStore } }
 }
 
 function trigger(container: HTMLElement) {
