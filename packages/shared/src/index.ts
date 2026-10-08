@@ -95,5 +95,6 @@ export * from './custom-theme'
 export * from './theme-preferences'
 export * from './theme-preset'
 export * from './theme-assistant'
+export * from './decisions'
 
 export * from './github-feedback'

@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm'
+import { decisionRoutingSchema } from '@ficus/shared'
 import { db, settings } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
@@ -201,6 +202,21 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
     // the broadcast the worker keeps admitting at the OLD cap for up to 60s
     // after the operator saves — which is the whole promise of "takes effect
     // without a restart".
+    crossProcess: true,
+  },
+  DECISION_ROUTING: {
+    type: 'string',
+    default: '{}',
+    description: 'Which decision model providers each purpose asks, in order, and how long to wait for an answer.',
+    validate: (value) => {
+      try {
+        const result = decisionRoutingSchema.safeParse(JSON.parse(value))
+        return result.success ? null : (result.error.issues[0]?.message ?? 'Invalid decision routing.')
+      } catch {
+        return 'Decision routing must be JSON.'
+      }
+    },
+    // Saved in Settings (ficus-api); the GitHub firewall and event rules ask from ficus-worker.
     crossProcess: true,
   },
 } as const

@@ -4341,3 +4341,24 @@ export const storageMonitor = pgTable('storage_monitor', {
     .notNull()
     .default([]),
 })
+
+// Decision model calls: what was asked, who answered (or that none could), and how fast. The input
+// itself is never kept, only its hash; rows older than 30 days are pruned.
+export const decisionLog = pgTable(
+  'decision_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    purpose: varchar('purpose', { length: 64 }).notNull(),
+    outcome: varchar('outcome', { length: 16 }).$type<'answered' | 'unavailable' | 'unconfigured'>().notNull(),
+    providerId: varchar('provider_id', { length: 64 }),
+    model: varchar('model', { length: 128 }),
+    latencyMs: integer('latency_ms').notNull(),
+    inputSha256: varchar('input_sha256', { length: 64 }).notNull(),
+    answers: jsonb('answers').$type<Record<string, import('@ficus/shared').DecisionAnswer>>(),
+    errors: jsonb('errors').$type<Array<{ providerId: string; error: string }>>(),
+    /** Where the question came from, e.g. `{ kind: 'github', squadId }`. */
+    source: jsonb('source').$type<Record<string, string>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_decision_log_created_at').on(table.createdAt)]
+)
