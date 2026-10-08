@@ -183,16 +183,48 @@ test('Dependabot safe lifecycle projection has no arbitrary package, path or adv
   ).toEqual([])
 })
 
-test('a trusted assignment actor cannot attest the current editor of a mixed parent title/body snapshot', () => {
+test('assignment actions bind the verified webhook actor and never carry parent title/body', () => {
   const event = feedbackEvent()
   event.type = 'issues'
   event.payload.action = 'assigned'
-  event.payload.issue.user = sender
+  event.payload.issue.user = owner
+  event.payload.assignee = { id: 4, login: 'bot-account', type: 'User' }
   event.githubObservation = { kind: 'webhook', deliveryId: 'assignment-1' }
   const content = projection(event).content!
+  expect(content.objectKind).toBe('action')
   expect(content.author!.accountId).toBe('1')
-  expect(content.attribution).toBe('unknown')
+  expect(content.attribution).toBe('creation')
   expect(content.editor).toBeNull()
+  expect(content.delivery!.data).toMatchObject({ assignee: 'bot-account', actor: 'trusted', projection: 'action' })
+  expect(JSON.stringify(content)).not.toContain('PARENT')
+  // A redelivery is the same action; a different assignee is a different reviewable action.
+  expect(
+    projection({ ...event, githubObservation: { kind: 'webhook', deliveryId: 'again' } }).content!.contentHash
+  ).toBe(content.contentHash)
+  const other = structuredClone(event)
+  other.payload.assignee = { id: 5, login: 'someone-else', type: 'User' }
+  expect(projection(other).content!.nativeId).not.toBe(content.nativeId)
+  // Polls have no signed actor: fail closed.
+  expect(projection({ ...event, githubObservation: { kind: 'poll' } }).content!.attribution).toBe('unknown')
+})
+
+test('review requests and labels are actions; title/body edits remain held content', () => {
+  const event = feedbackEvent()
+  event.type = 'pull_request'
+  event.payload.action = 'review_requested'
+  event.payload.pull_request = { ...event.payload.issue, user: owner, state: 'open' }
+  event.payload.requested_reviewer = { id: 4, login: 'bot-account', type: 'User' }
+  event.githubObservation = { kind: 'webhook', deliveryId: 'request-1' }
+  const request = projection(event).content!
+  expect(request).toMatchObject({ objectKind: 'action', attribution: 'creation' })
+  expect(request.delivery!.data).toMatchObject({ requestedReviewer: 'bot-account', pullRequest: { number: 3 } })
+  expect(JSON.stringify(request)).not.toContain('PARENT')
+  event.payload.action = 'labeled'
+  event.payload.label = { name: 'bug' }
+  expect(projection(event).content!.delivery!.data).toMatchObject({ action: 'labeled' })
+  event.payload.action = 'edited'
+  const edit = projection(event).content!
+  expect(edit).toMatchObject({ objectKind: 'pull_request', attribution: 'unknown' })
 })
 
 test('reviewed full text and the bounded notification preview are explicitly distinct and both approval-bound', () => {

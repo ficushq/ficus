@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto'
-import type { GitHubAccountIdentity, GitHubFeedbackEnvelope, IntegrationOutputFact } from '@ficus/shared'
+import type {
+  GitHubAccountIdentity,
+  GitHubFeedbackContent,
+  GitHubFeedbackEnvelope,
+  IntegrationOutputFact,
+} from '@ficus/shared'
 import { buildGitHubStatus } from './feedback-status'
 import type { VerifiedIngressEvent } from '../types'
 
@@ -36,6 +41,112 @@ export function githubContentHash(value: unknown): string {
   return createHash('sha256')
     .update(JSON.stringify(canonical(value)))
     .digest('hex')
+}
+
+/**
+ * Issue/PR actions whose only meaningful content is WHO did WHAT (assign, request review, label,
+ * close/reopen an issue). The verified webhook sender is the authority; the parent's editable title
+ * and body are never part of the projection, so a trusted actor cannot launder untrusted prose.
+ * Title/body edits are not here: those remain content and are held without a verified editor.
+ */
+export const GITHUB_ACTION_EVENTS: Record<string, readonly string[]> = {
+  issues: ['assigned', 'unassigned', 'labeled', 'unlabeled', 'closed', 'reopened'],
+  pull_request: ['assigned', 'unassigned', 'labeled', 'unlabeled', 'review_requested', 'review_request_removed'],
+}
+
+function githubActionContent(
+  event: VerifiedIngressEvent,
+  fact: IntegrationOutputFact,
+  parent: Record<string, any>,
+  repo: string,
+  repositoryId: string | null,
+  resourceUrl: string
+): GitHubFeedbackContent | null {
+  const payload = record(event.payload)
+  const action = text(payload.action)
+  if (!GITHUB_ACTION_EVENTS[event.type]?.includes(action)) return null
+  const parentId = githubNativeId(parent.id)
+  const actor = githubContentIdentity(payload.sender)
+  // Only a signed webhook names the actor. A poll's synthetic sender is fail-closed (held).
+  const attribution = event.githubObservation?.kind === 'webhook' && actor ? 'creation' : 'unknown'
+  const login = (value: unknown) => githubContentIdentity(value)?.login ?? ''
+  const isPR = !!fact.data.pullRequest
+  const number = record(fact.data.pullRequest ?? fact.data.issue).number
+  const headSha = sha(parent.head?.sha)
+  const assignee = login(payload.assignee)
+  const requestedReviewer = login(payload.requested_reviewer)
+  const requestedTeam = /^[a-z0-9_.-]+$/i.test(text(record(payload.requested_team).slug))
+    ? text(record(payload.requested_team).slug)
+    : ''
+  const label = ['labeled', 'unlabeled'].includes(action) ? text(record(payload.label).name).slice(0, 100) : ''
+  const summary = [
+    `@${actor?.login ?? 'unknown'} ${action.replaceAll('_', ' ')} on ${repo} ${isPR ? 'pull request' : 'issue'} ${number}.`,
+    assignee ? `Assignee: @${assignee}` : '',
+    requestedReviewer ? `Requested reviewer: @${requestedReviewer}` : '',
+    requestedTeam ? `Requested team: ${requestedTeam}` : '',
+    label ? `Label: ${label}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+  const data = {
+    repository: repo,
+    ...(repositoryId ? { repositoryId: Number(repositoryId) } : {}),
+    ...(isPR ? { pullRequest: { number, ...(headSha ? { headSha } : {}) } } : { issue: { number } }),
+    action,
+    state: ['open', 'closed'].includes(parent.state) ? parent.state : '',
+    actor: actor?.login ?? '',
+    actorType: actor?.accountType ?? '',
+    assignee,
+    requestedReviewer,
+    requestedTeam,
+    ...(fact.data.requestedReviewerType ? { requestedReviewerType: fact.data.requestedReviewerType } : {}),
+    // Logins and label names only; the predicate catalog allows rules to filter on them.
+    labels: Array.isArray(fact.data.labels) ? fact.data.labels : [],
+    assignees: Array.isArray(fact.data.assignees) ? fact.data.assignees : [],
+    content: { title: '', body: summary },
+    projection: 'action',
+  }
+  const delivery: IntegrationOutputFact = {
+    output: fact.output,
+    version: fact.version,
+    resourceKey: fact.resourceKey,
+    eventKey: fact.eventKey,
+    occurredAt: fact.occurredAt,
+    data,
+    subject: `GitHub ${isPR ? 'pull request' : 'issue'} ${action.replaceAll('_', ' ')}: ${repo} ${number}`,
+    body: `${summary}\n\n${resourceUrl}`,
+    url: resourceUrl,
+  }
+  // One object per action: an assignment and a later label are separate reviewable events, so
+  // out-of-order webhooks are never treated as stale versions of each other.
+  const nativeId = parentId
+    ? `${parentId}-${githubContentHash([action, data.assignee, data.requestedReviewer, data.requestedTeam, label, timestamp(parent.updated_at)]).slice(0, 24)}`
+    : null
+  const reviewed = {
+    normalizationVersion: 1,
+    repositoryId,
+    nativeId,
+    objectKind: 'action',
+    author: actor,
+    editor: null,
+    attribution,
+    url: resourceUrl,
+    data,
+  }
+  return {
+    normalizationVersion: 1,
+    repositoryId,
+    nativeId,
+    objectKind: 'action',
+    author: actor,
+    editor: null,
+    attribution,
+    providerVersion: null,
+    contentHash: githubContentHash(reviewed),
+    byteCount: Buffer.byteLength(JSON.stringify(canonical(reviewed))),
+    reason: null,
+    delivery,
+  }
 }
 
 /** No raw-body fallback: every supported automatic status has an explicit allowlist. */
@@ -129,6 +240,8 @@ export function normalizeGitHubFeedback(
     }
   }
   if (isCI) return { content: null, status }
+  const actionContent = githubActionContent(event, fact, parent, repo, repositoryId, resourceUrl)
+  if (actionContent) return { content: actionContent, status }
   const objectKind =
     event.type === 'issue_comment'
       ? 'issue_comment'

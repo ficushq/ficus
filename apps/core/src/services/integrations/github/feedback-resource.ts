@@ -61,7 +61,9 @@ export async function verifyGitHubOutputResource(source: {
     if (!number(parentNumber)) return result()
     const isPR = !!data?.pullRequest
     const kind = content?.objectKind
-    const nativeId = content?.nativeId
+    // An action is witnessed through its parent resource; its author is the webhook actor.
+    const action = !status && kind === 'action'
+    const nativeId = action ? /^([1-9][0-9]*)-[0-9a-f]{24}$/.exec(content?.nativeId ?? '')?.[1] : content?.nativeId
     if (!status && (!nativeId || !/^[1-9][0-9]*$/.test(nativeId))) return result()
     const path = status
       ? `${root}/${isPR ? 'pulls' : 'issues'}/${parentNumber}`
@@ -71,10 +73,10 @@ export async function verifyGitHubOutputResource(source: {
           ? `${root}/pulls/comments/${nativeId}`
           : kind === 'review'
             ? `${root}/pulls/${parentNumber}/reviews/${nativeId}`
-            : `${root}/${kind === 'pull_request' ? 'pulls' : 'issues'}/${parentNumber}`
+            : `${root}/${kind === 'pull_request' || (action && isPR) ? 'pulls' : 'issues'}/${parentNumber}`
     const native = record(await githubApiGet(path, squadId, connectionId))
     if (!githubNativeId(native.id) || (!status && githubNativeId(native.id) !== nativeId)) return result()
-    if (!status && content?.author && githubNativeId(record(native.user).id) !== content.author.accountId)
+    if (!status && !action && content?.author && githubNativeId(record(native.user).id) !== content.author.accountId)
       return result()
     const url = new URL(String(native.html_url))
     if (

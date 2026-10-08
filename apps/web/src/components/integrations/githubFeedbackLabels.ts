@@ -9,11 +9,14 @@ const KIND_LABELS: Record<NonNullable<GitHubFeedbackListItem['objectKind']>, str
   issue_comment: 'Comment',
   review: 'Review',
   review_comment: 'Review comment',
+  action: 'Issue or pull request action',
 }
 
 const REASON_LABELS: Record<string, string> = {
   untrusted_author: 'Author is not trusted in this squad',
   unknown_identity: 'Author or event could not be identified',
+  unknown_editor: 'Who made or edited this could not be verified',
+  source_unverified: 'GitHub could not confirm this event belongs to the connected repository',
   previously_held: 'An earlier version of this event was held',
   stale_observation: 'Observed out of order; a newer version may exist',
   ambiguous_observation: 'Who made this change could not be verified',

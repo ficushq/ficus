@@ -46,11 +46,15 @@ export interface GitHubPersonalIdentityStatus {
   authorization: { configured: boolean; authority: 'local' | 'platform_broker'; mode: 'browser' | 'device' }
 }
 
-/** Immutable review input. `delivery` contains only this content object's text, never its parent. */
+/**
+ * Immutable review input. `delivery` contains only this content object's text, never its parent.
+ * `action` is an issue/PR action (assign, review request, label, close/reopen) authored by the
+ * verified webhook sender; its delivery is a fixed factual projection without parent title/body.
+ */
 export interface GitHubFeedbackContent {
   normalizationVersion: 1
   repositoryId: string | null
-  objectKind: 'issue' | 'pull_request' | 'issue_comment' | 'review' | 'review_comment'
+  objectKind: 'issue' | 'pull_request' | 'issue_comment' | 'review' | 'review_comment' | 'action'
   nativeId: string | null
   providerVersion: string | null
   author: GitHubAccountIdentity | null

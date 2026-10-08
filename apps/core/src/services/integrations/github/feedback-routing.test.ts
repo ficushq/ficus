@@ -1,4 +1,4 @@
-import { expect, spyOn, test, setSystemTime } from 'bun:test'
+import { describe, expect, spyOn, test, setSystemTime } from 'bun:test'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { createBlankWorkflow, createWorkflowRun } from '@ficus/shared'
 import {
@@ -510,9 +510,12 @@ test('native webhook-only Dependabot rules carry structured security facts but n
         },
       },
     }
+    const [manager] = await db.select().from(agents).where(eq(agents.id, h.managerId))
+    const workflow = createBlankWorkflow()
+    workflow.participants.worker!.agentTypeId = manager!.agentTypeId
     await db
       .update(squads)
-      .set({ metadata: { github: [{ repo: 'acme/project' }] } })
+      .set({ metadata: { github: [{ repo: 'acme/project' }], workflow: { kind: 'inline', definition: workflow } } })
       .where(eq(squads.id, h.squadId))
     h.read.mockImplementation(
       async <T>(path: string): Promise<T | null> =>
@@ -2851,4 +2854,225 @@ test('a human deny stays final when the filter is later turned OFF', async () =>
     await revoke()
     await h.close()
   }
+})
+
+// Assignments, review requests and labels are authored by the verified webhook actor. Their
+// delivery is a fixed factual projection: no parent title/body, whoever wrote the PR or issue.
+describe('trusted actor actions with the author filter ON (default squad rules)', () => {
+  const trustedActor = { id: 2, login: 'author', type: 'User' }
+  const outsider = { id: 5, login: 'outsider', type: 'User' }
+  const parentAuthor = { id: 7, login: 'drive-by', type: 'User' }
+  const pr = {
+    id: 20,
+    number: 3,
+    title: 'UNTRUSTED_TITLE_SENTINEL',
+    body: 'UNTRUSTED_BODY_SENTINEL',
+    user: parentAuthor,
+    state: 'open',
+    html_url: 'https://github.com/acme/project/pull/3',
+    updated_at: '2026-10-02T11:00:00Z',
+    head: { sha: 'a'.repeat(40), ref: 'feature' },
+    base: { ref: 'main', repo: { full_name: 'acme/project' } },
+  }
+  const issue = {
+    id: 40,
+    number: 4,
+    title: 'UNTRUSTED_TITLE_SENTINEL',
+    body: 'UNTRUSTED_BODY_SENTINEL',
+    user: parentAuthor,
+    state: 'open',
+    html_url: 'https://github.com/acme/project/issues/4',
+    updated_at: '2026-10-02T11:00:00Z',
+  }
+  const reviewRequested = (sender: object, observation: 'webhook' | 'poll' = 'webhook') =>
+    githubOutputAdapter.normalize({
+      type: 'pull_request',
+      githubObservation:
+        observation === 'webhook' ? { kind: 'webhook', deliveryId: crypto.randomUUID() } : { kind: 'poll' },
+      payload: {
+        action: 'review_requested',
+        repository: { id: 10, full_name: 'acme/project' },
+        pull_request: pr,
+        requested_reviewer: { id: 99, login: 'ficus-bot', type: 'User' },
+        sender,
+      },
+    })[0]!
+  const assigned = (sender: object, observation: 'webhook' | 'poll' = 'webhook') =>
+    githubOutputAdapter.normalize({
+      type: 'issues',
+      githubObservation:
+        observation === 'webhook' ? { kind: 'webhook', deliveryId: crypto.randomUUID() } : { kind: 'poll' },
+      payload: {
+        action: 'assigned',
+        repository: { id: 10, full_name: 'acme/project' },
+        issue,
+        assignee: { id: 99, login: 'ficus-bot', type: 'User' },
+        sender,
+      },
+    })[0]!
+
+  async function defaultRulesFixture() {
+    const h = await fixture()
+    // No stored GitHub rules: the squad gets the built-in defaults (assigned -> manager,
+    // review_requested -> start-workstream), scoped to its routed repository.
+    const [manager] = await db.select().from(agents).where(eq(agents.id, h.managerId))
+    const workflow = createBlankWorkflow()
+    workflow.participants.worker!.agentTypeId = manager!.agentTypeId
+    await db
+      .update(squads)
+      .set({ metadata: { github: [{ repo: 'acme/project' }], workflow: { kind: 'inline', definition: workflow } } })
+      .where(eq(squads.id, h.squadId))
+    await db
+      .update(integrationConnections)
+      .set({ configuration: { login: 'ficus-bot' } })
+      .where(eq(integrationConnections.id, h.authority.connectionId))
+    h.read.mockImplementation(
+      async <T>(path: string): Promise<T | null> =>
+        (path === '/repositories/10'
+          ? { id: 10, full_name: 'acme/project' }
+          : path === '/repos/acme/project/pulls/3'
+            ? pr
+            : path === '/repos/acme/project/issues/4'
+              ? issue
+              : null) as T | null
+    )
+    return h
+  }
+  const revisions = (squadId: string) =>
+    db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, squadId))
+  const sentinelFree = async (squadId: string, managerId: string) => {
+    const messages = await db.select().from(inbox).where(eq(inbox.recipientId, managerId))
+    const streams = await db.select().from(workStreams).where(eq(workStreams.squadId, squadId))
+    expect(JSON.stringify([messages, streams])).not.toContain('SENTINEL')
+  }
+
+  test('a trusted review request starts the default work stream without any untrusted PR prose', async () => {
+    const h = await defaultRulesFixture()
+    try {
+      expect((await db.select().from(squads).where(eq(squads.id, h.squadId)))[0]!.githubAuthorFilter).toBe(true)
+      await h.trust()
+      const before = await h.effects()
+      await publishIntegrationOutput('github', reviewRequested(trustedActor), h.authority)
+      const after = await h.effects()
+      expect(after.streams).toBe(before.streams + 1)
+      expect(after.triggers).toBe(before.triggers + 1)
+      const [revision] = await revisions(h.squadId)
+      expect(revision).toMatchObject({ decision: 'automatic', reason: 'trusted_author', attribution: 'creation' })
+      expect(revision!.author).toMatchObject({ accountId: '2' })
+      const [stream] = await db.select().from(workStreams).where(eq(workStreams.squadId, h.squadId))
+      expect(stream!.description).toContain('Requested reviewer: @ficus-bot')
+      expect(stream!.description).toContain('https://github.com/acme/project/pull/3')
+      await sentinelFree(h.squadId, h.managerId)
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('a trusted assignment notifies the manager through the default rule', async () => {
+    const h = await defaultRulesFixture()
+    try {
+      await h.trust()
+      const before = await h.effects()
+      await publishIntegrationOutput('github', assigned(trustedActor), h.authority)
+      const after = await h.effects()
+      expect(after.inbox).toBe(before.inbox + 1)
+      expect(after.streams).toBe(before.streams)
+      const [message] = await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))
+      expect(message!.content).toContain('Assignee: @ficus-bot')
+      await sentinelFree(h.squadId, h.managerId)
+      // A redelivered webhook is the same reviewed action: no second notice.
+      const replay = assigned(trustedActor)
+      await publishIntegrationOutput('github', replay, h.authority)
+      await reconcileUnmatchedOutputs()
+      expect((await h.effects()).inbox).toBe(after.inbox)
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('an untrusted actor is held with zero effects, even on a trusted squad member’s issue', async () => {
+    const h = await defaultRulesFixture()
+    try {
+      await h.trust()
+      const before = await h.effects()
+      await publishIntegrationOutput('github', assigned(outsider), h.authority)
+      await publishIntegrationOutput('github', reviewRequested(outsider), h.authority)
+      await reconcileUnmatchedOutputs()
+      expect(await h.effects()).toEqual(before)
+      const held = await revisions(h.squadId)
+      expect(held).toHaveLength(2)
+      for (const revision of held)
+        expect(revision).toMatchObject({ decision: 'pending', reason: 'untrusted_author', releaseState: 'held' })
+      // What a moderator approves is the factual projection, not the parent title/body.
+      expect(JSON.stringify(held.map((revision) => revision.envelope))).not.toContain('SENTINEL')
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('rule predicates still match source fields the projection omits, such as issue.title', async () => {
+    const h = await defaultRulesFixture()
+    try {
+      await h.trust()
+      const rule = (title: string) => ({
+        id: 'by-title',
+        enabled: true,
+        source: { integration: 'github', output: 'issue.assigned', version: 1 },
+        filters: { audience: 'connected-account' },
+        predicates: [{ field: 'issue.title', op: 'eq', value: title }],
+        action: { type: 'notify-manager' },
+      })
+      const [squad] = await db.select().from(squads).where(eq(squads.id, h.squadId))
+      const setRule = (title: string) =>
+        db
+          .update(squads)
+          .set({ metadata: { ...(squad!.metadata as object), integrationRules: { github: [rule(title)] } } })
+          .where(eq(squads.id, h.squadId))
+      await setRule('some other title')
+      const before = await h.effects()
+      await publishIntegrationOutput('github', assigned(trustedActor), h.authority)
+      expect((await h.effects()).inbox).toBe(before.inbox)
+      await setRule('UNTRUSTED_TITLE_SENTINEL')
+      issue.updated_at = '2026-10-02T11:05:00Z'
+      try {
+        await publishIntegrationOutput('github', assigned(trustedActor), h.authority)
+      } finally {
+        issue.updated_at = '2026-10-02T11:00:00Z'
+      }
+      expect((await h.effects()).inbox).toBe(before.inbox + 1)
+      await sentinelFree(h.squadId, h.managerId)
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('a polled assignment has no verified actor and stays held for review', async () => {
+    const h = await defaultRulesFixture()
+    try {
+      await h.trust()
+      const before = await h.effects()
+      await publishIntegrationOutput('github', assigned(trustedActor, 'poll'), h.authority)
+      expect(await h.effects()).toEqual(before)
+      const [revision] = await revisions(h.squadId)
+      expect(revision).toMatchObject({ decision: 'pending', reason: 'unknown_editor' })
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('approving a held action delivers only the factual projection', async () => {
+    const h = await defaultRulesFixture()
+    try {
+      const before = await h.effects()
+      await publishIntegrationOutput('github', assigned(outsider), h.authority)
+      const [revision] = await revisions(h.squadId)
+      await h.allow(revision!.id)
+      await (await import('../../workflows/execution')).reconcileFlows()
+      const after = await h.effects()
+      expect(after.inbox).toBe(before.inbox + 1)
+      await sentinelFree(h.squadId, h.managerId)
+    } finally {
+      await h.close()
+    }
+  })
 })
