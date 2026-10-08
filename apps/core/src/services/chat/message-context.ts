@@ -1,5 +1,9 @@
 import { chatPagePathSchema, type MessageMetadata } from '@ficus/shared'
-import { assistantRoutingCorrectionNote, assistantRoutingNote } from '../routing/assistant-routing-note'
+import {
+  assistantRoutingCorrectionNote,
+  assistantRoutingInheritedNote,
+  assistantRoutingNote,
+} from '../routing/assistant-routing-note'
 
 /** Attach client navigation data only for model delivery; never rewrite the saved user text. */
 export function messageTextForModel(message: { content: string; metadata?: MessageMetadata | null }): string {
@@ -13,6 +17,8 @@ export function messageTextForModel(message: { content: string; metadata?: Messa
   // Server-owned routing for the Assistant: the decision model's hint, or the user's correction.
   const routing = message.metadata?.assistantRouting ? assistantRoutingNote(message.metadata.assistantRouting) : null
   if (routing) content += `\n\n[${routing}]`
+  else if (message.metadata?.assistantRoutingInherited)
+    content += `\n\n[${assistantRoutingInheritedNote(message.metadata.assistantRoutingInherited)}]`
   if (message.metadata?.assistantRoutingCorrection)
     content += `\n\n[${assistantRoutingCorrectionNote(message.metadata.assistantRoutingCorrection)}]`
   const path = chatPagePathSchema.safeParse(message.metadata?.pagePath)

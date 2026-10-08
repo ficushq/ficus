@@ -1,4 +1,4 @@
-import type { AssistantRoutingCorrection, AssistantRoutingHint } from './assistant-routing'
+import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 export * from './grants'
 // Schema field definition for task type schemas
 export interface SchemaFieldDef {
@@ -159,6 +159,11 @@ export interface MessageMetadata {
   pagePath?: string
   /** Server-owned: the Assistant's routing hint for this user message (and the user's correction). */
   assistantRouting?: AssistantRoutingHint
+  /**
+   * Server-owned, never saved: a follow-up's routing, inherited from the conversation's latest
+   * routed message (hint or correction) for the model only. It has no chip.
+   */
+  assistantRoutingInherited?: AssistantRoutingTarget & { fromMessageId: string }
   /** Server-owned: the user's routing correction this message carries to the Assistant. */
   assistantRoutingCorrection?: AssistantRoutingCorrection
   /** Server-owned direct-chat provenance; request bodies must not set these fields. */

@@ -467,6 +467,15 @@ test('user messages show their routing chip, and picking a squad corrects it for
     const human = (metadata: object) =>
       ({ kind: 'persisted', id: 'm-1', message: { id: 'm-1', role: 'human', content: 'Fix it', metadata } }) as any
     expect(f.chat.renderMessageFooter!(human({ source: 'user_chat' }))).toBeNull()
+    // A follow-up's inherited routing reaches only the model: no chip.
+    expect(
+      f.chat.renderMessageFooter!(
+        human({
+          source: 'user_chat',
+          assistantRoutingInherited: { scope: 'squad', squadId: 'squad-chlea', fromMessageId: 'm-0' },
+        })
+      )
+    ).toBeNull()
     const footerRoot = f.dom.createRoot()
     await f.dom.act(async () =>
       footerRoot.root.render(

@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import {
   ASSISTANT_ROUTING_MIN_CONFIDENCE,
+  effectiveAssistantRouting,
   type AssistantRoutingHint,
   type AssistantRoutingTarget,
   type DecisionAnswer,
@@ -29,7 +30,8 @@ export const SUGGEST_SQUAD_TIMEOUT_MS = 3_000
 /** Squads offered as options; above this, the purpose heuristic picks the likeliest. (A choice allows 64 options.) */
 export const MAX_ROUTING_SQUADS = 30
 const MESSAGE_CHARS = 4_000
-const RECENT_ENTRIES = 3
+/** The user's own earlier messages the decision sees, plus the Assistant's latest reply. */
+const RECENT_USER_MESSAGES = 4
 const RECENT_ENTRY_CHARS = 300
 const PURPOSE_CHARS = 400
 /** The message source of a user's own chat message: the only kind that is routed. */
@@ -46,6 +48,28 @@ export interface RecentEntry {
   text: string
 }
 
+/**
+ * What a user message is, asked alongside its scope:
+ * - `new_request`: asks for work that is not already under way (gets a hint and a chip);
+ * - `follow_up`: about work or a request already in this conversation (inherits its routing);
+ * - `conversation`: a confirmation, thanks, brainstorming or a question to the Assistant (no routing).
+ */
+export const ROUTING_KINDS = ['new_request', 'follow_up', 'conversation'] as const
+export type RoutingKind = (typeof ROUTING_KINDS)[number]
+
+/** What the decision sees of the conversation before a message, and what the skip rules need. */
+export interface RoutingContext {
+  /** The user's last few messages and the Assistant's latest reply, oldest first. */
+  recent: RecentEntry[]
+  /** The Assistant's last turn asked the user something: a question, or ask_human. */
+  assistantAsked: boolean
+}
+
+export interface InheritedRouting {
+  messageId: string
+  hint: AssistantRoutingHint
+}
+
 export interface AssistantRoutingDeps {
   decide?: (purpose: 'assistant-routing', input: DecisionRequest, options: DecideOptions) => Promise<DecisionOutcome>
   /** Whether the feature is on (Settings → Decision Providers → Features). */
@@ -54,7 +78,9 @@ export interface AssistantRoutingDeps {
   setTimer?: (fire: () => void, ms: number) => () => void
   timeoutMs?: number
   listSquads?: (identity: Identity) => Promise<RoutingSquad[]>
-  loadRecent?: (message: Pick<Message, 'id' | 'agentId' | 'createdAt'>) => Promise<RecentEntry[]>
+  loadContext?: (message: Pick<Message, 'id' | 'agentId' | 'createdAt'>) => Promise<RoutingContext>
+  /** The conversation's latest routing (hint or correction) before a message. */
+  findInherited?: (message: Pick<Message, 'id' | 'agentId' | 'createdAt'>) => Promise<InheritedRouting | null>
 }
 
 export interface RankedRoutingTarget extends AssistantRoutingTarget {
@@ -66,6 +92,8 @@ export interface AssistantRoutingDecision {
   hint: AssistantRoutingHint | null
   /** Every option the model rated, likeliest first. */
   ranked: RankedRoutingTarget[]
+  /** What the message is, when the kind question was asked and answered. */
+  kind?: { kind: RoutingKind; confidence: number }
   reason?: 'disabled' | 'no-squads' | 'empty' | 'unconfigured' | 'unavailable' | 'timeout' | 'unanswered'
 }
 
@@ -105,11 +133,51 @@ export const ROUTING_INSTRUCTIONS =
   'or work in that squad’s own project. Pick instance for Ficus itself, and general for work not tied to one ' +
   'squad’s project.'
 
+export const KIND_INSTRUCTIONS =
+  'What is the user’s latest message (state.message)? state.recent is the conversation just before it: the ' +
+  'user’s earlier messages and the Assistant’s latest reply.'
+
+const KIND_OPTIONS: Record<RoutingKind, string> = {
+  new_request:
+    'Asks for work to be done that is not already under way in this conversation, including redoing earlier work somewhere else (for example in a different squad).',
+  follow_up:
+    'About work or a request already in this conversation: its progress, details, changes, or more of the same work.',
+  conversation:
+    'A confirmation, thanks or reaction, brainstorming or discussion, or a question to the Assistant itself, with no work to hand off.',
+}
+
+const ACKNOWLEDGEMENT_WORDS = new Set(
+  (
+    'ok okay k kk yes yeah yep yup ya no nope nah sure thanks thank you ty thx cheers cool great nice perfect ' +
+    'awesome amazing good fine lgtm sgtm done got it sounds right alright agreed agree correct exactly please pls ' +
+    'go ahead do that this wow haha lol hmm oh ah np noted understood appreciated much very so'
+  ).split(' ')
+)
+
+/** A short reply that only acknowledges ("ok", "thanks!", "sounds good", "👍"): nothing to route. */
+export function isAcknowledgement(text: string): boolean {
+  const words = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+  return words.length <= 4 && words.every((word) => ACKNOWLEDGEMENT_WORDS.has(word))
+}
+
+/** Why a message needs no decision at all (no call, no cost), or null to ask. */
+export function routingSkipReason(text: string, context: RoutingContext): 'acknowledgement' | 'answer' | null {
+  if (isAcknowledgement(text)) return 'acknowledgement'
+  if (context.assistantAsked) return 'answer'
+  return null
+}
+
 /** The decision: one choice. Squad names and purposes are ours; the user's words go only in `state`. */
 export function buildRoutingRequest(input: {
   text: string
   recent: readonly RecentEntry[]
   squads: readonly RoutingSquad[]
+  /** Also ask what kind of message it is (user messages; suggest_squad only asks the scope). */
+  withKind?: boolean
 }): {
   request: DecisionRequest
   keys: Map<string, RoutingSquad>
@@ -132,12 +200,17 @@ export function buildRoutingRequest(input: {
     request: {
       state: {
         message: truncate(input.text.trim(), MESSAGE_CHARS),
-        recent: input.recent.slice(-RECENT_ENTRIES).map((entry) => ({
+        recent: input.recent.slice(-(RECENT_USER_MESSAGES + 1)).map((entry) => ({
           role: entry.role,
           text: truncate(entry.text.trim(), RECENT_ENTRY_CHARS),
         })),
       },
-      questions: { scope: { type: 'choice', instructions: ROUTING_INSTRUCTIONS, options } },
+      questions: {
+        ...(input.withKind
+          ? { kind: { type: 'choice' as const, instructions: KIND_INSTRUCTIONS, options: { ...KIND_OPTIONS } } }
+          : {}),
+        scope: { type: 'choice', instructions: ROUTING_INSTRUCTIONS, options },
+      },
     },
     keys,
   }
@@ -172,12 +245,26 @@ export function interpretRoutingAnswer(
   }
 }
 
+/** Just the target fields: no confidence or correction. */
+function routingTarget({ scope, squadId, squadName }: AssistantRoutingTarget): AssistantRoutingTarget {
+  return { scope, ...(squadId ? { squadId } : {}), ...(squadName ? { squadName } : {}) }
+}
+
+/** The kind answer, when it is one of the kinds. */
+export function interpretKindAnswer(answer: DecisionAnswer | undefined): AssistantRoutingDecision['kind'] {
+  if (answer?.type !== 'choice' || !(ROUTING_KINDS as readonly string[]).includes(answer.choice)) return undefined
+  return {
+    kind: answer.choice as RoutingKind,
+    confidence: unit(answer.confidence ?? answer.probabilities?.[answer.choice]),
+  }
+}
+
 /**
  * Ask the decision model where a message belongs. Never throws, and never waits past the timeout:
  * a slow provider is aborted and the Assistant goes on without a hint.
  */
 export async function decideAssistantRouting(
-  input: { text: string; recent: readonly RecentEntry[]; squads: readonly RoutingSquad[] },
+  input: { text: string; recent: readonly RecentEntry[]; squads: readonly RoutingSquad[]; withKind?: boolean },
   deps: AssistantRoutingDeps = {},
   source: Record<string, string> = { kind: 'assistant' }
 ): Promise<AssistantRoutingDecision> {
@@ -202,9 +289,10 @@ export async function decideAssistantRouting(
     ])
     if (outcome === 'timeout') return { hint: null, ranked: [], reason: 'timeout' }
     if (!outcome.ok) return { hint: null, ranked: [], reason: outcome.reason }
-    return (
-      interpretRoutingAnswer(outcome.result.answers.scope, keys) ?? { hint: null, ranked: [], reason: 'unanswered' }
-    )
+    const kind = input.withKind ? interpretKindAnswer(outcome.result.answers.kind) : undefined
+    const scope = interpretRoutingAnswer(outcome.result.answers.scope, keys)
+    if (!scope) return { hint: null, ranked: [], ...(kind ? { kind } : {}), reason: 'unanswered' }
+    return { ...scope, ...(kind ? { kind } : {}) }
   } catch (error) {
     log.warn('Assistant routing failed', error)
     return { hint: null, ranked: [], reason: 'unavailable' }
@@ -236,12 +324,23 @@ export async function listRoutableSquads(identity: Identity): Promise<RoutingSqu
     .limit(500)
 }
 
-/** The last few user and Assistant messages before this one, oldest first. */
-export async function loadRecentEntries(
+const ASKED_QUESTION = /\?[\s*_)"'”’`]*$/
+
+/**
+ * The conversation before a message, for the decision: the user's last few chat messages and the
+ * Assistant's latest reply, oldest first, each truncated; and whether the Assistant's last turn
+ * asked the user something.
+ */
+export async function loadRoutingContext(
   message: Pick<Message, 'id' | 'agentId' | 'createdAt'>
-): Promise<RecentEntry[]> {
+): Promise<RoutingContext> {
   const rows = await db
-    .select({ role: messages.role, content: messages.content, metadata: messages.metadata })
+    .select({
+      role: messages.role,
+      content: messages.content,
+      metadata: messages.metadata,
+      createdAt: messages.createdAt,
+    })
     .from(messages)
     .where(
       and(
@@ -251,19 +350,52 @@ export async function loadRecentEntries(
       )
     )
     .orderBy(desc(messages.createdAt))
-    .limit(12)
-  return rows
-    .filter((row) => {
-      const metadata = row.metadata as MessageMetadata | null
-      if (!row.content.trim() || row.content.startsWith('[System]') || metadata?.isSystem) return false
-      return row.role === 'assistant' || metadata?.source === USER_CHAT_SOURCE
-    })
-    .slice(0, RECENT_ENTRIES)
-    .reverse()
+    .limit(40)
+  // Newest first: the user's own chat messages and the Assistant's rows, never system notices.
+  const relevant = rows.filter((row) => {
+    const metadata = row.metadata as MessageMetadata | null
+    if (row.content.startsWith('[System]') || metadata?.isSystem) return false
+    return row.role === 'assistant' || metadata?.source === USER_CHAT_SOURCE
+  })
+  const userRows = relevant.filter((row) => row.role === 'human' && row.content.trim()).slice(0, RECENT_USER_MESSAGES)
+  const reply = relevant.find((row) => row.role === 'assistant' && row.content.trim())
+  const recent = [...userRows, ...(reply ? [reply] : [])]
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     .map((row) => ({
-      role: row.role === 'human' ? 'user' : 'assistant',
-      text: truncate(row.content, RECENT_ENTRY_CHARS),
+      role: row.role === 'human' ? ('user' as const) : ('assistant' as const),
+      text: truncate(row.content.trim(), RECENT_ENTRY_CHARS),
     }))
+  // The Assistant's last turn: its rows since the user last wrote.
+  const lastUser = relevant.findIndex((row) => row.role === 'human')
+  const turn = relevant.slice(0, lastUser < 0 ? relevant.length : lastUser)
+  const askedHuman = turn.some((row) =>
+    ((row.metadata as MessageMetadata | null)?.content ?? []).some(
+      (block) => block.type === 'tool_use' && block.toolCall.toolName === 'ask_human'
+    )
+  )
+  const lastText = turn.find((row) => row.content.trim())?.content.trim() ?? ''
+  return { recent, assistantAsked: askedHuman || ASKED_QUESTION.test(lastText) }
+}
+
+/** The conversation's latest saved routing before a message: a hint the user saw, or their correction. */
+export async function findInheritedRouting(
+  message: Pick<Message, 'id' | 'agentId' | 'createdAt'>
+): Promise<InheritedRouting | null> {
+  const [row] = await db
+    .select({ id: messages.id, metadata: messages.metadata })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.agentId, message.agentId),
+        eq(messages.role, 'human'),
+        lt(messages.createdAt, message.createdAt),
+        sql`${jsonbObjectRecovered(messages.metadata)} -> 'assistantRouting' IS NOT NULL`
+      )
+    )
+    .orderBy(desc(messages.createdAt))
+    .limit(1)
+  const hint = (row?.metadata as MessageMetadata | null)?.assistantRouting
+  return row && hint ? { messageId: row.id, hint } : null
 }
 
 /** A user's own chat message without a hint yet. */
@@ -277,9 +409,13 @@ export function isRoutableUserMessage(message: Pick<Message, 'role' | 'content' 
 }
 
 /**
- * Route one user message to the Assistant: ask the decision, and when it is confident enough, save
- * the hint on the message (the UI shows it; the model reads it with the message) and return the
- * message with it. Otherwise the message comes back unchanged. Never throws.
+ * Route one user message to the Assistant. Acknowledgements and answers to the Assistant's own
+ * question are not asked about at all. Otherwise one decision asks what kind of message it is and
+ * where it belongs:
+ * - a confident new request with a confident scope saves the hint on the message (the UI shows its
+ *   chip; the model reads it with the message);
+ * - a confident follow-up carries the conversation's latest routing to the model, unsaved, with no chip;
+ * - anything else comes back unchanged. Never throws.
  */
 export async function annotateAssistantMessage(
   identity: Identity,
@@ -291,16 +427,30 @@ export async function annotateAssistantMessage(
     if (!(deps.enabled ?? (() => isDecisionFeatureEnabled('assistant-routing')))()) return message
     const user = await resolveActingUser(identity)
     if (!user) return message
-    const [squadList, recent] = await Promise.all([
-      (deps.listSquads ?? listRoutableSquads)(user),
-      (deps.loadRecent ?? loadRecentEntries)(message),
-    ])
-    const { hint } = await decideAssistantRouting(
-      { text: message.content, recent, squads: squadList },
+    const context = await (deps.loadContext ?? loadRoutingContext)(message)
+    if (routingSkipReason(message.content, context)) return message
+    const squadList = await (deps.listSquads ?? listRoutableSquads)(user)
+    const { hint, kind } = await decideAssistantRouting(
+      { text: message.content, recent: context.recent, squads: squadList, withKind: true },
       { ...deps, enabled: () => true },
       { kind: 'assistant', agentId: message.agentId }
     )
-    if (!hint || hint.confidence < ASSISTANT_ROUTING_MIN_CONFIDENCE) return message
+    if (!kind || kind.confidence < ASSISTANT_ROUTING_MIN_CONFIDENCE) return message
+    if (kind.kind === 'follow_up') {
+      const inherited = await (deps.findInherited ?? findInheritedRouting)(message)
+      if (!inherited) return message
+      return {
+        ...message,
+        metadata: {
+          ...message.metadata,
+          assistantRoutingInherited: {
+            ...routingTarget(effectiveAssistantRouting(inherited.hint)),
+            fromMessageId: inherited.messageId,
+          },
+        },
+      }
+    }
+    if (kind.kind !== 'new_request' || !hint || hint.confidence < ASSISTANT_ROUTING_MIN_CONFIDENCE) return message
     const [saved] = await db
       .update(messages)
       .set({

@@ -34,6 +34,13 @@ export function assistantRoutingNote(hint: AssistantRoutingHint): string | null 
   }
 }
 
+/** The note on a follow-up: the routing it inherits from earlier in the conversation. */
+export function assistantRoutingInheritedNote(target: AssistantRoutingTarget): string {
+  return target.scope === 'squad' && target.squadId
+    ? `Routing (follows this conversation's earlier routing): ${squadRef(target)}. Keep using this squad for delegate_task unless the request says otherwise.`
+    : "Routing (follows this conversation's earlier routing): not for a squad. Keep using no squad for delegate_task unless the request says otherwise."
+}
+
 /** The note on the message that carries a user's routing correction. */
 export function assistantRoutingCorrectionNote(correction: AssistantRoutingCorrection): string {
   const target =

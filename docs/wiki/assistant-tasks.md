@@ -38,19 +38,38 @@ helpers never imply completion; a missing or terminated helper on an unfinished 
 ## Choosing a squad
 
 When a decision model is set up and **Assistant squad routing** is on (Settings → Decision
-Providers → Features), Core asks one choice before the Assistant reads each user chat message:
-`instance` (Ficus itself: settings, admin, the instance), `general` (not tied to one squad's
-project), or one `squad_<short id>` option per active squad the user can read, described by the
-squad's name and purpose. The user's message and the last three conversation entries (truncated)
-go only in the decision's state. Above 30 squads, the purpose heuristic from the squad suggester
-keeps the likeliest. The question waits at most 1.5 seconds; no answer means no hint.
+Providers → Features), Core may ask one decision before the Assistant reads a user chat message.
+It is not asked at all (no call, no cost) for a short acknowledgement ("ok", "thanks!", "sounds
+good": at most four words, all from a small acknowledgement vocabulary) or for a reply to the
+Assistant's own question (its last turn ended in a question or used `ask_human`).
 
-A pick with at least 60% confidence is saved on the message (`metadata.assistantRouting`) and
-added to the model's copy of it as a routing hint. The conversation shows it as a chip under the
-message ("Chlea · 91%", "Not about a squad", "General"). Choosing another squad, or No squad, from
-the chip (`POST /api/assistant/:conversationId/routing`) saves the correction on the message and
-sends the Assistant a short system message that carries it. The Assistant's `suggest_squad` tool
-asks the same decision for any phrasing, and falls back to the purpose heuristic without one.
+The one call asks two questions:
+
+- `kind`: `new_request` (asks for work not already under way, including redoing earlier work
+  somewhere else), `follow_up` (about work or a request already in this conversation), or
+  `conversation` (a confirmation, thanks, brainstorming, or a question to the Assistant itself).
+- `scope`: `instance` (Ficus itself: settings, admin, the instance), `general` (not tied to one
+  squad's project), or one `squad_<short id>` option per active squad the user can read,
+  described by the squad's name and purpose. Above 30 squads, the purpose heuristic from the
+  squad suggester keeps the likeliest.
+
+The user's message goes only in the decision's state, with the user's last four chat messages and
+the Assistant's latest reply (300 characters each). The question waits at most 1.5 seconds; no
+answer means no hint.
+
+- A `new_request` whose kind and scope are both at least 60% confident is saved on the message
+  (`metadata.assistantRouting`) and added to the model's copy of it as a routing hint. The
+  conversation shows it as a chip under the message ("Chlea · 91%", "Not about a squad",
+  "General").
+- A confident `follow_up` carries the conversation's latest routing (the newest message with a
+  hint, or the user's correction of it) to the model, unsaved and with no chip. With no earlier
+  routing it gets nothing.
+- `conversation`, and anything less confident, gets nothing.
+
+Choosing another squad, or No squad, from the chip (`POST /api/assistant/:conversationId/routing`)
+saves the correction on the message and sends the Assistant a short system message that carries
+it. The Assistant's `suggest_squad` tool asks the scope question for any phrasing, and falls back
+to the purpose heuristic without a decision model.
 
 ## Continuing, recovering, and cancelling
 

@@ -948,8 +948,14 @@ describe('AgentChat', () => {
         ]
         await waitFor(() => expect(_agentQuestionFetchCount).toBeGreaterThan(initialFetchCount), { timeout: 1000 })
       })
-      expect(window.document.querySelector('[data-testid="before-composer"]')?.textContent).toContain(
-        '1 pending question'
+      // The fallback poll has started its refetch; React Query delivers the answer on a later notify
+      // tick, so wait for the render rather than assuming it landed with the request.
+      await waitFor(
+        () =>
+          expect(window.document.querySelector('[data-testid="before-composer"]')?.textContent).toContain(
+            '1 pending question'
+          ),
+        { timeout: 1000 }
       )
       expect(window.document.querySelector('[role="dialog"]')?.textContent).toContain('Personal question?')
       expect(_agentQuestionFetchCount).toBeGreaterThan(1)

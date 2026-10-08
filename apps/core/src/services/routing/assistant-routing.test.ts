@@ -1,6 +1,9 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import type { DecisionRequest, Message } from '@ficus/shared'
+import { inArray } from 'drizzle-orm'
+import type { DecisionRequest, Message, MessageMetadata } from '@ficus/shared'
+import { agents, db, messages } from '../../db'
+import { Agent } from '../../entities/Agent'
 import type { DecideOptions, DecisionOutcome } from '../decisions/service'
 import { messageTextForModel } from '../chat/message-context'
 import {
@@ -9,7 +12,11 @@ import {
   annotateAssistantMessage,
   buildRoutingRequest,
   decideAssistantRouting,
+  findInheritedRouting,
   interpretRoutingAnswer,
+  isAcknowledgement,
+  loadRoutingContext,
+  routingSkipReason,
   squadOptionKeys,
   suggestAssistantSquad,
   type AssistantRoutingDeps,
@@ -102,7 +109,7 @@ describe('routing question', () => {
     expect(keys.has('squad_ffffffff')).toBe(true)
   })
 
-  test("the user's words go only in state, with a few truncated recent entries", () => {
+  test("the user's words go only in state, with truncated recent entries", () => {
     const text = 'Please fix the crash when I tap Export in Chlea'
     const recent = [
       { role: 'user' as const, text: 'first' },
@@ -114,8 +121,8 @@ describe('routing question', () => {
     expect(JSON.stringify(request.questions)).not.toContain('Export')
     const state = request.state as { message: string; recent: Array<{ role: string; text: string }> }
     expect(state.message).toBe(text)
-    expect(state.recent.map((entry) => entry.text.slice(0, 6))).toEqual(['second', 'third', 'xxxxxx'])
-    expect(state.recent[2]!.text.length).toBe(300)
+    expect(state.recent.map((entry) => entry.text.slice(0, 6))).toEqual(['first', 'second', 'third', 'xxxxxx'])
+    expect(state.recent[3]!.text.length).toBe(300)
   })
 })
 
@@ -197,30 +204,74 @@ describe('deciding', () => {
   })
 })
 
+describe('skipping the decision', () => {
+  const quiet = { recent: [], assistantAsked: false }
+
+  test('short acknowledgements are not asked about', () => {
+    for (const text of ['ok', 'Thanks!', 'sounds good', 'yes please', 'Thank you so much', '👍', 'go ahead, do it'])
+      expect(routingSkipReason(text, quiet)).toBe('acknowledgement')
+    for (const text of ['ok fix the Chlea login', 'thanks, now refund 42', 'Chlea', 'do it for Chlea instead'])
+      expect(routingSkipReason(text, quiet)).toBeNull()
+  })
+
+  test('an answer to the Assistant’s own question is not asked about', () => {
+    expect(isAcknowledgement('The second one')).toBe(false)
+    expect(routingSkipReason('The second one', { recent: [], assistantAsked: true })).toBe('answer')
+  })
+})
+
 describe('annotating a user message', () => {
-  const deps = (decide: AssistantRoutingDeps['decide']): AssistantRoutingDeps => ({
+  const both = (kind: string, kindP: number, scope: string, scopeP: number): DecisionOutcome => ({
+    ok: true,
+    result: {
+      answers: {
+        kind: { type: 'choice', choice: kind, probabilities: { [kind]: kindP } },
+        scope: { type: 'choice', choice: scope, probabilities: { [scope]: scopeP } },
+      },
+      providerId: 'p1',
+      model: 'clef',
+      latencyMs: 12,
+    },
+  })
+  const context = {
+    recent: [
+      { role: 'user' as const, text: 'Look at the Billing exports' },
+      { role: 'assistant' as const, text: 'Billing is on it.' },
+    ],
+    assistantAsked: false,
+  }
+  const inheritedFrom = {
+    messageId: randomUUID(),
+    hint: { scope: 'squad' as const, squadId: chlea.id, squadName: 'Chlea', confidence: 0.9 },
+  }
+  const deps = (
+    decide: AssistantRoutingDeps['decide'],
+    overrides: Partial<AssistantRoutingDeps> = {}
+  ): AssistantRoutingDeps => ({
     decide,
     enabled: () => true,
     listSquads: async () => [chlea, billing],
-    loadRecent: async () => [{ role: 'assistant', text: 'Which project?' }],
+    loadContext: async () => context,
+    findInherited: async () => inheritedFrom,
+    ...overrides,
   })
 
-  test('below the threshold the message is unchanged and the model reads no hint', async () => {
-    const { decide, calls } = recordingDecide(() => answered('squad_a1b2c3d4', { squad_a1b2c3d4: 0.55, general: 0.45 }))
-    const original = message('Fix the crash')
-    const result = await annotateAssistantMessage(user, original, deps(decide))
+  test('one call asks the kind and the scope, with the context window only in state', async () => {
+    const { decide, calls } = recordingDecide(() => both('new_request', 0.9, 'squad_a1b2c3d4', 0.91))
+    await annotateAssistantMessage(user, message('Fix the crash'), deps(decide))
     expect(calls).toHaveLength(1)
-    expect(result).toBe(original)
-    expect(messageTextForModel(result)).toBe('Fix the crash')
+    expect(Object.keys(calls[0]!.request.questions)).toEqual(['kind', 'scope'])
+    const kind = calls[0]!.request.questions.kind
+    if (kind?.type !== 'choice') throw new Error('expected a choice')
+    expect(Object.keys(kind.options)).toEqual(['new_request', 'follow_up', 'conversation'])
+    expect(calls[0]!.request.state).toEqual({ message: 'Fix the crash', recent: context.recent })
+    expect(JSON.stringify(calls[0]!.request.questions)).not.toContain('Billing exports')
   })
 
-  test('at or above the threshold the hint goes on the message and into the model text', async () => {
-    const { decide, calls } = recordingDecide(() => answered('squad_a1b2c3d4', { squad_a1b2c3d4: 0.91, general: 0.09 }))
+  test('a confident new request gets the hint on the message and into the model text', async () => {
+    const { decide } = recordingDecide(() => both('new_request', 0.8, 'squad_a1b2c3d4', 0.91))
     const original = message('Fix the crash')
     const result = await annotateAssistantMessage(user, original, deps(decide))
-    expect((calls[0]!.request.state as { recent: unknown[] }).recent).toEqual([
-      { role: 'assistant', text: 'Which project?' },
-    ])
     expect(result.metadata?.assistantRouting).toEqual({
       scope: 'squad',
       squadId: chlea.id,
@@ -235,15 +286,91 @@ describe('annotating a user message', () => {
     expect(text).toContain('Use this squad for delegate_task unless the request says otherwise.')
   })
 
-  test('instance and general hints tell the Assistant to use no squad', async () => {
-    const { decide } = recordingDecide(() => answered('instance', { instance: 0.88 }))
+  test('a new request below the threshold, in kind or in scope, gets nothing', async () => {
+    for (const outcome of [
+      both('new_request', 0.9, 'squad_a1b2c3d4', 0.55),
+      both('new_request', 0.5, 'squad_a1b2c3d4', 0.95),
+    ]) {
+      const original = message('Fix the crash')
+      const result = await annotateAssistantMessage(user, original, deps(recordingDecide(() => outcome).decide))
+      expect(result).toBe(original)
+      expect(messageTextForModel(result)).toBe('Fix the crash')
+    }
+  })
+
+  test('instance and general new requests tell the Assistant to use no squad', async () => {
+    const { decide } = recordingDecide(() => both('new_request', 0.9, 'instance', 0.88))
     const result = await annotateAssistantMessage(user, message('Add a user named Edith'), deps(decide))
     expect(messageTextForModel(result)).toContain('about Ficus itself')
     expect(messageTextForModel(result)).toContain('Use no squad for delegate_task')
   })
 
+  test('conversation gets no hint and no chip', async () => {
+    const { decide } = recordingDecide(() => both('conversation', 0.95, 'squad_a1b2c3d4', 0.9))
+    const original = message('What do you think about splitting the app in two?')
+    const result = await annotateAssistantMessage(user, original, deps(decide))
+    expect(result).toBe(original)
+    expect(result.metadata?.assistantRouting).toBeUndefined()
+  })
+
+  test('a follow-up inherits the latest routing for the model only, with no chip', async () => {
+    const { decide } = recordingDecide(() => both('follow_up', 0.9, 'squad_b2c3d4e5', 0.95))
+    const result = await annotateAssistantMessage(user, message('Any progress on that?'), deps(decide))
+    expect(result.metadata?.assistantRouting).toBeUndefined()
+    expect(result.metadata?.assistantRoutingInherited).toEqual({
+      scope: 'squad',
+      squadId: chlea.id,
+      squadName: 'Chlea',
+      fromMessageId: inheritedFrom.messageId,
+    })
+    expect(messageTextForModel(result)).toContain(
+      `Routing (follows this conversation's earlier routing): squad "Chlea" (squadId ${chlea.id})`
+    )
+  })
+
+  test("a follow-up inherits the user's correction over the model's pick", async () => {
+    const { decide } = recordingDecide(() => both('follow_up', 0.9, 'general', 0.9))
+    const corrected = {
+      messageId: inheritedFrom.messageId,
+      hint: { ...inheritedFrom.hint, correction: { scope: 'none' as const, at: '2026-10-08T00:00:00.000Z' } },
+    }
+    const result = await annotateAssistantMessage(
+      user,
+      message('Also do the same for Android'),
+      deps(decide, { findInherited: async () => corrected })
+    )
+    expect(result.metadata?.assistantRoutingInherited).toEqual({
+      scope: 'none',
+      fromMessageId: inheritedFrom.messageId,
+    })
+    expect(messageTextForModel(result)).toContain('not for a squad. Keep using no squad for delegate_task')
+  })
+
+  test('a follow-up with no earlier routing gets nothing', async () => {
+    const { decide } = recordingDecide(() => both('follow_up', 0.9, 'general', 0.9))
+    const original = message('Any progress on that?')
+    expect(await annotateAssistantMessage(user, original, deps(decide, { findInherited: async () => null }))).toBe(
+      original
+    )
+  })
+
+  test('acknowledgements and answers to the Assistant make no decision call', async () => {
+    const { decide, calls } = recordingDecide(() => both('new_request', 0.9, 'general', 0.9))
+    const ack = message('Thanks, sounds good!')
+    expect(await annotateAssistantMessage(user, ack, deps(decide))).toBe(ack)
+    const answer = message('The one from last week')
+    expect(
+      await annotateAssistantMessage(
+        user,
+        answer,
+        deps(decide, { loadContext: async () => ({ ...context, assistantAsked: true }) })
+      )
+    ).toBe(answer)
+    expect(calls).toHaveLength(0)
+  })
+
   test('only user chat messages are routed, once', async () => {
-    const { decide, calls } = recordingDecide(() => answered('general', { general: 0.9 }))
+    const { decide, calls } = recordingDecide(() => both('new_request', 0.9, 'general', 0.9))
     for (const skipped of [
       message('Task update', { source: 'inbox' }),
       message('[System] You said this is for Chlea.', { source: 'assistant_routing_correction' }),
@@ -259,6 +386,105 @@ describe('annotating a user message', () => {
     const original = message('Fix the crash')
     expect(await annotateAssistantMessage(user, original, deps(decide))).toBe(original)
     expect(await annotateAssistantMessage(user, original, { ...deps(decide), enabled: () => false })).toBe(original)
+  })
+})
+
+describe('conversation context from saved messages', () => {
+  const agentIds: string[] = []
+  afterEach(async () => {
+    if (agentIds.length) await db.delete(agents).where(inArray(agents.id, agentIds.splice(0)))
+  })
+
+  async function conversation(
+    rows: Array<{ role: 'human' | 'assistant'; content: string; metadata?: MessageMetadata }>
+  ) {
+    const agent = await Agent.create({ agentTypeId: 'system-manager', context: {} })
+    agentIds.push(agent.id)
+    const start = Date.now() - 60_000
+    const saved = await db
+      .insert(messages)
+      .values(
+        rows.map((row, index) => ({
+          agentId: agent.id,
+          role: row.role,
+          content: row.content,
+          pending: false,
+          metadata: row.metadata ?? (row.role === 'human' ? { source: 'user_chat' } : {}),
+          createdAt: new Date(start + index * 1000),
+        }))
+      )
+      .returning()
+    // The message being routed comes after every saved row.
+    return { saved, next: { id: randomUUID(), agentId: agent.id, createdAt: new Date() } }
+  }
+
+  test('the window is the user’s last four messages and the Assistant’s latest reply, truncated', async () => {
+    const { next } = await conversation([
+      { role: 'human', content: 'one' },
+      { role: 'assistant', content: 'old reply' },
+      { role: 'human', content: 'two' },
+      { role: 'human', content: 'update', metadata: { source: 'inbox' } },
+      { role: 'human', content: '[System] Context compacted successfully.' },
+      { role: 'human', content: 'three' },
+      { role: 'assistant', content: 'r'.repeat(500) },
+      { role: 'human', content: 'four' },
+      { role: 'human', content: 'five' },
+    ])
+    const context = await loadRoutingContext(next)
+    expect(context.recent.map((entry) => `${entry.role}:${entry.text.slice(0, 5)}`)).toEqual([
+      'user:two',
+      'user:three',
+      'assistant:rrrrr',
+      'user:four',
+      'user:five',
+    ])
+    expect(context.recent[2]!.text.length).toBe(300)
+    expect(context.assistantAsked).toBe(false)
+  })
+
+  test('the Assistant asked when its last turn ends in a question or used ask_human', async () => {
+    const asked = await conversation([
+      { role: 'human', content: 'Fix the export' },
+      { role: 'assistant', content: 'Which platform, **iOS or Android?**' },
+    ])
+    expect((await loadRoutingContext(asked.next)).assistantAsked).toBe(true)
+    const askHuman = await conversation([
+      { role: 'human', content: 'Fix the export' },
+      {
+        role: 'assistant',
+        content: '',
+        metadata: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              toolCall: { toolCallId: 't1', toolName: 'ask_human', args: '{}', result: '', isError: false },
+            },
+          ],
+        },
+      },
+      { role: 'assistant', content: 'I asked you above.' },
+    ])
+    expect((await loadRoutingContext(askHuman.next)).assistantAsked).toBe(true)
+    const answered = await conversation([
+      { role: 'assistant', content: 'Which platform?' },
+      { role: 'human', content: 'Android' },
+      { role: 'assistant', content: 'On it.' },
+    ])
+    expect((await loadRoutingContext(answered.next)).assistantAsked).toBe(false)
+  })
+
+  test('the inherited routing is the latest hinted or corrected user message', async () => {
+    const hint = { scope: 'squad' as const, squadId: chlea.id, squadName: 'Chlea', confidence: 0.9 }
+    const corrected = { ...hint, correction: { scope: 'none' as const, at: '2026-10-08T00:00:00.000Z' } }
+    const { saved, next } = await conversation([
+      { role: 'human', content: 'Fix Chlea', metadata: { source: 'user_chat', assistantRouting: hint } },
+      { role: 'human', content: 'Refund 42', metadata: { source: 'user_chat', assistantRouting: corrected } },
+      { role: 'human', content: 'How is it going?' },
+    ])
+    expect(await findInheritedRouting(next)).toEqual({ messageId: saved[1]!.id, hint: corrected })
+    const none = await conversation([{ role: 'human', content: 'Hello' }])
+    expect(await findInheritedRouting(none.next)).toBeNull()
   })
 })
 
