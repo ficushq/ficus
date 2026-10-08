@@ -1,17 +1,31 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { workflowReworkAttempt, type WorkflowAttempt, type WorkStream } from '@ficus/shared'
+import {
+  codeHostDeliveryLabel,
+  readDeliveryState,
+  trackedResourceLabel,
+  workflowReworkAttempt,
+  type WorkflowAttempt,
+  type WorkStream,
+} from '@ficus/shared'
 import type { WorkflowRunDetail as RunDetail } from '@ficus/client-core'
 import { client } from '../api/clientInstance'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { usePermissions } from '../hooks/usePermissions'
 import { useWorkflowRefresh } from '../hooks/useWorkflowRefresh'
 import { actionErrorMessage } from '../lib/actionError'
-import { attemptSummary, documentTitle, humanGateContext, openHumanGates, plainText } from '../lib/workflowReview'
+import {
+  attemptSummary,
+  documentTitle,
+  humanGateContext,
+  openHumanGates,
+  plainText,
+  PULL_REQUEST_COMPLETION_MODES,
+} from '../lib/workflowReview'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { queries } from '../queryOptions'
-import { Badge } from './Badge'
+import { Badge, type BadgeColor } from './Badge'
 import { ExpandableMarkdown } from './ExpandableMarkdown'
 import { WorkflowReviewModal } from './WorkflowReviewModal'
 import { ChatIcon, PullRequestIcon } from './icons'
@@ -57,7 +71,12 @@ function DeliveryCheck({ stream, run }: { stream: WorkStream; run: RunDetail }) 
     mutationFn: () => client.workflows.finish(stream.id, run.version),
     onSuccess: refresh,
   })
-  if (!can('workstreams:update') && !can('workstreams:respond')) return null
+  const canFinish = can('workstreams:update') || can('workstreams:respond')
+  const pullRequests = workStreamPullRequests(stream.metadata ?? {})
+  // The squad finishes a PR-mode stream itself when its pull request merges; the person's job is the PR.
+  if (PULL_REQUEST_COMPLETION_MODES.has(run.state.definition.completion.mode) && pullRequests.length)
+    return <PullRequestDelivery stream={stream} pullRequests={pullRequests} finish={canFinish ? finish : undefined} />
+  if (!canFinish) return null
   const isDeliverable = run.state.definition.completion.mode === 'deliverable'
   return (
     <section aria-label="Delivery requirements" className="p-4 rounded-xl bg-surface-secondary space-y-3">
@@ -77,6 +96,96 @@ function DeliveryCheck({ stream, run }: { stream: WorkStream; run: RunDetail }) 
       </button>
       {finish.error && (
         <p role="alert" className="text-sm text-status-danger-400">
+          {actionErrorMessage(finish.error)}
+        </p>
+      )}
+    </section>
+  )
+}
+
+const PULL_REQUEST_STATE: Record<'open' | 'merged' | 'closed', { label: string; color: BadgeColor }> = {
+  open: { label: 'Open', color: 'neutral' },
+  merged: { label: 'Merged', color: 'success' },
+  closed: { label: 'Closed', color: 'danger' },
+}
+
+/**
+ * PR completion modes at completion-ready: the pull request is the work. Checking delivery is only a
+ * manual fallback (the squad runs it when the PR merges), so it stays quiet here and appears only once
+ * every delivery PR is known merged; otherwise it lives in the work stream's More actions menu.
+ */
+function PullRequestDelivery({
+  stream,
+  pullRequests,
+  finish,
+}: {
+  stream: WorkStream
+  pullRequests: ReturnType<typeof workStreamPullRequests>
+  finish?: { isPending: boolean; error: Error | null; mutate: () => void }
+}) {
+  const states = readDeliveryState(stream.metadata).pullRequests
+  const merged = pullRequests.every((pullRequest) => states[pullRequest.key]?.state === 'merged')
+  const checks = codeHostDeliveryLabel(stream.delivery)
+  const primary = pullRequests.find((pullRequest) => pullRequest.url)
+  return (
+    <section aria-label="Review pull request" className="p-4 rounded-xl bg-surface-secondary space-y-3">
+      <h3 className="text-sm font-medium text-primary">Review pull request</h3>
+      <ul className="space-y-1.5">
+        {pullRequests.map((pullRequest) => {
+          const state = states[pullRequest.key]?.state
+          const label = (
+            <>
+              <PullRequestIcon className="h-4 w-4 shrink-0" />
+              {trackedResourceLabel(pullRequest)}
+            </>
+          )
+          return (
+            <li key={pullRequest.key} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+              {pullRequest.url ? (
+                <a
+                  href={pullRequest.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 font-medium text-accent-light hover:text-link-hover hover:underline"
+                >
+                  {label}
+                </a>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 font-medium text-primary">{label}</span>
+              )}
+              {state && <Badge color={PULL_REQUEST_STATE[state].color}>{PULL_REQUEST_STATE[state].label}</Badge>}
+            </li>
+          )
+        })}
+      </ul>
+      {checks && <p className="text-xs text-secondary">{checks}</p>}
+      <p className="text-sm text-secondary">When the PR merges, the squad completes this work stream automatically.</p>
+      {(primary?.url || (finish && merged)) && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {primary?.url && (
+            <a
+              href={primary.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ficus-button ficus-button-primary inline-flex min-h-10 items-center px-4 py-2 text-sm"
+            >
+              Open pull request
+            </a>
+          )}
+          {finish && merged && (
+            <button
+              type="button"
+              className="ficus-button min-h-10 px-3 py-2 text-sm text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-50"
+              disabled={finish.isPending}
+              onClick={() => finish.mutate()}
+            >
+              {finish.isPending ? 'Checking…' : 'Check delivery'}
+            </button>
+          )}
+        </div>
+      )}
+      {finish?.error && (
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {actionErrorMessage(finish.error)}
         </p>
       )}

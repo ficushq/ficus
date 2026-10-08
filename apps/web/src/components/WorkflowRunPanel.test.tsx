@@ -8,6 +8,7 @@ import { client } from '../api/clientInstance'
 import { modelTierQueryKeys, queryKeys } from '../queryKeys'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
 import { WorkflowReviewCallout } from './WorkflowReviewCallout'
+import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { WorkflowEditor } from './squads/WorkflowEditor'
 
 const preset = workflowPresetSchema.parse(
@@ -777,6 +778,44 @@ test('terminal unassigned human workflows have no empty management section', asy
     expect(f.dom.window.document.body.textContent).not.toContain('Manage workflow')
     expect(f.dom.window.document.body.textContent).toContain('Handoff history')
   } finally {
+    await f.cleanup()
+  }
+})
+
+test('PR completion modes ask for the pull request review; checking delivery stays a quiet fallback', async () => {
+  const value = deliveryRun()
+  value.state.definition.completion.mode = 'pr-merge'
+  const f = await fixture(value, ['workstreams:respond'])
+  const finish = spyOn(client.workflows, 'finish').mockResolvedValue(undefined as never)
+  try {
+    await f.render(<WorkflowReviewCallout stream={deliveredStream} />)
+    const card = f.dom.window.document.querySelector('section[aria-label="Review pull request"]')!
+    expect(card.querySelector('h3')!.textContent).toBe('Review pull request')
+    expect(card.textContent).toContain('ficushq/ficus#12')
+    expect(card.textContent).toContain('When the PR merges, the squad completes this work stream automatically.')
+    const open = [...card.querySelectorAll('a')].find((link) => link.textContent === 'Open pull request')!
+    expect(open.getAttribute('href')).toBe('https://github.com/ficushq/ficus/pull/12')
+    expect(open.className).toContain('ficus-button-primary')
+    // Not known merged: no Check delivery here (it is in the More actions menu).
+    expect([...card.querySelectorAll('button')].map((button) => button.textContent)).toEqual([])
+
+    const [pullRequest] = workStreamPullRequests(deliveredStream.metadata)
+    const merged = {
+      ...deliveredStream,
+      metadata: {
+        ...deliveredStream.metadata,
+        delivery: { pullRequests: { [pullRequest!.key]: { state: 'merged', at: '2026-10-08T10:00:00.000Z' } } },
+      },
+    } as unknown as WorkStream
+    await f.render(<WorkflowReviewCallout stream={merged} />)
+    const mergedCard = f.dom.window.document.querySelector('section[aria-label="Review pull request"]')!
+    expect(mergedCard.textContent).toContain('Merged')
+    const check = [...mergedCard.querySelectorAll('button')].find((button) => button.textContent === 'Check delivery')!
+    expect(check.className).not.toContain('ficus-button-primary')
+    await click(f, 'Check delivery')
+    expect(finish).toHaveBeenCalledWith(stream.id, value.version)
+  } finally {
+    finish.mockRestore()
     await f.cleanup()
   }
 })

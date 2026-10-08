@@ -31,7 +31,7 @@ export function outcomeEffect(run: WorkflowRun, transition: WorkflowTransition):
 /**
  * Whether deciding this outcome needs decision notes: the one place the rule lives. Core's `complete`
  * command requires non-empty evidence for every outcome today (`workflowCommandSchema`), so this
- * follows that contract. PR #480 makes forward approval notes optional and exports
+ * follows that contract. ficushq/ficus PR 480 makes forward approval notes optional and exports
  * `workflowOutcomeRequiresEvidence(step, transition)` from `@ficus/shared`; once it lands this body
  * becomes `return workflowOutcomeRequiresEvidence(step, transition)` and the surface follows.
  */
@@ -217,6 +217,9 @@ export function writeReviewDraft(key: string, value: string): void {
     // The draft stays in component state only.
   }
 }
+
+/** Completion modes whose delivery is a pull request the squad finishes on merge. */
+export const PULL_REQUEST_COMPLETION_MODES: ReadonlySet<string> = new Set(['pr-merge', 'pr-auto-merge', 'direct-merge'])
 
 /** A deep link that opens a work stream's review surface over the Feed. */
 export function workflowReviewPath(workStreamRef: string, waitId?: string): string {
