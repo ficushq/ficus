@@ -1812,6 +1812,7 @@ export function ChatView({
               'px-3 py-2 md:px-4 md:py-2.5 border-t border-th-border shrink-0 relative z-10 bg-surface',
               isDragging && 'ring-2 ring-accent-light ring-inset bg-accent/10'
             )}
+            data-drop-zone=""
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragEnter={handleDragEnter}

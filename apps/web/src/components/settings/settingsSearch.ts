@@ -237,7 +237,7 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     id: 'decision-models',
     label: 'Decision models',
     keywords:
-      'classifier yes no choice jev clef cloudflare openai decisions github firewall workflow decision event rules',
+      'classifier yes no choice jev clef cloudflare openai decisions github firewall workflow decision event rules screenshot filing images',
   },
   {
     section: 'decision-providers',

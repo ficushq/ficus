@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { DecisionAnswer, DecisionRequest } from '@ficus/shared'
+import {
+  decisionModelReadsImages,
+  decisionRequestSchema,
+  type DecisionAnswer,
+  type DecisionRequest,
+} from '@ficus/shared'
 import { callDecisionProvider, DecisionProviderError, systemOneBase, type DecisionFetch } from './adapters'
 
 const request: DecisionRequest = {
@@ -203,6 +208,86 @@ describe('OpenAI Decisions', () => {
       { fetcher }
     )
     expect(sent().input).toBe('{"title":"Hi"}')
+  })
+})
+
+describe('images', () => {
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  const withImages: DecisionRequest = {
+    state: { note: 'Dropped into Ficus' },
+    questions: { q: { type: 'yesno', instructions: 'Is it a bug?' } },
+    images: [
+      { mediaType: 'image/png', base64: PNG },
+      { mediaType: 'image/webp', base64: 'UklGRg==' },
+    ],
+  }
+
+  test('SystemOne (Clef) sends them as base64 data URLs in images, beside the state', async () => {
+    for (const endpoint of [
+      { kind: 'systemone' as const, model: 'clef', baseUrl: 'http://localhost:11434' },
+      { kind: 'cloudflare' as const, model: 'clef', apiKey: 't', accountId: 'a' },
+    ]) {
+      const answer = { answers: { q: { type: 'noul', noul: 0.8 } } }
+      const { fetcher, sent } = stub(200, endpoint.kind === 'cloudflare' ? { success: true, result: answer } : answer)
+      await callDecisionProvider(endpoint, withImages, { fetcher })
+      expect(sent()).toEqual({
+        model: 'clef',
+        state: { note: 'Dropped into Ficus' },
+        questions: { q: { type: 'noul', instructions: 'Is it a bug?' } },
+        images: [`data:image/png;base64,${PNG}`, 'data:image/webp;base64,UklGRg=='],
+      })
+    }
+  })
+
+  test('without images, SystemOne requests carry no images field', async () => {
+    const { fetcher, sent } = stub(200, systemOneAnswer)
+    await callDecisionProvider({ kind: 'jev', model: 'jev-latest', apiKey: 'k' }, request, { fetcher })
+    expect('images' in sent()).toBe(false)
+  })
+
+  test('OpenAI sends a user message with the state as input_text and each image as an input_image data URL', async () => {
+    const { fetcher, sent } = stub(200, { answers: [{ type: 'predicate', name: 'q', probability: 0.8 }] })
+    const result = await callDecisionProvider({ kind: 'openai', model: 'gpt-6-luna', apiKey: 'sk' }, withImages, {
+      fetcher,
+    })
+    expect(sent().input).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: '{"note":"Dropped into Ficus"}' },
+          { type: 'input_image', image_url: `data:image/png;base64,${PNG}` },
+          { type: 'input_image', image_url: 'data:image/webp;base64,UklGRg==' },
+        ],
+      },
+    ])
+    expect(result.answers).toEqual({ q: { type: 'yesno', probability: 0.8 } })
+  })
+
+  test('which models read images', () => {
+    expect(decisionModelReadsImages({ kind: 'jev', model: 'jev-latest' })).toBe(false)
+    expect(decisionModelReadsImages({ kind: 'cloudflare', model: 'clef-flash' })).toBe(true)
+    expect(decisionModelReadsImages({ kind: 'openai', model: 'gpt-6-luna' })).toBe(true)
+    for (const model of ['clef', 'clef-flash', 'clef:27b', 'Cloudflare/clef', 'hf.co/cloudflare/clef-flash-GGUF'])
+      expect([model, decisionModelReadsImages({ kind: 'systemone', model })]).toEqual([model, true])
+    for (const model of ['jev-local', 'qwen3:8b', 'clefable'])
+      expect([model, decisionModelReadsImages({ kind: 'systemone', model })]).toEqual([model, false])
+  })
+
+  test('requests take at most four PNG, JPEG or WebP images of up to 4 MB each', () => {
+    const image = { mediaType: 'image/png' as const, base64: PNG }
+    expect(decisionRequestSchema.safeParse({ ...withImages, images: Array(4).fill(image) }).success).toBe(true)
+    expect(decisionRequestSchema.safeParse({ ...withImages, images: Array(5).fill(image) }).success).toBe(false)
+    expect(
+      decisionRequestSchema.safeParse({ ...withImages, images: [{ mediaType: 'image/gif', base64: PNG }] }).success
+    ).toBe(false)
+    const big = 'A'.repeat(Math.ceil(((4 * 1024 * 1024 + 3) * 4) / 3))
+    expect(
+      decisionRequestSchema.safeParse({ ...withImages, images: [{ mediaType: 'image/png', base64: big }] }).success
+    ).toBe(false)
+    expect(
+      decisionRequestSchema.safeParse({ ...withImages, images: [{ mediaType: 'image/png', base64: `data:${PNG}` }] })
+        .success
+    ).toBe(false)
   })
 })
 

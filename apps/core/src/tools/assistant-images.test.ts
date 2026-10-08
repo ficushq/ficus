@@ -180,7 +180,7 @@ test('delegating to the general worker forwards the image the same way', async (
 test('message_agent forwards images to an agent the user can chat with', async () => {
   const { call, receive } = await conversationFor(member)
   const image = await receive()
-  const { value, text } = await call('message_agent', {
+  const { value } = await call('message_agent', {
     agentId: squadAgent.id,
     request: 'Is this the same bug?',
     imageIds: [image.id],
