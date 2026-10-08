@@ -73,7 +73,7 @@ function AgentScopesPanelContent({ agentId }: Props) {
             </SkeletonRows>
           </LoadingSurface>
         ) : isError ? (
-          <p className="text-sm text-danger">Failed to load extra scopes.</p>
+          <p className="text-sm text-status-danger-600 dark:text-status-danger-400">Failed to load extra scopes.</p>
         ) : scopes.length === 0 ? (
           <p className="text-sm italic text-muted">No extra scopes granted</p>
         ) : (
@@ -107,7 +107,11 @@ function AgentScopesPanelContent({ agentId }: Props) {
               <p className="mt-1 text-xs text-muted">Select one or more permissions to grant to this agent.</p>
             </div>
             <PermissionPicker value={selectedPermissions} onChange={setSelectedPermissions} />
-            {error && <div className="text-sm text-danger">{(error as Error).message}</div>}
+            {error && (
+              <div className="text-sm text-status-danger-600 dark:text-status-danger-400">
+                {(error as Error).message}
+              </div>
+            )}
             <button
               type="button"
               className={clsx(

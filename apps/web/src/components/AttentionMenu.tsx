@@ -198,7 +198,7 @@ export function AttentionMenu({
         </button>
       )}
       {mutation.isError && (
-        <p role="alert" className="mt-2 text-xs text-danger">
+        <p role="alert" className="mt-2 text-xs text-status-danger-600 dark:text-status-danger-400">
           Could not update attention. Try again.
         </p>
       )}

@@ -104,7 +104,7 @@ export function WorkflowPicker({
         </button>
       )}
       {(catalog.isError || error) && (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
           {error ?? 'Unable to load workflows.'}
         </p>
       )}

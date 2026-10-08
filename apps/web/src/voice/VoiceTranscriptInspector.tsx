@@ -212,7 +212,7 @@ function ToolTranscriptEntry({
           )}
         </button>
         {failed && (
-          <p className="px-2 py-1 text-xs text-danger break-words">
+          <p className="px-2 py-1 text-xs text-status-danger-600 dark:text-status-danger-400 break-words">
             {summarizeAssistantError(error ?? 'Tool failed. Expand for details.')}
           </p>
         )}

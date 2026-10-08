@@ -114,7 +114,7 @@ export function ProviderChannelRouting({
             </p>
           )}
           {(error || save.error) && (
-            <p role="alert" className="text-danger">
+            <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
               {error || save.error?.message}
             </p>
           )}

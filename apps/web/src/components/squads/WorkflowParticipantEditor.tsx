@@ -131,7 +131,7 @@ export function WorkflowParticipantEditor({
           />
           <button
             type="button"
-            className="ficus-button ficus-button-secondary rounded-md px-3 py-2 text-sm text-danger disabled:opacity-40"
+            className="ficus-button ficus-button-secondary rounded-md px-3 py-2 text-sm text-status-danger-600 dark:text-status-danger-400 disabled:opacity-40"
             disabled={
               usedBy.length > 0 ||
               definition.subscriptions?.some(
@@ -177,7 +177,7 @@ export function WorkflowParticipantEditor({
         </button>
       </div>
       {error && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {error}
         </p>
       )}
@@ -283,7 +283,7 @@ export function WorkflowParticipantTierField({
         </span>
       </label>
       {tiersError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Model tiers could not be loaded.
         </p>
       )}

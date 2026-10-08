@@ -77,7 +77,7 @@ export function WorkflowsSection() {
       {catalog.isPending ? (
         <p className="text-sm text-muted">Loading workflows…</p>
       ) : catalog.isError ? (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Unable to load workflows.
         </p>
       ) : (
@@ -99,7 +99,7 @@ export function WorkflowsSection() {
         </div>
       )}
       {editWorkflow && catalog.isSuccess && !editing && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Workflow not found. It may have been deleted or you may not have access.
         </p>
       )}
@@ -190,7 +190,7 @@ function WorkflowCard({
       </button>
       {preview && <WorkflowGraph definition={entry.definition} />}
       {mutation.isError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {mutation.error.message}
         </p>
       )}
@@ -429,12 +429,12 @@ function WorkflowModal({
         />
 
         {storageError && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             This browser could not save your draft. Keep this page open until you save the workflow.
           </p>
         )}
         {save.isError && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {save.error.message}
           </p>
         )}

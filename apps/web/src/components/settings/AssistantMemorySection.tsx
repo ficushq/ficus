@@ -75,7 +75,7 @@ export function AssistantMemorySection({ onboarding = false }: { onboarding?: bo
       {settings.isPending ? (
         <FormSkeleton label="Loading assistant settings" sections={1} />
       ) : settings.isError ? (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Unable to load feature settings.
         </p>
       ) : (
@@ -119,7 +119,7 @@ export function AssistantMemorySection({ onboarding = false }: { onboarding?: bo
         </div>
       )}
       {update.isError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {update.error.message}
         </p>
       )}
@@ -172,7 +172,7 @@ export function AssistantMemorySection({ onboarding = false }: { onboarding?: bo
           </div>
         )}
         {enable.isError && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {enable.error.message}
           </p>
         )}

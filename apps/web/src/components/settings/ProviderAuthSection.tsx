@@ -812,7 +812,7 @@ export function AddAccountForm({
         </label>
       </div>
       {addMutation.isError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Failed to save
         </p>
       )}
@@ -1619,7 +1619,7 @@ export function CompatibleCapabilityWarnings({
   return (
     <>
       {!tools && (
-        <p role="alert" className="text-danger">
+        <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
           This tool-less model cannot be Primary; Ficus agents require tools.
         </p>
       )}
@@ -1852,7 +1852,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
         </div>
       )}
       {error && (
-        <p role="alert" className="text-danger">
+        <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
           {error}
         </p>
       )}
