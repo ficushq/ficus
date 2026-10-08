@@ -47,10 +47,49 @@ export const decisionQuestionsSchema = z
   })
 export type DecisionQuestions = z.infer<typeof decisionQuestionsSchema>
 
+/** Image types every image-reading decision model accepts (Clef takes no GIFs). */
+export const DECISION_IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const
+export const DECISION_MAX_IMAGES = 4
+export const DECISION_MAX_IMAGE_BYTES = 4 * 1024 * 1024
+/** Clef's limit for all of a request's images together. */
+export const DECISION_MAX_IMAGES_TOTAL_BYTES = 8 * 1024 * 1024
+
+/** Decoded size of a base64 string, without decoding it. */
+export function base64DecodedBytes(base64: string): number {
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0
+  return Math.floor((base64.length * 3) / 4) - padding
+}
+
+export const decisionImageSchema = z.object({
+  mediaType: z.enum(DECISION_IMAGE_MEDIA_TYPES),
+  /** The image bytes, base64 (no `data:` prefix). */
+  base64: z
+    .string()
+    .min(1)
+    .regex(/^[A-Za-z0-9+/]+={0,2}$/, 'Use plain base64.')
+    .refine((value) => base64DecodedBytes(value) <= DECISION_MAX_IMAGE_BYTES, {
+      message: `Each image must be at most ${DECISION_MAX_IMAGE_BYTES / 1024 / 1024} MB.`,
+    }),
+})
+export type DecisionImage = z.infer<typeof decisionImageSchema>
+
 export const decisionRequestSchema = z.object({
   /** What the questions are about: text, or JSON for structured input. Treated as data, never instructions. */
   state: z.union([z.string(), z.record(z.unknown()), z.array(z.unknown())]),
   questions: decisionQuestionsSchema,
+  /**
+   * Images the questions are also about, treated as data like `state`. Only providers whose model
+   * reads images (see `decisionModelReadsImages`) are asked a request that has them.
+   */
+  images: z
+    .array(decisionImageSchema)
+    .max(DECISION_MAX_IMAGES)
+    .refine(
+      (images) =>
+        images.reduce((total, image) => total + base64DecodedBytes(image.base64), 0) <= DECISION_MAX_IMAGES_TOTAL_BYTES,
+      { message: `Images may total at most ${DECISION_MAX_IMAGES_TOTAL_BYTES / 1024 / 1024} MB.` }
+    )
+    .optional(),
 })
 export type DecisionRequest = z.infer<typeof decisionRequestSchema>
 
@@ -109,6 +148,44 @@ export const DECISION_PROVIDER_KIND_INFO: Record<
     defaultModel: 'gpt-6-luna',
     models: ['gpt-6-luna'],
   },
+}
+
+/**
+ * Which providers' models read images (`DecisionRequest.images`):
+ * - Jev: no; it reads text and JSON only.
+ * - Cloudflare Clef and Clef-flash: yes, up to four PNG, JPEG or WebP images (a Clef extension to
+ *   SystemOne, sent as base64 data URLs in `images`).
+ * - OpenAI Decisions: yes, as `input_image` data URLs in a user message.
+ * - A local SystemOne server: only when it serves a Clef model (`clef`, `clef-flash`, `clef:27b`,
+ *   `Cloudflare/clef`, ...); other local models are taken to be text-only.
+ */
+export const DECISION_PROVIDER_IMAGE_SUPPORT: Record<DecisionProviderKind, boolean | 'clef-models'> = {
+  jev: false,
+  systemone: 'clef-models',
+  cloudflare: true,
+  openai: true,
+}
+
+/**
+ * The copy of an image a decision model is shown. Clef's context fits only small images (about
+ * 190 KB in practice, well under its 4 MB limit), so Core sends decisions a re-encoded copy and
+ * keeps the original for everything else: the longest side scaled to at most
+ * `DECISION_IMAGE_MAX_SIDE`, encoded as JPEG at the first of `DECISION_IMAGE_QUALITIES` that fits in
+ * `DECISION_IMAGE_TARGET_BYTES`; if none fits, the side shrinks by `DECISION_IMAGE_SIDE_STEP` and the
+ * qualities are tried again, down to `DECISION_IMAGE_MIN_SIDE`, below which the image is too small to
+ * judge and the decision is skipped. A GIF is shown as its first frame.
+ */
+export const DECISION_IMAGE_MAX_SIDE = 1024
+export const DECISION_IMAGE_TARGET_BYTES = 180 * 1024
+export const DECISION_IMAGE_QUALITIES = [80, 70, 60, 50] as const
+export const DECISION_IMAGE_SIDE_STEP = 0.8
+export const DECISION_IMAGE_MIN_SIDE = 320
+
+/** Whether a provider's model can be asked a decision that has images. */
+export function decisionModelReadsImages(provider: { kind: DecisionProviderKind; model: string }): boolean {
+  const support = DECISION_PROVIDER_IMAGE_SUPPORT[provider.kind]
+  if (support === 'clef-models') return /(?:^|[/:])clef(?:[-:/._]|$)/i.test(provider.model.trim())
+  return support
 }
 
 /**
@@ -175,6 +252,7 @@ export const DECISION_PURPOSES = [
   'workflow-steps',
   'event-rules',
   'composer-delivery',
+  'screenshot-filing',
 ] as const
 export type DecisionPurpose = (typeof DECISION_PURPOSES)[number]
 
@@ -235,6 +313,12 @@ export const DECISION_PURPOSE_INFO: Record<
     label: 'Composer interrupt or follow-up',
     description:
       'While an agent works, suggests Interrupt when a message you are writing is about its current work and Follow up when it is not.',
+    scope: 'instance',
+  },
+  'screenshot-filing': {
+    label: 'Screenshot filing',
+    description:
+      'Guesses what a screenshot dropped into Ficus shows and which squad it belongs to, so the Assistant can file it. Needs a model that reads images (Clef or OpenAI).',
     scope: 'instance',
   },
 }

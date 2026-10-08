@@ -1,4 +1,10 @@
-import type { DecisionAnswer, DecisionProviderKind, DecisionQuestion, DecisionRequest } from '@ficus/shared'
+import type {
+  DecisionAnswer,
+  DecisionImage,
+  DecisionProviderKind,
+  DecisionQuestion,
+  DecisionRequest,
+} from '@ficus/shared'
 
 /*
  * Wire formats. SystemOne (`POST /v1/systemone`) is TypeSafe's format for Jev; Cloudflare's Clef
@@ -83,7 +89,20 @@ function systemOneRequest(endpoint: DecisionEndpoint, request: DecisionRequest) 
   const questions = Object.fromEntries(
     Object.entries(request.questions).map(([name, question]) => [name, systemOneQuestion(question)])
   )
-  return { url, body: { model: endpoint.model, state: request.state, questions } }
+  return {
+    url,
+    body: {
+      model: endpoint.model,
+      state: request.state,
+      questions,
+      // Clef's extension to SystemOne: up to four images as base64 data URLs.
+      ...(request.images?.length ? { images: request.images.map(dataUrl) } : {}),
+    },
+  }
+}
+
+function dataUrl(image: DecisionImage): string {
+  return `data:${image.mediaType};base64,${image.base64}`
 }
 
 function systemOneQuestion(question: DecisionQuestion) {
@@ -192,10 +211,29 @@ function openAIRequest(endpoint: DecisionEndpoint, request: DecisionRequest) {
     url: 'https://api.openai.com/v1/decisions',
     body: {
       model: endpoint.model,
-      input: typeof request.state === 'string' ? request.state : JSON.stringify(request.state),
+      input: openAIInput(request),
       questions,
     },
   }
+}
+
+/**
+ * The shared evidence: the state as a string, or with images a user message carrying the state as
+ * `input_text` and each image as an `input_image` data URL (the endpoint takes no hosted URLs or
+ * file IDs).
+ */
+function openAIInput(request: DecisionRequest) {
+  const text = typeof request.state === 'string' ? request.state : JSON.stringify(request.state)
+  if (!request.images?.length) return text
+  return [
+    {
+      role: 'user',
+      content: [
+        { type: 'input_text', text },
+        ...request.images.map((image) => ({ type: 'input_image', image_url: dataUrl(image) })),
+      ],
+    },
+  ]
 }
 
 function parseOpenAI(json: unknown, questions: DecisionRequest['questions']): WireAnswers {

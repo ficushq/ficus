@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { and, gte, isNotNull, lt, sql } from 'drizzle-orm'
 import {
+  decisionModelReadsImages,
   decisionPricePerMillion,
   DECISION_PURPOSE_INFO,
   DECISION_PURPOSES,
@@ -27,6 +28,12 @@ const log = createLogger('decisions')
 /** How long a provider that just failed is skipped while others can answer. */
 const COOLDOWN_MS = 30_000
 const LOG_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+/**
+ * A rough per-image input estimate for providers that don't report usage. Neither Clef nor OpenAI
+ * publishes an image token formula for decisions; this is the order of a typical vision model's
+ * screenshot cost, and counting base64 characters would overstate it a hundredfold.
+ */
+const ESTIMATED_TOKENS_PER_IMAGE = 1_000
 
 export type DecisionOutcome =
   | { ok: true; result: DecisionResult }
@@ -61,10 +68,11 @@ export function decisionCost(
   result: DecisionResult
 ): DecisionCost {
   const reported = result.usage?.inputTokens
+  const { images, ...text } = request
   const inputTokens =
     typeof reported === 'number' && Number.isFinite(reported) && reported >= 0
       ? Math.round(reported)
-      : Math.ceil(JSON.stringify(request).length / 4)
+      : Math.ceil(JSON.stringify(text).length / 4) + (images?.length ?? 0) * ESTIMATED_TOKENS_PER_IMAGE
   const price = decisionPricePerMillion(provider)
   // $/million tokens × tokens = micro-dollars; × 1000 = nanodollars.
   return {
@@ -133,9 +141,15 @@ export async function decide(
   const routing = getDecisionRouting()
   const budget = Math.min(options.timeoutMs ?? routing.timeoutMs, routing.timeoutMs)
   const started = Date.now()
-  const chain = decisionChain(purpose)
+  const routed = decisionChain(purpose)
+  // A request with images only goes to providers whose model reads them.
+  const chain = request.images?.length ? routed.filter(decisionModelReadsImages) : routed
   if (!chain.length) {
-    const outcome: DecisionOutcome = { ok: false, reason: 'unconfigured', errors: [] }
+    const outcome: DecisionOutcome = {
+      ok: false,
+      reason: 'unconfigured',
+      errors: routed.map((provider) => ({ providerId: provider.id, error: 'Its model does not read images' })),
+    }
     record(purpose, request, outcome, Date.now() - started, options)
     return outcome
   }

@@ -1114,6 +1114,7 @@ export function TierChainEditor({
         return (
           <div
             key={index}
+            data-drop-scope="reorder"
             draggable={!disabled}
             onDragStart={() => setDragged(index)}
             onDragOver={(event) => event.preventDefault()}

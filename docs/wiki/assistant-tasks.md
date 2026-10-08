@@ -74,6 +74,30 @@ saves the correction on the message and sends the Assistant a short system messa
 it. The Assistant's `suggest_squad` tool asks the scope question for any phrasing, and falls back
 to the purpose heuristic without a decision model.
 
+## Forwarding images
+
+The Assistant sees the images the user sent it as ordinary image input. `list_conversation_images`
+returns their IDs (images bound to the conversation's own agent, with the message each came with),
+and `delegate_task` and `message_agent` take up to 10 of them as `imageIds`. Each forwarded image is
+copied: a new `images` row and blob bound to the recipient (its squad, when it has one), uploaded by
+the same user, with `forwarded_from_image_id` naming the original. The copy rows are inserted in the
+same transaction as the inbox message, whose `metadata.imageIds` lists the copies, so ordinary inbox
+delivery sends them as image blocks. A replayed request adopts its first delivery's copies.
+
+This leaves the attachment scope rule alone: a squad consultant has no parent link to the Assistant
+and still cannot read the Assistant's images directly. Only images this conversation received can be
+forwarded (not another user's, nor another conversation's), the recipient must be one the request
+could reach anyway, its model must accept images, and the images together stay within the 10 MB
+per-message limit.
+
+Screenshot filing uses this: `POST /api/screenshots/file` (`{ imageId, note? }`, the user's own staged
+upload) asks one `screenshot-filing` decision (what it is, which visible squad, what to do) about a
+small JPEG copy of the image (at most 1024px and 180 KB, a GIF's first frame; see
+`DECISION_IMAGE_MAX_SIDE` in `packages/shared/src/decisions.ts`), then creates a new Assistant conversation whose first message carries the image, the guess with
+its probabilities, and the image ID to forward. With the feature off, or no decision model that reads
+images answering, the conversation is created without a guess. `POST /api/screenshots/correction`
+(`{ conversationId, squadId | null, clientId }`) posts a "Wrong squad?" correction into it.
+
 ## Continuing, recovering, and cancelling
 
 The owner can use `POST /api/assistant/:conversationId/tasks/:taskId/commands` with a durable

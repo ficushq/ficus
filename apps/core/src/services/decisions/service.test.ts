@@ -304,3 +304,51 @@ test('spend adds up by feature and provider from the decision log', async () => 
   expect((firewall(spend)?.costUsd ?? 0) - (firewall(before)?.costUsd ?? 0)).toBeCloseTo(0.168, 9)
   await db.delete(decisionLog).where(eq(decisionLog.providerId, hosted.id))
 })
+
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+const withImage: DecisionRequest = { ...question, images: [{ mediaType: 'image/png', base64: PNG }] }
+
+test('a request with images skips providers whose model cannot read them', async () => {
+  const jev = await addDecisionProvider({ kind: 'jev', apiKey: 'k' })
+  const text = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://text:11434', model: 'qwen3:8b' })
+  const clef = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://clef:11434', model: 'clef' })
+  await setDecisionRouting({ default: [jev.id, text.id, clef.id], purposes: {}, timeoutMs: 5000 }, 'test')
+  const { fetcher, asked } = servers({ 'api.typesafe.ai': 0.5, 'text:11434': 0.5, 'clef:11434': 0.9 })
+
+  const outcome = await decide('screenshot-filing', withImage, { fetcher, skipLog: true })
+  expect(outcome.ok && outcome.result.providerId).toBe(clef.id)
+  expect(asked).toEqual(['clef:11434'])
+
+  // The same question without an image still goes to the first provider.
+  asked.length = 0
+  const plain = await decide('screenshot-filing', question, { fetcher, skipLog: true })
+  expect(plain.ok && plain.result.providerId).toBe(jev.id)
+  expect(asked).toEqual(['api.typesafe.ai'])
+})
+
+test('when no provider reads images, an image decision is unconfigured and says why', async () => {
+  const jev = await addDecisionProvider({ kind: 'jev', apiKey: 'k' })
+  const { fetcher, asked } = servers({ 'api.typesafe.ai': 0.5 })
+  const outcome = await decide('screenshot-filing', withImage, { fetcher, skipLog: true })
+  expect(outcome).toEqual({
+    ok: false,
+    reason: 'unconfigured',
+    errors: [{ providerId: jev.id, error: 'Its model does not read images' }],
+  })
+  expect(asked).toEqual([])
+})
+
+test('screenshot filing is an instance feature, on by default once a decision model exists', async () => {
+  expect(isDecisionFeatureEnabled('screenshot-filing')).toBe(false)
+  await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://local:11434' })
+  expect(isDecisionFeatureEnabled('screenshot-filing')).toBe(true)
+  await setDecisionFeatureSwitch('screenshot-filing', 'off', 'test')
+  expect(isDecisionFeatureEnabled('screenshot-filing')).toBe(false)
+})
+
+test("an image's estimated cost is a fixed token count, not its base64 length", () => {
+  const unreported = { answers: {}, providerId: 'p', model: 'clef', latencyMs: 1 }
+  const plain = decisionCost({ kind: 'cloudflare', model: 'clef' }, question, unreported).inputTokens
+  const big = { ...question, images: [{ mediaType: 'image/png' as const, base64: 'A'.repeat(400_000) }] }
+  expect(decisionCost({ kind: 'cloudflare', model: 'clef' }, big, unreported).inputTokens).toBe(plain + 1_000)
+})

@@ -842,6 +842,11 @@ export const images = pgTable('images', {
   uploadedByUserId: uuid('uploaded_by_user_id').references((): AnyPgColumn => users.id, {
     onDelete: 'set null',
   }),
+  // A copy the Assistant forwarded to another agent: the image it was copied from. The copy has its
+  // own blob and is bound to the recipient, so it outlives the original.
+  forwardedFromImageId: uuid('forwarded_from_image_id').references((): AnyPgColumn => images.id, {
+    onDelete: 'set null',
+  }),
 
   // Status tracking
   status: imageStatusEnum('status').notNull().default('pending'),
