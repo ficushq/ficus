@@ -35,6 +35,7 @@ import { systemTokensRouter } from './routes/system-tokens'
 import { imagesRouter } from './routes/images'
 import { agentsRouter } from './routes/agents'
 import { agentFilesRouter } from './routes/agent-files'
+import { agentDeliverySuggestionRouter } from './routes/agent-delivery-suggestion'
 import { artifactsRouter } from './routes/artifacts'
 import { inboxRouter } from './routes/inbox'
 import { squadPresetsRouter } from './routes/squad-presets'
@@ -293,6 +294,7 @@ app.route('/api/ai/extract', aiExtractRouter)
 
 app.route('/api/images', imagesRouter)
 app.route('/api/agents', agentFilesRouter)
+app.route('/api/agents', agentDeliverySuggestionRouter)
 app.route('/api/agents', agentsRouter)
 app.route(
   '/api/agents',

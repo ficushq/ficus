@@ -34,6 +34,8 @@ let _capturedOnDeliveryModeChange: ((m: string) => void) | null = null
 let _capturedSendLabel: string | undefined = undefined
 let _capturedOnStop: (() => void) | undefined
 let _capturedOnCancelQueue: (() => void) | undefined
+let _capturedOnDraftChange: ((draft: string) => void) | undefined
+let _capturedSuggestedDelivery: unknown
 
 // ---------------------------------------------------------------------------
 // Module mocks — must be declared before any lazy imports
@@ -52,6 +54,8 @@ const TestChatView = ({
   sendLabel,
   onStop,
   onCancelQueue,
+  onDraftChange,
+  suggestedDelivery,
 }: {
   items: RenderItem[]
   onSend: (message: string, imageIds?: string[]) => void | Promise<void>
@@ -64,8 +68,12 @@ const TestChatView = ({
   sendLabel?: string
   onStop?: () => void
   onCancelQueue?: () => void
+  onDraftChange?: (draft: string) => void
+  suggestedDelivery?: unknown
   [key: string]: unknown
 }) => {
+  _capturedOnDraftChange = onDraftChange
+  _capturedSuggestedDelivery = suggestedDelivery
   _capturedOnSend = onSend
   _capturedItems = items
   _capturedAfterMessages = afterMessages ?? null
@@ -123,7 +131,7 @@ type ChatCb = Parameters<FicusClient['chat']['sendChatMessage']>[1]
 function makeMockClient() {
   let streamCb: StreamCb | null = null
   let chatCb: ChatCb | null = null
-  const sent: Array<{ content: string; clientId?: string; imageIds?: string[] }> = []
+  const sent: Array<{ content: string; clientId?: string; imageIds?: string[]; deliveryMode?: string }> = []
   const chatSent: Array<{ message: string; scope?: unknown; clientId?: string }> = []
 
   const client = {
@@ -133,8 +141,17 @@ function makeMockClient() {
         streamCb = cb
         return () => {}
       },
-      sendMessage: async (_id: string, content: string, opts?: { clientId?: string; imageIds?: string[] }) => {
-        sent.push({ content, clientId: opts?.clientId, imageIds: opts?.imageIds })
+      sendMessage: async (
+        _id: string,
+        content: string,
+        opts?: { clientId?: string; imageIds?: string[]; deliveryMode?: string }
+      ) => {
+        sent.push({
+          content,
+          clientId: opts?.clientId,
+          imageIds: opts?.imageIds,
+          ...(opts?.deliveryMode ? { deliveryMode: opts.deliveryMode } : {}),
+        })
         return { success: true, status: 'queued' }
       },
       clearQueue: async () => ({ success: true }),
@@ -186,7 +203,11 @@ async function installDom() {
 
 const queryClients = new Set<QueryClient>()
 
-function makeProviders(client: FicusClient, getQuestions = async (_id: string) => _openQuestions) {
+function makeProviders(
+  client: FicusClient,
+  getQuestions = async (_id: string) => _openQuestions,
+  apiOverrides: Partial<import('../api/ChatApiProvider').ChatApi> = {}
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClients.add(qc)
   function Providers({ children }: { children: React.ReactNode }) {
@@ -200,6 +221,7 @@ function makeProviders(client: FicusClient, getQuestions = async (_id: string) =
               _agentQuestionFetchCount += 1
               return (await getQuestions(id)) as never
             },
+            ...apiOverrides,
           }}
         >
           <ConversationClientProvider client={client}>{children}</ConversationClientProvider>
@@ -1003,6 +1025,52 @@ describe('AgentChat', () => {
     })
     await flush()
     expect(_capturedDeliveryMode).toBe('follow-up')
+  })
+
+  test('a paused draft to a working agent pre-selects the suggested mode; sending resets it', async () => {
+    const dom = await installDom()
+    const mc = makeMockClient()
+    const asked: string[] = []
+    const { Providers } = makeProviders(mc.client, undefined, {
+      getDeliverySuggestion: async (_id, draft) => {
+        asked.push(draft)
+        return { suggestion: 'follow-up', probability: 0.1 }
+      },
+    })
+    const { root } = dom.createRoot()
+    await dom.act(async () => {
+      root.render(
+        <Providers>
+          <AgentChat dependencies={{ ChatViewComponent: TestChatView }} agentId="a1" />
+        </Providers>
+      )
+    })
+    await flush()
+    // Idle: typing asks nothing.
+    await dom.act(async () => _capturedOnDraftChange!('book the offsite in lisbon'))
+    await dom.act(async () => _capturedOnDraftChange!(''))
+    expect(asked).toEqual([])
+
+    await dom.act(async () => {
+      mc.emit({ type: 'agent', agentId: 'a1' })
+      mc.emit({ type: 'text', text: 'Working on the login form', streamGroupId: 'S' })
+    })
+    await waitFor(() => expect(_capturedItems.some((item) => item.kind === 'streaming')).toBe(true))
+
+    await dom.act(async () => _capturedOnDraftChange!('book the offsite in lisbon'))
+    // Waits for the 400ms typing pause, then applies the confident answer.
+    await waitFor(() => expect(_capturedDeliveryMode).toBe('follow-up'))
+    expect(_capturedSuggestedDelivery).toEqual({ mode: 'follow-up', related: false })
+    expect(asked).toEqual(['book the offsite in lisbon'])
+
+    await dom.act(async () => {
+      await _capturedOnSend!('book the offsite in lisbon')
+      _capturedOnDraftChange!('')
+    })
+    // Sent with the mode shown.
+    expect(mc.sent.at(-1)).toMatchObject({ content: 'book the offsite in lisbon', deliveryMode: 'follow-up' })
+    expect(_capturedDeliveryMode).toBe('steer')
+    expect(_capturedSuggestedDelivery).toBeNull()
   })
 
   test('waiting-input with inputDisabled: question form submit button is disabled', async () => {

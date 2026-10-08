@@ -131,6 +131,17 @@ export type ContentBlock =
 
 export type DeliveryMode = 'steer' | 'follow-up'
 
+/** The longest draft `POST /api/agents/:id/delivery-suggestion` accepts. */
+export const DELIVERY_SUGGESTION_MAX_DRAFT_LENGTH = 4000
+
+/**
+ * The composer's suggested delivery for a draft written while an agent works: `steer` when the
+ * draft is about its current work, `follow-up` when it is not. `probability` is how likely the
+ * draft is related. Null when there is nothing to suggest (idle agent, feature off, short draft,
+ * or no decision model answered).
+ */
+export type DeliverySuggestion = { suggestion: null } | { suggestion: DeliveryMode; probability: number }
+
 export type MonitorMessageKind = 'lines' | 'exited' | 'canceled' | 'timed-out' | 'overload' | 'failed'
 
 export interface MessageMetadata {

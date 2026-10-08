@@ -196,6 +196,11 @@ export async function clearAgentQueue(agentId: string): Promise<{ success: boole
   })
 }
 
+/** The composer's Interrupt / Follow up suggestion for a draft written while the agent works. */
+export function getDeliverySuggestion(agentId: string, draft: string, signal?: AbortSignal) {
+  return client.agents.deliverySuggestion(agentId, draft, { signal })
+}
+
 export function sendAgentMessage(agentId: string, content: string, imageIds?: string[], deliveryMode?: DeliveryMode) {
   return client.agents.sendMessage(agentId, content, { imageIds, deliveryMode })
 }

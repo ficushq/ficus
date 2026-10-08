@@ -1,10 +1,11 @@
 import { AgentSlotWaitStatus } from './AgentSlotWaitStatus'
 import { useStableRef } from '../hooks/useStableRef'
+import { useDeliverySuggestion } from '../hooks/useDeliverySuggestion'
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAgentConversation } from '@ficus/client-react'
-import type { ChatScope, DeliveryMode, MessageMetadata } from '@ficus/shared'
+import type { ChatScope, MessageMetadata } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { ChatView } from './ChatView'
 import { QuestionInput } from './QuestionInput'
@@ -136,7 +137,6 @@ export function AgentChat({
   const beforeSendRef = useStableRef(beforeSend)
   const [preparationError, setPreparationError] = useState<string>()
   const [initialPreparationAttempt, setInitialPreparationAttempt] = useState(0)
-  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('steer')
 
   // Launcher requests are sends, not pre-existing optimistic rows. Keep failed sends
   // in the conversation's retry UI and never resend on rerenders or mode switches.
@@ -219,6 +219,21 @@ export function AgentChat({
     }
   }, [conv.items, onNavigate])
 
+  // Interrupt or Follow up: while the agent works, a paused draft is judged for whether it is about
+  // the current work, and a confident answer pre-selects the mode. A manual choice wins.
+  const isStreaming = conv.streamStatus === 'live' && conv.items.some((i) => i.kind === 'streaming')
+  const executionBusy =
+    conv.executionStatus === 'queued' ||
+    conv.executionStatus === 'waiting-sandbox' ||
+    conv.executionStatus === 'running' ||
+    conv.executionStatus === 'stopping'
+  const delivery = useDeliverySuggestion({
+    agentId: conv.agentId,
+    busy: !inputDisabled && !isReview && !isWaitingInput && (executionBusy || isStreaming),
+    fetchSuggestion: api.getDeliverySuggestion,
+  })
+  const deliveryMode = delivery.deliveryMode
+
   // Send routing: review feedback takes priority over normal send
   const handleSend = async (message: string, imageIds?: string[]) => {
     if (inputDisabled) return
@@ -228,6 +243,8 @@ export function AgentChat({
     }
     await beforeSendRef.current?.()
     await conv.sendAccepted(message, { imageIds, deliveryMode }).accepted
+    // The next draft starts from the default and takes a fresh suggestion.
+    delivery.reset()
   }
 
   // Composer visibility
@@ -236,7 +253,6 @@ export function AgentChat({
   // Contextual placeholder (explicit prop overrides contextual default)
   const maintenanceQueued = conv.executionStatus === 'waiting-maintenance'
   const isRunning = conv.executionStatus === 'running' || conv.executionStatus === 'waiting-sandbox'
-  const isStreaming = conv.streamStatus === 'live' && conv.items.some((i) => i.kind === 'streaming')
   const canSendInline = isRunning || isStreaming
   const placeholder =
     placeholderProp ??
@@ -347,7 +363,7 @@ export function AgentChat({
       hasOlderMessages={conv.hasOlder}
       isLoadingOlder={conv.isFetchingOlder}
       isLoading={conv.isLoading}
-      isStreaming={conv.streamStatus === 'live' && conv.items.some((i) => i.kind === 'streaming')}
+      isStreaming={isStreaming}
       executionStatus={conv.executionStatus}
       viewingUserId={viewingUserId}
       readOnly={readOnly || isTerminated}
@@ -405,7 +421,9 @@ export function AgentChat({
       }
       inputPrefix={inputPrefix}
       deliveryMode={deliveryMode}
-      onDeliveryModeChange={setDeliveryMode}
+      onDeliveryModeChange={delivery.chooseMode}
+      suggestedDelivery={delivery.suggested}
+      onDraftChange={delivery.onDraftChange}
       sendLabel={isReview ? 'Send Feedback' : undefined}
       focusTrigger={focusTrigger}
       keyboardShortcutsEnabled={keyboardShortcutsEnabled}

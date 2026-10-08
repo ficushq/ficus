@@ -167,7 +167,13 @@ export interface DecisionSpend {
 }
 
 /** What Ficus asks decision models for: one per feature, each with its own provider order. */
-export const DECISION_PURPOSES = ['tool-results', 'github-firewall', 'workflow-steps', 'event-rules'] as const
+export const DECISION_PURPOSES = [
+  'tool-results',
+  'github-firewall',
+  'workflow-steps',
+  'event-rules',
+  'composer-delivery',
+] as const
 export type DecisionPurpose = (typeof DECISION_PURPOSES)[number]
 
 /**
@@ -204,6 +210,12 @@ export const DECISION_PURPOSE_INFO: Record<
     label: 'Event rule conditions',
     description: 'Decision conditions in event rules.',
     scope: 'authored',
+  },
+  'composer-delivery': {
+    label: 'Composer interrupt or follow-up',
+    description:
+      'While an agent works, suggests Interrupt when a message you are writing is about its current work and Follow up when it is not.',
+    scope: 'instance',
   },
 }
 

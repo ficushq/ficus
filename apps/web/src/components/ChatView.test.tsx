@@ -1352,6 +1352,94 @@ describe('ChatView mobile options overlay', () => {
     expect(group.querySelector('button[type="submit"]')!.textContent).toBe('Follow up')
   })
 
+  test('a mode the composer picked shows a quiet Auto indicator that says why', async () => {
+    const { root, dom, window } = await renderChatView(
+      <ChatView
+        items={[]}
+        onSend={() => {}}
+        executionStatus="running"
+        deliveryMode="follow-up"
+        onDeliveryModeChange={() => {}}
+        suggestedDelivery={{ related: false }}
+      />
+    )
+    const submit = window.document.querySelector('.chat-composer-delivery button[type="submit"]') as HTMLElement
+    const indicator = submit.querySelector('.chat-composer-auto') as HTMLElement
+    expect(indicator.textContent).toBe('Auto')
+    expect(indicator.querySelector('svg')).not.toBeNull()
+    expect(indicator.getAttribute('title')).toBe('Suggested because this looks unrelated to what the agent is doing')
+    expect(submit.getAttribute('aria-label')).toBe('Follow up (suggested)')
+    expect(submit.getAttribute('title')).toStartWith('Suggested because this looks unrelated')
+
+    await dom.act(async () =>
+      root.render(
+        <MemoryRouter>
+          <PermissionsProvider usePermissions={usePermissionsMock}>
+            <ChatView
+              items={[]}
+              onSend={() => {}}
+              executionStatus="running"
+              deliveryMode="steer"
+              onDeliveryModeChange={() => {}}
+              suggestedDelivery={{ related: true }}
+              dependencies={chatViewDependencies}
+            />
+          </PermissionsProvider>
+        </MemoryRouter>
+      )
+    )
+    expect(window.document.querySelector('.chat-composer-auto')?.getAttribute('title')).toBe(
+      'Suggested because this looks related to what the agent is doing'
+    )
+
+    // A mode the person chose shows no indicator.
+    await dom.act(async () =>
+      root.render(
+        <MemoryRouter>
+          <PermissionsProvider usePermissions={usePermissionsMock}>
+            <ChatView
+              items={[]}
+              onSend={() => {}}
+              executionStatus="running"
+              deliveryMode="steer"
+              onDeliveryModeChange={() => {}}
+              suggestedDelivery={null}
+              dependencies={chatViewDependencies}
+            />
+          </PermissionsProvider>
+        </MemoryRouter>
+      )
+    )
+    expect(window.document.querySelector('.chat-composer-auto')).toBeNull()
+    expect(window.document.querySelector('.chat-composer-delivery button[type="submit"]')!.textContent).toBe(
+      'Interrupt'
+    )
+  })
+
+  test('reports every draft change, including the clear after a send', async () => {
+    const drafts: string[] = []
+    const onSend = mock(async () => {})
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[]}
+        onSend={onSend}
+        executionStatus="running"
+        deliveryMode="steer"
+        onDeliveryModeChange={() => {}}
+        onDraftChange={(draft) => drafts.push(draft)}
+      />
+    )
+    const textarea = window.document.querySelector('textarea') as HTMLTextAreaElement
+    await dom.act(async () => fireEvent.input(textarea, { target: { value: 'also fix the tests' } }))
+    expect(drafts.at(-1)).toBe('also fix the tests')
+    await dom.act(async () => {
+      fireEvent.submit(textarea.closest('form')!)
+    })
+    await flushReact()
+    expect(onSend).toHaveBeenCalledTimes(1)
+    expect(drafts.at(-1)).toBe('')
+  })
+
   for (const fullscreen of [false, true]) {
     test(`escapes chat stacking contexts and closes before ${fullscreen ? 'fullscreen' : 'page'} navigation`, async () => {
       const { dom, window } = await renderChatView(<ChatView items={[]} onSend={() => {}} enableFullscreen />)

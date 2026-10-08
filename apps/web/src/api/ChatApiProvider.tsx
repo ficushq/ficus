@@ -1,5 +1,14 @@
 import { createContext, useContext, type ReactNode } from 'react'
-import { compactAgent, deleteAgent, getActiveExecution, getAgent, listAgents, resetAgent, stopAgent } from './agents'
+import {
+  compactAgent,
+  deleteAgent,
+  getActiveExecution,
+  getAgent,
+  getDeliverySuggestion,
+  listAgents,
+  resetAgent,
+  stopAgent,
+} from './agents'
 import { getAgentQuestions } from './agentQuestions'
 import { mergeDefined } from './mergeDefined'
 
@@ -12,6 +21,7 @@ export const defaultChatApi = {
   deleteAgent,
   resetAgent,
   stopAgent,
+  getDeliverySuggestion,
 }
 
 export type ChatApi = typeof defaultChatApi
