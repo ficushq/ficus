@@ -8,6 +8,8 @@ import {
   DECISION_PROVIDER_KIND_INFO,
   DECISION_PURPOSE_INFO,
   DECISION_PURPOSES,
+  type DecisionFeatureSwitch,
+  type DecisionFeatureView,
   type DecisionProviderView,
 } from '@ficus/shared'
 import type { DecisionSettings } from '../../api/decisions'
@@ -36,11 +38,20 @@ const local: DecisionProviderView = {
   hasApiKey: false,
 }
 
+const features = (toolSwitch: DecisionFeatureSwitch = 'auto', enabled = true): DecisionFeatureView[] =>
+  DECISION_PURPOSES.map((id) => ({
+    id,
+    ...DECISION_PURPOSE_INFO[id],
+    ...(DECISION_PURPOSE_INFO[id].scope === 'instance' ? { switch: toolSwitch } : {}),
+    enabled,
+  }))
+
 const settings = (overrides: Partial<DecisionSettings> = {}): DecisionSettings => ({
   providers: [jev, local],
   routing: { default: ['jev-1', 'systemone-1'], purposes: {}, timeoutMs: 5000 },
   kinds: DECISION_PROVIDER_KIND_INFO,
   purposes: DECISION_PURPOSES.map((id) => ({ id, ...DECISION_PURPOSE_INFO[id] })),
+  features: features(),
   openAIServicesKey: true,
   ...overrides,
 })
@@ -71,6 +82,10 @@ function tree(queryClient: QueryClient, canWrite: boolean, node: ReactNode = <De
 }
 
 const render = (data: DecisionSettings, canWrite = true) => renderToStaticMarkup(tree(client(data), canWrite))
+
+/** One feature row's markup. */
+const featureRow = (html: string, label: string) =>
+  html.slice(html.lastIndexOf('<li', html.indexOf(`aria-label="${label}"`))).split('</li>')[0]!
 
 type Call = { url: string; method: string; body?: unknown }
 
@@ -162,12 +177,66 @@ describe('Decision models settings', () => {
     expect(html).not.toContain('Save order')
   })
 
-  test('with no providers, only the add cards show', () => {
-    const html = render(settings({ providers: [], routing: { default: [], purposes: {}, timeoutMs: 5000 } }))
+  test('with no providers: the add cards and the features, which need a decision model', () => {
+    const html = render(
+      settings({
+        providers: [],
+        routing: { default: [], purposes: {}, timeoutMs: 5000 },
+        features: features('auto', false),
+      })
+    )
     expect(html).toContain('Add a decision model')
     expect(html).toContain('The first one you add answers every purpose')
+    expect(html).toContain('Tool result firewall')
+    expect(html).toContain('Needs a decision model')
+    expect(html).toMatch(/aria-label="Use the tool result firewall"[^>]*disabled=""/)
+    expect(html).not.toContain('Use default order')
     expect(html).not.toContain('Default order')
     expect(html).not.toContain('Try a decision')
+  })
+
+  test('every feature shows how it is turned on', () => {
+    const html = render(settings())
+    const row = (label: string) => featureRow(html, label)
+    for (const purpose of DECISION_PURPOSES)
+      expect(html).toContain(`aria-label="${DECISION_PURPOSE_INFO[purpose].label}"`)
+    expect(row('Tool result firewall')).toContain('>On<')
+    expect(row('Tool result firewall')).toContain('On by default once a decision model is set up.')
+    expect(row('Tool result firewall')).toMatch(/role="switch"[^>]*checked=""/)
+    expect(row('GitHub firewall')).toContain('Chosen per squad')
+    expect(row('GitHub firewall')).toContain('Set in each squad&#x27;s GitHub settings.')
+    expect(row('GitHub firewall')).not.toContain('role="switch"')
+    expect(row('Workflow decisions')).toContain('Runs where you add it')
+    expect(row('Event rule conditions')).toContain('Runs where you add it')
+    // Every feature keeps its own order choice.
+    expect(html.match(/>Use default order</g)?.length).toBe(DECISION_PURPOSES.length)
+    // Switched on by hand counts as on even when auto would not be; off is off.
+    expect(featureRow(render(settings({ features: features('on', false) })), 'Tool result firewall')).toContain('>On<')
+    expect(featureRow(render(settings({ features: features('off', false) })), 'Tool result firewall')).toContain(
+      '>Off<'
+    )
+  })
+
+  test('the tool result firewall switch turns off, and back on to automatic', async () => {
+    await mount(
+      settings(),
+      (call) =>
+        call.method === 'PUT' && call.url.includes('/decisions/features/')
+          ? Response.json(features((call.body as { value: DecisionFeatureSwitch }).value, true))
+          : undefined,
+      async ({ calls, act, document }) => {
+        const toggle = () => document.querySelector('[aria-label="Use the tool result firewall"]') as HTMLInputElement
+        expect(toggle().checked).toBe(true)
+        await act(() => fireEvent.click(toggle()))
+        const puts = calls.filter((call) => call.method === 'PUT')
+        expect(puts[0]?.url).toEndWith('/decisions/features/tool-results')
+        expect(puts[0]?.body).toEqual({ value: 'off' })
+        expect(toggle().checked).toBe(false)
+        await act(() => fireEvent.click(toggle()))
+        expect(calls.filter((call) => call.method === 'PUT')[1]?.body).toEqual({ value: 'auto' })
+        expect(toggle().checked).toBe(true)
+      }
+    )
   })
 
   test('a provider that fails the test question shows why, inline', async () => {

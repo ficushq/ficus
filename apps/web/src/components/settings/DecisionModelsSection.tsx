@@ -41,9 +41,9 @@ export function DecisionModelsSection() {
           Decision models
         </h3>
         <p className="mt-1 text-sm text-muted">
-          Fast models that answer quick yes/no and multiple-choice questions, never writing text. Ficus uses them for
-          the GitHub firewall, workflow decision steps and event rule conditions. They are separate from the agent
-          models above.
+          Fast models that answer quick yes/no and multiple-choice questions, never writing text. Ficus uses them to
+          screen what agents read for instructions aimed at them, and for workflow decision steps and event rule
+          conditions. They are separate from the agent models above.
         </p>
       </header>
       {isLoading ? (
@@ -60,9 +60,12 @@ export function DecisionModelsSection() {
           {data.providers.length > 0 && <DecisionProviderList providers={data.providers} canWrite={canWrite} />}
           {canWrite && <AddDecisionProviders providers={data.providers} openAIServicesKey={data.openAIServicesKey} />}
           {data.providers.length === 0 && !canWrite && <p className="text-sm text-muted">No decision models yet.</p>}
-          {data.providers.length > 0 && (
-            <DecisionRoutingEditor providers={data.providers} routing={data.routing} canWrite={canWrite} />
-          )}
+          <DecisionRoutingEditor
+            providers={data.providers}
+            routing={data.routing}
+            features={data.features ?? []}
+            canWrite={canWrite}
+          />
           {data.providers.length > 0 && canWrite && <DecisionTryPanel providers={data.providers} />}
         </>
       )}

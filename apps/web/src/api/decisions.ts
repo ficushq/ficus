@@ -1,4 +1,6 @@
 import type {
+  DecisionFeatureSwitch,
+  DecisionFeatureView,
   DecisionProviderKind,
   DecisionProviderView,
   DecisionPurpose,
@@ -14,6 +16,8 @@ export interface DecisionSettings {
   routing: DecisionRouting
   kinds: Record<DecisionProviderKind, { label: string; description: string; defaultModel: string; models: string[] }>
   purposes: Array<{ id: DecisionPurpose; label: string; description: string }>
+  /** Everything decision models power, with each instance feature's switch. */
+  features: DecisionFeatureView[]
   /** Whether the OpenAI API services key is set; OpenAI Decisions has no key of its own. */
   openAIServicesKey: boolean
 }
@@ -80,6 +84,17 @@ export function detectDecisionServers(): Promise<DetectedDecisionServer[]> {
 
 export function setDecisionRouting(routing: DecisionRouting): Promise<DecisionRouting> {
   return apiFetch<DecisionRouting>('/decisions/routing', { method: 'PUT', body: JSON.stringify(routing) })
+}
+
+/** `auto` is on whenever a decision model is set up for the feature. Returns every feature. */
+export function setDecisionFeatureSwitch(
+  id: DecisionPurpose,
+  value: DecisionFeatureSwitch
+): Promise<DecisionFeatureView[]> {
+  return apiFetch<DecisionFeatureView[]>(`/decisions/features/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ value }),
+  })
 }
 
 export function tryDecision(input: DecisionTryInput): Promise<DecisionTryOutcome> {

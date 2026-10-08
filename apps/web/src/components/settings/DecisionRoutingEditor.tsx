@@ -1,18 +1,18 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  DECISION_PURPOSE_INFO,
-  DECISION_PURPOSES,
   DECISION_TIMEOUT_MAX_MS,
+  type DecisionFeatureSwitch,
+  type DecisionFeatureView,
   type DecisionProviderView,
   type DecisionPurpose,
   type DecisionRouting,
 } from '@ficus/shared'
-import { setDecisionRouting } from '../../api/decisions'
+import { setDecisionFeatureSwitch, setDecisionRouting } from '../../api/decisions'
 import { decisionQueryKeys } from '../../queryKeys'
 import type { DecisionSettings } from '../../api/decisions'
-import { Badge } from '../Badge'
+import { Badge, type BadgeColor } from '../Badge'
 import { SegmentedControl } from '../SegmentedControl'
 import { ChevronDownIcon, CloseIcon, PlusIcon } from '../icons'
 import { DECISION_INPUT_CLASS } from './DecisionField'
@@ -24,16 +24,19 @@ const MAX_TIMEOUT_SECONDS = DECISION_TIMEOUT_MAX_MS / 1000
 const MAX_ORDER = 8
 
 /**
- * Which decision providers each purpose asks, first to last, and how long to wait in all.
+ * The features decision models power (with their switches and provider orders), the default
+ * order, and how long to wait in all.
  * Edits stay a local draft until saved, so reordering never half-applies.
  */
 export function DecisionRoutingEditor({
   providers,
   routing,
+  features,
   canWrite,
 }: {
   providers: DecisionProviderView[]
   routing: DecisionRouting
+  features: DecisionFeatureView[]
   canWrite: boolean
 }) {
   const queryClient = useQueryClient()
@@ -61,6 +64,15 @@ export function DecisionRoutingEditor({
     },
   })
 
+  const featureSwitch = useMutation({
+    mutationFn: ({ id, value }: { id: DecisionPurpose; value: DecisionFeatureSwitch }) =>
+      setDecisionFeatureSwitch(id, value),
+    onSuccess: (next) =>
+      queryClient.setQueryData<DecisionSettings>(decisionQueryKeys.settings(), (old) =>
+        old ? { ...old, features: next } : old
+      ),
+  })
+
   const edit = (change: (routing: DecisionRouting) => DecisionRouting) => setDraft(change(current))
   const setPurpose = (purpose: DecisionPurpose, ids: string[] | undefined) =>
     edit((routing) => {
@@ -83,139 +95,229 @@ export function DecisionRoutingEditor({
     })
   }
 
+  const hasProviders = providers.length > 0
   return (
-    <section aria-labelledby="decision-routing-heading" className="space-y-5">
-      <div>
-        <h4 id="decision-routing-heading" className="text-sm font-medium text-secondary">
-          Order
-        </h4>
-        <p className="mt-0.5 text-xs text-muted">
-          Ficus asks providers from the top; the first to answer in time wins. One that fails is asked last for the next
-          30 seconds.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <h5 className="text-xs font-medium text-secondary">Default order</h5>
-        <ProviderOrder
-          label="Default order"
-          ids={current.default}
-          providers={providers}
-          disabled={!canWrite}
-          onChange={(ids) => edit((routing) => ({ ...routing, default: ids }))}
-          emptyText="No order yet: every enabled provider is asked, in the order you added them."
-        />
-      </div>
-
-      <div className="space-y-4">
+    <div className="space-y-8">
+      <section aria-labelledby="decision-features-heading" className="space-y-3">
         <div>
-          <h5 className="text-xs font-medium text-secondary">By purpose</h5>
-          <p className="mt-0.5 text-xs text-muted">Give a feature its own order, or let it use the default.</p>
+          <h4 id="decision-features-heading" className="text-sm font-medium text-secondary">
+            Features
+          </h4>
+          <p className="mt-0.5 text-xs text-muted">
+            Everything decision models do in Ficus.
+            {hasProviders ? ' Each feature asks the default order unless you give it its own.' : ''}
+          </p>
         </div>
-        <ul className="divide-y divide-th-border">
-          {DECISION_PURPOSES.map((purpose) => {
-            const info = DECISION_PURPOSE_INFO[purpose]
-            const ids = current.purposes[purpose]
-            const custom = ids !== undefined
+        <ul className="divide-y divide-th-border border-y border-th-border">
+          {features.map((feature) => {
+            const ids = current.purposes[feature.id]
             return (
-              <li key={purpose} className="space-y-3 py-3 first:pt-0 last:pb-0">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-sm text-primary">{info.label}</p>
-                    <p className="text-xs text-muted">{info.description}</p>
-                  </div>
-                  <SegmentedControl
-                    size="compact"
-                    ariaLabel={`${info.label} order`}
-                    value={custom ? 'custom' : 'default'}
-                    disabled={!canWrite}
-                    onChange={(next) => setPurpose(purpose, next === 'custom' ? [...current.default] : undefined)}
-                    options={[
-                      { value: 'default', label: 'Use default order' },
-                      { value: 'custom', label: 'Custom order' },
-                    ]}
-                  />
-                </div>
-                {custom && (
+              <DecisionFeatureRow
+                key={feature.id}
+                feature={feature}
+                hasProviders={hasProviders}
+                canWrite={canWrite}
+                switching={featureSwitch.isPending}
+                onSwitch={(value) => featureSwitch.mutate({ id: feature.id, value })}
+                custom={ids !== undefined}
+                onCustomChange={(custom) => setPurpose(feature.id, custom ? [...current.default] : undefined)}
+              >
+                {ids !== undefined && hasProviders && (
                   <ProviderOrder
-                    label={`${info.label} order`}
+                    label={`${feature.label} order`}
                     ids={ids}
                     providers={providers}
                     disabled={!canWrite}
-                    onChange={(next) => setPurpose(purpose, next)}
+                    onChange={(next) => setPurpose(feature.id, next)}
                     emptyText="Empty, so it uses the default order."
                   />
                 )}
-              </li>
+              </DecisionFeatureRow>
             )
           })}
         </ul>
-      </div>
+        {featureSwitch.isError && (
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
+            {errorText(featureSwitch.error)}
+          </p>
+        )}
+      </section>
 
-      <div className="space-y-1">
-        <label htmlFor="decision-timeout" className="block text-sm font-medium text-primary">
-          Time limit
-        </label>
-        <div className="flex items-center gap-2">
-          <input
-            id="decision-timeout"
-            type="number"
-            inputMode="decimal"
-            min={MIN_TIMEOUT_SECONDS}
-            max={MAX_TIMEOUT_SECONDS}
-            step={0.25}
-            value={timeoutSeconds}
-            disabled={!canWrite}
-            aria-invalid={!timeoutValid}
-            onChange={(event) => setTimeoutText(event.target.value)}
-            className={clsx(DECISION_INPUT_CLASS, 'max-w-[7rem]')}
-          />
-          <span className="text-sm text-muted">seconds</span>
-        </div>
-        <p
-          className={clsx(
-            'text-xs',
-            timeoutValid ? 'text-muted' : 'text-status-danger-600 dark:text-status-danger-400'
-          )}
-        >
-          How long one decision may take across all providers, from {MIN_TIMEOUT_SECONDS} to {MAX_TIMEOUT_SECONDS}{' '}
-          seconds.
-        </p>
-      </div>
-
-      {canWrite && (
-        <div className="space-y-2">
-          {save.isError && (
-            <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
-              {errorText(save.error)}
-            </p>
-          )}
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!dirty || !timeoutValid || save.isPending}
-              className="ficus-button ficus-button-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
-            >
-              {save.isPending ? 'Saving…' : 'Save order'}
-            </button>
-            {dirty && (
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(null)
-                  setTimeoutText(null)
-                  save.reset()
-                }}
-                className="ficus-button ficus-button-secondary rounded-lg px-4 py-2 text-sm font-medium"
-              >
-                Discard changes
-              </button>
-            )}
+      {hasProviders && (
+        <section aria-labelledby="decision-routing-heading" className="space-y-5">
+          <div className="space-y-2">
+            <div>
+              <h4 id="decision-routing-heading" className="text-sm font-medium text-secondary">
+                Default order
+              </h4>
+              <p className="mt-0.5 text-xs text-muted">
+                Ficus asks providers from the top; the first to answer in time wins. One that fails is asked last for
+                the next 30 seconds.
+              </p>
+            </div>
+            <ProviderOrder
+              label="Default order"
+              ids={current.default}
+              providers={providers}
+              disabled={!canWrite}
+              onChange={(ids) => edit((routing) => ({ ...routing, default: ids }))}
+              emptyText="No order yet: every enabled provider is asked, in the order you added them."
+            />
           </div>
-        </div>
+
+          <div className="space-y-1">
+            <label htmlFor="decision-timeout" className="block text-sm font-medium text-primary">
+              Time limit
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="decision-timeout"
+                type="number"
+                inputMode="decimal"
+                min={MIN_TIMEOUT_SECONDS}
+                max={MAX_TIMEOUT_SECONDS}
+                step={0.25}
+                value={timeoutSeconds}
+                disabled={!canWrite}
+                aria-invalid={!timeoutValid}
+                onChange={(event) => setTimeoutText(event.target.value)}
+                className={clsx(DECISION_INPUT_CLASS, 'max-w-[7rem]')}
+              />
+              <span className="text-sm text-muted">seconds</span>
+            </div>
+            <p
+              className={clsx(
+                'text-xs',
+                timeoutValid ? 'text-muted' : 'text-status-danger-600 dark:text-status-danger-400'
+              )}
+            >
+              How long one decision may take across all providers, from {MIN_TIMEOUT_SECONDS} to {MAX_TIMEOUT_SECONDS}{' '}
+              seconds.
+            </p>
+          </div>
+
+          {canWrite && (
+            <div className="space-y-2">
+              {save.isError && (
+                <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
+                  {errorText(save.error)}
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={!dirty || !timeoutValid || save.isPending}
+                  className="ficus-button ficus-button-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+                >
+                  {save.isPending ? 'Saving…' : 'Save order'}
+                </button>
+                {dirty && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraft(null)
+                      setTimeoutText(null)
+                      save.reset()
+                    }}
+                    className="ficus-button ficus-button-secondary rounded-lg px-4 py-2 text-sm font-medium"
+                  >
+                    Discard changes
+                  </button>
+                )}
+                {dirty && <span className="text-xs text-muted">Saves the feature orders above too.</span>}
+              </div>
+            </div>
+          )}
+        </section>
       )}
-    </section>
+    </div>
+  )
+}
+
+const SCOPE_STATUS: Record<'squad' | 'authored', { status: string; note?: string }> = {
+  squad: { status: 'Chosen per squad', note: "Set in each squad's GitHub settings." },
+  authored: { status: 'Runs where you add it' },
+}
+
+/**
+ * One thing decision models power: what it does, whether it runs, and which providers it asks.
+ * Only instance features have a switch here; the three-way auto/on/off value stays in Core.
+ */
+export function DecisionFeatureRow({
+  feature,
+  hasProviders,
+  canWrite,
+  switching,
+  onSwitch,
+  custom,
+  onCustomChange,
+  children,
+}: {
+  feature: DecisionFeatureView
+  hasProviders: boolean
+  canWrite: boolean
+  switching: boolean
+  onSwitch: (value: DecisionFeatureSwitch) => void
+  custom: boolean
+  onCustomChange: (custom: boolean) => void
+  children?: ReactNode
+}) {
+  const instance = feature.scope === 'instance'
+  const on = feature.switch === 'on' || (feature.switch === 'auto' && feature.enabled)
+  const { status, color, note }: { status: string; color: BadgeColor; note?: string } =
+    feature.scope === 'instance'
+      ? {
+          status: !hasProviders ? 'Needs a decision model' : on ? 'On' : 'Off',
+          color: !hasProviders ? 'attention' : on ? 'success' : 'neutral',
+          note: 'On by default once a decision model is set up.',
+        }
+      : { ...SCOPE_STATUS[feature.scope], color: 'neutral' }
+  return (
+    <li className="space-y-3 py-3" aria-label={feature.label}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-sm font-medium text-primary">{feature.label}</span>
+            <Badge color={color}>{status}</Badge>
+          </div>
+          <p className="mt-0.5 text-xs text-muted">
+            {feature.description}
+            {note ? ` ${note}` : ''}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-3">
+          {instance && (
+            <label className="flex items-center gap-2 text-sm text-secondary">
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label={`Use the ${feature.label.toLowerCase()}`}
+                checked={hasProviders && on}
+                disabled={!canWrite || !hasProviders || switching}
+                onChange={(event) => onSwitch(event.target.checked ? 'auto' : 'off')}
+                className="h-4 w-4 accent-current disabled:opacity-50"
+              />
+              <span className={clsx(!hasProviders && 'opacity-50')}>Enabled</span>
+            </label>
+          )}
+          {hasProviders && (
+            <SegmentedControl
+              size="compact"
+              ariaLabel={`${feature.label} order`}
+              value={custom ? 'custom' : 'default'}
+              disabled={!canWrite}
+              onChange={(next) => onCustomChange(next === 'custom')}
+              options={[
+                { value: 'default', label: 'Use default order' },
+                { value: 'custom', label: 'Custom order' },
+              ]}
+            />
+          )}
+        </div>
+      </div>
+      {children}
+    </li>
   )
 }
 
