@@ -216,3 +216,24 @@ it must satisfy sharp's patched minimum (8.18.6 for sharp 0.35.4). Check
 - `app-store/` — the App Store art, rendered in Chrome by
   `scripts/brand/app-store.ts` rather than by this generator; see
   [App Store art](#app-store-art).
+
+### Published copies
+
+Core web and Core docs each need these files in their own public dirs
+instead of reading `brand/` directly, so `bun run brand:generate` also
+copies them there, byte-for-byte, after rendering (`PUBLISHED_ICON_COPIES` in
+`scripts/brand/generate.ts`; `scripts/brand/published-icons.test.ts` fails if
+any copy drifts from its source). The farm app (`apps/farm`) needs no copy:
+its Vite `publicDir` points straight at `brand/generated/farm`.
+
+| Copy                                       | Source                                                           |
+| ------------------------------------------ | ---------------------------------------------------------------- |
+| `apps/web/public/icons/**`                 | `brand/generated/web/**` (same relative path, including `dark/`) |
+| `apps/web/public/icons/icon-source.svg`    | `brand/ficus-mark.svg`                                           |
+| `apps/docs/public/favicon.svg`             | `brand/generated/web/favicon.svg`                                |
+| `apps/docs/src/assets/ficus-mark.svg`      | `brand/ficus-mark.svg`                                           |
+| `apps/docs/src/assets/ficus-mark-dark.svg` | `brand/ficus-mark-dark.svg`                                      |
+
+Platform web (`apps/platform/web/public/icons/`, the private ficus-platform
+repo) still needs its copy refreshed by hand, the same way as its social
+preview copy above.
