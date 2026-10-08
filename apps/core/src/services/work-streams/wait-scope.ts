@@ -229,7 +229,7 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
         : []
     )
     const { readOutputEvent } = await import('../integrations/github/feedback-pass-read')
-    const events = []
+    const events: NonNullable<Awaited<ReturnType<typeof readOutputEvent>>>[] = []
     for (const id of new Set(eventIds)) {
       const event = await readOutputEvent(store, id)
       if (event) events.push(event)

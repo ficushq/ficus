@@ -44,6 +44,7 @@ import { slotResourcesRouter, slotsRouter } from './routes/slots'
 import { activityRouter } from './routes/activity'
 import { deploymentsRouter } from './routes/deployments'
 import { createGitHubIdentityRouter } from './routes/github-identity'
+import { createGitHubFeedbackRouter } from './routes/github-feedback'
 import { channelLinksRouter } from './routes/channel-links'
 import { channelInstancesRouter } from './routes/channel-instances'
 import { terminalRouter } from './routes/terminal'
@@ -310,6 +311,8 @@ app.route('/api/artifacts', artifactsRouter)
 app.route('/api/inbox', inboxRouter)
 app.route('/api/squad-presets', squadPresetsRouter)
 app.route('/api/workflows', workflowsRouter)
+// Before squadsRouter so its parameterised squad routes cannot shadow these paths.
+app.route('/api/squads', createGitHubFeedbackRouter())
 app.route('/api/squads', squadsRouter)
 app.route('/api/squads', slotsRouter)
 app.route('/api/slots', slotResourcesRouter)

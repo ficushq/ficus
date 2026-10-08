@@ -7,6 +7,7 @@ import type {
   IntegrationDeviceAuthorizationStatus,
 } from '@ficus/shared'
 import { db } from '../db'
+import { eventEmitter } from '../lib/infra/event-emitter'
 import type { Identity } from '../services/rbac'
 import { GitHubFeedbackError, requireGitHubHuman } from '../services/integrations/github/feedback-trust'
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
@@ -89,14 +90,20 @@ export function createGitHubIdentityRouter(service: GitHubIdentityRoutesService)
   })
   app.post('/:id/confirm', zValidator('param', id), zValidator('json', empty), async (c) => {
     try {
-      return c.json(await service.confirm(c.get('identity') as Identity, c.req.valid('param').id))
+      const identity = c.get('identity') as Identity
+      const result = await service.confirm(identity, c.req.valid('param').id)
+      // Content-free, post-commit, private to this user's own sockets.
+      if (identity.type === 'user') eventEmitter.emit('githubIdentity.updated', { userId: identity.userId })
+      return c.json(result)
     } catch (error) {
       return failure(c, error)
     }
   })
   app.delete('/', zValidator('json', empty), async (c) => {
     try {
-      await service.unlink(c.get('identity') as Identity)
+      const identity = c.get('identity') as Identity
+      await service.unlink(identity)
+      if (identity.type === 'user') eventEmitter.emit('githubIdentity.updated', { userId: identity.userId })
       return c.json({ unlinked: true })
     } catch (error) {
       return failure(c, error)

@@ -10,6 +10,7 @@ import {
   inbox,
   chatSendReceipts,
 } from '../../../db'
+import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { readOutputEvent, readFeedbackRevision } from './feedback-pass-read'
 import { withGitHubOutputPass, withGitHubCandidate, reserveGitHubLookahead } from './feedback-pass'
 import { githubContentHash } from './feedback-envelope'
@@ -283,6 +284,7 @@ async function releaseInPass(
           reason = null
         }
       }
+      let settledSquadId: string | null = null
       await db.transaction(async (tx) => {
         await lockGitHubTrustAuthority(tx)
         const current = await readFeedbackRevision(tx, id, true)
@@ -306,7 +308,10 @@ async function releaseInPass(
             updatedAt: new Date(),
           })
           .where(and(eq(githubFeedbackRevisions.id, id), eq(githubFeedbackRevisions.leaseToken, leaseToken)))
+        settledSquadId = current.squadId
       })
+      // Content-free, post-commit: release progress (or a trust revocation) changes human queue counts.
+      if (settledSquadId) eventEmitter.emit('githubFeedback.updated', { squadId: settledSquadId })
     }, undefined)
   }
   return claimed

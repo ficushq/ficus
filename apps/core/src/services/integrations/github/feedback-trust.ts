@@ -9,7 +9,7 @@ import { hasUserPermissionWithExecutor, type Identity } from '../../rbac/permiss
 export class GitHubFeedbackError extends Error {
   constructor(
     public readonly code: string,
-    public readonly status: 400 | 403 | 409 | 502
+    public readonly status: 400 | 403 | 404 | 409 | 502
   ) {
     super(code)
     this.name = 'GitHubFeedbackError'
@@ -36,14 +36,26 @@ export function parseGitHubAccount(profile: unknown): GitHubAccountIdentity | nu
 }
 
 /** Public fixed-origin lookup; no squad token is ownership proof or exposed to this request. */
-async function lookupGitHubAccount(login: string): Promise<unknown> {
+export async function lookupGitHubAccount(login: string): Promise<unknown> {
   const response = await fetch(`https://api.github.com/users/${encodeURIComponent(login)}`, {
     headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
     redirect: 'error',
     signal: AbortSignal.timeout(10_000),
   })
+  if (response.status === 404) throw new GitHubFeedbackError('unknown_account', 400)
   if (!response.ok) throw new GitHubFeedbackError('account_lookup_failed', 502)
   return response.json()
+}
+
+/** Server-side resolution of a login to a provider-verified identity. Grants nothing by itself. */
+export async function resolveGitHubAccount(
+  login: string,
+  lookup: (login: string) => Promise<unknown> = lookupGitHubAccount
+): Promise<GitHubAccountIdentity> {
+  if (!loginPattern.test(login)) throw new GitHubFeedbackError('invalid_login', 400)
+  const account = parseGitHubAccount(await lookup(login))
+  if (!account) throw new GitHubFeedbackError('unverified_account', 400)
+  return account
 }
 
 export async function requireGitHubHuman(
@@ -174,13 +186,15 @@ export async function addManualGitHubTrust(
   identity: Identity | undefined,
   squadId: string,
   login: string,
-  lookup: (login: string) => Promise<unknown> = lookupGitHubAccount
+  lookup: (login: string) => Promise<unknown> = lookupGitHubAccount,
+  /** The account the human confirmed. A rename/reuse between preview and add is refused, not swapped. */
+  expectedAccountId?: string
 ): Promise<GitHubAccountIdentity> {
   try {
     await requireGitHubHumanSquadUpdate(db, identity, squadId)
-    if (!loginPattern.test(login)) throw new GitHubFeedbackError('invalid_login', 400)
-    const account = parseGitHubAccount(await lookup(login))
-    if (!account) throw new GitHubFeedbackError('unverified_account', 400)
+    const account = await resolveGitHubAccount(login, lookup)
+    if (expectedAccountId !== undefined && account.accountId !== expectedAccountId)
+      throw new GitHubFeedbackError('account_changed', 409)
     await db.transaction(async (tx) => {
       await lockGitHubHuman(tx, identity)
       // Recheck after provider I/O; a stale browser guard is not authority.

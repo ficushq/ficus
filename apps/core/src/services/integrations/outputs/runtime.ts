@@ -1012,7 +1012,12 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
   if (
     message.subject !== event.fact.subject ||
     message.content !==
-      defaultNotificationContent(event, workStreamId, additionalContext, workStreamId ? undefined : recipient?.squadId)
+      defaultNotificationContent(
+        event,
+        workStreamId,
+        additionalContext,
+        workStreamId ? undefined : (recipient?.squadId ?? undefined)
+      )
   )
     return false
   return (

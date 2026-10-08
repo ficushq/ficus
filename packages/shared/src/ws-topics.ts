@@ -87,6 +87,8 @@ export type TopicEventMap = {
     | 'squadRelationship.deleted'
     | 'sandboxLocalDeployment.updated'
     | 'sandbox.status'
+    | 'githubFeedback.updated'
+    | 'githubIdentity.updated'
   >
   workstreams: Extract<
     keyof EventMap,

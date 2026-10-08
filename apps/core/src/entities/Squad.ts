@@ -201,6 +201,8 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
   declare createdAt: Date
   declare updatedAt: Date
   declare archivedAt: Date | null
+  /** Human-only (setGitHubAuthorFilter); read-only on the entity. */
+  declare githubAuthorFilter: boolean
 
   // Relation cache
   private _managerAgent?: Agent | null
@@ -247,6 +249,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       createdAt: squads.createdAt,
       updatedAt: squads.updatedAt,
       archivedAt: squads.archivedAt,
+      githubAuthorFilter: squads.githubAuthorFilter,
     }
   }
 

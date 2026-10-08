@@ -1,4 +1,5 @@
 import { and, eq, gt, ne, sql } from 'drizzle-orm'
+import { eventEmitter } from '../../../lib/infra/event-emitter'
 import {
   db,
   githubOutputProofs,
@@ -228,6 +229,9 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
       const captured = native
         ? await captureRelevantGitHubFeedback(source, deps)
         : await captureGitHubFeedback(source.id, deps)
+      // Content-free, after the capture transaction committed: the human queue count changed.
+      if (captured.revision.decision === 'pending' && captured.disposition !== 'replay')
+        eventEmitter.emit('githubFeedback.updated', { squadId: captured.revision.squadId })
       if (!native || !['automatic', 'allow_once', 'allow_trust'].includes(captured.revision.decision)) return null
       effect = await recordCanonicalGitHubFeedback(captured.revision.id, source.id, local)
     }

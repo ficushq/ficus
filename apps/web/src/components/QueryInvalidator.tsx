@@ -319,6 +319,10 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
 
       // ── Squad events ──────────────────────────────────────────────
       subscribe('squads', ({ event, data }) => {
+        // Content-free GitHub moderation signals must never fall through to the broad squad
+        // invalidation below (that refetch would reset open settings forms). Their narrow
+        // moderation/identity query invalidation belongs with those queries.
+        if (event === 'githubFeedback.updated' || event === 'githubIdentity.updated') return
         if (event === 'slots.updated') {
           // Stream slot context changes without a stored work-stream mutation.
           slotCoalescer.queue(queryKeys.squads.all)

@@ -90,3 +90,96 @@ export interface GitHubFeedbackRoute {
     stepHash?: string
   }>
 }
+
+// ---------------------------------------------------------------------------
+// Human moderation HTTP contracts. Every body is strict; the server derives author, squad,
+// authority and content from storage. No DTO carries routing hashes or connection material.
+// ---------------------------------------------------------------------------
+
+/** Pending = awaiting a human decision; releasing = allowed but not yet delivered (incl. retries). */
+export const githubFeedbackQueueSchema = z.enum(['pending', 'releasing'])
+export type GitHubFeedbackQueue = z.infer<typeof githubFeedbackQueueSchema>
+
+export const githubFeedbackPageQuerySchema = z
+  .object({
+    queue: githubFeedbackQueueSchema.default('pending'),
+    cursor: z.string().max(200).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .strict()
+
+export const githubAuthorFilterUpdateSchema = z.object({ enabled: z.boolean() }).strict()
+export const githubTrustedAuthorResolveSchema = z.object({ login: z.string().min(1).max(100) }).strict()
+/** `accountId` is the account the human confirmed; the server re-resolves and refuses a mismatch. */
+export const githubTrustedAuthorAddSchema = z
+  .object({ login: z.string().min(1).max(100), accountId: githubAccountIdSchema })
+  .strict()
+
+export interface GitHubFeedbackSummary {
+  authorFilterEnabled: boolean
+  pending: number
+  /** Allowed by a human (or the filter switch) and still waiting for, or retrying, delivery. */
+  releasing: number
+  /** Subset of `releasing` whose last attempt failed and will be retried. */
+  failing: number
+  canModerate: boolean
+}
+
+export interface GitHubFeedbackListItem {
+  id: string
+  contentHash: string
+  decisionVersion: number
+  decision: GitHubFeedbackDecision
+  releaseState: GitHubFeedbackReleaseState
+  reason: string | null
+  objectKind: GitHubFeedbackContent['objectKind'] | null
+  repository: string | null
+  number: number | null
+  isPullRequest: boolean
+  author: GitHubAccountIdentity | null
+  editor: GitHubAccountIdentity | null
+  attribution: GitHubFeedbackContent['attribution']
+  byteCount: number
+  contentAvailable: boolean
+  firstObservedAt: string
+  updatedAt: string
+  attempts: number
+}
+
+export interface GitHubFeedbackPage {
+  items: GitHubFeedbackListItem[]
+  nextCursor: string | null
+  canModerate: boolean
+}
+
+export interface GitHubFeedbackDetail extends GitHubFeedbackListItem {
+  /** Exactly the reviewed (approval-bound) text. Null when withheld or unavailable. */
+  content: {
+    title: string
+    body: string
+    path?: string
+    line?: number | null
+    reviewState: string
+    /** The agent-facing notification text a release delivers, verbatim. */
+    deliveryText: string
+    deliveryTruncated: boolean
+  } | null
+  /** Why `content` is null, if it is. */
+  contentWithheld: 'content_unavailable' | 'source_access_unavailable' | null
+  /** Canonical https://github.com link only; never another host. */
+  url: string | null
+  authorTrust: GitHubTrustOrigin[]
+  editorTrust: GitHubTrustOrigin[]
+  routes: Array<{ kind: string; id: string; workStreamId: string | null; recipientId: string | null }>
+  decidedByUserId: string | null
+  decidedAt: string | null
+  canModerate: boolean
+}
+
+export interface GitHubTrustedAuthor extends GitHubAccountIdentity {
+  origins: GitHubTrustOrigin[]
+}
+export interface GitHubTrustedAuthorList {
+  authors: GitHubTrustedAuthor[]
+  canManage: boolean
+}

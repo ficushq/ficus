@@ -106,6 +106,13 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
     return { topic: 'squads', instanceTopic: `squads:${data.squadId}` }
   }
 
+  // Content-free; the payload's squadId scopes delivery through the normal squad ACL.
+  if (event === 'githubFeedback.updated') {
+    return { topic: 'squads', instanceTopic: `squads:${data.squadId}` }
+  }
+  // Private to one user; delivered by broadcastToUser below, never through squad/collection ACL.
+  if (event === 'githubIdentity.updated') return null
+
   // --- Sandbox local deployment events ---
   if (event === 'sandboxLocalDeployment.updated') {
     return { topic: 'squads', instanceTopic: `squads:${data.squadId}` }
@@ -303,6 +310,11 @@ export function setupEventBridge(
         .assistantInboxOwner(entry.data.recipientId)
         .then((owner) => manager.broadcastActionCenterInvalidation(owner ? [owner] : []))
         .catch((err) => console.error('[ws] Assistant activity owner resolution failed:', err))
+    }
+
+    if (entry.event === 'githubIdentity.updated') {
+      manager.broadcastToUser(entry.data.userId, 'squads', entry.event, entry.data)
+      return
     }
 
     const route = resolve(entry)
