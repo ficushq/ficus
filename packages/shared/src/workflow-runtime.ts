@@ -7,6 +7,7 @@ import {
   type WorkflowDefinition,
   type WorkflowStep,
   type WorkflowParticipant,
+  type WorkflowTransition,
 } from './workflows'
 
 export interface WorkflowBranch {
@@ -132,7 +133,8 @@ export const workflowCommandSchema = z.discriminatedUnion('action', [
       ...commandFields,
       action: z.literal('complete'),
       outcome: z.string().min(1).max(100),
-      evidence: z.string().trim().min(1).max(64_000),
+      // May be empty only for a human approval that moves work forward; see workflowOutcomeRequiresEvidence.
+      evidence: z.string().trim().max(64_000),
       // An agent doing rework may return its result directly to the requester.
       resume: z.boolean().default(false),
     })
@@ -174,6 +176,15 @@ function sameOutcomes(left: WorkflowStep['outcomes'], right: WorkflowStep['outco
 export function effectiveWorkflowStep(state: WorkflowRun, attempt: WorkflowAttempt): WorkflowStep {
   const initial = attempt.step ?? stepById(state, attempt.stepId)
   return attempt.effectiveOutcomes ? { ...initial, outcomes: attempt.effectiveOutcomes.outcomes } : initial
+}
+
+/**
+ * Whether completing a step with this outcome needs non-empty evidence. Agent results always do.
+ * A human approver may move work forward without notes, but a return is rework feedback the
+ * returned step needs, so it must say what to change. Decided by transition shape, not outcome name.
+ */
+export function workflowOutcomeRequiresEvidence(step: WorkflowStep, transition: WorkflowTransition): boolean {
+  return step.kind !== 'human-approval' || 'returnTo' in transition
 }
 
 export function activeWorkflowAttempts(state: WorkflowRun): WorkflowAttempt[] {
@@ -530,8 +541,14 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
 
   if (!Object.hasOwn(step.outcomes, command.outcome)) throw new Error(`Unknown outcome '${command.outcome}'`)
   const transition = step.outcomes[command.outcome]!
+  if (!command.evidence && workflowOutcomeRequiresEvidence(step, transition))
+    throw new Error(
+      step.kind === 'human-approval'
+        ? `Decision notes are required for '${command.outcome}': say what needs to change`
+        : 'Evidence is required to complete this step'
+    )
   attempt.outcome = command.outcome
-  attempt.evidence = command.evidence
+  if (command.evidence) attempt.evidence = command.evidence
   if ('returnTo' in transition) {
     if (command.resume) throw new Error('A rework request cannot also resolve a return')
     if (transition.afterRework === 'return-to-requester') {

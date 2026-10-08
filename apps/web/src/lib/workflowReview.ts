@@ -1,6 +1,7 @@
 import {
   activeWorkflowAttempts,
   effectiveWorkflowStep,
+  workflowOutcomeRequiresEvidence,
   type WorkflowAttempt,
   type WorkflowRun,
   type WorkflowStep,
@@ -29,16 +30,12 @@ export function outcomeEffect(run: WorkflowRun, transition: WorkflowTransition):
 }
 
 /**
- * Whether deciding this outcome needs decision notes: the one place the rule lives. Core's `complete`
- * command requires non-empty evidence for every outcome today (`workflowCommandSchema`), so this
- * follows that contract. ficushq/ficus PR 480 makes forward approval notes optional and exports
- * `workflowOutcomeRequiresEvidence(step, transition)` from `@ficus/shared`; once it lands this body
- * becomes `return workflowOutcomeRequiresEvidence(step, transition)` and the surface follows.
+ * Whether deciding this outcome needs decision notes: the one place the web rule lives. It mirrors
+ * Core's authoritative check, so forward approval needs no notes and a send-back (`returnTo`) does,
+ * because the notes are the returned step's rework feedback.
  */
 export function outcomeRequiresNotes(step: WorkflowStep, transition: WorkflowTransition): boolean {
-  void step
-  void transition
-  return true
+  return workflowOutcomeRequiresEvidence(step, transition)
 }
 
 /** The notes helper for a gate's outcomes: "Required.", "Optional." or which outcomes need them. */

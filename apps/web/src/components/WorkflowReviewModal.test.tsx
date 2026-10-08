@@ -3,8 +3,8 @@ import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
+  advanceWorkflowRun,
   createWorkflowRun,
-  workflowCommandSchema,
   workflowPresetSchema,
   type WorkflowTransition,
   type WorkStream,
@@ -173,7 +173,9 @@ test('wide screens read the proposal in one scrolling column beside a decision r
     expect(rail.querySelector('a[href="https://github.com/ficushq/ficus/pull/12"]')?.textContent).toBe('PR #12')
     const notes = rail.querySelector<HTMLTextAreaElement>('textarea[aria-label="Decision and evidence"]')!
     expect(notes.getAttribute('rows')).toBe('8')
-    expect(f.doc.getElementById(notes.getAttribute('aria-describedby')!)!.textContent).toContain('Required.')
+    expect(f.doc.getElementById(notes.getAttribute('aria-describedby')!)!.textContent).toContain(
+      'Optional for Approved; required for Changes requested.'
+    )
     expect(f.decisionButtons().every((button) => rail.contains(button) && button.className.includes('w-full'))).toBe(
       true
     )
@@ -188,7 +190,7 @@ test('wide screens read the proposal in one scrolling column beside a decision r
   }
 })
 
-test('notes are required, and each outcome sends the same complete command with its sublabel', async () => {
+test('approving needs no notes, sending back does, and each outcome sends the same complete command', async () => {
   const f = await fixture()
   const advance = spyOn(client.workflows, 'advance').mockResolvedValue(undefined as never)
   let closed = 0
@@ -198,9 +200,9 @@ test('notes are required, and each outcome sends the same complete command with 
     expect(approve!.textContent).toBe('ApprovedFinishes the flow')
     expect(sendBack!.textContent).toBe('Changes requestedSends back to execute')
     expect(approve!.className).toContain('ficus-button-primary')
-    expect(approve!.disabled && sendBack!.disabled).toBe(true)
+    expect([approve!.disabled, sendBack!.disabled]).toEqual([false, true])
     await f.type('   ')
-    expect(approve!.disabled).toBe(true)
+    expect([approve!.disabled, sendBack!.disabled]).toEqual([false, true])
     await f.type('Checked the proposal against the brief')
     expect(approve!.disabled || sendBack!.disabled).toBe(false)
     await f.dom.act(async () => sendBack!.click())
@@ -335,6 +337,7 @@ test('phones stack the document over a sticky decision sheet that keeps notes ab
     expect(sheet!.querySelector('textarea')).toBeNull()
     const toggle = [...sheet!.querySelectorAll('button')].find((button) => button.textContent === 'Add notes')!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(sheet!.textContent).toContain('Notes are required to send back.')
     expect(f.decisionButtons().map((button) => sheet!.contains(button))).toEqual([true, true])
 
     // Expanded: the notes field, focused in the same tap so iOS raises the keyboard.
@@ -385,22 +388,27 @@ test('embedded documents cap heading sizes; chat markdown keeps the prose scale'
 })
 
 test('notes requiredness follows the Core complete contract from one per-outcome rule', () => {
-  // Core rejects a `complete` with empty evidence for every outcome today, so every outcome needs notes.
-  const empty = workflowCommandSchema.safeParse({
-    action: 'complete',
-    expectedVersion: 0,
-    attemptId: 1,
-    outcome: 'approved',
-    evidence: ' ',
-  })
-  expect(empty.success).toBe(false)
+  // Core accepts empty evidence only for a human approval that moves work forward.
+  const step = gateRun().state.definition.steps.find((entry) => entry.id === 'design-review')!
+  const state = gateRun().state
+  const decide = (outcome: string) => () =>
+    advanceWorkflowRun(state, {
+      action: 'complete',
+      expectedVersion: state.version,
+      attemptId: 4,
+      outcome,
+      evidence: ' ',
+    })
+  expect(decide('approved')).not.toThrow()
+  expect(decide('changes-requested')).toThrow('Decision notes are required')
   const outcomes: Array<[string, WorkflowTransition]> = [
     ['approved', { next: 'finish' }],
     ['changes-requested', { returnTo: 'execute' }],
   ]
-  const step = gateRun().state.definition.steps.find((entry) => entry.id === 'design-review')!
-  expect(outcomes.map(([, transition]) => outcomeRequiresNotes(step, transition))).toEqual([!empty.success, true])
+  expect(outcomes.map(([, transition]) => outcomeRequiresNotes(step, transition))).toEqual([false, true])
   expect(decisionNotesHint(step, outcomes)).toBe(
-    'Required. Your notes are recorded with the decision and passed to the next step.'
+    'Optional for Approved; required for Changes requested. Your notes are recorded with the decision and passed to the next step.'
   )
+  expect(decisionNotesHint(step, outcomes.slice(0, 1))).toStartWith('Optional.')
+  expect(decisionNotesHint(step, outcomes.slice(1))).toStartWith('Required.')
 })

@@ -413,12 +413,7 @@ function DecisionSheet(state: DecisionState) {
               {expanded ? 'Hide notes' : notes.trim() ? 'Edit notes' : 'Add notes'}
             </button>
             {!expanded && (
-              <span className="min-w-0 truncate text-xs text-muted">
-                {notes.trim() ||
-                  (gate.outcomes.some(([, transition]) => outcomeRequiresNotes(gate.step, transition))
-                    ? 'Notes are required to decide.'
-                    : 'Notes are optional.')}
-              </span>
+              <span className="min-w-0 truncate text-xs text-muted">{notes.trim() || collapsedNotesHint(gate)}</span>
             )}
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -431,6 +426,13 @@ function DecisionSheet(state: DecisionState) {
       )}
     </section>
   )
+}
+
+/** The collapsed phone sheet's one-line notes rule, from the same per-outcome rule as the hint. */
+function collapsedNotesHint(gate: DecisionState['gate']): string {
+  const required = gate.outcomes.filter(([, transition]) => outcomeRequiresNotes(gate.step, transition)).length
+  if (!required) return 'Notes are optional.'
+  return required === gate.outcomes.length ? 'Notes are required to decide.' : 'Notes are required to send back.'
 }
 
 function NotesField({
