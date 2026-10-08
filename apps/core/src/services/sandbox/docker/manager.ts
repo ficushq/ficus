@@ -466,6 +466,9 @@ let cachedSelectedRuntime: SandboxRuntime | null = null
  * Check if sysbox-runc is available on this system.
  * Sysbox only works on Linux with kernel 5.12+.
  */
+/** How long each synchronous `docker info` check (sysbox, socket mode) may take. */
+export const SYSBOX_CHECK_TIMEOUT_MS = 3_000
+
 export function isSysboxAvailable(): boolean {
   if (cachedSysboxAvailable !== null) return cachedSysboxAvailable
 
@@ -475,10 +478,12 @@ export function isSysboxAvailable(): boolean {
     return false
   }
 
-  // Check if sysbox-runc runtime is registered with Docker
+  // Check if sysbox-runc runtime is registered with Docker. Synchronous, so bounded: a slow or wedged
+  // Docker daemon must not block the process (a timeout counts as "not available").
   const result = Bun.spawnSync(['docker', 'info', '--format', '{{json .Runtimes}}'], {
     stdout: 'pipe',
     stderr: 'ignore',
+    timeout: SYSBOX_CHECK_TIMEOUT_MS,
   })
 
   if (result.exitCode !== 0) {
@@ -503,10 +508,11 @@ export function isSysboxAvailable(): boolean {
 export function isSocketModeAvailable(): boolean {
   if (cachedSocketModeAvailable !== null) return cachedSocketModeAvailable
 
-  // Check if Docker is running
+  // Check if Docker is running, bounded like the sysbox check (a timeout counts as "not running").
   const result = Bun.spawnSync(['docker', 'info'], {
     stdout: 'ignore',
     stderr: 'ignore',
+    timeout: SYSBOX_CHECK_TIMEOUT_MS,
   })
 
   cachedSocketModeAvailable = result.exitCode === 0
