@@ -144,7 +144,7 @@ export function RecommendationsPage() {
           Your recommendation access changed. Restart results to continue.{' '}
           <button
             onClick={() => qc.resetQueries({ queryKey: recommendationOptions.queryKey, exact: true })}
-            className="ficus-button rounded-md border border-th-border px-2.5 py-1 text-sm text-primary hover:bg-surface-hover"
+            className="ficus-button ficus-button-secondary rounded-md px-2.5 py-1 text-sm"
           >
             Restart results
           </button>
@@ -168,7 +168,7 @@ export function RecommendationsPage() {
         <button
           onClick={() => query.fetchNextPage()}
           disabled={query.isFetchingNextPage}
-          className="ficus-button rounded-md border border-th-border px-3 py-1.5 text-sm text-primary hover:bg-surface-hover disabled:opacity-50"
+          className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-sm disabled:opacity-50"
         >
           {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
         </button>

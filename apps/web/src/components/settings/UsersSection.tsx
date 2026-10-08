@@ -80,7 +80,7 @@ export function UsersSection() {
         </div>
         <button
           onClick={() => setShowInvite(!showInvite)}
-          className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover"
+          className="ficus-button ficus-button-primary px-4 py-2 rounded-md text-sm font-medium"
         >
           Invite User
         </button>
@@ -265,10 +265,7 @@ export function UserRow({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <button
-            onClick={onToggleExpand}
-            className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
-          >
+          <button onClick={onToggleExpand} className="ficus-button ficus-button-link text-xs font-medium">
             {isExpanded ? 'Hide Roles' : 'Manage Roles'}
           </button>
           <span className="text-muted">·</span>
@@ -281,7 +278,7 @@ export function UserRow({
               <button
                 onClick={() => resendMutation.mutate()}
                 disabled={resendMutation.isPending}
-                className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium disabled:opacity-50"
+                className="ficus-button ficus-button-link text-xs font-medium disabled:opacity-50"
               >
                 {resendMutation.isPending ? 'Resending...' : 'Resend Invite'}
               </button>
@@ -291,7 +288,7 @@ export function UserRow({
           <button
             onClick={onToggleDisable}
             className={clsx(
-              'ficus-button',
+              'ficus-button ficus-button-link',
               'text-xs font-medium',
               isDisabled
                 ? 'text-status-success-600 dark:text-status-success-400 hover:text-status-success-800 dark:hover:text-status-success-300'
@@ -304,7 +301,7 @@ export function UserRow({
           <button
             onClick={onDelete}
             disabled={isDeleting}
-            className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
+            className="ficus-button ficus-button-danger px-2 py-1 text-xs font-medium disabled:opacity-50"
           >
             Delete
           </button>
@@ -346,7 +343,7 @@ export function UserRow({
                       {scopeLabel(assignment) && <span className="text-muted">({scopeLabel(assignment)})</span>}
                       <button
                         onClick={() => removeMutation.mutate(assignment.id)}
-                        className="ficus-button ml-0.5 text-accent-light hover:text-status-danger-500 font-bold"
+                        className="ficus-button ficus-button-ghost ml-0.5 text-accent-light hover:text-status-danger-500 font-bold"
                         title={`Remove ${assignment.roleName || assignment.roleSlug || 'role'}`}
                         aria-label={`Remove ${assignment.roleName || assignment.roleSlug || 'role'}`}
                       >

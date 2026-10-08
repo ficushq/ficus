@@ -187,7 +187,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
               <button
                 type="submit"
                 disabled={kickoffMutation.isPending}
-                className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50"
               >
                 {kickoffMutation.isPending ? 'Sending…' : 'Send'}
               </button>
@@ -262,7 +262,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
             {squadPresets.isError && (
               <p role="alert" className="mt-1 text-xs text-muted">
                 Could not load presets.{' '}
-                <button type="button" onClick={() => squadPresets.refetch()} className="ficus-button text-accent-light">
+                <button type="button" onClick={() => squadPresets.refetch()} className="ficus-button ficus-button-link">
                   Retry
                 </button>
               </p>
@@ -291,7 +291,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
                 !name.trim() ||
                 createHostWorkspacePathError(hostWorkspacePath.trim()) !== null
               }
-              className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+              className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50"
             >
               {createMutation.isPending ? 'Creating…' : 'Create squad & send kickoff'}
             </button>
@@ -350,7 +350,7 @@ function KickoffFeedback({
         <p className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Failed to send the kickoff message.
         </p>
-        <button type="button" onClick={onRetry} className="ficus-button text-sm text-accent-light hover:underline">
+        <button type="button" onClick={onRetry} className="ficus-button ficus-button-link text-sm">
           Retry
         </button>
       </div>

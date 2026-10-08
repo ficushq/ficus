@@ -101,7 +101,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                 <button
                   onClick={() => revoke.mutate()}
                   disabled={isBusy}
-                  className="ficus-button rounded bg-status-danger-600/15 px-2 py-0.5 text-xs font-medium text-status-danger-600 hover:bg-status-danger-600/25 disabled:opacity-50 dark:text-status-danger-400"
+                  className="ficus-button ficus-button-danger rounded px-2 py-0.5 text-xs font-medium disabled:opacity-50"
                 >
                   Revoke
                 </button>
@@ -124,7 +124,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                   <button
                     type="submit"
                     disabled={!handle || isBusy}
-                    className="ficus-button ficus-button-primary rounded bg-accent px-2 py-0.5 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
+                    className="ficus-button ficus-button-primary rounded px-2 py-0.5 text-xs font-medium disabled:opacity-50"
                   >
                     Register
                   </button>
@@ -136,7 +136,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                   <button
                     onClick={() => close.mutate()}
                     disabled={isBusy}
-                    className="ficus-button rounded bg-surface-secondary px-2 py-0.5 text-xs font-medium text-secondary hover:text-primary disabled:opacity-50"
+                    className="ficus-button ficus-button-secondary rounded px-2 py-0.5 text-xs font-medium disabled:opacity-50"
                   >
                     Close
                   </button>
@@ -144,7 +144,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                   <button
                     onClick={() => open.mutate()}
                     disabled={isBusy}
-                    className="ficus-button rounded bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent-light hover:bg-accent/25 disabled:opacity-50"
+                    className="ficus-button ficus-button-secondary rounded px-2 py-0.5 text-xs font-medium disabled:opacity-50"
                   >
                     Open
                   </button>

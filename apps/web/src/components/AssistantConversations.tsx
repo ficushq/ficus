@@ -56,7 +56,7 @@ export function AssistantConversationList({
             }}
             aria-current={selectedId === agent.id ? 'true' : undefined}
             className={clsx(
-              'ficus-button flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-surface-secondary',
+              'ficus-button ficus-button-ghost flex w-full items-center gap-2.5 px-3 py-2.5 text-sm',
               selectedId === agent.id && 'bg-accent/10'
             )}
           >
@@ -122,7 +122,7 @@ export function AssistantConversationSwitcher({
         <button
           {...popover.triggerProps}
           onClick={popover.toggle}
-          className="ficus-button flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-primary hover:bg-surface-secondary"
+          className="ficus-button ficus-button-ghost flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-primary"
           title="Switch conversation"
         >
           <span className="truncate">{selected ? assistantConversationTitle(selected) : 'New conversation'}</span>
@@ -136,7 +136,7 @@ export function AssistantConversationSwitcher({
             setOpen(false)
             onNew()
           }}
-          className="ficus-button flex items-center gap-1 text-sm text-accent-light px-2 py-2 shrink-0 disabled:opacity-40"
+          className="ficus-button ficus-button-ghost flex items-center gap-1 text-sm text-accent-light px-2 py-2 shrink-0 disabled:opacity-40"
         >
           <PlusIcon className="w-4 h-4" />
           <span className="hidden sm:inline">New chat</span>

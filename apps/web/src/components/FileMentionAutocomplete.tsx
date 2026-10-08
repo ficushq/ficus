@@ -245,9 +245,11 @@ export function FileMentionAutocomplete({
                 data-selected={index === selectedIndex}
                 onClick={() => onSelect(file)}
                 className={clsx(
-                  'ficus-button',
+                  'ficus-button ficus-button-ghost',
                   'w-full text-left px-3 py-2 text-sm font-mono truncate transition-colors',
-                  index === selectedIndex ? 'bg-accent/10 text-accent-light' : 'text-primary hover:bg-surface-hover'
+                  index === selectedIndex
+                    ? 'bg-accent/10 hover:bg-accent/10 text-accent-light hover:text-accent-light'
+                    : 'text-primary'
                 )}
               >
                 @{file}

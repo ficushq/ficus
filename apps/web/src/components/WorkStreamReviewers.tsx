@@ -35,7 +35,7 @@ function ActiveWorkStreamReviewers({ stream }: { stream: WorkStream }) {
           {can('workstreams:update') && (
             <button
               type="button"
-              className="ficus-button text-xs text-muted"
+              className="ficus-button ficus-button-danger px-2 py-1 text-xs"
               disabled={update.isPending}
               onClick={() => update.mutate(ids.filter((value) => value !== id))}
             >

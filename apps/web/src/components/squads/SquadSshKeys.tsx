@@ -97,7 +97,7 @@ export function SquadSshKeys({ squadId }: Props) {
         {canWriteSsh && !showAddForm && (
           <button
             onClick={() => setShowAddForm(true)}
-            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-on-accent hover:bg-accent/90 transition-colors"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md font-medium transition-colors"
           >
             Add Key
           </button>
@@ -137,7 +137,7 @@ export function SquadSshKeys({ squadId }: Props) {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleCopyPublicKey(key)}
-                  className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-secondary hover:bg-surface-hover transition-colors"
+                  className="ficus-button ficus-button-secondary px-2 py-1 text-xs rounded transition-colors"
                 >
                   {copiedKey === key.name ? '✓ Copied' : 'Copy Public Key'}
                 </button>
@@ -146,8 +146,6 @@ export function SquadSshKeys({ squadId }: Props) {
                     onConfirm={() => deleteMutation.mutate(key.name)}
                     label="Delete"
                     confirmLabel="Confirm?"
-                    className="ficus-button px-2 py-1 text-xs rounded border border-status-danger-300 dark:border-status-danger-800 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 transition-colors"
-                    confirmClassName="px-2 py-1 text-xs rounded border border-status-danger-500 bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 transition-colors"
                     disabled={deleteMutation.isPending}
                   />
                 )}
@@ -233,7 +231,7 @@ export function SquadSshKeys({ squadId }: Props) {
                 setPrivateKey('')
                 setPublicKey('')
               }}
-              className="ficus-button px-3 py-1.5 text-sm rounded-md font-medium text-secondary hover:bg-surface-hover transition-colors"
+              className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm rounded-md font-medium transition-colors"
             >
               Cancel
             </button>
@@ -241,11 +239,9 @@ export function SquadSshKeys({ squadId }: Props) {
               type="submit"
               disabled={!keyName.trim() || !privateKey.trim() || !validateKeyName(keyName) || addMutation.isPending}
               className={clsx(
-                'ficus-button',
+                'ficus-button ficus-button-primary',
                 'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
-                keyName.trim() && privateKey.trim() && validateKeyName(keyName)
-                  ? 'bg-accent text-on-accent hover:bg-accent/90'
-                  : 'bg-surface-secondary text-muted cursor-not-allowed'
+                !(keyName.trim() && privateKey.trim() && validateKeyName(keyName)) && 'opacity-50 cursor-not-allowed'
               )}
             >
               {addMutation.isPending ? 'Adding...' : 'Add Key'}

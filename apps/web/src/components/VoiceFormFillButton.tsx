@@ -50,13 +50,13 @@ export function VoiceFormFillButton({
         onTouchEnd={() => endPress()}
         disabled={disabled || state === 'extracting' || state === 'transcribing'}
         className={clsx(
-          'ficus-button',
+          'ficus-button ficus-button-ghost',
           'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed transition-colors disabled:opacity-50',
           state === 'recording'
             ? 'border-status-danger-400 dark:border-status-danger-600 bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300'
             : state === 'transcribing' || state === 'extracting'
-              ? 'border-th-border bg-surface-secondary text-placeholder'
-              : 'border-th-border hover:border-status-danger-400 dark:hover:border-status-danger-600 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 text-secondary hover:text-status-danger-700 dark:hover:text-status-danger-300'
+              ? 'border-th-border bg-surface-secondary'
+              : 'border-th-border hover:border-status-danger-400 dark:hover:border-status-danger-600 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 hover:text-status-danger-700 dark:hover:text-status-danger-300'
         )}
       >
         {state === 'extracting' ? (

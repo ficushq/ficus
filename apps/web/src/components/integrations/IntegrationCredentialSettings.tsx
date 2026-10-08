@@ -137,7 +137,7 @@ export function IntegrationCredentialSettings({
         )}
         {canWrite && (
           <button
-            className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
+            className="ficus-button ficus-button-primary rounded-md px-3 py-2 text-sm disabled:opacity-50"
             disabled={save.isPending || config.isError || !Object.keys(draft).length}
           >
             {saveLabel ?? (provider === 'web-push' ? 'Save' : 'Save credentials')}

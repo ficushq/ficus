@@ -254,7 +254,7 @@ function SetupSteps({
                 <div className="mt-5 flex justify-end">
                   <button
                     type="button"
-                    className="ficus-button text-sm text-accent-light"
+                    className="ficus-button ficus-button-primary px-3 py-1.5 text-sm"
                     onClick={() => reveal(core[index + 1]?.id ?? null)}
                   >
                     Continue →
@@ -328,7 +328,7 @@ function SetupStepHeader({
         aria-controls={`setup-step-${id}`}
         data-onboarding-step
         onClick={onToggle}
-        className="ficus-button flex min-w-0 flex-1 items-center gap-3 text-left"
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
       >
         <span
           aria-hidden="true"
@@ -351,7 +351,12 @@ function SetupStepHeader({
         )}
       </button>
       {onSkip && (
-        <button type="button" disabled={pending} onClick={onSkip} className="ficus-button px-2 py-1 text-xs text-muted">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={onSkip}
+          className="ficus-button ficus-button-ghost px-2 py-1 text-xs"
+        >
           {state === 'skipped' ? 'Unskip' : 'Skip'}
         </button>
       )}
@@ -361,7 +366,7 @@ function SetupStepHeader({
         aria-expanded={expanded}
         aria-controls={`setup-step-${id}`}
         onClick={onToggle}
-        className="ficus-button p-1 text-muted"
+        className="ficus-button ficus-button-ghost p-1"
       >
         <ChevronDownIcon className={clsx('h-4 w-4', expanded && 'rotate-180')} />
       </button>
@@ -442,7 +447,7 @@ function DeepLinkItemRow({ meta, item, onSkip, onUnskip, pending, embedded }: It
           type="button"
           onClick={item.state === 'skipped' ? onUnskip : onSkip}
           disabled={pending}
-          className="ficus-button shrink-0 px-3 py-1.5 text-sm rounded-md border border-th-border text-secondary hover:bg-surface-hover disabled:opacity-50"
+          className="ficus-button ficus-button-secondary shrink-0 px-3 py-1.5 text-sm rounded-md disabled:opacity-50"
         >
           {item.state === 'skipped' ? 'Unskip' : 'Skip'}
         </button>
@@ -481,7 +486,7 @@ function ConnectionStep({ meta, item, onSkip, onUnskip, pending, embedded }: Ite
         </div>
       )}
       {item.state === 'done' && meta.id !== 'github' && (
-        <button type="button" className="ficus-button text-sm text-accent-light" onClick={() => setEditing(!editing)}>
+        <button type="button" className="ficus-button ficus-button-link text-sm" onClick={() => setEditing(!editing)}>
           {editing ? 'Close setup' : 'Manage connection'}
         </button>
       )}

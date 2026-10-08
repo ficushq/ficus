@@ -84,7 +84,7 @@ export function AgentComposerStatus({
           title={`Context ${percent}% used · ${formatTokens(context.tokens)} tokens`}
           heading={`Context ${percent}% used · ${formatTokens(context.tokens)} tokens`}
           width={260}
-          className="ficus-button flex min-h-[44px] items-center gap-1 rounded-md px-2 text-xs tabular-nums text-muted hover:bg-surface-hover hover:text-primary md:min-h-0 md:py-1.5"
+          className="ficus-button ficus-button-ghost flex min-h-[44px] items-center gap-1 rounded-md px-2 text-xs tabular-nums md:min-h-0 md:py-1.5"
           items={[
             {
               id: 'compact',
@@ -126,7 +126,7 @@ export function AgentComposerStatus({
             </button>
             <button
               type="button"
-              className="ficus-button rounded-md bg-status-danger-600 px-3 py-1.5 text-sm font-medium text-on-strong hover:bg-status-danger-700"
+              className="ficus-button ficus-button-danger rounded-md px-3 py-1.5 text-sm font-medium"
               onClick={() => {
                 setConfirmReset(false)
                 onReset()

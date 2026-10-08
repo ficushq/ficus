@@ -107,7 +107,7 @@ export function WorkspaceTab({ squadId, isTaskTerminal = false }: WorkspaceTabPr
           <>
             <button
               onClick={() => setSelectedFile(null)}
-              className="ficus-button shrink-0 px-3 py-2 text-sm text-accent-light hover:text-link-hover border-b border-th-border bg-surface text-left"
+              className="ficus-button ficus-button-ghost shrink-0 px-3 py-2 text-sm text-accent-light hover:text-link-hover border-b border-th-border bg-surface text-left"
             >
               ← Back to files
             </button>

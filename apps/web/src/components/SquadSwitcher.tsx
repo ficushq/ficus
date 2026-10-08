@@ -43,8 +43,8 @@ export function SquadSwitcher({ active }: { active: boolean }) {
       width={240}
       className={
         active
-          ? 'ficus-button flex items-center rounded-none px-2 text-accent-light hover:bg-accent/10'
-          : 'ficus-button flex items-center rounded-none px-2 text-secondary hover:bg-surface-hover hover:text-accent-light'
+          ? 'ficus-button ficus-button-ghost flex items-center rounded-none px-2 text-accent-light hover:text-accent-light hover:bg-accent/10'
+          : 'ficus-button ficus-button-ghost flex items-center rounded-none px-2 hover:text-accent-light'
       }
       items={[
         ...visible.map((squad) => ({

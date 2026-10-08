@@ -91,7 +91,7 @@ export function WorkflowGraph({
   metadata?: Record<string, unknown>
 }) {
   const control = clsx(
-    'ficus-button flex shrink-0 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40',
+    'ficus-button ficus-button-ghost flex shrink-0 items-center justify-center rounded-md disabled:opacity-40',
     onConnect ? 'h-8 w-8' : 'h-7 w-7'
   )
   const marker = useId().replaceAll(':', '') + '-flow-arrow'
@@ -920,7 +920,7 @@ export function WorkflowGraph({
                     {editable && step && selected === node.id && onDeleteStep && (
                       <button
                         type="button"
-                        className="ficus-button absolute z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-status-danger-500/10 hover:text-status-danger-400"
+                        className="ficus-button ficus-button-ghost absolute z-10 flex h-7 w-7 items-center justify-center rounded-md hover:bg-status-danger-500/10 hover:text-status-danger-400"
                         style={{ left: node.x + W - 35, top: node.y + 5 }}
                         title={`Delete ${node.label} (Delete or Backspace)`}
                         onClick={onDeleteStep}
@@ -1044,7 +1044,7 @@ export function WorkflowGraph({
               <button
                 type="button"
                 aria-label="Dismiss workflow warning"
-                className="ficus-button shrink-0 p-1 text-muted"
+                className="ficus-button ficus-button-ghost shrink-0 p-1"
                 onClick={onDismissNotice}
               >
                 <CloseIcon className="h-4 w-4" />

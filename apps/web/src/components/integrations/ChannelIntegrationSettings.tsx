@@ -208,7 +208,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
                   {managedReconnectNeeded && (
                     <button
                       type="button"
-                      className="ficus-button text-xs"
+                      className="ficus-button ficus-button-secondary px-2.5 py-1 disabled:opacity-50 text-xs"
                       disabled={authorizeManaged.isPending}
                       onClick={() => authorizeManaged.mutate(managedConnection.id)}
                     >
@@ -217,7 +217,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
                   )}
                   <button
                     type="button"
-                    className="ficus-button text-xs"
+                    className="ficus-button ficus-button-danger px-2.5 py-1 disabled:opacity-50 text-xs"
                     disabled={disconnectManaged.isPending}
                     onClick={() => {
                       if (!disconnectArmed) {

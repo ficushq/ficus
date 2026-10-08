@@ -106,7 +106,7 @@ export function MigrateControl({
           mutation.mutate()
         }}
         disabled={!target || mutation.isPending}
-        className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium disabled:opacity-50"
+        className="ficus-button ficus-button-link text-xs font-medium disabled:opacity-50"
       >
         {mutation.isPending ? 'Migrating…' : 'Migrate'}
       </button>

@@ -46,7 +46,7 @@ export function PasskeyRecoveryRequest({ onBack }: Props) {
           account and signs out its other sessions.
         </p>
         <p className="text-xs text-secondary text-center">
-          <button type="button" onClick={onBack} className="ficus-button text-accent-light hover:underline">
+          <button type="button" onClick={onBack} className="ficus-button ficus-button-link">
             Back to login
           </button>
         </p>
@@ -75,7 +75,7 @@ export function PasskeyRecoveryRequest({ onBack }: Props) {
       <button
         type="submit"
         disabled={!email.trim() || loading}
-        className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+        className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md font-medium text-sm disabled:opacity-50"
       >
         {loading ? 'Sending…' : 'Send recovery link'}
       </button>
@@ -85,7 +85,7 @@ export function PasskeyRecoveryRequest({ onBack }: Props) {
         </p>
       )}
       <p className="text-xs text-secondary text-center">
-        <button type="button" onClick={onBack} className="ficus-button text-accent-light hover:underline">
+        <button type="button" onClick={onBack} className="ficus-button ficus-button-link">
           Back to login
         </button>
       </p>

@@ -82,7 +82,7 @@ export function GitHubRepositoryAccess({
         </a>
         <button
           type="button"
-          className="ficus-button text-accent-light"
+          className="ficus-button ficus-button-link"
           disabled={access.isFetching}
           onClick={() => void access.refetch()}
         >

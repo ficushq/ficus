@@ -86,7 +86,7 @@ export function WorkStreamApprovalConfirmation({
             type="button"
             onClick={onCancel}
             disabled={isPending}
-            className="ficus-button min-h-10 px-3 py-2 text-sm text-secondary hover:bg-surface-hover disabled:opacity-50"
+            className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
           >
             Cancel
           </button>

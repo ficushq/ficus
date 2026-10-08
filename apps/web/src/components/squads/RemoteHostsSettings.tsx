@@ -145,7 +145,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
         {canWrite && !showAddForm && (
           <button
             onClick={() => setShowAddForm(true)}
-            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-on-accent hover:bg-accent/90 transition-colors"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md font-medium transition-colors"
           >
             Add Host
           </button>
@@ -267,7 +267,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
             <button
               type="button"
               onClick={closeForm}
-              className="ficus-button px-3 py-1.5 text-sm rounded-md font-medium text-secondary hover:bg-surface-hover transition-colors"
+              className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm rounded-md font-medium transition-colors"
             >
               {added ? 'Done' : 'Cancel'}
             </button>
@@ -276,11 +276,9 @@ export function RemoteHostsSettings({ squadId }: Props) {
                 type="submit"
                 disabled={!canSubmit || addMutation.isPending}
                 className={clsx(
-                  'ficus-button',
+                  'ficus-button ficus-button-primary',
                   'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
-                  canSubmit
-                    ? 'bg-accent text-on-accent hover:bg-accent/90'
-                    : 'bg-surface-secondary text-muted cursor-not-allowed'
+                  !canSubmit && 'opacity-50 cursor-not-allowed'
                 )}
               >
                 {addMutation.isPending ? 'Adding...' : 'Add Host'}
@@ -363,20 +361,11 @@ function RemoteHostRow({
         {canWrite && <CheckControl squadId={squadId} hostId={host.id} />}
         <button
           onClick={handleCopy}
-          className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-secondary hover:bg-surface-hover transition-colors"
+          className="ficus-button ficus-button-secondary px-2 py-1 text-xs rounded transition-colors"
         >
           {copied ? '✓ Copied' : 'Copy Public Key'}
         </button>
-        {canWrite && (
-          <ConfirmButton
-            onConfirm={onRevoke}
-            label="Revoke"
-            confirmLabel="Confirm?"
-            className="ficus-button px-2 py-1 text-xs rounded border border-status-danger-300 dark:border-status-danger-800 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 transition-colors"
-            confirmClassName="px-2 py-1 text-xs rounded border border-status-danger-500 bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 transition-colors"
-            disabled={revoking}
-          />
-        )}
+        {canWrite && <ConfirmButton onConfirm={onRevoke} label="Revoke" confirmLabel="Confirm?" disabled={revoking} />}
       </div>
     </div>
   )
@@ -394,7 +383,7 @@ function CheckControl({ squadId, hostId }: { squadId: string; hostId: string }) 
       <button
         onClick={() => checkMutation.mutate()}
         disabled={checkMutation.isPending}
-        className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-secondary hover:bg-surface-hover transition-colors disabled:opacity-50"
+        className="ficus-button ficus-button-secondary px-2 py-1 text-xs rounded transition-colors disabled:opacity-50"
       >
         {checkMutation.isPending ? 'Checking…' : 'Check'}
       </button>

@@ -357,7 +357,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
           <div className="mt-4 space-y-2">
             <button
               onClick={() => setShowInbox(true)}
-              className="ficus-button ficus-button-primary w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover"
+              className="ficus-button ficus-button-primary w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-md"
             >
               <InboxIcon className="w-4 h-4" />
               View Inbox
@@ -371,7 +371,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
                   return next
                 })
               }}
-              className="ficus-button w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover"
+              className="ficus-button ficus-button-secondary w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-md"
             >
               Open Chat
             </button>

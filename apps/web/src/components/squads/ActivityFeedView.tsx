@@ -133,12 +133,10 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
         <button
           type="button"
           className={clsx(
-            'ficus-button',
+            'ficus-button ficus-button-ghost',
             'rounded-lg px-3 text-xs transition-colors',
             isGlobalFeed ? 'py-2' : 'py-1.5',
-            kinds.length === 0
-              ? 'bg-selection text-accent-light'
-              : 'text-secondary hover:bg-surface-hover hover:text-primary'
+            kinds.length === 0 && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
           )}
           onClick={() => onKindsChange([])}
           aria-pressed={kinds.length === 0}
@@ -152,10 +150,10 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
               type="button"
               key={group.label}
               className={clsx(
-                'ficus-button',
+                'ficus-button ficus-button-ghost',
                 'rounded-lg px-3 text-xs transition-colors',
                 isGlobalFeed ? 'py-2' : 'py-1.5',
-                active ? 'bg-selection text-accent-light' : 'text-secondary hover:bg-surface-hover hover:text-primary'
+                active && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
               )}
               onClick={() =>
                 onKindsChange((current) =>
@@ -316,7 +314,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           event.stopPropagation()
                           navigate(chip.href)
                         }}
-                        className="ficus-button pointer-events-auto relative z-10 col-start-2 row-start-1 min-w-0 max-w-full self-start justify-self-end overflow-hidden rounded bg-pill px-1.5 py-0.5 text-right text-[10px] font-sans font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:col-start-2 lg:justify-self-start lg:text-left"
+                        className="pointer-events-auto relative z-10 col-start-2 row-start-1 min-w-0 max-w-full self-start justify-self-end overflow-hidden rounded bg-pill px-1.5 py-0.5 text-right text-[10px] font-sans font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:col-start-2 lg:justify-self-start lg:text-left"
                         data-activity-column="squad"
                         aria-label={`Open activity for ${chip.label}`}
                         title={chip.label}
@@ -366,7 +364,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           event.stopPropagation()
                           navigate(workStreamChip.href)
                         }}
-                        className="ficus-button pointer-events-auto relative z-10 ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="pointer-events-auto relative z-10 ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         aria-label={`Open work stream #${workStreamChip.number}`}
                       >
                         #{workStreamChip.number}

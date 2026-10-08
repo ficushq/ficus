@@ -335,7 +335,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           <button
             onClick={() => setHeaderExpanded((expanded) => !expanded)}
             aria-label={headerExpanded ? 'Collapse details' : 'Expand details'}
-            className="ficus-button p-1 text-muted hover:text-primary rounded-md hover:bg-surface-hover transition-colors"
+            className="ficus-button ficus-button-ghost p-1 rounded-md transition-colors"
           >
             {headerExpanded ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
           </button>
@@ -345,7 +345,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
                 {...headerMenu.triggerProps}
                 onClick={headerMenu.toggle}
                 aria-label="Squad actions"
-                className="ficus-button p-1 text-muted hover:text-primary rounded-md hover:bg-surface-hover transition-colors"
+                className="ficus-button ficus-button-ghost p-1 rounded-md transition-colors"
               >
                 <MoreIcon className="w-4 h-4" />
               </button>
@@ -359,7 +359,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
                 <MenuItem
                   opensDialog
                   onClick={() => setShowDeleteModal(true)}
-                  className="ficus-button w-full px-3 py-2 text-left text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20"
+                  className="ficus-button ficus-button-ghost w-full px-3 py-2 text-left text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20"
                 >
                   Archive
                 </MenuItem>
@@ -417,7 +417,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           {canDeleteSquad && (
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="ficus-button shrink-0 px-2.5 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 rounded-md transition-colors"
+              className="ficus-button ficus-button-danger shrink-0 px-2.5 py-1 text-xs font-medium rounded-md transition-colors"
             >
               Archive
             </button>

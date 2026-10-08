@@ -85,7 +85,7 @@ export function WorkflowPicker({
       {onCustomize && value?.kind === 'inline' && (
         <button
           type="button"
-          className="ficus-button text-sm text-accent"
+          className="ficus-button ficus-button-link text-sm"
           disabled={disabled}
           onClick={() => onCustomize(structuredClone(value.definition))}
         >
@@ -95,7 +95,7 @@ export function WorkflowPicker({
       {onCustomize && value?.kind === 'preset' && definition && (
         <button
           type="button"
-          className="ficus-button text-sm text-accent"
+          className="ficus-button ficus-button-link text-sm"
           disabled={disabled}
           title="Start a custom flow from this preset (it will no longer follow the preset)"
           onClick={() => onCustomize(structuredClone(definition))}

@@ -587,7 +587,6 @@ function ScheduleCard({
             onToggle(schedule)
           }}
           className={clsx(
-            'ficus-button',
             'relative w-9 h-5 rounded-full transition-colors shrink-0',
             schedule.enabled ? 'bg-status-success-500' : 'bg-th-border'
           )}
@@ -767,7 +766,7 @@ function ScheduleDetailModal({
             <button
               onClick={() => triggerMutation.mutate()}
               disabled={triggerMutation.isPending || !canTriggerSchedules}
-              className="ficus-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors"
+              className="ficus-button ficus-button-ghost p-1 rounded transition-colors"
               title={canTriggerSchedules ? 'Trigger now' : 'You do not have permission to trigger schedules'}
             >
               <PlayIcon className="w-4 h-4" />
@@ -775,7 +774,7 @@ function ScheduleDetailModal({
             <button
               onClick={() => setIsEditing(true)}
               disabled={!canUpdateSchedules}
-              className="ficus-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors disabled:opacity-50"
+              className="ficus-button ficus-button-ghost p-1 rounded transition-colors disabled:opacity-50"
               title={canUpdateSchedules ? 'Edit schedule' : 'You do not have permission to edit schedules'}
             >
               <PencilIcon className="w-4 h-4" />
@@ -808,7 +807,7 @@ function ScheduleDetailModal({
               onClick={toggleEnabled}
               disabled={updateMutation.isPending || !canUpdateSchedules}
               className={clsx(
-                'ficus-button',
+                'ficus-button ficus-button-secondary',
                 'flex items-center gap-2 px-2 py-1 rounded-md transition-colors',
                 schedule.enabled
                   ? 'bg-status-success-100 dark:bg-status-success-900/30 hover:bg-status-success-200 dark:hover:bg-status-success-900/50'
@@ -999,14 +998,14 @@ function ScheduleDetailModal({
             <button
               onClick={saveEdits}
               disabled={updateMutation.isPending}
-              className="ficus-button ficus-button-primary px-3 py-1.5 bg-accent text-on-accent text-xs font-medium rounded hover:bg-accent-hover disabled:opacity-50"
+              className="ficus-button ficus-button-primary px-3 py-1.5 text-xs font-medium rounded disabled:opacity-50"
             >
               {updateMutation.isPending ? 'Saving...' : 'Save'}
             </button>
             <button
               onClick={cancelEdits}
               disabled={updateMutation.isPending}
-              className="ficus-button px-3 py-1.5 bg-surface-secondary text-secondary text-xs font-medium rounded hover:bg-surface-hover"
+              className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs font-medium rounded"
             >
               Cancel
             </button>
@@ -1096,7 +1095,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
               <button
                 onClick={() => enableMutation.mutate()}
                 disabled={enableMutation.isPending || !canUpdateSchedules}
-                className="ficus-button text-xs text-accent-light hover:text-link-hover disabled:opacity-50"
+                className="ficus-button ficus-button-link text-xs disabled:opacity-50"
                 title={canUpdateSchedules ? 'Enable webhook' : 'You do not have permission to edit schedules'}
               >
                 {enableMutation.isPending ? 'Enabling...' : 'Enable'}
@@ -1106,7 +1105,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 <button
                   onClick={() => regenerateMutation.mutate()}
                   disabled={regenerateMutation.isPending || !canUpdateSchedules}
-                  className="ficus-button inline-flex items-center gap-1 text-xs text-muted hover:text-primary disabled:opacity-50"
+                  className="ficus-button ficus-button-link inline-flex items-center gap-1 text-xs disabled:opacity-50"
                   title={canUpdateSchedules ? 'Regenerate token' : 'You do not have permission to edit schedules'}
                 >
                   <RefreshIcon className="w-3 h-3" />
@@ -1115,7 +1114,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 <button
                   onClick={() => disableMutation.mutate()}
                   disabled={disableMutation.isPending || !canUpdateSchedules}
-                  className="ficus-button text-xs text-status-danger-500 hover:text-status-danger-600 disabled:opacity-50"
+                  className="ficus-button ficus-button-danger px-2 py-1 text-xs disabled:opacity-50"
                 >
                   {disableMutation.isPending ? 'Disabling...' : 'Disable'}
                 </button>
@@ -1135,7 +1134,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 </code>
                 <button
                   onClick={() => copyToClipboard(showToken)}
-                  className="ficus-button p-1 text-muted hover:text-primary"
+                  className="ficus-button ficus-button-ghost p-1"
                   title="Copy token"
                 >
                   <ClipboardIcon className="w-4 h-4" />
@@ -1155,7 +1154,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 </code>
                 <button
                   onClick={() => copyToClipboard(webhookUrl)}
-                  className="ficus-button p-1 text-muted hover:text-primary"
+                  className="ficus-button ficus-button-ghost p-1"
                   title="Copy URL"
                 >
                   <ClipboardIcon className="w-4 h-4" />

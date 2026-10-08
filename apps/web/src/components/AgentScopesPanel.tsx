@@ -87,7 +87,7 @@ function AgentScopesPanelContent({ agentId }: Props) {
                 <Can permission="agents:scopes:manage">
                   <button
                     type="button"
-                    className="ficus-button text-muted hover:text-danger"
+                    className="ficus-button ficus-button-ghost hover:text-status-danger-600 dark:hover:text-status-danger-400"
                     aria-label={`Revoke ${scope.permission}`}
                     disabled={isMutating}
                     onClick={() => revokeMutation.mutate(scope.permission)}
@@ -111,11 +111,9 @@ function AgentScopesPanelContent({ agentId }: Props) {
             <button
               type="button"
               className={clsx(
-                'ficus-button',
+                'ficus-button ficus-button-primary',
                 'rounded-md px-3 py-1.5 text-sm font-medium',
-                grantableSelections.length === 0 || isMutating
-                  ? 'cursor-not-allowed bg-surface text-muted'
-                  : 'bg-accent text-on-accent hover:bg-accent-hover'
+                grantableSelections.length === 0 || (isMutating && 'cursor-not-allowed opacity-50')
               )}
               disabled={grantableSelections.length === 0 || isMutating}
               onClick={() => void grantSelected()}

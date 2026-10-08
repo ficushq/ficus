@@ -78,7 +78,7 @@ export function SharedPromptPickerView({
                   aria-label={`Move ${id} up`}
                   disabled={loading || index === 0}
                   onClick={() => move(index, -1)}
-                  className="ficus-button text-xs text-muted hover:text-primary disabled:opacity-30"
+                  className="ficus-button ficus-button-ghost text-xs disabled:opacity-30"
                 >
                   ▲
                 </button>
@@ -87,7 +87,7 @@ export function SharedPromptPickerView({
                   aria-label={`Move ${id} down`}
                   disabled={loading || index === value.length - 1}
                   onClick={() => move(index, 1)}
-                  className="ficus-button text-xs text-muted hover:text-primary disabled:opacity-30"
+                  className="ficus-button ficus-button-ghost text-xs disabled:opacity-30"
                 >
                   ▼
                 </button>
@@ -96,7 +96,7 @@ export function SharedPromptPickerView({
                   aria-label={`Remove ${id}`}
                   disabled={loading}
                   onClick={() => onChange(value.filter((_entry, position) => position !== index))}
-                  className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300"
+                  className="ficus-button ficus-button-ghost text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300"
                 >
                   ✕
                 </button>

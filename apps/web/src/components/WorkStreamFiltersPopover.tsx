@@ -11,8 +11,8 @@ export function WorkStreamFiltersPopover({ count, children }: { count: number; c
         {...popover.triggerProps}
         type="button"
         className={clsx(
-          'ficus-button flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors',
-          count > 0 ? 'bg-selection text-accent-light' : 'text-secondary hover:bg-surface-hover hover:text-primary'
+          'ficus-button ficus-button-ghost flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors',
+          count > 0 && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
         )}
         onClick={popover.toggle}
       >

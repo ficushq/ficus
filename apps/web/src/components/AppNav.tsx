@@ -193,7 +193,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             {isChat && (
               <button
                 onClick={() => navigate('/chat?new')}
-                className="ficus-button md:hidden p-2 text-accent-light hover:text-accent-light"
+                className="ficus-button ficus-button-ghost md:hidden p-2 text-accent-light hover:text-accent-light"
                 title="New chat"
               >
                 <PencilIcon className="w-5 h-5" />
@@ -205,7 +205,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
               title="Assistant (⌘K / Ctrl+K)"
               aria-label="Assistant"
               aria-expanded={['open', 'expanded'].includes(new URLSearchParams(location.search).get('chat') ?? '')}
-              className="ficus-button group relative flex items-center gap-1.5 p-2 text-muted hover:text-accent-light hover:bg-surface-hover"
+              className="ficus-button ficus-button-ghost group relative flex items-center gap-1.5 p-2 hover:text-accent-light"
             >
               <SparklesIcon className="w-5 h-5 motion-safe:transition-transform motion-safe:duration-150 motion-safe:group-hover:rotate-6 motion-safe:group-hover:scale-110" />
               <span className="hidden lg:inline text-xs">Assistant</span>
@@ -216,7 +216,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
               href={farmHref()}
               title="Farm"
               aria-label="Open the farm"
-              className="ficus-button flex items-center justify-center p-2 rounded-md text-muted hover:text-primary hover:bg-surface-hover"
+              className="ficus-button ficus-button-ghost flex items-center justify-center p-2 rounded-md"
             >
               <SproutIcon className="w-5 h-5" />
             </a>
@@ -239,9 +239,9 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             <button
               onClick={() => window.dispatchEvent(new Event('open-inbox-popup'))}
               className={clsx(
-                'ficus-button',
+                'ficus-button ficus-button-ghost',
                 'relative hidden md:flex items-center justify-center p-2 rounded-md',
-                inboxPopupOpen ? 'text-accent-light' : 'text-muted hover:text-primary hover:bg-surface-hover'
+                inboxPopupOpen && 'text-accent-light hover:text-accent-light'
               )}
               title="Inbox (I)"
             >
@@ -353,7 +353,7 @@ export function MobileBottomNav({
                 more.toggle()
               }}
               className={clsx(
-                'ficus-button ficus-dock-item',
+                'ficus-dock-item',
                 'flex flex-col items-center justify-center w-full h-full',
                 isMoreActive || moreOpen ? 'text-accent-light' : 'text-muted hover:text-primary'
               )}
@@ -378,9 +378,11 @@ export function MobileBottomNav({
                     aria-current={isActive ? 'page' : undefined}
                     onClick={() => navigate(getTabNavigationTarget(location.pathname + location.search, item.to))}
                     className={clsx(
-                      'ficus-button',
+                      'ficus-button ficus-button-ghost',
                       'flex items-center gap-3 w-full px-4 py-3 text-sm',
-                      isActive ? 'text-accent-light bg-selection' : 'text-primary hover:bg-surface-hover'
+                      isActive
+                        ? 'text-accent-light hover:text-accent-light bg-selection hover:bg-selection'
+                        : 'text-primary'
                     )}
                   >
                     {item.icon}

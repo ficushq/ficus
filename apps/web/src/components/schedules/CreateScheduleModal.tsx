@@ -182,7 +182,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               </code>
               <button
                 onClick={() => copyToClipboard(webhookResult.token)}
-                className="ficus-button p-1.5 text-muted hover:text-primary bg-surface rounded border border-status-review-200 dark:border-status-review-800"
+                className="ficus-button ficus-button-ghost p-1.5 bg-surface rounded border border-status-review-200 dark:border-status-review-800"
                 title="Copy token"
               >
                 <ClipboardIcon className="w-4 h-4" />
@@ -199,7 +199,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               </code>
               <button
                 onClick={() => copyToClipboard(webhookResult.webhookUrl)}
-                className="ficus-button p-1.5 text-muted hover:text-primary bg-surface-secondary rounded border border-th-border"
+                className="ficus-button ficus-button-ghost p-1.5 bg-surface-secondary rounded border border-th-border"
                 title="Copy URL"
               >
                 <ClipboardIcon className="w-4 h-4" />
@@ -218,10 +218,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           </details>
 
           <div className="flex justify-end pt-2">
-            <button
-              onClick={onClose}
-              className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded hover:bg-accent-hover transition-colors"
-            >
+            <button onClick={onClose} className="ficus-button ficus-button-primary px-4 py-2 rounded transition-colors">
               Done
             </button>
           </div>
@@ -534,14 +531,14 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="ficus-button px-4 py-2 text-secondary hover:text-primary rounded hover:bg-surface-hover transition-colors"
+            className="ficus-button ficus-button-secondary px-4 py-2 rounded transition-colors"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-50 transition-colors"
+            className="ficus-button ficus-button-primary px-4 py-2 rounded disabled:opacity-50 transition-colors"
           >
             {createMutation.isPending ? 'Creating...' : 'Create Schedule'}
           </button>

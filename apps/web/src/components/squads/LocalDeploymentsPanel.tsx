@@ -191,7 +191,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
           <button
             type="button"
             onClick={() => setShowDone((value) => !value)}
-            className="ficus-button w-full flex items-center justify-between text-left py-1 text-xs font-semibold uppercase tracking-wide text-muted hover:text-primary transition-colors"
+            className="w-full flex items-center justify-between text-left py-1 text-xs font-semibold uppercase tracking-wide text-muted hover:text-primary transition-colors"
           >
             <span className="flex items-center gap-1.5">
               <ChevronDownIcon className={clsx('h-4 w-4 transition-transform', !showDone && '-rotate-90')} />
@@ -299,7 +299,7 @@ function LocalDeploymentRows({
                   <button
                     type="button"
                     onClick={() => onCopy(localDeployment)}
-                    className="ficus-button p-1.5 rounded text-muted hover:text-primary transition-colors"
+                    className="ficus-button ficus-button-ghost p-1.5 rounded transition-colors"
                     title="Copy local app URL"
                   >
                     <ClipboardIcon className="h-4 w-4" />
@@ -310,7 +310,7 @@ function LocalDeploymentRows({
                   <button
                     type="button"
                     onClick={() => onOpen(localDeployment)}
-                    className="ficus-button p-1.5 rounded text-muted hover:text-primary transition-colors"
+                    className="ficus-button ficus-button-ghost p-1.5 rounded transition-colors"
                     title="Open local app"
                   >
                     <LinkIcon className="h-4 w-4" />
@@ -319,7 +319,7 @@ function LocalDeploymentRows({
                     type="button"
                     onClick={() => onRestart(localDeployment)}
                     disabled={!canWriteDeployments || !canRestart}
-                    className="ficus-button p-1.5 rounded text-muted hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="ficus-button ficus-button-ghost p-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Restart local app"
                   >
                     <RefreshIcon className="h-4 w-4" />
@@ -327,7 +327,7 @@ function LocalDeploymentRows({
                   <button
                     type="button"
                     onClick={() => onShowLogs(localDeployment)}
-                    className="ficus-button p-1.5 rounded text-muted hover:text-primary transition-colors"
+                    className="ficus-button ficus-button-ghost p-1.5 rounded transition-colors"
                     title="View logs"
                   >
                     <LogsIcon className="h-4 w-4" />
@@ -336,7 +336,7 @@ function LocalDeploymentRows({
                     type="button"
                     onClick={() => onStop(localDeployment)}
                     disabled={!canWriteDeployments || !canStop}
-                    className="ficus-button p-1.5 rounded text-status-danger-600 dark:text-status-danger-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="ficus-button ficus-button-ghost p-1.5 rounded text-status-danger-600 dark:text-status-danger-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Stop local app"
                   >
                     <StopIcon className="h-4 w-4" />
@@ -346,11 +346,11 @@ function LocalDeploymentRows({
                     onClick={() => onArchive(localDeployment)}
                     disabled={!canDeleteDeployments || isBusy}
                     className={clsx(
-                      'ficus-button',
+                      'ficus-button ficus-button-ghost',
                       'p-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
                       confirmArchiveLocalDeploymentId === localDeployment.id
                         ? 'text-status-danger-700 dark:text-status-danger-300'
-                        : 'text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400'
+                        : 'hover:text-status-danger-600 dark:hover:text-status-danger-400'
                     )}
                     title={
                       confirmArchiveLocalDeploymentId === localDeployment.id
@@ -457,11 +457,9 @@ function LocalDeploymentLogsModal({
             if (next) scrollToBottom()
           }}
           className={clsx(
-            'ficus-button',
-            'px-2 py-1 rounded text-xs border transition-colors',
-            autoScroll
-              ? 'border-accent bg-accent/10 text-accent-light'
-              : 'border-th-border text-muted hover:text-primary'
+            'ficus-button ficus-button-secondary',
+            'px-2 py-1 rounded text-xs transition-colors',
+            autoScroll && 'bg-accent/10 hover:bg-accent/10 text-accent-light hover:text-accent-light'
           )}
           title={autoScroll ? 'Following new logs' : 'Click to follow new logs'}
         >

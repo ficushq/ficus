@@ -256,11 +256,11 @@
       rgb(var(--custom-rgb-on-accent-fg, var(--on-accent-fg)) / calc(var(--custom-alpha-on-accent-fg, 1) * 0.08));
   }
 
-  .ficus-button-primary:hover:not(:disabled) {
+  .ficus-button-primary:hover:where(:not(:disabled)) {
     background: rgb(var(--color-primary-hover));
   }
 
-  .ficus-button-primary:active:not(:disabled) {
+  .ficus-button-primary:active:where(:not(:disabled)) {
     background: rgb(var(--color-primary-active));
   }
 
@@ -274,9 +274,60 @@
       );
   }
 
-  .ficus-button-secondary:hover:not(:disabled) {
+  .ficus-button-secondary:hover:where(:not(:disabled)) {
     background: rgb(var(--color-bg-surface-hover));
     color: rgb(var(--color-text-primary));
+  }
+
+  /* `.ficus-button` is only the base; every button pairs it with exactly one variant
+     (primary, secondary, ghost, link or danger), enforced by
+     components/buttonVariants.guard.test.ts. Every variant's hover rule stays at two-class
+     specificity: it beats resting utilities (text-muted), while a `hover:` utility on the
+     element still wins (a ghost trash icon with hover:text-status-danger-600). */
+
+  /* Transparent at rest. Only for icon-only buttons and compact controls inside a toolbar,
+     header, menu or segmented cluster; a text button alone in content is secondary. */
+  .ficus-button-ghost {
+    background: transparent;
+    color: rgb(var(--color-text-secondary));
+  }
+
+  .ficus-button-ghost:hover:where(:not(:disabled)) {
+    background: rgb(var(--color-bg-surface-hover));
+    color: rgb(var(--color-text-primary));
+  }
+
+  /* An inline text action in running text or a section header. No horizontal padding,
+     so it never reads as an indented, empty button. */
+  .ficus-button-link {
+    padding-inline: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: rgb(var(--color-primary-light));
+    text-underline-offset: 2px;
+  }
+
+  .ficus-button-link:hover:where(:not(:disabled)) {
+    color: rgb(var(--color-link-hover));
+    text-decoration-line: underline;
+  }
+
+  /* A destructive action: secondary-shaped, with danger text. */
+  .ficus-button-danger {
+    color: rgb(var(--status-danger-fg));
+    background: rgb(var(--color-bg-surface-secondary));
+    box-shadow: inset 0 0 0 1px
+      rgb(
+        var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
+          calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
+      );
+  }
+
+  .ficus-button-danger:hover:where(:not(:disabled)) {
+    background: rgb(
+      var(--custom-rgb-status-danger-surface, var(--status-danger-surface)) /
+        calc(var(--custom-alpha-status-danger-surface, 1) * var(--opacity-status-danger-surface))
+    );
   }
 
   .ficus-nav-item {
@@ -555,6 +606,10 @@
   .ficus-field:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 3px;
+  }
+  /* An inline text action stays text, as a link would. */
+  .ficus-button-link:not(:focus-visible) {
+    outline: none;
   }
   .voice-orb {
     outline: 2px solid ButtonText !important;

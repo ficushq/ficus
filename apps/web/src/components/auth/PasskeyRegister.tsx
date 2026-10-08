@@ -178,7 +178,7 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false, ema
           <button
             type="submit"
             disabled={loading}
-            className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md font-medium text-sm disabled:opacity-50"
           >
             {loading ? 'Creating...' : 'Create admin account'}
           </button>
@@ -188,7 +188,7 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false, ema
         <button
           type="submit"
           disabled={!email || loading}
-          className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+          className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md font-medium text-sm disabled:opacity-50"
         >
           {loading ? 'Sending...' : isBootstrap ? 'Create Admin Account' : 'Send Verification Code'}
         </button>
@@ -238,7 +238,7 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false, ema
           <button
             type="submit"
             disabled={!code || !email || loading}
-            className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md font-medium text-sm disabled:opacity-50"
           >
             {loading ? 'Registering...' : 'Register with Passkey'}
           </button>
