@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   DECISION_PROVIDER_KIND_INFO,
   DECISION_PROVIDER_KINDS,
+  DECISION_FEATURE_SWITCH_VALUES,
   DECISION_PURPOSE_INFO,
   DECISION_PURPOSES,
   decisionRequestSchema,
@@ -12,7 +13,7 @@ import { requirePermission } from '../middleware/require-permission'
 import { auditActor, type Identity } from '../services/rbac'
 import { getOpenAIServiceKey } from '../services/integrations/openai-services/settings'
 import { systemOneBase } from '../services/decisions/adapters'
-import { askProvider, decide, DECISION_PROBE } from '../services/decisions/service'
+import { askProvider, decide, decisionFeatures, DECISION_PROBE } from '../services/decisions/service'
 import {
   addDecisionProvider,
   decisionProviderView,
@@ -20,6 +21,7 @@ import {
   getDecisionRouting,
   listDecisionProviders,
   removeDecisionProvider,
+  setDecisionFeatureSwitch,
   setDecisionRouting,
   updateDecisionProvider,
 } from '../services/decisions/store'
@@ -48,6 +50,7 @@ app.get('/', requirePermission('provider-auth:read'), (c) =>
     routing: getDecisionRouting(),
     kinds: DECISION_PROVIDER_KIND_INFO,
     purposes: DECISION_PURPOSES.map((id) => ({ id, ...DECISION_PURPOSE_INFO[id] })),
+    features: decisionFeatures(),
     openAIServicesKey: Boolean(getOpenAIServiceKey()),
   })
 )
@@ -116,6 +119,19 @@ app.put('/routing', requirePermission('provider-auth:write'), async (c) => {
   const unknown = ids.find((id) => !known.has(id))
   if (unknown) return c.json({ error: `No such decision provider: ${unknown}` }, 400)
   return c.json(await setDecisionRouting(parsed.data, auditActor(c.get('identity') as Identity)))
+})
+
+const featureSwitchInput = z.object({ value: z.enum(DECISION_FEATURE_SWITCH_VALUES) })
+
+/** Turn an instance feature (such as the tool result firewall) on or off, or back to automatic. */
+app.put('/features/:id', requirePermission('provider-auth:write'), async (c) => {
+  const id = c.req.param('id') as (typeof DECISION_PURPOSES)[number]
+  if (!DECISION_PURPOSES.includes(id) || DECISION_PURPOSE_INFO[id].scope !== 'instance')
+    return c.json({ error: 'Only instance features have a switch here' }, 400)
+  const parsed = featureSwitchInput.safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: 'Use auto, on or off' }, 400)
+  await setDecisionFeatureSwitch(id, parsed.data.value, auditActor(c.get('identity') as Identity))
+  return c.json(decisionFeatures())
 })
 
 const tryInput = decisionRequestSchema.extend({

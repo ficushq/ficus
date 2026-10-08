@@ -1,11 +1,24 @@
 import { createHash } from 'node:crypto'
 import { lt } from 'drizzle-orm'
-import { decisionRequestSchema, type DecisionPurpose, type DecisionRequest, type DecisionResult } from '@ficus/shared'
+import {
+  DECISION_PURPOSE_INFO,
+  DECISION_PURPOSES,
+  decisionRequestSchema,
+  type DecisionFeatureView,
+  type DecisionPurpose,
+  type DecisionRequest,
+  type DecisionResult,
+} from '@ficus/shared'
 import { db, decisionLog } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { getOpenAIServiceKey } from '../integrations/openai-services/settings'
 import { callDecisionProvider, DecisionProviderError, type DecisionFetch } from './adapters'
-import { getDecisionRouting, listDecisionProviders, type StoredDecisionProvider } from './store'
+import {
+  getDecisionFeatureSwitches,
+  getDecisionRouting,
+  listDecisionProviders,
+  type StoredDecisionProvider,
+} from './store'
 
 const log = createLogger('decisions')
 
@@ -40,6 +53,31 @@ export function decisionChain(purpose: DecisionPurpose | 'default'): StoredDecis
   const chain = order.flatMap((id) => providers.filter((provider) => provider.id === id))
   // Nothing ordered yet: every enabled provider, as added.
   return chain.length || order.length ? chain : providers
+}
+
+/**
+ * Whether an instance feature (see DECISION_PURPOSE_INFO) should run: `off` never, `on` always (it
+ * still needs a provider to answer), and by default exactly when a provider is set up for it.
+ */
+export function isDecisionFeatureEnabled(purpose: DecisionPurpose): boolean {
+  const value = getDecisionFeatureSwitches()[purpose] ?? 'auto'
+  if (value === 'off') return false
+  if (value === 'on') return true
+  return decisionChain(purpose).length > 0
+}
+
+/** Every decision feature with its scope, switch and whether it runs, for Settings. */
+export function decisionFeatures(): DecisionFeatureView[] {
+  const switches = getDecisionFeatureSwitches()
+  return DECISION_PURPOSES.map((id) => {
+    const info = DECISION_PURPOSE_INFO[id]
+    return {
+      id,
+      ...info,
+      ...(info.scope === 'instance' ? { switch: switches[id] ?? 'auto' } : {}),
+      enabled: info.scope === 'instance' ? isDecisionFeatureEnabled(id) : decisionChain(id).length > 0,
+    }
+  })
 }
 
 /**

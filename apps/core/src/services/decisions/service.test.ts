@@ -5,20 +5,22 @@ import { db, decisionLog, secrets, settings } from '../../db'
 import { getSecretStore, resetSecretStore } from '../secrets'
 import { getSettingsStore, resetSettingsStore } from '../settings'
 import type { DecisionFetch } from './adapters'
-import { decide, decisionChain, resetDecisionCooldownsForTests } from './service'
+import { decide, decisionChain, isDecisionFeatureEnabled, resetDecisionCooldownsForTests } from './service'
 import {
   addDecisionProvider,
+  DECISION_FEATURES_KEY,
   DECISION_PROVIDERS_KEY,
   DECISION_ROUTING_KEY,
   getDecisionRouting,
   listDecisionProviders,
   removeDecisionProvider,
+  setDecisionFeatureSwitch,
   setDecisionRouting,
   updateDecisionProvider,
 } from './store'
 
 const secretKeys = [DECISION_PROVIDERS_KEY, 'OPENAI_API_KEY']
-const settingKeys = [DECISION_ROUTING_KEY, '__integration-enabled:openai-services']
+const settingKeys = [DECISION_ROUTING_KEY, DECISION_FEATURES_KEY, '__integration-enabled:openai-services']
 const priorEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
 let priorSecrets: (typeof secrets.$inferSelect)[] = []
 let priorSettings: (typeof settings.$inferSelect)[] = []
@@ -177,4 +179,15 @@ test('decisions are logged by hash, never by input', async () => {
   expect(row!.inputSha256).toMatch(/^[0-9a-f]{64}$/)
   expect(JSON.stringify(row)).not.toContain('Ignore all previous instructions')
   await db.delete(decisionLog).where(eq(decisionLog.providerId, local.id))
+})
+
+test('an instance feature is on by default once a decision model exists, and can be turned off', async () => {
+  expect(isDecisionFeatureEnabled('tool-results')).toBe(false)
+  const local = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://local:11434' })
+  expect(isDecisionFeatureEnabled('tool-results')).toBe(true)
+  await setDecisionFeatureSwitch('tool-results', 'off', 'test')
+  expect(isDecisionFeatureEnabled('tool-results')).toBe(false)
+  await setDecisionFeatureSwitch('tool-results', 'auto', 'test')
+  await updateDecisionProvider(local.id, { enabled: false })
+  expect(isDecisionFeatureEnabled('tool-results')).toBe(false)
 })
