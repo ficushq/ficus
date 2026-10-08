@@ -330,7 +330,7 @@ export function WorkStreamDetailModal({
               )}
             </div>
             <div className="text-sm text-secondary max-h-64 overflow-y-auto">
-              <MarkdownContent className="prose-xs">
+              <MarkdownContent variant="document">
                 {(reviewWait ? (reviewWait.message ?? workStream.handoffMessage) : manualWait?.message) ?? ''}
               </MarkdownContent>
             </div>
@@ -579,7 +579,7 @@ export function WorkStreamDetailModal({
                   </div>
                   {wait.message && (
                     <div className="mt-1 text-primary">
-                      <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
+                      <MarkdownContent variant="document">{wait.message}</MarkdownContent>
                     </div>
                   )}
                   <WorkStreamQuestionWait
@@ -613,7 +613,7 @@ export function WorkStreamDetailModal({
                   </div>
                   {wait.message && (
                     <div className="mt-1 text-primary">
-                      <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
+                      <MarkdownContent variant="document">{wait.message}</MarkdownContent>
                     </div>
                   )}
                 </li>
@@ -714,7 +714,7 @@ export function WorkStreamDetailModal({
           <div>
             <label className="text-xs font-medium text-secondary">Next Steps</label>
             <div className="mt-3 text-sm leading-relaxed text-secondary">
-              <MarkdownContent className="prose-xs">{nextSteps}</MarkdownContent>
+              <MarkdownContent variant="document">{nextSteps}</MarkdownContent>
             </div>
           </div>
         )}
@@ -724,7 +724,7 @@ export function WorkStreamDetailModal({
           <div className="min-w-0 [overflow-wrap:anywhere]">
             <label className="text-xs font-medium text-secondary">Description</label>
             <div className="mt-3 text-sm leading-relaxed text-secondary">
-              <MarkdownContent className="prose-xs">{workStream.description}</MarkdownContent>
+              <MarkdownContent variant="document">{workStream.description}</MarkdownContent>
             </div>
           </div>
         )}
@@ -866,7 +866,7 @@ export function WorkStreamDetailModal({
                     </div>
                     {(wait.resolutionNote || wait.message) && (
                       <div className="mt-1 text-primary">
-                        <MarkdownContent className="prose-xs">
+                        <MarkdownContent variant="document">
                           {wait.resolutionNote || wait.message || ''}
                         </MarkdownContent>
                       </div>

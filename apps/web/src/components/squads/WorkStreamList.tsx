@@ -493,7 +493,7 @@ function WorkStreamCard({
       <h4 className="font-medium text-sm text-primary">{workStreamTitle(workStream)}</h4>
       {workStream.description && (
         <div className="mt-1 line-clamp-2 text-xs text-muted">
-          <MarkdownContent className="prose-xs">{workStream.description}</MarkdownContent>
+          <MarkdownContent variant="document">{workStream.description}</MarkdownContent>
         </div>
       )}
 

@@ -179,7 +179,7 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
         {data && !data.error && !data.binary && !isImageFile(fileName) && (
           <div className="grow overflow-auto">
             {isMarkdown(fileName) ? (
-              <MarkdownContent>{data.content}</MarkdownContent>
+              <MarkdownContent variant="document">{data.content}</MarkdownContent>
             ) : (
               <MarkdownContent>
                 {formatAsCodeBlock(data.content, getLanguageFromExt(fileName.split('.').pop()?.toLowerCase()))}

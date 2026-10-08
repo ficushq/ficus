@@ -19,6 +19,7 @@ import { DemoAccessPage } from './components/auth/DemoAccessPage'
 import { TokenRegisterPage } from './components/auth/TokenRegisterPage'
 import { FinishAdminSetupPage } from './components/auth/FinishAdminSetupPage'
 import { InboxPopup } from './components/InboxPopup'
+import { WorkflowReviewDeepLink, WorkflowReviewRoute } from './components/WorkflowReviewModal'
 import { ActionsPage } from './components/ActionsPage'
 import { InboxPage } from './components/InboxPage'
 import { SchedulesPage } from './components/SchedulesPage'
@@ -134,6 +135,7 @@ export default function App() {
             <Route path="/squads/:squadId/:tab?" element={<SquadDetailPage />} />
             <Route path="/actions" element={<ActionsPage />} />
             <Route path="/actions/:actionId" element={<ActionsPage />} />
+            <Route path="/work-streams/:workStreamId/review" element={<WorkflowReviewRoute />} />
             <Route path="/inbox" element={<InboxPage />} />
             <Route path="/settings/integrations/oauth/callback" element={<OAuthCallbackPage />} />
             <Route path="/settings/integrations/oauth/callback/github" element={<OAuthCallbackPage />} />
@@ -155,6 +157,9 @@ export default function App() {
 
       {/* Inbox popup - triggered from header (desktop) */}
       <InboxPopup />
+
+      {/* ?review=<work stream> opens a workflow gate's review over any page (notifications, links) */}
+      <WorkflowReviewDeepLink />
 
       {/* Floating chat button - desktop only, hidden on chat page */}
       <Routes>

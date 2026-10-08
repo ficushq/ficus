@@ -26,7 +26,11 @@ export function MarkdownContent({
   compactPullRequestLinks = false,
 }: {
   children: string
-  variant?: 'assistant' | 'human' | 'rewind'
+  /**
+   * `document` is for embedded documents (descriptions, handoffs, proposals): headings sit on a
+   * reading scale instead of prose's display sizes, so a `# Title` never outshines the surface title.
+   */
+  variant?: 'assistant' | 'human' | 'rewind' | 'document'
   className?: string
   agentId?: string
   /** Shorten bare GitHub PR URLs in compact action summaries, preserving explicit labels. */
@@ -37,6 +41,7 @@ export function MarkdownContent({
       className={clsx(
         'prose prose-sm max-w-none',
         variant === 'human' ? 'prose-on-accent' : 'prose-gray dark:prose-invert',
+        variant === 'document' && 'prose-document',
         className
       )}
     >
