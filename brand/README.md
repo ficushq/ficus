@@ -88,15 +88,17 @@ alpha channel, at Apple's exact sizes.
   an iPhone on the right showing the Ficus mobile Feed, with the hero plant on
   the ground rule beside it and the sage sun behind it. The text is sized to read
   where the art is shown, about 350pt wide under the app's name in search
-  results. The phone outline (body, side buttons, Dynamic Island, home
-  indicator) is drawn by the template; it isn't one of Apple's device frames.
+  results. The phone outline (body, side buttons and home indicator) is
+  drawn by the template; it isn't one of Apple's device frames.
 - **Phone screen:** [`app-store/feed-screen.png`](app-store/feed-screen.png),
-  1179×2556, is a capture of the interactive demo at ficus.sh/mobile/ (sample
-  data) on its Feed: "Needs attention" with a question and a "Review needed"
-  card. It's committed so rendering works offline. The capture strips the demo's
-  own bezel and sizes it to 393×852 CSS px at 3x. The demo sets its UI in the
-  system font, so capture on macOS for San Francisco. To recapture after the
-  demo changes:
+  1320×2868, is a real Ficus app screenshot of the Feed (iPhone 17 Pro Max
+  simulator, iOS 26, seeded demonstration data): "Needs attention" with a
+  question and a "Review needed" card, then Active work. It already includes the
+  status bar and Dynamic Island, so the template draws only the body, side
+  buttons and home indicator. Replace it with another real screenshot at the
+  same size (440×956 pt at 3x), then run `bun run brand:app-store`.
+  `--capture` re-captures the ficus.sh/mobile/ demo instead; prefer real
+  screenshots for App Store art.
 
   ```
   bun run brand:app-store --capture
