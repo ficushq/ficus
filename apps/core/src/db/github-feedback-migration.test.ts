@@ -10,7 +10,9 @@ const migration = await Bun.file(new URL('../../drizzle/0203_github_feedback_tru
 // applies only the statements that create or constrain this feature's own github_* tables.
 const ownTableStatements = migration
   .split('--> statement-breakpoint')
-  .filter((statement) => /^\s*(?:CREATE TABLE|ALTER TABLE|CREATE (?:UNIQUE )?INDEX "[a-z_]+" ON) "github_/.test(statement))
+  .filter((statement) =>
+    /^\s*(?:CREATE TABLE|ALTER TABLE|CREATE (?:UNIQUE )?INDEX "[a-z_]+" ON) "github_/.test(statement)
+  )
 
 test('generated moderation migration is additive and does not grant or replay historical feedback', () => {
   expect(migration).toContain('CREATE UNIQUE INDEX "github_personal_identity_active_account"')

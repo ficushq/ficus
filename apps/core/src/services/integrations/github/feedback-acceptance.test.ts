@@ -68,10 +68,7 @@ async function fixture() {
       },
     },
   })
-  const [manager] = await db
-    .insert(agents)
-    .values({ name: 'Manager', squadId, agentTypeId: typeId, status: 'idle' })
-    .returning()
+  const [manager] = await db.insert(agents).values({ squadId, agentTypeId: typeId, status: 'idle' }).returning()
   await db.update(squads).set({ managerAgentId: manager!.id }).where(eq(squads.id, squadId))
   const revision = crypto.randomUUID()
   const [connection] = await db
@@ -257,7 +254,7 @@ async function fixture() {
     },
   }
 }
-async function send(message: InboxMessage, clientId = crypto.randomUUID()) {
+async function send(message: InboxMessage, clientId: string = crypto.randomUUID()) {
   const prepared = prepareInboxDelivery([message], 'steer', 'steer')
   return (await Agent.mustFind(message.recipientId!)).sendMessage(prepared.prompt, {
     deliveryMode: 'steer',

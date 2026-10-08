@@ -44,7 +44,11 @@ async function fixture() {
     trackEvent(id: string) {
       eventIds.push(id)
     },
-    async source(input: VerifiedIngressEvent, squadId = squadIds[0], connectionId = crypto.randomUUID()) {
+    async source(
+      input: VerifiedIngressEvent,
+      squadId: string | undefined = squadIds[0],
+      connectionId = crypto.randomUUID()
+    ) {
       const fact = githubOutputAdapter.normalize(input)[0]!
       const [row] = await db
         .insert(integrationOutputEvents)

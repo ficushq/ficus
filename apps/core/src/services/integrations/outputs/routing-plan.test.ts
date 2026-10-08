@@ -51,7 +51,7 @@ async function fixture() {
       },
     },
   })
-  await db.insert(agents).values({ id: managerId, name: 'Manager', squadId, agentTypeId: typeId, status: 'idle' })
+  await db.insert(agents).values({ id: managerId, squadId, agentTypeId: typeId, status: 'idle' })
   await db.update(squads).set({ managerAgentId: managerId }).where(eq(squads.id, squadId))
   return {
     squadId,

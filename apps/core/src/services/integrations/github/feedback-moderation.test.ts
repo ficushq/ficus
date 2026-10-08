@@ -52,6 +52,7 @@ async function fixture() {
                 version: 1,
                 resourceKey: 'acme/project#1',
                 eventKey: crypto.randomUUID(),
+                occurredAt: new Date(0).toISOString(),
                 data: { repository: 'acme/project', issue: { number: 1 }, content: { body: 'REVIEWED' } },
                 subject: 'Feedback',
                 body: 'REVIEWED',

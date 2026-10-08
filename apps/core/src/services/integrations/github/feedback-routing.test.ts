@@ -83,10 +83,7 @@ async function fixture(action: 'notify-manager' | 'notify-consultant' | 'start-w
       },
     },
   })
-  const [manager] = await db
-    .insert(agents)
-    .values({ squadId, agentTypeId: typeId, name: 'Manager', status: 'idle' })
-    .returning()
+  const [manager] = await db.insert(agents).values({ squadId, agentTypeId: typeId, status: 'idle' }).returning()
   await db.update(squads).set({ managerAgentId: manager!.id }).where(eq(squads.id, squadId))
   const [connection] = await db
     .insert(integrationConnections)
@@ -1744,7 +1741,7 @@ test('ambiguous current-content reads also consume the aggregate fixed provider 
           ? { id: 10, full_name: 'acme/project' }
           : { ...h.native, id: Number(path.split('/').at(-1)) }) as T
     )
-    const sources = []
+    const sources: Awaited<ReturnType<typeof recordIntegrationOutput>>[] = []
     for (let i = 0; i < 8; i++) {
       h.native.id = 30 + i
       h.native.body = 'ORIGINAL'
@@ -2216,6 +2213,7 @@ test('GitHub work exhaustion does not change Linear history behavior', async () 
       subscription: {
         id: 'linear',
         source: { integration: 'linear', output: 'issue.comment', version: 1 },
+        match: {},
         deliver: { to: 'active', whenInactive: 'retain' },
       },
     })
@@ -2782,7 +2780,7 @@ test('approved held feedback reaches the CURRENT manager when ownership changed 
     const [old] = await db.select().from(agents).where(eq(agents.id, h.managerId))
     const [replacement] = await db
       .insert(agents)
-      .values({ squadId: h.squadId, agentTypeId: old!.agentTypeId, name: 'Replacement', status: 'idle' })
+      .values({ squadId: h.squadId, agentTypeId: old!.agentTypeId, status: 'idle' })
       .returning()
     await db.update(squads).set({ managerAgentId: replacement!.id }).where(eq(squads.id, h.squadId))
     await h.allow(held!.id)

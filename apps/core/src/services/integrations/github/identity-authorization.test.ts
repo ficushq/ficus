@@ -159,7 +159,7 @@ async function fixture(authority: 'local' | 'platform_broker' = 'local', mode: '
       disable: unused,
       replaceCredential: unused,
       remove: unused,
-    } as IntegrationRoutesService
+    } as unknown as IntegrationRoutesService
     app.route('/api/integrations', createIntegrationsRouter(service))
     return app
   }

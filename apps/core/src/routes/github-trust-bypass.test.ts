@@ -38,7 +38,6 @@ async function fixture() {
     .values({ subjectType: 'user', subjectId: adminId, roleId: adminRoleId, scope: 'system' })
   await db.insert(agents).values({
     id: agentId,
-    name: 'Delegated',
     agentTypeId: 'system-manager',
     ownerUserId: adminId,
     squadId: null,
