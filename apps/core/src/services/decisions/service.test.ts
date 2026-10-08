@@ -104,6 +104,7 @@ test('each purpose can have its own order, and disabled providers are skipped', 
     'test'
   )
   expect(decisionChain('github-firewall').map((p) => p.id)).toEqual([local.id])
+  expect(decisionChain('default').map((p) => p.id)).toEqual([local.id])
   expect(decisionChain('event-rules').map((p) => p.id)).toEqual([hosted.id, local.id])
   await updateDecisionProvider(hosted.id, { enabled: false })
   expect(decisionChain('event-rules').map((p) => p.id)).toEqual([local.id])

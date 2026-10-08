@@ -31,11 +31,12 @@ export interface DecideOptions {
 
 const cooldownUntil = new Map<string, number>()
 
-/** The enabled providers a purpose asks, in order. */
-export function decisionChain(purpose: DecisionPurpose): StoredDecisionProvider[] {
+/** The enabled providers a purpose asks, in order; `'default'` is the default order itself. */
+export function decisionChain(purpose: DecisionPurpose | 'default'): StoredDecisionProvider[] {
   const routing = getDecisionRouting()
   const providers = listDecisionProviders().filter((provider) => provider.enabled)
-  const order = routing.purposes[purpose]?.length ? routing.purposes[purpose]! : routing.default
+  const own = purpose === 'default' ? undefined : routing.purposes[purpose]
+  const order = own?.length ? own : routing.default
   const chain = order.flatMap((id) => providers.filter((provider) => provider.id === id))
   // Nothing ordered yet: every enabled provider, as added.
   return chain.length || order.length ? chain : providers
@@ -46,7 +47,7 @@ export function decisionChain(purpose: DecisionPurpose): StoredDecisionProvider[
  * Never throws for provider failures: callers decide what "no answer" means for them.
  */
 export async function decide(
-  purpose: DecisionPurpose,
+  purpose: DecisionPurpose | 'default',
   input: DecisionRequest,
   options: DecideOptions = {}
 ): Promise<DecisionOutcome> {
@@ -134,7 +135,7 @@ export const DECISION_PROBE: DecisionRequest = {
 let lastPrune = 0
 
 function record(
-  purpose: DecisionPurpose,
+  purpose: DecisionPurpose | 'default',
   request: DecisionRequest,
   outcome: DecisionOutcome,
   latencyMs: number,

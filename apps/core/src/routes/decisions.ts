@@ -119,7 +119,7 @@ app.put('/routing', requirePermission('provider-auth:write'), async (c) => {
 })
 
 const tryInput = decisionRequestSchema.extend({
-  /** Ask this provider directly, or else the purpose's providers in order. */
+  /** Ask this provider directly, or else the purpose's providers in order (the default order without one). */
   providerId: z.string().optional(),
   purpose: z.enum(DECISION_PURPOSES).optional(),
 })
@@ -145,7 +145,7 @@ app.post('/try', requirePermission('provider-auth:write'), async (c) => {
       })
     }
   }
-  return c.json(await decide(purpose ?? 'workflow-steps', request, { source: { kind: 'settings-try' } }))
+  return c.json(await decide(purpose ?? 'default', request, { source: { kind: 'settings-try' } }))
 })
 
 export default app
