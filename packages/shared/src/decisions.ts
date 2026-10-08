@@ -219,6 +219,8 @@ export interface DecisionFeatureView {
   label: string
   description: string
   scope: DecisionFeatureScope
+  /** Off until the owner turns it on (nice-to-haves that cost money). */
+  offByDefault?: boolean
   /** Instance features only. */
   switch?: DecisionFeatureSwitch
   /** Whether it runs now (instance features), or could (others: a provider is set up for it). */
