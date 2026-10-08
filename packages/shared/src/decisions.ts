@@ -253,4 +253,6 @@ export interface ToolFirewallFlag {
   intent?: ToolFirewallIntent
   /** A long result was only partly screened. */
   partial?: boolean
+  /** High severity: the flagged content was withheld from the agent, not just annotated. */
+  withheld?: boolean
 }

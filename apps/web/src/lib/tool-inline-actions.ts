@@ -86,5 +86,6 @@ export function getToolFirewallFlag(toolCall: Pick<MessageToolCall, 'result'>): 
       ? { intent: firewall.intent as ToolFirewallIntent }
       : {}),
     ...(firewall.partial === true ? { partial: true } : {}),
+    ...(firewall.withheld === true ? { withheld: true } : {}),
   }
 }

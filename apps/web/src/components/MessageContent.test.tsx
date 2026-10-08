@@ -186,6 +186,17 @@ describe('tool result firewall badge', () => {
     expect(html).toContain('94% likely, intent: malicious')
   })
 
+  test('a withheld result says the agent never saw it', () => {
+    const html = row(
+      fetched({
+        firewall: { flagged: true, severity: 'high', instructsAgent: 0.94, intent: 'malicious', withheld: true },
+      })
+    )
+    expect(html).toContain('Withheld: likely injection')
+    expect(html).toContain('bg-status-danger-badge-surface')
+    expect(html).toContain('so it was withheld from the agent.')
+  })
+
   test('medium severity uses the attention color and says when only part was screened', () => {
     const html = row(fetched({ firewall: { flagged: true, severity: 'medium', instructsAgent: 0.6, partial: true } }))
     expect(html).toContain('bg-status-attention-badge-surface')
