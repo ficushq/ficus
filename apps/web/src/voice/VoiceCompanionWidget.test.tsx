@@ -1,6 +1,7 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import type { ComponentProps } from 'react'
 import { acquireDomHarness } from '../test/domHarness'
+import { webkitTap } from '../test/webkitTap'
 import { VoiceCompanionButton } from './VoiceCompanionWidget'
 
 type Controls = ReturnType<
@@ -115,7 +116,7 @@ test('connected voice floats compactly and stays available when interacting with
   await dom!.act(async () => panel.querySelector<HTMLButtonElement>('[aria-label="Expand voice assistant"]')!.click())
   expect(panel.dataset.compact).toBe('false')
   await dom!.act(async () =>
-    dom!.window.document.body.dispatchEvent(new dom!.window.MouseEvent('mousedown', { bubbles: true }))
+    dom!.window.document.body.dispatchEvent(new dom!.window.MouseEvent('pointerdown', { bubbles: true }))
   )
   expect(panel.dataset.compact).toBe('true')
   expect(panel.dataset.state).toBe('open')
@@ -181,4 +182,35 @@ test('reset reconnects in place without returning to the start guide', async () 
   expect(container.querySelector('[role="status"]')?.textContent).toBe('Listening')
   expect(reset.disabled).toBe(false)
   expect(onConnected).toHaveBeenCalledTimes(1)
+})
+
+test('the header panel takes WebKit taps, and an outside tap or Escape closes it idle and compacts it live', async () => {
+  const { container, toggle, render, button } = await setup()
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Voice assistant"]')!
+  const panel = () => dom!.window.document.querySelector<HTMLElement>('.ficus-voice-panel')!
+  await dom!.act(async () => trigger.click())
+  await dom!.act(async () => button('Start voice chat').focus())
+  expect(await webkitTap(button('Start voice chat'), { touch: true })).toBe(true)
+  expect(toggle).toHaveBeenCalledTimes(1)
+  expect(panel().dataset.state).toBe('open')
+
+  await webkitTap(dom!.window.document.body)
+  expect(panel().dataset.state).toBe('closed')
+  await dom!.act(async () => trigger.click())
+  await dom!.act(async () =>
+    dom!.window.document.dispatchEvent(new dom!.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  )
+  expect(panel().dataset.state).toBe('closed')
+  expect(dom!.window.document.activeElement).toBe(trigger)
+
+  // Live and compact it is a persistent mini player: it neither dismisses nor claims Escape.
+  await render({ status: 'listening', isConnected: true })
+  expect(panel().dataset.compact).toBe('true')
+  let escapes = 0
+  dom!.window.document.addEventListener('keydown', () => escapes++)
+  await dom!.act(async () =>
+    dom!.window.document.dispatchEvent(new dom!.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  )
+  expect(escapes).toBe(1)
+  expect(panel().dataset.state).toBe('open')
 })

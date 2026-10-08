@@ -1,7 +1,7 @@
 import { useHref } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WorkStream } from '@ficus/shared'
-import { useDismissOnOutside } from '../hooks/useDismissOnOutside'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { getWorkStreamLink } from '../lib/inboxWorkStreamLink'
 import { AttentionMenu } from './AttentionMenu'
 import type { useWorkStreamPauseControls } from './WorkStreamPauseControls'
@@ -27,7 +27,7 @@ export function WorkStreamActionsMenu({
     wasEditing.current = controls.editing
   }, [controls.editing])
   const close = useCallback(() => setOpen(false), [])
-  useDismissOnOutside(open, container, trigger, close)
+  usePopupDismiss({ open, popup: container, trigger, onDismiss: close })
   const itemClass = 'ficus-button w-full rounded-md px-3 py-2 text-left text-sm text-secondary hover:bg-surface-hover'
   const copyLink = async () => {
     close()
@@ -40,17 +40,7 @@ export function WorkStreamActionsMenu({
     }
   }
   return (
-    <div
-      ref={container}
-      className="relative"
-      onBlur={(event) => {
-        const next = event.relatedTarget
-        // Pressing a non-focusable label first focuses the dialog ancestor, before its click
-        // forwards focus to the radio. Keep the editor mounted through that intermediate blur.
-        // Outside presses still dismiss via useDismissOnOutside; Tab to a sibling dismisses here.
-        if (next && !event.currentTarget.contains(next) && !next.contains(event.currentTarget)) close()
-      }}
-    >
+    <div ref={container} className="relative">
       <button
         ref={trigger}
         type="button"

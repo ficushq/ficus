@@ -2,7 +2,7 @@ import { DesktopHistoryControls } from './DesktopHistoryControls'
 import { SparklesIcon } from './icons'
 import { Presence } from './Presence'
 import clsx from 'clsx'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { SettingsIcon, PencilIcon, InboxIcon, MoreIcon, SproutIcon } from './icons'
@@ -13,6 +13,7 @@ import { queries } from '../queryOptions'
 import { VoiceCompanionButton } from '../voice/VoiceCompanionWidget'
 import { getTabNavigationTarget, recordTabPath } from '../hooks/useTabHistory'
 import { usePermissions } from '../hooks/usePermissions'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { AssistantActivityBadge } from './AssistantActivityBadge'
 import { SquadSwitcher } from './SquadSwitcher'
@@ -283,15 +284,9 @@ export function MobileBottomNav({
   const [moreOpen, setMoreOpen] = useState(false)
   const isMoreActive = visibleMoreMenuItems.some((item) => location.pathname.startsWith(item.to))
 
-  // Close menu on click outside
-  useEffect(() => {
-    if (!moreOpen) return
-    function handleClick() {
-      setMoreOpen(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [moreOpen])
+  const moreMenu = useRef<HTMLDivElement>(null)
+  const moreTrigger = useRef<HTMLButtonElement>(null)
+  usePopupDismiss({ open: moreOpen, popup: moreMenu, trigger: moreTrigger, onDismiss: () => setMoreOpen(false) })
 
   // Close menu on navigation
   useEffect(() => {
@@ -355,6 +350,7 @@ export function MobileBottomNav({
         {visibleMoreMenuItems.length > 1 && (
           <div className="relative flex-1 h-full min-w-0">
             <button
+              ref={moreTrigger}
               aria-expanded={moreOpen}
               data-active={isMoreActive || moreOpen}
               onClick={(e) => {
@@ -372,9 +368,9 @@ export function MobileBottomNav({
             </button>
 
             <Presence
+              ref={moreMenu}
               open={moreOpen}
               className="ficus-overlay absolute bottom-full right-0 mb-2 mr-2 bg-surface rounded-lg shadow-theme-lg border border-th-border py-1 min-w-[160px]"
-              onMouseDown={(e) => e.stopPropagation()}
             >
               {visibleMoreMenuItems.map((item) => {
                 const isActive = location.pathname.startsWith(item.to)

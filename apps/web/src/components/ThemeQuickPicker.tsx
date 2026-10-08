@@ -10,6 +10,7 @@ import {
   type WebThemeDefinition,
 } from '../theme/registry'
 import { presetAppearance } from '../theme/custom'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { hasAppearances, useThemeHoverPreview } from '../hooks/useThemeHoverPreview'
 import { PaletteIcon } from './icons'
 import { ThemeSwatch } from './ThemeSwatch'
@@ -102,24 +103,8 @@ export function ThemeQuickPicker({
     const panel = panelRef.current
     const selected = panel?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')
     ;(selected ?? panel?.querySelector<HTMLElement>('[role="radio"]'))?.focus()
-    const onPointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) close()
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      close()
-      triggerRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown, true)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+  usePopupDismiss({ open, popup: containerRef, trigger: triggerRef, onDismiss: close })
 
   if (!enabled) return null
 
@@ -128,13 +113,7 @@ export function ThemeQuickPicker({
   const showAppearance = findWebTheme(value.themeId).kind === 'dual' || (!!previewing && hasAppearances(previewing))
 
   return (
-    <div
-      ref={containerRef}
-      className="relative"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) close()
-      }}
-    >
+    <div ref={containerRef} className="relative">
       <button
         ref={triggerRef}
         type="button"

@@ -2,6 +2,7 @@ import { expect, test, spyOn } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { acquireDomHarness } from '../test/domHarness'
+import { webkitTap } from '../test/webkitTap'
 import { queries } from '../queryOptions'
 import { EntityReferenceLink } from './EntityReferenceLink'
 import type { EntityReference } from '../lib/entityReference'
@@ -370,3 +371,39 @@ for (const reference of [
     }
   })
 }
+
+// A keyboard-opened preview holds itself open while focus is inside. A WebKit tap on its quick link blurs
+// that link to nothing (links never take focus on a tap) before the click; the link must still navigate.
+test('a WebKit tap on a focused preview quick link follows it', async () => {
+  const f = await fixture({ kind: 'ws', id: '42' })
+  const matches = spyOn(f.button, 'matches').mockReturnValue(true)
+  try {
+    await f.dom.act(async () => f.button.focus())
+    await f.dom.act(async () =>
+      f.button.dispatchEvent(new f.dom.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    )
+    const link = f.tooltip()!.querySelector<HTMLAnchorElement>('a[href*="agents"]')!
+    expect(f.dom.window.document.activeElement).toBe(link)
+    expect(await webkitTap(link, { touch: true })).toBe(true)
+    expect(f.container.querySelector('output')?.textContent).toBe(`/squads/squad/agents?agent=${agentId}`)
+    expect(f.tooltip()).toBeNull()
+  } finally {
+    matches.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('a press outside a keyboard-opened preview releases it without moving focus', async () => {
+  const f = await fixture({ kind: 'agent', id: agentId })
+  const matches = spyOn(f.button, 'matches').mockReturnValue(true)
+  try {
+    await f.dom.act(async () => f.button.focus())
+    expect(f.tooltip()).not.toBeNull()
+    await webkitTap(f.container.querySelector('output')!)
+    await f.advance(150)
+    expect(f.tooltip()).toBeNull()
+  } finally {
+    matches.mockRestore()
+    await f.cleanup()
+  }
+})

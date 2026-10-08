@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { searchWorkspaceFiles } from '../api/squads'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import clsx from 'clsx'
 
 interface MentionState {
@@ -189,16 +190,9 @@ export function FileMentionAutocomplete({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [files, selectedIndex, onSelect, onClose])
 
-  // Click outside to close
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [onClose])
+  // A press outside closes it (the composer included: the caret moves). Focus stays in the
+  // composer and the key handler above owns Escape, so those dismissal paths are off.
+  usePopupDismiss({ open: true, popup: containerRef, onDismiss: onClose, escape: false, focusOut: false })
 
   // Scroll selected item into view
   useEffect(() => {

@@ -4,6 +4,7 @@ import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-librar
 import type { ThemePreset } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { useHoverTimer } from '../test/hoverTimer'
+import { webkitTap } from '../test/webkitTap'
 import { ThemeProvider, useTheme, useThemeSyncStore } from '../providers/ThemeProvider'
 import type { ThemeSyncStore } from '../theme/sync'
 import { ThemeQuickPicker } from './ThemeQuickPicker'
@@ -492,6 +493,34 @@ test('restore re-reads the store at leave time, reflecting a selection changed d
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
   } finally {
     hover.restore()
+  }
+})
+
+// Safari/iOS never focus a tapped button: the focused circle blurs to nothing first. The flyout used to
+// close on that blur, unmounting the circle before its click, so a tap never changed the theme.
+for (const touch of [false, true]) {
+  test(`tapping a circle in Safari/iOS (${touch ? 'touch' : 'mouse'} order) selects it and keeps the flyout open`, async () => {
+    const { container } = await renderPicker({ themeId: 'iris' })
+    await open(container)
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Iris')
+    expect(await webkitTap(getByRole(container, 'radio', { name: 'Ember' }), { touch })).toBe(true)
+    expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
+    expect(getByRole(container, 'dialog', { name: 'Theme' })).toBeTruthy()
+  })
+}
+
+test('Tab out of the flyout closes it; an outside tap closes it', async () => {
+  const { container } = await renderPicker({ themeId: 'iris' })
+  const outside = document.body.appendChild(document.createElement('button'))
+  try {
+    await open(container)
+    await act(async () => outside.focus())
+    expect(queryByRole(container, 'dialog')).toBeNull()
+    await open(container)
+    await webkitTap(outside)
+    expect(queryByRole(container, 'dialog')).toBeNull()
+  } finally {
+    outside.remove()
   }
 })
 

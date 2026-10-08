@@ -6,6 +6,7 @@ import { acquireDomHarness } from '../../test/domHarness'
 import { PermissionsProvider, type PermissionsResult } from '../../hooks/usePermissions'
 import { serverConnectionQueryKeys } from '../../queryKeys'
 import type { ServerConnection } from '../../api/serverConnection'
+import { webkitTap } from '../../test/webkitTap'
 import { RelayConnectionSettings } from './RelayConnectionSettings'
 
 let cleanup: (() => Promise<void>) | undefined
@@ -152,6 +153,54 @@ test('connected: the menu actions open confirmations', async () => {
   expect(requests).not.toContain('DELETE /api/push/server-connection')
   await dom.act(async () => fireEvent.click(getByRole(disconnect, 'button', { name: 'Disconnect' })))
   await waitFor(() => expect(requests).toContain('DELETE /api/push/server-connection'))
+})
+
+// The iPhone bug: the menu sits in `<section data-setting-target tabIndex={-1}>`. WebKit never focuses a tapped
+// button; it focuses that section instead, and a menu that closed on that blur made its items inert before the
+// tap's click arrived, so Reconnect…/Disconnect… did nothing.
+for (const touch of [false, true]) {
+  test(`connected: tapping a menu action in Safari/iOS (${touch ? 'touch' : 'mouse'} order) opens its confirmation`, async () => {
+    const { container, dom } = await render(connectedStatus())
+    const trigger = getByRole(container, 'button', { name: 'Ficus account actions' })
+    expect(trigger.closest('section')?.getAttribute('tabindex')).toBe('-1')
+
+    await dom.act(async () => fireEvent.click(trigger))
+    expect(document.activeElement?.textContent).toBe('Reconnect…')
+    expect(await webkitTap(getByRole(container, 'button', { name: 'Reconnect…' }), { touch })).toBe(true)
+    const reconnect = getByRole(document.body, 'dialog', { name: 'Reconnect Ficus account' })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    await dom.act(async () => fireEvent.click(getByRole(reconnect, 'button', { name: 'Cancel' })))
+
+    await dom.act(async () => fireEvent.click(trigger))
+    expect(await webkitTap(getByRole(container, 'button', { name: 'Disconnect…' }), { touch })).toBe(true)
+    expect(getByRole(document.body, 'dialog', { name: 'Disconnect Ficus account?' })).toBeTruthy()
+  })
+}
+
+test('connected: the actions menu closes on an outside tap, Escape, and Tab out — never on a section focus', async () => {
+  const { container, dom } = await render(connectedStatus())
+  const trigger = getByRole(container, 'button', { name: 'Ficus account actions' })
+  const outside = document.body.appendChild(document.createElement('button'))
+  const open = async () => {
+    await dom.act(async () => fireEvent.click(trigger))
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  }
+
+  await open()
+  await webkitTap(outside)
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+  await open()
+  await dom.act(async () => trigger.closest<HTMLElement>('section')!.focus())
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  await dom.act(async () => fireEvent.keyDown(document.activeElement!, { key: 'Escape' }))
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  expect(document.activeElement).toBe(trigger)
+
+  await open()
+  await dom.act(async () => outside.focus())
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  outside.remove()
 })
 
 test('connected: the Instance Pro rows show the allowance and slot use', async () => {

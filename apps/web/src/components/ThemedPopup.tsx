@@ -5,11 +5,11 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type FocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { placePopup, visualViewportBox, type PopupPlacement } from '../lib/popupPosition'
 import { CheckIcon } from './icons'
 
@@ -70,10 +70,6 @@ export function ActionPopup({ items, ...trigger }: PopupTrigger & { items: reado
   return <Popup {...trigger} role="menu" items={items} />
 }
 
-// Window capture precedes the app's document-level modal/voice/global shortcuts.
-// Registration order must not decide which popup consumes Escape.
-const popupStack: object[] = []
-
 function Popup({
   label,
   children,
@@ -95,7 +91,6 @@ function Popup({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
   const rowRefs = useRef<Array<HTMLButtonElement | null>>([])
-  const pointerSelection = useRef(false)
   const id = useId()
   const popupId = `${id}-popup`
 
@@ -121,7 +116,6 @@ function Popup({
     // Stay inside an aria-modal dialog so assistive technology keeps the popup
     // reachable; fixed positioning still escapes clipping ancestors.
     setContainer(triggerRef.current?.closest<HTMLElement>('[aria-modal="true"]') ?? document.body)
-    pointerSelection.current = false
     setOpen(true)
   }
 
@@ -206,46 +200,12 @@ function Popup({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, placement])
 
-  // Escape (topmost popup only) and outside pointer dismissal.
-  useEffect(() => {
-    if (!open) return
-    const token = {}
-    popupStack.push(token)
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || popupStack.at(-1) !== token) return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      close(true)
-    }
-    const outside = (event: PointerEvent) => {
-      const target = event.target
-      if (target instanceof Node && !popupRef.current?.contains(target) && !triggerRef.current?.contains(target))
-        setOpen(false) // never steal focus from what the user just targeted
-    }
-    window.addEventListener('keydown', escape, true)
-    document.addEventListener('pointerdown', outside)
-    return () => {
-      popupStack.splice(popupStack.indexOf(token), 1)
-      window.removeEventListener('keydown', escape, true)
-      document.removeEventListener('pointerdown', outside)
-    }
-  }, [open])
+  // Outside press, Escape (topmost popup only, restoring trigger focus) and keyboard focus leaving.
+  usePopupDismiss({ open, popup: popupRef, trigger: triggerRef, onDismiss: () => setOpen(false) })
 
   useEffect(() => {
     if (disabled) setOpen(false)
   }, [disabled])
-
-  const onBlur = (event: FocusEvent<HTMLElement>) => {
-    const target = event.relatedTarget
-    // Touch browsers can blur before an inside tap's click; let that selection finish.
-    if (
-      !pointerSelection.current &&
-      target instanceof Node &&
-      !popupRef.current?.contains(target) &&
-      !triggerRef.current?.contains(target)
-    )
-      setOpen(false)
-  }
 
   const onTriggerKeyDown = (event: ReactKeyboardEvent) => {
     if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && !open) {
@@ -255,7 +215,6 @@ function Popup({
   }
 
   const onPopupKeyDown = (event: ReactKeyboardEvent) => {
-    pointerSelection.current = false
     const position = enabled.indexOf(activeIndex)
     const move = (index: number | undefined) => {
       event.preventDefault()
@@ -302,7 +261,6 @@ function Popup({
         className={className}
         onClick={() => (open ? setOpen(false) : openPopup())}
         onKeyDown={onTriggerKeyDown}
-        onBlur={onBlur}
       >
         {children}
       </button>
@@ -315,10 +273,6 @@ function Popup({
             role={role}
             aria-label={heading ?? label}
             data-placement={placement?.side}
-            onBlur={onBlur}
-            onPointerDownCapture={() => {
-              pointerSelection.current = true
-            }}
             onKeyDown={onPopupKeyDown}
             className="ficus-overlay fixed z-[90] overflow-y-auto overscroll-contain p-1.5 outline-none"
             style={{

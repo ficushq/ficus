@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { workStreamTitle, type Agent, type WorkStream } from '@ficus/shared'
 import { useLayoutEffect, useRef, useState, type RefObject, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { usePopupDismiss } from '../hooks/usePopupDismiss'
 import { useStableRef } from '../hooks/useStableRef'
 import { getAgentPrimaryLabel, getAgentSecondaryLabel, AGENT_STATUS_LABELS } from '../lib/agentDisplay'
 import { agentChatPath, type EntityReference } from '../lib/entityReference'
@@ -64,12 +65,6 @@ export function EntityReferencePreview({
         ),
       })
     }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      dismiss.current()
-    }
     update()
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update)
     if (card.current) observer?.observe(card.current)
@@ -78,16 +73,23 @@ export function EntityReferencePreview({
     window.addEventListener('resize', update)
     window.visualViewport?.addEventListener('resize', update)
     window.visualViewport?.addEventListener('scroll', update)
-    window.addEventListener('keydown', escape, true)
     return () => {
       observer?.disconnect()
       window.removeEventListener('scroll', update, true)
       window.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('scroll', update)
-      window.removeEventListener('keydown', escape, true)
     }
   }, [anchor, dismiss])
+  // A hover/focus preview: Escape dismisses it (the caller restores focus only when it was inside);
+  // focus or a press leaving it just releases its focus hold, so hover can still keep it open.
+  usePopupDismiss({
+    open: true,
+    popup: card,
+    trigger: anchor,
+    restoreFocus: false,
+    onDismiss: (reason) => (reason === 'escape' ? onDismiss() : onBlur()),
+  })
 
   return createPortal(
     <div
@@ -96,9 +98,6 @@ export function EntityReferencePreview({
       role="dialog"
       aria-label={reference.kind === 'ws' ? 'Work stream preview' : 'Agent preview'}
       onFocusCapture={onFocus}
-      onBlurCapture={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== anchor.current) onBlur()
-      }}
       onKeyDown={(event) => {
         if (event.key !== 'Tab') return
         const links = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>('a[href]')]
