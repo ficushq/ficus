@@ -6,6 +6,16 @@ export const desktopQueryKeys = {
   enabled: () => ['desktop', 'notifications-enabled'] as const,
 }
 
+/**
+ * The composer's Interrupt / Follow up suggestion, keyed by the whitespace-normalized draft. Kept
+ * out of `agents` so agent events never refetch it (each fetch asks a decision model).
+ */
+export const composerQueryKeys = {
+  all: ['composer'] as const,
+  deliverySuggestion: (agentId: string, draft: string) =>
+    [...composerQueryKeys.all, 'delivery-suggestion', agentId, draft] as const,
+}
+
 export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
 
 /** Decision model providers, routing and the OpenAI services key state: one settings read. */

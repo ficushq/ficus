@@ -27,6 +27,7 @@ import {
   MinimizeIcon,
   PlusIcon,
   SendIcon,
+  SparklesIcon,
   SpeakerOffIcon,
   SpeakerOnIcon,
   StopIcon,
@@ -107,6 +108,10 @@ interface ChatViewProps {
   onCancelQueue?: () => void | Promise<void>
   deliveryMode?: DeliveryMode
   onDeliveryModeChange?: (m: DeliveryMode) => void
+  /** Set when the composer picked `deliveryMode` itself: shows the "Auto" indicator and why. */
+  suggestedDelivery?: { related: boolean } | null
+  /** Every change to the draft text (typing, voice, attachments, clearing after a send). */
+  onDraftChange?: (draft: string) => void
   // pagination
   onLoadOlder?: () => void
   isLoadingOlder?: boolean
@@ -431,6 +436,8 @@ export function ChatView({
   onCancelQueue,
   deliveryMode,
   onDeliveryModeChange,
+  suggestedDelivery,
+  onDraftChange,
   onLoadOlder,
   isLoadingOlder,
   hasOlderMessages,
@@ -513,6 +520,7 @@ export function ChatView({
     })()
   )
   const [hasInput, setHasInput] = useState(() => !!inputRef.current.trim())
+  const onDraftChangeRef = useStableRef(onDraftChange)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const inputContainerRef = useRef<HTMLDivElement>(null)
@@ -580,8 +588,9 @@ export function ChatView({
         resizeTextarea(textareaRef.current)
       }
       setHasInput(!!value.trim())
+      onDraftChangeRef.current?.(value)
     },
-    [resizeTextarea]
+    [resizeTextarea, onDraftChangeRef]
   )
 
   // Reload draft when the storage key changes (e.g. navigating between agents)
@@ -1382,6 +1391,23 @@ export function ChatView({
 
   const disabled = inputDisabled ?? false
 
+  // The delivery split button's labels. When the composer picked the mode itself, it says so and why.
+  const sendProgressLabel = isPreparingImages
+    ? 'Preparing...'
+    : isUploading
+      ? 'Uploading...'
+      : isSubmitting
+        ? 'Sending...'
+        : null
+  const deliveryLabel = deliveryMode === 'follow-up' ? 'Follow up' : 'Interrupt'
+  const deliveryTitle =
+    deliveryMode === 'follow-up'
+      ? 'Send after the agent finishes this turn'
+      : 'Send now: the agent reads it at its next step'
+  const suggestionReason = suggestedDelivery
+    ? `Suggested because this looks ${suggestedDelivery.related ? 'related' : 'unrelated'} to what the agent is doing`
+    : null
+
   const handleTranscription = useCallback(
     (text: string) => {
       const prev = inputRef.current
@@ -2052,6 +2078,7 @@ export function ChatView({
                     const val = e.target.value
                     inputRef.current = val
                     setHasInput(!!val.trim())
+                    onDraftChangeRef.current?.(val)
                     saveDraft(val)
                     resizeTextarea(e.currentTarget)
                     // Check for @ mention trigger
@@ -2301,21 +2328,9 @@ export function ChatView({
                         <button
                           type="submit"
                           aria-label={
-                            isPreparingImages
-                              ? 'Preparing...'
-                              : isUploading
-                                ? 'Uploading...'
-                                : isSubmitting
-                                  ? 'Sending...'
-                                  : deliveryMode === 'steer'
-                                    ? 'Interrupt'
-                                    : 'Follow up'
+                            sendProgressLabel ?? (suggestionReason ? `${deliveryLabel} (suggested)` : deliveryLabel)
                           }
-                          title={
-                            deliveryMode === 'steer'
-                              ? 'Send now: the agent reads it at its next step'
-                              : 'Send after the agent finishes this turn'
-                          }
+                          title={suggestionReason ? `${suggestionReason}. ${deliveryTitle}` : deliveryTitle}
                           disabled={
                             disabled ||
                             isUploading ||
@@ -2326,21 +2341,23 @@ export function ChatView({
                             (!hasInput && pendingImages.length === 0)
                           }
                           className={clsx(
-                            'chat-composer-submit whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 md:py-1.5',
+                            'chat-composer-submit inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 md:py-1.5',
                             deliveryMode === 'steer'
                               ? 'hover:bg-accent-hover active:bg-accent-active'
                               : 'hover:bg-status-attention-700 active:bg-status-attention-800'
                           )}
                         >
-                          {isPreparingImages
-                            ? 'Preparing...'
-                            : isUploading
-                              ? 'Uploading...'
-                              : isSubmitting
-                                ? 'Sending...'
-                                : deliveryMode === 'steer'
-                                  ? 'Interrupt'
-                                  : 'Follow up'}
+                          {sendProgressLabel ?? deliveryLabel}
+                          {suggestionReason && !sendProgressLabel && (
+                            <span
+                              className="chat-composer-auto inline-flex items-center gap-0.5 text-[11px] font-medium leading-none opacity-80"
+                              title={suggestionReason}
+                              aria-hidden="true"
+                            >
+                              <SparklesIcon className="h-3 w-3" />
+                              Auto
+                            </span>
+                          )}
                         </button>
                         <SelectionPopup
                           label="Message delivery"

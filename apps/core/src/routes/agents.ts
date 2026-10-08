@@ -1,5 +1,4 @@
 import { getPostgresError, publicErrorMessage } from '../db/errors'
-import { isUserAssistantAgentType } from '@ficus/shared'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
 import { listActiveSlotHolds } from '../services/slots/active-holds'
 import { chatPagePathSchema } from '@ficus/shared'
@@ -15,7 +14,6 @@ import { Execution } from '../entities/Execution'
 import { isSessionActive, isSessionCompacting, removeSession } from '../services/execution'
 import { getProxyWorkerSSE } from '../services/streaming/sse-proxy'
 import { Agent, AgentTargetUnavailableError, ListMessagesOptions } from '../entities/Agent'
-import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from '../entities/agent-runners/constants'
 import { and, eq } from 'drizzle-orm'
 import { db, agentExtraScopes, sandboxProvisionRecoveries } from '../db'
 import { AmbiguousPrefixError } from '../db/prefix-match'
@@ -50,6 +48,7 @@ import {
   type Identity,
 } from '../services/rbac'
 import { resumeHaltedAgentAuthoritatively, listErrorHaltedAgents } from '../services/agents/resume'
+import { isAllowedMessageTarget } from '../services/agents/message-target'
 import { listPendingActionsForIdentity } from '../services/agents/actions'
 import { User } from '../entities/User'
 import { Squad } from '../entities/Squad'
@@ -181,13 +180,6 @@ function parseDuration(duration: string): Date {
   }
 
   return new Date(now - ms)
-}
-
-function isAllowedMessageTarget(agent: Agent): boolean {
-  if (agent.agentTypeId === ARTIFACT_BUILDER_AGENT_TYPE_ID) return agent.status === 'waiting-input'
-  if (isUserAssistantAgentType(agent.agentTypeId)) return true
-  if (agent.squadId) return true
-  return false
 }
 
 export const agentsRouter = new Hono()

@@ -1,4 +1,4 @@
-import type { Agent, DeliveryMode, ExecutionStatus, Message } from '@ficus/shared'
+import type { Agent, DeliveryMode, DeliverySuggestion, ExecutionStatus, Message } from '@ficus/shared'
 import { parseSSEStream, type SSECallbacks } from '../sse'
 import type { Transport } from '../transport'
 
@@ -191,6 +191,20 @@ export function agentsResource(t: Transport) {
           deliveryMode: options?.deliveryMode,
           clientId: options?.clientId,
         },
+      }),
+    /**
+     * Whether a draft written while the agent works should interrupt it or follow up: the composer's
+     * Interrupt / Follow up suggestion. `{ suggestion: null }` when there is nothing to suggest.
+     */
+    deliverySuggestion: (
+      agentId: string,
+      draft: string,
+      options?: { signal?: AbortSignal }
+    ): Promise<DeliverySuggestion> =>
+      t.request(`/agents/${agentId}/delivery-suggestion`, {
+        method: 'POST',
+        body: { draft },
+        signal: options?.signal,
       }),
     /** @deprecated Use sendMessage(agentId, message, { deliveryMode: 'steer' }) instead. */
     steer: (agentId: string, message: string, imageIds?: string[]): Promise<{ success: boolean }> =>
