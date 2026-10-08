@@ -91,6 +91,24 @@ test('a 409 conflict keeps the selection and asks for review instead of retrying
   expect(decisionBodies()).toHaveLength(1)
 })
 
+test('a conflict drops selections someone else already decided; clear selection empties the rest', async () => {
+  const dialog = await render()
+  await harness.act(async () => fireEvent.click(checkbox(dialog(), 1)))
+  await harness.act(async () => fireEvent.click(checkbox(dialog(), 2)))
+  // Another moderator denies event 1 first; it leaves the pending queue and could no longer be unchecked.
+  api.decide = () => {
+    api.pending = api.pending.filter((row) => row.id !== rid(1))
+    return Response.json({ code: 'moderation_selection_conflict' }, { status: 409 })
+  }
+  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Allow once')))
+  await waitFor(() => expect(dialog().textContent).toContain('1 selected'))
+  expect(checkbox(dialog(), 2).checked).toBe(true)
+  expect(dialog().querySelector('[role="alert"]')?.textContent).toContain('changed or were already decided')
+  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Clear selection')))
+  expect(dialog().textContent).toContain('0 selected')
+  expect(checkbox(dialog(), 2).checked).toBe(false)
+})
+
 test('success announces a queued release, not delivery, and clears only the decided selection', async () => {
   const dialog = await render()
   await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Review @outsider1')))
@@ -175,6 +193,10 @@ test('detail shows author, trust, source, recipients and why held; external cont
   expect(panel().textContent).toContain('Author is not trusted')
   expect(panel().textContent).toContain('acme/widgets')
   expect(panel().textContent).toContain('ws-1')
+  // Hold-time routing is history only: release re-routes, so the copy must not promise this recipient.
+  expect(panel().textContent).toContain('Matched when held')
+  expect(panel().textContent).toContain('whoever should receive it at that time')
+  expect(panel().textContent).not.toContain('Would go to')
 
   await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Review @outsider2')))
   await waitFor(() => expect(panel().textContent).toContain('Added to this squad’s trusted authors'))

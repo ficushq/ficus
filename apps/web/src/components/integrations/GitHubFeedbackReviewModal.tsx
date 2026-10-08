@@ -163,7 +163,14 @@ export function GitHubFeedbackReviewModal({
         return
       }
       setStatus({ tone: 'error', text: githubFeedbackErrorMessage(error, "Couldn't save the decision.") })
-      if (githubFeedbackErrorCode(error)?.startsWith('moderation_')) await refresh()
+      if (!githubFeedbackErrorCode(error)?.startsWith('moderation_')) return
+      await refresh()
+      // Events someone else already decided have left the pending queue and can no longer be seen or
+      // unchecked; drop them. Still-pending selections stay bound to the version the person reviewed.
+      const pending = client.getQueryData(githubFeedbackQueries.list(squadId, 'pending').queryKey)
+      if (!pending) return
+      const stillPending = new Set(pending.pages.flatMap((page) => page.items.map((item) => item.id)))
+      setSelected((current) => new Map([...current].filter(([id]) => stillPending.has(id))))
     },
   })
 
@@ -273,10 +280,25 @@ export function GitHubFeedbackReviewModal({
               </div>
             )}
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-muted" aria-live="polite">
-                {selection.length} selected
-                {selection.length >= MAX_GITHUB_FEEDBACK_SELECTION && ` (limit ${MAX_GITHUB_FEEDBACK_SELECTION})`}
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-sm text-muted" aria-live="polite">
+                  {selection.length} selected
+                  {selection.length >= MAX_GITHUB_FEEDBACK_SELECTION && ` (limit ${MAX_GITHUB_FEEDBACK_SELECTION})`}
+                </p>
+                {selection.length > 0 && (
+                  <button
+                    type="button"
+                    className="text-sm text-accent-light hover:underline disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => {
+                      setStatus(null)
+                      setSelected(new Map())
+                    }}
+                  >
+                    Clear selection
+                  </button>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -577,7 +599,7 @@ function EventDetail({
           {detail.attempts ? ` · ${detail.attempts} delivery attempts` : ''}
           {detail.decidedAt && ` · decided ${formatTime(detail.decidedAt)}`}
         </dd>
-        <dt className="text-muted">Would go to</dt>
+        <dt className="text-muted">Matched when held</dt>
         <dd className="text-primary">
           {detail.routes.length === 0 ? (
             'Current routing is decided when it is released'
@@ -591,6 +613,9 @@ function EventDetail({
                 </li>
               ))}
             </ul>
+          )}
+          {detail.routes.length > 0 && (
+            <p className="text-xs text-muted">If allowed, it goes to whoever should receive it at that time.</p>
           )}
         </dd>
       </dl>
