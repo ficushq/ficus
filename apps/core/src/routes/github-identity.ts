@@ -6,10 +6,14 @@ import type {
   IntegrationAuthorizationStart,
   IntegrationDeviceAuthorizationStatus,
 } from '@ficus/shared'
-import { db } from '../db'
+import { db, integrationAuditEvents } from '../db'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import type { Identity } from '../services/rbac'
-import { GitHubFeedbackError, requireGitHubHuman } from '../services/integrations/github/feedback-trust'
+import {
+  GitHubFeedbackError,
+  githubAuthorityActor,
+  requireGitHubHuman,
+} from '../services/integrations/github/feedback-trust'
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
 import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 import { describeGitHubAuthorizationError } from '../services/integrations/authorization/github-errors'
@@ -45,12 +49,26 @@ const id = z.object({ id: z.string().uuid() })
 export function createGitHubIdentityRouter(service: GitHubIdentityRoutesService): Hono {
   const app = new Hono()
   app.use('*', async (c, next) => {
+    const identity = c.get('identity') as Identity | undefined
     try {
       // Never resolve an agent's associated/acting user. This is a self-only human account operation.
-      await requireGitHubHuman(db, c.get('identity') as Identity | undefined)
+      await requireGitHubHuman(db, identity)
       c.set('authzChecked', true)
       c.header('Cache-Control', 'no-store')
     } catch (error) {
+      // Refused before any service runs: audit the attempt like the services audit theirs.
+      if (error instanceof GitHubFeedbackError)
+        await db
+          .insert(integrationAuditEvents)
+          .values({
+            actorKey: githubAuthorityActor(identity),
+            targetKind: 'github_identity',
+            targetId: githubAuthorityActor(identity),
+            action: 'github.identity.access',
+            outcome: 'denied',
+            code: error.code,
+          })
+          .catch(() => undefined)
       return failure(c, error)
     }
     await next()

@@ -1,10 +1,11 @@
 import { sql } from 'drizzle-orm'
 import { inbox } from '../../../db'
+import { eventAuthoritySquadId, inboxIntegrationEventId } from './feedback-pass-read'
 
 /**
  * Rollout fence for GitHub notification mail that no model has received yet.
  *
- * The trust gate needs no data backfill. The 0208 migration leaves existing squads with the author
+ * The trust gate needs no data backfill. The 0204 migration leaves existing squads with the author
  * filter OFF, so they keep pre-feature routing. A squad with the filter ON (new squads, or one a
  * human switched ON) admits GitHub prose only through a capture, decision and projection proof.
  * Rows persisted before that (pre-feature mail, or mail queued while the filter was OFF) have none,
@@ -26,12 +27,12 @@ import { inbox } from '../../../db'
 export function withheldGitHubInboxCondition() {
   return sql`(${inbox.recipientType} = 'agent' AND ${inbox.deliveredAt} IS NULL AND EXISTS (
     SELECT 1 FROM integration_output_events fenced_event
-    WHERE fenced_event.id::text = ${inbox.metadata}->>'integrationEventId'
+    WHERE fenced_event.id = ${inboxIntegrationEventId()}
       AND fenced_event.integration = 'github'
       AND fenced_event.source_key NOT LIKE 'github-status:%'
       AND COALESCE(
         (SELECT fenced_squad.github_author_filter FROM squads fenced_squad
-          WHERE fenced_squad.id::text = fenced_event.authority->>'squadId'),
+          WHERE fenced_squad.id = ${eventAuthoritySquadId('fenced_event')}),
         true
       )
   ))`

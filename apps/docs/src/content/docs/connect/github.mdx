@@ -228,7 +228,11 @@ Allowed events are delivered by normal routing at the time you approve, so they
 reach whoever owns that work now. Paused or parked work receives them the usual
 way. A later edit on GitHub becomes a new version that is checked again; Ficus
 never delivers text you haven't approved. The **Releasing** tab shows events
-that are waiting to be delivered or are retrying.
+that are waiting to be delivered or are retrying. An allowed event that keeps
+failing to deliver shows up with the pending events on Home and Work; you can
+deny it from there to stop the retries. If the squad's GitHub connection can no
+longer read an event's source, the review window hides the text and the event
+can only be denied.
 
 Only people can review events, change trusted authors or turn filtering on or
 off, and they need permission to update the squad. Agents cannot do any of this,

@@ -17,6 +17,30 @@ const timestamp = (value: unknown) =>
   typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null
 const sha = (value: unknown) =>
   typeof value === 'string' && /^[0-9a-f]{40,64}$/i.test(value) ? value.toLowerCase() : undefined
+/**
+ * A review comment's file path, bounded for delivery. The path is the PR author's text, not the
+ * commenter's: it is kept on one line, stripped of control characters and capped, so it can
+ * neither fake message structure nor carry an essay into an agent's inbox.
+ */
+export function safeGitHubPath(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  const isControl = (code: number) =>
+    code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029
+  let cleaned = ''
+  let gap = false
+  for (const char of value) {
+    if (isControl(char.codePointAt(0)!)) {
+      if (!gap) cleaned += ' '
+      gap = true
+    } else {
+      cleaned += char
+      gap = false
+    }
+  }
+  cleaned = cleaned.trim()
+  return cleaned.length > 200 ? `${cleaned.slice(0, 199)}…` : cleaned
+}
+
 export function githubContentIdentity(value: unknown): GitHubAccountIdentity | null {
   const user = record(value)
   const accountId = githubNativeId(user.id)
@@ -294,7 +318,8 @@ export function normalizeGitHubFeedback(
   const url = resourceUrl + fragment
   const body = text(item.body)
   const title = ['issue', 'pull_request'].includes(objectKind) ? text(item.title) : ''
-  const path = objectKind === 'review_comment' ? text(item.path) : ''
+  // The file path is chosen by whoever wrote the pull request, not by the (trusted) commenter.
+  const path = objectKind === 'review_comment' ? safeGitHubPath(item.path) : ''
   const line =
     Number.isSafeInteger(item.line ?? item.original_line) && (item.line ?? item.original_line) > 0
       ? (item.line ?? item.original_line)

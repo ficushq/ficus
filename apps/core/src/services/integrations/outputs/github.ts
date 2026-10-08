@@ -1,5 +1,5 @@
 import { normalizeDependabot, DEPENDABOT_OUTPUT, DEPENDABOT_ACTIONS } from '../github/dependabot-output'
-import { normalizeGitHubFeedback } from '../github/feedback-envelope'
+import { normalizeGitHubFeedback, safeGitHubPath } from '../github/feedback-envelope'
 import { createHash } from 'node:crypto'
 import { githubOutputCatalog, isGitHubSelfComment, type IntegrationOutputFact } from '@ficus/shared'
 import type { IntegrationOutputAdapter } from './types'
@@ -254,7 +254,7 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
             }
           : {}),
         ...(output === 'pull_request.review_comment'
-          ? { path: String(item!.path ?? ''), line: item!.line ?? item!.original_line ?? null }
+          ? { path: safeGitHubPath(item!.path), line: item!.line ?? item!.original_line ?? null }
           : {}),
         ...(typeof native?.mergeable_state === 'string' ? { mergeState: native.mergeable_state } : {}),
         ...(native?.mergeable_state === 'dirty' ? { mergeConflict: true } : {}),

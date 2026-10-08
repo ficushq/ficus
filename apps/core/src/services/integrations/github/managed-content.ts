@@ -216,30 +216,39 @@ export async function projectGitHubThreadForMemory(
   squadId: string,
   detail: GitHubIssueApiItem,
   comments: GitHubIssueApiComment[],
-  executor: Executor = db
+  executor: Executor = db,
+  options: {
+    /** The pull request's own id (`/pulls/:number`), which the issues API does not report. */
+    pullRequestId?: number | null
+  } = {}
 ): Promise<ProjectedGitHubThread> {
   const parentKind: ItemKind = detail.pull_request ? 'pull_request' : 'issue'
   const nativeId = (value: unknown) =>
     typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? String(value) : null
+  const unchanged = (createdAt: unknown, updatedAt: unknown) =>
+    typeof createdAt === 'string' &&
+    Number.isFinite(Date.parse(createdAt)) &&
+    typeof updatedAt === 'string' &&
+    Date.parse(createdAt) === Date.parse(updatedAt)
   const parent: Candidate = {
     kind: parentKind,
-    // The issues API reports the ISSUE id; a pull request's captured object uses its PR id, so a
-    // PR parent never matches a stored revision and relies on live author trust alone.
-    nativeId: parentKind === 'issue' ? nativeId(detail.id) : null,
+    // The issues API reports the ISSUE id; a pull request's captured object uses its PR id, which
+    // the caller fetches separately. Without it an edited PR parent cannot match a revision.
+    nativeId: parentKind === 'issue' ? nativeId(detail.id) : nativeId(options.pullRequestId),
     author: githubContentIdentity(detail.user)?.accountId ?? null,
     bodyHash: sha256Hex(detail.body ?? ''),
     titleHash: sha256Hex(detail.title ?? ''),
-    unchanged: true,
+    // An edited title or description has no provable editor over REST (anyone with write access
+    // may have rewritten it), so like an edited comment it is admitted only through a captured,
+    // admitted revision, never on the original author's trust.
+    unchanged: unchanged(detail.created_at, detail.updated_at),
   }
   const children: Candidate[] = comments.map((comment) => ({
     kind: 'issue_comment',
     nativeId: nativeId(comment.id),
     author: githubContentIdentity(comment.user)?.accountId ?? null,
     bodyHash: sha256Hex(comment.body ?? ''),
-    unchanged:
-      typeof comment.created_at === 'string' &&
-      Number.isFinite(Date.parse(comment.created_at)) &&
-      Date.parse(comment.created_at) === Date.parse(comment.updated_at),
+    unchanged: unchanged(comment.created_at, comment.updated_at),
   }))
   const unfiltered = (item: Candidate): GitHubMemoryItem => ({
     kind: item.kind,

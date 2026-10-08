@@ -50,7 +50,10 @@ export function LinkedGitHubAccount() {
   })
   const cancel = useMutation({
     mutationFn: (id: string) => cancelGitHubIdentityDevice(id),
-    onSuccess: () => setDevice(null),
+    onSuccess: () => {
+      setDevice(null)
+      setError('')
+    },
     onError: fail("Couldn't cancel the GitHub sign-in."),
   })
   const confirm = useMutation({
@@ -81,6 +84,7 @@ export function LinkedGitHubAccount() {
       try {
         const result = await pollGitHubIdentityDevice(device.id)
         if (stopped) return
+        setError('')
         if (result.status === 'complete') {
           setDevice(null)
           await client.invalidateQueries({ queryKey: githubIdentityQueryKeys.all })

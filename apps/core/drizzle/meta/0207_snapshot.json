@@ -1,6 +1,6 @@
 {
-  "id": "3bd01a58-8f86-4223-b685-a244b2db3dc5",
-  "prevId": "c2f64218-59e0-4469-9013-4ac8ac88bf00",
+  "id": "d61143e2-f5f8-48f3-9fba-ae5fddf7ed17",
+  "prevId": "53d9dece-632c-44e6-878c-7883c0a0c707",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6265,6 +6265,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "github_feedback_source_by_event": {
+          "name": "github_feedback_source_by_event",
+          "columns": [
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -6505,7 +6520,23 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "github_output_proof_source": {
+          "name": "github_output_proof_source",
+          "columns": [
+            {
+              "expression": "source_event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "github_output_proofs_event_id_integration_output_events_id_fk": {
           "name": "github_output_proofs_event_id_integration_output_events_id_fk",

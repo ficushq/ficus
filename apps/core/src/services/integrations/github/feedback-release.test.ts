@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import {
   db,
   squads,
@@ -444,6 +444,31 @@ test('expired crash lease is recovered; obsolete routing is terminal and cannot 
     })
     expect(await release.releaseGitHubFeedback(deps, { revisionIds: [h.revisionId] })).toBe(0)
     expect(calls).toBe(1)
+  } finally {
+    await h.close()
+  }
+})
+
+test('a retained release backs off exponentially instead of re-checking every 30 seconds for ever', async () => {
+  const h = await fixture()
+  try {
+    await db
+      .update(githubFeedbackRevisions)
+      .set({ attempts: 3, releaseState: 'retained', nextAttemptAt: null })
+      .where(eq(githubFeedbackRevisions.id, h.revisionId))
+    const deps: release.GitHubFeedbackReleaseDependencies = {
+      authorizeSource: async () => true,
+      route: async () => ({ state: 'retained' as const, reason: 'awaiting_acceptance' }),
+    }
+    expect(await release.releaseGitHubFeedback(deps, { revisionIds: [h.revisionId] })).toBe(1)
+    const row = await h.row()
+    expect(row).toMatchObject({ releaseState: 'retained', attempts: 4, leaseToken: null })
+    // 30 s * 2^4 = 8 minutes, measured on the database clock that scheduled it.
+    const [{ seconds }] = await db.execute<{ seconds: number }>(
+      sql`SELECT EXTRACT(EPOCH FROM (${row.nextAttemptAt!.toISOString()}::timestamptz - clock_timestamp()))::float AS seconds`
+    )
+    expect(Number(seconds)).toBeGreaterThan(470)
+    expect(Number(seconds)).toBeLessThan(490)
   } finally {
     await h.close()
   }

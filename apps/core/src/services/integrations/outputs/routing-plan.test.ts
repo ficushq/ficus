@@ -375,3 +375,29 @@ test('a settled resource trigger receipt is not a new creation audience', async 
     await h.close()
   }
 })
+
+test('bot comments and reviews get no pre-flow compatibility route (the stream still owns the audience)', async () => {
+  const h = await fixture()
+  try {
+    // Pre-filter behaviour: the skip belongs to squads with the author filter OFF.
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+    const preflow = await h.stream()
+    const event = await h.event()
+    event.fact.data.actorType = 'Bot'
+    event.fact.data.actor = 'codecov[bot]'
+    const plan = await planning.planOutputRouting(event, async () => true)
+    expect(plan.routes.some((route) => route.kind === 'pre-flow' && route.workStreamId === preflow)).toBe(false)
+    // Owned by the tracked stream: the squad rule does not fall through to the manager either.
+    expect(plan.routes.some((route) => route.kind === 'notify-manager')).toBe(false)
+    expect(planning.isBotComment(event)).toBe(true)
+    event.fact.data.actorType = 'User'
+    expect(planning.isBotComment(event)).toBe(false)
+    expect(
+      (await planning.planOutputRouting(event, async () => true)).routes.some(
+        (route) => route.kind === 'pre-flow' && route.workStreamId === preflow
+      )
+    ).toBe(true)
+  } finally {
+    await h.close()
+  }
+})

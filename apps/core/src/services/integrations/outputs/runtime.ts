@@ -48,9 +48,11 @@ import { createLogger } from '../../../lib/infra/logger'
 import {
   isGitHubOutputAdmitted,
   prepareGitHubOutput,
+  prepareGitHubOutputOutcome,
   githubMatchingEvent,
   lockGitHubOutputAuthority,
 } from '../github/feedback-routing'
+import { isGitHubAuthorFilterEnabled } from '../github/author-filter'
 import {
   withGitHubOutputPass,
   githubOutputPass,
@@ -251,8 +253,10 @@ export async function publishIntegrationOutput(
   authority: IntegrationOutputAuthority
 ) {
   const source = await recordIntegrationOutput(integration, fact, authority)
-  const event = await prepareGitHubOutput(source)
-  if (!event) return source.id
+  const outcome = await prepareGitHubOutputOutcome(source)
+  if (outcome.kind === 'settle') await settleUnroutableOutput(source.id, outcome.reason)
+  if (outcome.kind !== 'ready') return source.id
+  const event = outcome.event
   let triggerError: unknown
   try {
     await applyOutputTriggers(event)
@@ -442,11 +446,28 @@ async function routeOutputEvent(event: Event, only?: string[]) {
   }
 }
 
+/**
+ * A raw GitHub source that will never route (unauthorized, irrelevant, not routable in this mode)
+ * is marked matched with its reason, exactly as pre-filter routing marked every event once it had
+ * been considered. Otherwise the durable unmatched queue would re-plan it on every pass for ever.
+ */
+async function settleUnroutableOutput(eventId: string, reason: string) {
+  await db
+    .update(integrationOutputEvents)
+    .set({ matchedAt: new Date(), lastErrorCode: reason })
+    .where(and(eq(integrationOutputEvents.id, eventId), isNull(integrationOutputEvents.matchedAt)))
+}
+
 async function finalizeOutputRouting(event: Event) {
   if (event.matchedAt || !(await isGitHubOutputAdmitted(db, event))) return
   // Mark routing complete only after native notifications persist too. A failed send is retried
   // by the same durable unmatched-event queue as work-stream triggers and subscriptions.
-  await routeDefaultNotifications(event, (squadId) => authorized(db, event.integration, event.authority, squadId))
+  const { refused } = await routeDefaultNotifications(event, (squadId) =>
+    authorized(db, event.integration, event.authority, squadId)
+  )
+  // A send refused under its final lock (proof or connection validation lapsed mid-route) is not
+  // "routed nowhere": leave the event unmatched so the next pass re-verifies and retries it.
+  if (refused) return
   await db
     .update(integrationOutputEvents)
     .set({ matchedAt: new Date(), lastErrorCode: null })
@@ -954,6 +975,18 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
   // and the immutable canonical decision are independent; neither can replace the other.
   if (event.integration !== 'github') return true
   const [recipient] = await store.select({ squadId: agents.squadId }).from(agents).where(eq(agents.id, agentId))
+  // Filter OFF: pre-feature acceptance. Exact connection authority still applies, but the
+  // stream-state and exact-content gates below bind a delivery to a reviewed decision, which a
+  // filter-OFF squad has none of: before the filter its notices were accepted as persisted
+  // (including to queued streams and after a rule edit).
+  if (
+    event.authority.kind === 'connection' &&
+    !(await isGitHubAuthorFilterEnabled(store as typeof db, event.authority.squadId))
+  )
+    return (
+      recipient?.squadId === event.authority.squadId &&
+      (await authorized(store, event.integration, event.authority, event.authority.squadId))
+    )
   const matching = await githubMatchingEvent(store, event)
   let additionalContext: string | undefined
   const workStreamId = typeof message.metadata.workStreamId === 'string' ? message.metadata.workStreamId : undefined
@@ -1065,8 +1098,10 @@ async function reconcileUnmatchedOutputsInPass() {
       const source = await readOutputEvent(db, id)
       if (!source) return
       try {
-        const event = await prepareGitHubOutput(source)
-        if (!event) return
+        const outcome = await prepareGitHubOutputOutcome(source)
+        if (outcome.kind === 'settle') return settleUnroutableOutput(source.id, outcome.reason)
+        if (outcome.kind !== 'ready') return
+        const event = outcome.event
         await applyOutputTriggers(event)
         for (const id of await matchOutputEvent(event)) await reconcileOutputDeliveries(id)
         await finalizeOutputRouting(event)

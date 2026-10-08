@@ -60,8 +60,9 @@ function issue(number: number, overrides: Record<string, unknown> = {}) {
     html_url: `https://github.com/${repo}/issues/${number}`,
     state: 'open',
     labels: [],
+    // Untouched since creation; an edited parent (updated_at moved) is admitted only via a capture.
     created_at: T0,
-    updated_at: T1,
+    updated_at: T0,
     user: TRUSTED,
     ...overrides,
   }
@@ -78,6 +79,14 @@ function installGitHub() {
   globalThis.fetch = mock(async (url: string | URL | Request) => {
     const parsed = new URL(String(url))
     if (parsed.origin !== 'https://api.github.com') throw new Error(`unexpected network: ${parsed.origin}`)
+    // A pull request's own id is only reported by `/pulls/:number`; the issues API gives the issue id.
+    const pull = parsed.pathname.match(/^\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)$/)
+    if (pull) {
+      const thread = threads.get(Number(pull[1]))
+      return thread?.issue.pull_request
+        ? Response.json({ id: PULL_ID_BASE + Number(pull[1]) })
+        : new Response('not found', { status: 404 })
+    }
     const match = parsed.pathname.match(/^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)(\/comments)?$/)
     const thread = match ? threads.get(Number(match[1])) : undefined
     if (!thread) return new Response('not found', { status: 404 })
@@ -99,13 +108,16 @@ const docText = async (documentId: string) =>
   JSON.stringify(await db.select().from(memoryChunks).where(eq(memoryChunks.documentId, documentId))) +
   JSON.stringify(await db.select().from(memoryDocuments).where(eq(memoryDocuments.id, documentId)))
 
+const PULL_ID_BASE = 70000
+
 async function revision(
   squadId: string,
   kind: string,
   nativeId: number,
   body: string,
   decision: 'allow_once' | 'deny' | 'pending' | 'automatic',
-  author: object = STRANGER
+  author: object = STRANGER,
+  title = ''
 ) {
   const [object] = await db
     .insert(githubFeedbackObjects)
@@ -133,7 +145,7 @@ async function revision(
       squadId,
       sequence: existing.length + 1,
       contentHash: 'a'.repeat(64),
-      envelope: { data: { content: { body, title: '' } } } as never,
+      envelope: { data: { content: { body, title } } } as never,
       byteCount: body.length,
       author: { accountId: String(identity.id), login: identity.login, accountType: identity.type },
       attribution: 'creation',
@@ -376,5 +388,41 @@ describe('managed GitHub memory projection', () => {
         .set({ unlinkedAt: null })
         .where(eq(githubPersonalIdentities.userId, userId))
     }
+  })
+})
+
+describe('edited parents', () => {
+  test("an edited issue or PR title/description is not admitted on the original author's trust", async () => {
+    // Trusted author opened both; someone with write access rewrote them (updated_at moved).
+    threads.set(7, { issue: issue(7, { user: TRUSTED, pull_request: { url: 'x' }, updated_at: T1 }), comments: [] })
+    threads.set(8, { issue: issue(8, { user: TRUSTED, updated_at: T1 }), comments: [] })
+    // An untouched parent (created_at === updated_at) by a trusted author is still admitted.
+    threads.set(9, { issue: issue(9, { user: TRUSTED }), comments: [] })
+    installGitHub()
+    for (const number of [7, 8, 9]) await index(squadA, number)
+    for (const number of [7, 8]) {
+      const text = await docText((await docFor(squadA, number)).id)
+      expect(text).not.toContain(`trustedtitle${number}`)
+      expect(text).not.toContain(`parentprose${number}`)
+      expect(text).toContain('The title and description are withheld until they are reviewed in Ficus.')
+    }
+    expect(await docText((await docFor(squadA, 9)).id)).toContain('parentprose9')
+
+    // A human-approved capture of exactly that PR text (keyed by the PR id) admits it.
+    await revision(
+      squadA,
+      'pull_request',
+      PULL_ID_BASE + 7,
+      'Parent body parentprose7',
+      'allow_once',
+      TRUSTED,
+      'Fix login trustedtitle7'
+    )
+    await index(squadA, 7)
+    expect(await docText((await docFor(squadA, 7)).id)).toContain('parentprose7')
+    // A human deny of that exact text wins over the author's trust.
+    await revision(squadA, 'issue', 9008, 'Parent body parentprose8', 'deny', TRUSTED, 'Fix login trustedtitle8')
+    await index(squadA, 8)
+    expect(await docText((await docFor(squadA, 8)).id)).not.toContain('parentprose8')
   })
 })

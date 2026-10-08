@@ -4,7 +4,7 @@ import { useParams, useNavigate, useLocation, useSearchParams } from 'react-rout
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ComponentProps, type ComponentType, useCallback, useEffect, useState, useMemo } from 'react'
 import { queries } from '../queryOptions'
-import { queryKeys } from '../queryKeys'
+import { queryKeys, githubFeedbackQueryKeys } from '../queryKeys'
 import { DONE_WORK_STREAM_STATUSES_KEY, listSquadAgentsWithRecent } from '../api/squads'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useInfiniteDoneWorkStreams } from '../hooks/useInfiniteDoneWorkStreams'
@@ -221,6 +221,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreams(resolvedId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.agentsWithRecent(resolvedId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.agents(resolvedId) }),
+      queryClient.invalidateQueries({ queryKey: githubFeedbackQueryKeys.summary(resolvedId) }),
     ])
   }, [queryClient, resolvedId, squadId])
 
@@ -230,6 +231,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.squads.doneWorkStreamsInfinite(resolvedId, DONE_WORK_STREAM_STATUSES_KEY),
       }),
+      queryClient.invalidateQueries({ queryKey: githubFeedbackQueryKeys.summary(resolvedId) }),
     ])
   }, [queryClient, resolvedId])
 

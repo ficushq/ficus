@@ -410,6 +410,52 @@ describe('mounted GitHub feedback moderation routes', () => {
     ).toBe(400)
     const summary = await (await get(moderator, `${squadA}/github-feedback/summary`)).json()
     expect(summary.failing).toBeGreaterThanOrEqual(1)
+
+    // A worker that crashed mid-attempt leaves an expired lease behind; that row is still retryable.
+    await db
+      .update(githubFeedbackRevisions)
+      .set({
+        leaseToken: crypto.randomUUID(),
+        leaseExpiresAt: new Date(0),
+        nextAttemptAt: new Date(Date.now() + 60_000),
+      })
+      .where(eq(githubFeedbackRevisions.id, failing.id))
+    expect((await send(moderator, 'POST', `${squadA}/github-feedback/revisions/${failing.id}/retry`, {})).status).toBe(
+      202
+    )
+    // A live lease is busy, not retryable.
+    await db
+      .update(githubFeedbackRevisions)
+      .set({ leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() + 60_000) })
+      .where(eq(githubFeedbackRevisions.id, failing.id))
+    expect((await send(moderator, 'POST', `${squadA}/github-feedback/revisions/${failing.id}/retry`, {})).status).toBe(
+      409
+    )
+  })
+
+  test('a release retained many times counts as failing so it surfaces on Home and Work', async () => {
+    const stuck = await revision({ decision: 'allow_once', releaseState: 'retry' })
+    await db
+      .update(githubFeedbackRevisions)
+      .set({ releaseState: 'retained', attempts: 10, reason: 'source_unavailable' })
+      .where(eq(githubFeedbackRevisions.id, stuck.id))
+    const quiet = await revision({ decision: 'allow_once', releaseState: 'retry' })
+    await db
+      .update(githubFeedbackRevisions)
+      .set({ releaseState: 'retained', attempts: 2, reason: 'awaiting_acceptance' })
+      .where(eq(githubFeedbackRevisions.id, quiet.id))
+    const summary = await (await get(moderator, `${squadA}/github-feedback/summary`)).json()
+    expect(summary.releasing).toBeGreaterThanOrEqual(2)
+    expect(summary.failing).toBeGreaterThanOrEqual(1)
+    // Denying an allowed-but-undelivered release is the human's way out of a stuck loop.
+    const denied = await send(moderator, 'POST', `${squadA}/github-feedback/decisions`, {
+      requestId: crypto.randomUUID(),
+      action: 'deny',
+      selections: [selection(stuck)],
+    })
+    expect(denied.status).toBe(202)
+    const [after] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, stuck.id))
+    expect(after).toMatchObject({ decision: 'deny', releaseState: 'held', leaseToken: null, reason: 'human_denied' })
   })
 
   test('trusted authors: server-resolved add, origin-accurate removal and confirmed-account binding', async () => {

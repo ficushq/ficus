@@ -150,9 +150,25 @@ export async function readFeedbackRevision(store: Store, id: string, lock = fals
   return revision
 }
 
+const UUID_PATTERN = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
+/**
+ * The inbox row's integration event id as a uuid, or NULL when the metadata holds no uuid-shaped
+ * value. Comparing as uuid lets the events' primary-key index serve every inbox read and write;
+ * a `::text` comparison on the key column forced a sequential scan of the whole events table.
+ */
+export function inboxIntegrationEventId() {
+  return sql`(CASE WHEN ${inbox.metadata}->>'integrationEventId' ~ ${UUID_PATTERN} THEN (${inbox.metadata}->>'integrationEventId')::uuid END)`
+}
+
+/** The squad id stored in an output event's authority, as a uuid (NULL when absent or malformed). */
+export function eventAuthoritySquadId(alias: string) {
+  return sql`(CASE WHEN ${sql.raw(alias)}.authority->>'squadId' ~ ${UUID_PATTERN} THEN (${sql.raw(alias)}.authority->>'squadId')::uuid END)`
+}
+
 /** Derive the provider from the original server event, never a transported metadata flag. */
 export function githubInboxCondition() {
-  return sql`EXISTS (SELECT 1 FROM integration_output_events WHERE id::text = ${inbox.metadata}->>'integrationEventId' AND integration = 'github')`
+  return sql`EXISTS (SELECT 1 FROM integration_output_events WHERE id = ${inboxIntegrationEventId()} AND integration = 'github')`
 }
 
 /** Persisted notification images count too. Cache payload only; every caller still verifies

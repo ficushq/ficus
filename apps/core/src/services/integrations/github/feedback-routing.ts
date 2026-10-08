@@ -124,6 +124,21 @@ export async function githubMatchingEvent(store: Store, event: Event): Promise<E
 }
 
 /**
+ * Outcome of preparing a GitHub output event for routing.
+ * - `ready`: route `event` now.
+ * - `settle`: this raw source event will never route (unauthorized, irrelevant, not routable);
+ *   the caller marks it matched with `reason` so the durable unmatched queue stops re-planning it.
+ * - `defer`: nothing to route right now (budget exhausted, held for review, transient state);
+ *   the event keeps its place in the unmatched queue or is excluded from it by its capture.
+ */
+export type GitHubOutputPreparation =
+  | { kind: 'ready'; event: Event }
+  | { kind: 'settle'; reason: string }
+  | { kind: 'defer' }
+
+const DEFER: GitHubOutputPreparation = { kind: 'defer' }
+
+/**
  * Entry to every output effect. First query relevance, then capture; held content returns null.
  * Assigned provider I/O finishes before any authority/stream/agent lock. The server-owned witness
  * is short-lived, content/authority bound and rechecked under final locks; a transported status flag
@@ -133,36 +148,54 @@ export async function prepareGitHubOutput(
   input: Event,
   options: { reverifyAdopted?: boolean } = {}
 ): Promise<Event | null> {
+  const outcome = await prepareGitHubOutputOutcome(input, options)
+  return outcome.kind === 'ready' ? outcome.event : null
+}
+
+/** Like {@link prepareGitHubOutput}, but tells the caller whether a null result is final. */
+export async function prepareGitHubOutputOutcome(
+  input: Event,
+  options: { reverifyAdopted?: boolean } = {}
+): Promise<GitHubOutputPreparation> {
   return withGitHubOutputPass(() =>
     input.integration === 'github'
-      ? inGitHubCandidate(() => prepareGitHubOutputInPass(input, options), null)
+      ? inGitHubCandidate(() => prepareGitHubOutputInPass(input, options), DEFER)
       : prepareGitHubOutputInPass(input, options)
   )
 }
 
-async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopted?: boolean }): Promise<Event | null> {
-  if (input.integration !== 'github') return input
-  if (!reserveGitHubEvent(input.id)) return null
+async function prepareGitHubOutputInPass(
+  input: Event,
+  options: { reverifyAdopted?: boolean }
+): Promise<GitHubOutputPreparation> {
+  const ready = (event: Event): GitHubOutputPreparation => ({ kind: 'ready', event })
+  // Only a raw provider source is ever settled. Canonical (`github-feedback:`) and status
+  // (`github-status:`) effects keep `matchedAt` as their own routing record, which the release
+  // worker reads; a dead end for one of those is a deferral.
+  const raw = !input.fact.github?.revisionId && !input.sourceKey.startsWith('github-status:')
+  const settle = (reason: string): GitHubOutputPreparation => (raw ? { kind: 'settle', reason } : DEFER)
+  if (input.integration !== 'github') return ready(input)
+  if (!reserveGitHubEvent(input.id)) return DEFER
   if (
     input.authority.kind !== 'connection' ||
     !input.authority.connectionRevision ||
     !(await authorized(db, 'github', input.authority, input.authority.squadId))
   )
-    return null
+    return settle('github_unauthorized')
   // Filter OFF: no capture, hold, provider witness or projection; the event routes as before.
   if (!(await isGitHubAuthorFilterEnabled(db, input.authority.squadId)))
-    return (await isUnfilteredGitHubEvent(db, input)) ? input : null
+    return (await isUnfilteredGitHubEvent(db, input)) ? ready(input) : settle('github_not_routable')
   let source = input
   const [prior] = await db.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, input.id))
   if (prior) {
     const stored = await readOutputEvent(db, prior.sourceEventId)
     if (!stored || sourceHash(stored) !== prior.sourceHash || hash(stored.authority) !== hash(input.authority))
-      return null
+      return DEFER
     source = stored
   } else if (input.fact.github?.revisionId) {
     // Crash recovery uses exact stored source associations and the immutable predicate, never
     // a guessed source, marker, other account's access or provider replacement content.
-    if (!(await isGitHubFeedbackAdmitted(db, input))) return null
+    if (!(await isGitHubFeedbackAdmitted(db, input))) return DEFER
     const [row] = await db
       .select({ sourceId: integrationOutputEvents.id })
       .from(githubFeedbackSources)
@@ -177,18 +210,18 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
       )
       .orderBy(githubFeedbackSources.observedAt)
       .limit(1)
-    if (!row) return null
+    if (!row) return DEFER
     const stored = await readOutputEvent(db, row.sourceId)
-    if (!stored) return null
+    if (!stored) return DEFER
     source = stored
-  } else if (input.sourceKey.startsWith('github-status:')) return null
+  } else if (input.sourceKey.startsWith('github-status:')) return DEFER
   // A raw event already routed (before rollout, or while the filter was OFF) is never re-delivered
   // as a new capture; only a refinement that resets matchedAt is evaluated again.
-  else if (input.matchedAt) return null
+  else if (input.matchedAt) return DEFER
   const envelope = source.fact.github
-  if (!envelope || (!envelope.content && !envelope.status)) return null
+  if (!envelope || (!envelope.content && !envelope.status)) return settle('github_no_content')
   const factual = !!envelope.status
-  if (factual && !statusFact(source)) return null
+  if (factual && !statusFact(source)) return settle('github_status_invalid')
   const relevanceEvent = factual ? { ...source, fact: envelope.status! } : source
   const local = (event: Event) =>
     event.authority.kind === 'connection' && sourceHash(event) === sourceHash(source)
@@ -201,7 +234,9 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
       squadId === (source.authority.kind === 'connection' ? source.authority.squadId : null) && (await local(source)),
     { bindingFact: source.fact }
   )
-  if (!plan.relevant && !prior && !input.fact.github?.revisionId) return null
+  // Nobody tracks this resource and no rule selects it. Before the filter this event was routed
+  // nowhere and marked matched; settling it keeps the unmatched queue from re-planning it for ever.
+  if (!plan.relevant && !prior && !input.fact.github?.revisionId) return settle('github_irrelevant')
   if (!factual && !input.fact.github?.revisionId) {
     const [known] = await db
       .select({ decision: githubFeedbackRevisions.decision })
@@ -211,14 +246,15 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
       .limit(1)
     // Explicit history is released only by the reviewed-source release adapter, never a raw
     // retry or a trust-list change. In particular, pending replays cost no provider requests.
-    if (known && known.decision !== 'automatic') return null
+    if (known && known.decision !== 'automatic') return DEFER
   }
   const access = await readGitHubResource(source)
-  if (!access?.repositoryAuthorized) return null
+  if (!access) return DEFER
+  if (!access.repositoryAuthorized) return settle('github_repository_unauthorized')
   const checkedAt = access.checkedAt,
     expiresAt = new Date(checkedAt.getTime() + TTL)
   const native = access.nativeAuthorized
-  if (!(await local(source))) return null
+  if (!(await local(source))) return settle('github_unauthorized')
   let effect: Event
   if (!factual) {
     if (prior || input.fact.github?.revisionId) effect = input
@@ -236,9 +272,18 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
                 enqueueGitHubFeedbackScreening(revision, tx),
             }),
       }
-      const captured = native
-        ? await captureRelevantGitHubFeedback(source, deps)
-        : await captureGitHubFeedback(source.id, deps)
+      let captured
+      try {
+        captured = native
+          ? await captureRelevantGitHubFeedback(source, deps)
+          : await captureGitHubFeedback(source.id, deps)
+      } catch (error) {
+        // The filter was turned OFF between the relevance read and the capture transaction:
+        // route the raw event as the filter-OFF path would, instead of holding it.
+        if (error instanceof Error && error.message === 'feedback_filter_disabled')
+          return (await isUnfilteredGitHubEvent(db, input)) ? ready(input) : settle('github_not_routable')
+        throw error
+      }
       // Content-free, after the capture transaction committed: the human queue count changed.
       if (captured.revision.decision === 'pending' && captured.disposition !== 'replay')
         eventEmitter.emit('githubFeedback.updated', { squadId: captured.revision.squadId })
@@ -247,11 +292,11 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
       if (native && captured.disposition !== 'replay' && (await isGitHubFeedbackScreenWaiting(captured.revision.id)))
         scheduleGitHubFeedbackScreening(captured.revision.id)
       if (!native || !['automatic', 'allow_once', 'allow_trust', 'screened'].includes(captured.revision.decision))
-        return null
+        return DEFER
       effect = await recordCanonicalGitHubFeedback(captured.revision.id, source.id, local)
     }
   } else {
-    if (!native) return null
+    if (!native) return settle('github_source_unverified')
     const fact = statusFact(source)!
     const [inserted] = await db
       .insert(integrationOutputEvents)
@@ -279,11 +324,11 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
           )
       )[0]!
     const storedEffect = await readOutputEvent(db, identity.id)
-    if (!storedEffect) return null
+    if (!storedEffect) return DEFER
     effect = storedEffect
-    if (hash(effect.fact) !== hash(fact)) return null // refinement must be deliberately reconciled, not substitute unseen text
+    if (hash(effect.fact) !== hash(fact)) return DEFER // refinement must be deliberately reconciled, not substitute unseen text
   }
-  if (!native) return null
+  if (!native) return DEFER
   const [existingProof] = await db.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, effect.id))
   if (
     hash(effect.authority) !== hash(source.authority) ||
@@ -293,12 +338,12 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
     // or replace that event's original source. Reverify its OWN retained authority instead.
     // Known-record renewal budgets one native verification per resource. A concurrent source
     // adoption must defer, not recursively exceed that budget; the next pass checks its own proof.
-    return options.reverifyAdopted === false ? null : prepareGitHubOutput(effect)
+    return options.reverifyAdopted === false ? DEFER : prepareGitHubOutputOutcome(effect)
   }
-  return db.transaction(async (tx) => {
+  return db.transaction(async (tx): Promise<GitHubOutputPreparation> => {
     await lockGitHubTrustAuthority(tx)
     const [lockedProof] = await tx.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, effect.id))
-    if (lockedProof && lockedProof.sourceEventId !== source.id) return null
+    if (lockedProof && lockedProof.sourceEventId !== source.id) return DEFER
     const current = await readOutputEvent(tx, source.id)
     if (
       expiresAt.getTime() <= Date.now() ||
@@ -308,7 +353,7 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
       !(await authorized(tx, 'github', effect.authority, effect.authority.squadId)) ||
       (effect.fact.github?.revisionId && !(await isGitHubFeedbackAdmitted(tx, effect)))
     )
-      return null
+      return DEFER
     const proof = {
       eventId: effect.id,
       sourceEventId: source.id,
@@ -322,7 +367,7 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
       .insert(githubOutputProofs)
       .values(proof)
       .onConflictDoUpdate({ target: githubOutputProofs.eventId, set: proof })
-    return effect
+    return ready(effect)
   })
 }
 
@@ -340,6 +385,9 @@ export class GitHubOutputNotAdmittedError extends Error {
  */
 export async function lockGitHubOutputAuthority(tx: DbTx, event: Event): Promise<void> {
   if (event.integration !== 'github') return
+  // Exclusive on purpose: effect transactions take the squad row FOR SHARE below and some later
+  // upgrade it (consultant creation, trigger runs). Two of them running concurrently under a shared
+  // advisory lock deadlock on that upgrade, so the advisory lock also serializes effects.
   await lockGitHubTrustAuthority(tx)
   if (event.authority.kind !== 'connection') return
   await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, event.authority.squadId)).for('share')

@@ -56,6 +56,10 @@ const buttonIn = (scope: HTMLElement, text: string) => {
 }
 const checkbox = (scope: HTMLElement, n: number) =>
   scope.querySelector(`input[type="checkbox"][data-revision-id="${rid(n)}"]`) as HTMLInputElement
+/** Opens a row's detail. The row button's accessible name is its own visible text, not a fixed
+ * "Review X" label, so tests target it by the same `data-revision-id` the checkbox uses. */
+const openRow = (scope: HTMLElement, n: number) =>
+  scope.querySelector(`button[data-revision-id="${rid(n)}"]`) as HTMLButtonElement
 const decisionBodies = () =>
   api.requests.filter((r) => r.method === 'POST' && r.path === '/decisions').map((r) => r.body as Record<string, any>)
 const refetch = () => harness.act(() => client.invalidateQueries({ queryKey: githubFeedbackQueryKeys.squad(SQUAD) }))
@@ -111,7 +115,7 @@ test('a conflict drops selections someone else already decided; clear selection 
 
 test('success announces a queued release, not delivery, and clears only the decided selection', async () => {
   const dialog = await render()
-  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Review @outsider1')))
+  await harness.act(async () => fireEvent.click(openRow(dialog(), 1)))
   await waitFor(() => expect(dialog().textContent).toContain(`Body of ${rid(1)}`))
   await harness.act(async () => fireEvent.click(checkbox(dialog(), 1)))
   await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Allow once')))
@@ -157,14 +161,44 @@ test('allow and trust requires an explicit confirmation naming each author and s
   expect(decisionBodies()[0]!.selections).toHaveLength(2)
 })
 
+test('a selection that turns out to be withheld disables confirm-trust even after it is already open', async () => {
+  api.details.set(rid(1), detailOf(item(1), { content: null, contentWithheld: 'source_access_unavailable' }))
+  const dialog = await render()
+  await harness.act(async () => fireEvent.click(checkbox(dialog(), 1)))
+  await harness.act(async () => fireEvent.click(checkbox(dialog(), 2)))
+  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Allow and trust author')))
+  const confirmButton = () => buttonIn(dialog(), 'Allow and trust 2 authors')
+  expect(confirmButton().disabled).toBe(false)
+  // The confirmation panel stays open while the list/detail panes underneath are still live; opening
+  // event 1's detail here reveals its content is withheld after all.
+  await harness.act(async () => fireEvent.click(openRow(dialog(), 1)))
+  await waitFor(() => expect(dialog().textContent).toContain('no longer has access'))
+  await waitFor(() => expect(confirmButton().disabled).toBe(true))
+  await harness.act(async () => fireEvent.click(confirmButton()))
+  expect(decisionBodies()).toHaveLength(0)
+})
+
 test('read-only reviewers can inspect but have no selection or decision controls', async () => {
   api.canModerate = false
   const dialog = await render()
   expect(checkbox(dialog(), 1)).toBeNull()
   expect(dialog().textContent).toContain('permission to update this squad')
   expect([...dialog().querySelectorAll('button')].some((b) => b.textContent === 'Allow once')).toBe(false)
-  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Review @outsider1')))
+  await harness.act(async () => fireEvent.click(openRow(dialog(), 1)))
   await waitFor(() => expect(dialog().textContent).toContain(`Body of ${rid(1)}`))
+})
+
+test('a row names itself by its own visible text, and checkbox labels stay unique for same-author, same-kind events', async () => {
+  const author = { accountId: '9001', login: 'dupe', accountType: 'User' } as const
+  api.pending = [item(1), item(2, { author }), item(3, { author })]
+  const dialog = await render()
+  await waitFor(() => expect(dialog().textContent).toContain('@dupe'))
+  const row = openRow(dialog(), 2)
+  // The visible text (author, kind, target, time) IS the accessible name; nothing overrides it.
+  expect(row.getAttribute('aria-label')).toBeNull()
+  expect(row.textContent).toContain('@dupe')
+  const labels = [checkbox(dialog(), 2), checkbox(dialog(), 3)].map((input) => input.getAttribute('aria-label'))
+  expect(new Set(labels).size).toBe(2)
 })
 
 test('detail shows author, trust, source, recipients and why held; external content stays inert text', async () => {
@@ -184,7 +218,7 @@ test('detail shows author, trust, source, recipients and why held; external cont
   )
   api.details.set(rid(2), detailOf(item(2), { authorTrust: [{ kind: 'manual', addedByUserId: 'u1' }] }))
   const dialog = await render()
-  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Review @outsider1')))
+  await harness.act(async () => fireEvent.click(openRow(dialog(), 1)))
   const panel = () => dialog().querySelector('[aria-label="Event details"]') as HTMLElement
   await waitFor(() => expect(panel()?.textContent).toContain('<script>alert(1)</script>'))
   expect(panel().querySelector('img, script, b')).toBeNull()
@@ -198,23 +232,28 @@ test('detail shows author, trust, source, recipients and why held; external cont
   expect(panel().textContent).toContain('whoever should receive it at that time')
   expect(panel().textContent).not.toContain('Would go to')
 
-  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Review @outsider2')))
+  await harness.act(async () => fireEvent.click(openRow(dialog(), 2)))
   await waitFor(() => expect(panel().textContent).toContain('Added to this squad’s trusted authors'))
   const source = panel().querySelector('a[href^="https://github.com/"]') as HTMLAnchorElement
   expect(source.rel).toContain('noopener')
 })
 
 test('withheld content explains why and can still be denied but not allowed', async () => {
-  api.pending = [item(1, { contentAvailable: false })]
+  // The server only reports `content_unavailable` when the list item's own `contentAvailable` is
+  // false. `source_access_unavailable` means the content WAS captured; it just can't be shown or
+  // released right now because the squad lost access to the GitHub connection it came from — so
+  // the list item correctly reports `contentAvailable: true` here.
+  api.pending = [item(1, { contentAvailable: true })]
   api.details.set(
     rid(1),
-    detailOf(item(1, { contentAvailable: false }), { content: null, contentWithheld: 'source_access_unavailable' })
+    detailOf(item(1, { contentAvailable: true }), { content: null, contentWithheld: 'source_access_unavailable' })
   )
   const dialog = await render()
-  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Review @outsider1')))
+  await harness.act(async () => fireEvent.click(openRow(dialog(), 1)))
   await waitFor(() => expect(dialog().textContent).toContain('no longer has access'))
   await harness.act(async () => fireEvent.click(checkbox(dialog(), 1)))
   expect(buttonIn(dialog(), 'Allow once').disabled).toBe(true)
+  expect(buttonIn(dialog(), 'Allow and trust author').disabled).toBe(true)
   expect(buttonIn(dialog(), 'Deny').disabled).toBe(false)
 })
 
@@ -224,7 +263,7 @@ test('releasing tab shows retry state and retries a failed release', async () =>
   await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Releasing (1)')))
   await waitFor(() => expect(dialog().textContent).toContain('@outsider5'))
   expect(dialog().textContent).toContain('Retrying')
-  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Review @outsider5')))
+  await harness.act(async () => fireEvent.click(openRow(dialog(), 5)))
   await waitFor(() => expect(buttonIn(dialog(), 'Retry now')).toBeTruthy())
   await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Retry now')))
   await waitFor(() =>
@@ -241,11 +280,64 @@ test('pagination loads more without dropping selections', async () => {
   expect(checkbox(dialog(), 1).checked).toBe(true)
 })
 
+test('reopening prunes selections no longer pending, so they stop counting toward the 50 cap', async () => {
+  const { root } = harness.createRoot()
+  const dialog = () => document.querySelector('[role="dialog"][aria-label="Review GitHub events"]') as HTMLElement
+  const renderWith = (isOpen: boolean) =>
+    harness.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <GitHubFeedbackReviewModal squadId={SQUAD} isOpen={isOpen} onClose={() => {}} />
+        </QueryClientProvider>
+      )
+    )
+  await renderWith(true)
+  await waitFor(() => expect(dialog()?.textContent).toContain('@outsider1'))
+  await harness.act(async () => fireEvent.click(checkbox(dialog(), 1)))
+  await harness.act(async () => fireEvent.click(checkbox(dialog(), 2)))
+  await waitFor(() => expect(dialog().textContent).toContain('2 selected'))
+
+  await renderWith(false)
+  // Someone else decides event 1 while this dialog is closed; no 409 ever surfaces here.
+  api.pending = [item(2)]
+  await renderWith(true)
+  await waitFor(() => expect(dialog().textContent).toContain('1 selected'))
+  expect(checkbox(dialog(), 2).checked).toBe(true)
+})
+
+test('Tab wraps correctly whether focus is resting on the dialog itself or has drifted outside it', async () => {
+  const dialog = await render()
+  const focusable = () => [
+    ...dialog().querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled])'),
+  ]
+  const first = () => focusable()[0]!
+  const last = () => focusable()[focusable().length - 1]!
+
+  // Resting state right after open: Modal focuses the dialog root itself, not a child control.
+  dialog().focus()
+  expect(document.activeElement).toBe(dialog())
+  await harness.act(async () => fireEvent.keyDown(dialog(), { key: 'Tab' }))
+  expect(document.activeElement).toBe(first())
+
+  dialog().focus()
+  await harness.act(async () => fireEvent.keyDown(dialog(), { key: 'Tab', shiftKey: true }))
+  expect(document.activeElement).toBe(last())
+
+  // Focus drifted outside the dialog entirely (e.g. a removed/hidden control reverted it to body).
+  document.body.focus()
+  await harness.act(async () => fireEvent.keyDown(document.body, { key: 'Tab' }))
+  expect(document.activeElement).toBe(first())
+
+  document.body.focus()
+  await harness.act(async () => fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true }))
+  expect(document.activeElement).toBe(last())
+})
+
 test('Escape closes; Enter in the content pane never submits a decision', async () => {
   let closed = 0
   const dialog = await render({ onClose: () => (closed += 1) })
   await harness.act(async () => fireEvent.click(checkbox(dialog(), 1)))
-  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Review @outsider1')))
+  await harness.act(async () => fireEvent.click(openRow(dialog(), 1)))
   const panel = dialog().querySelector('[aria-label="Event details"]') as HTMLElement
   await harness.act(async () => fireEvent.keyDown(panel, { key: 'Enter' }))
   expect(decisionBodies()).toHaveLength(0)

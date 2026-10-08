@@ -172,11 +172,17 @@ async function releaseInPass(
     )
   const selectionLimit = reserveGitHubLookahead(limit)
   if (!selectionLimit) return 0
+  // Fresh approvals (`ready`) go before rows that are retrying or retained, so a backlog of
+  // releases waiting on a paused stream never delays a new human decision.
   const candidates = await db
     .select({ id: githubFeedbackRevisions.id })
     .from(githubFeedbackRevisions)
     .where(due())
-    .orderBy(githubFeedbackRevisions.updatedAt, githubFeedbackRevisions.id)
+    .orderBy(
+      sql`CASE ${githubFeedbackRevisions.releaseState} WHEN 'ready' THEN 0 WHEN 'retry' THEN 1 ELSE 2 END`,
+      sql`${githubFeedbackRevisions.nextAttemptAt} NULLS FIRST`,
+      githubFeedbackRevisions.id
+    )
     .limit(selectionLimit)
   let claimed = 0
   for (const { id } of candidates) {
@@ -301,10 +307,13 @@ async function releaseInPass(
             reason: revoked ? 'trust_revoked' : reason,
             leaseToken: null,
             leaseExpiresAt: null,
+            // Exponential backoff from 30 s, doubling up to a one-hour ceiling: a retained release
+            // (rotated connection, paused stream, recipient gone) must not re-check GitHub every
+            // half minute for ever.
             nextAttemptAt:
               revoked || state === 'delivered' || state === 'obsolete'
                 ? null
-                : sql`clock_timestamp() + interval '30 seconds'`,
+                : sql`clock_timestamp() + interval '30 seconds' * least(power(2, least(${current.attempts}, 7)), 120)`,
             updatedAt: new Date(),
           })
           .where(and(eq(githubFeedbackRevisions.id, id), eq(githubFeedbackRevisions.leaseToken, leaseToken)))

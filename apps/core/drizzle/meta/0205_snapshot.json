@@ -1,6 +1,6 @@
 {
-  "id": "6e393670-d425-4a6b-90bd-ef780128c4ae",
-  "prevId": "b4db339b-0e44-4896-b089-07ede2919d7c",
+  "id": "3fd954a7-3797-4d80-a637-9981ce45080b",
+  "prevId": "672586f2-dcbe-46ec-b59d-0043e5adf551",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3430,6 +3430,25 @@
           "primaryKey": false,
           "notNull": true
         },
+        "input_tokens": {
+          "name": "input_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cost_nanodollars": {
+          "name": "cost_nanodollars",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cost_estimated": {
+          "name": "cost_estimated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "input_sha256": {
           "name": "input_sha256",
           "type": "varchar(64)",
@@ -3466,6 +3485,27 @@
         "idx_decision_log_created_at": {
           "name": "idx_decision_log_created_at",
           "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_decision_log_purpose_created_at": {
+          "name": "idx_decision_log_purpose_created_at",
+          "columns": [
+            {
+              "expression": "purpose",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "created_at",
               "isExpression": false,
@@ -6053,6 +6093,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "github_feedback_source_by_event": {
+          "name": "github_feedback_source_by_event",
+          "columns": [
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -6293,7 +6348,23 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "github_output_proof_source": {
+          "name": "github_output_proof_source",
+          "columns": [
+            {
+              "expression": "source_event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "github_output_proofs_event_id_integration_output_events_id_fk": {
           "name": "github_output_proofs_event_id_integration_output_events_id_fk",
@@ -17517,7 +17588,7 @@
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
-          "default": true
+          "default": false
         },
         "max_concurrent_work_streams": {
           "name": "max_concurrent_work_streams",

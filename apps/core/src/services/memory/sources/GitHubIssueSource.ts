@@ -154,8 +154,14 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
         squadId
       )) ?? []
     const kind = detail.pull_request ? 'pull_request' : 'issue'
+    // A pull request's captured revisions are keyed by its PR id, which only `/pulls` reports.
+    const pull = detail.pull_request
+      ? await githubApiGet<{ id?: number }>(`/repos/${ref.repo}/pulls/${ref.number}`, squadId)
+      : null
     // Only prose the squad's author filter admits is indexed; the projection records why.
-    const projected = await projectGitHubThreadForMemory(squadId, detail, comments)
+    const projected = await projectGitHubThreadForMemory(squadId, detail, comments, undefined, {
+      pullRequestId: pull?.id ?? null,
+    })
     return {
       content: renderIssueMarkdown(detail, projected.comments, {
         parent: !projected.parentAdmitted,

@@ -1,0 +1,1 @@
+ALTER TABLE "squads" ALTER COLUMN "github_author_filter" SET DEFAULT true;

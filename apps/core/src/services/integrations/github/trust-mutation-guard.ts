@@ -20,6 +20,51 @@ import { lockGitHubTrustAuthority } from './trust-authority-lock'
 
 const DEFAULT_SQUAD = 'github:future-squad'
 
+async function auditNonHuman(identity: Identity | undefined, action: string, targetId: string, code: string) {
+  await db.insert(integrationAuditEvents).values({
+    actorKey: githubAuthorityActor(identity),
+    action,
+    outcome: 'denied',
+    targetKind: 'authority_mutation',
+    targetId,
+    code,
+  })
+}
+
+/**
+ * Human-only gate for operations that hand out a way to BECOME a dynamically trusted person
+ * without touching a linked user: creating or inviting a person into a role that carries
+ * `squads:update`, granting such a role, or opening self-registration into one. An agent or
+ * system token holding `users:create`/`users:update` could otherwise mint a human who links a
+ * GitHub account and is trusted (and may moderate) everywhere that role applies.
+ */
+export async function requireHumanForTrustGrant(
+  identity: Identity | undefined,
+  grants: ReadonlyArray<{ permissions: readonly string[] }>,
+  targetId: string,
+  options: {
+    /** True when the target already effectively holds `squads:update` in the granted scope: a
+     * redundant grant changes no authority, so automation keeps it (the PR's existing contract). */
+    alreadyHeld?: () => Promise<boolean>
+  } = {}
+): Promise<void> {
+  if (identity?.type === 'user') return
+  const trustGranting = grants.some((role) =>
+    role.permissions.some((permission) => permissionMatches(permission, 'squads:update'))
+  )
+  if (!trustGranting) return
+  if (options.alreadyHeld && (await options.alreadyHeld())) return
+  await auditNonHuman(identity, 'github.trust.authority', targetId, 'human_required')
+  throw new GitHubFeedbackError('human_required', 403)
+}
+
+/** Sign-up policy (invite requirement, allowed domains, default role) is a trust-granting setting. */
+export async function requireHumanForSignupPolicy(identity: Identity | undefined): Promise<void> {
+  if (identity?.type === 'user') return
+  await auditNonHuman(identity, 'github.trust.authority', 'auth-settings', 'human_required')
+  throw new GitHubFeedbackError('human_required', 403)
+}
+
 async function snapshot(tx: DbTx, actorId?: string) {
   const linked = await tx
     .select({ userId: githubPersonalIdentities.userId, disabledAt: users.disabledAt })

@@ -260,12 +260,16 @@ Set `github.connectionId` to choose an attached account explicitly. Otherwise th
 
 Public GitHub authors can write prose that reaches fully privileged agents. Each
 squad therefore has an **author filter** (`squads.github_author_filter`, a column
-rather than metadata so generic squad updates cannot change it). Migration
-`0204_github_author_filter` sets it OFF for squads that existed at rollout and ON
-for new squads. User documentation: `apps/docs/src/content/docs/connect/github.mdx`.
+rather than metadata so generic squad updates cannot change it). Migrations
+`0205_github_author_filter` (added OFF, for squads that existed at rollout) and
+`0206_github_author_filter_default_on` (ON for new squads) set it. User documentation: `apps/docs/src/content/docs/connect/github.mdx`.
 
 - **OFF** keeps pre-feature routing: no capture, hold, queue or trust lookup.
-  Exact connection and repository authorization still apply.
+  Exact connection and repository authorization still apply. Notices are accepted
+  at delivery as they were before the filter (no stream-state or exact-text gate)
+  and pre-flow streams still skip bot comments. One difference remains: GitHub
+  notices are delivered one message at a time against an acceptance receipt in
+  every squad, instead of batched with the rest of the mailbox.
 - **ON** gates otherwise-matching feedback (issue and PR comments, reviews,
   inline review comments, issue and PR text) before any agent effect: inbox
   delivery, wake, consultant creation, work creation and trigger runs. This
@@ -286,6 +290,13 @@ authority. The content author is attributed per item (`feedback-envelope.ts`).
 An edit is attributed to its editor only when the provider proves who edited;
 otherwise the edit is held. Unknown or unresolvable authors are held, not
 allowed.
+
+An agent that posts to GitHub with a squad connection posts as the person who
+connected that account. If that person is trusted (linked, or added manually),
+the agent's comments are trusted as theirs, including anything the agent quoted
+from an untrusted source it read itself. That is the connected person's
+accountability, the same as agent-to-agent mail inside Ficus; the filter does
+not try to tell a person's comment from their agent's.
 
 **Actions** (`objectKind: 'action'`): issue `assigned`, `unassigned`, `labeled`,
 `unlabeled`, `closed`, `reopened` and pull request `assigned`, `unassigned`,
@@ -327,7 +338,20 @@ is made. The approved event reaches the current recipients, which may differ fro
 the recipients at hold time; hold-time routing is kept for display only. Delivery
 is receipt-based and exactly once. It respects pauses, parking and waits, never
 approves workflow gates, and ends `obsolete` when nobody should receive it. The
-**Releasing** queue shows `retry` and `retained` states.
+**Releasing** queue shows `retry` and `retained` states. A release that is not
+settled backs off exponentially (30 s doubling to one hour), fresh approvals are
+claimed before retries, and a release retained ten or more times counts as
+failing in the summary so it surfaces on Home and Work. A human may `deny` an
+allowed revision that is still releasing; that is the way out of a release that
+can no longer reach anyone. Allowing (and allow-and-trust) is refused when no
+squad connection can still read the source, because the review window withholds
+the body in that state.
+
+Raw GitHub source events that will never route (unauthorized connection,
+irrelevant to every stream and rule, or not routable in the squad's mode) are
+settled: marked matched with a reason code, exactly as pre-filter routing marked
+every considered event, so the durable unmatched queue never re-plans them.
+Canonical and status effects keep their own routing record.
 
 Turning the filter OFF (`author-filter-setting.ts`) records a one-time allow by
 that human for each held revision with readable content, released the same way.

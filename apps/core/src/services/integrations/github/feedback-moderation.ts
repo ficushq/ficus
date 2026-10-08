@@ -9,6 +9,7 @@ import {
 } from '../../../db'
 import type { Identity } from '../../rbac/permissions'
 import { githubContentHash } from './feedback-envelope'
+import { hasCurrentSourceAccess } from './feedback-review'
 import {
   GitHubFeedbackError,
   githubAuthorityActor,
@@ -16,10 +17,17 @@ import {
   requireGitHubHumanSquadUpdate,
 } from './feedback-trust'
 
+const ALLOWED = ['allow_once', 'allow_trust']
+const RELEASING = ['ready', 'retry', 'retained']
+
 /**
  * All-or-nothing, human-only compare-and-set against the exact displayed snapshots.
  * The transaction commits decision, content-free audit, future trust and durable release intent together.
  * It never fetches provider content or routes an event. Adding trust never releases other history.
+ *
+ * `deny` also accepts an allowed revision that is still releasing (ready, retry or retained): the
+ * human's only way out of a release that can no longer reach anyone. Allowing requires the squad to
+ * still be able to read the source, so nobody approves or trusts text that was withheld from view.
  */
 export async function moderateGitHubFeedback(
   identity: Identity | undefined,
@@ -63,21 +71,31 @@ export async function moderateGitHubFeedback(
         )
         .orderBy(githubFeedbackRevisions.id)
         .for('update')
+      const decidable = (row: (typeof rows)[number]) =>
+        row.decision === 'pending' ||
+        (request.action === 'deny' && ALLOWED.includes(row.decision) && RELEASING.includes(row.releaseState))
       if (
         rows.length !== selections.length ||
         selections.some((selection) => {
           const row = rows.find((row) => row.id === selection.revisionId)
           return (
             !row ||
-            row.decision !== 'pending' ||
+            !decidable(row) ||
             row.contentHash !== selection.contentHash ||
             row.decisionVersion !== selection.decisionVersion
           )
         })
       )
         throw new GitHubFeedbackError('moderation_selection_conflict', 409)
-      if (request.action !== 'deny' && rows.some((row) => !row.envelope || row.reason === 'content_unavailable'))
-        throw new GitHubFeedbackError('moderation_content_unavailable', 409)
+      if (request.action !== 'deny') {
+        if (rows.some((row) => !row.envelope || row.reason === 'content_unavailable'))
+          throw new GitHubFeedbackError('moderation_content_unavailable', 409)
+        // The detail view withholds the body when no squad connection can read the source any
+        // more; an allow (and especially allow-and-trust) on unseen text is refused the same way.
+        for (const row of rows)
+          if (!(await hasCurrentSourceAccess(row.id, squadId, tx)))
+            throw new GitHubFeedbackError('moderation_content_unavailable', 409)
+      }
       if (request.action === 'allow_trust' && rows.some((row) => !row.author))
         throw new GitHubFeedbackError('moderation_author_unavailable', 409)
       const decisions = []
@@ -91,13 +109,16 @@ export async function moderateGitHubFeedback(
             decidedAt: new Date(),
             releaseState: request.action === 'deny' ? 'held' : 'ready',
             nextAttemptAt: null,
+            // Denying a releasing row takes its lease away: a worker mid-attempt can no longer
+            // settle it, and every send rechecks the decision under its own lock.
+            ...(request.action === 'deny' ? { leaseToken: null, leaseExpiresAt: null } : {}),
             reason: request.action === 'deny' ? 'human_denied' : 'human_allowed',
             updatedAt: new Date(),
           })
           .where(
             and(
               eq(githubFeedbackRevisions.id, row.id),
-              eq(githubFeedbackRevisions.decision, 'pending'),
+              eq(githubFeedbackRevisions.decision, row.decision),
               eq(githubFeedbackRevisions.decisionVersion, row.decisionVersion)
             )
           )
@@ -132,6 +153,9 @@ export async function moderateGitHubFeedback(
         targetId: squadId,
         action: 'github.feedback.moderate',
         outcome: 'allowed',
+        // Which decision was taken, and on how many revisions; the rows themselves hold the ids.
+        code: request.action,
+        recordCount: rows.length,
       })
       return decisions
     })

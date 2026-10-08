@@ -1449,19 +1449,24 @@ export const githubFeedbackObjects = pgTable(
 )
 
 /** Server-owned, short-lived exact-resource witness. Never accepted from a fact or API DTO. */
-export const githubOutputProofs = pgTable('github_output_proofs', {
-  eventId: uuid('event_id')
-    .primaryKey()
-    .references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
-  sourceEventId: uuid('source_event_id')
-    .notNull()
-    .references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
-  sourceHash: varchar('source_hash', { length: 64 }).notNull(),
-  effectHash: varchar('effect_hash', { length: 64 }).notNull(),
-  authorityHash: varchar('authority_hash', { length: 64 }).notNull(),
-  checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-})
+export const githubOutputProofs = pgTable(
+  'github_output_proofs',
+  {
+    eventId: uuid('event_id')
+      .primaryKey()
+      .references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
+    sourceEventId: uuid('source_event_id')
+      .notNull()
+      .references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
+    sourceHash: varchar('source_hash', { length: 64 }).notNull(),
+    effectHash: varchar('effect_hash', { length: 64 }).notNull(),
+    authorityHash: varchar('authority_hash', { length: 64 }).notNull(),
+    checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  // Projection lookups (admission, the unmatched scan, FK cascades) lead on the source event.
+  (table) => [index('github_output_proof_source').on(table.sourceEventId)]
+)
 
 /** The envelope is immutable through services; a decision never re-fetches provider content. */
 export const githubFeedbackRevisions = pgTable(
@@ -1562,6 +1567,8 @@ export const githubFeedbackSources = pgTable(
   (table) => [
     primaryKey({ columns: [table.revisionId, table.eventId] }),
     index('github_feedback_source_event').on(table.squadId, table.eventId),
+    // Per-event lookups (admission, the unmatched scan, FK cascades) lead on the event alone.
+    index('github_feedback_source_by_event').on(table.eventId),
   ]
 )
 

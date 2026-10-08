@@ -96,17 +96,25 @@ export function shouldNotifyManager(metadata: unknown, event: Event, login: stri
   return selectOutputRule(metadata, event, login)?.action.type === 'notify-manager'
 }
 
-/** Native routing for squad metadata and pre-flow streams. Flow subscriptions always own their consumers. */
-export async function routeDefaultNotifications(event: Event, authorize: (squadId: string) => Promise<boolean>) {
-  if (event.authority.kind !== 'connection' || !(await isGitHubOutputAdmitted(db, event))) return
+/**
+ * Native routing for squad metadata and pre-flow streams. Flow subscriptions always own their consumers.
+ * `refused` reports a GitHub send that its final admission lock turned away (proof or connection
+ * validation lapsed mid-route); the caller must then leave the event unmatched for a retry.
+ */
+export async function routeDefaultNotifications(
+  event: Event,
+  authorize: (squadId: string) => Promise<boolean>
+): Promise<{ refused: boolean }> {
+  const done = { refused: false }
+  if (event.authority.kind !== 'connection' || !(await isGitHubOutputAdmitted(db, event))) return done
   const matching = await githubMatchingEvent(db, event)
   const squadId = event.authority.squadId
-  if (!(await authorize(squadId))) return
+  if (!(await authorize(squadId))) return done
   const [squad] = await db
     .select()
     .from(squads)
     .where(and(eq(squads.id, squadId), eq(squads.status, 'active')))
-  if (!squad) return
+  if (!squad) return done
   const [connection] = await db
     .select({ configuration: integrationConnections.configuration })
     .from(integrationConnections)
@@ -116,7 +124,8 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
     integrationOutputRegistry.adapter(event.integration)?.shouldNotify?.(matching.fact, connection?.configuration) ===
     false
   )
-    return
+    return done
+  let refused = false
   const data = record(event.fact.data)
   const candidates = await db
     .select({ stream: workStreams, runId: workStreamFlowRuns.workStreamId })
@@ -147,7 +156,7 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
         content: defaultNotificationContent(event, stream.id),
       })
       if (input.success) await settleCiNotification(stream.id, input.data, event)
-    } else await send(event, recipient.id, stream.id)
+    } else if (await send(event, recipient.id, stream.id)) refused = true
   }
   const [latest] = await db
     .select({ handled: integrationOutputEvents.triggerSquadIds })
@@ -159,17 +168,18 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
     .innerJoin(workStreams, eq(workStreams.id, integrationOutputDeliveries.workStreamId))
     .where(and(eq(integrationOutputDeliveries.eventId, event.id), eq(workStreams.squadId, squadId)))
     .limit(1)
-  if (matchedStream || delivery || latest?.handled.includes(squadId)) return
+  if (matchedStream || delivery || latest?.handled.includes(squadId)) return { refused }
   const rule = selectOutputRule(squad.metadata, event.fact.data.projection === 'status' ? event : matching, login)
-  if (rule?.action.type === 'notify-manager' && squad.managerAgentId)
-    await send(event, squad.managerAgentId, undefined, rule.action.additionalContext, squadId)
+  if (rule?.action.type === 'notify-manager' && squad.managerAgentId) {
+    if (await send(event, squad.managerAgentId, undefined, rule.action.additionalContext, squadId)) refused = true
+  }
   if (rule?.action.type === 'notify-consultant') {
     const id = consultantAgentId({
       actorUserId: 'integration-event',
       squadId,
       clientId: logicalEventKey(event, rule.id),
     })
-    if (!(await isGitHubOutputAdmitted(db, event))) return
+    if (!(await isGitHubOutputAdmitted(db, event))) return { refused: true }
     try {
       const consultant = await findOrCreateConsultant(
         id,
@@ -177,11 +187,13 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
         'integration',
         event.integration === 'github' ? (tx) => lockAdmittedGitHubOutput(tx, event) : undefined
       )
-      await send(event, consultant.id, undefined, rule.action.additionalContext, squadId)
+      if (await send(event, consultant.id, undefined, rule.action.additionalContext, squadId)) refused = true
     } catch (error) {
       if (!(error instanceof GitHubOutputNotAdmittedError)) throw error
+      refused = true
     }
   }
+  return { refused }
 }
 
 function logicalEventKey(event: Event, suffix: string) {
@@ -190,16 +202,18 @@ function logicalEventKey(event: Event, suffix: string) {
     .digest('hex')
 }
 
+/** Returns true when a GitHub send was refused by its final admission lock (retry later). */
 async function send(
   event: Event,
   recipientId: string,
   workStreamId?: string,
   additionalContext?: string,
   squadId?: string
-) {
+): Promise<boolean> {
   if (event.integration === 'github') {
     const afterCommit: Array<() => void> = []
     const key = `integration-notification:${logicalEventKey(event, `${workStreamId ?? 'squad'}:${recipientId}`)}`
+    let refused = false
     const message = await db
       .transaction(async (tx) => {
         await lockAdmittedGitHubOutput(tx, event)
@@ -233,7 +247,10 @@ async function send(
         )
       })
       .catch((error) => {
-        if (error instanceof GitHubOutputNotAdmittedError) return null
+        if (error instanceof GitHubOutputNotAdmittedError) {
+          refused = true
+          return null
+        }
         throw error
       })
     afterCommit.forEach((callback) => callback())
@@ -242,7 +259,7 @@ async function send(
       const { deliverInboxMessagesToAgent } = await import('../../inbox/inboxDelivery')
       await deliverInboxMessagesToAgent(recipientId, [message.id])
     }
-    return
+    return refused
   }
   await InboxMessage.sendOnce(
     {
@@ -259,6 +276,7 @@ async function send(
     },
     `integration-notification:${logicalEventKey(event, `${workStreamId ?? 'squad'}:${recipientId}`)}`
   )
+  return false
 }
 
 export function defaultNotificationContent(
