@@ -96,7 +96,10 @@ alpha channel, at Apple's exact sizes.
   question and a "Review needed" card, then Active work. It already includes the
   status bar and Dynamic Island, so the template draws only the body, side
   buttons and home indicator. Replace it with another real screenshot at the
-  same size (440×956 pt at 3x), then run `bun run brand:app-store`.
+  same size (440×956 pt at 3x), then run `bun run brand:app-store`. It
+  rewrites the screen without the alpha channel simulator screenshots carry
+  (the art must be opaque; the pixels stay the same), and stops if any pixel
+  is translucent.
   `--capture` re-captures the ficus.sh/mobile/ demo instead; prefer real
   screenshots for App Store art.
 

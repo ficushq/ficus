@@ -446,6 +446,29 @@ export async function captureScreen(out: string = join(REPO_ROOT, SCREEN_FILE)):
   }
 }
 
+/**
+ * Makes the phone screen PNG at `path` opaque, in place. Simulator screenshots carry an alpha
+ * channel even though every pixel is opaque, and App Store art must be opaque, so the channel is
+ * dropped and the file re-tagged sRGB; the visible pixels are unchanged. A screen with any
+ * translucent pixel is refused rather than guessed onto a background. Returns whether the file
+ * was rewritten (a screen that is already opaque is left byte for byte).
+ */
+export async function makeScreenOpaque(path: string): Promise<boolean> {
+  const input = await readFile(path)
+  if (!(await sharp(input).metadata()).hasAlpha) return false
+  const alpha = (await sharp(input).stats()).channels.at(-1)!
+  if (alpha.min < 255) {
+    throw new Error(`${path} has translucent pixels; export the screenshot without transparency`)
+  }
+  const png = await sharp(input)
+    .removeAlpha()
+    .withIccProfile('srgb')
+    .png({ compressionLevel: 9, adaptiveFiltering: true, palette: false })
+    .toBuffer()
+  await writeFile(path, png)
+  return true
+}
+
 /** Renders each SVG at each of its sizes to an opaque sRGB PNG, once its embedded fonts load. */
 async function renderPngs(
   jobs: Array<{ svg: string; families: readonly string[]; out: string; width: number; height: number }>
@@ -491,6 +514,7 @@ async function renderPngs(
 /** Writes every App Store SVG source and renders its PNGs. */
 export async function generateAppStoreArt(root: string = REPO_ROOT, opts: { capture?: boolean } = {}): Promise<void> {
   if (opts.capture) await captureScreen(join(root, SCREEN_FILE))
+  await makeScreenOpaque(join(root, SCREEN_FILE))
   const jobs: Parameters<typeof renderPngs>[0] = []
   for (const source of ART) {
     const svg = await buildArtSvg(source)

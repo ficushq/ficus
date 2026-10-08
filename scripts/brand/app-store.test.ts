@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { afterAll, describe, expect, it } from 'bun:test'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
-import { ART, ART_FONTS, buildArtSvg, SCREEN_FILE, SCREEN_SIZE } from './app-store'
+import { ART, ART_FONTS, buildArtSvg, makeScreenOpaque, SCREEN_FILE, SCREEN_SIZE } from './app-store'
 import { EMBEDDED_FONTS, FONT_SUBSET_DIR, HEADLINE, REPO_ROOT, SUPPORTING_LINE } from './social-preview'
 
 // These compare committed files only. Rendering needs Chrome, which CI may not
@@ -84,5 +85,52 @@ describe('App Store art', () => {
     expect(meta.hasAlpha).toBe(false)
     const search = ART.find((a) => a.kind === 'search')!
     expect(read(search.svg).toString('utf8')).toContain(`data:image/png;base64,${screen.toString('base64')}`)
+  })
+})
+
+describe('makeScreenOpaque', () => {
+  // A 2x2 screen in the app's dark background with one leaf-green pixel.
+  const pixels = (alpha: number) => Buffer.from([28, 26, 23, 255, 63, 107, 79, 255, 28, 26, 23, 255, 28, 26, 23, alpha])
+  const png = (alpha: number) =>
+    sharp(pixels(alpha), { raw: { width: 2, height: 2, channels: 4 } })
+      .png()
+      .toBuffer()
+  const rgb = async (file: string) => (await sharp(file).removeAlpha().raw().toBuffer()).toString('hex')
+
+  let dir = ''
+  const fixture = async (name: string, data: Buffer | Promise<Buffer>) => {
+    dir ||= mkdtempSync(join(tmpdir(), 'ficus-brand-screen-'))
+    const file = join(dir, name)
+    writeFileSync(file, await data)
+    return file
+  }
+  afterAll(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('drops a fully opaque alpha channel, keeping every visible pixel', async () => {
+    const file = await fixture('opaque-alpha.png', png(255))
+    const before = await rgb(file)
+    expect(await makeScreenOpaque(file)).toBe(true)
+    const meta = await sharp(file).metadata()
+    expect([meta.width, meta.height, meta.channels, meta.hasAlpha, meta.space]).toEqual([2, 2, 3, false, 'srgb'])
+    expect(await rgb(file)).toBe(before)
+  })
+
+  it('leaves an already opaque screen byte for byte', async () => {
+    const opaque = await sharp(await png(255))
+      .removeAlpha()
+      .png()
+      .toBuffer()
+    const file = await fixture('opaque.png', opaque)
+    expect(await makeScreenOpaque(file)).toBe(false)
+    expect(readFileSync(file).equals(opaque)).toBe(true)
+  })
+
+  it('refuses a screen with translucent pixels', async () => {
+    const file = await fixture('translucent.png', png(128))
+    const before = readFileSync(file)
+    await expect(makeScreenOpaque(file)).rejects.toThrow(/translucent pixels/)
+    expect(readFileSync(file).equals(before)).toBe(true)
   })
 })
