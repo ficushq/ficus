@@ -514,7 +514,7 @@ export function GitHubIntegrationSettings({
   )
 }
 
-function GitHubDeviceCode({ code }: { code: string }) {
+export function GitHubDeviceCode({ code }: { code: string }) {
   const [copied, setCopied] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
   useEffect(() => {

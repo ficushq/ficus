@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react'
 import { useQueryClient } from '../reactQueryHooks'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { queryKeys, onboardingQueryKeys, integrationQueryKeys } from '../queryKeys'
+import { githubFeedbackQueryKeys, githubIdentityQueryKeys } from '../queryKeys'
 import { invalidateSandboxStatus } from '../lib/sandboxStatusInvalidation'
 import { createInvalidationCoalescer } from '../lib/invalidationCoalescer'
 import { hasLiveConversation } from '../lib/messageInvalidationSuppression'
@@ -320,9 +321,19 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
       // ── Squad events ──────────────────────────────────────────────
       subscribe('squads', ({ event, data }) => {
         // Content-free GitHub moderation signals must never fall through to the broad squad
-        // invalidation below (that refetch would reset open settings forms). Their narrow
-        // moderation/identity query invalidation belongs with those queries.
-        if (event === 'githubFeedback.updated' || event === 'githubIdentity.updated') return
+        // invalidation below (that refetch would reset open settings forms). They refresh only
+        // their own moderation/identity queries; review selections live outside the cache.
+        if (event === 'githubFeedback.updated') {
+          if (typeof data?.squadId === 'string') invalidate(githubFeedbackQueryKeys.squad(data.squadId))
+          return
+        }
+        if (event === 'githubIdentity.updated') {
+          // Delivered only to this person's own sockets. Their linked account changes dynamic
+          // trust in every squad they can update, so trusted-author lists refresh too.
+          invalidate(githubIdentityQueryKeys.all)
+          invalidate(githubFeedbackQueryKeys.all)
+          return
+        }
         if (event === 'slots.updated') {
           // Stream slot context changes without a stored work-stream mutation.
           slotCoalescer.queue(queryKeys.squads.all)

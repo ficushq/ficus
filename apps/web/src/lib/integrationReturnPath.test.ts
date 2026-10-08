@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import {
+  githubIdentityAuthorizationReturnPath,
   integrationAuthorizationReturnPath,
   integrationReturnPath,
   integrationSettingsPath,
@@ -34,4 +35,15 @@ test('callback preserves custom return destinations', () => {
   expect(integrationReturnPath('/settings?section=account&setting=old&other=value#anchor', 'notion')).toBe(
     '/settings?section=integrations&setting=integration-notion&other=value#anchor'
   )
+})
+
+test('personal GitHub link returns to the linked-account setting, not the integration card', () => {
+  for (const base of ['/', '/ficus/']) {
+    const returnTo = githubIdentityAuthorizationReturnPath(base)
+    // The server accepts return targets without a query string only.
+    expect(returnTo).not.toContain('?')
+    expect(integrationReturnPath(returnTo, 'github', base)).toBe(
+      `${base}settings?section=account&setting=github-identity`
+    )
+  }
 })
