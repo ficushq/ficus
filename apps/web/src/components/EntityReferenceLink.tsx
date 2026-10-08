@@ -74,7 +74,7 @@ export function EntityReferenceLink({
         aria-expanded={client ? preview && !open : undefined}
         aria-controls={preview && client ? previewId : undefined}
         className={clsx(
-          'ficus-button inline text-accent-light underline underline-offset-2',
+          'ficus-button ficus-button-link inline underline underline-offset-2',
           loading && 'motion-safe:animate-pulse motion-reduce:opacity-60'
         )}
         onMouseEnter={() => {

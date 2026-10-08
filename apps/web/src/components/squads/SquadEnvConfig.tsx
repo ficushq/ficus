@@ -154,9 +154,9 @@ export function SquadEnvConfig({ squadId }: Props) {
           onClick={handleSave}
           disabled={!canWriteEnv || !dirty || mutation.isPending}
           className={clsx(
-            'ficus-button',
+            'ficus-button ficus-button-primary',
             'px-3 py-1 text-sm rounded-md font-medium transition-colors',
-            dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
+            !dirty && 'opacity-50 cursor-not-allowed'
           )}
         >
           {mutation.isPending ? 'Saving...' : 'Save'}
@@ -222,11 +222,9 @@ export function SquadEnvConfig({ squadId }: Props) {
             onClick={handleSaveSecrets}
             disabled={!canWriteEnv || !secretsDirty || secretsMutation.isPending}
             className={clsx(
-              'ficus-button',
+              'ficus-button ficus-button-primary',
               'px-3 py-1 text-sm rounded-md font-medium transition-colors',
-              secretsDirty
-                ? 'bg-accent text-on-accent hover:bg-accent/90'
-                : 'bg-surface-secondary text-muted cursor-not-allowed'
+              !secretsDirty && 'opacity-50 cursor-not-allowed'
             )}
           >
             {secretsMutation.isPending ? 'Saving...' : 'Save exposed secrets'}

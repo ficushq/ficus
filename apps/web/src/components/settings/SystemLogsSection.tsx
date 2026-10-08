@@ -192,30 +192,21 @@ export function SystemLogsSection() {
             />
             <button
               onClick={() => searchRef.current?.findNext(search)}
-              className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
+              className="ficus-button ficus-button-secondary px-2 py-1 text-xs rounded"
             >
               Next
             </button>
             {isLive ? (
               <>
-                <button
-                  onClick={connect}
-                  className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
-                >
+                <button onClick={connect} className="ficus-button ficus-button-secondary px-2 py-1 text-xs rounded">
                   Reconnect
                 </button>
-                <button
-                  onClick={disconnect}
-                  className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
-                >
+                <button onClick={disconnect} className="ficus-button ficus-button-secondary px-2 py-1 text-xs rounded">
                   Disconnect
                 </button>
               </>
             ) : (
-              <button
-                onClick={connect}
-                className="ficus-button px-2 py-1 text-xs rounded border border-th-border text-primary"
-              >
+              <button onClick={connect} className="ficus-button ficus-button-secondary px-2 py-1 text-xs rounded">
                 Connect
               </button>
             )}

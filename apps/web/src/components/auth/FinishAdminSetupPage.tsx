@@ -172,7 +172,7 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
           <button
             type="submit"
             disabled={loading}
-            className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md font-medium text-sm disabled:opacity-50"
           >
             {loading ? 'Creating passkey…' : error ? 'Retry' : 'Create passkey'}
           </button>
@@ -183,7 +183,7 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
           )}
         </form>
         <p className="text-xs text-secondary mt-4 text-center">
-          <button type="button" onClick={onSignOut} className="ficus-button text-accent-light hover:underline">
+          <button type="button" onClick={onSignOut} className="ficus-button ficus-button-link">
             Sign out
           </button>
         </p>

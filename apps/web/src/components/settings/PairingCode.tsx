@@ -41,7 +41,7 @@ export function PairingCode({
       <div className="flex items-center gap-2">
         <code className="rounded bg-surface-hover px-2 py-1 text-xs select-all">{pairing.code}</code>
         <button
-          className="ficus-button text-xs text-secondary"
+          className="ficus-button ficus-button-link text-xs"
           onClick={() => navigator.clipboard.writeText(pairing.code)}
         >
           Copy code
@@ -50,16 +50,12 @@ export function PairingCode({
       {openInApp && (
         <a
           href={pairing.deepLink}
-          className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover"
+          className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium rounded-md"
         >
           Open in Ficus app
         </a>
       )}
-      <button
-        onClick={onRegenerate}
-        disabled={regenerating}
-        className="ficus-button text-xs text-secondary hover:text-primary"
-      >
+      <button onClick={onRegenerate} disabled={regenerating} className="ficus-button ficus-button-link text-xs">
         Regenerate
       </button>
     </div>

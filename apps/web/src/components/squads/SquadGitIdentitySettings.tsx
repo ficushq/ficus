@@ -105,7 +105,7 @@ export function SquadGitIdentitySettings({ squadId }: { squadId: string }) {
           type="button"
           onClick={() => updateMutation.mutate()}
           disabled={updateMutation.isPending}
-          className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent"
+          className="ficus-button ficus-button-primary rounded-md px-3 py-2 text-sm"
         >
           {updateMutation.isPending ? 'Saving…' : 'Save identity'}
         </button>

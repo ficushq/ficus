@@ -98,7 +98,9 @@ export function GitHubCommitSigning({
             <button
               type="button"
               className={
-                code === 'permission_missing' ? 'ficus-button text-xs' : 'ficus-button ficus-button-primary px-3 py-1.5'
+                code === 'permission_missing'
+                  ? 'ficus-button ficus-button-secondary px-2.5 py-1 text-xs disabled:opacity-50'
+                  : 'ficus-button ficus-button-primary px-3 py-1.5'
               }
               disabled={change.isPending}
               onClick={() => change.mutate(true)}
@@ -109,7 +111,7 @@ export function GitHubCommitSigning({
           {on && (
             <button
               type="button"
-              className="ficus-button text-xs"
+              className="ficus-button ficus-button-secondary px-2.5 py-1 disabled:opacity-50 text-xs"
               disabled={change.isPending}
               onClick={() => change.mutate(false)}
             >

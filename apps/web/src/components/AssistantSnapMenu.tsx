@@ -56,8 +56,8 @@ export function AssistantSnapMenu({
         {...popover.triggerProps}
         type="button"
         className={clsx(
-          'ficus-button flex h-8 w-8 items-center justify-center rounded-lg',
-          popover.open ? 'bg-selection text-accent-light' : 'text-muted hover:bg-surface-hover hover:text-primary'
+          'ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-lg',
+          popover.open && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
         )}
         aria-label="Arrange assistant"
         title="Arrange assistant"
@@ -78,8 +78,8 @@ export function AssistantSnapMenu({
           checked={isDefault}
           title={`Default size and position, centered (${MODIFIERS}${DEFAULT_PLACEMENT_KEY.key})`}
           className={clsx(
-            'ficus-button flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-hover',
-            isDefault ? 'text-accent-light' : 'text-secondary'
+            'ficus-button ficus-button-ghost flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm',
+            isDefault && 'text-accent-light hover:text-accent-light'
           )}
           onClick={onReset}
         >
@@ -98,8 +98,8 @@ export function AssistantSnapMenu({
             checked={snap === item}
             title={`${SNAP_INFO[item].label} (${MODIFIERS}${SNAP_INFO[item].key})`}
             className={clsx(
-              'ficus-button flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-hover',
-              snap === item ? 'text-accent-light' : 'text-secondary'
+              'ficus-button ficus-button-ghost flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm',
+              snap === item && 'text-accent-light hover:text-accent-light'
             )}
             onClick={() => onSnap(item)}
           >

@@ -25,7 +25,7 @@ export function WorkStreamActionsMenu({
     if (wasEditing.current && !controls.editing) trigger.current?.focus()
     wasEditing.current = controls.editing
   }, [controls.editing, trigger])
-  const itemClass = 'ficus-button w-full rounded-md px-3 py-2 text-left text-sm text-secondary hover:bg-surface-hover'
+  const itemClass = 'ficus-button ficus-button-ghost w-full rounded-md px-3 py-2 text-left text-sm'
   const copyLink = async () => {
     close({ returnFocus: true })
     try {
@@ -41,7 +41,7 @@ export function WorkStreamActionsMenu({
         {...popover.triggerProps}
         type="button"
         aria-label="More actions"
-        className="ficus-button rounded-md px-3 py-1 text-secondary hover:bg-surface-hover"
+        className="ficus-button ficus-button-ghost rounded-md px-3 py-1"
         onClick={() => {
           popover.toggle()
           setFeedback('')

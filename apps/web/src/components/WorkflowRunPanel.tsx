@@ -287,7 +287,7 @@ function WorkflowRunPanelContent({
                         {!editing ? (
                           <button
                             type="button"
-                            className="ficus-button px-3 py-2 text-sm text-accent"
+                            className="ficus-button ficus-button-secondary px-3 py-2 text-sm"
                             onClick={() => {
                               setBase({ ...run, state: { ...run.state, activeAttemptId: attempt?.id ?? null } })
                               setDraft({ kind: 'inline', definition: run.state.definition })
@@ -314,7 +314,7 @@ function WorkflowRunPanelContent({
                             <div className="flex gap-3">
                               <button
                                 type="button"
-                                className="ficus-button px-3 py-2 text-sm text-accent"
+                                className="ficus-button ficus-button-primary px-3 py-2 text-sm"
                                 disabled={
                                   advance.isPending ||
                                   !reason.trim() ||
@@ -327,7 +327,7 @@ function WorkflowRunPanelContent({
                               </button>
                               <button
                                 type="button"
-                                className="ficus-button px-3 py-2 text-sm text-secondary"
+                                className="ficus-button ficus-button-secondary px-3 py-2 text-sm"
                                 onClick={() => setEditing(false)}
                               >
                                 Cancel
@@ -353,7 +353,7 @@ function WorkflowRunPanelContent({
                           />
                           <button
                             type="button"
-                            className="ficus-button px-3 py-2 text-sm text-accent"
+                            className="ficus-button ficus-button-primary px-3 py-2 text-sm"
                             disabled={!presetId || save.isPending}
                             onClick={() => save.mutate()}
                           >

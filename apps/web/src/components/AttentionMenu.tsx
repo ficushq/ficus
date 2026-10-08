@@ -192,7 +192,7 @@ export function AttentionMenu({
           type="button"
           onClick={() => mutation.mutate(null)}
           disabled={mutation.isPending}
-          className="ficus-button text-xs text-accent hover:underline"
+          className="ficus-button ficus-button-link text-xs"
         >
           Reset to squad
         </button>
@@ -221,7 +221,7 @@ export function AttentionMenu({
         ref={summaryRef}
         title="Choose what this notifies you about"
         className={clsx(
-          'ficus-button cursor-pointer list-none items-center gap-1.5 rounded-md text-secondary hover:bg-surface-hover',
+          'ficus-button ficus-button-ghost cursor-pointer list-none items-center gap-1.5 rounded-md',
           inline ? 'flex w-full px-3 py-2 text-sm' : 'inline-flex px-2 py-0.5 text-xs font-medium'
         )}
       >

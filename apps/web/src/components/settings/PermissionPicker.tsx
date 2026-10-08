@@ -98,7 +98,7 @@ export function PermissionPicker({ value, onChange, disabled = false }: Props) {
                     return next
                   })
                 }
-                className="ficus-button flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-hover"
+                className="ficus-button ficus-button-ghost flex w-full items-center gap-3 px-4 py-3 text-left"
               >
                 <span className="flex-1 text-sm font-medium text-primary">{group.label}</span>
                 {count > 0 && (
@@ -165,7 +165,7 @@ export function PermissionPicker({ value, onChange, disabled = false }: Props) {
                 type="button"
                 aria-label={`Remove ${permission}`}
                 onClick={() => onChange(value.filter((held) => held !== permission))}
-                className="ficus-button shrink-0 text-xs text-muted hover:text-danger"
+                className="ficus-button ficus-button-danger px-2 py-1 shrink-0 text-xs"
               >
                 Remove
               </button>

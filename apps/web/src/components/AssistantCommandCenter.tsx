@@ -322,8 +322,8 @@ export function AssistantCommandCenter({
           data-enter-target={askSelected || undefined}
           onFocus={() => setSelected(-1)}
           className={clsx(
-            'ficus-button flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-accent-light hover:bg-selection disabled:opacity-40',
-            askSelected && 'bg-selection'
+            'ficus-button ficus-button-ghost flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-accent-light hover:text-accent-light hover:bg-selection disabled:opacity-40',
+            askSelected && 'bg-selection hover:bg-selection'
           )}
         >
           <SparklesIcon className="w-5 h-5" />
@@ -340,7 +340,7 @@ export function AssistantCommandCenter({
               key={text}
               disabled={!canAsk}
               onClick={() => onAsk(text)}
-              className="ficus-button flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-surface-hover px-3 py-2 text-xs text-muted hover:bg-selection hover:text-accent-light disabled:opacity-40"
+              className="ficus-button ficus-button-secondary flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-2 text-xs hover:bg-selection hover:text-accent-light disabled:opacity-40"
             >
               <SparklesIcon className="h-3.5 w-3.5 shrink-0" />
               {text}
@@ -352,7 +352,7 @@ export function AssistantCommandCenter({
         <div className="flex shrink-0 min-w-0 items-center gap-2 px-4 py-2 text-xs border-b border-th-border">
           <button
             onClick={onBack}
-            className="ficus-button flex shrink-0 items-center gap-1 py-1.5 text-muted"
+            className="ficus-button ficus-button-link flex shrink-0 items-center gap-1 py-1.5 text-muted"
             aria-label={backLabel ?? (stack.length > 1 ? 'Back to preview' : 'Back to search')}
           >
             <ChevronRightIcon className="w-3.5 h-3.5 rotate-180" />
@@ -372,7 +372,7 @@ export function AssistantCommandCenter({
               </span>
               {currentAgentId && (
                 <a
-                  className="ficus-button shrink-0 p-1.5 text-muted hover:text-accent-light"
+                  className="ficus-button ficus-button-ghost shrink-0 p-1.5 hover:text-accent-light"
                   href={`/squads/${encodeURIComponent(slugFor(destination.squadId))}/agents?agent=${encodeURIComponent(currentAgentId)}`}
                   target="_blank"
                   rel="noreferrer"
@@ -401,7 +401,7 @@ export function AssistantCommandCenter({
                   aria-selected={i === index}
                   onClick={() => choose(result)}
                   className={clsx(
-                    'ficus-button flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-selection',
+                    'ficus-button ficus-button-ghost flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-selection',
                     i === index && 'bg-selection'
                   )}
                 >
@@ -534,7 +534,7 @@ export function AssistantCommandCenter({
           {!squadScope && (
             <button
               onClick={onBrowseAssistant}
-              className="ficus-button ml-auto py-1 text-xs text-muted hover:text-accent-light"
+              className="ficus-button ficus-button-link ml-auto py-1 text-xs text-muted"
             >
               Assistant conversations →
             </button>
@@ -743,7 +743,7 @@ function PreviewRow({
   return (
     <button
       onClick={onClick}
-      className="ficus-button flex w-full items-center gap-2 px-3 py-2.5 text-left rounded-xl hover:bg-selection focus:bg-selection"
+      className="ficus-button ficus-button-ghost flex w-full items-center gap-2 px-3 py-2.5 text-left rounded-xl hover:bg-selection focus:bg-selection"
     >
       {status && status !== 'idle' && <AgentActivityDot status={status} className="shrink-0" />}
       <span className="flex-1 min-w-0">
@@ -815,7 +815,7 @@ function WorkPreview({
         {agents.isPending ? (
           <CommandRowsSkeleton label="Loading conversations" />
         ) : agents.isError ? (
-          <button onClick={() => void agents.refetch()} className="ficus-button text-sm text-muted">
+          <button onClick={() => void agents.refetch()} className="ficus-button ficus-button-link text-sm">
             Retry loading conversations
           </button>
         ) : (
@@ -848,7 +848,7 @@ function WorkPreview({
       ) : creatorId && !knownCreator && creatorDetail.isPending ? (
         <CommandRowsSkeleton label="Loading originating conversation" />
       ) : creatorId && creatorDetail.isError && !knownCreator ? (
-        <button className="ficus-button text-sm text-muted" onClick={() => void creatorDetail.refetch()}>
+        <button className="ficus-button ficus-button-link text-sm" onClick={() => void creatorDetail.refetch()}>
           Retry loading originating conversation
         </button>
       ) : null}

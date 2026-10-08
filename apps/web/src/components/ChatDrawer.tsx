@@ -373,7 +373,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                       type="button"
                       aria-label="Agent actions"
                       onClick={agentActions.toggle}
-                      className="ficus-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors"
+                      className="ficus-button ficus-button-ghost p-1 rounded transition-colors"
                     >
                       <MoreIcon className="w-4 h-4" />
                     </button>
@@ -391,7 +391,8 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                         }}
                         disabled={compactMutation.isPending}
                         label="Compact"
-                        className="ficus-button w-full text-left px-2 py-1 text-[11px] font-medium text-accent-light hover:bg-accent/10 rounded transition-colors"
+                        variant="ghost"
+                        className="w-full text-left px-2 py-1 text-[11px] font-medium text-accent-light hover:bg-accent/10 rounded transition-colors"
                         confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-accent-light bg-accent/10 hover:bg-accent/20 rounded transition-colors"
                       />
                       <ConfirmButton
@@ -401,7 +402,8 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                         }}
                         disabled={resetMutation.isPending}
                         label="Reset"
-                        className="ficus-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
+                        variant="ghost"
+                        className="w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
                         confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-700 dark:text-status-external-wait-300 bg-status-external-wait-50 dark:bg-status-external-wait-900/30 hover:bg-status-external-wait-100 dark:hover:bg-status-external-wait-900/50 rounded transition-colors"
                       />
                       <ConfirmButton
@@ -411,7 +413,8 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                         }}
                         disabled={deleteMutation.isPending}
                         label="Delete"
-                        className="ficus-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors"
+                        variant="ghost"
+                        className="w-full text-left px-2 py-1 text-[11px] font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors"
                         confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-danger-700 dark:text-status-danger-300 bg-status-danger-50 dark:bg-status-danger-900/30 hover:bg-status-danger-100 dark:hover:bg-status-danger-900/50 rounded transition-colors"
                       />
                     </Panel>
@@ -421,7 +424,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
               {isOpen && conversation && mode === 'text' && (
                 <button
                   onClick={() => setDrawerState(isExpanded ? 'open' : 'expanded')}
-                  className="ficus-button text-placeholder hover:text-secondary p-1.5 rounded-md hover:bg-surface-hover transition-colors hidden sm:flex shrink-0"
+                  className="ficus-button ficus-button-ghost p-1.5 rounded-md transition-colors hidden sm:flex shrink-0"
                   title={isExpanded ? 'Compact' : 'Expand'}
                 >
                   {isExpanded ? <MinimizeIcon className="w-4 h-4" /> : <MaximizeIcon className="w-4 h-4" />}
@@ -435,7 +438,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                     setDrawerState('open')
                   } else setDrawerState(isOpen ? 'closed' : 'open')
                 }}
-                className="ficus-button text-placeholder hover:text-secondary p-1.5 rounded-md hover:bg-surface-hover transition-colors shrink-0"
+                className="ficus-button ficus-button-ghost p-1.5 rounded-md transition-colors shrink-0"
                 title={
                   compactVoice || !isOpen ? 'Expand assistant' : voiceActive ? 'Collapse assistant' : 'Close (Esc)'
                 }
@@ -473,7 +476,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
               {conversation && mode === 'text' && (
                 <button
                   onClick={backToAssistant}
-                  className="ficus-button ml-auto text-xs text-muted hover:text-primary px-2 py-1.5"
+                  className="ficus-button ficus-button-link ml-auto text-xs text-muted hover:text-primary py-1.5"
                 >
                   ← Back to search
                 </button>

@@ -28,7 +28,17 @@ Colors are theme tokens. `packages/shared/src/theme-schema.ts` lists them; `src/
 
 In the default Ficus theme the light canvas is linen (`#f1e9db`), with a lighter linen reading surface (`#f5f0e6`) and leaf-tinted secondary fills. Dark mode uses a soil canvas (`#1c1a17`), a warmer soil surface (`#2f2a24`), and leaf-tinted control fills. Leaf green (`#3f6b4f`, sage `#9fb57f` in dark mode) is Ficus's primary action and selection color, with terracotta and moss as its secondary and tertiary swatch colors. Iris keeps the original purple; other themes supply their own. Use the light accent token for foreground links in dark mode; filled controls use `text-on-accent`. A link's hover color is `text-link-hover` (`--color-link-hover`), which gains contrast in both appearances; `accent-hover` is a button fill that darkens in dark themes, so never use it for text.
 
-Use `ficus-field`, `ficus-button`, `ficus-button-primary`, `ficus-nav-item`, and `ficus-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
+Use `ficus-field`, `ficus-nav-item`, and `ficus-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
+
+`ficus-button` is only a base (radius, weight, transitions) with no fill or border. Always pair it with exactly one variant; `components/buttonVariants.guard.test.ts` enforces this:
+
+| Variant                  | Use for                                                                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ficus-button-primary`   | The one main action of a page, dialog or form (Save, Approve, Connect, Send).                                                                                  |
+| `ficus-button-secondary` | Standalone actions in content: card CTAs ("Review and decide", "View"), row actions shown as buttons, Cancel in a dialog. Visible at rest.                     |
+| `ficus-button-ghost`     | Icon-only buttons, and compact controls inside a toolbar, header, menu or segmented cluster. Transparent at rest; a text-only ghost alone in content is a bug. |
+| `ficus-button-link`      | Inline text actions in running text or a section header ("Dismiss", "Retry", "Edit"). No horizontal padding.                                                   |
+| `ficus-button-danger`    | Destructive actions (Delete, Remove, Revoke, Disconnect). Secondary-shaped with danger text; destructive icon buttons stay ghost with a danger hover.          |
 
 ## Hierarchy and spacing
 

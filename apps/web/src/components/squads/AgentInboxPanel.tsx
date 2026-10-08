@@ -54,10 +54,7 @@ export function AgentInboxPanel({ agent, onClose, fullWidth }: Props) {
               {agent.agentTypeId} · {agent.id.slice(0, 8)}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="ficus-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded"
-          >
+          <button onClick={onClose} className="ficus-button ficus-button-ghost p-1 rounded">
             <CloseIcon className="w-4 h-4" />
           </button>
         </div>

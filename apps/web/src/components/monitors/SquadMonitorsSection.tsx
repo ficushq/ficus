@@ -31,7 +31,7 @@ export function SquadMonitorsSection({ squadId }: { squadId: string }) {
           {data.length} {showAll ? 'total' : 'active'}
         </span>
         <button
-          className="ficus-button shrink-0 rounded-md border border-th-border px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
+          className="ficus-button ficus-button-secondary shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
           onClick={() => setShowAll(!showAll)}
         >
           {showAll ? 'Active only' : 'View all'}

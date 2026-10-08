@@ -126,7 +126,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
 
   /** A preset row's secondary actions, as plain rows in its overflow menu like the other OverflowMenu callers. */
   const presetSecondaryActions = (preset: ThemePreset) => {
-    const buttonClass = 'ficus-button hover:text-primary'
+    const buttonClass = 'ficus-button ficus-button-ghost'
     return (
       <>
         <button className={buttonClass} onClick={() => setRenaming({ id: preset.id, name: preset.document.name })}>

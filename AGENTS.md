@@ -237,13 +237,35 @@ component almost fits, extend it rather than forking it.
 | A destructive action that needs a second tap                                               | `ConfirmButton`                                                                                                                                                                 |
 | A status or label pill                                                                     | `Badge` (and `WorkStreamStatusBadges` for work stream state)                                                                                                                    |
 | Loading placeholders                                                                       | `LoadingContent` and the skeletons in `loading/Skeleton.tsx`                                                                                                                    |
-| Buttons, fields, nav items and tables                                                      | the `ficus-button`, `ficus-button-primary`, `ficus-field`, `ficus-nav-item` and `ficus-table` classes                                                                           |
+| A button                                                                                   | `ficus-button` plus exactly one variant (see Buttons below); `ConfirmButton` for a two-tap destructive action                                                                   |
+| Fields, nav items and tables                                                               | the `ficus-field`, `ficus-nav-item` and `ficus-table` classes                                                                                                                   |
 | Icons                                                                                      | `components/icons` (see Icons below)                                                                                                                                            |
 | Colors in JS                                                                               | `useThemeColors` / `tokenReader` (see Theme colors above)                                                                                                                       |
 
 Any new floating UI must dismiss through `usePopupDismiss` (`hooks/usePopupDismiss.ts`) and be tap-tested
 with the WebKit tap helper (`test/webkitTap.ts`); the `Popover` variants already do both. The guard tests
 `components/popover.guard.test.ts` and `components/popupDismissal.guard.test.ts` enforce it.
+
+#### Buttons
+
+`ficus-button` is only a base (radius, weight, transitions): it has no fill and no border, so a padded
+`ficus-button` on its own renders as indented text that only shows a background on hover. Always pair it
+with exactly one variant from `design-system.css`; `components/buttonVariants.guard.test.ts` fails any
+className that carries the base without one (or with two, or a variant without the base). Pick the
+variant by role:
+
+| Variant                  | Use for                                                                                                                                                                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ficus-button-primary`   | The one main action of a page, dialog or form (Save, Approve, Connect, Send).                                                                                                                                                 |
+| `ficus-button-secondary` | Standalone actions in content: card CTAs ("Review and decide", "View"), row actions shown as buttons, "Mark all read", a dialog's Cancel. Visible at rest.                                                                    |
+| `ficus-button-ghost`     | Only icon-only buttons, and compact controls inside a toolbar, header, menu or segmented cluster whose chrome already reads as controls. A text-only ghost standing alone in content is the bug: make it secondary or a link. |
+| `ficus-button-link`      | Inline text actions in running text or a section header ("Dismiss", "Retry", "Edit"). No horizontal padding (the guard checks), so nothing looks indented.                                                                    |
+| `ficus-button-danger`    | Destructive actions (Delete, Remove, Revoke, Disconnect, Stop): secondary-shaped with danger text. A destructive icon-only button stays ghost with a `hover:text-status-danger-*` tint.                                       |
+
+Variants own the color, fill and hover; utilities add size and layout. A `hover:` utility still wins
+over a variant's hover, so a tinted or active state can keep its look. Choose the variant dynamically
+with a ternary among variants (`active ? 'ficus-button-primary' : 'ficus-button-secondary'`), never by
+adding or dropping one, and write shared class constants with the base and the variant together.
 
 ### Stable Refs
 

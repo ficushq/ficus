@@ -399,11 +399,9 @@ export function SquadGeneralSettings({
           onClick={handleSave}
           disabled={!dirty || !isValid || mutation.isPending || !canUpdateSquad}
           className={clsx(
-            'ficus-button',
+            'ficus-button ficus-button-primary',
             'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
-            dirty && isValid && canUpdateSquad
-              ? 'bg-accent text-on-accent hover:bg-accent/90'
-              : 'bg-surface-secondary text-muted cursor-not-allowed'
+            !(dirty && isValid && canUpdateSquad) && 'opacity-50 cursor-not-allowed'
           )}
         >
           {mutation.isPending ? 'Saving...' : 'Save'}

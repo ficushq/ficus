@@ -114,7 +114,7 @@ export function EventRulePredicates({
             <button
               type="button"
               aria-label={`Remove ${prefix.toLowerCase()}`}
-              className="ficus-button text-xs"
+              className="ficus-button ficus-button-danger px-2 py-1 text-xs"
               onClick={() => onChange(predicates.filter((_, i) => i !== index))}
             >
               Remove condition
@@ -135,7 +135,7 @@ export function EventRulePredicates({
       )}
       <button
         type="button"
-        className="ficus-button text-sm disabled:opacity-40"
+        className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm disabled:opacity-40"
         disabled={!Object.keys(fields).length || predicates.length >= 16}
         onClick={() => onChange([...predicates, initial(Object.keys(fields)[0]!)])}
       >

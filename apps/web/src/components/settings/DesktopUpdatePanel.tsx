@@ -5,15 +5,13 @@ import type { DesktopUpdates, DesktopUpdateState } from '../../lib/desktop'
 const BUSY_PHASES = new Set<DesktopUpdateState['phase']>(['checking', 'downloading', 'installing'])
 
 const secondaryButton = clsx(
-  'ficus-button',
+  'ficus-button ficus-button-secondary',
   'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-  'bg-surface border border-th-border text-primary hover:bg-surface-hover',
   'disabled:opacity-50 disabled:cursor-not-allowed'
 )
 const primaryButton = clsx(
-  'ficus-button',
+  'ficus-button ficus-button-primary',
   'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-  'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
   'disabled:opacity-50 disabled:cursor-not-allowed'
 )
 

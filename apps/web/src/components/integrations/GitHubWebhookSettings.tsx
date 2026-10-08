@@ -71,7 +71,7 @@ export function GitHubWebhookSettings({ canWrite, managed }: { canWrite: boolean
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                className="ficus-button"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm disabled:opacity-50"
                 disabled={save.isPending}
                 onClick={() => {
                   setSecret(
@@ -86,7 +86,7 @@ export function GitHubWebhookSettings({ canWrite, managed }: { canWrite: boolean
               </button>
               <button
                 type="button"
-                className="ficus-button"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm disabled:opacity-50"
                 disabled={!secret || save.isPending}
                 onClick={async () => {
                   try {
@@ -99,13 +99,16 @@ export function GitHubWebhookSettings({ canWrite, managed }: { canWrite: boolean
               >
                 Copy new secret
               </button>
-              <button className="ficus-button" disabled={!secret.trim() || save.isPending}>
+              <button
+                className="ficus-button ficus-button-primary px-3 py-1.5 text-sm disabled:opacity-50"
+                disabled={!secret.trim() || save.isPending}
+              >
                 {settings.data.configured ? 'Save webhook secret' : 'Enable direct webhooks'}
               </button>
               {settings.data.configured && (
                 <button
                   type="button"
-                  className="ficus-button"
+                  className="ficus-button ficus-button-danger px-3 py-1.5 text-sm disabled:opacity-50"
                   disabled={save.isPending}
                   onClick={() => save.mutate(null)}
                 >

@@ -358,7 +358,7 @@ export function WorkStreamDetailModal({
                   <button
                     onClick={handleSubmit}
                     disabled={respondMutation.isPending || !canRespondToWait || !response.trim()}
-                    className="ficus-button ficus-button-primary px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded hover:bg-accent-hover disabled:opacity-50"
+                    className="ficus-button ficus-button-primary px-2 py-1 text-xs font-medium rounded disabled:opacity-50"
                     title={
                       canRespondToWait ? 'Submit response' : 'You do not have permission to respond to this work stream'
                     }
@@ -367,7 +367,7 @@ export function WorkStreamDetailModal({
                   </button>
                   <button
                     onClick={() => setIsResponding(false)}
-                    className="ficus-button px-2 py-1 text-xs font-medium text-secondary border border-th-border rounded hover:bg-surface-hover"
+                    className="ficus-button ficus-button-secondary px-2 py-1 text-xs font-medium rounded"
                   >
                     Cancel
                   </button>
@@ -378,7 +378,7 @@ export function WorkStreamDetailModal({
                 <button
                   onClick={() => setShowApprovalConfirmation(true)}
                   disabled={respondMutation.isPending || !canRespondToWait}
-                  className="ficus-button px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                  className="ficus-button ficus-button-primary px-2 py-1 text-xs font-medium rounded-lg disabled:opacity-50"
                   title={
                     canRespondToWait ? 'Approve review' : 'You do not have permission to respond to this work stream'
                   }
@@ -391,7 +391,7 @@ export function WorkStreamDetailModal({
                     setResponse('')
                   }}
                   disabled={!canRespondToWait}
-                  className="ficus-button px-2 py-1 text-xs font-medium text-secondary bg-surface-hover rounded-lg hover:bg-surface disabled:opacity-50"
+                  className="ficus-button ficus-button-secondary px-2 py-1 text-xs font-medium rounded-lg disabled:opacity-50"
                   title={
                     canRespondToWait ? 'Request changes' : 'You do not have permission to respond to this work stream'
                   }
@@ -403,7 +403,7 @@ export function WorkStreamDetailModal({
               <button
                 onClick={() => setIsResponding(true)}
                 disabled={!canRespondToWait}
-                className="ficus-button mt-2 px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary mt-2 px-2 py-1 text-xs font-medium rounded-lg disabled:opacity-50"
                 title={canRespondToWait ? 'Respond' : 'You do not have permission to respond to this work stream'}
               >
                 Respond
@@ -756,7 +756,7 @@ export function WorkStreamDetailModal({
                       aria-label={`Open dependency ${label}`}
                       onClick={() => onSelectWorkStream?.(depId)}
                       disabled={!onSelectWorkStream}
-                      className="ficus-button inline-flex items-center gap-1.5 text-accent-light hover:underline disabled:text-secondary disabled:no-underline"
+                      className="ficus-button ficus-button-link inline-flex items-center gap-1.5 disabled:text-secondary disabled:no-underline"
                     >
                       <span
                         aria-label={dependency ? `${workStreamStatusLabel(dependency)} status` : 'Unknown status'}

@@ -142,7 +142,7 @@ export function IntegrationDirectoryCard({
               data-setting-reveal={`integration-${entry.key}`}
               aria-controls={`integration-settings-${entry.key}`}
               onClick={() => setExpanded(!expanded)}
-              className="ficus-button mt-4 flex items-center gap-2 text-sm text-primary"
+              className="ficus-button ficus-button-link mt-4 flex items-center gap-2 text-sm text-primary"
             >
               Settings
               <ChevronDownIcon className={clsx('h-4 w-4 transition-transform', showSettings && 'rotate-180')} />

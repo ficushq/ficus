@@ -181,7 +181,7 @@ export function TokenRegisterPage({ onSuccess }: Props) {
             <button
               type="submit"
               disabled={loading}
-              className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+              className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md font-medium text-sm disabled:opacity-50"
             >
               {loading ? 'Registering…' : isRecovery ? 'Replace my passkey' : 'Register with Passkey'}
             </button>

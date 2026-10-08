@@ -222,9 +222,7 @@ function HumanGate({
                 title={outcomeEffect(run.state, transition)}
                 className={clsx(
                   'ficus-button px-3 py-2 text-sm rounded-md disabled:opacity-50',
-                  outcome === firstForward
-                    ? 'ficus-button-primary text-on-accent bg-accent hover:bg-accent-hover'
-                    : 'text-secondary border border-th-border hover:bg-surface-hover'
+                  outcome === firstForward ? 'ficus-button-primary' : 'ficus-button-secondary'
                 )}
                 disabled={
                   advance.isPending ||
@@ -323,7 +321,7 @@ function DeliveryApproval({
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                className="ficus-button ficus-button-primary px-3 py-2 text-sm text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary px-3 py-2 text-sm rounded-md disabled:opacity-50"
                 disabled={pending || !feedback.trim()}
                 onClick={() => sendBack.mutate()}
               >
@@ -331,7 +329,7 @@ function DeliveryApproval({
               </button>
               <button
                 type="button"
-                className="ficus-button px-3 py-2 text-sm text-secondary rounded-md hover:bg-surface-hover"
+                className="ficus-button ficus-button-secondary px-3 py-2 text-sm rounded-md"
                 onClick={() => setSendingBack(false)}
               >
                 Cancel
@@ -342,7 +340,7 @@ function DeliveryApproval({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="ficus-button ficus-button-primary px-3 py-2 text-sm text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+              className="ficus-button ficus-button-primary px-3 py-2 text-sm rounded-md disabled:opacity-50"
               disabled={pending}
               onClick={() => finish.mutate()}
             >
@@ -351,7 +349,7 @@ function DeliveryApproval({
             {reworkAttempt && (
               <button
                 type="button"
-                className="ficus-button px-3 py-2 text-sm text-secondary border border-th-border rounded-md hover:bg-surface-hover disabled:opacity-50"
+                className="ficus-button ficus-button-secondary px-3 py-2 text-sm rounded-md disabled:opacity-50"
                 disabled={pending}
                 onClick={() => setSendingBack(true)}
               >

@@ -132,7 +132,7 @@ export function FicusAssistantStart({
                 key={item.id}
                 onClick={() => go(item)}
                 className={clsx(
-                  'ficus-button w-full text-left px-3 py-2.5 text-sm hover:bg-surface-secondary',
+                  'ficus-button ficus-button-ghost w-full text-left px-3 py-2.5 text-sm',
                   index === selectedIndex && 'bg-surface-secondary'
                 )}
               >
@@ -176,7 +176,7 @@ export function FicusAssistantStart({
               key={example}
               disabled={!canAsk}
               onClick={() => onAsk(example)}
-              className="ficus-button flex items-center gap-2 w-full text-left px-3 py-2.5 text-sm text-secondary hover:bg-surface-secondary disabled:opacity-40"
+              className="ficus-button ficus-button-ghost flex items-center gap-2 w-full text-left px-3 py-2.5 text-sm disabled:opacity-40"
             >
               <SparklesIcon className="w-4 h-4 text-accent-light shrink-0" />
               {example}
@@ -189,7 +189,7 @@ export function FicusAssistantStart({
           <div className="mb-1 px-3 flex items-center justify-between">
             <h4 className="text-xs font-medium text-muted">Recent chats</h4>
             {recentChats.length > 5 && (
-              <button onClick={onViewAllChats} className="ficus-button text-xs text-muted hover:text-accent-light py-1">
+              <button onClick={onViewAllChats} className="ficus-button ficus-button-link text-xs text-muted py-1">
                 View all
               </button>
             )}

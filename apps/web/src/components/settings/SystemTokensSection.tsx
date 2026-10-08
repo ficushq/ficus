@@ -108,7 +108,7 @@ export function SystemTokensSection() {
                 ])
                 setCustomScope('')
               }}
-              className="ficus-button text-sm text-accent-light disabled:opacity-50"
+              className="ficus-button ficus-button-link text-sm disabled:opacity-50"
             >
               Add scope
             </button>
@@ -118,7 +118,7 @@ export function SystemTokensSection() {
         <button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending}
-          className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium rounded-md disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating…' : 'Create token'}
         </button>
@@ -136,12 +136,15 @@ export function SystemTokensSection() {
             </code>
             <button
               onClick={() => navigator.clipboard?.writeText(created.token)}
-              className="ficus-button px-2 py-1.5 text-xs font-medium text-secondary bg-surface-secondary rounded hover:bg-surface-hover shrink-0"
+              className="ficus-button ficus-button-secondary px-2 py-1.5 text-xs font-medium rounded shrink-0"
             >
               Copy
             </button>
           </div>
-          <button onClick={() => setCreated(null)} className="ficus-button text-xs text-muted hover:text-secondary">
+          <button
+            onClick={() => setCreated(null)}
+            className="ficus-button ficus-button-link text-xs text-muted hover:text-secondary"
+          >
             Dismiss
           </button>
         </div>
@@ -183,7 +186,7 @@ export function SystemTokensSection() {
                 <button
                   onClick={() => revokeMutation.mutate(t.id)}
                   disabled={revokeMutation.isPending}
-                  className="ficus-button px-2 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 border border-th-border rounded hover:bg-surface-hover disabled:opacity-50 shrink-0"
+                  className="ficus-button ficus-button-danger px-2 py-1 text-xs font-medium rounded disabled:opacity-50 shrink-0"
                 >
                   Revoke
                 </button>

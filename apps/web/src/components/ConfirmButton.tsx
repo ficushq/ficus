@@ -1,11 +1,22 @@
 import clsx from 'clsx'
 import { useState, useEffect, useRef } from 'react'
 
+/** Each variant with the `ficus-button` base it must ship with (see buttonVariants.guard.test.ts). */
+const VARIANT_CLASS = {
+  danger: 'ficus-button ficus-button-danger',
+  secondary: 'ficus-button ficus-button-secondary',
+  ghost: 'ficus-button ficus-button-ghost',
+} as const
+
 interface ConfirmButtonProps {
   onConfirm: () => void
   label?: string
   confirmLabel?: string
+  /** The button's look; destructive by default. Menu rows and header clusters pass `ghost`. */
+  variant?: keyof typeof VARIANT_CLASS
+  /** Sizing, layout and any tint; the variant supplies the look. */
   className?: string
+  /** Replaces `className` while armed; defaults to `className` plus a danger tint for the danger variant. */
   confirmClassName?: string
   disabled?: boolean
   title?: string
@@ -22,8 +33,9 @@ export function ConfirmButton({
   onConfirm,
   label = 'Cancel',
   confirmLabel = 'Confirm?',
-  className = 'px-2 py-1 text-xs font-medium text-status-danger-600 hover:bg-status-danger-50 rounded transition-colors',
-  confirmClassName = 'px-2 py-1 text-xs font-medium text-status-danger-700 bg-status-danger-50 hover:bg-status-danger-100 rounded transition-colors',
+  variant = 'danger',
+  className = 'px-2 py-1 text-xs',
+  confirmClassName,
   disabled,
   title,
   ariaLabel,
@@ -56,7 +68,13 @@ export function ConfirmButton({
       onClick={handleClick}
       disabled={disabled}
       aria-label={ariaLabel}
-      className={clsx('ficus-button', confirming ? confirmClassName : className, 'disabled:opacity-50')}
+      className={clsx(
+        VARIANT_CLASS[variant],
+        confirming
+          ? (confirmClassName ?? clsx(className, variant === 'danger' && 'bg-status-danger-surface'))
+          : className,
+        'disabled:opacity-50'
+      )}
       title={title}
     >
       {confirming ? confirmLabel : label}

@@ -109,7 +109,7 @@ export function RoleAssignmentPicker({
           setSquadId('')
         }}
         disabled={!ready || busy}
-        className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+        className="ficus-button ficus-button-primary text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
       >
         {busy ? busyLabel : addLabel}
       </button>

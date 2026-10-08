@@ -81,7 +81,7 @@ export function ProviderDirectoryCard({
             aria-expanded={expanded}
             aria-controls={`provider-settings-${providerId}`}
             onClick={() => setExpanded(!expanded)}
-            className="ficus-button flex items-center gap-2 self-start text-sm text-primary"
+            className="ficus-button ficus-button-link flex items-center gap-2 self-start text-sm text-primary"
           >
             {action}
             <ChevronDownIcon className={clsx('h-4 w-4 transition-transform', expanded && 'rotate-180')} />

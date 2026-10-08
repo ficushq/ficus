@@ -128,7 +128,7 @@ export function WorkStreamPauseControls({
               </button>
               <button
                 type="button"
-                className="ficus-button px-3 py-1.5 text-xs"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs"
                 disabled={action.isPending}
                 onClick={controls.closePause}
               >

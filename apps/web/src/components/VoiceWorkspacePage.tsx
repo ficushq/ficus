@@ -353,7 +353,7 @@ export function VoiceDebugInspector({
             <button
               type="button"
               onClick={onToggle}
-              className="ficus-button rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-primary"
+              className="ficus-button ficus-button-ghost rounded-md px-2 py-1 text-xs"
             >
               Close
             </button>
@@ -391,7 +391,7 @@ export function VoiceDebugInspector({
         type="button"
         onClick={onToggle}
         aria-pressed={open}
-        className="ficus-button rounded-full border border-th-border bg-surface/80 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.16em] text-secondary shadow-lg backdrop-blur-md hover:bg-surface-hover hover:text-primary"
+        className="ficus-button ficus-button-secondary rounded-full bg-surface/80 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.16em] shadow-lg backdrop-blur-md"
       >
         Debug
       </button>
@@ -508,7 +508,6 @@ function VoiceOrb({
         aria-label={actionLabel}
         style={{ '--voice-input-level': Math.max(0, Math.min(inputLevel, 1)) } as CSSProperties}
         className={clsx(
-          'ficus-button',
           'voice-orb group relative h-24 w-24 rounded-full outline-none transition-transform duration-300 disabled:cursor-default disabled:opacity-100',
           canClickOrb && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-decoration-10-200/80',
           isConnected && 'voice-orb--live',

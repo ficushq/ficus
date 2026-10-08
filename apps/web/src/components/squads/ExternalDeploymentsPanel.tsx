@@ -89,7 +89,7 @@ export function ExternalDeploymentsPanel({ squadId }: ExternalDeploymentsPanelPr
               <button
                 type="button"
                 onClick={() => setShowDone((value) => !value)}
-                className="ficus-button w-full flex items-center justify-between text-left py-1 text-xs font-semibold uppercase tracking-wide text-muted hover:text-primary transition-colors"
+                className="w-full flex items-center justify-between text-left py-1 text-xs font-semibold uppercase tracking-wide text-muted hover:text-primary transition-colors"
               >
                 <span className="flex items-center gap-1.5">
                   <ChevronDownIcon className={clsx('h-4 w-4 transition-transform', !showDone && '-rotate-90')} />
@@ -156,7 +156,7 @@ function DeploymentRows({
                     <button
                       type="button"
                       onClick={() => onCopy(deployment)}
-                      className="ficus-button p-1.5 rounded text-muted hover:text-primary transition-colors"
+                      className="ficus-button ficus-button-ghost p-1.5 rounded transition-colors"
                       title="Copy app URL"
                       aria-label="Copy app URL"
                     >
@@ -197,11 +197,11 @@ function DeploymentRows({
                     onClick={() => onArchive(deployment.id)}
                     disabled={isArchiving}
                     className={clsx(
-                      'ficus-button',
+                      'ficus-button ficus-button-ghost',
                       'p-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
                       confirmArchiveId === deployment.id
                         ? 'text-status-danger-700 dark:text-status-danger-300'
-                        : 'text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400'
+                        : 'hover:text-status-danger-600 dark:hover:text-status-danger-400'
                     )}
                     title={
                       confirmArchiveId === deployment.id ? 'Click again to archive deployment' : 'Archive deployment'

@@ -79,7 +79,7 @@ export function SquadPresetWorkflowsEditor({
                   </div>
                   <button
                     type="button"
-                    className="ficus-button text-sm text-muted"
+                    className="ficus-button ficus-button-danger px-2 py-1 text-sm"
                     onClick={() => onChange({ ...value, choices: value.choices.filter((_, i) => i !== index) })}
                   >
                     Remove
@@ -106,7 +106,7 @@ export function SquadPresetWorkflowsEditor({
             <button
               type="button"
               disabled={!entries.length || value.choices.length >= 32}
-              className="ficus-button text-sm text-accent-light"
+              className="ficus-button ficus-button-link text-sm"
               onClick={() =>
                 onChange({
                   ...value,

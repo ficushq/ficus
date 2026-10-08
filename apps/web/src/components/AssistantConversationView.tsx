@@ -300,7 +300,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
         <div role="alert" className="px-3 py-2 text-sm text-danger">
           {voice.error}{' '}
           <button
-            className="ficus-button"
+            className="ficus-button ficus-button-link"
             onClick={() => {
               void voice.retryConnection()
             }}
@@ -311,7 +311,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
       )}
       {props.realtime && !voice.isLiveAudio && agentId && (
         <button
-          className="ficus-button px-3 py-1 text-xs text-muted"
+          className="ficus-button ficus-button-link py-1 text-xs text-muted"
           onClick={() => {
             void startVoice()
           }}
@@ -323,7 +323,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
         <div role="alert" className="px-3 py-2 text-sm text-danger">
           {error}{' '}
           {!agentId && (
-            <button className="ficus-button" onClick={() => setAttempt((value) => value + 1)}>
+            <button className="ficus-button ficus-button-link" onClick={() => setAttempt((value) => value + 1)}>
               Retry
             </button>
           )}
@@ -335,7 +335,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
             <summary className="cursor-pointer text-muted">Earlier conversation</summary>
             {archiveHasMore && (
               <button
-                className="ficus-button"
+                className="ficus-button ficus-button-link"
                 onClick={async () => {
                   const page = await api.history(props.id, archiveBefore)
                   setArchive((current) => [
