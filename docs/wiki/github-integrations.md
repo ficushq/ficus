@@ -58,7 +58,7 @@ App-level webhooks are optional: Ficus continues polling repositories referenced
 
 Managed instances automatically register exact repositories found in unfinished work-stream metadata, GitHub flow subscriptions, squad GitHub Routing repositories, and squad integration triggers. Repository matches can use literals or work-stream metadata bindings; triggers without a repository match use the squad's declared GitHub repositories. This does not enumerate every repository a connected account can see. Install the App on the relevant repositories and assign a GitHub connection to the squad. No tenant webhook URL or signing secret is needed.
 
-Core consumes Platform's durable queue every five seconds (up to four connections per tick), using its instance credential. Platform checks that the supplied user token belongs to the shared App and still has repository and access to the specific event resource before releasing any payload. Events whose underlying resource is no longer readable are discarded; this does not remove the subscription to other events from that repository. Core then rechecks the connection revision, squad assignment, and declared interest. Events enter the same typed integration outputs used by polling; existing flow subscriptions select recipients, triggers can create work, and native squad routing handles assignments, mentions, and review requests. Relay events do not run legacy instance-wide webhook shell rules. Direct tenant webhooks still support those rules.
+Core consumes Platform's durable queue every five seconds (up to four connections per tick), using its instance credential. Platform checks that the supplied user token belongs to the shared App and still has repository and access to the specific event resource before releasing any payload. Events whose underlying resource is no longer readable are discarded; this does not remove the subscription to other events from that repository. Core then rechecks the connection revision, squad assignment, and declared interest. Events enter the same typed integration outputs used by polling; existing flow subscriptions select recipients, triggers can create work, and native squad routing handles assignments, mentions, and review requests. Relay events do not run legacy instance-wide webhook shell rules. Direct tenant webhooks still run them for non-feedback events such as `push`; GitHub feedback events (comments, reviews, issues, pull requests, workflow runs) no longer run shell or batch rules (see [Author trust and held feedback](#author-trust-and-held-feedback)).
 
 Subscriptions renew every five minutes and expire after 24 hours offline. Encrypted payloads and delivery receipts expire after 72 hours; acknowledged payloads are cleared earlier. A lost acknowledgment retries after a two-minute lease, and output fact keys deduplicate flow consumption. Each connection supports up to 100 exact repositories, with 100 connections per tenant and a tenant budget of 3,600 relay GitHub API requests per hour. Empty queue polls make no GitHub API calls.
 
@@ -162,7 +162,7 @@ This policy does not expand event coverage: PR polling currently detects
 lifecycle/head transitions and feedback, not description-only edits. The output
 adapter admits submitted reviews, not edited or dismissed review events. Webhook
 and polling presentation is identical for the same admitted fact. Operator-defined
-webhook shell commands remain outside this native presentation policy.
+webhook shell commands no longer run for GitHub feedback events.
 
 ### Typed conditions and match preview
 
@@ -252,6 +252,99 @@ delivery PR plus any tracked PR flagged `delivery: true` must all be merged.
 Comments, review line comments, and submitted reviews authored by the connected GitHub account are recorded but do not notify agents or start work streams. This echo protection applies to Code hosting, explicit workflow subscriptions, and squad rules (including **Any matching event**), and is rechecked before queued delivery. Other accounts' comments still reach linked work streams, including review bots. Assignment, merge, and CI events are unaffected. Legacy instance-level ingress without a connected account cannot identify self-authored events.
 
 Set `github.connectionId` to choose an attached account explicitly. Otherwise the code-host connection, or the original event's connection when it refers to this issue, pins routing; without a pinned connection, normal squad authorization applies. Removing or rebinding the issue invalidates pending delivery. Disabling **Code hosting** disables inferred PR and issue subscriptions; explicit workflow subscriptions remain available. Squad manager rules remain fallbacks and do not override a linked stream's subscription settings.
+
+## Author trust and held feedback
+
+Public GitHub authors can write prose that reaches fully privileged agents. Each
+squad therefore has an **author filter** (`squads.github_author_filter`, a column
+rather than metadata so generic squad updates cannot change it). Migration
+`0204_github_author_filter` sets it OFF for squads that existed at rollout and ON
+for new squads. User documentation: `apps/docs/src/content/docs/connect/github.mdx`.
+
+- **OFF** keeps pre-feature routing: no capture, hold, queue or trust lookup.
+  Exact connection and repository authorization still apply.
+- **ON** gates otherwise-matching feedback (issue and PR comments, reviews,
+  inline review comments, issue and PR text) before any agent effect: inbox
+  delivery, wake, consultant creation, work creation and trigger runs. This
+  covers squad rules, tracked issue/PR subscriptions, workflow subscriptions,
+  parked-owner notices, webhook, relay and polling paths, and retries.
+
+**Trust** (`feedback-trust.ts`) is evaluated fresh for each event and never cached as
+a derived allowlist. An author is trusted when either:
+
+- **Dynamic:** a Ficus human with a verified personal GitHub link
+  (`github_personal_identities`) has effective `squads:update` in THAT squad.
+- **Manual:** `github_trusted_authors` holds an entry for the squad. Entries are
+  keyed by numeric GitHub account ID and record the login and `User`/`Bot` type
+  for display.
+
+Usernames, `author_association` labels and the webhook sender are never
+authority. The content author is attributed per item (`feedback-envelope.ts`).
+An edit is attributed to its editor only when the provider proves who edited;
+otherwise the edit is held. Unknown or unresolvable authors are held, not
+allowed.
+
+Personal linking (`routes/github-identity.ts`, `personal-identity.ts`) reuses the
+GitHub OAuth/device transport with a separate `github_identity` purpose. It
+stores only the verified account ID and login, never assigns a connection or
+signing key, and disposes of the token locally without remote revocation. The
+provider token may be shared with other consumers of the same OAuth app, so
+local disposal is the conservative choice.
+
+**Held events** are captured as immutable revisions (`github_feedback_objects`,
+`github_feedback_revisions`, `github_feedback_sources`) bound to a content hash.
+They produce no agent effect and no prose in inbox subjects, summaries, history
+or alerts. Moderation (`feedback-moderation.ts`, `routes/github-feedback.ts`) is
+`allow_once`, `deny` or `allow_trust` on selected revision versions. Bulk
+requests of up to 50 are compare-and-set on the decision version and idempotent
+per request ID. A stale version returns 409. `allow_trust` adds manual trust
+and releases only the selected revisions; other held events stay held. A later
+edit creates a new revision that is evaluated again.
+
+**Release** (`feedback-release*.ts`) runs normal output routing when the decision
+is made. The approved event reaches the current recipients, which may differ from
+the recipients at hold time; hold-time routing is kept for display only. Delivery
+is receipt-based and exactly once. It respects pauses, parking and waits, never
+approves workflow gates, and ends `obsolete` when nobody should receive it. The
+**Releasing** queue shows `retry` and `retained` states.
+
+Turning the filter OFF (`author-filter-setting.ts`) records a one-time allow by
+that human for each held revision with readable content, released the same way.
+Held revisions with unavailable content stay pending. Turning it back ON never
+re-holds released events.
+
+**Human-only authority.** Trust edits, moderation and the filter setting require a
+literal enabled human identity with effective `squads:update` in the squad.
+Agents are rejected and audited, including delegated user-associated tokens.
+`trust-mutation-guard.ts` also serializes the user and role routes (profile,
+enable, disable, delete, roles and role assignments). Any change that would
+alter a linked user's effective dynamic trust needs that human authority. The
+guard compares effective trust before and after, so agents' unrelated role
+tools keep working. Generic squad updates reject the filter column, and trust
+lives in its own tables, not in squad metadata. Decision and audit rows record
+the actual human.
+
+**Status facts** (`feedback-status.ts`) keep flowing while feedback is held:
+PR updated, closed and merged, CI completed and Dependabot alert updates. They
+are rendered from an allowlist of numeric and state fields with no titles,
+descriptions, workflow names or log text. Dependabot stays webhook-only.
+
+**Managed reads** honor the same decisions. Memory indexing projects GitHub
+threads with held or denied items replaced by placeholders (`managed-content.ts`).
+Search, outline and backlinks withhold documents without provenance in ON
+squads. `resolveEventTrackedResource` refuses held events. Activity drops issue
+titles. Legacy YAML shell and batch handlers for feedback events are retired.
+
+**Rollout fence** (`feedback-upgrade.ts`): undelivered legacy GitHub prose already
+in agent inboxes of an ON squad is hidden from list, search, count, read and
+attachment reads, and final acceptance refuses it. Delivered rows stay readable
+history and are never re-sent. Nothing is backfilled or replayed.
+
+**Limits and residual risk.** Revisions and decisions are kept with no retention
+sweep yet, like the raw output events they reference. Agents keep their
+unrestricted tools: direct `gh` or API fetches and repository content can still
+carry untrusted text. The filter governs what Ficus delivers and indexes; it is
+not prompt-injection immunity.
 
 ## Dependabot dependency-security webhooks
 

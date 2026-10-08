@@ -132,6 +132,21 @@ Some API requests originate from agents rather than human users. Agent tokens (p
 
 The Consultant is a squad-bound agent (`squadId` set, `ownerUserId` null) that is granted manager-level permissions through this mapping. See [Consultant](consultant.md) for the full design.
 
+A delegated or user-associated agent token is still an agent identity. Routes that
+need a person, such as GitHub trust and moderation, check the identity type
+rather than the permissions, so these tokens are refused. See
+[Author trust and held feedback](github-integrations.md#author-trust-and-held-feedback).
+
+### Personal GitHub identity
+
+**Settings → Account → GitHub account** links a person's own GitHub account
+(`/api/github-identity`). It uses the GitHub OAuth or device transport with a
+separate `github_identity` purpose and stores only the verified numeric account
+ID and login. It is not an integration connection: it grants no repository
+access, assigns no squad connection or signing key, and Core disposes of the
+token locally without remote revocation. An account ID can be linked to only one
+active Ficus user. Unlinking removes future dynamic trust.
+
 ## Related Docs
 
 - [Secret Store](secret-store.md) — How secrets are encrypted and stored

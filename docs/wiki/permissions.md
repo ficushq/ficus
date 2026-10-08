@@ -17,6 +17,16 @@ while endpoint-specific ownership and resource checks still apply. A permission
 alone does not turn a token into a user or an agent. The token value is revealed
 only once, after creation.
 
+## Human-only squad controls
+
+Some squad settings check `squads:update` **and** require a literal, enabled human
+user. Agent tokens are refused even when the agent is acting for a user or has
+`squads:update` through its role or extra scopes. These settings are GitHub
+trusted authors, GitHub feedback moderation (allow, deny, allow and trust) and the
+GitHub author filter. Role and user changes that would change who is dynamically
+trusted need the same human authority. See
+[Author trust and held feedback](github-integrations.md#author-trust-and-held-feedback).
+
 ## Exact grants and wildcards
 
 Selecting permissions saves their exact names. Selecting every permission in a

@@ -68,12 +68,24 @@ The document body contains the issue/PR body plus comments. Chunks include paren
 
 Grant filters support `repos` and compile to indexed search filters against `frontmatter.repo`; malformed filters fail closed.
 
+## Author-filtered projection
+
+When the source squad's GitHub author filter is ON, indexing projects each thread
+through `projectGitHubThreadForMemory` (`services/integrations/github/managed-content.ts`).
+Comments that are held or denied, or whose author is not trusted, become fixed
+placeholders. Approved revisions are indexed with their exact reviewed text. The
+projection records `frontmatter.githubProjection` provenance. Search, outline and
+backlinks hide GitHub documents that lack this provenance whenever the source or
+calling squad has the filter ON. Approvals count only in the source squad.
+
 ## Limitations
 
 - Requires GitHub API credentials available to the shared GitHub client.
 - Uses GitHub issue comments; it does not ingest CI logs, commits, review threads, or Actions output.
 - PRs are represented through the Issues API shape plus `kind: pull_request`.
 - User identity remains the GitHub login.
+- With the author filter ON, issue and PR titles and bodies are admitted on the
+  author's trust: the REST API does not report who edited them.
 
 Source class: [`GitHubIssueSource`](../../../../apps/core/src/services/memory/sources/GitHubIssueSource.ts).
 
