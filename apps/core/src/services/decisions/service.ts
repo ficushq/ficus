@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
-import { lt } from 'drizzle-orm'
+import { and, gte, isNotNull, lt, sql } from 'drizzle-orm'
 import {
+  decisionPricePerMillion,
   DECISION_PURPOSE_INFO,
   DECISION_PURPOSES,
   decisionRequestSchema,
   type DecisionFeatureView,
+  type DecisionSpend,
   type DecisionPurpose,
   type DecisionRequest,
   type DecisionResult,
@@ -40,6 +42,36 @@ export interface DecideOptions {
   fetcher?: DecisionFetch
   /** Tests: skip writing the decision log. */
   skipLog?: boolean
+  /** Tests: see what an answer was counted as costing. */
+  onCost?: (cost: DecisionCost) => void
+}
+
+export interface DecisionCost {
+  inputTokens: number
+  /** Billionths of a dollar; null when the provider's price is unknown. */
+  nanodollars: number | null
+  /** The provider didn't report its token count, so it was estimated from the input size. */
+  estimated: boolean
+}
+
+/** What one answer cost: the provider's reported input tokens (or about 4 characters a token) at its price. */
+export function decisionCost(
+  provider: Pick<StoredDecisionProvider, 'kind' | 'model' | 'pricePerMillionInput'>,
+  request: DecisionRequest,
+  result: DecisionResult
+): DecisionCost {
+  const reported = result.usage?.inputTokens
+  const inputTokens =
+    typeof reported === 'number' && Number.isFinite(reported) && reported >= 0
+      ? Math.round(reported)
+      : Math.ceil(JSON.stringify(request).length / 4)
+  const price = decisionPricePerMillion(provider)
+  // $/million tokens × tokens = micro-dollars; × 1000 = nanodollars.
+  return {
+    inputTokens,
+    nanodollars: price === null ? null : Math.round(inputTokens * price * 1000),
+    estimated: reported === undefined,
+  }
 }
 
 const cooldownUntil = new Map<string, number>()
@@ -63,7 +95,7 @@ export function isDecisionFeatureEnabled(purpose: DecisionPurpose): boolean {
   const value = getDecisionFeatureSwitches()[purpose] ?? 'auto'
   if (value === 'off') return false
   if (value === 'on') return true
-  return decisionChain(purpose).length > 0
+  return !DECISION_PURPOSE_INFO[purpose].offByDefault && decisionChain(purpose).length > 0
 }
 
 /** Every decision feature with its scope, switch and whether it runs, for Settings. */
@@ -117,11 +149,12 @@ export async function decide(
         fetcher: options.fetcher,
       })
       cooldownUntil.delete(provider.id)
+      options.onCost?.(decisionCost(provider, request, result))
       const outcome: DecisionOutcome = {
         ok: true,
         result: { ...result, latencyMs: Date.now() - attemptStarted },
       }
-      record(purpose, request, outcome, Date.now() - started, options)
+      record(purpose, request, outcome, Date.now() - started, options, decisionCost(provider, request, result))
       return outcome
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
@@ -177,7 +210,8 @@ function record(
   request: DecisionRequest,
   outcome: DecisionOutcome,
   latencyMs: number,
-  options: DecideOptions
+  options: DecideOptions,
+  cost?: DecisionCost
 ) {
   if (options.skipLog) return
   const inputSha256 = createHash('sha256').update(JSON.stringify(request)).digest('hex')
@@ -188,6 +222,9 @@ function record(
       providerId: outcome.ok ? outcome.result.providerId : null,
       model: outcome.ok ? outcome.result.model : null,
       latencyMs,
+      inputTokens: cost?.inputTokens ?? null,
+      costNanodollars: cost?.nanodollars ?? null,
+      costEstimated: cost ? cost.estimated || cost.nanodollars === null : false,
       inputSha256,
       answers: outcome.ok ? outcome.result.answers : null,
       errors: outcome.ok ? null : outcome.errors,
@@ -198,6 +235,57 @@ function record(
       await db.delete(decisionLog).where(lt(decisionLog.createdAt, new Date(Date.now() - LOG_RETENTION_MS)))
     }
   })().catch((error) => log.warn('Could not record a decision', error))
+}
+
+/** What decision models cost over the last `days` days (the log keeps 30), by feature and by provider. */
+export async function decisionSpend(days: number): Promise<DecisionSpend> {
+  const since = new Date(Date.now() - Math.min(Math.max(days, 1), 30) * 24 * 60 * 60 * 1000)
+  const totals = {
+    calls: sql<number>`count(*)::int`,
+    inputTokens: sql<string>`coalesce(sum(${decisionLog.inputTokens}), 0)::bigint`,
+    nanodollars: sql<string>`coalesce(sum(${decisionLog.costNanodollars}), 0)::bigint`,
+    approximate: sql<boolean>`coalesce(bool_or(${decisionLog.costEstimated}), false)`,
+  }
+  const [purposes, providers] = await Promise.all([
+    db
+      .select({
+        purpose: decisionLog.purpose,
+        answered: sql<number>`(count(*) filter (where ${decisionLog.outcome} = 'answered'))::int`,
+        ...totals,
+      })
+      .from(decisionLog)
+      .where(gte(decisionLog.createdAt, since))
+      .groupBy(decisionLog.purpose),
+    db
+      .select({ providerId: decisionLog.providerId, ...totals })
+      .from(decisionLog)
+      .where(and(gte(decisionLog.createdAt, since), isNotNull(decisionLog.providerId)))
+      .groupBy(decisionLog.providerId),
+  ])
+  const usd = (nanodollars: string) => Number(nanodollars) / 1e9
+  const byPurpose = purposes
+    .map((row) => ({
+      purpose: row.purpose,
+      calls: row.calls,
+      answered: row.answered,
+      inputTokens: Number(row.inputTokens),
+      costUsd: usd(row.nanodollars),
+    }))
+    .sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls)
+  return {
+    days,
+    totalUsd: byPurpose.reduce((sum, row) => sum + row.costUsd, 0),
+    approximate: purposes.some((row) => row.approximate),
+    byPurpose,
+    byProvider: providers
+      .map((row) => ({
+        providerId: row.providerId!,
+        calls: row.calls,
+        inputTokens: Number(row.inputTokens),
+        costUsd: usd(row.nanodollars),
+      }))
+      .sort((a, b) => b.costUsd - a.costUsd),
+  }
 }
 
 export function resetDecisionCooldownsForTests() {

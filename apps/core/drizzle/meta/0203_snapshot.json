@@ -1,5 +1,5 @@
 {
-  "id": "0325d736-a0cd-408b-bbf3-91c6e5fb9870",
+  "id": "831dae5d-9d36-4800-b314-b94280812af8",
   "prevId": "f945e162-588b-4ea7-899f-6573fd80c2c0",
   "version": "7",
   "dialect": "postgresql",
@@ -3430,6 +3430,25 @@
           "primaryKey": false,
           "notNull": true
         },
+        "input_tokens": {
+          "name": "input_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cost_nanodollars": {
+          "name": "cost_nanodollars",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cost_estimated": {
+          "name": "cost_estimated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "input_sha256": {
           "name": "input_sha256",
           "type": "varchar(64)",
@@ -3466,6 +3485,27 @@
         "idx_decision_log_created_at": {
           "name": "idx_decision_log_created_at",
           "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_decision_log_purpose_created_at": {
+          "name": "idx_decision_log_purpose_created_at",
+          "columns": [
+            {
+              "expression": "purpose",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "created_at",
               "isExpression": false,

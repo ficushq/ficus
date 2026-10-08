@@ -111,6 +111,29 @@ export const DECISION_PROVIDER_KIND_INFO: Record<
   },
 }
 
+/**
+ * List prices in US dollars per million input tokens (decision models don't bill output), as
+ * published in October 2026. Jev's is early-access pricing. A local model costs nothing. Owners can
+ * set their own price per provider when these change.
+ */
+export const DECISION_MODEL_PRICES: Record<DecisionProviderKind, Record<string, number>> = {
+  jev: { 'jev-latest': 0.042, 'jev-preview': 0.042 },
+  systemone: {},
+  cloudflare: { clef: 0.24, 'clef-flash': 0.09 },
+  openai: { 'gpt-6-luna': 0.1 },
+}
+
+/** Dollars per million input tokens for a provider: its own price, else the list price; null when unknown. */
+export function decisionPricePerMillion(provider: {
+  kind: DecisionProviderKind
+  model: string
+  pricePerMillionInput?: number
+}): number | null {
+  if (provider.pricePerMillionInput !== undefined) return provider.pricePerMillionInput
+  if (provider.kind === 'systemone') return 0
+  return DECISION_MODEL_PRICES[provider.kind][provider.model] ?? null
+}
+
 /** A configured decision provider, as the API shows it (never its key). */
 export interface DecisionProviderView {
   id: string
@@ -121,6 +144,26 @@ export interface DecisionProviderView {
   baseUrl?: string
   accountId?: string
   hasApiKey: boolean
+  /** The owner's own price, if set. */
+  pricePerMillionInput?: number
+  /** The price spend is counted at: the owner's, else the list price; null when unknown. */
+  effectivePricePerMillionInput: number | null
+}
+
+/** What decision models cost over a period, by feature and by provider. */
+export interface DecisionSpend {
+  days: number
+  totalUsd: number
+  /** Some calls' tokens were estimated (the provider didn't report them), or a price is unknown. */
+  approximate: boolean
+  byPurpose: Array<{
+    purpose: string
+    calls: number
+    answered: number
+    inputTokens: number
+    costUsd: number
+  }>
+  byProvider: Array<{ providerId: string; calls: number; inputTokens: number; costUsd: number }>
 }
 
 /** What Ficus asks decision models for: one per feature, each with its own provider order. */
@@ -137,7 +180,13 @@ export type DecisionFeatureScope = 'instance' | 'squad' | 'authored'
 
 export const DECISION_PURPOSE_INFO: Record<
   DecisionPurpose,
-  { label: string; description: string; scope: DecisionFeatureScope }
+  {
+    label: string
+    description: string
+    scope: DecisionFeatureScope
+    /** Instance features that are nice to have but cost money: off until the owner turns them on. */
+    offByDefault?: boolean
+  }
 > = {
   'tool-results': {
     label: 'Tool result firewall',

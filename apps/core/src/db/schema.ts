@@ -4070,6 +4070,11 @@ export const decisionLog = pgTable(
     providerId: varchar('provider_id', { length: 64 }),
     model: varchar('model', { length: 128 }),
     latencyMs: integer('latency_ms').notNull(),
+    /** Input tokens the answering provider billed, or an estimate when it didn't say (`costEstimated`). */
+    inputTokens: integer('input_tokens'),
+    /** What the answer cost, in billionths of a dollar (decision models bill input only). */
+    costNanodollars: integer('cost_nanodollars'),
+    costEstimated: boolean('cost_estimated').notNull().default(false),
     inputSha256: varchar('input_sha256', { length: 64 }).notNull(),
     answers: jsonb('answers').$type<Record<string, import('@ficus/shared').DecisionAnswer>>(),
     errors: jsonb('errors').$type<Array<{ providerId: string; error: string }>>(),
@@ -4077,5 +4082,8 @@ export const decisionLog = pgTable(
     source: jsonb('source').$type<Record<string, string>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index('idx_decision_log_created_at').on(table.createdAt)]
+  (table) => [
+    index('idx_decision_log_created_at').on(table.createdAt),
+    index('idx_decision_log_purpose_created_at').on(table.purpose, table.createdAt),
+  ]
 )

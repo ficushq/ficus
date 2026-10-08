@@ -13,7 +13,7 @@ import { requirePermission } from '../middleware/require-permission'
 import { auditActor, type Identity } from '../services/rbac'
 import { getOpenAIServiceKey } from '../services/integrations/openai-services/settings'
 import { systemOneBase } from '../services/decisions/adapters'
-import { askProvider, decide, decisionFeatures, DECISION_PROBE } from '../services/decisions/service'
+import { askProvider, decide, decisionFeatures, decisionSpend, DECISION_PROBE } from '../services/decisions/service'
 import {
   addDecisionProvider,
   decisionProviderView,
@@ -42,7 +42,11 @@ const providerInput = z.object({
   apiKey: z.string().max(4096).optional(),
 })
 
-const providerPatch = providerInput.omit({ kind: true }).extend({ enabled: z.boolean().optional() })
+const providerPatch = providerInput.omit({ kind: true }).extend({
+  enabled: z.boolean().optional(),
+  /** Dollars per million input tokens; null goes back to the list price. */
+  pricePerMillionInput: z.number().min(0).max(1000).nullable().optional(),
+})
 
 app.get('/', requirePermission('provider-auth:read'), (c) =>
   c.json({
@@ -119,6 +123,13 @@ app.put('/routing', requirePermission('provider-auth:write'), async (c) => {
   const unknown = ids.find((id) => !known.has(id))
   if (unknown) return c.json({ error: `No such decision provider: ${unknown}` }, 400)
   return c.json(await setDecisionRouting(parsed.data, auditActor(c.get('identity') as Identity)))
+})
+
+/** What decision models cost, by feature and provider, over the last 1, 7 or 30 days. */
+app.get('/spend', requirePermission('provider-auth:read'), async (c) => {
+  const days = Number(c.req.query('days') ?? 30)
+  if (![1, 7, 30].includes(days)) return c.json({ error: 'days must be 1, 7 or 30' }, 400)
+  return c.json(await decisionSpend(days))
 })
 
 const featureSwitchInput = z.object({ value: z.enum(DECISION_FEATURE_SWITCH_VALUES) })

@@ -3,6 +3,7 @@ import {
   DECISION_PROVIDER_KIND_INFO,
   DECISION_PROVIDER_KINDS,
   decisionFeatureSwitchesSchema,
+  decisionPricePerMillion,
   decisionRoutingSchema,
   type DecisionFeatureSwitch,
   type DecisionFeatureSwitches,
@@ -33,6 +34,8 @@ export interface StoredDecisionProvider {
   baseUrl?: string
   accountId?: string
   apiKey?: string
+  /** The owner's own price in dollars per million input tokens, overriding the list price. */
+  pricePerMillionInput?: number
 }
 
 interface ProviderDocument {
@@ -68,6 +71,8 @@ export function decisionProviderView(provider: StoredDecisionProvider): Decision
     ...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}),
     ...(provider.accountId ? { accountId: provider.accountId } : {}),
     hasApiKey: Boolean(provider.apiKey),
+    ...(provider.pricePerMillionInput !== undefined ? { pricePerMillionInput: provider.pricePerMillionInput } : {}),
+    effectivePricePerMillionInput: decisionPricePerMillion(provider),
   }
 }
 
@@ -115,7 +120,10 @@ export async function addDecisionProvider(input: NewDecisionProvider): Promise<S
 
 export async function updateDecisionProvider(
   id: string,
-  patch: Partial<Pick<StoredDecisionProvider, 'label' | 'model' | 'enabled' | 'baseUrl' | 'accountId' | 'apiKey'>>
+  patch: Partial<Pick<StoredDecisionProvider, 'label' | 'model' | 'enabled' | 'baseUrl' | 'accountId' | 'apiKey'>> & {
+    /** A number sets the owner's price; null goes back to the list price. */
+    pricePerMillionInput?: number | null
+  }
 ): Promise<StoredDecisionProvider | undefined> {
   return mutateProviders((providers) => {
     const provider = providers.find((entry) => entry.id === id)
@@ -127,6 +135,8 @@ export async function updateDecisionProvider(
     if (patch.accountId !== undefined) provider.accountId = patch.accountId.trim() || undefined
     // An empty key keeps the stored one; only a new key replaces it.
     if (patch.apiKey?.trim()) provider.apiKey = patch.apiKey.trim()
+    if (patch.pricePerMillionInput === null) delete provider.pricePerMillionInput
+    else if (patch.pricePerMillionInput !== undefined) provider.pricePerMillionInput = patch.pricePerMillionInput
     return provider
   })
 }
