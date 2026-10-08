@@ -1,7 +1,8 @@
 import { useToolRenderers } from '../lib/ToolRenderersContext'
 import clsx from 'clsx'
 import { ToolInlineActions } from './ToolInlineActions'
-import type { ToolInlineAction } from '../lib/tool-inline-actions'
+import { getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
+import { ToolFirewallBadge } from './ToolFirewallBadge'
 import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { MarkdownContent } from './MarkdownContent'
 import { CollapsibleMarkdown } from './CollapsibleMarkdown'
@@ -10,6 +11,7 @@ import { parseMessageContent } from '../lib/message-parser'
 import {
   isWorkspaceVoiceRecipient,
   type MessageMetadata,
+  type ToolFirewallFlag,
   type MessageToolCall,
   type ContentBlock,
   type MonitorMessageKind,
@@ -75,6 +77,17 @@ function getGroupSummary(blocks: ContentBlock[]): string {
   }
 
   return parts.join(' • ')
+}
+
+/** A collapsed group still shows that one of its tool results was flagged by the firewall. */
+function mostSevereFirewallFlag(blocks: ContentBlock[]): ToolFirewallFlag | null {
+  let worst: ToolFirewallFlag | null = null
+  for (const block of blocks) {
+    if (block.type !== 'tool_use') continue
+    const flag = getToolFirewallFlag(block.toolCall)
+    if (flag && (!worst || (flag.severity === 'high' && worst.severity !== 'high'))) worst = flag
+  }
+  return worst
 }
 
 interface AssistantMessageContentProps {
@@ -579,6 +592,7 @@ export function SingleToolCallSection({
   const isIncomplete = !toolCall.result && !toolCall.isError
   const isError = toolCall.isError || isIncomplete
   const result = toolCall.result || (isIncomplete ? 'Command aborted' : '')
+  const firewall = useMemo(() => getToolFirewallFlag({ result: toolCall.result }), [toolCall.result])
 
   return (
     <div className="text-xs">
@@ -598,6 +612,7 @@ export function SingleToolCallSection({
         )}
         <span className="font-medium shrink-0">{toolCall.toolName}</span>
         <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+        {firewall && <ToolFirewallBadge flag={firewall} />}
         {isError && (
           <span className="text-status-danger-500 dark:text-status-danger-400 text-[10px] font-medium shrink-0">
             ERROR
@@ -719,6 +734,7 @@ function BlockGroupSection({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const summary = getGroupSummary(blocks)
+  const firewall = useMemo(() => mostSevereFirewallFlag(blocks), [blocks])
 
   return (
     <div className="text-xs">
@@ -730,6 +746,7 @@ function BlockGroupSection({
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
         />
         <span className="font-medium">{summary}</span>
+        {firewall && <ToolFirewallBadge flag={firewall} />}
       </button>
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-2">

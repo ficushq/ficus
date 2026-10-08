@@ -3,6 +3,8 @@ import { and, eq, inArray } from 'drizzle-orm'
 import {
   ADDRESSABLE_AGENT_STATUSES,
   integrationValueAt,
+  type EventRuleDecisions,
+  type SquadEventRule,
   type WorkflowEventTrigger,
   selectSquadEventRule,
   eventRuleWorkflow,
@@ -35,12 +37,19 @@ import {
 } from '../github/feedback-routing'
 import { ciNotificationSchema, settleCiNotification } from '../../work-streams/ci-notifications'
 import { readOutputInbox } from '../github/feedback-pass-read'
+import { resolveSquadEventRule } from './event-rule-decisions'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 const record = (value: unknown): Record<string, any> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
-export function eventRuleTrigger(metadata: unknown, event: Event, login: string): WorkflowEventTrigger | undefined {
-  const rule = selectOutputRule(metadata, event, login)
+/** `decisions`: answers from `resolveEventRuleDecisions`; without them a rule with decision conditions never matches. */
+export function eventRuleTrigger(
+  metadata: unknown,
+  event: Event,
+  login: string,
+  decisions?: EventRuleDecisions
+): WorkflowEventTrigger | undefined {
+  const rule = selectOutputRule(metadata, event, login, decisions)
   if (rule?.action.type !== 'start-workstream') return
   if (
     event.fact.output === 'dependabot_alert.updated' &&
@@ -77,23 +86,58 @@ export function eventRuleTrigger(metadata: unknown, event: Event, login: string)
   }
 }
 /** Status facts are bookkeeping only: they never execute content rules or metadata bindings. */
-export function selectOutputRule(metadata: unknown, event: Event, login: string) {
-  if (
+function isStatusOnly(event: Event): boolean {
+  return (
     event.integration === 'github' &&
     event.fact.data.projection === 'status' &&
     event.fact.output !== 'dependabot_alert.updated'
   )
-    return undefined
+}
+export function selectOutputRule(metadata: unknown, event: Event, login: string, decisions?: EventRuleDecisions) {
+  if (isStatusOnly(event)) return undefined
   return selectSquadEventRule(
     metadata,
     event.integration,
     event.fact,
     login,
-    event.authority.kind === 'connection' ? event.authority.connectionId : undefined
+    event.authority.kind === 'connection' ? event.authority.connectionId : undefined,
+    decisions
   )
 }
-export function shouldNotifyManager(metadata: unknown, event: Event, login: string): boolean {
-  return selectOutputRule(metadata, event, login)?.action.type === 'notify-manager'
+export function shouldNotifyManager(
+  metadata: unknown,
+  event: Event,
+  login: string,
+  decisions?: EventRuleDecisions
+): boolean {
+  return selectOutputRule(metadata, event, login, decisions)?.action.type === 'notify-manager'
+}
+
+/**
+ * Ask the decision conditions a squad's rule selection reaches for this event, outside any transaction.
+ * The caller must already have authorized the squad for the event, and pass the event rules select on
+ * (the GitHub matching view, for feedback). Status facts run no rules, so nothing is asked for them. Answers
+ * are cached per event, so every stage that selects a rule for it shares one model call per question.
+ */
+export async function resolveEventRuleDecisions(
+  event: Event,
+  squad: { id: string; metadata: unknown },
+  login: string,
+  actions?: SquadEventRule['action']['type'][]
+): Promise<{ rule: SquadEventRule | undefined; decisions: EventRuleDecisions }> {
+  if (isStatusOnly(event)) return { rule: undefined, decisions: () => undefined }
+  return resolveSquadEventRule(
+    {
+      metadata: squad.metadata,
+      integration: event.integration,
+      fact: event.fact,
+      login,
+      connectionId: event.authority.kind === 'connection' ? event.authority.connectionId : undefined,
+      eventId: event.id,
+      squadId: squad.id,
+    },
+    { actions }
+  )
 }
 
 /**
@@ -169,7 +213,13 @@ export async function routeDefaultNotifications(
     .where(and(eq(integrationOutputDeliveries.eventId, event.id), eq(workStreams.squadId, squadId)))
     .limit(1)
   if (matchedStream || delivery || latest?.handled.includes(squadId)) return { refused }
-  const rule = selectOutputRule(squad.metadata, event.fact.data.projection === 'status' ? event : matching, login)
+  // Authorized above; any decision conditions are asked here, after the webhook was acknowledged.
+  const { rule } = await resolveEventRuleDecisions(
+    event.fact.data.projection === 'status' ? event : matching,
+    squad,
+    login,
+    ['notify-manager', 'notify-consultant']
+  )
   if (rule?.action.type === 'notify-manager' && squad.managerAgentId) {
     if (await send(event, squad.managerAgentId, undefined, rule.action.additionalContext, squadId)) refused = true
   }

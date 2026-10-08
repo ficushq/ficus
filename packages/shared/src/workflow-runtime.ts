@@ -9,6 +9,7 @@ import {
   type WorkflowParticipant,
   type WorkflowTransition,
 } from './workflows'
+import type { WorkflowDecisionRecord } from './workflow-decision'
 
 export interface WorkflowBranch {
   forkId: number
@@ -43,6 +44,8 @@ export interface WorkflowAttempt {
   outcome?: string
   evidence?: string
   feedback?: string
+  /** A decision step's model answers and routing; set once, when Core evaluates the step. */
+  decision?: WorkflowDecisionRecord
 }
 
 /** Effective routing exposed by flow inspection and live revision receipts. */
@@ -184,7 +187,25 @@ export function effectiveWorkflowStep(state: WorkflowRun, attempt: WorkflowAttem
  * returned step needs, so it must say what to change. Decided by transition shape, not outcome name.
  */
 export function workflowOutcomeRequiresEvidence(step: WorkflowStep, transition: WorkflowTransition): boolean {
-  return step.kind !== 'human-approval' || 'returnTo' in transition
+  return step.kind === 'agent' || 'returnTo' in transition
+}
+
+/**
+ * The attempts whose handoffs feed this one, in attempt order. A decision step does no work of its
+ * own, so its sources pass through: the step after a decision still sees the result decided on.
+ */
+export function workflowIncomingAttempts(state: WorkflowRun, attempt: WorkflowAttempt): WorkflowAttempt[] {
+  const found = new Map<number, WorkflowAttempt>()
+  const pending = [...(attempt.sourceAttemptIds ?? [])]
+  while (pending.length) {
+    const id = pending.pop()!
+    const source = state.attempts.find((entry) => entry.id === id)
+    if (!source || found.has(id)) continue
+    found.set(id, source)
+    if ((source.step ?? state.definition.steps.find((step) => step.id === source.stepId))?.kind === 'decision')
+      pending.push(...(source.sourceAttemptIds ?? []))
+  }
+  return [...found.values()].sort((a, b) => a.id - b.id)
 }
 
 export function activeWorkflowAttempts(state: WorkflowRun): WorkflowAttempt[] {
@@ -325,7 +346,7 @@ function requestReturn(
   feedback: string,
   direct = false
 ): void {
-  stepById(state, targetStepId)
+  if (stepById(state, targetStepId).kind === 'decision') throw new Error('A decision step cannot do revisions')
   stepById(state, resumeAt)
   if (targetStepId === resumeAt) throw new Error('Rework and return destinations must be different steps')
   const parent = activeReturn(state, attempt.branch)
@@ -543,7 +564,7 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
   const transition = step.outcomes[command.outcome]!
   if (!command.evidence && workflowOutcomeRequiresEvidence(step, transition))
     throw new Error(
-      step.kind === 'human-approval'
+      step.kind !== 'agent'
         ? `Decision notes are required for '${command.outcome}': say what needs to change`
         : 'Evidence is required to complete this step'
     )

@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MessageMetadata } from '@ficus/shared'
 
-const { HumanMessageContent } = await import('./MessageContent')
+const { AssistantMessageContent, HumanMessageContent } = await import('./MessageContent')
 
 describe('HumanMessageContent', () => {
   const framedInbox = (subject: string, body: string) =>
@@ -159,4 +159,71 @@ test('persisted tool rows use the active Assistant or editor renderer', () => {
     </ToolRenderersContext.Provider>
   )
   expect(html).toContain('Editor proposal')
+})
+
+describe('tool result firewall badge', () => {
+  const fetched = (details: Record<string, unknown>) =>
+    JSON.stringify({ content: [{ type: 'text', text: 'page' }], details: { url: 'https://evil.example', ...details } })
+  const row = (result: string) =>
+    renderToStaticMarkup(
+      <SingleToolCallSection
+        toolCall={{
+          toolCallId: 'fetch-1',
+          toolName: 'webfetch',
+          args: '{"url":"https://evil.example"}',
+          result,
+          isError: false,
+        }}
+      />
+    )
+
+  test('a flagged tool result shows a warning badge with what was found', () => {
+    const html = row(
+      fetched({ firewall: { flagged: true, severity: 'high', instructsAgent: 0.94, intent: 'malicious' } })
+    )
+    expect(html).toContain('Possible injection')
+    expect(html).toContain('bg-status-danger-badge-surface')
+    expect(html).toContain('94% likely, intent: malicious')
+  })
+
+  test('a withheld result says the agent never saw it', () => {
+    const html = row(
+      fetched({
+        firewall: { flagged: true, severity: 'high', instructsAgent: 0.94, intent: 'malicious', withheld: true },
+      })
+    )
+    expect(html).toContain('Withheld: likely injection')
+    expect(html).toContain('bg-status-danger-badge-surface')
+    expect(html).toContain('so it was withheld from the agent.')
+  })
+
+  test('medium severity uses the attention color and says when only part was screened', () => {
+    const html = row(fetched({ firewall: { flagged: true, severity: 'medium', instructsAgent: 0.6, partial: true } }))
+    expect(html).toContain('bg-status-attention-badge-surface')
+    expect(html).toContain('60% likely)')
+    expect(html).toContain('Only part of it was screened.')
+  })
+
+  test('an unflagged or malformed result shows no badge', () => {
+    expect(row(fetched({}))).not.toContain('Possible injection')
+    expect(row(fetched({ firewall: { flagged: 'yes' } }))).not.toContain('Possible injection')
+    expect(row('not json')).not.toContain('Possible injection')
+  })
+
+  test('a collapsed group of tool calls shows the badge too', () => {
+    const toolBlock = (id: string, result: string) => ({
+      type: 'tool_use' as const,
+      id,
+      toolCall: { toolCallId: id, toolName: 'webfetch', args: '{}', result, isError: false },
+    })
+    const metadata = {
+      content: [
+        toolBlock('a', fetched({})),
+        toolBlock('b', fetched({ firewall: { flagged: true, severity: 'high', instructsAgent: 0.9 } })),
+      ],
+    } satisfies MessageMetadata
+    const html = renderToStaticMarkup(<AssistantMessageContent content="" metadata={metadata} />)
+    expect(html).toContain('2 tools')
+    expect(html).toContain('Possible injection')
+  })
 })

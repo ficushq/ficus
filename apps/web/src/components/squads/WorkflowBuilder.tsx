@@ -20,6 +20,7 @@ import {
   CloseIcon,
   AgentIcon,
   HumanApprovalIcon,
+  DecisionIcon,
   InspectorIcon,
   ParticipantsIcon,
   SettingsIcon,
@@ -27,6 +28,7 @@ import {
   RedoIcon,
 } from '../icons'
 import { WorkflowStructureEditor, WorkflowCompletionEditor } from './WorkflowStructureEditor'
+import { WorkflowDecisionEditor } from './WorkflowDecisionEditor'
 import {
   insertWorkflowStep,
   separateWorkflowParticipant,
@@ -37,13 +39,14 @@ import {
   workflowDraftWarning,
   workflowHistoryKey,
   isWorkflowTextTarget,
+  newWorkflowDecisionStep,
+  type WorkflowStepKind as StepKind,
 } from '../../lib/workflowEditing'
-
-type StepKind = WorkflowDefinition['steps'][number]['kind']
 
 const stepKindOptions: SegmentedControlOption<StepKind>[] = [
   { value: 'agent', label: 'Agent work' },
   { value: 'human-approval', label: 'Human approval' },
+  { value: 'decision', label: 'Decision' },
 ]
 
 const field = 'ficus-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
@@ -117,6 +120,8 @@ export function WorkflowBuilder({
   const { can } = usePermissions()
   const [selectedParticipant, setSelectedParticipant] = useState('')
   const previousParticipants = useRef<Record<string, string>>({})
+  // Switching to a decision drops the expected result; switching back restores it.
+  const previousOutputs = useRef<Record<string, string>>({})
   const selectedStep = definition.steps.find((step) => step.id === selected)
   const selectedIndex = definition.steps.findIndex((step) => step.id === selected)
   const notice =
@@ -229,9 +234,9 @@ export function WorkflowBuilder({
           : 'settings'
     )
   }
-  const add = (human: boolean) => {
+  const add = (kind: StepKind) => {
     setSelectedEdge(undefined)
-    const result = insertWorkflowStep(definition, selected, human)
+    const result = insertWorkflowStep(definition, selected, kind)
     onChange(result.definition)
     setSelected(result.selected)
     setInspecting(true)
@@ -259,9 +264,17 @@ export function WorkflowBuilder({
   const changeStepKind = (kind: StepKind) => {
     if (!selectedStep || selectedStep.kind === kind) return
     if (selectedStep.kind === 'agent') previousParticipants.current[selectedStep.id] = selectedStep.participant
+    if (selectedStep.kind !== 'decision') previousOutputs.current[selectedStep.id] = selectedStep.output
     edit((draft) => {
-      const { id, name, instructions, output, outcomes } = selectedStep
-      if (kind === 'human-approval')
+      const { id, name, instructions, outcomes } = selectedStep
+      const output =
+        selectedStep.kind !== 'decision'
+          ? selectedStep.output
+          : (previousOutputs.current[id] ??
+            (kind === 'human-approval' ? 'Approval decision and feedback.' : 'Result and evidence.'))
+      if (kind === 'decision')
+        draft.steps[selectedIndex] = newWorkflowDecisionStep({ id, name, instructions, outcomes })
+      else if (kind === 'human-approval')
         draft.steps[selectedIndex] = {
           id,
           name,
@@ -445,7 +458,7 @@ export function WorkflowBuilder({
                           Object.keys(definition.participants).length >= 64
                         }
                         title="Add agent step"
-                        onClick={() => add(false)}
+                        onClick={() => add('agent')}
                       >
                         <AgentIcon className="h-4 w-4" />
                         <span className="sr-only">Add agent step</span>
@@ -455,10 +468,20 @@ export function WorkflowBuilder({
                         className={button}
                         disabled={disabled || definition.steps.length >= 128}
                         title="Add approval"
-                        onClick={() => add(true)}
+                        onClick={() => add('human-approval')}
                       >
                         <HumanApprovalIcon className="h-4 w-4" />
                         <span className="sr-only">Add approval</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={button}
+                        disabled={disabled || definition.steps.length >= 128}
+                        title="Add decision"
+                        onClick={() => add('decision')}
+                      >
+                        <DecisionIcon className="h-4 w-4" />
+                        <span className="sr-only">Add decision</span>
                       </button>
                     </div>
                   </>
@@ -593,7 +616,11 @@ export function WorkflowBuilder({
                         </label>
                         <label className="block text-sm">
                           Instructions
-                          <span className="block text-xs text-muted mb-1">What to do and check.</span>
+                          <span className="block text-xs text-muted mb-1">
+                            {selectedStep.kind === 'decision'
+                              ? 'What this step decides, for the people following the work.'
+                              : 'What to do and check.'}
+                          </span>
                           <textarea
                             className={field}
                             rows={4}
@@ -606,22 +633,36 @@ export function WorkflowBuilder({
                             }
                           />
                         </label>
-                        <label className="block text-sm">
-                          Expected result
-                          <span className="block text-xs text-muted mb-1">
-                            The result and evidence this step should produce.
-                          </span>
-                          <textarea
-                            className={field}
-                            rows={2}
-                            value={selectedStep.output}
-                            onChange={(e) =>
+                        {selectedStep.kind === 'decision' ? (
+                          <WorkflowDecisionEditor
+                            key={`decision:${selectedStep.id}`}
+                            step={selectedStep}
+                            disabled={disabled}
+                            onChange={(step) =>
                               edit((draft) => {
-                                draft.steps[selectedIndex]!.output = e.target.value
+                                draft.steps[selectedIndex] = step
                               })
                             }
                           />
-                        </label>
+                        ) : (
+                          <label className="block text-sm">
+                            Expected result
+                            <span className="block text-xs text-muted mb-1">
+                              The result and evidence this step should produce.
+                            </span>
+                            <textarea
+                              className={field}
+                              rows={2}
+                              value={selectedStep.output}
+                              onChange={(e) =>
+                                edit((draft) => {
+                                  const step = draft.steps[selectedIndex]!
+                                  if (step.kind !== 'decision') step.output = e.target.value
+                                })
+                              }
+                            />
+                          </label>
+                        )}
                         {selectedStep.kind === 'agent' && (
                           <div className="space-y-2">
                             <label className="block text-sm">
