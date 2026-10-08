@@ -95,7 +95,7 @@ export function WorkStreamDependencies({
   )
 }
 
-/** "● #489 · title  In Progress": opens the dependency (in place when the caller can switch streams). */
+/** "● number · title  In Progress": opens the dependency (in place when the caller can switch streams). */
 function DependencyLink({
   id,
   dependency,
