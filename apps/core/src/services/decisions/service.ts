@@ -76,12 +76,17 @@ export function decisionCost(
 
 const cooldownUntil = new Map<string, number>()
 
-/** The enabled providers a purpose asks, in order; `'default'` is the default order itself. */
+/**
+ * The enabled providers a purpose asks, in order; `'default'` is the default order itself. A
+ * sub-feature without an order of its own asks its parent's, then the default.
+ */
 export function decisionChain(purpose: DecisionPurpose | 'default'): StoredDecisionProvider[] {
   const routing = getDecisionRouting()
   const providers = listDecisionProviders().filter((provider) => provider.enabled)
+  const parent = purpose === 'default' ? undefined : DECISION_PURPOSE_INFO[purpose].parent
   const own = purpose === 'default' ? undefined : routing.purposes[purpose]
-  const order = own?.length ? own : routing.default
+  const inherited = parent ? routing.purposes[parent] : undefined
+  const order = own?.length ? own : inherited?.length ? inherited : routing.default
   const chain = order.flatMap((id) => providers.filter((provider) => provider.id === id))
   // Nothing ordered yet: every enabled provider, as added.
   return chain.length || order.length ? chain : providers
@@ -89,9 +94,12 @@ export function decisionChain(purpose: DecisionPurpose | 'default'): StoredDecis
 
 /**
  * Whether an instance feature (see DECISION_PURPOSE_INFO) should run: `off` never, `on` always (it
- * still needs a provider to answer), and by default exactly when a provider is set up for it.
+ * still needs a provider to answer), and by default exactly when a provider is set up for it. A
+ * sub-feature runs only while its parent does, and then by its own switch.
  */
 export function isDecisionFeatureEnabled(purpose: DecisionPurpose): boolean {
+  const parent = DECISION_PURPOSE_INFO[purpose].parent
+  if (parent && !isDecisionFeatureEnabled(parent)) return false
   const value = getDecisionFeatureSwitches()[purpose] ?? 'auto'
   if (value === 'off') return false
   if (value === 'on') return true

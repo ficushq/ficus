@@ -9,6 +9,7 @@ import {
   decide,
   decisionChain,
   decisionCost,
+  decisionFeatures,
   decisionSpend,
   isDecisionFeatureEnabled,
   resetDecisionCooldownsForTests,
@@ -197,6 +198,58 @@ test('an instance feature is on by default once a decision model exists, and can
   await setDecisionFeatureSwitch('tool-results', 'auto', 'test')
   await updateDecisionProvider(local.id, { enabled: false })
   expect(isDecisionFeatureEnabled('tool-results')).toBe(false)
+})
+
+test('a sub-feature runs only while its parent does, and then by its own switch', async () => {
+  expect(isDecisionFeatureEnabled('tool-results-shell')).toBe(false)
+  await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://local:11434' })
+  expect(isDecisionFeatureEnabled('tool-results-shell')).toBe(true)
+  // The parent off turns it off, whatever its own switch says.
+  await setDecisionFeatureSwitch('tool-results', 'off', 'test')
+  for (const value of ['auto', 'on', 'off'] as const) {
+    await setDecisionFeatureSwitch('tool-results-shell', value, 'test')
+    expect(isDecisionFeatureEnabled('tool-results-shell')).toBe(false)
+  }
+  // Its own switch off with the parent on: shell screening is off, web screening still on.
+  await setDecisionFeatureSwitch('tool-results', 'auto', 'test')
+  expect(isDecisionFeatureEnabled('tool-results-shell')).toBe(false)
+  expect(isDecisionFeatureEnabled('tool-results')).toBe(true)
+  await setDecisionFeatureSwitch('tool-results-shell', 'auto', 'test')
+  expect(isDecisionFeatureEnabled('tool-results-shell')).toBe(true)
+  // Settings sees which feature it belongs to, and its own switch.
+  await setDecisionFeatureSwitch('tool-results-shell', 'off', 'test')
+  expect(decisionFeatures().find((feature) => feature.id === 'tool-results-shell')).toMatchObject({
+    parent: 'tool-results',
+    scope: 'instance',
+    switch: 'off',
+    enabled: false,
+  })
+  expect(decisionFeatures().find((feature) => feature.id === 'tool-results')).not.toHaveProperty('parent')
+})
+
+test('a sub-feature without its own order asks its parent’s, then the default', async () => {
+  const local = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://local:11434' })
+  const hosted = await addDecisionProvider({ kind: 'jev', apiKey: 'k' })
+  const chain = () => decisionChain('tool-results-shell').map((p) => p.id)
+  await setDecisionRouting({ default: [local.id], purposes: {}, timeoutMs: 5000 }, 'test')
+  expect(chain()).toEqual([local.id])
+  await setDecisionRouting({ default: [local.id], purposes: { 'tool-results': [hosted.id] }, timeoutMs: 5000 }, 'test')
+  expect(chain()).toEqual([hosted.id])
+  await setDecisionRouting(
+    {
+      default: [local.id],
+      purposes: { 'tool-results': [hosted.id], 'tool-results-shell': [local.id] },
+      timeoutMs: 5000,
+    },
+    'test'
+  )
+  expect(chain()).toEqual([local.id])
+  // An empty order of its own is no order: the parent's is asked.
+  await setDecisionRouting(
+    { default: [local.id], purposes: { 'tool-results': [hosted.id], 'tool-results-shell': [] }, timeoutMs: 5000 },
+    'test'
+  )
+  expect(chain()).toEqual([hosted.id])
 })
 
 test('an answer costs its reported input tokens at the provider price, or an estimate when unreported', () => {

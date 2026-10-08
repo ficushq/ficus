@@ -223,8 +223,10 @@ describe('Decision models settings', () => {
     expect(row('GitHub firewall')).not.toContain('role="switch"')
     expect(row('Workflow decisions')).toContain('Runs where you add it')
     expect(row('Event rule conditions')).toContain('Runs where you add it')
-    // Every feature keeps its own order choice.
-    expect(html.match(/>Use default order</g)?.length).toBe(DECISION_PURPOSES.length)
+    // Every feature keeps its own order choice; a sub-feature's starts as its parent's.
+    const subFeatures = DECISION_PURPOSES.filter((purpose) => DECISION_PURPOSE_INFO[purpose].parent)
+    expect(html.match(/>Use default order</g)?.length).toBe(DECISION_PURPOSES.length - subFeatures.length)
+    expect(html.match(/>Same as parent</g)?.length).toBe(subFeatures.length)
     // Switched on by hand counts as on even when auto would not be; off is off.
     expect(featureRow(render(settings({ features: features('on', false) })), 'Tool result firewall')).toContain('>On<')
     expect(featureRow(render(settings({ features: features('off', false) })), 'Tool result firewall')).toContain(
@@ -249,6 +251,88 @@ describe('Decision models settings', () => {
         expect(toggle().checked).toBe(false)
         await act(() => fireEvent.click(toggle()))
         expect(calls.filter((call) => call.method === 'PUT')[1]?.body).toEqual({ value: 'auto' })
+        expect(toggle().checked).toBe(true)
+      }
+    )
+  })
+
+  test('shell fetches are listed under the tool result firewall, with their own switch, status and spend', () => {
+    const month: DecisionSpend = {
+      ...noSpend(30),
+      totalUsd: 0.5,
+      byPurpose: [
+        { purpose: 'tool-results', calls: 40, answered: 40, inputTokens: 1000, costUsd: 0.3 },
+        { purpose: 'tool-results-shell', calls: 12, answered: 12, inputTokens: 500, costUsd: 0.2 },
+      ],
+    }
+    const html = renderToStaticMarkup(tree(client(settings(), { 30: month }), true))
+    const nested = html.slice(html.indexOf('aria-label="Parts of the tool result firewall"'))
+    expect(nested).toStartWith('aria-label="Parts of the tool result firewall"')
+    // Nested inside the parent's row, before any other feature.
+    expect(html.indexOf('aria-label="Shell fetches"')).toBeGreaterThan(
+      html.indexOf('aria-label="Tool result firewall"')
+    )
+    expect(html.indexOf('aria-label="Shell fetches"')).toBeLessThan(html.indexOf('aria-label="GitHub firewall"'))
+    const shell = featureRow(html, 'Shell fetches')
+    expect(shell).toContain(DECISION_PURPOSE_INFO['tool-results-shell'].description)
+    expect(shell).toContain('>On<')
+    expect(shell).toContain('On by default while the tool result firewall is on.')
+    expect(shell).toContain('$0.20 · 12 calls')
+    expect(shell).toMatch(/aria-label="Use the tool result firewall for shell fetches"[^>]*checked=""/)
+    expect(shell).toContain('Custom order')
+    // Each counts only its own spend.
+    expect(featureRow(html, 'Tool result firewall')).toContain('$0.30 · 40 calls')
+  })
+
+  test('with the tool result firewall off, shell fetches can’t be switched and say why', () => {
+    const off = features('auto', true).map((feature) =>
+      feature.id === 'tool-results'
+        ? { ...feature, switch: 'off' as const, enabled: false }
+        : feature.id === 'tool-results-shell'
+          ? { ...feature, enabled: false }
+          : feature
+    )
+    const shell = featureRow(render(settings({ features: off })), 'Shell fetches')
+    expect(shell).toContain('>Off<')
+    expect(shell).toContain('Turn on the tool result firewall first.')
+    expect(shell).toMatch(/aria-label="Use the tool result firewall for shell fetches"[^>]*disabled=""/)
+    expect(shell).not.toMatch(/aria-label="Use the tool result firewall for shell fetches"[^>]*checked=""/)
+    // Its own switch on doesn't make it run while the parent is off.
+    const forced = off.map((feature) =>
+      feature.id === 'tool-results-shell' ? { ...feature, switch: 'on' as const } : feature
+    )
+    expect(featureRow(render(settings({ features: forced })), 'Shell fetches')).toContain('>Off<')
+  })
+
+  test('the shell fetches switch turns off, and back on to automatic', async () => {
+    let current = features('auto', true)
+    await mount(
+      settings({ features: current }),
+      (call) => {
+        if (call.method !== 'PUT' || !call.url.includes('/decisions/features/')) return undefined
+        const id = call.url.split('/').pop()
+        const value = (call.body as { value: DecisionFeatureSwitch }).value
+        current = current.map((feature) =>
+          feature.id === id ? { ...feature, switch: value, enabled: value !== 'off' } : feature
+        )
+        return Response.json(current)
+      },
+      async ({ calls, act, document }) => {
+        const toggle = () =>
+          document.querySelector('[aria-label="Use the tool result firewall for shell fetches"]') as HTMLInputElement
+        expect(toggle().checked).toBe(true)
+        expect(toggle().disabled).toBe(false)
+        await act(() => fireEvent.click(toggle()))
+        const puts = () => calls.filter((call) => call.method === 'PUT')
+        expect(puts()[0]?.url).toEndWith('/decisions/features/tool-results-shell')
+        expect(puts()[0]?.body).toEqual({ value: 'off' })
+        expect(toggle().checked).toBe(false)
+        // The parent stays on.
+        expect(
+          (document.querySelector('[aria-label="Use the tool result firewall"]') as HTMLInputElement).checked
+        ).toBe(true)
+        await act(() => fireEvent.click(toggle()))
+        expect(puts()[1]?.body).toEqual({ value: 'auto' })
         expect(toggle().checked).toBe(true)
       }
     )

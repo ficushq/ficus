@@ -24,7 +24,7 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   providers:
     'ai credentials oauth subscriptions api keys models fallback routing openrouter anthropic claude openai chatgpt gemini copilot ollama local server',
   'decision-providers':
-    'decision models classifier yes no jev typesafe clef cloudflare openai decisions firewall prompt injection spend cost price',
+    'decision models classifier yes no jev typesafe clef cloudflare openai decisions firewall prompt injection shell fetches gh curl wget spend cost price',
   git: 'commit author name email github defaults override',
   skills: 'markdown import instructions tools extensions',
   'agent-types':
