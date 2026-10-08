@@ -44,7 +44,7 @@ function getImagesDir(): string {
   return join(getHomeDir(), IMAGES_DIR)
 }
 
-function getImagePath(filename: string): string {
+export function getImagePath(filename: string): string {
   return join(getImagesDir(), filename)
 }
 
@@ -61,6 +61,7 @@ export class Image implements ImageRow {
   declare agentId: string | null
   declare squadId: string | null
   declare uploadedByUserId: string | null
+  declare forwardedFromImageId: string | null
   declare status: ImageStatus
   declare usedAt: Date | null
   declare createdAt: Date
@@ -426,6 +427,7 @@ export class Image implements ImageRow {
       size: this.size,
       agentId: this.agentId,
       squadId: this.squadId,
+      forwardedFromImageId: this.forwardedFromImageId,
       status: this.status,
       usedAt: this.usedAt,
       createdAt: this.createdAt,

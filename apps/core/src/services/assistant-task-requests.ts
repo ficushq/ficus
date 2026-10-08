@@ -32,6 +32,13 @@ import {
   assistantDelegationSchema,
 } from './assistant-activity/project'
 import { resolveOwnedAgent } from './assistant-agents'
+import {
+  ImageForwardError,
+  MAX_FORWARDED_IMAGES,
+  prepareForwardedImages,
+  withForwardedImages,
+  type ForwardedImages,
+} from './attachments/forward-images'
 import { requireConsultantCreationAccess } from './chat/consultant-access'
 import { resolveActingUser, hasAgentResourcePermission, hasPermission, type Identity } from './rbac'
 
@@ -53,6 +60,8 @@ export const assistantMessageSchema = z
     label: z.string().trim().min(1).max(80).optional(),
     inReplyTo: uuid.optional(),
     mode: z.enum(['steer', 'follow-up']).default('steer'),
+    /** Images this conversation received, copied to the delegate with the request. */
+    imageIds: z.array(uuid).min(1).max(MAX_FORWARDED_IMAGES).optional(),
   })
   .refine((input) => !(input.agentId && input.squadId), { message: 'agentId and squadId are mutually exclusive' })
 
@@ -345,28 +354,48 @@ async function dispatchAssistantTaskRequest(
     )
     .orderBy(desc(inbox.createdAt))
     .limit(1)
-  const { message } = await InboxMessage.sendOnce(
-    {
-      recipientType: 'agent',
-      recipientId: agentId,
-      senderType: 'voice_assistant',
-      senderId: address,
-      content: requestContent,
-      deliveryMode: input.mode,
-      assistantRequest: snapshot,
-      assistantTaskMutation: mutation,
-      metadata: {
-        source: 'assistant_inbox',
-        inReplyTo: input.inReplyTo,
-        [ASSISTANT_DELEGATION_KEY]: { kind, squadId: targetSquadId, ...(input.label ? { label: input.label } : {}) },
-        ...(input.pagePath && previous?.pagePath !== input.pagePath ? { pagePath: input.pagePath } : {}),
-        assistantContext: history.reverse().map(({ entry }) => ({
-          role: (entry as AssistantEntry).role,
-          text: (entry as AssistantEntry).text.slice(-3000),
-        })),
+  // Forwarded images are copied to the delegate it has just been authorized to reach.
+  let forwarded: ForwardedImages | null = null
+  if (input.imageIds?.length) {
+    if (!agent || cancelledRecipientId) throw taskError(400, { message: 'Images cannot be sent with this request' })
+    try {
+      forwarded = await prepareForwardedImages({
+        sourceAgentId: conversation.agentId,
+        imageIds: input.imageIds,
+        target: agent,
+        userId: user.userId,
+      })
+    } catch (error) {
+      if (error instanceof ImageForwardError) throw taskError(400, { message: error.message })
+      throw error
+    }
+  }
+  const { message } = await withForwardedImages(forwarded, () =>
+    InboxMessage.sendOnce(
+      {
+        recipientType: 'agent',
+        recipientId: agentId,
+        senderType: 'voice_assistant',
+        senderId: address,
+        content: requestContent,
+        deliveryMode: input.mode,
+        assistantRequest: snapshot,
+        assistantTaskMutation: mutation,
+        persistInTransaction: forwarded?.insert,
+        metadata: {
+          ...(forwarded ? { imageIds: forwarded.ids } : {}),
+          source: 'assistant_inbox',
+          inReplyTo: input.inReplyTo,
+          [ASSISTANT_DELEGATION_KEY]: { kind, squadId: targetSquadId, ...(input.label ? { label: input.label } : {}) },
+          ...(input.pagePath && previous?.pagePath !== input.pagePath ? { pagePath: input.pagePath } : {}),
+          assistantContext: history.reverse().map(({ entry }) => ({
+            role: (entry as AssistantEntry).role,
+            text: (entry as AssistantEntry).text.slice(-3000),
+          })),
+        },
       },
-    },
-    idempotencyKey
+      idempotencyKey
+    )
   )
   if (
     message.metadata[ASSISTANT_REQUEST_KEY] !== undefined
