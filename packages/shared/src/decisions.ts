@@ -169,6 +169,7 @@ export interface DecisionSpend {
 /** What Ficus asks decision models for: one per feature, each with its own provider order. */
 export const DECISION_PURPOSES = [
   'tool-results',
+  'tool-results-shell',
   'github-firewall',
   'workflow-steps',
   'event-rules',
@@ -192,13 +193,25 @@ export const DECISION_PURPOSE_INFO: Record<
     scope: DecisionFeatureScope
     /** Instance features that are nice to have but cost money: off until the owner turns them on. */
     offByDefault?: boolean
+    /**
+     * A sub-feature of this (instance) feature. It runs only while its parent runs, and its own switch
+     * can still turn it off. Settings shows it nested under the parent; its calls are logged under its
+     * own purpose, so its spend is counted separately. Without an order of its own it asks the parent's.
+     */
+    parent?: DecisionPurpose
   }
 > = {
   'tool-results': {
     label: 'Tool result firewall',
     description:
-      'Screens what agents read from the web and the browser for instructions aimed at them, and warns the agent.',
+      'Screens what agents read from the web, the browser and shell fetches for instructions aimed at them, and warns the agent.',
     scope: 'instance',
+  },
+  'tool-results-shell': {
+    label: 'Shell fetches',
+    description: 'Screens output of commands that fetch outside content: gh, curl, wget.',
+    scope: 'instance',
+    parent: 'tool-results',
   },
   'github-firewall': {
     label: 'GitHub firewall',
@@ -233,6 +246,8 @@ export interface DecisionFeatureView {
   scope: DecisionFeatureScope
   /** Off until the owner turns it on (nice-to-haves that cost money). */
   offByDefault?: boolean
+  /** A sub-feature's parent: it runs only while the parent runs (see DECISION_PURPOSE_INFO). */
+  parent?: DecisionPurpose
   /** Instance features only. */
   switch?: DecisionFeatureSwitch
   /** Whether it runs now (instance features), or could (others: a provider is set up for it). */

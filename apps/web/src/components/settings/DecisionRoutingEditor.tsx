@@ -132,34 +132,60 @@ export function DecisionRoutingEditor({
         </div>
         <DecisionSpendSummary spend={spend} />
         <ul className="divide-y divide-th-border border-y border-th-border">
-          {features.map((feature) => {
-            const ids = current.purposes[feature.id]
-            return (
-              <DecisionFeatureRow
-                key={feature.id}
-                feature={feature}
-                spend={spend?.byPurpose.find((row) => row.purpose === feature.id)}
-                approximate={spend?.approximate ?? false}
-                hasProviders={hasProviders}
-                canWrite={canWrite}
-                switching={featureSwitch.isPending}
-                onSwitch={(value) => featureSwitch.mutate({ id: feature.id, value })}
-                custom={ids !== undefined}
-                onCustomChange={(custom) => setPurpose(feature.id, custom ? [...current.default] : undefined)}
-              >
-                {ids !== undefined && hasProviders && (
-                  <ProviderOrder
-                    label={`${feature.label} order`}
-                    ids={ids}
-                    providers={providers}
-                    disabled={!canWrite}
-                    onChange={(next) => setPurpose(feature.id, next)}
-                    emptyText="Empty, so it uses the default order."
-                  />
-                )}
-              </DecisionFeatureRow>
-            )
-          })}
+          {features
+            .filter((feature) => !feature.parent)
+            .map((feature) => {
+              const subFeatures = features.filter((sub) => sub.parent === feature.id)
+              const parentOn = hasProviders && featureSwitchState(feature).on
+              const row = (item: DecisionFeature, parent?: { label: string; on: boolean; ids?: string[] }) => {
+                const ids = current.purposes[item.id]
+                return (
+                  <DecisionFeatureRow
+                    key={item.id}
+                    feature={item}
+                    parent={parent}
+                    spend={spend?.byPurpose.find((entry) => entry.purpose === item.id)}
+                    approximate={spend?.approximate ?? false}
+                    hasProviders={hasProviders}
+                    canWrite={canWrite}
+                    switching={featureSwitch.isPending}
+                    onSwitch={(value) => featureSwitch.mutate({ id: item.id, value })}
+                    custom={ids !== undefined}
+                    // A sub-feature's own order starts from the one it asks now: its parent's, or the default.
+                    onCustomChange={(custom) =>
+                      setPurpose(item.id, custom ? [...(parent?.ids ?? current.default)] : undefined)
+                    }
+                    subFeatures={
+                      parent
+                        ? undefined
+                        : subFeatures.map((sub) =>
+                            row(sub, {
+                              label: feature.label,
+                              on: parentOn,
+                              ids: ids?.length ? ids : undefined,
+                            })
+                          )
+                    }
+                  >
+                    {ids !== undefined && hasProviders && (
+                      <ProviderOrder
+                        label={`${item.label} order`}
+                        ids={ids}
+                        providers={providers}
+                        disabled={!canWrite}
+                        onChange={(next) => setPurpose(item.id, next)}
+                        emptyText={
+                          parent
+                            ? `Empty, so it uses the ${parent.label.toLowerCase()}'s order.`
+                            : 'Empty, so it uses the default order.'
+                        }
+                      />
+                    )}
+                  </DecisionFeatureRow>
+                )
+              }
+              return row(feature)
+            })}
         </ul>
         {featureSwitch.isError && (
           <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
@@ -268,10 +294,13 @@ const SCOPE_STATUS: Record<'squad' | 'authored', { status: string; note?: string
 /**
  * One thing decision models power: what it does, what it cost, whether it runs, and which
  * providers it asks. Only instance features have a switch here; it shows on/off and
- * `featureSwitchState` picks the auto/on/off value to save.
+ * `featureSwitchState` picks the auto/on/off value to save. A sub-feature is listed nested under
+ * its parent's row, and can't be switched while the parent is off: it doesn't run then.
  */
 export function DecisionFeatureRow({
   feature,
+  parent,
+  subFeatures,
   spend,
   approximate = false,
   hasProviders,
@@ -292,20 +321,35 @@ export function DecisionFeatureRow({
   onSwitch: (value: DecisionFeatureSwitch) => void
   custom: boolean
   onCustomChange: (custom: boolean) => void
+  /** Set for a sub-feature: its parent's label, and whether the parent runs. */
+  parent?: { label: string; on: boolean }
+  /** A parent's sub-feature rows, listed nested under it. */
+  subFeatures?: ReactNode[]
   children?: ReactNode
 }) {
   const instance = feature.scope === 'instance'
-  const { on, offByDefault, turnOn, turnOff } = featureSwitchState(feature)
+  const featureState = featureSwitchState(feature)
+  const { offByDefault, turnOn, turnOff } = featureState
+  const parentOff = parent !== undefined && !parent.on
+  const on = featureState.on && !parentOff
   const { status, color, note }: { status: string; color: BadgeColor; note?: string } =
     feature.scope === 'instance'
       ? {
           status: !hasProviders ? 'Needs a decision model' : on ? 'On' : 'Off',
           color: !hasProviders ? 'attention' : on ? 'success' : 'neutral',
-          note: offByDefault
-            ? "Off by default; turn on if it's worth the cost."
-            : 'On by default once a decision model is set up.',
+          note:
+            hasProviders && parentOff
+              ? `Turn on the ${parent.label.toLowerCase()} first.`
+              : offByDefault
+                ? "Off by default; turn on if it's worth the cost."
+                : parent
+                  ? `On by default while the ${parent.label.toLowerCase()} is on.`
+                  : 'On by default once a decision model is set up.',
         }
       : { ...SCOPE_STATUS[feature.scope], color: 'neutral' }
+  const switchLabel = parent
+    ? `Use the ${parent.label.toLowerCase()} for ${feature.label.toLowerCase()}`
+    : `Use the ${feature.label.toLowerCase()}`
   return (
     <li className="space-y-3 py-3" aria-label={feature.label}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
@@ -334,13 +378,14 @@ export function DecisionFeatureRow({
               <input
                 type="checkbox"
                 role="switch"
-                aria-label={`Use the ${feature.label.toLowerCase()}`}
+                aria-label={switchLabel}
                 checked={hasProviders && on}
-                disabled={!canWrite || !hasProviders || switching}
+                disabled={!canWrite || !hasProviders || parentOff || switching}
+                title={parentOff && hasProviders ? `Turn on the ${parent.label.toLowerCase()} first` : undefined}
                 onChange={(event) => onSwitch(event.target.checked ? turnOn : turnOff)}
                 className="h-4 w-4 accent-current disabled:opacity-50"
               />
-              <span className={clsx(!hasProviders && 'opacity-50')}>Enabled</span>
+              <span className={clsx((!hasProviders || parentOff) && 'opacity-50')}>Enabled</span>
             </label>
           )}
           {hasProviders && (
@@ -351,7 +396,7 @@ export function DecisionFeatureRow({
               disabled={!canWrite}
               onChange={(next) => onCustomChange(next === 'custom')}
               options={[
-                { value: 'default', label: 'Use default order' },
+                { value: 'default', label: parent ? 'Same as parent' : 'Use default order' },
                 { value: 'custom', label: 'Custom order' },
               ]}
             />
@@ -359,6 +404,14 @@ export function DecisionFeatureRow({
         </div>
       </div>
       {children}
+      {subFeatures && subFeatures.length > 0 && (
+        <ul
+          aria-label={`Parts of the ${feature.label.toLowerCase()}`}
+          className="ml-3 divide-y divide-th-border border-l border-th-border pl-4 sm:ml-4"
+        >
+          {subFeatures}
+        </ul>
+      )}
     </li>
   )
 }
