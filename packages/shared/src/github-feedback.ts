@@ -47,9 +47,31 @@ export interface GitHubPersonalIdentityStatus {
 }
 
 /**
+ * An action's alternative delivery: the same factual message plus the parent issue or PR's CURRENT
+ * title and description. Normalization offers it only for a signed webhook whose payload names the
+ * parent's author by numeric ID. Capture uses it only when that author is trusted in the squad right
+ * then AND the text is provably theirs; otherwise the factual delivery is captured. Never authority.
+ */
+export interface GitHubParentTextVariant {
+  /** The parent's content author (`issue.user` / `pull_request.user`), by numeric account ID. */
+  author: GitHubAccountIdentity
+  objectKind: 'issue' | 'pull_request'
+  /** The parent's own GitHub ID (the captured `issue`/`pull_request` object's native ID). */
+  nativeId: string
+  title: string
+  body: string
+  /** The payload's `created_at` equals its `updated_at`: nothing about the parent changed since creation. */
+  unchanged: boolean
+  contentHash: string
+  byteCount: number
+  delivery: import('./integration-outputs').IntegrationOutputFact
+}
+
+/**
  * Immutable review input. `delivery` contains only this content object's text, never its parent.
  * `action` is an issue/PR action (assign, review request, label, close/reopen) authored by the
- * verified webhook sender; its delivery is a fixed factual projection without parent title/body.
+ * verified webhook sender; its delivery is a fixed factual projection without parent title/body,
+ * unless capture selects `parentText` (the parent's author is trusted and provably wrote the text).
  */
 export interface GitHubFeedbackContent {
   normalizationVersion: 1
@@ -64,6 +86,8 @@ export interface GitHubFeedbackContent {
   byteCount: number
   reason: 'content_unavailable' | null
   delivery: import('./integration-outputs').IntegrationOutputFact | null
+  /** Actions only. See {@link GitHubParentTextVariant}; absent when the payload cannot offer it. */
+  parentText?: GitHubParentTextVariant
 }
 export interface GitHubFeedbackEnvelope {
   /** Checked against the source association table, never trusted as an approval hint. */

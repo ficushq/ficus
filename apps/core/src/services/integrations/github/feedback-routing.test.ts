@@ -3089,4 +3089,331 @@ describe('trusted actor actions with the author filter ON (default squad rules)'
       await h.close()
     }
   })
+
+  // ── Parent text: the parent's title and description ride along only when ITS author is trusted ──
+  const trustedIssue = {
+    ...issue,
+    title: 'PARENT_TITLE_TEXT',
+    body: 'PARENT_BODY_TEXT',
+    created_at: '2026-10-02T11:00:00Z',
+  }
+  // The default rule notifies the manager of assignments to the connected account; distinct times
+  // make distinct assignment actions on the same issue.
+  const at = (minute: number) => {
+    const time = `2026-10-02T11:${String(minute).padStart(2, '0')}:00Z`
+    return { created_at: time, updated_at: time }
+  }
+  const assignedTo = (
+    login: string,
+    sender: object = trustedActor,
+    overrides: Record<string, unknown> = {},
+    observation: 'webhook' | 'poll' = 'webhook'
+  ) =>
+    githubOutputAdapter.normalize({
+      type: 'issues',
+      githubObservation:
+        observation === 'webhook' ? { kind: 'webhook', deliveryId: crypto.randomUUID() } : { kind: 'poll' },
+      payload: {
+        action: 'assigned',
+        repository: { id: 10, full_name: 'acme/project' },
+        issue: { ...trustedIssue, ...overrides },
+        assignee: { id: 99, login, type: 'User' },
+        sender,
+      },
+    })[0]!
+  const trustParentAuthor = (squadId: string, userId: string) =>
+    db
+      .insert(githubTrustedAuthors)
+      .values({ squadId, accountId: '7', login: 'drive-by', accountType: 'User', addedByUserId: userId })
+  const managerMessages = (managerId: string) =>
+    db.select().from(inbox).where(eq(inbox.recipientId, managerId)).orderBy(inbox.createdAt)
+
+  test('a trusted parent author (linked identity) has the current title and description included', async () => {
+    const h = await defaultRulesFixture()
+    const linkedUser = crypto.randomUUID()
+    await db.insert(users).values({ id: linkedUser, email: `${linkedUser}@routing.test` })
+    const { githubPersonalIdentities } = await import('../../../db')
+    await db.insert(githubPersonalIdentities).values({ userId: linkedUser, accountId: '7', login: 'drive-by' })
+    const revoke = await grantSquadUpdate(h.squadId, linkedUser)
+    try {
+      await h.trust()
+      const fact = assignedTo('ficus-bot')
+      await publishIntegrationOutput('github', fact, h.authority)
+      const [message] = await managerMessages(h.managerId)
+      expect(message!.content).toContain('Assignee: @ficus-bot')
+      expect(message!.content).toContain('written by @drive-by:\n\nPARENT_TITLE_TEXT\n\nPARENT_BODY_TEXT')
+      const [revision] = await revisions(h.squadId)
+      expect(revision).toMatchObject({ decision: 'automatic', reason: 'trusted_author' })
+      // The approval-bound hash is the parent-text variant's, covering the title and body.
+      expect(revision!.contentHash).toBe(fact.github!.content!.parentText!.contentHash)
+      expect(revision!.envelope!.data.parentContent).toMatchObject({
+        author: { accountId: '7' },
+        title: 'PARENT_TITLE_TEXT',
+        body: 'PARENT_BODY_TEXT',
+      })
+      // The same live check as comment authors: without squads:update the link grants nothing.
+      await revoke()
+      await publishIntegrationOutput('github', assignedTo('ficus-bot', trustedActor, at(1)), h.authority)
+      const messages = await managerMessages(h.managerId)
+      expect(messages).toHaveLength(2)
+      expect(messages[1]!.content).toContain('Assignee: @ficus-bot')
+      expect(messages[1]!.content).not.toContain('PARENT_')
+    } finally {
+      await revoke()
+      await h.close()
+      await db.delete(users).where(eq(users.id, linkedUser))
+    }
+  })
+
+  test('an untrusted, missing or unverifiable parent author ID gives the factual message only', async () => {
+    const h = await defaultRulesFixture()
+    try {
+      await h.trust()
+      // Trusted by LOGIN only: a different numeric ID with the same login is not the trusted author.
+      await db
+        .insert(githubTrustedAuthors)
+        .values({ squadId: h.squadId, accountId: '8', login: 'drive-by', accountType: 'User', addedByUserId: h.userId })
+      await publishIntegrationOutput('github', assignedTo('ficus-bot'), h.authority)
+      await publishIntegrationOutput(
+        'github',
+        assignedTo('ficus-bot', trustedActor, { ...at(1), user: { login: 'drive-by' } }),
+        h.authority
+      )
+      await publishIntegrationOutput(
+        'github',
+        assignedTo('ficus-bot', trustedActor, { ...at(2), user: { id: '7', login: 'drive-by', type: 'User' } }),
+        h.authority
+      )
+      const messages = await managerMessages(h.managerId)
+      expect(messages).toHaveLength(3)
+      for (const message of messages) expect(message.content).not.toContain('PARENT_')
+      for (const revision of await revisions(h.squadId)) {
+        expect(revision.decision).toBe('automatic')
+        expect(revision.envelope!.data.parentContent).toBeUndefined()
+      }
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('text that may have been edited since creation is included only when a captured creation by its author proves it', async () => {
+    const h = await defaultRulesFixture()
+    try {
+      await h.trust()
+      await trustParentAuthor(h.squadId, h.userId)
+      const edited = (minute: number) => ({ updated_at: `2026-10-02T12:0${minute}:00Z` })
+      // The payload names the creator but not who last edited the text, and its clock moved.
+      await publishIntegrationOutput('github', assignedTo('ficus-bot', trustedActor, edited(0)), h.authority)
+      // The squad captured the issue's creation, by the same author, with exactly this text.
+      const opened = githubOutputAdapter.normalize({
+        type: 'issues',
+        githubObservation: { kind: 'webhook', deliveryId: crypto.randomUUID() },
+        payload: {
+          action: 'opened',
+          repository: { id: 10, full_name: 'acme/project' },
+          issue: trustedIssue,
+          sender: parentAuthor,
+        },
+      })[0]!
+      const source = await recordIntegrationOutput('github', opened, h.authority)
+      const creation = await captureGitHubFeedback(source.id, {
+        authorizeSource: async () => true,
+        decideFresh: (await import('./feedback-trust')).isTrustedGitHubFeedbackContent,
+      })
+      expect(creation.revision).toMatchObject({ decision: 'automatic', attribution: 'creation' })
+      await publishIntegrationOutput('github', assignedTo('ficus-bot', trustedActor, edited(1)), h.authority)
+      // Someone rewrote the description: it no longer matches what the author wrote.
+      await publishIntegrationOutput(
+        'github',
+        assignedTo('ficus-bot', trustedActor, { ...edited(2), body: 'REWRITTEN_BY_SOMEONE' }),
+        h.authority
+      )
+      const messages = await managerMessages(h.managerId)
+      expect(messages.map((message) => message.content.includes('PARENT_BODY_TEXT'))).toEqual([false, true, false])
+      expect(JSON.stringify(messages)).not.toContain('REWRITTEN_BY_SOMEONE')
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('parent author trust revoked after the notice is queued, before the model reads it, gives the factual message only', async () => {
+    const { reconcileFlows } = await import('../../workflows/execution')
+    const { isGitHubOutputAdmitted } = await import('./feedback-routing')
+    const h = await defaultRulesFixture()
+    try {
+      await h.trust()
+      await trustParentAuthor(h.squadId, h.userId)
+      await publishIntegrationOutput('github', assignedTo('ficus-bot'), h.authority)
+      const canonical = () =>
+        db
+          .select()
+          .from(integrationOutputEvents)
+          .where(sql`${integrationOutputEvents.sourceKey} LIKE 'github-feedback:' || ${h.squadId} || ':%'`)
+      const [first] = await canonical()
+      // Queued with the parent text, but no agent has accepted it (sendMessage is stubbed here).
+      const [queued] = await managerMessages(h.managerId)
+      expect(queued!.content).toContain('PARENT_BODY_TEXT')
+      expect(queued!.deliveredAt).toBeNull()
+      await db
+        .delete(githubTrustedAuthors)
+        .where(sql`${githubTrustedAuthors.squadId} = ${h.squadId} AND ${githubTrustedAuthors.accountId} = '7'`)
+      // Final acceptance refuses the parent text now; the observed revocation replaces it.
+      expect(await isGitHubOutputAdmitted(db, first!)).toBe(false)
+      expect((await renewal.renewKnownGitHubOutputs([first!.id])).withheld).toEqual([first!.id])
+      const rows = await revisions(h.squadId)
+      expect(rows.find((row) => row.id === first!.eventKey)).toMatchObject({
+        releaseState: 'obsolete',
+        reason: 'parent_trust_revoked',
+      })
+      expect(rows.find((row) => row.id !== first!.eventKey)).toMatchObject({
+        decision: 'automatic',
+        releaseState: 'ready',
+      })
+      await reconcileFlows()
+      const replacement = (await canonical()).find((event) => event.id !== first!.id)!
+      expect(replacement.fact.data.parentContent).toBeUndefined()
+      expect(await isGitHubOutputAdmitted(db, first!)).toBe(false)
+      const messages = await managerMessages(h.managerId)
+      expect(messages).toHaveLength(2)
+      expect(messages[1]!.content).toContain('Assignee: @ficus-bot')
+      expect(messages[1]!.content).not.toContain('PARENT_')
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('parent author trust revoked between capture and acceptance gives the factual message only', async () => {
+    const { reconcileFlows } = await import('../../workflows/execution')
+    const { captureRelevantGitHubFeedback } = await import('./feedback-admission')
+    const { planOutputRouting } = await import('../outputs/routing-plan')
+    const h = await defaultRulesFixture()
+    try {
+      await h.trust()
+      await trustParentAuthor(h.squadId, h.userId)
+      const fact = assignedTo('ficus-bot')
+      const source = await recordIntegrationOutput('github', fact, h.authority)
+      const captured = await captureRelevantGitHubFeedback(source, {
+        authorizeSource: async () => true,
+        routingProvenance: (await planOutputRouting(source, async () => true)).routes,
+      })
+      expect(captured.revision).toMatchObject({ decision: 'automatic', releaseState: 'ready' })
+      expect(captured.revision.contentHash).toBe(fact.github!.content!.parentText!.contentHash)
+      // Only the parent text's author loses trust; the actor (id 2) stays trusted.
+      await db
+        .delete(githubTrustedAuthors)
+        .where(sql`${githubTrustedAuthors.squadId} = ${h.squadId} AND ${githubTrustedAuthors.accountId} = '7'`)
+      await reconcileFlows()
+      await reconcileFlows()
+      const rows = await revisions(h.squadId)
+      const original = rows.find((row) => row.id === captured.revision.id)!
+      expect(original).toMatchObject({
+        decision: 'automatic',
+        releaseState: 'obsolete',
+        reason: 'parent_trust_revoked',
+      })
+      const replacement = rows.find((row) => row.id !== captured.revision.id)!
+      expect(replacement).toMatchObject({ decision: 'automatic', sequence: 2 })
+      // Exactly the factual message normalization produced, under its own complete hash.
+      expect(replacement.contentHash).toBe(fact.github!.content!.contentHash)
+      expect(replacement.envelope).toEqual(fact.github!.content!.delivery)
+      const messages = await managerMessages(h.managerId)
+      expect(messages).toHaveLength(1)
+      expect(messages[0]!.content).toContain('Assignee: @ficus-bot')
+      expect(messages[0]!.content).not.toContain('PARENT_')
+      // Restored trust and a redelivered webhook replay the factual revision; history is not upgraded.
+      await trustParentAuthor(h.squadId, h.userId)
+      await publishIntegrationOutput('github', assignedTo('ficus-bot'), h.authority)
+      await reconcileFlows()
+      expect(await revisions(h.squadId)).toHaveLength(2)
+      expect(await managerMessages(h.managerId)).toHaveLength(1)
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('a held action carries the trusted author’s text into review, bound to that exact hash', async () => {
+    const { reconcileFlows } = await import('../../workflows/execution')
+    const { moderateGitHubFeedback } = await import('./feedback-moderation')
+    const { getGitHubFeedbackDetail } = await import('./feedback-review')
+    const h = await defaultRulesFixture()
+    const roleId = crypto.randomUUID()
+    try {
+      await trustParentAuthor(h.squadId, h.userId)
+      await db
+        .insert(roles)
+        .values({ id: roleId, slug: roleId, name: roleId, permissions: ['squads:read', 'squads:update'] })
+      await db
+        .insert(roleAssignments)
+        .values({ subjectType: 'user', subjectId: h.userId, roleId, scope: 'squad', squadId: h.squadId })
+      const fact = assignedTo('ficus-bot', outsider)
+      await publishIntegrationOutput('github', fact, h.authority)
+      expect(await managerMessages(h.managerId)).toHaveLength(0)
+      const [held] = await revisions(h.squadId)
+      expect(held).toMatchObject({ decision: 'pending', reason: 'untrusted_author' })
+      expect(held!.contentHash).toBe(fact.github!.content!.parentText!.contentHash)
+      const human = { type: 'user' as const, userId: h.userId }
+      // The reviewer sees the whole message, parent text included, as plain text.
+      const detail = await getGitHubFeedbackDetail(human, h.squadId, held!.id)
+      expect(detail.content!.body).toContain('Assignee: @ficus-bot')
+      expect(detail.content!.body).toContain('PARENT_TITLE_TEXT\n\nPARENT_BODY_TEXT')
+      expect(detail.content!.deliveryText).toBe(held!.envelope!.body)
+      // An approval for the factual hash is not an approval of the text that would be delivered.
+      await expect(
+        moderateGitHubFeedback(human, h.squadId, {
+          requestId: crypto.randomUUID(),
+          action: 'allow_once',
+          selections: [
+            {
+              revisionId: held!.id,
+              contentHash: fact.github!.content!.contentHash,
+              decisionVersion: held!.decisionVersion,
+            },
+          ],
+        })
+      ).rejects.toThrow('moderation_selection_conflict')
+      await moderateGitHubFeedback(human, h.squadId, {
+        requestId: crypto.randomUUID(),
+        action: 'allow_once',
+        selections: [{ revisionId: held!.id, contentHash: held!.contentHash, decisionVersion: held!.decisionVersion }],
+      })
+      await reconcileFlows()
+      const [message] = await managerMessages(h.managerId)
+      expect(message!.content).toContain('PARENT_BODY_TEXT')
+    } finally {
+      await db.delete(roleAssignments).where(eq(roleAssignments.roleId, roleId))
+      await db.delete(roles).where(eq(roles.id, roleId))
+      await h.close()
+    }
+  })
+
+  test('title and description edits stay held even when the author and editor are trusted', async () => {
+    const h = await defaultRulesFixture()
+    try {
+      await h.trust()
+      const before = await h.effects()
+      const edit = githubOutputAdapter.normalize({
+        type: 'issues',
+        githubObservation: { kind: 'webhook', deliveryId: crypto.randomUUID() },
+        payload: {
+          action: 'edited',
+          repository: { id: 10, full_name: 'acme/project' },
+          issue: { ...trustedIssue, user: trustedActor },
+          changes: { body: { from: 'old' } },
+          sender: trustedActor,
+        },
+      })[0]!
+      expect(edit.github!.content).toMatchObject({ objectKind: 'issue', attribution: 'unknown' })
+      expect(edit.github!.content!.parentText).toBeUndefined()
+      await captureGitHubFeedback((await recordIntegrationOutput('github', edit, h.authority)).id, {
+        authorizeSource: async () => true,
+        decideFresh: (await import('./feedback-trust')).isTrustedGitHubFeedbackContent,
+        decideParent: (await import('./feedback-parent')).isGitHubParentTextAdmissible,
+      })
+      const [held] = await revisions(h.squadId)
+      expect(held).toMatchObject({ decision: 'pending', reason: 'unknown_editor', releaseState: 'held' })
+      expect(await h.effects()).toEqual(before)
+    } finally {
+      await h.close()
+    }
+  })
 })

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import {
   db,
   githubFeedbackObjects,
@@ -9,7 +9,7 @@ import {
 } from '../../../db'
 import type { GitHubFeedbackContent } from '@ficus/shared'
 import { readOutputEvent, readFeedbackRevision } from './feedback-pass-read'
-import { githubContentHash } from './feedback-envelope'
+import { githubContentHash, githubParentTextContent } from './feedback-envelope'
 import { readCurrentGitHubFeedback } from './feedback-provider'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 import { isTrustedGitHubFeedbackContent } from './feedback-trust'
@@ -29,12 +29,19 @@ export interface FeedbackCaptureDependencies {
   routingProvenance?: Array<import('@ficus/shared').GitHubFeedbackRoute>
   /** Internal live-trust resolver, only for a new, unambiguous capture; never transported approval. */
   decideFresh?(tx: DbTx, squadId: string, content: GitHubFeedbackContent): Promise<boolean>
+  /**
+   * Internal live trust-and-provenance check for an action's parent title/description, only for a
+   * new capture under the authority lock. False (or absent) captures the factual message.
+   */
+  decideParent?(tx: DbTx, squadId: string, content: GitHubFeedbackContent): Promise<boolean>
 }
 
 /**
  * Capture only otherwise-relevant content. An internal live-trust resolver may decide a NEW
  * unambiguous version under the authority lock. Pending history is never upgraded on replay.
  * Does not send, wake, route, or claim triggers. The revision key is stable across source transports.
+ * An action offering parent text has two candidate hashes (factual, with parent text); a replay of
+ * either is the same observation, and only a NEW revision chooses between them.
  */
 export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptureDependencies) {
   const event = await readOutputEvent(db, eventId)
@@ -58,6 +65,8 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
     objectKind: content.objectKind,
     nativeId: content.nativeId ?? `unknown:${event.id}`,
   }
+  const withParent = githubParentTextContent(content)
+  const hashes = new Set([content.contentHash, ...(withParent ? [withParent.contentHash] : [])])
   const condition = and(
     eq(githubFeedbackObjects.squadId, squadId),
     eq(githubFeedbackObjects.repositoryId, identity.repositoryId),
@@ -74,7 +83,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   let currentHash: string | null = null
   if (
     beforeRead &&
-    knownHead?.contentHash !== content.contentHash &&
+    !hashes.has(knownHead?.contentHash ?? '') &&
     (!content.providerVersion || content.providerVersion === beforeRead.providerVersion)
   ) {
     try {
@@ -86,7 +95,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   // The callback's authorization is fresh immediately before entering the transaction.
   if (!(await deps.authorizeSource(event))) throw new Error('feedback_source_unavailable')
   return db.transaction(async (tx) => {
-    if (deps.decideFresh) await lockGitHubTrustAuthority(tx)
+    if (deps.decideFresh || deps.decideParent) await lockGitHubTrustAuthority(tx)
     // The relevance read happened before provider I/O; a human may have turned the filter OFF
     // since. Serialize with that toggle (it updates the squad row) and never hold an event the
     // squad no longer filters: the caller routes it raw instead.
@@ -98,7 +107,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
     const head = object.currentRevisionId ? await readFeedbackRevision(tx, object.currentRevisionId) : undefined
     if (object.currentRevisionId && !head) throw new Error('feedback_capacity_deferred')
     let revision =
-      head?.contentHash === content.contentHash && head.providerVersion === content.providerVersion ? head : undefined
+      head && hashes.has(head.contentHash) && head.providerVersion === content.providerVersion ? head : undefined
     let disposition: 'created' | 'replay' | 'held' = revision ? 'replay' : 'created'
     if (transportKey) {
       const receipts = await tx
@@ -112,7 +121,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
       if (receipts.length) {
         const prior = await readFeedbackRevision(tx, receipts[0]!.revisionId)
         // A transport identity cannot be reused with different content, even if someone approves it.
-        if (!prior || prior.contentHash !== content.contentHash) throw new Error('feedback_transport_conflict')
+        if (!prior || !hashes.has(prior.contentHash)) throw new Error('feedback_transport_conflict')
         revision = prior
         disposition = 'replay'
       }
@@ -126,7 +135,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
       const ambiguous =
         !!head &&
         (!content.providerVersion || content.providerVersion === object.providerVersion) &&
-        (currentHash !== content.contentHash || beforeRead?.currentRevisionId !== object.currentRevisionId)
+        (!hashes.has(currentHash ?? '') || beforeRead?.currentRevisionId !== object.currentRevisionId)
       const previouslyHeld =
         head?.decision === 'pending' &&
         head.envelope &&
@@ -160,7 +169,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
                 .where(
                   and(
                     eq(githubFeedbackRevisions.objectId, object.id),
-                    eq(githubFeedbackRevisions.contentHash, content.contentHash),
+                    inArray(githubFeedbackRevisions.contentHash, [...hashes]),
                     eq(githubFeedbackRevisions.decision, 'pending'),
                     eq(githubFeedbackRevisions.reason, reason)
                   )
@@ -173,23 +182,27 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
       if (revision) disposition = 'replay'
       else {
         const sequence = object.sequence + 1
+        // The parent's text is captured only if its author is trusted now and provably wrote it;
+        // otherwise (untrusted, unverifiable, edited by someone else) the factual message is.
+        const chosen =
+          withParent && deps.decideParent && (await deps.decideParent(tx, squadId, content)) ? withParent : content
         // Only the first capture may be automatic. Pending replay or stronger evidence never upgrades history.
         const automatic =
-          reason === 'untrusted_author' && !!content.delivery && !!(await deps.decideFresh?.(tx, squadId, content))
+          reason === 'untrusted_author' && !!chosen.delivery && !!(await deps.decideFresh?.(tx, squadId, chosen))
         const [created] = await tx
           .insert(githubFeedbackRevisions)
           .values({
             objectId: object.id,
             squadId,
             sequence,
-            contentHash: content.contentHash,
-            normalizationVersion: content.normalizationVersion,
-            envelope: content.delivery,
-            byteCount: content.byteCount,
-            author: content.author,
-            editor: content.editor,
-            attribution: content.attribution,
-            providerVersion: content.providerVersion,
+            contentHash: chosen.contentHash,
+            normalizationVersion: chosen.normalizationVersion,
+            envelope: chosen.delivery,
+            byteCount: chosen.byteCount,
+            author: chosen.author,
+            editor: chosen.editor,
+            attribution: chosen.attribution,
+            providerVersion: chosen.providerVersion,
             routingProvenance: deps.routingProvenance ?? [],
             reason: automatic ? 'trusted_author' : reason,
             decision: automatic ? 'automatic' : 'pending',

@@ -76,6 +76,7 @@ export async function withholdRevokedAutomaticGitHubOutput(eventId: string) {
   const { lockGitHubTrustAuthority } = await import('./trust-authority-lock')
   const { isTrustedGitHubFeedbackContent } = await import('./feedback-trust')
   const { hasAcceptedGitHubFeedbackReceipts } = await import('./feedback-release')
+  const { supersedeGitHubParentText } = await import('./feedback-parent')
   await db.transaction(async (tx) => {
     await lockGitHubTrustAuthority(tx)
     const event = await readOutputEvent(tx, eventId)
@@ -85,6 +86,8 @@ export async function withholdRevokedAutomaticGitHubOutput(eventId: string) {
     if (
       !revision ||
       revision.decision !== 'automatic' ||
+      // Already replaced by its factual message: never re-held for a person to release the parent text.
+      (revision.releaseState === 'obsolete' && revision.reason === 'parent_trust_revoked') ||
       event.eventKey !== revision.id ||
       event.sourceKey !== `github-feedback:${revision.squadId}:${revision.id}` ||
       event.authority.squadId !== revision.squadId ||
@@ -92,13 +95,19 @@ export async function withholdRevokedAutomaticGitHubOutput(eventId: string) {
       (await hasAcceptedGitHubFeedbackReceipts(event.id))
     )
       return
+    // Only the parent text's author lost trust: the factual message replaces it (see release).
+    const superseded = !!(await supersedeGitHubParentText(tx, revision))
     await tx
       .update(githubFeedbackRevisions)
       .set({
-        decision: 'pending',
-        decisionVersion: revision.decisionVersion + 1,
-        releaseState: 'held',
-        reason: 'trust_revoked',
+        ...(superseded
+          ? { releaseState: 'obsolete' as const, reason: 'parent_trust_revoked' }
+          : {
+              decision: 'pending' as const,
+              decisionVersion: revision.decisionVersion + 1,
+              releaseState: 'held' as const,
+              reason: 'trust_revoked',
+            }),
         nextAttemptAt: null,
         leaseToken: null,
         leaseExpiresAt: null,

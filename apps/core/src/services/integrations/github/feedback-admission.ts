@@ -4,12 +4,20 @@ import { outputSnapshotMatches, readFeedbackRevision } from './feedback-pass-rea
 import { githubContentHash } from './feedback-envelope'
 import { captureGitHubFeedback, type FeedbackCaptureDependencies } from './feedback-store'
 import { isTrustedGitHubFeedbackContent } from './feedback-trust'
+import { isGitHubParentTextAdmissible } from './feedback-parent'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 
 /** Called only after query-only relevance and exact-resource authorization. Never upgrades pending history. */
-export function captureRelevantGitHubFeedback(event: Event, deps: Omit<FeedbackCaptureDependencies, 'decideFresh'>) {
-  return captureGitHubFeedback(event.id, { ...deps, decideFresh: isTrustedGitHubFeedbackContent })
+export function captureRelevantGitHubFeedback(
+  event: Event,
+  deps: Omit<FeedbackCaptureDependencies, 'decideFresh' | 'decideParent'>
+) {
+  return captureGitHubFeedback(event.id, {
+    ...deps,
+    decideFresh: isTrustedGitHubFeedbackContent,
+    decideParent: isGitHubParentTextAdmissible,
+  })
 }
 
 /**

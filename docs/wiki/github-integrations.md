@@ -145,8 +145,13 @@ field changed or provide a historical diff. Agents can retrieve full details wit
 
 Opening, assignment, and review-request events retain their description context
 in squads with the author filter OFF. With it ON, assignment and review-request
-deliveries are fixed action projections without the parent title or description
-(see [Author trust and held feedback](#author-trust-and-held-feedback)).
+deliveries are fixed action projections that add the parent's current title and
+description only when its author is trusted and provably wrote that text (see
+[Author trust and held feedback](#author-trust-and-held-feedback)). Issue
+assignments and review requests present that message in full. Pull request
+assignments, labels, unassignments and close/reopen use the compact
+presentation below in both modes, so they show neither the projection's text
+nor the parent's.
 Comments (including edits), submitted reviews, review-thread file/line links, and
 CI results retain their existing event text and identifiers. Unchanged parent
 descriptions are not added to feedback. Existing provider text-size limits still
@@ -334,10 +339,46 @@ not try to tell a person's comment from their agent's.
 as the creator, so a trusted actor's assignment or review request is delivered
 automatically and an untrusted actor's is held. The delivered fact is a fixed
 projection: repository, number, action, actor, assignee, requested reviewer or
-team, label names, assignee logins and the canonical URL. It never includes the
-parent's title or body, whoever wrote them; agents fetch those themselves. Each
-action is its own object (parent ID plus a digest of action, target and time),
-so out-of-order actions are not stale versions of each other. Rule matching and
+team, label names, assignee logins and the canonical URL. Each action is its own
+object (parent ID plus a digest of action, target and time), so out-of-order
+actions are not stale versions of each other.
+
+**Parent text on actions** (`feedback-parent.ts`). A trusted actor's action
+does not vouch for the parent's title and body, so by default the projection
+omits them. A signed webhook also offers a `parentText` variant: the same
+factual message followed by the parent's current title and description, with
+the full text in `data.parentContent` next to the author's identity. Capture
+selects it, under the trust authority lock and only for a new revision, when
+both hold:
+
+- the parent's content author (`issue.user` / `pull_request.user`, by numeric
+  account ID; a missing, malformed or login-only identity offers nothing) is
+  trusted in the squad now, through `resolveGitHubAuthorTrust`, the same live
+  check as comment authors;
+- the text is provably theirs. Issue and PR payloads name the creator but not
+  who last edited the title or description, and `updated_at` moves on any
+  activity. As in managed memory reads, the latest captured revision of the
+  parent (`issue`/`pull_request` object, same squad and repository) with exactly
+  this title and body decides: an automatic or human-allowed revision attributed
+  to its creation by the same account proves it, a pending or denied one refuses
+  it. Without such a revision only an unchanged payload (`created_at` equals
+  `updated_at`) proves it. Otherwise the factual message is captured.
+
+The variant is a different reviewed object: its hash covers the parent text and
+author, so a moderator's approval and the canonical event's admission bind to
+the version with the text. Its preview uses the comment caps (24,000 characters,
+`notificationTruncated`) and a variant over the 256 KiB review cap is not
+offered. A replay matches either candidate hash and never upgrades history.
+Final acceptance (`isTrustedGitHubFeedbackContent`) rechecks the parent author's
+trust along with the actor's. When only the parent author lost trust and no
+agent has received the action (no delivered notice or flow delivery, no trigger
+run), release settlement or renewal supersedes it: a new automatic revision
+carries exactly the factual message, takes over the original source
+associations, and the old one becomes `obsolete` (`parent_trust_revoked`).
+Anything else follows the normal revocation hold (`trust_revoked`). Polled
+actions offer no variant and stay held.
+
+Rule matching and
 work-stream bindings still read the source fact, so predicates such as
 `requestedReviewer`, `assignee` and `issue.title` keep working. Polled actions
 have no signed actor and are held (`unknown_editor`). Issue and PR `edited`

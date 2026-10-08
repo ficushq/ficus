@@ -3,6 +3,7 @@ import type {
   GitHubAccountIdentity,
   GitHubFeedbackContent,
   GitHubFeedbackEnvelope,
+  GitHubParentTextVariant,
   IntegrationOutputFact,
 } from '@ficus/shared'
 import { buildGitHubStatus } from './feedback-status'
@@ -67,11 +68,121 @@ export function githubContentHash(value: unknown): string {
     .digest('hex')
 }
 
+/** The same caps as comment content: a bounded notification preview, a hard cap on reviewed bytes. */
+const NOTIFICATION_LIMIT = 24000
+const REVIEWED_LIMIT = 256 * 1024
+
+/**
+ * Hash and size of an action's COMPLETE reviewed object (identity, actor, URL and every data field,
+ * including any parent text it carries), independently of transport, timestamp and event key.
+ */
+export function githubActionReviewed(
+  identity: {
+    repositoryId: string | null
+    nativeId: string | null
+    author: GitHubAccountIdentity | null
+    attribution: GitHubFeedbackContent['attribution']
+  },
+  delivery: IntegrationOutputFact
+): { contentHash: string; byteCount: number } {
+  const reviewed = {
+    normalizationVersion: 1,
+    repositoryId: identity.repositoryId,
+    nativeId: identity.nativeId,
+    objectKind: 'action',
+    author: identity.author,
+    editor: null,
+    attribution: identity.attribution,
+    url: delivery.url,
+    data: delivery.data,
+  }
+  return {
+    contentHash: githubContentHash(reviewed),
+    byteCount: Buffer.byteLength(JSON.stringify(canonical(reviewed))),
+  }
+}
+
+/**
+ * The factual action message plus the parent's current title and description, as plain text after
+ * the facts. The full text is in `data.parentContent` (and so in the hash); the notification preview
+ * is capped like a comment's and says so in `data.notificationTruncated`.
+ */
+export function withGitHubParentText(
+  facts: IntegrationOutputFact,
+  parent: { author: GitHubAccountIdentity; objectKind: 'issue' | 'pull_request'; title: string; body: string }
+): IntegrationOutputFact {
+  const notification = parentTextMessage(facts.body, parent)
+  return {
+    ...facts,
+    data: {
+      ...facts.data,
+      parentContent: { author: parent.author, title: parent.title, body: parent.body },
+      notificationTruncated: notification.length > NOTIFICATION_LIMIT,
+    },
+    body: notification.slice(0, NOTIFICATION_LIMIT),
+  }
+}
+
+function parentTextMessage(
+  factsBody: string,
+  parent: { author: { login: string }; objectKind: string; title: string; body: string }
+): string {
+  return [
+    factsBody,
+    `Current ${parent.objectKind === 'pull_request' ? 'pull request' : 'issue'} title and description, written by @${parent.author.login}:`,
+    parent.title,
+    parent.body || '(No description.)',
+  ].join('\n\n')
+}
+
+/**
+ * The complete, untruncated agent-facing text of an action that carries parent text, for review:
+ * the same message as the delivery, before the notification cap. Null for any other delivery.
+ */
+export function githubParentTextReviewText(delivery: IntegrationOutputFact): string | null {
+  if (!hasGitHubParentText(delivery)) return null
+  const parent = record(delivery.data.parentContent)
+  return parentTextMessage(withoutGitHubParentText(delivery).body, {
+    author: { login: text(record(parent.author).login) },
+    objectKind: delivery.data.pullRequest ? 'pull_request' : 'issue',
+    title: text(parent.title),
+    body: text(parent.body),
+  })
+}
+
+/** The factual action message a parent-text delivery was built from: exactly what normalization produces. */
+export function withoutGitHubParentText(delivery: IntegrationOutputFact): IntegrationOutputFact {
+  const { parentContent: _parent, notificationTruncated: _truncated, ...data } = delivery.data
+  return { ...delivery, data, body: `${text(record(data.content).body)}\n\n${delivery.url}` }
+}
+
+/** True when an action delivery carries parent text (whoever wrote it). */
+export function hasGitHubParentText(delivery: IntegrationOutputFact | null | undefined): boolean {
+  return !!delivery && delivery.data.projection === 'action' && delivery.data.parentContent !== undefined
+}
+
+/** The numeric account ID of the parent author whose text a delivery carries; null when absent or malformed. */
+export function githubParentTextAuthorId(delivery: IntegrationOutputFact | null | undefined): string | null {
+  if (!hasGitHubParentText(delivery)) return null
+  const accountId = record(record(delivery!.data.parentContent).author).accountId
+  return typeof accountId === 'string' ? accountId : null
+}
+
+/** The action content with its parent-text variant selected: same identity, its own hash, size and delivery. */
+export function githubParentTextContent(content: GitHubFeedbackContent): GitHubFeedbackContent | null {
+  const variant = content.parentText
+  if (content.objectKind !== 'action' || !variant) return null
+  const { parentText: _variant, ...facts } = content
+  return { ...facts, contentHash: variant.contentHash, byteCount: variant.byteCount, delivery: variant.delivery }
+}
+
 /**
  * Issue/PR actions whose only meaningful content is WHO did WHAT (assign, request review, label,
- * close/reopen an issue). The verified webhook sender is the authority; the parent's editable title
- * and body are never part of the projection, so a trusted actor cannot launder untrusted prose.
- * Title/body edits are not here: those remain content and are held without a verified editor.
+ * close/reopen an issue). The verified webhook sender is the authority. By default the parent's
+ * editable title and body are not part of the projection, so a trusted actor cannot launder
+ * untrusted prose. A signed webhook also offers a `parentText` variant naming the parent's author by
+ * numeric ID; capture selects it only when that author is trusted and provably wrote the current
+ * text (`feedback-parent.ts`). Title/body edits are not here: those remain content and are held.
  */
 export const GITHUB_ACTION_EVENTS: Record<string, readonly string[]> = {
   issues: ['assigned', 'unassigned', 'labeled', 'unlabeled', 'closed', 'reopened'],
@@ -92,7 +203,8 @@ function githubActionContent(
   const parentId = githubNativeId(parent.id)
   const actor = githubContentIdentity(payload.sender)
   // Only a signed webhook names the actor. A poll's synthetic sender is fail-closed (held).
-  const attribution = event.githubObservation?.kind === 'webhook' && actor ? 'creation' : 'unknown'
+  const attribution: GitHubFeedbackContent['attribution'] =
+    event.githubObservation?.kind === 'webhook' && actor ? 'creation' : 'unknown'
   const login = (value: unknown) => githubContentIdentity(value)?.login ?? ''
   const isPR = !!fact.data.pullRequest
   const number = record(fact.data.pullRequest ?? fact.data.issue).number
@@ -146,16 +258,29 @@ function githubActionContent(
   const nativeId = parentId
     ? `${parentId}-${githubContentHash([action, data.assignee, data.requestedReviewer, data.requestedTeam, label, timestamp(parent.updated_at)]).slice(0, 24)}`
     : null
-  const reviewed = {
-    normalizationVersion: 1,
-    repositoryId,
-    nativeId,
-    objectKind: 'action',
-    author: actor,
-    editor: null,
-    attribution,
-    url: resourceUrl,
-    data,
+  const identity = { repositoryId, nativeId, author: actor, attribution }
+  // The parent's CONTENT author, by numeric ID only; a missing or malformed identity offers nothing.
+  const parentAuthor = githubContentIdentity(parent.user)
+  let parentText: GitHubParentTextVariant | undefined
+  if (attribution === 'creation' && parentAuthor && parentId && repositoryId && nativeId) {
+    const objectKind = isPR ? 'pull_request' : 'issue'
+    const title = text(parent.title)
+    const body = text(parent.body)
+    const withParent = withGitHubParentText(delivery, { author: parentAuthor, objectKind, title, body })
+    const reviewed = githubActionReviewed(identity, withParent)
+    // Too large to review: the factual message stands alone (it is never truncated into approval).
+    if (reviewed.byteCount <= REVIEWED_LIMIT)
+      parentText = {
+        author: parentAuthor,
+        objectKind,
+        nativeId: parentId,
+        title,
+        body,
+        unchanged:
+          timestamp(parent.created_at) !== null && timestamp(parent.created_at) === timestamp(parent.updated_at),
+        ...reviewed,
+        delivery: withParent,
+      }
   }
   return {
     normalizationVersion: 1,
@@ -166,10 +291,10 @@ function githubActionContent(
     editor: null,
     attribution,
     providerVersion: null,
-    contentHash: githubContentHash(reviewed),
-    byteCount: Buffer.byteLength(JSON.stringify(canonical(reviewed))),
+    ...githubActionReviewed(identity, delivery),
     reason: null,
     delivery,
+    ...(parentText ? { parentText } : {}),
   }
 }
 

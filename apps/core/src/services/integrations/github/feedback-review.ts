@@ -22,6 +22,7 @@ import {
 import { hasUserPermissionWithExecutor, type Identity } from '../../rbac/permissions'
 import { authorized } from '../outputs/authority'
 import { isGitHubAuthorFilterEnabled } from './author-filter'
+import { githubParentTextReviewText } from './feedback-envelope'
 import {
   GitHubFeedbackError,
   githubAuthorityActor,
@@ -244,12 +245,14 @@ export async function getGitHubFeedbackDetail(
   const data = (envelope?.data ?? {}) as Record<string, any>
   const content = (data.content ?? {}) as Record<string, unknown>
   const text = (value: unknown) => (typeof value === 'string' ? value : '')
+  // An action carrying its parent's title and description: review the whole message it delivers.
+  const parentText = envelope ? githubParentTextReviewText(envelope) : null
   return {
     ...item,
     content: envelope
       ? {
           title: text(content.title),
-          body: text(content.body),
+          body: parentText ?? text(content.body),
           ...(typeof content.path === 'string'
             ? { path: content.path, line: Number.isSafeInteger(content.line) ? (content.line as number) : null }
             : {}),
