@@ -49,10 +49,9 @@ export interface RecentEntry {
 }
 
 /**
- * What a user message is, asked alongside its scope:
- * - `new_request`: asks for work that is not already under way (gets a hint and a chip);
- * - `follow_up`: about work or a request already in this conversation (inherits its routing);
- * - `conversation`: a confirmation, thanks, brainstorming or a question to the Assistant (no routing).
+ * What a user message is, asked alongside its scope. Scope is the message's target (a squad, Ficus
+ * itself, or general), whether or not it asks for new work, so it decides the hint; kind only lets a
+ * confident `follow_up` carry the conversation's earlier routing instead of a fresh guess.
  */
 export const ROUTING_KINDS = ['new_request', 'follow_up', 'conversation'] as const
 export type RoutingKind = (typeof ROUTING_KINDS)[number]
@@ -224,6 +223,13 @@ function targetFor(choice: string, keys: Map<string, RoutingSquad>): AssistantRo
 const unit = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
 
+/**
+ * How sure the model is of its pick: the chosen option's own probability. Not a provider's `confidence`,
+ * which some (Jev) report as how concentrated the probabilities are, so a 52/41 split scores 0.28.
+ */
+const pickProbability = (answer: Extract<DecisionAnswer, { type: 'choice' }>) =>
+  unit(answer.probabilities?.[answer.choice] ?? answer.confidence)
+
 /** The model's pick and ranking, or null for a refusal, an unknown option or another answer type. */
 export function interpretRoutingAnswer(
   answer: DecisionAnswer | undefined,
@@ -239,7 +245,7 @@ export function interpretRoutingAnswer(
     })
     .sort((a, b) => b.probability - a.probability)
   return {
-    hint: { ...target, confidence: unit(answer.confidence ?? answer.probabilities?.[answer.choice]) },
+    hint: { ...target, confidence: pickProbability(answer) },
     ranked,
   }
 }
@@ -254,7 +260,7 @@ export function interpretKindAnswer(answer: DecisionAnswer | undefined): Assista
   if (answer?.type !== 'choice' || !(ROUTING_KINDS as readonly string[]).includes(answer.choice)) return undefined
   return {
     kind: answer.choice as RoutingKind,
-    confidence: unit(answer.confidence ?? answer.probabilities?.[answer.choice]),
+    confidence: pickProbability(answer),
   }
 }
 
@@ -422,22 +428,23 @@ export async function annotateAssistantMessage(
       { ...deps, enabled: () => true },
       { kind: 'assistant', agentId: message.agentId }
     )
-    if (!kind || kind.confidence < ASSISTANT_ROUTING_MIN_CONFIDENCE) return message
-    if (kind.kind === 'follow_up') {
+    // A confident follow-up keeps the conversation's earlier routing, when it has some.
+    if (kind?.kind === 'follow_up' && kind.confidence >= ASSISTANT_ROUTING_MIN_CONFIDENCE) {
       const inherited = await (deps.findInherited ?? findInheritedRouting)(message)
-      if (!inherited) return message
-      return {
-        ...message,
-        metadata: {
-          ...message.metadata,
-          assistantRoutingInherited: {
-            ...routingTarget(effectiveAssistantRouting(inherited.hint)),
-            fromMessageId: inherited.messageId,
+      if (inherited)
+        return {
+          ...message,
+          metadata: {
+            ...message.metadata,
+            assistantRoutingInherited: {
+              ...routingTarget(effectiveAssistantRouting(inherited.hint)),
+              fromMessageId: inherited.messageId,
+            },
           },
-        },
-      }
+        }
     }
-    if (kind.kind !== 'new_request' || !hint || hint.confidence < ASSISTANT_ROUTING_MIN_CONFIDENCE) return message
+    // Otherwise the message's target decides, whatever its kind: a question about a squad is for that squad.
+    if (!hint || hint.confidence < ASSISTANT_ROUTING_MIN_CONFIDENCE) return message
     const [saved] = await db
       .update(messages)
       .set({

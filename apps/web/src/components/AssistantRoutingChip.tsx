@@ -122,6 +122,8 @@ export function AssistantMessageRouting({
   api?: Pick<typeof assistantApi, 'correctRouting'>
 }) {
   const squads = useQuery(queries.squads.list('active'))
+  // "General" is a hint for the model, not news for the user: only a squad, Ficus itself, or a correction shows.
+  if (effectiveAssistantRouting(hint).scope === 'general' && !hint.correction) return null
   return (
     <AssistantRoutingChip
       hint={hint}

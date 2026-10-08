@@ -1,7 +1,8 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import type { AssistantRoutingHint } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
-import { AssistantRoutingChip, type AssistantRoutingPick } from './AssistantRoutingChip'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AssistantMessageRouting, AssistantRoutingChip, type AssistantRoutingPick } from './AssistantRoutingChip'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 afterEach(async () => {
@@ -95,4 +96,28 @@ test('a failed correction goes back to the saved pick and says why', async () =>
   await dom!.act(async () => f.option('Chlea').click())
   expect(f.trigger().textContent).toBe('General·70%')
   expect(f.container.querySelector('[role="alert"]')?.textContent).toBe('Squad not found')
+})
+
+test('a general hint shows no chip on the message unless the user corrected it', async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost' })
+  const { root, container } = dom.createRoot()
+  const api = { correctRouting: mock(async () => ({})) }
+  const show = (hint: AssistantRoutingHint) =>
+    dom!.act(async () =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <AssistantMessageRouting conversationId="c1" messageId="m1" hint={hint} api={api as never} />
+        </QueryClientProvider>
+      )
+    )
+  await show({ scope: 'general', confidence: 0.92 })
+  expect(container.querySelector('button[role="combobox"]')).toBeNull()
+  await show({
+    scope: 'general',
+    confidence: 0.92,
+    correction: { scope: 'squad', squadId: chlea.id, squadName: 'Chlea', at: '2026-10-08T00:00:00.000Z' },
+  })
+  expect(container.querySelector('button[role="combobox"]')).not.toBeNull()
+  await show({ scope: 'squad', squadId: chlea.id, squadName: 'Chlea', confidence: 0.94 })
+  expect(container.querySelector('button[role="combobox"]')?.textContent).toBe('Chlea·94%')
 })
