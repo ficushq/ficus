@@ -111,6 +111,29 @@ export const DECISION_PROVIDER_KIND_INFO: Record<
   },
 }
 
+/**
+ * List prices in US dollars per million input tokens (decision models don't bill output), as
+ * published in October 2026. Jev's is early-access pricing. A local model costs nothing. Owners can
+ * set their own price per provider when these change.
+ */
+export const DECISION_MODEL_PRICES: Record<DecisionProviderKind, Record<string, number>> = {
+  jev: { 'jev-latest': 0.042, 'jev-preview': 0.042 },
+  systemone: {},
+  cloudflare: { clef: 0.24, 'clef-flash': 0.09 },
+  openai: { 'gpt-6-luna': 0.1 },
+}
+
+/** Dollars per million input tokens for a provider: its own price, else the list price; null when unknown. */
+export function decisionPricePerMillion(provider: {
+  kind: DecisionProviderKind
+  model: string
+  pricePerMillionInput?: number
+}): number | null {
+  if (provider.pricePerMillionInput !== undefined) return provider.pricePerMillionInput
+  if (provider.kind === 'systemone') return 0
+  return DECISION_MODEL_PRICES[provider.kind][provider.model] ?? null
+}
+
 /** A configured decision provider, as the API shows it (never its key). */
 export interface DecisionProviderView {
   id: string
@@ -121,19 +144,87 @@ export interface DecisionProviderView {
   baseUrl?: string
   accountId?: string
   hasApiKey: boolean
+  /** The owner's own price, if set. */
+  pricePerMillionInput?: number
+  /** The price spend is counted at: the owner's, else the list price; null when unknown. */
+  effectivePricePerMillionInput: number | null
 }
 
-/** What Ficus asks decision models for; each has its own provider order. */
-export const DECISION_PURPOSES = ['github-firewall', 'workflow-steps', 'event-rules'] as const
+/** What decision models cost over a period, by feature and by provider. */
+export interface DecisionSpend {
+  days: number
+  totalUsd: number
+  /** Some calls' tokens were estimated (the provider didn't report them), or a price is unknown. */
+  approximate: boolean
+  byPurpose: Array<{
+    purpose: string
+    calls: number
+    answered: number
+    inputTokens: number
+    costUsd: number
+  }>
+  byProvider: Array<{ providerId: string; calls: number; inputTokens: number; costUsd: number }>
+}
+
+/** What Ficus asks decision models for: one per feature, each with its own provider order. */
+export const DECISION_PURPOSES = ['tool-results', 'github-firewall', 'workflow-steps', 'event-rules'] as const
 export type DecisionPurpose = (typeof DECISION_PURPOSES)[number]
 
-export const DECISION_PURPOSE_INFO: Record<DecisionPurpose, { label: string; description: string }> = {
+/**
+ * Where a feature is turned on and off:
+ * - `instance`: one switch for the whole instance, in Settings. On by default once a decision model exists.
+ * - `squad`: each squad chooses in its own settings, since it changes what that squad receives.
+ * - `authored`: no switch; it runs only where someone added it (a workflow step, an event rule).
+ */
+export type DecisionFeatureScope = 'instance' | 'squad' | 'authored'
+
+export const DECISION_PURPOSE_INFO: Record<
+  DecisionPurpose,
+  {
+    label: string
+    description: string
+    scope: DecisionFeatureScope
+    /** Instance features that are nice to have but cost money: off until the owner turns them on. */
+    offByDefault?: boolean
+  }
+> = {
+  'tool-results': {
+    label: 'Tool result firewall',
+    description:
+      'Screens what agents read from the web and the browser for instructions aimed at them, and warns the agent.',
+    scope: 'instance',
+  },
   'github-firewall': {
     label: 'GitHub firewall',
     description: 'Screens GitHub feedback from untrusted authors, in squads that opt in.',
+    scope: 'squad',
   },
-  'workflow-steps': { label: 'Workflow decisions', description: 'Decision steps in workflows.' },
-  'event-rules': { label: 'Event rule conditions', description: 'Decision conditions in event rules.' },
+  'workflow-steps': { label: 'Workflow decisions', description: 'Decision steps in workflows.', scope: 'authored' },
+  'event-rules': {
+    label: 'Event rule conditions',
+    description: 'Decision conditions in event rules.',
+    scope: 'authored',
+  },
+}
+
+/** An instance feature's switch: `auto` is on exactly when a decision model is set up for it. */
+export const DECISION_FEATURE_SWITCH_VALUES = ['auto', 'on', 'off'] as const
+export type DecisionFeatureSwitch = (typeof DECISION_FEATURE_SWITCH_VALUES)[number]
+export const decisionFeatureSwitchesSchema = z.record(z.enum(DECISION_PURPOSES), z.enum(DECISION_FEATURE_SWITCH_VALUES))
+export type DecisionFeatureSwitches = z.infer<typeof decisionFeatureSwitchesSchema>
+
+/** A feature as Settings shows it. */
+export interface DecisionFeatureView {
+  id: DecisionPurpose
+  label: string
+  description: string
+  scope: DecisionFeatureScope
+  /** Off until the owner turns it on (nice-to-haves that cost money). */
+  offByDefault?: boolean
+  /** Instance features only. */
+  switch?: DecisionFeatureSwitch
+  /** Whether it runs now (instance features), or could (others: a provider is set up for it). */
+  enabled: boolean
 }
 
 export const DECISION_TIMEOUT_DEFAULT_MS = 5_000

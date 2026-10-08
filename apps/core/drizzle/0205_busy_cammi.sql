@@ -5,6 +5,9 @@ CREATE TABLE "decision_log" (
 	"provider_id" varchar(64),
 	"model" varchar(128),
 	"latency_ms" integer NOT NULL,
+	"input_tokens" integer,
+	"cost_nanodollars" integer,
+	"cost_estimated" boolean DEFAULT false NOT NULL,
 	"input_sha256" varchar(64) NOT NULL,
 	"answers" jsonb,
 	"errors" jsonb,
@@ -12,4 +15,5 @@ CREATE TABLE "decision_log" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX "idx_decision_log_created_at" ON "decision_log" USING btree ("created_at");
+CREATE INDEX "idx_decision_log_created_at" ON "decision_log" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX "idx_decision_log_purpose_created_at" ON "decision_log" USING btree ("purpose","created_at");

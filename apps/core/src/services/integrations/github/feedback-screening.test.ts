@@ -436,7 +436,7 @@ test('a screen decided by a person first is not sent to the model at all', async
   }
 })
 
-test('retried and concurrent jobs screen once; a crash mid-screen is retried, then left held', async () => {
+test('retried and concurrent jobs screen once', async () => {
   const h = await fixture()
   try {
     // Concurrent runs: one lease, one model call.
@@ -464,7 +464,9 @@ test('retried and concurrent jobs screen once; a crash mid-screen is retried, th
   } finally {
     await h.close()
   }
+})
 
+test('a crash mid-screen is retried, then left held', async () => {
   const crashed = await fixture()
   try {
     // A worker claimed the screen and died: the item is still held, and a person can act on it.

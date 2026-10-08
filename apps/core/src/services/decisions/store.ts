@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 import {
   DECISION_PROVIDER_KIND_INFO,
   DECISION_PROVIDER_KINDS,
+  decisionFeatureSwitchesSchema,
+  decisionPricePerMillion,
   decisionRoutingSchema,
+  type DecisionFeatureSwitch,
+  type DecisionFeatureSwitches,
+  type DecisionPurpose,
   type DecisionProviderKind,
   type DecisionProviderView,
   type DecisionRouting,
@@ -18,6 +23,7 @@ import { getSettingsStore } from '../settings'
 
 export const DECISION_PROVIDERS_KEY = 'DECISION_PROVIDERS'
 export const DECISION_ROUTING_KEY = 'DECISION_ROUTING'
+export const DECISION_FEATURES_KEY = 'DECISION_FEATURES'
 
 export interface StoredDecisionProvider {
   id: string
@@ -28,6 +34,8 @@ export interface StoredDecisionProvider {
   baseUrl?: string
   accountId?: string
   apiKey?: string
+  /** The owner's own price in dollars per million input tokens, overriding the list price. */
+  pricePerMillionInput?: number
 }
 
 interface ProviderDocument {
@@ -63,6 +71,8 @@ export function decisionProviderView(provider: StoredDecisionProvider): Decision
     ...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}),
     ...(provider.accountId ? { accountId: provider.accountId } : {}),
     hasApiKey: Boolean(provider.apiKey),
+    ...(provider.pricePerMillionInput !== undefined ? { pricePerMillionInput: provider.pricePerMillionInput } : {}),
+    effectivePricePerMillionInput: decisionPricePerMillion(provider),
   }
 }
 
@@ -110,7 +120,10 @@ export async function addDecisionProvider(input: NewDecisionProvider): Promise<S
 
 export async function updateDecisionProvider(
   id: string,
-  patch: Partial<Pick<StoredDecisionProvider, 'label' | 'model' | 'enabled' | 'baseUrl' | 'accountId' | 'apiKey'>>
+  patch: Partial<Pick<StoredDecisionProvider, 'label' | 'model' | 'enabled' | 'baseUrl' | 'accountId' | 'apiKey'>> & {
+    /** A number sets the owner's price; null goes back to the list price. */
+    pricePerMillionInput?: number | null
+  }
 ): Promise<StoredDecisionProvider | undefined> {
   return mutateProviders((providers) => {
     const provider = providers.find((entry) => entry.id === id)
@@ -122,6 +135,8 @@ export async function updateDecisionProvider(
     if (patch.accountId !== undefined) provider.accountId = patch.accountId.trim() || undefined
     // An empty key keeps the stored one; only a new key replaces it.
     if (patch.apiKey?.trim()) provider.apiKey = patch.apiKey.trim()
+    if (patch.pricePerMillionInput === null) delete provider.pricePerMillionInput
+    else if (patch.pricePerMillionInput !== undefined) provider.pricePerMillionInput = patch.pricePerMillionInput
     return provider
   })
 }
@@ -161,4 +176,26 @@ export async function setDecisionRouting(routing: DecisionRouting, actor: string
   const parsed = decisionRoutingSchema.parse(routing)
   await getSettingsStore().set(DECISION_ROUTING_KEY, JSON.stringify(parsed), actor)
   return parsed
+}
+
+export function getDecisionFeatureSwitches(): DecisionFeatureSwitches {
+  const raw = getSettingsStore().getStoredValue(DECISION_FEATURES_KEY)
+  try {
+    return decisionFeatureSwitchesSchema.parse(raw ? JSON.parse(raw) : {})
+  } catch {
+    return {}
+  }
+}
+
+/** Turn an instance feature on or off, or back to `auto` (on once a decision model exists). */
+export async function setDecisionFeatureSwitch(
+  purpose: DecisionPurpose,
+  value: DecisionFeatureSwitch,
+  actor: string
+): Promise<DecisionFeatureSwitches> {
+  const switches = { ...getDecisionFeatureSwitches() }
+  if (value === 'auto') delete switches[purpose]
+  else switches[purpose] = value
+  await getSettingsStore().set(DECISION_FEATURES_KEY, JSON.stringify(switches), actor)
+  return switches
 }

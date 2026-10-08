@@ -22,7 +22,7 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   'system-tokens': 'api token expiration permissions revoke',
   signup: 'registration allowed domains email allowlist',
   providers:
-    'ai credentials oauth subscriptions api keys models fallback routing openrouter anthropic claude openai chatgpt gemini copilot ollama local server',
+    'ai credentials oauth subscriptions api keys models fallback routing openrouter anthropic claude openai chatgpt gemini copilot ollama local server decision models classifier jev clef',
   git: 'commit author name email github defaults override',
   skills: 'markdown import instructions tools extensions',
   'agent-types':
@@ -229,6 +229,19 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     id: 'add-a-provider',
     label: 'Add a provider',
     keywords: 'anthropic claude openai chatgpt google gemini copilot oauth api key',
+  },
+  {
+    section: 'providers',
+    id: 'decision-models',
+    label: 'Decision models',
+    keywords:
+      'classifier yes no choice jev clef cloudflare openai decisions github firewall workflow decision event rules',
+  },
+  {
+    section: 'providers',
+    id: 'add-decision-model',
+    label: 'Add a decision model',
+    keywords: 'jev typesafe clef cloudflare workers ai openai decisions local systemone ollama vllm sglang',
   },
   {
     section: 'amtp',

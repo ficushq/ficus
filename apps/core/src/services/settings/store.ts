@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { decisionRoutingSchema } from '@ficus/shared'
+import { decisionFeatureSwitchesSchema, decisionRoutingSchema } from '@ficus/shared'
 import { db, settings } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
@@ -217,6 +217,22 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
       }
     },
     // Saved in Settings (ficus-api); the GitHub firewall and event rules ask from ficus-worker.
+    crossProcess: true,
+  },
+  DECISION_FEATURES: {
+    type: 'string',
+    default: '{}',
+    description:
+      "Instance decision features turned on or off; a feature that isn't listed is on once a decision model exists.",
+    validate: (value) => {
+      try {
+        const result = decisionFeatureSwitchesSchema.safeParse(JSON.parse(value))
+        return result.success ? null : (result.error.issues[0]?.message ?? 'Invalid decision features.')
+      } catch {
+        return 'Decision features must be JSON.'
+      }
+    },
+    // Tools run in ficus-worker; the switch is flipped in Settings (ficus-api).
     crossProcess: true,
   },
 } as const

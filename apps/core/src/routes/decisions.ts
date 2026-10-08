@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   DECISION_PROVIDER_KIND_INFO,
   DECISION_PROVIDER_KINDS,
+  DECISION_FEATURE_SWITCH_VALUES,
   DECISION_PURPOSE_INFO,
   DECISION_PURPOSES,
   decisionRequestSchema,
@@ -12,7 +13,7 @@ import { requirePermission } from '../middleware/require-permission'
 import { auditActor, type Identity } from '../services/rbac'
 import { getOpenAIServiceKey } from '../services/integrations/openai-services/settings'
 import { systemOneBase } from '../services/decisions/adapters'
-import { askProvider, decide, DECISION_PROBE } from '../services/decisions/service'
+import { askProvider, decide, decisionFeatures, decisionSpend, DECISION_PROBE } from '../services/decisions/service'
 import {
   addDecisionProvider,
   decisionProviderView,
@@ -20,6 +21,7 @@ import {
   getDecisionRouting,
   listDecisionProviders,
   removeDecisionProvider,
+  setDecisionFeatureSwitch,
   setDecisionRouting,
   updateDecisionProvider,
 } from '../services/decisions/store'
@@ -40,7 +42,11 @@ const providerInput = z.object({
   apiKey: z.string().max(4096).optional(),
 })
 
-const providerPatch = providerInput.omit({ kind: true }).extend({ enabled: z.boolean().optional() })
+const providerPatch = providerInput.omit({ kind: true }).extend({
+  enabled: z.boolean().optional(),
+  /** Dollars per million input tokens; null goes back to the list price. */
+  pricePerMillionInput: z.number().min(0).max(1000).nullable().optional(),
+})
 
 app.get('/', requirePermission('provider-auth:read'), (c) =>
   c.json({
@@ -48,6 +54,7 @@ app.get('/', requirePermission('provider-auth:read'), (c) =>
     routing: getDecisionRouting(),
     kinds: DECISION_PROVIDER_KIND_INFO,
     purposes: DECISION_PURPOSES.map((id) => ({ id, ...DECISION_PURPOSE_INFO[id] })),
+    features: decisionFeatures(),
     openAIServicesKey: Boolean(getOpenAIServiceKey()),
   })
 )
@@ -118,8 +125,28 @@ app.put('/routing', requirePermission('provider-auth:write'), async (c) => {
   return c.json(await setDecisionRouting(parsed.data, auditActor(c.get('identity') as Identity)))
 })
 
+/** What decision models cost, by feature and provider, over the last 1, 7 or 30 days. */
+app.get('/spend', requirePermission('provider-auth:read'), async (c) => {
+  const days = Number(c.req.query('days') ?? 30)
+  if (![1, 7, 30].includes(days)) return c.json({ error: 'days must be 1, 7 or 30' }, 400)
+  return c.json(await decisionSpend(days))
+})
+
+const featureSwitchInput = z.object({ value: z.enum(DECISION_FEATURE_SWITCH_VALUES) })
+
+/** Turn an instance feature (such as the tool result firewall) on or off, or back to automatic. */
+app.put('/features/:id', requirePermission('provider-auth:write'), async (c) => {
+  const id = c.req.param('id') as (typeof DECISION_PURPOSES)[number]
+  if (!DECISION_PURPOSES.includes(id) || DECISION_PURPOSE_INFO[id].scope !== 'instance')
+    return c.json({ error: 'Only instance features have a switch here' }, 400)
+  const parsed = featureSwitchInput.safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: 'Use auto, on or off' }, 400)
+  await setDecisionFeatureSwitch(id, parsed.data.value, auditActor(c.get('identity') as Identity))
+  return c.json(decisionFeatures())
+})
+
 const tryInput = decisionRequestSchema.extend({
-  /** Ask this provider directly, or else the purpose's providers in order. */
+  /** Ask this provider directly, or else the purpose's providers in order (the default order without one). */
   providerId: z.string().optional(),
   purpose: z.enum(DECISION_PURPOSES).optional(),
 })
@@ -145,7 +172,7 @@ app.post('/try', requirePermission('provider-auth:write'), async (c) => {
       })
     }
   }
-  return c.json(await decide(purpose ?? 'workflow-steps', request, { source: { kind: 'settings-try' } }))
+  return c.json(await decide(purpose ?? 'default', request, { source: { kind: 'settings-try' } }))
 })
 
 export default app
