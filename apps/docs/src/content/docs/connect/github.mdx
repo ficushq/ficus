@@ -194,6 +194,12 @@ whether its intent is benign, suspicious or malicious:
   no model is set up or the model doesn't answer. The review window shows the
   model's verdict, such as _Decision model: likely prompt injection, 94%_.
 
+Screening applies to feedback that arrives after you choose it. To screen events
+that were already waiting, use **Screen N waiting now** (offered right after you
+switch, too). It screens up to 200 at a time. Events whose earlier screen got no
+answer, for example because no model was set up yet, are screened again; a
+verdict the model already gave is kept.
+
 Screening only applies to feedback held because its author isn't trusted. Events
 held for other reasons, such as an unverified editor or an event found by
 polling, always wait for a person. You can still allow or deny a held event

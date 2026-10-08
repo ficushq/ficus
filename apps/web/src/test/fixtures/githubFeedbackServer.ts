@@ -101,6 +101,7 @@ export function moderationFetch(api: FakeModerationApi): typeof fetch {
         authorFilterEnabled: true,
         untrustedHandling: 'hold',
         decisionModelConfigured: false,
+        screenable: 0,
         pending: api.pending.length,
         releasing: api.releasing.length,
         failing: api.releasing.filter((row) => row.releaseState === 'retry').length,

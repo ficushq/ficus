@@ -118,6 +118,25 @@ export function scheduleGitHubFeedbackScreening(revisionId: string, deps: Screen
   }, 0)
 }
 
+/**
+ * Run several queued screens one after another, off the caller's path, so a bulk request never
+ * opens a burst of concurrent model calls. Anything left over is picked up by the worker's sweep.
+ */
+export function scheduleGitHubFeedbackScreenings(revisionIds: string[], deps: ScreeningDependencies = {}) {
+  if (!revisionIds.length) return
+  setTimeout(() => {
+    void (async () => {
+      for (const revisionId of revisionIds)
+        await screenGitHubFeedback(revisionId, deps).catch((error) =>
+          log.warn('GitHub feedback screen failed; it stays held', {
+            revisionId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        )
+    })()
+  }, 0)
+}
+
 export type ScreenRunResult =
   | { status: 'not_claimed' }
   | { status: 'settled'; released: boolean; outcome: ScreenEvaluation['outcome'] }

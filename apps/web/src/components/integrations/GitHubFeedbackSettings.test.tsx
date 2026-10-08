@@ -258,3 +258,77 @@ test('the choice is hidden while the author filter is off, since nothing is held
   const container = await render()
   expect(handlingGroup(container)).toBeNull()
 })
+
+const maybeButton = (scope: ParentNode, text: string) =>
+  [...scope.querySelectorAll('button')].find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined
+
+test('with screening on, held untrusted feedback can be screened now: Screening…, then the result and a refresh', async () => {
+  api.summary = { untrustedHandling: 'screen', decisionModelConfigured: true, screenable: 3 }
+  let finish!: (response: Response) => void
+  api.other = (method, path) =>
+    method === 'POST' && path === '/screen-pending'
+      ? (new Promise<Response>((resolve) => (finish = resolve)) as unknown as Response)
+      : undefined
+  const container = await render()
+  const summaries = () => calls('GET', '/summary').length
+  const before = summaries()
+  await click(buttonNamed(container, 'Screen 3 waiting now'))
+  await waitFor(() => expect(buttonNamed(container, 'Screening…').disabled).toBe(true))
+  expect(calls('POST', '/screen-pending')).toHaveLength(1)
+  api.summary = { ...api.summary, screenable: 0 }
+  await dom.act(async () => finish(Response.json({ queued: 3, skipped: 0, more: false }, { status: 202 })))
+  await waitFor(() => expect(container.textContent).toContain('3 held events are being screened'))
+  await waitFor(() => expect(summaries()).toBeGreaterThan(before))
+  await waitFor(() => expect(maybeButton(container, 'Screen 0 waiting now')).toBeUndefined())
+  // A second press while it ran was impossible: the button was disabled.
+  expect(calls('POST', '/screen-pending')).toHaveLength(1)
+})
+
+test('switching to screening offers to screen what is already waiting', async () => {
+  api.summary = { untrustedHandling: 'hold', decisionModelConfigured: true, screenable: 2 }
+  api.other = (method, path, body) => {
+    if (method === 'PUT' && path === '/untrusted-handling') {
+      api.summary = { ...api.summary, untrustedHandling: (body as { handling: 'hold' | 'screen' }).handling }
+      return Response.json(body)
+    }
+    if (method === 'POST' && path === '/screen-pending')
+      return Response.json({ queued: 2, skipped: 0, more: true }, { status: 202 })
+    return undefined
+  }
+  const container = await render()
+  // Holding: nothing to screen from here.
+  expect(maybeButton(container, 'Screen 2 waiting now')).toBeUndefined()
+  await click(radio(handlingGroup(container), 'Screen with a model'))
+  await waitFor(() => expect(container.textContent).toContain('2 held events are waiting. Screen them now?'))
+  await click(buttonNamed(container, 'Screen them now'))
+  await waitFor(() => expect(container.textContent).toContain('More are waiting; screen again to continue.'))
+  expect(container.textContent).not.toContain('Screen them now?')
+})
+
+test('the screen-now button is absent with nothing waiting or without permission, and disabled without a model', async () => {
+  api.summary = { untrustedHandling: 'screen', decisionModelConfigured: true, screenable: 0 }
+  const container = await render()
+  expect(maybeButton(container, 'Screen 0 waiting now')).toBeUndefined()
+  await dom.act(async () => {
+    api.summary = { untrustedHandling: 'screen', decisionModelConfigured: false, screenable: 4 }
+    await client.invalidateQueries()
+  })
+  await waitFor(() => expect(buttonNamed(container, 'Screen 4 waiting now').disabled).toBe(true))
+  expect(buttonNamed(container, 'Screen 4 waiting now').title).toBe('Set up a decision model first')
+  await dom.act(async () => {
+    api.canModerate = false
+    await client.invalidateQueries()
+  })
+  await waitFor(() => expect(maybeButton(container, 'Screen 4 waiting now')).toBeUndefined())
+})
+
+test('a refused screen-now shows why', async () => {
+  api.summary = { untrustedHandling: 'screen', decisionModelConfigured: true, screenable: 1 }
+  api.other = (method, path) =>
+    method === 'POST' && path === '/screen-pending'
+      ? Response.json({ code: 'screening_not_enabled' }, { status: 409 })
+      : undefined
+  const container = await render()
+  await click(buttonNamed(container, 'Screen 1 waiting now'))
+  await waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain('Screen with a model'))
+})

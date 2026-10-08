@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test, mock } from 'bun:test'
-import { and, eq, inArray, or } from 'drizzle-orm'
+import { and, eq, inArray, or, sql } from 'drizzle-orm'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
 import { app } from '../index'
 import {
@@ -9,7 +9,9 @@ import {
   githubFeedbackDecisions,
   githubFeedbackObjects,
   githubFeedbackRevisions,
+  githubFeedbackScreenings,
   githubFeedbackSources,
+  decisionLog,
   githubPersonalIdentities,
   githubTrustedAuthors,
   integrationAuditEvents,
@@ -199,6 +201,7 @@ describe('mounted GitHub feedback moderation routes', () => {
       ['POST', `${squadA}/github-feedback/revisions/${row.id}/retry`, {}],
       ['PUT', `${squadA}/github-feedback/author-filter`, { enabled: false }],
       ['PUT', `${squadA}/github-feedback/untrusted-handling`, { handling: 'screen' }],
+      ['POST', `${squadA}/github-feedback/screen-pending`, {}],
       ['POST', `${squadA}/github-feedback/trusted-authors/resolve`, { login: 'someone' }],
       ['POST', `${squadA}/github-feedback/trusted-authors`, { login: 'someone', accountId: '9' }],
       ['DELETE', `${squadA}/github-feedback/trusted-authors/4242`, undefined],
@@ -251,6 +254,7 @@ describe('mounted GitHub feedback moderation routes', () => {
     expect(
       (await send(reader, 'PUT', `${squadA}/github-feedback/untrusted-handling`, { handling: 'screen' })).status
     ).toBe(403)
+    expect((await send(reader, 'POST', `${squadA}/github-feedback/screen-pending`, {})).status).toBe(403)
     expect(
       (await send(reader, 'POST', `${squadA}/github-feedback/trusted-authors`, { login: 'x', accountId: '9' })).status
     ).toBe(403)
@@ -530,6 +534,57 @@ describe('GitHub untrusted handling route', () => {
     expect(hold.status).toBe(200)
     const [squad] = await db.select().from(squads).where(eq(squads.id, squadA))
     expect(squad!.githubUntrustedHandling).toBe('hold')
+  })
+})
+
+describe('GitHub screen-pending route', () => {
+  test('screening what is pending is refused until the squad screens, then queues held untrusted feedback once', async () => {
+    const row = await revision()
+    const refused = await send(moderator, 'POST', `${squadA}/github-feedback/screen-pending`, {})
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toMatchObject({ code: 'screening_not_enabled' })
+    expect((await send(moderator, 'POST', `${squadA}/github-feedback/screen-pending`, { all: true })).status).toBe(400)
+    expect(
+      (await send(moderator, 'PUT', `${squadA}/github-feedback/untrusted-handling`, { handling: 'screen' })).status
+    ).toBe(200)
+    try {
+      expect((await (await get(reader, `${squadA}/github-feedback/summary`)).json()).screenable).toBeGreaterThanOrEqual(
+        1
+      )
+      emitted.length = 0
+      const first = await send(moderator, 'POST', `${squadA}/github-feedback/screen-pending`, {})
+      expect(first.status).toBe(202)
+      const result = await first.json()
+      expect(result).toMatchObject({ more: false })
+      expect(result.queued).toBeGreaterThanOrEqual(1)
+      expect(emitted).toContainEqual({ squadId: squadA })
+      const screening = async () =>
+        (await db.select().from(githubFeedbackScreenings).where(eq(githubFeedbackScreenings.revisionId, row.id)))[0]
+      expect(await screening()).toBeDefined()
+      // Readiness boundary: the kicked screens settle (no decision model is configured in tests).
+      const deadline = Date.now() + 5_000
+      const open = () =>
+        db
+          .select()
+          .from(githubFeedbackScreenings)
+          .where(
+            and(
+              eq(githubFeedbackScreenings.squadId, squadA),
+              inArray(githubFeedbackScreenings.state, ['queued', 'running'])
+            )
+          )
+      while ((await open()).length && Date.now() < deadline) await Bun.sleep(25)
+      expect(await open()).toEqual([])
+      expect(await screening()).toMatchObject({ state: 'held', outcome: 'unconfigured' })
+      const [after] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, row.id))
+      expect(after).toMatchObject({ decision: 'pending' })
+    } finally {
+      expect(
+        (await send(moderator, 'PUT', `${squadA}/github-feedback/untrusted-handling`, { handling: 'hold' })).status
+      ).toBe(200)
+      await db.delete(githubFeedbackScreenings).where(eq(githubFeedbackScreenings.squadId, squadA))
+      await db.delete(decisionLog).where(sql`${decisionLog.source}->>'squadId' = ${squadA}`)
+    }
   })
 })
 

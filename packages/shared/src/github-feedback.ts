@@ -175,12 +175,21 @@ export interface GitHubFeedbackSummary {
   untrustedHandling: GitHubUntrustedHandling
   /** Some decision model is set up and enabled for the GitHub firewall. */
   decisionModelConfigured: boolean
+  /** Held untrusted feedback that "screen what's pending now" would queue. */
+  screenable: number
   pending: number
   /** Allowed by a human (or the filter switch) and still waiting for, or retrying, delivery. */
   releasing: number
   /** Subset of `releasing` whose last attempt failed and will be retried. */
   failing: number
   canModerate: boolean
+}
+
+/** Result of "screen what's pending now". `more`: eligible feedback beyond this batch remains. */
+export interface GitHubFeedbackScreenPendingResult {
+  queued: number
+  skipped: number
+  more: boolean
 }
 
 export interface GitHubFeedbackListItem {

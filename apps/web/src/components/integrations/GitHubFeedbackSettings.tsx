@@ -4,7 +4,12 @@ import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { GitHubUntrustedHandling } from '@ficus/shared'
 import { ApiError } from '../../api/client'
-import { githubFeedbackErrorMessage, setGitHubAuthorFilter, setGitHubUntrustedHandling } from '../../api/githubFeedback'
+import {
+  githubFeedbackErrorMessage,
+  screenPendingGitHubFeedback,
+  setGitHubAuthorFilter,
+  setGitHubUntrustedHandling,
+} from '../../api/githubFeedback'
 import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 import { githubFeedbackQueries } from '../../queryOptions'
 import { githubFeedbackQueryKeys } from '../../queryKeys'
@@ -46,8 +51,13 @@ function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
   const [message, setMessage] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
   const handlingChange = useMutation({
     mutationFn: (handling: GitHubUntrustedHandling) => setGitHubUntrustedHandling(squadId, handling),
-    onMutate: () => setMessage(null),
-    onSuccess: async () => {
+    onMutate: () => {
+      setMessage(null)
+      setOfferScreen(false)
+    },
+    onSuccess: async (result) => {
+      // Right after switching to screening is when held feedback is worth screening.
+      setOfferScreen(result.handling === 'screen')
       await client.invalidateQueries({ queryKey: githubFeedbackQueryKeys.squad(squadId) })
     },
     onError: (error) => {
@@ -55,6 +65,25 @@ function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
         tone: 'error',
         text: githubFeedbackErrorMessage(error, "Couldn't change how untrusted feedback is handled."),
       })
+    },
+  })
+  const [offerScreen, setOfferScreen] = useState(false)
+  const screenPending = useMutation({
+    mutationFn: () => screenPendingGitHubFeedback(squadId),
+    onMutate: () => setMessage(null),
+    onSuccess: async (result) => {
+      setOfferScreen(false)
+      setMessage({
+        tone: 'info',
+        text:
+          result.queued > 0
+            ? `${result.queued} held ${result.queued === 1 ? 'event is' : 'events are'} being screened. Anything not clearly safe stays held here.${result.more ? ' More are waiting; screen again to continue.' : ''}`
+            : 'Nothing new to screen. Held events already have a screen or a verdict.',
+      })
+      await client.invalidateQueries({ queryKey: githubFeedbackQueryKeys.squad(squadId) })
+    },
+    onError: (error) => {
+      setMessage({ tone: 'error', text: githubFeedbackErrorMessage(error, "Couldn't screen held events.") })
     },
   })
   const toggle = useMutation({
@@ -106,6 +135,12 @@ function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
       ? 'screen'
       : 'hold'
   const modelConfigured = summary.data.decisionModelConfigured === true
+  const screenable = summary.data.screenable ?? 0
+  const screenLabel = screenPending.isPending
+    ? 'Screening…'
+    : offerScreen
+      ? 'Screen them now'
+      : `Screen ${screenable} waiting now`
   return (
     <section
       aria-labelledby={`github-feedback-${squadId}`}
@@ -150,6 +185,25 @@ function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
             disabled={!canModerate || handlingChange.isPending}
           />
           <p className="text-xs text-muted">{HANDLING_HELP[handling]}</p>
+          {handling === 'screen' && canModerate && (screenable > 0 || screenPending.isPending) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {offerScreen && (
+                <p className="text-sm text-primary">
+                  {screenable} held {screenable === 1 ? 'event is' : 'events are'} waiting. Screen{' '}
+                  {screenable === 1 ? 'it' : 'them'} now?
+                </p>
+              )}
+              <button
+                type="button"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm"
+                disabled={screenPending.isPending || !modelConfigured}
+                title={modelConfigured ? undefined : 'Set up a decision model first'}
+                onClick={() => screenPending.mutate()}
+              >
+                {screenLabel}
+              </button>
+            </div>
+          )}
           {!modelConfigured && (
             <p
               className={clsx(
