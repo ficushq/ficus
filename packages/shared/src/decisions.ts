@@ -238,3 +238,21 @@ export const decisionRoutingSchema = z.object({
   timeoutMs: z.number().int().min(250).max(DECISION_TIMEOUT_MAX_MS).default(DECISION_TIMEOUT_DEFAULT_MS),
 })
 export type DecisionRouting = z.infer<typeof decisionRoutingSchema>
+
+/** The tool result firewall's verdict on content an agent read, in that tool result's `details.firewall`. */
+export const TOOL_FIREWALL_INTENTS = ['benign', 'suspicious', 'malicious'] as const
+export type ToolFirewallIntent = (typeof TOOL_FIREWALL_INTENTS)[number]
+
+export interface ToolFirewallFlag {
+  /** Only flagged results carry a verdict; a clean result is left as it was. */
+  flagged: true
+  severity: 'high' | 'medium'
+  /** The highest probability, across the screened parts, that the content instructs an AI agent. */
+  instructsAgent: number
+  /** The most worrying intent any screened part was given, if the model answered. */
+  intent?: ToolFirewallIntent
+  /** A long result was only partly screened. */
+  partial?: boolean
+  /** High severity: the flagged content was withheld from the agent, not just annotated. */
+  withheld?: boolean
+}

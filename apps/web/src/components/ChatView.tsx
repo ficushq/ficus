@@ -38,7 +38,8 @@ import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
 import { ToolInlineActions } from './ToolInlineActions'
 import { ToolInlineActionModal, type ToolInlineActionModalProps } from './ToolInlineActionModal'
-import type { ToolInlineAction } from '../lib/tool-inline-actions'
+import { getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
+import { ToolFirewallBadge } from './ToolFirewallBadge'
 import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
 import { lastBlocksSegmentIndex, segmentAtNotices, type RenderedContentBlock } from '@ficus/client-core'
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
@@ -2859,6 +2860,10 @@ function StreamingToolCallItem({
   const isError = toolCall.isError || isIncomplete
   const result = toolCall.result || (isIncomplete ? 'Command aborted' : '')
   const [expanded, setExpanded] = useState(defaultExpanded)
+  const firewall = useMemo(
+    () => (toolCall._done ? getToolFirewallFlag({ result: toolCall.result }) : null),
+    [toolCall._done, toolCall.result]
+  )
 
   // When defaultExpanded changes (e.g. a new tool call pushes this one up), sync
   useEffect(() => {
@@ -2885,6 +2890,7 @@ function StreamingToolCallItem({
           )}
           <span className="font-medium shrink-0">{toolCall.toolName}</span>
           <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+          {firewall && <ToolFirewallBadge flag={firewall} />}
           {isError && (
             <span className="text-status-danger-500 dark:text-status-danger-400 text-[10px] font-medium shrink-0">
               ERROR
