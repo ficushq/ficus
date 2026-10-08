@@ -129,7 +129,7 @@ export async function readStructuredInput(
 }
 // Only fixed schema field names are safe to print. Participant/step IDs and unknown keys are caller data.
 const safeFields = new Set(
-  'action expectedVersion attemptId outcome evidence feedback resume targetStepId resumeAt operations op reason active participant task kind id definition customizations schemaVersion name description scope squadId participants steps entry routing limits completion mode agentTypeId instructions output outcomes'.split(
+  'action expectedVersion attemptId outcome evidence feedback resume targetStepId resumeAt operations op reason active participant task kind id definition customizations schemaVersion name description scope squadId participants steps entry routing limits completion mode agentTypeId instructions output outcomes input questions routes when otherwise unavailable type question op probability equals minConfidence level levels label options'.split(
     ' '
   )
 )

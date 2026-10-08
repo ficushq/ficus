@@ -3,6 +3,7 @@ import {
   workStreamRef,
   activeWorkflowAttempts,
   effectiveWorkflowStep,
+  workflowIncomingAttempts,
   type WorkflowAttempt,
   type WorkflowRun,
 } from '@ficus/shared'
@@ -32,9 +33,8 @@ export function flowMessage(
     ['Repository', metadata?.codeHost?.repository ?? metadata?.git?.repository],
   ].filter(([, value]) => typeof value === 'string' && value.length)
   // Runtime provenance follows the actual handoff, not every possible graph edge or prior result.
-  const sources = new Set(attempt.sourceAttemptIds ?? [])
-  const results = run.state.attempts
-    .filter((entry) => sources.has(entry.id) && (entry.evidence || entry.feedback))
+  const results = workflowIncomingAttempts(run.state, attempt)
+    .filter((entry) => entry.evidence || entry.feedback)
     .map((entry) => `${entry.stepId} (attempt ${entry.id}): ${entry.evidence ?? entry.feedback}`)
   const returns = run.state.returns.filter(
     (entry) =>
@@ -51,7 +51,7 @@ export function flowMessage(
   }
   return [
     `Work stream ${workStreamLabel(stream)}: ${stream.title}\nStep: ${step.id} (attempt ${attempt.id}, version ${run.version})`,
-    `${step.instructions}\nExpected output: ${step.output}`,
+    step.kind === 'decision' ? step.instructions : `${step.instructions}\nExpected output: ${step.output}`,
     workspace.length ? workspace.map(([label, value]) => `${label}: ${value}`).join('\n') : '',
     attempt.feedback ? `Rework request:\n${attempt.feedback}` : '',
     results.length ? `Incoming results:\n\n${results.join('\n\n')}` : '',

@@ -10,7 +10,7 @@ The connected account supplies the assignee identity. Ficus verifies current iss
 
 ## Outputs
 
-A verified `Issue` or `Comment` webhook normalizes into one of these typed outputs, the same way GitHub events do — consumable from workflow subscriptions, squad event rules, and predicate conditions (`GET /api/integrations/outputs`):
+A verified `Issue` or `Comment` webhook normalizes into one of these typed outputs, the same way GitHub events do — consumable from workflow subscriptions, squad event rules, and predicate conditions, including [decision conditions](github-integrations.md#decision-conditions) (`GET /api/integrations/outputs`):
 
 | Output             | Emitted when                                                                                                                                                                                                               |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

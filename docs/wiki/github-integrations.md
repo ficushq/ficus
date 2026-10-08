@@ -192,9 +192,38 @@ Fields are allowlisted per provider, event and version in the authenticated outp
 - GitHub repository/login fields and assignee collection members compare case-insensitively. Labels, review states, workflow names, paths and Linear identifiers are case-sensitive. Only the existing repository-pattern filter interprets `*` as a wildcard; typed equality does not.
 - At most 16 conditions per rule, 100 operands per `in`, and 2,000 characters per string. Unsupported fields/operators, wrong operand types, null operands and extra properties are rejected on squad configuration writes. Changing the event in the editor clears incompatible conditions. An omitted or empty conditions list adds no restriction.
 
+#### Decision conditions
+
+A **decision condition** (`"kind": "decision"` in `predicates`) asks a decision model a typed question about the event and matches on its answer — for example, start a work stream only if an issue is a bug report, or notify the manager only if a comment looks urgent. Providers are configured under the **Event rule conditions** decision purpose; Ficus never asks the agent model.
+
+```json
+{
+  "id": "urgent-comments",
+  "source": { "integration": "github", "output": "issue.comment", "version": 1 },
+  "filters": { "squadRouting": true, "audience": "any" },
+  "predicates": [
+    { "field": "actorType", "op": "eq", "value": "User" },
+    {
+      "kind": "decision",
+      "question": { "type": "yesno", "instructions": "The comment reports something urgent, such as an outage." },
+      "when": { "type": "yesno", "op": "at-least", "probability": 0.7 },
+      "onUnavailable": "no-match"
+    }
+  ],
+  "action": { "type": "notify-manager" }
+}
+```
+
+- `question` is a decision question: `yesno`, `choice` (with `options`, name → description) or `score` (with ordered `levels`).
+- `when` is the answer that matches, in the same condition format as [workflow decision routes](workflows.md) but without `question` (the condition asks only one): `{ "type": "yesno", "op": "at-least" | "at-most", "probability": 0.7 }`, `{ "type": "choice", "equals": "bug", "minConfidence"?: 0.6 }`, or `{ "type": "score", "op": "at-least" | "at-most", "level": "high" }` with a level label. Bounds are inclusive. Omitted, a yes/no condition matches at least 0.5; choice and score questions require it. A refusal never matches.
+- `input` (optional) chooses what is sent: by default the event's subject, text (body or comment) and its `issue.title`, `actor`, `actorType` and `labels` where present. `{ "fields": [...] }` replaces those fields (from the same predicate allowlist, at most 8) and `{ "body": false }` drops the text. Text is capped at 6,000 characters, strings at 500 and lists at 50 items. Event content is sent only as the decision's data, never in the question.
+- `onUnavailable` (`no-match` by default, or `match`) applies when no provider is configured or none answers within the routing timeout.
+- At most 4 decision conditions per rule. They run last: only when every other check of the rule passes, and never for a rule after the first match. A rule's questions about the same input are asked in one call, and the answer is reused for the rest of that event's routing (for 15 minutes, per Core process), so each event normally costs at most one call per rule. Calls are recorded in the decision log with source `event-rule`, the squad and the rule.
+- Rules are evaluated after the webhook is acknowledged and before any database lock is taken, so a slow provider delays only that event's routing, by at most the routing timeout.
+
 **Match preview** runs locally against unsaved rules and shared scope using the same evaluator as live rule selection. Enter a synthetic JSON object with flat field-name keys (for example `{"repository":"owner/repo","issue.number":15,"labels":["bug"]}`). The supported-fields disclosure lists types. Omit absent fields or use null. Select an attached connection if testing an account-specific rule; enter a hypothetical GitHub login and mention checkbox for account-involvement checks. The login is not read from the connection.
 
-The trace explains failed filters, empty/ignored shared scope, disabled rules, self-comment suppression, the selected action, and first-match shadowing. It contains no event values, configured operands or additional instructions. The preview reads no stored events, accepts no raw bodies/credentials, saves nothing and sends nothing. Legacy matches on fields outside the sample allowlist cannot be populated in a synthetic sample.
+The trace explains failed filters, empty/ignored shared scope, disabled rules, self-comment suppression, the selected action, and first-match shadowing. It contains no event values, configured operands or additional instructions. The preview asks no decision model: when a rule has decision conditions, choose whether to assume they match or not. The preview reads no stored events, accepts no raw bodies/credentials, saves nothing and sends nothing. Legacy matches on fields outside the sample allowlist cannot be populated in a synthetic sample.
 
 This is a **rule-selection preview, not a delivery guarantee**. It assumes an authorized normalized event; connection access, provider suppression, existing work-stream subscriptions, paused/waiting work, resource bindings, and deduplication still govern actual dispatch. Changing rules or previewing an event never replays previously handled events.
 

@@ -1,6 +1,8 @@
 import {
   activeWorkflowAttempts,
+  describeWorkflowDecision,
   effectiveWorkflowStep,
+  workflowIncomingAttempts,
   workflowOutcomeRequiresEvidence,
   type WorkflowAttempt,
   type WorkflowRun,
@@ -12,6 +14,14 @@ import {
 import type { WorkflowRunDetail } from '@ficus/client-core'
 
 export type HumanApprovalStep = Extract<WorkflowStep, { kind: 'human-approval' }>
+/** A step a person decides: an approval, or a decision step that got no automatic decision. */
+export type HumanGateStep = HumanApprovalStep | Extract<WorkflowStep, { kind: 'decision' }>
+
+/** Whether a person decides this attempt now. */
+export function isHumanGate(run: WorkflowRun, attempt: WorkflowAttempt): boolean {
+  const step = effectiveWorkflowStep(run, attempt)
+  return step?.kind === 'human-approval' || (step?.kind === 'decision' && !!attempt.decision?.awaitingPerson)
+}
 
 export const stepName = (run: WorkflowRun, stepId: string) =>
   run.definition.steps.find((entry) => entry.id === stepId)?.name ?? stepId
@@ -69,7 +79,7 @@ export function openHumanGates(stream: WorkStream, run: WorkflowRunDetail, focus
   const waits = run.openWaits ?? stream.openWaits ?? []
   const focusedAttemptId = waits.find((wait) => wait.id === focusWaitId)?.flowAttemptId
   return activeWorkflowAttempts(run.state)
-    .filter((attempt) => effectiveWorkflowStep(run.state, attempt)?.kind === 'human-approval')
+    .filter((attempt) => isHumanGate(run.state, attempt))
     .sort((a, b) => Number(b.id === focusedAttemptId) - Number(a.id === focusedAttemptId))
 }
 
@@ -87,7 +97,9 @@ export function focusedHumanGate(
 }
 
 export interface HumanGateContext {
-  step: HumanApprovalStep
+  step: HumanGateStep
+  /** For a decision step: why no automatic decision was made, and what the model answered. */
+  decisionNote?: string
   /** The workflow-owned wait this gate holds open, when the run reports it. */
   gateWait?: WorkStreamWait
   /** Other waits on this step that must be resolved before the gate can be decided. */
@@ -115,7 +127,7 @@ export function humanGateContext(
   }
 ): HumanGateContext | undefined {
   const step = effectiveWorkflowStep(run.state, attempt)
-  if (step?.kind !== 'human-approval') return undefined
+  if (!step || !isHumanGate(run.state, attempt) || step.kind === 'agent') return undefined
   const waits = run.openWaits ?? stream.openWaits ?? []
   const gateWait = waits.find((wait) => wait.flowAttemptId === attempt.id && wait.resolutionHandler === 'workflow')
   const blockingWaits = waits.filter(
@@ -124,14 +136,14 @@ export function humanGateContext(
       !(wait.resolutionHandler === 'workflow' && wait.flowAttemptId === attempt.id)
   )
   const assigned = stream.assignedReviewerIds ?? []
-  const restricted = step.approver === 'assigned-reviewers' && assigned.length > 0
+  // Any reviewer decides for a decision step; only approvals can be limited to assigned reviewers.
+  const restricted = step.kind === 'human-approval' && step.approver === 'assigned-reviewers' && assigned.length > 0
   const canReview = permissions.can('workstreams:review')
   const identity = permissions.identity
   const canDecide =
     canReview && (!restricted || (identity?.type === 'user' && !!identity.userId && assigned.includes(identity.userId)))
-  const sources = (attempt.sourceAttemptIds ?? [])
-    .map((id) => run.state.attempts.find((entry) => entry.id === id))
-    .filter((entry): entry is WorkflowAttempt => !!entry)
+  // A decision step before this gate passes its own sources through, so the work under review shows.
+  const sources = workflowIncomingAttempts(run.state, attempt)
   const declared = Object.entries(step.outcomes)
   const primaryOutcome = declared.find(([, transition]) => !('returnTo' in transition))?.[0]
   const outcomes = [
@@ -143,6 +155,9 @@ export function humanGateContext(
     .sort((a, b) => b.id - a.id)
   return {
     step,
+    ...(step.kind === 'decision' && attempt.decision
+      ? { decisionNote: describeWorkflowDecision(step, attempt.decision) }
+      : {}),
     gateWait,
     blockingWaits,
     canDecide,

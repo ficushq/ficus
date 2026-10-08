@@ -18,6 +18,7 @@ import {
   workflowCommandSchema,
   type WorkflowSource,
   type WorkflowRun,
+  describeWorkflowDecision,
 } from '@ficus/shared'
 import {
   db,
@@ -228,7 +229,8 @@ async function dispatchFlowAttempt(
 ) {
   if (attempt.responseAssignment) return
   const step = attempt.step ?? run.state.definition.steps.find((entry) => entry.id === attempt.stepId)!
-  if (step.kind === 'human-approval') {
+  // A decision step that got no automatic decision waits for a person exactly like an approval.
+  if (step.kind === 'human-approval' || (step.kind === 'decision' && attempt.decision?.awaitingPerson)) {
     const referenceId = flowWaitReference(stream.id, 'human', attempt.id)
     if (!(await listOpenWaits(tx, stream.id)).some((w) => w.referenceId === referenceId))
       await openWait(tx, {
@@ -237,11 +239,16 @@ async function dispatchFlowAttempt(
         resolutionHandler: 'workflow',
         flowAttemptId: attempt.id,
         referenceId,
-        message: step.instructions,
+        message:
+          step.kind === 'decision'
+            ? `${step.instructions}\n\n${describeWorkflowDecision(step, attempt.decision!)}`
+            : step.instructions,
       })
     await tx.update(workStreams).set({ assigneeAgentId: null }).where(eq(workStreams.id, stream.id))
     return
   }
+  // Core evaluates decision steps itself (decision-steps.ts); no agent is bound to them.
+  if (step.kind === 'decision') return
   if ((await waitsForAttempt(tx, stream.id, attempt.id)).length > 0) return
   const [sent] = await tx
     .select({ id: inbox.id })
@@ -421,7 +428,12 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
           403
         )
     } else if (command.action !== 'revise') {
-      if (step?.kind === 'human-approval') {
+      if (step?.kind === 'decision') {
+        if (!attempt?.decision?.awaitingPerson)
+          throw new WorkflowError('A decision model is deciding this step; wait for its decision', 409)
+        if (identity.type !== 'user' || !canReview)
+          throw new WorkflowError('A person with review permission must choose this outcome', 403)
+      } else if (step?.kind === 'human-approval') {
         if (
           identity.type !== 'user' ||
           !canReview ||
@@ -446,7 +458,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         waits.some(
           (wait) =>
             !(
-              step?.kind === 'human-approval' &&
+              (step?.kind === 'human-approval' || step?.kind === 'decision') &&
               wait.resolutionHandler === 'workflow' &&
               wait.referenceId === flowWaitReference(id, 'human', attempt.id)
             )
@@ -522,7 +534,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
             .set({ readAt: new Date() })
             .where(eq(inbox.idempotencyKey, `flow:${id}:${attempt.id}`))
       }
-    } else if (step?.kind === 'human-approval')
+    } else if (step?.kind === 'human-approval' || step?.kind === 'decision')
       await closeOpenWaits(
         tx,
         { workStreamId: id, referenceId: flowWaitReference(id, 'human', attempt!.id) },
@@ -756,9 +768,12 @@ export async function reconcileFlows() {
     .from(workStreamFlowRuns)
     .innerJoin(workStreams, eq(workStreams.id, workStreamFlowRuns.workStreamId))
     .where(and(eq(workStreamFlowRuns.activated, true), eq(workStreams.status, 'active')))
+  const { evaluateFlowDecisions } = await import('./decision-steps')
   for (const row of rows) {
     try {
       await ensureFlowDispatch(row.id)
+      // The backstop for decision steps whose change event was missed or whose evaluation crashed.
+      await evaluateFlowDecisions(row.id)
     } catch (error) {
       log.warn(`Flow dispatch deferred for ${row.id}`, error)
     }
@@ -820,7 +835,7 @@ export async function forbidUntrackedDelegation(agentId: string) {
 }
 
 /** Retry committed inbox intents without creating agents for queued or future work. */
-async function deliverFlow(id: string) {
+export async function deliverFlow(id: string) {
   const run = await getFlow(id)
   if (!run?.activated || run.state.status !== 'running') return
   for (const canceled of run.state.attempts.filter((entry) => entry.status === 'canceled')) {
