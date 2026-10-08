@@ -9,6 +9,7 @@ import {
   secrets,
 } from '../../../db'
 import type { OAuthAuthority } from './authority'
+import type { OAuthAuthorizationPurpose } from './state-repository'
 import { connectionAuthorizationLeaseKey } from './connection-lease'
 
 export type AuthorizationInstallKind = 'connect' | 'reconnect_same' | 'reconnect_distinct'
@@ -19,6 +20,8 @@ export interface AuthorizationFlowReceipt {
   authority: OAuthAuthority
   intent: 'connect' | 'reconnect'
   initiatingUserId: string
+  purpose?: OAuthAuthorizationPurpose
+  linkGeneration?: number | null
   returnTo: string
   completionHandleHash: string
   adapterVersion: number | null
@@ -30,6 +33,8 @@ export interface AuthorizationFlowReceipt {
   installedConnectionId: string | null
   installedMaterialRevision: string | null
   installedAt: Date | null
+  identityProofId?: string | null
+  identityVerifiedAt?: Date | null
   terminalCode: string | null
   terminalAt: Date | null
   revocationRequiredAt: Date | null
@@ -45,6 +50,8 @@ export interface AuthorizationFlowBinding {
   authority: OAuthAuthority
   intent: 'connect' | 'reconnect'
   userId: string
+  purpose?: OAuthAuthorizationPurpose
+  linkGeneration?: number | null
   connectionId: string | null
   expectedMaterialRevision: string | null
 }
@@ -74,6 +81,8 @@ export class DbAuthorizationFlowReceiptRepository implements AuthorizationFlowRe
       binding &&
       (!receipt ||
         receipt.providerKey !== binding.providerKey ||
+        (receipt.purpose ?? 'integration') !== (binding.purpose ?? 'integration') ||
+        (receipt.linkGeneration ?? null) !== (binding.linkGeneration ?? null) ||
         receipt.authority !== binding.authority ||
         receipt.intent !== binding.intent ||
         receipt.initiatingUserId !== binding.userId ||
@@ -116,6 +125,7 @@ export class DbAuthorizationFlowReceiptRepository implements AuthorizationFlowRe
             isNotNull(integrationAuthorizationFlowReceipts.stagingStartedAt)
           ),
           isNull(integrationAuthorizationFlowReceipts.installKind),
+          isNull(integrationAuthorizationFlowReceipts.identityVerifiedAt),
           isNull(integrationAuthorizationFlowReceipts.terminalAt),
           isNull(integrationAuthorizationFlowReceipts.revocationRequiredAt),
           isNull(integrationAuthorizationFlowReceipts.cleanupRequiredAt),
@@ -139,6 +149,7 @@ export class DbAuthorizationFlowReceiptRepository implements AuthorizationFlowRe
         and(
           eq(integrationAuthorizationFlowReceipts.localFlowId, localFlowId),
           isNull(integrationAuthorizationFlowReceipts.installKind),
+          isNull(integrationAuthorizationFlowReceipts.identityVerifiedAt),
           sql`(${integrationAuthorizationFlowReceipts.stagingStartedAt} IS NULL OR ${integrationAuthorizationFlowReceipts.revocationRequiredAt} IS NOT NULL OR ${integrationAuthorizationFlowReceipts.cleanupRequiredAt} IS NOT NULL)`
         )
       )
@@ -169,8 +180,8 @@ export class DbAuthorizationFlowReceiptRepository implements AuthorizationFlowRe
       await tx
         .update(integrationAuthorizationFlowReceipts)
         .set({
-          terminalCode: receipt.terminalCode ?? input.code,
-          terminalAt: receipt.terminalAt ?? now,
+          terminalCode: receipt.identityProofId ? null : (receipt.terminalCode ?? input.code),
+          terminalAt: receipt.identityProofId ? null : (receipt.terminalAt ?? now),
           revocationRequiredAt: receipt.revocationRequiredAt ?? now,
           updatedAt: now,
         })
@@ -222,8 +233,8 @@ export class DbAuthorizationFlowReceiptRepository implements AuthorizationFlowRe
       await tx
         .update(integrationAuthorizationFlowReceipts)
         .set({
-          terminalCode: receipt.terminalCode ?? code,
-          terminalAt: receipt.terminalAt ?? now,
+          terminalCode: receipt.identityProofId ? null : (receipt.terminalCode ?? code),
+          terminalAt: receipt.identityProofId ? null : (receipt.terminalAt ?? now),
           cleanupRequiredAt: receipt.cleanupRequiredAt ?? now,
           updatedAt: now,
         })
@@ -288,7 +299,7 @@ export async function sweepExpiredAuthorizationFlows(): Promise<void> {
         )
         .for('update')
       if (!receipt) return
-      if (!receipt.installKind && !receipt.terminalAt) {
+      if (!receipt.installKind && !receipt.identityProofId && !receipt.terminalAt) {
         const now = sql`transaction_timestamp()`
         await tx
           .update(integrationAuthorizationFlowReceipts)
@@ -372,7 +383,7 @@ function deletableReceiptPredicate() {
   return and(
     lte(integrationAuthorizationFlowReceipts.retainUntil, sql`clock_timestamp()`),
     sql`(
-      (${integrationAuthorizationFlowReceipts.installedAt} IS NOT NULL OR ${integrationAuthorizationFlowReceipts.terminalAt} IS NOT NULL)
+      (${integrationAuthorizationFlowReceipts.installedAt} IS NOT NULL OR ${integrationAuthorizationFlowReceipts.identityVerifiedAt} IS NOT NULL OR ${integrationAuthorizationFlowReceipts.terminalAt} IS NOT NULL)
       AND (${integrationAuthorizationFlowReceipts.revocationRequiredAt} IS NULL OR ${integrationAuthorizationFlowReceipts.revocationSettledAt} IS NOT NULL)
       AND (${integrationAuthorizationFlowReceipts.cleanupRequiredAt} IS NULL OR ${integrationAuthorizationFlowReceipts.cleanupSettledAt} IS NOT NULL)
     )`,
@@ -431,7 +442,8 @@ function mapReceipt(
   if (
     !row ||
     (row.authority !== 'local' && row.authority !== 'platform_broker') ||
-    (row.intent !== 'connect' && row.intent !== 'reconnect')
+    (row.intent !== 'connect' && row.intent !== 'reconnect') ||
+    (row.purpose !== 'integration' && row.purpose !== 'github_identity')
   ) {
     return null
   }

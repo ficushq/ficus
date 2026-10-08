@@ -13,6 +13,7 @@ import {
 } from '../db'
 import { uuidPrefixCondition, AmbiguousPrefixError } from '../db/prefix-match'
 import {
+  hasReservedGitHubAuthorityMetadata,
   Squad as SquadJson,
   SquadStatus,
   CreateSquadInput,
@@ -200,6 +201,8 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
   declare createdAt: Date
   declare updatedAt: Date
   declare archivedAt: Date | null
+  /** Human-only (setGitHubAuthorFilter); read-only on the entity. */
+  declare githubAuthorFilter: boolean
 
   // Relation cache
   private _managerAgent?: Agent | null
@@ -246,6 +249,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       createdAt: squads.createdAt,
       updatedAt: squads.updatedAt,
       archivedAt: squads.archivedAt,
+      githubAuthorFilter: squads.githubAuthorFilter,
     }
   }
 
@@ -284,7 +288,9 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
   }
 
   static async create(rawInput: CreateSquadInput): Promise<Squad> {
+    if (hasReservedGitHubAuthorityMetadata(rawInput.metadata)) throw new Error('Reserved GitHub authority metadata')
     const input = await this.prepareCreateInput(rawInput)
+    if (hasReservedGitHubAuthorityMetadata(input.metadata)) throw new Error('Reserved GitHub authority metadata')
     const { validateSquadWorkflows } = await import('../services/workflows/access')
     await validateSquadWorkflows(input.metadata ?? {}, '')
     const typeContext = await normalizeTypeContext(input.typeContext)
@@ -457,6 +463,9 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
    * Update a squad by ID.
    */
   static async update(id: string, input: UpdateSquadInput): Promise<Squad> {
+    if (hasReservedGitHubAuthorityMetadata(input.metadata)) throw new Error('Reserved GitHub authority metadata')
+    // Human-only: changed exclusively through setGitHubAuthorFilter, never generic squad updates.
+    if (Object.hasOwn(input, 'githubAuthorFilter')) throw new Error('Reserved GitHub author filter setting')
     // Loaded OUTSIDE the transaction: an AgentType.list pool read inside a
     // row-lock-holding transaction is hold-and-wait on the shared pool.
     const knownTypeIds = input.typeContext ? await loadKnownAgentTypeIds() : []

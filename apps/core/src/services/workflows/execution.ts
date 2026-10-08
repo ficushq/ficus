@@ -760,8 +760,28 @@ export async function finishFlow(id: string, version: number, identity: Identity
 }
 
 export async function reconcileFlows() {
-  const { reconcileUnmatchedOutputs, reconcileParkedOutputDeliveries } = await import('../integrations/outputs/runtime')
-  await reconcileUnmatchedOutputs()
+  const { withGitHubOutputPass } = await import('../integrations/github/feedback-pass')
+  return withGitHubOutputPass(reconcileFlowsInPass)
+}
+
+let githubReconcilePhase = 0
+async function reconcileFlowsInPass() {
+  const {
+    reconcileUnmatchedOutputs,
+    reconcileParkedOutputDeliveries,
+    reconcileApprovedGitHubFeedback,
+    reconcileSelectedOutputDeliveries,
+  } = await import('../integrations/outputs/runtime')
+  const { reconcileGitHubInboxNotifications } = await import('../integrations/github/feedback-inbox')
+  const phases = [
+    reconcileApprovedGitHubFeedback,
+    reconcileSelectedOutputDeliveries,
+    reconcileUnmatchedOutputs,
+    reconcileGitHubInboxNotifications,
+  ]
+  // Rotate priority as well as candidates: perpetually held releases cannot monopolize every pass.
+  const start = githubReconcilePhase++ % phases.length
+  for (let offset = 0; offset < phases.length; offset++) await phases[(start + offset) % phases.length]!()
   await reconcileParkedOutputDeliveries()
   const rows = await db
     .select({ id: workStreamFlowRuns.workStreamId })
@@ -863,6 +883,11 @@ export async function isCurrentFlowMessage(message: { id?: string; metadata: unk
     attemptId?: number
     integrationDeliveryId?: string
   } | null
+  if (metadata?.source === 'integration-notification') {
+    if (!message.id || !message.recipientId) return false
+    const { isCurrentIntegrationNotification } = await import('../integrations/outputs/runtime')
+    return isCurrentIntegrationNotification(db, message.recipientId, message.id)
+  }
   if (metadata?.source === 'integration-output') {
     if (!metadata.integrationDeliveryId || !message.id || !message.recipientId) return false
     const { isCurrentIntegrationDelivery } = await import('../integrations/outputs/runtime')

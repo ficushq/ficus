@@ -6,11 +6,15 @@ export interface GitHubIssueApiLabel {
   name?: string | null
 }
 
+/** Provider-native identity: the numeric `id` (not the editable login) is what trust binds to. */
 export interface GitHubIssueApiUser {
+  id?: number
   login?: string | null
+  type?: string
 }
 
 export interface GitHubIssueApiItem {
+  id?: number
   number: number
   title: string
   body?: string | null
@@ -24,6 +28,7 @@ export interface GitHubIssueApiItem {
 }
 
 export interface GitHubIssueApiComment {
+  id?: number
   body?: string | null
   html_url?: string
   user?: GitHubIssueApiUser | null

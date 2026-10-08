@@ -269,6 +269,27 @@ export class IntegrationRevocationWorker {
     const leaseToken = this.#uuid()
     const job = await this.#dependencies.repository.claim(now, new Date(now.getTime() + LEASE_MS), leaseToken)
     if (!job) return false
+    if (job.providerKey === 'github' && job.authorizationFlowId) {
+      try {
+        const [receipt] = await db
+          .select({ purpose: integrationAuthorizationFlowReceipts.purpose })
+          .from(integrationAuthorizationFlowReceipts)
+          .where(
+            and(
+              eq(integrationAuthorizationFlowReceipts.localFlowId, job.authorizationFlowId),
+              eq(integrationAuthorizationFlowReceipts.artifactCredentialRef, job.credentialRef),
+              eq(integrationAuthorizationFlowReceipts.authority, job.clientAuthority),
+              eq(integrationAuthorizationFlowReceipts.providerKey, 'github')
+            )
+          )
+        if (!receipt) return this.#retry(job, 'identity_flow_mismatch')
+        // Local reference absence is not token-exclusivity proof for a shared OAuth client.
+        if (receipt.purpose === 'github_identity') return this.#finish(job, 'identity_token_local_disposal')
+      } catch {
+        // Uncertain purpose/ownership must never authorize a remote revoke.
+        return this.#retry(job, 'identity_disposition_check_failed')
+      }
+    }
     const plugin = this.#dependencies.resolvePlugin(job.providerKey, job.adapterVersion, job.clientAuthority)
     await this.#dependencies.credentials.refreshKey(job.credentialRef)
     const raw = this.#dependencies.credentials.get(job.credentialRef)

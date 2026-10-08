@@ -2,7 +2,7 @@ import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integ
 useEnabledIntegrationFixtures('github', 'linear')
 import { afterAll, beforeAll, expect, spyOn, test } from 'bun:test'
 import { createHash, randomUUID } from 'node:crypto'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import {
   createBlankWorkflow,
   resolveTrackedResources,
@@ -64,8 +64,12 @@ const fact = (number: number, changes: Partial<IntegrationOutputFact> = {}): Int
   body: 'Please verify the edge case.',
   ...changes,
 })
+// These fixtures are the pre-filter routing contract: a squad with its GitHub author filter OFF
+// routes events exactly as before. A real assigned connection supplies the squad authority.
+let fixtureConnectionId: string
+const fixtureAuthority = () => ({ kind: 'connection' as const, connectionId: fixtureConnectionId, squadId })
 async function publish(event: IntegrationOutputFact) {
-  const id = (await publishIntegrationOutput('github', event, { kind: 'instance' }))!
+  const id = (await publishIntegrationOutput('github', event, fixtureAuthority()))!
   eventIds.push(id)
   return id
 }
@@ -161,8 +165,34 @@ beforeAll(async () => {
     model: 'anthropic:claude-sonnet-4-5',
     systemPrompt: 'Test worker',
   })
-  squadId = (await db.insert(squads).values({ name: prefix, purpose: 'Integration output fixtures' }).returning())[0]!
-    .id
+  squadId = (
+    await db
+      .insert(squads)
+      .values({ name: prefix, purpose: 'Integration output fixtures', githubAuthorFilter: false })
+      .returning()
+  )[0]!.id
+  const revision = randomUUID()
+  fixtureConnectionId = (
+    await db
+      .insert(integrationConnections)
+      .values({
+        providerKey: 'github',
+        adapterVersion: 1,
+        displayName: `${prefix}-fixture`,
+        configuration: {},
+        credentialRef: `fixture:${prefix}:default`,
+        enabled: true,
+        authState: 'authenticated',
+        healthState: 'healthy',
+        materialRevision: revision,
+        validatedRevision: revision,
+        validationExpiresAt: new Date(Date.now() + 3_600_000),
+      })
+      .returning()
+  )[0]!.id
+  await db
+    .insert(integrationConnectionAssignments)
+    .values({ squadId, providerKey: 'github', connectionId: fixtureConnectionId })
   send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({ success: true, queued: true, status: 'queued' })
 })
 afterAll(async () => {
@@ -177,9 +207,15 @@ afterAll(async () => {
     )
   await db.delete(workStreams).where(eq(workStreams.squadId, squadId))
   await db.delete(agents).where(eq(agents.squadId, squadId))
+  if (eventIds.length) await db.delete(integrationOutputEvents).where(inArray(integrationOutputEvents.id, eventIds))
+  // Untracked observations (aliases, refinements) must not linger as unmatched work for later files.
+  await db.delete(integrationOutputEvents).where(sql`${integrationOutputEvents.authority}->>'squadId' = ${squadId}`)
+  await db
+    .delete(integrationConnectionAssignments)
+    .where(eq(integrationConnectionAssignments.connectionId, fixtureConnectionId))
+  await db.delete(integrationConnections).where(eq(integrationConnections.id, fixtureConnectionId))
   await db.delete(squads).where(eq(squads.id, squadId))
   await db.delete(agentTypes).where(eq(agentTypes.id, prefix))
-  if (eventIds.length) await db.delete(integrationOutputEvents).where(inArray(integrationOutputEvents.id, eventIds))
 })
 
 test('webhook/polling retries and concurrent duplicates create one notification per subscription', async () => {
@@ -466,10 +502,10 @@ test('a second issue assignment keeps the trigger receipt and cannot duplicate l
       { watermark: 99 }
     )
     expect(result.events).toHaveLength(1)
-    expect(await publishIntegrationOutputs('github', result.events[0]!, { kind: 'instance' })).toEqual([squadId])
-    expect(await publishIntegrationOutputs('github', event, { kind: 'instance' })).toEqual([squadId])
+    expect(await publishIntegrationOutputs('github', result.events[0]!, fixtureAuthority())).toEqual([squadId])
+    expect(await publishIntegrationOutputs('github', event, fixtureAuthority())).toEqual([squadId])
     event.payload.issue.updated_at = new Date(Date.now() + 1000).toISOString()
-    expect(await publishIntegrationOutputs('github', event, { kind: 'instance' })).toEqual([squadId])
+    expect(await publishIntegrationOutputs('github', event, fixtureAuthority())).toEqual([squadId])
     const created = await db
       .select()
       .from(integrationOutputTriggerRuns)
@@ -973,9 +1009,18 @@ test('decision conditions gate rule actions end to end, asked once per event wit
         .set({ metadata: { integrationRules: { github: rules }, workflow: { kind: 'inline', definition: flow } } })
         .where(eq(squads.id, squadId))
       const authority = { kind: 'connection' as const, connectionId, squadId }
-      const notices = async () =>
+      const integrationMessages = async () =>
         (await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).filter(
           (row) => (row.metadata as Record<string, unknown> | null)?.source === 'integration-notification'
+        )
+      // The fallback notify-manager rule's notices, not the creation notice a started stream's owner gets.
+      const notices = async () =>
+        (await integrationMessages()).filter(
+          (row) => (row.metadata as Record<string, unknown>).integrationCreationNotice !== true
+        )
+      const creationNotices = async () =>
+        (await integrationMessages()).filter(
+          (row) => (row.metadata as Record<string, unknown>).integrationCreationNotice === true
         )
 
       const bug = fact(4301, {
@@ -999,6 +1044,7 @@ test('decision conditions gate rule actions end to end, asked once per event wit
       expect(runs).toHaveLength(1)
       expect(runs[0]!.triggerId).toBe('bugs')
       expect(await notices()).toHaveLength(0)
+      expect(await creationNotices()).toHaveLength(1)
 
       probability = 0.1
       const question = fact(4302, {
@@ -1012,6 +1058,7 @@ test('decision conditions gate rule actions end to end, asked once per event wit
         await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.eventId, questionId))
       ).toHaveLength(0)
       expect(await notices()).toHaveLength(1)
+      expect(await creationNotices()).toHaveLength(1)
     })
   } finally {
     restore()
@@ -1023,8 +1070,11 @@ test('failed native notifications remain retryable and reconciliation completes 
     await setRule('notify-manager')
     const assigned = fact(37, { output: 'issue.assigned' })
     const { InboxMessage } = await import('../../../entities/InboxMessage')
-    const original = InboxMessage.sendOnce
-    const sending = spyOn(InboxMessage, 'sendOnce').mockRejectedValueOnce(new Error('temporary inbox failure'))
+    // GitHub notices persist inside the admission transaction (receipt-safe acceptance path).
+    const original = InboxMessage.persistSystemAgentOnceInTransaction
+    const sending = spyOn(InboxMessage, 'persistSystemAgentOnceInTransaction').mockRejectedValueOnce(
+      new Error('temporary inbox failure')
+    )
     try {
       await expect(
         publishIntegrationOutput('github', assigned, { kind: 'connection', connectionId, squadId })
@@ -1201,11 +1251,11 @@ test('a failed preparation notice is recovered from the trigger receipt without 
       output: 'pull_request.review_requested',
       data: { repository: `${prefix}/repo`, pullRequest: { number: 52 }, requestedReviewer: 'ficus-bot' },
     })
-    const { setWorkStreamNotificationBeforePersistHookForTests: setHook } =
-      await import('../../squad/work-stream-notifications')
-    setHook(() => {
-      throw new Error('temporary owner inbox failure')
-    })
+    // GitHub creation notices persist inside the admission transaction (receipt-safe acceptance).
+    const { InboxMessage } = await import('../../../entities/InboxMessage')
+    const persisting = spyOn(InboxMessage, 'persistSystemAgentOnceInTransaction').mockRejectedValueOnce(
+      new Error('temporary owner inbox failure')
+    )
     try {
       await expect(
         publishIntegrationOutput('github', review, { kind: 'connection', connectionId, squadId })
@@ -1224,7 +1274,7 @@ test('a failed preparation notice is recovered from the trigger receipt without 
       expect(stream.pause).not.toBeNull()
       expect((await getFlow(stream.id))!.attemptAgents).toEqual({})
       expect(await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).toHaveLength(0)
-      setHook(undefined)
+      persisting.mockRestore()
       const { reconcileUnmatchedOutputs } = await import('./runtime')
       await reconcileUnmatchedOutputs()
       await reconcileUnmatchedOutputs()
@@ -1239,7 +1289,7 @@ test('a failed preparation notice is recovered from the trigger receipt without 
       expect(done!.matchedAt).not.toBeNull()
       expect(done!.lastErrorCode).toBeNull()
     } finally {
-      setHook(undefined)
+      persisting.mockRestore()
     }
   })
 })
@@ -1451,7 +1501,9 @@ test('periodic flow reconciliation retries a parked owner notice after the webho
   })
   try {
     const { reconcileFlows } = await import('../../workflows/execution')
-    await reconcileFlows()
+    // Bounded root passes rotate fairly across all pending deliveries (including other fixtures'),
+    // so the retry may land on a later tick; it still sends exactly once.
+    for (let tick = 0; tick < 6 && !(await ownerNotices(id))[0]!.deliveredAt; tick++) await reconcileFlows()
     expect((await ownerNotices(id))[0]!.deliveredAt).not.toBeNull()
     const { chatSendReceipts } = await import('../../../db')
     await reconcileFlows()
@@ -1463,7 +1515,7 @@ test('periodic flow reconciliation retries a parked owner notice after the webho
     send.mockResolvedValue({ success: true, queued: true, status: 'queued' })
     await (await owner.getActiveExecution())?.stop()
   }
-})
+}, 30_000)
 
 /** Attach an issue the way the product does: a `metadata.tracked` link, replacing any earlier one. */
 async function attachIssue(id: string, number: number, connectionId?: string) {
@@ -2143,7 +2195,7 @@ test('a later stream throwing during the same event does not swallow an earlier 
     data: { repository: `${prefix}/other`, pullRequest: { number: tracked.number } },
   })
   try {
-    await expect(publishIntegrationOutput('github', merged, { kind: 'instance' })).rejects.toThrow(
+    await expect(publishIntegrationOutput('github', merged, fixtureAuthority())).rejects.toThrow(
       'second stream observation boom'
     )
     const [pending] = await db
@@ -2319,7 +2371,7 @@ test('tracked issues and pull requests across repositories each route; removal s
     reason: 'Subscription changed',
   })
   expect(after.filter((row) => row.id !== dropped.id).map((row) => row.status)).toEqual(['queued', 'queued', 'queued'])
-})
+}, 20_000)
 
 test('the same issue tracked twice yields one subscription set and one delivery', async () => {
   const issue = trackedIssue(2011, `${prefix}/repo`)
@@ -3071,4 +3123,22 @@ test('event-created work uses compact presentation and a retrieval link without 
   } finally {
     await db.update(squads).set({ metadata: {} }).where(eq(squads.id, squadId))
   }
+})
+
+test('recording a relevant source fact alone has no routing, inbox or trigger side effects', async () => {
+  const runtime = await import('./runtime')
+  expect(runtime.recordIntegrationOutput).toBeDefined()
+  const id = await create(987)
+  const agentId = (await getFlow(id))!.attemptAgents['1']!
+  const before = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+  const event = await runtime.recordIntegrationOutput('github', fact(987), fixtureAuthority())
+  eventIds.push(event.id)
+  expect(await db.select().from(inbox).where(eq(inbox.recipientId, agentId))).toEqual(before)
+  expect(
+    await db.select().from(integrationOutputDeliveries).where(eq(integrationOutputDeliveries.eventId, event.id))
+  ).toHaveLength(0)
+  expect(
+    await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.eventId, event.id))
+  ).toHaveLength(0)
+  expect(event.matchedAt).toBeNull()
 })

@@ -1,5 +1,28 @@
 import { eq } from 'drizzle-orm'
-import { db, squads, workStreams } from '../../db'
+import { db, squads, workStreams, type DbTx } from '../../db'
+
+/** Canonical shape, shared with query-only future-subscription planning. No metadata is persisted here. */
+export function changeRequestBindingMetadata(
+  metadata: unknown,
+  reference: { integration: string; repository: string; connectionId?: string },
+  chosen: { number: number; url?: string }
+) {
+  const record = (metadata as Record<string, unknown> | null) ?? {}
+  const url =
+    chosen.url ??
+    (reference.integration === 'github'
+      ? `https://github.com/${reference.repository}/pull/${chosen.number}`
+      : undefined)
+  return {
+    ...record,
+    codeHost: {
+      integration: reference.integration,
+      repository: reference.repository,
+      ...(reference.connectionId ? { connectionId: reference.connectionId } : {}),
+      changeRequest: { number: chosen.number, ...(url ? { url } : {}) },
+    },
+  }
+}
 
 /**
  * Persist a resolved delivery change request binding.
@@ -17,14 +40,11 @@ export async function recordChangeRequestBinding(
   streamId: string,
   reference: { integration: string; repository: string; connectionId?: string },
   chosen: { number: number; url?: string },
-  stillMatches?: (metadata: unknown) => boolean
+  stillMatches?: (metadata: unknown) => boolean,
+  admit?: (tx: DbTx) => Promise<boolean>
 ): Promise<boolean> {
-  const url =
-    chosen.url ??
-    (reference.integration === 'github'
-      ? `https://github.com/${reference.repository}/pull/${chosen.number}`
-      : undefined)
   const changed = await db.transaction(async (tx) => {
+    if (admit && !(await admit(tx))) return false
     // Global lock order: squad before work stream.
     const [owner] = await tx
       .select({ squadId: workStreams.squadId })
@@ -43,15 +63,7 @@ export async function recordChangeRequestBinding(
     await tx
       .update(workStreams)
       .set({
-        metadata: {
-          ...record,
-          codeHost: {
-            integration: reference.integration,
-            repository: reference.repository,
-            ...(reference.connectionId ? { connectionId: reference.connectionId } : {}),
-            changeRequest: { number: chosen.number, ...(url ? { url } : {}) },
-          },
-        },
+        metadata: changeRequestBindingMetadata(locked.metadata, reference, chosen),
         updatedAt: new Date(),
       })
       .where(eq(workStreams.id, streamId))

@@ -8,7 +8,7 @@ import { createTestGitHubConnection } from '../../../test-utils/github-connectio
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../../db'
-import { memoryChunks, memoryDocuments } from '../../../db/schema'
+import { memoryChunks, memoryDocuments, squads } from '../../../db/schema'
 import { Squad } from '../../../entities/Squad'
 import { SquadSourceConfig } from '../../../entities/SquadSourceConfig'
 import { GitHubIssueSource, githubIssueSourceId, parseGithubUrl, renderIssueMarkdown } from './GitHubIssueSource'
@@ -74,6 +74,8 @@ describe('GitHubIssueSource validation', () => {
 describe('GitHubIssueSource indexing', () => {
   it('indexes allowed configured repos and writes frontmatter/chunk metadata', async () => {
     const squad = await Squad.create({ name: `github index ${crypto.randomUUID()}`, purpose: 'test' })
+    // Author filter OFF: the pre-filter indexing contract (filtered projection: managed-content.test.ts).
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, squad.id))
     await SquadSourceConfig.upsert({
       squadId: squad.id,
       sourceType: 'github_issue',

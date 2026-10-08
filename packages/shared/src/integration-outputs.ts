@@ -74,6 +74,8 @@ export interface IntegrationOutputFact {
   subject: string
   body: string
   url?: string
+  /** Server-normalized GitHub projections; raw data remains internal matching evidence. */
+  github?: import('./github-feedback').GitHubFeedbackEnvelope
   /** Lexicographic monotonic position, e.g. CI run number then attempt. */
   ordering?: { key: string; position: number[] }
 }

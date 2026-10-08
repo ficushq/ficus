@@ -121,7 +121,22 @@ export const squadPresetWorkflowsSchema = z
   .strict()
 export type SquadPresetWorkflows = z.infer<typeof squadPresetWorkflowsSchema>
 
+/** Authority lives in dedicated tables, never in generic metadata (even deletion patches). */
+export function hasReservedGitHubAuthorityMetadata(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  return Object.entries(value).some(
+    ([key, child]) =>
+      key
+        .split('.')
+        .some((segment) =>
+          ['githubAuthorTrust', 'githubFeedbackModeration', 'githubPersonalIdentity'].includes(segment)
+        ) || hasReservedGitHubAuthorityMetadata(child)
+  )
+}
+
 export const squadMetadataSchema = z.record(z.unknown()).superRefine((metadata, ctx) => {
+  if (hasReservedGitHubAuthorityMetadata(metadata))
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Reserved GitHub authority metadata' })
   if (metadata.integrationRules !== undefined) {
     const result = squadEventRulesSchema.safeParse(metadata.integrationRules)
     if (!result.success)

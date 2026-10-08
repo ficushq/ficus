@@ -1406,3 +1406,30 @@ describe('NotionConnectionAuthorizer', () => {
     expect(revoked).toEqual([])
   })
 })
+
+test('the provider-neutral integration installer rejects personal purpose before exchange or credential side effects', async () => {
+  const h = harness()
+  let exchanges = 0
+  const intent = {
+    ...reconnectIntent(),
+    purpose: 'github_identity' as const,
+    linkGeneration: 0,
+    intent: 'connect' as const,
+    connectionId: null,
+    expectedMaterialRevision: null,
+  }
+  await expect(
+    h.authorizer.install({
+      intent,
+      userId: intent.userId,
+      exchange: async () => {
+        exchanges++
+        return grant
+      },
+    })
+  ).rejects.toThrow('purpose')
+  expect(exchanges).toBe(0)
+  expect(h.staged.size).toBe(0)
+  expect(h.creates).toHaveLength(0)
+  expect(h.enabled).toHaveLength(0)
+})

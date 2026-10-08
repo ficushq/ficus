@@ -61,6 +61,7 @@ export async function dispatchHostedGitHubDelivery(delivery: RelayDelivery, inte
     type: delivery.eventType,
     payload: delivery.payload,
     metadata: { providerDeliveryId: delivery.deliveryId },
+    githubObservation: { kind: 'webhook' as const, deliveryId: delivery.deliveryId },
   }
   // Connection-scoped output facts own agent routing. Instance-wide legacy shell rules
   // are deliberately not an authority path for a shared App's tenant-scoped events.

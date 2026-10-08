@@ -1,4 +1,10 @@
+import { and, eq } from 'drizzle-orm'
+import { z } from 'zod'
+import { db, chatSendReceipts } from '../../db'
 import type { DeliveryMode } from '@ficus/shared'
+import { githubOutputPass, withGitHubOutputPass, withGitHubCandidate } from '../integrations/github/feedback-pass'
+import { readOutputCandidate, readOutputInbox } from '../integrations/github/feedback-pass-read'
+import { selectGitHubInboxPage } from '../integrations/github/feedback-inbox'
 import { Agent } from '../../entities/Agent'
 import {
   formatInboxMessageSender,
@@ -7,11 +13,58 @@ import {
   isInboxMessageWakeEligible,
 } from '../../entities/InboxMessage'
 
-export async function deliverInboxMessagesToAgent(agentId: string): Promise<void> {
+/**
+ * `githubMessageIds` names GitHub notices the caller just persisted for this agent. They join the
+ * pass's selected cohort (each still charged as one WORK unit) instead of waiting a tick when the
+ * ordinary cohort was selected earlier in the same pass. It never widens to a mailbox sweep.
+ */
+export async function deliverInboxMessagesToAgent(agentId: string, githubMessageIds: string[] = []): Promise<void> {
+  return withGitHubOutputPass(() => deliverInboxInPass(agentId, githubMessageIds))
+}
+
+async function deliverInboxInPass(agentId: string, githubMessageIds: string[]): Promise<void> {
   const { pausedWorkStreamForAgent } = await import('../work-streams/pause')
-  if (await pausedWorkStreamForAgent(agentId)) return
+  const paused = await pausedWorkStreamForAgent(agentId)
   const agent = await Agent.mustFind(agentId)
-  const pending = await InboxMessage.listUndeliveredUnread('agent', agent.id)
+  const cohort = githubOutputPass()?.ordinary
+  const selected = cohort ? (cohort.get(agent.id) ?? []) : (await selectGitHubInboxPage(agent.id)).map((row) => row.id)
+  const ids = [...new Set([...selected, ...githubMessageIds.filter((id) => z.string().uuid().safeParse(id).success)])]
+  cohort?.delete(agent.id)
+  const { renewKnownGitHubOutputs } = await import('../integrations/github/feedback-renewal')
+  for (const id of ids) {
+    await withGitHubCandidate(async () => {
+      if (paused) return
+      const row = await readOutputInbox(db, id)
+      if (!row || row.recipientId !== agent.id || row.readAt || row.deliveredAt) return
+      const eventId = row.metadata?.integrationEventId
+      if (typeof eventId !== 'string' || !z.string().uuid().safeParse(eventId).success) return
+      const clientId = `github-feedback:${eventId}:${id}`
+      const [receipt] = await db
+        .select({
+          messageId: chatSendReceipts.messageId,
+          executionId: chatSendReceipts.executionId,
+          acceptedAt: chatSendReceipts.acceptedAt,
+        })
+        .from(chatSendReceipts)
+        .where(
+          and(
+            eq(chatSendReceipts.agentId, agent.id),
+            eq(chatSendReceipts.clientId, clientId),
+            eq(chatSendReceipts.state, 'accepted')
+          )
+        )
+      if (!receipt?.messageId || !receipt.executionId || !receipt.acceptedAt) {
+        const event = await readOutputCandidate(db, eventId)
+        if (!event || event.integration !== 'github') return
+        await renewKnownGitHubOutputs([eventId])
+      }
+      await acceptGitHubNotification(agent, new InboxMessage(row), eventId)
+    }, undefined)
+  }
+  // Ordinary non-GitHub mail keeps its existing batching/lifecycle behavior. GitHub bodies
+  // must never be materialized by this unbounded legacy mailbox query.
+  if (paused) return
+  const pending = await InboxMessage.listUndeliveredUnread('agent', agent.id, true)
   const { isCurrentFlowMessage } = await import('../workflows/execution')
   const messages: InboxMessage[] = []
   // Observer mail is informational, never a lifecycle wake. Recheck at delivery:
@@ -148,5 +201,43 @@ export function prepareInboxDelivery(messages: InboxMessage[], batchMode: Delive
         }
       }),
     },
+  }
+}
+
+async function acceptGitHubNotification(agent: Agent, message: InboxMessage, eventId: string): Promise<void> {
+  const clientId = `github-feedback:${eventId}:${message.id}`
+  const receipt = async () =>
+    (
+      await db
+        .select()
+        .from(chatSendReceipts)
+        .where(
+          and(
+            eq(chatSendReceipts.agentId, agent.id),
+            eq(chatSendReceipts.clientId, clientId),
+            eq(chatSendReceipts.state, 'accepted')
+          )
+        )
+    )[0]
+  try {
+    let accepted = await receipt()
+    if (!accepted) {
+      if (agent.status === 'terminated' || (agent.status === 'dormant' && !isInboxMessageWakeEligible(message))) return
+      const { isCurrentFlowMessage } = await import('../workflows/execution')
+      if (!(await isCurrentFlowMessage(message))) return
+      const prepared = prepareInboxDelivery([message], message.deliveryMode, message.deliveryMode)
+      const result = await agent.sendMessage(prepared.prompt, {
+        deliveryMode: message.deliveryMode,
+        metadata: { ...prepared.metadata, clientId },
+      })
+      if (!result.success) return
+      accepted = await receipt()
+    }
+    if (accepted?.messageId && accepted.executionId && accepted.acceptedAt)
+      await message.update({ deliveredAt: accepted.acceptedAt })
+  } catch {
+    // The persisted row remains pending. Enqueue/success without a receipt is not delivery.
+    const { withholdRevokedAutomaticGitHubOutput } = await import('../integrations/github/feedback-renewal')
+    await withholdRevokedAutomaticGitHubOutput(eventId)
   }
 }

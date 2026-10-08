@@ -1,6 +1,6 @@
 import { deliveryInstructionsForRun } from '../services/workflows/completion-prompt'
 import { listWorkflowReviewers } from '../services/workflows/reviewers'
-import { outputDeliveryHistory } from '../services/integrations/outputs/runtime'
+import { outputDeliveryHistory, outputDeliveryHistoryPage } from '../services/integrations/outputs/runtime'
 import { listOpenWaits, toWaitJson } from '../services/work-streams/waits'
 import { getFlowUsage } from '../services/workflows/usage'
 import { Hono } from 'hono'
@@ -79,6 +79,24 @@ export const workflowsRouter = new Hono()
         : null
     )
   })
+  .get(
+    '/runs/:streamId/integration-deliveries',
+    zValidator('query', z.object({ cursor: z.string().max(400).optional() })),
+    async (c) => {
+      const stream = await WorkStream.find(c.req.param('streamId'))
+      if (!stream) return c.json({ error: 'Work stream not found' }, 404)
+      if (!(await hasPermission(c.get('identity')!, 'workstreams:read', stream.squadId)))
+        return c.json({ error: 'Forbidden' }, 403)
+      try {
+        // GitHub-only pages complement the compatibility preview in the run response.
+        return c.json(await outputDeliveryHistoryPage(stream.id, c.req.valid('query')))
+      } catch (error) {
+        if (error instanceof Error && error.message === 'invalid_output_history_cursor')
+          return c.json({ error: 'Invalid history cursor' }, 400)
+        throw error
+      }
+    }
+  )
   .post(
     '/runs/:streamId/advance',
     zValidator('json', z.object({ requestId: z.string().uuid(), command: workflowCommandSchema }).strict()),

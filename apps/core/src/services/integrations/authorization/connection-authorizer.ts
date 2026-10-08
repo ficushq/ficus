@@ -129,6 +129,9 @@ export class OAuthConnectionAuthorizer<C> {
     grant?: OAuthGrant<C>
     exchange?: () => Promise<AuthorizationGrant<unknown, unknown>>
   }): Promise<void> {
+    if ((input.intent.purpose ?? 'integration') !== 'integration') {
+      throw new Error('OAuth integration authorization purpose mismatch')
+    }
     if (input.intent.providerKey !== this.#dependencies.plugin.key || input.userId !== input.intent.userId) {
       throw new Error('OAuth authorization binding mismatch')
     }

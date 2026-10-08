@@ -107,6 +107,23 @@ export const agentSlotHoldQueryKeys = {
   agent: (squadId: string, agentId: string) => ['agent-slot-holds', squadId, agentId] as const,
 }
 
+/**
+ * GitHub moderation state per squad. Kept outside `queryKeys.squads` and `integrationQueryKeys` so
+ * the content-free `githubFeedback.updated` event refreshes only these queries, never squad
+ * settings or rule forms.
+ */
+export const githubFeedbackQueryKeys = {
+  all: ['github-feedback'] as const,
+  squad: (squadId: string) => ['github-feedback', squadId] as const,
+  summary: (squadId: string) => ['github-feedback', squadId, 'summary'] as const,
+  list: (squadId: string, queue: 'pending' | 'releasing') => ['github-feedback', squadId, 'list', queue] as const,
+  detail: (squadId: string, revisionId: string) => ['github-feedback', squadId, 'detail', revisionId] as const,
+  trustedAuthors: (squadId: string) => ['github-feedback', squadId, 'trusted-authors'] as const,
+}
+
+/** The signed-in person's own verified GitHub account; refreshed by `githubIdentity.updated`. */
+export const githubIdentityQueryKeys = { all: ['github-identity'] as const }
+
 export const serverConnectionQueryKeys = {
   status: () => ['push-server-connection'] as const,
   availability: () => ['push-relay-availability'] as const,

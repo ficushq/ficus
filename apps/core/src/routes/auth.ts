@@ -644,6 +644,16 @@ authRouter.put('/settings', identityMiddleware, requirePermission('settings:writ
     .strict()
     .safeParse(await c.req.json())
   if (!parsed.success) return c.json({ error: 'Invalid sign-up settings' }, 400)
+  // Sign-up policy decides who can become a person here (and in which role). Agents and system
+  // tokens must not open registration into a role that GitHub trust follows.
+  try {
+    const { requireHumanForSignupPolicy } = await import('../services/integrations/github/trust-mutation-guard')
+    await requireHumanForSignupPolicy(c.get('identity'))
+  } catch (error) {
+    const { GitHubFeedbackError } = await import('../services/integrations/github/feedback-trust')
+    if (error instanceof GitHubFeedbackError) return c.json({ error: error.code }, error.status)
+    throw error
+  }
   const body = parsed.data
   const existing = await getAuthSettings()
   const roleId = body.defaultSignupRoleId === undefined ? existing.defaultSignupRoleId : body.defaultSignupRoleId

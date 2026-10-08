@@ -113,6 +113,11 @@ export type EventMap = {
   // derives which status query to invalidate from its prefix.
   'sandbox.status': { sandboxId: string }
   'integration.projection-invalidated': { squadId: string; providerKey: string }
+  // Content-free GitHub moderation invalidations. Never carry author, repository, text or routing.
+  // Squad-scoped: pending queue / trusted authors / author filter changed in this squad.
+  'githubFeedback.updated': { squadId: string }
+  // Delivered only to this user's own sockets: their verified GitHub link changed.
+  'githubIdentity.updated': { userId: string }
   'sandbox.provision-transition': {
     scopeHash: string
     from: 'closed' | 'open' | 'half_open'

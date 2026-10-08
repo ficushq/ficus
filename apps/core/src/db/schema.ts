@@ -933,6 +933,10 @@ export const squads = pgTable('squads', {
   globalCollaborationEnabled: boolean('global_collaboration_enabled').notNull().default(false),
   order: integer('order').notNull().default(0),
   metadata: jsonb('metadata').notNull().default({}),
+  // GitHub author filter: ON holds comments/reviews from untrusted authors for human review.
+  // OFF routes GitHub events exactly as before the filter existed. New squads default ON;
+  // squads that existed at rollout were migrated OFF. Human-only; never part of generic updates.
+  githubAuthorFilter: boolean('github_author_filter').notNull().default(true),
   // Max simultaneously-admitted work streams (status 'active').
   // NULL = unlimited (legacy behavior); excess creations land in 'queued'.
   maxConcurrentWorkStreams: integer('max_concurrent_work_streams'),
@@ -1325,6 +1329,266 @@ export const integrationOutputEvents = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [unique('integration_output_event_identity').on(table.integration, table.sourceKey, table.eventKey)]
+)
+
+/** Ownership proof only: no integration credentials or derived squad grants. */
+export const githubPersonalIdentities = pgTable(
+  'github_personal_identities',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    host: text('host').notNull().default('github.com'),
+    // An unlinked generation tombstone can exist before the first OAuth proof.
+    accountId: text('account_id'),
+    login: varchar('login', { length: 100 }),
+    generation: integer('generation').notNull().default(0),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow(),
+    unlinkedAt: timestamp('unlinked_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('github_personal_identity_active_account')
+      .on(table.host, table.accountId)
+      .where(sql`${table.unlinkedAt} is null`),
+    check('github_personal_identity_host', sql`${table.host} = 'github.com'`),
+    check(
+      'github_personal_identity_account_id',
+      sql`${table.accountId} ~ '^[1-9][0-9]{0,15}$' AND ${table.accountId}::numeric <= 9007199254740991`
+    ),
+    check('github_personal_identity_generation', sql`${table.generation} >= 0`),
+    check(
+      'github_personal_identity_link_tuple',
+      sql`(${table.accountId} IS NULL AND ${table.login} IS NULL AND ${table.unlinkedAt} IS NOT NULL) OR (${table.accountId} IS NOT NULL AND ${table.login} IS NOT NULL AND ${table.linkedAt} IS NOT NULL)`
+    ),
+  ]
+)
+
+/** Server-verified, short-lived ownership confirmation. No access/refresh tokens. */
+export const githubIdentityProofs = pgTable(
+  'github_identity_proofs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    flowKey: varchar('flow_key', { length: 64 }).notNull().unique(),
+    generation: integer('generation').notNull(),
+    accountId: text('account_id').notNull(),
+    login: varchar('login', { length: 100 }).notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('github_identity_proof_user').on(table.userId, table.expiresAt),
+    check('github_identity_proof_generation', sql`${table.generation} >= 0`),
+    check('github_identity_proof_flow_hash', sql`${table.flowKey} ~ '^[0-9a-f]{64}$'`),
+    check(
+      'github_identity_proof_account_id',
+      sql`${table.accountId} ~ '^[1-9][0-9]{0,15}$' AND ${table.accountId}::numeric <= 9007199254740991`
+    ),
+    check('github_identity_proof_lifetime', sql`${table.expiresAt} > ${table.verifiedAt}`),
+  ]
+)
+
+export const githubTrustedAuthors = pgTable(
+  'github_trusted_authors',
+  {
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    host: text('host').notNull().default('github.com'),
+    accountId: text('account_id').notNull(),
+    login: varchar('login', { length: 100 }).notNull(),
+    accountType: text('account_type').$type<'User' | 'Bot'>().notNull(),
+    // Scalar audit identity deliberately survives removal of the managing human.
+    addedByUserId: uuid('added_by_user_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.squadId, table.host, table.accountId] }),
+    check('github_trusted_author_host', sql`${table.host} = 'github.com'`),
+    check(
+      'github_trusted_author_account_id',
+      sql`${table.accountId} ~ '^[1-9][0-9]{0,15}$' AND ${table.accountId}::numeric <= 9007199254740991`
+    ),
+    check('github_trusted_author_type', sql`${table.accountType} in ('User', 'Bot')`),
+  ]
+)
+
+/** Serialize object revisions across connection, webhook, and poll observations. */
+export const githubFeedbackObjects = pgTable(
+  'github_feedback_objects',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    repositoryId: text('repository_id').notNull(),
+    objectKind: text('object_kind').notNull(),
+    nativeId: text('native_id').notNull(),
+    sequence: integer('sequence').notNull().default(0),
+    currentRevisionId: uuid('current_revision_id').references((): AnyPgColumn => githubFeedbackRevisions.id, {
+      onDelete: 'set null',
+    }),
+    providerVersion: text('provider_version'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('github_feedback_object_identity').on(table.squadId, table.repositoryId, table.objectKind, table.nativeId),
+    check('github_feedback_object_sequence', sql`${table.sequence} >= 0`),
+  ]
+)
+
+/** Server-owned, short-lived exact-resource witness. Never accepted from a fact or API DTO. */
+export const githubOutputProofs = pgTable(
+  'github_output_proofs',
+  {
+    eventId: uuid('event_id')
+      .primaryKey()
+      .references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
+    sourceEventId: uuid('source_event_id')
+      .notNull()
+      .references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
+    sourceHash: varchar('source_hash', { length: 64 }).notNull(),
+    effectHash: varchar('effect_hash', { length: 64 }).notNull(),
+    authorityHash: varchar('authority_hash', { length: 64 }).notNull(),
+    checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  // Projection lookups (admission, the unmatched scan, FK cascades) lead on the source event.
+  (table) => [index('github_output_proof_source').on(table.sourceEventId)]
+)
+
+/** The envelope is immutable through services; a decision never re-fetches provider content. */
+export const githubFeedbackRevisions = pgTable(
+  'github_feedback_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    objectId: uuid('object_id')
+      .notNull()
+      .references((): AnyPgColumn => githubFeedbackObjects.id, { onDelete: 'cascade' }),
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    sequence: integer('sequence').notNull(),
+    contentHash: varchar('content_hash', { length: 64 }).notNull(),
+    normalizationVersion: integer('normalization_version').notNull().default(1),
+    // Null only after settled content retention, or when the full content exceeds the size cap.
+    envelope: jsonb('envelope').$type<IntegrationOutputFact>(),
+    byteCount: integer('byte_count').notNull(),
+    author: jsonb('author').$type<import('@ficus/shared').GitHubAccountIdentity>(),
+    editor: jsonb('editor').$type<import('@ficus/shared').GitHubAccountIdentity>(),
+    attribution: text('attribution').$type<'creation' | 'verified_edit' | 'unknown'>().notNull(),
+    providerVersion: text('provider_version'),
+    routingProvenance: jsonb('routing_provenance')
+      .$type<Array<import('@ficus/shared').GitHubFeedbackRoute>>()
+      .notNull()
+      .default([]),
+    decision: text('decision').$type<import('@ficus/shared').GitHubFeedbackDecision>().notNull().default('pending'),
+    decisionVersion: integer('decision_version').notNull().default(0),
+    decidedByUserId: uuid('decided_by_user_id'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    releaseState: text('release_state')
+      .$type<import('@ficus/shared').GitHubFeedbackReleaseState>()
+      .notNull()
+      .default('held'),
+    reason: varchar('reason', { length: 64 }),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    leaseToken: uuid('lease_token'),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    firstObservedAt: timestamp('first_observed_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('github_feedback_revision_sequence').on(table.objectId, table.sequence),
+    index('github_feedback_revision_pending').on(table.squadId, table.decision, table.firstObservedAt, table.id),
+    index('github_feedback_revision_release').on(table.releaseState, table.nextAttemptAt, table.id),
+    check('github_feedback_revision_hash', sql`${table.contentHash} ~ '^[0-9a-f]{64}$'`),
+    check(
+      'github_feedback_revision_sequence_positive',
+      sql`${table.sequence} > 0 AND ${table.normalizationVersion} > 0`
+    ),
+    check(
+      'github_feedback_revision_counters',
+      sql`${table.decisionVersion} >= 0 AND ${table.byteCount} >= 0 AND ${table.attempts} >= 0`
+    ),
+    check(
+      'github_feedback_revision_attribution',
+      sql`${table.attribution} in ('creation', 'verified_edit', 'unknown')`
+    ),
+    check(
+      'github_feedback_revision_decision',
+      sql`${table.decision} in ('pending', 'allow_once', 'allow_trust', 'deny', 'automatic', 'historical')`
+    ),
+    check(
+      'github_feedback_revision_release_state',
+      sql`${table.releaseState} in ('held', 'ready', 'retry', 'retained', 'delivered', 'obsolete')`
+    ),
+    check(
+      'github_feedback_revision_human_decision',
+      sql`(${table.decision} in ('allow_once', 'allow_trust', 'deny') AND ${table.decidedByUserId} is not null AND ${table.decidedAt} is not null) OR (${table.decision} in ('pending', 'automatic', 'historical') AND ${table.decidedByUserId} is null AND ${table.decidedAt} is null)`
+    ),
+    check(
+      'github_feedback_revision_lease_pair',
+      sql`(${table.leaseToken} is null) = (${table.leaseExpiresAt} is null)`
+    ),
+  ]
+)
+
+/** Source authorities remain distinct; moderation cannot confer repository access. */
+export const githubFeedbackSources = pgTable(
+  'github_feedback_sources',
+  {
+    revisionId: uuid('revision_id')
+      .notNull()
+      .references(() => githubFeedbackRevisions.id, { onDelete: 'cascade' }),
+    eventId: uuid('event_id')
+      .notNull()
+      .references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    authority: jsonb('authority')
+      .$type<import('../services/integrations/outputs/types').IntegrationOutputAuthority>()
+      .notNull(),
+    transportKey: text('transport_key'),
+    observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.revisionId, table.eventId] }),
+    index('github_feedback_source_event').on(table.squadId, table.eventId),
+    // Per-event lookups (admission, the unmatched scan, FK cascades) lead on the event alone.
+    index('github_feedback_source_by_event').on(table.eventId),
+  ]
+)
+
+/** Append-only, content-free idempotency/audit tombstones; intentionally no cascading FKs. */
+export const githubFeedbackDecisions = pgTable(
+  'github_feedback_decisions',
+  {
+    requestId: uuid('request_id').notNull(),
+    revisionId: uuid('revision_id').notNull(),
+    squadId: uuid('squad_id').notNull(),
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    contentHash: varchar('content_hash', { length: 64 }).notNull(),
+    decisionVersion: integer('decision_version').notNull(),
+    action: text('action').$type<import('@ficus/shared').ModerateGitHubFeedback['action']>().notNull(),
+    userId: uuid('user_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.requestId, table.revisionId] }),
+    index('github_feedback_decision_squad_created').on(table.squadId, table.createdAt),
+    check(
+      'github_feedback_decision_hashes',
+      sql`${table.contentHash} ~ '^[0-9a-f]{64}$' AND ${table.requestHash} ~ '^[0-9a-f]{64}$'`
+    ),
+    check('github_feedback_decision_action', sql`${table.action} in ('allow_once', 'deny', 'allow_trust')`),
+    check('github_feedback_decision_version', sql`${table.decisionVersion} > 0`),
+  ]
 )
 
 export const integrationOutputDeliveries = pgTable(
@@ -3412,6 +3676,8 @@ export const integrationOauthStates = pgTable(
   'integration_oauth_states',
   {
     stateHash: varchar('state_hash', { length: 64 }).primaryKey(),
+    purpose: text('purpose').notNull().default('integration'),
+    linkGeneration: integer('link_generation'),
     localFlowId: uuid('local_flow_id'),
     authority: varchar('authority', { length: 32 }).notNull().default('local'),
     completionHandleHash: varchar('completion_handle_hash', { length: 64 }),
@@ -3433,6 +3699,10 @@ export const integrationOauthStates = pgTable(
     uniqueIndex('uq_integration_oauth_states_local_flow')
       .on(table.localFlowId)
       .where(sql`${table.localFlowId} is not null`),
+    check(
+      'integration_oauth_states_purpose_context',
+      sql`(${table.purpose} = 'integration' AND ${table.linkGeneration} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.providerKey} = 'github' AND ${table.intent} = 'connect' AND ${table.linkGeneration} IS NOT NULL AND ${table.linkGeneration} >= 0)`
+    ),
     check('integration_oauth_states_hash_format', sql`${table.stateHash} ~ '^[0-9a-f]{64}$'`),
     check('integration_oauth_states_authority_check', sql`${table.authority} in ('local', 'platform_broker')`),
     check(
@@ -3445,7 +3715,7 @@ export const integrationOauthStates = pgTable(
     ),
     check(
       'integration_oauth_states_authority_flow_check',
-      sql`(${table.authority} = 'local' AND ${table.localFlowId} IS NULL) OR (${table.authority} = 'platform_broker' AND ${table.localFlowId} IS NOT NULL)`
+      sql`(${table.authority} = 'local' AND ((${table.purpose} = 'integration' AND ${table.localFlowId} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.localFlowId} IS NOT NULL))) OR (${table.authority} = 'platform_broker' AND ${table.localFlowId} IS NOT NULL)`
     ),
     check(
       'integration_oauth_states_intent_context',
@@ -3458,6 +3728,8 @@ export const integrationAuthorizationFlowReceipts = pgTable(
   'integration_authorization_flow_receipts',
   {
     localFlowId: uuid('local_flow_id').primaryKey(),
+    purpose: text('purpose').notNull().default('integration'),
+    linkGeneration: integer('link_generation'),
     providerKey: varchar('provider_key', { length: 64 }).notNull(),
     authority: varchar('authority', { length: 32 }).notNull(),
     intent: varchar('intent', { length: 16 }).notNull(),
@@ -3473,6 +3745,8 @@ export const integrationAuthorizationFlowReceipts = pgTable(
     installedConnectionId: uuid('installed_connection_id'),
     installedMaterialRevision: uuid('installed_material_revision'),
     installedAt: timestamp('installed_at', { withTimezone: true }),
+    identityProofId: uuid('identity_proof_id'),
+    identityVerifiedAt: timestamp('identity_verified_at', { withTimezone: true }),
     terminalCode: varchar('terminal_code', { length: 64 }),
     terminalAt: timestamp('terminal_at', { withTimezone: true }),
     revocationRequiredAt: timestamp('revocation_required_at', { withTimezone: true }),
@@ -3495,6 +3769,14 @@ export const integrationAuthorizationFlowReceipts = pgTable(
       .on(table.cleanupRequiredAt, table.localFlowId)
       .where(sql`${table.cleanupRequiredAt} IS NOT NULL AND ${table.cleanupSettledAt} IS NULL`),
     index('idx_integration_auth_receipts_retention').on(table.retainUntil, table.localFlowId),
+    check(
+      'integration_auth_receipts_purpose_context',
+      sql`(${table.purpose} = 'integration' AND ${table.linkGeneration} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.providerKey} = 'github' AND ${table.intent} = 'connect' AND ${table.linkGeneration} IS NOT NULL AND ${table.linkGeneration} >= 0)`
+    ),
+    check(
+      'integration_auth_receipts_connection_purpose',
+      sql`${table.purpose} = 'integration' OR (${table.installKind} IS NULL AND ${table.installedConnectionId} IS NULL AND ${table.installedMaterialRevision} IS NULL)`
+    ),
     check('integration_auth_receipts_authority_check', sql`${table.authority} in ('local', 'platform_broker')`),
     check(
       'integration_auth_receipts_artifact_ref_binding',
@@ -3536,7 +3818,11 @@ export const integrationAuthorizationFlowReceipts = pgTable(
     ),
     check(
       'integration_auth_receipts_install_terminal_exclusive',
-      sql`${table.terminalAt} IS NULL OR ${table.installedAt} IS NULL`
+      sql`${table.terminalAt} IS NULL OR (${table.installedAt} IS NULL AND ${table.identityVerifiedAt} IS NULL)`
+    ),
+    check(
+      'integration_auth_receipts_identity_result',
+      sql`(${table.identityProofId} IS NULL AND ${table.identityVerifiedAt} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.identityProofId} IS NOT NULL AND ${table.identityVerifiedAt} IS NOT NULL AND ${table.stagingStartedAt} IS NOT NULL AND ${table.adapterVersion} IS NOT NULL)`
     ),
     check(
       'integration_auth_receipts_revocation_settlement',
@@ -3548,7 +3834,7 @@ export const integrationAuthorizationFlowReceipts = pgTable(
     ),
     check(
       'integration_auth_receipts_obligation_disposition',
-      sql`(${table.revocationRequiredAt} IS NULL AND ${table.cleanupRequiredAt} IS NULL) OR ${table.terminalAt} IS NOT NULL OR ${table.installedAt} IS NOT NULL`
+      sql`(${table.revocationRequiredAt} IS NULL AND ${table.cleanupRequiredAt} IS NULL) OR ${table.terminalAt} IS NOT NULL OR ${table.installedAt} IS NOT NULL OR ${table.identityVerifiedAt} IS NOT NULL`
     ),
     check('integration_auth_receipts_retention_window', sql`${table.retainUntil} >= ${table.recoveryExpiresAt}`),
   ]
@@ -3898,6 +4184,10 @@ export const integrationAuditEvents = pgTable(
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     capability: varchar('capability', { length: 64 }),
+    // Literal authenticated principal and content-free target for security-sensitive mutations.
+    actorKey: text('actor_key'),
+    targetKind: varchar('target_kind', { length: 64 }),
+    targetId: text('target_id'),
     action: varchar('action', { length: 64 }).notNull(),
     outcome: varchar('outcome', { length: 32 }).notNull(),
     requestId: uuid('request_id'),

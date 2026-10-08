@@ -108,6 +108,119 @@ instance must be reachable at the displayed public URL.
 
 </ModeContent>
 
+## Control who can send feedback to agents
+
+Anyone who can comment on a public repository can write a pull request review or
+an issue comment. Before **author filtering**, every comment, review and inline
+comment that matched a squad's routing or tracked work reached its agents. With
+author filtering on, Ficus holds feedback it can't attribute to someone the squad
+trusts until a person reviews it.
+
+Author filtering is on by default for new squads. Squads that existed before the
+feature start with it off, so their routing is unchanged until you turn it on.
+Turn it on or off in the squad's **Settings → Integrations** under **GitHub
+feedback review → Filter GitHub feedback by author**. Leave it off only if every
+repository the squad watches is private to people you trust. When you turn it
+off, held events with readable content are allowed once and delivered to their
+current recipients; held events whose content can't be read stay held until
+someone decides.
+
+### Trusted authors
+
+A GitHub author is trusted in a squad when either of these is true:
+
+- **Linked Ficus user.** A Ficus user who can update the squad's settings has
+  linked their GitHub account in **Settings → Account → GitHub account**. Linking
+  uses a GitHub sign-in to prove the account is yours. It does not connect
+  repositories or give Ficus access to your account. This trust follows your
+  current permission: if you lose the permission or unlink, your later feedback
+  is held again.
+- **Added manually.** Someone who can update the squad added the account under
+  **Trusted authors**. Use this for people and bots that have no Ficus account.
+  Ficus looks the username up on GitHub and saves the numeric account ID, so trust
+  keeps working after a rename and cannot be claimed by a new account that takes
+  the old name.
+
+The list shows every reason an author is trusted. Removing a manual entry does not
+remove trust that comes from a linked account. Bots are never trusted
+automatically, and GitHub's author labels such as _Member_ or _Contributor_ do
+not count. Trust only decides whether feedback reaches agents; it never grants
+repository access or adds permissions.
+
+### What gets held
+
+With author filtering on, Ficus checks who wrote or did each event:
+
+- **Comments, reviews and inline comments** are checked against their author. An
+  edit also needs the person who edited it to be trusted.
+- **Assignments, review requests, labels, and closing or reopening an issue** are
+  checked against the person who did it. They arrive as a short fixed message
+  (who did what, the assignee or reviewer, the label and a link). An issue
+  assignment or a review request also includes the issue or pull request's
+  current title and description, but only when the person who wrote it is
+  trusted and Ficus can confirm the text is still theirs, so a trusted person
+  assigning someone else's issue doesn't pass that issue's text to agents.
+  Ficus can confirm this when the issue or pull request hasn't changed since it
+  was opened, or when its title and description still match what its author
+  wrote when Ficus received the opening event.
+  GitHub doesn't say who last edited a title or description, so text that may
+  have been edited by someone else is left out. If the author stops being
+  trusted before the message is delivered, agents get the short message instead.
+- **New issues and pull requests** are checked against their author.
+
+Some events are held even when everyone involved is trusted, because Ficus can't
+confirm who wrote or did them:
+
+- Edits to an issue or pull request title or description.
+- Events Ficus found by polling GitHub instead of receiving a webhook, when the
+  event is a pull request review, an edit, an assignment, a label or a
+  close/reopen. Polling doesn't reliably tell Ficus who acted.
+- Events GitHub can't confirm belong to the connected repository, events that
+  arrive out of order, and content too large to review.
+
+The review window shows the reason for each held event. Set up the repository
+webhook to keep these holds rare.
+
+### Review held events
+
+When events are held, **Pending GitHub events** appears on the squad's **Home**
+and **Work** tabs with a count, and in the squad's GitHub settings. Each of these
+opens the same **Review GitHub events** window. For each event it shows the
+author and why the event was held, the repository and pull request or issue,
+the intended recipient, and the exact text that will be delivered. It also links
+to the event on GitHub. Choose one or more events, then:
+
+- **Allow once** delivers exactly the version you reviewed. It does not trust
+  the author.
+- **Deny** keeps the event out of every agent's inbox. Ficus keeps a record of the
+  decision.
+- **Allow and trust author** delivers the selected events and adds their authors
+  as trusted authors of this squad. Their other held events stay held until you
+  review them.
+
+Allowed events are delivered by normal routing at the time you approve, so they
+reach whoever owns that work now. Paused or parked work receives them the usual
+way. A later edit on GitHub becomes a new version that is checked again; Ficus
+never delivers text you haven't approved. The **Releasing** tab shows events
+that are waiting to be delivered or are retrying. An allowed event that keeps
+failing to deliver shows up with the pending events on Home and Work; you can
+deny it from there to stop the retries. If the squad's GitHub connection can no
+longer read an event's source, the review window hides the text and the event
+can only be denied.
+
+Only people can review events, change trusted authors or turn filtering on or
+off, and they need permission to update the squad. Agents cannot do any of this,
+even when acting on a person's behalf. People who can view the squad but not
+update it see the queue without the actions.
+
+Pull request merges, closes and reopens and CI results still reach agents while
+feedback is held. They arrive as fixed status messages that include no titles,
+descriptions or log text. Dependabot alerts still arrive only through verified
+webhooks. Agents keep their usual tools, so an agent that runs `gh` or opens
+GitHub itself can still read anything the squad's account can see. Author
+filtering controls what Ficus delivers and indexes; it does not make agents
+immune to untrusted text they fetch themselves.
+
 ## Sign agents' commits
 
 Each account in the GitHub card has a **Commit signing** line. When it is on,

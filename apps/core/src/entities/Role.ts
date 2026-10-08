@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { db } from '../db'
+import { db, type DbTx } from '../db'
 import { roles, type RoleAppliesTo } from '../db/schema'
 import type { InferSelectModel } from 'drizzle-orm'
 
@@ -113,7 +113,7 @@ export class Role {
     return rows.map((r) => new Role(r))
   }
 
-  async update(input: UpdateRoleInput): Promise<Role> {
+  async update(input: UpdateRoleInput, executor: typeof db | DbTx = db): Promise<Role> {
     if (this.readOnly) {
       throw new RoleProtectedError('Cannot modify read-only roles')
     }
@@ -124,7 +124,7 @@ export class Role {
     if (this.isSystem && updateValues.name !== undefined) {
       delete updateValues.name
     }
-    const [row] = await db
+    const [row] = await executor
       .update(roles)
       .set({ ...updateValues, updatedAt: new Date(), updatedBy: 'admin' })
       .where(eq(roles.id, this.id))
@@ -133,13 +133,13 @@ export class Role {
     return this
   }
 
-  async delete(): Promise<void> {
+  async delete(executor: typeof db | DbTx = db): Promise<void> {
     if (this.readOnly) {
       throw new RoleProtectedError('Cannot delete read-only roles')
     }
     if (this.isSystem) {
       throw new RoleProtectedError('Cannot delete system roles')
     }
-    await db.delete(roles).where(eq(roles.id, this.id))
+    await executor.delete(roles).where(eq(roles.id, this.id))
   }
 }

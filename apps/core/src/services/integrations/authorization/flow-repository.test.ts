@@ -29,13 +29,14 @@ function hash(character: string): string {
   return character.repeat(64)
 }
 
-async function createClaimedFlow(localFlowId: string = crypto.randomUUID()): Promise<string> {
+async function createClaimedFlow(localFlowId: string = crypto.randomUUID(), personal = false): Promise<string> {
   createdFlowIds.add(localFlowId)
   await states.create({
     stateHash: createHash('sha256').update(localFlowId).digest('hex'),
     localFlowId,
     authority: 'platform_broker',
-    providerKey: 'notion',
+    providerKey: personal ? 'github' : 'notion',
+    ...(personal ? { purpose: 'github_identity' as const, linkGeneration: 3 } : {}),
     userId,
     intent: 'connect',
     connectionId: null,
@@ -46,7 +47,7 @@ async function createClaimedFlow(localFlowId: string = crypto.randomUUID()): Pro
   })
   const claimed = await states.claimByFlow({
     localFlowId,
-    providerKey: 'notion',
+    providerKey: personal ? 'github' : 'notion',
     userId,
     authority: 'platform_broker',
     handleHash: hash('a'),
@@ -276,4 +277,37 @@ describe('authorization flow receipts', () => {
     expect(await deleteSettledAuthorizationReceipts()).toBe(1)
     expect(await receipts.get(localFlowId)).toBeNull()
   })
+})
+
+test('personal proof receipt is immutable success through cleanup, expiry, and coordinator finalization', async () => {
+  const localFlowId = await createClaimedFlow(crypto.randomUUID(), true)
+  const proofId = crypto.randomUUID()
+  await receipts.beginStaging(localFlowId, 1)
+  await db
+    .update(integrationAuthorizationFlowReceipts)
+    .set({ identityProofId: proofId, identityVerifiedAt: new Date() })
+    .where(eq(integrationAuthorizationFlowReceipts.localFlowId, localFlowId))
+  expect(await receipts.beginStaging(localFlowId, 1)).toBeNull()
+  expect(await receipts.markTerminal(localFlowId, 'provider_denied')).toBeNull()
+  expect(await states.finishByFlow({ localFlowId, handleHash: hash('a') })).toBe(true)
+  expect(await receipts.requireCleanup(localFlowId, 'identity_verified')).toMatchObject({
+    identityProofId: proofId,
+    terminalAt: null,
+    cleanupSettledAt: expect.any(Date),
+  })
+  await db
+    .update(integrationAuthorizationFlowReceipts)
+    .set({ recoveryExpiresAt: new Date('2000-01-01T00:00:00.000Z') })
+    .where(eq(integrationAuthorizationFlowReceipts.localFlowId, localFlowId))
+  await sweepExpiredAuthorizationFlows()
+  expect(await receipts.get(localFlowId)).toMatchObject({
+    identityProofId: proofId,
+    terminalAt: null,
+    installedConnectionId: null,
+  })
+  await db
+    .update(integrationAuthorizationFlowReceipts)
+    .set({ retainUntil: new Date('2000-01-02T00:00:00.000Z') })
+    .where(eq(integrationAuthorizationFlowReceipts.localFlowId, localFlowId))
+  expect(await deleteSettledAuthorizationReceipts()).toBe(1)
 })

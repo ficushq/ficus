@@ -9,6 +9,14 @@ export function integrationSettingsPath(provider: OAuthProvider, baseUrl = impor
   return `${integrationAuthorizationReturnPath(baseUrl)}?section=integrations&setting=integration-${provider}`
 }
 
+/**
+ * Personal GitHub identity links return here. Authorization accepts paths only, so this marker path
+ * is mapped back to the account page's linked-GitHub setting by `integrationReturnPath`.
+ */
+export function githubIdentityAuthorizationReturnPath(baseUrl = import.meta.env?.BASE_URL ?? '/') {
+  return `${baseUrl.replace(/\/$/, '')}/settings/github-identity`
+}
+
 /** Older authorization flows saved only /settings, which opens the personal account page. */
 export function integrationReturnPath(
   returnTo: string,
@@ -17,6 +25,8 @@ export function integrationReturnPath(
 ) {
   const settingsPath = `${baseUrl.replace(/\/$/, '')}/settings`
   const pathname = returnTo.split(/[?#]/, 1)[0]?.replace(/\/$/, '')
+  if (provider === 'github' && pathname === githubIdentityAuthorizationReturnPath(baseUrl))
+    return `${settingsPath}?section=account&setting=github-identity`
   if (
     provider === 'github' &&
     (pathname === '/onboarding' || pathname === `${baseUrl.replace(/\/$/, '')}/onboarding`)

@@ -2,5 +2,7 @@
 # GitHub/Linear notifications, code-host feedback, and review-request creation
 # run through the native integration event system. No notification scripts needed.
 # Existing bundled script references in older files are ignored on load.
+# For GitHub only `push` commands run; feedback/issue/PR/CI commands and batches are
+# retired (they bypassed the squad GitHub author filter) and are ignored with a warning.
 github: {}
 linear: {}

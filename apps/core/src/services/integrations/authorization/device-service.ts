@@ -4,8 +4,9 @@ import { classifyGitHubOAuthError } from '@ficus/shared/oauth-providers'
 import type { GitHubConnectionConfiguration } from '@ficus/shared/oauth-providers/github/config'
 import type { AuthorizationFlowReceipt, AuthorizationFlowReceiptRepository } from './flow-repository'
 import type { OAuthCredentialBundleV1 } from './credential-bundle'
-import type { OAuthStateRecord } from './state-repository'
+import type { OAuthAuthorizationPurpose, OAuthStateRecord } from './state-repository'
 import type { AuthorizationGrant } from '../plugin'
+import { GitHubFeedbackError } from '../github/feedback-trust'
 import { AuthorizationFlowError, isSafeReturnTarget } from './service'
 
 export interface DeviceAuthorizationRecord {
@@ -29,6 +30,8 @@ export interface DeviceAuthorizationRepository {
     returnTo: string
     connectionId: string | null
     expectedMaterialRevision: string | null
+    purpose?: OAuthAuthorizationPurpose
+    linkGeneration?: number
   }): Promise<{ expiresAt: Date }>
   get(id: string, userId: string): Promise<DeviceAuthorizationRecord | null>
   defer(id: string, intervalSeconds: number): Promise<void>
@@ -50,6 +53,13 @@ export interface DeviceAuthorizationDependencies {
     userId: string
     grant: AuthorizationGrant<GitHubConnectionConfiguration, OAuthCredentialBundleV1>
   }): Promise<void>
+  /** Per-request literal-human/generation preflight. Finalization rechecks after provider I/O. */
+  verifyPersonal?(record: DeviceAuthorizationRecord): Promise<void>
+  installIdentity?(input: {
+    state: OAuthStateRecord
+    userId: string
+    credential: OAuthCredentialBundleV1
+  }): Promise<void>
   now?: () => Date
   uuid?: () => string
 }
@@ -65,8 +75,25 @@ export class DeviceAuthorizationService {
     this.#now = dependencies.now ?? (() => new Date())
   }
 
-  async start(input: { userId: string; returnTo: string; connectionId?: string; expectedMaterialRevision?: string }) {
+  async start(input: {
+    userId: string
+    returnTo: string
+    connectionId?: string
+    expectedMaterialRevision?: string
+    purpose?: OAuthAuthorizationPurpose
+    linkGeneration?: number
+  }) {
     this.dependencies.requireLocal()
+    if (
+      (input.purpose === 'github_identity' &&
+        (input.connectionId ||
+          input.expectedMaterialRevision ||
+          !Number.isSafeInteger(input.linkGeneration) ||
+          input.linkGeneration! < 0)) ||
+      ((input.purpose ?? 'integration') === 'integration' && input.linkGeneration !== undefined) ||
+      (input.purpose !== undefined && !['integration', 'github_identity'].includes(input.purpose))
+    )
+      throw new AuthorizationFlowError('invalid_authorization_purpose')
     if (!isSafeReturnTarget(input.returnTo)) throw new AuthorizationFlowError('unsafe_return_target')
     if (Boolean(input.connectionId) !== Boolean(input.expectedMaterialRevision))
       throw new AuthorizationFlowError('invalid_reconnect_target')
@@ -82,6 +109,7 @@ export class DeviceAuthorizationService {
       returnTo: input.returnTo,
       connectionId: input.connectionId ?? null,
       expectedMaterialRevision: input.expectedMaterialRevision ?? null,
+      ...(input.purpose === 'github_identity' ? { purpose: input.purpose, linkGeneration: input.linkGeneration } : {}),
     })
     return {
       kind: 'device' as const,
@@ -102,6 +130,20 @@ export class DeviceAuthorizationService {
         let record = await this.#requireRecord(input)
         const settled = this.#settled(record.receipt)
         if (settled) return { result: settled }
+        if (record.receipt.purpose === 'github_identity') {
+          if (!this.dependencies.verifyPersonal) throw new AuthorizationFlowError('identity_installer_unavailable')
+          try {
+            await this.dependencies.verifyPersonal(record)
+          } catch (error) {
+            if (error instanceof GitHubFeedbackError) {
+              const disposition = record.receipt.stagingStartedAt
+                ? await this.dependencies.receipts.requireCleanup(record.id, error.code)
+                : await this.dependencies.receipts.markTerminal(record.id, error.code)
+              if (!disposition?.terminalAt) throw new AuthorizationFlowError('flow_finalization_failed')
+            }
+            throw error
+          }
+        }
         if (record.status === 'authorized' && record.receipt.recoveryExpiresAt <= this.#now()) {
           await this.dependencies.receipts.requireRevocation({
             localFlowId: record.id,
@@ -156,6 +198,17 @@ export class DeviceAuthorizationService {
       if (prepared.result) return prepared.result
       const record = prepared.record!
       const credential = await this.dependencies.repository.credential(record)
+      if (record.receipt.purpose === 'github_identity') {
+        if (!this.dependencies.installIdentity) throw new AuthorizationFlowError('identity_installer_unavailable')
+        await this.dependencies.installIdentity({
+          state: this.#state(record, input.userId),
+          userId: input.userId,
+          credential,
+        })
+        const installed = await this.dependencies.receipts.get(record.id)
+        if (!installed?.identityProofId) throw new AuthorizationFlowError('grant_persistence_failed')
+        return { status: 'complete', returnTo: installed.returnTo }
+      }
       // This lookup can be retried without repeating the one-time exchange.
       let configuration: GitHubConnectionConfiguration
       try {
@@ -172,23 +225,7 @@ export class DeviceAuthorizationService {
         )
         return { status: 'failed', code: failure.code }
       }
-      const receipt = record.receipt
-      const state: OAuthStateRecord = {
-        stateHash: receipt.completionHandleHash,
-        localFlowId: record.id,
-        authority: 'local',
-        completionHandleHash: receipt.completionHandleHash,
-        recoveryExpiresAt: receipt.recoveryExpiresAt,
-        providerKey: 'github',
-        userId: input.userId,
-        intent: receipt.intent,
-        connectionId: receipt.sourceConnectionId,
-        expectedMaterialRevision: receipt.sourceMaterialRevision,
-        redirectUri: '',
-        returnTo: receipt.returnTo,
-        expiresAt: receipt.recoveryExpiresAt,
-        createdAt: this.#now(),
-      }
+      const state = this.#state(record, input.userId)
       await this.dependencies.install({
         state,
         userId: input.userId,
@@ -205,7 +242,7 @@ export class DeviceAuthorizationService {
     await this.dependencies.lease.runExclusive(`device:${input.id}`, () =>
       this.dependencies.lease.runExclusive(`flow:${input.id}`, async () => {
         const record = await this.#requireRecord(input)
-        if (record.receipt.installKind) return
+        if (record.receipt.installKind || record.receipt.identityProofId) return
         if (record.status === 'authorized') {
           await this.dependencies.receipts.requireRevocation({
             localFlowId: record.id,
@@ -231,8 +268,30 @@ export class DeviceAuthorizationService {
     return record
   }
 
+  #state(record: DeviceAuthorizationRecord, userId: string): OAuthStateRecord {
+    const receipt = record.receipt
+    return {
+      stateHash: receipt.completionHandleHash,
+      localFlowId: record.id,
+      authority: 'local',
+      completionHandleHash: receipt.completionHandleHash,
+      recoveryExpiresAt: receipt.recoveryExpiresAt,
+      providerKey: 'github',
+      userId,
+      intent: receipt.intent,
+      purpose: receipt.purpose ?? 'integration',
+      linkGeneration: receipt.linkGeneration ?? null,
+      connectionId: receipt.sourceConnectionId,
+      expectedMaterialRevision: receipt.sourceMaterialRevision,
+      redirectUri: '',
+      returnTo: receipt.returnTo,
+      expiresAt: receipt.recoveryExpiresAt,
+      createdAt: this.#now(),
+    }
+  }
+
   #settled(receipt: AuthorizationFlowReceipt): DeviceAuthorizationPollResult | undefined {
-    if (receipt.installKind) return { status: 'complete', returnTo: receipt.returnTo }
+    if (receipt.installKind || receipt.identityProofId) return { status: 'complete', returnTo: receipt.returnTo }
     if (receipt.terminalAt) return { status: 'failed', code: receipt.terminalCode ?? 'flow_expired' }
     return undefined
   }

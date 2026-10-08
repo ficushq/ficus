@@ -3,7 +3,7 @@ import { getRelayAvailability, getServerConnection } from './api/serverConnectio
 import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
 import { desktopQueryKeys } from './queryKeys'
 import { desktopBridge, type DesktopNotificationBatch } from './lib/desktop'
-import { apiFetch } from './api/client'
+import { apiFetch, ApiError } from './api/client'
 import { channelLinkQueryKeys } from './queryKeys'
 import { getChannelLinks } from './api/channelLinks'
 import { listIntegrationOutputs } from './api/integrations'
@@ -1132,6 +1132,63 @@ export const feedQueries = {
       queryKey: feedQueryKeys.recent(after, squadIds),
       queryFn: () => listDoneWorkStreams({ completedAfter: after, squadIds, statuses: ['done'], limit: 5 }),
       staleTime: 30_000,
+    }),
+}
+
+import { githubFeedbackQueryKeys, githubIdentityQueryKeys } from './queryKeys'
+import {
+  getGitHubFeedbackDetail,
+  getGitHubFeedbackSummary,
+  listGitHubFeedback,
+  listGitHubTrustedAuthors,
+} from './api/githubFeedback'
+import { getGitHubIdentity } from './api/githubIdentity'
+
+/**
+ * Moderation queries never retry 4xx (403 for agents/out-of-squad users must render as "no access",
+ * not spin) and always refetch on focus, because dynamic trust changes from role edits emit no event.
+ */
+const noRetryOnClientError = (count: number, error: unknown) =>
+  !(error instanceof ApiError && error.status >= 400 && error.status < 500) && count < 2
+
+export const githubFeedbackQueries = {
+  summary: (squadId: string) =>
+    queryOptions({
+      queryKey: githubFeedbackQueryKeys.summary(squadId),
+      queryFn: () => getGitHubFeedbackSummary(squadId),
+      staleTime: 15_000,
+      retry: noRetryOnClientError,
+      refetchOnWindowFocus: 'always',
+    }),
+  list: (squadId: string, queue: 'pending' | 'releasing') =>
+    infiniteQueryOptions({
+      queryKey: githubFeedbackQueryKeys.list(squadId, queue),
+      queryFn: ({ pageParam }) => listGitHubFeedback(squadId, { queue, cursor: pageParam }),
+      initialPageParam: null as string | null,
+      getNextPageParam: (page) => page.nextCursor,
+      retry: noRetryOnClientError,
+    }),
+  detail: (squadId: string, revisionId: string) =>
+    queryOptions({
+      queryKey: githubFeedbackQueryKeys.detail(squadId, revisionId),
+      queryFn: () => getGitHubFeedbackDetail(squadId, revisionId),
+      retry: noRetryOnClientError,
+    }),
+  trustedAuthors: (squadId: string) =>
+    queryOptions({
+      queryKey: githubFeedbackQueryKeys.trustedAuthors(squadId),
+      queryFn: () => listGitHubTrustedAuthors(squadId),
+      retry: noRetryOnClientError,
+      refetchOnWindowFocus: 'always',
+    }),
+}
+
+export const githubIdentityQueries = {
+  status: () =>
+    queryOptions({
+      queryKey: githubIdentityQueryKeys.all,
+      queryFn: () => getGitHubIdentity(),
+      retry: noRetryOnClientError,
     }),
 }
 

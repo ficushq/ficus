@@ -8,15 +8,7 @@ export {
   githubProcessor,
   handleGithubPush,
   handleGithubPing,
-  handleGithubPullRequestReview,
-  handleGithubPullRequestReviewRequested,
-  handleGithubPullRequestMerge,
-  handleGithubPullRequestConflict,
-  handleGithubIssuesAssigned,
-  handleGithubIssuesUnassigned,
-  handleGithubWorkflowRun,
-  handleGithubIssueComment,
-  handleGithubPullRequestReviewComment,
+  handleGithubManagedIndexing,
   setGithubActionConfig,
 } from './github'
 

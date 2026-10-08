@@ -35,7 +35,8 @@ export interface UserOnboarding {
 }
 
 /** Either the pooled db handle or a drizzle transaction handle. */
-export type UserExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
+type UserTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+export type UserExecutor = typeof db | UserTransaction
 
 export class User {
   constructor(private row: UserRow) {}
@@ -183,8 +184,11 @@ export class User {
     return Number(result[0].count)
   }
 
-  async update(input: { email?: string; displayName?: string | null; disabledAt?: Date | null }): Promise<User> {
-    const [row] = await db
+  async update(
+    input: { email?: string; displayName?: string | null; disabledAt?: Date | null },
+    executor: UserExecutor = db
+  ): Promise<User> {
+    const [row] = await executor
       .update(users)
       .set({ ...input, updatedAt: new Date() })
       .where(eq(users.id, this.id))
@@ -193,16 +197,21 @@ export class User {
     return this
   }
 
-  async disable(): Promise<User> {
-    return this.update({ disabledAt: new Date() })
+  async disable(executor: UserExecutor = db): Promise<User> {
+    return this.update({ disabledAt: new Date() }, executor)
   }
 
-  async enable(): Promise<User> {
-    return this.update({ disabledAt: null })
+  async enable(executor: UserExecutor = db): Promise<User> {
+    return this.update({ disabledAt: null }, executor)
   }
 
-  async delete(): Promise<void> {
-    await db.transaction(async (tx) => {
+  /**
+   * Deletes the user atomically. Callers that already hold a transaction (for example the human-only
+   * GitHub trust-mutation guard, which must lock trust authority first) pass it as `executor`; otherwise
+   * a new transaction is opened.
+   */
+  async delete(executor: UserExecutor = db): Promise<void> {
+    const run = async (tx: UserTransaction) => {
       await tx.select({ id: users.id }).from(users).where(eq(users.id, this.id)).for('update')
       await prepareActivityRelayUserDeletion(tx, this.id)
       // Revoke any agent tokens this user owns (e.g. system-manager tokens) before
@@ -217,7 +226,9 @@ export class User {
         .delete(roleAssignments)
         .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.subjectId, this.id)))
       await tx.delete(users).where(eq(users.id, this.id))
-    })
+    }
+    if (executor === db) await db.transaction(run)
+    else await run(executor as UserTransaction)
     invalidatePermissionCache()
   }
 

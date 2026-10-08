@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, inArray, InferSelectModel, isNotNull, isNull, lte, sql, type SQL } from 'drizzle-orm'
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core'
-import { agents, db, messages } from '../db'
+import { agents, db, messages, type DbTx } from '../db'
 import { ADDRESSABLE_AGENT_STATUSES, AgentStatus, LIVE_AGENT_STATUSES, Message } from '@ficus/shared'
 import { AmbiguousPrefixError, uuidPrefixCondition } from '../db/prefix-match'
 import { validateModelSpecList } from '../lib/utils/model-spec'
@@ -530,8 +530,8 @@ export async function validateAgentIds(agentIds: string[]): Promise<string[]> {
  * DB insert statement behind Agent.create. See Agent.ts for id/name/metadata
  * assembly, validation, construction (via mustFind), and event emission.
  */
-export async function insertAgent(values: typeof agents.$inferInsert): Promise<void> {
-  await db.insert(agents).values(values)
+export async function insertAgent(values: typeof agents.$inferInsert, store: typeof db | DbTx = db): Promise<void> {
+  await store.insert(agents).values(values)
 }
 
 /**

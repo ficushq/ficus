@@ -4,7 +4,7 @@ import { useParams, useNavigate, useLocation, useSearchParams } from 'react-rout
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ComponentProps, type ComponentType, useCallback, useEffect, useState, useMemo } from 'react'
 import { queries } from '../queryOptions'
-import { queryKeys } from '../queryKeys'
+import { queryKeys, githubFeedbackQueryKeys } from '../queryKeys'
 import { DONE_WORK_STREAM_STATUSES_KEY, listSquadAgentsWithRecent } from '../api/squads'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useInfiniteDoneWorkStreams } from '../hooks/useInfiniteDoneWorkStreams'
@@ -35,6 +35,8 @@ import { SquadMonitorsSection } from './monitors/SquadMonitorsSection'
 import { ChevronDownIcon, ChevronRightIcon, MoreIcon } from './icons'
 import { countableSquadAgents } from '../lib/agentDisplay'
 import { LoadingContent, SkeletonBlock, SkeletonText } from './loading/Skeleton'
+import { GitHubFeedbackReviewProvider } from './integrations/GitHubFeedbackReviewProvider'
+import { PendingGitHubEventsSection } from './integrations/PendingGitHubEventsSection'
 
 const STATUS_BADGE_COLORS: Record<string, BadgeColor> = {
   active: 'success',
@@ -219,6 +221,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreams(resolvedId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.agentsWithRecent(resolvedId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.agents(resolvedId) }),
+      queryClient.invalidateQueries({ queryKey: githubFeedbackQueryKeys.summary(resolvedId) }),
     ])
   }, [queryClient, resolvedId, squadId])
 
@@ -228,6 +231,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.squads.doneWorkStreamsInfinite(resolvedId, DONE_WORK_STREAM_STATUSES_KEY),
       }),
+      queryClient.invalidateQueries({ queryKey: githubFeedbackQueryKeys.summary(resolvedId) }),
     ])
   }, [queryClient, resolvedId])
 
@@ -429,124 +433,131 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
 
       <SquadNavigation tabs={TABS} activeTab={activeTab} onChange={setActiveTab} />
 
-      {/* Tab content */}
-      <div className="squad-detail-tab-content flex-1 min-h-0 overflow-hidden">
-        {activeTab === 'home' && (
-          <PullToRefresh
-            onRefresh={refreshSquadHome}
-            label="squad home"
-            data-testid="squad-home-pull-to-refresh"
-            className="squad-home-pull-to-refresh h-full"
-          >
-            <SquadHomeTab
+      {/* Tab content. One GitHub review modal serves Home, Work and settings for this squad. */}
+      <GitHubFeedbackReviewProvider squadId={resolvedId}>
+        <div className="squad-detail-tab-content flex-1 min-h-0 overflow-hidden">
+          {activeTab === 'home' && (
+            <PullToRefresh
+              onRefresh={refreshSquadHome}
+              label="squad home"
+              data-testid="squad-home-pull-to-refresh"
+              className="squad-home-pull-to-refresh h-full"
+            >
+              <SquadHomeTab
+                squadId={resolvedId}
+                squadSlug={squadId}
+                dependencies={dependencies.homeTabDependencies}
+                squad={squad}
+                workStreams={activeWorkStreamRows}
+                managerAgent={managerAgent}
+                agents={agents}
+                recentlyTerminatedAgents={recentlyTerminatedAgents}
+                recentlyTerminatedTotalCount={recentlyTerminatedTotalCount}
+                hasMoreRecentlyTerminatedAgents={hasMoreRecentlyTerminatedAgents}
+                isFetchingMoreRecentlyTerminated={isFetchingMoreRecentlyTerminated}
+                onLoadMoreRecentlyTerminated={fetchMoreRecentlyTerminatedAgents}
+                workStreamsLoading={workStreamsLoading}
+                agentsLoading={agentsLoading}
+              />
+            </PullToRefresh>
+          )}
+          {activeTab === 'activity' && (
+            <SquadActivityTab
               squadId={resolvedId}
-              squadSlug={squadId}
-              dependencies={dependencies.homeTabDependencies}
-              squad={squad}
-              workStreams={activeWorkStreamRows}
-              managerAgent={managerAgent}
+              squadSlug={squadId ?? resolvedId}
+              agents={activityAgents}
+              agentsLoading={agentsLoading}
+            />
+          )}
+          {activeTab === 'agents' && (
+            <AgentThreads
               agents={agents}
               recentlyTerminatedAgents={recentlyTerminatedAgents}
               recentlyTerminatedTotalCount={recentlyTerminatedTotalCount}
               hasMoreRecentlyTerminatedAgents={hasMoreRecentlyTerminatedAgents}
               isFetchingMoreRecentlyTerminated={isFetchingMoreRecentlyTerminated}
               onLoadMoreRecentlyTerminated={fetchMoreRecentlyTerminatedAgents}
-              workStreamsLoading={workStreamsLoading}
-              agentsLoading={agentsLoading}
-            />
-          </PullToRefresh>
-        )}
-        {activeTab === 'activity' && (
-          <SquadActivityTab
-            squadId={resolvedId}
-            squadSlug={squadId ?? resolvedId}
-            agents={activityAgents}
-            agentsLoading={agentsLoading}
-          />
-        )}
-        {activeTab === 'agents' && (
-          <AgentThreads
-            agents={agents}
-            recentlyTerminatedAgents={recentlyTerminatedAgents}
-            recentlyTerminatedTotalCount={recentlyTerminatedTotalCount}
-            hasMoreRecentlyTerminatedAgents={hasMoreRecentlyTerminatedAgents}
-            isFetchingMoreRecentlyTerminated={isFetchingMoreRecentlyTerminated}
-            onLoadMoreRecentlyTerminated={fetchMoreRecentlyTerminatedAgents}
-            squadId={resolvedId}
-            isLoading={agentsLoading}
-          />
-        )}
-        {activeTab === 'work' && (
-          <PullToRefresh
-            onRefresh={refreshSquadWork}
-            label="squad work"
-            data-testid="squad-work-pull-to-refresh"
-            className="h-full"
-          >
-            <WorkStreamList
-              workStreams={activeWorkStreamRows}
               squadId={resolvedId}
-              squad={squad}
-              isLoading={workStreamsLoading}
-              isLoadingDone={!squad || isLoadingDone}
-              doneStreams={doneStreams}
-              doneTotalCount={doneTotalCount}
-              hasMoreDone={hasMoreDone}
-              isFetchingMoreDone={isFetchingMoreDone}
-              onLoadMoreDone={fetchMoreDone}
+              isLoading={agentsLoading}
             />
-          </PullToRefresh>
-        )}
-        {activeTab === 'apps' && <AppsTab squadId={resolvedId} />}
-        {activeTab === 'schedules' && (
-          <div className="h-full overflow-y-auto">
-            <SchedulesList scopeType="squad" scopeId={resolvedId} agents={agents} />
-          </div>
-        )}
-        {activeTab === 'monitors' && (
-          <div className="h-full overflow-y-auto">
-            <SquadMonitorsSection squadId={resolvedId} />
-          </div>
-        )}
-        {activeTab === 'workspace' && (
-          <div className="h-full">
-            <WorkspaceTab squadId={resolvedId} />
-          </div>
-        )}
-        {activeTab === 'memory' && (
-          <div className="h-full">
-            <MemoryTab squadId={resolvedId} />
-          </div>
-        )}
-        {activeTab === 'relationships' && squad?.relationships && (
-          <div className="h-full overflow-y-auto">
-            <RelationshipsList squadId={resolvedId} relationships={squad.relationships} />
-          </div>
-        )}
-        {activeTab === 'sharing' && (
-          <div className="h-full overflow-y-auto">
-            <SharingTab squadId={resolvedId} />
-          </div>
-        )}
-        {activeTab === 'graph' && (
-          <div className="h-full overflow-y-auto">
-            <AgentVisualization agents={agents} squadId={resolvedId} isLoading={agentsLoading} />
-          </div>
-        )}
-        {activeTab === 'settings' && squad && (
-          <SquadSettingsTab
-            squadId={resolvedId}
-            name={squad.name}
-            purpose={squad.purpose}
-            context={squad.context}
-            typeContext={squad.typeContext}
-            globalCollaborationEnabled={squad.globalCollaborationEnabled}
-            maxConcurrentWorkStreams={squad.maxConcurrentWorkStreams}
-            blockedGraceMinutes={squad.blockedGraceMinutes}
-            hostWorkspacePath={squad.hostWorkspacePath}
-          />
-        )}
-      </div>
+          )}
+          {activeTab === 'work' && (
+            <PullToRefresh
+              onRefresh={refreshSquadWork}
+              label="squad work"
+              data-testid="squad-work-pull-to-refresh"
+              className="h-full"
+            >
+              <div className="flex h-full min-h-0 flex-col gap-3">
+                <PendingGitHubEventsSection squadId={resolvedId} className="shrink-0" />
+                <div className="min-h-0 flex-1">
+                  <WorkStreamList
+                    workStreams={activeWorkStreamRows}
+                    squadId={resolvedId}
+                    squad={squad}
+                    isLoading={workStreamsLoading}
+                    isLoadingDone={!squad || isLoadingDone}
+                    doneStreams={doneStreams}
+                    doneTotalCount={doneTotalCount}
+                    hasMoreDone={hasMoreDone}
+                    isFetchingMoreDone={isFetchingMoreDone}
+                    onLoadMoreDone={fetchMoreDone}
+                  />
+                </div>
+              </div>
+            </PullToRefresh>
+          )}
+          {activeTab === 'apps' && <AppsTab squadId={resolvedId} />}
+          {activeTab === 'schedules' && (
+            <div className="h-full overflow-y-auto">
+              <SchedulesList scopeType="squad" scopeId={resolvedId} agents={agents} />
+            </div>
+          )}
+          {activeTab === 'monitors' && (
+            <div className="h-full overflow-y-auto">
+              <SquadMonitorsSection squadId={resolvedId} />
+            </div>
+          )}
+          {activeTab === 'workspace' && (
+            <div className="h-full">
+              <WorkspaceTab squadId={resolvedId} />
+            </div>
+          )}
+          {activeTab === 'memory' && (
+            <div className="h-full">
+              <MemoryTab squadId={resolvedId} />
+            </div>
+          )}
+          {activeTab === 'relationships' && squad?.relationships && (
+            <div className="h-full overflow-y-auto">
+              <RelationshipsList squadId={resolvedId} relationships={squad.relationships} />
+            </div>
+          )}
+          {activeTab === 'sharing' && (
+            <div className="h-full overflow-y-auto">
+              <SharingTab squadId={resolvedId} />
+            </div>
+          )}
+          {activeTab === 'graph' && (
+            <div className="h-full overflow-y-auto">
+              <AgentVisualization agents={agents} squadId={resolvedId} isLoading={agentsLoading} />
+            </div>
+          )}
+          {activeTab === 'settings' && squad && (
+            <SquadSettingsTab
+              squadId={resolvedId}
+              name={squad.name}
+              purpose={squad.purpose}
+              context={squad.context}
+              typeContext={squad.typeContext}
+              globalCollaborationEnabled={squad.globalCollaborationEnabled}
+              maxConcurrentWorkStreams={squad.maxConcurrentWorkStreams}
+              blockedGraceMinutes={squad.blockedGraceMinutes}
+              hostWorkspacePath={squad.hostWorkspacePath}
+            />
+          )}
+        </div>
+      </GitHubFeedbackReviewProvider>
 
       {canDeleteSquad && squad && (
         <DeleteSquadModal

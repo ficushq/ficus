@@ -268,3 +268,172 @@ describe('DbOAuthStateRepository', () => {
     expect(results.filter(Boolean)).toHaveLength(1)
   })
 })
+
+test('personal purpose and unlink generation survive hosted claim and immutable recovery binding', async () => {
+  const localFlowId = crypto.randomUUID()
+  const stateHash = new Bun.CryptoHasher('sha256').update(localFlowId).digest('hex')
+  await repository.create({
+    stateHash,
+    localFlowId,
+    authority: 'platform_broker',
+    providerKey: 'github',
+    userId: initiatingUserId,
+    purpose: 'github_identity',
+    linkGeneration: 4,
+    intent: 'connect',
+    connectionId: null,
+    expectedMaterialRevision: null,
+    redirectUri: 'https://ficus.example/settings/integrations/oauth/callback',
+    returnTo: '/settings',
+    expiresAt: new Date(Date.now() + 60_000),
+  })
+  expect(
+    await repository.claimByFlow({
+      localFlowId,
+      providerKey: 'github',
+      userId: otherUserId,
+      authority: 'platform_broker',
+      handleHash: hash('f'),
+    })
+  ).toBeNull()
+  const claimed = await repository.claimByFlow({
+    localFlowId,
+    providerKey: 'github',
+    userId: initiatingUserId,
+    authority: 'platform_broker',
+    handleHash: hash('f'),
+  })
+  expect(claimed).toMatchObject({ purpose: 'github_identity', linkGeneration: 4, connectionId: null })
+  const [receipt] = await db
+    .select()
+    .from(integrationAuthorizationFlowReceipts)
+    .where(eq(integrationAuthorizationFlowReceipts.localFlowId, localFlowId))
+  expect(receipt).toMatchObject({
+    purpose: 'github_identity',
+    linkGeneration: 4,
+    installedConnectionId: null,
+    initiatingUserId,
+  })
+  // Even an accidental integration installer cannot commit a connection result for personal purpose.
+  await expect(
+    db
+      .update(integrationAuthorizationFlowReceipts)
+      .set({
+        installKind: 'connect',
+        installedConnectionId: crypto.randomUUID(),
+        installedMaterialRevision: crypto.randomUUID(),
+        installedAt: new Date(),
+        stagingStartedAt: new Date(),
+        adapterVersion: 1,
+      })
+      .where(eq(integrationAuthorizationFlowReceipts.localFlowId, localFlowId))
+      .execute()
+  ).rejects.toMatchObject({ cause: expect.objectContaining({ code: '23514' }) })
+  await expect(
+    repository.create({
+      stateHash: new Bun.CryptoHasher('sha256').update(crypto.randomUUID()).digest('hex'),
+      providerKey: 'github',
+      userId: initiatingUserId,
+      purpose: 'github_identity',
+      intent: 'connect',
+      connectionId: null,
+      expectedMaterialRevision: null,
+      redirectUri: 'https://ficus.example/settings/integrations/oauth/callback',
+      returnTo: '/settings',
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+  ).rejects.toMatchObject({ cause: expect.objectContaining({ code: '23514' }) })
+})
+
+test('local personal nonce consumption atomically creates one owner/generation-bound proof receipt', async () => {
+  const localFlowId = crypto.randomUUID()
+  const stateHash = new Bun.CryptoHasher('sha256').update(localFlowId).digest('hex')
+  await repository.create({
+    stateHash,
+    localFlowId,
+    authority: 'local',
+    providerKey: 'github',
+    userId: initiatingUserId,
+    purpose: 'github_identity',
+    linkGeneration: 5,
+    intent: 'connect',
+    connectionId: null,
+    expectedMaterialRevision: null,
+    redirectUri: 'https://ficus.example/callback',
+    returnTo: '/settings',
+    expiresAt: new Date(Date.now() + 60_000),
+  })
+  expect(await repository.consume({ stateHash, providerKey: 'github', userId: otherUserId })).toBeNull()
+  const results = await Promise.all(
+    Array.from({ length: 3 }, () => repository.consume({ stateHash, providerKey: 'github', userId: initiatingUserId }))
+  )
+  const consumed = results.filter(Boolean)
+  expect(consumed).toHaveLength(1)
+  expect(consumed[0]).toMatchObject({
+    authority: 'local',
+    localFlowId,
+    purpose: 'github_identity',
+    linkGeneration: 5,
+    completionHandleHash: stateHash,
+  })
+  const receiptRows = await db
+    .select()
+    .from(integrationAuthorizationFlowReceipts)
+    .where(eq(integrationAuthorizationFlowReceipts.localFlowId, localFlowId))
+  expect(receiptRows).toHaveLength(1)
+  expect(receiptRows[0]).toMatchObject({
+    authority: 'local',
+    initiatingUserId,
+    purpose: 'github_identity',
+    linkGeneration: 5,
+    installedConnectionId: null,
+    completionHandleHash: stateHash,
+  })
+  expect(consumed[0]!.recoveryExpiresAt).toEqual(receiptRows[0]!.recoveryExpiresAt)
+})
+
+test('local personal receipt collision cannot consume a nonce or adopt a different receipt purpose', async () => {
+  const localFlowId = crypto.randomUUID()
+  const stateHash = new Bun.CryptoHasher('sha256').update(localFlowId).digest('hex')
+  await repository.create({
+    stateHash,
+    localFlowId,
+    authority: 'local',
+    providerKey: 'github',
+    userId: initiatingUserId,
+    purpose: 'github_identity',
+    linkGeneration: 5,
+    intent: 'connect',
+    connectionId: null,
+    expectedMaterialRevision: null,
+    redirectUri: 'https://ficus.example/callback',
+    returnTo: '/settings',
+    expiresAt: new Date(Date.now() + 60_000),
+  })
+  await db.insert(integrationAuthorizationFlowReceipts).values({
+    localFlowId,
+    providerKey: 'github',
+    authority: 'local',
+    intent: 'connect',
+    initiatingUserId,
+    purpose: 'integration',
+    returnTo: '/settings',
+    completionHandleHash: stateHash,
+    artifactCredentialRef: `__integration-credential:authorization-flow:${localFlowId}:bearer`,
+    recoveryExpiresAt: new Date(Date.now() + 60_000),
+    retainUntil: new Date(Date.now() + 60_000),
+  })
+  await expect(repository.consume({ stateHash, providerKey: 'github', userId: initiatingUserId })).rejects.toThrow(
+    'Authorization flow receipt identity mismatch'
+  )
+  const stillPending = await db
+    .select()
+    .from(integrationOauthStates)
+    .where(eq(integrationOauthStates.stateHash, stateHash))
+  expect(stillPending).toHaveLength(1)
+  const [receipt] = await db
+    .select()
+    .from(integrationAuthorizationFlowReceipts)
+    .where(eq(integrationAuthorizationFlowReceipts.localFlowId, localFlowId))
+  expect(receipt!.purpose).toBe('integration')
+})
