@@ -36,7 +36,8 @@ import {
 } from './api/agents'
 import { listAgentTypes } from './api/agentTypes'
 import { getModelTiers, getSquadPresets } from './api/config'
-import { modelTierQueryKeys } from './queryKeys'
+import { modelTierQueryKeys, decisionQueryKeys } from './queryKeys'
+import { getDecisionSettings } from './api/decisions'
 import { schedulesApi, type ListSchedulesParams } from './api/schedules'
 import { monitorsApi, type ListMonitorsParams } from './api/monitors'
 import { getRecommendation, listRecommendations, type ListRecommendationsParams } from './api/recommendations'
@@ -259,6 +260,10 @@ export const queries = {
 
   modelTiers: {
     list: () => queryOptions({ queryKey: modelTierQueryKeys.list(), queryFn: getModelTiers }),
+  },
+
+  decisions: {
+    settings: () => queryOptions({ queryKey: decisionQueryKeys.settings(), queryFn: getDecisionSettings }),
   },
 
   agentTypes: {

@@ -8,6 +8,12 @@ export const desktopQueryKeys = {
 
 export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
 
+/** Decision model providers, routing and the OpenAI services key state: one settings read. */
+export const decisionQueryKeys = {
+  all: ['decisions'] as const,
+  settings: () => [...decisionQueryKeys.all, 'settings'] as const,
+}
+
 /** A user's theme preset library. Phase 2 adds `scope` ('mine' | 'shared' |
  * 'all') so the caller's own presets and everyone else's shared presets can
  * be cached independently; every scope still shares the `all` prefix, so a

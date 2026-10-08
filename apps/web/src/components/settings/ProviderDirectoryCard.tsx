@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type ComponentType, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   AnthropicIcon,
@@ -40,6 +40,9 @@ export function ProviderDirectoryCard({
   description,
   status,
   action = 'Settings',
+  logo,
+  expanded: controlledExpanded,
+  onExpandedChange,
   children,
 }: {
   providerId: string
@@ -47,9 +50,20 @@ export function ProviderDirectoryCard({
   description: string
   status?: string
   action?: string
+  /** A mark for cards whose id has no brand logo (e.g. decision model kinds). */
+  logo?: ComponentType<{ className?: string }>
+  /** Controlled open state, for content that closes the card itself (such as a finished setup form). */
+  expanded?: boolean
+  onExpandedChange?: (expanded: boolean) => void
   children: ReactNode
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const [localExpanded, setLocalExpanded] = useState(false)
+  const expanded = controlledExpanded ?? localExpanded
+  const setExpanded = (next: boolean) => {
+    setLocalExpanded(next)
+    onExpandedChange?.(next)
+  }
+  const Logo = logo
   return (
     <article
       className={clsx(
@@ -63,7 +77,7 @@ export function ProviderDirectoryCard({
             aria-hidden="true"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-panel-border bg-surface-secondary text-primary"
           >
-            <ProviderLogo providerId={providerId} className="h-7 w-7" />
+            {Logo ? <Logo className="h-6 w-6" /> : <ProviderLogo providerId={providerId} className="h-7 w-7" />}
           </div>
           <div className="min-w-0 flex-1">
             <h4 className="font-semibold text-primary">{name}</h4>
