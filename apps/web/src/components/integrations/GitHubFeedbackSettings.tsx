@@ -1,0 +1,165 @@
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ApiError } from '../../api/client'
+import { githubFeedbackErrorMessage, setGitHubAuthorFilter } from '../../api/githubFeedback'
+import { githubFeedbackQueries } from '../../queryOptions'
+import { githubFeedbackQueryKeys } from '../../queryKeys'
+import { GitHubFeedbackReviewProvider, useGitHubFeedbackReview } from './GitHubFeedbackReviewProvider'
+import { GitHubTrustedAuthors } from './GitHubTrustedAuthors'
+
+/**
+ * Squad settings for GitHub author filtering. Composed beside (never inside) the integration rule
+ * form so moderation refreshes cannot touch unsaved rule drafts, and shown independently of the
+ * integration-credential permissions: squad-update humans manage trust without integration admin.
+ */
+export function GitHubFeedbackSettings({ squadId }: { squadId: string }) {
+  const review = useGitHubFeedbackReview(squadId)
+  if (review) return <GitHubFeedbackSettingsBody squadId={squadId} />
+  // Rendered outside the squad page (no shared modal): own a provider so the action still works.
+  return (
+    <GitHubFeedbackReviewProvider squadId={squadId}>
+      <GitHubFeedbackSettingsBody squadId={squadId} />
+    </GitHubFeedbackReviewProvider>
+  )
+}
+
+function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
+  const client = useQueryClient()
+  const review = useGitHubFeedbackReview(squadId)
+  const summary = useQuery(githubFeedbackQueries.summary(squadId))
+  const [confirmOff, setConfirmOff] = useState(false)
+  const [message, setMessage] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => setGitHubAuthorFilter(squadId, enabled),
+    onMutate: () => setMessage(null),
+    onSuccess: async (result) => {
+      setConfirmOff(false)
+      setMessage({
+        tone: 'info',
+        text: result.enabled
+          ? 'Author filtering is on. New feedback from untrusted authors will be held for review.'
+          : result.released > 0
+            ? `Author filtering is off. ${result.released} held ${result.released === 1 ? 'event was' : 'events were'} allowed and queued for release.`
+            : 'Author filtering is off.',
+      })
+      await client.invalidateQueries({ queryKey: githubFeedbackQueryKeys.squad(squadId) })
+    },
+    onError: (error) => {
+      setConfirmOff(false)
+      setMessage({ tone: 'error', text: githubFeedbackErrorMessage(error, "Couldn't change author filtering.") })
+    },
+  })
+
+  // Agents, signed-out sessions and users without squad access get no moderation surface at all.
+  if (summary.isError) {
+    if (summary.error instanceof ApiError && summary.error.status >= 400 && summary.error.status < 500) return null
+    return (
+      <div role="alert" className="space-y-2 text-sm text-status-danger-600 dark:text-status-danger-400">
+        <p>Couldn’t load GitHub feedback review settings.</p>
+        <button
+          type="button"
+          className="ficus-button ficus-button-secondary px-3 py-1.5"
+          onClick={() => summary.refetch()}
+        >
+          Try again
+        </button>
+      </div>
+    )
+  }
+  if (!summary.data)
+    return (
+      <p role="status" className="text-sm text-muted">
+        Loading GitHub feedback settings…
+      </p>
+    )
+  const { authorFilterEnabled: enabled, pending, releasing, failing, canModerate } = summary.data
+  return (
+    <section
+      aria-labelledby={`github-feedback-${squadId}`}
+      data-setting-target="github-feedback"
+      className="space-y-4 rounded-lg border border-panel-border p-4"
+    >
+      <div>
+        <h4 id={`github-feedback-${squadId}`} className="text-md font-medium text-primary">
+          GitHub feedback review
+        </h4>
+        <p className="mt-1 text-sm text-muted">
+          Comments and reviews on GitHub can come from anyone who can comment on a repository. With author filtering on,
+          feedback from authors this squad doesn’t trust is held here until a person allows it.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="flex items-center gap-2 text-sm text-primary">
+          <input
+            type="checkbox"
+            role="switch"
+            aria-checked={enabled}
+            checked={enabled}
+            disabled={!canModerate || toggle.isPending}
+            onChange={() => (enabled ? setConfirmOff(true) : toggle.mutate(true))}
+          />
+          Filter GitHub feedback by author
+        </label>
+        <span className="text-xs text-muted">{enabled ? 'On' : 'Off'}</span>
+      </div>
+      {!enabled && (
+        <p className="text-xs text-muted">
+          Off: GitHub feedback that matches this squad’s rules reaches agents from any author, as it did before author
+          filtering. Use this only if every repository this squad watches is private to people you trust.
+        </p>
+      )}
+      {confirmOff && (
+        <div role="group" aria-label="Confirm turning off author filtering" className="ficus-inset space-y-2 p-3">
+          <p className="text-sm text-primary">
+            Feedback from any GitHub author will reach agents without review.
+            {pending > 0 &&
+              ` The ${pending} held ${pending === 1 ? 'event' : 'events'} will be allowed and released to ${pending === 1 ? 'its' : 'their'} current recipients; any whose content can’t be read stay held for a decision.`}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm"
+              disabled={toggle.isPending}
+              onClick={() => toggle.mutate(false)}
+            >
+              Turn off author filtering
+            </button>
+            <button
+              type="button"
+              className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm"
+              onClick={() => setConfirmOff(false)}
+            >
+              Keep on
+            </button>
+          </div>
+        </div>
+      )}
+      {!canModerate && (
+        <p className="text-xs text-muted">You need permission to update this squad to change these settings.</p>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-primary">
+          {pending} waiting for review · {releasing} being released
+          {failing > 0 && ` (${failing} retrying)`}
+        </p>
+        <button
+          type="button"
+          className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm"
+          disabled={!review}
+          onClick={() => review?.open(pending > 0 || releasing === 0 ? 'pending' : 'releasing')}
+        >
+          Review events
+        </button>
+      </div>
+      {message && (
+        <p
+          role={message.tone === 'error' ? 'alert' : 'status'}
+          className={`text-sm ${message.tone === 'error' ? 'text-status-danger-600 dark:text-status-danger-400' : 'text-muted'}`}
+        >
+          {message.text}
+        </p>
+      )}
+      <GitHubTrustedAuthors squadId={squadId} />
+    </section>
+  )
+}
