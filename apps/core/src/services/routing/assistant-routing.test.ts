@@ -142,13 +142,20 @@ describe('reading the answer', () => {
     expect(outcome?.ranked.map((entry) => entry.scope)).toEqual(['squad', 'general', 'instance'])
   })
 
-  test('the reported confidence wins over the probability; refusals and unknown options are no answer', () => {
+  test("the pick's own probability wins over a provider's confidence; refusals and unknown options are no answer", () => {
+    // Jev reports confidence as how concentrated the probabilities are: 0.28 for a 52/41 split.
     expect(
       interpretRoutingAnswer(
         { type: 'choice', choice: 'instance', probabilities: { instance: 0.5 }, confidence: 0.8 },
         keys
       )?.hint
-    ).toEqual({ scope: 'instance', confidence: 0.8 })
+    ).toEqual({ scope: 'instance', confidence: 0.5 })
+    expect(
+      interpretRoutingAnswer({ type: 'choice', choice: 'instance', probabilities: {}, confidence: 0.8 }, keys)?.hint
+    ).toEqual({
+      scope: 'instance',
+      confidence: 0.8,
+    })
     expect(interpretRoutingAnswer({ type: 'refusal' }, keys)).toBeNull()
     expect(interpretRoutingAnswer({ type: 'choice', choice: 'squad_deadbeef', probabilities: {} }, keys)).toBeNull()
   })
@@ -279,16 +286,23 @@ describe('annotating a user message', () => {
     expect(text).toContain('Use this squad for delegate_task unless the request says otherwise.')
   })
 
-  test('a new request below the threshold, in kind or in scope, gets nothing', async () => {
+  test('a target below the threshold gets nothing, whatever the kind', async () => {
     for (const outcome of [
       both('new_request', 0.9, 'squad_a1b2c3d4', 0.55),
-      both('new_request', 0.5, 'squad_a1b2c3d4', 0.95),
+      both('conversation', 0.9, 'general', 0.5),
     ]) {
       const original = message('Fix the crash')
       const result = await annotateAssistantMessage(user, original, deps(recordingDecide(() => outcome).decide))
       expect(result).toBe(original)
       expect(messageTextForModel(result)).toBe('Fix the crash')
     }
+  })
+
+  test('the target decides, not the kind: an unsure kind with a confident squad gets the hint', async () => {
+    // "what's up with the tau squad": new_request 0.52 vs conversation 0.41, squad 0.94.
+    const { decide } = recordingDecide(() => both('new_request', 0.52, 'squad_a1b2c3d4', 0.94))
+    const result = await annotateAssistantMessage(user, message("What's up with the Chlea squad?"), deps(decide))
+    expect(result.metadata?.assistantRouting).toMatchObject({ scope: 'squad', squadId: chlea.id, confidence: 0.94 })
   })
 
   test('instance and general new requests tell the Assistant to use no squad', async () => {
@@ -298,12 +312,22 @@ describe('annotating a user message', () => {
     expect(messageTextForModel(result)).toContain('Use no squad for delegate_task')
   })
 
-  test('conversation gets no hint and no chip', async () => {
-    const { decide } = recordingDecide(() => both('conversation', 0.95, 'squad_a1b2c3d4', 0.9))
-    const original = message('What do you think about splitting the app in two?')
-    const result = await annotateAssistantMessage(user, original, deps(decide))
-    expect(result).toBe(original)
-    expect(result.metadata?.assistantRouting).toBeUndefined()
+  test('conversation about a squad is still for that squad; general conversation is a general hint', async () => {
+    const about = recordingDecide(() => both('conversation', 0.95, 'squad_a1b2c3d4', 0.9))
+    const squadResult = await annotateAssistantMessage(
+      user,
+      message('What do you think about splitting Chlea in two?'),
+      deps(about.decide)
+    )
+    expect(squadResult.metadata?.assistantRouting).toMatchObject({ scope: 'squad', squadId: chlea.id })
+    // General is saved for the model; the web shows no chip for it.
+    const general = recordingDecide(() => both('conversation', 0.95, 'general', 0.9))
+    const generalResult = await annotateAssistantMessage(
+      user,
+      message('What do you think about AI?'),
+      deps(general.decide)
+    )
+    expect(generalResult.metadata?.assistantRouting).toMatchObject({ scope: 'general' })
   })
 
   test('a follow-up inherits the latest routing for the model only, with no chip', async () => {
@@ -339,12 +363,15 @@ describe('annotating a user message', () => {
     expect(messageTextForModel(result)).toContain('not for a squad. Keep using no squad for delegate_task')
   })
 
-  test('a follow-up with no earlier routing gets nothing', async () => {
-    const { decide } = recordingDecide(() => both('follow_up', 0.9, 'general', 0.9))
-    const original = message('Any progress on that?')
-    expect(await annotateAssistantMessage(user, original, deps(decide, { findInherited: async () => null }))).toBe(
-      original
+  test('a follow-up with no earlier routing falls back to its own target', async () => {
+    const { decide } = recordingDecide(() => both('follow_up', 0.9, 'squad_a1b2c3d4', 0.9))
+    const result = await annotateAssistantMessage(
+      user,
+      message('Any progress on the Chlea crash?'),
+      deps(decide, { findInherited: async () => null })
     )
+    expect(result.metadata?.assistantRoutingInherited).toBeUndefined()
+    expect(result.metadata?.assistantRouting).toMatchObject({ scope: 'squad', squadId: chlea.id })
   })
 
   test('acknowledgements make no decision call', async () => {
@@ -374,13 +401,15 @@ describe('annotating a user message', () => {
       expect(result.metadata?.assistantRouting).toMatchObject({ scope: 'squad', squadName: 'Chlea' })
     })
 
-    test('answering or brainstorming in the reply gets nothing', async () => {
+    test('answering in the reply is routed by its target too', async () => {
       const { decide, calls } = recordingDecide(() => both('conversation', 0.9, 'squad_a1b2c3d4', 0.9))
-      const original = message('Probably the Chlea one, but let me think about it')
-      const result = await annotateAssistantMessage(user, original, deps(decide, { loadContext: async () => asked }))
+      const result = await annotateAssistantMessage(
+        user,
+        message('Probably the Chlea one, but let me think about it'),
+        deps(decide, { loadContext: async () => asked })
+      )
       expect(calls).toHaveLength(1)
-      expect(result).toBe(original)
-      expect(result.metadata?.assistantRouting).toBeUndefined()
+      expect(result.metadata?.assistantRouting).toMatchObject({ scope: 'squad', squadId: chlea.id })
     })
   })
 
