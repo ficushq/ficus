@@ -11,6 +11,7 @@ import {
   integrationSubscriptionMatches,
   type IntegrationSubscription,
   type IntegrationOutputFact,
+  type EventRuleDecisions,
 } from '@ficus/shared'
 import {
   db,
@@ -32,7 +33,7 @@ import { workflowFingerprint } from '../../workflows/catalog'
 import { integrationOutputRegistry } from './registry'
 import type { IntegrationOutputAuthority } from './types'
 import type { VerifiedIngressEvent } from '../types'
-import { eventRuleTrigger, routeDefaultNotifications } from './default-routing'
+import { eventRuleTrigger, resolveEventRuleDecisions, routeDefaultNotifications } from './default-routing'
 import { eventTrackedResource, streamTracksEvent } from './tracked-match'
 import { bindChangeRequestFromEvent } from './delivery-binding'
 import { recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
@@ -836,7 +837,7 @@ export async function outputDeliveryHistory(workStreamId: string) {
  * `authorized()` below would reject any other candidate anyway — after this read had already
  * cost it a provider query.
  */
-async function describeIdentityTarget(event: Event, squadId: string) {
+async function describeIdentityTarget(event: Event, squadId: string, decisions?: EventRuleDecisions) {
   if (event.authority.kind !== 'connection' || event.authority.squadId !== squadId) return null
   if (eventTrackedResource(event)) return null
   if (!integrationOutputRegistry.adapter(event.integration)?.trackedIdentity?.(event.fact)) return null
@@ -847,7 +848,7 @@ async function describeIdentityTarget(event: Event, squadId: string) {
     .from(integrationConnections)
     .where(eq(integrationConnections.id, event.authority.connectionId))
   const login = (connection?.configuration as { login?: string } | undefined)?.login ?? ''
-  if (!eventRuleTrigger(squad.metadata, event, login)) return null
+  if (!eventRuleTrigger(squad.metadata, event, login, decisions)) return null
   try {
     const { describeEventTrackedIdentity } = await import('../../work-streams/tracked-resources')
     return await describeEventTrackedIdentity(event, squadId)
@@ -855,6 +856,30 @@ async function describeIdentityTarget(event: Event, squadId: string) {
     log.debug(`Event ${event.id} names a ${event.integration} resource squad ${squadId} cannot describe`, error)
     return null
   }
+}
+
+async function eventLogin(store: Store, event: Event) {
+  if (event.authority.kind !== 'connection') return ''
+  const [connection] = await store
+    .select({ configuration: integrationConnections.configuration })
+    .from(integrationConnections)
+    .where(eq(integrationConnections.id, event.authority.connectionId))
+  return (connection?.configuration as { login?: string } | undefined)?.login ?? ''
+}
+
+/**
+ * Decision conditions are model calls: ask them before the creation transaction (which holds the squad
+ * row lock), and only for a squad this event is authorized for. The transaction reselects with these answers.
+ */
+async function triggerDecisions(event: Event, squadId: string): Promise<EventRuleDecisions | undefined> {
+  const [squad] = await db
+    .select({ id: squads.id, metadata: squads.metadata, status: squads.status })
+    .from(squads)
+    .where(eq(squads.id, squadId))
+  if (!squad || squad.status !== 'active' || !(await authorized(db, event.integration, event.authority, squadId)))
+    return undefined
+  // Only a reachable start-workstream rule makes an answer matter here; notifications ask later, if at all.
+  return (await resolveEventRuleDecisions(event, squad, await eventLogin(db, event), ['start-workstream'])).decisions
 }
 
 async function applyOutputTriggers(event: Event) {
@@ -875,21 +900,17 @@ async function applyOutputTriggers(event: Event) {
   const errors: unknown[] = []
   for (const { id } of candidates) {
     try {
-      const identityTarget = await describeIdentityTarget(event, id)
+      const decisions = await triggerDecisions(event, id)
+      const identityTarget = await describeIdentityTarget(event, id, decisions)
       const created = await db.transaction(async (tx) => {
         // Same squad → stream order as admission. Creation and resource identity commit together.
         const [squad] = await tx.select().from(squads).where(eq(squads.id, id)).for('update')
         if (!squad || squad.status !== 'active' || !(await authorized(tx, event.integration, event.authority, id)))
           return []
-        let login = ''
-        if (event.authority.kind === 'connection') {
-          const [connection] = await tx
-            .select({ configuration: integrationConnections.configuration })
-            .from(integrationConnections)
-            .where(eq(integrationConnections.id, event.authority.connectionId))
-          login = (connection?.configuration as { login?: string } | undefined)?.login ?? ''
-        }
-        const ruleTrigger = eventRuleTrigger(squad.metadata, event, login)
+        const login = await eventLogin(tx, event)
+        // Synchronous under the lock: decision answers were resolved before the transaction. A rule whose
+        // decision conditions changed meanwhile has no answer here and does not match.
+        const ruleTrigger = eventRuleTrigger(squad.metadata, event, login, decisions)
         const triggers = ruleTrigger ? [ruleTrigger] : []
         const streams: string[] = []
         for (const raw of triggers) {

@@ -117,6 +117,14 @@ describe('decision step schema', () => {
     ])
   })
 
+  test('a route may omit its question only when the step asks one', () => {
+    const unnamed = { when: { type: 'yesno', op: 'at-least', probability: 0.8 }, outcome: 'ship' }
+    expect(issues({ ...decision, routes: [unnamed] })).toEqual([
+      'steps.1.routes.0.when: Route 1: Name the question this condition reads: there are 2 (ready, kind)',
+    ])
+    expect(issues({ ...decision, questions: { ready: decision.questions.ready }, routes: [unnamed] })).toEqual([])
+  })
+
   test('rejects bad thresholds, duplicate inputs and empty questions', () => {
     const bad = (step: Record<string, unknown>) => workflowStepSchema.safeParse(step).success
     expect(
@@ -162,6 +170,21 @@ describe('routeWorkflowDecision', () => {
     expect(record).toMatchObject({ status: 'answered', matched: 0, outcome: 'ship', providerId: 'jev', latencyMs: 42 })
     const second = routeWorkflowDecision(step, answered({ ready: { type: 'yesno', probability: 0.4 }, kind: kindBug }))
     expect(second).toMatchObject({ matched: 1, outcome: 'rework' })
+  })
+
+  test('a route without a question name reads the only question', () => {
+    const single = {
+      ...step,
+      questions: { ready: step.questions.ready! },
+      routes: [{ when: { type: 'yesno' as const, op: 'at-least' as const, probability: 0.8 }, outcome: 'ship' }],
+    }
+    expect(routeWorkflowDecision(single, answered({ ready: { type: 'yesno', probability: 0.9 } }))).toMatchObject({
+      matched: 0,
+      outcome: 'ship',
+    })
+    expect(routeWorkflowDecision(single, answered({ ready: { type: 'yesno', probability: 0.5 } }))).toMatchObject({
+      matched: 'otherwise',
+    })
   })
 
   test('no match follows otherwise, or waits for a person without one', () => {

@@ -1,4 +1,4 @@
-import { answerMatches, describeDecisionCondition } from './decision-conditions'
+import { answerMatches, decisionConditionQuestion, describeDecisionCondition } from './decision-conditions'
 import type { DecisionAnswer } from './decisions'
 import type { WorkflowDecisionStep } from './workflows'
 
@@ -52,9 +52,10 @@ export function routeWorkflowDecision(
   const provenance = { answers, providerId, model, latencyMs }
   const unusable = Object.entries(step.questions).some(([name, question]) => answers[name]?.type !== question.type)
   if (unusable) return settle({ status: 'refused', matched: 'unavailable', ...provenance }, step.unavailable)
-  const index = step.routes.findIndex((route) =>
-    answerMatches(answers[route.when.question], route.when, step.questions[route.when.question])
-  )
+  const index = step.routes.findIndex((route) => {
+    const name = decisionConditionQuestion(route.when, step.questions)
+    return name !== undefined && answerMatches(answers[name], route.when, step.questions[name])
+  })
   if (index !== -1) return settle({ status: 'answered', matched: index, ...provenance }, step.routes[index]!.outcome)
   return settle({ status: 'answered', matched: 'otherwise', ...provenance }, step.otherwise)
 }
