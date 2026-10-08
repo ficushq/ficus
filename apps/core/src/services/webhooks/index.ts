@@ -25,25 +25,28 @@ export type { BatchConfig, BatchEventConfig, BatcherConfig, BatchContext, Pendin
 
 // Import processors and handlers
 import { webhookRegistry } from './registry'
+import type { WebhookHandler } from './types'
 import {
   githubProcessor,
   handleGithubPush,
   handleGithubPing,
-  handleGithubPullRequestReview,
-  handleGithubPullRequestReviewRequested,
-  handleGithubPullRequestMerge,
-  handleGithubPullRequestConflict,
-  handleGithubIssuesAssigned,
-  handleGithubIssuesUnassigned,
-  handleGithubWorkflowRun,
-  handleGithubIssueComment,
-  handleGithubPullRequestReviewComment,
+  handleGithubManagedIndexing,
   linearProcessor,
   handleLinearIssueUpdate,
 } from './processors'
 import { createLogger } from '../../lib/infra/logger'
 
 const log = createLogger('webhooks')
+
+/** GitHub events whose verified deliveries are published natively and re-indexed for memory. */
+export const GITHUB_MANAGED_INDEXING_EVENTS = [
+  'pull_request_review',
+  'pull_request',
+  'issues',
+  'workflow_run',
+  'issue_comment',
+  'pull_request_review_comment',
+] as const
 
 /**
  * Initialize all webhook processors and handlers.
@@ -56,20 +59,14 @@ export function initializeWebhooks(): void {
   webhookRegistry.registerProcessor(githubProcessor)
   log.info('Registered processor: github')
 
-  // Register GitHub event handlers
-  const githubHandlers = [
+  // GitHub handlers. Feedback events keep a handler only for the managed memory indexing hook, so
+  // the route still dispatches them to native output publishing (which applies the author filter).
+  // Legacy operator shell commands/batches for feedback events are retired and never registered.
+  const githubHandlers: Array<[string, WebhookHandler]> = [
     ['push', handleGithubPush],
     ['ping', handleGithubPing],
-    ['pull_request_review', handleGithubPullRequestReview],
-    ['pull_request', handleGithubPullRequestReviewRequested],
-    ['pull_request', handleGithubPullRequestMerge],
-    ['pull_request', handleGithubPullRequestConflict],
-    ['issues', handleGithubIssuesAssigned],
-    ['issues', handleGithubIssuesUnassigned],
-    ['workflow_run', handleGithubWorkflowRun],
-    ['issue_comment', handleGithubIssueComment],
-    ['pull_request_review_comment', handleGithubPullRequestReviewComment],
-  ] as const
+    ...GITHUB_MANAGED_INDEXING_EVENTS.map((event): [string, WebhookHandler] => [event, handleGithubManagedIndexing]),
+  ]
 
   for (const [event, handler] of githubHandlers) {
     webhookRegistry.registerHandler('github', event, handler)

@@ -201,6 +201,38 @@ test('an event resolves to a tracked issue only for the squad whose live connect
   await expect(resolveEventTrackedResource(untrackable.id, squadId)).rejects.toMatchObject({ status: 400 })
 })
 
+test('with the author filter ON, a raw or held GitHub event cannot seed tracking even by guessed ID', async () => {
+  const authority = { kind: 'connection', connectionId, squadId, connectionRevision } as const
+  const raw = await insertEvent(issueFact(2201), authority)
+  const insertKeyed = async (sourceKey: string, fact: IntegrationOutputFact) => {
+    const [row] = await db
+      .insert(integrationOutputEvents)
+      .values({ integration: 'github', sourceKey, eventKey: fact.eventKey, authority, fact })
+      .returning()
+    eventIds.push(row!.id)
+    return row!
+  }
+  const status = await insertKeyed(`github-status:${prefix}`, issueFact(2202))
+  const held = await insertKeyed(`github-feedback:${squadId}:${randomUUID()}`, {
+    ...issueFact(2203),
+    github: { content: null, status: null, revisionId: randomUUID() },
+  })
+  await db.update(squads).set({ githubAuthorFilter: true }).where(eq(squads.id, squadId))
+  try {
+    for (const event of [raw, held])
+      await expect(resolveEventTrackedResource(event.id, squadId)).rejects.toMatchObject({
+        status: 409,
+        message: 'Event is held for human review in this squad',
+      })
+    // Content-free status projections still identify their resource.
+    expect(await resolveEventTrackedResource(status.id, squadId)).toMatchObject({ repository: repo, number: 2202 })
+  } finally {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, squadId))
+  }
+  // Filter OFF: the pre-filter contract.
+  expect(await resolveEventTrackedResource(raw.id, squadId)).toMatchObject({ number: 2201 })
+})
+
 test('authorization comes from the squad connection, not from the resource identity', async () => {
   await authorizeTrackedResource(squadId, trackedIssue(2110))
   await expect(authorizeTrackedResource(otherSquadId, trackedIssue(2110))).rejects.toMatchObject({ status: 403 })

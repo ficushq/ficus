@@ -120,7 +120,9 @@ Structure: `provider > eventType > rules[]`. Each rule has:
 | `cwd`                | No       | Working directory for commands (defaults to the monorepo root)                           |
 | `env`                | No       | Object of environment variables. Supports `{{ payload.dot.path }}` templates             |
 
-Rules are evaluated top-to-bottom; the first matching rule wins. The GitHub PR review request action uses the YAML action key `pull_request_review_requested`. If no rule matches, the push is logged and skipped.
+Rules are evaluated top-to-bottom; the first matching rule wins. If no rule matches, the push is logged and skipped.
+
+For GitHub, `push` is the only supported action key. Commands and `batches` for code-host feedback events (`issue_comment`, `pull_request_review`, `pull_request_review_comment`, `pull_request_review_requested`, `issues`, `workflow_run` and similar) are retired: they ran shell commands on unmoderated comment and review text outside the squad's GitHub author filter. They are neither registered nor executed, and GitHub batches are never loaded, so none can be flushed or resumed. A config that still names them logs one warning at startup listing only the ignored keys. Use squad event rules instead (**Squad settings → Integrations → Event rules**). Linear and other providers' custom commands are unchanged.
 
 If the config file is missing or fails to load, a warning is logged at startup and push events are skipped (non-fatal).
 
@@ -130,12 +132,12 @@ Rules can define an `env` block with template expressions that resolve values fr
 
 ```yaml
 github:
-  pull_request_review:
-    - env:
-        PR_NUMBER: '{{ payload.pull_request.number }}'
-        REVIEW_STATE: '{{ payload.review.state }}'
+  push:
+    - branches: ['refs/heads/main']
+      env:
+        COMMIT: '{{ payload.head_commit.id }}'
       commands:
-        - run: echo "PR $PR_NUMBER got $REVIEW_STATE"
+        - run: echo "Deploying $COMMIT"
 ```
 
 Template syntax: `{{ payload.dot.path }}`. The path is walked through the payload object. Missing paths resolve to empty strings. Non-string values (numbers, booleans) are stringified.
@@ -152,7 +154,7 @@ Webhook scripts receive `FICUS_WEBHOOK_CONTEXT=1`, the local Core listener as `F
 - **Event type:** Extracted from `X-GitHub-Event` header
 - **Secret:** Settings → Integrations → GitHub → Webhook delivery
 
-GitHub events enter the integration output system before optional custom commands.
+GitHub events enter the integration output system before the push/ping handlers and the memory indexing hook.
 Webhooks, the managed relay, and polling share event identities and routing:
 
 - **Squad settings → Integrations → Event rules** selects event filters and one action: notify manager, notify new consultant, start work stream with a chosen workflow, or ignore. The first matching enabled rule applies. Existing repository/team routing supplies editable defaults.
@@ -173,6 +175,10 @@ A GitHub event passes through four stages, in order:
 4. **Subscription deliveries** — separately, the event is matched against work-stream and squad subscriptions and recorded in `integration_output_deliveries`, each with a reason (delivered, retained, skipped, and why).
 
 Activity (stage 3) and delivery (stage 4) are independent: an issue or PR can show up in a squad's Activity feed with no agent ever notified, and a delivery can be skipped (work stream ended, not following changes, resource rebound) without affecting the Activity record.
+
+With the squad's GitHub author filter ON, Activity rows for issues keep the number, action, actor and link but omit the issue title, which is author prose; the title is reviewed in the pending-event queue instead. With the filter OFF, Activity shows titles as before.
+
+GitHub issue and PR threads indexed into squad memory follow the same filter. With it ON, each part of the thread (title and description, each comment) is indexed only if a human approved that exact text for the squad, or its author is currently trusted; edited comments need an approved or automatically admitted captured version, because GitHub's REST API does not say who edited them. Anything else is replaced by a fixed placeholder such as "2 comments are withheld until reviewed in Ficus". Each indexed document records why its content was admitted, and memory search, outline and backlinks recheck that on every read for both the reading squad and the source squad. So revoking trust hides the document until it is re-indexed, an approval in one squad never grants access in a squad that reads it through shared memory, and documents indexed before the filter (or while it was OFF) are hidden in an ON squad until re-indexed. A `--from-event` or `workstream track --event` request is refused while the filter is ON unless the event is a content-free status update or approved feedback. Raw provider events and held or denied revisions are refused even when their ID is guessed. With the filter OFF, indexing and reads work as they did before the filter.
 
 Bundled notification scripts have been retired. The default `actions.yaml` contains no notification rules. On upgrade, references to the old bundled notification commands are ignored, including their review batch, while custom commands remain intact. Native notifications need neither a CLI subprocess nor a host-user login. Custom webhook commands that invoke Ficus still receive the instance-bound identity described above.
 

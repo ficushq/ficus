@@ -146,7 +146,13 @@ test('duplicate webhooks notify one manager; inaccessible alerts and unrelated s
           )
         )
       )
-    expect((await resolveEventTrackedResource(stored!.id, one.squadId)).externalId).toBe('101:7')
+    // The manager is offered the content-free status projection it received; that is what seeds
+    // tracking. The raw provider event is never agent-facing under the author filter, even by ID.
+    const offered = messages[0]!.content.match(/--from-event (\S+)/)![1]!
+    expect(offered).not.toBe(stored!.id)
+    expect((await resolveEventTrackedResource(offered, one.squadId)).externalId).toBe('101:7')
+    await expect(resolveEventTrackedResource(stored!.id, one.squadId)).rejects.toMatchObject({ status: 409 })
+    await expect(resolveEventTrackedResource(offered, unrelated.squadId)).rejects.toThrow('not accessible')
     await expect(resolveEventTrackedResource(stored!.id, unrelated.squadId)).rejects.toThrow('not accessible')
     securityAllowed = false
     await publishGitHubWebhookOutputs(event('reopened', { updated_at: '2026-09-02T00:00:00Z' }))

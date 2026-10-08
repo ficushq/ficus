@@ -518,15 +518,22 @@ export async function loadGitHubIssueSnapshot(
   groupId: string
 ): Promise<GitHubIssueSnapshot | null> {
   const resolved = await loadTrackedSnapshot(executor, groupId, 'github-issue')
-  return resolved && resolved.base.family === 'github-issue'
-    ? {
-        sourceId: resolved.base.sourceId,
-        activityId: resolved.base.activityId,
-        squadId: resolved.squadId,
-        workStreamIds: resolved.workStreamIds,
-        fact: resolved.base.fact,
-      }
-    : null
+  if (!resolved || resolved.base.family !== 'github-issue') return null
+  // An issue title is author prose. With the squad's GitHub author filter ON (or unknown), Activity
+  // keeps only the factual number/verb/actor/link; the title is reviewed in the pending-event queue.
+  const [filter] = rows<{ enabled: boolean }>(
+    await executor.execute(
+      sql`SELECT github_author_filter AS enabled FROM squads WHERE id=${resolved.squadId}::uuid LIMIT 1`
+    )
+  )
+  const fact = filter?.enabled === false ? resolved.base.fact : { ...resolved.base.fact, issueTitle: '' }
+  return {
+    sourceId: resolved.base.sourceId,
+    activityId: resolved.base.activityId,
+    squadId: resolved.squadId,
+    workStreamIds: resolved.workStreamIds,
+    fact,
+  }
 }
 
 export async function loadLinearIssueSnapshot(

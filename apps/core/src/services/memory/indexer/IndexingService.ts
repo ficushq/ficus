@@ -19,6 +19,7 @@ import { SlackThreadSource } from '../sources/SlackThreadSource'
 import type { IndexResult } from '../sources/types'
 import type { MemorySourceAdapter } from '../sources/adapter'
 import type { LiveMemorySourceAdapter } from '../sources/live-adapter'
+import { withheldGitHubMemoryDocuments } from '../../integrations/github/managed-content'
 
 // ============================================================================
 // Types
@@ -268,6 +269,7 @@ export class IndexingService {
     // Find all links pointing to this document
     const links = await db
       .select({
+        sourceDocumentId: memoryLinks.sourceDocumentId,
         sourceDocPath: memoryDocuments.path,
         sourceDocTitle: memoryDocuments.title,
         targetHeading: memoryLinks.targetHeading,
@@ -276,10 +278,17 @@ export class IndexingService {
       .innerJoin(memoryDocuments, eq(memoryLinks.sourceDocumentId, memoryDocuments.id))
       .where(and(eq(memoryLinks.squadId, squadId), eq(memoryLinks.targetDocumentId, targetDoc.id)))
 
-    return links.map((link) => ({
-      sourcePath: link.sourceDocPath ?? '',
-      sourceTitle: link.sourceDocTitle,
-      heading: link.targetHeading,
-    }))
+    // A GitHub source document's title is prose; it is listed only while the author filter admits it.
+    const withheld = await withheldGitHubMemoryDocuments(
+      squadId,
+      links.map((link) => link.sourceDocumentId)
+    )
+    return links
+      .filter((link) => !withheld.has(link.sourceDocumentId))
+      .map((link) => ({
+        sourcePath: link.sourceDocPath ?? '',
+        sourceTitle: link.sourceDocTitle,
+        heading: link.targetHeading,
+      }))
   }
 }

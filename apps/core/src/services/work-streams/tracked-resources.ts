@@ -24,6 +24,7 @@ import { isOutputEventAuthorizedForSquad, reconcileOutputDeliveries } from '../i
 import { integrationOutputRegistry } from '../integrations/outputs/registry'
 import { eventTrackedResource, type TrackedTarget } from '../integrations/outputs/tracked-match'
 import { deliveryView } from './delivery-pull-requests'
+import { isGitHubEventUsableForSquad } from '../integrations/github/managed-content'
 import { TrackedResourceError } from './tracked-resource-error'
 
 export { TrackedResourceError } from './tracked-resource-error'
@@ -110,6 +111,9 @@ export async function resolveEventTrackedResource(eventId: string, squadId: stri
     throw new TrackedResourceError('Event is not accessible from this squad', 403)
   if (!(await isOutputEventAuthorizedForSquad(event, squadId)))
     throw new TrackedResourceError('Event connection is not authorized for this squad', 403)
+  // Tracking never approves feedback: a held, denied or raw GitHub event cannot seed agent work.
+  if (!(await isGitHubEventUsableForSquad(event, squadId)))
+    throw new TrackedResourceError('Event is held for human review in this squad', 409)
   // A fact without repository/number still identifies its resource, just natively; completing it
   // is a read on the squad's own connection, which the checks above have already established.
   const target = eventTrackedResource(event) ?? (await describeEventTrackedIdentity(event, squadId))
