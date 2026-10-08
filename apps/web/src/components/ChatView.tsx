@@ -1,4 +1,6 @@
 import { SelectionPopup } from './ThemedPopup'
+import { ChatDropOverlay } from './ChatDropOverlay'
+import { isFileDrag, isTextEntry } from '../lib/dropScope'
 import { useToolRenderers } from '../lib/ToolRenderersContext'
 import { ConversationSkeleton } from './loading/Skeleton'
 import clsx from 'clsx'
@@ -1194,48 +1196,74 @@ export function ChatView({
     [addImages, agentFiles]
   )
 
-  // Drag and drop handlers
+  // Drag and drop: the whole chat surface (messages and composer) is the drop target. Only file
+  // drags count, so selecting text or dragging page elements never shows the overlay. Entering a
+  // child fires before leaving the last one, so a depth count settles where rect checks flicker.
+  const dragDepthRef = useRef(0)
+  const composerHidden = hideComposer || hideInput
+  const canDropFiles = !composerHidden && !inputDisabled
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
+      if (!isFileDrag(e)) return
+      // Never let the browser open a file dropped on a chat, even one that can't take it.
       e.preventDefault()
       e.stopPropagation()
+      dragDepthRef.current = 0
       setIsDragging(false)
 
-      if (inputDisabled || isSubmittingRef.current) return
+      if (composerHidden || inputDisabled || isSubmittingRef.current) return
       const files = Array.from(e.dataTransfer.files)
       const images = files.filter((file) => ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.type))
       if (imageAttachState.allowed) addImages(images)
       agentFiles.addFiles(files.filter((file) => !images.includes(file)))
     },
-    [addImages, agentFiles, imageAttachState.allowed, inputDisabled]
+    [addImages, agentFiles, imageAttachState.allowed, inputDisabled, composerHidden]
   )
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }, [])
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!isFileDrag(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = canDropFiles ? 'copy' : 'none'
+    },
+    [canDropFiles]
+  )
 
   const handleDragEnter = useCallback(
     (e: React.DragEvent) => {
+      if (!isFileDrag(e)) return
       e.preventDefault()
       e.stopPropagation()
-      if (inputDisabled || isSubmittingRef.current) return
+      dragDepthRef.current += 1
+      if (!canDropFiles || isSubmittingRef.current) return
       setIsDragging(true)
     },
-    [inputDisabled]
+    [canDropFiles]
   )
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
     e.preventDefault()
     e.stopPropagation()
-    // Only set dragging to false if we're leaving the drop zone entirely
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX
-    const y = e.clientY
-    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setIsDragging(false)
+  }, [])
+
+  // A drag that ends elsewhere (dropped outside, or cancelled with Escape) clears the overlay.
+  useEffect(() => {
+    if (!isDragging) return
+    const reset = () => {
+      dragDepthRef.current = 0
       setIsDragging(false)
     }
-  }, [])
+    window.addEventListener('dragend', reset)
+    window.addEventListener('drop', reset)
+    return () => {
+      window.removeEventListener('dragend', reset)
+      window.removeEventListener('drop', reset)
+    }
+  }, [isDragging])
 
   // Paste handler
   const handlePaste = useCallback(
@@ -1262,6 +1290,16 @@ export function ChatView({
       }
     },
     [addImages, agentFiles, imageAttachState.allowed, inputDisabled]
+  )
+
+  // Pastes with focus on the chat surface but outside its fields (after clicking the messages, say)
+  // attach to this chat, like pasting into the composer; text fields keep their own paste.
+  const handleSurfacePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      if (e.defaultPrevented || composerHidden || isTextEntry(e.target as Element)) return
+      handlePaste(e)
+    },
+    [handlePaste, composerHidden]
   )
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1536,12 +1574,21 @@ export function ChatView({
 
   const chatContent = (
     <div
+      // The whole chat is one drop and paste scope; clicking its messages focuses it (see handleSurfacePaste).
+      data-drop-scope="chat"
+      tabIndex={-1}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onPaste={handleSurfacePaste}
       className={clsx(
-        'flex flex-col bg-surface min-h-0 grow',
+        'relative flex flex-col bg-surface min-h-0 grow outline-none',
         isFullscreen ? 'h-full rounded-lg shadow-xl overflow-hidden' : 'rounded-lg',
         className
       )}
     >
+      {isDragging && <ChatDropOverlay />}
       {(header || headerRawTextToggle || fullscreenButton) && (
         <div
           className={clsx(
@@ -1562,6 +1609,7 @@ export function ChatView({
       {/* Messages */}
       <div
         ref={scrollContainerRef}
+        data-testid="chat-messages"
         onScroll={handleScroll}
         onWheel={markUserScrolling}
         onTouchMove={markUserScrolling}
@@ -1808,15 +1856,7 @@ export function ChatView({
           />
           <div
             ref={inputContainerRef}
-            className={clsx(
-              'px-3 py-2 md:px-4 md:py-2.5 border-t border-th-border shrink-0 relative z-10 bg-surface',
-              isDragging && 'ring-2 ring-accent-light ring-inset bg-accent/10'
-            )}
-            data-drop-zone=""
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
+            className="px-3 py-2 md:px-4 md:py-2.5 border-t border-th-border shrink-0 relative z-10 bg-surface"
           >
             {/* Hidden file input - outside flow so space-y-3 doesn't add gap */}
             <input
@@ -1860,16 +1900,6 @@ export function ChatView({
                     : imageError
                       ? `Image upload failed: ${imageError}`
                       : `Message was not sent: ${sendError}`}
-                </div>
-              )}
-
-              {/* Drop overlay */}
-              {isDragging && (
-                <div className="absolute inset-0 bg-selection/90 flex items-center justify-center z-10 pointer-events-none rounded-b-lg">
-                  <div className="text-accent-light font-medium flex items-center gap-2">
-                    <FileIcon className="h-6 w-6" />
-                    Drop files here
-                  </div>
                 </div>
               )}
 

@@ -1,34 +1,21 @@
 import { useEffect } from 'react'
 import { IMAGE_ATTACHMENT_MIME_TYPES } from '@ficus/shared'
-import { DROP_ZONE_ATTRIBUTE } from '../lib/dropZone'
+import { dropScopeOf, isFileDrag, isTextEntry } from '../lib/dropScope'
 import { useStableRef } from './useStableRef'
 
 function isImageFile(file: File | null | undefined): file is File {
   return Boolean(file && (IMAGE_ATTACHMENT_MIME_TYPES as readonly string[]).includes(file.type))
 }
 
-function carriesFiles(event: DragEvent): boolean {
-  return Array.from(event.dataTransfer?.types ?? []).includes('Files')
-}
-
-function inDropZone(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest(`[${DROP_ZONE_ATTRIBUTE}]`) !== null
-}
-
-const NON_TEXT_INPUTS = new Set(['button', 'checkbox', 'color', 'file', 'image', 'radio', 'range', 'reset', 'submit'])
-
-/** Whether a paste there goes into text: a text field, a text area, or editable content. */
-export function isTextEntry(element: Element | null): boolean {
-  if (!element) return false
-  if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) return true
-  if (element instanceof HTMLInputElement) return !NON_TEXT_INPUTS.has(element.type)
-  return element instanceof HTMLElement && (element.isContentEditable || element.closest('[contenteditable]') !== null)
-}
-
 /**
- * Window-level drop and paste of an image outside every existing drop zone and text field.
- * Capture-phase listeners see drags even where a composer stops propagation; the overlay itself
- * takes no pointer input, so the element under the pointer stays the drag target.
+ * Window-level drop and paste of an image outside every drop scope (`lib/dropScope.ts`) and text field.
+ * Capture-phase listeners see drags even where a chat stops propagation; the overlay itself takes no
+ * pointer input, so the element under the pointer stays the drag target. Only file drags count.
+ *
+ * Paste rule: a paste belongs to where focus is. In a text field it is text; with focus anywhere in
+ * a drop scope (a chat focuses its surface when its messages are clicked) the scope handles it, so
+ * an image pasted there attaches to that chat; only with focus outside every scope does an image
+ * paste file a screenshot.
  */
 export function useGlobalImageDrop(options: {
   enabled: boolean
@@ -46,8 +33,8 @@ export function useGlobalImageDrop(options: {
       onDraggingChange.current(next)
     }
     const over = (event: DragEvent) => {
-      if (!carriesFiles(event)) return
-      if (inDropZone(event.target)) return show(false)
+      if (!isFileDrag(event)) return
+      if (dropScopeOf(event.target)) return show(false)
       event.preventDefault()
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
       show(true)
@@ -56,19 +43,19 @@ export function useGlobalImageDrop(options: {
     // the drag leaves the window.
     let depth = 0
     const enter = (event: DragEvent) => {
-      if (!carriesFiles(event)) return
+      if (!isFileDrag(event)) return
       depth++
       over(event)
     }
     const leave = (event: DragEvent) => {
-      if (!carriesFiles(event)) return
+      if (!isFileDrag(event)) return
       depth = Math.max(0, depth - 1)
       if (depth === 0) show(false)
     }
     const drop = (event: DragEvent) => {
       depth = 0
       show(false)
-      if (!carriesFiles(event) || inDropZone(event.target)) return
+      if (!isFileDrag(event) || dropScopeOf(event.target)) return
       event.preventDefault()
       const image = Array.from(event.dataTransfer?.files ?? []).find(isImageFile)
       if (image) onImage.current(image)
@@ -78,7 +65,14 @@ export function useGlobalImageDrop(options: {
       show(false)
     }
     const paste = (event: ClipboardEvent) => {
-      if (event.defaultPrevented || isTextEntry(document.activeElement) || isTextEntry(event.target as Element)) return
+      if (
+        event.defaultPrevented ||
+        isTextEntry(document.activeElement) ||
+        isTextEntry(event.target as Element) ||
+        dropScopeOf(document.activeElement) ||
+        dropScopeOf(event.target)
+      )
+        return
       const item = Array.from(event.clipboardData?.items ?? []).find(
         (entry) => entry.kind === 'file' && (IMAGE_ATTACHMENT_MIME_TYPES as readonly string[]).includes(entry.type)
       )

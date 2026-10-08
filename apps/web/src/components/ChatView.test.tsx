@@ -77,6 +77,34 @@ async function installDom() {
   }))
 }
 
+/** A drag event carrying files (or, with `types`, something else) dispatched at `target`. */
+function drag(
+  window: Window | Awaited<ReturnType<typeof acquireDomHarness>>['window'],
+  type: string,
+  target: Element,
+  files: File[] = [],
+  dispatch = true,
+  types = ['Files']
+) {
+  const event = new window.Event(type, { bubbles: true, cancelable: true }) as unknown as DragEvent
+  Object.defineProperty(event, 'dataTransfer', { value: { types, files, dropEffect: 'none' } })
+  if (dispatch) target.dispatchEvent(event)
+  return event
+}
+
+function pasteFiles(
+  window: Window | Awaited<ReturnType<typeof acquireDomHarness>>['window'],
+  target: Element,
+  files: File[]
+) {
+  const event = new window.Event('paste', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent
+  Object.defineProperty(event, 'clipboardData', {
+    value: { items: files.map((file) => ({ kind: 'file', type: file.type, getAsFile: () => file })) },
+  })
+  target.dispatchEvent(event)
+  return event
+}
+
 async function flushReact() {
   await new Promise((resolve) => setTimeout(resolve, 10))
 }
@@ -1559,13 +1587,9 @@ describe('ChatView ordinary file attachments', () => {
       <ChatView items={[]} agentId="6f7e72d8-1aa6-4cec-8d24-80c8ca80ef4d" inputDisabled onSend={() => {}} />
     )
     const form = window.document.querySelector('form') as HTMLFormElement
-    const event = new window.Event('drop', { bubbles: true, cancelable: true }) as Event & {
-      dataTransfer: { files: File[] }
-    }
-    Object.defineProperty(event, 'dataTransfer', {
-      value: { files: [new window.File(['x'], 'notes.txt', { type: 'text/plain' })] },
-    })
+    const event = drag(window, 'drop', form, [new window.File(['x'], 'notes.txt', { type: 'text/plain' })], false)
     await dom.act(async () => form.dispatchEvent(event))
+    expect(event.defaultPrevented).toBe(true)
     expect(uploadAgentFileMock).not.toHaveBeenCalled()
   })
 
@@ -1707,12 +1731,194 @@ describe('ChatView ordinary file attachments', () => {
       <ChatView items={[]} agentId="6f7e72d8-1aa6-4cec-8d24-80c8ca80ef4d" onSend={() => {}} />
     )
     const form = window.document.querySelector('form') as HTMLFormElement
-    const event = new window.Event('dragenter', { bubbles: true, cancelable: true })
-    await dom.act(async () => form.dispatchEvent(event))
+    await dom.act(async () => void drag(window, 'dragenter', form))
     await flushReact()
     const body = window.document.body.textContent ?? ''
-    expect(body).toContain('Drop files here')
+    expect(body).toContain('Drop to attach to this chat')
+    expect(body).toContain('other files as agent files')
     expect(body).not.toContain('Drop images here')
+  })
+})
+
+describe('ChatView whole-surface drops and pastes', () => {
+  const agentId = '6f7e72d8-1aa6-4cec-8d24-80c8ca80ef4d'
+  const image = (window: Awaited<ReturnType<typeof acquireDomHarness>>['window']) =>
+    new window.File([new Uint8Array([137, 80, 78, 71])], 'shot.png', { type: 'image/png' }) as unknown as File
+  const text = (window: Awaited<ReturnType<typeof acquireDomHarness>>['window']) =>
+    new window.File(['notes'], 'notes.txt', { type: 'text/plain' }) as unknown as File
+  const overlay = (window: Awaited<ReturnType<typeof acquireDomHarness>>['window']) =>
+    window.document.querySelector('[data-testid="chat-drop-overlay"]')
+  const attachedImages = (window: Awaited<ReturnType<typeof acquireDomHarness>>['window']) =>
+    window.document.querySelectorAll('[aria-label="Remove image"]').length
+  const chat = (window: Awaited<ReturnType<typeof acquireDomHarness>>['window']) => ({
+    surface: window.document.querySelector('[data-drop-scope="chat"]') as HTMLElement,
+    messages: window.document.querySelector('[data-testid="chat-messages"]') as HTMLElement,
+    form: window.document.querySelector('form') as HTMLFormElement,
+  })
+
+  test('a drop on the messages area attaches images as images and other files as agent files', async () => {
+    uploadAgentFileMock.mockClear()
+    const { dom, window } = await renderChatView(
+      <ChatView items={[]} agentId={agentId} selectedModelSupportsImages onSend={() => {}} />
+    )
+    const { messages } = chat(window)
+    const dropped = await dom.act(async () => drag(window, 'drop', messages, [image(window), text(window)]))
+    expect(dropped.defaultPrevented).toBe(true)
+    await flushReact()
+    expect(attachedImages(window)).toBe(1)
+    expect(uploadAgentFileMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('dragging over nested children neither flickers nor sticks', async () => {
+    const { dom, window } = await renderChatView(<ChatView items={[]} agentId={agentId} onSend={() => {}} />)
+    const { messages, form } = chat(window)
+    const textarea = window.document.querySelector('textarea') as HTMLTextAreaElement
+    await dom.act(async () => void drag(window, 'dragenter', messages))
+    expect(overlay(window)?.textContent).toContain('Drop to attach to this chat')
+    // Moving into the composer enters the new child before leaving the old one.
+    await dom.act(async () => {
+      drag(window, 'dragenter', form)
+      drag(window, 'dragleave', messages)
+      drag(window, 'dragenter', textarea)
+      drag(window, 'dragleave', form)
+    })
+    expect(overlay(window)).not.toBeNull()
+    // Leaving the chat altogether clears it.
+    await dom.act(async () => void drag(window, 'dragleave', textarea))
+    expect(overlay(window)).toBeNull()
+    // A drag that ends elsewhere does not leave it stuck either.
+    await dom.act(async () => void drag(window, 'dragenter', messages))
+    expect(overlay(window)).not.toBeNull()
+    await dom.act(async () => void window.dispatchEvent(new window.Event('dragend')))
+    expect(overlay(window)).toBeNull()
+    // Nor does a drop, after which a new drag starts counting from zero.
+    await dom.act(async () => {
+      drag(window, 'dragenter', messages)
+      drag(window, 'drop', messages)
+    })
+    expect(overlay(window)).toBeNull()
+    await dom.act(async () => void drag(window, 'dragenter', form))
+    expect(overlay(window)).not.toBeNull()
+    await dom.act(async () => void drag(window, 'dragleave', form))
+    expect(overlay(window)).toBeNull()
+  })
+
+  test('internal drags (selected text, page elements) are left alone', async () => {
+    uploadAgentFileMock.mockClear()
+    const { dom, window } = await renderChatView(<ChatView items={[]} agentId={agentId} onSend={() => {}} />)
+    const { messages } = chat(window)
+    const types = ['text/plain', 'text/html']
+    const entered = await dom.act(async () => drag(window, 'dragenter', messages, [], true, types))
+    const over = await dom.act(async () => drag(window, 'dragover', messages, [], true, types))
+    expect(overlay(window)).toBeNull()
+    expect(entered.defaultPrevented).toBe(false)
+    expect(over.defaultPrevented).toBe(false)
+    const dropped = await dom.act(async () => drag(window, 'drop', messages, [], true, types))
+    expect(dropped.defaultPrevented).toBe(false)
+    expect(uploadAgentFileMock).not.toHaveBeenCalled()
+  })
+
+  test('a read-only chat shows no overlay but still keeps the browser from opening a dropped file', async () => {
+    const { dom, window } = await renderChatView(
+      <ChatView items={[]} agentId={agentId} hideComposer onSend={() => {}} />
+    )
+    const { surface } = chat(window)
+    await dom.act(async () => void drag(window, 'dragenter', surface))
+    expect(overlay(window)).toBeNull()
+    const dropped = await dom.act(async () => drag(window, 'drop', surface, [image(window)]))
+    expect(dropped.defaultPrevented).toBe(true)
+  })
+
+  test('an image pasted with focus on the chat surface attaches once; in the composer, once too', async () => {
+    const { dom, window } = await renderChatView(
+      <ChatView items={[]} agentId={agentId} selectedModelSupportsImages onSend={() => {}} />
+    )
+    const { surface, messages } = chat(window)
+    // Clicking the messages focuses the surface (it is the nearest focusable ancestor).
+    surface.focus()
+    expect(window.document.activeElement).toBe(surface)
+    const pasted = await dom.act(async () => pasteFiles(window, messages, [image(window)]))
+    expect(pasted.defaultPrevented).toBe(true)
+    await flushReact()
+    expect(attachedImages(window)).toBe(1)
+    const textarea = window.document.querySelector('textarea') as HTMLTextAreaElement
+    textarea.focus()
+    await dom.act(async () => void pasteFiles(window, textarea, [image(window)]))
+    await flushReact()
+    expect(attachedImages(window)).toBe(2)
+  })
+
+  test('beside the page-wide screenshot drop: chats keep their drops and pastes, the page files', async () => {
+    const dom = await installDom()
+    const { window } = dom
+    const { root } = dom.createRoot()
+    const filed: string[] = []
+    const { ScreenshotFiling } = await import('./ScreenshotFiling')
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+    await dom.act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={['/']}>
+          <QueryClientProvider client={new QueryClient()}>
+            <PermissionsProvider usePermissions={usePermissionsMock}>
+              <p data-testid="page">Page content</p>
+              <ChatView
+                items={[]}
+                agentId={agentId}
+                selectedModelSupportsImages
+                onSend={() => {}}
+                dependencies={chatViewDependencies}
+              />
+              <ScreenshotFiling
+                dependencies={
+                  {
+                    upload: async () => ['image-1'],
+                    api: {
+                      file: async (id: string) => {
+                        filed.push(id)
+                        return { conversationId: 'c', guess: null }
+                      },
+                      correct: async () => ({ conversationId: 'c' }),
+                    },
+                  } as never
+                }
+              />
+            </PermissionsProvider>
+          </QueryClientProvider>
+        </MemoryRouter>
+      )
+    )
+    await flushReact()
+    const page = window.document.querySelector('[data-testid="page"]')!
+    const pageOverlay = () => window.document.querySelector('[data-testid="screenshot-drop-overlay"]')
+    const { surface, messages } = chat(window)
+
+    // Outside the chat the page-wide target works; inside it only the chat's overlay shows.
+    await dom.act(async () => void drag(window, 'dragenter', page))
+    expect(pageOverlay()).not.toBeNull()
+    await dom.act(async () => {
+      drag(window, 'dragenter', messages)
+      drag(window, 'dragleave', page)
+    })
+    expect(pageOverlay()).toBeNull()
+    expect(overlay(window)).not.toBeNull()
+    await dom.act(async () => void drag(window, 'dragover', messages))
+    expect(pageOverlay()).toBeNull()
+    await dom.act(async () => void drag(window, 'drop', messages, [image(window)]))
+    await flushReact()
+    expect(attachedImages(window)).toBe(1)
+    expect(filed).toEqual([])
+
+    // A paste with focus on the chat attaches to it; with focus outside every chat, it files.
+    surface.focus()
+    await dom.act(async () => void pasteFiles(window, surface, [image(window)]))
+    await flushReact()
+    expect(attachedImages(window)).toBe(2)
+    expect(filed).toEqual([])
+    surface.blur()
+    await dom.act(async () => void pasteFiles(window, page, [image(window)]))
+    await flushReact()
+    expect(filed).toEqual(['image-1'])
+    expect(attachedImages(window)).toBe(2)
   })
 })
 

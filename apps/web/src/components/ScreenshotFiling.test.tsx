@@ -67,7 +67,8 @@ async function render(dom: Harness, deps: ReturnType<typeof fakes>, permissions 
             <main>
               <p>Page content</p>
               <input aria-label="Search" />
-              <div data-drop-zone="">
+              <div data-drop-scope="chat" tabIndex={-1}>
+                <p>A chat message</p>
                 <textarea aria-label="Composer" />
               </div>
             </main>
@@ -178,8 +179,18 @@ describe('ScreenshotFiling', () => {
       await dom.act(async () => void paste(dom, composer, png(dom)))
       expect(deps.uploads).toEqual([])
 
+      // Focus on a chat surface (not a field): the chat handles it, nothing is filed.
+      const chatSurface = document.querySelector('[data-drop-scope="chat"]') as HTMLElement
+      chatSurface.focus()
+      const intoChat = await dom.act(async () =>
+        paste(dom, document.querySelector('[data-drop-scope="chat"] p')!, png(dom))
+      )
+      expect(intoChat.defaultPrevented).toBe(false)
+      expect(deps.uploads).toEqual([])
+
       search.blur()
       composer.blur()
+      chatSurface.blur()
       const page = document.querySelector('main p')!
       // Text, not an image: left alone.
       const text = await dom.act(async () => paste(dom, page, null))

@@ -4,7 +4,7 @@
  * Drag-and-drop file/folder upload with progress indicator.
  */
 
-import { DROP_ZONE_ATTRIBUTE } from '../../lib/dropZone'
+import { DROP_SCOPE_ATTRIBUTE } from '../../lib/dropScope'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { uploadToSquadWorkspace } from '../../api/workspace'
@@ -76,14 +76,14 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
     const container = containerRef.current?.closest('.relative') as HTMLElement | null
     if (container) {
       // The global screenshot drop target leaves dropped files here to this upload.
-      container.setAttribute(DROP_ZONE_ATTRIBUTE, '')
+      container.setAttribute(DROP_SCOPE_ATTRIBUTE, 'upload')
       container.addEventListener('dragenter', handleDragEnter)
       container.addEventListener('dragleave', handleDragLeave)
       container.addEventListener('dragover', handleDragOver)
       // Note: drop is handled by the overlay, not here
 
       return () => {
-        container.removeAttribute(DROP_ZONE_ATTRIBUTE)
+        container.removeAttribute(DROP_SCOPE_ATTRIBUTE)
         container.removeEventListener('dragenter', handleDragEnter)
         container.removeEventListener('dragleave', handleDragLeave)
         container.removeEventListener('dragover', handleDragOver)
