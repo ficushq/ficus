@@ -106,6 +106,11 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         description: 'Model accounts and local providers.',
       },
       {
+        id: 'decision-providers',
+        label: 'Decision Providers',
+        description: 'Fast yes/no models, their features and cost.',
+      },
+      {
         id: 'memory',
         label: 'Assistant & Memory',
         description: 'Voice assistant and semantic memory search, including OpenAI API setup.',
@@ -160,6 +165,7 @@ const SECTION_PERMISSIONS: Partial<Record<SectionId, string>> = {
   memory: 'settings:read',
   'mobile-pro': 'settings:read',
   providers: 'provider-auth:read',
+  'decision-providers': 'provider-auth:read',
   skills: 'skills:read',
   'agent-types': 'agent-types:read',
   'squad-presets': 'squad-presets:read',
