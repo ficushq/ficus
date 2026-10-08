@@ -80,7 +80,7 @@ test('legacy streams render no flow controls; queued flows label the current ste
     await f.cleanup()
   }
 })
-test('human outcomes require evidence and send the displayed version and attempt; failures retain the draft', async () => {
+test('approving needs no notes; human outcomes send the displayed version and attempt; failures retain the draft', async () => {
   const f = await fixture(run(true), ['workstreams:review'])
   const advance = spyOn(client.workflows, 'advance').mockRejectedValue(new Error('The flow changed; reload'))
   try {
@@ -89,7 +89,9 @@ test('human outcomes require evidence and send the displayed version and attempt
       node.textContent?.startsWith('Approved')
     )!
     expect(button.textContent).toContain('Finishes the flow')
-    expect(button.disabled).toBe(true)
+    // A forward-only gate never needs notes.
+    expect(button.disabled).toBe(false)
+    expect(f.dom.window.document.body.textContent).toContain('Optional. Your notes are recorded')
     const input = f.dom.window.document.querySelector('textarea')!
     await f.dom.act(async () => {
       Object.getOwnPropertyDescriptor(f.dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(
@@ -531,7 +533,44 @@ test('a human gate shows the handoff it reviews and labels each outcome with whe
     // The forward outcome is the primary action even when a rework outcome is declared first.
     expect(buttons[1]!.className).toContain('ficus-button-primary')
     expect(buttons[0]!.className).not.toContain('ficus-button-primary')
+    // Notes are the rework feedback, so only the send-back outcome waits for them.
+    expect(section.textContent).toContain('Optional for Approve; required for Request changes.')
+    expect(buttons.map((button) => button.disabled)).toEqual([true, false])
+    const input = section.querySelector('textarea')!
+    await f.dom.act(async () => {
+      Object.getOwnPropertyDescriptor(f.dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(input, '   ')
+      input.dispatchEvent(new f.dom.window.Event('input', { bubbles: true }))
+    })
+    expect(buttons.map((button) => button.disabled)).toEqual([true, false])
+    await f.dom.act(async () => {
+      Object.getOwnPropertyDescriptor(f.dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        input,
+        'Tighten the headline'
+      )
+      input.dispatchEvent(new f.dom.window.Event('input', { bubbles: true }))
+    })
+    expect(buttons.map((button) => button.disabled)).toEqual([false, false])
   } finally {
+    await f.cleanup()
+  }
+})
+
+test('approving without notes submits an empty decision note', async () => {
+  const f = await fixture(run(true), ['workstreams:review'])
+  const advance = spyOn(client.workflows, 'advance').mockResolvedValue({} as never)
+  try {
+    await f.render(<WorkflowReviewCallout stream={stream} />)
+    const button = [...f.dom.window.document.querySelectorAll('button')].find((node) =>
+      node.textContent?.startsWith('Approved')
+    )!
+    await f.dom.act(async () => {
+      button.click()
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    })
+    expect(advance).toHaveBeenCalledTimes(1)
+    expect(advance.mock.calls[0]![1]).toMatchObject({ action: 'complete', outcome: 'approved', evidence: '' })
+  } finally {
+    advance.mockRestore()
     await f.cleanup()
   }
 })

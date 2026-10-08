@@ -383,14 +383,29 @@ describe('flow lifecycle and authority', () => {
     expect(toWaitJson((await listOpenWaits(db, id))[0]!).resolutionHandler).toBe('workflow')
     await expect(db.transaction((tx) => guardFlowWaitResolution(tx, id))).rejects.toThrow('workflow decision')
     await expect((await WorkStream.mustFind(id)).unblock()).rejects.toThrow('workflow decision')
+    // Approving forward needs no notes; the closed gate records none.
     await advanceFlow(
       id,
-      { action: 'complete', expectedVersion: 0, attemptId: 1, outcome: 'completed', evidence: 'Scope approved' },
+      { action: 'complete', expectedVersion: 0, attemptId: 1, outcome: 'completed', evidence: '' },
       randomUUID(),
       { type: 'user', userId: user.id }
     )
+    const [gateWait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, id))
+    expect(gateWait).toMatchObject({ resolution: 'approved', resolutionNote: null })
+    const [reviewer] = await bindings(id)
     expect(await bindings(id)).toHaveLength(1)
-    expect((await getFlow(id))!.state.activeAttemptId).toBe(2)
+    const run = (await getFlow(id))!
+    expect(run.state.activeAttemptId).toBe(2)
+    expect(run.state.attempts[0]!.evidence).toBeUndefined()
+    // Agent results still need evidence.
+    await expect(
+      advanceFlow(
+        id,
+        { action: 'complete', expectedVersion: run.version, attemptId: 2, outcome: 'approved', evidence: ' ' },
+        randomUUID(),
+        { type: 'agent', agentId: reviewer!.agentId, squadId }
+      )
+    ).rejects.toThrow('Evidence is required')
   })
   test('only the active worker can submit an outcome and adaptive workers cannot weaken required participant settings', async () => {
     const definition = structuredClone(flow)

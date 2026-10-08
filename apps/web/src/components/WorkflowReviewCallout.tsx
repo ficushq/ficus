@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import {
   activeWorkflowAttempts,
   effectiveWorkflowStep,
+  workflowOutcomeRequiresEvidence,
   workflowReworkAttempt,
   type WorkflowAttempt,
   type WorkflowRun,
@@ -171,6 +172,19 @@ function HumanGate({
     .map((id) => run.state.attempts.find((entry) => entry.id === id))
     .filter((entry): entry is WorkflowAttempt => !!entry)
   const firstForward = Object.entries(step.outcomes).find(([, transition]) => !('returnTo' in transition))?.[0]
+  // Approving forward needs no notes; sending work back does, because they are the rework feedback.
+  const outcomes = Object.entries(step.outcomes)
+  const labelsWhere = (required: boolean) =>
+    outcomes
+      .filter(([, transition]) => workflowOutcomeRequiresEvidence(step, transition) === required)
+      .map(([outcome]) => outcomeLabel(outcome))
+  const notesRequiredFor = labelsWhere(true)
+  const notesOptionalFor = labelsWhere(false)
+  const notesHint = !notesRequiredFor.length
+    ? 'Optional.'
+    : !notesOptionalFor.length
+      ? 'Required.'
+      : `Optional for ${notesOptionalFor.join(', ')}; required for ${notesRequiredFor.join(', ')}.`
   return (
     <section aria-label={`Review ${step.name ?? step.id}`} className="p-4 rounded-xl bg-surface-secondary space-y-3">
       <header className="flex flex-wrap items-center gap-2">
@@ -198,7 +212,7 @@ function HumanGate({
             />
           </label>
           <p id={`decision-hint-${attempt.id}`} className="text-xs text-muted">
-            Required. Your notes are recorded with the decision and passed to the next step.
+            {notesHint} Your notes are recorded with the decision and passed to the next step.
           </p>
           <div className="flex flex-wrap gap-2">
             {Object.entries(step.outcomes).map(([outcome, transition]) => (
@@ -212,7 +226,11 @@ function HumanGate({
                     ? 'ficus-button-primary text-on-accent bg-accent hover:bg-accent-hover'
                     : 'text-secondary border border-th-border hover:bg-surface-hover'
                 )}
-                disabled={advance.isPending || !evidence.trim() || blockingWaits.length > 0}
+                disabled={
+                  advance.isPending ||
+                  blockingWaits.length > 0 ||
+                  (!evidence.trim() && workflowOutcomeRequiresEvidence(step, transition))
+                }
                 onClick={() => advance.mutate(outcome)}
               >
                 {outcomeLabel(outcome)}
