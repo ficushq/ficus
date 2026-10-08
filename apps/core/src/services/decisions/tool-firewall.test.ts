@@ -77,6 +77,8 @@ describe('the decision table', () => {
     [0.5, 'benign', 0.9, true, false],
     [0.84, 'suspicious', 0.9, true, false],
     [0.85, 'benign', 0.9, true, true],
+    [0.2, 'malicious', 0.49, false, false],
+    [0.2, 'malicious', 0.5, true, false],
     [0.2, 'malicious', 0.69, true, false],
     [0.2, 'malicious', 0.7, true, true],
   ] as const)('instructs_agent %p, intent %p (%p) → flagged %p, high %p', (p, intent, confidence, flagged, high) => {

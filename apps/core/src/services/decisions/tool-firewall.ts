@@ -52,8 +52,10 @@ export const TOOL_FIREWALL_QUESTIONS = {
 export const FLAG_INSTRUCTS_AGENT = 0.5
 /** …and call it high severity from here, */
 export const HIGH_INSTRUCTS_AGENT = 0.85
-/** or when the model calls it malicious at least this confidently. (Any malicious answer flags.) */
+/** or when the model calls it malicious at least this confidently. */
 export const HIGH_MALICIOUS_CONFIDENCE = 0.7
+/** A malicious answer flags a part only from this confidence, so a coin-flip "malicious" isn't noise. */
+export const FLAG_MALICIOUS_CONFIDENCE = 0.5
 
 /** Long results are screened in parts of about this many characters, in parallel… */
 export const FIREWALL_CHUNK_CHARS = 24_000
@@ -232,7 +234,10 @@ export function readAnswers(answers: Record<string, DecisionAnswer>): PartVerdic
 }
 
 export function isFlagged(verdict: PartVerdict): boolean {
-  return (verdict.instructsAgent ?? 0) >= FLAG_INSTRUCTS_AGENT || verdict.intent === 'malicious'
+  return (
+    (verdict.instructsAgent ?? 0) >= FLAG_INSTRUCTS_AGENT ||
+    (verdict.intent === 'malicious' && verdict.intentConfidence >= FLAG_MALICIOUS_CONFIDENCE)
+  )
 }
 
 export function isHigh(verdict: PartVerdict): boolean {
