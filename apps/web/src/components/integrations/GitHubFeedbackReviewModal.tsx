@@ -356,7 +356,7 @@ export function GitHubFeedbackReviewModal({
           {moderating && rows.length > 0 && (
             <button
               type="button"
-              className="ficus-button ml-auto px-2 py-1.5 text-xs text-accent-light"
+              className="ficus-button ficus-button-ghost ml-auto rounded-lg px-2 py-1.5 text-xs text-accent-light"
               onClick={selectAllShown}
             >
               Select all shown
@@ -479,7 +479,7 @@ export function GitHubFeedbackReviewModal({
               <div className="p-4 pb-0 md:hidden">
                 <button
                   type="button"
-                  className="ficus-button text-xs text-accent-light"
+                  className="ficus-button ficus-button-link text-xs text-accent-light"
                   onClick={() => setFocusedId(null)}
                 >
                   ← Back to list
