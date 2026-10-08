@@ -95,7 +95,7 @@ function DeliveryCheck({ stream, run }: { stream: WorkStream; run: RunDetail }) 
         {finish.isPending ? 'Checking…' : isDeliverable ? 'Mark complete' : 'Check delivery'}
       </button>
       {finish.error && (
-        <p role="alert" className="text-sm text-status-danger-400">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {actionErrorMessage(finish.error)}
         </p>
       )}
