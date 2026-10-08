@@ -214,8 +214,8 @@ function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
               {handling === 'screen'
                 ? 'No decision model is set up for the GitHub firewall, so this feedback is still held for review. '
                 : 'Screening needs a decision model. '}
-              <Link to="/settings?section=providers" className="text-accent-light hover:underline">
-                Set one up in Settings → AI Providers → Decision models
+              <Link to="/settings?section=decision-providers" className="text-accent-light hover:underline">
+                Set one up in Settings → Decision Providers
               </Link>
               .
             </p>

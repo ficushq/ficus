@@ -215,8 +215,8 @@ test('untrusted feedback is held by default, and screening is offered with a lin
   expect(radio(group, 'Screen with a model').getAttribute('aria-checked')).toBe('false')
   expect(radio(group, 'Screen with a model').title).toBe('Let a decision model screen it')
   expect(container.textContent).toContain('waits here until someone allows it or trusts its author')
-  const setup = container.querySelector('a[href="/settings?section=providers"]') as HTMLAnchorElement
-  expect(setup.textContent).toContain('Settings → AI Providers → Decision models')
+  const setup = container.querySelector('a[href="/settings?section=decision-providers"]') as HTMLAnchorElement
+  expect(setup.textContent).toContain('Settings → Decision Providers')
   expect(container.textContent).toContain('Screening needs a decision model.')
 })
 
@@ -236,14 +236,14 @@ test('choosing screening saves it and explains that anything not clearly safe, o
   expect(container.textContent).toContain('delivered once, and its author still isn’t trusted')
   // No model yet: still selectable, because it fails closed, and the card says so.
   expect(container.textContent).toContain('No decision model is set up for the GitHub firewall')
-  expect(container.querySelector('a[href="/settings?section=providers"]')).not.toBeNull()
+  expect(container.querySelector('a[href="/settings?section=decision-providers"]')).not.toBeNull()
 })
 
 test('with a decision model set up there is no setup hint', async () => {
   api.summary = { untrustedHandling: 'screen', decisionModelConfigured: true }
   const container = await render()
   expect(radio(handlingGroup(container), 'Screen with a model').getAttribute('aria-checked')).toBe('true')
-  expect(container.querySelector('a[href="/settings?section=providers"]')).toBeNull()
+  expect(container.querySelector('a[href="/settings?section=decision-providers"]')).toBeNull()
 })
 
 test('the choice is read-only without squad update', async () => {
