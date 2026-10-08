@@ -45,5 +45,6 @@ test('decision model verdicts read as one line, leading with the strongest signa
   expect(label({ outcome: 'unconfigured' })).toBe('Decision model: none set up')
   expect(label({ outcome: 'too_long' })).toBe('Decision model: too long to screen')
   expect(label({ outcome: 'skipped' })).toBe('Decision model: not screened')
+  expect(label({ outcome: 'source_unavailable' })).toContain('can’t read this any more')
   expect(reasonLabel('decision_model_allowed')).toMatch(/decision model/i)
 })

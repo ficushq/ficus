@@ -140,6 +140,8 @@ export const githubUntrustedHandlingUpdateSchema = z.object({ handling: z.enum(G
  * - `unavailable` / `unconfigured`: no decision model answered, or none is set up.
  * - `too_long`: longer than Ficus screens; held without asking.
  * - `skipped`: a person decided first, the content changed, or the squad stopped screening.
+ * - `source_unavailable`: no squad connection can still read the source, so it was not screened or
+ *   released (the same rule as a human allow).
  */
 export type GitHubFeedbackScreenOutcome =
   | 'safe'
@@ -149,6 +151,7 @@ export type GitHubFeedbackScreenOutcome =
   | 'unconfigured'
   | 'too_long'
   | 'skipped'
+  | 'source_unavailable'
 
 /** A decision model's verdict on one held revision, as stored and shown to moderators. */
 export interface GitHubFeedbackScreening {

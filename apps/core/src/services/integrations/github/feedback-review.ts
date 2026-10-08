@@ -15,7 +15,6 @@ import {
   githubFeedbackObjects,
   githubFeedbackRevisions,
   githubFeedbackScreenings,
-  githubFeedbackSources,
   githubPersonalIdentities,
   githubTrustedAuthors,
   integrationAuditEvents,
@@ -23,7 +22,7 @@ import {
   users,
 } from '../../../db'
 import { hasUserPermissionWithExecutor, type Identity } from '../../rbac/permissions'
-import { authorized } from '../outputs/authority'
+import { hasCurrentSourceAccess } from './feedback-source-access'
 import { decisionChain } from '../../decisions/service'
 import {
   GitHubFeedbackError,
@@ -48,7 +47,6 @@ const ALLOWED = ['allow_once', 'allow_trust', 'screened'] as const
 /** Retained this many times, a release counts as failing in the summary and surfaces on Home/Work. */
 export const FAILING_RETAINED_ATTEMPTS = 10
 /** Bounded scans: these are UI lists, not enumeration APIs. */
-const MAX_SOURCES_CHECKED = 20
 const MAX_TRUST_ROWS = 500
 
 async function requireReader(identity: Identity | undefined, squadId: string) {
@@ -229,29 +227,8 @@ const safeGitHubUrl = (value: unknown): string | null => {
   }
 }
 
-/**
- * Exact-resource gate for disclosure: at least one recorded source must still come from a connection
- * that is enabled, healthy, assigned to THIS squad and on the same material revision. A rotated or
- * revoked connection withholds the body (decision metadata stays visible so a human can still deny).
- */
-export async function hasCurrentSourceAccess(
-  revisionId: string,
-  squadId: string,
-  executor: Pick<typeof db, 'select'> = db
-): Promise<boolean> {
-  const sources = await executor
-    .select({ authority: githubFeedbackSources.authority })
-    .from(githubFeedbackSources)
-    .where(and(eq(githubFeedbackSources.revisionId, revisionId), eq(githubFeedbackSources.squadId, squadId)))
-    .limit(MAX_SOURCES_CHECKED)
-  for (const source of sources)
-    if (
-      source.authority.kind === 'connection' &&
-      (await authorized(executor as typeof db, 'github', source.authority, squadId))
-    )
-      return true
-  return false
-}
+// Moved to its own module so screening can share it without an import cycle; re-exported here.
+export { hasCurrentSourceAccess }
 
 export async function getGitHubFeedbackDetail(
   identity: Identity | undefined,

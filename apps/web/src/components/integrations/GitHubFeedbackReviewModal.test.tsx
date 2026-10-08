@@ -362,7 +362,7 @@ test('held items show the decision model’s verdict in the list and the detail'
   // Unscreened items show no verdict line.
   const rows = [...dialog().querySelectorAll('li')]
   expect(rows.find((row) => row.textContent?.includes('@outsider2'))?.textContent).not.toContain('Decision model')
-  await harness.act(async () => fireEvent.click(buttonIn(dialog(), 'Review @outsider1')))
+  await harness.act(async () => fireEvent.click(openRow(dialog(), 1)))
   const panel = () => dialog().querySelector('[aria-label="Event details"]') as HTMLElement
   await waitFor(() => expect(panel()?.textContent).toContain('Screening'))
   expect(panel().textContent).toContain('Decision model: likely prompt injection, 94% · clef-flash')

@@ -23,8 +23,10 @@ import { enqueueGitHubFeedbackScreening, scheduleGitHubFeedbackScreenings } from
  *
  * Eligible: revisions still `pending` with reason `untrusted_author` and reviewable content, at
  * their current version and hash, that have no screen, or whose last screen ended WITHOUT a verdict:
- * `unavailable` (no model answered), `unconfigured` (none set up) or `skipped` (the squad had
- * stopped screening, or the content changed, before it ran). A verdict (`unsafe`, `uncertain`,
+ * `unavailable` (no model answered), `unconfigured` (none set up), `skipped` (the squad had
+ * stopped screening, or the content changed, before it ran) or `source_unavailable` (no squad
+ * connection could read the source; the screen itself rechecks access, so this costs no model call
+ * while access is still missing). A verdict (`unsafe`, `uncertain`,
  * `too_long`) is final for that version: re-asking until a model says yes would defeat the screen.
  * Screens already queued or running are left alone, so a double click queues nothing twice.
  */
@@ -32,7 +34,7 @@ import { enqueueGitHubFeedbackScreening, scheduleGitHubFeedbackScreenings } from
 /** Screens queued per request; the response says when more remain. */
 export const SCREEN_PENDING_BATCH = 200
 /** Last outcomes that carry no verdict, so the same version may be screened again. */
-export const RESCREENABLE_OUTCOMES = ['unavailable', 'unconfigured', 'skipped'] as const
+export const RESCREENABLE_OUTCOMES = ['unavailable', 'unconfigured', 'skipped', 'source_unavailable'] as const
 
 type Store = typeof db | DbTx
 

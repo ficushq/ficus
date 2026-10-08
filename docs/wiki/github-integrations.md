@@ -375,14 +375,17 @@ decision `screened` (`releaseState: ready`, reason `decision_model_allowed`, no
 `allow_once`; no trust is added. Every other outcome (unsafe, uncertain,
 `unavailable`, `unconfigured`, `too_long`, or `skipped` because a human decided
 first, the content changed or the squad switched back to `hold`) leaves the
-revision pending and records the verdict for the review window. A lease makes
+revision pending and records the verdict for the review window. Like a human allow,
+a screen needs current source access (`hasCurrentSourceAccess`): without it the
+feedback is neither sent to a model nor released (`source_unavailable`, rechecked
+under the lock at release). A lease makes
 retries safe; a screen that crashes three times is left held as `unavailable`.
 Audit rows use actor `decision-model` and action `github.feedback.screen`.
 `POST .../github-feedback/screen-pending` (`feedback-screen-pending.ts`, human-only,
 409 `author_filter_off`/`screening_not_enabled` otherwise) queues screens for
 already-held `untrusted_author` revisions, 200 per call (`more` when others
 remain). It re-queues a previous screen only when it ended without a verdict
-(`unavailable`, `unconfigured`, `skipped`); verdicts (`unsafe`, `uncertain`,
+(`unavailable`, `unconfigured`, `skipped`, `source_unavailable`); verdicts (`unsafe`, `uncertain`,
 `too_long`) are final for that version, and queued or running screens are left
 alone, so repeating the call is a no-op. The summary's `screenable` counts what it
 would queue.

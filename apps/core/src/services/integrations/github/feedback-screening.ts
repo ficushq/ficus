@@ -12,6 +12,7 @@ import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { createLogger } from '../../../lib/infra/logger'
 import { decide as defaultDecide, type DecisionOutcome } from '../../decisions/service'
 import { buildScreenState, evaluateScreen, SCREEN_QUESTIONS, type ScreenEvaluation } from './feedback-screen-policy'
+import { hasCurrentSourceAccess } from './feedback-source-access'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 
 /*
@@ -179,6 +180,10 @@ export async function screenGitHubFeedback(
     !revision.envelope
   ) {
     evaluation = { pass: false, outcome: 'skipped', verdict: emptyVerdict() }
+  } else if (!(await hasSourceAccess(revision.id, claimed.squadId))) {
+    // Like a human allow: no squad connection can still read the source, so it is neither sent to
+    // a model nor released. It may be screened again once access returns.
+    evaluation = { pass: false, outcome: 'source_unavailable', verdict: emptyVerdict() }
   } else {
     const built = buildScreenState(revision, row.objectKind)
     if (!built) evaluation = { pass: false, outcome: 'skipped', verdict: emptyVerdict() }
@@ -203,6 +208,11 @@ export async function screenGitHubFeedback(
     }
   }
   return settle(claimed, leaseToken, evaluation)
+}
+
+/** The same gate a human allow passes: some squad connection can still read the source. */
+function hasSourceAccess(revisionId: string, squadId: string, store: Store = db): Promise<boolean> {
+  return hasCurrentSourceAccess(revisionId, squadId, store)
 }
 
 function stillScreenable(revision: Revision, claimed: typeof githubFeedbackScreenings.$inferSelect) {
@@ -261,7 +271,10 @@ async function settle(
         squad.handling === 'screen' &&
         !!revision.envelope &&
         stillScreenable(revision, screening)
-      const [updated] = eligible
+      // Rechecked under the lock: access lost while the model was answering also holds it.
+      const readable = eligible && (await hasSourceAccess(screening.revisionId, screening.squadId, tx))
+      if (eligible && !readable) outcome = 'source_unavailable'
+      const [updated] = readable
         ? await tx
             .update(githubFeedbackRevisions)
             .set({
@@ -283,7 +296,7 @@ async function settle(
             .returning({ id: githubFeedbackRevisions.id })
         : []
       released = !!updated
-      if (!released) outcome = 'skipped'
+      if (!released && outcome === 'safe') outcome = 'skipped'
     }
     await tx
       .update(githubFeedbackScreenings)

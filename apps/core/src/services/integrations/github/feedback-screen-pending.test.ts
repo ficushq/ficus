@@ -241,10 +241,11 @@ test(`queues at most ${SCREEN_PENDING_BATCH} per call and reports when more rema
   }
 })
 
-test('re-screens results without a verdict (unavailable, unconfigured, skipped), never a verdict or a live screen', async () => {
+test('re-screens results without a verdict (unavailable, unconfigured, skipped, source unavailable), never a verdict or a live screen', async () => {
   const h = await fixture()
   try {
-    const [unavailable, unconfigured, skipped, unsafe, uncertain, tooLong, queued, running] = await h.revisions(8)
+    const [unavailable, unconfigured, skipped, sourceUnavailable, unsafe, uncertain, tooLong, queued, running] =
+      await h.revisions(9)
     const verdict = {
       instructsAgent: 0.9,
       intent: 'malicious' as const,
@@ -258,6 +259,7 @@ test('re-screens results without a verdict (unavailable, unconfigured, skipped),
       [unavailable, 'unavailable'],
       [unconfigured, 'unconfigured'],
       [skipped, 'skipped'],
+      [sourceUnavailable, 'source_unavailable'],
       [unsafe, 'unsafe'],
       [uncertain, 'uncertain'],
       [tooLong, 'too_long'],
@@ -270,14 +272,14 @@ test('re-screens results without a verdict (unavailable, unconfigured, skipped),
       leaseToken: crypto.randomUUID(),
       leaseExpiresAt: new Date(Date.now() + 60_000),
     })
-    expect((await getGitHubFeedbackSummary(h.human, h.squadId)).screenable).toBe(3)
+    expect((await getGitHubFeedbackSummary(h.human, h.squadId)).screenable).toBe(4)
     expect(await screenPendingGitHubFeedback(h.human, h.squadId, { schedule: h.schedule })).toEqual({
-      queued: 3,
+      queued: 4,
       skipped: 5,
       more: false,
     })
     const byId = new Map((await h.screenings()).map((row) => [row.revisionId, row]))
-    for (const id of [unavailable, unconfigured, skipped])
+    for (const id of [unavailable, unconfigured, skipped, sourceUnavailable])
       expect(byId.get(id!)).toMatchObject({
         state: 'queued',
         attempts: 0,
@@ -292,7 +294,7 @@ test('re-screens results without a verdict (unavailable, unconfigured, skipped),
     ] as const)
       expect(byId.get(id!)).toMatchObject({ state: 'held', outcome })
     expect(byId.get(running!)).toMatchObject({ state: 'running', attempts: 1 })
-    expect(h.scheduled.flat().sort()).toEqual([unavailable, unconfigured, skipped].sort())
+    expect(h.scheduled.flat().sort()).toEqual([unavailable, unconfigured, skipped, sourceUnavailable].sort())
   } finally {
     await h.close()
   }

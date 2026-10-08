@@ -109,6 +109,8 @@ export function screeningLabel(screening: GitHubFeedbackScreening | null): strin
       return 'Decision model: none set up'
     case 'too_long':
       return 'Decision model: too long to screen'
+    case 'source_unavailable':
+      return 'Decision model: not screened; the squad’s GitHub connection can’t read this any more'
     default:
       return 'Decision model: not screened'
   }
