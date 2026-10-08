@@ -61,8 +61,6 @@ export type RoutingKind = (typeof ROUTING_KINDS)[number]
 export interface RoutingContext {
   /** The user's last few messages and the Assistant's latest reply, oldest first. */
   recent: RecentEntry[]
-  /** The Assistant's last turn asked the user something: a question, or ask_human. */
-  assistantAsked: boolean
 }
 
 export interface InheritedRouting {
@@ -139,11 +137,11 @@ export const KIND_INSTRUCTIONS =
 
 const KIND_OPTIONS: Record<RoutingKind, string> = {
   new_request:
-    'Asks for work to be done that is not already under way in this conversation, including redoing earlier work somewhere else (for example in a different squad).',
+    'Asks for work to be done that is not already under way in this conversation, even when it comes as a reply to the Assistant, including redoing earlier work somewhere else (for example in a different squad).',
   follow_up:
     'About work or a request already in this conversation: its progress, details, changes, or more of the same work.',
   conversation:
-    'A confirmation, thanks or reaction, brainstorming or discussion, or a question to the Assistant itself, with no work to hand off.',
+    'A confirmation, thanks or reaction; answering the Assistant’s question or brainstorming with it without asking for new work; or a question to the Assistant itself, with no work to hand off.',
 }
 
 const ACKNOWLEDGEMENT_WORDS = new Set(
@@ -164,11 +162,12 @@ export function isAcknowledgement(text: string): boolean {
   return words.length <= 4 && words.every((word) => ACKNOWLEDGEMENT_WORDS.has(word))
 }
 
-/** Why a message needs no decision at all (no call, no cost), or null to ask. */
-export function routingSkipReason(text: string, context: RoutingContext): 'acknowledgement' | 'answer' | null {
-  if (isAcknowledgement(text)) return 'acknowledgement'
-  if (context.assistantAsked) return 'answer'
-  return null
+/**
+ * Why a message needs no decision at all (no call, no cost), or null to ask. Only acknowledgements:
+ * a reply to the Assistant's question may still be a new request, which the kind question decides.
+ */
+export function routingSkipReason(text: string): 'acknowledgement' | null {
+  return isAcknowledgement(text) ? 'acknowledgement' : null
 }
 
 /** The decision: one choice. Squad names and purposes are ours; the user's words go only in `state`. */
@@ -324,12 +323,9 @@ export async function listRoutableSquads(identity: Identity): Promise<RoutingSqu
     .limit(500)
 }
 
-const ASKED_QUESTION = /\?[\s*_)"'”’`]*$/
-
 /**
  * The conversation before a message, for the decision: the user's last few chat messages and the
- * Assistant's latest reply, oldest first, each truncated; and whether the Assistant's last turn
- * asked the user something.
+ * Assistant's latest reply (so a reply to its question can be judged), oldest first, each truncated.
  */
 export async function loadRoutingContext(
   message: Pick<Message, 'id' | 'agentId' | 'createdAt'>
@@ -365,16 +361,7 @@ export async function loadRoutingContext(
       role: row.role === 'human' ? ('user' as const) : ('assistant' as const),
       text: truncate(row.content.trim(), RECENT_ENTRY_CHARS),
     }))
-  // The Assistant's last turn: its rows since the user last wrote.
-  const lastUser = relevant.findIndex((row) => row.role === 'human')
-  const turn = relevant.slice(0, lastUser < 0 ? relevant.length : lastUser)
-  const askedHuman = turn.some((row) =>
-    ((row.metadata as MessageMetadata | null)?.content ?? []).some(
-      (block) => block.type === 'tool_use' && block.toolCall.toolName === 'ask_human'
-    )
-  )
-  const lastText = turn.find((row) => row.content.trim())?.content.trim() ?? ''
-  return { recent, assistantAsked: askedHuman || ASKED_QUESTION.test(lastText) }
+  return { recent }
 }
 
 /** The conversation's latest saved routing before a message: a hint the user saw, or their correction. */
@@ -409,8 +396,8 @@ export function isRoutableUserMessage(message: Pick<Message, 'role' | 'content' 
 }
 
 /**
- * Route one user message to the Assistant. Acknowledgements and answers to the Assistant's own
- * question are not asked about at all. Otherwise one decision asks what kind of message it is and
+ * Route one user message to the Assistant. Short acknowledgements are not asked about at all.
+ * Otherwise one decision asks what kind of message it is and
  * where it belongs:
  * - a confident new request with a confident scope saves the hint on the message (the UI shows its
  *   chip; the model reads it with the message);
@@ -427,8 +414,8 @@ export async function annotateAssistantMessage(
     if (!(deps.enabled ?? (() => isDecisionFeatureEnabled('assistant-routing')))()) return message
     const user = await resolveActingUser(identity)
     if (!user) return message
+    if (routingSkipReason(message.content)) return message
     const context = await (deps.loadContext ?? loadRoutingContext)(message)
-    if (routingSkipReason(message.content, context)) return message
     const squadList = await (deps.listSquads ?? listRoutableSquads)(user)
     const { hint, kind } = await decideAssistantRouting(
       { text: message.content, recent: context.recent, squads: squadList, withKind: true },

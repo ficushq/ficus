@@ -40,14 +40,17 @@ helpers never imply completion; a missing or terminated helper on an unfinished 
 When a decision model is set up and **Assistant squad routing** is on (Settings → Decision
 Providers → Features), Core may ask one decision before the Assistant reads a user chat message.
 It is not asked at all (no call, no cost) for a short acknowledgement ("ok", "thanks!", "sounds
-good": at most four words, all from a small acknowledgement vocabulary) or for a reply to the
-Assistant's own question (its last turn ended in a question or used `ask_human`).
+good", "👍": at most four words, all from a small acknowledgement vocabulary). A reply to the
+Assistant's own question is still asked about: the `kind` question, which sees the Assistant's
+latest reply, decides whether it is a new request or conversation.
 
 The one call asks two questions:
 
-- `kind`: `new_request` (asks for work not already under way, including redoing earlier work
-  somewhere else), `follow_up` (about work or a request already in this conversation), or
-  `conversation` (a confirmation, thanks, brainstorming, or a question to the Assistant itself).
+- `kind`: `new_request` (asks for work not already under way, even as a reply to the Assistant,
+  including redoing earlier work somewhere else), `follow_up` (about work or a request already in
+  this conversation), or `conversation` (a confirmation or thanks, answering the Assistant's
+  question or brainstorming with it without asking for new work, or a question to the Assistant
+  itself).
 - `scope`: `instance` (Ficus itself: settings, admin, the instance), `general` (not tied to one
   squad's project), or one `squad_<short id>` option per active squad the user can read,
   described by the squad's name and purpose. Above 30 squads, the purpose heuristic from the

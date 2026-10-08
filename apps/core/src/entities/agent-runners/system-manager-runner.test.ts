@@ -315,7 +315,7 @@ describe('SystemManagerRunner Assistant routing', () => {
       this.assistantRoutingDeps = {
         enabled: () => true,
         listSquads: async () => [chlea],
-        loadContext: async () => ({ recent: [], assistantAsked: false }),
+        loadContext: async () => ({ recent: [] }),
         decide: async (_purpose, request) => {
           this.asked.push((request.state as { message: string }).message)
           return { ok: false, reason: 'unavailable', errors: [] }
