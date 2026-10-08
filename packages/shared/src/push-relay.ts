@@ -6,13 +6,29 @@ export const relayInstanceTokenPattern =
   /^ficus_pri_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_[A-Za-z0-9_-]{43}$/
 export const relayBindingTokenSchema = z.string().regex(/^ficus_prd_[A-Za-z0-9_-]{43}$/)
 export const apnsTokenSchema = z.string().regex(/^(?:[0-9a-f]{2}){16,256}$/i)
+export const fcmTokenSchema = z
+  .string()
+  .min(32)
+  .max(4096)
+  .regex(/^[A-Za-z0-9_:.-]+$/)
+export type PushTransport = 'apns' | 'fcm'
+function validatePushDestination(
+  value: { deviceToken: string; transport?: PushTransport; environment: string },
+  ctx: z.RefinementCtx
+) {
+  const schema = value.transport === 'fcm' ? fcmTokenSchema : apnsTokenSchema
+  if (!schema.safeParse(value.deviceToken).success || (value.transport === 'fcm' && value.environment !== 'production'))
+    ctx.addIssue({ code: 'custom', message: 'Invalid push destination', path: ['deviceToken'] })
+}
 export const relayPairingSchema = z
   .object({
     instanceId: z.string().uuid(),
-    deviceToken: apnsTokenSchema,
+    deviceToken: z.string().max(4096),
+    transport: z.enum(['apns', 'fcm']).optional(),
     environment: z.enum(['production', 'sandbox']),
   })
   .strict()
+  .superRefine(validatePushDestination)
 // No arbitrary aps keys or caller-chosen origin/URL. Content previews are opt-in;
 // otherwise only event type and a numeric work reference describe the update.
 // Grouping (threadKey), replacement (collapseKey), and urgency (interruptionLevel) are
@@ -126,19 +142,24 @@ export const installationKeySchema = z.string().regex(/^[0-9a-f]{64}$/)
 export const instanceEnrollmentSchema = z
   .object({ publicKey: installationKeySchema, label: z.string().trim().min(1).max(60) })
   .strict()
-export const activationActionSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('refresh'), activationId: z.string().uuid() }).strict(),
-  z
-    .object({
-      action: z.literal('bind'),
-      activationId: z.string().uuid(),
-      deviceToken: apnsTokenSchema,
-      environment: z.enum(['sandbox', 'production']),
-      bindingToken: relayBindingTokenSchema,
-      notificationPolicy: nativeNotificationPolicySchema.optional(),
-    })
-    .strict(),
-])
+export const activationActionSchema = z
+  .discriminatedUnion('action', [
+    z.object({ action: z.literal('refresh'), activationId: z.string().uuid() }).strict(),
+    z
+      .object({
+        action: z.literal('bind'),
+        activationId: z.string().uuid(),
+        deviceToken: z.string().max(4096),
+        transport: z.enum(['apns', 'fcm']).optional(),
+        environment: z.enum(['sandbox', 'production']),
+        bindingToken: relayBindingTokenSchema,
+        notificationPolicy: nativeNotificationPolicySchema.optional(),
+      })
+      .strict(),
+  ])
+  .superRefine((value, ctx) => {
+    if (value.action === 'bind') validatePushDestination(value, ctx)
+  })
 export const activationProofSchema = z
   .object({ challengeId: z.string().uuid(), signature: z.string().regex(/^[0-9a-f]{128}$/) })
   .strict()
@@ -156,6 +177,7 @@ export function activationOperationPayload(operation: ActivationOperation): stri
             operation.environment,
             operation.bindingToken,
             ...(operation.notificationPolicy ? [operation.notificationPolicy] : []),
+            ...(operation.transport ? [operation.transport] : []),
           ]
   )
 }

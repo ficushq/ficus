@@ -357,7 +357,7 @@ export class NotificationService {
         }
         const alert = pushAlertText(presentation)
         if (pushRelayConfig()) {
-          if (device.platform !== 'ios' || !device.relayBindingToken) return
+          if (!device.relayBindingToken) return
           const result = await sendRelayAlert(device.relayBindingToken, {
             ...presentation,
             collapseKey: event.collapseKey,
@@ -379,6 +379,7 @@ export class NotificationService {
           const result = await sendManagedCloudAlert({
             bindingToken: device.relayBindingToken,
             deviceToken: device.apnsToken,
+            platform: device.platform === 'android' ? 'android' : 'ios',
             environment,
             routing: {
               ...presentation,
@@ -397,6 +398,8 @@ export class NotificationService {
           if (result.status === 410 || result.reason === 'Unregistered') await deleteApnsDeviceByToken(device.apnsToken)
           return
         }
+        // Android always uses the authenticated FCM relay; never send an FCM token to APNs.
+        if (device.platform === 'android') return
         const result = await sendApnsNotification(
           device.apnsToken,
           {
