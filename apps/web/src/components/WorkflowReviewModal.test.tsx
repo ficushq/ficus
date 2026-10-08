@@ -2,12 +2,20 @@ import { expect, spyOn, test } from 'bun:test'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createWorkflowRun, workflowPresetSchema, type WorkStream, type WorkStreamWait } from '@ficus/shared'
+import {
+  createWorkflowRun,
+  workflowCommandSchema,
+  workflowPresetSchema,
+  type WorkflowTransition,
+  type WorkStream,
+  type WorkStreamWait,
+} from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import { acquireDomHarness } from '../test/domHarness'
 import { webkitTap } from '../test/webkitTap'
 import { client } from '../api/clientInstance'
 import { queryKeys } from '../queryKeys'
+import { decisionNotesHint, outcomeRequiresNotes } from '../lib/workflowReview'
 import { MarkdownContent } from './MarkdownContent'
 import { WorkflowReviewCallout } from './WorkflowReviewCallout'
 import { WorkflowReviewDeepLink, WorkflowReviewModal, WorkflowReviewRoute } from './WorkflowReviewModal'
@@ -374,4 +382,25 @@ test('embedded documents cap heading sizes; chat markdown keeps the prose scale'
   } finally {
     await f.cleanup()
   }
+})
+
+test('notes requiredness follows the Core complete contract from one per-outcome rule', () => {
+  // Core rejects a `complete` with empty evidence for every outcome today, so every outcome needs notes.
+  const empty = workflowCommandSchema.safeParse({
+    action: 'complete',
+    expectedVersion: 0,
+    attemptId: 1,
+    outcome: 'approved',
+    evidence: ' ',
+  })
+  expect(empty.success).toBe(false)
+  const outcomes: Array<[string, WorkflowTransition]> = [
+    ['approved', { next: 'finish' }],
+    ['changes-requested', { returnTo: 'execute' }],
+  ]
+  const step = gateRun().state.definition.steps.find((entry) => entry.id === 'design-review')!
+  expect(outcomes.map(([, transition]) => outcomeRequiresNotes(step, transition))).toEqual([!empty.success, true])
+  expect(decisionNotesHint(step, outcomes)).toBe(
+    'Required. Your notes are recorded with the decision and passed to the next step.'
+  )
 })

@@ -28,6 +28,35 @@ export function outcomeEffect(run: WorkflowRun, transition: WorkflowTransition):
   return `Continues to ${targets.map((target) => (target === 'finish' ? 'finish' : stepName(run, target))).join(', ')}`
 }
 
+/**
+ * Whether deciding this outcome needs decision notes: the one place the rule lives. Core's `complete`
+ * command requires non-empty evidence for every outcome today (`workflowCommandSchema`), so this
+ * follows that contract. PR #480 makes forward approval notes optional and exports
+ * `workflowOutcomeRequiresEvidence(step, transition)` from `@ficus/shared`; once it lands this body
+ * becomes `return workflowOutcomeRequiresEvidence(step, transition)` and the surface follows.
+ */
+export function outcomeRequiresNotes(step: WorkflowStep, transition: WorkflowTransition): boolean {
+  void step
+  void transition
+  return true
+}
+
+/** The notes helper for a gate's outcomes: "Required.", "Optional." or which outcomes need them. */
+export function decisionNotesHint(step: WorkflowStep, outcomes: Array<[string, WorkflowTransition]>): string {
+  const labelsWhere = (required: boolean) =>
+    outcomes
+      .filter(([, transition]) => outcomeRequiresNotes(step, transition) === required)
+      .map(([outcome]) => outcomeLabel(outcome))
+  const requiredFor = labelsWhere(true)
+  const optionalFor = labelsWhere(false)
+  const rule = !requiredFor.length
+    ? 'Optional.'
+    : !optionalFor.length
+      ? 'Required.'
+      : `Optional for ${optionalFor.join(', ')}; required for ${requiredFor.join(', ')}.`
+  return `${rule} Your notes are recorded with the decision and passed to the next step.`
+}
+
 /** "design-assessment · Attempt 16 · Proposal ready": the attempt whose handoff is under review. */
 export function attemptSummary(run: WorkflowRun, attempt: WorkflowAttempt): string {
   return `${stepName(run, attempt.stepId)} · Attempt ${attempt.id}${attempt.outcome ? ` · ${outcomeLabel(attempt.outcome)}` : ''}`

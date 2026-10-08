@@ -13,11 +13,13 @@ import { useWorkflowRefresh } from '../hooks/useWorkflowRefresh'
 import { actionErrorMessage } from '../lib/actionError'
 import {
   attemptSummary,
+  decisionNotesHint,
   focusedHumanGate,
   humanGateContext,
   openHumanGates,
   outcomeEffect,
   outcomeLabel,
+  outcomeRequiresNotes,
   readReviewDraft,
   reviewDraftKey,
   workflowReviewPath,
@@ -337,8 +339,6 @@ interface DecisionState {
   advance: { isPending: boolean; error: Error | null; mutate: (outcome: string) => void }
 }
 
-const NOTES_HINT = 'Required. Your notes are recorded with the decision and passed to the next step.'
-
 /** Notes, then the outcomes stacked full width with the forward outcome first. */
 function DecisionForm({ layout, gate, run, notes, setNotes, advance }: DecisionState & { layout: 'rail' }) {
   const id = useId()
@@ -349,7 +349,7 @@ function DecisionForm({ layout, gate, run, notes, setNotes, advance }: DecisionS
       </label>
       <NotesField id={`${id}-notes`} hintId={`${id}-hint`} rows={8} value={notes} onChange={setNotes} />
       <p id={`${id}-hint`} className="text-xs text-muted">
-        {NOTES_HINT}
+        {decisionNotesHint(gate.step, gate.outcomes)}
       </p>
       <div className="space-y-2 pt-2">
         <DecisionButtons gate={gate} run={run} notes={notes} advance={advance} />
@@ -398,7 +398,7 @@ function DecisionSheet(state: DecisionState) {
                 onChange={setNotes}
               />
               <p id={`${id}-hint`} className="text-xs text-muted">
-                {NOTES_HINT}
+                {decisionNotesHint(gate.step, gate.outcomes)}
               </p>
             </div>
           )}
@@ -414,7 +414,10 @@ function DecisionSheet(state: DecisionState) {
             </button>
             {!expanded && (
               <span className="min-w-0 truncate text-xs text-muted">
-                {notes.trim() || 'Notes are required to decide.'}
+                {notes.trim() ||
+                  (gate.outcomes.some(([, transition]) => outcomeRequiresNotes(gate.step, transition))
+                    ? 'Notes are required to decide.'
+                    : 'Notes are optional.')}
               </span>
             )}
           </div>
@@ -489,7 +492,11 @@ function DecisionButtons({ gate, run, notes, advance }: Omit<DecisionState, 'set
               primary ? 'ficus-button-primary' : 'ficus-button-secondary',
               sendsBack && !primary && 'text-status-danger-600 dark:text-status-danger-400'
             )}
-            disabled={advance.isPending || !notes.trim() || gate.blockingWaits.length > 0}
+            disabled={
+              advance.isPending ||
+              (outcomeRequiresNotes(gate.step, transition) && !notes.trim()) ||
+              gate.blockingWaits.length > 0
+            }
             onClick={() => advance.mutate(outcome)}
           >
             {outcomeLabel(outcome)}
