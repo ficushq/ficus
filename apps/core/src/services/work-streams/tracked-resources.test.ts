@@ -114,11 +114,17 @@ beforeAll(async () => {
     model: 'anthropic:claude-sonnet-4-5',
     systemPrompt: 'Test worker',
   })
-  squadId = (await db.insert(squads).values({ name: prefix, purpose: 'Tracked resource fixtures' }).returning())[0]!.id
+  // Tracked routing here is the pre-filter contract: the GitHub author filter is OFF.
+  squadId = (
+    await db
+      .insert(squads)
+      .values({ name: prefix, purpose: 'Tracked resource fixtures', githubAuthorFilter: false })
+      .returning()
+  )[0]!.id
   otherSquadId = (
     await db
       .insert(squads)
-      .values({ name: `${prefix}-other`, purpose: 'Tracked resource fixtures' })
+      .values({ name: `${prefix}-other`, purpose: 'Tracked resource fixtures', githubAuthorFilter: false })
       .returning()
   )[0]!.id
   const fixture = await createTestGitHubConnection({ squadId })

@@ -60,3 +60,31 @@ test('generated migration itself enforces active GitHub ownership without preloa
     .where(sql`${users.id} = ${userIds[0]}`)
   expect(removed).toBeUndefined()
 })
+
+test('author filter migration keeps rollout squads OFF and defaults new squads ON', async () => {
+  const filter = await Bun.file(new URL('../../drizzle/0208_github_author_filter.sql', import.meta.url)).text()
+  const namespace = `author_filter_migration_${crypto.randomUUID().replaceAll('-', '')}`
+  const rollback = new Error('owned migration fixture rollback')
+  try {
+    await db.transaction(async (tx) => {
+      // An isolated stand-in resolves the migration's unqualified "squads" before public.squads.
+      await tx.execute(sql.raw(`CREATE SCHEMA "${namespace}"`))
+      await tx.execute(sql.raw(`SET LOCAL search_path TO "${namespace}", public`))
+      await tx.execute(sql.raw(`CREATE TABLE "${namespace}"."squads" (id integer PRIMARY KEY)`))
+      await tx.execute(sql.raw(`INSERT INTO "${namespace}"."squads" (id) VALUES (1)`))
+      for (const statement of filter.split('--> statement-breakpoint'))
+        if (statement.trim()) await tx.execute(sql.raw(statement))
+      await tx.execute(sql.raw(`INSERT INTO "${namespace}"."squads" (id) VALUES (2)`))
+      const rows = await tx.execute(
+        sql.raw(`SELECT id, github_author_filter AS enabled FROM "${namespace}"."squads" ORDER BY id`)
+      )
+      expect(rows.map((row) => [row.id, row.enabled])).toEqual([
+        [1, false],
+        [2, true],
+      ])
+      throw rollback
+    })
+  } catch (error) {
+    if (error !== rollback) throw error
+  }
+})

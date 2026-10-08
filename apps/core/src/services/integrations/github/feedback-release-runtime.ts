@@ -3,7 +3,7 @@ import { db, githubFeedbackRevisions, githubFeedbackSources, integrationOutputEv
 import { readOutputEvent, readFeedbackRevision } from './feedback-pass-read'
 import { authorized } from '../outputs/authority'
 import { githubContentHash } from './feedback-envelope'
-import { isGitHubOutputAdmitted, isOriginalGitHubRoute, matchesOriginalGitHubRoutes } from './feedback-routing'
+import { isGitHubOutputAdmitted } from './feedback-routing'
 import { isTrustedGitHubFeedbackContent } from './feedback-trust'
 import { releaseGitHubFeedback, type GitHubFeedbackReleaseDependencies } from './feedback-release'
 import { renewKnownGitHubOutputs } from './feedback-renewal'
@@ -38,9 +38,7 @@ export async function reconcileGitHubFeedbackRelease(route: GitHubFeedbackReleas
           !(await isTrustedGitHubFeedbackContent(store, revision.squadId, revision)))
       )
         return 'source_unavailable' as const
-      return (await matchesOriginalGitHubRoutes(store, event, revision.routingProvenance, event))
-        ? null
-        : ('routing_changed' as const)
+      return null
     }
     return releaseGitHubFeedback({
       async prepareSource(event) {
@@ -51,21 +49,17 @@ export async function reconcileGitHubFeedbackRelease(route: GitHubFeedbackReleas
             !(await authorized(db, 'github', event.authority, event.authority.squadId))
           )
             return false
-          if (!(await isOriginalGitHubRoute(db, event))) return { state: 'obsolete', reason: 'routing_changed' }
           await renewKnownGitHubOutputs([event.id])
-          return (await isGitHubOutputAdmitted(db, event)) && (await isOriginalGitHubRoute(db, event))
+          return isGitHubOutputAdmitted(db, event)
         }
-        const reason = await sourceReason(event, db)
-        if (reason === 'routing_changed') return { state: 'obsolete', reason }
-        if (reason) return false
+        if (await sourceReason(event, db)) return false
         const access = await readGitHubResource(event)
         if (!access?.nativeAuthorized) return false
         witnesses.set(event.id, { hash: snapshot(event), expiresAt: access.checkedAt.getTime() + 60_000 })
         return true
       },
       async authorizeSource(event, store = db) {
-        if (event.fact.github?.revisionId)
-          return (await isGitHubOutputAdmitted(store, event)) && (await isOriginalGitHubRoute(store, event))
+        if (event.fact.github?.revisionId) return isGitHubOutputAdmitted(store, event)
         const witness = witnesses.get(event.id)
         if (!witness || witness.expiresAt <= Date.now() || witness.hash !== snapshot(event)) return false
         const current = await readOutputEvent(store, event.id)

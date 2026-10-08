@@ -174,11 +174,10 @@ test('duplicate workers hold one lease, route the immutable canonical identity, 
     let calls = 0
     const deps: release.GitHubFeedbackReleaseDependencies = {
       authorizeSource: async () => true,
-      route: async (event: typeof h.source, provenance: Array<{ kind: string; id: string }>) => {
+      route: async (event: typeof h.source) => {
         calls++
         expect(event.sourceKey).toBe(`github-feedback:${h.squadId}:${h.revisionId}`)
         expect(event.fact.body).toContain('EXACT REVIEWED')
-        expect(provenance).toEqual([{ kind: 'pre-flow', id: 'original-recipient' }])
         await h.queued(event, false)
         entered()
         await barrier
@@ -325,7 +324,7 @@ test('a stale worker cannot overwrite settlement after lease takeover', async ()
           ids.push(event.id)
           entered()
           await barrier
-          return { state: 'obsolete', reason: 'routing_changed' }
+          return { state: 'obsolete', reason: 'work_stream_ended' }
         },
       },
       { revisionIds: [h.revisionId] }
@@ -433,7 +432,7 @@ test('expired crash lease is recovered; obsolete routing is terminal and cannot 
       authorizeSource: async () => true,
       route: async () => {
         calls++
-        return { state: 'obsolete' as const, reason: 'routing_changed' }
+        return { state: 'obsolete' as const, reason: 'work_stream_ended' }
       },
     }
     expect(await release.releaseGitHubFeedback(deps, { revisionIds: [h.revisionId] })).toBe(1)

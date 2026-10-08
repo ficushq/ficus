@@ -13,16 +13,22 @@ import {
   isInboxMessageWakeEligible,
 } from '../../entities/InboxMessage'
 
-export async function deliverInboxMessagesToAgent(agentId: string): Promise<void> {
-  return withGitHubOutputPass(() => deliverInboxInPass(agentId))
+/**
+ * `githubMessageIds` names GitHub notices the caller just persisted for this agent. They join the
+ * pass's selected cohort (each still charged as one WORK unit) instead of waiting a tick when the
+ * ordinary cohort was selected earlier in the same pass. It never widens to a mailbox sweep.
+ */
+export async function deliverInboxMessagesToAgent(agentId: string, githubMessageIds: string[] = []): Promise<void> {
+  return withGitHubOutputPass(() => deliverInboxInPass(agentId, githubMessageIds))
 }
 
-async function deliverInboxInPass(agentId: string): Promise<void> {
+async function deliverInboxInPass(agentId: string, githubMessageIds: string[]): Promise<void> {
   const { pausedWorkStreamForAgent } = await import('../work-streams/pause')
   const paused = await pausedWorkStreamForAgent(agentId)
   const agent = await Agent.mustFind(agentId)
   const cohort = githubOutputPass()?.ordinary
-  const ids = cohort ? (cohort.get(agent.id) ?? []) : (await selectGitHubInboxPage(agent.id)).map((row) => row.id)
+  const selected = cohort ? (cohort.get(agent.id) ?? []) : (await selectGitHubInboxPage(agent.id)).map((row) => row.id)
+  const ids = [...new Set([...selected, ...githubMessageIds.filter((id) => z.string().uuid().safeParse(id).success)])]
   cohort?.delete(agent.id)
   const { renewKnownGitHubOutputs } = await import('../integrations/github/feedback-renewal')
   for (const id of ids) {

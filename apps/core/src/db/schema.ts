@@ -933,6 +933,10 @@ export const squads = pgTable('squads', {
   globalCollaborationEnabled: boolean('global_collaboration_enabled').notNull().default(false),
   order: integer('order').notNull().default(0),
   metadata: jsonb('metadata').notNull().default({}),
+  // GitHub author filter: ON holds comments/reviews from untrusted authors for human review.
+  // OFF routes GitHub events exactly as before the filter existed. New squads default ON;
+  // squads that existed at rollout were migrated OFF. Human-only; never part of generic updates.
+  githubAuthorFilter: boolean('github_author_filter').notNull().default(true),
   // Max simultaneously-admitted work streams (status 'active').
   // NULL = unlimited (legacy behavior); excess creations land in 'queued'.
   maxConcurrentWorkStreams: integer('max_concurrent_work_streams'),
@@ -1448,7 +1452,6 @@ export const githubOutputProofs = pgTable('github_output_proofs', {
   sourceHash: varchar('source_hash', { length: 64 }).notNull(),
   effectHash: varchar('effect_hash', { length: 64 }).notNull(),
   authorityHash: varchar('authority_hash', { length: 64 }).notNull(),
-  routes: jsonb('routes').$type<import('@ficus/shared').GitHubFeedbackRoute[]>().notNull().default([]),
   checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 })

@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { db, type DbTx } from '../../../db'
 import { githubPersonalIdentities, githubTrustedAuthors, integrationAuditEvents, users } from '../../../db/schema'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
+import { isGitHubAuthorFilterEnabled } from './author-filter'
 import { hasUserPermissionWithExecutor, type Identity } from '../../rbac/permissions'
 
 export class GitHubFeedbackError extends Error {
@@ -109,12 +110,17 @@ export async function resolveGitHubAuthorTrust(
   return origins
 }
 
-/** Author AND actual editor must be currently trusted; transport origin is not an authority grant. */
+/**
+ * Author AND actual editor must be currently trusted; transport origin is not an authority grant.
+ * A squad with its author filter OFF ignores the trusted list: already-captured content is not
+ * re-held or revoked for its author while the filter is off.
+ */
 export async function isTrustedGitHubFeedbackContent(
   executor: Pick<typeof db, 'select'>,
   squadId: string,
   content: { author: GitHubAccountIdentity | null; editor: GitHubAccountIdentity | null; attribution: string }
 ): Promise<boolean> {
+  if (!(await isGitHubAuthorFilterEnabled(executor as typeof db, squadId))) return true
   if (!content.author || !['creation', 'verified_edit'].includes(content.attribution)) return false
   if (!(await resolveGitHubAuthorTrust(executor, squadId, content.author.accountId)).length) return false
   return (

@@ -461,6 +461,8 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
    */
   static async update(id: string, input: UpdateSquadInput): Promise<Squad> {
     if (hasReservedGitHubAuthorityMetadata(input.metadata)) throw new Error('Reserved GitHub authority metadata')
+    // Human-only: changed exclusively through setGitHubAuthorFilter, never generic squad updates.
+    if (Object.hasOwn(input, 'githubAuthorFilter')) throw new Error('Reserved GitHub author filter setting')
     // Loaded OUTSIDE the transaction: an AgentType.list pool read inside a
     // row-lock-holding transaction is hold-and-wait on the shared pool.
     const knownTypeIds = input.typeContext ? await loadKnownAgentTypeIds() : []

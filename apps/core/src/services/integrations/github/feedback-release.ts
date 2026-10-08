@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import {
   db,
@@ -6,6 +6,7 @@ import {
   githubFeedbackSources,
   integrationOutputEvents,
   integrationOutputDeliveries,
+  integrationOutputTriggerRuns,
   inbox,
   chatSendReceipts,
 } from '../../../db'
@@ -20,7 +21,6 @@ import { isTrustedGitHubFeedbackContent } from './feedback-trust'
 type Event = typeof integrationOutputEvents.$inferSelect
 const reasons = [
   'recipient_waiting',
-  'routing_changed',
   'recipient_changed',
   'subscription_changed',
   'work_stream_ended',
@@ -28,17 +28,15 @@ const reasons = [
   'parked',
   'unrelated_wait',
   'awaiting_acceptance',
+  'no_current_recipient',
 ] as const
 export interface GitHubFeedbackReleaseDependencies {
   /** Live material revision AND exact native resource. No I/O while holding moderation/claim locks. */
   authorizeSource(event: Event, store?: typeof db | import('../../../db').DbTx): Promise<boolean>
   /** Optional for primitive callers; production must prepare native witnesses OUTSIDE all locks. */
   prepareSource?(event: Event): Promise<boolean | { state: 'retained' | 'obsolete'; reason: (typeof reasons)[number] }>
-  /** Must enforce stored audience provenance and recheck every effect and final acceptance seam. */
-  route(
-    event: Event,
-    provenance: Array<import('@ficus/shared').GitHubFeedbackRoute>
-  ): Promise<void | { state: 'retained' | 'obsolete'; reason: (typeof reasons)[number] }>
+  /** Normal output routing at release time: current recipients, every effect/acceptance seam rechecked. */
+  route(event: Event): Promise<void | { state: 'retained' | 'obsolete'; reason: (typeof reasons)[number] }>
 }
 
 /**
@@ -103,6 +101,36 @@ export async function hasAcceptedGitHubFeedbackReceipts(eventId: string): Promis
     if (!receipt?.messageId || !receipt.executionId || !receipt.acceptedAt) return false
   }
   return true
+}
+
+/**
+ * Release-time routing completed and nobody currently receives the event: no notice, live flow
+ * delivery or trigger receipt exists. This is terminal (nothing to retry), not a delivery claim.
+ */
+export async function isGitHubFeedbackRoutedNowhere(eventId: string): Promise<boolean> {
+  const [event] = await db
+    .select({ matchedAt: integrationOutputEvents.matchedAt })
+    .from(integrationOutputEvents)
+    .where(eq(integrationOutputEvents.id, eventId))
+  if (!event?.matchedAt) return false
+  const [notice] = await db
+    .select({ id: inbox.id })
+    .from(inbox)
+    .where(sql`${inbox.metadata}->>'integrationEventId' = ${eventId}`)
+    .limit(1)
+  if (notice) return false
+  const [delivery] = await db
+    .select({ id: integrationOutputDeliveries.id })
+    .from(integrationOutputDeliveries)
+    .where(and(eq(integrationOutputDeliveries.eventId, eventId), ne(integrationOutputDeliveries.status, 'superseded')))
+    .limit(1)
+  if (delivery) return false
+  const [trigger] = await db
+    .select({ triggerId: integrationOutputTriggerRuns.triggerId })
+    .from(integrationOutputTriggerRuns)
+    .where(eq(integrationOutputTriggerRuns.eventId, eventId))
+    .limit(1)
+  return !trigger
 }
 
 /** Bounded lease/CAS worker. No timers, raw-error persistence, routing on pending history, or delivered-on-enqueue. */
@@ -231,12 +259,15 @@ async function releaseInPass(
           if (canonical && !isObsolete() && (await prepared(canonical)) && (await deps.authorizeSource(canonical))) {
             if (!(await isGitHubFeedbackAdmitted(db, canonical))) reason = 'feedback_not_admitted'
             else {
-              const outcome = await deps.route(canonical, revision.routingProvenance)
+              const outcome = await deps.route(canonical)
               state = outcome && outcome.state === 'obsolete' ? 'obsolete' : 'retained'
               reason = outcome && reasons.includes(outcome.reason) ? outcome.reason : 'awaiting_acceptance'
               if (await hasAcceptedGitHubFeedbackReceipts(canonical.id)) {
                 state = 'delivered'
                 reason = null
+              } else if (state !== 'obsolete' && (await isGitHubFeedbackRoutedNowhere(canonical.id))) {
+                state = 'obsolete'
+                reason = 'no_current_recipient'
               }
             }
           }

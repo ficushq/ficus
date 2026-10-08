@@ -24,8 +24,9 @@ import {
   withGitHubOutputPass,
   inGitHubCandidate,
 } from './feedback-pass'
-import { readOutputEvent, readFeedbackRevision } from './feedback-pass-read'
+import { readOutputEvent } from './feedback-pass-read'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
+import { isGitHubAuthorFilterEnabled, isUnfilteredGitHubEvent } from './author-filter'
 
 type Store = typeof db | DbTx
 type Event = typeof integrationOutputEvents.$inferSelect
@@ -60,6 +61,12 @@ const statusFact = (source: Event) => {
 export async function isGitHubOutputAdmitted(store: Store, event: Event): Promise<boolean> {
   if (event.integration !== 'github') return true
   if (event.authority.kind !== 'connection' || !event.authority.connectionRevision) return false
+  // Filter OFF: pre-filter routing. Exact connection authority still applies; no witness/trust.
+  if (!(await isGitHubAuthorFilterEnabled(store, event.authority.squadId)))
+    return (
+      (await authorized(store, 'github', event.authority, event.authority.squadId)) &&
+      (await isUnfilteredGitHubEvent(store, event))
+    )
   const [proof] = await store
     .select()
     .from(githubOutputProofs)
@@ -110,111 +117,6 @@ export async function githubMatchingEvent(store: Store, event: Event): Promise<E
   return source && sourceHash(source) === proof?.sourceHash ? { ...event, fact: source.fact } : event
 }
 
-/** Original review audiences are immutable. Replanning can only retain or remove them. */
-export async function originalGitHubRoutes(store: Store, event: Event) {
-  if (event.fact.github?.revisionId) {
-    const revision = await readFeedbackRevision(store, event.fact.github.revisionId)
-    return revision?.routingProvenance ?? []
-  }
-  const [proof] = await store.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, event.id))
-  return proof?.routes ?? []
-}
-
-export async function isOriginalGitHubRoute(
-  store: Store,
-  event: Event,
-  selection?: {
-    kind?: string
-    id?: string
-    workStreamId?: string
-    recipientId?: string
-    owner?: boolean
-    target?: { agentId: string; attemptId?: number; version?: number }
-  }
-): Promise<boolean> {
-  if (event.integration !== 'github') return true
-  if (
-    event.authority.kind !== 'connection' ||
-    !(await authorized(store, 'github', event.authority, event.authority.squadId))
-  )
-    return false
-  return matchesOriginalGitHubRoutes(
-    store,
-    event,
-    await originalGitHubRoutes(store, event),
-    await githubMatchingEvent(store, event),
-    selection
-  )
-}
-
-/** Query-only original provenance check for a stored raw source before canonical creation. */
-export async function matchesOriginalGitHubRoutes(
-  store: Store,
-  event: Event,
-  originals: import('@ficus/shared').GitHubFeedbackRoute[],
-  raw: Event,
-  selection?: Parameters<typeof isOriginalGitHubRoute>[2]
-): Promise<boolean> {
-  if (!originals.length || event.authority.kind !== 'connection') return false
-  const matching = raw.fact.github?.status ? { ...raw, fact: raw.fact.github.status } : raw
-  const current = await planOutputRouting(
-    matching,
-    (squadId) => authorized(store, 'github', event.authority, squadId),
-    { store, bindingFact: raw.fact, includeSettled: true }
-  )
-  return originals.some((original) => {
-    if (
-      !original.fingerprint ||
-      original.authorityHash !== hash(event.authority) ||
-      (selection?.kind && original.kind !== selection.kind) ||
-      (selection?.id && original.id !== selection.id) ||
-      (selection?.workStreamId && original.workStreamId !== selection.workStreamId) ||
-      (selection?.recipientId && original.recipientId !== selection.recipientId)
-    )
-      return false
-    // A branch route becomes a normal subscription after its authorized binding commits.
-    const live = current.routes.find(
-      (route) =>
-        route.id === original.id &&
-        route.workStreamId === original.workStreamId &&
-        (route.kind === original.kind || (original.kind === 'delivery-branch' && route.kind === 'subscription')) &&
-        route.fingerprint === original.fingerprint &&
-        route.runId === original.runId &&
-        route.recipientId === original.recipientId
-    )
-    if (!live) return false
-    if (selection?.owner)
-      return !!original.ownerId && live.ownerId === original.ownerId && selection.target?.agentId === original.ownerId
-    if (!selection?.target)
-      return (
-        !original.consumers ||
-        original.consumers.some((slot) =>
-          live.consumers?.some(
-            (now) =>
-              now.attemptId === slot.attemptId &&
-              now.version === slot.version &&
-              now.stepHash === slot.stepHash &&
-              (!slot.agentId || slot.agentId === now.agentId)
-          )
-        )
-      )
-    const target = selection.target
-    return (
-      original.consumers?.some((slot) => {
-        if (slot.agentId && slot.agentId !== target.agentId) return false
-        if (slot.attemptId !== target.attemptId || slot.version !== target.version) return false
-        return live.consumers?.some(
-          (now) =>
-            now.agentId === target.agentId &&
-            now.attemptId === slot.attemptId &&
-            now.version === slot.version &&
-            now.stepHash === slot.stepHash
-        )
-      }) === true
-    )
-  })
-}
-
 /**
  * Entry to every output effect. First query relevance, then capture; held content returns null.
  * Assigned provider I/O finishes before any authority/stream/agent lock. The server-owned witness
@@ -241,6 +143,9 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
     !(await authorized(db, 'github', input.authority, input.authority.squadId))
   )
     return null
+  // Filter OFF: no capture, hold, provider witness or projection; the event routes as before.
+  if (!(await isGitHubAuthorFilterEnabled(db, input.authority.squadId)))
+    return (await isUnfilteredGitHubEvent(db, input)) ? input : null
   let source = input
   const [prior] = await db.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, input.id))
   if (prior) {
@@ -271,6 +176,9 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
     if (!stored) return null
     source = stored
   } else if (input.sourceKey.startsWith('github-status:')) return null
+  // A raw event already routed (before rollout, or while the filter was OFF) is never re-delivered
+  // as a new capture; only a refinement that resets matchedAt is evaluated again.
+  else if (input.matchedAt) return null
   const envelope = source.fact.github
   if (!envelope || (!envelope.content && !envelope.status)) return null
   const factual = !!envelope.status
@@ -299,7 +207,6 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
     // retry or a trust-list change. In particular, pending replays cost no provider requests.
     if (known && known.decision !== 'automatic') return null
   }
-  if ((prior || input.fact.github?.revisionId) && !(await isOriginalGitHubRoute(db, input))) return null
   const access = await readGitHubResource(source)
   if (!access?.repositoryAuthorized) return null
   const checkedAt = access.checkedAt,
@@ -389,8 +296,6 @@ async function prepareGitHubOutputInPass(input: Event, options: { reverifyAdopte
       sourceHash: sourceHash(source),
       effectHash: hash(effect.fact),
       authorityHash: hash(effect.authority),
-      routes:
-        lockedProof?.routes ?? (effect.fact.github?.revisionId ? await originalGitHubRoutes(tx, effect) : plan.routes),
       checkedAt,
       expiresAt,
     }
@@ -457,6 +362,5 @@ export async function lockGitHubOutputAuthority(tx: DbTx, event: Event): Promise
 /** Local final effect guard; always acquired before stream/agent locks, never does provider I/O. */
 export async function lockAdmittedGitHubOutput(tx: DbTx, event: Event): Promise<void> {
   await lockGitHubOutputAuthority(tx, event)
-  if (!(await isGitHubOutputAdmitted(tx, event)) || !(await isOriginalGitHubRoute(tx, event)))
-    throw new GitHubOutputNotAdmittedError()
+  if (!(await isGitHubOutputAdmitted(tx, event))) throw new GitHubOutputNotAdmittedError()
 }

@@ -116,6 +116,8 @@ describe('work-stream tracked-resource routes', () => {
     })
     const squad = await Squad.create({ name: `${testPrefix} Tracked Squad`, purpose: 'Testing tracked links' })
     testSquadId = squad.id
+    // New squads default the GitHub author filter ON; these routes cover pre-filter tracked routing.
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, testSquadId))
     const definition = createBlankWorkflow()
     definition.participants.worker!.agentTypeId = testAgentTypeId
     await squad.update({ metadata: { workflow: { kind: 'inline', definition } } })

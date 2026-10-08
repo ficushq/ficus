@@ -5,7 +5,7 @@ import { readOutputEvent, readOutputCandidate, readFeedbackRevision } from './fe
 import { authorized } from '../outputs/authority'
 import { withGitHubOutputPass, reserveGitHubEvent, githubOutputPass, inGitHubCandidate } from './feedback-pass'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
-import { isGitHubOutputAdmitted, isOriginalGitHubRoute, prepareGitHubOutput } from './feedback-routing'
+import { isGitHubOutputAdmitted, prepareGitHubOutput } from './feedback-routing'
 
 export const GITHUB_RENEWAL_READ_LIMIT = 25
 export const GITHUB_RENEWAL_RESOURCE_LIMIT = 8
@@ -16,7 +16,7 @@ export const GITHUB_RENEWAL_PROVIDER_CALL_LIMIT = 24
  * Renew only explicitly known records, never discover objects or scan retained history. Each
  * invocation reads at most 25 distinct events and verifies at most 8 resources (24 provider reads).
  * Dedupe BEFORE the read/budget. No transaction/queue/authority locks enclose provider work.
- * Material, content/trust and ORIGINAL route checks precede I/O; preparation rechecks them before
+ * Material and content/trust checks precede I/O; preparation rechecks them before
  * committing the 60s witness. Failure/expiry is withheld, not an authorization fallback.
  */
 export async function renewKnownGitHubOutputs(eventIds: string[]) {
@@ -44,8 +44,7 @@ async function renewKnownInPass(eventIds: string[]) {
       if (
         event.authority.kind !== 'connection' ||
         !(await authorized(db, 'github', event.authority, event.authority.squadId)) ||
-        (event.fact.github?.revisionId && !(await isGitHubFeedbackAdmitted(db, event))) ||
-        !(await isOriginalGitHubRoute(db, event))
+        (event.fact.github?.revisionId && !(await isGitHubFeedbackAdmitted(db, event)))
       ) {
         await withholdRevokedAutomaticGitHubOutput(event.id)
         result.withheld.push(event.id)

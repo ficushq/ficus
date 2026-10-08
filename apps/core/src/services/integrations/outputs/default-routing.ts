@@ -7,6 +7,7 @@ import {
   selectSquadEventRule,
   eventRuleWorkflow,
   trackedResourceLabel,
+  workStreamRef,
 } from '@ficus/shared'
 import {
   db,
@@ -17,6 +18,8 @@ import {
   integrationOutputEvents,
   integrationOutputDeliveries,
   integrationConnections,
+  integrationOutputTriggerRuns,
+  inbox,
 } from '../../../db'
 import { InboxMessage } from '../../../entities/InboxMessage'
 import { findOrCreateConsultant } from '../../chat/consultant'
@@ -26,13 +29,12 @@ import { consultantAgentId } from '../../chat/consultant-idempotency'
 export { matchesGitHubRouting } from '@ficus/shared'
 import {
   isGitHubOutputAdmitted,
-  isOriginalGitHubRoute,
-  originalGitHubRoutes,
   githubMatchingEvent,
   lockAdmittedGitHubOutput,
   GitHubOutputNotAdmittedError,
 } from '../github/feedback-routing'
 import { ciNotificationSchema, settleCiNotification } from '../../work-streams/ci-notifications'
+import { readOutputInbox } from '../github/feedback-pass-read'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 const record = (value: unknown): Record<string, any> =>
@@ -134,15 +136,7 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
       .from(agents)
       .where(and(eq(agents.squadId, squadId), inArray(agents.status, [...ADDRESSABLE_AGENT_STATUSES])))
     const recipient = preFlowRecipient(stream, available, squad.managerAgentId)
-    if (
-      !recipient ||
-      !(await isOriginalGitHubRoute(db, event, {
-        kind: 'pre-flow',
-        workStreamId: stream.id,
-        recipientId: recipient.id,
-      }))
-    )
-      continue
+    if (!recipient) continue
     if (event.fact.output === 'pull_request.ci_completed') {
       const input = ciNotificationSchema.safeParse({
         recipientId: recipient.id,
@@ -167,44 +161,21 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
     .limit(1)
   if (matchedStream || delivery || latest?.handled.includes(squadId)) return
   const rule = selectOutputRule(squad.metadata, event.fact.data.projection === 'status' ? event : matching, login)
-  if (
-    rule?.action.type === 'notify-manager' &&
-    squad.managerAgentId &&
-    (await isOriginalGitHubRoute(db, event, { kind: 'notify-manager', id: rule.id, recipientId: squad.managerAgentId }))
-  )
+  if (rule?.action.type === 'notify-manager' && squad.managerAgentId)
     await send(event, squad.managerAgentId, undefined, rule.action.additionalContext, squadId)
   if (rule?.action.type === 'notify-consultant') {
-    const legacyId = consultantAgentId({
+    const id = consultantAgentId({
       actorUserId: 'integration-event',
       squadId,
       clientId: logicalEventKey(event, rule.id),
     })
-    const id =
-      event.integration === 'github'
-        ? (await originalGitHubRoutes(db, event)).find(
-            (route) => route.kind === 'notify-consultant' && route.id === rule.id
-          )?.recipientId
-        : legacyId
-    if (
-      !id ||
-      !(await isGitHubOutputAdmitted(db, event)) ||
-      !(await isOriginalGitHubRoute(db, event, { kind: 'notify-consultant', id: rule.id, recipientId: id }))
-    )
-      return
+    if (!(await isGitHubOutputAdmitted(db, event))) return
     try {
       const consultant = await findOrCreateConsultant(
         id,
         squadId,
         'integration',
-        event.integration === 'github'
-          ? async (tx) => {
-              await lockAdmittedGitHubOutput(tx, event)
-              if (
-                !(await isOriginalGitHubRoute(tx, event, { kind: 'notify-consultant', id: rule.id, recipientId: id }))
-              )
-                throw new GitHubOutputNotAdmittedError()
-            }
-          : undefined
+        event.integration === 'github' ? (tx) => lockAdmittedGitHubOutput(tx, event) : undefined
       )
       await send(event, consultant.id, undefined, rule.action.additionalContext, squadId)
     } catch (error) {
@@ -228,16 +199,21 @@ async function send(
 ) {
   if (event.integration === 'github') {
     const afterCommit: Array<() => void> = []
+    const key = `integration-notification:${logicalEventKey(event, `${workStreamId ?? 'squad'}:${recipientId}`)}`
     const message = await db
       .transaction(async (tx) => {
         await lockAdmittedGitHubOutput(tx, event)
-        if (
-          !(await isOriginalGitHubRoute(tx, event, {
-            ...(workStreamId ? { kind: 'pre-flow', workStreamId } : {}),
-            recipientId,
-          }))
-        )
-          throw new GitHubOutputNotAdmittedError()
+        // Another assigned account may already have sent this logical notice (same provider event,
+        // same recipient). Its winner stands; this observation adds no second action.
+        const [winner] = await tx
+          .select({ id: inbox.id, recipientId: inbox.recipientId })
+          .from(inbox)
+          .where(eq(inbox.idempotencyKey, key))
+          .limit(1)
+        if (winner?.recipientId === recipientId) {
+          const row = await readOutputInbox(tx, winner.id)
+          return row ? new InboxMessage(row) : null
+        }
         return InboxMessage.persistSystemAgentOnceInTransaction(
           tx,
           {
@@ -252,7 +228,7 @@ async function send(
             wakeEligible: true,
             recordOnly: true,
           },
-          `integration-notification:${logicalEventKey(event, `${workStreamId ?? 'squad'}:${recipientId}`)}`,
+          key,
           afterCommit
         )
       })
@@ -262,10 +238,9 @@ async function send(
       })
     afterCommit.forEach((callback) => callback())
     if (message && !message.deliveredAt) {
-      // Preserve the existing batching policy here. Stable per-event acceptance and original
-      // route receipts are composed by the next effect checkpoint, not claimed by this insert.
+      // Acceptance is recorded only by the agent queue receipt, never by this insert.
       const { deliverInboxMessagesToAgent } = await import('../../inbox/inboxDelivery')
-      await deliverInboxMessagesToAgent(recipientId)
+      await deliverInboxMessagesToAgent(recipientId, [message.id])
     }
     return
   }
@@ -328,9 +303,14 @@ export function defaultNotificationContent(
     .join('\n\n')
 }
 
-/** The created stream is not an accepted delivery. Its original owner's intake is. */
-export function creationNotificationContent(event: Event, workStreamId: string) {
-  return `A new work stream you own was created from this integration event. Review it with \`ficus workstream get ${workStreamId}\`. Its workflow is paused until deliberate preparation and resume.\n\n${defaultNotificationContent(event, workStreamId)}`
+/** The created stream is not an accepted delivery. Its current owner's intake is. */
+export function creationNotificationContent(event: Event, stream: { id: string; number?: number | null }) {
+  const ref = workStreamRef(stream)
+  return [
+    `A new work stream you own was created from an integration event (${event.integration}). Review it with \`ficus workstream get ${ref}\`.`,
+    `The workflow is paused before any workers start. Review the event and workflow, prepare its workspace if needed with \`ficus workstream update ${ref} --repository <checkout-path>\`, then start it with \`ficus workstream resume ${ref}\`. If no Git workspace is needed, resume after reviewing the task. Do not manually bypass repository setup guards.`,
+    defaultNotificationContent(event, stream.id),
+  ].join('\n\n')
 }
 export async function notifyGitHubCreatedStream(event: Event, workStreamId: string) {
   const afterCommit: Array<() => void> = []
@@ -344,22 +324,24 @@ export async function notifyGitHubCreatedStream(event: Event, workStreamId: stri
         integrationValueAt(stream.metadata, 'integrationSource.eventId') !== event.id
       )
         return null
-      const original = (await originalGitHubRoutes(tx, event)).find((route) => route.kind === 'start-workstream')
-      if (
-        !original ||
-        !(await isOriginalGitHubRoute(tx, event, {
-          kind: 'start-workstream',
-          id: original.id,
-          recipientId: stream.ownerAgentId,
-        }))
-      )
-        return null
+      // The stream's current owner receives the notice; the creating rule is its durable receipt.
+      const [run] = await tx
+        .select({ triggerId: integrationOutputTriggerRuns.triggerId })
+        .from(integrationOutputTriggerRuns)
+        .where(
+          and(
+            eq(integrationOutputTriggerRuns.eventId, event.id),
+            eq(integrationOutputTriggerRuns.workStreamId, stream.id)
+          )
+        )
+        .limit(1)
+      if (!run) return null
       return InboxMessage.persistSystemAgentOnceInTransaction(
         tx,
         {
           recipientId: stream.ownerAgentId,
           subject: `New work stream you own: ${event.fact.subject}`,
-          content: creationNotificationContent(event, stream.id),
+          content: creationNotificationContent(event, stream),
           wakeEligible: true,
           recordOnly: true,
           metadata: {
@@ -367,7 +349,7 @@ export async function notifyGitHubCreatedStream(event: Event, workStreamId: stri
             integrationEventId: event.id,
             integrationCreationNotice: true,
             workStreamId: stream.id,
-            integrationRuleId: original.id,
+            integrationRuleId: run.triggerId,
           },
         },
         `github-feedback-creation:${event.id}:${stream.id}:${stream.ownerAgentId}`,
@@ -381,6 +363,6 @@ export async function notifyGitHubCreatedStream(event: Event, workStreamId: stri
   afterCommit.forEach((callback) => callback())
   if (message && !message.deliveredAt) {
     const { deliverInboxMessagesToAgent } = await import('../../inbox/inboxDelivery')
-    await deliverInboxMessagesToAgent(message.recipientId)
+    await deliverInboxMessagesToAgent(message.recipientId, [message.id])
   }
 }

@@ -1,5 +1,5 @@
 {
-  "id": "7ffe21c5-9675-48b0-bab8-064c90908a22",
+  "id": "4105c18f-b9be-4a0d-81b3-5d49b9ef0869",
   "prevId": "b5346663-2453-4d4b-b16d-f35b4f66f12f",
   "version": "7",
   "dialect": "postgresql",
@@ -6182,13 +6182,6 @@
           "type": "varchar(64)",
           "primaryKey": false,
           "notNull": true
-        },
-        "routes": {
-          "name": "routes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
         },
         "checked_at": {
           "name": "checked_at",
@@ -17328,6 +17321,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "github_author_filter": {
+          "name": "github_author_filter",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         },
         "max_concurrent_work_streams": {
           "name": "max_concurrent_work_streams",

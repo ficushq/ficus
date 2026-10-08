@@ -49,7 +49,6 @@ import {
   isGitHubOutputAdmitted,
   prepareGitHubOutput,
   githubMatchingEvent,
-  isOriginalGitHubRoute,
   lockGitHubOutputAuthority,
 } from '../github/feedback-routing'
 import {
@@ -304,7 +303,7 @@ async function matchOutputEvent(event: Event): Promise<string[]> {
     event.integration === 'github'
       ? async (tx) => {
           await lockGitHubOutputAuthority(tx, event)
-          return (await isGitHubOutputAdmitted(tx, event)) && (await isOriginalGitHubRoute(tx, event))
+          return isGitHubOutputAdmitted(tx, event)
         }
       : undefined
   )
@@ -396,7 +395,6 @@ async function routeOutputEvent(event: Event, only?: string[]) {
         const descriptor = integrationOutputRegistry.descriptor(subscription.source)
         if (
           !descriptor ||
-          !(await isOriginalGitHubRoute(tx, event, { id: subscription.id, workStreamId: id })) ||
           !sourceMatches(subscription, event) ||
           !integrationSubscriptionMatches(subscription, matching.fact, stream.metadata, descriptor)
         )
@@ -590,17 +588,15 @@ async function reconcileOutputDeliveryCandidates(
           .where(eq(integrationOutputDeliveries.id, delivery.id))
         continue
       }
-      if (!(await isGitHubOutputAdmitted(tx, event))) {
+      // An expired witness on a still-authorized connection waits for renewal. Lost connection
+      // authority falls through to the terminal 'Connection no longer available' policy below.
+      if (
+        (await authorized(tx, event.integration, event.authority, stream.squadId)) &&
+        !(await isGitHubOutputAdmitted(tx, event))
+      ) {
         await tx
           .update(integrationOutputDeliveries)
           .set({ reason: 'GitHub proof unavailable; awaiting authorized renewal' })
-          .where(eq(integrationOutputDeliveries.id, delivery.id))
-        continue
-      }
-      if (!(await isOriginalGitHubRoute(tx, event, { id: delivery.subscriptionId, workStreamId }))) {
-        await tx
-          .update(integrationOutputDeliveries)
-          .set({ status: 'superseded', reason: 'Original route changed', updatedAt: new Date() })
           .where(eq(integrationOutputDeliveries.id, delivery.id))
         continue
       }
@@ -644,16 +640,7 @@ async function reconcileOutputDeliveryCandidates(
               : !owner || ['terminated', 'terminating'].includes(owner.status)
                 ? 'Work stream parked; owner unavailable'
                 : ''
-          if (
-            !holdReason &&
-            ownerId &&
-            (await isOriginalGitHubRoute(tx, event, {
-              id: delivery.subscriptionId,
-              workStreamId,
-              owner: true,
-              target: { agentId: ownerId },
-            }))
-          ) {
+          if (!holdReason && ownerId) {
             const notice = await InboxMessage.persistSystemAgentOnceInTransaction(
               tx,
               {
@@ -714,10 +701,18 @@ async function reconcileOutputDeliveryCandidates(
                   eq(chatSendReceipts.state, 'accepted')
                 )
               )
-            return !!receipt?.messageId && !!receipt.executionId && !!receipt.acceptedAt
+            return receipt?.messageId && receipt.executionId && receipt.acceptedAt
+              ? { inboxId: target.inboxId, acceptedAt: receipt.acceptedAt }
+              : null
           })
         )
         if (accepted.length > 0 && accepted.every(Boolean)) {
+          // Crash recovery: acceptance committed before the inbox row was settled.
+          for (const receipt of accepted)
+            await tx
+              .update(inbox)
+              .set({ deliveredAt: receipt!.acceptedAt })
+              .where(and(eq(inbox.id, receipt!.inboxId), isNull(inbox.deliveredAt)))
           await tx
             .update(integrationOutputDeliveries)
             .set({ status: 'delivered', reason: null, updatedAt: new Date() })
@@ -753,7 +748,6 @@ async function reconcileOutputDeliveryCandidates(
       }
       const targets: Delivery['targets'] = []
       for (const target of recipients) {
-        if (!(await isOriginalGitHubRoute(tx, event, { id: delivery.subscriptionId, workStreamId, target }))) continue
         const [agent] = await tx.select({ status: agents.status }).from(agents).where(eq(agents.id, target.agentId))
         if (!agent || ['terminated', 'terminating'].includes(agent.status)) continue
         const message = await InboxMessage.persistSystemAgentOnceInTransaction(
@@ -917,16 +911,7 @@ export async function isCurrentIntegrationDelivery(store: Store, deliveryId: str
     message.metadata?.integrationOwnerNotice === true &&
     message.metadata.integrationDeliveryId === delivery.id
   )
-    return (
-      isParkedStartedFlow(stream, run) &&
-      independentStreamOwner(stream, run) === agentId &&
-      (await isOriginalGitHubRoute(store, event, {
-        id: delivery.subscriptionId,
-        workStreamId: stream.id,
-        owner: true,
-        target: { agentId },
-      }))
-    )
+    return isParkedStartedFlow(stream, run) && independentStreamOwner(stream, run) === agentId
   if (
     !['queued', 'delivered'].includes(delivery.status) ||
     stream.status !== 'active' ||
@@ -941,7 +926,6 @@ export async function isCurrentIntegrationDelivery(store: Store, deliveryId: str
   const target = delivery.targets.find((target) => target.agentId === agentId && target.inboxId === inboxId)
   return (
     !!target &&
-    (await isOriginalGitHubRoute(store, event, { id: delivery.subscriptionId, workStreamId: stream.id, target })) &&
     !(await recipientBlocked(store, stream, run, delivery.subscription, agentId)) &&
     outputRecipients(run, stream, delivery.subscription, squad?.managerId).some(
       (recipient) =>
@@ -1009,13 +993,8 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
       integrationValueAt(stream.metadata, 'integrationSource.eventId') === event.id &&
       recipient?.squadId === stream.squadId &&
       message.subject === `New work stream you own: ${event.fact.subject}` &&
-      message.content === creationNotificationContent(event, stream.id) &&
+      message.content === creationNotificationContent(event, stream) &&
       (await isGitHubOutputAdmitted(store, event)) &&
-      (await isOriginalGitHubRoute(store, event, {
-        kind: 'start-workstream',
-        id: message.metadata.integrationRuleId,
-        recipientId: agentId,
-      })) &&
       (await shouldNotifyEvent(store, event))
     )
   }
@@ -1041,10 +1020,6 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
     recipient?.squadId === event.authority.squadId &&
     (await authorized(store, event.integration, event.authority, event.authority.squadId)) &&
     (await isGitHubOutputAdmitted(store, event)) &&
-    (await isOriginalGitHubRoute(store, event, {
-      ...(workStreamId ? { kind: 'pre-flow', workStreamId } : {}),
-      recipientId: agentId,
-    })) &&
     (await shouldNotifyEvent(store, event))
   )
 }
@@ -1182,8 +1157,7 @@ export async function outputDeliveryHistoryPage(workStreamId: string, options: {
         if (
           !renewal.withheld.length &&
           (await authorized(db, event.integration, event.authority, row.squadId)) &&
-          (await isGitHubOutputAdmitted(db, event)) &&
-          (await isOriginalGitHubRoute(db, event, { id: row.subscriptionId, workStreamId }))
+          (await isGitHubOutputAdmitted(db, event))
         ) {
           const { eventId: _eventId, squadId: _squadId, ...history } = row
           items.push({ ...history, fact: event.fact })
@@ -1315,11 +1289,6 @@ async function applyOutputTriggers(event: Event) {
           const descriptor = integrationOutputRegistry.descriptor(trigger.source)
           if (
             !descriptor ||
-            !(await isOriginalGitHubRoute(tx, event, {
-              kind: 'start-workstream',
-              id: trigger.id,
-              recipientId: squad.managerAgentId ?? undefined,
-            })) ||
             !sourceMatches(subscription, event) ||
             !integrationSubscriptionMatches(subscription, matching.fact, {}, descriptor)
           )
@@ -1509,7 +1478,6 @@ async function applyOutputTriggers(event: Event) {
 /** The existing tick uses exactly the existing effect/router/Agent receipt paths. */
 export async function reconcileApprovedGitHubFeedback() {
   return reconcileGitHubFeedbackRelease(async (event) => {
-    if (!(await isOriginalGitHubRoute(db, event))) return { state: 'obsolete', reason: 'routing_changed' }
     await applyOutputTriggers(event)
     const bound = await matchOutputEvent(event)
     const deliveries = await db

@@ -1,1 +1,0 @@
-ALTER TABLE "github_output_proofs" ADD COLUMN "routes" jsonb DEFAULT '[]'::jsonb NOT NULL;
