@@ -7,6 +7,7 @@ import * as modelSpec from '../lib/utils/model-spec'
 import { getSessionDir } from '../lib/infra/session-files'
 import * as workspaceLayoutModule from '../services/sandbox/workspace-layout'
 import * as toolOutputRedaction from '../services/security/tool-output-redaction'
+import * as toolFirewall from '../services/decisions/tool-firewall'
 
 describe('AgentSession', () => {
   it('configures Pi to drain queued steers together and follow-ups one at a time', async () => {
@@ -160,6 +161,45 @@ describe('AgentSession', () => {
       session.dispose()
     } finally {
       wrapSpy.mockRestore()
+      selSpy.mockRestore()
+    }
+  })
+
+  it('screens tool results with the firewall after redaction, for the session’s agent', async () => {
+    const selSpy = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
+      selected: 'anthropic:claude-sonnet-4-5',
+      candidates: [
+        { spec: 'anthropic:claude-sonnet-4-5', provider: 'anthropic', modelId: 'claude-sonnet-4-5', usable: true },
+      ],
+    })
+    const redactSpy = spyOn(toolOutputRedaction, 'wrapToolsWithOutputRedaction')
+    const firewallSpy = spyOn(toolFirewall, 'wrapToolsWithFirewall')
+
+    try {
+      const session = await AgentSession.create({
+        model: 'anthropic:claude-sonnet-4-5',
+        systemPrompt: 'You are a test agent.',
+        tools: {
+          core: [
+            {
+              name: 'webfetch',
+              label: 'webfetch',
+              description: 'webfetch',
+              parameters: {} as never,
+              execute: async () => ({ content: [] }),
+            } as never,
+          ],
+        },
+      })
+
+      // The decision model must only ever see content with stored secrets already redacted.
+      expect(firewallSpy).toHaveBeenCalledTimes(1)
+      expect(firewallSpy.mock.calls[0]![0]).toBe(redactSpy.mock.results[0]!.value as never)
+      expect(firewallSpy.mock.calls[0]![1]).toEqual({ agentId: undefined })
+      session.dispose()
+    } finally {
+      firewallSpy.mockRestore()
+      redactSpy.mockRestore()
       selSpy.mockRestore()
     }
   })
