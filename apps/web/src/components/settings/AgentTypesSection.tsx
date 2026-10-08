@@ -1288,7 +1288,7 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
         <p className="text-xs text-muted">Model catalog unavailable. You can still enter model IDs manually.</p>
       )}
       {(mutation.error || remove.error) && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {String(mutation.error ?? remove.error)}
         </p>
       )}

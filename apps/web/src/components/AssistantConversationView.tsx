@@ -297,7 +297,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
         />
       )}
       {voice.error && (
-        <div role="alert" className="px-3 py-2 text-sm text-danger">
+        <div role="alert" className="px-3 py-2 text-sm text-status-danger-600 dark:text-status-danger-400">
           {voice.error}{' '}
           <button
             className="ficus-button ficus-button-link"
@@ -320,7 +320,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
         </button>
       )}
       {error && (
-        <div role="alert" className="px-3 py-2 text-sm text-danger">
+        <div role="alert" className="px-3 py-2 text-sm text-status-danger-600 dark:text-status-danger-400">
           {error}{' '}
           {!agentId && (
             <button className="ficus-button ficus-button-link" onClick={() => setAttempt((value) => value + 1)}>

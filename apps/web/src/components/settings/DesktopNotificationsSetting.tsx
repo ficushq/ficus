@@ -29,7 +29,7 @@ export function DesktopNotificationsSetting() {
       </label>
       <p className="text-sm text-muted">macOS alerts for inbox updates while Ficus is in the background.</p>
       {update.isError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {update.error instanceof Error ? update.error.message : String(update.error)}
         </p>
       )}

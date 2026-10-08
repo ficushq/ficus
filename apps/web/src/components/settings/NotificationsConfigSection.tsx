@@ -375,7 +375,7 @@ export function NotificationsConfigSection() {
         )}
       </fieldset>
       {updateMutation.isError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {updateMutation.error.message}
         </p>
       )}

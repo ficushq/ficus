@@ -89,7 +89,7 @@ function TaskQuestion({
       ) : (
         <>
           {error && (
-            <p role="alert" className="mb-2 text-sm text-danger">
+            <p role="alert" className="mb-2 text-sm text-status-danger-600 dark:text-status-danger-400">
               {error}
             </p>
           )}

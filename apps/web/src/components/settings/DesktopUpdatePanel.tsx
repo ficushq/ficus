@@ -82,7 +82,7 @@ export function DesktopUpdatePanel({ updates, canWrite }: { updates: DesktopUpda
       </div>
       {!state ? (
         bridgeError ? (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {bridgeError}
           </p>
         ) : (
@@ -115,7 +115,7 @@ export function DesktopUpdatePanel({ updates, canWrite }: { updates: DesktopUpda
               <p className="text-sm text-muted">Last checked {formatLastChecked(state.lastCheckedAt)}</p>
             )}
             {bridgeError && (
-              <p role="alert" className="text-sm text-danger">
+              <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
                 {bridgeError}
               </p>
             )}
@@ -199,7 +199,7 @@ function DesktopUpdateStatus({
     case 'error':
       return (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {state.error || 'The update check failed.'}
           </p>
           {canWrite && (

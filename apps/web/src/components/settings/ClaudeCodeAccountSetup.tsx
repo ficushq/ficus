@@ -95,7 +95,7 @@ export function ClaudeCodeAccountSetup({
         plan’s usage limits, and Anthropic may bill some to extra usage. Use it for your own agents only.
       </p>
       {enable.isError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {enable.error instanceof Error && enable.error.message
             ? enable.error.message
             : 'Could not turn on Claude Code'}

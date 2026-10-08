@@ -153,7 +153,7 @@ export function ChannelLinkCommand({ code }: { code: string }) {
         </button>
       </div>
       {status === 'failed' && (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
           Couldn’t copy. Select the command and copy it manually.
         </p>
       )}

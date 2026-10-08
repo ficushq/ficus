@@ -64,7 +64,7 @@ export function WorkflowEditorModal({
       >
         <WorkflowEditor squadId={squadId} value={draft} onChange={(next) => next && setDraft(next)} />
         {error && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {error}
           </p>
         )}

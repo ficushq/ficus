@@ -702,7 +702,7 @@ export function WorkflowBuilder({
                               />
                             </label>
                             {renameError && (
-                              <p role="alert" className="text-xs text-danger">
+                              <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
                                 {renameError}
                               </p>
                             )}
@@ -827,7 +827,7 @@ export function WorkflowBuilder({
         </section>
       </div>
       {assistantError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {assistantError}
         </p>
       )}

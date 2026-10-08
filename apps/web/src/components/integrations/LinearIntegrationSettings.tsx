@@ -102,7 +102,7 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
             {create.isPending ? 'Connecting…' : 'Create and validate'}
           </button>
           {create.isError && (
-            <p role="alert" className="text-sm text-danger">
+            <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
               {create.error.message}
             </p>
           )}
@@ -266,7 +266,7 @@ function LinearAccount({
         </div>
       )}
       {(action.error || remove.error || replace.error) && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {(action.error || remove.error || replace.error)?.message}
         </p>
       )}

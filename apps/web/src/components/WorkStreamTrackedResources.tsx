@@ -178,7 +178,7 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
         </form>
       )}
       {error && (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
           {error.message}
         </p>
       )}
