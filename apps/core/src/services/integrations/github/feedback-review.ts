@@ -4,6 +4,7 @@ import type {
   GitHubFeedbackListItem,
   GitHubFeedbackPage,
   GitHubFeedbackQueue,
+  GitHubFeedbackScreening,
   GitHubFeedbackSummary,
   GitHubTrustedAuthor,
   GitHubTrustedAuthorList,
@@ -13,15 +14,17 @@ import {
   db,
   githubFeedbackObjects,
   githubFeedbackRevisions,
+  githubFeedbackScreenings,
   githubFeedbackSources,
   githubPersonalIdentities,
   githubTrustedAuthors,
   integrationAuditEvents,
+  squads,
   users,
 } from '../../../db'
 import { hasUserPermissionWithExecutor, type Identity } from '../../rbac/permissions'
 import { authorized } from '../outputs/authority'
-import { isGitHubAuthorFilterEnabled } from './author-filter'
+import { decisionChain } from '../../decisions/service'
 import {
   GitHubFeedbackError,
   githubAuthorityActor,
@@ -30,6 +33,7 @@ import {
   requireGitHubHumanSquadUpdate,
   resolveGitHubAuthorTrust,
 } from './feedback-trust'
+import type { ScreenVerdict } from './feedback-screen-policy'
 
 /**
  * Human moderation READ model. Every function requires the authenticated principal itself to be an
@@ -39,7 +43,7 @@ import {
  */
 
 const RELEASING = ['ready', 'retry', 'retained'] as const
-const ALLOWED = ['allow_once', 'allow_trust'] as const
+const ALLOWED = ['allow_once', 'allow_trust', 'screened'] as const
 /** Bounded scans: these are UI lists, not enumeration APIs. */
 const MAX_SOURCES_CHECKED = 20
 const MAX_TRUST_ROWS = 500
@@ -65,6 +69,10 @@ export async function getGitHubFeedbackSummary(
   squadId: string
 ): Promise<GitHubFeedbackSummary> {
   const { canModerate } = await requireReader(identity, squadId)
+  const [squad] = await db
+    .select({ enabled: squads.githubAuthorFilter, handling: squads.githubUntrustedHandling })
+    .from(squads)
+    .where(eq(squads.id, squadId))
   const [counts] = await db
     .select({
       pending: sql<number>`count(*) filter (where ${githubFeedbackRevisions.decision} = 'pending')::int`,
@@ -74,7 +82,10 @@ export async function getGitHubFeedbackSummary(
     .from(githubFeedbackRevisions)
     .where(eq(githubFeedbackRevisions.squadId, squadId))
   return {
-    authorFilterEnabled: await isGitHubAuthorFilterEnabled(db, squadId),
+    // An unknown squad fails closed (ON), like isGitHubAuthorFilterEnabled.
+    authorFilterEnabled: squad?.enabled ?? true,
+    untrustedHandling: squad?.handling === 'screen' ? 'screen' : 'hold',
+    decisionModelConfigured: decisionChain('github-firewall').length > 0,
     pending: counts?.pending ?? 0,
     releasing: counts?.releasing ?? 0,
     failing: counts?.failing ?? 0,
@@ -120,6 +131,10 @@ const listColumns = {
   firstObservedAt: githubFeedbackRevisions.firstObservedAt,
   cursorAt: sql<string>`to_char(${githubFeedbackRevisions.firstObservedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
   updatedAt: githubFeedbackRevisions.updatedAt,
+  screeningState: githubFeedbackScreenings.state,
+  screeningOutcome: githubFeedbackScreenings.outcome,
+  screeningVerdict: githubFeedbackScreenings.verdict,
+  screenedAt: githubFeedbackScreenings.screenedAt,
 }
 type ListRow = { [K in keyof typeof listColumns]: any }
 
@@ -144,6 +159,23 @@ function toListItem(row: ListRow): GitHubFeedbackListItem {
     firstObservedAt: new Date(row.firstObservedAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
     attempts: row.attempts,
+    screening: toScreening(row),
+  }
+}
+
+/** The decision model's answers and who gave them; the screened text is never stored. */
+function toScreening(row: ListRow): GitHubFeedbackScreening | null {
+  if (!row.screeningState) return null
+  const verdict = row.screeningVerdict as ScreenVerdict | null
+  return {
+    state: row.screeningState,
+    outcome: row.screeningOutcome ?? null,
+    instructsAgent: verdict?.instructsAgent ?? null,
+    intent: verdict?.intent ?? null,
+    intentConfidence: verdict?.intentConfidence ?? null,
+    providerId: verdict?.providerId ?? null,
+    model: verdict?.model ?? null,
+    screenedAt: row.screenedAt ? new Date(row.screenedAt).toISOString() : null,
   }
 }
 
@@ -159,6 +191,7 @@ export async function listGitHubFeedback(
     .select(listColumns)
     .from(githubFeedbackRevisions)
     .innerJoin(githubFeedbackObjects, eq(githubFeedbackObjects.id, githubFeedbackRevisions.objectId))
+    .leftJoin(githubFeedbackScreenings, eq(githubFeedbackScreenings.revisionId, githubFeedbackRevisions.id))
     .where(
       and(
         eq(githubFeedbackRevisions.squadId, squadId),
@@ -223,6 +256,7 @@ export async function getGitHubFeedbackDetail(
     })
     .from(githubFeedbackRevisions)
     .innerJoin(githubFeedbackObjects, eq(githubFeedbackObjects.id, githubFeedbackRevisions.objectId))
+    .leftJoin(githubFeedbackScreenings, eq(githubFeedbackScreenings.revisionId, githubFeedbackRevisions.id))
     // Squad-bound lookup: another squad's revision is indistinguishable from a missing one.
     .where(and(eq(githubFeedbackRevisions.id, revisionId), eq(githubFeedbackRevisions.squadId, squadId)))
     .limit(1)

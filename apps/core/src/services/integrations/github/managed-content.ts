@@ -270,7 +270,7 @@ export async function projectGitHubThreadForMemory(
     if (!matches) return null
     const match = matches.get(item)
     if (match) {
-      if (match.decision === 'allow_once' || match.decision === 'allow_trust')
+      if (match.decision === 'allow_once' || match.decision === 'allow_trust' || match.decision === 'screened')
         return {
           kind: item.kind,
           nativeId: item.nativeId,
@@ -392,7 +392,7 @@ export async function withheldGitHubMemoryDocuments(
             .where(
               and(
                 inArray(githubFeedbackRevisions.id, [...revisionIds]),
-                inArray(githubFeedbackRevisions.decision, ['allow_once', 'allow_trust'])
+                inArray(githubFeedbackRevisions.decision, ['allow_once', 'allow_trust', 'screened'])
               )
             )
         ).map((row) => `${row.squadId}:${row.id}`)

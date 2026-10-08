@@ -158,7 +158,7 @@ async function releaseInPass(
   if (options.revisionIds?.length === 0) return 0
   const due = () =>
     and(
-      inArray(githubFeedbackRevisions.decision, ['automatic', 'allow_once', 'allow_trust']),
+      inArray(githubFeedbackRevisions.decision, ['automatic', 'allow_once', 'allow_trust', 'screened']),
       inArray(githubFeedbackRevisions.releaseState, ['ready', 'retry', 'retained']),
       or(
         isNull(githubFeedbackRevisions.nextAttemptAt),

@@ -7,6 +7,7 @@ import {
   githubFeedbackPageQuerySchema,
   githubTrustedAuthorAddSchema,
   githubTrustedAuthorResolveSchema,
+  githubUntrustedHandlingUpdateSchema,
   moderateGitHubFeedbackSchema,
 } from '@ficus/shared'
 import { db } from '../db'
@@ -22,7 +23,10 @@ import {
   resolveGitHubAccount,
 } from '../services/integrations/github/feedback-trust'
 import { moderateGitHubFeedback } from '../services/integrations/github/feedback-moderation'
-import { setGitHubAuthorFilter } from '../services/integrations/github/author-filter-setting'
+import {
+  setGitHubAuthorFilter,
+  setGitHubUntrustedHandling,
+} from '../services/integrations/github/author-filter-setting'
 import {
   getGitHubFeedbackDetail,
   getGitHubFeedbackSummary,
@@ -179,6 +183,23 @@ export function createGitHubFeedbackRouter(options: GitHubFeedbackRouterOptions 
       const { squadId } = c.req.valid('param')
       try {
         const result = await setGitHubAuthorFilter(identityOf(c), squadId, c.req.valid('json').enabled)
+        invalidate(squadId)
+        return c.json(result)
+      } catch (error) {
+        return failure(c, error)
+      }
+    }
+  )
+
+  // What the author filter does with untrusted feedback: hold it, or screen it with a decision model.
+  app.put(
+    '/:squadId/github-feedback/untrusted-handling',
+    strict('param', squadParam),
+    strict('json', githubUntrustedHandlingUpdateSchema),
+    async (c) => {
+      const { squadId } = c.req.valid('param')
+      try {
+        const result = await setGitHubUntrustedHandling(identityOf(c), squadId, c.req.valid('json').handling)
         invalidate(squadId)
         return c.json(result)
       } catch (error) {

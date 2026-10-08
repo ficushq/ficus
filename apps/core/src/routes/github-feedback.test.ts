@@ -198,6 +198,7 @@ describe('mounted GitHub feedback moderation routes', () => {
       ],
       ['POST', `${squadA}/github-feedback/revisions/${row.id}/retry`, {}],
       ['PUT', `${squadA}/github-feedback/author-filter`, { enabled: false }],
+      ['PUT', `${squadA}/github-feedback/untrusted-handling`, { handling: 'screen' }],
       ['POST', `${squadA}/github-feedback/trusted-authors/resolve`, { login: 'someone' }],
       ['POST', `${squadA}/github-feedback/trusted-authors`, { login: 'someone', accountId: '9' }],
       ['DELETE', `${squadA}/github-feedback/trusted-authors/4242`, undefined],
@@ -208,6 +209,7 @@ describe('mounted GitHub feedback moderation routes', () => {
     expect(await db.select().from(githubTrustedAuthors).where(eq(githubTrustedAuthors.squadId, squadA))).toEqual([])
     const [squad] = await db.select().from(squads).where(eq(squads.id, squadA))
     expect(squad!.githubAuthorFilter).toBe(true)
+    expect(squad!.githubUntrustedHandling).toBe('hold')
   })
 
   test('a reader sees the safe queue and exact reviewed content but cannot act', async () => {
@@ -246,6 +248,9 @@ describe('mounted GitHub feedback moderation routes', () => {
     })
     expect(denied.status).toBe(403)
     expect((await send(reader, 'PUT', `${squadA}/github-feedback/author-filter`, { enabled: false })).status).toBe(403)
+    expect(
+      (await send(reader, 'PUT', `${squadA}/github-feedback/untrusted-handling`, { handling: 'screen' })).status
+    ).toBe(403)
     expect(
       (await send(reader, 'POST', `${squadA}/github-feedback/trusted-authors`, { login: 'x', accountId: '9' })).status
     ).toBe(403)
@@ -506,6 +511,25 @@ describe('mounted GitHub feedback moderation routes', () => {
     expect((await send(moderator, 'PUT', `${squadA}/github-feedback/author-filter`, { enabled: true })).status).toBe(
       200
     )
+  })
+})
+
+describe('GitHub untrusted handling route', () => {
+  test('only a human with squad update can choose decision-model screening; it defaults to hold', async () => {
+    const before = await (await get(reader, `${squadA}/github-feedback/summary`)).json()
+    expect(before).toMatchObject({ untrustedHandling: 'hold', decisionModelConfigured: false })
+    emitted.length = 0
+    const screen = await send(moderator, 'PUT', `${squadA}/github-feedback/untrusted-handling`, { handling: 'screen' })
+    expect(screen.status).toBe(200)
+    expect(await screen.json()).toEqual({ handling: 'screen' })
+    expect(emitted).toEqual([{ squadId: squadA }])
+    expect((await (await get(reader, `${squadA}/github-feedback/summary`)).json()).untrustedHandling).toBe('screen')
+    for (const body of [{ handling: 'allow' }, { handling: 'screen', extra: true }, {}])
+      expect((await send(moderator, 'PUT', `${squadA}/github-feedback/untrusted-handling`, body)).status).toBe(400)
+    const hold = await send(moderator, 'PUT', `${squadA}/github-feedback/untrusted-handling`, { handling: 'hold' })
+    expect(hold.status).toBe(200)
+    const [squad] = await db.select().from(squads).where(eq(squads.id, squadA))
+    expect(squad!.githubUntrustedHandling).toBe('hold')
   })
 })
 

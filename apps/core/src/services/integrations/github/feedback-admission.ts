@@ -45,7 +45,7 @@ export async function isGitHubFeedbackAdmitted(store: typeof db | DbTx, event: E
     event.eventKey !== revision.id ||
     !revision.envelope ||
     revision.releaseState === 'obsolete' ||
-    !['allow_once', 'allow_trust', 'automatic'].includes(revision.decision)
+    !['allow_once', 'allow_trust', 'screened', 'automatic'].includes(revision.decision)
   )
     return false
   const expected = {
