@@ -197,7 +197,7 @@ export function AccountFeedVisit({
           </button>
         )}
         {completed.isFetchNextPageError && (
-          <p role="alert" className="ml-6 text-sm text-danger">
+          <p role="alert" className="ml-6 text-sm text-status-danger-600 dark:text-status-danger-400">
             Could not load more updates. Try again.
           </p>
         )}

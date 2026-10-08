@@ -13,7 +13,7 @@ export function AgentExecutionSection() {
   if (isLoading) return <FormSkeleton label="Loading execution settings" sections={1} />
   if (isError)
     return (
-      <p role="alert" className="text-sm text-danger">
+      <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
         Unable to load the agent limit.
       </p>
     )
@@ -169,7 +169,7 @@ export function NumberSettingFields({
       </div>
 
       {errorMessage && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {errorMessage}
         </p>
       )}

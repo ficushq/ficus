@@ -8,6 +8,7 @@ import { client } from '../api/clientInstance'
 import { modelTierQueryKeys, queryKeys } from '../queryKeys'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
 import { WorkflowReviewCallout } from './WorkflowReviewCallout'
+import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { WorkflowEditor } from './squads/WorkflowEditor'
 
 const preset = workflowPresetSchema.parse(
@@ -65,6 +66,16 @@ async function fixture(value: WorkflowRunDetail | null, permissions: string[] = 
 async function expandWorkflow(f: Awaited<ReturnType<typeof fixture>>) {
   await f.dom.act(async () => f.dom.window.document.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
 }
+/** Open the first gate's review surface from its compact callout card (deciding happens there). */
+async function openReview(f: Awaited<ReturnType<typeof fixture>>) {
+  const doc = f.dom.window.document
+  if (doc.querySelector('[role="dialog"]')) return doc.querySelector<HTMLElement>('[role="dialog"]')!
+  const button = [...doc.querySelectorAll<HTMLButtonElement>('section[aria-label^="Review "] button')].find((node) =>
+    ['Review and decide', 'Read proposal'].includes(node.textContent ?? '')
+  )!
+  await f.dom.act(async () => button.click())
+  return doc.querySelector<HTMLElement>('[role="dialog"]')!
+}
 
 test('legacy streams render no flow controls; queued flows label the current step without claiming it is working', async () => {
   const f = await fixture(null)
@@ -85,6 +96,7 @@ test('approving needs no notes; human outcomes send the displayed version and at
   const advance = spyOn(client.workflows, 'advance').mockRejectedValue(new Error('The flow changed; reload'))
   try {
     await f.render(<WorkflowReviewCallout stream={stream} />)
+    await openReview(f)
     const button = [...f.dom.window.document.querySelectorAll('button')].find((node) =>
       node.textContent?.startsWith('Approved')
     )!
@@ -122,6 +134,14 @@ test('approving needs no notes; human outcomes send the displayed version and at
     ])
     expect(input.value).toBe('Approved after checking scope')
     expect(f.dom.window.document.body.textContent).toContain('The flow changed; reload')
+    // The draft outlives the surface: closing and reopening the review keeps the notes.
+    await f.dom.act(async () =>
+      f.dom.window.document.querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label="Close"]')!.click()
+    )
+    expect(f.dom.window.document.querySelector('[role="dialog"][data-state="open"]')).toBeNull()
+    await f.dom.act(async () => new Promise<void>((resolve) => setTimeout(resolve, 200)))
+    await openReview(f)
+    expect(f.dom.window.document.querySelector('textarea')!.value).toBe('Approved after checking scope')
   } finally {
     advance.mockRestore()
     await f.cleanup()
@@ -139,6 +159,12 @@ test('read-only viewers can inspect human work without approval or revision cont
     expect(f.dom.window.document.querySelector('textarea')).toBeNull()
     expect(f.dom.window.document.body.textContent).toContain('Approve this draft')
     expect(f.dom.window.document.body.textContent).toContain('You need review permission in this squad to decide.')
+    // The review surface shows the document and the pending decision, never the controls.
+    const dialog = await openReview(f)
+    expect(dialog.querySelector('[data-review-document]')!.textContent).toContain('Approve this draft')
+    expect(dialog.querySelector('textarea')).toBeNull()
+    expect(dialog.textContent).toContain('Awaiting a decision')
+    expect([...dialog.querySelectorAll('button')].some((node) => node.textContent?.startsWith('Approved'))).toBe(false)
   } finally {
     await f.cleanup()
   }
@@ -210,6 +236,7 @@ test('review permission exposes human decisions without requiring squad editing 
   const f = await fixture(run(true), ['squads:update', 'workstreams:respond'])
   try {
     await f.render(<WorkflowReviewCallout stream={stream} />)
+    await openReview(f)
     expect(f.dom.window.document.querySelector('[aria-label="Decision and evidence"]') === null).toBe(true)
     await f.dom.act(async () => {
       f.queryClient.setQueryData(queryKeys.auth.permissions(stream.squadId), {
@@ -236,6 +263,7 @@ test('assigned reviewer filters restrict a nonempty list and allow reviewers whe
     await expandWorkflow(f)
     expect(f.dom.window.document.body.textContent).toContain('anyone with review permission can decide.')
     await f.render(<WorkflowReviewCallout stream={stream} />)
+    await openReview(f)
     expect(f.dom.window.document.querySelector('[aria-label="Decision and evidence"]') !== null).toBe(true)
     await f.render(<WorkflowReviewCallout stream={{ ...stream, assignedReviewerIds: ['someone-else'] }} />)
     expect(f.dom.window.document.querySelector('[aria-label="Decision and evidence"]') === null).toBe(true)
@@ -524,32 +552,27 @@ test('a human gate shows the handoff it reviews and labels each outcome with whe
   try {
     await f.render(<WorkflowReviewCallout stream={stream} />)
     const section = f.dom.window.document.querySelector('section[aria-label="Review Product sign-off"]')!
-    expect(section.textContent).toContain('Draft copy ready')
-    const buttons = [...section.querySelectorAll('button')]
+    // The compact card names the gate, previews the brief and the proposal, and opens the review.
+    expect(section.textContent).toContain('execute · Attempt 1 · Completed')
+    expect(section.textContent).toContain('Check the copy before release')
+    expect(section.textContent).toContain('Proposal · Draft copy ready')
+    expect([...section.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Review and decide'])
+    const dialog = await openReview(f)
+    expect(dialog.querySelector('[data-review-document]')!.textContent).toContain('Draft copy ready')
+    const buttons = [...dialog.querySelectorAll<HTMLButtonElement>('[data-review-rail] button')].filter((button) =>
+      button.querySelector('span')
+    )
+    // The forward outcome is the primary action, listed first, even when a rework outcome is declared first.
     expect(buttons.map((button) => button.textContent)).toEqual([
-      'Request changesSends back to execute',
       'ApproveFinishes the flow',
+      'Request changesSends back to execute',
     ])
-    // The forward outcome is the primary action even when a rework outcome is declared first.
-    expect(buttons[1]!.className).toContain('ficus-button-primary')
-    expect(buttons[0]!.className).not.toContain('ficus-button-primary')
+    expect(buttons[0]!.className).toContain('ficus-button-primary')
+    expect(buttons[1]!.className).not.toContain('ficus-button-primary')
+    expect(buttons[1]!.className).toContain('ficus-button-danger')
     // Notes are the rework feedback, so only the send-back outcome waits for them.
-    expect(section.textContent).toContain('Optional for Approve; required for Request changes.')
-    expect(buttons.map((button) => button.disabled)).toEqual([true, false])
-    const input = section.querySelector('textarea')!
-    await f.dom.act(async () => {
-      Object.getOwnPropertyDescriptor(f.dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(input, '   ')
-      input.dispatchEvent(new f.dom.window.Event('input', { bubbles: true }))
-    })
-    expect(buttons.map((button) => button.disabled)).toEqual([true, false])
-    await f.dom.act(async () => {
-      Object.getOwnPropertyDescriptor(f.dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(
-        input,
-        'Tighten the headline'
-      )
-      input.dispatchEvent(new f.dom.window.Event('input', { bubbles: true }))
-    })
-    expect(buttons.map((button) => button.disabled)).toEqual([false, false])
+    expect(dialog.textContent).toContain('Optional for Approve; required for Request changes.')
+    expect(buttons.map((button) => button.disabled)).toEqual([false, true])
   } finally {
     await f.cleanup()
   }
@@ -560,6 +583,7 @@ test('approving without notes submits an empty decision note', async () => {
   const advance = spyOn(client.workflows, 'advance').mockResolvedValue({} as never)
   try {
     await f.render(<WorkflowReviewCallout stream={stream} />)
+    await openReview(f)
     const button = [...f.dom.window.document.querySelectorAll('button')].find((node) =>
       node.textContent?.startsWith('Approved')
     )!
@@ -598,6 +622,7 @@ test('kept human gates show only the effective outcomes and retain their initial
   const f = await fixture(value, ['workstreams:review'])
   try {
     await f.render(<WorkflowReviewCallout stream={stream} />)
+    await openReview(f)
     const text = f.dom.window.document.body.textContent!
     expect(text).toContain('Accepted')
     expect(text).not.toContain('Approved')
@@ -779,6 +804,44 @@ test('terminal unassigned human workflows have no empty management section', asy
     expect(f.dom.window.document.body.textContent).not.toContain('Manage workflow')
     expect(f.dom.window.document.body.textContent).toContain('Handoff history')
   } finally {
+    await f.cleanup()
+  }
+})
+
+test('PR completion modes ask for the pull request review; checking delivery stays a quiet fallback', async () => {
+  const value = deliveryRun()
+  value.state.definition.completion.mode = 'pr-merge'
+  const f = await fixture(value, ['workstreams:respond'])
+  const finish = spyOn(client.workflows, 'finish').mockResolvedValue(undefined as never)
+  try {
+    await f.render(<WorkflowReviewCallout stream={deliveredStream} />)
+    const card = f.dom.window.document.querySelector('section[aria-label="Review pull request"]')!
+    expect(card.querySelector('h3')!.textContent).toBe('Review pull request')
+    expect(card.textContent).toContain('ficushq/ficus#12')
+    expect(card.textContent).toContain('When the PR merges, the squad completes this work stream automatically.')
+    const open = [...card.querySelectorAll('a')].find((link) => link.textContent === 'Open pull request')!
+    expect(open.getAttribute('href')).toBe('https://github.com/ficushq/ficus/pull/12')
+    expect(open.className).toContain('ficus-button-primary')
+    // Not known merged: no Check delivery here (it is in the More actions menu).
+    expect([...card.querySelectorAll('button')].map((button) => button.textContent)).toEqual([])
+
+    const [pullRequest] = workStreamPullRequests(deliveredStream.metadata)
+    const merged = {
+      ...deliveredStream,
+      metadata: {
+        ...deliveredStream.metadata,
+        delivery: { pullRequests: { [pullRequest!.key]: { state: 'merged', at: '2026-10-08T10:00:00.000Z' } } },
+      },
+    } as unknown as WorkStream
+    await f.render(<WorkflowReviewCallout stream={merged} />)
+    const mergedCard = f.dom.window.document.querySelector('section[aria-label="Review pull request"]')!
+    expect(mergedCard.textContent).toContain('Merged')
+    const check = [...mergedCard.querySelectorAll('button')].find((button) => button.textContent === 'Check delivery')!
+    expect(check.className).toContain('ficus-button-secondary')
+    await click(f, 'Check delivery')
+    expect(finish).toHaveBeenCalledWith(stream.id, value.version)
+  } finally {
+    finish.mockRestore()
     await f.cleanup()
   }
 })

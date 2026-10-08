@@ -11,6 +11,7 @@ import { useActionCenter } from './ActionCenterContext'
 import { MarkdownContent } from './MarkdownContent'
 import { WorkStreamFileList } from './WorkStreamFileCard'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
+import { WorkflowReviewLauncher } from './WorkflowReviewModal'
 import { WorkStreamApprovalConfirmation } from './WorkStreamApprovalConfirmation'
 import { sendAgentMessage, continueHaltedAgents } from '../api/agents'
 import { resolveWorkStreamWait } from '../api/squads'
@@ -835,7 +836,18 @@ function WorkStreamBlockedActionContent({
         </button>
       )}
 
-      {showWsModal && (
+      {/* A flow-owned wait is a workflow gate: open its review surface (the work stream when it is not a gate). */}
+      {showWsModal && flowControlled && (
+        <WorkflowReviewLauncher
+          workStreamId={data.workStreamId}
+          squadId={data.squadId}
+          squadName={data.squadName}
+          focusWaitId={data.focus.waitId}
+          actionCanRespond={action.canRespond}
+          onClose={() => setShowWsModal(false)}
+        />
+      )}
+      {showWsModal && !flowControlled && (
         <WorkStreamViewModal
           workStreamId={data.workStreamId}
           squadId={data.squadId}

@@ -71,7 +71,7 @@ function ActiveWorkStreamReviewers({ stream }: { stream: WorkStream }) {
         <p className="text-xs text-muted">No users have review permission in this squad yet.</p>
       )}
       {(update.error || error) && (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
           {update.error ? update.error.message : 'Could not load reviewers.'}
         </p>
       )}

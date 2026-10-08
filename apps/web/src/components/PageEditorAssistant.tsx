@@ -208,7 +208,10 @@ export function PageEditorAssistant({
         <p className="text-xs text-muted">{subtitle}</p>
       </header>
       {syncError && (
-        <p role="alert" className="max-h-28 shrink-0 overflow-y-auto break-words p-3 text-sm text-danger">
+        <p
+          role="alert"
+          className="max-h-28 shrink-0 overflow-y-auto break-words p-3 text-sm text-status-danger-600 dark:text-status-danger-400"
+        >
           {summarizeAssistantError(syncError)}{' '}
           <button type="button" onClick={() => void sync().catch(() => {})}>
             Retry
