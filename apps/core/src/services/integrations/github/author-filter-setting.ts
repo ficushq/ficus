@@ -9,6 +9,9 @@ import {
   requireGitHubHumanSquadUpdate,
 } from './feedback-trust'
 
+/** 8 bind parameters per decision row; Postgres allows 65,535 per statement. */
+const DECISION_INSERT_CHUNK = 2000
+
 /**
  * Human-only squad setting, the same authority as trusted-author edits: a literal enabled human
  * with effective squads:update in THIS squad. Agents (including delegated user credentials) are
@@ -67,18 +70,20 @@ export async function setGitHubAuthorFilter(identity: Identity | undefined, squa
           if (rows.length) {
             const requestId = crypto.randomUUID()
             const requestHash = githubContentHash({ squadId, userId, action: 'author_filter_off', requestId })
-            await tx.insert(githubFeedbackDecisions).values(
-              rows.map((row) => ({
-                requestId,
-                revisionId: row.id,
-                squadId,
-                requestHash,
-                contentHash: row.contentHash,
-                decisionVersion: row.decisionVersion,
-                action: 'allow_once' as const,
-                userId,
-              }))
-            )
+            // Chunked: one statement per ~8k rows would exceed Postgres's bind-parameter limit.
+            for (let offset = 0; offset < rows.length; offset += DECISION_INSERT_CHUNK)
+              await tx.insert(githubFeedbackDecisions).values(
+                rows.slice(offset, offset + DECISION_INSERT_CHUNK).map((row) => ({
+                  requestId,
+                  revisionId: row.id,
+                  squadId,
+                  requestHash,
+                  contentHash: row.contentHash,
+                  decisionVersion: row.decisionVersion,
+                  action: 'allow_once' as const,
+                  userId,
+                }))
+              )
           }
           released = rows.length
         }

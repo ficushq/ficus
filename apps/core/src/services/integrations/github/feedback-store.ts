@@ -13,6 +13,8 @@ import { githubContentHash } from './feedback-envelope'
 import { readCurrentGitHubFeedback } from './feedback-provider'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 import { isTrustedGitHubFeedbackContent } from './feedback-trust'
+import { isGitHubAuthorFilterEnabled } from './author-filter'
+import { squads } from '../../../db/schema'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 export interface FeedbackCaptureDependencies {
@@ -85,6 +87,11 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   if (!(await deps.authorizeSource(event))) throw new Error('feedback_source_unavailable')
   return db.transaction(async (tx) => {
     if (deps.decideFresh) await lockGitHubTrustAuthority(tx)
+    // The relevance read happened before provider I/O; a human may have turned the filter OFF
+    // since. Serialize with that toggle (it updates the squad row) and never hold an event the
+    // squad no longer filters: the caller routes it raw instead.
+    await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, squadId)).for('share')
+    if (!(await isGitHubAuthorFilterEnabled(tx, squadId))) throw new Error('feedback_filter_disabled')
     await tx.insert(githubFeedbackObjects).values(identity).onConflictDoNothing()
     const [object] = await tx.select().from(githubFeedbackObjects).where(condition).for('update')
     if (!object) throw new Error('feedback_capture_failed')

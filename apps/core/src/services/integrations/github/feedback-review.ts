@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import type {
   GitHubFeedbackDetail,
   GitHubFeedbackListItem,
@@ -40,6 +40,8 @@ import {
 
 const RELEASING = ['ready', 'retry', 'retained'] as const
 const ALLOWED = ['allow_once', 'allow_trust'] as const
+/** Retained this many times, a release counts as failing in the summary and surfaces on Home/Work. */
+export const FAILING_RETAINED_ATTEMPTS = 10
 /** Bounded scans: these are UI lists, not enumeration APIs. */
 const MAX_SOURCES_CHECKED = 20
 const MAX_TRUST_ROWS = 500
@@ -69,7 +71,9 @@ export async function getGitHubFeedbackSummary(
     .select({
       pending: sql<number>`count(*) filter (where ${githubFeedbackRevisions.decision} = 'pending')::int`,
       releasing: sql<number>`count(*) filter (where ${queueCondition('releasing')})::int`,
-      failing: sql<number>`count(*) filter (where ${queueCondition('releasing')} and ${githubFeedbackRevisions.releaseState} = 'retry')::int`,
+      // A release retained again and again (no current source, recipient or acceptance) is failing
+      // too; without this it would be an invisible, unbounded retry loop.
+      failing: sql<number>`count(*) filter (where ${queueCondition('releasing')} and (${githubFeedbackRevisions.releaseState} = 'retry' or (${githubFeedbackRevisions.releaseState} = 'retained' and ${githubFeedbackRevisions.attempts} >= ${FAILING_RETAINED_ATTEMPTS})))::int`,
     })
     .from(githubFeedbackRevisions)
     .where(eq(githubFeedbackRevisions.squadId, squadId))
@@ -195,14 +199,21 @@ const safeGitHubUrl = (value: unknown): string | null => {
  * that is enabled, healthy, assigned to THIS squad and on the same material revision. A rotated or
  * revoked connection withholds the body (decision metadata stays visible so a human can still deny).
  */
-async function hasCurrentSourceAccess(revisionId: string, squadId: string): Promise<boolean> {
-  const sources = await db
+export async function hasCurrentSourceAccess(
+  revisionId: string,
+  squadId: string,
+  executor: Pick<typeof db, 'select'> = db
+): Promise<boolean> {
+  const sources = await executor
     .select({ authority: githubFeedbackSources.authority })
     .from(githubFeedbackSources)
     .where(and(eq(githubFeedbackSources.revisionId, revisionId), eq(githubFeedbackSources.squadId, squadId)))
     .limit(MAX_SOURCES_CHECKED)
   for (const source of sources)
-    if (source.authority.kind === 'connection' && (await authorized(db, 'github', source.authority, squadId)))
+    if (
+      source.authority.kind === 'connection' &&
+      (await authorized(executor as typeof db, 'github', source.authority, squadId))
+    )
       return true
   return false
 }
@@ -339,7 +350,11 @@ export async function retryGitHubFeedbackRelease(
             eq(githubFeedbackRevisions.squadId, squadId),
             inArray(githubFeedbackRevisions.decision, [...ALLOWED]),
             inArray(githubFeedbackRevisions.releaseState, ['retry', 'retained']),
-            isNull(githubFeedbackRevisions.leaseToken)
+            // A crashed worker leaves an expired lease behind; that row is retryable, not busy.
+            or(
+              isNull(githubFeedbackRevisions.leaseExpiresAt),
+              lte(githubFeedbackRevisions.leaseExpiresAt, sql`clock_timestamp()`)
+            )
           )
         )
         .returning({ id: githubFeedbackRevisions.id })

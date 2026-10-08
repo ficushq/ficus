@@ -311,11 +311,18 @@ test('irrelevant feedback is recorded but never captured or queried from GitHub'
   const h = await fixture()
   try {
     await db.update(squads).set({ metadata: {} }).where(eq(squads.id, h.squadId))
-    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const eventId = await publishIntegrationOutput('github', h.fact(), h.authority)
     expect(
       await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
     ).toHaveLength(0)
     expect(h.read).not.toHaveBeenCalled()
+    // Settled, not re-planned for ever: like pre-filter routing, a considered event is matched once.
+    const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+    expect(event!.matchedAt).not.toBeNull()
+    expect(event!.lastErrorCode).toBe('github_irrelevant')
+    const before = h.read.mock.calls.length
+    await reconcileUnmatchedOutputs()
+    expect(h.read.mock.calls.length).toBe(before)
   } finally {
     await h.close()
   }
@@ -897,7 +904,7 @@ test('a native witness that expires waiting for the authority lock cannot become
     })
     await entered.promise
     setDatabaseQueryObserverForTest((query) => {
-      if (query.includes('pg_advisory_xact_lock(438, 5)')) blocked.resolve()
+      if (/pg_advisory_xact_lock(?:_shared)?\(438, 5\)/.test(query)) blocked.resolve()
     })
     publishing = publishIntegrationOutput('github', h.fact(), h.authority)
     await blocked.promise
@@ -1840,7 +1847,7 @@ test('mounted factory prepares provider evidence before authority locking and re
     })
     await entered.promise
     setDatabaseQueryObserverForTest((query) => {
-      if (query.includes('pg_advisory_xact_lock(438, 5)')) waiting.resolve()
+      if (/pg_advisory_xact_lock(?:_shared)?\(438, 5\)/.test(query)) waiting.resolve()
     })
     tick = reconcileFlows()
     await waiting.promise

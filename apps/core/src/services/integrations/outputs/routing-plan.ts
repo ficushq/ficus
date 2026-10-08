@@ -27,6 +27,7 @@ import { eventRuleTrigger, selectOutputRule } from './default-routing'
 import { defaultStreamMatches, preFlowRecipient } from './tracked-match'
 import { planChangeRequestBinding } from './delivery-binding'
 import { githubContentHash } from '../github/feedback-envelope'
+import { isGitHubAuthorFilterEnabled } from '../github/author-filter'
 import { outputRecipients } from './routing-audience'
 import { consultantAgentId } from '../../chat/consultant-idempotency'
 import { changeRequestBindingMetadata } from '../../work-streams/change-request-binding'
@@ -74,6 +75,21 @@ export async function findOutputTriggerRun(
     .limit(1)
   return prior
 }
+const BOT_COMMENT_OUTPUTS = [
+  'issue.comment',
+  'pull_request.comment',
+  'pull_request.reviewed',
+  'pull_request.review_comment',
+]
+/** A GitHub comment or review whose content author is a Bot account. */
+export function isBotComment(event: Event): boolean {
+  return (
+    event.integration === 'github' &&
+    BOT_COMMENT_OUTPUTS.includes(event.fact.output) &&
+    (event.fact.data as Record<string, unknown>).actorType === 'Bot'
+  )
+}
+
 function result(input: OutputRoutingRoute[]): OutputRoutingPlan {
   const routes = [...input].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
   // Only IDs/provenance, never raw titles, bodies, binding values, or external text.
@@ -126,12 +142,15 @@ export async function planOutputRouting(
     .where(and(eq(agents.squadId, squadId), inArray(agents.status, [...ADDRESSABLE_AGENT_STATUSES])))
   const routes: OutputRoutingRoute[] = []
   let defaultAudienceOwned = false
+  // Pre-filter routing never woke a pre-flow recipient for a bot comment (codecov, CI bots,
+  // Copilot); a filter-OFF squad keeps that. With the filter ON a bot is held unless a human
+  // trusts it, and a trusted bot's comment reaches the same pre-flow recipient as anyone's.
+  const skipBots = isBotComment(event) && !(await isGitHubAuthorFilterEnabled(store, squadId))
   for (const { stream, run } of rows) {
     if (defaultStreamMatches(stream.metadata, event)) {
       defaultAudienceOwned = true
-      if (!run) {
+      if (!run && !skipBots) {
         const recipient = preFlowRecipient(stream, available, squad.managerAgentId)
-        // Bot relevance follows the existing audience/rule predicates, not a blanket bot discard.
         if (recipient)
           routes.push({
             kind: 'pre-flow',

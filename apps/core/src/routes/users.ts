@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { eq, and, ne, isNull, sql } from 'drizzle-orm'
 import { db } from '../db'
 import { roleAssignments, roles, sessions, squads, users } from '../db/schema'
-import { invalidatePermissionCache } from '../services/rbac/permissions'
+import { hasUserPermissionWithExecutor, invalidatePermissionCache } from '../services/rbac/permissions'
 import { User } from '../entities/User'
 import { Role, isUserAssignable } from '../entities/Role'
 import { requirePermission } from '../middleware/require-permission'
@@ -33,7 +33,10 @@ import { notifyOnboardingChanged } from '../services/onboarding/events'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import { endLiveActivitiesForUser } from '../services/push/live-activity'
 
-import { withGitHubTrustMutation } from '../services/integrations/github/trust-mutation-guard'
+import {
+  requireHumanForTrustGrant,
+  withGitHubTrustMutation,
+} from '../services/integrations/github/trust-mutation-guard'
 import { GitHubFeedbackError } from '../services/integrations/github/feedback-trust'
 import { z } from 'zod'
 import { hasReservedGitHubAuthorityMetadata } from '@ficus/shared'
@@ -290,6 +293,13 @@ usersRouter.post('/', requirePermission('users:create'), async (c) => {
   // leaves a half-invited user behind.
   const resolved = await resolveInviteAssignments(assignments, roleIds, c.get('identity') as Identity)
   if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status)
+  // Automation may create people, but not people who arrive already able to update squads: that
+  // role makes a linked GitHub account trusted (and able to moderate) wherever it applies.
+  await requireHumanForTrustGrant(
+    c.get('identity'),
+    resolved.assignments.map((assignment) => assignment.role),
+    email
+  )
 
   // One transaction: an invitee who exists without their roles is a broken invite
   // (they sign in and see nothing, and the admin has no signal it went wrong).
@@ -586,6 +596,12 @@ usersRouter.post('/:id/roles', requirePermission('users:update'), async (c) => {
   if (lacking.length > 0) {
     return c.json({ error: `Cannot grant permissions you do not hold: ${lacking.join(', ')}` }, 403)
   }
+  // A role carrying squads:update makes a linked GitHub account trusted; only a person grants it
+  // to someone who does not hold it yet, whether or not that person has linked an account.
+  await requireHumanForTrustGrant(callerIdentity, [role], userId, {
+    alreadyHeld: () =>
+      hasUserPermissionWithExecutor(db, userId, 'squads:update', scope === 'squad' ? squadId : undefined),
+  })
 
   try {
     const [assignment] = await withGitHubTrustMutation(c.get('identity'), userId, (tx) =>

@@ -9,12 +9,13 @@ import {
   githubTrustedAuthorResolveSchema,
   moderateGitHubFeedbackSchema,
 } from '@ficus/shared'
-import { db } from '../db'
+import { db, integrationAuditEvents } from '../db'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import type { Identity } from '../services/rbac'
 import {
   addManualGitHubTrust,
   GitHubFeedbackError,
+  githubAuthorityActor,
   lookupGitHubAccount,
   removeManualGitHubTrust,
   requireGitHubHuman,
@@ -92,6 +93,20 @@ export function createGitHubFeedbackRouter(options: GitHubFeedbackRouterOptions 
     try {
       await requireGitHubHuman(db, identity)
     } catch (error) {
+      // A non-human principal is refused here, before any service runs; record the attempt the
+      // same way the services audit their own refusals.
+      if (error instanceof GitHubFeedbackError)
+        await db
+          .insert(integrationAuditEvents)
+          .values({
+            actorKey: githubAuthorityActor(identity),
+            targetKind: 'squad',
+            targetId: c.req.param('squadId') ?? 'unknown',
+            action: 'github.feedback.access',
+            outcome: 'denied',
+            code: error.code,
+          })
+          .catch(() => undefined)
       return failure(c, error)
     }
     if (!squadParam.safeParse({ squadId: c.req.param('squadId') }).success)

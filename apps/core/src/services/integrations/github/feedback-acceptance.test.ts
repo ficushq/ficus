@@ -355,7 +355,7 @@ for (const flow of [false, true])
       const order: string[] = []
       setDatabaseQueryObserverForTest((query) => {
         order.push(query)
-        if (query.includes('pg_advisory_xact_lock(438, 5)')) observed.resolve()
+        if (/pg_advisory_xact_lock(?:_shared)?\(438, 5\)/.test(query)) observed.resolve()
       })
       // Convert rejection to a result immediately so the intentional refusal cannot be unhandled.
       acceptance = send(message).then(
@@ -392,7 +392,7 @@ test('ordinary Linear notifications retain real acceptance and do not acquire th
     setDatabaseQueryObserverForTest((query) => queries.push(query))
     expect((await send(message)).success).toBe(true)
     setDatabaseQueryObserverForTest(undefined)
-    expect(queries.some((query) => query.includes('pg_advisory_xact_lock(438, 5)'))).toBe(false)
+    expect(queries.some((query) => /pg_advisory_xact_lock(?:_shared)?\(438, 5\)/.test(query))).toBe(false)
     expect(
       await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, message.recipientId!))
     ).toHaveLength(1)

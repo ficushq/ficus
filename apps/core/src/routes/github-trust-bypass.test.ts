@@ -488,3 +488,55 @@ test('a human self-deletion retains scalar trust audit after actor FK removal', 
     await h.close()
   }
 })
+
+test('automation cannot mint a person who arrives able to update squads, nor grant that role to one who lacks it', async () => {
+  const h = await fixture()
+  const email = `${crypto.randomUUID()}@trust-mint.test`
+  const freshId = crypto.randomUUID()
+  await db.insert(users).values({ id: freshId, email: `${freshId}@trust-mint.test` })
+  try {
+    // Creating a person with a squads:* role is a trust grant: human only.
+    const minted = await h.request(h.agent, '/users', 'POST', {
+      email,
+      assignments: [{ roleId: h.defaultRoleId, scope: 'system' }],
+    })
+    expect(minted.status).toBe(403)
+    expect(await db.select().from(users).where(eq(users.email, email))).toEqual([])
+    // Granting squads:update to an unlinked person who does not hold it yet: human only.
+    expect(
+      (await h.request(h.agent, `/users/${freshId}/roles`, 'POST', { roleId: h.defaultRoleId, scope: 'system' })).status
+    ).toBe(403)
+    // A redundant grant (already effectively held) stays available to automation.
+    await db
+      .insert(roleAssignments)
+      .values({ subjectType: 'user', subjectId: freshId, roleId: h.adminRoleId, scope: 'system' })
+    expect(
+      (await h.request(h.agent, `/users/${freshId}/roles`, 'POST', { roleId: h.defaultRoleId, scope: 'system' })).status
+    ).toBe(201)
+    // Roles without squads:update are unaffected, and a human can do all of it.
+    expect(
+      (await h.request(h.agent, `/users/${freshId}/roles`, 'POST', { roleId: h.roleId, scope: 'system' })).status
+    ).toBe(201)
+    const human = await h.request(h.human, '/users', 'POST', {
+      email,
+      assignments: [{ roleId: h.defaultRoleId, scope: 'system' }],
+    })
+    expect(human.status).toBe(201)
+    const denied = await db
+      .select()
+      .from(integrationAuditEvents)
+      .where(and(eq(integrationAuditEvents.outcome, 'denied'), eq(integrationAuditEvents.code, 'human_required')))
+    expect(denied.some((row) => row.targetId === email)).toBe(true)
+    expect(denied.some((row) => row.targetId === freshId)).toBe(true)
+  } finally {
+    const created = await db.select().from(users).where(eq(users.email, email))
+    for (const user of created) {
+      await db.delete(roleAssignments).where(eq(roleAssignments.subjectId, user.id))
+      await db.delete(users).where(eq(users.id, user.id))
+    }
+    await db.delete(integrationAuditEvents).where(inArray(integrationAuditEvents.targetId, [email, freshId]))
+    await db.delete(roleAssignments).where(eq(roleAssignments.subjectId, freshId))
+    await db.delete(users).where(eq(users.id, freshId))
+    await h.close()
+  }
+})
