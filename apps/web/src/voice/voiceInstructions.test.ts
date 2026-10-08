@@ -157,8 +157,9 @@ test('the prompt and tool definitions stay within the size budget', async () => 
     currentPath: `/squads/${squads[0]!.id}/work`,
     squads: squads as any,
   })
-  // Budget: navigation guide ~4.9k (incl. ~2.4k settings descriptions) + generated squads/current screen ~1k + prose ~5k.
-  expect(instructions.length).toBeLessThan(11_500)
+  // Budget: navigation guide ~5k (incl. ~2.5k settings descriptions, one line per settings page) + generated
+  // squads/current screen ~1k + prose ~5k. Raised from 11.5k for the Decision Providers page.
+  expect(instructions.length).toBeLessThan(11_750)
   expect(JSON.stringify(siteOperatorToolDefinitions).length).toBeLessThan(10_000)
   expect(instructions.split(buildVoiceNavigationGuide()).length).toBe(2)
 })

@@ -31,7 +31,7 @@ import {
 } from './decisionUi'
 
 /**
- * Decision models, apart from the agent model providers above them: fast models that answer
+ * Settings → Decision Providers, apart from AI Providers' agent models: fast models that answer
  * yes/no and multiple-choice questions for the GitHub firewall, workflow decision steps and
  * event rule conditions. They never write text, so they never run agents.
  */
@@ -41,19 +41,19 @@ export function DecisionModelsSection() {
   const { data, isLoading, isError, error } = useQuery(queries.decisions.settings())
 
   return (
-    <section aria-labelledby="decision-models-heading" className="space-y-8 border-t border-th-border pt-8">
+    <section aria-labelledby="decision-models-heading" className="space-y-8">
       <header>
         <h3
           id="decision-models-heading"
           data-setting-target="decision-models"
           className="text-lg font-semibold text-primary"
         >
-          Decision models
+          Decision Providers
         </h3>
         <p className="mt-1 text-sm text-muted">
           Fast models that answer quick yes/no and multiple-choice questions, never writing text. Ficus uses them to
           screen what agents read for instructions aimed at them, and for workflow decision steps and event rule
-          conditions. They are separate from the agent models above.
+          conditions. They are separate from the agent models in AI Providers.
         </p>
       </header>
       {isLoading ? (

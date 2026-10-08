@@ -116,7 +116,7 @@ async function mount(
 ) {
   const calls: Call[] = []
   const original = globalThis.fetch
-  const dom = await acquireDomHarness({ url: 'http://localhost/settings?section=providers' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/settings?section=decision-providers' })
   globalThis.fetch = (async (input, init) => {
     const call = {
       url: String(input),
@@ -163,7 +163,7 @@ async function mount(
 describe('Decision models settings', () => {
   test('lists providers with kind, model and state, and offers every kind to add', () => {
     const html = render(settings())
-    expect(html).toContain('Decision models')
+    expect(html).toContain('Decision Providers')
     expect(html).toContain('separate from the agent')
     expect(html).toContain('Clef on the Mac mini')
     expect(html).toContain('clef-flash · http://localhost:11434')

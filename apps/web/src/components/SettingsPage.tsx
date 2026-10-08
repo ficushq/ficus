@@ -38,6 +38,7 @@ import { CheckIcon, ShareIcon, WifiOffIcon } from './icons'
 import { ConfirmButton } from './ConfirmButton'
 import { SecretsSection } from './settings/SecretsSection'
 import { ProviderAuthSection } from './settings/ProviderAuthSection'
+import { DecisionModelsSection } from './settings/DecisionModelsSection'
 import { AgentTypesSection } from './settings/AgentTypesSection'
 import { SkillsSection } from './settings/SkillsSection'
 import { WorkflowsSection } from './settings/WorkflowsSection'
@@ -192,6 +193,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
           {activeSection === 'mobile-pro' && <MobileProSection />}
           {activeSection === 'notification-rules' && <NotificationsConfigSection />}
           {activeSection === 'providers' && <ProviderAuthSection />}
+          {activeSection === 'decision-providers' && <DecisionModelsSection />}
           {activeSection === 'git' && <SecretsSection />}
           {activeSection === 'amtp' && <AmtpSection />}
           {activeSection === 'machines' && <MachinesSection />}
