@@ -257,6 +257,7 @@ export async function hasActiveLocalDeployments(sandboxId: string): Promise<bool
     .where(
       and(
         eq(localDeployments.sandboxId, sandboxId),
+        isNull(localDeployments.archivedAt),
         eq(localDeployments.keepSandboxAlive, true),
         inArray(localDeployments.status, ACTIVE_LOCAL_APP_STATUSES)
       )

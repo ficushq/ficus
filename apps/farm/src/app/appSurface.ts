@@ -3,8 +3,8 @@ import { webAppUrl } from '../api/base'
 
 /** Running as an installed home-screen app (not a browser tab, not Ficus Desktop). */
 export function isInstalledApp(): boolean {
-  const w = window as Window & { ficusDesktopApp?: unknown; tauDesktopApp?: unknown }
-  if (w.ficusDesktopApp || w.tauDesktopApp) return false
+  const w = window as Window & { ficusDesktopApp?: unknown }
+  if (w.ficusDesktopApp) return false
   const iosStandalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
   return iosStandalone || window.matchMedia?.('(display-mode: standalone)').matches === true
 }

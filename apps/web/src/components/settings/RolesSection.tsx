@@ -121,7 +121,7 @@ export function RolesSection() {
           type="button"
           aria-label="Create role"
           onClick={() => (showCreate ? resetCreate() : openCreate())}
-          className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover"
+          className="ficus-button ficus-button-primary px-4 py-2 rounded-md text-sm font-medium"
         >
           Create Role
         </button>
@@ -207,7 +207,7 @@ export function RolesSection() {
                   })
                 }
                 disabled={!createName || !createSlug || createMutation.isPending}
-                className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50"
               >
                 {createMutation.isPending ? 'Creating...' : 'Create'}
               </button>
@@ -253,7 +253,7 @@ export function RolesSection() {
                       <button
                         onClick={() => updateMutation.mutate(role.id)}
                         disabled={updateMutation.isPending}
-                        className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                        className="ficus-button ficus-button-primary text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
                       >
                         {updateMutation.isPending ? 'Saving...' : 'Save'}
                       </button>
@@ -318,8 +318,8 @@ export function RolesSection() {
                                   : undefined
                               }
                               className={clsx(
-                                'ficus-button',
-                                'text-xs font-medium text-accent-light hover:text-link-hover',
+                                'ficus-button ficus-button-link',
+                                'text-xs font-medium',
                                 !canDuplicate && 'cursor-not-allowed opacity-50'
                               )}
                             >
@@ -343,7 +343,7 @@ export function RolesSection() {
                               setEditName(role.name)
                               setEditPermissions(role.permissions || [])
                             }}
-                            className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
+                            className="ficus-button ficus-button-link text-xs font-medium"
                           >
                             Edit
                           </button>
@@ -360,7 +360,7 @@ export function RolesSection() {
                             }}
                             disabled={deleteMutation.isPending}
                             aria-label={`Delete role ${role.name}`}
-                            className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
+                            className="ficus-button ficus-button-danger px-2 py-1 text-xs font-medium disabled:opacity-50"
                           >
                             Delete
                           </button>

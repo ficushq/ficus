@@ -27,10 +27,12 @@ export interface StartManagedLocalDeploymentArgs {
   command: string
   cwd?: string | null
   port: number
+  /** Preserve the recorded session identity when restarting an existing app. */
+  processId?: string
 }
 
 export function managedLocalDeploymentSessionName(localDeploymentId: string): string {
-  return `tau-local-deployment-${localDeploymentId.slice(0, 8)}`
+  return `ficus-local-deployment-${localDeploymentId.slice(0, 8)}`
 }
 
 function localDeploymentDir(sandboxId: string, localDeploymentId: string): string {
@@ -73,7 +75,7 @@ export class LocalDeploymentProcessSupervisor {
   constructor(private manager: ISandboxManager = getSandboxManager()) {}
 
   async startManagedLocalDeployment(args: StartManagedLocalDeploymentArgs): Promise<{ processId: string }> {
-    const processId = managedLocalDeploymentSessionName(args.localDeploymentId)
+    const processId = args.processId ?? managedLocalDeploymentSessionName(args.localDeploymentId)
     const squadId = args.sandboxId.replace(/^squad_/, '')
     const { workspaceMount } = resolveWorkspaceLayout({ squadId })
     const dir = localDeploymentDir(args.sandboxId, args.localDeploymentId)

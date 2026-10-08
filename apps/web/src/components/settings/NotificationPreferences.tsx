@@ -57,11 +57,8 @@ export function NotificationPreferences() {
           onClick={() => mutation.mutate({ pushEnabled: !pushEnabled })}
           disabled={mutation.isPending}
           className={clsx(
-            'ficus-button',
-            'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-            pushEnabled
-              ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50'
-              : 'bg-accent text-on-accent hover:bg-accent-hover'
+            'ficus-button px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
+            pushEnabled ? 'ficus-button-secondary' : 'ficus-button-primary'
           )}
         >
           {pushEnabled ? 'Disable' : 'Enable'}

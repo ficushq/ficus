@@ -12,6 +12,7 @@ import {
   captureRuntimeCommand,
   readReprovisionEnvCommand,
   runningReprovisionProbeCommand,
+  verifyInstalledCommand,
 } from './box-reprovision-runtime'
 import type { ReprovisionJournal } from './box-reprovision'
 
@@ -83,6 +84,21 @@ describe('reprovision remote commands', () => {
     expect(command).toContain('[ ! -L "$file" ]')
     expect(command).not.toContain('source ')
     expect(command).not.toContain('. "$file"')
+  })
+  it('requires canonical environment and runtime units without legacy fallback', () => {
+    const command = readReprovisionEnvCommand(box)
+    expect(command).toContain(`/.ficus/server.env`)
+    expect(command).toContain('[ -f "$file" ]')
+    expect(captureRuntimeCommand(box)).not.toContain('unit=$old')
+  })
+  it('requires canonical real HOME and alias-free owned units after install', () => {
+    for (const sandboxId of ['agent_fixture', 'squad_fixture']) {
+      const command = verifyInstalledCommand({ ...box, sandboxId, unixUser: boxUnixUser(sandboxId) })
+      expect(command).toContain('^Alias=')
+      expect(command).toContain('[ ! -L "$home/.ficus" ]')
+      expect(command).toContain('$owner:644')
+      expect(command).toContain(sandboxId.startsWith('agent_') ? 'owner=0' : 'owner=$uid')
+    }
   })
   it('puts show before the unit argument for both system and user controllers', () => {
     expect(captureRuntimeCommand(box)).toContain('"$controller" show --property=ActiveState --value "$target"')

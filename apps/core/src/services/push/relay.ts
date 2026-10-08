@@ -1,5 +1,7 @@
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
+import { enrollManagedCloudPro } from './cloud-pro'
 import { getSecretStore } from '../secrets'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createLogger } from '../../lib/infra/logger'
 import {
   PUSH_RELAY_BASE_URL,
@@ -56,9 +58,32 @@ export function resolvePushRelayBaseUrl(env: NodeJS.ProcessEnv = process.env): s
   return PUSH_RELAY_BASE_URL
 }
 
-/** Runtime-only credential; never a Secret Store value or squad environment input. */
+/** Private persisted credentials are bound to both this server and the Cloud authority. */
+export function relayConnectionSecretKey(env: NodeJS.ProcessEnv = process.env) {
+  return `__push-relay-connection:${createHash('sha256')
+    .update(`${resolvePushRelayBaseUrl(env)}\n${resolvePublicAppUrl(env) ?? ''}`)
+    .digest('hex')}`
+}
+
+export function savedRelayCredential() {
+  if (process.env.FICUS_MANAGED === '1') return undefined
+  const store = getSecretStore()
+  const current = store.get(relayConnectionSecretKey())
+  if (current !== undefined) return current
+  // Older connections hashed PUBLIC_URL verbatim. Adopt those only when they
+  // describe the same address; APP_URL pointing elsewhere must require reconnect.
+  if (resolvePublicAppUrl({ PUBLIC_URL: process.env.PUBLIC_URL }) !== resolvePublicAppUrl()) return undefined
+  const legacyKey = `__push-relay-connection:${createHash('sha256')
+    .update(`${resolvePushRelayBaseUrl()}\n${process.env.PUBLIC_URL?.trim().replace(/\/+$/, '') ?? ''}`)
+    .digest('hex')}`
+  return store.get(legacyKey)
+}
+
+/** The credential stays private to Core and is never exposed to squad environments. */
 export function pushRelayConfig(env?: NodeJS.ProcessEnv) {
-  const token = (env ? env.FICUS_PUSH_RELAY_TOKEN : getSecretStore().get('FICUS_PUSH_RELAY_TOKEN'))?.trim()
+  const token = (
+    env ? env.FICUS_PUSH_RELAY_TOKEN : (savedRelayCredential() ?? getSecretStore().get('FICUS_PUSH_RELAY_TOKEN'))
+  )?.trim()
   if (!token) return null
   const match = relayInstanceTokenPattern.exec(token)
   if (!match) throw new Error('FICUS_PUSH_RELAY_TOKEN must be a push-only instance credential')
@@ -124,7 +149,7 @@ export async function sendRelayAlert(
 /** Human-user enrollment approval is forwarded with the scoped server credential. */
 export async function enrollInstancePro(input: { publicKey: string; label: string }) {
   const config = pushRelayConfig()
-  if (!config) throw new Error('Instance Pro is not configured on this server')
+  if (!config) return enrollManagedCloudPro(input)
   const response = await fetch(`${config.baseUrl}/api/push-relay/enrollments`, {
     method: 'POST',
     redirect: 'error',

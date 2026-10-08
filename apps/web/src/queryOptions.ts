@@ -1,3 +1,5 @@
+import { serverConnectionQueryKeys } from './queryKeys'
+import { getRelayAvailability, getServerConnection } from './api/serverConnection'
 import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
 import { desktopQueryKeys } from './queryKeys'
 import { desktopBridge, type DesktopNotificationBatch } from './lib/desktop'
@@ -1158,5 +1160,17 @@ export const githubIdentityQueries = {
       queryKey: githubIdentityQueryKeys.all,
       queryFn: () => getGitHubIdentity(),
       retry: noRetryOnClientError,
+    }),
+}
+
+export const serverConnectionQueries = {
+  status: () =>
+    queryOptions({ queryKey: serverConnectionQueryKeys.status(), queryFn: getServerConnection, staleTime: 15_000 }),
+  availability: () =>
+    queryOptions({
+      queryKey: serverConnectionQueryKeys.availability(),
+      queryFn: getRelayAvailability,
+      staleTime: 60_000,
+      retry: false,
     }),
 }

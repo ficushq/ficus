@@ -1,20 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createHash, randomUUID } from 'crypto'
-import {
-  chmodSync,
-  chownSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-  writeFileSync,
-} from 'fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import type { Machine } from './queries'
@@ -27,7 +13,6 @@ import {
 } from './bootstrap'
 import { buildBoxProvisionArtifact } from './box-provision-artifact'
 import { tarCodecFlag } from './box-manager'
-import { LEGACY_BOX_UNIT_PREFIX, LEGACY_USER_UNIT_PREFIX } from './box-paths'
 import { devboxInstallCommand } from './devbox-seed'
 import type { SshResult, SshRunner } from './ssh'
 
@@ -1187,35 +1172,51 @@ describe('browser tools Phase 2 — machine plumbing (group membership, socket e
 
 describe('box-provision.sh validation (unprivileged — must exit BEFORE any sudo call)', () => {
   const boxProvisionPath = join(repoRoot, 'scripts/machine/box-provision.sh')
+  // Resolve before adding the fixture's bash shim: only the nested inventory
+  // shell is refused, not the real script under test.
+  const bash = Bun.which('bash')!
+  const fixtureRoots: string[] = []
+  afterEach(() => {
+    for (const dir of fixtureRoots.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
 
-  // These run the real script on real bash as the (non-root) test user. Every
-  // case below must decide its fate purely from arg validation, so no sudo /
-  // privileged command is ever reached — hence they are safe (and fast) in CI.
+  // Run the real script with real bash. Invalid arguments must fail before
+  // privilege; the valid-input cases below explicitly refuse that boundary.
   async function runBoxProvision(
     args: string[],
     options: { env?: Record<string, string> } = {}
-  ): Promise<{ exitCode: number; stderr: string }> {
-    const proc = Bun.spawn(['bash', boxProvisionPath, ...args], {
+  ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    const proc = Bun.spawn([bash, boxProvisionPath, ...args], {
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
       ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
     })
-    const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited])
-    return { exitCode, stderr }
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    return { exitCode, stdout, stderr }
   }
 
   /**
-   * A PATH whose `sudo` refuses every call with a marker and exit 77. The
-   * "gets past validation" case must stop at the FIRST privileged call, but
-   * that only happens naturally where sudo prompts; on hosts with passwordless
-   * sudo (GitHub-hosted runners, most dev boxes) the script would really start
-   * provisioning a box user and overrun the test timeout instead.
+   * Refuse the inventory boundary with exit 77, before any host access/effects.
+   * Simulate both caller UIDs on every platform: non-root reaches sudo, while
+   * root invokes the inventory bash directly. Neither shim runs its arguments.
    */
-  function refusingSudoPath(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'ficus-refusing-sudo-'))
-    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\necho "ficus-test: sudo refused: $*" >&2\nexit 77\n', { mode: 0o755 })
-    return `${dir}:${process.env.PATH ?? ''}`
+  function refusingInventoryEnv(uid: number): Record<string, string> {
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-refusing-inventory-'))
+    fixtureRoots.push(dir)
+    writeFileSync(join(dir, 'id'), `#!/bin/sh\n[ "$#" = 1 ] && [ "$1" = -u ] || exit 78\nprintf '%s\\n' '${uid}'\n`, {
+      mode: 0o755,
+    })
+    for (const command of ['sudo', 'bash']) {
+      writeFileSync(join(dir, command), `#!/bin/sh\necho "ficus-test: ${command} refused: $*" >&2\nexit 77\n`, {
+        mode: 0o755,
+      })
+    }
+    return { PATH: `${dir}:${process.env.PATH ?? ''}`, FICUS_HOST_ROOT: dir }
   }
 
   it('rejects an invalid --unix-user charset (exit 2)', async () => {
@@ -1426,24 +1427,41 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
     expect(stderr).toContain('unknown argument: --port=50100')
   })
 
-  it('lets a valid box user + port PAST validation (fails later at the first privileged call, never with the validation exit 2)', async () => {
-    const { exitCode, stderr } = await runBoxProvision(
+  it.each([1000, 0])('lets valid box user + port reach the refused layout inventory (caller UID %s)', async (uid) => {
+    const { exitCode, stdout, stderr } = await runBoxProvision(
       ['--sandbox-id', 'x', '--unix-user', 'box_0123456789ab', '--port', '50100'],
-      { env: { PATH: refusingSudoPath() } }
+      { env: refusingInventoryEnv(uid) }
     )
-    // It gets past validation and then trips on the first privileged call —
-    // anything but the validation exit code proves validation passed. As a
-    // non-root user that call goes through the refusing sudo above, which is
-    // the proof it got that far rather than dying somewhere else.
-    expect(exitCode).not.toBe(2)
-    // Only Linux hosts get as far as sudo: elsewhere the script stops at its
-    // systemd preflight (still not exit 2, which is all the assertion above
-    // needs). Root has no sudo call to refuse.
-    if (process.platform === 'linux' && process.getuid?.() !== 0) {
-      expect(exitCode).toBe(77)
-      expect(stderr).toContain('ficus-test: sudo refused')
+    // The first privileged call is now the layout inventory. Its failure is
+    // deliberately normalized to exit 3, NOT the shim's exit 77. Require both
+    // the exact boundary and the fail-closed diagnostic, not just "not exit 2".
+    expect(exitCode).toBe(3)
+    const boundary = uid === 0 ? 'bash refused: -s -- ' : 'sudo refused: bash -s -- '
+    expect(stderr).toContain(`ficus-test: ${boundary}`)
+    expect(stderr.match(/ficus-test:/g)).toHaveLength(1)
+    expect(stderr).toContain('machine layout inventory failed; nothing was changed')
+    expect(stdout).toBe('')
+  })
+
+  it.each([1000, 0])('rejects invalid user/port before the inventory boundary (caller UID %s)', async (uid) => {
+    const env = refusingInventoryEnv(uid)
+    for (const [user, port, diagnostic] of [
+      ['bad;name', '50100', 'invalid --unix-user'],
+      ['box_0123456789ab', 'abc', 'invalid --port'],
+      ['box_0123456789ab', '1023', 'invalid --port'],
+      ['box_0123456789ab', '65536', 'invalid --port'],
+    ]) {
+      const { exitCode, stdout, stderr } = await runBoxProvision(
+        ['--sandbox-id', 'x', '--unix-user', user, '--port', port],
+        { env }
+      )
+      expect(exitCode).toBe(2)
+      expect(stderr).toContain(diagnostic)
+      expect(stderr).not.toContain('ficus-test:')
+      expect(stderr).not.toContain('machine layout inventory failed')
+      expect(stdout).toBe('')
     }
-  }, 30_000)
+  })
 })
 
 // The subuid/subgid overlap-scan allocation (Fix 3) is exercised through the
@@ -1678,7 +1696,7 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
   it('requires operation staging and never falls back to extracting into HOME', async () => {
     const fixture = makeFixture()
     try {
-      const { exitCode, stderr } = await runRestoreStream(fixture, {
+      const { exitCode } = await runRestoreStream(fixture, {
         codec: 'gzip',
         stateDirs: 'workspace .private',
         stagingId: '',
@@ -2015,7 +2033,6 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         '[Install]',
         'WantedBy=multi-user.target',
         // While the bridge lasts each unit's pre-rename name is its alias.
-        `Alias=${LEGACY_BOX_UNIT_PREFIX}-box_abc123abc123.service`,
         '# path: /etc/systemd/system/ficus-box-box_abc123abc123.socket',
         '[Unit]',
         'Description=Ficus sandbox server socket',
@@ -2027,7 +2044,6 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         '',
         '[Install]',
         'WantedBy=sockets.target',
-        `Alias=${LEGACY_BOX_UNIT_PREFIX}-box_abc123abc123.socket`,
         '# path: /etc/systemd/system/ficus-box-box_abc123abc123-proxy.service',
         '[Unit]',
         'Description=Ficus sandbox server socket proxy',
@@ -2087,7 +2103,6 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         '',
         '[Install]',
         'WantedBy=default.target',
-        `Alias=${LEGACY_USER_UNIT_PREFIX}.service`,
         '# path: /home/box_abc123abc123/.config/systemd/user/ficus-sandbox-server.socket',
         '[Unit]',
         'Description=Ficus sandbox server socket',
@@ -2099,7 +2114,6 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         '',
         '[Install]',
         'WantedBy=sockets.target',
-        `Alias=${LEGACY_USER_UNIT_PREFIX}.socket`,
         '# path: /home/box_abc123abc123/.config/systemd/user/ficus-sandbox-server-proxy.service',
         '[Unit]',
         'Description=Ficus sandbox server socket proxy',
@@ -2255,512 +2269,5 @@ describe('shared machine Nix cache', () => {
     ])
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' })
     expect(stdout).toContain('6 cache integration checks passed')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// migrate_machine_root, RUN FOR REAL under a temp root
-//
-// bootstrap.sh is sourced (it only defines functions when sourced) with
-// FICUS_HOST_ROOT pointing at a fixture tree, and migrate_machine_root runs
-// against it for real: mv, ln, the journal and every inverse. Only the account
-// and service managers are stubbed on PATH (usermod/groupmod/getent/id over a
-// fake passwd/group, systemctl emulating enable/disable links, apparmor_parser),
-// each recording its argv. The old names come from bootstrap.sh's own bridge
-// constants, never retyped here.
-// ---------------------------------------------------------------------------
-const GNU_MV = (() => {
-  const r = Bun.spawnSync(['mv', '--version'])
-  return r.exitCode === 0 && r.stdout.toString().includes('GNU')
-})()
-
-describe.skipIf(!GNU_MV)('bootstrap.sh migrate_machine_root (temp root)', () => {
-  const bootstrapPath = join(repoRoot, 'scripts/machine/bootstrap.sh')
-  const legacy = (() => {
-    const r = Bun.spawnSync([
-      'bash',
-      '-c',
-      `source '${bootstrapPath}' && printf '%s\\n%s\\n' "$LEGACY_MACHINE_ROOT" "$LEGACY_BROWSER_NAME"`,
-    ])
-    const [root, browser] = r.stdout.toString().trim().split('\n')
-    return { root: root ?? '', browser: browser ?? '' }
-  })()
-  const roots: string[] = []
-  afterEach(() => {
-    for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
-  })
-
-  const shims: Record<string, string> = {
-    sudo: 'exec "$@"',
-    pgrep: 'exit 1',
-    apparmor_parser: [
-      'echo "apparmor_parser $*" >>"$STUB_R/calls.log"',
-      'profiles="$STUB_R/sys/kernel/security/apparmor/profiles"',
-      'case "$1" in',
-      '  -R) : >"$profiles" ;;',
-      '  -r) [ "${STUB_FAIL_APPARMOR:-}" != 1 ] || exit 1; [ "${STUB_APPARMOR_NOLOAD:-}" != 1 ] || exit 0; printf "%s (enforce)\\n" "$(basename "${@: -1}")" >"$profiles" ;;',
-      'esac',
-    ].join('\n'),
-    'systemd-tmpfiles': 'echo "systemd-tmpfiles $*" >>"$STUB_R/calls.log"',
-    getent: ['db="$STUB_R/fakedb/$1"; [ -f "$db" ] || exit 2', 'grep -m1 "^$2:" "$db" || exit 2'].join('\n'),
-    id: [
-      'if [ "$1" = "-u" ] && [ -n "${2:-}" ]; then',
-      '  line=$(grep -m1 "^$2:" "$STUB_R/fakedb/passwd") || { echo "id: $2: no such user" >&2; exit 1; }',
-      '  echo "$line" | cut -d: -f3; exit 0',
-      'fi',
-      'exec /usr/bin/id "$@"',
-    ].join('\n'),
-    usermod: [
-      'echo "usermod $*" >>"$STUB_R/calls.log"',
-      'new="" home=""',
-      'while [ $# -gt 1 ]; do case "$1" in -l) new=$2; shift 2 ;; -d) home=$2; shift 2 ;; *) shift ;; esac; done',
-      'old=$1; db="$STUB_R/fakedb/passwd"',
-      'grep -q "^$old:" "$db" || { echo "usermod: user $old does not exist" >&2; exit 6; }',
-      'awk -F: -v OFS=: -v o="$old" -v n="$new" -v h="$home" \'$1==o { if (n!="") $1=n; if (h!="") $6=h } { print }\' "$db" >"$db.new" && mv "$db.new" "$db"',
-    ].join('\n'),
-    groupmod: [
-      'echo "groupmod $*" >>"$STUB_R/calls.log"',
-      'new=$2; old=$3; db="$STUB_R/fakedb/group"',
-      'grep -q "^$old:" "$db" || { echo "groupmod: group $old does not exist" >&2; exit 6; }',
-      'awk -F: -v OFS=: -v o="$old" -v n="$new" \'$1==o { $1=n } { print }\' "$db" >"$db.new" && mv "$db.new" "$db"',
-    ].join('\n'),
-    // systemctl: records argv; emulates enable/disable as systemd does for a
-    // system unit (a wants link per WantedBy=, one link per Alias=), is-enabled
-    // from those links, and is-active from persistent fixture runtime state.
-    systemctl: [
-      'echo "systemctl $*" >>"$STUB_R/calls.log"',
-      'dir="$STUB_R/etc/systemd/system"',
-      'verb=""; units=""',
-      'for a in "$@"; do case "$a" in -*) ;; *) if [ -z "$verb" ]; then verb=$a; else units="$units $a"; fi ;; esac; done',
-      'installs() { sed -n "s/^$1=//p" "$dir/$2" 2>/dev/null; }',
-      '[ "$verb" != "${STUB_FAIL_VERB:-}" ] || exit 1',
-      'case "$verb" in',
-      '  reset-failed) touch "$STUB_R/.runtime/reset" ;;',
-      '  start) [ "${STUB_REQUIRE_RESET:-}" != 1 ] || [ -f "$STUB_R/.runtime/reset" ] || exit 1; [ "${STUB_START_INACTIVE:-}" != 1 ] || exit 0; printf "%s\\n" "$units" >"$STUB_R/.runtime/active" ;;',
-      '  stop) : >"$STUB_R/.runtime/active" ;;',
-      '  enable) for u in $units; do [ -e "$dir/$u" ] || exit 1',
-      '      for t in $(installs WantedBy "$u"); do mkdir -p "$dir/$t.wants"; ln -sfn "$dir/$u" "$dir/$t.wants/$u"; done',
-      '      for al in $(installs Alias "$u"); do if [ -e "$dir/$al" ] && [ ! -L "$dir/$al" ]; then exit 1; fi; ln -sfn "$dir/$u" "$dir/$al"; done',
-      '    done ;;',
-      '  disable) for u in $units; do',
-      '      for l in "$dir"/*.wants/"$u"; do [ -L "$l" ] && rm -f "$l"; done',
-      '      for al in $(installs Alias "$u"); do [ -L "$dir/$al" ] && rm -f "$dir/$al"; done',
-      '    done; exit 0 ;;',
-      '  is-enabled) for u in $units; do for l in "$dir"/*.wants/"$u"; do [ -L "$l" ] && exit 0; done; done; exit 1 ;;',
-      '  is-active) for u in $units; do case " $(cat "$STUB_R/.runtime/active") " in *" $u "*) echo active; exit 0 ;; esac; done; echo inactive; exit 3 ;;',
-      'esac',
-      'exit 0',
-    ].join('\n'),
-  }
-
-  function makeShims(r: string): string {
-    const dir = join(r, '.shims')
-    mkdirSync(dir, { recursive: true })
-    for (const [name, body] of Object.entries(shims)) {
-      writeFileSync(join(dir, name), `#!/usr/bin/env bash\n${body}\n`)
-      chmodSync(join(dir, name), 0o755)
-    }
-    return dir
-  }
-
-  function put(r: string, path: string, content: string): void {
-    mkdirSync(join(r, path, '..'), { recursive: true })
-    writeFileSync(join(r, path), content)
-  }
-
-  /** A machine bootstrapped by the previous release: the legacy root, browser
-   *  identity, unit (enabled), drop-in and AppArmor profile. */
-  function makeLegacyMachine(opts: { stray?: boolean } = {}): string {
-    const r = mkdtempSync(join(tmpdir(), 'ficus-machine-root-'))
-    roots.push(r)
-    const o = legacy.root
-    const b = legacy.browser
-    put(r, `${o}/bun/bin/bun`, 'bun binary\n')
-    mkdirSync(join(r, o, 'bin'), { recursive: true })
-    symlinkSync(`${o}/bun/bin/bun`, join(r, o, 'bin/bun'))
-    put(r, `${o}/bin/box-provision.sh`, 'old box-provision\n')
-    put(r, `${o}/server/server.js`, 'old server\n')
-    put(r, `${o}/browser/service/${b}.js`, 'old browser service\n')
-    put(r, `${o}/browser/service/verify-sandbox.js`, 'old verify\n')
-    put(r, `${o}/browser/ms-playwright/chromium-1/chrome-linux/chrome`, 'chrome\n')
-    mkdirSync(join(r, o, 'browser/home'), { recursive: true })
-    put(r, `${o}/browser-tokens/box_0123456789ab.token`, 'digest\n')
-    put(r, `${o}/prebaked`, '{}\n')
-    put(
-      r,
-      `/etc/systemd/system/${b}.service`,
-      '[Unit]\nDescription=legacy browser\n\n[Service]\nExecStart=/bin/true\n\n[Install]\nWantedBy=multi-user.target\n'
-    )
-    put(r, `/etc/systemd/system/${b}.service.d/memory.conf`, '[Service]\nMemoryHigh=1M\n')
-    mkdirSync(join(r, 'etc/systemd/system/multi-user.target.wants'), { recursive: true })
-    symlinkSync(
-      join(r, `etc/systemd/system/${b}.service`),
-      join(r, `etc/systemd/system/multi-user.target.wants/${b}.service`)
-    )
-    put(r, `/etc/apparmor.d/${b}-chromium`, 'legacy profile\n')
-    put(r, '/sys/kernel/security/apparmor/profiles', `${b}-chromium (enforce)\n`)
-    put(r, '/.runtime/active', `${b}.service\n`)
-    mkdirSync(join(r, 'usr/local/bin'), { recursive: true })
-    symlinkSync(`${o}/bun/bin/bun`, join(r, 'usr/local/bin/bun'))
-    mkdirSync(join(r, 'run'), { recursive: true })
-    mkdirSync(join(r, 'var'), { recursive: true })
-    mkdirSync(join(r, 'etc/tmpfiles.d'), { recursive: true })
-    put(r, '/fakedb/passwd', `root:x:0:0:root:/root:/bin/bash\n${b}:x:998:998::${o}/browser/home:/usr/sbin/nologin\n`)
-    put(r, '/fakedb/group', `root:x:0:\n${b}:x:998:box_0123456789ab\n`)
-    if (opts.stray) {
-      // Artifacts a new Core pushed before this machine was re-bootstrapped.
-      put(r, '/opt/ficus/server/server.js', 'new server\n')
-      put(r, '/opt/ficus/bin/box-provision.sh', 'new box-provision\n')
-      put(r, '/opt/ficus/cli/ficus.js', 'new cli\n')
-    }
-    writeFileSync(join(r, 'calls.log'), '')
-    return r
-  }
-
-  /** Every path under the root except the journal, the shims and the call log:
-   *  type, mode, link target and content hash. */
-  function snapshot(r: string): string {
-    const out: string[] = []
-    const walk = (rel: string) => {
-      const abs = join(r, rel)
-      const st = lstatSync(abs)
-      const mode = `${(st.mode & 0o7777).toString(8)} ${st.uid}:${st.gid}`
-      if (st.isSymbolicLink()) out.push(`${rel} l ${readlinkSync(abs)}`)
-      else if (st.isDirectory()) {
-        out.push(`${rel} d ${mode}`)
-        for (const name of readdirSync(abs).sort()) {
-          const child = rel ? `${rel}/${name}` : name
-          if (['.shims', '.runtime', 'calls.log', 'var/backups'].includes(child)) continue
-          walk(child)
-        }
-      } else out.push(`${rel} f ${mode} ${createHash('sha256').update(readFileSync(abs)).digest('hex')}`)
-    }
-    walk('')
-    return out.join('\n')
-  }
-
-  async function bash(r: string, script: string, env: Record<string, string> = {}) {
-    const proc = Bun.spawn(['bash', '-c', `source '${bootstrapPath}'\n${script}`], {
-      env: {
-        PATH: `${makeShims(r)}:/usr/sbin:/usr/bin:/sbin:/bin`,
-        HOME: r,
-        FICUS_HOST_ROOT: r,
-        STUB_R: r,
-        ...env,
-      },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ])
-    return { stdout, stderr, code }
-  }
-
-  const journals = (r: string): string[] => {
-    const root = join(r, 'var/backups/ficus-host-migrate')
-    return existsSync(root) ? readdirSync(root).filter((n) => n.startsWith('machine-')) : []
-  }
-  const calls = (r: string) => readFileSync(join(r, 'calls.log'), 'utf8')
-
-  it('reads its old names from bridge constants', () => {
-    expect(legacy.root).toMatch(/^\/opt\/[a-z]+$/)
-    expect(legacy.root).not.toBe('/opt/ficus')
-    expect(legacy.browser).toMatch(/^[a-z]+-browser$/)
-    expect(legacy.browser).not.toBe('ficus-browser')
-  })
-
-  it('moves the root, renames the browser user and group, and moves the unit, profile and program', async () => {
-    const r = makeLegacyMachine()
-    const res = await bash(r, 'migrate_machine_root')
-    expect(res.stderr).not.toContain('reversed')
-    expect(res.code).toBe(0)
-    const o = legacy.root
-    const b = legacy.browser
-    expect(lstatSync(join(r, 'opt/ficus')).isDirectory()).toBe(true)
-    expect(readlinkSync(join(r, o))).toBe('ficus')
-    expect(readFileSync(join(r, 'opt/ficus/server/server.js'), 'utf8')).toBe('old server\n')
-    // The account keeps its UID/GID; only the names and the home field change.
-    expect(calls(r)).toContain(`usermod -l ficus-browser -d /opt/ficus/browser/home ${b}`)
-    expect(calls(r)).toContain(`groupmod -n ficus-browser ${b}`)
-    expect(readFileSync(join(r, 'fakedb/passwd'), 'utf8')).toContain(
-      'ficus-browser:x:998:998::/opt/ficus/browser/home:/usr/sbin/nologin'
-    )
-    expect(readFileSync(join(r, 'fakedb/group'), 'utf8')).toContain('ficus-browser:x:998:box_0123456789ab')
-    // The browser was stopped before anything moved.
-    expect(
-      calls(r)
-        .split('\n')
-        .find((l) => l.startsWith('systemctl stop'))
-    ).toBe(`systemctl stop ${b}.service`)
-    // Unit: the ficus unit, enabled, carrying the legacy name as its alias link.
-    const unit = readFileSync(join(r, 'etc/systemd/system/ficus-browser.service'), 'utf8')
-    expect(unit).toContain('User=ficus-browser')
-    expect(unit).toContain(`Alias=${b}.service`)
-    expect(unit).not.toContain('@ALIAS@')
-    expect(readlinkSync(join(r, `etc/systemd/system/${b}.service`))).toBe(
-      join(r, 'etc/systemd/system/ficus-browser.service')
-    )
-    expect(existsSync(join(r, 'etc/systemd/system/multi-user.target.wants/ficus-browser.service'))).toBe(true)
-    expect(existsSync(join(r, 'etc/systemd/system/ficus-browser.service.d/memory.conf'))).toBe(true)
-    expect(existsSync(join(r, `etc/systemd/system/${b}.service.d`))).toBe(false)
-    // AppArmor: the legacy profile unloaded and removed, the ficus one written.
-    expect(calls(r)).toContain(`apparmor_parser -R ${join(r, `etc/apparmor.d/${b}-chromium`)}`)
-    expect(existsSync(join(r, `etc/apparmor.d/${b}-chromium`))).toBe(false)
-    expect(readFileSync(join(r, 'etc/apparmor.d/ficus-browser-chromium'), 'utf8')).toContain(
-      'profile ficus-browser-chromium /opt/ficus/browser/ms-playwright/'
-    )
-    // Program: the ficus service file replaces the legacy one.
-    expect(existsSync(join(r, 'opt/ficus/browser/service/ficus-browser.js'))).toBe(true)
-    expect(existsSync(join(r, `opt/ficus/browser/service/${b}.js`))).toBe(false)
-    // Absolute links into the old root now name the new one.
-    expect(readlinkSync(join(r, 'opt/ficus/bin/bun'))).toBe('/opt/ficus/bun/bin/bun')
-    expect(readlinkSync(join(r, 'usr/local/bin/bun'))).toBe('/opt/ficus/bun/bin/bun')
-    // Boxes still running on the old unit reach the socket through /run/<legacy>.
-    expect(readlinkSync(join(r, `run/${b}`))).toBe('ficus-browser')
-    expect(readFileSync(join(r, 'etc/tmpfiles.d/ficus-browser-bridge.conf'), 'utf8')).toContain(
-      `L /run/${b} - - - - ficus-browser`
-    )
-    expect(journals(r)).toHaveLength(1)
-    expect(existsSync(join(r, 'var/backups/ficus-host-migrate', journals(r)[0], 'DONE'))).toBe(true)
-  })
-
-  it('a second run is a no-op', async () => {
-    const r = makeLegacyMachine()
-    expect((await bash(r, 'migrate_machine_root')).code).toBe(0)
-    const before = snapshot(r)
-    writeFileSync(join(r, 'calls.log'), '')
-    const res = await bash(r, 'migrate_machine_root')
-    expect(res.code).toBe(0)
-    expect(snapshot(r)).toBe(before)
-    expect(journals(r)).toHaveLength(1)
-    expect(calls(r)).not.toContain('usermod')
-    expect(calls(r)).not.toContain('systemctl stop')
-  })
-
-  it('a fresh host with no legacy layout is left alone and journals nothing', async () => {
-    const r = mkdtempSync(join(tmpdir(), 'ficus-machine-root-'))
-    roots.push(r)
-    put(r, '/fakedb/passwd', 'root:x:0:0:root:/root:/bin/bash\n')
-    put(r, '/fakedb/group', 'root:x:0:\n')
-    writeFileSync(join(r, 'calls.log'), '')
-    const before = snapshot(r)
-    expect((await bash(r, 'migrate_machine_root')).code).toBe(0)
-    expect(snapshot(r)).toBe(before)
-    expect(journals(r)).toHaveLength(0)
-  })
-
-  it('merges artifacts a new Core pushed before the re-bootstrap (newest wins)', async () => {
-    const r = makeLegacyMachine({ stray: true })
-    const res = await bash(r, 'migrate_machine_root')
-    expect(res.code).toBe(0)
-    expect(readlinkSync(join(r, legacy.root))).toBe('ficus')
-    expect(readFileSync(join(r, 'opt/ficus/server/server.js'), 'utf8')).toBe('new server\n')
-    expect(readFileSync(join(r, 'opt/ficus/bin/box-provision.sh'), 'utf8')).toBe('new box-provision\n')
-    expect(readFileSync(join(r, 'opt/ficus/cli/ficus.js'), 'utf8')).toBe('new cli\n')
-    // Everything only the old root had is still there.
-    expect(readFileSync(join(r, 'opt/ficus/browser-tokens/box_0123456789ab.token'), 'utf8')).toBe('digest\n')
-    // The pushed tree's leftovers and the bytes it replaced go to the journal, not /opt.
-    expect(readdirSync(join(r, 'opt')).sort()).toEqual([legacy.root.slice('/opt/'.length), 'ficus'].sort())
-    const journal = join(r, 'var/backups/ficus-host-migrate', journals(r)[0])
-    expect(readFileSync(join(journal, 'REPLACED/server/server.js'), 'utf8')).toBe('old server\n')
-  })
-
-  for (const step of ['1', '2', '3', '3b', '4', '5', '6', '7', '8', '9', '10']) {
-    // S2 and S4 act only on a tree a new Core pushed before the re-bootstrap.
-    for (const stray of ['2', '4'].includes(step) ? [true] : [false, true]) {
-      it(`a failure inside S${step}${stray ? ' (with pushed artifacts)' : ''} reverses to the original tree`, async () => {
-        const r = makeLegacyMachine({ stray })
-        const before = snapshot(r)
-        const res = await bash(r, 'migrate_machine_root', { MR_FAIL_AT: step })
-        expect(res.code).not.toBe(0)
-        expect(res.stderr).toContain('reversed')
-        expect(snapshot(r)).toBe(before)
-        // The browser was running, so the reverse starts it again.
-        expect(calls(r)).toContain(`systemctl start ${legacy.browser}.service`)
-        // The journal says what happened and is never replayed.
-        expect(journals(r)).toHaveLength(1)
-        expect(existsSync(join(r, 'var/backups/ficus-host-migrate', journals(r)[0], 'REVERSED'))).toBe(true)
-        // The next bootstrap migrates cleanly.
-        expect((await bash(r, 'migrate_machine_root')).code).toBe(0)
-        expect(readlinkSync(join(r, legacy.root))).toBe('ficus')
-      })
-    }
-  }
-
-  it('a SIGKILL inside a step is reversed by the next run before it migrates', async () => {
-    const r = makeLegacyMachine({ stray: true })
-    const before = snapshot(r)
-    const killed = await bash(r, 'migrate_machine_root', { MR_KILL_IN: '4' })
-    expect(killed.code).not.toBe(0)
-    expect(snapshot(r)).not.toBe(before)
-    const settled = await bash(r, '_mr_reconcile')
-    expect(settled.code).toBe(0)
-    expect(snapshot(r)).toBe(before)
-    const res = await bash(r, 'migrate_machine_root')
-    expect(res.code).toBe(0)
-    expect(readFileSync(join(r, 'opt/ficus/server/server.js'), 'utf8')).toBe('new server\n')
-    expect(journals(r)).toHaveLength(2)
-  })
-
-  for (const step of ['S9', 'S8', 'S7', 'S6', 'S5', 'S4', 'S3b', 'S3', 'S2', 'runtime']) {
-    for (const stray of ['S2', 'S4'].includes(step) ? [true] : [false, true]) {
-      it(`resumes after SIGKILL following inverse ${step}${stray ? ' with pushed artifacts' : ''}`, async () => {
-        const r = makeLegacyMachine({ stray })
-        const before = snapshot(r)
-        const killed = await bash(r, 'migrate_machine_root', { MR_FAIL_AT: '10', MR_KILL_IN: `undo-${step}` })
-        expect(killed.code).not.toBe(0)
-        const journal = join(r, 'var/backups/ficus-host-migrate', journals(r)[0])
-        expect(existsSync(join(journal, 'REVERSED'))).toBe(false)
-        const settled = await bash(r, '_mr_reconcile')
-        expect(settled.stderr).not.toContain('could not reverse')
-        expect(settled.code).toBe(0)
-        expect(snapshot(r)).toBe(before)
-        expect(existsSync(join(journal, 'REVERSED'))).toBe(true)
-      })
-    }
-  }
-
-  for (const verb of ['daemon-reload', 'enable', 'reset-failed', 'start']) {
-    it(`keeps reverse pending when restoring runtime ${verb} fails, then retries after file reversal`, async () => {
-      const r = makeLegacyMachine({ stray: true })
-      const before = snapshot(r)
-      const failed = await bash(r, 'migrate_machine_root', { MR_FAIL_AT: '10', STUB_FAIL_VERB: verb })
-      expect(failed.code).not.toBe(0)
-      const journal = join(r, 'var/backups/ficus-host-migrate', journals(r)[0])
-      expect(existsSync(join(journal, 'REVERSED'))).toBe(false)
-      expect((await bash(r, '_mr_reconcile')).code).toBe(0)
-      expect(snapshot(r)).toBe(before)
-      expect(existsSync(join(journal, 'REVERSED'))).toBe(true)
-    })
-  }
-
-  for (const faulty of ['STUB_START_INACTIVE', 'STUB_APPARMOR_NOLOAD']) {
-    it(`keeps pending when runtime commands report success without restoring state (${faulty})`, async () => {
-      const r = makeLegacyMachine()
-      const failed = await bash(r, 'migrate_machine_root', { MR_FAIL_AT: '10', [faulty]: '1' })
-      expect(failed.code).not.toBe(0)
-      const journal = join(r, 'var/backups/ficus-host-migrate', journals(r)[0])
-      expect(existsSync(join(journal, 'REVERSED'))).toBe(false)
-      expect((await bash(r, '_mr_reconcile')).code).toBe(0)
-      expect(existsSync(join(journal, 'REVERSED'))).toBe(true)
-    })
-  }
-
-  it('resets a browser start-limit before restarting its prior active state', async () => {
-    const r = makeLegacyMachine()
-    const failed = await bash(r, 'migrate_machine_root', { MR_FAIL_AT: '10', STUB_REQUIRE_RESET: '1' })
-    expect(failed.code).not.toBe(0)
-    expect(failed.stderr).toContain('reversed:')
-    expect(calls(r).indexOf(`systemctl reset-failed ${legacy.browser}.service`)).toBeLessThan(
-      calls(r).indexOf(`systemctl start ${legacy.browser}.service`)
-    )
-  })
-
-  it('records AppArmor unload intent before SIGKILL and retries a failed reload', async () => {
-    const r = makeLegacyMachine()
-    const before = snapshot(r)
-    const killed = await bash(r, 'migrate_machine_root', { MR_KILL_IN: '6-unloaded' })
-    expect(killed.code).not.toBe(0)
-    const journal = join(r, 'var/backups/ficus-host-migrate', journals(r)[0])
-    expect(readFileSync(join(journal, 'state/APPARMOR_UNLOAD_INTENT'), 'utf8')).toBe('1\n')
-    expect((await bash(r, '_mr_reconcile', { STUB_FAIL_APPARMOR: '1' })).code).not.toBe(0)
-    expect(existsSync(join(journal, 'REVERSED'))).toBe(false)
-    expect((await bash(r, '_mr_reconcile')).code).toBe(0)
-    expect(snapshot(r)).toBe(before)
-    expect(existsSync(join(journal, 'REVERSED'))).toBe(true)
-  })
-
-  it('does not start a previously stopped or enable a previously disabled browser', async () => {
-    const r = makeLegacyMachine()
-    writeFileSync(join(r, '.runtime/active'), '')
-    rmSync(join(r, `etc/systemd/system/multi-user.target.wants/${legacy.browser}.service`))
-    const before = snapshot(r)
-    const failed = await bash(r, 'migrate_machine_root', { MR_FAIL_AT: '10' })
-    expect(failed.code).not.toBe(0)
-    expect(failed.stderr).toContain('reversed:')
-    expect(snapshot(r)).toBe(before)
-    expect(calls(r)).not.toContain(`systemctl start ${legacy.browser}.service`)
-    expect(calls(r)).not.toContain(`systemctl enable ${legacy.browser}.service`)
-  })
-
-  for (const producer of ['find', 'sort']) {
-    it(`fails closed when ${producer} cannot enumerate the pushed tree`, async () => {
-      const r = makeLegacyMachine({ stray: true })
-      const before = snapshot(r)
-      const inject = `function ${producer}() { return 73; }; export -f ${producer}; migrate_machine_root`
-      const failed = await bash(r, inject)
-      expect(failed.code).not.toBe(0)
-      expect(snapshot(r)).toBe(before)
-      expect(existsSync(join(r, 'var/backups/ficus-host-migrate', journals(r)[0], 'DONE'))).toBe(false)
-    })
-  }
-
-  it('keeps journal and replaced files private even when their original parent supplied confidentiality', async () => {
-    const r = makeLegacyMachine({ stray: true })
-    put(r, `${legacy.root}/private/public-mode-file`, 'private ancestor protects this file\n')
-    chmodSync(join(r, legacy.root, 'private'), 0o700)
-    put(r, '/opt/ficus/private/public-mode-file', 'replacement\n')
-    expect((await bash(r, 'migrate_machine_root')).code).toBe(0)
-    const journal = join(r, 'var/backups/ficus-host-migrate', journals(r)[0])
-    expect(statSync(journal).mode & 0o777).toBe(0o700)
-    expect(statSync(join(journal, 'EXTRA')).mode & 0o777).toBe(0o700)
-    expect(readFileSync(join(journal, 'REPLACED/private/public-mode-file'), 'utf8')).toBe(
-      'private ancestor protects this file\n'
-    )
-  })
-
-  function makeMixedMachine(): string {
-    const r = makeLegacyMachine({ stray: true })
-    put(
-      r,
-      '/fakedb/passwd',
-      readFileSync(join(r, 'fakedb/passwd'), 'utf8') +
-        'ficus-browser:x:999:999::/opt/ficus/browser/home:/usr/sbin/nologin\n'
-    )
-    put(r, '/fakedb/group', readFileSync(join(r, 'fakedb/group'), 'utf8') + 'ficus-browser:x:999:\n')
-    put(r, `${legacy.root}/browser/home/profile/data`, 'browser profile retained\n')
-    for (const path of ['browser/home', 'browser/home/profile', 'browser/home/profile/data'])
-      chownSync(join(r, legacy.root, path), 998, 998)
-    chmodSync(join(r, legacy.root, 'browser/home'), 0o700)
-    return r
-  }
-
-  it.skipIf(process.getuid?.() !== 0)(
-    'repairs a mixed-image private browser HOME for the existing new account without losing data',
-    async () => {
-      const r = makeMixedMachine()
-      const res = await bash(r, 'migrate_machine_root')
-      expect(res.code).toBe(0)
-      for (const path of ['browser/home', 'browser/home/profile', 'browser/home/profile/data']) {
-        const info = statSync(join(r, 'opt/ficus', path))
-        expect([info.uid, info.gid]).toEqual([999, 999])
-      }
-      expect(statSync(join(r, 'opt/ficus/browser/home')).mode & 0o777).toBe(0o700)
-      expect(readFileSync(join(r, 'opt/ficus/browser/home/profile/data'), 'utf8')).toBe('browser profile retained\n')
-      expect(readFileSync(join(r, 'fakedb/passwd'), 'utf8')).toContain(`${legacy.browser}:x:998:998:`)
-    }
-  )
-
-  for (const kill of ['5-home', 'undo-5-home']) {
-    it.skipIf(process.getuid?.() !== 0)(
-      `restores exact mixed-image HOME ownership after interruption at ${kill}`,
-      async () => {
-        const r = makeMixedMachine()
-        const before = snapshot(r)
-        const killed = await bash(r, 'migrate_machine_root', { MR_FAIL_AT: '10', MR_KILL_IN: kill })
-        expect(killed.code).not.toBe(0)
-        expect((await bash(r, '_mr_reconcile')).code).toBe(0)
-        expect(snapshot(r)).toBe(before)
-      }
-    )
-  }
-
-  it('main runs the migration first, before the prebaked check reads the marker', () => {
-    const main = bootstrapSh.slice(bootstrapSh.indexOf('\nmain() {'))
-    expect(main.indexOf('migrate_machine_root')).toBeGreaterThan(0)
-    expect(main.indexOf('migrate_machine_root')).toBeLessThan(main.indexOf('PREBAKED_MARKER}" ]'))
   })
 })

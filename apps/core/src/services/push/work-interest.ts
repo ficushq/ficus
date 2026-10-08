@@ -1,8 +1,7 @@
 import { UserNotificationPreferences } from '../../entities/UserNotificationPreferences'
-import { and, eq, inArray, isNull, or } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import {
   buildWorkInterestSnapshot,
-  hasNotify,
   type WorkInterestSnapshot,
   type WorkStream,
   type WorkStreamDerivedState,
@@ -11,7 +10,7 @@ import {
 } from '@ficus/shared'
 import { db } from '../../db'
 import { users, workStreams } from '../../db/schema'
-import { hasPermission } from '../rbac/permissions'
+import { getAccessibleSquadIds, hasPermission } from '../rbac/permissions'
 import { loadUserAttention, type UserAttention } from '../attention/resolver'
 import { computeDerivedStates } from '../work-streams/derived-state'
 
@@ -38,7 +37,7 @@ export const WORK_INTEREST_AUTH_CONCURRENCY = 8
 export interface WorkInterestLoaderDeps {
   isActiveUser(userId: string): Promise<boolean>
   loadAttention(userId: string): Promise<UserAttention>
-  loadCandidates(squadIds: string[], streamIds: string[]): Promise<WorkInterestCandidate[]>
+  loadCandidates(userId: string): Promise<WorkInterestCandidate[]>
   canReadSquad(userId: string, squadId: string): Promise<boolean>
   derive(streams: WorkInterestCandidate[]): Promise<Map<string, DerivedFacts>>
   now(): Date
@@ -69,22 +68,15 @@ export function createWorkInterestLoader(deps: WorkInterestLoaderDeps) {
   return async (userId: string): Promise<WorkInterestSnapshot> => {
     if (!(await deps.isActiveUser(userId))) return buildWorkInterestSnapshot([], deps.now())
 
-    // Live Activity and the widget carry work the user asked to be interrupted about, so interest
-    // is `notify` on either kind. DEFAULT_ATTENTION never notifies, which is why rows alone bound
-    // the candidate query.
+    // Show (including the default without a saved row) is passive visibility. Notify adds
+    // alerts, but is not required for widgets or Live Activities.
     const attention = await deps.loadAttention(userId)
-    const squadIds = Array.from(attention.squads.entries())
-      .filter(([, levels]) => hasNotify(levels))
-      .map(([squadId]) => squadId)
-    const streamIds = Array.from(attention.workStreams.entries())
-      .filter(([, levels]) => hasNotify(levels))
-      .map(([workStreamId]) => workStreamId)
-    if (squadIds.length === 0 && streamIds.length === 0) return buildWorkInterestSnapshot([], deps.now())
-
-    const candidates = await deps.loadCandidates(squadIds, streamIds)
+    const candidates = await deps.loadCandidates(userId)
     const deduped = [...new Map(candidates.map((stream) => [stream.id, stream])).values()]
-    // A stream row can quiet one stream inside a notify squad; re-check each candidate.
-    const interested = deduped.filter((stream) => hasNotify(attention.forWorkStream(stream.id, stream.squadId)))
+    const interested = deduped.filter((stream) => {
+      const levels = attention.forWorkStream(stream.id, stream.squadId)
+      return levels.decisions !== 'mute' || levels.progress !== 'mute'
+    })
     const candidateSquadIds = [...new Set(interested.map((stream) => stream.squadId))]
     const authorizedSquads = await filterAuthorizedSquads(candidateSquadIds, (squadId) =>
       deps.canReadSquad(userId, squadId)
@@ -98,13 +90,9 @@ export function createWorkInterestLoader(deps: WorkInterestLoaderDeps) {
   }
 }
 
-async function loadCandidates(squadIds: string[], streamIds: string[]): Promise<WorkInterestCandidate[]> {
-  const interest =
-    squadIds.length > 0 && streamIds.length > 0
-      ? or(inArray(workStreams.squadId, squadIds), inArray(workStreams.id, streamIds))
-      : squadIds.length > 0
-        ? inArray(workStreams.squadId, squadIds)
-        : inArray(workStreams.id, streamIds)
+async function loadCandidates(userId: string): Promise<WorkInterestCandidate[]> {
+  const squadIds = await getAccessibleSquadIds({ type: 'user', userId })
+  if (squadIds !== 'all' && squadIds.length === 0) return []
 
   return db
     .select({
@@ -119,7 +107,12 @@ async function loadCandidates(squadIds: string[], streamIds: string[]): Promise<
       updatedAt: workStreams.updatedAt,
     })
     .from(workStreams)
-    .where(and(inArray(workStreams.status, ['queued', 'active']), interest))
+    .where(
+      and(
+        inArray(workStreams.status, ['queued', 'active']),
+        squadIds === 'all' ? undefined : inArray(workStreams.squadId, squadIds)
+      )
+    )
 }
 
 const loadSnapshot = createWorkInterestLoader({

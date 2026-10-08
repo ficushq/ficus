@@ -45,7 +45,7 @@ test('a desktop build that already polls notifications itself is never polled ag
   }
 })
 
-test('only an enabled desktop bridge receives cached or newly fetched alerts, without marking inbox items read (legacy window.tauDesktopApp — D1 and older Desktop builds)', async () => {
+test('only an enabled desktop bridge receives cached or newly fetched alerts, without marking inbox items read', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   const delivered: DesktopNotificationBatch[] = []
@@ -56,7 +56,7 @@ test('only an enabled desktop bridge receives cached or newly fetched alerts, wi
     ],
   }
   try {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => true,
       deliverNotifications: async (value) => {
@@ -84,7 +84,7 @@ test('only an enabled desktop bridge receives cached or newly fetched alerts, wi
     expect(delivered).toEqual([batch])
   } finally {
     await dom.cleanup()
-    delete window.tauDesktopApp
+    delete window.ficusDesktopApp
     client.clear()
   }
 })

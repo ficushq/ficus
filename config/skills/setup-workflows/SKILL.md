@@ -56,6 +56,10 @@ Choose delivery separately from the participant sequence. `completion.mode` keep
 `pr-merge`, `pr-auto-merge`, and `direct-merge`; it also supports `deliverable`
 and `review-approval`. Solo Coding, Reviewed Coding, and Planned Coding default to `pr-merge`; their
 sources can use a `set-completion` customization without duplicating the steps.
+Preserve the full squad workflow source, including `set-completion` customizations;
+explicit user or flow delivery choices override the default. Inherit the squad
+source by omitting a source at creation, or pass the full agreed source; selecting
+only a preset ID does not carry the squad's customizations.
 `pr-auto-merge` still requires the squad's explicit `allowAutoMerge` policy;
 `direct-merge` requires `allowDirectMerge`. Selecting a mode does not grant that
 authority. Do not enable those policies without the user's authorization.

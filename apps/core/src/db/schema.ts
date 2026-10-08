@@ -2968,6 +2968,22 @@ export const liveActivityTokens = pgTable('live_activity_tokens', {
   lastUsedAt: timestamp('last_used_at'),
 })
 
+/** Durable relay capabilities and outbox, encrypted together; never raw APNs tokens. */
+export const liveActivityRelayInstallations = pgTable(
+  'live_activity_relay_installations',
+  {
+    activationId: uuid('activation_id').primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    generation: integer('generation').notNull(),
+    stateEnc: text('state_enc').notNull(),
+    leaseId: uuid('lease_id'),
+    leaseUntil: timestamp('lease_until'),
+    nextAttemptAt: timestamp('next_attempt_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('live_activity_relay_due_idx').on(t.nextAttemptAt)]
+)
+
 export const webauthnChallenges = pgTable('webauthn_challenges', {
   id: uuid('id').primaryKey().defaultRandom(),
   challengeKey: text('challenge_key').notNull().unique(),

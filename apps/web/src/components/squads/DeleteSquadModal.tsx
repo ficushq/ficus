@@ -58,7 +58,7 @@ export function DeleteSquadModal({ isOpen, onClose, squadId, squadName }: Props)
             onClick={() => mutation.mutate()}
             disabled={!isConfirmed || mutation.isPending || !canDeleteSquad}
             title={canDeleteSquad ? 'Archive squad' : 'You do not have permission to delete squads'}
-            className="ficus-button px-4 py-2 text-sm font-medium text-on-strong bg-status-danger-600 hover:bg-status-danger-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
+            className="ficus-button ficus-button-danger px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
           >
             {mutation.isPending ? 'Archiving...' : 'Archive Squad'}
           </button>

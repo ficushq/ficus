@@ -38,17 +38,18 @@ settings to conceal those details. Alerts then describe only the event and work
 number, such as **Work #42 needs your answer**, and Live Activity rows use the
 work number instead of the title. Open Ficus to read the details.
 
-In the mobile app, this switch is in Settings. The preference applies to your
-account on that Ficus instance across devices. While enabled, preview text is sent
-through the configured delivery service (including the Ficus relay, when used) and
-Apple or your browser's push service, and may appear on your lock screen. Squad
+In the mobile app, **Settings → Notifications → Allow Cloud notification previews**
+controls previews for the device. The instance account’s preview preference also
+applies; turning it off keeps alerts generic. Enabled preview text passes through
+the configured delivery service (including the Ficus relay, when used) and your
+device or browser’s push service, and may appear on your lock screen. Squad
 updates to connected chat channels follow their own notification settings.
 
 ## Choose which work alerts you
 
 The categories in your personal settings decide which KINDS of alert your devices accept. Which squads and work streams reach you at all is set on each squad and work stream, using the attention control in its header: **Decisions** (questions, reviews, and blockers) and **Progress** (active work and completions), each at **Notify**, **Show**, or **Mute**.
 
-Only **Notify** sends an inbox message and a device alert. **Show** keeps the work visible in the Feed and Needs you without alerting, and **Mute** removes it from those lists for you. Both filters apply: a muted category stays silent even where you chose Notify.
+Only **Notify** sends an inbox message and a device alert. **Show** keeps the work visible in the Feed and Needs you, and in eligible mobile widgets and Live Activity, without alerting, and **Mute** removes it from those lists for you. Both filters apply: a muted category stays silent even where you chose Notify.
 
 ## Check instance delivery
 
@@ -56,10 +57,12 @@ An enabled device subscription also needs instance-level delivery configuration.
 
 <ModeContent mode="cloud">
 
-If device registration succeeds but alerts never arrive, ask your instance
-administrator to check **Settings → Integrations → Web Push**. Delivery must be
-enabled for the instance. Managed Apple Push credentials, when present, are
-controlled by Cloud rather than editable in your tenant settings.
+Mobile push and Pro features are configured automatically for paid Cloud
+instances. No relay connection or separate mobile subscription is needed. Check
+mobile device permissions and personal preferences if an alert is missing.
+
+For browser push, ask your administrator to check **Settings → Integrations →
+Web Push** if device registration succeeds but alerts never arrive.
 
 </ModeContent>
 
@@ -70,9 +73,14 @@ valid **Contact address**, using a `mailto:` address or HTTPS URL. Ficus manages
 the browser push signing keys. Use HTTPS for your public instance and then
 register the browser device above.
 
-For a native iOS app deployment, **Apple Push** needs the APNs `.p8` signing key,
-key ID, team ID, and matching app bundle ID. Browser notifications use Web Push
-and do not require Apple Push configuration.
+For the official Ficus mobile app, [connect a Ficus account](/connect/mobile/)
+under **Settings → Administration → Mobile & Pro**. Devices use personal
+Ficus Pro or the server’s Instance Pro allowance. You do not need your own push
+signing key.
+
+**Apple Push** signing keys are for custom native app builds using their own app
+identity. Browser notifications use Web Push and do not require mobile Pro or
+Apple Push configuration.
 
 </ModeContent>
 

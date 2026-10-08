@@ -1,3 +1,5 @@
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
+import { startActivityRelayRunner } from './live-activity-outbox'
 import {
   buildLiveActivityState,
   shouldShowLiveActivity,
@@ -8,9 +10,7 @@ import {
 } from '@ficus/shared'
 import { createLogger } from '../../lib/infra/logger'
 import { getApnsConfig, sendApnsLiveActivity, type ApnsSendResult } from './apns'
-import { deleteLiveActivityToken, listLiveActivityTokens } from './live-activity-tokens'
-import { listSquadSubscriberIds } from '../squad/subscriptions'
-import { listWorkStreamSubscriberIds, listSquadWorkStreamSubscriberIds } from '../work-streams/subscriptions'
+import { deleteLiveActivityToken, listLiveActivityTokens, listLiveActivityUserIds } from './live-activity-tokens'
 import { loadWorkInterestSnapshot } from './work-interest'
 
 const log = createLogger('live-activity-fanout')
@@ -69,7 +69,7 @@ interface LiveActivityChange {
 }
 
 export interface LiveActivityFanoutDeps {
-  /** Subscribers of the changed stream ∪ of its squad — the same set the inbox notification uses. */
+  /** Users whose Live Activity snapshot may need recomputing; distinct from alert recipients. */
   resolveUserIds: (input: LiveActivityChange) => Promise<string[]>
   /** Authoritative server snapshot. Legacy stream injection remains for focused unit tests. */
   loadSnapshot?: (userId: string) => Promise<WorkInterestSnapshot>
@@ -383,27 +383,16 @@ export function registerLiveActivityFanout(
   deps: Partial<LiveActivityFanoutDeps> = {}
 ): LiveActivityFanout {
   const fanout = createLiveActivityFanout({
-    // The RECOMPUTE set, not a recipient set: every user with a subscription row on the stream or
-    // its squad, at any level. Deliberately wider than the inbox notice (which resolves effective
-    // `notify` and checks permission) because a row at any level can change what the card should
-    // show — including dropping the stream off it. Each user's own snapshot then decides what, if
-    // anything, they see: `loadWorkInterestSnapshot` keeps only work whose effective attention is
-    // `notify` and whose squad the user may read, so a mute or a lost role ends the card instead
-    // of leaking content into it.
-    resolveUserIds: async ({ workStreamId, squadId, includeDirectStreamSubscribers }) => {
-      const [streamWatchers, squadWatchers, directWatchers] = await Promise.all([
-        workStreamId ? listWorkStreamSubscriberIds(workStreamId) : Promise.resolve([]),
-        squadId ? listSquadSubscriberIds(squadId) : Promise.resolve([]),
-        squadId && includeDirectStreamSubscribers ? listSquadWorkStreamSubscriberIds(squadId) : Promise.resolve([]),
-      ])
-      return [...new Set([...streamWatchers, ...squadWatchers, ...directWatchers])]
-    },
+    // Default Show has no subscription row. Recompute for registered Live Activity users,
+    // then let the snapshot enforce effective visibility, active-user status and current RBAC.
+    // This includes existing cards that must end after a mute or permission revocation.
+    resolveUserIds: listLiveActivityUserIds,
     loadSnapshot: loadWorkInterestSnapshot,
-    origin: () => process.env.PUBLIC_URL ?? '',
+    origin: () => resolvePublicAppUrl() ?? '',
     ...deps,
   })
 
-  const unsubscribes: Array<() => void> = []
+  const unsubscribes: Array<() => void> = [startActivityRelayRunner()]
   for (const event of LIVE_ACTIVITY_EVENTS) {
     const unsubscribe = emitter.on(event, (payload) => {
       void fanout.onWorkStreamEvent(payload ?? {})

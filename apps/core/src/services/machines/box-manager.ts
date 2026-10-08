@@ -308,6 +308,7 @@ export interface BoxManagerDeps {
   getMachineBox?: (sandboxId: string) => Promise<MachineBox | null>
   deleteMachineBox?: (sandboxId: string) => Promise<void>
   queryReadySharedMachines?: () => Promise<Array<{ machine: Machine; boxCount: number }>>
+  queryTransientSharedMachineStatus?: () => Promise<string | null>
   /** Exact old-machine remnant fence for a fresh logical sandbox placement. */
   findUnverifiedStopRemnant?: (machineId: string, unixUser: string) => Promise<MachineBox | null>
   /** Inline retirement seam for a remnant on the only returning machine. */
@@ -786,13 +787,7 @@ export function buildMachineSnapshotCommand(box: { sandboxId: string; unixUser: 
   // socket-activated box whose server has idle-exited is `idle` — healthy, and
   // the steady state of an unused box — while only a missing socket (or a
   // server unit that has genuinely `failed`, i.e. exhausted Restart=on-failure)
-  // means the box is down. The socket and server are probed under whichever
-  // names the box runs (onHost: a box not re-provisioned since the rename keeps
-  // its legacy units). The `legacy` leg covers a box this deploy has not
-  // re-provisioned yet, whose port is held by the server itself with no socket
-  // unit at all; without it every not-yet-migrated box would read `exited` and
-  // be condemned.
-  const legacyIsActive = ctl.legacyIsActiveCommand?.()
+  // means the box is down. Finalized hosts are observed by canonical names.
   return [
     `uid=$(id -u ${shellQuote(unixUser)} 2>/dev/null || true)`,
     `box_live() { case "$1" in active|activating|reloading|listening|running) return 0 ;; *) return 1 ;; esac; }`,
@@ -800,12 +795,11 @@ export function buildMachineSnapshotCommand(box: { sandboxId: string; unixUser: 
       (u) =>
         `sock=$(${ctl.isActiveCommandOf(u.socket)} 2>/dev/null || true); state=$(${ctl.isActiveCommandOf(u.unit)} 2>/dev/null || true)`
     ),
-    legacyIsActive ? `legacy=$(${legacyIsActive} 2>/dev/null || true)` : 'legacy=',
     'if box_live "$sock"; then ' +
       'if box_live "$state"; then echo FICUS_BOX_LIVENESS=running; ' +
       'elif [ "$state" = failed ]; then echo FICUS_BOX_LIVENESS=exited; ' +
       'else echo FICUS_BOX_LIVENESS=idle; fi; ' +
-      'elif box_live "$state" || box_live "$legacy"; then echo FICUS_BOX_LIVENESS=running; ' +
+      'elif box_live "$state"; then echo FICUS_BOX_LIVENESS=running; ' +
       'else echo FICUS_BOX_LIVENESS=exited; fi',
     'echo FICUS_CONTAINER_STATES_BEGIN',
     // Rootless docker is user-manager-only by construction, so this probe keeps
@@ -2522,7 +2516,10 @@ export async function removeBox(
  * `stopped`. On-disk state (home, workspace, .private) persists so a later
  * ensure resumes it (spec §8). No-op when the box row is absent.
  */
-export type BoxStopResult = { kind: 'verified' } | { kind: 'unverified' } | { kind: 'not-found' }
+export type BoxStopResult =
+  | { kind: 'verified' }
+  | { kind: 'unverified'; machineStatus?: string }
+  | { kind: 'not-found' }
 
 export async function stopBox(sandboxId: string, deps: BoxManagerDeps = {}): Promise<BoxStopResult> {
   const runner = deps.runner ?? defaultSshRunner
@@ -2565,7 +2562,7 @@ export async function stopBox(sandboxId: string, deps: BoxManagerDeps = {}): Pro
         port: box.port,
       })
     }
-    return { kind: 'unverified' }
+    return { kind: 'unverified', machineStatus: machine.status }
   }
 
   // Retrying a stopped row still performs the physical effects: older parks

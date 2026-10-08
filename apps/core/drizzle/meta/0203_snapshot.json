@@ -1,6 +1,6 @@
 {
-  "id": "94554485-7d3f-4a6f-98aa-e624eb3d5dfb",
-  "prevId": "78f0984e-7775-40c9-b27b-74d2a8ed3acd",
+  "id": "1f3b0c52-e980-42b9-99a6-dba5d3d86407",
+  "prevId": "f945e162-588b-4ea7-899f-6573fd80c2c0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6013,6 +6013,224 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.github_identity_proofs": {
+      "name": "github_identity_proofs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "flow_key": {
+          "name": "flow_key",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "login": {
+          "name": "login",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invalidated_at": {
+          "name": "invalidated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "github_identity_proof_user": {
+          "name": "github_identity_proof_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "github_identity_proofs_user_id_users_id_fk": {
+          "name": "github_identity_proofs_user_id_users_id_fk",
+          "tableFrom": "github_identity_proofs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "github_identity_proofs_flow_key_unique": {
+          "name": "github_identity_proofs_flow_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "flow_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "github_identity_proof_generation": {
+          "name": "github_identity_proof_generation",
+          "value": "\"github_identity_proofs\".\"generation\" >= 0"
+        },
+        "github_identity_proof_flow_hash": {
+          "name": "github_identity_proof_flow_hash",
+          "value": "\"github_identity_proofs\".\"flow_key\" ~ '^[0-9a-f]{64}$'"
+        },
+        "github_identity_proof_account_id": {
+          "name": "github_identity_proof_account_id",
+          "value": "\"github_identity_proofs\".\"account_id\" ~ '^[1-9][0-9]{0,15}$' AND \"github_identity_proofs\".\"account_id\"::numeric <= 9007199254740991"
+        },
+        "github_identity_proof_lifetime": {
+          "name": "github_identity_proof_lifetime",
+          "value": "\"github_identity_proofs\".\"expires_at\" > \"github_identity_proofs\".\"verified_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.github_output_proofs": {
+      "name": "github_output_proofs",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source_event_id": {
+          "name": "source_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_hash": {
+          "name": "source_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effect_hash": {
+          "name": "effect_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authority_hash": {
+          "name": "authority_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "checked_at": {
+          "name": "checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "github_output_proofs_event_id_integration_output_events_id_fk": {
+          "name": "github_output_proofs_event_id_integration_output_events_id_fk",
+          "tableFrom": "github_output_proofs",
+          "tableTo": "integration_output_events",
+          "columnsFrom": [
+            "event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "github_output_proofs_source_event_id_integration_output_events_id_fk": {
+          "name": "github_output_proofs_source_event_id_integration_output_events_id_fk",
+          "tableFrom": "github_output_proofs",
+          "tableTo": "integration_output_events",
+          "columnsFrom": [
+            "source_event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.github_personal_identities": {
       "name": "github_personal_identities",
       "schema": "",
@@ -6034,13 +6252,13 @@
           "name": "account_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "login": {
           "name": "login",
           "type": "varchar(100)",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "generation": {
           "name": "generation",
@@ -6053,7 +6271,7 @@
           "name": "linked_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": "now()"
         },
         "unlinked_at": {
@@ -6117,6 +6335,10 @@
         "github_personal_identity_generation": {
           "name": "github_personal_identity_generation",
           "value": "\"github_personal_identities\".\"generation\" >= 0"
+        },
+        "github_personal_identity_link_tuple": {
+          "name": "github_personal_identity_link_tuple",
+          "value": "(\"github_personal_identities\".\"account_id\" IS NULL AND \"github_personal_identities\".\"login\" IS NULL AND \"github_personal_identities\".\"unlinked_at\" IS NOT NULL) OR (\"github_personal_identities\".\"account_id\" IS NOT NULL AND \"github_personal_identities\".\"login\" IS NOT NULL AND \"github_personal_identities\".\"linked_at\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -7272,6 +7494,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "identity_proof_id": {
+          "name": "identity_proof_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "identity_verified_at": {
+          "name": "identity_verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "terminal_code": {
           "name": "terminal_code",
           "type": "varchar(64)",
@@ -7495,7 +7729,11 @@
         },
         "integration_auth_receipts_install_terminal_exclusive": {
           "name": "integration_auth_receipts_install_terminal_exclusive",
-          "value": "\"integration_authorization_flow_receipts\".\"terminal_at\" IS NULL OR \"integration_authorization_flow_receipts\".\"installed_at\" IS NULL"
+          "value": "\"integration_authorization_flow_receipts\".\"terminal_at\" IS NULL OR (\"integration_authorization_flow_receipts\".\"installed_at\" IS NULL AND \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NULL)"
+        },
+        "integration_auth_receipts_identity_result": {
+          "name": "integration_auth_receipts_identity_result",
+          "value": "(\"integration_authorization_flow_receipts\".\"identity_proof_id\" IS NULL AND \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NULL) OR (\"integration_authorization_flow_receipts\".\"purpose\" = 'github_identity' AND \"integration_authorization_flow_receipts\".\"identity_proof_id\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"staging_started_at\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"adapter_version\" IS NOT NULL)"
         },
         "integration_auth_receipts_revocation_settlement": {
           "name": "integration_auth_receipts_revocation_settlement",
@@ -7507,7 +7745,7 @@
         },
         "integration_auth_receipts_obligation_disposition": {
           "name": "integration_auth_receipts_obligation_disposition",
-          "value": "(\"integration_authorization_flow_receipts\".\"revocation_required_at\" IS NULL AND \"integration_authorization_flow_receipts\".\"cleanup_required_at\" IS NULL) OR \"integration_authorization_flow_receipts\".\"terminal_at\" IS NOT NULL OR \"integration_authorization_flow_receipts\".\"installed_at\" IS NOT NULL"
+          "value": "(\"integration_authorization_flow_receipts\".\"revocation_required_at\" IS NULL AND \"integration_authorization_flow_receipts\".\"cleanup_required_at\" IS NULL) OR \"integration_authorization_flow_receipts\".\"terminal_at\" IS NOT NULL OR \"integration_authorization_flow_receipts\".\"installed_at\" IS NOT NULL OR \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NOT NULL"
         },
         "integration_auth_receipts_retention_window": {
           "name": "integration_auth_receipts_retention_window",
@@ -9077,7 +9315,7 @@
         },
         "integration_oauth_states_authority_flow_check": {
           "name": "integration_oauth_states_authority_flow_check",
-          "value": "(\"integration_oauth_states\".\"authority\" = 'local' AND \"integration_oauth_states\".\"local_flow_id\" IS NULL) OR (\"integration_oauth_states\".\"authority\" = 'platform_broker' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL)"
+          "value": "(\"integration_oauth_states\".\"authority\" = 'local' AND ((\"integration_oauth_states\".\"purpose\" = 'integration' AND \"integration_oauth_states\".\"local_flow_id\" IS NULL) OR (\"integration_oauth_states\".\"purpose\" = 'github_identity' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL))) OR (\"integration_oauth_states\".\"authority\" = 'platform_broker' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL)"
         },
         "integration_oauth_states_intent_context": {
           "name": "integration_oauth_states_intent_context",
@@ -9950,6 +10188,99 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.live_activity_relay_installations": {
+      "name": "live_activity_relay_installations",
+      "schema": "",
+      "columns": {
+        "activation_id": {
+          "name": "activation_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state_enc": {
+          "name": "state_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lease_id": {
+          "name": "lease_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_until": {
+          "name": "lease_until",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "live_activity_relay_due_idx": {
+          "name": "live_activity_relay_due_idx",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "live_activity_relay_installations_user_id_users_id_fk": {
+          "name": "live_activity_relay_installations_user_id_users_id_fk",
+          "tableFrom": "live_activity_relay_installations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

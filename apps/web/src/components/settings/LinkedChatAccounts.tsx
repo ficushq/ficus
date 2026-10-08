@@ -147,13 +147,13 @@ export function ChannelLinkCommand({ code }: { code: string }) {
           type="button"
           onClick={copy}
           aria-label="Copy account linking command"
-          className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium shrink-0 px-2 py-1"
+          className="ficus-button ficus-button-link text-xs font-medium shrink-0 py-1"
         >
           <span role="status">{status === 'copied' ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
       {status === 'failed' && (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
           Couldn’t copy. Select the command and copy it manually.
         </p>
       )}

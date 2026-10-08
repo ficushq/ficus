@@ -195,7 +195,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                     onClick={() => {
                       setDraft({ ...config, github: githubEntries.filter((_, i) => i !== index) })
                     }}
-                    className="ficus-button text-xs text-status-danger-500 hover:underline"
+                    className="ficus-button ficus-button-danger px-2 py-1 text-xs"
                   >
                     Remove repository
                   </button>
@@ -209,7 +209,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
             onClick={() => {
               setDraft({ ...config, github: [...githubEntries, { repo: '', labelsText: '' }] })
             }}
-            className="ficus-button mt-3 px-3 py-1.5 text-sm rounded-md border border-th-border text-primary hover:bg-surface-hover"
+            className="ficus-button ficus-button-secondary mt-3 px-3 py-1.5 text-sm rounded-md"
           >
             Add repository
           </button>
@@ -249,7 +249,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                     onClick={() => {
                       setDraft({ ...config, linear: linearEntries.filter((_, i) => i !== index) })
                     }}
-                    className="ficus-button text-xs text-status-danger-500 hover:underline"
+                    className="ficus-button ficus-button-danger px-2 py-1 text-xs"
                   >
                     Remove team
                   </button>
@@ -263,7 +263,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
             onClick={() => {
               setDraft({ ...config, linear: [...linearEntries, { teamId: '' }] })
             }}
-            className="ficus-button mt-3 px-3 py-1.5 text-sm rounded-md border border-th-border text-primary hover:bg-surface-hover"
+            className="ficus-button ficus-button-secondary mt-3 px-3 py-1.5 text-sm rounded-md"
           >
             Add Linear team
           </button>
@@ -288,7 +288,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
           type="button"
           onClick={() => updateMutation.mutate(config)}
           disabled={updateMutation.isPending || !squadEventRulesSchema.safeParse({ [provider]: eventRules }).success}
-          className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent"
+          className="ficus-button ficus-button-primary rounded-md px-3 py-2 text-sm"
         >
           {updateMutation.isPending ? 'Saving…' : 'Save settings'}
         </button>

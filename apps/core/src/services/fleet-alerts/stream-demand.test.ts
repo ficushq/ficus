@@ -50,7 +50,7 @@ test('linked PR delivery is external, but missing PR setup remains actionable', 
     stream.state.definition.completion = { mode, followChanges: true }
     stream.metadata = {}
     expect(hasRunnableStreamDemand(stream)).toBe(true)
-    stream.metadata = { codeHost: { integration: 'github', repository: 'ficushq/tau', changeRequest: { number: 1 } } }
+    stream.metadata = { codeHost: { integration: 'github', repository: 'ficushq/ficus', changeRequest: { number: 1 } } }
     expect(hasRunnableStreamDemand(stream)).toBe(false)
   }
   stream.state.definition.completion = { mode: 'review-approval' }

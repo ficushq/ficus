@@ -244,7 +244,7 @@ export function internalEventToken(): string {
     log.error(
       'Neither FICUS_INTERNAL_EVENT_TOKEN nor FICUS_ENCRYPTION_KEY is set — cross-process events ' +
         '(agent control signals, event forwarding, secret invalidation) are DISABLED. Set the ' +
-        'SAME value in the environment of both tau-api and tau-worker.'
+        'SAME value in the environment of both ficus-api and ficus-worker.'
     )
   }
   return processToken

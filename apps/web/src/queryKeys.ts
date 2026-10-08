@@ -106,3 +106,8 @@ export const githubFeedbackQueryKeys = {
 
 /** The signed-in person's own verified GitHub account; refreshed by `githubIdentity.updated`. */
 export const githubIdentityQueryKeys = { all: ['github-identity'] as const }
+
+export const serverConnectionQueryKeys = {
+  status: () => ['push-server-connection'] as const,
+  availability: () => ['push-relay-availability'] as const,
+}

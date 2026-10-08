@@ -21,7 +21,7 @@ import {
 } from './test-utils/test-db-fallback'
 
 // Give the whole run its own Ficus home so no test can write into the developer's
-// real ~/.tau (this is what stops squad workspace stubs leaking out of tests).
+// real ~/.ficus (this is what stops squad workspace stubs leaking out of tests).
 // On macOS, tmpdir() is the ~45-char /var/folders/... path; with the suffixes
 // the machines tunnel-manager appends (machines/ctl/owner-<pid>-<hash>.sock)
 // the unix socket path exceeds the 104-byte sun_path limit and listen() fails

@@ -1,69 +1,37 @@
 import clsx from 'clsx'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { ChevronDownIcon } from './icons'
+import { Panel, usePopover } from './popover'
 
 export function WorkStreamFiltersPopover({ count, children }: { count: number; children: ReactNode }) {
-  const [open, setOpen] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  const panelId = useId()
-
-  useEffect(() => {
-    if (!open) return
-    panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
-    const onPointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      setOpen(false)
-      triggerRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown, true)
-    }
-  }, [open])
-
+  const popover = usePopover({ kind: 'disclosure' })
   return (
-    <div
-      ref={containerRef}
-      className="relative"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
-      }}
-    >
+    <div className="relative">
       <button
-        ref={triggerRef}
+        {...popover.triggerProps}
         type="button"
-        aria-expanded={open}
-        aria-controls={panelId}
         className={clsx(
-          'ficus-button flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors',
-          count > 0 ? 'bg-selection text-accent-light' : 'text-secondary hover:bg-surface-hover hover:text-primary'
+          'ficus-button ficus-button-ghost flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors',
+          count > 0 && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
         )}
-        onClick={() => setOpen((current) => !current)}
+        onClick={popover.toggle}
       >
         Filters
         {count > 0 && <span className="font-medium">{count}</span>}
-        <ChevronDownIcon className={clsx('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
+        <ChevronDownIcon className={clsx('h-3.5 w-3.5 transition-transform', popover.open && 'rotate-180')} />
       </button>
-      {open && (
-        <div
-          ref={panelRef}
-          id={panelId}
-          role="region"
-          aria-label="Feed filters"
-          className="ficus-overlay absolute right-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-3rem)] max-h-[min(32rem,70dvh)] overflow-y-auto rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
-        >
-          {children}
-        </div>
-      )}
+      <Panel
+        {...popover.popoverProps}
+        role="region"
+        label="Feed filters"
+        gap={8}
+        initialFocus={(panel) => panel.querySelector('button')}
+        // At most 32rem, and never more than 70% of the visible viewport.
+        maxHeight={(viewport) => Math.min(512, 0.7 * (viewport.bottom - viewport.top))}
+        className="ficus-overlay w-80 rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
+      >
+        {children}
+      </Panel>
     </div>
   )
 }

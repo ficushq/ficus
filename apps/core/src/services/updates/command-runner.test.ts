@@ -83,7 +83,7 @@ describe('CommandRunner', () => {
   it('records a failed systemd API restart instead of dispatching it blindly', async () => {
     const dispatched: string[][] = []
     const commands: PlannedCommand[] = [
-      { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'tau-api'], status: 'pending' },
+      { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'ficus-api'], status: 'pending' },
     ]
     const runner = new CommandRunner({
       cwd: '/repo',
@@ -91,7 +91,7 @@ describe('CommandRunner', () => {
       runProcess: async () => ({ exitCode: 1, output: 'sudo: a password is required' }),
     })
 
-    await expect(runner.runAll(commands)).rejects.toThrow('systemctl restart tau-api')
+    await expect(runner.runAll(commands)).rejects.toThrow('systemctl restart ficus-api')
 
     expect(dispatched).toEqual([])
     expect(commands[0]).toMatchObject({
@@ -106,7 +106,7 @@ describe('CommandRunner', () => {
     const launchd: PlannedCommand[] = [
       {
         task: 'core',
-        command: ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-smoke-api'],
+        command: ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-api'],
         status: 'pending',
       },
     ]
@@ -127,7 +127,7 @@ describe('CommandRunner', () => {
     const systemd: PlannedCommand[] = [
       {
         task: 'core',
-        command: ['systemctl', '--user', '--no-block', 'restart', 'tau-smoke-api.service'],
+        command: ['systemctl', '--user', '--no-block', 'restart', 'ficus-smoke-api.service'],
         status: 'pending',
       },
     ]
@@ -145,12 +145,12 @@ describe('CommandRunner', () => {
     const commands: PlannedCommand[] = [
       {
         task: 'core',
-        command: ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-smoke-worker'],
+        command: ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-worker'],
         status: 'pending',
       },
       {
         task: 'core',
-        command: ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-smoke-api'],
+        command: ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-smoke-api'],
         status: 'pending',
       },
     ]
@@ -178,12 +178,12 @@ describe('CommandRunner', () => {
       const commands: PlannedCommand[] = [
         {
           task: 'core',
-          command: ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-worker'],
+          command: ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-worker'],
           status: 'pending',
         },
         {
           task: 'core',
-          command: ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-api'],
+          command: ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-api'],
           status: 'pending',
         },
       ]
@@ -211,7 +211,7 @@ describe('CommandRunner', () => {
     const commands: PlannedCommand[] = [
       {
         task: 'core',
-        command: ['launchctl', 'kickstart', '-k', 'gui/501/ai.hiretau.tau-api'],
+        command: ['launchctl', 'kickstart', '-k', 'gui/501/sh.ficus.ficus-api'],
         status: 'pending',
       },
     ]
@@ -231,7 +231,7 @@ describe('CommandRunner', () => {
     const commands: PlannedCommand[] = [
       {
         task: 'core',
-        command: ['systemctl', '--user', '--no-block', 'restart', 'tau-api.service'],
+        command: ['systemctl', '--user', '--no-block', 'restart', 'ficus-api.service'],
         status: 'pending',
       },
     ]
@@ -258,7 +258,11 @@ describe('CommandRunner', () => {
     // start stopping the unit — and kill this whole cgroup, child included — before it
     // returns. The child then exits 143, which is the restart working, not a rejection.
     const commands: PlannedCommand[] = [
-      { task: 'core', command: ['systemctl', '--user', '--no-block', 'restart', 'tau-api.service'], status: 'pending' },
+      {
+        task: 'core',
+        command: ['systemctl', '--user', '--no-block', 'restart', 'ficus-api.service'],
+        status: 'pending',
+      },
     ]
     const runner = new CommandRunner({
       cwd: '/repo',
@@ -281,17 +285,21 @@ describe('CommandRunner', () => {
     const commands: PlannedCommand[] = [
       {
         task: 'core',
-        command: ['systemctl', '--user', '--no-block', 'restart', 'tau-api.service'],
+        command: ['systemctl', '--user', '--no-block', 'restart', 'ficus-api.service'],
         status: 'pending',
       },
     ]
     const runner = new CommandRunner({
       cwd: '/repo',
-      runProcess: async () => ({ exitCode: 1, output: 'Unit tau-api.service not loaded' }),
+      runProcess: async () => ({ exitCode: 1, output: 'Unit ficus-api.service not loaded' }),
     })
 
-    await expect(runner.runAll(commands)).rejects.toThrow(/restart tau-api.service/)
-    expect(commands[0]).toMatchObject({ status: 'failed', exitCode: 1, outputTail: 'Unit tau-api.service not loaded' })
+    await expect(runner.runAll(commands)).rejects.toThrow(/restart ficus-api.service/)
+    expect(commands[0]).toMatchObject({
+      status: 'failed',
+      exitCode: 1,
+      outputTail: 'Unit ficus-api.service not loaded',
+    })
   })
 
   it('stops after the first failing command', async () => {

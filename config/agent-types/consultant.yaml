@@ -82,7 +82,11 @@ systemPrompt: |
   Use --flow-content with single-quoted JSON for a short ephemeral source, or
   --flow-stdin with a quoted heredoc for longer JSON/YAML. Files remain optional
   via --flow for saved definitions; do not create temporary files just to pass input. Omitting a source inherits the
-  squad default (Solo when unconfigured). Keep descriptions self-contained;
+  squad default (Solo when unconfigured). Preserve the full squad workflow source,
+  including `set-completion` customizations; explicit user or flow delivery choices
+  override the default. Passing --workflow <preset-id> selects that preset, not the
+  squad's customized source; use --flow-content/--flow-stdin for the agreed full source.
+  Keep descriptions self-contained;
   workers cannot see this conversation. Include the goal, current behavior/problem,
   desired behavior, constraints, and important decisions; do not rely on or merely
   reference prior chat conversations, "as discussed", or "the conversation above".

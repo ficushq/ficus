@@ -71,7 +71,12 @@ function GitUpdateSection() {
     })
 
   if (isLoading) return <FormSkeleton label="Loading update settings" sections={4} />
-  if (error) return <div className="text-danger">Failed to load update settings: {(error as Error).message}</div>
+  if (error)
+    return (
+      <div className="text-status-danger-600 dark:text-status-danger-400">
+        Failed to load update settings: {(error as Error).message}
+      </div>
+    )
   if (status?.flavor?.supervisor === 'desktop') return <DesktopManagedNotice />
   return (
     <section className="space-y-6 text-primary">
@@ -147,9 +152,8 @@ function GitUpdateSection() {
       <div className="flex gap-2">
         <button
           className={clsx(
-            'ficus-button',
+            'ficus-button ficus-button-secondary',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-            'bg-surface border border-th-border text-primary hover:bg-surface-hover',
             'disabled:opacity-50 disabled:cursor-not-allowed'
           )}
           onClick={() => check.mutate()}
@@ -159,9 +163,8 @@ function GitUpdateSection() {
         </button>
         <button
           className={clsx(
-            'ficus-button',
+            'ficus-button ficus-button-primary',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-            'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
             'disabled:opacity-50 disabled:cursor-not-allowed'
           )}
           onClick={() => apply.mutate()}
@@ -192,9 +195,8 @@ function GitUpdateSection() {
         </div>
         <button
           className={clsx(
-            'ficus-button',
+            'ficus-button ficus-button-primary',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-            'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
             'disabled:opacity-50 disabled:cursor-not-allowed'
           )}
           onClick={() => rebuild.mutate(Array.from(selectedTargets))}
@@ -202,7 +204,11 @@ function GitUpdateSection() {
         >
           {rebuild.isPending ? 'Rebuilding…' : 'Rebuild selected'}
         </button>
-        {rebuild.error && <p className="text-sm text-danger">{formatUpdateError(rebuild.error)}</p>}
+        {rebuild.error && (
+          <p className="text-sm text-status-danger-600 dark:text-status-danger-400">
+            {formatUpdateError(rebuild.error)}
+          </p>
+        )}
       </div>
       <div className="border-b border-panel-border last:border-b-0 p-4 min-w-0">
         <h3 data-setting-target="latest-run" className="font-medium text-primary">
@@ -211,8 +217,10 @@ function GitUpdateSection() {
         <p className="text-sm text-muted">
           Status: {latest?.status ?? 'none'} {latest?.message ? `— ${latest.message}` : ''}
         </p>
-        {latest?.error && <p className="text-sm text-danger">{latest.error}</p>}
-        {apply.error && <p className="text-sm text-danger">{formatUpdateError(apply.error)}</p>}
+        {latest?.error && <p className="text-sm text-status-danger-600 dark:text-status-danger-400">{latest.error}</p>}
+        {apply.error && (
+          <p className="text-sm text-status-danger-600 dark:text-status-danger-400">{formatUpdateError(apply.error)}</p>
+        )}
         {statusQuery.error && <p className="text-sm text-warning">{formatUpdateError(statusQuery.error)}</p>}
         <p className="text-sm text-muted">Tasks: {latest?.selectedTasks?.join(', ') || 'none'}</p>
         {latest?.changedFiles?.length ? (

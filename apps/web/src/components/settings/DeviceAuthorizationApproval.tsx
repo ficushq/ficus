@@ -33,7 +33,7 @@ export function DeviceAuthorizationApproval(props: {
           <button
             onClick={props.onApprove}
             disabled={props.isPending || props.isSuccess}
-            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md disabled:opacity-50"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium rounded-md disabled:opacity-50"
           >
             {props.isSuccess ? 'Approved' : props.isPending ? 'Approving…' : 'Approve'}
           </button>

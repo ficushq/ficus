@@ -240,7 +240,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
             }
           >
             <button
-              className="ficus-button p-2 rounded-lg hover:bg-selection disabled:opacity-40"
+              className="ficus-button ficus-button-ghost p-2 rounded-lg hover:bg-selection disabled:opacity-40"
               disabled={Boolean(voiceReason) || live || controls?.connecting || stack.length > 0}
               aria-label={controls?.connecting ? 'Starting voice chat' : 'Start voice chat'}
               onClick={() => {
@@ -252,7 +252,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
             </button>
           </span>
           <button
-            className="ficus-button p-2 rounded-lg hover:bg-surface-hover"
+            className="ficus-button ficus-button-ghost p-2 rounded-lg"
             title={live ? 'Collapse assistant' : 'Close assistant'}
             onClick={() => (live ? setState('closed') : navigation.close())}
           >
@@ -262,11 +262,11 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       )}
       {!small && open && viewing && (
         <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-xs">
-          <button className="ficus-button text-muted py-1" onClick={navigation.back}>
+          <button className="ficus-button ficus-button-link text-muted py-1" onClick={navigation.back}>
             {navigation.entries.length > 1 ? '← Back' : '← Back to search'}
           </button>
           <button
-            className="ficus-button text-muted ml-auto py-1"
+            className="ficus-button ficus-button-link text-muted ml-auto py-1"
             disabled={live}
             title={live ? 'End voice before switching conversations' : undefined}
             onClick={() => {
@@ -275,7 +275,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
           >
             Recent chats
           </button>
-          <button className="ficus-button text-accent-light p-1" disabled={live} onClick={newChat}>
+          <button className="ficus-button ficus-button-ghost text-accent-light p-1" disabled={live} onClick={newChat}>
             <PlusIcon className="h-4 w-4" />
             <span className="sr-only">New chat</span>
           </button>
@@ -286,7 +286,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
           <MicIcon className="h-3.5 w-3.5 text-accent-light" />
           <span>Talking to Assistant · Type below to message the selected agent</span>
           <button
-            className="ficus-button ml-auto shrink-0 text-accent-light"
+            className="ficus-button ficus-button-link ml-auto shrink-0"
             onClick={() => {
               setCompact(false)
               while (navigationRef.current.entries.length && navigationRef.current.entries.at(-1)?.kind !== 'assistant')
@@ -319,14 +319,14 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       {!small && open && !viewing && browse && (
         <div className="min-h-0 overflow-y-auto">
           <section className="px-5 pb-4 space-y-2">
-            <button className="ficus-button py-2 text-xs text-muted" onClick={navigation.back}>
+            <button className="ficus-button ficus-button-link py-2 text-xs text-muted" onClick={navigation.back}>
               ← Back to search
             </button>
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-medium text-muted">Recent chats</h2>
               {existing && (
                 <button
-                  className="ficus-button text-xs text-accent-light"
+                  className="ficus-button ficus-button-link text-xs"
                   onClick={() => navigation.push({ kind: 'assistant', id, label: 'Assistant' })}
                 >
                   Continue current chat
@@ -363,7 +363,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
                   hash: location.hash,
                 }}
                 aria-disabled={live}
-                className="ficus-button block px-3 py-2 hover:bg-selection rounded-lg"
+                className="ficus-button ficus-button-ghost block px-3 py-2 hover:bg-selection rounded-lg"
                 onClick={(event) => {
                   if (live) {
                     event.preventDefault()
@@ -403,7 +403,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
             ))}
             {!browse && ((recent.data?.conversations.length ?? 0) > 5 || recent.data?.hasMore) && (
               <button
-                className="ficus-button text-xs text-muted"
+                className="ficus-button ficus-button-link text-xs text-muted"
                 onClick={() => navigation.push({ kind: 'recent', id: 'recent', label: 'Recent chats' })}
               >
                 View all chats →

@@ -63,7 +63,7 @@ describe('reconcileSquadSandboxSpecs', () => {
         {
           manager: makeManager(stub),
           buildOptions: (squad) => {
-            if (squad.id === 'sq2') throw new WorkspaceDotDirConflictError('/home/w/sq2', 'both-present')
+            if (squad.id === 'sq2') throw new WorkspaceDotDirConflictError('/home/w/sq2', 'ficus-not-a-directory')
             return buildOptions(squad)
           },
           isIdle: async () => true,
@@ -73,7 +73,7 @@ describe('reconcileSquadSandboxSpecs', () => {
 
     expect(stub.recreated.sort()).toEqual([Squad.getSandboxId('sq1'), Squad.getSandboxId('sq3')].sort())
     expect(warnings).toEqual([
-      `Sandbox spec reconcile skipped for squad sq2: ${new WorkspaceDotDirConflictError('/home/w/sq2', 'both-present').message}`,
+      `Sandbox spec reconcile skipped for squad sq2: ${new WorkspaceDotDirConflictError('/home/w/sq2', 'ficus-not-a-directory').message}`,
     ])
     expect(squads.length).toBe(3)
   })

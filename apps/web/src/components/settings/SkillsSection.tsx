@@ -167,11 +167,15 @@ export function SkillsSection() {
         </div>
         {canWriteSkills && (
           <div className="flex items-center gap-3 shrink-0">
-            <button type="button" onClick={() => setImporting(true)} className="ficus-button text-sm text-secondary">
+            <button
+              type="button"
+              onClick={() => setImporting(true)}
+              className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm"
+            >
               Import
             </button>
             <button
-              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
+              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md"
               onClick={() =>
                 editSkill({
                   id: '',
@@ -208,7 +212,7 @@ export function SkillsSection() {
               onChange={(e) => setImportContent(e.target.value)}
             />
             <button
-              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md disabled:opacity-50"
+              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md disabled:opacity-50"
               disabled={!importContent.trim() || importer.isPending}
               onClick={() => importer.mutate()}
             >
@@ -304,7 +308,7 @@ export function SkillsSection() {
                 </div>
                 <button
                   type="button"
-                  className="ficus-button px-3 py-1.5 text-sm bg-surface-hover rounded-md"
+                  className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm rounded-md"
                   onClick={addSupportFile}
                 >
                   Add file
@@ -324,7 +328,7 @@ export function SkillsSection() {
                       />
                       <button
                         type="button"
-                        className="ficus-button text-sm text-status-danger-600"
+                        className="ficus-button ficus-button-danger px-2 py-1 text-sm"
                         onClick={() => removeSupportFile(path)}
                       >
                         Remove
@@ -342,14 +346,14 @@ export function SkillsSection() {
 
             <div className="flex items-center gap-2">
               <button
-                className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
+                className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md"
                 disabled={save.isPending}
               >
                 Save
               </button>
               <button
                 type="button"
-                className="ficus-button px-3 py-1.5 text-sm bg-surface-hover rounded-md"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm rounded-md"
                 onClick={() => setEditing(null)}
               >
                 Cancel
@@ -386,25 +390,28 @@ export function SkillsSection() {
             </div>
             <div className="flex gap-2 shrink-0 flex-wrap justify-end">
               {canWriteSkills && (
-                <button className="ficus-button text-sm text-accent-light" onClick={() => editSkill(skill)}>
+                <button className="ficus-button ficus-button-link text-sm" onClick={() => editSkill(skill)}>
                   Edit
                 </button>
               )}
-              <button className="ficus-button text-sm text-accent-light" onClick={() => exportMarkdown(skill.id)}>
+              <button className="ficus-button ficus-button-link text-sm" onClick={() => exportMarkdown(skill.id)}>
                 Export
               </button>
               {skill.hasTemplate && (
-                <button className="ficus-button text-sm text-accent-light" onClick={() => setDiffId(skill.id)}>
+                <button className="ficus-button ficus-button-link text-sm" onClick={() => setDiffId(skill.id)}>
                   Diff
                 </button>
               )}
               {canWriteSkills && (
-                <button className="ficus-button text-sm text-muted" onClick={() => toggle.mutate(skill)}>
+                <button className="ficus-button ficus-button-link text-sm" onClick={() => toggle.mutate(skill)}>
                   {skill.disabled ? 'Enable' : 'Disable'}
                 </button>
               )}
               {canWriteSkills && !skill.hasTemplate && (
-                <button className="ficus-button text-sm text-status-danger-600" onClick={() => remove.mutate(skill.id)}>
+                <button
+                  className="ficus-button ficus-button-danger px-2 py-1 text-sm"
+                  onClick={() => remove.mutate(skill.id)}
+                >
                   Delete
                 </button>
               )}

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import { OfflineUpdateBlockedError, STALE_RUN_MS, planOfflineUpdate, runOfflineUpdate } from './update-offline'
 import { migrationListFingerprint } from '../db/migration-journal'
 import type { DeploymentFlavor } from '../services/updates/deployment-flavor'
@@ -137,7 +136,7 @@ describe('runOfflineUpdate', () => {
     expect(persisted.commands[0].status).toBe('failed')
   })
   it('keeps the status file in a pre-rename status dir while the checkout has only that one', async () => {
-    mkdirSync(join(root, LEGACY_HOME_DIR_NAME))
+    mkdirSync(join(root, '.other-settings'))
     const run = await runOfflineUpdate({
       repoRoot: root,
       fromSha: 'a'.repeat(40),
@@ -145,11 +144,11 @@ describe('runOfflineUpdate', () => {
       git: async (args) => (args[0] === 'diff' ? 'apps/core/src/x.ts\n' : 'b'.repeat(40)),
       runProcess: async () => ({ exitCode: 0, output: '' }),
     })
-    const persisted = JSON.parse(readFileSync(join(root, LEGACY_HOME_DIR_NAME, 'local-update-status.json'), 'utf8'))
+    const persisted = JSON.parse(readFileSync(join(root, '.ficus', 'local-update-status.json'), 'utf8'))
     expect(persisted.id).toBe(run.id)
   })
   it('reads the .ficus status file first when both status dirs exist', async () => {
-    mkdirSync(join(root, LEGACY_HOME_DIR_NAME))
+    mkdirSync(join(root, '.other-settings'))
     mkdirSync(join(root, '.ficus'))
     const running = {
       id: 'x',
@@ -172,9 +171,9 @@ describe('runOfflineUpdate', () => {
     ).rejects.toThrow(OfflineUpdateBlockedError)
   })
   it('refuses to run while a persisted run is still running', async () => {
-    mkdirSync(join(root, '.tau'))
+    mkdirSync(join(root, '.ficus'))
     writeFileSync(
-      join(root, '.tau', 'local-update-status.json'),
+      join(root, '.ficus', 'local-update-status.json'),
       JSON.stringify({
         id: 'x',
         status: 'running',
@@ -196,10 +195,10 @@ describe('runOfflineUpdate', () => {
     ).rejects.toThrow(OfflineUpdateBlockedError)
   })
   it('refuses to run while a persisted checking run is still fresh', async () => {
-    mkdirSync(join(root, '.tau'))
+    mkdirSync(join(root, '.ficus'))
     const nowIso = '2026-09-02T00:01:00.000Z'
     writeFileSync(
-      join(root, '.tau', 'local-update-status.json'),
+      join(root, '.ficus', 'local-update-status.json'),
       JSON.stringify({
         id: 'x',
         status: 'checking',
@@ -222,9 +221,9 @@ describe('runOfflineUpdate', () => {
     ).rejects.toThrow(OfflineUpdateBlockedError)
   })
   it('reconciles a stale offline run left running regardless of age and proceeds', async () => {
-    mkdirSync(join(root, '.tau'))
+    mkdirSync(join(root, '.ficus'))
     writeFileSync(
-      join(root, '.tau', 'local-update-status.json'),
+      join(root, '.ficus', 'local-update-status.json'),
       JSON.stringify({
         id: 'x',
         status: 'running',
@@ -244,13 +243,13 @@ describe('runOfflineUpdate', () => {
       now: () => '2026-09-02T00:00:30.000Z',
     })
     expect(run.status).toBe('succeeded')
-    const persisted = JSON.parse(readFileSync(join(root, '.tau', 'local-update-status.json'), 'utf8'))
+    const persisted = JSON.parse(readFileSync(join(root, '.ficus', 'local-update-status.json'), 'utf8'))
     expect(persisted.id).toBe(run.id)
   })
   it('reconciles a stale (>2h) non-offline running run and proceeds', async () => {
-    mkdirSync(join(root, '.tau'))
+    mkdirSync(join(root, '.ficus'))
     writeFileSync(
-      join(root, '.tau', 'local-update-status.json'),
+      join(root, '.ficus', 'local-update-status.json'),
       JSON.stringify({
         id: 'x',
         status: 'running',
@@ -273,10 +272,10 @@ describe('runOfflineUpdate', () => {
     expect(run.status).toBe('succeeded')
   })
   it('still throws for a fresh (<2h) non-offline running run', async () => {
-    mkdirSync(join(root, '.tau'))
+    mkdirSync(join(root, '.ficus'))
     const startedAt = '2026-09-02T00:00:00.000Z'
     writeFileSync(
-      join(root, '.tau', 'local-update-status.json'),
+      join(root, '.ficus', 'local-update-status.json'),
       JSON.stringify({
         id: 'x',
         status: 'running',

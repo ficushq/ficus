@@ -30,7 +30,7 @@ source:
   #            three are presigned GET credentials, and this file is not
   #            where credentials belong.
   mode: git-ssh
-  repo: git@github.com:ficushq/tau.git
+  repo: git@github.com:ficushq/ficus.git
   # Branch, tag, or full/abbreviated commit sha. Recorded metadata even in
   # artifact mode (there is no checkout to move, but the ref is still logged).
   ref: main

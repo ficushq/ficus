@@ -224,6 +224,7 @@ export class BashInvocationRegistry {
               // Preserve the first proven outcome/timestamp across persistence
               // retries, including an already-published immutable terminal file.
               if (!record.terminalAt) {
+                record.priorState = record.state
                 record.state = state
                 record.terminalAt = this.now().toISOString()
               }
@@ -344,10 +345,7 @@ export class BashInvocationRegistry {
       record.startToken.length > 0
     const terminal = ['success', 'failed', 'terminated'].includes(record.state)
     const partialStartingHistory =
-      record.state === 'terminated' &&
-      record.priorState === 'starting' &&
-      record.pgid === undefined &&
-      record.sid === undefined
+      ['failed', 'terminated'].includes(record.state) && record.priorState === 'starting' && !ownsProcess
     if (
       record.version !== 1 ||
       record.invocationIdHash !== key ||

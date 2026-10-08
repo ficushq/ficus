@@ -43,7 +43,7 @@ export function ChannelIdsEditor({
                 type="button"
                 onClick={() => onChange(value.filter((_, i) => i !== index))}
                 aria-label={`Remove ${kind.toLowerCase()} channel ${index + 1}`}
-                className="ficus-button text-xs text-muted hover:text-danger px-1 shrink-0"
+                className="ficus-button ficus-button-ghost text-xs hover:text-status-danger-600 dark:hover:text-status-danger-400 px-1 shrink-0"
               >
                 ✕
               </button>
@@ -54,7 +54,7 @@ export function ChannelIdsEditor({
       <button
         type="button"
         onClick={() => onChange([...value, ''])}
-        className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
+        className="ficus-button ficus-button-link text-xs font-medium"
       >
         + Add {kind.toLowerCase()} channel
       </button>

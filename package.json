@@ -19,7 +19,7 @@
     "reload:api": "pm2 reload ecosystem.config.js --update-env --only $(bun scripts/pm2-name.ts api)",
     "reload:worker": "pm2 reload ecosystem.config.js --update-env --only $(bun scripts/pm2-name.ts worker)",
     "reload:core": "bun reload:api && bun reload:worker",
-    "reload:web": "pm2 reload ecosystem.config.js --update-env --only tau-web",
+    "reload:web": "pm2 reload ecosystem.config.js --update-env --only ficus-web",
     "logs": "pm2 logs",
     "dev": "bun run --filter core --filter web dev",
     "dev:core": "bun run --filter core dev",
@@ -107,7 +107,9 @@
     "dev:docs": "bun run --filter @ficus/docs dev",
     "build:docs": "bun run --filter @ficus/docs build",
     "check:docs": "bun run --filter @ficus/docs check",
-    "brand:generate": "bun run scripts/brand/generate.ts"
+    "brand:generate": "bun run scripts/brand/generate.ts",
+    "brand:social": "bun run scripts/brand/social-preview.ts",
+    "brand:app-store": "bun run scripts/brand/app-store.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9",

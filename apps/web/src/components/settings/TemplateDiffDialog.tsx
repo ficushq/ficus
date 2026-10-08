@@ -97,7 +97,7 @@ export function TemplateDiffDialog({
                 Current
               </span>
             </div>
-            <button onClick={onClose} className="ficus-button text-muted hover:text-primary text-xl leading-none">
+            <button onClick={onClose} className="ficus-button ficus-button-ghost text-xl leading-none">
               ✕
             </button>
           </div>
@@ -114,7 +114,7 @@ export function TemplateDiffDialog({
                     key={field}
                     onClick={() => handleRevertField(field)}
                     disabled={isReverting}
-                    className="ficus-button text-xs px-2 py-1 rounded bg-status-attention-100 dark:bg-status-attention-900/30 text-status-attention-800 dark:text-status-attention-300 hover:bg-status-attention-200 dark:hover:bg-status-attention-900/50 disabled:opacity-50 font-mono"
+                    className="ficus-button ficus-button-secondary text-xs px-2 py-1 rounded bg-status-attention-100 dark:bg-status-attention-900/30 text-status-attention-800 dark:text-status-attention-300 hover:bg-status-attention-200 dark:hover:bg-status-attention-900/50 disabled:opacity-50 font-mono"
                   >
                     Revert {field}
                   </button>
@@ -196,7 +196,7 @@ export function TemplateDiffDialog({
             <button
               onClick={handleRevert}
               disabled={isReverting || !hasDiff}
-              className="ficus-button text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
+              className="ficus-button ficus-button-primary text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
             >
               {isReverting ? 'Reverting…' : 'Revert to Template'}
             </button>

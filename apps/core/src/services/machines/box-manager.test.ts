@@ -1,3 +1,4 @@
+import { foreignUnits, FOREIGN_BOX_UNIT_PREFIX, FOREIGN_USER_UNIT_PREFIX } from './foreign-unit.fixture'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { createHash, randomBytes, randomUUID } from 'crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
@@ -55,8 +56,13 @@ import {
   roleWantsDocker,
   tarCodecFlag,
 } from './box-manager'
-import { LEGACY_BOX_UNIT_PREFIX, LEGACY_USER_UNIT_PREFIX } from './box-paths'
-import { insertMachine, deleteMachine, listMachines, upsertMachineBox } from './queries'
+import {
+  insertMachine,
+  deleteMachine,
+  listMachines,
+  upsertMachineBox,
+  queryTransientSharedMachineStatus,
+} from './queries'
 import type { Machine, MachineBox } from './queries'
 import type { SshResult, SshRunner, SshStreamer } from './ssh'
 
@@ -2234,9 +2240,12 @@ describe('resolveMachineForBox', () => {
   })
 
   it('throws MachineUnavailableError with the documented message when no shared machine is ready', async () => {
-    await expect(resolveMachineForBox(null, { queryReadySharedMachines: async () => [] })).rejects.toThrow(
-      'no ready shared machine registered'
-    )
+    await expect(
+      resolveMachineForBox(null, {
+        queryReadySharedMachines: async () => [],
+        queryTransientSharedMachineStatus: async () => null,
+      })
+    ).rejects.toThrow('no ready shared machine registered')
   })
 
   it('returns the sole ready shared machine', async () => {
@@ -3424,23 +3433,26 @@ describe('stopBox', () => {
     )
   })
 
-  it('marks an unreachable-machine stop unverified without attempting SSH or tunnel mutation', async () => {
-    const box = makeBox({ status: 'ready' })
-    const machine = makeMachine({ status: 'unreachable' })
-    const upserts: string[] = []
-    const result = await stopBox('sb-1', {
-      runner: { run: async () => Promise.reject(new Error('must not SSH')) } as any,
-      tunnels: { removeForward: async () => Promise.reject(new Error('must not mutate tunnel')) } as any,
-      getMachineBox: async () => box,
-      getMachine: async () => machine,
-      upsertMachineBox: async (update: { status?: string }) => {
-        upserts.push(update.status ?? '')
-        return { ...box, status: update.status } as MachineBox
-      },
-    })
-    expect(result).toEqual({ kind: 'unverified' })
-    expect(upserts).toEqual(['stop_unverified'])
-  })
+  it.each(['registered', 'bootstrapping', 'unreachable', 'reaping', 'terminated'])(
+    'preserves observed %s machine status without attempting SSH or tunnel mutation',
+    async (status) => {
+      const box = makeBox({ status: 'ready' })
+      const machine = makeMachine({ status })
+      const upserts: string[] = []
+      const result = await stopBox('sb-1', {
+        runner: { run: async () => Promise.reject(new Error('must not SSH')) } as any,
+        tunnels: { removeForward: async () => Promise.reject(new Error('must not mutate tunnel')) } as any,
+        getMachineBox: async () => box,
+        getMachine: async () => machine,
+        upsertMachineBox: async (update: { status?: string }) => {
+          upserts.push(update.status ?? '')
+          return { ...box, status: update.status } as MachineBox
+        },
+      })
+      expect(result).toEqual({ kind: 'unverified', machineStatus: status })
+      expect(upserts).toEqual(['stop_unverified'])
+    }
+  )
 
   it('deletes a stale box row when its recorded machine row is already gone', async () => {
     const box = makeBox({ status: 'stop_unverified' })
@@ -3559,7 +3571,7 @@ describe('persistent park/resume (executed remote shell)', () => {
 
   function fixture(sandboxId: string, legacy: boolean) {
     const ctl = boxUnitControl({ sandboxId, unixUser: boxUnixUser(sandboxId) })
-    const names = legacy ? ctl.legacy : ctl
+    const names = legacy ? foreignUnits(ctl) : ctl
     const dir = mkdtempSync(join(tmpdir(), 'box-park-'))
     dirs.push(dir)
     const manager = ctl.systemctl.replace('sudo systemctl', '').trim()
@@ -3655,7 +3667,7 @@ done
   for (const sandboxId of ['agent_park', 'squad_park']) {
     for (const legacy of [false, true]) {
       const label = `${sandboxId} ${legacy ? 'legacy' : 'current'}`
-      it(`${label}: park persists across simulated manager restart; retry and resume pair enablement`, async () => {
+      it(`${label}: ${legacy ? 'finalized controls refuse unmigrated units without touching them' : 'park persists across simulated manager restart; retry and resume pair enablement'}`, async () => {
         const f = fixture(sandboxId, legacy)
         let box = makeBox({ sandboxId, unixUser: boxUnixUser(sandboxId) })
         const deps: BoxManagerDeps = {
@@ -3668,6 +3680,19 @@ done
             return box
           },
           fetch: makeFakeFetch([], [{ ok: true, status: 200 }]),
+        }
+        if (legacy) {
+          expect(await stopBox(sandboxId, deps)).toEqual({ kind: 'unverified' })
+          expect(box.status).toBe('stop_unverified')
+          await expect(
+            startBoxAndAwaitHealth({ machine: makeMachine(), sandboxId, unixUser: box.unixUser, port: box.port }, deps)
+          ).rejects.toThrow()
+          for (const unit of f.names.allUnits.split(' ')) expect(f.value(unit, 'active')).toBe('active')
+          expect(f.value(f.names.socket, 'enabled')).toBe('enabled')
+          expect(f.calls()).not.toMatch(
+            new RegExp(`(?:disable|enable|stop|restart) .*${f.names.socket.replaceAll('.', '\\.')}`)
+          )
+          return
         }
         expect(await stopBox(sandboxId, deps)).toEqual({ kind: 'verified' })
         expect(f.value(f.names.socket, 'enabled')).toBe('disabled')
@@ -3682,7 +3707,7 @@ done
         expect(f.value(f.names.socket, 'active')).toBe('active')
         expect(f.value(f.names.unit, 'enabled')).toBe('disabled')
         expect(f.calls()).not.toContain('*')
-        const other = legacy ? f.ctl.socket : f.ctl.legacy.socket
+        const other = legacy ? f.ctl.socket : foreignUnits(f.ctl).socket
         expect(f.calls()).not.toMatch(new RegExp(`(?:disable|enable|stop|restart) .*${other.replaceAll('.', '\\.')}`))
       })
 
@@ -3691,8 +3716,6 @@ done
         ['stop', ''],
         ['', 'error'],
         ['', 'empty'],
-        ['', 'load-error'],
-        ['', 'load-empty'],
         ['', 'still-active'],
       ]) {
         it(`${label}: ${verb || state} failure cannot verify a previously stopped row`, async () => {
@@ -3719,8 +3742,6 @@ done
         ['restart', ''],
         ['', 'error'],
         ['', 'empty'],
-        ['', 'load-error'],
-        ['', 'load-empty'],
       ]) {
         it(`${label}: resume rejects ${verb || state} failure before tunnel/health success`, async () => {
           const f = fixture(sandboxId, legacy)
@@ -3813,9 +3834,7 @@ describe('boxUnitControl', () => {
     expect(ctl.unit).toBe(`ficus-box-${unixUser}.service`)
     expect(ctl.systemctl).toBe('sudo systemctl')
     // Both names while the bridge lasts: a box not re-provisioned since the rename logs under its old unit.
-    expect(ctl.journalctl).toBe(
-      `sudo journalctl -u ficus-box-${unixUser}.service -u ${LEGACY_BOX_UNIT_PREFIX}-${unixUser}.service`
-    )
+    expect(ctl.journalctl).toBe(`sudo journalctl -u ficus-box-${unixUser}.service`)
     expect(ctl.isActiveCommand()).toBe(`sudo systemctl is-active ficus-box-${unixUser}.service`)
   })
 
@@ -3829,7 +3848,7 @@ describe('boxUnitControl', () => {
       // `$uid` is a REMOTE shell variable the caller defines (`uid=$(id -u …)`);
       // these two strings are exactly what the machine snapshot used to inline.
       expect(ctl.journalctl).toBe(
-        `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid journalctl --user -u ficus-sandbox-server.service -u ${LEGACY_USER_UNIT_PREFIX}.service`
+        `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid journalctl --user -u ficus-sandbox-server.service`
       )
       expect(ctl.isActiveCommand()).toBe(
         `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid systemctl --user is-active ficus-sandbox-server.service`
@@ -3916,10 +3935,10 @@ describe('machine snapshot liveness (executed)', () => {
     expect(await livenessFor({ sock: 'active', service: 'failed', legacy: 'inactive' })).toBe('exited')
   })
 
-  it('falls back to the LEGACY user unit when there is no socket yet', async () => {
+  it('does not adopt a legacy-only user unit', async () => {
     // A box not re-provisioned since the socket layout landed: its port is held
     // by the old user-manager server, and condemning it would be wrong.
-    expect(await livenessFor({ sock: 'inactive', service: 'inactive', legacy: 'active' })).toBe('running')
+    expect(await livenessFor({ sock: 'inactive', service: 'inactive', legacy: 'active' })).toBe('exited')
   })
 
   it('reads nothing active as exited', async () => {
@@ -3937,7 +3956,7 @@ describe('machine snapshot liveness (executed)', () => {
   async function legacyNamedLiveness(states: { sock: string; service: string }): Promise<string> {
     const sandboxId = 'agent_live2'
     const unixUser = boxUnixUser(sandboxId)
-    const legacy = `${LEGACY_BOX_UNIT_PREFIX}-${unixUser}`
+    const legacy = `${FOREIGN_BOX_UNIT_PREFIX}-${unixUser}`
     const command = buildMachineSnapshotCommand({ sandboxId, unixUser })
     const dir = mkdtempSync(join(tmpdir(), 'box-liveness-legacy-'))
     stubs.push(dir)
@@ -3969,8 +3988,8 @@ describe('machine snapshot liveness (executed)', () => {
   }
 
   it('reads a legacy-named box through its legacy socket and server', async () => {
-    expect(await legacyNamedLiveness({ sock: 'active', service: 'inactive' })).toBe('idle')
-    expect(await legacyNamedLiveness({ sock: 'active', service: 'active' })).toBe('running')
+    expect(await legacyNamedLiveness({ sock: 'active', service: 'inactive' })).toBe('exited')
+    expect(await legacyNamedLiveness({ sock: 'active', service: 'active' })).toBe('exited')
     expect(await legacyNamedLiveness({ sock: 'inactive', service: 'inactive' })).toBe('exited')
   })
 })
@@ -4171,29 +4190,27 @@ describe('box unit commands by mode', () => {
     expect(provCall.command).not.toContain('--with-docker')
     // Resuming pairs persistent parking with enable --now; failure is not
     // hidden by a successful server restart.
-    const legacy = `${LEGACY_BOX_UNIT_PREFIX}-${unixUser}`
+    const legacy = `${FOREIGN_BOX_UNIT_PREFIX}-${unixUser}`
     const restart = calls.find((c) => c.command.includes('systemctl'))!.command
     expect(restart).toContain(
       `sudo systemctl reset-failed ${unit} 2>/dev/null || true; sudo systemctl enable --now ficus-box-${unixUser}.socket && sudo systemctl restart ${unit}`
     )
-    // ...or the box's legacy units, when only those are loaded (not re-provisioned since the rename).
-    expect(restart).toContain(`sudo systemctl restart ${legacy}.service`)
+    // Finalized runtime control never falls back to old names.
+    expect(restart).not.toContain(`sudo systemctl restart ${legacy}.service`)
 
     const stop = await stopCommand(sandboxId)
     expect(stop).toContain(
       `sudo systemctl stop ficus-box-${unixUser}.socket ficus-box-${unixUser}-proxy.service ${unit}`
     )
-    expect(stop).toContain(`sudo systemctl stop ${legacy}.socket ${legacy}-proxy.service ${legacy}.service`)
+    expect(stop).not.toContain(`sudo systemctl stop ${legacy}.socket ${legacy}-proxy.service ${legacy}.service`)
 
     const snapshot = await snapshotCommand(sandboxId, 'agent')
     expect(snapshot).toContain(`sock=$(sudo systemctl is-active ficus-box-${unixUser}.socket 2>/dev/null || true)`)
     expect(snapshot).toContain(`state=$(sudo systemctl is-active ${unit} 2>/dev/null || true)`)
-    expect(snapshot).toContain(`sock=$(sudo systemctl is-active ${legacy}.socket 2>/dev/null || true)`)
-    // A system-mode box that has NOT been re-provisioned since the unit-mode
-    // split still runs the old user unit; without this leg it would read
-    // `exited` and be condemned on its first unhealthy probe.
-    expect(snapshot).toContain(`systemctl --user is-active ${LEGACY_USER_UNIT_PREFIX}.service`)
-    expect(snapshot).toContain(`sudo journalctl -u ${unit} -u ${legacy}.service -n 200 --no-pager`)
+    expect(snapshot).not.toContain(`sock=$(sudo systemctl is-active ${legacy}.socket 2>/dev/null || true)`)
+    // Old unit activity cannot make a finalized canonical box appear alive.
+    expect(snapshot).not.toContain(`systemctl --user is-active ${FOREIGN_USER_UNIT_PREFIX}.service`)
+    expect(snapshot).toContain(`sudo journalctl -u ${unit} -n 200 --no-pager`)
   })
 
   it('leaves a squad_* box on its user manager for persistent stop/resume', async () => {
@@ -4209,14 +4226,14 @@ describe('box unit commands by mode', () => {
     expect(restart).toContain(
       `${userCtl} reset-failed ficus-sandbox-server.service 2>/dev/null || true; ${userCtl} enable --now ficus-sandbox-server.socket && ${userCtl} restart ficus-sandbox-server.service`
     )
-    expect(restart).toContain(`${userCtl} restart ${LEGACY_USER_UNIT_PREFIX}.service`)
+    expect(restart).not.toContain(`${userCtl} restart ${FOREIGN_USER_UNIT_PREFIX}.service`)
 
     const stop = await stopCommand(sandboxId)
     expect(stop).toContain(
       `${userCtl} stop ficus-sandbox-server.socket ficus-sandbox-server-proxy.service ficus-sandbox-server.service`
     )
-    expect(stop).toContain(
-      `${userCtl} stop ${LEGACY_USER_UNIT_PREFIX}.socket ${LEGACY_USER_UNIT_PREFIX}-proxy.service ${LEGACY_USER_UNIT_PREFIX}.service`
+    expect(stop).not.toContain(
+      `${userCtl} stop ${FOREIGN_USER_UNIT_PREFIX}.socket ${FOREIGN_USER_UNIT_PREFIX}-proxy.service ${FOREIGN_USER_UNIT_PREFIX}.service`
     )
 
     const snapshot = await snapshotCommand(sandboxId, 'squad')
@@ -4228,9 +4245,9 @@ describe('box unit commands by mode', () => {
     )
     // A user-mode box's pre-socket layout used the SAME service unit name, so
     // there is no separate legacy probe to run.
-    expect(snapshot).toContain('legacy=;')
+    expect(snapshot).not.toContain('legacy=;')
     expect(snapshot).toContain(
-      `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid journalctl --user -u ficus-sandbox-server.service -u ${LEGACY_USER_UNIT_PREFIX}.service -n 200 --no-pager`
+      `sudo -u '${unixUser}' env XDG_RUNTIME_DIR=/run/user/$uid journalctl --user -u ficus-sandbox-server.service -n 200 --no-pager`
     )
   })
 })
@@ -4707,6 +4724,20 @@ describe('queryReadySharedMachines (DB)', () => {
   }
   beforeEach(cleanup)
   afterEach(cleanup)
+
+  it('observes only transient general-shared machine status, never dedicated/squad/commons or permanent hosts', async () => {
+    for (const status of ['parked', 'disabled', 'ready', 'reaping', 'terminated'])
+      await insertMachine(machineValues(status, { status }))
+    for (const purpose of ['dedicated', 'squad', 'commons'])
+      await insertMachine(machineValues(purpose, { status: 'bootstrapping', purpose }))
+    await insertMachine(machineValues('ded-scope', { status: 'bootstrapping', scope: 'dedicated' }))
+    expect(await queryTransientSharedMachineStatus()).toBeNull()
+    for (const status of ['registered', 'bootstrapping', 'unreachable']) {
+      const machine = await insertMachine(machineValues('eligible-' + status, { status }))
+      expect(await queryTransientSharedMachineStatus()).toBe(status)
+      await deleteMachine(machine.id)
+    }
+  })
 
   it('counts boxes per ready shared machine and excludes non-ready/non-shared', async () => {
     const ready = await insertMachine(machineValues('ready', { status: 'ready', scope: 'shared' }))

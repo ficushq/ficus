@@ -1188,19 +1188,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     return this.queueExecution(input)
   }
 
-  /**
-   * Try to confirm a pending human message already claimed by the DB-backed
-   * drain (injectedAt != null) and then processed by the SDK.
-   * If content is provided, first looks for a claimed pending message with exact
-   * content. If no content match is found and content is omitted (for example,
-   * an image-only persisted SDK user message), falls back to DB-backed SDK
-   * processing order: steer first, then follow-up, then other pending messages;
-   * FIFO within each group. A neutral prompt persisted by the SDK must not
-   * confirm unrelated unclaimed rows.
-   * Returns the confirmed message, or null if none found.
-   * @param content - Optional SDK user message content to match exactly.
-   * @returns The confirmed message, or null if none found.
-   */
+  /** Legacy content-only confirmation is deliberately a no-op; use a trusted SDK claim. */
   async tryConfirmPendingMessage(
     content?: string,
     identity?: pendingDelivery.ResponseGroupIdentity
@@ -1208,10 +1196,25 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     return pendingDelivery.tryConfirmPendingMessage(this.id, content, identity)
   }
 
+  async confirmSessionDelivery(
+    deliveryId: string,
+    owner: pendingDelivery.SessionDeliveryOwner,
+    entryId: string,
+    identity: pendingDelivery.ResponseGroupIdentity
+  ): Promise<Message[]> {
+    return pendingDelivery.confirmSessionDelivery(this.id, deliveryId, owner, entryId, identity)
+  }
+
+  async reconcileSessionDeliveries(
+    entries: pendingDelivery.SessionDeliveryReceipts,
+    generation?: string
+  ): Promise<void> {
+    return pendingDelivery.reconcileSessionDeliveries(this.id, entries, generation)
+  }
+
   /**
    * Confirm a specific pending human message for this agent.
-   * Active-session control messages use this with the persisted message id so
-   * steer/follow-up confirmation follows SDK processing order, not DB creation order.
+   * Explicit non-SDK consumption only; SDK events use confirmSessionDelivery.
    * Returns the confirmed message, or null if the message is not pending for this agent.
    * @param messageId - The pending message id to confirm.
    * @returns The confirmed message, or null if none was confirmed.
@@ -1225,7 +1228,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
 
   /**
    * Confirm all pending human messages for the agent.
-   * Called after sendPrompt when multiple messages may have been queued.
+   * @deprecated Explicit legacy bulk consumption only; never call from SDK delivery.
    * @returns The number of messages confirmed.
    */
   async confirmAllPendingMessages(): Promise<number> {
@@ -1250,8 +1253,10 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    * row locks plus the injectedAt CAS marker so two workers cannot deliver the
    * same pending row.
    */
-  async claimInitialPendingMessagesForSessionDelivery(): Promise<Message[]> {
-    return pendingDelivery.claimInitialPendingMessagesForSessionDelivery(this.id)
+  async claimInitialPendingMessagesForSessionDelivery(
+    owner?: pendingDelivery.SessionDeliveryOwner
+  ): Promise<Message[]> {
+    return pendingDelivery.claimInitialPendingMessagesForSessionDelivery(this.id, owner)
   }
 
   /**
@@ -1267,16 +1272,22 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    * Atomically claim a pending human message for delivery to a live SDK session.
    * Returns null if another consumer already claimed/confirmed it.
    */
-  async claimPendingInterventionForSessionDelivery(messageId: string): Promise<Message | null> {
-    return pendingDelivery.claimPendingInterventionForSessionDelivery(this.id, messageId)
+  async claimPendingInterventionForSessionDelivery(
+    messageId: string,
+    owner?: pendingDelivery.SessionDeliveryOwner
+  ): Promise<Message | null> {
+    return pendingDelivery.claimPendingInterventionForSessionDelivery(this.id, messageId, owner)
   }
 
   /**
    * Reset a claimed pending message so a future queue drain can retry it.
    * Used when the SDK rejects delivery after the injectedAt CAS claim.
    */
-  async resetPendingInterventionSessionDelivery(messageId: string): Promise<void> {
-    return pendingDelivery.resetPendingInterventionSessionDelivery(this.id, messageId)
+  async resetPendingInterventionSessionDelivery(
+    messageId: string,
+    claim?: MessageMetadata['sessionDelivery']
+  ): Promise<void> {
+    return pendingDelivery.resetPendingInterventionSessionDelivery(this.id, messageId, claim)
   }
 
   /**

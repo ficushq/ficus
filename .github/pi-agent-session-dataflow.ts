@@ -344,7 +344,13 @@ export function verifyAgentSessionDataflow(source: string, fileName: string): vo
     entryAssignment.operatorToken.kind !== ts.SyntaxKind.EqualsToken ||
     !ts.isIdentifier(entryAssignment.left) ||
     entryAssignment.left.text !== 'entryId' ||
-    !exactCall(entryAssignment.right, 'this.sessionManager', 'appendMessage', 'event.message') ||
+    !(
+      ts.isCallExpression(entryAssignment.right) &&
+      property(entryAssignment.right.expression, 'this.sessionManager', 'appendMessage') &&
+      entryAssignment.right.arguments.length === 2 &&
+      expressionPath(entryAssignment.right.arguments[0]) === 'event.message' &&
+      exactCall(entryAssignment.right.arguments[1], 'this._deliveryIds', 'get', 'event.message')
+    ) ||
     !next ||
     !ts.isExpressionStatement(next) ||
     !ts.isCallExpression(next.expression) ||
@@ -361,16 +367,18 @@ export function verifyAgentSessionDataflow(source: string, fileName: string): vo
   const type = propertyAssignment('type')?.initializer
   const message = propertyAssignment('message')?.initializer
   const sessionFile = propertyAssignment('sessionFile')?.initializer
+  const deliveryId = propertyAssignment('deliveryId')?.initializer
   const entryId = object.properties.find(
     (item): item is ts.ShorthandPropertyAssignment =>
       ts.isShorthandPropertyAssignment(item) && item.name.text === 'entryId'
   )
   if (
-    object.properties.length !== 4 ||
+    object.properties.length !== 5 ||
     !type ||
     !ts.isStringLiteral(type) ||
     type.text !== 'session_message_persisted' ||
     expressionPath(message) !== 'event.message' ||
+    !exactCall(deliveryId, 'this._deliveryIds', 'get', 'event.message') ||
     !entryId ||
     !sessionFile ||
     !ts.isCallExpression(sessionFile) ||
@@ -403,7 +411,7 @@ export function verifyAgentSessionDataflow(source: string, fileName: string): vo
         ts.isPropertyAssignment(item) && ts.isIdentifier(item.name) && item.name.text === 'type'
     )
     return (
-      object.properties.length === 4 &&
+      object.properties.length === 5 &&
       Boolean(type && ts.isStringLiteral(type.initializer) && type.initializer.text === 'session_message_persisted') &&
       Boolean(message && expressionPath(message.initializer) === 'event.message')
     )
@@ -443,8 +451,9 @@ export function verifyAgentSessionDataflow(source: string, fileName: string): vo
     throw new Error('unexpected custom message persistence sink')
   if (
     appendMessageCalls.length !== 1 ||
-    appendMessageCalls[0]!.arguments.length !== 1 ||
-    expressionPath(appendMessageCalls[0]!.arguments[0]) !== 'event.message'
+    appendMessageCalls[0]!.arguments.length !== 2 ||
+    expressionPath(appendMessageCalls[0]!.arguments[0]) !== 'event.message' ||
+    !exactCall(appendMessageCalls[0]!.arguments[1], 'this._deliveryIds', 'get', 'event.message')
   )
     throw new Error('unexpected session message persistence sink')
 
@@ -497,8 +506,16 @@ export function verifyAgentSessionDataflow(source: string, fileName: string): vo
   if (
     setter.operatorToken.kind !== ts.SyntaxKind.EqualsToken ||
     !property(setter.left, 'this', '_eventSanitizer') ||
-    !ts.isIdentifier(setter.right) ||
-    setter.right.text !== 'sanitizer'
+    !ts.isArrowFunction(setter.right) ||
+    setter.right.getText(parsed.sourceFile).replace(/\s/g, '') !==
+      `async (original) => {
+      const event = sanitizer ? await sanitizer(original) : original;
+      if ("message" in original && "message" in event) {
+        const deliveryId = this._deliveryIds.get(original.message);
+        if (deliveryId) this._deliveryIds.set(event.message, deliveryId);
+      }
+      return event;
+    }`.replace(/\s/g, '')
   )
-    throw new Error('sanitizer setter must assign its parameter')
+    throw new Error('sanitizer setter must preserve awaited sanitization and trusted identity')
 }

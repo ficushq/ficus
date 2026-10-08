@@ -7,11 +7,31 @@ export type RepositorySetupInput = Pick<
   CreateWorkStreamInput,
   'repository' | 'gitRemote' | 'worktree' | 'branch' | 'baseBranch' | 'baseSource'
 >
-export type RepositoryExec = (args: string[]) => Promise<string>
+export type RepositoryExec = (args: string[], options?: { env?: Record<string, string> }) => Promise<string>
+/** The squad's authorized GitHub credential, or undefined when none is assigned. */
+export type ResolveGitHubToken = () => Promise<string | undefined>
 
 export type { WorktreeOwnership } from '@ficus/shared'
 
 type RecordOwnership = (ownership: WorktreeOwnership) => unknown
+
+/** Read only by the one-off helper below; its name, never its value, is in argv. */
+export const GITHUB_FETCH_TOKEN_ENV = 'FICUS_REPOSITORY_SETUP_GITHUB_TOKEN'
+
+/**
+ * Git config for a single fetch that answers only github.com HTTPS credential
+ * requests from {@link GITHUB_FETCH_TOKEN_ENV}. The empty values first clear
+ * every helper inherited from system/global/repo config (and the squad shell's
+ * `git` wrapper), so no other helper can `store` the credential.
+ */
+export const githubFetchCredentialConfig = [
+  '-c',
+  'credential.helper=',
+  '-c',
+  'credential.https://github.com.helper=',
+  '-c',
+  `credential.https://github.com.helper=!f() { if [ "$1" = get ]; then printf 'username=x-access-token\\npassword=%s\\n' "$${GITHUB_FETCH_TOKEN_ENV}"; fi; }; f`,
+] as const
 
 /** Recognize resource identity, never credentials or an account selection. */
 export function codeHostFromRemote(remote: string): { integration: string; repository: string } | undefined {
@@ -30,7 +50,8 @@ export async function prepareRepository(
   key: string,
   metadata: Record<string, unknown>,
   recordOwnership?: RecordOwnership,
-  validateTarget?: (target: string, repository: string) => unknown
+  validateTarget?: (target: string, repository: string) => unknown,
+  resolveGitHubToken?: ResolveGitHubToken
 ): Promise<Record<string, unknown>> {
   const physical = (dir: string) => exec(['sh', '-c', 'cd -- "$1" && pwd -P', 'ficus-worktree', dir])
   const root = (await physical(workspace)).trim()
@@ -49,7 +70,9 @@ export async function prepareRepository(
   const remotes = (await git('remote', 'get-url', '--push', '--all', remote)).split('\n')
   if (remotes.length !== 1) throw new Error('Choose a Git remote with exactly one push URL')
   const detected = codeHostFromRemote(remotes[0])
-  const fetchIdentity = codeHostFromRemote(await git('remote', 'get-url', remote))
+  // get-url applies insteadOf rewrites, so this is the URL fetch will contact.
+  const fetchUrl = await git('remote', 'get-url', remote)
+  const fetchIdentity = codeHostFromRemote(fetchUrl)
   if (detected && fetchIdentity && detected.repository.toLowerCase() !== fetchIdentity.repository.toLowerCase())
     throw new Error('Remote fetch and push repositories differ; select a remote targeting one repository')
   const explicit = metadata.codeHost as { integration?: string; repository?: string } | undefined
@@ -138,14 +161,34 @@ export async function prepareRepository(
           baseCommit = await git('rev-parse', '--verify', `refs/heads/${base}^{commit}`)
         } else {
           try {
-            await git(
-              'fetch',
-              '--no-tags',
-              '--no-recurse-submodules',
-              '--no-write-fetch-head',
-              '--refmap=',
-              remote,
-              `+refs/heads/${base}:${fetchedRef}`
+            // Never prompt: a server-side fetch has no terminal to answer one.
+            const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0' }
+            let credentialConfig: readonly string[] = []
+            // Private GitHub repos need the squad's authorized credential; the
+            // helper is scoped to github.com HTTPS and to this one command.
+            if (fetchIdentity?.integration === 'github' && fetchUrl.startsWith('https://')) {
+              const token = await resolveGitHubToken?.()
+              if (token !== undefined) {
+                if (!/^[\x21-\x7e]+$/.test(token)) throw new Error('Unusable GitHub credential')
+                env[GITHUB_FETCH_TOKEN_ENV] = token
+                credentialConfig = githubFetchCredentialConfig
+              }
+            }
+            await exec(
+              [
+                'git',
+                '-C',
+                repo,
+                ...credentialConfig,
+                'fetch',
+                '--no-tags',
+                '--no-recurse-submodules',
+                '--no-write-fetch-head',
+                '--refmap=',
+                remote,
+                `+refs/heads/${base}:${fetchedRef}`,
+              ],
+              { env }
             )
             baseCommit = await git('rev-parse', '--verify', `${fetchedRef}^{commit}`)
           } catch {
@@ -230,7 +273,7 @@ export async function setupWorkStreamRepository(
   const manager = getSandboxManager()
   try {
     return await prepareRepository(
-      async (args) => (await manager.exec(Squad.getSandboxId(squadId), args)).toString(),
+      async (args, options) => (await manager.exec(Squad.getSandboxId(squadId), args, options)).toString(),
       workspace,
       input,
       key,
@@ -239,6 +282,12 @@ export async function setupWorkStreamRepository(
       async (target, repository) => {
         const { assertRepositoryTargetAvailable } = await import('./worktree-cleanup-store')
         await assertRepositoryTargetAvailable(squadId, key, target, repository)
+      },
+      // Same authority as agent shells' `ficus integration exec github --squad`:
+      // the squad's default live, validated GitHub assignment, nothing wider.
+      async () => {
+        const { resolveGitHubConnection } = await import('../integrations/github/resolve-connection')
+        return (await resolveGitHubConnection(squadId))?.credential.accessToken
       }
     )
   } catch (error) {

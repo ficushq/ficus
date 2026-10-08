@@ -4,8 +4,8 @@ import type { LocalEventHandler } from './local-events'
 /**
  * Operator-triggered restart of BOTH Ficus processes.
  *
- * `POST /api/system/restart` runs in the api process, but tau-api and
- * tau-worker are separate units (systemd, pm2, or two k8s pods) with no
+ * `POST /api/system/restart` runs in the api process, but ficus-api and
+ * ficus-worker are separate units (systemd, pm2, or two k8s pods) with no
  * coupling: the api exiting does nothing to the worker. So the api first
  * signals the worker over the existing loopback event transport
  * (`local-events.ts`, channel below), then exits itself. Each process is then

@@ -528,7 +528,8 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         { workStreamId: id, referenceId: flowWaitReference(id, 'human', attempt!.id) },
         'approved',
         {
-          note: command.action === 'complete' ? command.evidence : 'Returned for rework',
+          // An approval may carry no notes; record none rather than an empty string.
+          note: command.action === 'complete' ? command.evidence || null : 'Returned for rework',
         }
       )
     const activeIds = new Set(activeWorkflowAttempts(state).map((entry) => entry.id))

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 import { checkCliOnPath, cliInstallDir, cliPathHintLines, detectShell, type CliPathDeps } from './cli-path'
 
 const HOME = '/home/fixture'
@@ -38,7 +38,7 @@ describe('cliInstallDir', () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-cli-path-')))
     try {
       mkdirSync(join(home, LEGACY_HOME_DIR_NAME))
-      expect(cliInstallDir({}, home)).toBe(join(home, LEGACY_HOME_DIR_NAME, 'bin'))
+      expect(cliInstallDir({}, home)).toBe(join(home, '.ficus', 'bin'))
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 
 import { getAuthStorePath } from './auth-store'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 
 describe('getAuthStorePath', () => {
   const original = process.env.FICUS_AUTH_STORE
@@ -22,7 +22,7 @@ describe('getAuthStorePath', () => {
       process.env.HOME = home
       expect(getAuthStorePath()).toBe(join(home, '.ficus', 'cli', 'auth.json'))
       mkdirSync(join(home, LEGACY_HOME_DIR_NAME))
-      expect(getAuthStorePath()).toBe(join(home, LEGACY_HOME_DIR_NAME, 'cli', 'auth.json'))
+      expect(getAuthStorePath()).toBe(join(home, '.ficus', 'cli', 'auth.json'))
     } finally {
       if (originalHome === undefined) delete process.env.HOME
       else process.env.HOME = originalHome

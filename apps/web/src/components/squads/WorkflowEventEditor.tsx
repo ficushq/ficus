@@ -278,7 +278,7 @@ export function WorkflowEventEditor({
           )
         })}
         {catalog.isError ? (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             Could not load integration events.
           </p>
         ) : (

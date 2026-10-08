@@ -190,7 +190,7 @@ export function PageEditorAssistant({
           {useRealtime && (
             <button
               type="button"
-              className="ficus-button flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-accent-light hover:bg-surface-hover disabled:opacity-50"
+              className="ficus-button ficus-button-ghost flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-accent-light disabled:opacity-50"
               aria-label={
                 controls?.connecting ? 'Connecting microphone' : controls?.live ? 'Microphone on' : 'Enable microphone'
               }
@@ -208,7 +208,10 @@ export function PageEditorAssistant({
         <p className="text-xs text-muted">{subtitle}</p>
       </header>
       {syncError && (
-        <p role="alert" className="max-h-28 shrink-0 overflow-y-auto break-words p-3 text-sm text-danger">
+        <p
+          role="alert"
+          className="max-h-28 shrink-0 overflow-y-auto break-words p-3 text-sm text-status-danger-600 dark:text-status-danger-400"
+        >
           {summarizeAssistantError(syncError)}{' '}
           <button type="button" onClick={() => void sync().catch(() => {})}>
             Retry

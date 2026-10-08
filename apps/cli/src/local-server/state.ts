@@ -1,11 +1,27 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'fs'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'fs'
 import { homedir } from 'os'
 import { dirname, isAbsolute, join, resolve } from 'path'
 import { CORE_ROOT_PACKAGE_NAMES, type CoreRootPackageName } from '@ficus/shared/identity'
-import { expandTilde, LEGACY_LOCAL_INSTANCE } from '@ficus/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { CURRENT_IDENTITY, normalizeLabel } from './instance'
 import { LOCAL_SUPERVISORS, type LocalSupervisor } from './types'
 import { cliHome } from './home-move'
+
+/** Refusal-only path: never silently hide an unmigrated local installation. */
+export const RETIRED_CLI_HOME = '.tau' // ficus-legacy-refusal: inspect only; no migration or writes
+
+/** Refusal-only label for a registry written before local instances had identities. */
+export const RETIRED_DEFAULT_INSTANCE = 'tau' // ficus-p5-bridge: refuses older local registrations
 
 /** One installed instance: the checkout it lives in and the port it serves on. */
 export interface InstanceRecord {
@@ -15,8 +31,7 @@ export interface InstanceRecord {
   createdAt: string
   updatedAt: string
   /**
-   * `2`: the instance runs under the ficus names (setup registers it so, `ficus server
-   * rename-identity` moves an older one). Absent: it still has the names it was installed under.
+   * `2`: the instance runs under the ficus names (setup registers it so). Absent: a retired identity.
    * Every read → write keeps it; the registry `version` stays 3 either way. Any other number was
    * written by a newer CLI: the lenient read (`list`) keeps and shows it, mutating reads refuse.
    */
@@ -84,6 +99,39 @@ export function getStatePath(env: Record<string, string | undefined> = process.e
   )
 }
 
+/** Refusal-only bridge inventory: never read or select a retired registry for normal management. */
+export function assertDefaultRegistryReady(
+  env: Record<string, string | undefined> = process.env,
+  statePath = getStatePath(env)
+): void {
+  const home = env.HOME ?? homedir()
+  const canonical = join(cliHome({ homedir: home }), 'cli', 'local-server.json')
+  // An explicit registry is an independent operator selection, not a default-home lookup.
+  if (resolve(statePath) !== resolve(canonical)) return
+  const present = (path: string): boolean => {
+    try {
+      lstatSync(path)
+      return true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+      throw new Error('cannot inspect local registry layout — resolve access before managing instances', {
+        cause: error,
+      })
+    }
+  }
+  const retired = join(home, RETIRED_CLI_HOME, 'cli', 'local-server.json')
+  if (!present(retired)) return
+  if (present(canonical)) {
+    // A migrated home link (or another path to the same inode) is one registry, not a hidden instance.
+    const currentFile = statSync(canonical)
+    const retiredFile = statSync(retired)
+    if (currentFile.dev === retiredFile.dev && currentFile.ino === retiredFile.ino) return
+  }
+  throw new Error(
+    'local registry predates the Ficus home layout or has separate copies — upgrade through the ficus-host-layout-bridge Core release first'
+  )
+}
+
 function emptyRegistry(): LocalServerRegistry {
   return { version: REGISTRY_VERSION, instances: {} }
 }
@@ -123,7 +171,7 @@ function toRecord(value: unknown, legacy: boolean): InstanceRecord | null {
 
 /** An entry a newer CLI wrote: an identity this code does not know how to name. */
 export function unsupportedIdentity(record: InstanceRecord): boolean {
-  return record.identity !== undefined && record.identity !== CURRENT_IDENTITY
+  return record.identity !== undefined && record.identity !== 1 && record.identity !== CURRENT_IDENTITY
 }
 
 function validRegistryLabel(label: string): boolean {
@@ -197,8 +245,8 @@ function parseRegistryFile(path: string): {
       return {
         registry: {
           version: REGISTRY_VERSION,
-          default: LEGACY_LOCAL_INSTANCE,
-          instances: { [LEGACY_LOCAL_INSTANCE]: v1 },
+          default: RETIRED_DEFAULT_INSTANCE,
+          instances: { [RETIRED_DEFAULT_INSTANCE]: v1 },
         },
       }
     if (Object.keys(object).length === 0) return { registry: emptyRegistry() }

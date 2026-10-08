@@ -276,7 +276,7 @@ export function QuestionInput({ questionData, onSubmit, disabled, secondaryActio
           <button
             onClick={() => handleSubmit(secondaryAction.onSubmit)}
             disabled={disabled || !isValid()}
-            className="ficus-button min-h-10 text-secondary border border-th-border px-3 py-2 hover:bg-surface-hover disabled:opacity-50 text-sm"
+            className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 disabled:opacity-50 text-sm"
           >
             {secondaryAction.label}
           </button>
@@ -288,7 +288,7 @@ export function QuestionInput({ questionData, onSubmit, disabled, secondaryActio
             disabled={disabled}
             title="Dismiss without answering"
             aria-label="Dismiss without answering"
-            className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 hover:bg-surface-hover disabled:opacity-50"
+            className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm hover:text-status-danger-600 dark:hover:text-status-danger-400 disabled:opacity-50"
           >
             Dismiss
           </button>

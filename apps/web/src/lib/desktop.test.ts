@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { desktopBridge, desktopInstance, type DesktopBridge } from './desktop'
 
 afterEach(() => {
-  delete window.tauDesktopApp
+  Reflect.deleteProperty(window, 'tauDesktopApp') // ficus-negative-test
   delete window.ficusDesktopApp
 })
 
@@ -10,25 +10,16 @@ function bridge(): DesktopBridge {
   return { version: 1, notificationsEnabled: async () => false, deliverNotifications: async () => {} }
 }
 
-describe('desktopBridge (dual-read)', () => {
+describe('desktopBridge', () => {
   test('detects the bridge from window.ficusDesktopApp alone', () => {
     const ficus = bridge()
     window.ficusDesktopApp = ficus
     expect(desktopBridge()).toBe(ficus)
   })
 
-  test('detects the bridge from window.tauDesktopApp alone (D1 and older Desktop builds)', () => {
-    const tau = bridge()
-    window.tauDesktopApp = tau
-    expect(desktopBridge()).toBe(tau)
-  })
-
-  test('window.ficusDesktopApp wins when both are set', () => {
-    const ficus = bridge()
-    const tau = bridge()
-    window.ficusDesktopApp = ficus
-    window.tauDesktopApp = tau
-    expect(desktopBridge()).toBe(ficus)
+  test('does not recognize a retired preload property', () => {
+    Object.assign(window, { tauDesktopApp: bridge() }) // ficus-negative-test
+    expect(desktopBridge()).toBeUndefined()
   })
 })
 
@@ -38,7 +29,7 @@ describe('desktopInstance', () => {
   })
 
   test('returns undefined when instance.kind is not one of the three kinds', () => {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -50,7 +41,7 @@ describe('desktopInstance', () => {
   })
 
   test('returns undefined when name is not a string', () => {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -63,7 +54,7 @@ describe('desktopInstance', () => {
 
   test('returns the instance when kind and name are valid', () => {
     const instance = { kind: 'remote' as const, name: 'noah' }
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -74,7 +65,7 @@ describe('desktopInstance', () => {
   })
 
   test('returns undefined when name is empty or all whitespace', () => {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -85,7 +76,7 @@ describe('desktopInstance', () => {
   })
 
   test('drops a non-function disconnect from an untrusted/older bridge', () => {
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},
@@ -105,7 +96,7 @@ describe('desktopInstance', () => {
   test('keeps a function disconnect', () => {
     const disconnect = async () => {}
     const instance = { kind: 'remote' as const, name: 'noah', disconnect }
-    window.tauDesktopApp = {
+    window.ficusDesktopApp = {
       version: 1,
       notificationsEnabled: async () => false,
       deliverNotifications: async () => {},

@@ -73,7 +73,17 @@ export function useOptionalAuth(): AuthContextValue | null {
  * drift out of sync with each other. */
 // eslint-disable-next-line react-refresh/only-export-components
 export function selfServiceQueryEnabled(auth: AuthContextValue | null): boolean {
-  return !!auth?.isAuthenticated || auth?.authRequired === false
+  if (auth?.authRequired === false) return true
+  // Bootstrap credentials authenticate the instance operator, not a person.
+  // Person-scoped requests return 401 and would wrongly trigger global logout
+  // while the operator is completing first-admin setup.
+  return (
+    auth?.authRequired === true &&
+    auth.isAuthenticated &&
+    auth.session?.identityType !== 'legacy' &&
+    !auth.needsFirstAdminSetup &&
+    !auth.needsAdminCompletion
+  )
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

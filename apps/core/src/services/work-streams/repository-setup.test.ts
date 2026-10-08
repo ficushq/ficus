@@ -2,15 +2,21 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { codeHostFromRemote, prepareRepository, type RepositoryExec } from './repository-setup'
+import {
+  codeHostFromRemote,
+  GITHUB_FETCH_TOKEN_ENV,
+  githubFetchCredentialConfig,
+  prepareRepository,
+  type RepositoryExec,
+} from './repository-setup'
 
 let root: string
 let repo: string
-const exec: RepositoryExec = async (args) => {
+const exec: RepositoryExec = async (args, options) => {
   const child = Bun.spawn(args, {
     stdout: 'pipe',
     stderr: 'pipe',
-    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', ...options?.env },
   })
   const [out, err, code] = await Promise.all([
     new Response(child.stdout).text(),
@@ -376,4 +382,166 @@ test('a pre-existing branch checked out in a dirty source checkout is never move
   ).rejects.toThrow(/already (checked out|used by worktree)/)
   expect(await exec(['git', '-C', repo, 'status', '--porcelain'])).toBe(before)
   expect((await exec(['git', '-C', repo, 'branch', '--show-current'])).trim()).toBe('existing')
+})
+
+// Synthetic credential: never a real token.
+const TOKEN = 'ghs_fixtureCredential0123456789'
+const PRIVATE_URL = 'https://github.com/example/repo.git'
+
+/** Records every call and redirects the private GitHub URL to the local bare repo for fetch only. */
+function recordingExec() {
+  const calls: { args: string[]; env?: Record<string, string> }[] = []
+  const recording: RepositoryExec = (args, options) => {
+    calls.push({ args, env: options?.env })
+    if (!args.includes('fetch')) return exec(args, options)
+    return exec(args, {
+      env: {
+        ...options?.env,
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: `url.${join(root, 'upstream.git')}.insteadOf`,
+        GIT_CONFIG_VALUE_0: PRIVATE_URL,
+      },
+    })
+  }
+  return { calls, recording, fetch: () => calls.find((call) => call.args.includes('fetch'))! }
+}
+
+async function credentialFill(host: string, env: Record<string, string>, globalConfig = '/dev/null') {
+  const child = Bun.spawn(['git', ...githubFetchCredentialConfig, 'credential', 'fill'], {
+    stdin: new TextEncoder().encode(`protocol=https\nhost=${host}\n\n`),
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: globalConfig,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_TERMINAL_PROMPT: '0',
+      ...env,
+    },
+  })
+  const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
+  return { out, code }
+}
+
+test('private GitHub base fetch uses the squad credential via env, never argv', async () => {
+  await exec(['git', '-C', repo, 'remote', 'set-url', 'origin', PRIVATE_URL])
+  const fresh = await advanceRemote()
+  const { calls, recording, fetch } = recordingExec()
+  let resolved = 0
+  const metadata = await prepareRepository(
+    recording,
+    root,
+    { repository: 'repo', baseBranch: 'main' },
+    'private',
+    {},
+    undefined,
+    undefined,
+    async () => {
+      resolved++
+      return TOKEN
+    }
+  )
+  expect(resolved).toBe(1)
+  expect(metadata.git).toMatchObject({ baseCommit: fresh, baseSource: 'remote' })
+  expect(await oid(join(root, 'worktrees/private'))).toBe(fresh)
+  expect(JSON.stringify(metadata)).not.toContain(TOKEN)
+  for (const call of calls) expect(call.args.join(' ')).not.toContain(TOKEN)
+  expect(fetch().args).toEqual(expect.arrayContaining([...githubFetchCredentialConfig]))
+  expect(fetch().env).toEqual({ GIT_TERMINAL_PROMPT: '0', [GITHUB_FETCH_TOKEN_ENV]: TOKEN })
+  // Only the fetch carries the credential.
+  expect(calls.filter((call) => call.env?.[GITHUB_FETCH_TOKEN_ENV])).toHaveLength(1)
+  expect(await exec(['git', '-C', repo, 'config', '--list', '--show-origin'])).not.toContain(TOKEN)
+  expect(await exec(['git', '-C', repo, 'remote', 'get-url', 'origin'])).toBe(`${PRIVATE_URL}\n`)
+})
+
+test('the fetch credential helper answers github.com only and shadows inherited helpers', async () => {
+  const log = join(root, 'inherited-helper.log')
+  const globalConfig = join(root, 'global.gitconfig')
+  await writeFile(
+    globalConfig,
+    `[credential]\n\thelper = "!f() { echo generic:$1 >> ${log}; }; f"\n` +
+      `[credential "https://github.com"]\n\thelper = "!f() { echo scoped:$1 >> ${log}; }; f"\n`
+  )
+  const github = await credentialFill('github.com', { [GITHUB_FETCH_TOKEN_ENV]: TOKEN }, globalConfig)
+  expect(github.code).toBe(0)
+  expect(github.out).toContain('username=x-access-token\n')
+  expect(github.out).toContain(`password=${TOKEN}\n`)
+  expect(await Bun.file(log).exists()).toBe(false)
+  const other = await credentialFill('gitlab.example', { [GITHUB_FETCH_TOKEN_ENV]: TOKEN })
+  expect(other.code).not.toBe(0)
+  expect(other.out).not.toContain(TOKEN)
+})
+
+test('public and non-GitHub base fetches stay unauthenticated', async () => {
+  // Fixture fetch URL is a local path: no credential is resolved or offered.
+  const local = recordingExec()
+  let resolved = 0
+  const resolve = async () => {
+    resolved++
+    return TOKEN
+  }
+  await prepareRepository(
+    local.recording,
+    root,
+    { repository: 'repo', baseBranch: 'main' },
+    'local-remote',
+    {},
+    undefined,
+    undefined,
+    resolve
+  )
+  expect(resolved).toBe(0)
+  expect(local.fetch().env).toEqual({ GIT_TERMINAL_PROMPT: '0' })
+  expect(local.fetch().args).not.toContain(githubFetchCredentialConfig[1])
+
+  // A GitHub remote with no squad credential still fetches anonymously (public repos).
+  await exec(['git', '-C', repo, 'remote', 'set-url', 'origin', PRIVATE_URL])
+  const fresh = await advanceRemote()
+  const anonymous = recordingExec()
+  const metadata = await prepareRepository(
+    anonymous.recording,
+    root,
+    { repository: 'repo', baseBranch: 'main' },
+    'public',
+    {},
+    undefined,
+    undefined,
+    async () => undefined
+  )
+  expect(metadata.git).toMatchObject({ baseCommit: fresh })
+  expect(anonymous.fetch().env).toEqual({ GIT_TERMINAL_PROMPT: '0' })
+  expect(anonymous.fetch().args).not.toContain(githubFetchCredentialConfig[1])
+})
+
+test('authenticated fetch failures stay sanitized with no local fallback', async () => {
+  await exec(['git', '-C', repo, 'remote', 'set-url', 'origin', PRIVATE_URL])
+  const failures: [string, RepositoryExec, () => Promise<string | undefined>][] = [
+    [
+      'transport',
+      (args, options) => {
+        if (args.includes('fetch')) throw new Error(`denied https://x-access-token:${TOKEN}@github.com/example/repo`)
+        return exec(args, options)
+      },
+      async () => TOKEN,
+    ],
+    ['resolver', exec, async () => Promise.reject(new Error(`store failure ${TOKEN}`))],
+    ['malformed credential', exec, async () => `${TOKEN}\nprotocol=http`],
+  ]
+  for (const [key, failing, resolve] of failures) {
+    const error = await prepareRepository(
+      failing,
+      root,
+      { repository: 'repo', baseBranch: 'main' },
+      `failed-${key.replace(' ', '-')}`,
+      {},
+      undefined,
+      undefined,
+      resolve
+    ).catch((error) => error as Error)
+    expect(error).toBeInstanceOf(Error)
+    expect(error.message).toContain('Could not refresh Git base')
+    expect(error.message).not.toContain(TOKEN)
+  }
+  expect(await exec(['git', '-C', repo, 'for-each-ref', 'refs/ficus/provisioning/'])).toBe('')
+  expect(await exec(['git', '-C', repo, 'branch', '--list', 'work/*'])).toBe('')
 })

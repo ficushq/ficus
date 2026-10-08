@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect } from 'react'
-import { useAuth } from './AuthProvider'
+import { selfServiceQueryEnabled, useAuth } from './AuthProvider'
 import { useThemeSyncStore } from './ThemeProvider'
 import { client } from '../api/clientInstance'
 import type { ThemePresetLiveLinkApi, ThemeSyncApi } from '../theme/sync'
@@ -7,10 +7,13 @@ import type { ThemePresetLiveLinkApi, ThemeSyncApi } from '../theme/sync'
 /** Deliberately inside AuthProvider, outside the synchronous paint provider.
  * Two animation frames give the browser a paint opportunity before any theme I/O. */
 export function ThemeAccountSync() {
-  const { isAuthenticated, authRequired, sessionVersion } = useAuth()
+  const auth = useAuth()
+  const { authRequired, sessionVersion } = auth
   return (
     <ThemeAccountSyncSession
-      sessionKey={authRequired === null ? undefined : isAuthenticated && authRequired ? sessionVersion : null}
+      sessionKey={
+        authRequired === null ? undefined : authRequired && selfServiceQueryEnabled(auth) ? sessionVersion : null
+      }
     />
   )
 }

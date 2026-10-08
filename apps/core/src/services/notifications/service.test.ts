@@ -659,6 +659,57 @@ describe('NotificationService', () => {
       await db.delete(pushSubscriptions).where(eq(pushSubscriptions.userId, otherUser.id))
     })
 
+    test.each([
+      [
+        'Delivered [#454](ficus:ws:454) via [PR #1591](https://github.com/ficushq/ficus-platform/pull/1591).',
+        'Delivered #454 via PR #1591.',
+      ],
+      [
+        '# **Ready**\n\n> *Ship* ~~later~~ now\n\n- [**PR** _1591_](https://example.com)\n- ![build status][image]\n\n[image]: https://example.com/status.png',
+        'Ready\n\nShip later now\n\nPR 1591\nbuild status\n\n',
+      ],
+      ['Use `a_b * c`\n\n```ts\nconst x = "**literal**"\n```', 'Use a_b * c\n\nconst x = "**literal**"'],
+      [
+        '[reference][pr], [shortcut], ![alt](https://example.com/image)\n\n[pr]: https://example.com/pr\n[shortcut]: ficus:ws:454',
+        'reference, shortcut, alt\n\n',
+      ],
+      [
+        'Hello, 世界 👋 — #454; PR #1591! a_b, x*y, 2 < 3 & 4 > 1.\nhttps://example.com/a_b?q=1&x=2',
+        'Hello, 世界 👋 — #454; PR #1591! a_b, x*y, 2 < 3 & 4 > 1.\nhttps://example.com/a_b?q=1&x=2',
+      ],
+    ])('renders web push Markdown as visible text: %s', async (body, expected) => {
+      await registerPushSubscription({
+        endpoint: 'https://push.example.com/markdown',
+        p256dh: 'k',
+        auth: 'a',
+        userId: user.id,
+      })
+      const sendSpy = spyOn(webpush, 'sendNotification').mockResolvedValue({ statusCode: 201 } as any)
+      const event = Object.freeze({
+        title: '**Delivered** [#454](ficus:ws:454)',
+        body,
+        url: '/inbox',
+        messageId: 'm1',
+        actionId: 'agent-question:q1',
+        collapseKey: 'ws:454',
+      })
+      try {
+        await callSendWebPush(service, [user.id], event)
+        expect(JSON.parse(sendSpy.mock.calls[0][1] as string)).toMatchObject({
+          title: 'Delivered #454',
+          body: expected,
+          url: event.url,
+          messageId: event.messageId,
+          actionId: event.actionId,
+          tag: event.collapseKey,
+        })
+        expect(event.body).toBe(body)
+        expect(event.title).toBe('**Delivered** [#454](ficus:ws:454)')
+      } finally {
+        sendSpy.mockRestore()
+      }
+    })
+
     test('logs when recipients have no web push subscriptions', async () => {
       await callSendWebPush(service, [user.id], {
         title: 'Hello',
@@ -932,6 +983,78 @@ describe('NotificationService', () => {
         await UserNotificationPreferences.upsert(user.id, { showPreviews: true })
         config.mockRestore()
         relay.mockRestore()
+      }
+    })
+
+    test('cleans direct and relayed Apple previews before limiting text without changing routing or source', async () => {
+      await registerApnsDevice({
+        userId: user.id,
+        apnsToken: 'markdown-token',
+        platform: 'ios',
+        environment: 'production',
+      })
+      await db.update(apnsDevices).set({ relayBindingToken: 'ficus_prd_test' }).where(eq(apnsDevices.userId, user.id))
+      const direct = spyOn(apnsModule, 'sendApnsNotification').mockResolvedValue({ ok: true, status: 200 })
+      const relay = spyOn(relayModule, 'sendRelayAlert').mockResolvedValue({ accepted: true, reason: undefined })
+      const config = spyOn(relayModule, 'pushRelayConfig').mockReturnValue(null)
+      const destination = `https://example.com/${'x'.repeat(600)}`
+      const event = Object.freeze({
+        title: `[**Delivered**](${destination})`,
+        body: `[PR #1591](${destination}) merged. ${'✅'.repeat(600)}`,
+        subtitle: '*Platform*',
+        workStreamNumber: 454,
+        url: '/squads/s1/work?ws=454',
+        squadId: 's1',
+        agentId: 'a1',
+        messageId: 'm1',
+        waitId: 'w1',
+        questionId: 'q1',
+        actionId: 'agent-question:q1',
+        collapseKey: 'ws:454',
+        threadKey: 'squad:s1',
+      })
+      const original = { ...event }
+      try {
+        await callSendApnsPush(service, [user.id], event)
+        const preview = {
+          title: 'Delivered',
+          body: `PR #1591 merged. ${'✅'.repeat(600)}`.slice(0, 500),
+          subtitle: 'Platform',
+        }
+        expect(direct.mock.calls[0][1]).toMatchObject({
+          ...preview,
+          collapseId: event.collapseKey,
+          threadId: event.threadKey,
+          data: {
+            url: event.url,
+            squadId: 's1',
+            agentId: 'a1',
+            workStreamId: '454',
+            messageId: 'm1',
+            waitId: 'w1',
+            questionId: 'q1',
+            actionId: event.actionId,
+          },
+        })
+        config.mockReturnValue({ token: 'fixture', instanceId: 'fixture', baseUrl: 'https://example.invalid' })
+        await callSendApnsPush(service, [user.id], event)
+        expect(relay.mock.calls[0][1]).toMatchObject({
+          preview,
+          workStreamNumber: 454,
+          squadId: 's1',
+          agentId: 'a1',
+          messageId: 'm1',
+          waitId: 'w1',
+          questionId: 'q1',
+          actionId: event.actionId,
+          collapseKey: event.collapseKey,
+          threadKey: event.threadKey,
+        })
+        expect(event).toEqual(original)
+      } finally {
+        config.mockRestore()
+        relay.mockRestore()
+        direct.mockRestore()
       }
     })
 

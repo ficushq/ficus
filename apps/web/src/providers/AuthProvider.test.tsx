@@ -300,6 +300,82 @@ describe('AuthProvider first-admin funnel', () => {
     expect(seen.isAuthenticated).toBe(false)
   })
 
+  test('bootstrap admin completion does not sync account preferences or force a valid session out', async () => {
+    const { ThemeProvider, useThemeSyncStore } = await import('./ThemeProvider')
+    const { ThemeAccountSync } = await import('./ThemeAccountSync')
+    let validation: unknown = legacyWithPendingAdmin
+    respond = (url) => {
+      if (url.includes('/auth/status')) return { body: { ...baseStatus, hasUsers: true } }
+      if (url.includes('/auth/validate')) return { body: validation }
+      if (url.includes('/user-preferences/me')) {
+        if (validation === legacyWithPendingAdmin) return { status: 401, body: { error: 'Unauthorized' } }
+        return {
+          body: {
+            userId: 'owner',
+            theme: { themeId: 'harbor', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null },
+          },
+        }
+      }
+      return { body: {} }
+    }
+    const frames = new Map<number, FrameRequestCallback>()
+    let nextFrame = 0
+    const originalRequest = globalThis.requestAnimationFrame
+    const originalCancel = globalThis.cancelAnimationFrame
+    globalThis.requestAnimationFrame = (callback) => {
+      frames.set(++nextFrame, callback)
+      return nextFrame
+    }
+    globalThis.cancelAnimationFrame = (id) => {
+      frames.delete(id)
+    }
+    let themeStore: ReturnType<typeof useThemeSyncStore>
+    function ThemeProbe() {
+      themeStore = useThemeSyncStore()
+      return <Probe />
+    }
+    const paint = async () => {
+      const batch = [...frames.values()]
+      frames.clear()
+      await act(async () => {
+        for (const callback of batch) callback(0)
+      })
+    }
+    try {
+      await mount(
+        <ThemeProvider>
+          <ThemeAccountSync />
+          <ThemeProbe />
+        </ThemeProvider>
+      )
+      await paint()
+      await paint()
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+        await themeStore.refresh()
+      })
+      expect(requests.filter((url) => url.includes('/user-preferences/me'))).toHaveLength(0)
+      expect(seen.isAuthenticated).toBe(true)
+      expect(seen.needsAdminCompletion).toBe(true)
+
+      validation = { valid: true, identityType: 'user' }
+      await act(async () => {
+        await seen.loginWithToken(true)
+      })
+      await paint()
+      await paint()
+      await act(async () => {
+        await themeStore.refresh()
+      })
+      expect(requests.some((url) => url.includes('/user-preferences/me'))).toBe(true)
+      expect(themeStore.getSnapshot().syncAvailable).toBe(true)
+      expect(seen.needsAdminCompletion).toBe(false)
+    } finally {
+      globalThis.requestAnimationFrame = originalRequest
+      globalThis.cancelAnimationFrame = originalCancel
+    }
+  })
+
   test('status fetch failure fails closed to the login page', async () => {
     respond = () => {
       throw new Error('offline')
@@ -316,6 +392,18 @@ describe('selfServiceQueryEnabled', () => {
     const { selfServiceQueryEnabled } = await import('./AuthProvider')
     expect(selfServiceQueryEnabled({ authRequired: true, isAuthenticated: true } as never)).toBe(true)
     expect(selfServiceQueryEnabled({ authRequired: false, isAuthenticated: true } as never)).toBe(true)
+  })
+
+  test('false for bootstrap identities and unfinished admin setup even with valid authentication', async () => {
+    const { selfServiceQueryEnabled } = await import('./AuthProvider')
+    for (const pending of [
+      { session: { identityType: 'legacy' } },
+      { needsFirstAdminSetup: true },
+      { needsAdminCompletion: true },
+    ]) {
+      expect(selfServiceQueryEnabled({ authRequired: true, isAuthenticated: true, ...pending } as never)).toBe(false)
+    }
+    expect(selfServiceQueryEnabled({ authRequired: null, isAuthenticated: true } as never)).toBe(false)
   })
 
   test('true on an auth-disabled instance even when NOT authenticated — the actual bug: AppNav used to require BOTH isAuthenticated AND authRequired, so it never showed presets at all on an auth-disabled instance', async () => {

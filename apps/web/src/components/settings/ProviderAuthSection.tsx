@@ -539,7 +539,7 @@ function ProviderGroupStatus({
                 onClick={() => resetMutation.mutate()}
                 disabled={resetMutation.isPending}
                 aria-label={`Reset health for ${entry.provider}`}
-                className="ficus-button hover:text-primary disabled:opacity-50"
+                className="ficus-button ficus-button-link disabled:opacity-50"
               >
                 Reset
               </button>
@@ -654,7 +654,7 @@ export function ProviderRow({
           {canWrite && hasAnyAccounts && addMode === 'closed' && (
             <button
               onClick={() => setAddMode(hasChoice ? 'choose' : 'api-key')}
-              className="ficus-button text-sm text-accent-light hover:text-link-hover"
+              className="ficus-button ficus-button-link text-sm"
             >
               Connect another account
             </button>
@@ -735,7 +735,7 @@ export function AddAccountChooser({
         <button
           type="button"
           onClick={onChooseApiKey}
-          className="ficus-button rounded-lg border border-th-border px-4 py-2.5 text-sm font-medium text-primary hover:bg-surface-hover"
+          className="ficus-button ficus-button-secondary rounded-lg px-4 py-2.5 text-sm font-medium"
         >
           API key
         </button>
@@ -812,7 +812,7 @@ export function AddAccountForm({
         </label>
       </div>
       {addMutation.isError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Failed to save
         </p>
       )}
@@ -906,7 +906,7 @@ export function ProviderAccountsList({
                     onClick={() => moveAccount(index, -1)}
                     disabled={index === 0 || reorderMutation.isPending}
                     aria-label="Move up"
-                    className="ficus-button leading-none hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="ficus-button ficus-button-ghost leading-none disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     ▲
                   </button>
@@ -914,7 +914,7 @@ export function ProviderAccountsList({
                     onClick={() => moveAccount(index, 1)}
                     disabled={index === accounts.length - 1 || reorderMutation.isPending}
                     aria-label="Move down"
-                    className="ficus-button leading-none hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="ficus-button ficus-button-ghost leading-none disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     ▼
                   </button>
@@ -1003,7 +1003,7 @@ export function ProviderAccountsList({
                     <>
                       <button
                         onClick={() => updateMutation.mutate({ id: account.id, patch: { label: editLabelValue } })}
-                        className="ficus-button hover:text-primary"
+                        className="ficus-button ficus-button-link"
                       >
                         Save label
                       </button>
@@ -1012,7 +1012,7 @@ export function ProviderAccountsList({
                           setEditingAccountId(null)
                           setEditLabelValue('')
                         }}
-                        className="ficus-button hover:text-primary"
+                        className="ficus-button ficus-button-link"
                       >
                         Cancel
                       </button>
@@ -1028,7 +1028,7 @@ export function ProviderAccountsList({
                             onClick={() => resetHealthMutation.mutate(account.id)}
                             disabled={resetHealthMutation.isPending}
                             aria-label={`Reset health for ${account.label || account.id}`}
-                            className="ficus-button hover:text-primary disabled:opacity-50"
+                            className="ficus-button ficus-button-link disabled:opacity-50"
                           >
                             Reset
                           </button>
@@ -1039,14 +1039,14 @@ export function ProviderAccountsList({
                             setEditingAccountId(account.id)
                             setEditLabelValue(account.label ?? '')
                           }}
-                          className="ficus-button hover:text-primary"
+                          className="ficus-button ficus-button-link"
                         >
                           Edit label
                         </button>
                         {account.type === 'oauth' && (
                           <button
                             onClick={() => setReloginAccountId(account.id)}
-                            className="ficus-button hover:text-primary"
+                            className="ficus-button ficus-button-link"
                           >
                             Re-authorize
                           </button>
@@ -1055,7 +1055,7 @@ export function ProviderAccountsList({
                           onClick={() =>
                             updateMutation.mutate({ id: account.id, patch: { enabled: !account.enabled } })
                           }
-                          className="ficus-button hover:text-primary"
+                          className="ficus-button ficus-button-link"
                         >
                           {account.enabled ? 'Disable' : 'Enable'}
                         </button>
@@ -1064,7 +1064,7 @@ export function ProviderAccountsList({
                             if (confirm(`Delete account ${account.label || account.id}?`))
                               deleteMutation.mutate(account.id)
                           }}
-                          className="ficus-button text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300"
+                          className="ficus-button ficus-button-danger px-2 py-1"
                         >
                           Delete
                         </button>
@@ -1130,7 +1130,7 @@ function ApiKeyForm({
       <button
         onClick={() => mutation.mutate(value)}
         disabled={!value || mutation.isPending}
-        className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+        className="ficus-button ficus-button-primary text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
       >
         {mutation.isPending ? 'Saving...' : 'Save'}
       </button>
@@ -1348,7 +1348,7 @@ export function SelectStep({
         <button
           onClick={() => onSelect(deviceOption.id)}
           disabled={isPending}
-          className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
         >
           Device code login (recommended)
         </button>
@@ -1359,7 +1359,7 @@ export function SelectStep({
           <button
             onClick={() => onSelect(browserOption.id)}
             disabled={isPending}
-            className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
+            className="ficus-button ficus-button-link text-xs font-medium"
           >
             Use browser login instead
           </button>
@@ -1387,7 +1387,7 @@ export function SelectStep({
             key={option.id}
             onClick={() => onSelect(option.id)}
             disabled={isPending}
-            className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+            className="ficus-button ficus-button-primary text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
           >
             {option.label}
           </button>
@@ -1452,7 +1452,7 @@ export function CodeStep({
         <button
           onClick={onSubmit}
           disabled={!code.trim() || isSubmitting}
-          className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
         >
           {isSubmitting ? 'Submitting...' : 'Submit'}
         </button>
@@ -1528,7 +1528,7 @@ export function DeviceCodeStep({
         <button
           onClick={copyCode}
           disabled={!need}
-          className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium shrink-0 disabled:opacity-50"
+          className="ficus-button ficus-button-link text-xs font-medium shrink-0 disabled:opacity-50"
         >
           {copied ? 'Copied' : 'Copy'}
         </button>
@@ -1592,7 +1592,7 @@ export function ErrorStep({
     <div className="space-y-2">
       <p className="text-sm text-status-danger-600 dark:text-status-danger-400">Login failed: {message}</p>
       <div className="flex gap-2">
-        <button onClick={onRetry} className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium">
+        <button onClick={onRetry} className="ficus-button ficus-button-link text-xs font-medium">
           Try Again
         </button>
         <button
@@ -1619,7 +1619,7 @@ export function CompatibleCapabilityWarnings({
   return (
     <>
       {!tools && (
-        <p role="alert" className="text-danger">
+        <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
           This tool-less model cannot be Primary; Ficus agents require tools.
         </p>
       )}
@@ -1723,7 +1723,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
         <button
           disabled={!canWrite}
           onClick={detect}
-          className="ficus-button w-fit whitespace-nowrap rounded bg-surface-secondary px-3 py-2 text-sm text-primary disabled:opacity-50"
+          className="ficus-button ficus-button-secondary w-fit whitespace-nowrap rounded px-3 py-2 text-sm disabled:opacity-50"
         >
           Detect local servers
         </button>
@@ -1780,7 +1780,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
         <button
           disabled={!baseUrl || !providerId || !model || !canWrite}
           onClick={verify}
-          className="ficus-button ficus-button-primary rounded bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
+          className="ficus-button ficus-button-primary rounded px-3 py-2 text-sm disabled:opacity-50"
         >
           Verify capabilities
         </button>
@@ -1845,14 +1845,14 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
           <button
             onClick={save}
             disabled={!selectedTiers.length || !canWrite}
-            className="ficus-button ficus-button-primary rounded bg-accent px-3 py-2 text-on-accent disabled:opacity-50"
+            className="ficus-button ficus-button-primary rounded px-3 py-2 disabled:opacity-50"
           >
             Add provider and assign tiers
           </button>
         </div>
       )}
       {error && (
-        <p role="alert" className="text-danger">
+        <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
           {error}
         </p>
       )}

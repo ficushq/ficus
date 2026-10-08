@@ -1,8 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { RenderedPairing } from './pairingQr'
-
-// The deep link only resolves on a phone with the Ficus app installed; hide it on desktop.
-const IS_MOBILE = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+import { canOpenFicusApp, type RenderedPairing } from './pairingQr'
 
 /**
  * A minted pairing code as the person pairing sees it: the QR, a countdown to
@@ -22,6 +19,7 @@ export function PairingCode({
   regenerating: boolean
   hint?: string
 }) {
+  const [openInApp] = useState(canOpenFicusApp)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     setNow(Date.now())
@@ -43,25 +41,21 @@ export function PairingCode({
       <div className="flex items-center gap-2">
         <code className="rounded bg-surface-hover px-2 py-1 text-xs select-all">{pairing.code}</code>
         <button
-          className="ficus-button text-xs text-secondary"
+          className="ficus-button ficus-button-link text-xs"
           onClick={() => navigator.clipboard.writeText(pairing.code)}
         >
           Copy code
         </button>
       </div>
-      {IS_MOBILE && (
+      {openInApp && (
         <a
           href={pairing.deepLink}
-          className="px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover"
+          className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium rounded-md"
         >
-          Open in the Ficus app
+          Open in Ficus app
         </a>
       )}
-      <button
-        onClick={onRegenerate}
-        disabled={regenerating}
-        className="ficus-button text-xs text-secondary hover:text-primary"
-      >
+      <button onClick={onRegenerate} disabled={regenerating} className="ficus-button ficus-button-link text-xs">
         Regenerate
       </button>
     </div>

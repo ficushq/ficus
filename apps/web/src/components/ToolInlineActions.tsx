@@ -22,7 +22,7 @@ export function ToolInlineActions({
             type="button"
             aria-label={accessibleLabel}
             onClick={() => onOpen(action)}
-            className="ficus-button truncate text-left text-[11px] font-medium text-accent-light hover:underline"
+            className="ficus-button ficus-button-link truncate text-left text-[11px] font-medium"
           >
             {accessibleLabel} →
           </button>

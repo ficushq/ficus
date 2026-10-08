@@ -231,7 +231,7 @@ export function TerminalTabs({ sandboxId, selectedShell, onSelectShell, disabled
                   e.stopPropagation()
                   handleCloseTab(tab.id)
                 }}
-                className="ficus-button w-4 h-4 flex items-center justify-center rounded hover:bg-surface-hover text-muted hover:text-primary"
+                className="ficus-button ficus-button-ghost w-4 h-4 flex items-center justify-center rounded"
                 title="Close"
               >
                 ×
@@ -240,11 +240,7 @@ export function TerminalTabs({ sandboxId, selectedShell, onSelectShell, disabled
           ))}
         </div>
         {!disabled && (
-          <button
-            onClick={handleAddTab}
-            className="ficus-button px-3 py-2 text-muted hover:text-primary hover:bg-surface-hover"
-            title="New terminal"
-          >
+          <button onClick={handleAddTab} className="ficus-button ficus-button-ghost px-3 py-2" title="New terminal">
             +
           </button>
         )}

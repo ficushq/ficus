@@ -6,7 +6,7 @@ Ficus can run behind one public hostname in two ways:
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Built-in single-origin (`FICUS_SERVE_WEB=1`) | You want the simplest self-hosted VM or Docker deploy: `/`, `/api/*`, `/ws`, and `/ws/terminal` all come from Core on `:3000`. |
 | Split-port reverse proxy                     | You want Core on `:3000` and a separately served web build or Vite server on `:5173`.                                          |
-| Kubernetes/CDN split                         | You run the hosted-style Kubernetes topology with separate `tau-api`/`tau-web` deployments and CDN/static hosting.             |
+| Kubernetes/CDN split                         | You run the Kubernetes topology with `ficus-api`/`ficus-worker` and separately hosted CDN/static web assets.                   |
 
 ## Built-in single-origin serving
 
@@ -217,7 +217,7 @@ tailnet with automatic HTTPS and no public DNS at all. With the built-in
 single-origin mode (`FICUS_SERVE_WEB=1`), point it at Core:
 
 ```bash
-tailscale serve --bg --set-path=/tau http://localhost:3000
+tailscale serve --bg --set-path=/ficus http://localhost:3000
 ```
 
 Ficus is then reachable at `https://<your-machine>.<tailnet>/ficus`. Because that
@@ -225,8 +225,8 @@ URL carries a path, set the base path and the WebAuthn origin explicitly, or
 passkeys break:
 
 ```bash
-APP_URL=https://<your-machine>.<tailnet>/tau
-APP_BASE_PATH=/tau
+APP_URL=https://<your-machine>.<tailnet>/ficus
+APP_BASE_PATH=/ficus
 FICUS_WEB_ORIGIN=https://<your-machine>.<tailnet>   # bare origin, no path
 ```
 

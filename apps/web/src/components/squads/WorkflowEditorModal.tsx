@@ -64,7 +64,7 @@ export function WorkflowEditorModal({
       >
         <WorkflowEditor squadId={squadId} value={draft} onChange={(next) => next && setDraft(next)} />
         {error && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {error}
           </p>
         )}
@@ -78,7 +78,7 @@ export function WorkflowEditorModal({
           </button>
           <button
             type="button"
-            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md"
             onClick={save}
           >
             Use this flow

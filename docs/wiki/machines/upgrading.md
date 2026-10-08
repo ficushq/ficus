@@ -29,8 +29,8 @@ ensure/warmup. Expect a one-time pod recreation wave after deploy.
 
 ## docker — automatic since the machines-backlog wave
 
-The docker runtime now has **volume-drift detection**. Each `tau-sandbox-*`
-container is stamped at create with a `tau.spec-hash` label derived from its
+The docker runtime now has **volume-drift detection**. Each `ficus-sandbox-*`
+container is stamped at create with a `ficus.spec-hash` label derived from its
 mount-affecting spec (image, runtime, workspace/private binds, squad, and the
 `-v` volume list). On the next `ensure`, a container whose label differs from
 the current spec — or whose label is missing (a container created before this
@@ -39,14 +39,16 @@ skills mount, manifest-driven binds). No manual step is needed: mount-changing
 upgrades take effect lazily on next use.
 
 Historical note (pre-this-wave versions had no drift detection): the manual
-sweep below force-removed stale sandbox containers so they would recreate with
-the new mounts. It is no longer required but remains safe to run.
+sweep below targeted the old `tau-sandbox-*` names so those containers would
+recreate with new mounts. It is not required for current `ficus-sandbox-*`
+containers. Check exact container ownership before running it on an older
+installation.
 
 ```bash
 docker ps -a --format '{{.Names}}' | grep '^tau-sandbox-' | xargs -r docker rm -f
 ```
 
-Nix stores: new sandboxes clone from the shared `~/.tau/nix/.base` (seeded
+Nix stores: new sandboxes clone from the shared `~/.ficus/nix/.base` (seeded
 once from the image; hardlink/CoW per sandbox). Existing full-copy per-sandbox
 stores stay as-is and are reclaimed by the terminal-lifecycle cleanup (#632)
 as their agents are deleted.
@@ -88,7 +90,7 @@ way.
 **Expect one fleet-wide docker recreate.** The selected runtime is part of a
 sandbox container's spec hash, and the rename changes it (`socket` →
 `docker-socket`, `sysbox` → `docker-sysbox`), so every existing
-`tau-sandbox-*` container drifts and is recreated once on its next ensure.
+container from that release drifts and is recreated once on its next ensure.
 This is safe and needs no action: workspaces, memory and private dirs are bind
 mounts on the host, and the old per-sandbox nix stores are reclaimed host-side
 by the terminal-lifecycle cleanup. Only the first ensure after the upgrade pays

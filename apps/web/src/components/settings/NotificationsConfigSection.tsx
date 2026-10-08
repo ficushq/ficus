@@ -211,7 +211,7 @@ export function NotificationsConfigSection() {
         <button
           onClick={() => createMutation.mutate()}
           disabled={!canWrite || createMutation.isPending}
-          className="ficus-button ficus-button-primary px-4 py-2 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 font-medium"
+          className="ficus-button ficus-button-primary px-4 py-2 text-sm rounded-md disabled:opacity-50 font-medium"
         >
           {createMutation.isPending ? 'Creating…' : 'Set up notifications'}
         </button>
@@ -295,7 +295,7 @@ export function NotificationsConfigSection() {
                         type="button"
                         onClick={() => removeRule(index)}
                         aria-label={`Remove rule: ${label}`}
-                        className="ficus-button text-xs text-muted hover:text-danger"
+                        className="ficus-button ficus-button-danger px-2 py-1 text-xs"
                       >
                         Remove
                       </button>
@@ -361,7 +361,7 @@ export function NotificationsConfigSection() {
                   setRules(null)
                   setChannels(null)
                 }}
-                className="ficus-button text-sm text-muted"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm"
               >
                 Discard changes
               </button>
@@ -375,7 +375,7 @@ export function NotificationsConfigSection() {
         )}
       </fieldset>
       {updateMutation.isError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {updateMutation.error.message}
         </p>
       )}
@@ -388,11 +388,11 @@ export function NotificationsConfigSection() {
         </p>
         <div className="my-4 flex flex-wrap items-center gap-4">
           {config.yamlFieldOverrides.length > 0 && (
-            <button onClick={() => setShowDiff(true)} className="ficus-button text-sm text-accent-light">
+            <button onClick={() => setShowDiff(true)} className="ficus-button ficus-button-link text-sm">
               Compare to template
             </button>
           )}
-          <button onClick={handleExport} className="ficus-button text-sm text-accent-light">
+          <button onClick={handleExport} className="ficus-button ficus-button-link text-sm">
             {copyMsg || 'Export YAML'}
           </button>
         </div>

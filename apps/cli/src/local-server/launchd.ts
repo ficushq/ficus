@@ -1,10 +1,10 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { basename, dirname, isAbsolute, join } from 'path'
 import { parseLaunchdJobIdentity } from '@ficus/shared'
-import { FICUS_LAUNCHD_PREFIX, LEGACY_LAUNCHD_PREFIX } from '@ficus/shared/node'
+import { FICUS_LAUNCHD_PREFIX } from '@ficus/shared/node'
 import type { SupervisorAdapter, SupervisorContext, SupervisorProcess } from './supervisor'
 import { cliHome } from './home-move'
-import { CURRENT_IDENTITY, instanceNames } from './instance'
+import { instanceNames } from './instance'
 
 export type NativeComponent = 'api' | 'worker'
 const COMPONENTS_WORKER_FIRST: NativeComponent[] = ['worker', 'api']
@@ -50,15 +50,14 @@ function processName(context: Pick<SupervisorContext, 'label' | 'identity'>, com
 }
 
 export function nativeLogPath(context: NamedContext, component: NativeComponent): string {
-  return join(cliHome({ homedir: context.home }), 'logs', processName(context, component) + '.log')
+  const home = cliHome({ homedir: context.home })
+  return join(home, 'logs', processName(context, component) + '.log')
 }
 
-/** `sh.ficus.<process>`; an identity-1 instance keeps the prefix its jobs were registered under. */
+/** `sh.ficus.<process>`. */
 export function launchdNames(context: NamedContext, component: NativeComponent) {
   const process = processName(context, component)
-  const prefix =
-    (context.identity ?? CURRENT_IDENTITY) === CURRENT_IDENTITY ? FICUS_LAUNCHD_PREFIX : LEGACY_LAUNCHD_PREFIX
-  const label = `${prefix}.${process}`
+  const label = `${FICUS_LAUNCHD_PREFIX}.${process}`
   return {
     process,
     label,
@@ -68,7 +67,7 @@ export function launchdNames(context: NamedContext, component: NativeComponent) 
 }
 
 function ownershipMarker(root: string): string {
-  return `tau-generated-root:${Buffer.from(root).toString('base64url')}`
+  return `ficus-generated-root:${Buffer.from(root).toString('base64url')}`
 }
 
 export function launchdDefinition(context: SupervisorContext, component: NativeComponent): string {
@@ -105,11 +104,13 @@ export function launchdDefinition(context: SupervisorContext, component: NativeC
 `
 }
 
+const RETIRED_OWNERSHIP_PREFIX = 'tau-generated-root:' // ficus-p5-bridge: recognize exact-root ownership until local definitions are rewritten
 function assertOwned(path: string, root: string): void {
   if (!existsSync(path)) return
-  if (!readFileSync(path, 'utf8').includes(`<!-- ${ownershipMarker(root)} -->`)) {
+  const definition = readFileSync(path, 'utf8')
+  const markers = [ownershipMarker(root), RETIRED_OWNERSHIP_PREFIX + Buffer.from(root).toString('base64url')]
+  if (!markers.some((value) => definition.split('\n').includes(`<!-- ${value} -->`)))
     throw new Error(`Refusing to replace supervisor definition not owned by this checkout: ${path}`)
-  }
 }
 
 function prepareLogs(context: SupervisorContext): void {
@@ -195,9 +196,8 @@ function parseStatus(context: SupervisorContext, component: NativeComponent, std
 }
 
 /**
- * The same log file: equal paths, or the same name in directories that resolve to one place — a
- * job loaded before `ficus server rename-identity` moved the CLI home still names its log
- * through the legacy home, which is now a link to the moved one.
+ * The same log file: equal paths, or the same name in directories that resolve to one place — an
+ * already-loaded job may name its log through the old-home link until Apple finalization.
  */
 function sameLogFile(a: string, b: string): boolean {
   if (a === b) return true

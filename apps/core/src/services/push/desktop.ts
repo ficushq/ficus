@@ -1,3 +1,4 @@
+import { pushPreview } from './preview'
 import { createHash } from 'node:crypto'
 import { and, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
 import type { PushCategory } from '@ficus/shared'
@@ -39,6 +40,7 @@ export async function enqueueDesktopNotifications(
       ])
     )
     .digest('hex')
+  const preview = pushPreview(event)
   await db
     .insert(desktopNotifications)
     .values(
@@ -47,8 +49,8 @@ export async function enqueueDesktopNotifications(
         eventKey,
         eventType,
         category,
-        title: event.title.slice(0, 200),
-        body: event.body.slice(0, 500),
+        title: preview.title,
+        body: preview.body,
         url: event.url ?? '/inbox',
       }))
     )

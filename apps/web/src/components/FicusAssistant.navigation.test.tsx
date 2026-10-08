@@ -133,7 +133,8 @@ test('assistant history, starter messages, and live voice use the shared panel',
     expect(container.querySelectorAll('[aria-label="Recent assistant chats"] a')).toHaveLength(5)
     await click('View all')
     expect(dom.window.document.activeElement?.getAttribute('aria-label')).toBe('Search assistant conversations')
-    expect(container.querySelectorAll('#assistant-conversations a')).toHaveLength(6)
+    // The conversation switcher's panel is portaled out of the drawer.
+    expect(dom.window.document.querySelectorAll('#assistant-conversations a')).toHaveLength(6)
     await click('← Back to search')
     await click('What needs my attention?')
     expect(container.querySelector('[data-testid="initial-message"]')?.textContent).toBe('What needs my attention?')

@@ -5,7 +5,7 @@
 # setup-host.sh (that needs a full cfg_load + secrets-resolution
 # environment); instead it renders the template with lib.sh's
 # render_backup_script_content — the render setup-host.sh's
-# render_backup_script() and the host layout migration call — then
+# render_backup_script() uses — then
 # runs the rendered script for real against a scratch DEST/.env + HOME_DIR
 # tree and a fake pg_dump (via the FICUS_BACKUP_PG_DUMP_CMD test seam — no live
 # postgres needed), with FICUS_BACKUP_DRY_RUN=1 so it stops before contacting
@@ -59,8 +59,8 @@ printf 'FICUS_ENCRYPTION_KEY=test-encryption-key-envelope\nDATABASE_URL=postgres
 printf 'agent memory contents\n' >"${HOME_DIR}/workspace/agent-1/notes.md"
 printf 'shared context\n' >"${HOME_DIR}/context.md"
 
-# --- render the template with lib.sh's renderer, for host LAYOUT (1, or 2 /
-# fresh) under a scratch host root: the layout decides @DB_NAME@.
+# --- render the template with lib.sh's renderer for a canonical host under a
+# scratch root. The layout supplies @DB_NAME@.
 render_for_layout() { # LAYOUT DB_MODE DB_CONTAINER OUT
   (
     export FICUS_HOST_ROOT="${SCRATCH}/host-root" FICUS_SYSTEMD_UNIT_DIR="${SCRATCH}/host-root/units"
@@ -73,8 +73,8 @@ render_for_layout() { # LAYOUT DB_MODE DB_CONTAINER OUT
   chmod 755 "$4"
 }
 render_for_layout fresh container ficus-postgres-test-unused "${RENDERED}"
-# The layouts' database names, from lib.sh (never retyped here).
-eval "$(bash -c 'source "$1/lib.sh"; declare -p HL_LEGACY_DB_NAME HL_NEW_DB_NAME' _ "${SCRIPT_DIR}")"
+# The canonical database name, from lib.sh (never retyped here).
+eval "$(bash -c 'source "$1/lib.sh"; declare -p HL_NEW_DB_NAME' _ "${SCRIPT_DIR}")"
 
 unrendered_rc=0
 grep -q '@[A-Z_]*@' "${RENDERED}" && unrendered_rc=1
@@ -145,10 +145,13 @@ expect_eq 'tar exit 1 is logged' "$(grep -c 'changed while they were archived' "
 expect_eq 'tar exit 2 fails the backup' "$([[ $(tar_run 2 "${SCRATCH}/work-tar2") -ne 0 ]] && echo yes || echo no)" 'yes'
 expect_eq 'tar exit 2 names the failure' "$(grep -c 'tar archive failed (2)' "${SCRATCH}/work-tar2.log")" '1'
 
-# --- a wrong passphrase must NOT decrypt (encryption is doing something) ----
-wrong_rc=0
-openssl enc -d -aes-256-cbc -pbkdf2 -pass 'pass:wrong-passphrase' -in "${ENC_FILE}" -out "${SCRATCH}/should-fail.tar.gz" >/dev/null 2>&1 || wrong_rc=$?
-expect_eq 'decryption with the WRONG passphrase fails (non-zero exit)' "$([[ ${wrong_rc} -ne 0 ]] && echo yes || echo no)" 'yes'
+# --- a wrong passphrase must NOT recover the archive -----------------------
+# CBC can accidentally accept padding under a wrong key and exit 0. Verify
+# the backup cannot be recovered, rather than relying on that random padding.
+WRONG_TAR="${SCRATCH}/should-fail.tar.gz"
+openssl enc -d -aes-256-cbc -pbkdf2 -pass 'pass:wrong-passphrase' -in "${ENC_FILE}" -out "${WRONG_TAR}" >/dev/null 2>&1 || true
+expect_eq 'wrong passphrase does not recover the original archive' "$(cmp -s "${WRONG_TAR}" "${DECRYPTED_TAR}" && echo yes || echo no)" 'no'
+expect_eq 'wrong passphrase does not recover a valid gzip archive' "$(gzip -t "${WRONG_TAR}" >/dev/null 2>&1 && echo yes || echo no)" 'no'
 
 # --- Finding 1 (review): a mid-run failure (e.g. the S3 upload step dying)
 # must leave NO workdir/artifact behind — only FICUS_BACKUP_DRY_RUN=1 may do
@@ -334,18 +337,14 @@ DOCKER_ARGS_LOG="${SCRATCH}/docker-args.log"
 mkdir -p "${DOCKER_SHIM_DIR}"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"%s"\nprintf "FAKE-CONTAINER-DUMP\\n"\n' "${DOCKER_ARGS_LOG}" >"${DOCKER_SHIM_DIR}/docker"
 chmod 755 "${DOCKER_SHIM_DIR}/docker"
-for layout in 1 2; do
-  : >"${DOCKER_ARGS_LOG}"
-  render_for_layout "${layout}" container dbc-test "${SCRATCH}/container-${layout}.sh"
-  container_rc=0
-  PATH="${DOCKER_SHIM_DIR}:${PATH}" FICUS_BACKUP_DRY_RUN=1 FICUS_BACKUP_WORKDIR="${SCRATCH}/container-work-${layout}" \
-    "${SCRATCH}/container-${layout}.sh" >/dev/null 2>"${SCRATCH}/container-${layout}.stderr" || container_rc=$?
-  want_db=${HL_NEW_DB_NAME}
-  [[ ${layout} == 2 ]] || want_db=${HL_LEGACY_DB_NAME}
-  expect_eq "container mode on layout ${layout}: the backup exits 0 (dry run)" "${container_rc}" '0'
-  expect_eq "container mode on layout ${layout}: pg_dump inside the container dumps the layout's database (@DB_NAME@)" \
-    "$(cat "${DOCKER_ARGS_LOG}")" "exec dbc-test pg_dump -U postgres -Fc ${want_db}"
-done
+: >"${DOCKER_ARGS_LOG}"
+render_for_layout 2 container dbc-test "${SCRATCH}/container.sh"
+container_rc=0
+PATH="${DOCKER_SHIM_DIR}:${PATH}" FICUS_BACKUP_DRY_RUN=1 FICUS_BACKUP_WORKDIR="${SCRATCH}/container-work" \
+  "${SCRATCH}/container.sh" >/dev/null 2>"${SCRATCH}/container.stderr" || container_rc=$?
+expect_eq 'container mode: the backup exits 0 (dry run)' "${container_rc}" '0'
+expect_eq 'container mode: pg_dump targets the canonical database (@DB_NAME@)' \
+  "$(cat "${DOCKER_ARGS_LOG}")" "exec dbc-test pg_dump -U postgres -Fc ${HL_NEW_DB_NAME}"
 
 # --- Finding 3a (review): backup.enabled requires a non-empty
 # backup.s3_prefix — setup-host.sh's config validation, exercised via

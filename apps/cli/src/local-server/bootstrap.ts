@@ -5,7 +5,7 @@ import type { Runner } from './runner'
 import { defaultLabel, isCheckout, readRegistry } from './state'
 import { cliHome } from './home-move'
 
-export const DEFAULT_REPO = 'https://github.com/ficushq/tau.git'
+export const DEFAULT_REPO = 'https://github.com/ficushq/ficus.git'
 /**
  * Where `ficus server install` puts the checkout without --root: the root of the registered
  * default instance when there is one (so re-running the installer reuses that checkout, whatever

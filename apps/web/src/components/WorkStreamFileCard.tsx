@@ -139,7 +139,7 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
     <>
       <button
         onClick={handleClick}
-        className="ficus-button flex items-center gap-3 px-3 py-3 rounded-xl border-0 bg-surface-secondary hover:bg-surface-hover transition-colors text-left w-full group"
+        className="ficus-button ficus-button-secondary flex items-center gap-3 px-3 py-3 rounded-xl transition-colors text-left w-full group"
       >
         <div
           className={clsx(
@@ -179,7 +179,7 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
         {data && !data.error && !data.binary && !isImageFile(fileName) && (
           <div className="grow overflow-auto">
             {isMarkdown(fileName) ? (
-              <MarkdownContent>{data.content}</MarkdownContent>
+              <MarkdownContent variant="document">{data.content}</MarkdownContent>
             ) : (
               <MarkdownContent>
                 {formatAsCodeBlock(data.content, getLanguageFromExt(fileName.split('.').pop()?.toLowerCase()))}

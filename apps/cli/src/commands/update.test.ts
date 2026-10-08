@@ -3,7 +3,7 @@ import { Command } from 'commander'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 import { apiGet, apiPatch, apiPost } from '../client'
 import { output, outputError, setOutputOptions } from '../output'
 import { upsertInstance } from '../local-server/state'
@@ -145,8 +145,8 @@ describe('update apply offline fallback', () => {
       expect(apiGet).not.toHaveBeenCalled()
       expect(output).toHaveBeenCalledWith(
         expect.objectContaining({
-          latest: expect.objectContaining({ id: 'r1' }),
-          source: join(dir, dirName, 'local-update-status.json'),
+          latest: dirName === '.ficus' ? expect.objectContaining({ id: 'r1' }) : null,
+          source: join(dir, '.ficus', 'local-update-status.json'),
         }),
         expect.any(String)
       )
@@ -178,6 +178,7 @@ describe('defaultUpdateDeps localPort', () => {
     process.env.FICUS_LOCAL_SERVER_STATE = statePath
     try {
       expect(defaultUpdateDeps().localPort(root)).toBe(3100)
+      expect(() => defaultUpdateDeps().offlineUpdate({ root, log: () => {} })).toThrow('ficus-host-layout-bridge')
       expect(defaultUpdateDeps().localPort(other)).toBe(4321)
       expect(defaultUpdateDeps().localPort(join(tmp, 'nope'))).toBeUndefined()
     } finally {
@@ -186,4 +187,25 @@ describe('defaultUpdateDeps localPort', () => {
       rmSync(tmp, { recursive: true, force: true })
     }
   })
+})
+
+it('refuses standalone offline update when only the old home registry exists', () => {
+  const home = mkdtempSync(join(tmpdir(), 'ficus-update-old-home-'))
+  const oldDir = join(home, LEGACY_HOME_DIR_NAME, 'cli')
+  mkdirSync(oldDir, { recursive: true })
+  writeFileSync(join(oldDir, 'local-server.json'), JSON.stringify({ version: 3, instances: {} }))
+  const savedHome = process.env.HOME
+  const savedState = process.env.FICUS_LOCAL_SERVER_STATE
+  try {
+    process.env.HOME = home
+    delete process.env.FICUS_LOCAL_SERVER_STATE
+    expect(() => defaultUpdateDeps().resolveRoot()).toThrow('ficus-host-layout-bridge')
+    expect(() => defaultUpdateDeps().offlineUpdate({ root: home, log: () => {} })).toThrow('ficus-host-layout-bridge')
+  } finally {
+    if (savedHome === undefined) delete process.env.HOME
+    else process.env.HOME = savedHome
+    if (savedState === undefined) delete process.env.FICUS_LOCAL_SERVER_STATE
+    else process.env.FICUS_LOCAL_SERVER_STATE = savedState
+    rmSync(home, { recursive: true, force: true })
+  }
 })

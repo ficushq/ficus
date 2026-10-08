@@ -28,7 +28,17 @@ Colors are theme tokens. `packages/shared/src/theme-schema.ts` lists them; `src/
 
 In the default Ficus theme the light canvas is linen (`#f1e9db`), with a lighter linen reading surface (`#f5f0e6`) and leaf-tinted secondary fills. Dark mode uses a soil canvas (`#1c1a17`), a warmer soil surface (`#2f2a24`), and leaf-tinted control fills. Leaf green (`#3f6b4f`, sage `#9fb57f` in dark mode) is Ficus's primary action and selection color, with terracotta and moss as its secondary and tertiary swatch colors. Iris keeps the original purple; other themes supply their own. Use the light accent token for foreground links in dark mode; filled controls use `text-on-accent`. A link's hover color is `text-link-hover` (`--color-link-hover`), which gains contrast in both appearances; `accent-hover` is a button fill that darkens in dark themes, so never use it for text.
 
-Use `ficus-field`, `ficus-button`, `ficus-button-primary`, `ficus-nav-item`, and `ficus-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
+Use `ficus-field`, `ficus-nav-item`, and `ficus-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
+
+`ficus-button` is only a base (radius, weight, transitions) with no fill or border. Always pair it with exactly one variant; `components/buttonVariants.guard.test.ts` enforces this:
+
+| Variant                  | Use for                                                                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ficus-button-primary`   | The one main action of a page, dialog or form (Save, Approve, Connect, Send).                                                                                  |
+| `ficus-button-secondary` | Standalone actions in content: card CTAs ("Review and decide", "View"), row actions shown as buttons, Cancel in a dialog. Visible at rest.                     |
+| `ficus-button-ghost`     | Icon-only buttons, and compact controls inside a toolbar, header, menu or segmented cluster. Transparent at rest; a text-only ghost alone in content is a bug. |
+| `ficus-button-link`      | Inline text actions in running text or a section header ("Dismiss", "Retry", "Edit"). No horizontal padding.                                                   |
+| `ficus-button-danger`    | Destructive actions (Delete, Remove, Revoke, Disconnect). Secondary-shaped with danger text; destructive icon buttons stay ghost with a danger hover.          |
 
 ## Hierarchy and spacing
 
@@ -59,7 +69,7 @@ The Home active-work explorer is always a list inline; it has no list/kanban/gra
 
 The chat picker keeps the manager, search, and New chat action accessible. The pulse toggle starts disabled. When enabled, it limits the worker list to live/non-idle agents plus the currently viewed agent, retaining that agent’s category even if it becomes idle or completed and hiding other empty categories. Consultant recents remain available. Show **No active agents** when the filtered worker region is empty.
 
-Squad Home and the Chats panel show up to five unarchived recent consultants, ordered by the last human message or creation time, without a fixed age cutoff. The Chats panel’s Recent chats section starts expanded and can collapse independently of workers and the open conversation; search reveals matching chats. Home has no recent-chat disclosure. Browsing/search gives access to older chats. Standalone chat page pickers retain ten recents.
+Squad Home and the Chats panel show up to five unarchived recent consultants, ordered by the last human message or creation time, without a fixed age cutoff. The Chats panel’s Recent chats section starts expanded and can collapse independently of workers and the open conversation; its selected eligible consultant stays visible while collapsed or outside the recent subset, without expanding the section. Search reveals matching chats without retaining non-matching selections. Home has no recent-chat disclosure. Browsing/search gives access to older chats. Standalone chat page pickers retain ten recents.
 
 Titles use `Manager (Name)`, `Purpose (Type • Name)`, or `Type (Name)` when there is no purpose. Display types in title case.
 
@@ -107,6 +117,22 @@ Respect `prefers-reduced-motion` and `prefers-reduced-transparency`. Skeleton pu
 
 Target WCAG 2.2 AA, without treating this guide as a compliance certification. Normal text requires 4.5:1 contrast and qualifying large text 3:1; check the composited result for glass. See [W3C contrast guidance](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html). Keep focus visible and aim for comfortable touch targets; WCAG's [minimum target size criterion](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) is 24 CSS pixels subject to its exceptions, while 44px is a useful product target for primary phone controls.
 
+## Work stream details
+
+Workflow previews start collapsed. The disclosure visibly says **Workflow · actual name**
+(including custom inline names); missing names show **Workflow**, not a guessed preset.
+Expanding exposes the interactive graph and grouped steps. Step usage, handoff history and
+management tools are secondary disclosures inside that section, not loose text below the
+collapsed summary. Overall usage stays in the enclosing detail view without a duplicate
+workflow total. Critical waits, human decisions and delivery checks remain in the leading
+attention callouts; checking delivery does not claim a merge or review has completed.
+Refreshes preserve expansion; switching streams or reopening details resets it.
+Descriptions wrap long paths, URLs and inline code within the modal; wide tables and code
+blocks retain contained scrolling. The focused, DB-free browser regression can be run from
+`apps/web` with `CHROMIUM_PATH=/path/to/chromium bun scripts/check-work-stream-detail-layout.ts`.
+Set `SCREENSHOT_DIR` to save narrow/wide screenshots and measurements. This uses synthetic
+query data and the real modal, markdown renderer and styles, without contacting a backend.
+
 ## Specialized content
 
 Terminal themes, ANSI colors, syntax highlighting, code/diff meaning, graph canvases, voice visualization, and user-authored artifacts retain functional conventions. Their application framing, menus, and buttons use the shared language. Do not rewrite embedded user content or recolor semantic outputs merely to match the canvas.
@@ -143,7 +169,7 @@ Guides size to their content. Phone conversations use the available visual viewp
 
 The live voice control stays visible; disable it with an explanatory tooltip until configuration and permission are confirmed. On insecure or unsupported browsers, explain why starting is unavailable. Show connection progress on the control. A connected call automatically compacts into a small strip: the mic toggles mute, a status label explains the current phase, and icon controls end the call or expand the transcript. Listening means the microphone is ready; a soft mic halo pulses when speech is detected, respecting reduced motion. Connection and error state belong inside Assistant. Keep motion restrained and respect reduced motion.
 
-Inbox rows use plain sender text, wrapping subjects, quieter previews and timestamps, and light separators. Expanded details and attachments remain accessible without outlined cards around each message.
+Inbox rows use plain sender text, wrapping subjects, quieter previews and timestamps, and light separators. Expanded details and attachments remain accessible without outlined cards around each message. Below 768px, the standalone Inbox list keeps an 8px viewport-edge gutter rather than stacking page and section padding. The title keeps the standard page gutter; rows and section headers retain their shared internal unread-dot gutter. Desktop and popup insets are unchanged.
 
 Agent models use safe catalog metadata from the runtime registry when available, retaining custom IDs as a fallback. Model tier editors allow registry selection and custom entry. Agent type editing uses a dialog for long prompts and skill selection; integration-specific controls require the corresponding enabled feature.
 

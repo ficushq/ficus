@@ -13,7 +13,7 @@ export function AgentExecutionSection() {
   if (isLoading) return <FormSkeleton label="Loading execution settings" sections={1} />
   if (isError)
     return (
-      <p role="alert" className="text-sm text-danger">
+      <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
         Unable to load the agent limit.
       </p>
     )
@@ -152,7 +152,7 @@ export function NumberSettingFields({
         <button
           onClick={onSave}
           disabled={disabled || !isDirty}
-          className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent disabled:opacity-50 disabled:cursor-not-allowed"
+          className="ficus-button ficus-button-primary rounded-md px-3 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSaving ? 'Saving…' : 'Save'}
         </button>
@@ -160,7 +160,7 @@ export function NumberSettingFields({
           <button
             onClick={onReset}
             disabled={disabled}
-            className="ficus-button rounded-md bg-surface-secondary px-3 py-1.5 text-sm text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isResetting ? 'Resetting…' : 'Reset to default'}
           </button>
@@ -169,7 +169,7 @@ export function NumberSettingFields({
       </div>
 
       {errorMessage && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {errorMessage}
         </p>
       )}

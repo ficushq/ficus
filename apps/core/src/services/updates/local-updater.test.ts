@@ -5,7 +5,6 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { EnvNamingError, RENAME_BRIDGE_TAG, PRE_FICUS_ENCRYPTION_KEY } from '@ficus/shared/env-naming'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
 import { CommandRunner } from './command-runner'
 import {
   LocalUpdateManager,
@@ -152,7 +151,7 @@ describe('LocalUpdateManager', () => {
   // The same status file `bun run update:offline` writes: <root>/.ficus, or the pre-rename dir while only it exists.
   for (const [where, dirName] of [
     ['.ficus', '.ficus'],
-    ['the legacy dir', LEGACY_HOME_DIR_NAME],
+    ['the legacy dir', '.other-settings'],
   ] as const) {
     it(`reads the persisted run from ${where} under the repo root by default`, () => {
       const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
@@ -168,7 +167,7 @@ describe('LocalUpdateManager', () => {
           commands: [],
         }
         writeFileSync(join(dir, dirName, 'local-update-status.json'), JSON.stringify(run))
-        expect(manager({ repoRoot: dir }).updater.status().latest?.id).toBe('r1')
+        expect(manager({ repoRoot: dir }).updater.status().latest?.id).toBe(dirName === '.ficus' ? 'r1' : undefined)
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }
@@ -258,7 +257,7 @@ describe('LocalUpdateManager', () => {
       run.selectedTasks = ['core']
       run.commands = [
         { task: 'core', command: ['bun', 'run', 'build:core'], status: 'succeeded' },
-        { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'tau-api'], status: 'running' },
+        { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'ficus-api'], status: 'running' },
       ]
       ;(first.updater as any).persistLatest(run)
 
@@ -284,7 +283,7 @@ describe('LocalUpdateManager', () => {
         { task: 'core', command: ['bun', 'run', 'build:core'], status: 'succeeded' },
         {
           task: 'core',
-          command: ['systemctl', '--user', '--no-block', 'restart', 'tau-api.service'],
+          command: ['systemctl', '--user', '--no-block', 'restart', 'ficus-api.service'],
           status: 'succeeded',
           exitCode: 0,
         },
@@ -314,7 +313,7 @@ describe('LocalUpdateManager', () => {
         { task: 'core', command: ['bun', 'run', 'build:core'], status: 'succeeded' },
         {
           task: 'core',
-          command: ['systemctl', '--user', '--no-block', 'restart', 'tau-api.service'],
+          command: ['systemctl', '--user', '--no-block', 'restart', 'ficus-api.service'],
           status: 'failed',
           exitCode: 143,
           outputTail: '',
@@ -342,8 +341,8 @@ describe('LocalUpdateManager', () => {
       run.selectedTasks = ['core']
       run.commands = [
         { task: 'core', command: ['bun', 'run', 'build:core'], status: 'running' },
-        { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'tau-worker'], status: 'pending' },
-        { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'tau-api'], status: 'pending' },
+        { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'ficus-worker'], status: 'pending' },
+        { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'ficus-api'], status: 'pending' },
       ]
       ;(first.updater as any).persistLatest(run)
 
@@ -367,10 +366,10 @@ describe('LocalUpdateManager', () => {
       run.selectedTasks = ['core']
       run.commands = [
         { task: 'core', command: ['bun', 'run', 'build:core'], status: 'succeeded' },
-        { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'tau-worker'], status: 'succeeded' },
+        { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'ficus-worker'], status: 'succeeded' },
         // The command runner marks the API-restart command 'succeeded' before dispatching it,
         // so a genuine self-restart always persists with this final status, never 'pending'.
-        { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'tau-api'], status: 'succeeded' },
+        { task: 'core', command: ['sudo', '-n', 'systemctl', 'restart', 'ficus-api'], status: 'succeeded' },
       ]
       ;(first.updater as any).persistLatest(run)
 
@@ -505,8 +504,8 @@ describe('LocalUpdateManager', () => {
         commandRunner: new CommandRunner({
           cwd: '/repo',
           runProcess: async (command) => ({
-            exitCode: command.includes('tau-api') ? 1 : 0,
-            output: command.includes('tau-api') ? 'sudo: a password is required' : '',
+            exitCode: command.includes('ficus-api') ? 1 : 0,
+            output: command.includes('ficus-api') ? 'sudo: a password is required' : '',
           }),
         }),
       })
@@ -565,7 +564,7 @@ describe('LocalUpdateManager', () => {
       const run = updater.applyInBackground({ manual: true, tasks: ['core'] })
       await waitUntilInactive(updater)
       const planned = run.commands.map((c) => c.command.join(' '))
-      expect(planned.some((c) => c.includes('systemctl restart tau-worker'))).toBe(true)
+      expect(planned.some((c) => c.includes('systemctl restart ficus-worker'))).toBe(true)
       expect(planned.some((c) => c.includes('reload:'))).toBe(false)
     })
   })
@@ -737,7 +736,7 @@ describe('cross-process update run lock (real advisory lock)', () => {
   })
 })
 
-// The last thing an update does is restart tau-api and tau-worker, and it
+// The last thing an update does is restart ficus-api and ficus-worker, and it
 // rewrites no .env. Since FICUS_SANDBOX_RUNTIME became mandatory and explicit,
 // an install whose environment never named one comes back from that restart
 // with both services DEAD — after the merge and the build already landed.

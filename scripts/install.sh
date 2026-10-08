@@ -1,17 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-REPO="${FICUS_INSTALL_REPO:-ficushq/tau}"
-# The CLI home is ~/.ficus. A legacy home that has not been moved yet (and no
-# ~/.ficus beside it) stays the CLI home until `ficus server rename-identity`
-# moves it — the same rule as the CLI's own cliHome().
-LEGACY_HOME_NAME=.tau # ficus-p5-bridge
+REPO="${FICUS_INSTALL_REPO:-ficushq/ficus}"
 CLI_HOME="$HOME/.ficus"
-MOVE_NOTICE=""
-if [ ! -e "$CLI_HOME" ] && [ ! -L "$CLI_HOME" ] && { [ -e "$HOME/$LEGACY_HOME_NAME" ] || [ -L "$HOME/$LEGACY_HOME_NAME" ]; }; then
-  CLI_HOME="$HOME/$LEGACY_HOME_NAME" # ficus-p5-bridge
-  MOVE_NOTICE="run \`ficus server rename-identity\` to move $CLI_HOME to ~/.ficus"
-fi
 INSTALL_DIR=${FICUS_INSTALL_DIR:-}
 [ -n "$INSTALL_DIR" ] || INSTALL_DIR="$CLI_HOME/bin"
 SHARE_DIR="${FICUS_SHARE_DIR:-$CLI_HOME/share}"
@@ -97,9 +88,6 @@ else
 fi
 say "${DIM}Install dir:${RESET} $INSTALL_DIR"
 say "${DIM}Share dir:${RESET}   $SHARE_DIR"
-if [ -z "${FICUS_INSTALL_DIR:-}" ] && [ -n "$MOVE_NOTICE" ]; then
-  warn "$MOVE_NOTICE"
-fi
 
 need curl
 need tar
@@ -343,3 +331,6 @@ esac
 say ""
 say "Run: ${BOLD}ficus --help${RESET}"
 say "Project memory skill: ${BOLD}ficus skill install ficus-memory --agent pi${RESET}"
+if [ "$PLATFORM" = "macos" ]; then
+  say "Desktop app: ${BOLD}ficus desktop${RESET}"
+fi

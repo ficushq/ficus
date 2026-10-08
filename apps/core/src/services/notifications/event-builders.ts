@@ -1,3 +1,4 @@
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
 import {
   workStreamWaitActor,
   assistantConversationPath,
@@ -60,11 +61,11 @@ function buildUrl(path: string): string | undefined {
 }
 
 /**
- * This instance's own web origin, derived from APP_URL like buildUrl (lowercase scheme+host,
+ * This instance's public app address (APP_URL, with legacy PUBLIC_URL fallback): lowercase scheme+host,
  * optional base path, no trailing slash) so a multi-server mobile app can match it against
- * its paired servers. Undefined when APP_URL isn't set or isn't a URL.
+ * its paired servers. Undefined when no valid public application URL is configured.
  */
-export function getAppOrigin(appUrl: string | undefined = process.env.APP_URL): string | undefined {
+export function getAppOrigin(appUrl: string | undefined = resolvePublicAppUrl()): string | undefined {
   if (!appUrl) return undefined
   try {
     const parsed = new URL(appUrl)
@@ -95,7 +96,6 @@ export const eventBuilders: Record<string, EventBuilder> = {
       .map((item) => item.question.trim())
       .filter(Boolean)
       .join('\n')
-      .slice(0, 300)
 
     return {
       type: 'agent-question.created',
@@ -107,7 +107,8 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadId: question.squadId ?? undefined,
       squadName: squad?.name,
       title: `❓ ${agentLabel} has a question`,
-      body: questionText || 'Open Ficus to respond',
+      body: questionText.slice(0, 300) || 'Open Ficus to respond',
+      pushSource: { body: questionText || 'Open Ficus to respond' },
       url: question.squadId ? buildUrl(`/squads/${question.squadId}?agent=${agent.id}`) : buildUrl(`/chat/${agent.id}`),
       timestamp: new Date(),
     }
@@ -163,6 +164,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       ...(target ? { waitId: target.waitId, actionId: target.actionId } : {}),
       title: `👀 Ready for review: ${workStreamTitle(ws)}`,
       body: target?.message || ws.handoffMessage || ws.description?.slice(0, 200) || 'No description',
+      pushSource: { body: target?.message || ws.handoffMessage || ws.description || 'No description' },
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
@@ -186,6 +188,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       workStreamNumber: ws.number,
       title: `✅ Completed: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
+      pushSource: { body: ws.description || 'No description' },
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
@@ -232,6 +235,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       workStreamNumber: ws.number,
       title: `📋 New work stream: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
+      pushSource: { body: ws.description || 'No description' },
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
@@ -255,6 +259,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       workStreamNumber: ws.number,
       title: `📝 Updated: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
+      pushSource: { body: ws.description || 'No description' },
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
@@ -287,20 +292,25 @@ export const eventBuilders: Record<string, EventBuilder> = {
     // chat in its squad; non-agent senders (system/user/voice) fall back to Feed.
     const senderMeta = message.metadata?.sender as { squadId?: string } | undefined
     const isAgentSender = message.senderType === 'agent' && !!message.senderId
-    const fleetSquadId =
+    const metadataSquadId =
       typeof message.metadata?.squadId === 'string' && UUID_PATTERN.test(message.metadata.squadId)
         ? message.metadata.squadId
         : undefined
     const isFleetAlert =
       message.senderType === 'system' &&
       message.metadata?.source === 'fleet-alert' &&
-      (message.metadata.squadId === undefined || fleetSquadId !== undefined)
-    const fleetSquad = isFleetAlert && fleetSquadId ? await Squad.find(fleetSquadId) : null
+      (message.metadata.squadId === undefined || metadataSquadId !== undefined)
+    const fleetSquad = isFleetAlert && metadataSquadId ? await Squad.find(metadataSquadId) : null
     const trustedMetadata = message.senderType === 'system' ? message.metadata : null
     const trustedString = (key: 'workStreamId' | 'waitId' | 'questionId' | 'actionId') => {
       const value = trustedMetadata?.[key]
       return typeof value === 'string' && value ? value : undefined
     }
+    // Lifecycle inbox notifications already store their squad, but are not fleet alerts.
+    // Preserve that trusted context so mobile can open completed work outside the active Feed.
+    const workStreamSquad =
+      trustedString('workStreamId') && metadataSquadId ? (fleetSquad ?? (await Squad.find(metadataSquadId))) : null
+    const inboxSquad = workStreamSquad ?? fleetSquad
     // A system-authored message may carry copy written for the phone; the row's subject and
     // content were written for its recipient. Agents and users cannot restyle their own alerts.
     const push = parseInboxPushPresentation(trustedMetadata?.push)
@@ -318,10 +328,11 @@ export const eventBuilders: Record<string, EventBuilder> = {
       questionId: trustedString('questionId'),
       actionId: trustedString('actionId'),
       agentId: isAgentSender ? message.senderId! : undefined,
-      squadId: isAgentSender ? senderMeta?.squadId : fleetSquad?.id,
-      squadName: fleetSquad?.name,
+      squadId: isAgentSender ? senderMeta?.squadId : inboxSquad?.id,
+      squadName: inboxSquad?.name,
       title: push?.title ?? (message.subject || 'New message'),
       body: push?.body ?? message.content.slice(0, 300),
+      pushSource: push?.source ?? { body: push?.body ?? message.content },
       ...(push?.subtitle ? { subtitle: push.subtitle } : {}),
       ...(push?.collapseKey ? { collapseKey: push.collapseKey } : {}),
       ...(push?.threadKey ? { threadKey: push.threadKey } : {}),
@@ -411,6 +422,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       agentId: agent.id,
       title: `❌ Execution failed`,
       body: `${agentLabel} agent failed: ${errorMsg.slice(0, 200)}`,
+      pushSource: { body: `${agentLabel} agent failed: ${errorMsg}` },
       url,
       timestamp: new Date(),
     }

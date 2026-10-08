@@ -1,5 +1,5 @@
 import { createLogger } from '../../lib/infra/logger'
-import { loadExplicitSystemLogConfig } from './config'
+import { loadExplicitSystemLogConfig, pm2LogTargets } from './config'
 import { DockerLogProvider } from './docker-provider'
 import { FileLogProvider } from './file-provider'
 import { K8sLogProvider } from './k8s-provider'
@@ -26,11 +26,8 @@ const defaultFactoryDependencies: SystemLogFactoryDependencies = {
 }
 
 function verifiedPm2Targets(dependencies: SystemLogFactoryDependencies): { api: string; worker: string } | undefined {
-  const targets = {
-    api: process.env.FICUS_PM2_API_NAME?.trim() || 'tau-api',
-    worker: process.env.FICUS_PM2_WORKER_NAME?.trim() || 'tau-worker',
-  }
   try {
+    const targets = pm2LogTargets()
     const result = dependencies.listPm2Processes()
     if (result.exitCode !== 0) return undefined
     const processes = JSON.parse(result.stdout) as Array<{ name?: string }>

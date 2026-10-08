@@ -52,7 +52,7 @@ export function monitorDir(workspaceMount: string, monitorId: string): string {
 }
 
 export function sessionNameForMonitor(monitorId: string): string {
-  return `tau-monitor-${monitorId.slice(0, 8)}`
+  return `ficus-monitor-${monitorId.slice(0, 8)}`
 }
 
 /**

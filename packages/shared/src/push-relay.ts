@@ -48,6 +48,80 @@ export const relaySendSchema = z
 export type RelayRouting = z.infer<typeof relayRoutingSchema>
 export type RelaySend = z.infer<typeof relaySendSchema>
 
+/** Device-authored policy. Missing preview consent always means generic text. */
+export const nativeNotificationPolicySchema = z
+  .object({
+    enabled: z.boolean(),
+    showPreviews: z.boolean(),
+    mutedSquadIds: z.array(z.string().uuid()).max(200),
+    onlySquadIds: z.array(z.string().uuid()).max(200).optional(),
+    eventTypes: z
+      .array(z.enum(['question', 'review', 'blocked', 'done', 'canceled', 'created', 'message', 'update']))
+      .max(8)
+      .optional(),
+    quietHours: z
+      .object({
+        startMinute: z.number().int().min(0).max(1439),
+        endMinute: z.number().int().min(0).max(1439),
+        timeZone: z
+          .string()
+          .max(100)
+          .refine((zone) => {
+            try {
+              new Intl.DateTimeFormat('en', { timeZone: zone })
+              return true
+            } catch {
+              return false
+            }
+          }, 'Use an IANA time zone'),
+      })
+      .strict()
+      .refine((hours) => hours.startMinute !== hours.endMinute, 'Quiet hours must have a duration')
+      .optional(),
+  })
+  .strict()
+export type NativeNotificationPolicy = z.infer<typeof nativeNotificationPolicySchema>
+export const defaultNativeNotificationPolicy: NativeNotificationPolicy = {
+  enabled: true,
+  showPreviews: false,
+  mutedSquadIds: [],
+}
+/** Use the named zone at the event instant: repeated DST hours are both quiet. */
+export function nativeNotificationDecision(
+  policy: NativeNotificationPolicy,
+  routing: RelayRouting,
+  pro: boolean,
+  at = new Date()
+): { deliver: boolean; routing: RelayRouting } {
+  const sanitized = { ...routing }
+  if (!policy.showPreviews) delete sanitized.preview
+  if (!policy.enabled || (routing.squadId && policy.mutedSquadIds.includes(routing.squadId)))
+    return { deliver: false, routing: sanitized }
+  if (pro) {
+    if (policy.onlySquadIds && (!routing.squadId || !policy.onlySquadIds.includes(routing.squadId)))
+      return { deliver: false, routing: sanitized }
+    if (policy.eventTypes && !policy.eventTypes.includes(routing.eventType ?? 'update'))
+      return { deliver: false, routing: sanitized }
+    if (policy.quietHours) {
+      const { startMinute, endMinute, timeZone } = policy.quietHours
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone,
+        hourCycle: 'h23',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).formatToParts(at)
+      const minute =
+        Number(parts.find((p) => p.type === 'hour')?.value) * 60 + Number(parts.find((p) => p.type === 'minute')?.value)
+      const quiet =
+        startMinute < endMinute
+          ? minute >= startMinute && minute < endMinute
+          : minute >= startMinute || minute < endMinute
+      if (quiet) return { deliver: false, routing: sanitized }
+    }
+  }
+  return { deliver: true, routing: sanitized }
+}
+
 export const installationKeySchema = z.string().regex(/^[0-9a-f]{64}$/)
 export const instanceEnrollmentSchema = z
   .object({ publicKey: installationKeySchema, label: z.string().trim().min(1).max(60) })
@@ -61,6 +135,7 @@ export const activationActionSchema = z.discriminatedUnion('action', [
       deviceToken: apnsTokenSchema,
       environment: z.enum(['sandbox', 'production']),
       bindingToken: relayBindingTokenSchema,
+      notificationPolicy: nativeNotificationPolicySchema.optional(),
     })
     .strict(),
 ])
@@ -80,6 +155,7 @@ export function activationOperationPayload(operation: ActivationOperation): stri
             operation.deviceToken,
             operation.environment,
             operation.bindingToken,
+            ...(operation.notificationPolicy ? [operation.notificationPolicy] : []),
           ]
   )
 }

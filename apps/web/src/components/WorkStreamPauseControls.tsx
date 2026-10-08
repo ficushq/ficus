@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { WorkStream } from '@ficus/shared'
 import { client } from '../api/clientInstance'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'
 
-export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
+export function useWorkStreamPauseControls(stream: WorkStream) {
   const { can } = usePermissions(stream.squadId)
   const cache = useQueryClient()
   const [editing, setEditing] = useState(false)
@@ -23,7 +23,45 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
       cache.invalidateQueries({ queryKey: queryKeys.agents.all })
     },
   })
+  const eligible = can('workstreams:update') && !['done', 'canceled'].includes(stream.status)
+  const paused = Boolean(stream?.pause)
+  const { reset } = action
+  useEffect(() => {
+    setEditing(false)
+    setReason('')
+    setMinutes('')
+    reset()
+  }, [stream.id, paused, eligible, reset])
+  return {
+    action,
+    editing,
+    reason,
+    setReason,
+    minutes,
+    setMinutes,
+    canPause: eligible && !stream.pause,
+    canPark: eligible && Boolean(stream.pause) && stream.status === 'active',
+    canResume: eligible && Boolean(stream.pause),
+    openPause: () => {
+      if (eligible && !stream.pause && !action.isPending) setEditing(true)
+    },
+    closePause: () => setEditing(false),
+    park: () => {
+      if (eligible && stream.pause && stream.status === 'active' && !action.isPending) action.mutate('park')
+    },
+  }
+}
+
+export function WorkStreamPauseControls({
+  stream,
+  controls,
+}: {
+  stream: WorkStream
+  controls: ReturnType<typeof useWorkStreamPauseControls>
+}) {
+  const { action, editing, reason, setReason, minutes, setMinutes } = controls
   if (['done', 'canceled'].includes(stream.status)) return null
+  if (!stream.pause && !(editing && controls.canPause) && !action.error) return null
   return (
     <section className="space-y-2">
       {stream.pause && (
@@ -35,46 +73,24 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
             : ''}
         </p>
       )}
-      {can('workstreams:update') && (
+      {(controls.canPause || controls.canResume) && (
         <>
-          <div className="flex gap-3">
-            {stream.pause ? (
-              <>
-                <button
-                  type="button"
-                  className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-xs font-medium"
-                  disabled={action.isPending}
-                  onClick={() => action.mutate('resume')}
-                >
-                  Resume work
-                </button>
-                {stream.status === 'active' && (
-                  <button
-                    type="button"
-                    className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-xs font-medium"
-                    disabled={action.isPending}
-                    onClick={() => action.mutate('park')}
-                  >
-                    Park while paused
-                  </button>
-                )}
-              </>
-            ) : (
-              <button
-                type="button"
-                className="ficus-button rounded-md border border-th-border px-3 py-1.5 text-xs font-medium text-secondary"
-                onClick={() => setEditing(!editing)}
-              >
-                Pause work
-              </button>
-            )}
-          </div>
+          {controls.canResume && (
+            <button
+              type="button"
+              className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-xs font-medium"
+              disabled={action.isPending}
+              onClick={() => action.mutate('resume')}
+            >
+              Resume work
+            </button>
+          )}
           {editing && !stream.pause && (
             <form
               className="space-y-2"
               onSubmit={(event) => {
                 event.preventDefault()
-                action.mutate('pause')
+                if (controls.canPause && !action.isPending) action.mutate('pause')
               }}
             >
               <p className="text-xs text-secondary">
@@ -85,6 +101,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
                 Reason
                 <input
                   className="ficus-field w-full p-2 border border-th-border rounded-md"
+                  autoFocus
                   value={reason}
                   maxLength={2000}
                   onChange={(event) => setReason(event.target.value)}
@@ -108,6 +125,14 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
                 disabled={action.isPending}
               >
                 Pause now
+              </button>
+              <button
+                type="button"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 text-xs"
+                disabled={action.isPending}
+                onClick={controls.closePause}
+              >
+                Cancel
               </button>
             </form>
           )}

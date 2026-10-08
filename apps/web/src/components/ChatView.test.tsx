@@ -239,6 +239,23 @@ async function attachImageAndSend(
   })
 }
 
+test('a mounted composer banner that renders nothing leaves no padding gap', async () => {
+  function Banner() {
+    const [visible, setVisible] = useState(true)
+    return visible ? (
+      <button data-testid="banner" onClick={() => setVisible(false)}>
+        Hide banner
+      </button>
+    ) : null
+  }
+  const { dom, window } = await renderChatView(<ChatView items={[]} onSend={() => {}} beforeComposer={<Banner />} />)
+  const banner = window.document.querySelector('[data-testid="banner"]')!
+  const slot = banner.parentElement!
+  await dom.act(async () => banner.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
+  expect(slot.matches(':empty')).toBe(true)
+  expect(slot.classList.contains('empty:hidden')).toBe(true)
+})
+
 describe('ChatView image upload targeting and recovery', () => {
   test('mobile expansion keeps staged images attached to the draft and sends them once', async () => {
     const upload = mock(async () => ['image-mobile'])

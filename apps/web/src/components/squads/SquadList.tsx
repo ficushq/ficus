@@ -291,7 +291,7 @@ function SortableSquadCard({
       <button
         {...attributes}
         {...listeners}
-        className="ficus-button absolute bottom-2 right-2 p-1.5 text-muted hover:text-secondary cursor-grab active:cursor-grabbing rounded hover:bg-surface-secondary transition-colors touch-none"
+        className="ficus-button ficus-button-ghost absolute bottom-2 right-2 p-1.5 cursor-grab active:cursor-grabbing rounded hover:bg-surface-secondary transition-colors touch-none"
         aria-label="Drag to reorder"
       >
         <DragHandleIcon className="w-4 h-4" />

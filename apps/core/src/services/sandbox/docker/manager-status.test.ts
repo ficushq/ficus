@@ -1,5 +1,6 @@
+import { SANDBOX_IDENTITY_LEGACY } from '../retired-identity.fixture'
 import { describe, expect, it } from 'bun:test'
-import { SANDBOX_IDENTITY_LEGACY, SANDBOX_IDENTITY_NEW, type SandboxIdentitySet } from '../identity-names'
+import { SANDBOX_IDENTITY_NEW, type SandboxIdentitySet } from '../identity-names'
 import { classifyDockerContainerOwnership, classifyDockerInspectStatus } from './lifecycle-contract'
 
 describe('classifyDockerInspectStatus', () => {
@@ -20,13 +21,13 @@ describe('classifyDockerContainerOwnership', () => {
     Config: { Labels: { [set.managedLabel]: 'true', [set.sandboxIdLabel]: sandboxId, ...extraLabels } },
   })
 
-  it('accepts exact current ownership under either identity set', () => {
+  it('accepts canonical ownership and refuses retired ownership', () => {
     expect(classifyDockerContainerOwnership(owned(SANDBOX_IDENTITY_NEW), sandboxId)).toBe('current')
-    expect(classifyDockerContainerOwnership(owned(SANDBOX_IDENTITY_LEGACY), sandboxId)).toBe('current')
+    expect(classifyDockerContainerOwnership(owned(SANDBOX_IDENTITY_LEGACY), sandboxId)).toBe('unproven')
   })
 
   it('rejects a labeled neighbor under either identity set', () => {
-    for (const set of [SANDBOX_IDENTITY_NEW, SANDBOX_IDENTITY_LEGACY]) {
+    for (const set of [SANDBOX_IDENTITY_NEW]) {
       const neighbor = owned(set, { [set.sandboxIdLabel]: 'neighbor' })
       expect(classifyDockerContainerOwnership(neighbor, sandboxId)).toBe('unproven')
     }
@@ -43,7 +44,7 @@ describe('classifyDockerContainerOwnership', () => {
   })
 
   it('accepts legacy provenance only with exact name, spec, and workspace mount', () => {
-    for (const set of [SANDBOX_IDENTITY_NEW, SANDBOX_IDENTITY_LEGACY]) {
+    for (const set of [SANDBOX_IDENTITY_NEW]) {
       const legacy = {
         Name: `/${set.containerPrefix}${sandboxId}`,
         Config: { Labels: { [set.specHashLabel]: 'abc' } },

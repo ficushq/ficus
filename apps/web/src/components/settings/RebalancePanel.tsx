@@ -122,7 +122,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
         <button
           onClick={() => dryRun.mutate()}
           disabled={busy}
-          className="ficus-button ficus-button-primary shrink-0 text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary shrink-0 text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
         >
           {dryRun.isPending ? 'Planning…' : 'Rebalance'}
         </button>
@@ -142,7 +142,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
               <button
                 onClick={() => apply.mutate()}
                 disabled={busy}
-                className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
               >
                 {apply.isPending ? 'Applying…' : 'Confirm'}
               </button>
@@ -150,7 +150,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
             <button
               onClick={() => setPlan(null)}
               disabled={busy}
-              className="ficus-button text-xs text-muted hover:text-primary font-medium disabled:opacity-50"
+              className="ficus-button ficus-button-link text-xs text-muted hover:text-primary font-medium disabled:opacity-50"
             >
               {plan.moves.length > 0 ? 'Cancel' : 'Dismiss'}
             </button>
@@ -163,7 +163,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
           <AppliedResultsView plan={applied} />
           <button
             onClick={() => setApplied(null)}
-            className="ficus-button text-xs text-muted hover:text-primary font-medium"
+            className="ficus-button ficus-button-link text-xs text-muted hover:text-primary font-medium"
           >
             Dismiss
           </button>

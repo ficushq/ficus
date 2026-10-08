@@ -1,5 +1,5 @@
 {
-  "id": "f396bb9e-b88f-4b3c-b2c3-92539d4e1690",
+  "id": "cc67f926-d682-4c22-a97a-010da983c31c",
   "prevId": "25ca2ef5-6bb2-4759-bd1c-bb142b936219",
   "version": "7",
   "dialect": "postgresql",
@@ -5367,853 +5367,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.github_feedback_decisions": {
-      "name": "github_feedback_decisions",
-      "schema": "",
-      "columns": {
-        "request_id": {
-          "name": "request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision_id": {
-          "name": "revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "request_hash": {
-          "name": "request_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_hash": {
-          "name": "content_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decision_version": {
-          "name": "decision_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "github_feedback_decision_squad_created": {
-          "name": "github_feedback_decision_squad_created",
-          "columns": [
-            {
-              "expression": "squad_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "github_feedback_decisions_request_id_revision_id_pk": {
-          "name": "github_feedback_decisions_request_id_revision_id_pk",
-          "columns": [
-            "request_id",
-            "revision_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "github_feedback_decision_hashes": {
-          "name": "github_feedback_decision_hashes",
-          "value": "\"github_feedback_decisions\".\"content_hash\" ~ '^[0-9a-f]{64}$' AND \"github_feedback_decisions\".\"request_hash\" ~ '^[0-9a-f]{64}$'"
-        },
-        "github_feedback_decision_action": {
-          "name": "github_feedback_decision_action",
-          "value": "\"github_feedback_decisions\".\"action\" in ('allow_once', 'deny', 'allow_trust')"
-        },
-        "github_feedback_decision_version": {
-          "name": "github_feedback_decision_version",
-          "value": "\"github_feedback_decisions\".\"decision_version\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.github_feedback_objects": {
-      "name": "github_feedback_objects",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "repository_id": {
-          "name": "repository_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "object_kind": {
-          "name": "object_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "native_id": {
-          "name": "native_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sequence": {
-          "name": "sequence",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "current_revision_id": {
-          "name": "current_revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider_version": {
-          "name": "provider_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "github_feedback_objects_squad_id_squads_id_fk": {
-          "name": "github_feedback_objects_squad_id_squads_id_fk",
-          "tableFrom": "github_feedback_objects",
-          "tableTo": "squads",
-          "columnsFrom": [
-            "squad_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "github_feedback_objects_current_revision_id_github_feedback_revisions_id_fk": {
-          "name": "github_feedback_objects_current_revision_id_github_feedback_revisions_id_fk",
-          "tableFrom": "github_feedback_objects",
-          "tableTo": "github_feedback_revisions",
-          "columnsFrom": [
-            "current_revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "github_feedback_object_identity": {
-          "name": "github_feedback_object_identity",
-          "nullsNotDistinct": false,
-          "columns": [
-            "squad_id",
-            "repository_id",
-            "object_kind",
-            "native_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "github_feedback_object_sequence": {
-          "name": "github_feedback_object_sequence",
-          "value": "\"github_feedback_objects\".\"sequence\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.github_feedback_revisions": {
-      "name": "github_feedback_revisions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "object_id": {
-          "name": "object_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sequence": {
-          "name": "sequence",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_hash": {
-          "name": "content_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "normalization_version": {
-          "name": "normalization_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "envelope": {
-          "name": "envelope",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "byte_count": {
-          "name": "byte_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "author": {
-          "name": "author",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "editor": {
-          "name": "editor",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attribution": {
-          "name": "attribution",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider_version": {
-          "name": "provider_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "routing_provenance": {
-          "name": "routing_provenance",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "decision": {
-          "name": "decision",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "decision_version": {
-          "name": "decision_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "decided_by_user_id": {
-          "name": "decided_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "release_state": {
-          "name": "release_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'held'"
-        },
-        "reason": {
-          "name": "reason",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "next_attempt_at": {
-          "name": "next_attempt_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_token": {
-          "name": "lease_token",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_expires_at": {
-          "name": "lease_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "first_observed_at": {
-          "name": "first_observed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "github_feedback_revision_pending": {
-          "name": "github_feedback_revision_pending",
-          "columns": [
-            {
-              "expression": "squad_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "decision",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "first_observed_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "github_feedback_revision_release": {
-          "name": "github_feedback_revision_release",
-          "columns": [
-            {
-              "expression": "release_state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "next_attempt_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "github_feedback_revisions_object_id_github_feedback_objects_id_fk": {
-          "name": "github_feedback_revisions_object_id_github_feedback_objects_id_fk",
-          "tableFrom": "github_feedback_revisions",
-          "tableTo": "github_feedback_objects",
-          "columnsFrom": [
-            "object_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "github_feedback_revisions_squad_id_squads_id_fk": {
-          "name": "github_feedback_revisions_squad_id_squads_id_fk",
-          "tableFrom": "github_feedback_revisions",
-          "tableTo": "squads",
-          "columnsFrom": [
-            "squad_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "github_feedback_revision_sequence": {
-          "name": "github_feedback_revision_sequence",
-          "nullsNotDistinct": false,
-          "columns": [
-            "object_id",
-            "sequence"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "github_feedback_revision_hash": {
-          "name": "github_feedback_revision_hash",
-          "value": "\"github_feedback_revisions\".\"content_hash\" ~ '^[0-9a-f]{64}$'"
-        },
-        "github_feedback_revision_sequence_positive": {
-          "name": "github_feedback_revision_sequence_positive",
-          "value": "\"github_feedback_revisions\".\"sequence\" > 0 AND \"github_feedback_revisions\".\"normalization_version\" > 0"
-        },
-        "github_feedback_revision_counters": {
-          "name": "github_feedback_revision_counters",
-          "value": "\"github_feedback_revisions\".\"decision_version\" >= 0 AND \"github_feedback_revisions\".\"byte_count\" >= 0 AND \"github_feedback_revisions\".\"attempts\" >= 0"
-        },
-        "github_feedback_revision_attribution": {
-          "name": "github_feedback_revision_attribution",
-          "value": "\"github_feedback_revisions\".\"attribution\" in ('creation', 'verified_edit', 'unknown')"
-        },
-        "github_feedback_revision_decision": {
-          "name": "github_feedback_revision_decision",
-          "value": "\"github_feedback_revisions\".\"decision\" in ('pending', 'allow_once', 'allow_trust', 'deny', 'automatic', 'historical')"
-        },
-        "github_feedback_revision_release_state": {
-          "name": "github_feedback_revision_release_state",
-          "value": "\"github_feedback_revisions\".\"release_state\" in ('held', 'ready', 'retry', 'retained', 'delivered', 'obsolete')"
-        },
-        "github_feedback_revision_human_decision": {
-          "name": "github_feedback_revision_human_decision",
-          "value": "(\"github_feedback_revisions\".\"decision\" in ('allow_once', 'allow_trust', 'deny') AND \"github_feedback_revisions\".\"decided_by_user_id\" is not null AND \"github_feedback_revisions\".\"decided_at\" is not null) OR (\"github_feedback_revisions\".\"decision\" in ('pending', 'automatic', 'historical') AND \"github_feedback_revisions\".\"decided_by_user_id\" is null AND \"github_feedback_revisions\".\"decided_at\" is null)"
-        },
-        "github_feedback_revision_lease_pair": {
-          "name": "github_feedback_revision_lease_pair",
-          "value": "(\"github_feedback_revisions\".\"lease_token\" is null) = (\"github_feedback_revisions\".\"lease_expires_at\" is null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.github_feedback_sources": {
-      "name": "github_feedback_sources",
-      "schema": "",
-      "columns": {
-        "revision_id": {
-          "name": "revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event_id": {
-          "name": "event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "authority": {
-          "name": "authority",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "transport_key": {
-          "name": "transport_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "observed_at": {
-          "name": "observed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "github_feedback_source_event": {
-          "name": "github_feedback_source_event",
-          "columns": [
-            {
-              "expression": "squad_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "github_feedback_sources_revision_id_github_feedback_revisions_id_fk": {
-          "name": "github_feedback_sources_revision_id_github_feedback_revisions_id_fk",
-          "tableFrom": "github_feedback_sources",
-          "tableTo": "github_feedback_revisions",
-          "columnsFrom": [
-            "revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "github_feedback_sources_event_id_integration_output_events_id_fk": {
-          "name": "github_feedback_sources_event_id_integration_output_events_id_fk",
-          "tableFrom": "github_feedback_sources",
-          "tableTo": "integration_output_events",
-          "columnsFrom": [
-            "event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "github_feedback_sources_squad_id_squads_id_fk": {
-          "name": "github_feedback_sources_squad_id_squads_id_fk",
-          "tableFrom": "github_feedback_sources",
-          "tableTo": "squads",
-          "columnsFrom": [
-            "squad_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "github_feedback_sources_revision_id_event_id_pk": {
-          "name": "github_feedback_sources_revision_id_event_id_pk",
-          "columns": [
-            "revision_id",
-            "event_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.github_personal_identities": {
-      "name": "github_personal_identities",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "host": {
-          "name": "host",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'github.com'"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "login": {
-          "name": "login",
-          "type": "varchar(100)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "linked_at": {
-          "name": "linked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "unlinked_at": {
-          "name": "unlinked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "github_personal_identity_active_account": {
-          "name": "github_personal_identity_active_account",
-          "columns": [
-            {
-              "expression": "host",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"github_personal_identities\".\"unlinked_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "github_personal_identities_user_id_users_id_fk": {
-          "name": "github_personal_identities_user_id_users_id_fk",
-          "tableFrom": "github_personal_identities",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "github_personal_identity_host": {
-          "name": "github_personal_identity_host",
-          "value": "\"github_personal_identities\".\"host\" = 'github.com'"
-        },
-        "github_personal_identity_account_id": {
-          "name": "github_personal_identity_account_id",
-          "value": "\"github_personal_identities\".\"account_id\" ~ '^[1-9][0-9]{0,15}$' AND \"github_personal_identities\".\"account_id\"::numeric <= 9007199254740991"
-        },
-        "github_personal_identity_generation": {
-          "name": "github_personal_identity_generation",
-          "value": "\"github_personal_identities\".\"generation\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.github_trusted_authors": {
-      "name": "github_trusted_authors",
-      "schema": "",
-      "columns": {
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "host": {
-          "name": "host",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'github.com'"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "login": {
-          "name": "login",
-          "type": "varchar(100)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_type": {
-          "name": "account_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "added_by_user_id": {
-          "name": "added_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "github_trusted_authors_squad_id_squads_id_fk": {
-          "name": "github_trusted_authors_squad_id_squads_id_fk",
-          "tableFrom": "github_trusted_authors",
-          "tableTo": "squads",
-          "columnsFrom": [
-            "squad_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "github_trusted_authors_squad_id_host_account_id_pk": {
-          "name": "github_trusted_authors_squad_id_host_account_id_pk",
-          "columns": [
-            "squad_id",
-            "host",
-            "account_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "github_trusted_author_host": {
-          "name": "github_trusted_author_host",
-          "value": "\"github_trusted_authors\".\"host\" = 'github.com'"
-        },
-        "github_trusted_author_account_id": {
-          "name": "github_trusted_author_account_id",
-          "value": "\"github_trusted_authors\".\"account_id\" ~ '^[1-9][0-9]{0,15}$' AND \"github_trusted_authors\".\"account_id\"::numeric <= 9007199254740991"
-        },
-        "github_trusted_author_type": {
-          "name": "github_trusted_author_type",
-          "value": "\"github_trusted_authors\".\"account_type\" in ('User', 'Bot')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.global_secret_exposures": {
       "name": "global_secret_exposures",
       "schema": "",
@@ -9894,6 +9047,99 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.live_activity_relay_installations": {
+      "name": "live_activity_relay_installations",
+      "schema": "",
+      "columns": {
+        "activation_id": {
+          "name": "activation_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state_enc": {
+          "name": "state_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lease_id": {
+          "name": "lease_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_until": {
+          "name": "lease_until",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "live_activity_relay_due_idx": {
+          "name": "live_activity_relay_due_idx",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "live_activity_relay_installations_user_id_users_id_fk": {
+          "name": "live_activity_relay_installations_user_id_users_id_fk",
+          "tableFrom": "live_activity_relay_installations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

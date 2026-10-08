@@ -12,7 +12,7 @@
  */
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query'
 import { ChatApiProvider } from '../api/ChatApiProvider'
 import { queryKeys } from '../queryKeys'
 import type { FicusClient } from '@ficus/client-core'
@@ -186,7 +186,7 @@ async function installDom() {
 
 const queryClients = new Set<QueryClient>()
 
-function makeProviders(client: FicusClient) {
+function makeProviders(client: FicusClient, getQuestions = async (_id: string) => _openQuestions) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClients.add(qc)
   function Providers({ children }: { children: React.ReactNode }) {
@@ -196,9 +196,9 @@ function makeProviders(client: FicusClient) {
           overrides={{
             getAgent: async (id) =>
               ({ ...(_agentStore[id] ?? { id, terminatedAt: null, status: 'running', questionData: null }) }) as never,
-            getAgentQuestions: async () => {
+            getAgentQuestions: async (id) => {
               _agentQuestionFetchCount += 1
-              return _openQuestions as never
+              return (await getQuestions(id)) as never
             },
           }}
         >
@@ -251,10 +251,12 @@ const { AgentChat } = await import('./AgentChat')
 // ---------------------------------------------------------------------------
 
 afterEach(async () => {
-  for (const queryClient of queryClients) {
-    await queryClient.cancelQueries()
-    queryClient.clear()
-  }
+  await activeDom?.act(async () => {
+    for (const queryClient of queryClients) {
+      await queryClient.cancelQueries()
+      queryClient.clear()
+    }
+  })
   queryClients.clear()
   await activeDom?.cleanup()
   activeDom = undefined
@@ -782,6 +784,106 @@ describe('AgentChat', () => {
     }
   })
 
+  for (const initiallyFails of [false, true]) {
+    test(`question hydration waits for data after initial ${initiallyFails ? 'error' : 'loading'}`, async () => {
+      const dom = await installDom()
+      const mc = makeMockClient()
+      let resolve!: (questions: unknown[]) => void
+      let reject!: (error: Error) => void
+      const initial = new Promise<unknown[]>((res, rej) => {
+        resolve = res
+        reject = rej
+      })
+      const { Providers, qc } = makeProviders(mc.client, () => initial)
+      const key = queryKeys.agentQuestions.byAgent('a1', 'open')
+      const question = {
+        id: 'hydrated',
+        agentId: 'a1',
+        status: 'open',
+        questionData: { questions: [{ id: 'item', question: 'Historical question?', type: 'text' }] },
+      }
+      const { root } = dom.createRoot()
+      await dom.act(async () =>
+        root.render(
+          <Providers>
+            <AgentChat agentId="a1" dependencies={{ ChatViewComponent: TestChatView }} />
+          </Providers>
+        )
+      )
+      await flush()
+      expect(dom.window.document.querySelector('[role="dialog"]')).toBeNull()
+      if (initiallyFails) {
+        await dom.act(async () => reject(new Error('Offline')))
+        await waitFor(() => expect(qc.getQueryState(key)?.status).toBe('error'))
+        await dom.act(async () => qc.setQueryData(key, [question]))
+      } else {
+        await dom.act(async () => resolve([question]))
+      }
+      await waitFor(() => expect(dom.window.document.body.textContent).toContain('1 pending question'))
+      expect(dom.window.document.querySelector('[role="dialog"]')).toBeNull()
+      await dom.act(async () => qc.setQueryData(key, [{ ...question, id: 'live' }]))
+      await waitFor(() =>
+        expect(dom.window.document.querySelector('[role="dialog"][data-state="open"]')).not.toBeNull()
+      )
+    })
+  }
+
+  test('navigation resets question state and ignores previous-agent placeholder data', async () => {
+    const dom = await installDom()
+    const mc = makeMockClient()
+    let resolve!: (questions: unknown[]) => void
+    const loading = new Promise<unknown[]>((res) => {
+      resolve = res
+    })
+    const { Providers, qc } = makeProviders(mc.client, () => loading)
+    qc.setQueryDefaults(queryKeys.agentQuestions.all, { placeholderData: keepPreviousData, staleTime: Infinity })
+    const question = (id: string, agentId: string) => ({
+      id,
+      agentId,
+      status: 'open',
+      questionData: { questions: [{ id: 'item', question: `${id}?`, type: 'text' }] },
+    })
+    const aKey = queryKeys.agentQuestions.byAgent('a1', 'open')
+    const bKey = queryKeys.agentQuestions.byAgent('a2', 'open')
+    qc.setQueryData(aKey, [question('a-history', 'a1')])
+    const { root } = dom.createRoot()
+    const render = async (agentId: string) => {
+      await dom.act(async () =>
+        root.render(
+          <Providers>
+            <AgentChat agentId={agentId} dependencies={{ ChatViewComponent: TestChatView }} />
+          </Providers>
+        )
+      )
+      await flush()
+    }
+    const dialog = () => dom.window.document.querySelector('[role="dialog"][data-state="open"]')
+    await render('a1')
+    expect(dialog()).toBeNull()
+    await dom.act(async () => qc.setQueryData(aKey, [question('a-live', 'a1')]))
+    await waitFor(() => expect(dialog()?.textContent).toContain('a-live?'))
+    await render('a2')
+    expect(dialog()).toBeNull()
+    expect(dom.window.document.querySelector('[data-testid="before-composer"]')?.textContent).toBe('')
+    // Even a transient mis-scoped response must not establish this chat's baseline.
+    await dom.act(async () => qc.setQueryData(bKey, [question('a-history', 'a1')]))
+    await flush()
+    expect(dom.window.document.querySelector('[data-testid="before-composer"]')?.textContent).toBe('')
+    await dom.act(async () => resolve([question('b-history', 'a2')]))
+    await waitFor(() => expect(dom.window.document.body.textContent).toContain('1 pending question'))
+    expect(dialog()).toBeNull()
+    await dom.act(async () => qc.setQueryData(bKey, [question('b-live', 'a2')]))
+    await waitFor(() => expect(dialog()?.textContent).toContain('b-live?'))
+    // Returning to a cached chat is history, not another live arrival.
+    await render('a1')
+    expect(dialog()).toBeNull()
+    await dom.act(async () => qc.setQueryData(aKey, [question('a-live', 'a1')]))
+    await flush()
+    expect(dialog()).toBeNull()
+    await dom.act(async () => qc.setQueryData(aKey, [question('a-later', 'a1')]))
+    await waitFor(() => expect(dialog()?.textContent).toContain('a-later?'))
+  })
+
   test('squad-less agent questions use the scoped fallback to become live without an event', async () => {
     _agentStore['personal-agent'] = {
       id: 'personal-agent',
@@ -795,7 +897,7 @@ describe('AgentChat', () => {
       const dom = await installDom()
       const { window } = dom
       const mc = makeMockClient()
-      const { Providers } = makeProviders(mc.client)
+      const { Providers, qc } = makeProviders(mc.client)
       const { root } = dom.createRoot()
 
       await dom.act(async () => {
@@ -808,23 +910,28 @@ describe('AgentChat', () => {
           </Providers>
         )
       })
-      await waitFor(() => expect(_agentQuestionFetchCount).toBeGreaterThan(0))
-      _openQuestions = [
-        {
-          id: 'personal-question',
-          agentId: 'personal-agent',
-          status: 'open',
-          questionData: { questions: [{ id: 'item-1', question: 'Personal question?', type: 'text' }] },
-        },
-      ]
-      await waitFor(
-        () =>
-          expect(window.document.querySelector('[data-testid="before-composer"]')?.textContent).toContain(
-            '1 pending question'
-          ),
-        { timeout: 1000 }
+      await waitFor(() =>
+        expect(qc.getQueryState(queryKeys.agentQuestions.byAgent('personal-agent', 'open'))?.status).toBe('success')
       )
+      await flush()
+      const initialFetchCount = _agentQuestionFetchCount
+      await dom.act(async () => {
+        _openQuestions = [
+          {
+            id: 'personal-question',
+            agentId: 'personal-agent',
+            status: 'open',
+            questionData: { questions: [{ id: 'item-1', question: 'Personal question?', type: 'text' }] },
+          },
+        ]
+        await waitFor(() => expect(_agentQuestionFetchCount).toBeGreaterThan(initialFetchCount), { timeout: 1000 })
+      })
+      expect(window.document.querySelector('[data-testid="before-composer"]')?.textContent).toContain(
+        '1 pending question'
+      )
+      expect(window.document.querySelector('[role="dialog"]')?.textContent).toContain('Personal question?')
       expect(_agentQuestionFetchCount).toBeGreaterThan(1)
+      await dom.act(async () => root.unmount())
     } finally {
       delete _agentStore['personal-agent']
       _openQuestions = []

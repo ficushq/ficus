@@ -60,7 +60,7 @@ export function RelationshipsList({ squadId, relationships }: Props) {
         <div className="flex justify-end mb-4">
           <button
             onClick={() => setShowAddForm(true)}
-            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded hover:bg-accent-hover"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium rounded"
           >
             Add Relationship
           </button>
@@ -95,13 +95,13 @@ export function RelationshipsList({ squadId, relationships }: Props) {
               <button
                 onClick={() => createMutation.mutate()}
                 disabled={createMutation.isPending || !targetSquadId}
-                className="ficus-button ficus-button-primary flex-1 px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary flex-1 px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50"
               >
                 {createMutation.isPending ? 'Adding...' : 'Add'}
               </button>
               <button
                 onClick={() => setShowAddForm(false)}
-                className="ficus-button px-4 py-2 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover"
+                className="ficus-button ficus-button-secondary px-4 py-2 text-sm font-medium rounded-md"
               >
                 Cancel
               </button>

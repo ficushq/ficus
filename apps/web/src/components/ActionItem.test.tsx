@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { acquireDomHarness } from '../test/domHarness'
-import type { PendingAction } from '@ficus/shared'
+import { createBlankWorkflow, createWorkflowRun, type PendingAction } from '@ficus/shared'
 import { ActionItem } from './ActionItem'
 import { ActionCenterContent } from './ActionCenterContent'
 import { queryKeys } from '../queryKeys'
@@ -732,6 +732,48 @@ test('a flow-owned wait opens its decision controls instead of exposing generic 
     )
     expect(dom.window.document.body.textContent).toContain('Review and decide')
     expect(dom.window.document.querySelector('input[placeholder="Your response..."]')).toBeNull()
+
+    // Review and decide opens the gate's review surface directly, not the work stream detail.
+    const definition = createBlankWorkflow()
+    const gate = {
+      id: 'design',
+      name: 'Design approval',
+      kind: 'human-approval' as const,
+      approver: 'reviewers' as const,
+      instructions: 'Approve the design',
+      output: 'Decision',
+      outcomes: { approved: { next: 'finish' } },
+    }
+    definition.steps = [gate]
+    definition.entry = 'design'
+    const state = createWorkflowRun(definition)
+    cache.setQueryData(queryKeys.squads.workStreamDetail('ws-1'), {
+      id: 'ws-1',
+      squadId: 'squad-1',
+      title: 'Ship it',
+      status: 'active',
+      agentIds: [],
+    })
+    cache.setQueryData(queryKeys.workflows.run('ws-1'), {
+      workStreamId: 'ws-1',
+      source: {},
+      state,
+      version: 0,
+      attemptAgents: {},
+      openWaits: [{ id: 'flow-wait', flowAttemptId: 1, resolutionHandler: 'workflow', openedAt: state.startedAt }],
+    })
+    cache.setQueryData(queryKeys.auth.permissions('squad-1'), {
+      permissions: ['workstreams:review'],
+      identity: { type: 'user', userId: 'reviewer' },
+    })
+    const open = [...dom.window.document.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Review and decide'
+    )!
+    expect(open.className).toContain('ficus-button-secondary')
+    await dom.act(async () => open.click())
+    const dialog = dom.window.document.querySelector('[role="dialog"]')!
+    expect(dialog.getAttribute('aria-label')).toBe('Review Design approval')
+    expect(dialog.querySelector('textarea[aria-label="Decision and evidence"]')).not.toBeNull()
   } finally {
     await dom.cleanup()
     cache.clear()
@@ -810,7 +852,7 @@ describe('ActionItem code-host delivery gate', () => {
       squadName: 'Ficus',
       deliveryKind: 'review',
       pullRequests: [
-        { repository: 'ficushq/tau-mobile', number: 42, url: 'https://github.com/ficushq/tau-mobile/pull/42' },
+        { repository: 'ficushq/ficus-mobile', number: 42, url: 'https://github.com/ficushq/ficus-mobile/pull/42' },
       ],
       focus: { kind: 'workstream', workStreamId: 'ws-2' },
     },
@@ -836,8 +878,8 @@ describe('ActionItem code-host delivery gate', () => {
       await dom.act(async () => expand[0]!.click())
       expect(document.body.textContent).toContain('needs an approving human review')
       expect(document.body.textContent).not.toContain('do not have permission to respond')
-      const link = document.querySelector('a[href="https://github.com/ficushq/tau-mobile/pull/42"]')
-      expect(link?.textContent).toBe('Review ficushq/tau-mobile#42')
+      const link = document.querySelector('a[href="https://github.com/ficushq/ficus-mobile/pull/42"]')
+      expect(link?.textContent).toBe('Review ficushq/ficus-mobile#42')
     } finally {
       await dom.cleanup()
     }

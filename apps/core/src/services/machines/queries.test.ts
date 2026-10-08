@@ -177,7 +177,7 @@ describe('unverified stop externalization', () => {
 
     expect(await externalizeUnverifiedBoxStop('agent_unverified')).toEqual({ kind: 'machine-ready' })
     await updateMachine(machine.id, { status: 'unreachable' })
-    expect(await stopBox('agent_unverified')).toEqual({ kind: 'unverified' })
+    expect(await stopBox('agent_unverified')).toEqual({ kind: 'unverified', machineStatus: 'unreachable' })
     expect(await externalizeUnverifiedBoxStop('agent_unverified')).toEqual({ kind: 'deferred' })
     await db
       .update(machineBoxes)
@@ -186,8 +186,8 @@ describe('unverified stop externalization', () => {
 
     // Repeated one-minute dormancy attempts must not refresh the original
     // stop intent's age or prevent the five-minute externalization bound.
-    expect(await stopBox('agent_unverified')).toEqual({ kind: 'unverified' })
-    expect(await stopBox('agent_unverified')).toEqual({ kind: 'unverified' })
+    expect(await stopBox('agent_unverified')).toEqual({ kind: 'unverified', machineStatus: 'unreachable' })
+    expect(await stopBox('agent_unverified')).toEqual({ kind: 'unverified', machineStatus: 'unreachable' })
 
     const result = await externalizeUnverifiedBoxStop('agent_unverified')
     expect(result).toMatchObject({ kind: 'externalized', machineId: machine.id, port: 50100 })

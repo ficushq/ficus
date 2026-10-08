@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { parseDockerCommandIdentity, resolveDockerCommandIdentity } from './command-identity'
+import {
+  parseDockerCommandIdentity,
+  resolveDockerCommandIdentity,
+  LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT,
+} from './command-identity'
 import { DockerSandboxCompatibilityError, DockerSandboxLifecycleError } from './errors'
 
 const contract = { version: 1, user: 'ficus', home: '/home/ficus', uid: 1000, gid: 1000 } as const
@@ -36,6 +40,15 @@ describe('Docker command identity', () => {
         resolvedGid: 1000,
       })
     }
+  })
+
+  test('retains a fixed old health contract without accepting it as a new image contract', () => {
+    const old = resolveDockerCommandIdentity(LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT, {})
+    expect(old).toMatchObject({ user: 'tau', home: '/home/tau', source: 'image', resolvedUid: 1000, resolvedGid: 1000 })
+    expect(old.contractDigest).not.toBe(resolveDockerCommandIdentity(contract, {}).contractDigest)
+    expect(() => parseDockerCommandIdentity(JSON.stringify(LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT))).toThrow(
+      'Invalid Docker command identity contract'
+    )
   })
 
   test('rejects malformed, unsafe, and extended contracts', () => {

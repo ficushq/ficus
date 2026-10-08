@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LEGACY_HOME_DIR_NAME, LEGACY_LAUNCHD_PREFIX, LEGACY_LOCAL_INSTANCE, LEGACY_UNITS } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 import { launchdDefinition, launchdNames, launchdSupervisor, nativeLogPath } from './launchd'
 import type { SupervisorContext } from './supervisor'
 
@@ -43,17 +43,8 @@ describe('launchdDefinition', () => {
     expect(xml).not.toContain('FORCE_COLOR')
   })
 
-  it('keeps the pre-rename label and process names for an identity-1 instance', () => {
-    const L = LEGACY_LOCAL_INSTANCE
-    expect(launchdNames({ ...context, identity: 1 }, 'api')).toEqual({
-      process: `${L}-smoke-api`,
-      label: `${LEGACY_LAUNCHD_PREFIX}.${L}-smoke-api`,
-      plist: `/Users/me/Library/LaunchAgents/${LEGACY_LAUNCHD_PREFIX}.${L}-smoke-api.plist`,
-      log: `/Users/me/.ficus/logs/${L}-smoke-api.log`,
-    })
-    expect(launchdNames({ ...context, label: L, identity: 1 }, 'worker').label).toBe(
-      `${LEGACY_LAUNCHD_PREFIX}.${LEGACY_UNITS.worker}`
-    )
+  it('refuses to render a retired instance identity', () => {
+    expect(() => launchdNames({ ...context, identity: 1 }, 'api')).toThrow(/retired/)
   })
 
   it('rejects control characters in rendered fields', () => {
@@ -65,12 +56,12 @@ describe('launchdDefinition', () => {
 })
 
 describe('nativeLogPath', () => {
-  it('keeps logs in a legacy CLI home that has not moved yet', () => {
+  it('uses canonical logs even when an unrelated old home remains', () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-launchd-home-')))
     try {
       mkdirSync(join(home, LEGACY_HOME_DIR_NAME))
       expect(nativeLogPath({ home, label: 'Smoke' }, 'worker')).toBe(
-        join(home, LEGACY_HOME_DIR_NAME, 'logs', launchdNames({ home, label: 'Smoke' }, 'worker').process + '.log')
+        join(home, '.ficus', 'logs', launchdNames({ home, label: 'Smoke' }, 'worker').process + '.log')
       )
     } finally {
       rmSync(home, { recursive: true, force: true })
@@ -391,4 +382,46 @@ describe('launchd status vocabulary', () => {
     const rows = await launchdSupervisor.status(ctx)
     expect(rows.every((row) => row.status === 'online' && row.pid === 77)).toBe(true)
   })
+})
+
+// ficus-p5-bridge: exact old ownership marker, never a legacy service-name fallback
+const retiredOwnershipPrefix = 'tau-generated-root:'
+describe('supervisor ownership marker upgrade', () => {
+  for (const sameRoot of [true, false]) {
+    it(`rewrites only definitions belonging to this root (same root: ${sameRoot})`, async () => {
+      const root = mkdtempSync(join(tmpdir(), 'ficus-owned-definition-'))
+      const ctx: SupervisorContext = {
+        ...context,
+        root,
+        home: join(root, 'home'),
+        runner: async (command) => ({
+          code: command[0] === 'launchctl' && command[1] === 'print' && command[2]?.split('/').length === 3 ? 113 : 0,
+          stdout: '',
+          stderr: '',
+        }),
+      }
+      try {
+        const library = join(root, 'node_modules/bun-pty/rust-pty/target/release')
+        mkdirSync(library, { recursive: true })
+        writeFileSync(join(library, 'librust_pty_arm64.dylib'), '')
+        const path = launchdNames(ctx, 'worker').plist
+        mkdirSync(join(path, '..'), { recursive: true })
+        const before = launchdDefinition({ ...ctx, root: sameRoot ? root : join(root, 'foreign') }, 'worker').replace(
+          'ficus-generated-root:',
+          retiredOwnershipPrefix
+        )
+        writeFileSync(path, before)
+        if (sameRoot) {
+          await launchdSupervisor.start(ctx)
+          expect(readFileSync(path, 'utf8')).toContain('ficus-generated-root:')
+          expect(readFileSync(path, 'utf8')).not.toContain(retiredOwnershipPrefix)
+        } else {
+          await expect(launchdSupervisor.start(ctx)).rejects.toThrow(/not owned/)
+          expect(readFileSync(path, 'utf8')).toBe(before)
+        }
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
 })

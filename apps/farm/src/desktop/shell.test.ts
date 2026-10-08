@@ -8,13 +8,16 @@ describe('desktopShell', () => {
     expect(desktopShell({})).toBeUndefined()
   })
 
-  it('reads the current and the renamed desktop bridge', () => {
-    expect(desktopShell({ tauDesktopApp: { version: 1, shell } })).toBe(shell)
+  it('reads the Ficus desktop bridge', () => {
     expect(desktopShell({ ficusDesktopApp: { version: 1, shell } })).toBe(shell)
   })
 
+  it('ignores the retired preload property', () => {
+    expect(desktopShell({ tauDesktopApp: { version: 1, shell } })).toBeUndefined() // ficus-negative-test
+  })
+
   it('ignores unknown bridge versions and incomplete shells', () => {
-    expect(desktopShell({ tauDesktopApp: { version: 2, shell } })).toBeUndefined()
-    expect(desktopShell({ tauDesktopApp: { version: 1, shell: { insetTitleBar: true } } })).toBeUndefined()
+    expect(desktopShell({ ficusDesktopApp: { version: 2, shell } })).toBeUndefined()
+    expect(desktopShell({ ficusDesktopApp: { version: 1, shell: { insetTitleBar: true } } })).toBeUndefined()
   })
 })

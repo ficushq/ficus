@@ -2767,13 +2767,23 @@ describe('agents service', () => {
   })
 
   describe('pending messages', () => {
-    it('tryConfirmPendingMessage confirms oldest pending human message', async () => {
+    const owner = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
+    async function confirmSource(agent: Agent, messageId: string) {
+      const message = await Agent.findMessage(messageId)
+      const claim = message!.metadata!.sessionDelivery!
+      const confirmed = await agent.confirmSessionDelivery(claim.id, owner, `entry-${messageId}`, {
+        executionId: owner.executionId,
+        streamGroupId: `group-${messageId}`,
+      })
+      return confirmed[0] ?? null
+    }
+    it('confirmSessionDelivery confirms only its claimed source', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       const first = await agent.recordMessage({ role: 'human', content: 'First', pending: true })
       await agent.recordMessage({ role: 'human', content: 'Second', pending: true })
-      await agent.claimPendingInterventionForSessionDelivery(first.id)
+      await agent.claimPendingInterventionForSessionDelivery(first.id, owner)
 
-      const confirmed = await agent.tryConfirmPendingMessage()
+      const confirmed = await confirmSource(agent, first.id)
       expect(confirmed).not.toBeNull()
       expect(confirmed!.content).toBe('First')
       expect(confirmed!.pending).toBe(false)
@@ -2784,14 +2794,14 @@ describe('agents service', () => {
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
 
-    it('tryConfirmPendingMessage skips non-pending and assistant messages', async () => {
+    it('confirmSessionDelivery skips non-pending and assistant messages', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       await agent.recordMessage({ role: 'human', content: 'Confirmed', pending: false })
       await agent.recordMessage({ role: 'assistant', content: 'Response', pending: true })
       const pending = await agent.recordMessage({ role: 'human', content: 'Pending', pending: true })
-      await agent.claimPendingInterventionForSessionDelivery(pending.id)
+      await agent.claimPendingInterventionForSessionDelivery(pending.id, owner)
 
-      const confirmed = await agent.tryConfirmPendingMessage()
+      const confirmed = await confirmSource(agent, pending.id)
       expect(confirmed!.content).toBe('Pending')
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
@@ -2812,15 +2822,15 @@ describe('agents service', () => {
       expect(await agent.tryConfirmPendingMessage('Continue.')).toBeNull()
       expect((await Agent.findMessage(pending.id))?.pending).toBe(true)
 
-      await agent.claimPendingInterventionForSessionDelivery(pending.id)
-      const confirmed = await agent.tryConfirmPendingMessage('hello')
+      await agent.claimPendingInterventionForSessionDelivery(pending.id, owner)
+      const confirmed = await confirmSource(agent, pending.id)
       expect(confirmed?.id).toBe(pending.id)
       expect((await Agent.findMessage(pending.id))?.pending).toBe(false)
 
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
 
-    it('tryConfirmPendingMessage without content follows the drain ordering for claimed rows', async () => {
+    it('identity confirmation handles image-only input independently of queue order', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       const imageOnly = await agent.recordMessage({
         role: 'human',
@@ -2835,12 +2845,12 @@ describe('agents service', () => {
         metadata: { deliveryMode: 'follow-up' },
         pending: true,
       })
-      await agent.claimPendingInterventionForSessionDelivery(imageOnly.id)
-      await agent.claimPendingInterventionForSessionDelivery(followUp.id)
+      await agent.claimPendingInterventionForSessionDelivery(imageOnly.id, owner)
+      await agent.claimPendingInterventionForSessionDelivery(followUp.id, owner)
 
-      expect((await agent.tryConfirmPendingMessage())?.id).toBe(imageOnly.id)
+      expect((await confirmSource(agent, imageOnly.id))?.id).toBe(imageOnly.id)
       expect((await Agent.findMessage(followUp.id))?.pending).toBe(true)
-      expect((await agent.tryConfirmPendingMessage())?.id).toBe(followUp.id)
+      expect((await confirmSource(agent, followUp.id))?.id).toBe(followUp.id)
 
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
@@ -2905,13 +2915,13 @@ describe('agents service', () => {
       expect((await Agent.findMessage(steerMsg.id))?.pending).toBe(false)
       expect((await Agent.findMessage(followUpMsg.id))?.pending).toBe(true)
 
-      await agent.claimPendingInterventionForSessionDelivery(followUpMsg.id)
-      await agent.tryConfirmPendingMessage('Follow-up: after you finish')
+      await agent.claimPendingInterventionForSessionDelivery(followUpMsg.id, owner)
+      await confirmSource(agent, followUpMsg.id)
       expect((await Agent.findMessage(followUpMsg.id))?.pending).toBe(false)
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
 
-    it('tryConfirmPendingMessage prioritizes steer before older follow-up and then FIFO within mode', async () => {
+    it('identity confirmations follow persisted steer then follow-up events', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       const followUpOne = await agent.recordMessage({
         role: 'human',
@@ -2942,13 +2952,13 @@ describe('agents service', () => {
       })
 
       for (const message of [followUpOne, steerOne, followUpTwo, steerTwo]) {
-        await agent.claimPendingInterventionForSessionDelivery(message.id)
+        await agent.claimPendingInterventionForSessionDelivery(message.id, owner)
       }
 
-      expect((await agent.tryConfirmPendingMessage())?.id).toBe(steerOne.id)
-      expect((await agent.tryConfirmPendingMessage())?.id).toBe(steerTwo.id)
-      expect((await agent.tryConfirmPendingMessage())?.id).toBe(followUpOne.id)
-      expect((await agent.tryConfirmPendingMessage())?.id).toBe(followUpTwo.id)
+      expect((await confirmSource(agent, steerOne.id))?.id).toBe(steerOne.id)
+      expect((await confirmSource(agent, steerTwo.id))?.id).toBe(steerTwo.id)
+      expect((await confirmSource(agent, followUpOne.id))?.id).toBe(followUpOne.id)
+      expect((await confirmSource(agent, followUpTwo.id))?.id).toBe(followUpTwo.id)
 
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
@@ -2984,7 +2994,7 @@ describe('agents service', () => {
       })
 
       for (const message of [firstFollowUp, firstSteer, secondFollowUp, secondSteer]) {
-        await agent.claimPendingInterventionForSessionDelivery(message.id)
+        await agent.claimPendingInterventionForSessionDelivery(message.id, owner)
       }
 
       // These calls model AgentRunner handling Pi session_message_persisted
@@ -2992,21 +3002,21 @@ describe('agents service', () => {
       // session, while followUpMode=one-at-a-time persists one follow-up turn at
       // a time. Each persisted user event should confirm exactly the row Pi just
       // processed and leave later follow-ups pending.
-      expect((await agent.tryConfirmPendingMessage('batched steer one'))?.id).toBe(firstSteer.id)
-      expect((await agent.tryConfirmPendingMessage('batched steer two'))?.id).toBe(secondSteer.id)
+      expect((await confirmSource(agent, firstSteer.id))?.id).toBe(firstSteer.id)
+      expect((await confirmSource(agent, secondSteer.id))?.id).toBe(secondSteer.id)
       expect((await Agent.findMessage(firstFollowUp.id))?.pending).toBe(true)
       expect((await Agent.findMessage(secondFollowUp.id))?.pending).toBe(true)
 
-      expect((await agent.tryConfirmPendingMessage('queued follow-up one'))?.id).toBe(firstFollowUp.id)
+      expect((await confirmSource(agent, firstFollowUp.id))?.id).toBe(firstFollowUp.id)
       expect((await Agent.findMessage(secondFollowUp.id))?.pending).toBe(true)
 
-      expect((await agent.tryConfirmPendingMessage('queued follow-up two'))?.id).toBe(secondFollowUp.id)
+      expect((await confirmSource(agent, secondFollowUp.id))?.id).toBe(secondFollowUp.id)
       expect((await agent.listPendingHumanMessages()).map((message) => message.id)).toEqual([])
 
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
 
-    it('tryConfirmPendingMessage matches claimed exact content and only falls back among claimed rows', async () => {
+    it('identity confirmation does not fall back to unrelated claimed rows', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       const followUp = await agent.recordMessage({
         role: 'human',
@@ -3021,13 +3031,13 @@ describe('agents service', () => {
         pending: true,
       })
 
-      await agent.claimPendingInterventionForSessionDelivery(followUp.id)
-      await agent.claimPendingInterventionForSessionDelivery(steer.id)
+      await agent.claimPendingInterventionForSessionDelivery(followUp.id, owner)
+      await agent.claimPendingInterventionForSessionDelivery(steer.id, owner)
 
-      expect((await agent.tryConfirmPendingMessage('matched follow-up'))?.id).toBe(followUp.id)
+      expect((await confirmSource(agent, followUp.id))?.id).toBe(followUp.id)
       expect((await Agent.findMessage(steer.id))?.pending).toBe(true)
       expect(await agent.tryConfirmPendingMessage('missing content')).toBeNull()
-      expect((await agent.tryConfirmPendingMessage())?.id).toBe(steer.id)
+      expect((await confirmSource(agent, steer.id))?.id).toBe(steer.id)
 
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
@@ -3088,16 +3098,16 @@ describe('agents service', () => {
         pending: true,
       })
 
-      await agent.claimPendingInterventionForSessionDelivery(followUp.id)
-      await agent.claimPendingInterventionForSessionDelivery(steer.id)
+      await agent.claimPendingInterventionForSessionDelivery(followUp.id, owner)
+      await agent.claimPendingInterventionForSessionDelivery(steer.id, owner)
 
-      const confirmed = await agent.tryConfirmPendingMessage()
+      const confirmed = await confirmSource(agent, steer.id)
 
       expect(confirmed?.id).toBe(steer.id)
       expect((await Agent.findMessage(steer.id))?.pending).toBe(false)
       expect((await Agent.findMessage(followUp.id))?.pending).toBe(true)
 
-      await agent.tryConfirmPendingMessage()
+      await confirmSource(agent, followUp.id)
       expect((await Agent.findMessage(followUp.id))?.pending).toBe(false)
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })

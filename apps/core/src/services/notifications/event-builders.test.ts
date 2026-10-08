@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { buildNotificationEvent, getAppOrigin } from './event-builders'
+import { pushPreview } from '../push/preview'
 import { WorkStream } from '../../entities/WorkStream'
 import { Squad } from '../../entities/Squad'
 import { InboxMessage } from '../../entities/InboxMessage'
@@ -23,6 +24,30 @@ describe('notification event builders', () => {
     else process.env.APP_URL = originalAppUrl
   })
 
+  test('retains complete inbox Markdown for push while preserving the external-channel preview and stored message', async () => {
+    const content = `[PR #1591](https://example.com/${'x'.repeat(600)}) merged.`
+    const message = Object.freeze({ id: 'm1', senderType: 'system', subject: '**Delivered**', content })
+    track(spyOn(InboxMessage, 'find').mockResolvedValue(message as any))
+    const event = await buildNotificationEvent('inbox.messageReceived', { messageId: 'm1' })
+    expect(event).toMatchObject({ title: message.subject, body: content.slice(0, 300), pushSource: { body: content } })
+    expect(pushPreview(event!)).toMatchObject({ title: 'Delivered', body: 'PR #1591 merged.' })
+    expect(message.content).toBe(content)
+  })
+
+  test.each(['workStream.done', 'workStream.created', 'workStream.updated', 'workStream.review'])(
+    'keeps complete push source for %s',
+    async (type) => {
+      const description = `[PR #1591](https://example.com/${'x'.repeat(600)}) merged.`
+      track(
+        spyOn(WorkStream, 'find').mockResolvedValue({ id: 'ws1', squadId: 's1', title: 'Ready', description } as any)
+      )
+      track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Ficus' } as any))
+      const event = await buildNotificationEvent(type, { workStreamId: 'ws1', squadId: 's1' })
+      expect(event?.body).toBe(description.slice(0, 200))
+      expect(pushPreview(event!).body).toBe('PR #1591 merged.')
+    }
+  )
+
   test('builds an agent question notification from persisted state', async () => {
     process.env.APP_URL = 'https://ficus.example'
     track(
@@ -33,7 +58,11 @@ describe('notification event builders', () => {
         ownerUserId: null,
         questionData: {
           questions: [
-            { id: '1', type: 'text', question: ' Which release should I target? ' },
+            {
+              id: '1',
+              type: 'text',
+              question: ` [Which release should I target?](https://example.com/${'x'.repeat(600)}) `,
+            },
             { id: '2', type: 'text', question: '  ' },
           ],
         },
@@ -65,7 +94,8 @@ describe('notification event builders', () => {
       squadId: 's1',
       squadName: 'Ficus',
       title: '❓ Forge has a question',
-      body: 'Which release should I target?',
+      body: `[Which release should I target?](https://example.com/${'x'.repeat(600)})`.slice(0, 300),
+      pushSource: { body: `[Which release should I target?](https://example.com/${'x'.repeat(600)})` },
       url: 'https://ficus.example/squads/s1?agent=a1',
     })
   })
@@ -207,7 +237,12 @@ describe('notification event builders', () => {
         metadata: { name: 'Engineer' },
       } as any)
     )
-    track(spyOn(Execution, 'find').mockResolvedValue({ id: 'e1', error: null } as any))
+    track(
+      spyOn(Execution, 'find').mockResolvedValue({
+        id: 'e1',
+        error: `[details](https://example.com/${'x'.repeat(600)})`,
+      } as any)
+    )
     track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Ficus' } as any))
 
     const event = await buildNotificationEvent('execution.completed', { executionId: 'e1', agentId: 'a1' })
@@ -218,6 +253,8 @@ describe('notification event builders', () => {
       squadName: 'Ficus',
       agentId: 'a1',
     })
+    const failed = await buildNotificationEvent('execution.failed', { executionId: 'e1', agentId: 'a1' })
+    expect(pushPreview(failed!).body).toBe('Engineer agent failed: details')
   })
 
   test('adds message and sender routing fields to agent-sent inbox notification events', async () => {
@@ -306,6 +343,65 @@ describe('notification event builders', () => {
     expect(spoofed?.actionId).toBeUndefined()
   })
 
+  test.each(['done', 'canceled', 'review'])(
+    'preserves squad routing for system work-stream %s inbox pushes',
+    async (event) => {
+      const squadId = '00000000-0000-4000-8000-000000000002'
+      track(
+        spyOn(InboxMessage, 'find').mockResolvedValue({
+          id: 'lifecycle-message',
+          senderType: 'system',
+          metadata: { workStreamId: 'ws1', squadId, event },
+          subject: 'Work stream update',
+          content: 'Open the work stream.',
+        } as any)
+      )
+      track(spyOn(Squad, 'find').mockResolvedValue({ id: squadId, name: 'Engineering' } as any))
+      expect(await buildNotificationEvent('inbox.messageReceived', { messageId: 'lifecycle-message' })).toMatchObject({
+        type: 'inbox.messageReceived',
+        notificationKind: `workStream.${event}`,
+        messageId: 'lifecycle-message',
+        workStreamId: 'ws1',
+        squadId,
+        squadName: 'Engineering',
+      })
+    }
+  )
+
+  test('does not infer work-stream squad routing from user-authored metadata', async () => {
+    track(
+      spyOn(InboxMessage, 'find').mockResolvedValue({
+        id: 'spoofed',
+        senderType: 'user',
+        senderId: 'user1',
+        metadata: { workStreamId: 'ws1', squadId: '00000000-0000-4000-8000-000000000002', event: 'done' },
+        subject: 'Update',
+        content: 'Body',
+      } as any)
+    )
+    const lookup = track(spyOn(Squad, 'find').mockResolvedValue(null))
+    const event = await buildNotificationEvent('inbox.messageReceived', { messageId: 'spoofed' })
+    expect(event?.squadId).toBeUndefined()
+    expect(event?.workStreamId).toBeUndefined()
+    expect(lookup).not.toHaveBeenCalled()
+  })
+
+  test('keeps the inbox target when a work-stream squad no longer exists', async () => {
+    track(
+      spyOn(InboxMessage, 'find').mockResolvedValue({
+        id: 'orphaned',
+        senderType: 'system',
+        metadata: { workStreamId: 'ws1', squadId: '00000000-0000-4000-8000-000000000002', event: 'done' },
+        subject: 'Update',
+        content: 'Body',
+      } as any)
+    )
+    track(spyOn(Squad, 'find').mockResolvedValue(null))
+    const event = await buildNotificationEvent('inbox.messageReceived', { messageId: 'orphaned' })
+    expect(event?.messageId).toBe('orphaned')
+    expect(event?.squadId).toBeUndefined()
+  })
+
   test('uses the stored push presentation for system inbox messages and ignores it from other senders', async () => {
     const push = {
       title: 'Completed: #197 · Validate deletion',
@@ -314,6 +410,7 @@ describe('notification event builders', () => {
       collapseKey: 'ws:abc',
       threadKey: 'squad:def',
       interruptionLevel: 'passive',
+      source: { title: '**Full title**', body: '`**literal**` content', subtitle: '*Platform*' },
     }
     track(
       spyOn(InboxMessage, 'find').mockImplementation(
@@ -337,11 +434,14 @@ describe('notification event builders', () => {
       threadKey: 'squad:def',
       interruptionLevel: 'passive',
     })
+    const system = await buildNotificationEvent('inbox.messageReceived', { messageId: 'system' })
+    expect(pushPreview(system!)).toEqual({ title: 'Full title', body: '**literal** content', subtitle: 'Platform' })
     const agent = await buildNotificationEvent('inbox.messageReceived', { messageId: 'agent' })
     expect(agent).toMatchObject({ title: 'Work Stream done: #197 · Validate deletion' })
     expect(agent?.body).toBe('Work stream "#197 · Validate deletion" has been completed.')
     expect(agent?.subtitle).toBeUndefined()
     expect(agent?.collapseKey).toBeUndefined()
+    expect(pushPreview(agent!).body).toBe(agent!.body)
   })
 
   test('adds fleet alert squad routing while provider-global alerts remain squadless', async () => {
@@ -472,6 +572,22 @@ describe('getAppOrigin', () => {
     expect(getAppOrigin('https://Ficus.Example.com/')).toBe('https://ficus.example.com')
     expect(getAppOrigin('https://ficus.example.com')).toBe('https://ficus.example.com')
     expect(getAppOrigin('http://localhost:3000/tau/')).toBe('http://localhost:3000/tau')
+  })
+
+  test('native routing shares APP_URL authority and legacy PUBLIC_URL fallback', () => {
+    const previous = { APP_URL: process.env.APP_URL, PUBLIC_URL: process.env.PUBLIC_URL }
+    try {
+      process.env.APP_URL = 'https://home.example.com/ficus/'
+      process.env.PUBLIC_URL = 'https://legacy.example.com'
+      expect(getAppOrigin()).toBe('https://home.example.com/ficus')
+      delete process.env.APP_URL
+      expect(getAppOrigin()).toBe('https://legacy.example.com')
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
   })
 
   test('is undefined when APP_URL is unset or not a URL', () => {

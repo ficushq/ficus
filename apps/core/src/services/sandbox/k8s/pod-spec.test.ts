@@ -1,3 +1,4 @@
+import { SANDBOX_IDENTITY_LEGACY } from '../retired-identity.fixture'
 import { describe, test, expect, spyOn } from 'bun:test'
 import { createHash } from 'crypto'
 import {
@@ -15,7 +16,7 @@ import {
   type SquadSandboxConfig,
 } from './pod-spec'
 import { getSandboxSkillsDir } from '../../agent/skill-materializer'
-import { SANDBOX_IDENTITY_LEGACY, SANDBOX_IDENTITY_READ, SANDBOX_IDENTITY_WRITE } from '../identity-names'
+import { SANDBOX_IDENTITY_WRITE } from '../identity-names'
 import * as workspaceLayoutModule from '../workspace-layout'
 
 /** Build a spec with the env seam stubbed out (no secret store / git identity). */
@@ -48,11 +49,8 @@ describe('sandboxPodName', () => {
     expect(sandboxPodName(id1)).not.toBe(sandboxPodName(id2))
   })
 
-  // I1 (fix round 1): a pod built under the legacy `tau-sb-` prefix must
-  // still be found by name — sandboxPodNames (used by ensurePod's discovery
-  // loop) must try it.
-  test('accepts an explicit prefix, so a legacy-named pod can still be computed', () => {
-    expect(sandboxPodName('squad_abc123', SANDBOX_IDENTITY_LEGACY.k8sPodNamePrefix)).toBe('tau-sb-squad-abc123')
+  test('computes the exact retired name for the create-time refusal guard', () => {
+    expect(sandboxPodName('squad_abc123', 'tau-sb-')).toBe('tau-sb-squad-abc123')
   })
 })
 
@@ -60,8 +58,8 @@ describe('sandboxPodNames', () => {
   test('lists the write name first, then every other read name', () => {
     const names = sandboxPodNames('squad_abc123')
     expect(names[0]).toBe('ficus-sb-squad-abc123')
-    expect(names).toContain('tau-sb-squad-abc123')
-    expect(names).toHaveLength(2)
+    expect(names).not.toContain('tau-sb-squad-abc123')
+    expect(names).toHaveLength(1)
   })
 })
 
@@ -238,7 +236,7 @@ describe('buildSandboxPodSpec', () => {
       podName: 'sb-squad-11111111-1111-4111-8111-111111111111',
       config,
     })
-    const other = SANDBOX_IDENTITY_READ.find((set) => set !== SANDBOX_IDENTITY_WRITE)!
+    const other = SANDBOX_IDENTITY_LEGACY
     expect(podSpec.metadata?.labels?.app).toBe(SANDBOX_IDENTITY_WRITE.k8sAppLabelValue)
     expect(podSpec.metadata?.annotations?.[SANDBOX_IDENTITY_WRITE.k8sSpecHashAnnotation]).toBe(
       reconcilableSpecHash(config)

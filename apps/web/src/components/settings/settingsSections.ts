@@ -13,7 +13,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
   {
     label: 'Personal',
     items: [
-      { id: 'account', label: 'Account', description: 'Your profile, email, password, and passkeys.' },
+      { id: 'account', label: 'Account', description: 'Profile, email and passkeys.' },
       {
         id: 'appearance',
         label: 'Appearance',
@@ -29,6 +29,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         label: 'Notifications',
         description: 'Your notification delivery and sound preferences.',
       },
+      { id: 'mobile', label: 'Mobile', description: 'Pair a device and see what Pro adds.' },
       { id: 'devices', label: 'Paired Devices', description: 'Pair and manage linked devices.' },
       { id: 'sessions', label: 'Sessions', description: 'Active sign-in sessions and revocation.' },
     ],
@@ -39,7 +40,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'workflows',
         label: 'Workflows',
-        description: 'Reusable flows: participants, steps, handoffs, reviews, limits, and delivery policies.',
+        description: 'Flows, participants, handoffs, approvals, limits and delivery.',
       },
       {
         id: 'agent-types',
@@ -54,7 +55,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'integrations',
         label: 'Integrations',
-        description: 'Enable apps, connect accounts, and configure integration credentials and services.',
+        description: 'Apps, accounts, credentials and services.',
       },
     ],
   },
@@ -75,6 +76,11 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
     label: 'Configuration',
     items: [
       {
+        id: 'mobile-pro',
+        label: 'Mobile & Pro',
+        description: 'Ficus account connection, relays and Instance Pro coverage.',
+      },
+      {
         id: 'squad-presets',
         label: 'Squad Presets',
         description: 'Starting templates copied into newly created squads.',
@@ -82,7 +88,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'git',
         label: 'Git',
-        description: 'Default commit author identity and GitHub identity overrides.',
+        description: 'Commit author and GitHub identity overrides.',
       },
       {
         id: 'notification-rules',
@@ -97,7 +103,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'providers',
         label: 'AI Providers',
-        description: 'Connect model provider accounts and configure custom local providers.',
+        description: 'Model accounts and local providers.',
       },
       {
         id: 'memory',
@@ -110,7 +116,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         label: 'Machines',
         description: 'Machines and capacity used to run squad workloads.',
       },
-      { id: 'remote-hosts', label: 'Remote hosts', description: 'Shared SSH targets squads can access.' },
+      { id: 'remote-hosts', label: 'Remote hosts', description: 'Shared SSH targets.' },
     ],
   },
   {
@@ -126,7 +132,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         label: 'Storage',
         description: 'Disk usage by squad, repositories, worktrees, and tools.',
       },
-      { id: 'system-logs', label: 'Logs', description: 'Search and inspect system logs.' },
+      { id: 'system-logs', label: 'Logs', description: 'System logs.' },
       {
         id: 'ops-insights',
         label: 'Recommendations',
@@ -152,6 +158,7 @@ const SECTION_PERMISSIONS: Partial<Record<SectionId, string>> = {
   // Reading the policy exposes the allowed-domain list, which GET /auth/settings gates on settings:read.
   signup: 'settings:read',
   memory: 'settings:read',
+  'mobile-pro': 'settings:read',
   providers: 'provider-auth:read',
   skills: 'skills:read',
   'agent-types': 'agent-types:read',

@@ -1,3 +1,4 @@
+import { SANDBOX_IDENTITY_LEGACY, DOCKER_EXEC_IDENTITY_LEGACY } from '../retired-identity.fixture'
 import { describe, test, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import * as fs from 'fs'
 import * as os from 'os'
@@ -26,9 +27,7 @@ import {
   type SandboxRuntime,
 } from './manager'
 import {
-  DOCKER_EXEC_IDENTITY_LEGACY,
   DOCKER_EXEC_IDENTITY_NEW,
-  SANDBOX_IDENTITY_LEGACY,
   SANDBOX_IDENTITY_NEW,
   SANDBOX_IDENTITY_READ,
   SANDBOX_IDENTITY_WRITE,
@@ -37,7 +36,12 @@ import {
   type SandboxIdentitySet,
 } from '../identity-names'
 import { computeDockerSpecDigest } from './runtime-contract'
-import { LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT, resolveDockerCommandIdentity } from './command-identity'
+import {
+  resolveDockerCommandIdentity,
+  LEGACY_DOCKER_MANAGED_LABEL,
+  LEGACY_DOCKER_EXEC_IDENTITY,
+  LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT,
+} from './command-identity'
 import { buildBashrcContent } from '../bashrc'
 import type { SandboxOptions } from '../types'
 import { observeSandboxSetupProgress, type SandboxSetupProgressEvent } from '../setup-progress'
@@ -78,7 +82,7 @@ describe('DockerSandboxManager generation-fenced stop', () => {
   })
 })
 
-describe('DockerSandboxManager lifecycle under both identity sets', () => {
+describe('DockerSandboxManager canonical lifecycle and retired-resource exclusion', () => {
   type FakeContainer = { id: string; name: string; labels: Record<string, string> }
   const hex = (c: string) => c.repeat(64)
   const ok = (stdout = '') => ({ exitCode: 0, stdout: Buffer.from(stdout), stderr: Buffer.alloc(0) })
@@ -128,10 +132,7 @@ describe('DockerSandboxManager lifecycle under both identity sets', () => {
     labels: { [set.managedLabel]: 'true', [set.sandboxIdLabel]: sandboxId },
   })
 
-  for (const [label, set] of [
-    ['new', SANDBOX_IDENTITY_NEW],
-    ['legacy', SANDBOX_IDENTITY_LEGACY],
-  ] as const) {
+  for (const [label, set] of [['new', SANDBOX_IDENTITY_NEW]] as const) {
     test(`removeSandbox removes a ${label}-identity container by its immutable id`, async () => {
       const docker = fakeDocker([owned(set, hex('a'))])
       await proto.removeSandbox.call(docker.self, 'agent_x')
@@ -140,10 +141,10 @@ describe('DockerSandboxManager lifecycle under both identity sets', () => {
     })
   }
 
-  test('removeSandbox removes the containers under BOTH prefixes, leaving no orphan', async () => {
+  test('removeSandbox removes only the canonical container and leaves retired identities untouched', async () => {
     const docker = fakeDocker([owned(SANDBOX_IDENTITY_NEW, hex('a')), owned(SANDBOX_IDENTITY_LEGACY, hex('b'))])
     await proto.removeSandbox.call(docker.self, 'agent_x')
-    expect(docker.live.size).toBe(0)
+    expect([...docker.live.keys()]).toEqual([hex('b')])
   })
 
   test('removeSandbox never touches a neighbour or a container without the managed label', async () => {
@@ -171,40 +172,21 @@ describe('DockerSandboxManager lifecycle under both identity sets', () => {
     expect(refusing.calls.some((args) => args[0] === 'rm')).toBe(false)
   })
 
-  // M1: every candidate is proven before any is removed.
-  test('removeSandbox proves every candidate first: an unproven one removes nothing and keeps tracked state', async () => {
-    const other = SANDBOX_IDENTITY_READ.find((set) => set !== SANDBOX_IDENTITY_WRITE)!
+  test('retired-name squatters cannot be removed through canonical teardown', async () => {
     const tracked = owned(SANDBOX_IDENTITY_WRITE, hex('a'))
-    const squatter: FakeContainer = { id: hex('b'), name: `${other.containerPrefix}agent_x`, labels: {} }
+    const squatter: FakeContainer = {
+      id: hex('b'),
+      name: `${SANDBOX_IDENTITY_LEGACY.containerPrefix}agent_x`,
+      labels: {},
+    }
     const docker = fakeDocker([tracked, squatter])
     docker.self.sandboxes.set('agent_x', { sandboxId: 'agent_x', containerId: hex('a').slice(0, 12) })
-
-    const error = await proto.removeSandbox.call(docker.self, 'agent_x').catch((caught: unknown) => caught)
-    expect(error).toMatchObject({ code: 'LEGACY_OWNERSHIP_UNPROVEN', containerName: squatter.name })
-    expect([...docker.live.keys()].sort()).toEqual([hex('a'), hex('b')])
-    expect(docker.calls.some((args) => args[0] === 'rm')).toBe(false)
-    expect(docker.self.sandboxes.has('agent_x')).toBe(true)
-  })
-
-  test('removeSandbox removes the tracked container last, so a failed duplicate removal keeps it and its state', async () => {
-    const other = SANDBOX_IDENTITY_READ.find((set) => set !== SANDBOX_IDENTITY_WRITE)!
-    const docker = fakeDocker([owned(SANDBOX_IDENTITY_WRITE, hex('a')), owned(other, hex('b'))])
-    docker.self.sandboxes.set('agent_x', { sandboxId: 'agent_x', containerId: hex('a').slice(0, 12) })
-    const run = docker.self.runLifecycleDocker
-    // `rm` of the duplicate "succeeds" but the container stays: a REMOVE_FAILED postcondition.
-    docker.self.runLifecycleDocker = (args: string[]) => (args[0] === 'rm' && args[2] === hex('b') ? ok() : run(args))
-
-    await expect(proto.removeSandbox.call(docker.self, 'agent_x')).rejects.toMatchObject({ code: 'REMOVE_FAILED' })
-    expect(docker.live.has(hex('a'))).toBe(true)
-    expect(docker.self.sandboxes.has('agent_x')).toBe(true)
-
-    docker.self.runLifecycleDocker = run
     await proto.removeSandbox.call(docker.self, 'agent_x')
-    expect(docker.live.size).toBe(0)
-    expect(docker.self.sandboxes.has('agent_x')).toBe(false)
+    expect([...docker.live.keys()]).toEqual([hex('b')])
+    expect(docker.calls.filter((args) => args[0] === 'rm')).toEqual([['rm', '-f', hex('a')]])
   })
 
-  // M2: a duplicate under the other prefix is removed on adopt, never left running.
+  // Retired resources are outside canonical adoption and teardown.
   describe('ensure with containers under both prefixes', () => {
     const original = process.env.FICUS_SANDBOX_RUNTIME
     beforeEach(() => {
@@ -225,7 +207,7 @@ describe('DockerSandboxManager lifecycle under both identity sets', () => {
       executorProtocolVersion: 1,
       commandContractVersion: 1,
     } as const
-    const other = SANDBOX_IDENTITY_READ.find((set) => set !== SANDBOX_IDENTITY_WRITE)!
+    const other = SANDBOX_IDENTITY_LEGACY
 
     function ensuringSelf(docker: ReturnType<typeof fakeDocker>) {
       return {
@@ -239,11 +221,11 @@ describe('DockerSandboxManager lifecycle under both identity sets', () => {
       }
     }
 
-    test('adopts the write-name container and removes the proven duplicate', async () => {
+    test('adopts the canonical container and leaves the retired container untouched', async () => {
       const docker = fakeDocker([owned(SANDBOX_IDENTITY_WRITE, hex('a')), owned(other, hex('b'))])
       await expect(proto.ensureSandbox.call(ensuringSelf(docker), 'agent_x', opts)).resolves.toBe(hex('a').slice(0, 12))
-      expect([...docker.live.keys()]).toEqual([hex('a')])
-      expect(docker.calls.filter((args) => args[0] === 'rm')).toEqual([['rm', '-f', hex('b')]])
+      expect([...docker.live.keys()]).toEqual([hex('a'), hex('b')])
+      expect(docker.calls.filter((args) => args[0] === 'rm')).toEqual([])
     })
 
     test('an unproven container under the other prefix is left untouched', async () => {
@@ -254,10 +236,10 @@ describe('DockerSandboxManager lifecycle under both identity sets', () => {
       expect(docker.calls.some((args) => args[0] === 'rm')).toBe(false)
     })
 
-    test('attach adopts the write-name container and removes the proven duplicate', async () => {
+    test('attach adopts the canonical container and leaves the retired container untouched', async () => {
       const docker = fakeDocker([owned(SANDBOX_IDENTITY_WRITE, hex('a')), owned(other, hex('b'))])
       await expect(proto.attachExistingSandbox.call(ensuringSelf(docker), 'agent_x', opts)).resolves.toBe(true)
-      expect([...docker.live.keys()]).toEqual([hex('a')])
+      expect([...docker.live.keys()]).toEqual([hex('a'), hex('b')])
     })
   })
 
@@ -312,7 +294,7 @@ describe('DockerSandboxManager lifecycle under both identity sets', () => {
 })
 
 describe('sandbox container create labels', () => {
-  const other = SANDBOX_IDENTITY_READ.find((set) => set !== SANDBOX_IDENTITY_WRITE)!
+  const other = SANDBOX_IDENTITY_LEGACY
   const labelKeys = (args: string[]) =>
     args.flatMap((arg, i) => (args[i - 1] === '--label' ? [arg.slice(0, arg.indexOf('='))] : []))
 
@@ -872,6 +854,8 @@ describe('ensureSandbox spec-hash drift detection', () => {
         executorProtocolVersion: 1,
         commandContractVersion: 1,
       }),
+      assertNoRetiredContainer: (DockerSandboxManager.prototype as any).assertNoRetiredContainer,
+      inspectContainerRunning: () => 'not_found',
       resetStaleSandboxStatus: async () => {},
       tryAcquireSandboxLock: async () => true,
       waitForSandboxReady: async () => {},
@@ -896,6 +880,49 @@ describe('ensureSandbox spec-hash drift detection', () => {
 
   const ensure = (self: unknown, id: string, o: SandboxOptions) =>
     DockerSandboxManager.prototype.ensureSandbox.call(self as DockerSandboxManager, id, o)
+
+  for (const state of ['running', 'stopped', 'unknown'] as const) {
+    it(`refuses creation when the exact pre-rename container is ${state}`, async () => {
+      const calls: string[][] = []
+      const { self, created, removed } = fakeManager({
+        inspectContainerRunning: (DockerSandboxManager.prototype as any).inspectContainerRunning,
+        runLifecycleDocker: (args: string[]) => {
+          calls.push(args)
+          return {
+            exitCode: state === 'unknown' ? 1 : 0,
+            stdout: Buffer.from(state === 'running' ? 'true' : 'false'),
+            stderr: Buffer.from(state === 'unknown' ? 'Docker unavailable' : ''),
+          }
+        },
+        resetStaleSandboxStatus: async () => {
+          throw new Error('must not mutate DB')
+        },
+      })
+      await expect(ensure(self, 'agent_exact', opts)).rejects.toThrow(
+        state === 'unknown' ? 'refusing creation' : 'bridge release'
+      )
+      expect(calls).toEqual([['inspect', '-f', '{{.State.Running}}', 'tau-sandbox-agent_exact']])
+      expect(created).toEqual([])
+      expect(removed).toEqual([])
+    })
+  }
+
+  it('rechecks retired presence after waiting for initialization, before creating', async () => {
+    let calls = 0
+    let admissions = 0
+    let waited = false
+    const { self, created } = fakeManager({
+      inspectContainerRunning: () => (++calls === 1 ? 'not_found' : 'running'),
+      tryAcquireSandboxLock: async () => ++admissions > 1,
+      waitForSandboxReady: async () => {
+        waited = true
+      },
+    })
+    await expect(ensure(self, 'agent_exact', opts)).rejects.toThrow('bridge release')
+    expect(calls).toBe(2)
+    expect(waited).toBe(true)
+    expect(created).toEqual([])
+  })
 
   it('(a) reuses an in-memory container with matching spec-hash — no recreate', async () => {
     const hash = computeDockerSpecHash(opts)
@@ -1068,12 +1095,8 @@ describe('ensureSandbox spec-hash drift detection', () => {
     expect(absent.created).toEqual([])
   })
 
-  // Adoption recognises a container under every identity set, so a release that
-  // reads both never double-creates beside a box it failed to find.
-  for (const [label, set] of [
-    ['new', SANDBOX_IDENTITY_NEW],
-    ['legacy', SANDBOX_IDENTITY_LEGACY],
-  ] as const) {
+  // Canonical discovery and adoption preserve normal lifecycle behavior.
+  for (const [label, set] of [['new', SANDBOX_IDENTITY_NEW]] as const) {
     it(`adopts a discovered container carrying only the ${label} identity — no recreate`, async () => {
       const hash = computeDockerSpecHash(opts)
       const lookups: string[] = []
@@ -1120,7 +1143,18 @@ describe('ensureSandbox spec-hash drift detection', () => {
     })
   }
 
-  it('adopts the write-name container and hands the other-prefix one to duplicate removal', async () => {
+  it('does not attach to a retired-name container', async () => {
+    const { self, created } = fakeManager({
+      getExistingContainer: (name: string) =>
+        name === `${SANDBOX_IDENTITY_LEGACY.containerPrefix}s` ? 'retired' : null,
+    })
+    await expect(
+      DockerSandboxManager.prototype.attachExistingSandbox.call(self as unknown as DockerSandboxManager, 's', opts)
+    ).resolves.toBe(false)
+    expect(created).toEqual([])
+  })
+
+  it('does not hand retired containers to duplicate removal', async () => {
     const hash = computeDockerSpecHash(opts)
     const ids: Record<string, string> = {
       [`${SANDBOX_IDENTITY_NEW.containerPrefix}s`]: 'new-c',
@@ -1134,7 +1168,7 @@ describe('ensureSandbox spec-hash drift detection', () => {
     })
     const write = ids[`${SANDBOX_IDENTITY_WRITE.containerPrefix}s`]
     await expect(ensure(self, 's', opts)).resolves.toBe(write)
-    expect(duplicates).toEqual([Object.values(ids).filter((id) => id !== write)])
+    expect(duplicates).toEqual([])
     expect(created).toEqual([])
     expect(removed).toEqual([])
   })
@@ -1238,6 +1272,8 @@ describe('ensureSandbox: a container created without the /usr/local/bin/ficus mo
         executorProtocolVersion: 1,
         commandContractVersion: 1,
       }),
+      assertNoRetiredContainer: (DockerSandboxManager.prototype as any).assertNoRetiredContainer,
+      inspectContainerRunning: () => 'not_found',
       resetStaleSandboxStatus: async () => {},
       tryAcquireSandboxLock: async () => true,
       waitForSandboxReady: async () => {},
@@ -1874,7 +1910,7 @@ describe('docker-sandbox-manager', () => {
 })
 
 // C1 (fix round 1 — review finding): an adopted container that was built
-// under the LEGACY identity (user `tau`, `/run/tau/...` paths — every // ficus-p5-bridge
+// under a foreign identity (different user and runtime paths — every
 // container running before this release) has no `ficus` user and no
 // `/run/ficus/...` paths. connectExecutor and getSandboxUserArgs must read
 // the container's OWN label set to decide which paths/user to use — not
@@ -1914,24 +1950,30 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
       ])
     })
 
-    it('uses the legacy identity for a legacy-labelled container — not the Ficus one', () => {
+    it('never selects retired exec paths from retired labels', () => {
       const self = fakeThisForLabels({ [SANDBOX_IDENTITY_LEGACY.managedLabel]: 'true' })
       const args: string[] = proto.getSandboxUserArgs.call(self, 'container-legacy')
-      // Built from the exported LEGACY constant (not retyped literals) so this
-      // test tracks the real pre-release values, whatever they are.
-      expect(args).toEqual([
-        '--user',
-        DOCKER_EXEC_IDENTITY_LEGACY.user,
-        '-e',
-        `HOME=${DOCKER_EXEC_IDENTITY_LEGACY.home}`,
-        '-e',
-        `USER=${DOCKER_EXEC_IDENTITY_LEGACY.user}`,
-        '-e',
-        `LOGNAME=${DOCKER_EXEC_IDENTITY_LEGACY.user}`,
-        '-e',
-        `DOCKER_HOST=unix://${DOCKER_EXEC_IDENTITY_LEGACY.dockerProxySocketPath}`,
-      ])
+      expect(args).toContain(DOCKER_EXEC_IDENTITY_NEW.user)
+      expect(args).not.toContain(DOCKER_EXEC_IDENTITY_LEGACY.user)
+    })
+
+    it('uses the fixed pre-rename identity only for an explicitly attached old container', () => {
+      const self = fakeThisForLabels({ [LEGACY_DOCKER_MANAGED_LABEL]: 'true' })
+      const args: string[] = proto.getSandboxUserArgs.call(self, 'persisted-old-container')
+      expect(args).toContain(LEGACY_DOCKER_EXEC_IDENTITY.user)
+      expect(args).toContain(`HOME=${LEGACY_DOCKER_EXEC_IDENTITY.home}`)
       expect(args).not.toContain(DOCKER_EXEC_IDENTITY_NEW.user)
+      expect(SANDBOX_IDENTITY_READ.map((set) => set.managedLabel)).not.toContain(LEGACY_DOCKER_MANAGED_LABEL)
+    })
+
+    it('refuses conflicting canonical and pre-rename managed labels', () => {
+      const self = fakeThisForLabels({
+        [SANDBOX_IDENTITY_NEW.managedLabel]: 'true',
+        [LEGACY_DOCKER_MANAGED_LABEL]: 'true',
+      })
+      expect(() => proto.getSandboxUserArgs.call(self, 'conflicting-container')).toThrow(
+        'Conflicting Docker managed identities'
+      )
     })
 
     it('falls back to the Ficus (write) identity when a container has no managed label at all', () => {
@@ -1946,15 +1988,16 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
     /** Each identity's expected health-contract payload, computed via the REAL resolveDockerCommandIdentity. */
     function expectedHealthIdentity(execIdentity: DockerExecIdentity) {
       const contract =
-        execIdentity === DOCKER_EXEC_IDENTITY_NEW
-          ? { version: 1 as const, user: 'ficus', home: '/home/ficus', uid: 1000, gid: 1000 }
-          : LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT
+        execIdentity === LEGACY_DOCKER_EXEC_IDENTITY
+          ? LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT
+          : { version: 1 as const, user: 'ficus', home: '/home/ficus', uid: 1000, gid: 1000 }
       return resolveDockerCommandIdentity(contract, { uid: process.getuid?.(), gid: process.getgid?.() })
     }
 
-    for (const [label, identitySet, execIdentity] of [
-      ['new', SANDBOX_IDENTITY_NEW, DOCKER_EXEC_IDENTITY_NEW],
-      ['legacy', SANDBOX_IDENTITY_LEGACY, DOCKER_EXEC_IDENTITY_LEGACY],
+    for (const [label, identitySet, execIdentity, healthMatches] of [
+      ['new', SANDBOX_IDENTITY_NEW, DOCKER_EXEC_IDENTITY_NEW, true],
+      ['pre-rename', { managedLabel: LEGACY_DOCKER_MANAGED_LABEL }, LEGACY_DOCKER_EXEC_IDENTITY, true],
+      ['pre-rename-wrong-health', { managedLabel: LEGACY_DOCKER_MANAGED_LABEL }, LEGACY_DOCKER_EXEC_IDENTITY, false],
     ] as const) {
       it(`reads the executor token from the ${label} path and validates the ${label} identity for a ${label}-labelled container`, async () => {
         const sandboxId = `agent_${label}`
@@ -1962,7 +2005,7 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
         const self = fakeThisForLabels({ [identitySet.managedLabel]: 'true' })
         self.sandboxes.set(sandboxId, {})
 
-        const resolved = expectedHealthIdentity(execIdentity)
+        const resolved = expectedHealthIdentity(healthMatches ? execIdentity : DOCKER_EXEC_IDENTITY_NEW)
         const tokenCalls: string[] = []
         const otherIdentityTokenPath =
           execIdentity === DOCKER_EXEC_IDENTITY_NEW
@@ -2016,7 +2059,8 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
         })) as unknown as typeof fetch
 
         try {
-          await proto.connectExecutor.call(self, containerId, sandboxId)
+          if (healthMatches) await proto.connectExecutor.call(self, containerId, sandboxId)
+          else await expect(proto.connectExecutor.call(self, containerId, sandboxId)).rejects.toThrow()
         } finally {
           spawnSpy.mockRestore()
           sleepSpy.mockRestore()
@@ -2028,7 +2072,8 @@ describe("connectExecutor and getSandboxUserArgs resolve the container's OWN ide
         // unconditionally means a legacy container's token is never found).
         expect(tokenCalls).toContain(execIdentity.executorTokenPath)
         expect(tokenCalls).not.toContain(otherIdentityTokenPath)
-        expect(self.sandboxes.get(sandboxId)?.client).toBeDefined()
+        if (healthMatches) expect(self.sandboxes.get(sandboxId)?.client).toBeDefined()
+        else expect(self.sandboxes.get(sandboxId)?.client).toBeUndefined()
       })
     }
   })

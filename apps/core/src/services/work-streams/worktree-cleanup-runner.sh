@@ -34,6 +34,7 @@ const git = (dir, ...args) => runGit(dir, args);
 if (git(o.repository, 'rev-parse', '--show-toplevel').trim() !== o.repository ||
     git(o.repository, 'rev-parse', '--path-format=absolute', '--git-common-dir').trim() !== o.commonDirectory)
   fail('Repository identity changed');
+// ficus-p5-bridge: durable deletion receipts preserve replay and fencing across upgrades
 const records = path.join(o.commonDirectory, 'tau-worktree-cleanup');
 try { fs.mkdirSync(records, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
 physical(records);

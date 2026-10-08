@@ -39,6 +39,7 @@ import type { SandboxPressure } from '@ficus/shared'
 import {
   getSquadIdFromSandbox,
   type ISandboxManager,
+  type SandboxExecOptions,
   type SandboxOptions,
   type SandboxRuntime,
   type SpawnHook,
@@ -95,7 +96,7 @@ import {
   type BoxStatusWithChain,
   type EnsureBoxOpts,
 } from '../../machines/box-manager'
-import { resolvePlacement, type PlacementRequest } from '../../machines/placement'
+import { MachineUnavailableError, resolvePlacement, type PlacementRequest } from '../../machines/placement'
 import {
   getMachine as getMachineReal,
   getMachineBox as getMachineBoxReal,
@@ -1099,7 +1100,7 @@ export class VmSandboxManager implements ISandboxManager {
         this.dropAttachedClient(sandboxId)
         this.healthObservations.delete(sandboxId)
         const stop = await this.deps.stopBox(sandboxId)
-        if (stop.kind === 'unverified') return { kind: 'unverified' } as const
+        if (stop.kind === 'unverified') return stop
         return { kind: stop.kind === 'not-found' ? 'not-found' : 'stopped' } as const
       })
     } finally {
@@ -1250,7 +1251,7 @@ export class VmSandboxManager implements ISandboxManager {
     return null
   }
 
-  async exec(sandboxId: string, args: string[]): Promise<Buffer> {
+  async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
     const state = this.requireSandbox(sandboxId)
     this.touch(state)
 
@@ -1260,7 +1261,7 @@ export class VmSandboxManager implements ISandboxManager {
       const chunks: Buffer[] = []
       let terminal = false
       let settled = false
-      const stream = launchingClient.bash({ command, cwd: state.workRoot })
+      const stream = launchingClient.bash({ command, cwd: state.workRoot, env: options?.env })
       stream.on('data', (response: BashResponse) => {
         if (response.stdout) chunks.push(Buffer.from(response.stdout, 'base64'))
         if (response.stderr) chunks.push(Buffer.from(response.stderr, 'base64'))
@@ -1473,7 +1474,16 @@ export class VmSandboxManager implements ISandboxManager {
       log.info(`Recreating box to apply spec change: ${sandboxId}`)
       // Park (state persists on disk) then re-ensure with the new spec.
       const stop = await this.stopSandbox(sandboxId)
-      if (stop.kind === 'unverified') throw new Error(`Cannot recreate ${sandboxId} until its stop is verified`)
+      if (stop.kind === 'unverified') {
+        const message = `Cannot recreate ${sandboxId} until its stop is verified`
+        // Only an observed non-ready machine is an infrastructure failure. A
+        // ready host that failed stop verification remains a terminal refusal.
+        // Startup retry owns the allowlist of transient machine statuses.
+        if (stop.machineStatus && stop.machineStatus !== 'ready') {
+          throw new MachineUnavailableError(message, stop.machineStatus)
+        }
+        throw new Error(message)
+      }
       return this.ensureSandbox(sandboxId, opts)
     })
   }

@@ -173,7 +173,7 @@ describe('SystemUpdateSection theme classes', () => {
   test('uses theme-safe primary text classes for controls and latest run content', () => {
     expect(source).toContain('<section className="space-y-6 text-primary">')
     expect(source).toContain('bg-surface px-2 py-1 text-primary')
-    expect(source).toContain('bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active')
+    expect(source).toContain("'ficus-button ficus-button-primary'")
     expect(source).toContain('rounded bg-background text-xs text-primary')
   })
 

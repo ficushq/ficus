@@ -2,11 +2,10 @@ import { siteAssistantToolRenderers } from '../lib/tool-renderers'
 import type { ReactNode } from 'react'
 import { useRef, useEffect, useState, useId } from 'react'
 import clsx from 'clsx'
-import { createPortal } from 'react-dom'
 import { siteOperatorVoiceAssistant } from './assistants/siteOperator/siteOperatorAssistant'
 import { VoiceTranscriptInspector } from './VoiceTranscriptInspector'
 import { useRealtimeVoiceAssistant } from './useRealtimeVoiceAssistant'
-import { Presence } from '../components/Presence'
+import { Panel } from '../components/popover'
 import { MicIcon, CloseIcon, ExpandIcon, ChevronDownIcon, StopIcon, RefreshIcon } from '../components/icons'
 import { OPEN_ASSISTANT_EVENT, OPEN_VOICE_EVENT } from '@ficus/shared/browser-keys'
 
@@ -89,7 +88,6 @@ export function VoiceCompanionButton({
     onActivityChange?.(live || status === 'connecting')
   }, [live, status, onActivityChange])
   const unavailableHintId = useId()
-  const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -120,35 +118,6 @@ export function VoiceCompanionButton({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [history])
-
-  // Close panel on outside click
-  useEffect(() => {
-    if (!panelOpen) return
-    const handler = (e: MouseEvent) => {
-      if (
-        panelRef.current &&
-        !panelRef.current.contains(e.target as Node) &&
-        buttonRef.current &&
-        !buttonRef.current.contains(e.target as Node)
-      ) {
-        if (isConnected) setCompact(true)
-        else setPanelOpen(false)
-      }
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (isConnected) setCompact(true)
-        else setPanelOpen(false)
-        buttonRef.current?.focus()
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    document.addEventListener('keydown', escape)
-    return () => {
-      document.removeEventListener('mousedown', handler)
-      document.removeEventListener('keydown', escape)
-    }
-  }, [panelOpen, isConnected])
 
   const unavailableReason =
     typeof window !== 'undefined' && window.isSecureContext === false
@@ -197,19 +166,8 @@ export function VoiceCompanionButton({
   }
   const statusLabel = statusLabels[status]
 
-  const panel = (
-    <Presence
-      open={embedded || panelOpen}
-      ref={panelRef}
-      data-compact={live && compact}
-      style={embedded ? undefined : { top: (buttonRef.current?.getBoundingClientRect().bottom ?? 56) + 8 }}
-      className={clsx(
-        embedded
-          ? 'p-2 overflow-y-auto min-h-0'
-          : 'ficus-overlay ficus-voice-panel fixed right-3 sm:right-6 z-50 p-2 overflow-y-auto max-h-[calc(100dvh-10rem)] max-w-[calc(100vw-1.5rem)] transition-[width] duration-200 ease-out motion-reduce:transition-none',
-        !embedded && (live && compact ? 'w-72' : 'w-[calc(100vw-1.5rem)] sm:w-96')
-      )}
-    >
+  const content = (
+    <>
       <div
         className="flex items-center justify-between gap-2 px-2 py-2"
         style={embedded && !live ? { display: 'none' } : undefined}
@@ -223,8 +181,10 @@ export function VoiceCompanionButton({
               aria-label={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
               title={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
               className={clsx(
-                'ficus-button relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
-                isMicMuted ? 'bg-surface-secondary text-muted' : 'bg-selection text-accent-light'
+                'ficus-button ficus-button-ghost relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+                isMicMuted
+                  ? 'bg-surface-secondary'
+                  : 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
               )}
             >
               {!isMicMuted && status === 'user-speaking' && (
@@ -259,7 +219,7 @@ export function VoiceCompanionButton({
               disabled={resetting}
               aria-label="Reset voice conversation"
               title="Reset voice conversation"
-              className="ficus-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover"
+              className="ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-lg"
             >
               <RefreshIcon className={clsx('h-4 w-4', resetting && 'motion-safe:animate-spin')} />
             </button>
@@ -270,7 +230,7 @@ export function VoiceCompanionButton({
               onClick={handleDisconnect}
               aria-label="End chat"
               title="End chat"
-              className="ficus-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-status-danger-500/10 hover:text-status-danger-500"
+              className="ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-lg hover:bg-status-danger-500/10 hover:text-status-danger-500"
             >
               <StopIcon className="h-4 w-4" />
             </button>
@@ -280,7 +240,7 @@ export function VoiceCompanionButton({
               onClick={onExpand}
               aria-label="Expand assistant"
               title="Expand assistant"
-              className="ficus-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover"
+              className="ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-lg"
             >
               <ExpandIcon className="h-4 w-4" />
             </button>
@@ -297,7 +257,7 @@ export function VoiceCompanionButton({
               aria-label={
                 isConnected ? (compact ? 'Expand voice assistant' : 'Compact voice assistant') : 'Close voice assistant'
               }
-              className="ficus-button rounded-lg p-2 text-muted hover:bg-surface-hover hover:text-primary"
+              className="ficus-button ficus-button-ghost rounded-lg p-2"
             >
               {isConnected ? (
                 compact ? (
@@ -341,7 +301,7 @@ export function VoiceCompanionButton({
               onClick={() => {
                 void toggle()
               }}
-              className="ficus-button mt-2 w-full rounded-lg py-2 text-xs text-muted hover:bg-surface-hover"
+              className="ficus-button ficus-button-secondary mt-2 w-full rounded-lg py-2 text-xs"
             >
               Cancel
             </button>
@@ -378,9 +338,15 @@ export function VoiceCompanionButton({
       {!controlsOnly && !hasHistory && isConnected && !compact && !canInterrupt && (
         <div className="px-3 py-6 text-center text-sm text-muted">Speak naturally. You can interrupt at any time.</div>
       )}
-    </Presence>
+    </>
   )
-  if (embedded) return panel
+  // Embedded, it is part of its host (the assistant drawer), not a floating surface.
+  if (embedded)
+    return (
+      <div className="ficus-presence p-2 overflow-y-auto min-h-0" data-state="open" data-compact={live && compact}>
+        {content}
+      </div>
+    )
   return (
     <div className="relative group/voice">
       {/* Header button */}
@@ -393,10 +359,8 @@ export function VoiceCompanionButton({
           aria-describedby={unavailableReason ? unavailableHintId : undefined}
           aria-label="Voice assistant"
           className={clsx(
-            'ficus-button relative flex items-center justify-center p-2 rounded-md transition-colors',
-            unavailableReason
-              ? 'text-muted opacity-50 cursor-not-allowed'
-              : 'text-muted hover:text-primary hover:bg-surface-hover'
+            'ficus-button ficus-button-ghost relative flex items-center justify-center p-2 rounded-md transition-colors',
+            unavailableReason && 'opacity-50 cursor-not-allowed'
           )}
           title={unavailableReason ?? 'Voice assistant'}
         >
@@ -414,8 +378,31 @@ export function VoiceCompanionButton({
         </div>
       )}
 
-      {/* Dropdown panel */}
-      {typeof document !== 'undefined' && createPortal(panel, document.body)}
+      {/* The expanded header panel is a popup: an outside press or Escape compacts a live session and closes an
+          idle one. Compact-and-live it is a persistent mini player that never dismisses (nor claims Escape), and
+          a non-modal companion that keeps running while the user works elsewhere: focus moving away never
+          dismisses it. It lives on the companion layer, under modals and the assistant window. */}
+      <Panel
+        open={panelOpen}
+        onDismiss={() => {
+          if (isConnected) setCompact(true)
+          else setPanelOpen(false)
+        }}
+        dismissible={!(isConnected && compact)}
+        trigger={buttonRef}
+        label="Voice assistant"
+        layer="companion"
+        initialFocus="none"
+        focusOut={false}
+        gap={8}
+        data-compact={live && compact}
+        className={clsx(
+          'ficus-overlay ficus-voice-panel p-2 transition-[width] duration-200 ease-out motion-reduce:transition-none',
+          live && compact ? 'w-72' : 'w-[calc(100vw-1.5rem)] sm:w-96'
+        )}
+      >
+        {content}
+      </Panel>
     </div>
   )
 }

@@ -67,6 +67,7 @@ export default defineConfig({
             { label: 'Project tools', slug: 'connect/project-tools' },
             { label: 'Chat channels', slug: 'connect/chat' },
             { label: 'Notifications', slug: 'connect/notifications' },
+            { label: 'Mobile app and Pro', slug: 'connect/mobile' },
           ],
         },
         {

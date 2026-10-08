@@ -18,7 +18,7 @@ runtime executes agent work** (`FICUS_SANDBOX_RUNTIME`). Any combination works.
    web dev server.
 2. **Single-VM hosted (the scripted path)** — the setup toolkit
    (`scripts/setup/`) takes a blank Ubuntu VM from nothing → running: config
-   wizard, systemd units (`tau-api`/`tau-worker`), dockerized ParadeDB, built
+   wizard, systemd units (`ficus-api`/`ficus-worker`), dockerized ParadeDB, built
    dist, bootstrap `FICUS_PASSWORD` that self-disables once a passkey exists.
    `provision.sh` does the whole flow on a fresh VM in ~2–3 min (exe.dev, or
    Hetzner Cloud + Cloudflare DNS via `provision.provider: hetzner`). The
@@ -32,10 +32,10 @@ runtime executes agent work** (`FICUS_SANDBOX_RUNTIME`). Any combination works.
 start without one of these five values.
 
 1. **`docker-sysbox` / `docker-socket`** — one container per sandbox
-   (`tau-sandbox-*`) under sysbox-runc or with the host Docker socket mounted
+   (`ficus-sandbox-*`) under sysbox-runc or with the host Docker socket mounted
    in (`docker-sysbox` never falls back to socket mode), manifest-driven bind mounts,
    shared nix base (`<HOME_DIR>/nix/.base`) with per-sandbox hardlink/CoW clones
-   and terminal-lifecycle reclaim. Containers carry a `tau.spec-hash` label, so
+   and terminal-lifecycle reclaim. Containers carry a `ficus.spec-hash` label, so
    mount-changing upgrades recreate them lazily on next use (see
    `docs/wiki/machines/upgrading.md`).
 2. **`k8s` (the heavy tier)** — real pods with subPath mounts on the shared

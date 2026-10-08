@@ -20,15 +20,15 @@ describe('system log provider selection', () => {
 
   it('selects explicitly configured k8s targets', () => {
     process.env.FICUS_SYSTEM_LOG_PROVIDER = 'k8s'
-    process.env.FICUS_SYSTEM_LOG_K8S_NAMESPACE = 'tau-core'
+    process.env.FICUS_SYSTEM_LOG_K8S_NAMESPACE = 'ficus-core'
     expect(detectProvider()).toBe('k8s')
     expect(getSystemLogProvider(true)).toBeInstanceOf(K8sLogProvider)
   })
 
   it('selects explicitly configured Docker targets', () => {
     process.env.FICUS_SYSTEM_LOG_PROVIDER = 'docker'
-    process.env.FICUS_DOCKER_API_CONTAINER = 'tau-api'
-    process.env.FICUS_DOCKER_WORKER_CONTAINER = 'tau-worker'
+    process.env.FICUS_DOCKER_API_CONTAINER = 'ficus-api'
+    process.env.FICUS_DOCKER_WORKER_CONTAINER = 'ficus-worker'
     expect(getSystemLogProvider(true)).toBeInstanceOf(DockerLogProvider)
   })
 
@@ -55,14 +55,14 @@ describe('system log provider selection', () => {
 
   it('does not use PM2 fallback when only one target is running', () => {
     delete process.env.FICUS_SYSTEM_LOG_PROVIDER
-    const dependencies = pm2Processes('tau-api')
+    const dependencies = pm2Processes('ficus-api')
     expect(detectProvider(dependencies)).toBe('unavailable')
     expect(getSystemLogProvider(true, dependencies)).toBeInstanceOf(UnavailableLogProvider)
   })
 
   it('uses PM2 fallback when both targets are running', () => {
     delete process.env.FICUS_SYSTEM_LOG_PROVIDER
-    const dependencies = pm2Processes('tau-api', 'tau-worker')
+    const dependencies = pm2Processes('ficus-api', 'ficus-worker')
     expect(detectProvider(dependencies)).toBe('pm2')
     expect(getSystemLogProvider(true, dependencies)).toBeInstanceOf(Pm2LogProvider)
   })
@@ -91,7 +91,7 @@ describe('system log provider selection', () => {
 
   it('keeps the cached provider unless forceFresh is requested', () => {
     delete process.env.FICUS_SYSTEM_LOG_PROVIDER
-    const selected = getSystemLogProvider(true, pm2Processes('tau-api', 'tau-worker'))
+    const selected = getSystemLogProvider(true, pm2Processes('ficus-api', 'ficus-worker'))
     expect(getSystemLogProvider(false, pm2Unavailable)).toBe(selected)
     expect(getSystemLogProvider(true, pm2Unavailable)).toBeInstanceOf(UnavailableLogProvider)
   })

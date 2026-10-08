@@ -36,9 +36,7 @@ export function normalizeLocalInstanceLabel(raw: string): string {
 
 /**
  * Derive the only process names allowed for a local instance: `ficus-api`/`ficus-worker` for the
- * default instance, `ficus-<label>-api`/`ficus-<label>-worker` for any other. An instance the CLI
- * has not yet moved with `ficus server rename-identity` still runs under its pre-rename names
- * (`legacyLocalProcessNames` in `@ficus/shared/node`).
+ * default instance, `ficus-<label>-api`/`ficus-<label>-worker` for any other.
  */
 export function localProcessNames(raw: string): { label: string; api: string; worker: string } {
   const label = normalizeLocalInstanceLabel(raw)

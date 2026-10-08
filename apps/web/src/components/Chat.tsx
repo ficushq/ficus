@@ -163,7 +163,8 @@ export function Chat({
           onConfirm={() => stopMutation.mutate()}
           disabled={stopMutation.isPending}
           label="Stop"
-          className="ficus-button px-1.5 py-0.5 text-[11px] font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors"
+          variant="ghost"
+          className="px-1.5 py-0.5 text-[11px] font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors"
           confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-status-danger-700 dark:text-status-danger-300 bg-status-danger-50 dark:bg-status-danger-900/30 hover:bg-status-danger-100 dark:hover:bg-status-danger-900/50 rounded transition-colors"
         />
       )}
@@ -173,14 +174,16 @@ export function Chat({
             onConfirm={() => compactMutation.mutate()}
             disabled={compactMutation.isPending}
             label="Compact"
-            className="ficus-button px-1.5 py-0.5 text-[11px] font-medium text-accent-light hover:bg-accent/10 rounded transition-colors"
+            variant="ghost"
+            className="px-1.5 py-0.5 text-[11px] font-medium text-accent-light hover:bg-accent/10 rounded transition-colors"
             confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-accent-light bg-accent/10 hover:bg-accent/20 rounded transition-colors"
           />
           <ConfirmButton
             onConfirm={() => resetMutation.mutate()}
             disabled={resetMutation.isPending}
             label="Reset"
-            className="ficus-button px-1.5 py-0.5 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
+            variant="ghost"
+            className="px-1.5 py-0.5 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
             confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-status-external-wait-700 dark:text-status-external-wait-300 bg-status-external-wait-50 dark:bg-status-external-wait-900/30 hover:bg-status-external-wait-100 dark:hover:bg-status-external-wait-900/50 rounded transition-colors"
           />
         </>

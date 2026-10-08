@@ -244,7 +244,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                 <button
                   type="submit"
                   disabled={loading || !password.trim()}
-                  className="ficus-button ficus-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+                  className="ficus-button ficus-button-primary w-full mt-3 px-4 py-2 rounded-md font-medium text-sm disabled:opacity-50"
                 >
                   {loading ? 'Verifying...' : 'Continue'}
                 </button>
@@ -291,11 +291,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
             <>
               <PasskeyRegisterComponent onSuccess={loginWithToken} />
               <p className="text-xs text-secondary mt-4 text-center">
-                <button
-                  type="button"
-                  onClick={() => setShowRegister(false)}
-                  className="ficus-button text-accent-light hover:underline"
-                >
+                <button type="button" onClick={() => setShowRegister(false)} className="ficus-button ficus-button-link">
                   Back to login
                 </button>
               </p>
@@ -312,7 +308,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                   <button
                     type="button"
                     onClick={() => setShowRegister(true)}
-                    className="ficus-button text-accent-light hover:underline"
+                    className="ficus-button ficus-button-link"
                   >
                     Create account
                   </button>
@@ -322,11 +318,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                   Offered unconditionally: it is invite-independent, and the endpoint
                   answers the same for an unknown address, so it leaks nothing. */}
               <p className="text-xs text-secondary mt-2 text-center">
-                <button
-                  type="button"
-                  onClick={() => setShowRecovery(true)}
-                  className="ficus-button text-accent-light hover:underline"
-                >
+                <button type="button" onClick={() => setShowRecovery(true)} className="ficus-button ficus-button-link">
                   Lost your passkey?
                 </button>
               </p>
@@ -369,7 +361,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
           <button
             type="submit"
             disabled={loading || !password.trim()}
-            className="ficus-button ficus-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-primary w-full mt-3 px-4 py-2 rounded-md font-medium text-sm disabled:opacity-50"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>

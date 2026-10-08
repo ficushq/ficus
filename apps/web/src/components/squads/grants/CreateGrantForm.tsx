@@ -74,13 +74,13 @@ export function CreateGrantForm({ sourceSquadId, onClose }: Props) {
         <button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending || !granteeSquadId}
-          className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating...' : 'Create grant'}
         </button>
         <button
           onClick={onClose}
-          className="ficus-button px-4 py-2 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover"
+          className="ficus-button ficus-button-secondary px-4 py-2 text-sm font-medium rounded-md"
         >
           Cancel
         </button>

@@ -177,7 +177,7 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
               <label className="block text-xs font-medium text-secondary">{name}</label>
               <button
                 onClick={() => handleRemoveType(typeId)}
-                className="ficus-button text-xs text-muted hover:text-status-danger-500 transition-colors"
+                className="ficus-button ficus-button-ghost text-xs hover:text-status-danger-500 transition-colors"
                 aria-label={`Remove ${name} context field`}
               >
                 ✕
@@ -227,9 +227,9 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
           onClick={handleSave}
           disabled={!dirty || mutation.isPending}
           className={clsx(
-            'ficus-button',
+            'ficus-button ficus-button-primary',
             'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
-            dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
+            !dirty && 'opacity-50 cursor-not-allowed'
           )}
         >
           {mutation.isPending ? 'Saving...' : 'Save'}

@@ -1,6 +1,7 @@
+import { SANDBOX_IDENTITY_LEGACY } from '../retired-identity.fixture'
 import { describe, test, expect } from 'bun:test'
 import { prepullSandboxImages, prepullPodName, prepullPodNames, type PrepullDeps } from './image-prepull'
-import { SANDBOX_IDENTITY_LEGACY } from '../identity-names'
+import {} from '../identity-names'
 
 interface Call {
   op: 'create' | 'read' | 'delete'
@@ -127,8 +128,8 @@ describe('prepullSandboxImages', () => {
     await prepullSandboxImages(baseDeps(api))
 
     const names = prepullPodNames('squad')
-    expect(names).toHaveLength(2)
-    expect(names).toContain(prepullPodName('squad', SANDBOX_IDENTITY_LEGACY.k8sPodNamePrefix))
+    expect(names).toHaveLength(1)
+    expect(names).not.toContain(prepullPodName('squad', SANDBOX_IDENTITY_LEGACY.k8sPodNamePrefix))
     for (const name of names) {
       expect(calls.some((c) => c.op === 'delete' && c.name === name)).toBe(true)
     }

@@ -1,6 +1,6 @@
 {
-  "id": "ba08aebd-13cc-415d-ad7c-803b0c427a04",
-  "prevId": "94554485-7d3f-4a6f-98aa-e624eb3d5dfb",
+  "id": "b4db339b-0e44-4896-b089-07ede2919d7c",
+  "prevId": "1f3b0c52-e980-42b9-99a6-dba5d3d86407",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6149,6 +6149,88 @@
       },
       "isRLSEnabled": false
     },
+    "public.github_output_proofs": {
+      "name": "github_output_proofs",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source_event_id": {
+          "name": "source_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_hash": {
+          "name": "source_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effect_hash": {
+          "name": "effect_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authority_hash": {
+          "name": "authority_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "checked_at": {
+          "name": "checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "github_output_proofs_event_id_integration_output_events_id_fk": {
+          "name": "github_output_proofs_event_id_integration_output_events_id_fk",
+          "tableFrom": "github_output_proofs",
+          "tableTo": "integration_output_events",
+          "columnsFrom": [
+            "event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "github_output_proofs_source_event_id_integration_output_events_id_fk": {
+          "name": "github_output_proofs_source_event_id_integration_output_events_id_fk",
+          "tableFrom": "github_output_proofs",
+          "tableTo": "integration_output_events",
+          "columnsFrom": [
+            "source_event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.github_personal_identities": {
       "name": "github_personal_identities",
       "schema": "",
@@ -7412,6 +7494,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "identity_proof_id": {
+          "name": "identity_proof_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "identity_verified_at": {
+          "name": "identity_verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "terminal_code": {
           "name": "terminal_code",
           "type": "varchar(64)",
@@ -7635,7 +7729,11 @@
         },
         "integration_auth_receipts_install_terminal_exclusive": {
           "name": "integration_auth_receipts_install_terminal_exclusive",
-          "value": "\"integration_authorization_flow_receipts\".\"terminal_at\" IS NULL OR \"integration_authorization_flow_receipts\".\"installed_at\" IS NULL"
+          "value": "\"integration_authorization_flow_receipts\".\"terminal_at\" IS NULL OR (\"integration_authorization_flow_receipts\".\"installed_at\" IS NULL AND \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NULL)"
+        },
+        "integration_auth_receipts_identity_result": {
+          "name": "integration_auth_receipts_identity_result",
+          "value": "(\"integration_authorization_flow_receipts\".\"identity_proof_id\" IS NULL AND \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NULL) OR (\"integration_authorization_flow_receipts\".\"purpose\" = 'github_identity' AND \"integration_authorization_flow_receipts\".\"identity_proof_id\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"staging_started_at\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"adapter_version\" IS NOT NULL)"
         },
         "integration_auth_receipts_revocation_settlement": {
           "name": "integration_auth_receipts_revocation_settlement",
@@ -7647,7 +7745,7 @@
         },
         "integration_auth_receipts_obligation_disposition": {
           "name": "integration_auth_receipts_obligation_disposition",
-          "value": "(\"integration_authorization_flow_receipts\".\"revocation_required_at\" IS NULL AND \"integration_authorization_flow_receipts\".\"cleanup_required_at\" IS NULL) OR \"integration_authorization_flow_receipts\".\"terminal_at\" IS NOT NULL OR \"integration_authorization_flow_receipts\".\"installed_at\" IS NOT NULL"
+          "value": "(\"integration_authorization_flow_receipts\".\"revocation_required_at\" IS NULL AND \"integration_authorization_flow_receipts\".\"cleanup_required_at\" IS NULL) OR \"integration_authorization_flow_receipts\".\"terminal_at\" IS NOT NULL OR \"integration_authorization_flow_receipts\".\"installed_at\" IS NOT NULL OR \"integration_authorization_flow_receipts\".\"identity_verified_at\" IS NOT NULL"
         },
         "integration_auth_receipts_retention_window": {
           "name": "integration_auth_receipts_retention_window",
@@ -9217,7 +9315,7 @@
         },
         "integration_oauth_states_authority_flow_check": {
           "name": "integration_oauth_states_authority_flow_check",
-          "value": "(\"integration_oauth_states\".\"authority\" = 'local' AND \"integration_oauth_states\".\"local_flow_id\" IS NULL) OR (\"integration_oauth_states\".\"authority\" = 'platform_broker' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL)"
+          "value": "(\"integration_oauth_states\".\"authority\" = 'local' AND ((\"integration_oauth_states\".\"purpose\" = 'integration' AND \"integration_oauth_states\".\"local_flow_id\" IS NULL) OR (\"integration_oauth_states\".\"purpose\" = 'github_identity' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL))) OR (\"integration_oauth_states\".\"authority\" = 'platform_broker' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL)"
         },
         "integration_oauth_states_intent_context": {
           "name": "integration_oauth_states_intent_context",
@@ -10090,6 +10188,99 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.live_activity_relay_installations": {
+      "name": "live_activity_relay_installations",
+      "schema": "",
+      "columns": {
+        "activation_id": {
+          "name": "activation_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state_enc": {
+          "name": "state_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lease_id": {
+          "name": "lease_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_until": {
+          "name": "lease_until",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "live_activity_relay_due_idx": {
+          "name": "live_activity_relay_due_idx",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "live_activity_relay_installations_user_id_users_id_fk": {
+          "name": "live_activity_relay_installations_user_id_users_id_fk",
+          "tableFrom": "live_activity_relay_installations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -17223,6 +17414,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "github_author_filter": {
+          "name": "github_author_filter",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         },
         "max_concurrent_work_streams": {
           "name": "max_concurrent_work_streams",

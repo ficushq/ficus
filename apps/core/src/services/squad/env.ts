@@ -145,7 +145,7 @@ function normalizeSecretKeys(keys: string[]): string[] {
         // is the single chokepoint: every persistence and render path routes
         // exposure keys through here, so a managed key can neither be stored as
         // an exposure nor rendered into .ficus/.env.
-        .filter((key) => !isManagedSecretKey(key))
+        .filter((key) => !key.startsWith('__') && !isManagedSecretKey(key))
         .filter(
           (key) =>
             !/^(?:GH_TOKEN|GITHUB_TOKEN)(?:_|$)/.test(key) &&

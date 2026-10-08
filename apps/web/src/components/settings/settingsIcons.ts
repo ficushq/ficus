@@ -7,6 +7,7 @@ import {
   CloudIcon,
   CpuIcon,
   DeviceIcon,
+  DeviceProIcon,
   DownloadIcon,
   FolderIcon,
   GitBranchIcon,
@@ -28,6 +29,7 @@ import {
   TerminalIcon,
   UserIcon,
   WorkflowIcon,
+  WindowLayoutIcon,
 } from '../icons'
 
 export const SETTINGS_SECTION_ICONS = {
@@ -37,7 +39,9 @@ export const SETTINGS_SECTION_ICONS = {
   access: TerminalIcon,
   account: UserIcon,
   appearance: PaletteIcon,
-  app: DeviceIcon,
+  app: WindowLayoutIcon,
+  mobile: DeviceIcon,
+  'mobile-pro': DeviceProIcon,
   notifications: BellIcon,
   devices: MonitorIcon,
   sessions: CalendarIcon,

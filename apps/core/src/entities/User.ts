@@ -1,3 +1,4 @@
+import { prepareActivityRelayUserDeletion } from '../services/push/live-activity-outbox'
 import { eq, and, sql, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { users, userCredentials, sessions, roleAssignments, agentTokens, emailVerifications } from '../db/schema'
@@ -34,7 +35,8 @@ export interface UserOnboarding {
 }
 
 /** Either the pooled db handle or a drizzle transaction handle. */
-export type UserExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
+type UserTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+export type UserExecutor = typeof db | UserTransaction
 
 export class User {
   constructor(private row: UserRow) {}
@@ -203,20 +205,31 @@ export class User {
     return this.update({ disabledAt: null }, executor)
   }
 
+  /**
+   * Deletes the user atomically. Callers that already hold a transaction (for example the human-only
+   * GitHub trust-mutation guard, which must lock trust authority first) pass it as `executor`; otherwise
+   * a new transaction is opened.
+   */
   async delete(executor: UserExecutor = db): Promise<void> {
-    // Revoke any agent tokens this user owns (e.g. system-manager tokens) before
-    // deleting. The agent_tokens.user_id FK is ON DELETE SET NULL, which would
-    // otherwise silently downgrade the token to a plain agent identity instead
-    // of invalidating it; setting revokedAt makes resolveToken fail closed.
-    await executor
-      .update(agentTokens)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(agentTokens.userId, this.id), isNull(agentTokens.revokedAt)))
-    await executor
-      .delete(roleAssignments)
-      .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.subjectId, this.id)))
+    const run = async (tx: UserTransaction) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, this.id)).for('update')
+      await prepareActivityRelayUserDeletion(tx, this.id)
+      // Revoke any agent tokens this user owns (e.g. system-manager tokens) before
+      // deleting. The agent_tokens.user_id FK is ON DELETE SET NULL, which would
+      // otherwise silently downgrade the token to a plain agent identity instead
+      // of invalidating it; setting revokedAt makes resolveToken fail closed.
+      await tx
+        .update(agentTokens)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(agentTokens.userId, this.id), isNull(agentTokens.revokedAt)))
+      await tx
+        .delete(roleAssignments)
+        .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.subjectId, this.id)))
+      await tx.delete(users).where(eq(users.id, this.id))
+    }
+    if (executor === db) await db.transaction(run)
+    else await run(executor as UserTransaction)
     invalidatePermissionCache()
-    await executor.delete(users).where(eq(users.id, this.id))
   }
 
   async createSession(opts?: {

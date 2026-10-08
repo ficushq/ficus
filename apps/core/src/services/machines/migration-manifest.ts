@@ -2,9 +2,8 @@ import { createHash } from 'crypto'
 import { posix } from 'path'
 
 export const MIGRATION_MANIFEST_SCHEMA = 'ficus-box-migration/v1' as const
-/** Bridge (phase 5, U4): the kind manifests carried before the rename. Still read, never written. */
-export const LEGACY_MIGRATION_MANIFEST_SCHEMA = 'tau-box-migration/v1' as const // ficus-p5-bridge
-export type MigrationManifestSchema = typeof MIGRATION_MANIFEST_SCHEMA | typeof LEGACY_MIGRATION_MANIFEST_SCHEMA
+/** The canonical schema accepted by migration readers and writers. */
+export type MigrationManifestSchema = typeof MIGRATION_MANIFEST_SCHEMA
 export type DurableRootName = 'workspace' | '.private'
 export type ManifestEntryV1 =
   | { pathB64: string; type: 'file'; mode: string; size: string; contentSha256: string }
@@ -172,8 +171,7 @@ export function createMigrationManifest(
 export function parseMigrationManifest(input: unknown): MigrationManifestV1 {
   if (!input || typeof input !== 'object') throw new Error('invalid migration manifest')
   const candidate = input as MigrationManifestV1
-  if (candidate.schema !== MIGRATION_MANIFEST_SCHEMA && candidate.schema !== LEGACY_MIGRATION_MANIFEST_SCHEMA)
-    throw new Error('unsupported migration manifest schema')
+  if (candidate.schema !== MIGRATION_MANIFEST_SCHEMA) throw new Error('unsupported migration manifest schema')
   const rebuilt = createMigrationManifest(
     {
       operationId: candidate.operationId,

@@ -61,11 +61,9 @@ export function SquadAvatarSettings({ squadId, name }: { squadId: string; name: 
             onClick={() => fileRef.current?.click()}
             disabled={!canUpdate || busy}
             className={clsx(
-              'ficus-button',
+              'ficus-button ficus-button-primary',
               'px-3 py-1.5 text-sm rounded-md font-medium',
-              canUpdate && !busy
-                ? 'bg-accent text-on-accent hover:bg-accent/90'
-                : 'bg-surface-secondary text-muted cursor-not-allowed'
+              !(canUpdate && !busy) && 'opacity-50 cursor-not-allowed'
             )}
           >
             {uploadMutation.isPending ? 'Uploading…' : avatarUrl ? 'Change' : 'Upload image'}
@@ -74,7 +72,7 @@ export function SquadAvatarSettings({ squadId, name }: { squadId: string; name: 
             <button
               onClick={() => removeMutation.mutate()}
               disabled={!canUpdate || busy}
-              className="ficus-button px-3 py-1.5 text-sm rounded-md font-medium bg-surface-secondary text-secondary border border-th-border hover:bg-surface-hover disabled:opacity-50"
+              className="ficus-button ficus-button-danger px-3 py-1.5 text-sm rounded-md font-medium disabled:opacity-50"
             >
               Remove
             </button>

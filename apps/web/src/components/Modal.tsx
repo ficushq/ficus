@@ -5,9 +5,10 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import { CloseIcon } from './icons'
+import { useStableRef } from '../hooks/useStableRef'
 import './ResponsiveChat.css'
 
-type ModalSize = 'default' | 'viewport' | 'editor'
+type ModalSize = 'default' | 'viewport' | 'workspace' | 'editor'
 
 export const VIEWPORT_MODAL_HEIGHT =
   'calc(var(--modal-viewport-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
@@ -19,6 +20,8 @@ export const MODAL_SIZE_STYLE: Record<ModalSize, CSSProperties | undefined> = {
     maxHeight: VIEWPORT_MODAL_HEIGHT,
     maxWidth: 'calc(100vw - 2rem)',
   },
+  // Sized in ResponsiveChat.css so `mobileFullscreen` can still take the whole phone screen.
+  workspace: undefined,
 }
 
 interface ModalProps {
@@ -43,6 +46,8 @@ interface ModalProps {
   size?: ModalSize
   overlayClassName?: string
   noChildPadding?: boolean
+  /** Close on Escape when this is the topmost dialog and no popup inside it consumed the key. */
+  closeOnEscape?: boolean
 }
 
 export function Modal({
@@ -59,6 +64,7 @@ export function Modal({
   size = 'default',
   overlayClassName,
   noChildPadding = false,
+  closeOnEscape = false,
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -68,6 +74,21 @@ export function Modal({
   useEffect(() => {
     if (isOpen) overlayRef.current?.focus()
   }, [isOpen])
+
+  const onCloseRef = useStableRef(onClose)
+  useEffect(() => {
+    if (!isOpen || !closeOnEscape) return
+    // Bubble phase: shared popups dismiss on Escape in the capture phase and stop it there.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+      const open = [...document.querySelectorAll('.ficus-modal-backdrop[data-state="open"]')]
+      if (open.at(-1) !== overlayRef.current) return
+      event.preventDefault()
+      onCloseRef.current()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isOpen, closeOnEscape, onCloseRef])
 
   useEffect(() => {
     if (!isOpen) return
@@ -159,7 +180,7 @@ export function Modal({
               {headerActions}
               <button
                 onClick={onClose}
-                className="ficus-button p-1.5 rounded-md text-muted hover:text-primary hover:bg-surface-hover transition-colors shrink-0"
+                className="ficus-button ficus-button-ghost p-1.5 rounded-md transition-colors shrink-0"
                 aria-label="Close"
                 title="Close (Escape)"
               >

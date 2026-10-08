@@ -1,11 +1,6 @@
 import { createHash } from 'crypto'
+import type { DockerExecIdentity } from '../identity-names'
 
-/**
- * `user`/`home` are a plain `string`, not a `'ficus'` literal: a still-running
- * container built before this release reports the legacy identity
- * ({@link LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT}), and the health check must
- * compare against THAT, not unconditionally against the current release's.
- */
 export interface DockerCommandIdentityContract {
   version: 1
   user: string
@@ -23,18 +18,19 @@ export interface ResolvedDockerCommandIdentity {
   contractDigest: string
 }
 
-/**
- * The identity contract every pre-this-release sandbox image baked into
- * `/opt/tau/command-identity.json` and reported over its health endpoint. A // ficus-p5-bridge
- * container built from that image still exists after this release ships (it
- * is adopted, not recreated, while it has an active session — see
- * `connectExecutor`), so this fixed pair is the "expected" identity to
- * validate against for exactly that container, never for a newly created one.
- */
+/** Read-only identity for an explicitly attached, still-running pre-rename container.
+ * Never used to create an image or broaden container discovery. Remove after those containers drain. */
+export const LEGACY_DOCKER_MANAGED_LABEL = 'tau.managed' // ficus-p5-bridge: active-container identity validation only
+export const LEGACY_DOCKER_EXEC_IDENTITY: DockerExecIdentity = {
+  user: 'tau',
+  home: '/home/tau',
+  executorTokenPath: '/run/tau/executor-token',
+  dockerProxySocketPath: '/run/tau-docker/docker.sock',
+}
 export const LEGACY_DOCKER_COMMAND_IDENTITY_CONTRACT: DockerCommandIdentityContract = {
   version: 1,
-  user: 'tau', // ficus-p5-bridge
-  home: '/home/tau', // ficus-p5-bridge
+  user: 'tau',
+  home: '/home/tau',
   uid: 1000,
   gid: 1000,
 }

@@ -200,6 +200,8 @@ export type AgentSessionEvent =
 			type: "session_message_persisted";
 			message: Message | CustomMessage | BashExecutionMessage;
 			entryId: string;
+			/** Trusted host correlation; never part of model-visible content. */
+			deliveryId?: string;
 			sessionFile?: string;
 	  }
 	| {
@@ -299,6 +301,8 @@ export type PromptDisposition = QueuedInputDisposition | "started";
 
 /** Options for AgentSession.prompt() */
 export interface PromptOptions {
+	/** Opaque host delivery identity, stored on the session entry, not the message. */
+	deliveryId?: string;
 	/** Whether to dispatch extension commands and expand skill commands and prompt templates (default: true) */
 	expandPromptTemplates?: boolean;
 	/** Image attachments */
@@ -379,6 +383,7 @@ export class AgentSession {
 	private _resolveIdleWait: (() => void) | undefined;
 
 	/** Tracks pending steering messages for UI display. Removed when delivered. */
+	private _deliveryIds = new WeakMap<AgentMessage, string>();
 	private _steeringMessages: string[] = [];
 	/** Tracks pending follow-up messages for UI display. Removed when delivered. */
 	private _followUpMessages: string[] = [];
@@ -458,6 +463,7 @@ export class AgentSession {
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
+		this.setEventSanitizer(undefined);
 		this.sessionManager = config.sessionManager;
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
@@ -1132,11 +1138,12 @@ export class AgentSession {
 				event.message.role === "toolResult"
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
-				entryId = this.sessionManager.appendMessage(event.message);
+				entryId = this.sessionManager.appendMessage(event.message, this._deliveryIds.get(event.message));
 				this._emit({
 					type: "session_message_persisted",
 					message: event.message,
 					entryId,
+					deliveryId: this._deliveryIds.get(event.message),
 					sessionFile: this.sessionManager.getSessionFile(),
 				});
 			}
@@ -1345,7 +1352,15 @@ export class AgentSession {
 	 * Multiple listeners can be added. Returns unsubscribe function for this listener.
 	 */
 	setEventSanitizer(sanitizer: AgentSessionEventSanitizer | undefined): void {
-		this._eventSanitizer = sanitizer;
+		// Keep correlation through sanitizer object replacement without trusting message fields.
+		this._eventSanitizer = async (original) => {
+			const event = sanitizer ? await sanitizer(original) : original;
+			if ("message" in original && "message" in event) {
+				const deliveryId = this._deliveryIds.get(original.message);
+				if (deliveryId) this._deliveryIds.set(event.message, deliveryId);
+			}
+			return event;
+		};
 	}
 
 	subscribe(listener: AgentSessionEventListener): () => void {
@@ -1957,9 +1972,9 @@ export class AgentSession {
 				);
 			}
 			if (options.streamingBehavior === "followUp") {
-				await this._queueFollowUp(expandedText, currentImages);
+				await this._queueFollowUp(expandedText, currentImages, options?.deliveryId);
 			} else {
-				await this._queueSteer(expandedText, currentImages);
+				await this._queueSteer(expandedText, currentImages, options?.deliveryId);
 			}
 			preflightResult?.("queued");
 			return;
@@ -2019,11 +2034,9 @@ export class AgentSession {
 		const messages: AgentMessage[] = [];
 		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: userText }];
 		userContent.push(...normalized.images);
-		messages.push({
-			role: "user",
-			content: userContent,
-			timestamp: Date.now(),
-		});
+		const userMessage: AgentMessage = { role: "user", content: userContent, timestamp: Date.now() };
+		if (options?.deliveryId) this._deliveryIds.set(userMessage, options.deliveryId);
+		messages.push(userMessage);
 
 		// Inject any pending "nextTurn" messages as context alongside the user message
 		for (const msg of this._pendingNextTurnMessages) {
@@ -2115,6 +2128,7 @@ export class AgentSession {
 		images: ImageContent[] | undefined,
 		behavior: "steer" | "followUp",
 		source: InputSource,
+		deliveryId?: string,
 	): Promise<QueuedInputDisposition> {
 		if (text.startsWith("/")) {
 			this._throwIfExtensionCommand(text);
@@ -2132,9 +2146,9 @@ export class AgentSession {
 		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 
 		if (behavior === "steer") {
-			await this._queueSteer(expandedText, processedInput.images);
+			await this._queueSteer(expandedText, processedInput.images, deliveryId);
 		} else {
-			await this._queueFollowUp(expandedText, processedInput.images);
+			await this._queueFollowUp(expandedText, processedInput.images, deliveryId);
 		}
 		return "queued";
 	}
@@ -2151,9 +2165,9 @@ export class AgentSession {
 	async steer(
 		text: string,
 		images?: ImageContent[],
-		options?: { source?: InputSource },
+		options?: { source?: InputSource; deliveryId?: string },
 	): Promise<QueuedInputDisposition> {
-		return this._queueUserInput(text, images, "steer", options?.source ?? "interactive");
+		return this._queueUserInput(text, images, "steer", options?.source ?? "interactive", options?.deliveryId);
 	}
 
 	/**
@@ -2167,39 +2181,39 @@ export class AgentSession {
 	async followUp(
 		text: string,
 		images?: ImageContent[],
-		options?: { source?: InputSource },
+		options?: { source?: InputSource; deliveryId?: string },
 	): Promise<QueuedInputDisposition> {
-		return this._queueUserInput(text, images, "followUp", options?.source ?? "interactive");
+		return this._queueUserInput(text, images, "followUp", options?.source ?? "interactive", options?.deliveryId);
 	}
 
 	/**
 	 * Internal: Queue a steering message (already expanded, no extension command check).
 	 */
-	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
+	private async _queueSteer(text: string, images?: ImageContent[], deliveryId?: string): Promise<void> {
 		this._steeringMessages.push(text);
 		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
 		if (images) {
 			content.push(...images);
 		}
-		this.agent.steer({
-			role: "user",
-			content,
-			timestamp: Date.now(),
-		});
+		const message: AgentMessage = { role: "user", content, timestamp: Date.now() };
+		if (deliveryId) this._deliveryIds.set(message, deliveryId);
+		this.agent.steer(message);
 	}
 
 	/**
 	 * Internal: Queue a follow-up message (already expanded, no extension command check).
 	 */
-	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
+	private async _queueFollowUp(text: string, images?: ImageContent[], deliveryId?: string): Promise<void> {
 		this._followUpMessages.push(text);
 		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
 		if (images) {
 			content.push(...images);
 		}
-		this.agent.followUp({ role: "user", content, timestamp: Date.now() });
+		const message: AgentMessage = { role: "user", content, timestamp: Date.now() };
+		if (deliveryId) this._deliveryIds.set(message, deliveryId);
+		this.agent.followUp(message);
 	}
 
 	/**

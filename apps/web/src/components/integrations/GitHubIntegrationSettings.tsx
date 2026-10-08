@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import { CheckIcon, ClipboardIcon } from '../icons'
 import { GitHubWebhookSettings } from './GitHubWebhookSettings'
 import { GitHubRepositoryAccess } from './GitHubRepositoryAccess'
@@ -337,7 +338,7 @@ export function GitHubIntegrationSettings({
               {!connection.isGlobalDefault && connection.enabled && (
                 <button
                   type="button"
-                  className="ficus-button text-xs"
+                  className="ficus-button ficus-button-secondary px-2.5 py-1 disabled:opacity-50 text-xs"
                   disabled={defaultMutation.isPending}
                   onClick={() => defaultMutation.mutate(connection.id)}
                 >
@@ -346,7 +347,7 @@ export function GitHubIntegrationSettings({
               )}
               <button
                 type="button"
-                className="ficus-button text-xs"
+                className="ficus-button ficus-button-secondary px-2.5 py-1 disabled:opacity-50 text-xs"
                 disabled={authorize.isPending || !!device}
                 onClick={() => authorize.mutate(connection.id)}
               >
@@ -360,7 +361,10 @@ export function GitHubIntegrationSettings({
                   <button
                     key={kind}
                     type="button"
-                    className="ficus-button text-xs"
+                    className={clsx(
+                      'ficus-button px-2.5 py-1 text-xs disabled:opacity-50',
+                      kind === 'remove' ? 'ficus-button-danger' : 'ficus-button-secondary'
+                    )}
                     disabled={lifecycle.isPending}
                     onClick={() => {
                       if (assigned && confirmation !== key) {
@@ -404,7 +408,7 @@ export function GitHubIntegrationSettings({
         {canConnect && hasAccounts && (
           <button
             type="button"
-            className="ficus-button mt-3 text-sm text-accent-light hover:text-link-hover disabled:opacity-50"
+            className="ficus-button ficus-button-link mt-3 text-sm disabled:opacity-50"
             disabled={authorize.isPending || !!device}
             onClick={() => authorize.mutate(undefined)}
           >
@@ -459,14 +463,14 @@ export function GitHubIntegrationSettings({
             </label>
             <div className="flex gap-3">
               <button
-                className="ficus-button text-sm"
+                className="ficus-button ficus-button-primary px-3 py-1.5 disabled:opacity-50 text-sm"
                 disabled={!clientId.trim() || !acknowledged || configure.isPending || !!device}
               >
                 Save app
               </button>
               <button
                 type="button"
-                className="ficus-button text-sm"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 disabled:opacity-50 text-sm"
                 disabled={configure.isPending || !!device}
                 onClick={() => configure.mutate(true)}
               >
@@ -529,7 +533,7 @@ export function GitHubDeviceCode({ code }: { code: string }) {
         type="button"
         aria-label="Copy GitHub device code"
         title={copied ? 'Copied' : 'Copy code'}
-        className="ficus-button rounded-md p-1.5 text-muted hover:text-primary"
+        className="ficus-button ficus-button-ghost rounded-md p-1.5"
         onClick={async () => {
           setCopyFailed(false)
           try {

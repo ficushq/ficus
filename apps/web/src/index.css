@@ -27,6 +27,12 @@
     position: fixed;
     inset: 0;
     width: 100%;
+    /* The fixed body spans the whole layout viewport. While the keyboard is open the app shell
+       is pinned to the visible height, so the body is what shows below the shell (where Safari
+       pans to a field, behind its floating address bar and AutoFill bar). Paint it the shell's own
+       page color so that area reads as the page and never as a mismatched band. The
+       token cascades from :root, so built-in, custom and previewed themes all follow it live. */
+    background-color: rgb(var(--color-bg-page));
   }
 
   :root,
@@ -1574,8 +1580,8 @@
 /* Ficus Desktop inset title bar (html[data-desktop-shell='inset'], set by
    useDesktopShellChrome only inside the desktop app while windowed). The macOS
    window controls sit over the top-left of the page, so the app header becomes
-   the title bar: exactly 56px tall, a window drag region, with a compact logo 24px after
-   the window controls. Browsers and mobile never get the attribute. */
+   the title bar: exactly 56px tall, a window drag region, with history arrows 24px after
+   the window controls followed by the compact logo. Browsers and mobile never get the attribute. */
 :root[data-desktop-shell='inset'] .ficus-app-header {
   height: 56px;
   padding-top: 0;
@@ -1586,7 +1592,7 @@
   height: 100%;
   padding-top: 0;
   padding-bottom: 0;
-  /* Title-bar chrome spans the window like a native toolbar: the logo sits a
+  /* Title-bar chrome spans the window like a native toolbar: history controls sit a
      fixed 24px after the window controls (which end near x=72px) at every
      width instead of drifting with the page's centered content column. */
   max-width: none;

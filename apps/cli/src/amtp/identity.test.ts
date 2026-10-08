@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { generateKeyPairSync, verify } from 'crypto'
-import { LEGACY_HOME_DIR_NAME } from '@ficus/shared/node'
+const LEGACY_HOME_DIR_NAME = '.tau'
 import {
   readIdentityPrivateKeyPem,
   signAgentSig,
@@ -76,7 +76,7 @@ describe('portable identity paths', () => {
     delete process.env.FICUS_IDENTITY_CACHE
     process.env.FICUS_PRIVATE_DIR = dir
     await mkdir(join(dir, LEGACY_HOME_DIR_NAME))
-    expect(identityCachePath()).toBe(join(dir, LEGACY_HOME_DIR_NAME, 'identity.json'))
+    expect(identityCachePath()).toBe(join(dir, '.ficus', 'identity.json'))
   })
 })
 

@@ -29,7 +29,8 @@ export function pushResource(t: Transport) {
       label: string
     }): Promise<import('@ficus/shared/push-relay').ActivationChallenge> =>
       t.request('/push/instance-pro/enroll', { method: 'POST', body: input }),
-    getRelayConfig: (): Promise<{ enabled: boolean; instanceId?: string }> => t.request('/push/relay-config'),
+    getRelayConfig: (): Promise<{ enabled: boolean; instanceId?: string; liveActivities?: boolean }> =>
+      t.request('/push/relay-config'),
     getWorkInterestSnapshot: (): Promise<WorkInterestSnapshot> => t.request('/push/work-interest'),
     listDevices: (): Promise<PushDeviceRegistration[]> => t.request('/push/device'),
     registerDevice: (input: {
@@ -39,6 +40,13 @@ export function pushResource(t: Transport) {
       relayBindingToken?: string
     }): Promise<RegisteredDevice> => t.request('/push/device', { method: 'POST', body: input }),
     unregisterDevice: (id: string): Promise<void> => t.request(`/push/device/${id}`, { method: 'DELETE' }),
+
+    registerLiveActivityRelay: (
+      input: import('@ficus/shared/live-activity-relay').CoreLiveActivityRegistration
+    ): Promise<RegisteredDevice & { resetRequired?: boolean }> =>
+      t.request('/push/live-activity/relay', { method: 'POST', body: input }),
+    unregisterLiveActivityRelay: (activationId: string): Promise<void> =>
+      t.request(`/push/live-activity/relay/${encodeURIComponent(activationId)}`, { method: 'DELETE' }),
 
     // Live Activity tokens are separate from device tokens: they need a different APNs topic and
     // push type, and `update` tokens die with their activity (~8h, or on dismissal/reboot), so the

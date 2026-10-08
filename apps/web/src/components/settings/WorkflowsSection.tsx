@@ -77,7 +77,7 @@ export function WorkflowsSection() {
       {catalog.isPending ? (
         <p className="text-sm text-muted">Loading workflows…</p>
       ) : catalog.isError ? (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Unable to load workflows.
         </p>
       ) : (
@@ -99,7 +99,7 @@ export function WorkflowsSection() {
         </div>
       )}
       {editWorkflow && catalog.isSuccess && !editing && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Workflow not found. It may have been deleted or you may not have access.
         </p>
       )}
@@ -157,18 +157,18 @@ function WorkflowCard({
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">
           {canUpdate && (
-            <button className="ficus-button text-accent-light" onClick={onEdit}>
+            <button className="ficus-button ficus-button-link" onClick={onEdit}>
               Edit
             </button>
           )}
           {canCreate && (
-            <button className="ficus-button text-muted" onClick={onDuplicate}>
+            <button className="ficus-button ficus-button-link" onClick={onDuplicate}>
               Duplicate
             </button>
           )}
           {canUpdate && (
             <button
-              className="ficus-button text-muted"
+              className="ficus-button ficus-button-link"
               disabled={mutation.isPending}
               onClick={() => mutation.mutate('toggle')}
             >
@@ -176,18 +176,13 @@ function WorkflowCard({
             </button>
           )}
           {canDelete && (
-            <ConfirmButton
-              onConfirm={() => mutation.mutate('delete')}
-              disabled={mutation.isPending}
-              className="text-danger"
-              label="Delete"
-            />
+            <ConfirmButton onConfirm={() => mutation.mutate('delete')} disabled={mutation.isPending} label="Delete" />
           )}
         </div>
       </div>
       {entry.description && <p className="break-words text-sm text-muted">{entry.description}</p>}
       <button
-        className="ficus-button text-sm text-secondary"
+        className="ficus-button ficus-button-link text-sm"
         aria-expanded={preview}
         onClick={() => setPreview(!preview)}
       >
@@ -195,7 +190,7 @@ function WorkflowCard({
       </button>
       {preview && <WorkflowGraph definition={entry.definition} />}
       {mutation.isError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {mutation.error.message}
         </p>
       )}
@@ -304,7 +299,7 @@ function WorkflowModal({
             <div className="mr-auto">
               <ConfirmButton
                 label="Discard draft"
-                className="text-sm text-muted"
+                className="px-3 py-2 text-sm"
                 disabled={save.isPending}
                 onConfirm={() => {
                   try {
@@ -317,16 +312,15 @@ function WorkflowModal({
               />
             </div>
           )}
-          <button className="ficus-button text-sm text-muted" disabled={save.isPending} onClick={onClose}>
+          <button
+            className="ficus-button ficus-button-secondary px-3 py-2 text-sm"
+            disabled={save.isPending}
+            onClick={onClose}
+          >
             {updating ? 'Cancel' : 'Close'}
           </button>
           <button
-            className={clsx(
-              'ficus-button rounded-md px-3 py-2 text-sm',
-              !allowed || !valid || save.isPending
-                ? 'border border-th-border bg-surface-hover text-muted'
-                : 'ficus-button-primary'
-            )}
+            className="ficus-button ficus-button-primary rounded-md px-3 py-2 text-sm disabled:opacity-50"
             disabled={!allowed || !valid || save.isPending}
             onClick={() => save.mutate()}
           >
@@ -435,12 +429,12 @@ function WorkflowModal({
         />
 
         {storageError && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             This browser could not save your draft. Keep this page open until you save the workflow.
           </p>
         )}
         {save.isError && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {save.error.message}
           </p>
         )}

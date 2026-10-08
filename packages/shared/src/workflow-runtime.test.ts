@@ -246,7 +246,10 @@ describe('workflow transition kernel', () => {
     const state = await run('solo')
     expect(() => complete(state, 'constructor')).toThrow('Unknown outcome')
     const command = { action: 'complete', expectedVersion: 0, attemptId: 1, outcome: 'completed', evidence: '' }
-    expect(() => advanceWorkflowRun(state, command)).toThrow()
+    expect(() => advanceWorkflowRun(state, command)).toThrow('Evidence is required')
+    expect(() => advanceWorkflowRun(state, { ...command, evidence: '  \n ' })).toThrow('Evidence is required')
+    const { evidence: _omitted, ...withoutEvidence } = command
+    expect(() => advanceWorkflowRun(state, withoutEvidence)).toThrow()
     expect(() => advanceWorkflowRun(state, { ...command, evidence: 'done', status: 'done' })).toThrow()
     expect(() => complete(state, 'completed', true)).toThrow('No return destination')
   })
@@ -405,6 +408,46 @@ describe('completion-ready rework', () => {
         feedback: 'Old attempt',
       })
     ).toThrow('latest completed delivery agent')
+  })
+
+  test('a human approver may move work forward without notes but must explain a send-back', async () => {
+    const initial = await run('builder-reviewer')
+    initial.definition.steps.push({
+      id: 'approval',
+      kind: 'human-approval',
+      instructions: 'Approve',
+      output: 'Decision',
+      // Outcome names are deliberately unconventional: the transition shape decides.
+      outcomes: { ship: { next: 'finish' }, redo: { returnTo: 'build' } },
+      approver: 'reviewers',
+    })
+    initial.definition.steps[1]!.outcomes.approved = { next: 'approval' }
+    const gate = complete(complete(initial), 'approved')
+    expect(active(gate)).toBe('approval')
+    const decide = (outcome: string, evidence: string) =>
+      advanceWorkflowRun(gate, {
+        action: 'complete',
+        expectedVersion: gate.version,
+        attemptId: gate.activeAttemptId,
+        outcome,
+        evidence,
+      })
+    expect(() => decide('redo', '')).toThrow("Decision notes are required for 'redo'")
+    expect(() => decide('redo', '   ')).toThrow('Decision notes are required')
+    const sentBack = decide('redo', 'Rename the export')
+    expect(active(sentBack)).toBe('build')
+    expect(sentBack.attempts.at(-1)!.feedback).toBeUndefined()
+    expect(sentBack.attempts.find((entry) => entry.stepId === 'approval')!.feedback).toBe('Rename the export')
+    for (const notes of ['', '  ']) {
+      const approved = decide('ship', notes)
+      expect(approved.status).toBe('completion-ready')
+      const decision = approved.attempts.find((entry) => entry.stepId === 'approval')!
+      expect(decision).toMatchObject({ status: 'completed', outcome: 'ship' })
+      expect('evidence' in decision).toBe(false)
+    }
+    expect(decide('ship', 'Looks right').attempts.find((entry) => entry.stepId === 'approval')!.evidence).toBe(
+      'Looks right'
+    )
   })
 
   test('rework repeats the downstream human gate and cannot bypass it', async () => {

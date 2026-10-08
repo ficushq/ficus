@@ -11,6 +11,7 @@ import { useInfiniteDoneWorkStreams } from '../hooks/useInfiniteDoneWorkStreams'
 import { usePermissions } from '../hooks/usePermissions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { BackLink } from './BackLink'
+import { Menu, MenuItem, usePopover } from './popover'
 import { Badge, type BadgeColor } from './Badge'
 import { AgentVisualization } from './squads/AgentVisualization'
 import { SquadAgentThreads } from './squads/SquadAgentThreads'
@@ -90,6 +91,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [headerExpanded, setHeaderExpanded] = useState(false)
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
+  const headerMenu = usePopover({ kind: 'menu', open: headerMenuOpen, onOpenChange: setHeaderMenuOpen })
 
   const [searchParams] = useSearchParams()
   const agentParam = searchParams.get('agent')
@@ -335,33 +337,35 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           <button
             onClick={() => setHeaderExpanded((expanded) => !expanded)}
             aria-label={headerExpanded ? 'Collapse details' : 'Expand details'}
-            className="ficus-button p-1 text-muted hover:text-primary rounded-md hover:bg-surface-hover transition-colors"
+            className="ficus-button ficus-button-ghost p-1 rounded-md transition-colors"
           >
             {headerExpanded ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
           </button>
           {canDeleteSquad && (
             <div className="relative">
               <button
-                onClick={() => setHeaderMenuOpen((open) => !open)}
+                {...headerMenu.triggerProps}
+                onClick={headerMenu.toggle}
                 aria-label="Squad actions"
-                aria-expanded={headerMenuOpen}
-                className="ficus-button p-1 text-muted hover:text-primary rounded-md hover:bg-surface-hover transition-colors"
+                className="ficus-button ficus-button-ghost p-1 rounded-md transition-colors"
               >
                 <MoreIcon className="w-4 h-4" />
               </button>
-              {headerMenuOpen && (
-                <div className="absolute right-0 top-full mt-1 z-20 min-w-28 rounded-md border border-th-border bg-surface overflow-hidden">
-                  <button
-                    onClick={() => {
-                      setHeaderMenuOpen(false)
-                      setShowDeleteModal(true)
-                    }}
-                    className="ficus-button w-full px-3 py-2 text-left text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20"
-                  >
-                    Archive
-                  </button>
-                </div>
-              )}
+              <Menu
+                {...headerMenu.popoverProps}
+                label="Squad actions"
+                gap={4}
+                scroll={false}
+                className="min-w-28 rounded-md border border-th-border bg-surface overflow-hidden"
+              >
+                <MenuItem
+                  opensDialog
+                  onClick={() => setShowDeleteModal(true)}
+                  className="ficus-button ficus-button-ghost w-full px-3 py-2 text-left text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20"
+                >
+                  Archive
+                </MenuItem>
+              </Menu>
             </div>
           )}
         </div>
@@ -415,7 +419,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           {canDeleteSquad && (
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="ficus-button shrink-0 px-2.5 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 rounded-md transition-colors"
+              className="ficus-button ficus-button-danger shrink-0 px-2.5 py-1 text-xs font-medium rounded-md transition-colors"
             >
               Archive
             </button>

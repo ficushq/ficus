@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { acquireDomHarness } from '../test/domHarness'
-import { integrationQueryKeys, queryKeys } from '../queryKeys'
+import { integrationQueryKeys, queryKeys, serverConnectionQueryKeys } from '../queryKeys'
 import type { IntegrationConnection } from '../api/integrations'
 import { PermissionsProvider } from '../hooks/usePermissions'
 
@@ -51,6 +51,7 @@ const dependencies = {
 
 type SquadFixture = { id: string; name: string; purpose: string; status: string }
 type RenderSettingsOptions = {
+  human?: boolean
   managed?: boolean
   squadPermissions?: string[] | Record<string, string[]>
   integrations?: Record<string, IntegrationConnection[]>
@@ -69,7 +70,18 @@ function seedSettingsQueries(queryClient: QueryClient, permissions: string[], op
     status: { active: false, latest: null },
     managed: options.managed ?? false,
   })
-  queryClient.setQueryData(queryKeys.auth.permissions(undefined), { permissions })
+  queryClient.setQueryData(queryKeys.auth.permissions(undefined), {
+    permissions,
+    ...(options.human ? { identity: { type: 'user', userId: 'u1' } } : {}),
+  })
+  queryClient.setQueryData(serverConnectionQueryKeys.status(), {
+    managed: options.managed ?? false,
+    configured: options.managed ?? false,
+    connected: options.managed ?? false,
+    origin: 'https://studio.example.com',
+    baseUrl: 'https://ficus.sh',
+    manageUrl: 'https://ficus.sh/account/pro',
+  })
   queryClient.setQueryData(integrationQueryKeys.catalog(), {
     integrations: [
       {
@@ -137,6 +149,81 @@ async function renderSettings(
 }
 
 describe('SettingsPage RBAC tabs', () => {
+  test('personal Mobile shows administrators the Ficus account status without connection controls', async () => {
+    const html = await renderSettings('/settings?section=mobile', ['settings:read'], { human: true })
+    expect(html).toContain('Pair a mobile device')
+    expect(html).toContain('Free and Pro')
+    expect(html).not.toContain('Ficus, to go.')
+    expect(html).not.toContain('Pick up the thread')
+    expect(html).toContain('Ficus account: Not connected')
+    expect(html).toContain('href="/settings?section=mobile-pro"')
+    expect(html).not.toContain('Search integrations')
+    expect(html).not.toContain('Connect Ficus account</button>')
+    expect(html).not.toContain('Paid Ficus Cloud includes Pro')
+  })
+
+  test('personal Mobile on Cloud tells administrators Pro is included', async () => {
+    const html = await renderSettings('/settings?section=mobile', ['settings:read'], { human: true, managed: true })
+    expect(html).toContain('Paid Ficus Cloud includes Pro on this server automatically')
+    expect(html).not.toContain('Ficus account: Not connected')
+  })
+
+  test('Mobile is available to ordinary members without protected relay details', async () => {
+    const html = await renderSettings('/settings?section=mobile', [], { human: true })
+    expect(html).toContain('Pair a mobile device')
+    expect(html).toContain('href="https://ficus.sh/mobile"')
+    expect(html).not.toContain('Ficus account:')
+    expect(html).not.toContain('href="/settings?section=mobile-pro"')
+    expect(html).not.toContain('Manage Pro and devices')
+  })
+
+  test('Mobile stays hidden without a human identity', async () => {
+    const html = await renderSettings('/settings?section=mobile', ['settings:read'])
+    expect(html).not.toContain('Pair a mobile device')
+    expect(html).not.toContain('Instance Pro')
+  })
+
+  test('Cloud Mobile & Pro is one tidy row without a connection form', async () => {
+    const html = await renderSettings('/settings?section=mobile-pro', ['settings:read', 'settings:write'], {
+      human: true,
+      managed: true,
+    })
+    expect(html).toContain('Ficus Cloud manages this automatically. Nothing to set up.')
+    expect(html).not.toContain('Connect Ficus account</button>')
+    expect(html).not.toContain('Instance Pro allowance')
+  })
+
+  test('Integrations points to Mobile & Pro without duplicating relay management', async () => {
+    const html = await renderSettings(
+      '/settings?section=integrations',
+      ['settings:read', 'integrations:read:bigbrain'],
+      { human: true }
+    )
+    expect(html).toContain('href="/settings?section=mobile-pro"')
+    expect(html).toContain('Connect a Ficus account and manage Pro coverage')
+    expect(html).not.toContain('Server address')
+  })
+
+  test('administration Mobile & Pro allows human settings readers without integration grants', async () => {
+    const html = await renderSettings('/settings?section=mobile-pro', ['settings:read'], { human: true })
+    expect(html).toContain('Ficus account')
+    expect(html).toContain('Instance Pro')
+    expect(html).toContain('Server address')
+    expect(html).not.toContain('Pair a mobile device')
+    expect(html).not.toContain('Connect Ficus account</button>')
+  })
+
+  test('administration Mobile & Pro denies ordinary members and nonhuman identities', async () => {
+    for (const [permissions, human] of [
+      [[], true],
+      [['settings:read'], false],
+    ] as const) {
+      const html = await renderSettings('/settings?section=mobile-pro', [...permissions], { human })
+      expect(html).not.toContain('Instance Pro allowance')
+      expect(html).not.toContain('Manage Pro and devices')
+    }
+  })
+
   beforeEach(() => undefined)
 
   test('opens global Integrations with an instance Bigbrain read/write grant', async () => {

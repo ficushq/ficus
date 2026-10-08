@@ -1,4 +1,5 @@
 import { messageTextForModel } from '../../services/chat/message-context'
+import type { SessionDeliveryOwner } from '../../services/agent/pending-delivery'
 import type { MessageMetadata } from '@ficus/shared'
 import { Image, type ImageContent } from '../Image'
 import type { Agent } from '../Agent'
@@ -9,6 +10,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 const log = createLogger('runner')
 
 export interface PendingInterventionQueueDeps {
+  deliveryOwner: SessionDeliveryOwner
   agentId: string
   /** The runner's agent entity — spies in tests intercept THESE methods; never bypass them. */
   agent: Pick<
@@ -29,11 +31,13 @@ export class PendingInterventionQueue {
   private unsubscribe: (() => void) | null = null
   private drain: Promise<void> | null = null
   private drainRequested = false
+  private closed = false
 
   constructor(private readonly deps: PendingInterventionQueueDeps) {}
 
   start(): void {
     this.clear()
+    this.closed = false
     this.unsubscribe = eventEmitter.on('message.created', ({ agentId }) => {
       if (agentId === this.deps.agentId) this.schedule()
     })
@@ -47,8 +51,18 @@ export class PendingInterventionQueue {
   }
 
   clear(): void {
+    this.closed = true
     this.unsubscribe?.()
     this.unsubscribe = null
+  }
+
+  async close(): Promise<void> {
+    this.clear()
+    await this.drain
+  }
+
+  private isActive(): boolean {
+    return !this.closed && this.deps.isActive()
   }
 
   private async drainQueue(): Promise<void> {
@@ -70,17 +84,20 @@ export class PendingInterventionQueue {
   }
 
   private async drainOnce(): Promise<void> {
-    if (!this.deps.isActive()) return
+    if (!this.isActive()) return
 
     const pending = await this.deps.agent.listPendingInterventionsForSessionDelivery()
     for (const message of pending) {
-      if (!this.deps.isActive()) return
-      const claimed = await this.deps.agent.claimPendingInterventionForSessionDelivery(message.id)
+      if (!this.isActive()) return
+      const claimed = await this.deps.agent.claimPendingInterventionForSessionDelivery(
+        message.id,
+        this.deps.deliveryOwner
+      )
       if (!claimed) continue
       try {
         await this.deliverClaimed(claimed)
       } catch (error) {
-        await this.deps.agent.resetPendingInterventionSessionDelivery(claimed.id)
+        await this.deps.agent.resetPendingInterventionSessionDelivery(claimed.id, claimed.metadata?.sessionDelivery)
         log.error(`Failed to deliver pending intervention ${claimed.id} for agent ${this.deps.agentId}:`, error)
       }
     }
@@ -98,14 +115,15 @@ export class PendingInterventionQueue {
         ? await (this.deps.loadImages ?? ((ids) => Image.loadManyForAgent(ids, this.deps.targetAgent!)))(imageIds)
         : undefined
 
+    if (!this.isActive()) throw new Error('Session closed before queue admission')
+    const options = { deliveryId: message.metadata?.sessionDelivery?.id }
     if (mode === 'follow-up') {
-      await this.deps.getSession().pi.followUp(messageTextForModel(message), images)
+      await this.deps.getSession().pi.followUp(messageTextForModel(message), images, options)
     } else {
       // Pending rows without an explicit deliveryMode are normal user messages,
-      // including the row that queued the current execution. Approach B routes
-      // all of them through the DB-backed drain; the initial prompt only
-      // establishes session ordering.
-      await this.deps.getSession().pi.steer(messageTextForModel(message), images)
+      // accepted after the initial prompt claim. The initial batch and this
+      // live drain use the same identity-fenced persistence acknowledgment.
+      await this.deps.getSession().pi.steer(messageTextForModel(message), images, options)
     }
 
     if (imageIds.length > 0) {

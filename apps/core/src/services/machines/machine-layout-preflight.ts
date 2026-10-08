@@ -1,11 +1,6 @@
 import type { Machine } from './queries'
 import type { SshRunner } from './ssh'
 
-// Bridge (phase 5, U4): automatic worker boot must not migrate an existing host
-// while the candidate Core release can still automatically roll back.
-export const LEGACY_MACHINE_ROOT = '/opt/tau' // ficus-p5-bridge
-export const LEGACY_BROWSER_NAME = 'tau-browser' // ficus-p5-bridge
-
 const READY = 'FICUS_MACHINE_LAYOUT=ready'
 const OPERATOR_REQUIRED = 'FICUS_MACHINE_LAYOUT=operator-required'
 
@@ -17,12 +12,23 @@ function quote(value: string): string {
  * Run every check under sudo, including journal enumeration, so inaccessible
  * paths cannot be mistaken for an already migrated host. root is a fixture seam.
  */
-export function machineLayoutPreflightCommand(root = ''): string {
-  const script = `set -eu
-old_root="$4$1" old_browser=$2 root=$4
-new_root="$root/opt/ficus"
-needs_operator() { printf '%s\\n' '${OPERATOR_REQUIRED}'; exit 0; }
-# getent distinguishes a missing key (2) from an invalid/failed invocation.
+export const MACHINE_LAYOUT_PREFLIGHT_PROGRAM = String.raw`set -eu
+root=$1
+needs_operator() { printf '%s\n' 'FICUS_MACHINE_LAYOUT=operator-required'; exit 0; }
+for journal in "$root/var/backups/ficus-host-migrate"/machine-*; do
+  [ -f "$journal/STEPS" ] || continue
+  if [ ! -e "$journal/DONE" ] && [ ! -e "$journal/REVERSED" ]; then needs_operator; fi
+done
+# ficus-p5-bridge: refusal-only checks; never migrate or remove these paths.
+old_root="$root/opt/tau"
+if [ -d "$old_root" ] && [ ! -L "$old_root" ]; then needs_operator; fi
+old_browser="$root/etc/systemd/system/tau-browser.service"
+if [ -f "$old_browser" ] && [ ! -L "$old_browser" ]; then needs_operator; fi
+if [ -f "$root/etc/apparmor.d/tau-browser-chromium" ]; then needs_operator; fi
+if [ -f "$root/opt/ficus/browser/service/tau-browser.js" ]; then needs_operator; fi
+for old_unit in "$root/etc/systemd/system/tau-box"-box_*; do
+  if [ -f "$old_unit" ] && [ ! -L "$old_unit" ]; then needs_operator; fi
+done
 account_exists() {
   if getent "$1" "$2" >/dev/null; then return 0; else
     rc=$?
@@ -30,19 +36,30 @@ account_exists() {
     exit "$rc"
   fi
 }
-if [ -d "$old_root" ] && [ ! -L "$old_root" ]; then needs_operator; fi
-for journal in "$root/var/backups/ficus-host-migrate"/machine-*; do
-  [ -f "$journal/STEPS" ] || continue
-  if [ ! -e "$journal/DONE" ] && [ ! -e "$journal/REVERSED" ]; then needs_operator; fi
+if account_exists passwd tau-browser && ! account_exists passwd ficus-browser; then needs_operator; fi
+if account_exists group tau-browser && ! account_exists group ficus-browser; then needs_operator; fi
+if [ -e "$root/opt/ficus" ] || [ -L "$root/opt/ficus" ]; then
+  [ -d "$root/opt/ficus" ] && [ ! -L "$root/opt/ficus" ] || needs_operator
+fi
+for home in "$root"/home/box_*; do
+  [ -e "$home" ] || [ -L "$home" ] || continue
+  [ -d "$home" ] && [ ! -L "$home" ] || needs_operator
+  if [ -e "$home/.tau" ] && [ ! -L "$home/.tau" ]; then needs_operator; fi
+  for old_unit in "$home/.config/systemd/user/tau-sandbox-server.service" "$home/.config/systemd/user/tau-sandbox-server.socket" "$home/.config/systemd/user/tau-sandbox-server-proxy.service"; do
+    if [ -f "$old_unit" ] && [ ! -L "$old_unit" ]; then needs_operator; fi
+  done
+  [ -d "$home/.ficus" ] && [ ! -L "$home/.ficus" ] || needs_operator
+  name=$(basename "$home")
+  system="$root/etc/systemd/system/ficus-box-$name.service"
+  user="$home/.config/systemd/user/ficus-sandbox-server.service"
+  if [ -f "$system" ] && [ ! -L "$system" ]; then continue; fi
+  if [ -f "$user" ] && [ ! -L "$user" ]; then continue; fi
+  needs_operator
 done
-unit="$root/etc/systemd/system/$old_browser.service"
-if [ -f "$unit" ] && [ ! -L "$unit" ]; then needs_operator; fi
-if [ -f "$root/etc/apparmor.d/$old_browser-chromium" ]; then needs_operator; fi
-if [ -f "$new_root/browser/service/$old_browser.js" ]; then needs_operator; fi
-if account_exists passwd "$old_browser" && ! account_exists passwd "$3"; then needs_operator; fi
-if account_exists group "$old_browser" && ! account_exists group "$3"; then needs_operator; fi
-printf '%s\\n' '${READY}'`
-  return `sudo -n bash -c ${quote(script)} machine-layout-preflight ${quote(LEGACY_MACHINE_ROOT)} ${quote(LEGACY_BROWSER_NAME)} ficus-browser ${quote(root)}`
+printf '%s\n' 'FICUS_MACHINE_LAYOUT=ready'`
+
+export function machineLayoutPreflightCommand(root = ''): string {
+  return `sudo -n bash -c ${quote(MACHINE_LAYOUT_PREFLIGHT_PROGRAM)} machine-layout-preflight ${quote(root)}`
 }
 
 /** Throw on an indeterminate probe. The automatic caller must defer without
