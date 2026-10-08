@@ -926,8 +926,11 @@ describe('AgentChat', () => {
         ]
         await waitFor(() => expect(_agentQuestionFetchCount).toBeGreaterThan(initialFetchCount), { timeout: 1000 })
       })
-      expect(window.document.querySelector('[data-testid="before-composer"]')?.textContent).toContain(
-        '1 pending question'
+      // The fetch count rises when the request starts; wait for its response to render.
+      await waitFor(() =>
+        expect(window.document.querySelector('[data-testid="before-composer"]')?.textContent).toContain(
+          '1 pending question'
+        )
       )
       expect(window.document.querySelector('[role="dialog"]')?.textContent).toContain('Personal question?')
       expect(_agentQuestionFetchCount).toBeGreaterThan(1)

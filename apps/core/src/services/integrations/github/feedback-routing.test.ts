@@ -2444,8 +2444,15 @@ test('production poll runner/plugin/durable cursor publisher holds feedback then
         new Response(child.stderr).text(),
         child.exited,
       ])
-      if (code !== 0) console.error(out + err)
-      else console.info(err.trim().split('\n').slice(-8).join('\n'))
+      // Prefix the child's lines: its own bun summary must not read as this file's final summary.
+      const prefixed = (text: string) =>
+        text
+          .trim()
+          .split('\n')
+          .map((line) => `[poll child] ${line}`)
+          .join('\n')
+      if (code !== 0) console.error(prefixed(out + err))
+      else console.info(prefixed(err.trim().split('\n').slice(-8).join('\n')))
       expect(code).toBe(0)
     } finally {
       child.kill()
