@@ -30,7 +30,7 @@ export function CollapsibleMarkdown({
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          className="ficus-button mt-1 text-xs font-medium text-accent-light underline decoration-accent-light/30 underline-offset-2 hover:text-link-hover hover:decoration-link-hover/70"
+          className="ficus-button ficus-button-link mt-1 text-xs font-medium underline decoration-accent-light/30 underline-offset-2"
         >
           {expanded ? 'Show less' : 'Show more'}
         </button>

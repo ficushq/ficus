@@ -43,7 +43,7 @@ export function SquadChatActions({
           onClick={onNewChat}
           aria-label="New consultant chat"
           title="New consultant chat"
-          className="ficus-button ficus-button-primary flex h-[26px] items-center gap-1 rounded-md bg-accent px-2 text-xs font-medium text-on-accent hover:bg-accent-hover"
+          className="ficus-button ficus-button-primary flex h-[26px] items-center gap-1 rounded-md px-2 text-xs font-medium"
         >
           <PlusIcon className="h-3.5 w-3.5" />
           New chat
@@ -53,7 +53,7 @@ export function SquadChatActions({
         <ActionPopup
           label="Chat options"
           items={actions}
-          className="ficus-button flex h-[26px] w-[26px] items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary"
+          className="ficus-button ficus-button-ghost flex h-[26px] w-[26px] items-center justify-center rounded-md"
         >
           <MoreIcon className="h-4 w-4" />
         </ActionPopup>

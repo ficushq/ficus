@@ -216,7 +216,7 @@ export function WorkStreamList({
           ref={expandTriggerRef}
           type="button"
           onClick={enterFullscreen}
-          className="ficus-button rounded-md p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-primary"
+          className="ficus-button ficus-button-ghost rounded-md p-1.5 transition-colors"
           aria-label="Show work stream graph"
           title="Show work stream graph"
         >
@@ -446,7 +446,7 @@ function StatusColumn({
               type="button"
               onClick={onLoadMore}
               disabled={isFetchingMore}
-              className="ficus-button w-full rounded-md border border-th-border bg-surface px-3 py-2 text-sm text-secondary hover:bg-surface-hover disabled:opacity-60"
+              className="ficus-button ficus-button-secondary w-full rounded-md px-3 py-2 text-sm disabled:opacity-60"
             >
               {isFetchingMore ? 'Loading…' : 'Load more done'}
             </button>

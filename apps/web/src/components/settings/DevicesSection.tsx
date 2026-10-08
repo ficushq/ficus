@@ -93,7 +93,7 @@ export function DevicesSection() {
           <button
             onClick={start}
             disabled={starting}
-            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium rounded-md disabled:opacity-50"
           >
             {starting ? 'Generating…' : 'Generate pairing QR'}
           </button>
@@ -128,7 +128,7 @@ export function DevicesSection() {
                 <button
                   onClick={() => revokeMutation.mutate(d.id)}
                   disabled={revokeMutation.isPending}
-                  className="ficus-button px-2 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 border border-th-border rounded hover:bg-surface-hover disabled:opacity-50 shrink-0"
+                  className="ficus-button ficus-button-danger px-2 py-1 text-xs font-medium rounded disabled:opacity-50 shrink-0"
                 >
                   Revoke
                 </button>

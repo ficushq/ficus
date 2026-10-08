@@ -45,7 +45,7 @@ export function WorkflowParticipantEditor({
               type="button"
               aria-pressed={active === id}
               className={clsx(
-                'ficus-button flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm',
+                'ficus-button ficus-button-ghost flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm',
                 active === id && 'bg-surface-hover text-accent-light'
               )}
               onClick={() => onSelect(id)}
@@ -106,7 +106,7 @@ export function WorkflowParticipantEditor({
                   <button
                     type="button"
                     aria-label={`Make ${step.name ?? step.id} separate`}
-                    className="ficus-button shrink-0 text-accent-light disabled:opacity-40"
+                    className="ficus-button ficus-button-link shrink-0 disabled:opacity-40"
                     disabled={ids.length >= 64}
                     onClick={() => {
                       const next = separateWorkflowParticipant(definition, step.id)
@@ -163,7 +163,7 @@ export function WorkflowParticipantEditor({
         </label>
         <button
           type="button"
-          className="ficus-button rounded-md border border-th-border px-3 py-2 text-sm disabled:opacity-40"
+          className="ficus-button ficus-button-secondary rounded-md px-3 py-2 text-sm disabled:opacity-40"
           disabled={!validId(newId) || !!definition.participants[newId] || ids.length >= 64}
           onClick={() => {
             edit((draft) => {

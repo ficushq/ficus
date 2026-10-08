@@ -68,7 +68,7 @@ export function SquadEventRulesEditor({
             <div className="flex gap-3 text-xs">
               <button
                 type="button"
-                className="ficus-button disabled:opacity-40"
+                className="ficus-button ficus-button-secondary px-2 py-1 text-xs disabled:opacity-40"
                 disabled={index === 0}
                 onClick={() => move(index, -1)}
                 aria-label={`Move rule ${index + 1} up`}
@@ -77,7 +77,7 @@ export function SquadEventRulesEditor({
               </button>
               <button
                 type="button"
-                className="ficus-button disabled:opacity-40"
+                className="ficus-button ficus-button-secondary px-2 py-1 text-xs disabled:opacity-40"
                 disabled={index === value.length - 1}
                 onClick={() => move(index, 1)}
                 aria-label={`Move rule ${index + 1} down`}
@@ -86,7 +86,7 @@ export function SquadEventRulesEditor({
               </button>
               <button
                 type="button"
-                className="ficus-button text-status-danger-500"
+                className="ficus-button ficus-button-danger px-2 py-1 text-xs"
                 onClick={() => onChange(value.filter((_, i) => i !== index))}
                 aria-label={`Remove rule ${index + 1}`}
               >
@@ -340,7 +340,7 @@ export function SquadEventRulesEditor({
       <button
         type="button"
         disabled={disabled || !events.length || value.length >= 32}
-        className="ficus-button rounded-md border border-panel-border px-3 py-2 text-sm disabled:opacity-40"
+        className="ficus-button ficus-button-secondary rounded-md px-3 py-2 text-sm disabled:opacity-40"
         onClick={() =>
           onChange([
             {

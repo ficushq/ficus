@@ -293,14 +293,14 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={!canWriteWorkspace || uploadMutation.isPending}
-            className="ficus-button inline-flex items-center gap-1.5 text-xs px-2 py-2 rounded-lg hover:bg-surface-hover text-secondary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ficus-button ficus-button-ghost inline-flex items-center gap-1.5 text-xs px-2 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <FileIcon className="h-3.5 w-3.5" /> Upload files
           </button>
           <button
             onClick={() => folderInputRef.current?.click()}
             disabled={!canWriteWorkspace || uploadMutation.isPending}
-            className="ficus-button inline-flex items-center gap-1.5 text-xs px-2 py-2 rounded-lg hover:bg-surface-hover text-secondary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ficus-button ficus-button-ghost inline-flex items-center gap-1.5 text-xs px-2 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <FolderIcon className="h-3.5 w-3.5" /> Upload folder
           </button>
@@ -308,7 +308,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
           {uploadMutation.isPending && (
             <button
               onClick={handleCancelUpload}
-              className="ficus-button text-xs px-2 py-1 rounded bg-status-danger-500/10 hover:bg-status-danger-500/20 text-status-danger-500 hover:text-status-danger-600 cursor-pointer"
+              className="ficus-button ficus-button-danger text-xs px-2 py-1 rounded cursor-pointer"
               title="Cancel upload"
             >
               Cancel
@@ -330,7 +330,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
             <span className="text-xs text-status-danger-500 flex-1 whitespace-pre-line">{uploadError}</span>
             <button
               onClick={() => setUploadError(null)}
-              className="ficus-button text-xs text-muted hover:text-secondary"
+              className="ficus-button ficus-button-ghost text-xs"
               title="Dismiss"
             >
               ✕
@@ -356,13 +356,13 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
             <div className="flex gap-3 justify-end">
               <button
                 onClick={handleOverwriteCancel}
-                className="ficus-button px-4 py-2 text-sm rounded bg-surface-hover hover:bg-surface-secondary text-secondary"
+                className="ficus-button ficus-button-secondary px-4 py-2 text-sm rounded"
               >
                 Skip
               </button>
               <button
                 onClick={handleOverwriteConfirm}
-                className="ficus-button ficus-button-primary px-4 py-2 text-sm rounded bg-accent hover:bg-accent/90 text-on-accent"
+                className="ficus-button ficus-button-primary px-4 py-2 text-sm rounded"
               >
                 Overwrite
               </button>

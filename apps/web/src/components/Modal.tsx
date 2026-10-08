@@ -159,7 +159,7 @@ export function Modal({
               {headerActions}
               <button
                 onClick={onClose}
-                className="ficus-button p-1.5 rounded-md text-muted hover:text-primary hover:bg-surface-hover transition-colors shrink-0"
+                className="ficus-button ficus-button-ghost p-1.5 rounded-md transition-colors shrink-0"
                 aria-label="Close"
                 title="Close (Escape)"
               >

@@ -81,7 +81,7 @@ export function SquadPresetsSection() {
           <button
             onClick={() => setIsAdding(true)}
             disabled={isAdding}
-            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md disabled:opacity-50 shrink-0"
           >
             New squad preset
           </button>
@@ -241,7 +241,7 @@ function AddSquadPresetForm({ onClose, onCreated }: { onClose: () => void; onCre
         <button
           onClick={handleCreate}
           disabled={createMutation.isPending}
-          className="ficus-button ficus-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary text-sm px-4 py-1.5 rounded font-medium disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating…' : 'Create'}
         </button>
@@ -391,7 +391,7 @@ function SquadPresetRow({
           type="button"
           onClick={onToggle}
           aria-label={`${canUpdate ? 'Edit' : 'View'} ${squadPreset.name}`}
-          className="ficus-button shrink-0 text-sm text-accent-light"
+          className="ficus-button ficus-button-link shrink-0 text-sm"
         >
           {canUpdate ? 'Edit' : 'View'}
         </button>
@@ -410,24 +410,18 @@ function SquadPresetRow({
           >
             <div className="flex items-center gap-2 flex-wrap">
               {squadPreset.hasTemplate && squadPreset.yamlFieldOverrides.length > 0 && (
-                <button
-                  onClick={onShowDiff}
-                  className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
-                >
+                <button onClick={onShowDiff} className="ficus-button ficus-button-link text-xs font-medium">
                   Compare to Template
                 </button>
               )}
-              <button
-                onClick={handleExport}
-                className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
-              >
+              <button onClick={handleExport} className="ficus-button ficus-button-link text-xs font-medium">
                 {copyMsg || 'Export YAML'}
               </button>
               {canUpdate && (
                 <button
                   onClick={() => toggleDisableMutation.mutate()}
                   disabled={toggleDisableMutation.isPending}
-                  className="ficus-button text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
+                  className="ficus-button ficus-button-link text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
                 >
                   {squadPreset.disabled ? 'Enable' : 'Disable'}
                 </button>
@@ -436,7 +430,7 @@ function SquadPresetRow({
                 <button
                   onClick={handleDelete}
                   disabled={deleteMutation.isPending}
-                  className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
+                  className="ficus-button ficus-button-danger px-2 py-1 text-xs font-medium"
                 >
                   Delete
                 </button>
@@ -497,7 +491,7 @@ function SquadPresetRow({
                 <button
                   onClick={handleSave}
                   disabled={!canUpdate || updateMutation.isPending}
-                  className="ficus-button ficus-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                  className="ficus-button ficus-button-primary text-sm px-4 py-1.5 rounded font-medium disabled:opacity-50"
                 >
                   {updateMutation.isPending ? 'Saving…' : 'Save'}
                 </button>

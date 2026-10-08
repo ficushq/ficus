@@ -77,9 +77,9 @@ export function SquadContextEditor({ squadId, context }: Props) {
           onClick={handleSave}
           disabled={!dirty || mutation.isPending}
           className={clsx(
-            'ficus-button',
+            'ficus-button ficus-button-primary',
             'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
-            dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
+            !dirty && 'opacity-50 cursor-not-allowed'
           )}
         >
           {mutation.isPending ? 'Saving...' : 'Save'}

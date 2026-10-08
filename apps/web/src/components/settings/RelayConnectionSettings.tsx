@@ -14,11 +14,9 @@ import {
 } from '../../api/serverConnection'
 import { Modal } from '../Modal'
 import { OverflowMenu } from '../OverflowMenu'
-import { ExternalLink, SETTINGS_BUTTON, SETTINGS_HEADING, SettingsRow } from './SettingsRow'
+import { ExternalLink, SETTINGS_BUTTON_SIZE, SETTINGS_HEADING, SettingsRow } from './SettingsRow'
 
 const CONNECT_FORM_ID = 'ficus-account-connect'
-const DANGER_BUTTON =
-  'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50'
 const FIELD = 'ficus-field w-full rounded-lg border border-th-border bg-surface px-3 py-2 text-sm text-primary'
 
 /** The connect form's default name: the name Ficus already knows, else this server's hostname. */
@@ -270,7 +268,7 @@ export function RelayConnectionSettings() {
                       <button
                         type="submit"
                         form={CONNECT_FORM_ID}
-                        className={clsx(SETTINGS_BUTTON, 'ficus-button-primary')}
+                        className={clsx('ficus-button ficus-button-primary', SETTINGS_BUTTON_SIZE)}
                         disabled={blocked}
                       >
                         {start.isPending
@@ -285,7 +283,7 @@ export function RelayConnectionSettings() {
                         type="button"
                         disabled={busy}
                         onClick={() => setDialog('disconnect')}
-                        className={clsx(SETTINGS_BUTTON, 'ficus-button-secondary')}
+                        className={clsx('ficus-button ficus-button-secondary', SETTINGS_BUTTON_SIZE)}
                       >
                         Disconnect…
                       </button>
@@ -415,14 +413,18 @@ export function RelayConnectionSettings() {
         title="Reconnect Ficus account"
         footer={
           <div className="flex items-center justify-end gap-3">
-            <button type="button" className="ficus-button text-sm text-muted" onClick={() => setDialog(null)}>
+            <button
+              type="button"
+              className={clsx('ficus-button ficus-button-secondary', SETTINGS_BUTTON_SIZE)}
+              onClick={() => setDialog(null)}
+            >
               Cancel
             </button>
             <button
               type="submit"
               form={`${CONNECT_FORM_ID}-reconnect`}
               disabled={blocked}
-              className={clsx(SETTINGS_BUTTON, 'ficus-button-primary')}
+              className={clsx('ficus-button ficus-button-primary', SETTINGS_BUTTON_SIZE)}
             >
               {start.isPending ? 'Starting…' : 'Reconnect'}
             </button>
@@ -460,14 +462,18 @@ export function RelayConnectionSettings() {
         title="Disconnect Ficus account?"
         footer={
           <div className="flex items-center justify-end gap-3">
-            <button type="button" className="ficus-button text-sm text-muted" onClick={() => setDialog(null)}>
+            <button
+              type="button"
+              className={clsx('ficus-button ficus-button-secondary', SETTINGS_BUTTON_SIZE)}
+              onClick={() => setDialog(null)}
+            >
               Cancel
             </button>
             <button
               type="button"
               disabled={disconnect.isPending}
               onClick={() => disconnect.mutate()}
-              className={clsx(SETTINGS_BUTTON, DANGER_BUTTON)}
+              className={clsx('ficus-button ficus-button-danger', SETTINGS_BUTTON_SIZE)}
             >
               {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
             </button>

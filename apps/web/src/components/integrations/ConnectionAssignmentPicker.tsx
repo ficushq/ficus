@@ -94,7 +94,7 @@ export function ConnectionAssignmentPicker({
               type="button"
               disabled={!canWrite || inheritMutation.isPending}
               onClick={() => inheritMutation.mutate()}
-              className="ficus-button text-accent-light"
+              className="ficus-button ficus-button-link"
             >
               Use global default
             </button>
@@ -134,7 +134,7 @@ export function ConnectionAssignmentPicker({
                     canWrite && (
                       <button
                         type="button"
-                        className="ficus-button text-xs"
+                        className="ficus-button ficus-button-secondary px-2.5 py-1 disabled:opacity-50 text-xs"
                         disabled={accountMutation.isPending || !connection.enabled}
                         onClick={() => accountMutation.mutate({ id: connection.id, action: 'default' })}
                       >
@@ -181,7 +181,7 @@ export function ConnectionAssignmentPicker({
           <span>Projection: {projectionLabel}</span>
           {canWrite && projectionLabel === 'degraded' && value.assignment && (
             <button
-              className="ficus-button"
+              className="ficus-button ficus-button-link"
               type="button"
               disabled={retryMutation.isPending}
               onClick={() => retryMutation.mutate()}

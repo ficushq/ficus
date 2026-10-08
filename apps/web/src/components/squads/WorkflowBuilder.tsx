@@ -48,7 +48,7 @@ const stepKindOptions: SegmentedControlOption<StepKind>[] = [
 
 const field = 'ficus-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
 const button =
-  'ficus-button flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40'
+  'ficus-button ficus-button-ghost flex h-8 w-8 shrink-0 items-center justify-center rounded-md disabled:opacity-40'
 
 export function WorkflowBuilder({
   definition,
@@ -343,10 +343,10 @@ export function WorkflowBuilder({
                   inspecting && (panel === 'inspector' ? tab !== 'settings' && tab !== 'participants' : tab === panel)
                 }
                 className={clsx(
-                  'ficus-button flex items-center gap-2 rounded-md px-2 sm:px-3 py-1.5 text-sm',
-                  inspecting && (panel === 'inspector' ? tab !== 'settings' && tab !== 'participants' : tab === panel)
-                    ? 'bg-surface-hover text-accent-light'
-                    : 'text-secondary'
+                  'ficus-button ficus-button-ghost flex items-center gap-2 rounded-md px-2 sm:px-3 py-1.5 text-sm',
+                  inspecting &&
+                    (panel === 'inspector' ? tab !== 'settings' && tab !== 'participants' : tab === panel) &&
+                    'bg-surface-hover text-accent-light'
                 )}
                 onClick={() => {
                   setInspecting(
@@ -561,7 +561,7 @@ export function WorkflowBuilder({
                   <button
                     type="button"
                     aria-label="Close inspector"
-                    className="ficus-button p-1.5 text-muted hover:text-primary"
+                    className="ficus-button ficus-button-ghost p-1.5"
                     onClick={() => setInspecting(false)}
                   >
                     <CloseIcon className="h-4 w-4" />
@@ -648,7 +648,7 @@ export function WorkflowBuilder({
                             </p>
                             <button
                               type="button"
-                              className="ficus-button text-sm text-accent-light"
+                              className="ficus-button ficus-button-link text-sm"
                               onClick={() => {
                                 setSelectedParticipant(selectedStep.participant)
                                 setTab('participants')
@@ -661,7 +661,7 @@ export function WorkflowBuilder({
                             ).length > 1 && (
                               <button
                                 type="button"
-                                className="ficus-button ml-3 text-sm text-accent-light disabled:opacity-40"
+                                className="ficus-button ficus-button-link ml-3 text-sm disabled:opacity-40"
                                 disabled={Object.keys(definition.participants).length >= 64}
                                 onClick={() =>
                                   onChange(separateWorkflowParticipant(definition, selectedStep.id).definition)

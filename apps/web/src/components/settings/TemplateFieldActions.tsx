@@ -77,7 +77,7 @@ export function TemplateFieldActions({
         <button
           type="button"
           onClick={() => setIsDiffOpen(true)}
-          className="ficus-button text-[11px] text-accent-light hover:text-link-hover"
+          className="ficus-button ficus-button-link text-[11px]"
         >
           Diff
         </button>
@@ -87,7 +87,7 @@ export function TemplateFieldActions({
           type="button"
           onClick={handleRevert}
           disabled={isReverting}
-          className="ficus-button text-[11px] text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 disabled:opacity-50"
+          className="ficus-button ficus-button-link text-[11px] text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 disabled:opacity-50"
         >
           Revert
         </button>
@@ -100,7 +100,7 @@ export function TemplateFieldActions({
               <h3 className="text-base font-semibold text-primary">Template Diff — {field}</h3>
               <button
                 onClick={() => setIsDiffOpen(false)}
-                className="ficus-button text-muted hover:text-primary text-xl leading-none"
+                className="ficus-button ficus-button-ghost text-xl leading-none"
               >
                 ✕
               </button>
@@ -128,7 +128,7 @@ export function TemplateFieldActions({
                 <button
                   onClick={handleRevert}
                   disabled={isReverting}
-                  className="ficus-button text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
+                  className="ficus-button ficus-button-primary text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
                 >
                   Revert Field
                 </button>

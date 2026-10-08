@@ -29,7 +29,7 @@ export function OverflowMenu({
         type="button"
         aria-label={label}
         onClick={popover.toggle}
-        className="ficus-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-primary"
+        className="ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-lg"
       >
         <MoreIcon className="h-4 w-4" />
       </button>

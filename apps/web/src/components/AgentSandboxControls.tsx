@@ -106,7 +106,7 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
         {canStop && (
           <button
             onClick={() => stopMutation.mutate()}
-            className="ficus-button ml-auto rounded bg-status-danger-600/15 px-2 py-0.5 text-xs font-medium text-status-danger-600 transition-colors hover:bg-status-danger-600/25 dark:text-status-danger-400"
+            className="ficus-button ficus-button-danger ml-auto rounded px-2 py-0.5 text-xs font-medium transition-colors"
             title="Stop sandbox"
           >
             Stop
@@ -116,8 +116,8 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
           <button
             onClick={() => restartMutation.mutate()}
             className={clsx(
-              'ficus-button',
-              'rounded bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent-light transition-colors hover:bg-accent/25',
+              'ficus-button ficus-button-secondary',
+              'rounded px-2 py-0.5 text-xs font-medium transition-colors',
               !canStop && 'ml-auto'
             )}
             title={isStart ? 'Start sandbox' : 'Restart sandbox'}

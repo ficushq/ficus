@@ -36,7 +36,7 @@ export function SharingTab({ squadId, components = {} }: Props) {
           {canWriteGrants && !showCreate && (
             <button
               onClick={() => setShowCreate(true)}
-              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded hover:bg-accent-hover"
+              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium rounded"
             >
               Share memory
             </button>

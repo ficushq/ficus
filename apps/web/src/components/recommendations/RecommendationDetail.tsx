@@ -72,7 +72,7 @@ export function RecommendationDetail({
             <button
               key={s}
               onClick={() => onStatus(s)}
-              className="ficus-button rounded-md border border-th-border px-3 py-1.5 text-sm capitalize text-primary transition-colors hover:bg-surface-hover"
+              className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-sm capitalize transition-colors"
             >
               {s === 'open' ? 'Reopen' : s}
             </button>

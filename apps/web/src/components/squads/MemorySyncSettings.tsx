@@ -239,7 +239,7 @@ export function MemorySyncSettings({ squadId }: Props) {
         {!showAddProvider && editingIndex === null && canWriteMemory && (
           <button
             onClick={() => setShowAddProvider(true)}
-            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-on-accent hover:bg-accent/90 transition-colors"
+            className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md font-medium transition-colors"
           >
             Add Provider
           </button>
@@ -267,14 +267,14 @@ export function MemorySyncSettings({ squadId }: Props) {
                   <button
                     onClick={() => startEditing(index)}
                     disabled={editingIndex !== null || showAddProvider || !canWriteMemory}
-                    className="ficus-button text-xs text-accent-light hover:underline disabled:opacity-50"
+                    className="ficus-button ficus-button-link text-xs disabled:opacity-50"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => removeProviderMutation.mutate(index)}
                     disabled={removeProviderMutation.isPending || !canWriteMemory}
-                    className="ficus-button text-xs text-status-danger-500 hover:underline"
+                    className="ficus-button ficus-button-danger px-2 py-1 text-xs"
                   >
                     Remove
                   </button>
@@ -294,11 +294,9 @@ export function MemorySyncSettings({ squadId }: Props) {
               onClick={() => pullMutation.mutate()}
               disabled={pullMutation.isPending || !canWriteMemory}
               className={clsx(
-                'ficus-button',
-                'flex-1 px-3 py-2 text-sm rounded-md font-medium transition-colors border',
-                pullMutation.isPending || !canWriteMemory
-                  ? 'bg-surface-secondary text-muted cursor-not-allowed border-th-border'
-                  : 'border-th-border text-secondary hover:bg-surface-hover'
+                'ficus-button ficus-button-secondary',
+                'flex-1 px-3 py-2 text-sm rounded-md font-medium transition-colors',
+                pullMutation.isPending || (!canWriteMemory && 'cursor-not-allowed opacity-50')
               )}
             >
               {pullMutation.isPending ? 'Pulling...' : '↓ Pull'}
@@ -307,11 +305,9 @@ export function MemorySyncSettings({ squadId }: Props) {
               onClick={() => pushMutation.mutate()}
               disabled={pushMutation.isPending || !canWriteMemory}
               className={clsx(
-                'ficus-button',
-                'flex-1 px-3 py-2 text-sm rounded-md font-medium transition-colors border',
-                pushMutation.isPending || !canWriteMemory
-                  ? 'bg-surface-secondary text-muted cursor-not-allowed border-th-border'
-                  : 'border-th-border text-secondary hover:bg-surface-hover'
+                'ficus-button ficus-button-secondary',
+                'flex-1 px-3 py-2 text-sm rounded-md font-medium transition-colors',
+                pushMutation.isPending || (!canWriteMemory && 'cursor-not-allowed opacity-50')
               )}
             >
               {pushMutation.isPending ? 'Pushing...' : '↑ Push'}
@@ -438,7 +434,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                     setShowAddProvider(false)
                     resetForm()
                   }}
-                  className="ficus-button px-3 py-1.5 text-sm rounded-md font-medium text-secondary hover:bg-surface-hover"
+                  className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm rounded-md font-medium"
                 >
                   Cancel
                 </button>
@@ -452,11 +448,9 @@ export function MemorySyncSettings({ squadId }: Props) {
                     !canWriteMemory
                   }
                   className={clsx(
-                    'ficus-button',
+                    'ficus-button ficus-button-primary',
                     'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
-                    gitRepoUrl && gitSshKeyName && canWriteMemory
-                      ? 'bg-accent text-on-accent hover:bg-accent/90'
-                      : 'bg-surface-secondary text-muted cursor-not-allowed'
+                    !(gitRepoUrl && gitSshKeyName && canWriteMemory) && 'opacity-50 cursor-not-allowed'
                   )}
                 >
                   {editingIndex !== null

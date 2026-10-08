@@ -39,7 +39,7 @@ function ScanStatusDisplay({ scanStatus }: { scanStatus: NonNullable<MemoryConfi
             <span>·</span>
             <button
               onClick={() => setShowSkipped(!showSkipped)}
-              className="ficus-button text-status-attention-600 dark:text-status-attention-400 hover:underline"
+              className="ficus-button ficus-button-link text-status-attention-600 dark:text-status-attention-400"
             >
               {scanStatus.skipped.length} skipped
             </button>
@@ -160,7 +160,7 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
           <button
             data-setting-reveal="include-patterns exclude-patterns"
             onClick={startEditing}
-            className="ficus-button text-xs text-accent-light hover:underline"
+            className="ficus-button ficus-button-link text-xs"
           >
             Edit
           </button>
@@ -184,7 +184,7 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
                   <span className="text-sm font-mono text-primary flex-1">{pattern}</span>
                   <button
                     onClick={() => removeInclude(i)}
-                    className="ficus-button text-xs text-muted hover:text-status-danger-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="ficus-button ficus-button-ghost text-xs hover:text-status-danger-500 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     ✕
                   </button>
@@ -204,9 +204,9 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
                 onClick={addInclude}
                 disabled={!newInclude.trim()}
                 className={clsx(
-                  'ficus-button',
+                  'ficus-button ficus-button-secondary',
                   'px-2 py-1.5 text-sm rounded-md',
-                  newInclude.trim() ? 'text-accent-light hover:bg-surface-hover' : 'text-muted cursor-not-allowed'
+                  !newInclude.trim() && 'cursor-not-allowed opacity-50'
                 )}
               >
                 Add
@@ -235,7 +235,7 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
                   <span className="text-sm font-mono text-primary flex-1">{pattern}</span>
                   <button
                     onClick={() => removeExclude(i)}
-                    className="ficus-button text-xs text-muted hover:text-status-danger-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="ficus-button ficus-button-ghost text-xs hover:text-status-danger-500 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     ✕
                   </button>
@@ -255,9 +255,9 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
                 onClick={addExclude}
                 disabled={!newExclude.trim()}
                 className={clsx(
-                  'ficus-button',
+                  'ficus-button ficus-button-secondary',
                   'px-2 py-1.5 text-sm rounded-md',
-                  newExclude.trim() ? 'text-accent-light hover:bg-surface-hover' : 'text-muted cursor-not-allowed'
+                  !newExclude.trim() && 'cursor-not-allowed opacity-50'
                 )}
               >
                 Add
@@ -269,14 +269,14 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
           <div className="flex justify-end gap-2">
             <button
               onClick={handleCancel}
-              className="ficus-button px-3 py-1.5 text-sm rounded-md text-secondary hover:bg-surface-hover"
+              className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm rounded-md"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={updateMutation.isPending}
-              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-on-accent hover:bg-accent/90"
+              className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md"
             >
               {updateMutation.isPending ? 'Saving...' : 'Save'}
             </button>

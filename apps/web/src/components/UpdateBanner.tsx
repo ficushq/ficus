@@ -29,7 +29,7 @@ export function UpdateBanner({ usePWA: usePWAProp = usePWA }: { usePWA?: typeof 
       <button
         onClick={onApplyUpdate}
         disabled={isApplying}
-        className="ficus-button px-3 py-1 bg-on-accent text-accent rounded text-sm font-medium hover:bg-on-accent/90 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+        className="ficus-button ficus-button-secondary px-3 py-1 bg-on-accent text-accent rounded text-sm font-medium hover:bg-on-accent/90 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
       >
         {isApplying ? 'Updating…' : 'Update'}
       </button>

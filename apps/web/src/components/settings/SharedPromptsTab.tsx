@@ -71,17 +71,17 @@ export function SharedPromptList({
           </div>
           <div className="flex gap-2 shrink-0 flex-wrap justify-end">
             {canWrite && (
-              <button className="ficus-button text-sm text-accent-light" onClick={() => onEdit(include)}>
+              <button className="ficus-button ficus-button-link text-sm" onClick={() => onEdit(include)}>
                 Edit
               </button>
             )}
             {canWrite && (
-              <button className="ficus-button text-sm text-muted" onClick={() => onToggle(include)}>
+              <button className="ficus-button ficus-button-link text-sm" onClick={() => onToggle(include)}>
                 {include.disabled ? 'Enable' : 'Disable'}
               </button>
             )}
             {canWrite && !include.hasTemplate && (
-              <button className="ficus-button text-sm text-status-danger-600" onClick={() => onDelete(include)}>
+              <button className="ficus-button ficus-button-danger px-2 py-1 text-sm" onClick={() => onDelete(include)}>
                 Delete
               </button>
             )}
@@ -232,7 +232,7 @@ export function SharedPromptsTab() {
         </p>
         {canWrite && (
           <button
-            className="ficus-button ficus-button-primary shrink-0 px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
+            className="ficus-button ficus-button-primary shrink-0 px-3 py-1.5 text-sm rounded-md"
             onClick={openNew}
           >
             New shared prompt
@@ -320,14 +320,14 @@ export function SharedPromptsTab() {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                className="ficus-button ficus-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md disabled:opacity-50"
+                className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md disabled:opacity-50"
                 disabled={save.isPending}
               >
                 {save.isPending ? 'Saving…' : 'Save'}
               </button>
               <button
                 type="button"
-                className="ficus-button px-3 py-1.5 text-sm bg-surface-hover rounded-md"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm rounded-md"
                 onClick={() => setEditing(null)}
               >
                 Cancel

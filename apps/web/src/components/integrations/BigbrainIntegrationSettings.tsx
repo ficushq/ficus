@@ -337,7 +337,7 @@ export function BigbrainIntegrationSettings({
                   <button
                     disabled={pending}
                     onClick={() => action.mutate({ connectionId: connection.id, action: 'validate' })}
-                    className="ficus-button rounded-md border border-th-border px-3 py-1.5 disabled:opacity-50"
+                    className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 disabled:opacity-50"
                   >
                     {actionPending && action.variables?.action === 'validate' ? 'Validating…' : 'Validate'}
                   </button>
@@ -346,7 +346,7 @@ export function BigbrainIntegrationSettings({
                     onClick={() =>
                       action.mutate({ connectionId: connection.id, action: connection.enabled ? 'disable' : 'enable' })
                     }
-                    className="ficus-button rounded-md border border-th-border px-3 py-1.5 disabled:opacity-50"
+                    className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 disabled:opacity-50"
                   >
                     {actionPending && action.variables?.action !== 'validate'
                       ? connection.enabled
@@ -366,12 +366,12 @@ export function BigbrainIntegrationSettings({
                       setNextCredential('')
                       setConfirmation(null)
                     }}
-                    className="ficus-button rounded-md border border-th-border px-3 py-1.5 disabled:opacity-50"
+                    className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 disabled:opacity-50"
                   >
                     Replace credential
                   </button>
                   <ConfirmButton
-                    className="ficus-button"
+                    className="rounded-md px-3 py-1.5"
                     key={`${connectionIds}:${connection.id}`}
                     label="Remove"
                     confirmLabel="Confirm remove"
@@ -413,7 +413,7 @@ export function BigbrainIntegrationSettings({
                     <button
                       type="submit"
                       disabled={pending}
-                      className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+                      className="ficus-button ficus-button-primary rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
                     >
                       {replacePending ? 'Replacing…' : 'Save credential'}
                     </button>
@@ -427,7 +427,7 @@ export function BigbrainIntegrationSettings({
                         setReplacingId(null)
                         setConfirmation(null)
                       }}
-                      className="ficus-button rounded-md border border-th-border px-3 py-2 text-sm"
+                      className="ficus-button ficus-button-secondary rounded-md px-3 py-2 text-sm"
                     >
                       Cancel
                     </button>
@@ -447,7 +447,7 @@ export function BigbrainIntegrationSettings({
                     <p className="mt-1 text-xs">{confirming.usage.squads.map((squad) => squad.name).join(', ')}</p>
                   )}
                   <button
-                    className="ficus-button mt-2 rounded-md border border-status-attention-600 px-3 py-1.5"
+                    className="ficus-button ficus-button-secondary mt-2 rounded-md border border-status-attention-600 px-3 py-1.5"
                     onClick={() => {
                       if (confirming.operation === 'disable')
                         action.mutate({ connectionId: connection.id, action: 'disable', confirmAssigned: true })
@@ -516,7 +516,7 @@ export function BigbrainIntegrationSettings({
           </label>
           <button
             type="submit"
-            className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+            className="ficus-button ficus-button-primary rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
             disabled={create.isPending}
           >
             {create.isPending ? 'Creating and validating…' : 'Create and validate'}

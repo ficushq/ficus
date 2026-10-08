@@ -189,8 +189,8 @@ export function SettingsNavigation({
                 type="button"
                 onClick={() => select(result.section, result.id || undefined)}
                 className={clsx(
-                  'ficus-button ficus-nav-item block w-full px-2.5 py-2.5 text-left',
-                  selectedIndex === index && 'bg-accent/10 text-accent'
+                  'ficus-button ficus-button-ghost ficus-nav-item block w-full px-2.5 py-2.5 text-left',
+                  selectedIndex === index && 'bg-accent/10 hover:bg-accent/10 text-accent hover:text-accent'
                 )}
               >
                 <span className="block text-sm text-primary">{result.label}</span>
@@ -218,7 +218,7 @@ export function SettingsNavigation({
                       key={section.id}
                       aria-current={activeSection === section.id ? 'page' : undefined}
                       onClick={() => select(section.id)}
-                      className="ficus-button ficus-nav-item flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm text-secondary"
+                      className="ficus-button ficus-button-ghost ficus-nav-item flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm"
                     >
                       <Icon className="h-4 w-4 shrink-0 opacity-80" />
                       <span>{section.label}</span>

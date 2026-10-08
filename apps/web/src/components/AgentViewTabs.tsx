@@ -37,7 +37,7 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
       <div className="md:hidden">
         <ActionPopup
           label={`Conversation options, ${currentTab?.label ?? activeTab} view`}
-          className="ficus-button flex h-9 w-9 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary"
+          className="ficus-button ficus-button-ghost flex h-9 w-9 items-center justify-center rounded-md"
           items={options.map((option) => ({
             ...option,
             id: option.value,
@@ -54,7 +54,7 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
           value={activeTab}
           onChange={onChange}
           options={options}
-          className="ficus-button flex max-w-36 items-center gap-2 rounded-md border border-th-border bg-surface px-2 py-1 text-xs font-medium text-primary"
+          className="ficus-button ficus-button-secondary flex max-w-36 items-center gap-2 rounded-md px-2 py-1 text-xs font-medium"
         >
           <span className="truncate">{options.find((option) => option.value === activeTab)?.label ?? activeTab}</span>
           <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted" />

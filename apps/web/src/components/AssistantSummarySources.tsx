@@ -29,7 +29,7 @@ export function AssistantSummarySources({
       {query.isError ? (
         <button
           type="button"
-          className="ficus-button py-1 text-xs text-accent-light"
+          className="ficus-button ficus-button-link py-1 text-xs"
           onClick={() => {
             void query.refetch()
           }}

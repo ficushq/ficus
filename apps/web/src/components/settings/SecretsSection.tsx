@@ -160,7 +160,7 @@ export function SecretsSection({ scope = 'git' }: { scope?: 'git' | 'machines' }
             <button
               onClick={() => restartMutation.mutate()}
               disabled={restartMutation.isPending}
-              className="ficus-button text-sm bg-status-review-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-review-700 disabled:opacity-50 shrink-0"
+              className="ficus-button ficus-button-primary text-sm bg-status-review-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-review-700 disabled:opacity-50 shrink-0"
             >
               {restartMutation.isPending ? 'Restarting…' : 'Restart Now'}
             </button>
@@ -400,19 +400,13 @@ function SecretRow({
           <div className="flex items-center gap-2 shrink-0">
             {isSet && sensitive && (
               <>
-                <button
-                  onClick={handleReveal}
-                  className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
-                >
+                <button onClick={handleReveal} className="ficus-button ficus-button-link text-xs font-medium">
                   Reveal
                 </button>
                 <span className="text-muted">·</span>
               </>
             )}
-            <button
-              onClick={handleEdit}
-              className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium"
-            >
+            <button onClick={handleEdit} className="ficus-button ficus-button-link text-xs font-medium">
               {isSet ? 'Edit' : inheritedValue ? 'Override' : 'Set'}
             </button>
             {isSet && (
@@ -420,7 +414,7 @@ function SecretRow({
                 <span className="text-muted">·</span>
                 <button
                   onClick={handleDelete}
-                  className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
+                  className="ficus-button ficus-button-danger px-2 py-1 text-xs font-medium"
                 >
                   Clear
                 </button>
@@ -435,7 +429,10 @@ function SecretRow({
           <code className="text-xs bg-surface-secondary px-2 py-1 rounded font-mono text-primary break-all flex-1">
             {revealedValue}
           </code>
-          <button onClick={handleCancel} className="ficus-button text-xs text-muted hover:text-primary shrink-0">
+          <button
+            onClick={handleCancel}
+            className="ficus-button ficus-button-link text-xs text-muted hover:text-primary shrink-0"
+          >
             Hide
           </button>
         </div>
@@ -462,7 +459,7 @@ function SecretRow({
             <button
               onClick={() => handleSave()}
               disabled={!value || saveMutation.isPending}
-              className="ficus-button ficus-button-primary inline-flex items-center gap-1.5 text-xs bg-accent text-on-accent px-3 py-1 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+              className="ficus-button ficus-button-primary inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded font-medium disabled:opacity-50"
             >
               {saveMutation.isPending && validated && (
                 <span className="animate-spin h-3 w-3 border-2 border-chrome-highlight border-t-transparent rounded-full" />
@@ -486,7 +483,7 @@ function SecretRow({
               <button
                 onClick={() => handleSave(true)}
                 disabled={saveMutation.isPending}
-                className="ficus-button text-xs bg-status-review-600 text-on-strong px-3 py-1 rounded font-medium disabled:opacity-50"
+                className="ficus-button ficus-button-primary text-xs bg-status-review-600 text-on-strong px-3 py-1 rounded font-medium disabled:opacity-50"
               >
                 Save anyway
               </button>

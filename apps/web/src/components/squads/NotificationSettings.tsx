@@ -151,11 +151,9 @@ export function NotificationSettings({ squadId }: Props) {
             onClick={handleSave}
             disabled={updateMutation.isPending || hasValidationErrors}
             className={clsx(
-              'ficus-button',
+              'ficus-button ficus-button-primary',
               'px-3 py-1.5 text-sm rounded-md',
-              hasValidationErrors
-                ? 'bg-surface-secondary text-muted cursor-not-allowed'
-                : 'bg-accent text-on-accent hover:bg-accent/90'
+              hasValidationErrors && 'opacity-50 cursor-not-allowed'
             )}
           >
             {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
@@ -183,7 +181,7 @@ export function NotificationSettings({ squadId }: Props) {
                 {cfg?.instanceId && (
                   <button
                     onClick={() => clearProvider(provider.key)}
-                    className="ficus-button text-xs text-muted hover:text-status-danger-500"
+                    className="ficus-button ficus-button-link text-xs text-muted hover:text-status-danger-500"
                   >
                     Clear
                   </button>

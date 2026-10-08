@@ -84,7 +84,7 @@ export function InviteUserForm({
             type="button"
             disabled={resendMutation.isPending}
             onClick={() => resendMutation.mutate()}
-            className="ficus-button text-sm text-accent-light disabled:opacity-50"
+            className="ficus-button ficus-button-link text-sm disabled:opacity-50"
           >
             {resendMutation.isPending ? 'Resending…' : 'Resend invitation'}
           </button>
@@ -103,7 +103,7 @@ export function InviteUserForm({
               </code>
               <button
                 type="button"
-                className="ficus-button text-sm text-accent-light"
+                className="ficus-button ficus-button-link text-sm"
                 onClick={async () => {
                   try {
                     if (!navigator.clipboard) throw new Error('Clipboard unavailable')
@@ -122,7 +122,7 @@ export function InviteUserForm({
         <div className="flex gap-3">
           <button
             type="button"
-            className="ficus-button text-sm text-accent-light"
+            className="ficus-button ficus-button-link text-sm"
             onClick={() => {
               inviteMutation.reset()
               resendMutation.reset()
@@ -195,7 +195,7 @@ export function InviteUserForm({
                   type="button"
                   aria-label={`Remove ${roleName(a.roleId)} (${where(a)})`}
                   onClick={() => removeAssignment(k)}
-                  className="ficus-button text-muted hover:text-primary"
+                  className="ficus-button ficus-button-danger px-2 py-1 text-xs"
                 >
                   Remove
                 </button>
@@ -228,7 +228,7 @@ export function InviteUserForm({
         <button
           type="submit"
           disabled={!inviteEmail || !assignments.length || pickerPending || inviteMutation.isPending}
-          className="ficus-button ficus-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="ficus-button ficus-button-primary px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50"
         >
           {inviteMutation.isPending ? 'Inviting...' : 'Send Invite'}
         </button>

@@ -350,11 +350,11 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                 key={f.value}
                 onClick={() => handleUserFilterChange(f.value)}
                 className={clsx(
-                  'ficus-button',
+                  'ficus-button ficus-button-ghost',
                   'px-2.5 py-0.5 rounded-full text-xs whitespace-nowrap',
                   scopeFilter === f.value
-                    ? 'bg-accent text-on-accent'
-                    : 'bg-surface-secondary text-secondary hover:bg-surface-hover'
+                    ? 'bg-accent hover:bg-accent text-on-accent hover:text-on-accent'
+                    : 'bg-surface-secondary'
                 )}
               >
                 {f.label}
@@ -367,7 +367,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
         <div className="hidden md:block p-3 border-b border-th-border space-y-3">
           <button
             onClick={handleNewChat}
-            className="ficus-button ficus-button-primary w-full bg-accent text-on-accent px-4 py-2 rounded-md hover:bg-accent-hover text-sm font-medium"
+            className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md text-sm font-medium"
           >
             New System Chat
           </button>
@@ -377,11 +377,11 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                 key={f.value}
                 onClick={() => handleUserFilterChange(f.value)}
                 className={clsx(
-                  'ficus-button',
+                  'ficus-button ficus-button-ghost',
                   'px-2 py-0.5 rounded-full text-xs',
                   scopeFilter === f.value
-                    ? 'bg-accent text-on-accent'
-                    : 'bg-surface-secondary text-secondary hover:bg-surface-hover'
+                    ? 'bg-accent hover:bg-accent text-on-accent hover:text-on-accent'
+                    : 'bg-surface-secondary'
                 )}
               >
                 {f.label}
@@ -419,8 +419,8 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                 key={agent.id}
                 onClick={() => handleSelectAgent(agent.id)}
                 className={clsx(
-                  'ficus-button',
-                  'w-full text-left px-3 py-3 md:py-2.5 border-b border-th-border hover:bg-surface-hover group',
+                  'ficus-button ficus-button-ghost',
+                  'w-full text-left px-3 py-3 md:py-2.5 border-b border-th-border group',
                   agentId === agent.id && 'bg-selection'
                 )}
                 title={`${stableName} · ${agent.agentTypeId} · ${agent.id}`}
@@ -480,7 +480,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                     {tabToggle}
                     <button
                       onClick={toggleFullscreen}
-                      className="ficus-button p-1.5 rounded-md text-muted hover:text-primary hover:bg-surface-hover transition-colors"
+                      className="ficus-button ficus-button-ghost p-1.5 rounded-md transition-colors"
                       aria-label="Fullscreen"
                       title="Fullscreen"
                     >

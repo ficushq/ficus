@@ -51,7 +51,7 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
         </code>
         <button
           onClick={() => navigator.clipboard?.writeText(invite.url)}
-          className="ficus-button px-2 py-1.5 text-xs font-medium text-secondary bg-surface-secondary rounded hover:bg-surface-hover shrink-0"
+          className="ficus-button ficus-button-secondary px-2 py-1.5 text-xs font-medium rounded shrink-0"
         >
           Copy
         </button>
@@ -61,7 +61,7 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
           <button
             type="button"
             onClick={() => navigate(`/register?token=${encodeURIComponent(token)}`)}
-            className="ficus-button ficus-button-primary px-3 py-1.5 bg-accent text-on-accent rounded-md text-xs font-medium hover:bg-accent-hover shrink-0"
+            className="ficus-button ficus-button-primary px-3 py-1.5 rounded-md text-xs font-medium shrink-0"
           >
             Open in Ficus
           </button>
