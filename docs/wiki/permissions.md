@@ -27,6 +27,23 @@ GitHub author filter. Role and user changes that would change who is dynamically
 trusted need the same human authority. See
 [Author trust and held feedback](github-integrations.md#author-trust-and-held-feedback).
 
+Three user-management actions now also require a literal human, because each
+hands out or redirects a way to sign in as a person. A person's session could
+then moderate GitHub feedback or change trust, which agents must not do.
+Agents and system tokens are refused even with `users:create` or `users:update`:
+
+- Re-sending an invite or creating an invite link (`POST /users/:id/invite`), for
+  any user.
+- Changing a user's email address (`PATCH /users/:id` with a new `email`), for any
+  user. Display-name changes are unaffected.
+- Receiving the invite code or link when creating a user (`POST /users`) on an
+  instance with no mail configured. Automation can still create the user; the
+  response reports the invite as undelivered and a person sends it later.
+
+A human making these changes for a user who is dynamically trusted in a squad
+also needs `squads:update` in that squad. Each attempt is recorded in the
+integration audit log.
+
 ## Exact grants and wildcards
 
 Selecting permissions saves their exact names. Selecting every permission in a

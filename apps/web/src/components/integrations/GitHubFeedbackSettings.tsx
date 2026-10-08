@@ -37,7 +37,7 @@ function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
       setMessage({
         tone: 'info',
         text: result.enabled
-          ? 'Author filtering is on. New feedback from untrusted authors will be held for review.'
+          ? 'Author filtering is on. New feedback that isn’t from a trusted author will be held for review.'
           : result.released > 0
             ? `Author filtering is off. ${result.released} held ${result.released === 1 ? 'event was' : 'events were'} allowed and queued for release.`
             : 'Author filtering is off.',
@@ -85,7 +85,9 @@ function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
         </h4>
         <p className="mt-1 text-sm text-muted">
           Comments and reviews on GitHub can come from anyone who can comment on a repository. With author filtering on,
-          feedback from authors this squad doesn’t trust is held here until a person allows it.
+          feedback is held here until a person allows it unless Ficus can confirm it came from someone this squad
+          trusts. A few events, such as title or description edits and events found by polling, can be held even from
+          trusted people because GitHub doesn’t confirm who made them.
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">

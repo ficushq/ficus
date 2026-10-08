@@ -28,7 +28,7 @@ export function PendingGitHubEventsSection({ squadId, className = '' }: { squadI
           </p>
         )}
         <p className="text-xs text-muted">
-          Feedback from GitHub authors this squad doesn’t trust is held until someone allows it.
+          GitHub feedback that can’t be traced to someone this squad trusts is held until a person allows it.
         </p>
       </div>
       <button

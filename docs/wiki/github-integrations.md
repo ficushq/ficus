@@ -143,7 +143,10 @@ link, including when a description was cleared; it does not claim to know which
 field changed or provide a historical diff. Agents can retrieve full details with
 `gh pr view <url>` or `gh issue view <url>` using their squad connection.
 
-Opening, assignment, and review-request events retain their description context.
+Opening, assignment, and review-request events retain their description context
+in squads with the author filter OFF. With it ON, assignment and review-request
+deliveries are fixed action projections without the parent title or description
+(see [Author trust and held feedback](#author-trust-and-held-feedback)).
 Comments (including edits), submitted reviews, review-thread file/line links, and
 CI results retain their existing event text and identifiers. Unchanged parent
 descriptions are not added to feedback. Existing provider text-size limits still
@@ -283,6 +286,24 @@ authority. The content author is attributed per item (`feedback-envelope.ts`).
 An edit is attributed to its editor only when the provider proves who edited;
 otherwise the edit is held. Unknown or unresolvable authors are held, not
 allowed.
+
+**Actions** (`objectKind: 'action'`): issue `assigned`, `unassigned`, `labeled`,
+`unlabeled`, `closed`, `reopened` and pull request `assigned`, `unassigned`,
+`labeled`, `unlabeled`, `review_requested`, `review_request_removed`
+(`GITHUB_ACTION_EVENTS`). The authority is the signed webhook sender, attributed
+as the creator, so a trusted actor's assignment or review request is delivered
+automatically and an untrusted actor's is held. The delivered fact is a fixed
+projection: repository, number, action, actor, assignee, requested reviewer or
+team, label names, assignee logins and the canonical URL. It never includes the
+parent's title or body, whoever wrote them; agents fetch those themselves. Each
+action is its own object (parent ID plus a digest of action, target and time),
+so out-of-order actions are not stale versions of each other. Rule matching and
+work-stream bindings still read the source fact, so predicates such as
+`requestedReviewer`, `assignee` and `issue.title` keep working. Polled actions
+have no signed actor and are held (`unknown_editor`). Issue and PR `edited`
+events stay content and are held without a verified editor, because the payload
+does not prove who changed which field. PR `closed`, `reopened`, `synchronize`
+and draft changes are status facts.
 
 Personal linking (`routes/github-identity.ts`, `personal-identity.ts`) reuses the
 GitHub OAuth/device transport with a separate `github_identity` purpose. It

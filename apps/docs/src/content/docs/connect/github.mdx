@@ -113,8 +113,8 @@ instance must be reachable at the displayed public URL.
 Anyone who can comment on a public repository can write a pull request review or
 an issue comment. Before **author filtering**, every comment, review and inline
 comment that matched a squad's routing or tracked work reached its agents. With
-author filtering on, Ficus holds feedback from authors the squad does not trust
-until a person reviews it.
+author filtering on, Ficus holds feedback it can't attribute to someone the squad
+trusts until a person reviews it.
 
 Author filtering is on by default for new squads. Squads that existed before the
 feature start with it off, so their routing is unchanged until you turn it on.
@@ -147,12 +147,38 @@ automatically, and GitHub's author labels such as _Member_ or _Contributor_ do
 not count. Trust only decides whether feedback reaches agents; it never grants
 repository access or adds permissions.
 
+### What gets held
+
+With author filtering on, Ficus checks who wrote or did each event:
+
+- **Comments, reviews and inline comments** are checked against their author. An
+  edit also needs the person who edited it to be trusted.
+- **Assignments, review requests, labels, and closing or reopening an issue** are
+  checked against the person who did it. They arrive as a short fixed message
+  (who did what, the assignee or reviewer, the label and a link) without the
+  issue or pull request title or description, so a trusted person assigning
+  someone else's issue doesn't pass that issue's text to agents.
+- **New issues and pull requests** are checked against their author.
+
+Some events are held even when everyone involved is trusted, because Ficus can't
+confirm who wrote or did them:
+
+- Edits to an issue or pull request title or description.
+- Events Ficus found by polling GitHub instead of receiving a webhook, when the
+  event is a pull request review, an edit, an assignment, a label or a
+  close/reopen. Polling doesn't reliably tell Ficus who acted.
+- Events GitHub can't confirm belong to the connected repository, events that
+  arrive out of order, and content too large to review.
+
+The review window shows the reason for each held event. Set up the repository
+webhook to keep these holds rare.
+
 ### Review held events
 
 When events are held, **Pending GitHub events** appears on the squad's **Home**
 and **Work** tabs with a count, and in the squad's GitHub settings. Each of these
 opens the same **Review GitHub events** window. For each event it shows the
-author and why they are not trusted, the repository and pull request or issue,
+author and why the event was held, the repository and pull request or issue,
 the intended recipient, and the exact text that will be delivered. It also links
 to the event on GitHub. Choose one or more events, then:
 
