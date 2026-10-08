@@ -56,7 +56,7 @@ and repeat review. A terminal parallel branch restarts its outer fork to preserv
 sibling checks and joins. History, evidence, and attempt limits remain intact.
 
 Final delivery approval is sent back when rework starts and must be requested again.
-An explicit human-approval step, manual pause, question, or unrelated wait is not
+An explicit human-approval step, a decision step waiting for a person, manual pause, question, or unrelated wait is not
 bypassed. Code-host notifications are retained behind unrelated waits and pauses,
 then retried after resolution/resume; final delivery review itself does not block
 CI/review feedback. For parked work, the owner receives the event and can request rework;

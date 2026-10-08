@@ -13,6 +13,7 @@ import {
   workflowStepSchema,
   activeWorkflowAttempts,
   workflowReworkAttempt,
+  type WorkflowStep,
 } from '@ficus/shared'
 import {
   db,
@@ -1679,7 +1680,11 @@ test('parked completion-ready rework clears delivery review but waits for capaci
 
 test('same-agent step transitions return durable assignments without inbox duplicates, including racing retries', async () => {
   const definition = structuredClone(flow)
-  definition.steps[1] = { ...definition.steps[1]!, kind: 'agent', participant: 'builder' }
+  definition.steps[1] = {
+    ...(definition.steps[1] as Extract<WorkflowStep, { kind: 'agent' }>),
+    kind: 'agent',
+    participant: 'builder',
+  }
   const id = await create('active', definition)
   const initial = (await getFlow(id))!
   const worker = { type: 'agent' as const, agentId: initial.attemptAgents['1']!, squadId }
@@ -1734,7 +1739,11 @@ test.each(['different-participant', 'fresh-session'] as const)(
     const definition = structuredClone(flow)
     if (mode === 'fresh-session') {
       definition.participants.builder!.session = 'fresh-per-attempt'
-      definition.steps[1] = { ...definition.steps[1]!, kind: 'agent', participant: 'builder' }
+      definition.steps[1] = {
+        ...(definition.steps[1] as Extract<WorkflowStep, { kind: 'agent' }>),
+        kind: 'agent',
+        participant: 'builder',
+      }
     }
     const id = await create('active', definition)
     const initial = (await getFlow(id))!

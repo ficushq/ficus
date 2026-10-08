@@ -1157,6 +1157,8 @@ async function startup(): Promise<void> {
   // Warm work-stream agents' sandboxes on spawn + assignment so handoffs are instant
   {
     const { reconcileFlows } = await import('./services/workflows/execution')
+    const { registerDecisionStepHandlers } = await import('./services/workflows/decision-steps')
+    registerDecisionStepHandlers()
     createPeriodicRunner({
       name: 'workflow-dispatch',
       intervalMs: 15_000,

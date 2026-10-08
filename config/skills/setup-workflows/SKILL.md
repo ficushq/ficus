@@ -160,7 +160,9 @@ wake paused participants, or schedule messages to bypass the hold.
 
 ## Explain waits and pause when choosing a flow
 
-Blocking questions and manual requests from flow agents default to their own active attempt. Other branches continue, and the join waits. Use `waitScope: stream` for a shared question blocker or `ficus workstream request-input ID --scope stream -m "Reason"` for a shared manual blocker. A response provides input without approving the step. Use a human-approval step for an enforced decision. Whole-stream pause interrupts work until explicit resume; park separately to release capacity.
+Blocking questions and manual requests from flow agents default to their own active attempt. Other branches continue, and the join waits. Use `waitScope: stream` for a shared question blocker or `ficus workstream request-input ID --scope stream -m "Reason"` for a shared manual blocker. A response provides input without approving the step. Use a human-approval step for an enforced decision.
+
+Use a `kind: decision` step to route on a fast decision-model judgment instead of an agent or a person, for example "ready to ship, or needs human review?". It has `instructions`, `input` (any of `title`, `description`, `handoff`, `incoming-results`), typed `questions` (`yesno`, `choice` with `options`, `score` with `levels`), ordered `routes` of `{when, outcome}` (first match wins), `otherwise`, `unavailable`, and `outcomes`; no participant or output. Omit `otherwise` or `unavailable` to have a person choose in that case rather than guessing. Decision steps need a provider under Settings → Decision models for Workflow decisions; without one, they follow `unavailable` or wait for a person. They cannot be a `returnTo` target. Whole-stream pause interrupts work until explicit resume; park separately to release capacity.
 
 See `docs/wiki/workflows.md` for the reference. Flow `subscriptions` and squad `integrationTriggers` are supported. Graph integration connections visualize those definitions; do not invent additional graph attachment fields outside the accepted schema.
 

@@ -188,6 +188,15 @@ function ReviewLayout({
               </ExpandableMarkdown>
             </section>
           )}
+          {gate.decisionNote && (
+            <section
+              aria-label="Automatic decision"
+              className="mt-4 rounded-xl border border-th-border px-4 py-3.5 sm:px-5"
+            >
+              <h2 className="mb-1.5 text-xs font-medium text-muted">Automatic decision</h2>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-secondary">{gate.decisionNote}</p>
+            </section>
+          )}
           <ReviewDocument run={run} sources={gate.sources} />
           {!wide && gate.history.length > 0 && (
             <div className="mt-10 border-t border-panel-border pt-5">

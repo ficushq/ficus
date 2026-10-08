@@ -10,6 +10,7 @@ import {
   type IntegrationOutputFact,
   type IntegrationSubscription,
   type TrackedResource,
+  type WorkflowStep,
 } from '@ficus/shared'
 import {
   db,
@@ -91,7 +92,7 @@ async function create(
     flow.participants.later = { agentTypeId: prefix, session: 'reuse-within-stream' }
     flow.steps[0]!.outcomes = { completed: { next: 'review' } }
     flow.steps.push({
-      ...flow.steps[0]!,
+      ...(flow.steps[0] as Extract<WorkflowStep, { kind: 'agent' }>),
       id: 'review',
       kind: 'agent',
       participant: 'later',
@@ -106,7 +107,7 @@ async function create(
     flow.steps[0]!.outcomes = { completed: { parallel: ['security', 'qa'], join: 'join' } }
     for (const participant of ['security', 'qa'])
       flow.steps.push({
-        ...flow.steps[0]!,
+        ...(flow.steps[0] as Extract<WorkflowStep, { kind: 'agent' }>),
         id: participant,
         kind: 'agent',
         participant,
@@ -114,7 +115,7 @@ async function create(
         outcomes: { completed: { next: 'join' } },
       })
     flow.steps.push({
-      ...flow.steps[0]!,
+      ...(flow.steps[0] as Extract<WorkflowStep, { kind: 'agent' }>),
       id: 'join',
       kind: 'agent',
       participant: 'worker',

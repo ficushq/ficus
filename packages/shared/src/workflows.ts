@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { integrationSubscriptionSchema, integrationDataPathSchema } from './integration-outputs'
+import { decisionQuestionsSchema } from './decisions'
+import { decisionConditionIssue, decisionConditionSchema } from './decision-conditions'
 
 const identifier = z
   .string()
@@ -63,6 +65,23 @@ const stepFields = {
   outcomes,
 }
 
+/** What a decision step shows its decision model, from the work stream and the run so far. */
+export const WORKFLOW_DECISION_INPUTS = ['title', 'description', 'handoff', 'incoming-results'] as const
+export type WorkflowDecisionInput = (typeof WORKFLOW_DECISION_INPUTS)[number]
+export const WORKFLOW_DECISION_INPUT_INFO: Record<WorkflowDecisionInput, { label: string; description: string }> = {
+  title: { label: 'Title', description: "The work stream's title." },
+  description: { label: 'Description', description: "The work stream's original brief." },
+  handoff: { label: "Owner's handoff", description: "The owner's handoff message, when there is one." },
+  'incoming-results': {
+    label: 'Incoming results',
+    description: 'The results or feedback of the steps that handed off to this one.',
+  },
+}
+export const DEFAULT_WORKFLOW_DECISION_INPUT: WorkflowDecisionInput[] = ['title', 'description', 'incoming-results']
+
+export const workflowDecisionRouteSchema = z.object({ when: decisionConditionSchema, outcome: identifier }).strict()
+export type WorkflowDecisionRoute = z.infer<typeof workflowDecisionRouteSchema>
+
 export const workflowStepSchema = z.union([
   z
     .object({
@@ -78,7 +97,52 @@ export const workflowStepSchema = z.union([
       approver: z.enum(['assigned-reviewers', 'reviewers']).default('assigned-reviewers'),
     })
     .strict(),
+  /**
+   * No agent works on a decision step: Core asks a decision model its questions about the
+   * selected input and follows the first route whose condition matches. Without a match it
+   * follows `otherwise`; without an answer (unconfigured, unavailable or refused) it follows
+   * `unavailable`. Either one omitted waits for a person to choose, like a human approval.
+   */
+  z
+    .object({
+      id: stepFields.id,
+      name: stepFields.name,
+      instructions: stepFields.instructions,
+      kind: z.literal('decision'),
+      input: z
+        .array(z.enum(WORKFLOW_DECISION_INPUTS))
+        .min(1, 'Choose what the decision looks at')
+        .max(WORKFLOW_DECISION_INPUTS.length)
+        .refine((input) => new Set(input).size === input.length, 'List each input once')
+        .default(DEFAULT_WORKFLOW_DECISION_INPUT),
+      questions: decisionQuestionsSchema,
+      routes: z.array(workflowDecisionRouteSchema).max(32, 'Use at most 32 routes').default([]),
+      otherwise: identifier.optional(),
+      unavailable: identifier.optional(),
+      outcomes,
+    })
+    .strict(),
 ])
+export type WorkflowDecisionStep = Extract<z.infer<typeof workflowStepSchema>, { kind: 'decision' }>
+
+/** Problems a decision step's routes have with its own questions and outcomes, for the editor and validation. */
+export function workflowDecisionStepIssues(
+  step: Pick<WorkflowDecisionStep, 'questions' | 'routes' | 'otherwise' | 'unavailable' | 'outcomes'>
+): Array<{ path: (string | number)[]; message: string }> {
+  const issues: Array<{ path: (string | number)[]; message: string }> = []
+  const outcome = (path: (string | number)[], name: string | undefined, label: string) => {
+    if (name !== undefined && !Object.hasOwn(step.outcomes, name))
+      issues.push({ path, message: `${label} uses unknown outcome '${name}'; add it to the step's outcomes` })
+  }
+  for (const [index, route] of step.routes.entries()) {
+    const issue = decisionConditionIssue(route.when, step.questions)
+    if (issue) issues.push({ path: ['routes', index, 'when'], message: `Route ${index + 1}: ${issue}` })
+    outcome(['routes', index, 'outcome'], route.outcome, `Route ${index + 1}`)
+  }
+  outcome(['otherwise'], step.otherwise, 'Otherwise')
+  outcome(['unavailable'], step.unavailable, 'Unavailable')
+  return issues
+}
 
 export const workflowRoutingSchema = z
   .object({
@@ -270,6 +334,8 @@ export const workflowDefinitionSchema = definitionShape
         if (!Object.hasOwn(definition.participants, step.participant))
           issue([...path, 'participant'], `Unknown participant '${step.participant}'`)
       }
+      if (step.kind === 'decision')
+        for (const problem of workflowDecisionStepIssues(step)) issue([...path, ...problem.path], problem.message)
       for (const [outcomeName, outcome] of Object.entries(step.outcomes)) {
         const transitionPath = [...path, 'outcomes', outcomeName]
         if ('next' in outcome) {
@@ -307,6 +373,8 @@ export const workflowDefinitionSchema = definitionShape
           if (outcome.returnTo === step.id) issue(transitionPath, 'Choose another step to do the revisions')
           if (!steps.has(outcome.returnTo))
             issue([...transitionPath, 'returnTo'], `Unknown rework step '${outcome.returnTo}'`)
+          else if (steps.get(outcome.returnTo)!.kind === 'decision')
+            issue([...transitionPath, 'returnTo'], `Decision step '${outcome.returnTo}' cannot do revisions`)
         }
       }
       if (!reachable(step.id, allEdges).has('finish')) issue(path, `Step '${step.id}' has no path to finish`)
@@ -361,6 +429,7 @@ export const workflowCustomizationSchema = z.discriminatedUnion('op', [
       changes: z.union([
         workflowStepSchema.options[0].omit({ id: true, kind: true }).partial(),
         workflowStepSchema.options[1].omit({ id: true, kind: true }).partial(),
+        workflowStepSchema.options[2].omit({ id: true, kind: true }).partial(),
       ]),
     })
     .strict(),
