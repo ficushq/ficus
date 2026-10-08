@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { buildVoiceInstructions, type VoiceSessionContext } from './assistants/siteOperator/siteOperatorInstructions'
+import { ALL_SECTIONS } from '../components/settings/settingsSections'
 
 const baseContext: VoiceSessionContext = {
   squads: [],
@@ -157,9 +158,21 @@ test('the prompt and tool definitions stay within the size budget', async () => 
     currentPath: `/squads/${squads[0]!.id}/work`,
     squads: squads as any,
   })
-  // Budget: navigation guide ~5k (incl. ~2.5k settings descriptions, one line per settings page) + generated
-  // squads/current screen ~1k + prose ~5k. Raised from 11.5k for the Decision Providers page.
-  expect(instructions.length).toBeLessThan(11_750)
+  // The hand-written prose has a budget. Generated lists (nav items, tabs, settings pages, squads; every
+  // "- " line) grow with the app, so they're capped per line instead (see the settings description test).
+  const prose = instructions
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('- '))
+    .join('\n')
+  expect(prose.length).toBeLessThan(6_500)
   expect(JSON.stringify(siteOperatorToolDefinitions).length).toBeLessThan(10_000)
   expect(instructions.split(buildVoiceNavigationGuide()).length).toBe(2)
+})
+
+test('each settings page adds one short line to the navigation guide', () => {
+  // Every settings page is listed with its description in each voice session, so keep them brief.
+  const long = ALL_SECTIONS.filter((section) => section.description.length > 80).map(
+    (section) => `${section.id} (${section.description.length})`
+  )
+  expect(long).toEqual([])
 })
