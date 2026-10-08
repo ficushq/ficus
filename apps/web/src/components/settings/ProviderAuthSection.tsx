@@ -45,7 +45,6 @@ import { CollectionSkeleton, SkeletonLine } from '../loading/Skeleton'
 import { ProviderAccountActions } from './ProviderAccountActions'
 import { ProviderDirectoryCard } from './ProviderDirectoryCard'
 import { ClaudeCodeAccountSetup } from './ClaudeCodeAccountSetup'
-import { DecisionModelsSection } from './DecisionModelsSection'
 import { SearchIcon } from '../icons'
 import { OnboardingProviderPicker } from '../onboarding/OnboardingProviderPicker'
 
@@ -333,7 +332,6 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
         Model tiers choose provider order. Enabled accounts are tried from top to bottom, followed by the OpenRouter
         fallback when enabled.
       </p>
-      <DecisionModelsSection />
     </div>
   )
 }

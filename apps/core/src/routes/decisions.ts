@@ -61,7 +61,7 @@ app.get('/', requirePermission('provider-auth:read'), (c) =>
 
 /** Check a provider answers a test question, then save it. */
 app.post('/providers', requirePermission('provider-auth:write'), async (c) => {
-  const parsed = providerInput.safeParse(await c.req.json().catch(() => null))
+  const parsed = providerInput.safeParse(await c.req.json())
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid provider' }, 400)
   const input = parsed.data
   if (input.kind === 'systemone') {
@@ -82,7 +82,7 @@ app.post('/providers', requirePermission('provider-auth:write'), async (c) => {
 })
 
 app.patch('/providers/:id', requirePermission('provider-auth:write'), async (c) => {
-  const parsed = providerPatch.safeParse(await c.req.json().catch(() => null))
+  const parsed = providerPatch.safeParse(await c.req.json())
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid change' }, 400)
   const provider = await updateDecisionProvider(c.req.param('id'), parsed.data)
   if (!provider) return c.json({ error: 'No such decision provider' }, 404)
@@ -116,7 +116,7 @@ app.post('/providers/detect', requirePermission('provider-auth:read'), async (c)
 })
 
 app.put('/routing', requirePermission('provider-auth:write'), async (c) => {
-  const parsed = decisionRoutingSchema.safeParse(await c.req.json().catch(() => null))
+  const parsed = decisionRoutingSchema.safeParse(await c.req.json())
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid routing' }, 400)
   const known = new Set(listDecisionProviders().map((provider) => provider.id))
   const ids = [...parsed.data.default, ...Object.values(parsed.data.purposes).flat()]
@@ -139,7 +139,7 @@ app.put('/features/:id', requirePermission('provider-auth:write'), async (c) => 
   const id = c.req.param('id') as (typeof DECISION_PURPOSES)[number]
   if (!DECISION_PURPOSES.includes(id) || DECISION_PURPOSE_INFO[id].scope !== 'instance')
     return c.json({ error: 'Only instance features have a switch here' }, 400)
-  const parsed = featureSwitchInput.safeParse(await c.req.json().catch(() => null))
+  const parsed = featureSwitchInput.safeParse(await c.req.json())
   if (!parsed.success) return c.json({ error: 'Use auto, on or off' }, 400)
   await setDecisionFeatureSwitch(id, parsed.data.value, auditActor(c.get('identity') as Identity))
   return c.json(decisionFeatures())
@@ -153,7 +153,7 @@ const tryInput = decisionRequestSchema.extend({
 
 /** Settings' "Try a decision": ask with real providers and show what came back. */
 app.post('/try', requirePermission('provider-auth:write'), async (c) => {
-  const parsed = tryInput.safeParse(await c.req.json().catch(() => null))
+  const parsed = tryInput.safeParse(await c.req.json())
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid question' }, 400)
   const { providerId, purpose, ...request } = parsed.data
   if (providerId) {
