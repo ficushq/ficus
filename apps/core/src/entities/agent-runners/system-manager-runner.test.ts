@@ -304,3 +304,52 @@ describe('System manager visible squad context', () => {
     }
   })
 })
+
+describe('SystemManagerRunner Assistant routing', () => {
+  const chlea = { id: 'a1b2c3d4-0000-4000-8000-000000000001', name: 'Chlea', purpose: 'The Chlea app' }
+  class RoutingRunner extends SystemManagerRunner {
+    asked: string[] = []
+    constructor(routes: boolean) {
+      super({ id: 'exec-1' } as any, { id: 'assistant-1', squadId: null } as any, { id: 'assistant' } as any)
+      this.routesAssistantMessages = routes
+      this.assistantRoutingDeps = {
+        enabled: () => true,
+        listSquads: async () => [chlea],
+        loadRecent: async () => [],
+        decide: async (_purpose, request) => {
+          this.asked.push((request.state as { message: string }).message)
+          return { ok: false, reason: 'unavailable', errors: [] }
+        },
+      }
+    }
+    protected override assistantRoutingIdentity() {
+      return { type: 'user' as const, userId: 'user-1' }
+    }
+    prepare(messages: any[]) {
+      return this.prepareMessagesForModel(messages)
+    }
+  }
+  const message = (id: string, content: string, source = 'user_chat') => ({
+    id,
+    agentId: 'assistant-1',
+    role: 'human' as const,
+    content,
+    metadata: { source },
+    pending: true,
+    createdAt: new Date(),
+  })
+
+  it('routes only the latest user message of a batch; an unanswered decision changes nothing', async () => {
+    const batch = [message('m-1', 'first'), message('m-2', 'second'), message('m-3', 'update', 'inbox')]
+    const runner = new RoutingRunner(true)
+    expect(await runner.prepare(batch)).toEqual(batch)
+    expect(runner.asked).toEqual(['second'])
+  })
+
+  it('page editors and other runners are never routed', async () => {
+    const runner = new RoutingRunner(false)
+    const batch = [message('m-1', 'first')]
+    expect(await runner.prepare(batch)).toBe(batch)
+    expect(runner.asked).toEqual([])
+  })
+})

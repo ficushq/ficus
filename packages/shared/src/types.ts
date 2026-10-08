@@ -1,3 +1,4 @@
+import type { AssistantRoutingCorrection, AssistantRoutingHint } from './assistant-routing'
 export * from './grants'
 // Schema field definition for task type schemas
 export interface SchemaFieldDef {
@@ -156,6 +157,10 @@ export interface MessageMetadata {
   assistantContext?: string
   /** Client-provided navigation context, separate from visible message content. */
   pagePath?: string
+  /** Server-owned: the Assistant's routing hint for this user message (and the user's correction). */
+  assistantRouting?: AssistantRoutingHint
+  /** Server-owned: the user's routing correction this message carries to the Assistant. */
+  assistantRoutingCorrection?: AssistantRoutingCorrection
   /** Server-owned direct-chat provenance; request bodies must not set these fields. */
   executionId?: string
   externalExport?: 'disabled' | 'enabled'

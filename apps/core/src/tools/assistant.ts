@@ -16,6 +16,7 @@ import {
   changeAssistantTask,
 } from '../services/assistant-task-requests'
 import { listVisibleSquads, searchEntities } from '../services/entity-search'
+import { suggestAssistantSquad, type AssistantRoutingDeps } from '../services/routing/assistant-routing'
 import { getAgentQuestion, answerAgentQuestion, dismissAgentQuestion } from '../services/agents/questions'
 import { canAnswerAgentQuestion } from '../services/agents/question-authorization'
 import { listPendingActionsForIdentity } from '../services/agents/actions'
@@ -96,7 +97,12 @@ export function assistantToolClientId(agentId: string, executionId: string, tool
 }
 
 /** Conversation and authority are runner-bound. No model-provided owner or fake HTTP context. */
-export function createAssistantTools(agentId: string, executionId: string, conversationId: string): ToolDefinition[] {
+export function createAssistantTools(
+  agentId: string,
+  executionId: string,
+  conversationId: string,
+  routingDeps: AssistantRoutingDeps = {}
+): ToolDefinition[] {
   const identity = { type: 'agent' as const, agentId, squadId: null }
   const access = () => requireAssistantConversation(identity, conversationId)
   function tool<S extends TSchema>(
@@ -296,6 +302,12 @@ export function createAssistantTools(agentId: string, executionId: string, conve
       'List squads visible to the user, with full IDs and manager IDs.',
       Type.Object({ limit }),
       async (input) => listVisibleSquads((await access()).user, input.limit)
+    ),
+    tool(
+      'suggest_squad',
+      'Ask which squad a request is for, with the same decision model as the routing hint on user messages: Ficus itself (instance), general work, or one squad’s project. Use it to ask again with a clearer phrasing or for a request the hint did not cover. Without a decision model it falls back to matching squad names and purposes.',
+      Type.Object({ request: Type.String({ minLength: 1, maxLength: 4000 }) }),
+      async (input) => suggestAssistantSquad((await access()).user, input.request, routingDeps)
     ),
     tool(
       'search_ficus',

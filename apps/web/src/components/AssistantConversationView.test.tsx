@@ -36,6 +36,7 @@ async function fixture(realtime = false) {
     inbox: mock(async () => ({})),
     acknowledge: mock(async () => ({})),
     release: mock(async () => ({})),
+    correctRouting: mock(async () => ({ hint: {} })),
   }
   const sendAccepted = mock((_text: string, options?: { clientId?: string }) => ({
     clientId: options?.clientId ?? 'send',
@@ -451,4 +452,52 @@ test('viewing a conversation reads its task updates; a hidden or compact one doe
   await f.dom.act(async () => f.render())
   await waitFor(() => expect(f.api.seenThrough).toHaveBeenCalledWith('conversation', 5))
   await f.cleanup()
+})
+
+test('user messages show their routing chip, and picking a squad corrects it for this conversation', async () => {
+  const f = await fixture()
+  try {
+    f.queryClient.setQueryData(queryKeys.squads.list('active'), [
+      { id: 'squad-chlea', name: 'Chlea', purpose: 'The Chlea app', isAnonymous: false },
+      { id: 'squad-billing', name: 'Billing', purpose: 'Invoices', isAnonymous: false },
+      { id: 'squad-anon', name: 'Scratch', purpose: '', isAnonymous: true },
+    ] as any)
+    await f.dom.act(async () => f.render())
+    await waitFor(() => expect(f.chat.renderMessageFooter).toBeDefined())
+    const human = (metadata: object) =>
+      ({ kind: 'persisted', id: 'm-1', message: { id: 'm-1', role: 'human', content: 'Fix it', metadata } }) as any
+    expect(f.chat.renderMessageFooter!(human({ source: 'user_chat' }))).toBeNull()
+    const footerRoot = f.dom.createRoot()
+    await f.dom.act(async () =>
+      footerRoot.root.render(
+        <QueryClientProvider client={f.queryClient}>
+          {f.chat.renderMessageFooter!(
+            human({
+              source: 'user_chat',
+              assistantRouting: { scope: 'squad', squadId: 'squad-chlea', squadName: 'Chlea', confidence: 0.91 },
+            })
+          )}
+        </QueryClientProvider>
+      )
+    )
+    const chip = footerRoot.container.querySelector<HTMLButtonElement>('[data-assistant-routing] button')!
+    expect(chip.textContent).toBe('Chlea·91%')
+    await f.dom.act(async () => fireEvent.click(chip))
+    const options = [...f.dom.window.document.querySelectorAll<HTMLElement>('[role="option"]')]
+    // Anonymous squads are not offered.
+    expect(options.map((row) => row.textContent)).toEqual([
+      'No squadFicus itself or general work',
+      'ChleaThe Chlea app',
+      'BillingInvoices',
+    ])
+    await f.dom.act(async () => fireEvent.click(options[2]!))
+    expect(f.api.correctRouting).toHaveBeenCalledWith('conversation', {
+      messageId: 'm-1',
+      clientId: expect.any(String),
+      scope: 'squad',
+      squadId: 'squad-billing',
+    })
+  } finally {
+    await f.cleanup()
+  }
 })

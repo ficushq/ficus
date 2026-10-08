@@ -35,6 +35,23 @@ visible but cannot change status; a terminal status is never reopened by a later
 helpers never imply completion; a missing or terminated helper on an unfinished task is shown as
 `unavailable` without rewriting its status.
 
+## Choosing a squad
+
+When a decision model is set up and **Assistant squad routing** is on (Settings → Decision
+Providers → Features), Core asks one choice before the Assistant reads each user chat message:
+`instance` (Ficus itself: settings, admin, the instance), `general` (not tied to one squad's
+project), or one `squad_<short id>` option per active squad the user can read, described by the
+squad's name and purpose. The user's message and the last three conversation entries (truncated)
+go only in the decision's state. Above 30 squads, the purpose heuristic from the squad suggester
+keeps the likeliest. The question waits at most 1.5 seconds; no answer means no hint.
+
+A pick with at least 60% confidence is saved on the message (`metadata.assistantRouting`) and
+added to the model's copy of it as a routing hint. The conversation shows it as a chip under the
+message ("Chlea · 91%", "Not about a squad", "General"). Choosing another squad, or No squad, from
+the chip (`POST /api/assistant/:conversationId/routing`) saves the correction on the message and
+sends the Assistant a short system message that carries it. The Assistant's `suggest_squad` tool
+asks the same decision for any phrasing, and falls back to the purpose heuristic without one.
+
 ## Continuing, recovering, and cancelling
 
 The owner can use `POST /api/assistant/:conversationId/tasks/:taskId/commands` with a durable
