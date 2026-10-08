@@ -6,6 +6,7 @@ import type {
   GitHubFeedbackSummary,
   GitHubTrustOrigin,
   GitHubTrustedAuthorList,
+  GitHubUntrustedHandling,
   ModerateGitHubFeedback,
 } from '@ficus/shared'
 import { apiFetch, ApiError } from './client'
@@ -50,6 +51,17 @@ export const setGitHubAuthorFilter = (squadId: string, enabled: boolean, fetcher
   fetcher<{ enabled: boolean; released: number }>(`${base(squadId)}/author-filter`, {
     method: 'PUT',
     body: JSON.stringify({ enabled }),
+  })
+
+/** Hold untrusted feedback for a person, or let a decision model screen it first. Human-only. */
+export const setGitHubUntrustedHandling = (
+  squadId: string,
+  handling: GitHubUntrustedHandling,
+  fetcher: ApiFetcher = apiFetch
+) =>
+  fetcher<{ handling: GitHubUntrustedHandling }>(`${base(squadId)}/untrusted-handling`, {
+    method: 'PUT',
+    body: JSON.stringify({ handling }),
   })
 
 export const listGitHubTrustedAuthors = (squadId: string, fetcher: ApiFetcher = apiFetch) =>

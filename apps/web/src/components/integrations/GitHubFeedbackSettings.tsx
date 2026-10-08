@@ -1,7 +1,11 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { GitHubUntrustedHandling } from '@ficus/shared'
 import { ApiError } from '../../api/client'
-import { githubFeedbackErrorMessage, setGitHubAuthorFilter } from '../../api/githubFeedback'
+import { githubFeedbackErrorMessage, setGitHubAuthorFilter, setGitHubUntrustedHandling } from '../../api/githubFeedback'
+import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 import { githubFeedbackQueries } from '../../queryOptions'
 import { githubFeedbackQueryKeys } from '../../queryKeys'
 import { GitHubFeedbackReviewProvider, useGitHubFeedbackReview } from './GitHubFeedbackReviewProvider'
@@ -23,12 +27,36 @@ export function GitHubFeedbackSettings({ squadId }: { squadId: string }) {
   )
 }
 
+const HANDLING_OPTIONS: readonly SegmentedControlOption<GitHubUntrustedHandling>[] = [
+  { value: 'hold', label: 'Hold for review', title: 'Hold for review until trusted' },
+  { value: 'screen', label: 'Screen with a model', title: 'Let a decision model screen it' },
+]
+
+const HANDLING_HELP: Record<GitHubUntrustedHandling, string> = {
+  hold: 'Feedback from people this squad doesn’t trust waits here until someone allows it or trusts its author.',
+  screen:
+    'A decision model checks feedback from people this squad doesn’t trust for instructions aimed at agents. If it’s confident the feedback is safe, it’s delivered once, and its author still isn’t trusted. Anything else, including when no model answers, is held here with the model’s verdict.',
+}
+
 function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
   const client = useQueryClient()
   const review = useGitHubFeedbackReview(squadId)
   const summary = useQuery(githubFeedbackQueries.summary(squadId))
   const [confirmOff, setConfirmOff] = useState(false)
   const [message, setMessage] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
+  const handlingChange = useMutation({
+    mutationFn: (handling: GitHubUntrustedHandling) => setGitHubUntrustedHandling(squadId, handling),
+    onMutate: () => setMessage(null),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: githubFeedbackQueryKeys.squad(squadId) })
+    },
+    onError: (error) => {
+      setMessage({
+        tone: 'error',
+        text: githubFeedbackErrorMessage(error, "Couldn't change how untrusted feedback is handled."),
+      })
+    },
+  })
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => setGitHubAuthorFilter(squadId, enabled),
     onMutate: () => setMessage(null),
@@ -73,6 +101,11 @@ function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
       </p>
     )
   const { authorFilterEnabled: enabled, pending, releasing, failing, canModerate } = summary.data
+  const handling: GitHubUntrustedHandling =
+    (handlingChange.isPending ? handlingChange.variables : summary.data.untrustedHandling) === 'screen'
+      ? 'screen'
+      : 'hold'
+  const modelConfigured = summary.data.decisionModelConfigured === true
   return (
     <section
       aria-labelledby={`github-feedback-${squadId}`}
@@ -104,6 +137,37 @@ function GitHubFeedbackSettingsBody({ squadId }: { squadId: string }) {
         </label>
         <span className="text-xs text-muted">{enabled ? 'On' : 'Off'}</span>
       </div>
+      {enabled && (
+        <div className="space-y-2">
+          <p id={`github-untrusted-${squadId}`} className="text-sm text-primary">
+            Feedback from untrusted authors
+          </p>
+          <SegmentedControl
+            ariaLabel="Feedback from untrusted authors"
+            options={HANDLING_OPTIONS}
+            value={handling}
+            onChange={(next) => next !== handling && handlingChange.mutate(next)}
+            disabled={!canModerate || handlingChange.isPending}
+          />
+          <p className="text-xs text-muted">{HANDLING_HELP[handling]}</p>
+          {!modelConfigured && (
+            <p
+              className={clsx(
+                'text-xs',
+                handling === 'screen' ? 'text-status-warning-600 dark:text-status-warning-400' : 'text-muted'
+              )}
+            >
+              {handling === 'screen'
+                ? 'No decision model is set up for the GitHub firewall, so this feedback is still held for review. '
+                : 'Screening needs a decision model. '}
+              <Link to="/settings?section=providers" className="text-accent-light hover:underline">
+                Set one up in Settings → AI Providers → Decision models
+              </Link>
+              .
+            </p>
+          )}
+        </div>
+      )}
       {!enabled && (
         <p className="text-xs text-muted">
           Off: GitHub feedback that matches this squad’s rules reaches agents from any author, as it did before author

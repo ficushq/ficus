@@ -1,4 +1,9 @@
-import type { GitHubAccountIdentity, GitHubFeedbackListItem, GitHubTrustOrigin } from '@ficus/shared'
+import type {
+  GitHubAccountIdentity,
+  GitHubFeedbackListItem,
+  GitHubFeedbackScreening,
+  GitHubTrustOrigin,
+} from '@ficus/shared'
 import type { ModerateGitHubFeedback } from '@ficus/shared'
 
 type Action = ModerateGitHubFeedback['action']
@@ -23,6 +28,7 @@ const REASON_LABELS: Record<string, string> = {
   content_unavailable: 'Content could not be read from GitHub',
   trust_revoked: 'Author was trusted when sent, but trust was removed before delivery',
   filter_disabled: 'Released when the squad turned author filtering off',
+  decision_model_allowed: 'A decision model screened it as safe; its author is still not trusted',
   trusted_author: 'Author is trusted',
   recipient_waiting: 'Waiting for the recipient to be ready',
   no_current_recipient: 'No current recipient matches this event',
@@ -69,4 +75,41 @@ export function trustOriginLabel(origin: GitHubTrustOrigin) {
   return origin.kind === 'manual'
     ? 'Added to this squad’s trusted authors'
     : 'Linked Ficus user who can update this squad'
+}
+
+const percent = (value: number) => `${Math.round(value * 100)}%`
+/** At or above this, an unsafe verdict reads as prompt injection (matches Core's display threshold). */
+const INJECTION_LABEL_AT = 0.5
+
+/**
+ * One line summarising a decision model's verdict for a moderator, such as
+ * "Decision model: likely prompt injection, 94%". Null when the item was never screened.
+ */
+export function screeningLabel(screening: GitHubFeedbackScreening | null): string | null {
+  if (!screening) return null
+  if (screening.state === 'queued' || screening.state === 'running') return 'Decision model: screening…'
+  const { instructsAgent, intent, intentConfidence } = screening
+  const confidence = intentConfidence === null ? '' : `, ${percent(intentConfidence)}`
+  switch (screening.outcome) {
+    case 'safe':
+      return `Decision model: likely safe${confidence}`
+    case 'unsafe':
+      if (instructsAgent !== null && instructsAgent >= INJECTION_LABEL_AT)
+        return `Decision model: likely prompt injection, ${percent(instructsAgent)}`
+      if (intent === 'malicious') return `Decision model: likely malicious${confidence}`
+      if (intent === 'suspicious') return `Decision model: suspicious${confidence}`
+      return 'Decision model: may be unsafe'
+    case 'uncertain':
+      return intent === 'benign' && intentConfidence !== null
+        ? `Decision model: not confident it’s safe (benign, ${percent(intentConfidence)})`
+        : 'Decision model: not confident it’s safe'
+    case 'unavailable':
+      return 'Decision model: didn’t answer'
+    case 'unconfigured':
+      return 'Decision model: none set up'
+    case 'too_long':
+      return 'Decision model: too long to screen'
+    default:
+      return 'Decision model: not screened'
+  }
 }

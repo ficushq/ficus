@@ -173,6 +173,34 @@ confirm who wrote or did them:
 The review window shows the reason for each held event. Set up the repository
 webhook to keep these holds rare.
 
+### Screen untrusted feedback with a decision model
+
+By default, feedback from people the squad doesn't trust waits for a person. You
+can instead let a decision model look at it first. In **GitHub feedback review →
+Feedback from untrusted authors**, choose **Screen with a model** instead of
+**Hold for review**. This needs a decision model set up in **Settings → AI
+Providers → Decision models**.
+
+With screening on, the model is asked whether the feedback contains instructions
+aimed at an agent reading it (such as ignoring its instructions, running
+commands, revealing secrets, changing permissions or contacting someone) and
+whether its intent is benign, suspicious or malicious:
+
+- When the model is confident the feedback is safe, Ficus delivers it once, the
+  same way **Allow once** does. The author is still not trusted, so their next
+  comment is screened again.
+- Anything else stays held for a person: feedback the model thinks may be
+  unsafe or isn't sure about, feedback too long to screen, and everything while
+  no model is set up or the model doesn't answer. The review window shows the
+  model's verdict, such as _Decision model: likely prompt injection, 94%_.
+
+Screening only applies to feedback held because its author isn't trusted. Events
+held for other reasons, such as an unverified editor or an event found by
+polling, always wait for a person. You can still allow or deny a held event
+while it's being screened, and your decision wins. Choosing **Hold for review**
+again stops screens that haven't finished. A decision model can be wrong, so
+use screening where an occasional unsafe comment reaching agents is acceptable.
+
 ### Review held events
 
 When events are held, **Pending GitHub events** appears on the squad's **Home**

@@ -25,6 +25,7 @@ import {
   formatTime,
   kindLabel,
   reasonLabel,
+  screeningLabel,
   safeGitHubUrl,
   target,
   trustOriginLabel,
@@ -443,6 +444,9 @@ export function GitHubFeedbackReviewModal({
                           ? `${RELEASE_LABELS[row.releaseState]}${row.attempts ? ` · ${row.attempts} attempts` : ''}`
                           : reasonLabel(row.reason)}
                       </span>
+                      {row.screening && (
+                        <span className="block truncate text-xs text-muted">{screeningLabel(row.screening)}</span>
+                      )}
                       {changed && (
                         <span className="mt-1 block text-xs text-status-warning-600 dark:text-status-warning-400">
                           Changed since you selected it. Your selection still refers to the version you reviewed.
@@ -568,6 +572,16 @@ function EventDetail({
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
         <dt className="text-muted">{detail.decision === 'pending' ? 'Why held' : 'Reason'}</dt>
         <dd className="text-primary">{reasonLabel(detail.reason) ?? '—'}</dd>
+        {detail.screening && (
+          <>
+            <dt className="text-muted">Screening</dt>
+            <dd className="text-primary">
+              {screeningLabel(detail.screening)}
+              {detail.screening.model && ` · ${detail.screening.model}`}
+              {detail.screening.screenedAt && ` · ${formatTime(detail.screening.screenedAt)}`}
+            </dd>
+          </>
+        )}
         <dt className="text-muted">Author trust</dt>
         <dd className="text-primary">
           {detail.authorTrust.length

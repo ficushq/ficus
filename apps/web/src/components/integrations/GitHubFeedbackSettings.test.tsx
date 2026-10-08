@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, waitFor } from '@testing-library/dom'
+import { MemoryRouter } from 'react-router-dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import {
   SQUAD,
@@ -51,7 +52,13 @@ afterEach(async () => {
 
 async function render(node = <GitHubFeedbackSettings squadId={SQUAD} />) {
   const { root, container } = dom.createRoot()
-  await dom.act(async () => root.render(<QueryClientProvider client={client}>{node}</QueryClientProvider>))
+  await dom.act(async () =>
+    root.render(
+      <MemoryRouter>
+        <QueryClientProvider client={client}>{node}</QueryClientProvider>
+      </MemoryRouter>
+    )
+  )
   await waitFor(() => expect(container.textContent).toContain('@maintainer'))
   return container
 }
@@ -194,4 +201,60 @@ test('closing the review dialog with Escape returns focus to the control that op
   expect(dialog.contains(document.activeElement)).toBe(true)
   await dom.act(async () => fireEvent.keyDown(dialog, { key: 'Escape' }))
   await waitFor(() => expect(document.activeElement).toBe(opener))
+})
+
+const handlingGroup = (container: HTMLElement) =>
+  container.querySelector('[role="radiogroup"][aria-label="Feedback from untrusted authors"]') as HTMLElement
+const radio = (group: HTMLElement, label: string) =>
+  [...group.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement
+
+test('untrusted feedback is held by default, and screening is offered with a link to set up a model', async () => {
+  const container = await render()
+  const group = handlingGroup(container)
+  expect(radio(group, 'Hold for review').getAttribute('aria-checked')).toBe('true')
+  expect(radio(group, 'Screen with a model').getAttribute('aria-checked')).toBe('false')
+  expect(radio(group, 'Screen with a model').title).toBe('Let a decision model screen it')
+  expect(container.textContent).toContain('waits here until someone allows it or trusts its author')
+  const setup = container.querySelector('a[href="/settings?section=providers"]') as HTMLAnchorElement
+  expect(setup.textContent).toContain('Settings → AI Providers → Decision models')
+  expect(container.textContent).toContain('Screening needs a decision model.')
+})
+
+test('choosing screening saves it and explains that anything not clearly safe, or unscreened, stays held', async () => {
+  api.other = (method, path, body) => {
+    if (method !== 'PUT' || path !== '/untrusted-handling') return undefined
+    api.summary = { ...api.summary, untrustedHandling: (body as { handling: 'hold' | 'screen' }).handling }
+    return Response.json(body)
+  }
+  const container = await render()
+  await click(radio(handlingGroup(container), 'Screen with a model'))
+  await waitFor(() => expect(calls('PUT', '/untrusted-handling')).toHaveLength(1))
+  expect(calls('PUT', '/untrusted-handling')[0]!.body).toEqual({ handling: 'screen' })
+  await waitFor(() =>
+    expect(radio(handlingGroup(container), 'Screen with a model').getAttribute('aria-checked')).toBe('true')
+  )
+  expect(container.textContent).toContain('delivered once, and its author still isn’t trusted')
+  // No model yet: still selectable, because it fails closed, and the card says so.
+  expect(container.textContent).toContain('No decision model is set up for the GitHub firewall')
+  expect(container.querySelector('a[href="/settings?section=providers"]')).not.toBeNull()
+})
+
+test('with a decision model set up there is no setup hint', async () => {
+  api.summary = { untrustedHandling: 'screen', decisionModelConfigured: true }
+  const container = await render()
+  expect(radio(handlingGroup(container), 'Screen with a model').getAttribute('aria-checked')).toBe('true')
+  expect(container.querySelector('a[href="/settings?section=providers"]')).toBeNull()
+})
+
+test('the choice is read-only without squad update', async () => {
+  api.canModerate = false
+  const container = await render()
+  for (const button of handlingGroup(container).querySelectorAll('[role="radio"]'))
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+})
+
+test('the choice is hidden while the author filter is off, since nothing is held', async () => {
+  api.summary = { authorFilterEnabled: false }
+  const container = await render()
+  expect(handlingGroup(container)).toBeNull()
 })

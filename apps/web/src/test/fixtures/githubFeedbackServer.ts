@@ -34,6 +34,7 @@ export function item(n: number, patch: Partial<GitHubFeedbackListItem> = {}): Gi
     firstObservedAt: `2026-10-0${Math.min(n, 9)}T10:00:00.000Z`,
     updatedAt: `2026-10-0${Math.min(n, 9)}T10:00:00.000Z`,
     attempts: 0,
+    screening: null,
     ...patch,
   }
 }
@@ -98,6 +99,8 @@ export function moderationFetch(api: FakeModerationApi): typeof fetch {
     if (method === 'GET' && path === '/summary')
       return Response.json({
         authorFilterEnabled: true,
+        untrustedHandling: 'hold',
+        decisionModelConfigured: false,
         pending: api.pending.length,
         releasing: api.releasing.length,
         failing: api.releasing.filter((row) => row.releaseState === 'retry').length,
