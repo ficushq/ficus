@@ -332,16 +332,6 @@ function DurableConversation(props: AssistantConversationViewProps) {
           </button>
         </div>
       )}
-      {props.realtime && !voice.isLiveAudio && agentId && (
-        <button
-          className="ficus-button ficus-button-link py-1 text-xs text-muted"
-          onClick={() => {
-            void startVoice()
-          }}
-        >
-          enable your microphone
-        </button>
-      )}
       {error && (
         <div role="alert" className="px-3 py-2 text-sm text-status-danger-600 dark:text-status-danger-400">
           {error}{' '}
