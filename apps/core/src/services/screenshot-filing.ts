@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, count, eq, inArray } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
 import {
   DECISION_IMAGE_MEDIA_TYPES,
@@ -15,7 +15,7 @@ import {
   type ScreenshotGuess,
   type ScreenshotKind,
 } from '@ficus/shared'
-import { assistantConversations, db } from '../db'
+import { assistantConversations, db, workStreams } from '../db'
 import { Agent } from '../entities/Agent'
 import { Image } from '../entities/Image'
 import { User } from '../entities/User'
@@ -44,6 +44,8 @@ export interface ScreenshotSquad {
   id: string
   name: string
   purpose: string | null
+  /** Active or queued work streams, so "add it to an existing work stream" is only offered where there are some. */
+  openWorkStreams?: number
 }
 
 function filingError(status: 400 | 403 | 404 | 409, message: string) {
@@ -75,8 +77,14 @@ export function buildScreenshotDecision(input: {
   squads: ScreenshotSquad[]
 }): DecisionRequest {
   const squads = input.squads.slice(0, MAX_SQUADS)
+  const streams = (squad: ScreenshotSquad) =>
+    squad.openWorkStreams === undefined
+      ? ''
+      : squad.openWorkStreams
+        ? ` (${squad.openWorkStreams} open work stream${squad.openWorkStreams === 1 ? '' : 's'})`
+        : ' (no open work streams)'
   const describe = (squad: ScreenshotSquad) =>
-    (squad.purpose?.trim() ? `${squad.name}: ${squad.purpose.trim()}` : squad.name).slice(0, 1000)
+    (squad.purpose?.trim() ? `${squad.name}: ${squad.purpose.trim()}` : squad.name).slice(0, 960) + streams(squad)
   return {
     state: {
       input: 'A screenshot the user dropped into Ficus to be filed with the right squad.',
@@ -125,6 +133,15 @@ export function readScreenshotGuess(
   if (!kind || !(kind.choice in SCREENSHOT_KINDS) || !action || !(action.choice in SCREENSHOT_ACTIONS)) return null
   const squadAnswer = chosen(answers.squad)
   const squad = squadAnswer ? squads.find((candidate) => squadOptionKey(candidate.id) === squadAnswer.choice) : null
+  // "Add it to an existing work stream" makes no sense without one: take the next likeliest action instead.
+  if (action.choice === 'existing_work_stream' && (!squad || squad.openWorkStreams === 0)) {
+    const probabilities = answers.action?.type === 'choice' ? answers.action.probabilities : {}
+    const next = Object.keys(SCREENSHOT_ACTIONS)
+      .filter((id) => id !== 'existing_work_stream')
+      .sort((a, b) => (probabilities[b] ?? 0) - (probabilities[a] ?? 0))[0]!
+    action.choice = next
+    action.probability = probabilities[next] ?? 0
+  }
   return {
     kind: {
       id: kind.choice as ScreenshotKind,
@@ -177,11 +194,31 @@ async function senderOf(userId: string) {
 }
 
 async function visibleSquads(identity: Identity): Promise<ScreenshotSquad[]> {
-  const rows = await listVisibleSquads(identity, 100)
-  return rows
+  const rows = (await listVisibleSquads(identity, 100))
     .filter((squad) => squad.status !== 'archived')
     .slice(0, MAX_SQUADS)
-    .map((squad) => ({ id: squad.id, name: squad.name, purpose: squad.purpose }))
+  const open = rows.length
+    ? await db
+        .select({ squadId: workStreams.squadId, open: count() })
+        .from(workStreams)
+        .where(
+          and(
+            inArray(
+              workStreams.squadId,
+              rows.map((squad) => squad.id)
+            ),
+            inArray(workStreams.status, ['active', 'queued'])
+          )
+        )
+        .groupBy(workStreams.squadId)
+    : []
+  const openBySquad = new Map(open.map((row) => [row.squadId, Number(row.open)]))
+  return rows.map((squad) => ({
+    id: squad.id,
+    name: squad.name,
+    purpose: squad.purpose,
+    openWorkStreams: openBySquad.get(squad.id) ?? 0,
+  }))
 }
 
 /**
