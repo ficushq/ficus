@@ -1,4 +1,5 @@
 import { deliveryInstructionsForRun } from '../services/workflows/completion-prompt'
+import { decisionStepWarnings, withWarnings } from '../services/workflows/decision-step-warnings'
 import { listWorkflowReviewers } from '../services/workflows/reviewers'
 import { outputDeliveryHistory } from '../services/integrations/outputs/runtime'
 import { listOpenWaits, toWaitJson } from '../services/work-streams/waits'
@@ -162,7 +163,8 @@ export const workflowsRouter = new Hono()
       const [squad] = await db.select({ id: squads.id }).from(squads).where(eq(squads.id, squadId))
       if (!squad) return c.json({ error: 'Squad not found' }, 404)
       // Preview only: no work stream, catalog record, or agent is created.
-      return c.json(await resolveStoredWorkflow(source))
+      const resolved = await resolveStoredWorkflow(source)
+      return c.json({ ...resolved, ...withWarnings(decisionStepWarnings(resolved.definition)) })
     }
   )
   .get(
@@ -183,7 +185,10 @@ export const workflowsRouter = new Hono()
     const preset = c.req.valid('json')
     if (!(await canAccessWorkflow(c.get('identity')!, 'workflows:create', preset.scope)))
       return c.json({ error: 'Forbidden' }, 403)
-    return c.json(serializeWorkflow(await createWorkflow(preset)), 201)
+    return c.json(
+      { ...serializeWorkflow(await createWorkflow(preset)), ...withWarnings(decisionStepWarnings(preset.definition)) },
+      201
+    )
   })
   .put(
     '/:id',
@@ -194,7 +199,10 @@ export const workflowsRouter = new Hono()
     zValidator('json', z.object({ revision: z.string().min(1).max(200), preset: workflowPresetSchema }).strict()),
     async (c) => {
       const { revision, preset } = c.req.valid('json')
-      return c.json(serializeWorkflow(await replaceWorkflow(c.req.param('id'), revision, preset)))
+      return c.json({
+        ...serializeWorkflow(await replaceWorkflow(c.req.param('id'), revision, preset)),
+        ...withWarnings(decisionStepWarnings(preset.definition)),
+      })
     }
   )
   .delete(

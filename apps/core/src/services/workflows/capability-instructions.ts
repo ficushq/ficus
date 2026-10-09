@@ -57,7 +57,7 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
     )
   lines.push(
     definition.routing.mode === 'adaptive'
-      ? 'Live revision: use action=revise, operations, reason, and active=keep. Live outcome changes require flow management permission; workers may revise permitted future work. Preserve existing steps, current attempts and their outcomes, participants, and delivery policy; do not increase limits. Other changes require the manager.'
+      ? 'Live revision: use action=revise, operations, reason, and active=keep. Live outcome changes require flow management permission; workers may revise permitted future work. Preserve existing steps, current attempts and their outcomes, participants, and delivery policy; do not increase limits. A new step may be a decision step (kind decision: a decision model routes on typed questions, no participant; see the setup-workflows skill), which cannot be a returnTo target. Other changes require the manager.'
       : 'Other flow changes: flow-management permission is required; ask the manager.'
   )
   const limits = [
