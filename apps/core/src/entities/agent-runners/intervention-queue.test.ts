@@ -76,7 +76,7 @@ describe('PendingInterventionQueue', () => {
     await completion
     expect(prepared).toEqual(['m1'])
     expect(recorded.steers[0]).toStartWith('Fix the crash')
-    expect(recorded.steers[0]).toContain('Routing hint (decision model): general work')
+    expect(recorded.steers[0]).toContain('Routing hint (decision model): not about one squad (80%)')
   })
 
   it('drains claimed messages, routing steer vs follow-up by deliveryMode', async () => {
