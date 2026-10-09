@@ -47,11 +47,10 @@ test('each squad option says how many work streams are open, so the model knows 
 
 test('"add it to an existing work stream" falls back to the next likeliest action when the squad has none', () => {
   const probabilities = { existing_work_stream: 0.8, new_work_stream: 0.15, ask_consultant: 0.04, just_save: 0.01 }
-  expect(readScreenshotGuess(answers(empty, probabilities), [busy, empty])?.action).toEqual({
-    id: 'new_work_stream',
-    label: 'start a new work stream',
-    probability: 0.15,
-  })
+  const fallback = readScreenshotGuess(answers(empty, probabilities), [busy, empty])?.action
+  expect(fallback).toMatchObject({ id: 'new_work_stream', label: 'start a new work stream' })
+  // Its share of the actions still possible: 0.15 / (0.15 + 0.04 + 0.01).
+  expect(fallback?.probability).toBeCloseTo(0.75)
   // With open work streams it stands.
   expect(readScreenshotGuess(answers(busy, probabilities), [busy, empty])?.action.id).toBe('existing_work_stream')
   // Other actions are untouched.

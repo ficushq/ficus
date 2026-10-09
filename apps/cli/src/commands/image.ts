@@ -54,7 +54,11 @@ export function registerImageCommands(program: Command) {
     .option('-o, --out <filepath>', 'Save to file')
     .action(async (id, options) => {
       try {
-        const response = await apiGetRaw(`/api/images/${id}`)
+        // Image bytes are served only from signed URLs; ask for one (this checks the caller may read it).
+        const { urls } = await apiPost<{ urls: Record<string, string> }>('/api/images/sign-urls', { ids: [id] })
+        const signed = urls[id]
+        if (!signed) throw new Error(`Image ${id} not found, or you cannot read it`)
+        const response = await apiGetRaw(signed)
         const contentType = response.headers.get('content-type') || 'unknown'
         const arrayBuffer = await response.arrayBuffer()
         const buffer = Buffer.from(arrayBuffer)
