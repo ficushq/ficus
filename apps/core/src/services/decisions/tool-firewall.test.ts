@@ -97,6 +97,22 @@ describe('the decision table', () => {
     expect(isHigh(verdict!)).toBe(true)
   })
 
+  test("the chosen option's probability wins over a provider's concentration-style confidence", () => {
+    // Jev reported 65% malicious with a 0.48 confidence; the 0.48 hid a flag-worthy answer.
+    const verdict = readAnswers({
+      instructs_agent: { type: 'yesno', probability: 0.34 },
+      intent: {
+        type: 'choice',
+        choice: 'malicious',
+        probabilities: { benign: 0.3, suspicious: 0.05, malicious: 0.65 },
+        confidence: 0.48,
+      },
+    })!
+    expect(verdict.intentConfidence).toBe(0.65)
+    expect(isFlagged(verdict)).toBe(true)
+    expect(isHigh(verdict)).toBe(false)
+  })
+
   test('refusals on both questions are no answer at all', () => {
     expect(readAnswers({ instructs_agent: { type: 'refusal' }, intent: { type: 'refusal' } })).toBeNull()
   })
