@@ -38,6 +38,7 @@ import {
 import type { WorkStreamStatus, WorkStreamWaitCreatedBy, WorkStreamPriority } from '@ficus/shared'
 import {
   WorkStream,
+  SquadArchivedError,
   WorkStreamEventAlreadyHandledError,
   WorkStreamNotReopenableError,
   WorkStreamOpenWaitsError,
@@ -832,6 +833,7 @@ export const workStreamsRouter = new Hono()
     if (!squad) {
       return c.json({ error: 'Squad not found' }, 404)
     }
+    if (squad.isArchived) return c.json({ error: 'Squad is archived' }, 410)
 
     if (input.workflow) {
       const { authorizeWorkflowSource } = await import('../services/workflows/access')
@@ -932,6 +934,7 @@ export const workStreamsRouter = new Hono()
         )
       }
       if (error instanceof ObservationError) return c.json({ error: error.message }, error.status)
+      if (error instanceof SquadArchivedError) return c.json({ error: error.message }, 410)
       if (error instanceof TrackedResourceError) return c.json({ error: error.message }, error.status)
       if (error instanceof WorktreeCleanupConflictError)
         return c.json({ error: error.message, code: 'worktree_cleanup_conflict' }, 409)
