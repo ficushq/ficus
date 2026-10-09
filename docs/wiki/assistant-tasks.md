@@ -93,8 +93,13 @@ per-message limit.
 Screenshot filing uses this: `POST /api/screenshots/file` (`{ imageId, note? }`, the user's own staged
 upload) asks one `screenshot-filing` decision (what it is, which visible squad, what to do) about a
 small JPEG copy of the image (at most 1024px and 180 KB, a GIF's first frame; see
-`DECISION_IMAGE_MAX_SIDE` in `packages/shared/src/decisions.ts`), then creates a new Assistant conversation whose first message carries the image, the guess with
-its probabilities, and the image ID to forward. With the feature off, or no decision model that reads
+`DECISION_IMAGE_MAX_SIDE` in `packages/shared/src/decisions.ts`). When the guessed squad has open
+(active or queued) work streams the user may read, a second decision asks which one it is about. The
+streams' titles and descriptions go in its `state` as data, and the options only point at them. A
+pick at 60% or more (`SCREENSHOT_WORK_STREAM_MIN_PROBABILITY`) becomes "add it to that work stream",
+and "none" rules out adding to one. Then it creates a new Assistant conversation whose first message
+carries the image, the guess with its probabilities (and the work stream ID, if one was picked), and
+the image ID to forward. With the feature off, or no decision model that reads
 images answering, the conversation is created without a guess. `POST /api/screenshots/correction`
 (`{ conversationId, squadId | null, clientId }`) posts a "Wrong squad?" correction into it.
 

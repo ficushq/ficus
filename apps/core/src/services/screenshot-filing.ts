@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
-import { and, count, eq, inArray } from 'drizzle-orm'
+import { and, count, desc, eq, inArray } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
 import {
   DECISION_IMAGE_MEDIA_TYPES,
   SCREENSHOT_ACTIONS,
   SCREENSHOT_KINDS,
+  SCREENSHOT_WORK_STREAM_MIN_PROBABILITY,
   screenshotGuessSummary,
   type DecisionAnswer,
   type DecisionRequest,
@@ -26,14 +27,16 @@ import { InvalidAttachmentError } from './attachments/agent-scope'
 import { ChatIdempotencyConflictError } from './chat/consultant-idempotency'
 import { decide as defaultDecide, isDecisionFeatureEnabled } from './decisions/service'
 import { listVisibleSquads } from './entity-search'
-import { resolveActingUser, type Identity } from './rbac'
+import { hasPermission, resolveActingUser, type Identity } from './rbac'
 import { createLogger } from '../lib/infra/logger'
 
 const log = createLogger('screenshot-filing')
 
 /** A choice question takes at most 64 options; one is "none". */
 const MAX_SQUADS = 63
+const MAX_WORK_STREAMS = 63
 const NO_SQUAD = 'none'
+const NO_WORK_STREAM = 'none'
 
 export interface ScreenshotFilingDeps {
   decide?: typeof defaultDecide
@@ -46,6 +49,13 @@ export interface ScreenshotSquad {
   purpose: string | null
   /** Active or queued work streams, so "add it to an existing work stream" is only offered where there are some. */
   openWorkStreams?: number
+}
+
+/** An open work stream in the guessed squad, offered by the second question. */
+export interface ScreenshotWorkStream {
+  id: string
+  title: string
+  description: string
 }
 
 function filingError(status: 400 | 403 | 404 | 409, message: string) {
@@ -118,23 +128,92 @@ export function buildScreenshotDecision(input: {
   }
 }
 
+/** A work stream's option key: its place in `state.workStreams`. */
+export function workStreamOptionKey(index: number): string {
+  return `w${index + 1}`
+}
+
+/**
+ * The second question, asked only when the guessed squad has open work streams: which of them the
+ * screenshot is about. Work stream titles and descriptions can come from anywhere (issue titles,
+ * agents), so they go in `state` as data; the options only point at them.
+ */
+export function buildScreenshotWorkStreamDecision(input: {
+  image: { mediaType: (typeof DECISION_IMAGE_MEDIA_TYPES)[number]; base64: string }
+  note?: string
+  squadName: string
+  workStreams: ScreenshotWorkStream[]
+}): DecisionRequest {
+  const streams = input.workStreams.slice(0, MAX_WORK_STREAMS)
+  return {
+    state: {
+      input: `A screenshot the user dropped into Ficus, filed with the squad ${JSON.stringify(input.squadName)}. workStreams lists that squad's open work streams.`,
+      ...(input.note ? { note: input.note } : {}),
+      workStreams: streams.map((stream, index) => ({
+        option: workStreamOptionKey(index),
+        title: stream.title,
+        description: stream.description.trim().slice(0, 400),
+      })),
+    },
+    images: [input.image],
+    questions: {
+      work_stream: {
+        type: 'choice',
+        instructions:
+          'Which work stream in workStreams the screenshot is about: pick one only when the screenshot is clearly about that work.',
+        options: {
+          ...Object.fromEntries(
+            streams.map((_, index) => [
+              workStreamOptionKey(index),
+              `The work stream with option ${workStreamOptionKey(index)} in workStreams.`,
+            ])
+          ),
+          [NO_WORK_STREAM]: 'None of them: it is not about work already under way.',
+        },
+      },
+    },
+  }
+}
+
 function chosen(answer: DecisionAnswer | undefined): { choice: string; probability: number } | null {
   if (answer?.type !== 'choice') return null
   return { choice: answer.choice, probability: answer.probabilities[answer.choice] ?? answer.confidence ?? 0 }
 }
 
-/** The guess in a decision's answers, or null when the kind or action was refused. */
+/**
+ * The guess in a decision's answers, or null when the kind or action was refused. `workStreams` is
+ * the second question's answer and the streams it was asked about, when it was asked.
+ */
 export function readScreenshotGuess(
   answers: Record<string, DecisionAnswer>,
-  squads: ScreenshotSquad[]
+  squads: ScreenshotSquad[],
+  workStreams?: { answer: DecisionAnswer | undefined; streams: ScreenshotWorkStream[] }
 ): ScreenshotGuess | null {
   const kind = chosen(answers.kind)
   const action = chosen(answers.action)
   if (!kind || !(kind.choice in SCREENSHOT_KINDS) || !action || !(action.choice in SCREENSHOT_ACTIONS)) return null
   const squadAnswer = chosen(answers.squad)
   const squad = squadAnswer ? squads.find((candidate) => squadOptionKey(candidate.id) === squadAnswer.choice) : null
-  // "Add it to an existing work stream" makes no sense without one: take the next likeliest action instead.
-  if (action.choice === 'existing_work_stream' && (!squad || squad.openWorkStreams === 0)) {
+  let workStream: ScreenshotGuess['workStream']
+  if (workStreams) {
+    const picked = chosen(workStreams.answer)
+    const stream = picked
+      ? workStreams.streams.find((_, index) => workStreamOptionKey(index) === picked.choice)
+      : undefined
+    workStream =
+      stream && picked && picked.probability >= SCREENSHOT_WORK_STREAM_MIN_PROBABILITY
+        ? { id: stream.id, title: stream.title, probability: picked.probability }
+        : null
+  }
+  if (workStream) {
+    // It names the work it belongs to: add it there.
+    action.choice = 'existing_work_stream'
+    action.probability = workStream.probability
+  } else if (
+    action.choice === 'existing_work_stream' &&
+    (!squad || squad.openWorkStreams === 0 || workStream === null)
+  ) {
+    // "Add it to an existing work stream" makes no sense without one that fits: take the next likeliest action.
     const probabilities = answers.action?.type === 'choice' ? answers.action.probabilities : {}
     const next = Object.keys(SCREENSHOT_ACTIONS)
       .filter((id) => id !== 'existing_work_stream')
@@ -154,6 +233,7 @@ export function readScreenshotGuess(
       label: SCREENSHOT_ACTIONS[action.choice as ScreenshotAction].label,
       probability: action.probability,
     },
+    ...(workStream !== undefined ? { workStream } : {}),
   }
 }
 
@@ -177,6 +257,11 @@ export function screenshotFilingMessage(input: { imageId: string; note?: string;
         : '- Squad: none stood out',
       `- Suggested action: ${guess.action.label} (${percent(guess.action.probability)})`
     )
+    if (guess.workStream)
+      lines.push(
+        `- Work stream: ${JSON.stringify(guess.workStream.title)}, work stream ID ${guess.workStream.id} (${percent(guess.workStream.probability)})`
+      )
+    else if (guess.workStream === null) lines.push("- Work stream: none of the squad's open ones stood out")
   } else {
     lines.push('Filed screenshot. Please look at it and file it in the right place.')
   }
@@ -221,9 +306,21 @@ async function visibleSquads(identity: Identity): Promise<ScreenshotSquad[]> {
   }))
 }
 
+/** The squad's open work streams, most recently active first, when the user may read them. */
+async function openWorkStreams(identity: Identity, squadId: string): Promise<ScreenshotWorkStream[]> {
+  if (!(await hasPermission(identity, 'workstreams:read', squadId))) return []
+  return db
+    .select({ id: workStreams.id, title: workStreams.title, description: workStreams.description })
+    .from(workStreams)
+    .where(and(eq(workStreams.squadId, squadId), inArray(workStreams.status, ['active', 'queued'])))
+    .orderBy(desc(workStreams.updatedAt))
+    .limit(MAX_WORK_STREAMS)
+}
+
 /**
  * File a dropped screenshot: guess what it is and where it belongs (when the feature is on and a
- * decision model that reads images answers), then start a new Assistant conversation for the user
+ * decision model that reads images answers; a second question picks the squad's open work stream
+ * when it has some), then start a new Assistant conversation for the user
  * with the image and the guess, so the Assistant files it with its normal tools.
  */
 export async function fileScreenshot(
@@ -283,7 +380,31 @@ export async function fileScreenshot(
         const outcome = await (deps.decide ?? defaultDecide)('screenshot-filing', request, {
           source: { kind: 'screenshot', userId: user.userId },
         })
-        if (outcome.ok) guess = readScreenshotGuess(outcome.result.answers, squads)
+        if (outcome.ok) {
+          guess = readScreenshotGuess(outcome.result.answers, squads)
+          const squad = guess && squads.find((candidate) => candidate.id === guess!.squad?.id)
+          const streams = squad?.openWorkStreams ? await openWorkStreams(user, squad.id) : []
+          if (streams.length) {
+            const second = await (deps.decide ?? defaultDecide)(
+              'screenshot-filing',
+              buildScreenshotWorkStreamDecision({
+                image: copy.image,
+                note: input.note,
+                squadName: squad!.name,
+                workStreams: streams,
+              }),
+              { source: { kind: 'screenshot', userId: user.userId } }
+            ).catch((error) => {
+              log.warn('Screenshot work stream decision failed', error)
+              return null
+            })
+            if (second?.ok)
+              guess = readScreenshotGuess(outcome.result.answers, squads, {
+                answer: second.result.answers.work_stream,
+                streams,
+              })
+          }
+        }
       } catch (error) {
         // Filing never depends on the guess.
         log.warn('Screenshot decision failed', error)
