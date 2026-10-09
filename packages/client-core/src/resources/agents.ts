@@ -216,6 +216,12 @@ export function agentsResource(t: Transport) {
         body: { draft },
         signal: options?.signal,
       }),
+    /**
+     * The user sent a draft in the other mode than the composer suggested. Kept as a candidate
+     * decision eval case only where saving corrections is turned on; a no-op otherwise.
+     */
+    deliveryCorrection: (agentId: string, draft: string, chosen: DeliveryMode): Promise<void> =>
+      t.request(`/agents/${agentId}/delivery-suggestion/correction`, { method: 'POST', body: { draft, chosen } }),
     /** @deprecated Use sendMessage(agentId, message, { deliveryMode: 'steer' }) instead. */
     steer: (agentId: string, message: string, imageIds?: string[]): Promise<{ success: boolean }> =>
       t.request(`/agents/${agentId}/steer`, { method: 'POST', body: { message, imageIds } }),

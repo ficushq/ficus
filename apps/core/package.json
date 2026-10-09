@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -n api,worker -c blue,magenta 'bun run dev:api' 'bun run dev:worker'",
+    "decisions:eval": "bun run src/scripts/decision-eval.ts",
     "dev:api": "bun run --env-file ../../.env --watch src/index.ts",
     "dev:worker": "bun run --env-file ../../.env --watch src/worker.ts",
     "build": "bun build src/index.ts src/worker.ts src/smoke-configured-extensions.ts src/box-control.ts src/machine-bootstrap.ts src/box-reprovision.ts src/system-token-control.ts --outdir dist --target bun --external=bun-pty --external=jsdom --external=@silvia-odwyer/photon-node --external=@google-cloud/text-to-speech --external=@aws-sdk/client-ses --external=@aws-sdk/client-s3 --external=playwright-core --external=playwright && bun build src/db/run-migrations.ts --outfile dist/migrate.js --target bun --external=bun-pty --external=playwright-core --external=playwright && bun build src/scripts/rebase-home.ts --outfile dist/rebase-home.js --target bun --external=bun-pty --external=playwright-core --external=playwright && bun run build:docs",

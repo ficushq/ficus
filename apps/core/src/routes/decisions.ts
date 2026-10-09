@@ -13,7 +13,16 @@ import { requirePermission } from '../middleware/require-permission'
 import { auditActor, type Identity } from '../services/rbac'
 import { getOpenAIServiceKey } from '../services/integrations/openai-services/settings'
 import { systemOneBase } from '../services/decisions/adapters'
-import { askProvider, decide, decisionFeatures, decisionSpend, DECISION_PROBE } from '../services/decisions/service'
+import { EvalCaptureUnavailableError, evalCaptureState, setEvalCapture } from '../services/decisions/evals/capture'
+import {
+  askProvider,
+  decide,
+  decisionFeatures,
+  decisionSpend,
+  recordProviderAnswer,
+  DECISION_PROBE,
+  type DecisionOutcome,
+} from '../services/decisions/service'
 import {
   addDecisionProvider,
   decisionProviderView,
@@ -48,7 +57,7 @@ const providerPatch = providerInput.omit({ kind: true }).extend({
   pricePerMillionInput: z.number().min(0).max(1000).nullable().optional(),
 })
 
-app.get('/', requirePermission('provider-auth:read'), (c) =>
+app.get('/', requirePermission('provider-auth:read'), async (c) =>
   c.json({
     providers: listDecisionProviders().map(decisionProviderView),
     routing: getDecisionRouting(),
@@ -56,8 +65,25 @@ app.get('/', requirePermission('provider-auth:read'), (c) =>
     purposes: DECISION_PURPOSES.map((id) => ({ id, ...DECISION_PURPOSE_INFO[id] })),
     features: decisionFeatures(),
     openAIServicesKey: Boolean(getOpenAIServiceKey()),
+    evalCapture: await evalCaptureState(),
   })
 )
+
+/**
+ * Save users' corrections of decisions as candidate eval cases (`bun run decisions:eval --inbox`).
+ * Off by default; refused on hosted instances, whose users' text is never kept for evals.
+ */
+app.put('/eval-capture', requirePermission('provider-auth:write'), async (c) => {
+  const parsed = z.object({ enabled: z.boolean() }).safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: 'Send {enabled: true|false}' }, 400)
+  try {
+    await setEvalCapture(parsed.data.enabled, auditActor(c.get('identity') as Identity))
+  } catch (error) {
+    if (error instanceof EvalCaptureUnavailableError) return c.json({ error: error.message }, 403)
+    throw error
+  }
+  return c.json(await evalCaptureState())
+})
 
 /** Check a provider answers a test question, then save it. */
 app.post('/providers', requirePermission('provider-auth:write'), async (c) => {
@@ -149,30 +175,36 @@ const tryInput = decisionRequestSchema.extend({
   /** Ask this provider directly, or else the purpose's providers in order (the default order without one). */
   providerId: z.string().optional(),
   purpose: z.enum(DECISION_PURPOSES).optional(),
+  /** Who is asking, for the decision log: Settings' try (default) or a decision eval run. */
+  source: z.enum(['settings-try', 'eval']).optional(),
 })
 
 /** Settings' "Try a decision": ask with real providers and show what came back. */
 app.post('/try', requirePermission('provider-auth:write'), async (c) => {
   const parsed = tryInput.safeParse(await c.req.json())
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid question' }, 400)
-  const { providerId, purpose, ...request } = parsed.data
+  const { providerId, purpose, source = 'settings-try', ...request } = parsed.data
   if (providerId) {
     const provider = getDecisionProvider(providerId)
     if (!provider) return c.json({ error: 'No such decision provider' }, 404)
+    const started = Date.now()
+    let outcome: DecisionOutcome
     try {
-      return c.json({
-        ok: true,
-        result: await askProvider(provider, request, { signal: AbortSignal.timeout(getDecisionRouting().timeoutMs) }),
+      const result = await askProvider(provider, request, {
+        signal: AbortSignal.timeout(source === 'eval' ? 30_000 : getDecisionRouting().timeoutMs),
       })
+      outcome = { ok: true, result }
     } catch (error) {
-      return c.json({
+      outcome = {
         ok: false,
         reason: 'unavailable',
         errors: [{ providerId, error: String(error instanceof Error ? error.message : error) }],
-      })
+      }
     }
+    recordProviderAnswer(purpose ?? 'default', provider, request, outcome, Date.now() - started, { kind: source })
+    return c.json(outcome)
   }
-  return c.json(await decide(purpose ?? 'default', request, { source: { kind: 'settings-try' } }))
+  return c.json(await decide(purpose ?? 'default', request, { source: { kind: source } }))
 })
 
 export default app

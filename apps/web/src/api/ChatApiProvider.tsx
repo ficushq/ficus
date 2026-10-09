@@ -6,6 +6,7 @@ import {
   getAgent,
   getDeliverySuggestion,
   listAgents,
+  reportDeliveryCorrection,
   resetAgent,
   stopAgent,
 } from './agents'
@@ -22,6 +23,7 @@ export const defaultChatApi = {
   resetAgent,
   stopAgent,
   getDeliverySuggestion,
+  reportDeliveryCorrection,
 }
 
 export type ChatApi = typeof defaultChatApi

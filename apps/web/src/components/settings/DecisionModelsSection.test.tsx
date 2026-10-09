@@ -234,6 +234,35 @@ describe('Decision models settings', () => {
     )
   })
 
+  test('saving corrections as eval cases is off by default, hidden on hosted instances, and turns on', async () => {
+    expect(render(settings())).not.toContain('Save corrections as eval cases')
+    expect(render(settings({ evalCapture: { available: false, enabled: false, pending: 0 } }))).not.toContain(
+      'Save corrections as eval cases'
+    )
+    expect(render(settings({ evalCapture: { available: true, enabled: false, pending: 0 } }), false)).not.toContain(
+      'Save corrections as eval cases'
+    )
+    expect(render(settings({ evalCapture: { available: true, enabled: true, pending: 3 } }))).toContain(
+      '3 waiting for review.'
+    )
+    await mount(
+      settings({ evalCapture: { available: true, enabled: false, pending: 0 } }),
+      (call) =>
+        call.method === 'PUT' && call.url.endsWith('/decisions/eval-capture')
+          ? Response.json({ available: true, enabled: true, pending: 0 })
+          : undefined,
+      async ({ calls, act, document }) => {
+        const box = () =>
+          [...document.querySelectorAll('label')]
+            .find((label) => label.textContent?.includes('Save corrections as eval cases'))!
+            .querySelector('input') as HTMLInputElement
+        expect(box().checked).toBe(false)
+        await act(() => fireEvent.click(box()))
+        expect(calls.find((call) => call.method === 'PUT')).toMatchObject({ body: { enabled: true } })
+      }
+    )
+  })
+
   test('the tool result firewall switch turns off, and back on to automatic', async () => {
     await mount(
       settings(),

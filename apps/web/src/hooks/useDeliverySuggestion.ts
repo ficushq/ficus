@@ -110,12 +110,28 @@ export function useDeliverySuggestion({
 
   const chooseMode = useCallback((mode: DeliveryMode) => setManualMode(mode), [])
 
+  // The pick the composer made for the draft as it stands, kept when the user overrides it.
+  const pickedRef = useStableRef(settledDraft === draft ? confidentSuggestion(data) : null)
+  /**
+   * The mode the user chose instead of the composer's suggestion for this text, or null when they
+   * kept it (or there was none). Read as the draft is sent, to report the correction.
+   */
+  const overrideFor = useCallback(
+    (text: string): DeliveryMode | null => {
+      const picked = pickedRef.current
+      if (!picked || manualMode === null || manualMode === picked.mode) return null
+      return normalizeDraft(text) === draft ? manualMode : null
+    },
+    [pickedRef, manualMode, draft]
+  )
+
   return {
     deliveryMode: manualMode ?? suggested?.mode ?? DEFAULT_MODE,
     /** Set when the shown mode is the composer's own pick (for the "Auto" indicator). */
     suggested: manualMode === null ? suggested : null,
     onDraftChange,
     chooseMode,
+    overrideFor,
     reset,
   }
 }

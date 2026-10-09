@@ -144,6 +144,22 @@ describe('useDeliverySuggestion', () => {
     expect(latest.suggested).toEqual({ mode: 'steer', now: true })
   })
 
+  test('choosing the other mode than the suggestion is reported as an override for that text', async () => {
+    const { type, pause, act } = await mount(async () => answer(0.1))
+    await type('book the offsite in lisbon')
+    await pause()
+    await until(() => latest.deliveryMode === 'follow-up')
+    // Kept the suggestion: no override.
+    expect(latest.overrideFor('book the offsite in lisbon')).toBeNull()
+    await act(() => latest.chooseMode('steer'))
+    expect(latest.overrideFor('book the offsite  in lisbon')).toBe('steer')
+    // Only for the text that was judged.
+    expect(latest.overrideFor('something else entirely')).toBeNull()
+    // Choosing the suggested mode again is not an override.
+    await act(() => latest.chooseMode('follow-up'))
+    expect(latest.overrideFor('book the offsite in lisbon')).toBeNull()
+  })
+
   test('a manual choice wins for the rest of the draft; clearing it lets suggestions apply again', async () => {
     const fetchSuggestion = mock<Fetch>(async () => answer(0.1))
     const { type, pause, act } = await mount(fetchSuggestion)

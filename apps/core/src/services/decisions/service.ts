@@ -219,6 +219,28 @@ export async function askProvider(
   }
 }
 
+/**
+ * Record a direct ask (Settings' try with a provider, a backend eval run) in the decision log, so
+ * its spend shows like any other decision's.
+ */
+export function recordProviderAnswer(
+  purpose: DecisionPurpose | 'default',
+  provider: Pick<StoredDecisionProvider, 'kind' | 'model' | 'pricePerMillionInput'>,
+  request: DecisionRequest,
+  outcome: DecisionOutcome,
+  latencyMs: number,
+  source: Record<string, string>
+) {
+  record(
+    purpose,
+    request,
+    outcome,
+    latencyMs,
+    { source },
+    outcome.ok ? decisionCost(provider, request, outcome.result) : undefined
+  )
+}
+
 /** One cheap question, to check a provider answers before it's saved. */
 export const DECISION_PROBE: DecisionRequest = {
   state: 'The sky is blue.',

@@ -201,6 +201,10 @@ export function getDeliverySuggestion(agentId: string, draft: string, signal?: A
   return client.agents.deliverySuggestion(agentId, draft, { signal })
 }
 
+export function reportDeliveryCorrection(agentId: string, draft: string, chosen: DeliveryMode) {
+  return client.agents.deliveryCorrection(agentId, draft, chosen)
+}
+
 export function sendAgentMessage(agentId: string, content: string, imageIds?: string[], deliveryMode?: DeliveryMode) {
   return client.agents.sendMessage(agentId, content, { imageIds, deliveryMode })
 }

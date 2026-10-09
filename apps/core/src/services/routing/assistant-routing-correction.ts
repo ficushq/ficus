@@ -19,6 +19,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { requireAssistantConversation } from '../assistant-task-requests'
 import type { Identity } from '../rbac'
 import { listRoutableSquads, type RoutingSquad } from './assistant-routing'
+import { captureRoutingCorrection } from './routing-eval-capture'
 
 function fail(status: 400 | 404 | 409, message: string) {
   return new HTTPException(status, { message, res: Response.json({ error: message }, { status }) })
@@ -89,6 +90,14 @@ export async function correctAssistantRouting(
     .where(eq(messages.id, row.id))
     .returning()
   if (saved) eventEmitter.emit('message.updated', messageEventData(mapMessage(saved)))
+  void captureRoutingCorrection({
+    identity: user,
+    agentId: conversation.agentId,
+    sentAt: row.createdAt,
+    text: row.content,
+    target,
+    source: 'routing-pill',
+  })
 
   const agent = await Agent.find(conversation.agentId)
   if (!agent) throw fail(404, 'Message not found')
