@@ -880,6 +880,22 @@ async function startup(): Promise<void> {
     task: runQuestionAttentionMaintenance,
   }).start()
 
+  // Archiving a squad cancels its open Assistant tasks in the same transaction. This sweep closes
+  // the ones that predate that (squads archived earlier) and any delegation that committed while
+  // its squad was being archived: one batch at startup plus a 60-second tick, quiescent when clean.
+  const { closeArchivedSquadAssistantTasks } = await import('./services/assistant-activity/squad-archive')
+  const runArchivedSquadTaskSweep = async () => {
+    const closed = await closeArchivedSquadAssistantTasks()
+    if (closed > 0) log.info(`Closed ${closed} Assistant task(s) left open in archived squads`)
+  }
+  await runArchivedSquadTaskSweep()
+  createPeriodicRunner({
+    name: 'archived-squad-assistant-tasks',
+    intervalMs: 60_000,
+    runImmediately: false,
+    task: runArchivedSquadTaskSweep,
+  }).start()
+
   // `POST /api/system/restart` runs in the api process, which cannot reach this
   // one (separate systemd/pm2 units, no coupling) — it asks us to restart over
   // the same transport. Run the graceful shutdown (requeue owned executions)
