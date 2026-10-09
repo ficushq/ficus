@@ -1040,7 +1040,7 @@ describe('AgentChat', () => {
     const { Providers } = makeProviders(mc.client, undefined, {
       getDeliverySuggestion: async (_id, draft) => {
         asked.push(draft)
-        return { suggestion: 'follow-up', probability: 0.1 }
+        return { suggestion: 'follow-up', related: 0.1, now: 0.2 }
       },
     })
     const { root } = dom.createRoot()
@@ -1066,7 +1066,7 @@ describe('AgentChat', () => {
     await dom.act(async () => _capturedOnDraftChange!('book the offsite in lisbon'))
     // Waits for the 400ms typing pause, then applies the confident answer.
     await waitFor(() => expect(_capturedDeliveryMode).toBe('follow-up'))
-    expect(_capturedSuggestedDelivery).toEqual({ mode: 'follow-up', related: false })
+    expect(_capturedSuggestedDelivery).toEqual({ mode: 'follow-up', now: false })
     expect(asked).toEqual(['book the offsite in lisbon'])
 
     await dom.act(async () => {

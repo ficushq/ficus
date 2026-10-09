@@ -1,13 +1,15 @@
 import { and, desc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm'
-import type { DecisionQuestions, DeliverySuggestion } from '@ficus/shared'
+import type { DecisionAnswer, DecisionQuestions, DeliverySuggestion } from '@ficus/shared'
 import { db, executions, messages, workStreams } from '../../db'
 import type { DecideOptions, DecisionOutcome } from '../decisions/service'
+import { isAcknowledgement } from '../routing/assistant-routing'
 
 /*
  * The composer's Interrupt / Follow-up suggestion. Agents handle queued work well, so the question
  * is not "stop or wait" but relevance: is the draft about the work the agent is doing right now?
- * Related messages interrupt (the agent folds them into its current plan, even "after that, also…");
- * unrelated ones would distract, so they follow up.
+ * Related messages interrupt (the agent folds them into its current plan, even "after that, also…"),
+ * and so do messages that need the agent now though they share no topic with the work (a status
+ * question, "stop"); separate work that can wait would distract, so it follows up.
  *
  * The API process can't see the worker's live stream, so the state is built from what the database
  * already holds, deterministically and with no model call of its own.
@@ -18,8 +20,12 @@ const BUSY_EXECUTION_STATUSES = ['queued', 'waiting-sandbox', 'running'] as cons
 
 /** Drafts shorter than this many words are too thin to judge. */
 export const DELIVERY_SUGGESTION_MIN_WORDS = 3
-/** `related` at or above this suggests Interrupt (steer); below, Follow up. */
-export const DELIVERY_STEER_THRESHOLD = 0.5
+/** Interrupt (steer) when either answer is at least this sure. */
+export const DELIVERY_STEER_AT_LEAST = 0.7
+/** Follow up only when the draft is this clearly unrelated… */
+export const DELIVERY_FOLLOW_UP_RELATED_AT_MOST = 0.3
+/** …and this clearly able to wait. Anything else suggests nothing and keeps the composer's mode. */
+export const DELIVERY_FOLLOW_UP_NOW_AT_MOST = 0.5
 export const DELIVERY_SUGGESTION_TIMEOUT_MS = 1500
 
 // Character budgets: about 3,200 characters, roughly 800 tokens, in all.
@@ -48,13 +54,29 @@ export type ComposerDeliveryState = {
   draft: string
 }
 
+const STATE_INTRO =
+  "The state describes an AI agent's current work: `asked` is what started it, `workStream` the work stream it is on, " +
+  '`recentTools` its latest tool calls and `lastSaid` what it last said. `draft` is a new message someone is writing to it while it works. '
+
+/**
+ * Two questions, asked together. `related` alone missed messages that share no topic with the work
+ * but still need the agent now: "how's it going?", "are you stuck?", "stop". `now` asks for that.
+ */
 export const COMPOSER_DELIVERY_QUESTIONS: DecisionQuestions = {
   related: {
     type: 'yesno',
     instructions:
-      "The state describes an AI agent's current work: `asked` is what started it, `workStream` the work stream it is on, " +
-      '`recentTools` its latest tool calls and `lastSaid` what it last said. `draft` is a new message someone is writing to it. ' +
+      STATE_INTRO +
       'The new message is about the work the agent is currently doing (same task, files, feature or goal), including follow-on steps of it.',
+  },
+  now: {
+    type: 'yesno',
+    instructions:
+      STATE_INTRO +
+      'The message should reach the agent now rather than wait until it finishes its current work: it is about that work ' +
+      '(same task, files, feature or goal, including follow-on steps), corrects or redirects it, tells it to stop, wait or pause, ' +
+      'or asks it something it should answer right away, such as how it is going, what it is doing or a question about its progress. ' +
+      'It should wait only when it is separate work that has nothing to do with the current work and asks nothing of the agent right now.',
   },
 }
 
@@ -225,6 +247,8 @@ export async function suggestDelivery(
   const none: DeliverySuggestion = { suggestion: null }
   if (!deps.isEnabled()) return none
   if (countWords(draft) < DELIVERY_SUGGESTION_MIN_WORDS) return none
+  // "ok, thanks", "sounds good": nothing to deliver one way or the other.
+  if (isAcknowledgement(draft)) return none
   // A waiting agent's next message answers it; there is no turn to interrupt.
   if (agent.status === 'waiting-input') return none
   const state = await buildComposerDeliveryState(agent.id, draft)
@@ -236,8 +260,29 @@ export async function suggestDelivery(
     { timeoutMs: DELIVERY_SUGGESTION_TIMEOUT_MS, source: { kind: 'composer', agentId: agent.id }, signal }
   )
   if (!outcome.ok) return none
-  const answer = outcome.result.answers.related
-  if (answer?.type !== 'yesno' || !Number.isFinite(answer.probability)) return none
-  const probability = Math.min(Math.max(answer.probability, 0), 1)
-  return { suggestion: probability >= DELIVERY_STEER_THRESHOLD ? 'steer' : 'follow-up', probability }
+  return deliverySuggestionFrom(outcome.result.answers)
+}
+
+const unit = (answer: DecisionAnswer | undefined) =>
+  answer?.type === 'yesno' && Number.isFinite(answer.probability)
+    ? Math.min(Math.max(answer.probability, 0), 1)
+    : undefined
+
+/**
+ * Interrupt when the draft is about the current work or should reach the agent now; Follow up only
+ * when it is clearly unrelated and can wait; otherwise nothing, so the composer keeps its mode.
+ */
+export function deliverySuggestionFrom(answers: Record<string, DecisionAnswer>): DeliverySuggestion {
+  const related = unit(answers.related)
+  const now = unit(answers.now)
+  if (related === undefined && now === undefined) return { suggestion: null }
+  const scores = { ...(related !== undefined ? { related } : {}), ...(now !== undefined ? { now } : {}) }
+  if (Math.max(related ?? 0, now ?? 0) >= DELIVERY_STEER_AT_LEAST) return { suggestion: 'steer', ...scores }
+  if (
+    related !== undefined &&
+    related <= DELIVERY_FOLLOW_UP_RELATED_AT_MOST &&
+    (now ?? 0) <= DELIVERY_FOLLOW_UP_NOW_AT_MOST
+  )
+    return { suggestion: 'follow-up', ...scores }
+  return { suggestion: null, ...scores }
 }

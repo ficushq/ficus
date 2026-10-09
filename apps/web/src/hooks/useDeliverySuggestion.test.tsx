@@ -84,9 +84,11 @@ async function until(check: () => boolean) {
   expect(check()).toBe(true)
 }
 
-const answer = (probability: number): DeliverySuggestion => ({
-  suggestion: probability >= 0.5 ? 'steer' : 'follow-up',
-  probability,
+/** What Core answers for a draft scored `related` (its rule lives in delivery-suggestion.ts). */
+const answer = (related: number): DeliverySuggestion => ({
+  suggestion: related >= 0.7 ? 'steer' : related <= 0.3 ? 'follow-up' : null,
+  related,
+  now: related,
 })
 
 describe('useDeliverySuggestion', () => {
@@ -124,7 +126,7 @@ describe('useDeliverySuggestion', () => {
     await type('book the offsite in lisbon')
     await pause()
     await until(() => latest.deliveryMode === 'follow-up')
-    expect(latest.suggested).toEqual({ mode: 'follow-up', related: false })
+    expect(latest.suggested).toEqual({ mode: 'follow-up', now: false })
 
     // 0.55 is neither sure enough to interrupt nor to follow up: nothing changes.
     await type('and maybe something else too')
@@ -139,7 +141,7 @@ describe('useDeliverySuggestion', () => {
     await type('also update the login tests')
     await pause()
     await until(() => latest.deliveryMode === 'steer')
-    expect(latest.suggested).toEqual({ mode: 'steer', related: true })
+    expect(latest.suggested).toEqual({ mode: 'steer', now: true })
   })
 
   test('a manual choice wins for the rest of the draft; clearing it lets suggestions apply again', async () => {
@@ -167,7 +169,7 @@ describe('useDeliverySuggestion', () => {
     await type('plan the team dinner next week')
     await pause()
     await until(() => latest.deliveryMode === 'follow-up')
-    expect(latest.suggested).toEqual({ mode: 'follow-up', related: false })
+    expect(latest.suggested).toEqual({ mode: 'follow-up', now: false })
   })
 
   test('sending resets to Interrupt for the next draft', async () => {
@@ -227,14 +229,13 @@ test('normalizeDraft collapses whitespace and caps the length', () => {
   expect(normalizeDraft('x'.repeat(5000))).toHaveLength(4000)
 })
 
-test('confidentSuggestion applies only at 0.7 and above or 0.3 and below', () => {
-  expect(confidentSuggestion({ suggestion: 'steer', probability: 0.7 })).toEqual({ mode: 'steer', related: true })
-  expect(confidentSuggestion({ suggestion: 'steer', probability: 0.69 })).toBeNull()
-  expect(confidentSuggestion({ suggestion: 'follow-up', probability: 0.31 })).toBeNull()
-  expect(confidentSuggestion({ suggestion: 'follow-up', probability: 0.3 })).toEqual({
+test("confidentSuggestion takes Core's pick; no pick keeps the current mode", () => {
+  expect(confidentSuggestion({ suggestion: 'steer', related: 0.37, now: 0.83 })).toEqual({ mode: 'steer', now: true })
+  expect(confidentSuggestion({ suggestion: 'follow-up', related: 0.1, now: 0.2 })).toEqual({
     mode: 'follow-up',
-    related: false,
+    now: false,
   })
+  expect(confidentSuggestion({ suggestion: null, related: 0.5, now: 0.5 })).toBeNull()
   expect(confidentSuggestion({ suggestion: null })).toBeNull()
   expect(confidentSuggestion(undefined)).toBeNull()
 })

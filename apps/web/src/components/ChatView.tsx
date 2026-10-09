@@ -111,7 +111,7 @@ interface ChatViewProps {
   deliveryMode?: DeliveryMode
   onDeliveryModeChange?: (m: DeliveryMode) => void
   /** Set when the composer picked `deliveryMode` itself: shows the "Auto" indicator and why. */
-  suggestedDelivery?: { related: boolean } | null
+  suggestedDelivery?: { now: boolean } | null
   /** Every change to the draft text (typing, voice, attachments, clearing after a send). */
   onDraftChange?: (draft: string) => void
   // pagination
@@ -1461,7 +1461,9 @@ export function ChatView({
       ? 'Send after the agent finishes this turn'
       : 'Send now: the agent reads it at its next step'
   const suggestionReason = suggestedDelivery
-    ? `Suggested because this looks ${suggestedDelivery.related ? 'related' : 'unrelated'} to what the agent is doing`
+    ? suggestedDelivery.now
+      ? 'Suggested because this should reach the agent now'
+      : 'Suggested because this looks like separate work that can wait'
     : null
 
   const handleTranscription = useCallback(

@@ -29,10 +29,10 @@ const decide: DecideFn = async (purpose, input, options) => {
   calls.push({ purpose, input, options })
   return outcome
 }
-const answered = (related: DecisionAnswer): DecisionOutcome => ({
+const answered = (related: DecisionAnswer, now?: DecisionAnswer): DecisionOutcome => ({
   ok: true,
   result: {
-    answers: { related },
+    answers: { related, ...(now ? { now } : {}) },
     providerId: 'fake',
     model: 'fake-model',
     latencyMs: 3,
@@ -233,22 +233,50 @@ describe('POST /api/agents/:id/delivery-suggestion', () => {
     expect(state.draft.endsWith('…')).toBe(true)
   })
 
+  const yes = (probability: number): DecisionAnswer => ({ type: 'yesno', probability })
+
   test('related work suggests Interrupt', async () => {
-    outcome = answered({ type: 'yesno', probability: 0.82 })
-    expect(await (await ask(busy.id, DRAFT)).json()).toEqual({ suggestion: 'steer', probability: 0.82 })
+    outcome = answered(yes(0.82), yes(0.6))
+    expect(await (await ask(busy.id, DRAFT)).json()).toEqual({ suggestion: 'steer', related: 0.82, now: 0.6 })
   })
 
-  test('unrelated work suggests Follow up', async () => {
-    outcome = answered({ type: 'yesno', probability: 0.12 })
-    expect(await (await ask(busy.id, 'Unrelated: book the team offsite in Lisbon')).json()).toEqual({
-      suggestion: 'follow-up',
-      probability: 0.12,
+  test('a message that needs the agent now interrupts though it shares no topic with the work', async () => {
+    // "how's it going" is not about the task, but it asks for an answer now.
+    outcome = answered(yes(0.37), yes(0.83))
+    expect(await (await ask(busy.id, "how's it going")).json()).toEqual({
+      suggestion: 'steer',
+      related: 0.37,
+      now: 0.83,
     })
   })
 
-  test('the 0.5 boundary interrupts', async () => {
-    outcome = answered({ type: 'yesno', probability: 0.5 })
-    expect(await (await ask(busy.id, DRAFT)).json()).toEqual({ suggestion: 'steer', probability: 0.5 })
+  test('separate work that can wait suggests Follow up', async () => {
+    outcome = answered(yes(0.12), yes(0.3))
+    expect(await (await ask(busy.id, 'Unrelated: book the team offsite in Lisbon')).json()).toEqual({
+      suggestion: 'follow-up',
+      related: 0.12,
+      now: 0.3,
+    })
+  })
+
+  test('unsure either way suggests nothing, so the composer keeps its mode', async () => {
+    for (const [related, now] of [
+      [0.5, 0.5],
+      [0.1, 0.6],
+      [0.45, 0.2],
+    ] as const) {
+      outcome = answered(yes(related), yes(now))
+      expect(await (await ask(busy.id, DRAFT)).json()).toEqual({ suggestion: null, related, now })
+    }
+  })
+
+  test('an acknowledgement gets no suggestion and no model call', async () => {
+    expect(await (await ask(busy.id, 'ok sounds good thanks')).json()).toEqual({ suggestion: null })
+    expect(calls).toHaveLength(0)
+  })
+
+  test('asks both questions in one call', () => {
+    expect(Object.keys(COMPOSER_DELIVERY_QUESTIONS)).toEqual(['related', 'now'])
   })
 
   test('no answer, a refusal or a missing question is no suggestion', async () => {

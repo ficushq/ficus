@@ -141,7 +141,14 @@ export const DELIVERY_SUGGESTION_MAX_DRAFT_LENGTH = 4000
  * draft is related. Null when there is nothing to suggest (idle agent, feature off, short draft,
  * or no decision model answered).
  */
-export type DeliverySuggestion = { suggestion: null } | { suggestion: DeliveryMode; probability: number }
+/**
+ * The composer's Interrupt / Follow up suggestion. `suggestion` is set only when the decision model is
+ * sure enough either way; `related` (about the agent's current work) and `now` (should reach the agent
+ * now rather than wait) are its answers, 0 to 1, when it answered.
+ */
+export type DeliverySuggestion =
+  | { suggestion: null; related?: number; now?: number }
+  | { suggestion: DeliveryMode; related?: number; now?: number }
 
 export type MonitorMessageKind = 'lines' | 'exited' | 'canceled' | 'timed-out' | 'overload' | 'failed'
 
