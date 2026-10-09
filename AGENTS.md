@@ -159,7 +159,7 @@ Any change that asks a decision model, whether a new `DECISION_PURPOSES` entry, 
 - **Saving users' corrections** as candidate cases is opt-in: Settings → Decision Providers → For developers. It is off by default and refused on hosted instances, because it keeps what people typed.
   - When a feature has a user correction (an override, a "wrong guess" control, a pick that replaces the model's), call `captureCorrection` from that path with the eval's name and the user's choice in the eval's outcome terms.
   - Review with `bun run decisions:eval --inbox`, then `--accept <id>` or `--dismiss <id>`. Accepted cases go to a gitignored `*.decision-cases.local.json`. `--shared` writes the committed `*.decision-cases.json` instead: check those cases hold nothing private first.
-- **Live runs in GitHub** use the manual "Decision evals" workflow, which needs the `FICUS_EVAL_*` repository secrets.
+- **CI runs only the offline replay**, never live providers: run evals live yourself, then record and commit the snapshots.
 
 ## Monorepo Structure
 

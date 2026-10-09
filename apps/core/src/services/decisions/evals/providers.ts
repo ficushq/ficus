@@ -57,7 +57,7 @@ export async function localProviders(): Promise<EvalProvider[]> {
 }
 
 /**
- * Providers from environment variables, for CI and machines without an instance:
+ * Providers from environment variables, for machines without an instance:
  * `FICUS_EVAL_<KIND>_API_KEY` (JEV, OPENAI, CLOUDFLARE), `FICUS_EVAL_CLOUDFLARE_ACCOUNT_ID`,
  * `FICUS_EVAL_SYSTEMONE_URL`, and optionally `FICUS_EVAL_<KIND>_MODEL`.
  */
