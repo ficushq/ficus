@@ -1,0 +1,2 @@
+ALTER TABLE "images" ADD COLUMN "forwarded_from_image_id" uuid;--> statement-breakpoint
+ALTER TABLE "images" ADD CONSTRAINT "images_forwarded_from_image_id_images_id_fk" FOREIGN KEY ("forwarded_from_image_id") REFERENCES "public"."images"("id") ON DELETE set null ON UPDATE no action;

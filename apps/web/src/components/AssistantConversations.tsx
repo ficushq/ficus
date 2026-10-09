@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import type { Agent } from '@ficus/shared'
 import { getAgentPurpose, getAgentName } from '../lib/agentDisplay'
-import { Presence } from './Presence'
+import { Panel, usePopover } from './popover'
 import { ChevronDownIcon, PlusIcon } from './icons'
 
 export function assistantConversationTitle(agent: Agent): string {
@@ -56,7 +56,7 @@ export function AssistantConversationList({
             }}
             aria-current={selectedId === agent.id ? 'true' : undefined}
             className={clsx(
-              'ficus-button flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-surface-secondary',
+              'ficus-button ficus-button-ghost flex w-full items-center gap-2.5 px-3 py-2.5 text-sm',
               selectedId === agent.id && 'bg-accent/10'
             )}
           >
@@ -102,49 +102,27 @@ export function AssistantConversationSwitcher({
   canCreate: boolean
   openRequest?: number
 }) {
-  const [open, setOpen] = useState(false)
+  const popover = usePopover({ kind: 'dialog', id: 'assistant-conversations' })
+  const { setOpen } = popover
+  const [filter, setFilter] = useState('')
   useEffect(() => {
     if (openRequest) {
       setOpen(true)
       setFilter('')
     }
-  }, [openRequest])
-  const [filter, setFilter] = useState('')
-  const container = useRef<HTMLDivElement>(null)
-  const trigger = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (!open) return
-    container.current?.querySelector('input')?.focus()
-    const dismiss = (event: PointerEvent) => {
-      if (event.target instanceof Node && !container.current?.contains(event.target)) setOpen(false)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        setOpen(false)
-        trigger.current?.focus()
-      }
-    }
-    document.addEventListener('pointerdown', dismiss)
-    document.addEventListener('keydown', escape, true)
-    return () => {
-      document.removeEventListener('pointerdown', dismiss)
-      document.removeEventListener('keydown', escape, true)
-    }
-  }, [open])
+  }, [openRequest, setOpen])
+  const row = useRef<HTMLDivElement>(null)
   const selected = agents.find((agent) => agent.id === selectedId)
   const filtered = agents.filter((agent) =>
     assistantConversationTitle(agent).toLowerCase().includes(filter.trim().toLowerCase())
   )
   return (
-    <div ref={container} className="relative w-full min-w-0 px-3 pb-3 pt-2">
-      <div className="flex items-center gap-2">
+    <div className="relative w-full min-w-0 px-3 pb-3 pt-2">
+      <div ref={row} className="flex items-center gap-2">
         <button
-          ref={trigger}
-          aria-expanded={open}
-          aria-controls="assistant-conversations"
-          onClick={() => setOpen(!open)}
-          className="ficus-button flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-primary hover:bg-surface-secondary"
+          {...popover.triggerProps}
+          onClick={popover.toggle}
+          className="ficus-button ficus-button-ghost flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-primary"
           title="Switch conversation"
         >
           <span className="truncate">{selected ? assistantConversationTitle(selected) : 'New conversation'}</span>
@@ -158,16 +136,22 @@ export function AssistantConversationSwitcher({
             setOpen(false)
             onNew()
           }}
-          className="ficus-button flex items-center gap-1 text-sm text-accent-light px-2 py-2 shrink-0 disabled:opacity-40"
+          className="ficus-button ficus-button-ghost flex items-center gap-1 text-sm text-accent-light px-2 py-2 shrink-0 disabled:opacity-40"
         >
           <PlusIcon className="w-4 h-4" />
           <span className="hidden sm:inline">New chat</span>
         </button>
       </div>
-      <Presence
-        open={open}
-        id="assistant-conversations"
-        className="absolute top-full left-3 right-3 z-20 ficus-glass shadow-theme-lg rounded-xl p-2"
+      {/* As wide as the header row, hanging just below the header. */}
+      <Panel
+        {...popover.popoverProps}
+        label="Assistant conversations"
+        anchor={row}
+        width="anchor"
+        align="start"
+        gap={12}
+        initialFocus={(panel) => panel.querySelector('input')}
+        className="ficus-glass shadow-theme-lg rounded-xl p-2"
       >
         <input
           aria-label="Search assistant conversations"
@@ -187,7 +171,7 @@ export function AssistantConversationSwitcher({
           />
           {!filtered.length && <p className="p-3 text-sm text-muted">No matching conversations.</p>}
         </div>
-      </Presence>
+      </Panel>
     </div>
   )
 }

@@ -59,14 +59,14 @@ export function SpawnAgentModal({ squadId, onClose, onSpawned }: SpawnAgentModal
               <button
                 type="button"
                 onClick={onClose}
-                className="ficus-button rounded-md border border-th-border px-3 py-1.5 text-sm font-medium text-secondary"
+                className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-sm font-medium"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 disabled
-                className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent opacity-50"
+                className="ficus-button ficus-button-primary rounded-md px-3 py-1.5 text-sm font-medium opacity-50"
               >
                 Spawn
               </button>
@@ -107,14 +107,14 @@ export function SpawnAgentModal({ squadId, onClose, onSpawned }: SpawnAgentModal
             <div className="flex justify-end gap-2">
               <button
                 onClick={onClose}
-                className="ficus-button px-3 py-1.5 text-sm font-medium text-secondary border border-th-border rounded-md hover:bg-surface-hover transition-colors"
+                className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSpawn}
                 disabled={!selectedTypeId || spawnMutation.isPending}
-                className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+                className="ficus-button ficus-button-primary px-3 py-1.5 text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
               >
                 {spawnMutation.isPending && <SpinnerIcon className="w-4 h-4 animate-spin" />}
                 Spawn

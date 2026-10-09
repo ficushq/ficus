@@ -20,7 +20,7 @@ export function ChatChannelSetup() {
       ) : catalog.isPending ? (
         <p className="text-sm text-muted">Loading chat integrations…</p>
       ) : catalog.isError ? (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Unable to load chat integrations.
         </p>
       ) : (

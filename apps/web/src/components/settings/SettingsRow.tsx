@@ -3,9 +3,12 @@ import clsx from 'clsx'
 
 /** Section heading classes shared with Notifications' and App's settings sections. */
 export const SETTINGS_HEADING = 'text-base font-medium text-primary mb-4'
-/** Row action button sizing, matching the Notifications page (44px touch target on phones). */
-export const SETTINGS_BUTTON =
-  'ficus-button px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50'
+/**
+ * Row action button sizing, matching the Notifications page (44px touch target on phones). Sizing only:
+ * pair it with `ficus-button` and one variant, e.g. `clsx('ficus-button ficus-button-primary', SETTINGS_BUTTON_SIZE)`.
+ */
+export const SETTINGS_BUTTON_SIZE =
+  'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50'
 export const QUIET_LINK = 'text-sm text-accent-light hover:underline'
 
 /**
@@ -89,7 +92,7 @@ export function CopyButton({ value, label = 'Copy' }: { value: string; label?: s
     )
   }
   return (
-    <button type="button" onClick={copy} className={clsx(SETTINGS_BUTTON, 'ficus-button-secondary')}>
+    <button type="button" onClick={copy} className={clsx('ficus-button ficus-button-secondary', SETTINGS_BUTTON_SIZE)}>
       {state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : label}
     </button>
   )

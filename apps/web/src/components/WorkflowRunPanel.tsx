@@ -5,9 +5,18 @@ import { WorkStreamReviewers } from './WorkStreamReviewers'
 import { WorkflowGraph } from './WorkflowGraph'
 import { useId, useState, type ComponentProps } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { WorkStream, WorkflowCommand, WorkflowSource } from '@ficus/shared'
+import type {
+  WorkStream,
+  WorkflowAttempt,
+  WorkflowCommand,
+  WorkflowDecisionRecord,
+  WorkflowRun,
+  WorkflowSource,
+} from '@ficus/shared'
 import {
   activeWorkflowAttempts,
+  describeWorkflowDecision,
+  effectiveWorkflowStep,
   formatWorkflowUsage,
   workflowRevisionOperations,
   workflowDefinitionSchema,
@@ -266,6 +275,11 @@ function WorkflowRunPanelContent({
                         </div>
                       )}
                       {entry.evidence && <p className="text-secondary whitespace-pre-wrap">{entry.evidence}</p>}
+                      {!entry.evidence && entry.decision && (
+                        <p className="text-secondary whitespace-pre-wrap">
+                          {describeAttemptDecision(run.state, entry, entry.decision)}
+                        </p>
+                      )}
                       {entry.feedback && <p className="text-secondary whitespace-pre-wrap">{entry.feedback}</p>}
                     </li>
                   ))}
@@ -287,7 +301,7 @@ function WorkflowRunPanelContent({
                         {!editing ? (
                           <button
                             type="button"
-                            className="ficus-button px-3 py-2 text-sm text-accent"
+                            className="ficus-button ficus-button-secondary px-3 py-2 text-sm"
                             onClick={() => {
                               setBase({ ...run, state: { ...run.state, activeAttemptId: attempt?.id ?? null } })
                               setDraft({ kind: 'inline', definition: run.state.definition })
@@ -314,7 +328,7 @@ function WorkflowRunPanelContent({
                             <div className="flex gap-3">
                               <button
                                 type="button"
-                                className="ficus-button px-3 py-2 text-sm text-accent"
+                                className="ficus-button ficus-button-primary px-3 py-2 text-sm"
                                 disabled={
                                   advance.isPending ||
                                   !reason.trim() ||
@@ -327,7 +341,7 @@ function WorkflowRunPanelContent({
                               </button>
                               <button
                                 type="button"
-                                className="ficus-button px-3 py-2 text-sm text-secondary"
+                                className="ficus-button ficus-button-secondary px-3 py-2 text-sm"
                                 onClick={() => setEditing(false)}
                               >
                                 Cancel
@@ -353,7 +367,7 @@ function WorkflowRunPanelContent({
                           />
                           <button
                             type="button"
-                            className="ficus-button px-3 py-2 text-sm text-accent"
+                            className="ficus-button ficus-button-primary px-3 py-2 text-sm"
                             disabled={!presetId || save.isPending}
                             onClick={() => save.mutate()}
                           >
@@ -381,4 +395,10 @@ function WorkflowRunPanelContent({
 // Each detail identity owns its disclosure state; query refreshes keep it intact.
 export function WorkflowRunPanel(props: ComponentProps<typeof WorkflowRunPanelContent>) {
   return <WorkflowRunPanelContent key={props.stream.id} {...props} />
+}
+
+/** A decision attempt still waiting for a person has no recorded result yet; say why. */
+function describeAttemptDecision(state: WorkflowRun, attempt: WorkflowAttempt, decision: WorkflowDecisionRecord) {
+  const step = effectiveWorkflowStep(state, attempt)
+  return step.kind === 'decision' ? describeWorkflowDecision(step, decision) : null
 }

@@ -35,6 +35,86 @@ visible but cannot change status; a terminal status is never reopened by a later
 helpers never imply completion; a missing or terminated helper on an unfinished task is shown as
 `unavailable` without rewriting its status.
 
+## Choosing a squad
+
+When a decision model is set up and **Assistant squad routing** is on (Settings → Decision
+Providers → Features), Core may ask one decision before the Assistant reads a user chat message.
+It is not asked at all (no call, no cost) for a short acknowledgement ("ok", "thanks!", "sounds
+good", "👍": at most four words, all from a small acknowledgement vocabulary). A reply to the
+Assistant's own question is still asked about: the `kind` question, which sees the Assistant's
+latest reply, decides whether it is a new request or conversation.
+
+The one call asks two questions:
+
+- `kind`: `new_request` (asks for work not already under way, even as a reply to the Assistant,
+  including redoing earlier work somewhere else), `follow_up` (about work or a request already in
+  this conversation), or `conversation` (a confirmation or thanks, answering the Assistant's
+  question or brainstorming with it without asking for new work, or a question to the Assistant
+  itself).
+- `scope`: `instance` (Ficus itself: settings, admin, the instance), `general` (not tied to one
+  squad's project), or one `squad_<short id>` option per active squad the user can read,
+  described by the squad's name and purpose. Above 30 squads, the purpose heuristic from the
+  squad suggester keeps the likeliest.
+
+The user's message goes only in the decision's state, with the user's last four chat messages and
+the Assistant's latest reply (300 characters each). The question waits at most 1.5 seconds; no
+answer means no hint.
+
+- A confident `follow_up` (at least 60%) carries the conversation's latest routing (the newest
+  message with a hint, or the user's correction of it) to the model, unsaved and with no chip.
+- Otherwise a scope at least 60% confident, whatever the kind, is saved on the message
+  (`metadata.assistantRouting`) and added to the model's copy of it as a routing hint. The
+  conversation shows it as a chip under the message ("Chlea", "Not about a squad"). A "general"
+  hint shows no chip, and chips show no confidence.
+- Anything less confident gets nothing.
+
+While the user writes, the composer asks the same decision about the draft
+(`POST /api/assistant/:conversationId/routing/preview`, `{ draft }`). It asks after an 800ms pause
+in typing, for drafts of three words or more, with the conversation so far as context. A confident
+squad or "Ficus itself" shows as a pill by the composer, where the user can pick another squad
+before sending. The message is sent with `assistantRouting` (`AssistantRoutingSend`): the preview's
+pick if it was for exactly the sent text, and the user's pick as its correction. Core checks both
+against the squads the sender can see, and the turn then reads that routing without asking again.
+A message sent before the preview answers is routed by the turn as usual. Page editors are never
+routed.
+
+On the user's latest message, choosing another squad, or No squad, from the chip
+(`POST /api/assistant/:conversationId/routing`) saves the correction on the message. It also sends
+the Assistant a short system message that carries it and quotes the start of the message. Older
+messages can't be corrected in place (409): nothing ties a message to the tasks it led to. Their
+chip instead puts a request quoting the message in the composer ("Please move "…" to Billing."),
+for the user to edit and send. The Assistant's `suggest_squad` tool asks the scope question for
+any phrasing, and falls back to the purpose heuristic without a decision model.
+
+## Forwarding images
+
+The Assistant sees the images the user sent it as ordinary image input. `list_conversation_images`
+returns their IDs (images bound to the conversation's own agent, with the message each came with),
+and `delegate_task` and `message_agent` take up to 10 of them as `imageIds`. Each forwarded image is
+copied: a new `images` row and blob bound to the recipient (its squad, when it has one), uploaded by
+the same user, with `forwarded_from_image_id` naming the original. The copy rows are inserted in the
+same transaction as the inbox message, whose `metadata.imageIds` lists the copies, so ordinary inbox
+delivery sends them as image blocks. A replayed request adopts its first delivery's copies.
+
+This leaves the attachment scope rule alone: a squad consultant has no parent link to the Assistant
+and still cannot read the Assistant's images directly. Only images this conversation received can be
+forwarded (not another user's, nor another conversation's), the recipient must be one the request
+could reach anyway, its model must accept images, and the images together stay within the 10 MB
+per-message limit.
+
+Screenshot filing uses this: `POST /api/screenshots/file` (`{ imageId, note? }`, the user's own staged
+upload) asks one `screenshot-filing` decision (what it is, which visible squad, what to do) about a
+small JPEG copy of the image (at most 1024px and 180 KB, a GIF's first frame; see
+`DECISION_IMAGE_MAX_SIDE` in `packages/shared/src/decisions.ts`). When the guessed squad has open
+(active or queued) work streams the user may read, a second decision asks which one it is about. The
+streams' titles and descriptions go in its `state` as data, and the options only point at them. A
+pick at 60% or more (`SCREENSHOT_WORK_STREAM_MIN_PROBABILITY`) becomes "add it to that work stream",
+and "none" rules out adding to one. Then it creates a new Assistant conversation whose first message
+carries the image, the guess with its probabilities (and the work stream ID, if one was picked), and
+the image ID to forward. With the feature off, or no decision model that reads
+images answering, the conversation is created without a guess. `POST /api/screenshots/correction`
+(`{ conversationId, squadId | null, clientId }`) posts a "Wrong squad?" correction into it.
+
 ## Continuing, recovering, and cancelling
 
 The owner can use `POST /api/assistant/:conversationId/tasks/:taskId/commands` with a durable

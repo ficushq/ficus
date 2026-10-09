@@ -15,6 +15,7 @@ function makeQueue(opts: {
   steerError?: Error
   /** When set, steerError only throws for this content (later rows deliver). */
   steerErrorContent?: string
+  prepare?: PendingInterventionQueueDeps['prepare']
 }) {
   const recorded: Recorded = { steers: [], followUps: [], resets: [] }
   const pending = opts.pending ?? []
@@ -48,11 +49,36 @@ function makeQueue(opts: {
     isActive: opts.active ?? (() => true),
     loadImages: async () => [],
     markImagesUsed: async () => 0,
+    ...(opts.prepare ? { prepare: opts.prepare } : {}),
   }
   return { queue: new PendingInterventionQueue(deps), recorded }
 }
 
 describe('PendingInterventionQueue', () => {
+  it('lets the runner add routing context to a claimed message before the model reads it', async () => {
+    let finish!: () => void
+    const completion = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const prepared: string[] = []
+    const { queue, recorded } = makeQueue({
+      pending: [{ id: 'm1', content: 'Fix the crash', metadata: { source: 'user_chat' } }],
+      onDelivered: () => finish(),
+      prepare: async (message) => {
+        prepared.push(message.id)
+        return {
+          ...message,
+          metadata: { ...message.metadata, assistantRouting: { scope: 'general', confidence: 0.8 } },
+        }
+      },
+    })
+    queue.schedule()
+    await completion
+    expect(prepared).toEqual(['m1'])
+    expect(recorded.steers[0]).toStartWith('Fix the crash')
+    expect(recorded.steers[0]).toContain('Routing hint (decision model): not about one squad (80%)')
+  })
+
   it('drains claimed messages, routing steer vs follow-up by deliveryMode', async () => {
     const { queue, recorded } = makeQueue({
       pending: [

@@ -2,10 +2,20 @@ import { readSquadFile } from '../services/squad/read-file'
 import { createHash } from 'node:crypto'
 import { Type, type TSchema, type Static } from '@sinclair/typebox'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
-import { and, desc, eq, inArray, isNull, lt, notInArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, workStreamRef } from '@ficus/shared'
-import { agents, assistantEntries, assistantTasks, assistantUpdates, db, inbox, workStreams } from '../db'
+import {
+  agents,
+  assistantEntries,
+  assistantTasks,
+  assistantUpdates,
+  db,
+  images,
+  inbox,
+  messages,
+  workStreams,
+} from '../db'
 import { Agent } from '../entities/Agent'
 import { InboxMessage } from '../entities/InboxMessage'
 import { WorkStream } from '../entities/WorkStream'
@@ -16,6 +26,12 @@ import {
   changeAssistantTask,
 } from '../services/assistant-task-requests'
 import { listVisibleSquads, searchEntities } from '../services/entity-search'
+import { suggestAssistantSquad, type AssistantRoutingDeps } from '../services/routing/assistant-routing'
+import {
+  MAX_FORWARDED_IMAGES,
+  prepareForwardedImages,
+  withForwardedImages,
+} from '../services/attachments/forward-images'
 import { getAgentQuestion, answerAgentQuestion, dismissAgentQuestion } from '../services/agents/questions'
 import { canAnswerAgentQuestion } from '../services/agents/question-authorization'
 import { listPendingActionsForIdentity } from '../services/agents/actions'
@@ -26,6 +42,14 @@ import { computeDerivedStates, type DerivedStreamInfo } from '../services/work-s
 const uuid = Type.String({ format: 'uuid' })
 const request = Type.String({ minLength: 1, maxLength: 20000 })
 const limit = Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
+const imageIds = Type.Optional(
+  Type.Array(uuid, {
+    minItems: 1,
+    maxItems: MAX_FORWARDED_IMAGES,
+    description:
+      'IDs of images this conversation received (from list_conversation_images). The recipient gets copies it can see.',
+  })
+)
 
 type StreamRow = Pick<
   typeof workStreams.$inferSelect,
@@ -96,7 +120,12 @@ export function assistantToolClientId(agentId: string, executionId: string, tool
 }
 
 /** Conversation and authority are runner-bound. No model-provided owner or fake HTTP context. */
-export function createAssistantTools(agentId: string, executionId: string, conversationId: string): ToolDefinition[] {
+export function createAssistantTools(
+  agentId: string,
+  executionId: string,
+  conversationId: string,
+  routingDeps: AssistantRoutingDeps = {}
+): ToolDefinition[] {
   const identity = { type: 'agent' as const, agentId, squadId: null }
   const access = () => requireAssistantConversation(identity, conversationId)
   function tool<S extends TSchema>(
@@ -157,8 +186,54 @@ export function createAssistantTools(agentId: string, executionId: string, conve
         agentId: Type.Optional(uuid),
         label: Type.Optional(Type.String({ maxLength: 80 })),
         mode: Type.Optional(Type.Union([Type.Literal('steer'), Type.Literal('follow-up')])),
+        imageIds,
       }),
       (input, clientId) => sendAssistantTaskRequest(identity, conversationId, { ...input, clientId })
+    ),
+    tool(
+      'list_conversation_images',
+      'List the images the user sent in this conversation, newest first, with their IDs and the message each came with. Pass IDs as imageIds to delegate_task or message_agent to hand the images on.',
+      Type.Object({ limit }),
+      async (input) => {
+        const { conversation } = await access()
+        if (!conversation.agentId) return { images: [] }
+        const rows = await db
+          .select({ id: images.id, mimeType: images.mimeType, size: images.size, createdAt: images.createdAt })
+          .from(images)
+          .where(eq(images.agentId, conversation.agentId))
+          .orderBy(desc(images.createdAt))
+          .limit(input.limit ?? 20)
+        if (!rows.length) return { images: [] }
+        const carriers = await db
+          .select({
+            id: messages.id,
+            content: messages.content,
+            imageIds: sql<unknown>`${messages.metadata}->'imageIds'`,
+          })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.agentId, conversation.agentId),
+              sql`${messages.metadata}->'imageIds' ?| array[${sql.join(
+                rows.map((row) => sql`${row.id}`),
+                sql`, `
+              )}]::text[]`
+            )
+          )
+        const carrierOf = new Map<string, { id: string; content: string }>()
+        for (const carrier of carriers)
+          if (Array.isArray(carrier.imageIds))
+            for (const id of carrier.imageIds) if (typeof id === 'string') carrierOf.set(id, carrier)
+        return {
+          images: rows.map((row) => {
+            const carrier = carrierOf.get(row.id)
+            return {
+              ...row,
+              ...(carrier ? { messageId: carrier.id, messagePreview: carrier.content.slice(0, 200) } : {}),
+            }
+          }),
+        }
+      }
     ),
     ...taskTools,
     tool(
@@ -298,6 +373,12 @@ export function createAssistantTools(agentId: string, executionId: string, conve
       async (input) => listVisibleSquads((await access()).user, input.limit)
     ),
     tool(
+      'suggest_squad',
+      'Ask which squad a request is for, with the same decision model as the routing hint on user messages: Ficus itself (instance), general work, or one squad’s project. Use it to ask again with a clearer phrasing or for a request the hint did not cover. Without a decision model it falls back to matching squad names and purposes.',
+      Type.Object({ request: Type.String({ minLength: 1, maxLength: 4000 }) }),
+      async (input) => suggestAssistantSquad((await access()).user, input.request, routingDeps)
+    ),
+    tool(
       'search_ficus',
       'Search visible squads, work streams and conversations. Results include full IDs for subsequent tools.',
       Type.Object({ q: Type.String({ minLength: 1, maxLength: 200 }), squadId: Type.Optional(uuid), limit }),
@@ -341,21 +422,32 @@ export function createAssistantTools(agentId: string, executionId: string, conve
     tool(
       'message_agent',
       'Send a message to a known agent the user can chat with. Use delegate_task to track independent work. Requires the full UUID.',
-      Type.Object({ agentId: uuid, request }),
+      Type.Object({ agentId: uuid, request, imageIds }),
       async (input, clientId) => {
-        const { user } = await access()
+        const { user, conversation } = await access()
         const target = await Agent.find(z.string().uuid().parse(input.agentId))
         if (!target || !(await hasAgentResourcePermission(user, target, 'chat:send')))
           throw new Error('Agent not found')
-        const result = await InboxMessage.sendOnce(
-          {
-            recipientType: 'agent',
-            recipientId: target.id,
-            senderType: 'user',
-            senderId: user.userId,
-            content: input.request,
-          },
-          `assistant-message:${clientId}`
+        const forwarded = input.imageIds?.length
+          ? await prepareForwardedImages({
+              sourceAgentId: conversation.agentId,
+              imageIds: input.imageIds,
+              target,
+              userId: user.userId,
+            })
+          : null
+        const result = await withForwardedImages(forwarded, () =>
+          InboxMessage.sendOnce(
+            {
+              recipientType: 'agent',
+              recipientId: target.id,
+              senderType: 'user',
+              senderId: user.userId,
+              content: input.request,
+              ...(forwarded ? { metadata: { imageIds: forwarded.ids }, persistInTransaction: forwarded.insert } : {}),
+            },
+            `assistant-message:${clientId}`
+          )
         )
         return { messageId: result.message.id, agentId: target.id }
       }

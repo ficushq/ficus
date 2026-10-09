@@ -33,10 +33,12 @@ import {
   getAgentSandboxStatus,
   getAgentSandboxProcesses,
   listAgentScopes,
+  getDeliverySuggestion,
 } from './api/agents'
 import { listAgentTypes } from './api/agentTypes'
 import { getModelTiers, getSquadPresets } from './api/config'
-import { modelTierQueryKeys } from './queryKeys'
+import { modelTierQueryKeys, decisionQueryKeys, composerQueryKeys } from './queryKeys'
+import { getDecisionSettings, getDecisionSpend, type DecisionSpendDays } from './api/decisions'
 import { schedulesApi, type ListSchedulesParams } from './api/schedules'
 import { monitorsApi, type ListMonitorsParams } from './api/monitors'
 import { getRecommendation, listRecommendations, type ListRecommendationsParams } from './api/recommendations'
@@ -259,6 +261,33 @@ export const queries = {
 
   modelTiers: {
     list: () => queryOptions({ queryKey: modelTierQueryKeys.list(), queryFn: getModelTiers }),
+  },
+
+  decisions: {
+    settings: () => queryOptions({ queryKey: decisionQueryKeys.settings(), queryFn: getDecisionSettings }),
+    spend: (days: DecisionSpendDays) =>
+      queryOptions({
+        queryKey: decisionQueryKeys.spend(days),
+        queryFn: () => getDecisionSpend(days),
+        staleTime: 60_000,
+      }),
+  },
+
+  composer: {
+    /**
+     * Interrupt or Follow up for a draft written while the agent works. One answer per draft: never
+     * refetched on focus or reconnect, and an abandoned draft's request is cancelled.
+     */
+    deliverySuggestion: (agentId: string, draft: string) =>
+      queryOptions({
+        queryKey: composerQueryKeys.deliverySuggestion(agentId, draft),
+        queryFn: ({ signal }) => getDeliverySuggestion(agentId, draft, signal),
+        staleTime: Infinity,
+        gcTime: 60_000,
+        retry: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+      }),
   },
 
   agentTypes: {

@@ -1,0 +1,56 @@
+import {
+  ASSISTANT_ROUTING_MIN_CONFIDENCE,
+  type AssistantRoutingCorrection,
+  type AssistantRoutingHint,
+  type AssistantRoutingTarget,
+} from '@ficus/shared'
+
+const percent = (confidence: number) => `${Math.round(confidence * 100)}%`
+const squadRef = (target: AssistantRoutingTarget) =>
+  `squad ${JSON.stringify(target.squadName ?? 'unknown')} (squadId ${target.squadId})`
+
+/**
+ * The note the Assistant reads with a user message: the user's own correction, else the decision
+ * model's pick when it is confident enough. Null when there is nothing to say.
+ */
+export function assistantRoutingNote(hint: AssistantRoutingHint): string | null {
+  if (hint.correction) {
+    return hint.correction.scope === 'squad' && hint.correction.squadId
+      ? `Routing (set by the user): this is for ${squadRef(hint.correction)}. Use this squad for delegate_task.`
+      : 'Routing (set by the user): this is not for a squad. Use no squad for delegate_task.'
+  }
+  if (!(hint.confidence >= ASSISTANT_ROUTING_MIN_CONFIDENCE)) return null
+  const howSure = percent(hint.confidence)
+  switch (hint.scope) {
+    case 'squad':
+      if (!hint.squadId) return null
+      return `Routing hint (decision model): likely about squad ${JSON.stringify(hint.squadName ?? 'unknown')} (${howSure}, squadId ${hint.squadId}). It's the target: look there for a question, and use this squad for delegate_task for work, unless the message says otherwise.`
+    case 'instance':
+      return `Routing hint (decision model): about Ficus itself (settings, admin or the instance), not a squad's project (${howSure}). Use no squad for delegate_task unless the message says otherwise.`
+    case 'general':
+      return `Routing hint (decision model): not about one squad (${howSure}). Use no squad for delegate_task unless the message says otherwise.`
+    default:
+      return null
+  }
+}
+
+/** The note on a follow-up: the routing it inherits from earlier in the conversation. */
+export function assistantRoutingInheritedNote(target: AssistantRoutingTarget): string {
+  return target.scope === 'squad' && target.squadId
+    ? `Routing (follows this conversation's earlier routing): ${squadRef(target)}. Keep it as the target (look there, and use this squad for delegate_task) unless the message says otherwise.`
+    : "Routing (follows this conversation's earlier routing): not for a squad. Keep using no squad for delegate_task unless the message says otherwise."
+}
+
+/** The note on the message that carries a user's routing correction (always for their latest message). */
+export function assistantRoutingCorrectionNote(correction: AssistantRoutingCorrection): string {
+  const target =
+    correction.scope === 'squad' && correction.squadId ? `is for ${squadRef(correction)}` : 'is not for a squad'
+  const which = correction.excerpt
+    ? `their latest message (${JSON.stringify(correction.excerpt)})`
+    : 'their latest message'
+  return (
+    `Routing correction from the user: ${which} ${target}. ` +
+    `Use ${correction.scope === 'squad' ? 'this squad' : 'no squad'} for delegate_task for it. If that work already went ` +
+    'to a different delegate and is still running, move it (cancel_task, then delegate_task) and say where it went.'
+  )
+}

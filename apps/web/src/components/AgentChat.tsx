@@ -1,10 +1,11 @@
 import { AgentSlotWaitStatus } from './AgentSlotWaitStatus'
 import { useStableRef } from '../hooks/useStableRef'
+import { useDeliverySuggestion } from '../hooks/useDeliverySuggestion'
 import clsx from 'clsx'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAgentConversation } from '@ficus/client-react'
-import type { ChatScope, DeliveryMode, MessageMetadata } from '@ficus/shared'
+import type { AssistantRoutingSend, ChatScope, MessageMetadata } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { ChatView } from './ChatView'
 import { QuestionInput } from './QuestionInput'
@@ -25,6 +26,10 @@ interface AgentChatDependencies {
 export type AgentChatController = ReturnType<typeof useAgentConversation>
 interface AgentChatProps {
   beforeSend?: () => Promise<void>
+  /** Called with the composer's draft as it changes. */
+  onDraftChange?: (draft: string) => void
+  /** Extra options for a typed message, read as it is sent (e.g. the Assistant's routing). */
+  sendOptions?: (message: string) => { assistantRouting?: AssistantRoutingSend } | undefined
   onConversation?: (conversation: AgentChatController) => void
   renderMessageFooter?: React.ComponentProps<typeof ChatView>['renderMessageFooter']
   afterConversation?: React.ReactNode
@@ -55,6 +60,7 @@ interface AgentChatProps {
   isReview?: boolean
   onReviewFeedback?: (message: string) => Promise<void>
   inputStorageKey?: string
+  composerDraft?: React.ComponentProps<typeof ChatView>['composerDraft']
   squadId?: string
   tts?: {
     enabled: boolean
@@ -107,6 +113,7 @@ export function AgentChat({
   isReview,
   onReviewFeedback,
   inputStorageKey,
+  composerDraft,
   squadId,
   tts,
   showRawText,
@@ -122,6 +129,8 @@ export function AgentChat({
   dependencies,
   onConversation,
   beforeSend,
+  onDraftChange,
+  sendOptions,
   afterConversation,
   renderMessageFooter,
 }: AgentChatProps) {
@@ -134,9 +143,10 @@ export function AgentChat({
   }, [conv, onConversationRef])
 
   const beforeSendRef = useStableRef(beforeSend)
+  const sendOptionsRef = useStableRef(sendOptions)
+  const onDraftChangeRef = useStableRef(onDraftChange)
   const [preparationError, setPreparationError] = useState<string>()
   const [initialPreparationAttempt, setInitialPreparationAttempt] = useState(0)
-  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('steer')
 
   // Launcher requests are sends, not pre-existing optimistic rows. Keep failed sends
   // in the conversation's retry UI and never resend on rerenders or mode switches.
@@ -219,6 +229,29 @@ export function AgentChat({
     }
   }, [conv.items, onNavigate])
 
+  // Interrupt or Follow up: while the agent works, a paused draft is judged for whether it is about
+  // the current work, and a confident answer pre-selects the mode. A manual choice wins.
+  const isStreaming = conv.streamStatus === 'live' && conv.items.some((i) => i.kind === 'streaming')
+  const executionBusy =
+    conv.executionStatus === 'queued' ||
+    conv.executionStatus === 'waiting-sandbox' ||
+    conv.executionStatus === 'running' ||
+    conv.executionStatus === 'stopping'
+  const delivery = useDeliverySuggestion({
+    agentId: conv.agentId,
+    busy: !inputDisabled && !isReview && !isWaitingInput && (executionBusy || isStreaming),
+    fetchSuggestion: api.getDeliverySuggestion,
+  })
+  const deliveryMode = delivery.deliveryMode
+  const deliveryDraftChange = delivery.onDraftChange
+  const handleDraftChange = useCallback(
+    (draft: string) => {
+      deliveryDraftChange(draft)
+      onDraftChangeRef.current?.(draft)
+    },
+    [deliveryDraftChange, onDraftChangeRef]
+  )
+
   // Send routing: review feedback takes priority over normal send
   const handleSend = async (message: string, imageIds?: string[]) => {
     if (inputDisabled) return
@@ -227,7 +260,12 @@ export function AgentChat({
       return
     }
     await beforeSendRef.current?.()
-    await conv.sendAccepted(message, { imageIds, deliveryMode }).accepted
+    const overridden = delivery.overrideFor(message)
+    await conv.sendAccepted(message, { imageIds, deliveryMode, ...sendOptionsRef.current?.(message) }).accepted
+    // The user overrode the composer's pick: a labelled example, kept only where saving corrections is on.
+    if (overridden && conv.agentId) void api.reportDeliveryCorrection(conv.agentId, message, overridden).catch(() => {})
+    // The next draft starts from the default and takes a fresh suggestion.
+    delivery.reset()
   }
 
   // Composer visibility
@@ -236,7 +274,6 @@ export function AgentChat({
   // Contextual placeholder (explicit prop overrides contextual default)
   const maintenanceQueued = conv.executionStatus === 'waiting-maintenance'
   const isRunning = conv.executionStatus === 'running' || conv.executionStatus === 'waiting-sandbox'
-  const isStreaming = conv.streamStatus === 'live' && conv.items.some((i) => i.kind === 'streaming')
   const canSendInline = isRunning || isStreaming
   const placeholder =
     placeholderProp ??
@@ -347,7 +384,7 @@ export function AgentChat({
       hasOlderMessages={conv.hasOlder}
       isLoadingOlder={conv.isFetchingOlder}
       isLoading={conv.isLoading}
-      isStreaming={conv.streamStatus === 'live' && conv.items.some((i) => i.kind === 'streaming')}
+      isStreaming={isStreaming}
       executionStatus={conv.executionStatus}
       viewingUserId={viewingUserId}
       readOnly={readOnly || isTerminated}
@@ -378,7 +415,10 @@ export function AgentChat({
             <div role="alert">
               {preparationError}
               {!initialMessageSent.current && initialMessage && (
-                <button className="ficus-button" onClick={() => setInitialPreparationAttempt((value) => value + 1)}>
+                <button
+                  className="ficus-button ficus-button-link ml-2"
+                  onClick={() => setInitialPreparationAttempt((value) => value + 1)}
+                >
                   Retry sending
                 </button>
               )}
@@ -391,6 +431,7 @@ export function AgentChat({
       placeholder={placeholder}
       thinkingLabel={thinkingLabel}
       inputStorageKey={inputStorageKey}
+      composerDraft={composerDraft}
       squadId={squadId}
       tts={tts}
       showRawText={showRawText}
@@ -402,7 +443,9 @@ export function AgentChat({
       }
       inputPrefix={inputPrefix}
       deliveryMode={deliveryMode}
-      onDeliveryModeChange={setDeliveryMode}
+      onDeliveryModeChange={delivery.chooseMode}
+      suggestedDelivery={delivery.suggested}
+      onDraftChange={handleDraftChange}
       sendLabel={isReview ? 'Send Feedback' : undefined}
       focusTrigger={focusTrigger}
       keyboardShortcutsEnabled={keyboardShortcutsEnabled}

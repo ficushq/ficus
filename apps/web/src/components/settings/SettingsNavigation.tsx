@@ -1,11 +1,11 @@
-import { Presence } from '../Presence'
 import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 import { matchesSetting, settingMatchRank, SETTINGS_PAGE_KEYWORDS, SETTINGS_SEARCH_ENTRIES } from './settingsSearch'
 import clsx from 'clsx'
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDownIcon, SettingsIcon } from '../icons'
 import { SETTINGS_SECTION_ICONS as icons } from './settingsIcons'
+import { Panel, usePopover } from '../popover'
 
 export interface SettingsSectionGroup {
   label?: string
@@ -40,62 +40,15 @@ export function SettingsNavigation({
   pageKeywords?: Record<string, string>
   searchEntries?: typeof SETTINGS_SEARCH_ENTRIES
 }) {
-  const mobileRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
+  // The phone chooser hangs below its trigger, as wide as it, and stays inside the settings region
+  // (which ends above the dock and its PWA safe area) as well as the visual viewport.
+  const chooserRef = useRef<HTMLDivElement>(null)
+  const settingsRegionRef = useRef<HTMLElement>(null)
+  const chooser = usePopover({ kind: 'disclosure' })
+  const { open: mobileOpen, setOpen: setMobileOpen } = chooser
   const [search, setSearch] = useState('')
   const searchId = useId()
   const [selection, setSelection] = useState({ key: '', index: 0 })
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const [mobileMaxHeight, setMobileMaxHeight] = useState(0)
-  useLayoutEffect(() => {
-    if (!mobileOpen) return
-    const chooser = mobileRef.current
-    const bounds = chooser?.parentElement
-    if (!chooser || !bounds) return
-    const viewport = window.visualViewport
-    const updateHeight = () => {
-      // The settings region ends above the dock, including its PWA safe area.
-      // A viewport-only cap can extend beyond that region and get clipped.
-      const viewportBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight
-      const bottom = Math.min(bounds.getBoundingClientRect().bottom, viewportBottom)
-      setMobileMaxHeight(Math.max(0, bottom - chooser.getBoundingClientRect().bottom - 16))
-    }
-    updateHeight()
-    const observer = new ResizeObserver(updateHeight)
-    observer.observe(bounds)
-    observer.observe(chooser)
-    window.addEventListener('resize', updateHeight)
-    window.addEventListener('scroll', updateHeight, true)
-    viewport?.addEventListener('resize', updateHeight)
-    viewport?.addEventListener('scroll', updateHeight)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', updateHeight)
-      window.removeEventListener('scroll', updateHeight, true)
-      viewport?.removeEventListener('resize', updateHeight)
-      viewport?.removeEventListener('scroll', updateHeight)
-    }
-  }, [mobileOpen])
-  useEffect(() => {
-    if (!mobileOpen) return
-    mobileRef.current?.querySelector<HTMLInputElement>('input')?.focus()
-    const dismiss = (event: PointerEvent) => {
-      if (event.target instanceof Node && !mobileRef.current?.contains(event.target)) setMobileOpen(false)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        setMobileOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-    document.addEventListener('pointerdown', dismiss)
-    document.addEventListener('keydown', escape, true)
-    return () => {
-      document.removeEventListener('pointerdown', dismiss)
-      document.removeEventListener('keydown', escape, true)
-    }
-  }, [mobileOpen])
   const sections = groups.flatMap((group) => group.items)
   const inAdministration = !scopeTitle && !PERSONAL_SECTIONS.has(activeSection)
   const personal = sections.filter((section) => PERSONAL_SECTIONS.has(section.id))
@@ -236,8 +189,8 @@ export function SettingsNavigation({
                 type="button"
                 onClick={() => select(result.section, result.id || undefined)}
                 className={clsx(
-                  'ficus-button ficus-nav-item block w-full px-2.5 py-2.5 text-left',
-                  selectedIndex === index && 'bg-accent/10 text-accent'
+                  'ficus-button ficus-button-ghost ficus-nav-item block w-full px-2.5 py-2.5 text-left',
+                  selectedIndex === index && 'bg-accent/10 hover:bg-accent/10 text-accent hover:text-accent'
                 )}
               >
                 <span className="block text-sm text-primary">{result.label}</span>
@@ -265,7 +218,7 @@ export function SettingsNavigation({
                       key={section.id}
                       aria-current={activeSection === section.id ? 'page' : undefined}
                       onClick={() => select(section.id)}
-                      className="ficus-button ficus-nav-item flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm text-secondary"
+                      className="ficus-button ficus-button-ghost ficus-nav-item flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm"
                     >
                       <Icon className="h-4 w-4 shrink-0 opacity-80" />
                       <span>{section.label}</span>
@@ -305,13 +258,18 @@ export function SettingsNavigation({
   )
   return (
     <>
-      <div ref={mobileRef} className="relative shrink-0 md:hidden">
+      <div
+        ref={(node) => {
+          chooserRef.current = node
+          settingsRegionRef.current = node?.parentElement ?? null
+        }}
+        className="relative shrink-0 md:hidden"
+      >
         <button
+          {...chooser.triggerProps}
           type="button"
-          ref={triggerRef}
           aria-label="Choose settings section"
-          aria-expanded={mobileOpen}
-          onClick={() => setMobileOpen((open) => !open)}
+          onClick={chooser.toggle}
           className="ficus-panel flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
         >
           <span>
@@ -320,13 +278,21 @@ export function SettingsNavigation({
           </span>
           <ChevronDownIcon className={clsx('h-4 w-4 text-secondary', mobileOpen && 'rotate-180')} />
         </button>
-        <Presence
-          open={mobileOpen}
-          style={{ maxHeight: `min(60dvh, ${mobileMaxHeight}px)` }}
-          className="ficus-overlay absolute left-0 right-0 top-full z-30 mt-2 overflow-y-auto overscroll-contain p-3"
+        <Panel
+          {...chooser.popoverProps}
+          role="region"
+          label="Settings sections"
+          anchor={chooserRef}
+          width="anchor"
+          align="start"
+          gap={8}
+          boundary={settingsRegionRef}
+          maxHeight={(viewport) => 0.6 * (viewport.bottom - viewport.top)}
+          initialFocus={(panel) => panel.querySelector('input')}
+          className="ficus-overlay p-3"
         >
           {content('mobile')}
-        </Presence>
+        </Panel>
       </div>
       <aside className="ficus-panel ficus-glass hidden md:block w-60 flex-shrink-0 h-full overflow-y-auto p-3">
         <h2 className="px-2 pb-4 pt-1 text-sm font-semibold text-primary">{scopeTitle ?? 'Settings'}</h2>

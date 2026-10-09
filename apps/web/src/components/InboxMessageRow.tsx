@@ -107,7 +107,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
                       e.stopPropagation()
                       onMarkAsRead()
                     }}
-                    className="ficus-button -my-1 min-h-[32px] py-1 text-accent-light hover:underline"
+                    className="ficus-button ficus-button-link -my-1 min-h-[32px] py-1"
                   >
                     Mark read
                   </button>
@@ -128,7 +128,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
                 e.stopPropagation()
                 onMarkAsRead()
               }}
-              className="ficus-button text-xs text-accent-light hover:underline shrink-0"
+              className="ficus-button ficus-button-link text-xs shrink-0"
             >
               {compact ? 'Read' : 'Mark read'}
             </button>
@@ -141,7 +141,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
             e.stopPropagation()
             setExpanded(!expanded)
           }}
-          className="ficus-button p-1 -mr-1 text-placeholder hover:text-secondary shrink-0 md:mr-0"
+          className="ficus-button ficus-button-ghost p-1 -mr-1 shrink-0 md:mr-0"
           aria-expanded={expanded}
           aria-label={expanded ? 'Collapse' : 'Expand'}
         >
@@ -221,8 +221,8 @@ export function SectionHeader({ title, count, collapsible, collapsed, onToggle }
         onClick={onToggle}
         aria-expanded={!collapsed}
         className={clsx(
-          'ficus-button',
-          'w-full rounded-lg pl-6 pr-3 py-2 hover:bg-surface-hover text-left focus-visible:outline-offset-[-2px]'
+          'ficus-button ficus-button-ghost',
+          'w-full rounded-lg pl-6 pr-3 py-2 text-left focus-visible:outline-offset-[-2px]'
         )}
       >
         {content}

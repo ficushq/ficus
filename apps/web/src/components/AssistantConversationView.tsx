@@ -2,6 +2,8 @@ import { ToolRenderersContext } from '../lib/ToolRenderersContext'
 import { AssistantConversationContext } from '../voice/AssistantConversationContext'
 import { AssistantConversationLinkRow } from './AssistantConversationLinkRow'
 import { AssistantPageLinkRow } from './AssistantPageLinkRow'
+import { AssistantDraftRouting, AssistantMessageRouting, latestAssistantUserMessageId } from './AssistantRoutingChip'
+import { useAssistantRoutingPreview } from '../hooks/useAssistantRoutingPreview'
 import { AssistantSummarySources } from './AssistantSummarySources'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -80,6 +82,26 @@ function DurableConversation(props: AssistantConversationViewProps) {
   const [voiceRequested, setVoiceRequested] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const controller = useRef<AgentChatController | null>(null)
+  const [latestUserMessageId, setLatestUserMessageId] = useState<string | null>(null)
+  const [composerDraft, setComposerDraft] = useState<{ id: number; text: string }>()
+  // Where a draft would go, while it is written (not for page editors, which aren't routed).
+  const routing = useAssistantRoutingPreview({
+    conversationId: props.id,
+    enabled: Boolean(agentId) && !props.pageEditor,
+    fetchPreview: api.previewRouting,
+  })
+  const routingFor = routing.routingFor
+  const sendOptions = useCallback(
+    (message: string) => {
+      const assistantRouting = routingFor(message)
+      return assistantRouting ? { assistantRouting } : undefined
+    },
+    [routingFor]
+  )
+  const draftInComposer = useCallback(
+    (text: string) => setComposerDraft((current) => ({ id: (current?.id ?? 0) + 1, text })),
+    []
+  )
   const voiceReceipts = useRef(new AssistantVoiceReceipts())
   const sourceIds = useRef(new Map<string, string>())
   const answerIds = useRef(new Map<string, string>())
@@ -189,6 +211,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
   const onConversation = useCallback(
     (value: AgentChatController) => {
       controller.current = value
+      setLatestUserMessageId(latestAssistantUserMessageId(value.items))
       speakReady()
     },
     [speakReady]
@@ -297,10 +320,10 @@ function DurableConversation(props: AssistantConversationViewProps) {
         />
       )}
       {voice.error && (
-        <div role="alert" className="px-3 py-2 text-sm text-danger">
+        <div role="alert" className="px-3 py-2 text-sm text-status-danger-600 dark:text-status-danger-400">
           {voice.error}{' '}
           <button
-            className="ficus-button"
+            className="ficus-button ficus-button-link"
             onClick={() => {
               void voice.retryConnection()
             }}
@@ -309,21 +332,11 @@ function DurableConversation(props: AssistantConversationViewProps) {
           </button>
         </div>
       )}
-      {props.realtime && !voice.isLiveAudio && agentId && (
-        <button
-          className="ficus-button px-3 py-1 text-xs text-muted"
-          onClick={() => {
-            void startVoice()
-          }}
-        >
-          enable your microphone
-        </button>
-      )}
       {error && (
-        <div role="alert" className="px-3 py-2 text-sm text-danger">
+        <div role="alert" className="px-3 py-2 text-sm text-status-danger-600 dark:text-status-danger-400">
           {error}{' '}
           {!agentId && (
-            <button className="ficus-button" onClick={() => setAttempt((value) => value + 1)}>
+            <button className="ficus-button ficus-button-link" onClick={() => setAttempt((value) => value + 1)}>
               Retry
             </button>
           )}
@@ -335,7 +348,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
             <summary className="cursor-pointer text-muted">Earlier conversation</summary>
             {archiveHasMore && (
               <button
-                className="ficus-button"
+                className="ficus-button ficus-button-link"
                 onClick={async () => {
                   const page = await api.history(props.id, archiveBefore)
                   setArchive((current) => [
@@ -366,7 +379,17 @@ function DurableConversation(props: AssistantConversationViewProps) {
             pagePath={pagePath}
             initialMessage={props.initialMessage ? { content: props.initialMessage.text } : undefined}
             renderMessageFooter={(item) =>
-              item.message.role === 'assistant' && ownerId ? (
+              item.message.role === 'human' && item.message.metadata?.assistantRouting ? (
+                <AssistantMessageRouting
+                  conversationId={props.id}
+                  messageId={item.message.id}
+                  content={item.message.content}
+                  hint={item.message.metadata.assistantRouting}
+                  latest={item.message.id === latestUserMessageId}
+                  onDraft={draftInComposer}
+                  api={api}
+                />
+              ) : item.message.role === 'assistant' && ownerId ? (
                 <>
                   {props.onOpenConversation &&
                     durableAssistantConversationLinks(item).map((link) => (
@@ -390,6 +413,10 @@ function DurableConversation(props: AssistantConversationViewProps) {
             onNavigate={navigate}
             afterConversation={questions}
             inputStorageKey={`assistant:${props.id}`}
+            composerDraft={composerDraft}
+            onDraftChange={routing.onDraftChange}
+            sendOptions={sendOptions}
+            composerStatus={<AssistantDraftRouting hint={routing.hint} pick={routing.pick} onPick={routing.setPick} />}
             placeholder="Ask anything…"
           />
         ) : (

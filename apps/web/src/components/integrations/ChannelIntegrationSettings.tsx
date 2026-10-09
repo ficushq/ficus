@@ -128,7 +128,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
         <section className="space-y-3 text-sm" aria-label="Connection status">
           <h4 className="font-medium text-primary">Connection</h4>
           {data.setup?.state === 'needs_attention' ? (
-            <p role="alert" className="text-danger">
+            <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
               {data.setup.issues.join(' ')}
             </p>
           ) : data.setup?.state === 'needs_setup' ? (
@@ -208,7 +208,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
                   {managedReconnectNeeded && (
                     <button
                       type="button"
-                      className="ficus-button text-xs"
+                      className="ficus-button ficus-button-secondary px-2.5 py-1 disabled:opacity-50 text-xs"
                       disabled={authorizeManaged.isPending}
                       onClick={() => authorizeManaged.mutate(managedConnection.id)}
                     >
@@ -217,7 +217,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
                   )}
                   <button
                     type="button"
-                    className="ficus-button text-xs"
+                    className="ficus-button ficus-button-danger px-2.5 py-1 disabled:opacity-50 text-xs"
                     disabled={disconnectManaged.isPending}
                     onClick={() => {
                       if (!disconnectArmed) {
@@ -235,7 +235,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
           )}
           {authError && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <p role="alert" className="text-danger">
+              <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
                 {authError}
               </p>
               {canWrite && (
@@ -251,7 +251,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
             </div>
           )}
           {disconnectManaged.isError && (
-            <p role="alert" className="text-danger">
+            <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
               {disconnectManaged.error.message}
             </p>
           )}
@@ -322,7 +322,7 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
             provider === 'discord' && <p className="text-muted">Choose the server above to pick a default squad.</p>
           )}
           {setRouting.isError && (
-            <p role="alert" className="text-danger">
+            <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
               {setRouting.error.message}
             </p>
           )}

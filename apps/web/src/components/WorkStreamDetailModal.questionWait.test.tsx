@@ -244,19 +244,19 @@ describe('WorkStreamDetailModal question waits', () => {
     const section = getByRole(body, 'region', { name: 'Pending questions' })
     const topDetails = getByText(body, 'Completion').parentElement!.parentElement!
     expect(topDetails.nextElementSibling).toBe(section)
-    expect(section.nextElementSibling).toBe(getByText(body, 'Open Waits').parentElement!)
-    expect(section.nextElementSibling?.nextElementSibling?.contains(getByText(body, 'Cost:'))).toBe(true)
-    expect(
-      section.compareDocumentPosition(getByText(body, 'Open Waits')) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy()
+    // The dependency wait is a Blocking row in Dependencies (above the details), not an Open Waits row.
+    const dependencies = getByRole(body, 'region', { name: 'Dependencies' })
+    expect(topDetails.previousElementSibling).toBe(dependencies)
+    expect(within(dependencies).getByText('Waiting for prerequisite')).toBeTruthy()
+    expect(dependencies.textContent).toContain('Blocking · waiting')
+    expect(queryByText(body, 'Open Waits')).toBeNull()
+    expect(section.nextElementSibling?.contains(getByText(body, 'Cost:'))).toBe(true)
     expect(within(section).getAllByRole('button', { name: 'Submit Answer' })).toHaveLength(1)
     expect(within(body).getAllByRole('button', { name: 'Submit Answer' })).toHaveLength(1)
     expect(within(section).getByText('Attempt 2')).toBeTruthy()
-    expect(within(section).getByText(now.toLocaleString())).toBeTruthy()
-    const otherWaits = getByText(body, 'Open Waits').parentElement!
-    expect(within(otherWaits).getByText('Waiting for prerequisite')).toBeTruthy()
-    expect(otherWaits.querySelector('input')).toBeNull()
-    expect(otherWaits.textContent).not.toContain('Switch the testnet RPC?')
+    // Wait ages are relative, with the exact time on hover.
+    expect(within(section).getByTitle(now.toLocaleString()).textContent).toMatch(/^waiting \d+[smhd]$/)
+    expect(section.textContent).not.toContain('Waiting for prerequisite')
   })
 
   test.each(['absent', 'loading'] as const)('keeps questions above the body when metrics are %s', async (metrics) => {
@@ -283,9 +283,10 @@ describe('WorkStreamDetailModal question waits', () => {
     expect(queryByRole(body, 'region', { name: 'Pending questions' })).toBeNull()
     expect(queryByRole(body, 'button', { name: 'Submit Answer' })).toBeNull()
     const topDetails = getByText(body, 'Completion').parentElement!.parentElement!
-    expect(topDetails.nextElementSibling).toBe(getByText(body, 'Open Waits').parentElement!)
-    expect(topDetails.nextElementSibling?.nextElementSibling?.contains(getByText(body, 'Cost:'))).toBe(true)
-    expect(getByText(body, 'Open Waits').parentElement!.textContent).toContain('Prerequisite')
+    // A stream whose only open wait is a dependency has no Open Waits section: Dependencies says it.
+    expect(queryByText(body, 'Open Waits')).toBeNull()
+    expect(topDetails.nextElementSibling?.contains(getByText(body, 'Cost:'))).toBe(true)
+    expect(getByRole(body, 'region', { name: 'Dependencies' }).textContent).toContain('Prerequisite')
     expect(getByText(body, 'Wait history (1)').parentElement!.textContent).toContain('Answered')
   })
 

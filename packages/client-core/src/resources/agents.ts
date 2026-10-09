@@ -1,4 +1,11 @@
-import type { Agent, DeliveryMode, ExecutionStatus, Message } from '@ficus/shared'
+import type {
+  Agent,
+  AssistantRoutingSend,
+  DeliveryMode,
+  DeliverySuggestion,
+  ExecutionStatus,
+  Message,
+} from '@ficus/shared'
 import { parseSSEStream, type SSECallbacks } from '../sse'
 import type { Transport } from '../transport'
 
@@ -55,6 +62,8 @@ export interface SendAgentMessageOptions {
   imageIds?: string[]
   deliveryMode?: DeliveryMode
   clientId?: string
+  /** Assistant conversations: the composer's routing preview or the user's pick. */
+  assistantRouting?: AssistantRoutingSend
 }
 
 function openReconnectableAgentStream(
@@ -190,8 +199,29 @@ export function agentsResource(t: Transport) {
           imageIds: options?.imageIds,
           deliveryMode: options?.deliveryMode,
           clientId: options?.clientId,
+          ...(options?.assistantRouting ? { assistantRouting: options.assistantRouting } : {}),
         },
       }),
+    /**
+     * Whether a draft written while the agent works should interrupt it or follow up: the composer's
+     * Interrupt / Follow up suggestion. `{ suggestion: null }` when there is nothing to suggest.
+     */
+    deliverySuggestion: (
+      agentId: string,
+      draft: string,
+      options?: { signal?: AbortSignal }
+    ): Promise<DeliverySuggestion> =>
+      t.request(`/agents/${agentId}/delivery-suggestion`, {
+        method: 'POST',
+        body: { draft },
+        signal: options?.signal,
+      }),
+    /**
+     * The user sent a draft in the other mode than the composer suggested. Kept as a candidate
+     * decision eval case only where saving corrections is turned on; a no-op otherwise.
+     */
+    deliveryCorrection: (agentId: string, draft: string, chosen: DeliveryMode): Promise<void> =>
+      t.request(`/agents/${agentId}/delivery-suggestion/correction`, { method: 'POST', body: { draft, chosen } }),
     /** @deprecated Use sendMessage(agentId, message, { deliveryMode: 'steer' }) instead. */
     steer: (agentId: string, message: string, imageIds?: string[]): Promise<{ success: boolean }> =>
       t.request(`/agents/${agentId}/steer`, { method: 'POST', body: { message, imageIds } }),

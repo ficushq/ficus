@@ -1,7 +1,8 @@
 import { useToolRenderers } from '../lib/ToolRenderersContext'
 import clsx from 'clsx'
 import { ToolInlineActions } from './ToolInlineActions'
-import type { ToolInlineAction } from '../lib/tool-inline-actions'
+import { getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
+import { ToolFirewallBadge } from './ToolFirewallBadge'
 import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { MarkdownContent } from './MarkdownContent'
 import { CollapsibleMarkdown } from './CollapsibleMarkdown'
@@ -10,6 +11,7 @@ import { parseMessageContent } from '../lib/message-parser'
 import {
   isWorkspaceVoiceRecipient,
   type MessageMetadata,
+  type ToolFirewallFlag,
   type MessageToolCall,
   type ContentBlock,
   type MonitorMessageKind,
@@ -75,6 +77,17 @@ function getGroupSummary(blocks: ContentBlock[]): string {
   }
 
   return parts.join(' • ')
+}
+
+/** A collapsed group still shows that one of its tool results was flagged by the firewall. */
+function mostSevereFirewallFlag(blocks: ContentBlock[]): ToolFirewallFlag | null {
+  let worst: ToolFirewallFlag | null = null
+  for (const block of blocks) {
+    if (block.type !== 'tool_use') continue
+    const flag = getToolFirewallFlag(block.toolCall)
+    if (flag && (!worst || (flag.severity === 'high' && worst.severity !== 'high'))) worst = flag
+  }
+  return worst
 }
 
 interface AssistantMessageContentProps {
@@ -230,7 +243,7 @@ function StandardHumanMessageContent({
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="ficus-button mt-1 text-xs font-medium underline underline-offset-2 opacity-85 hover:opacity-100"
+          className="ficus-button ficus-button-link text-inherit hover:text-inherit mt-1 text-xs font-medium underline underline-offset-2 opacity-85 hover:opacity-100"
           aria-expanded={expanded}
         >
           {expanded ? 'Show less' : 'Show more'}
@@ -349,7 +362,7 @@ function MonitorMessageRow({
       <div className="border border-th-border rounded-md text-xs">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="ficus-button w-full flex items-center gap-1.5 px-2.5 py-1.5 text-secondary hover:bg-surface-hover transition-colors text-left min-w-0 rounded-md"
+          className="ficus-button ficus-button-ghost w-full flex items-center gap-1.5 px-2.5 py-1.5 transition-colors text-left min-w-0 rounded-md"
         >
           <ChevronRightIcon className={clsx('h-3 w-3 shrink-0 transition-transform', expanded && 'rotate-90')} />
           <span className="shrink-0" aria-label="Monitor">
@@ -456,7 +469,7 @@ function InboxDeliveryMessageCard({
                   <button
                     type="button"
                     onClick={() => setWsOpen({ workStreamId: summary.workStreamId!, squadId: summary.squadId! })}
-                    className="ficus-button mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent-light hover:text-link-hover"
+                    className="ficus-button ficus-button-link mt-2 inline-flex items-center gap-1 text-xs font-medium"
                   >
                     <WorkStreamIcon className="h-3.5 w-3.5 shrink-0" />
                     View work stream
@@ -579,13 +592,14 @@ export function SingleToolCallSection({
   const isIncomplete = !toolCall.result && !toolCall.isError
   const isError = toolCall.isError || isIncomplete
   const result = toolCall.result || (isIncomplete ? 'Command aborted' : '')
+  const firewall = useMemo(() => getToolFirewallFlag({ result: toolCall.result }), [toolCall.result])
 
   return (
     <div className="text-xs">
       <button
         data-tool-call-row={toolCall.toolCallId}
         onClick={() => setExpanded(!expanded)}
-        className="ficus-button w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
+        className="font-medium w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
       >
         {isError ? (
           <span className="text-status-danger-500 dark:text-status-danger-400 shrink-0 inline-block w-3 text-center">
@@ -598,6 +612,7 @@ export function SingleToolCallSection({
         )}
         <span className="font-medium shrink-0">{toolCall.toolName}</span>
         <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+        {firewall && <ToolFirewallBadge flag={firewall} />}
         {isError && (
           <span className="text-status-danger-500 dark:text-status-danger-400 text-[10px] font-medium shrink-0">
             ERROR
@@ -674,7 +689,7 @@ export function ThinkingSection({
     <div className="text-xs">
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="ficus-button w-full flex items-center gap-1.5 py-0.5 text-status-human-wait-600 dark:text-status-human-wait-400 hover:text-status-human-wait-800 dark:hover:text-status-human-wait-300 transition-colors"
+        className="font-medium w-full flex items-center gap-1.5 py-0.5 text-status-human-wait-600 dark:text-status-human-wait-400 hover:text-status-human-wait-800 dark:hover:text-status-human-wait-300 transition-colors"
       >
         {isStreaming ? (
           <span className="inline-block w-3 h-3 border-2 border-status-human-wait-300 dark:border-status-human-wait-700 border-t-status-human-wait-600 dark:border-t-status-human-wait-300 rounded-full animate-spin shrink-0" />
@@ -719,17 +734,19 @@ function BlockGroupSection({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const summary = getGroupSummary(blocks)
+  const firewall = useMemo(() => mostSevereFirewallFlag(blocks), [blocks])
 
   return (
     <div className="text-xs">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="ficus-button w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors"
+        className="font-medium w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors"
       >
         <ChevronRightIcon
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
         />
         <span className="font-medium">{summary}</span>
+        {firewall && <ToolFirewallBadge flag={firewall} />}
       </button>
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-2">

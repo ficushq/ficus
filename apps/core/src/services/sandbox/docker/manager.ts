@@ -19,7 +19,13 @@ import { MONOREPO_ROOT } from '../../../lib/paths'
 import { createLogger } from '../../../lib/infra/logger'
 import { getHomeDir } from '../../../lib/utils/home'
 import { getSquadIdFromSandbox } from '../types'
-import type { ISandboxManager, ManagedToolchainRequest, SandboxOptions, SandboxRuntime } from '../types'
+import type {
+  ISandboxManager,
+  ManagedToolchainRequest,
+  SandboxExecOptions,
+  SandboxOptions,
+  SandboxRuntime,
+} from '../types'
 import { requireSandboxRuntime } from '../runtime'
 import { buildBashrcContent } from '../bashrc'
 import { WORKSPACE_DOT_DIR, workspaceDotPath } from '../../workspace/dot-dir'
@@ -460,6 +466,9 @@ let cachedSelectedRuntime: SandboxRuntime | null = null
  * Check if sysbox-runc is available on this system.
  * Sysbox only works on Linux with kernel 5.12+.
  */
+/** How long each synchronous `docker info` check (sysbox, socket mode) may take. */
+export const SYSBOX_CHECK_TIMEOUT_MS = 3_000
+
 export function isSysboxAvailable(): boolean {
   if (cachedSysboxAvailable !== null) return cachedSysboxAvailable
 
@@ -469,10 +478,12 @@ export function isSysboxAvailable(): boolean {
     return false
   }
 
-  // Check if sysbox-runc runtime is registered with Docker
+  // Check if sysbox-runc runtime is registered with Docker. Synchronous, so bounded: a slow or wedged
+  // Docker daemon must not block the process (a timeout counts as "not available").
   const result = Bun.spawnSync(['docker', 'info', '--format', '{{json .Runtimes}}'], {
     stdout: 'pipe',
     stderr: 'ignore',
+    timeout: SYSBOX_CHECK_TIMEOUT_MS,
   })
 
   if (result.exitCode !== 0) {
@@ -497,10 +508,11 @@ export function isSysboxAvailable(): boolean {
 export function isSocketModeAvailable(): boolean {
   if (cachedSocketModeAvailable !== null) return cachedSocketModeAvailable
 
-  // Check if Docker is running
+  // Check if Docker is running, bounded like the sysbox check (a timeout counts as "not running").
   const result = Bun.spawnSync(['docker', 'info'], {
     stdout: 'ignore',
     stderr: 'ignore',
+    timeout: SYSBOX_CHECK_TIMEOUT_MS,
   })
 
   cachedSocketModeAvailable = result.exitCode === 0
@@ -1815,16 +1827,21 @@ export class DockerSandboxManager implements ISandboxManager {
    * Execute a command inside the container and return stdout.
    * Throws on non-zero exit code.
    */
-  async exec(sandboxId: string, args: string[]): Promise<Buffer> {
+  async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
     const sandbox = this.sandboxes.get(sandboxId)
     if (!sandbox) throw new Error(`No sandbox found for ${sandboxId}`)
 
     const userArgs = this.getSandboxUserArgs(sandbox.containerId)
+    const env = options?.env ?? {}
+    // `-e NAME` without `=value` makes the Docker CLI forward NAME from its own
+    // environment, so values never appear in the host process listing.
+    const envArgs = Object.keys(env).flatMap((name) => ['-e', name])
     const result = Bun.spawnSync(
-      ['docker', 'exec', ...userArgs, '-w', sandbox.workspaceMount, sandbox.containerId, ...args],
+      ['docker', 'exec', ...userArgs, ...envArgs, '-w', sandbox.workspaceMount, sandbox.containerId, ...args],
       {
         stdout: 'pipe',
         stderr: 'pipe',
+        ...(envArgs.length ? { env: { ...process.env, ...env } } : {}),
       }
     )
 

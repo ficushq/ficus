@@ -842,6 +842,11 @@ export const images = pgTable('images', {
   uploadedByUserId: uuid('uploaded_by_user_id').references((): AnyPgColumn => users.id, {
     onDelete: 'set null',
   }),
+  // A copy the Assistant forwarded to another agent: the image it was copied from. The copy has its
+  // own blob and is bound to the recipient, so it outlives the original.
+  forwardedFromImageId: uuid('forwarded_from_image_id').references((): AnyPgColumn => images.id, {
+    onDelete: 'set null',
+  }),
 
   // Status tracking
   status: imageStatusEnum('status').notNull().default('pending'),
@@ -4058,3 +4063,61 @@ export const storageMonitor = pgTable('storage_monitor', {
     .notNull()
     .default([]),
 })
+
+// Decision model calls: what was asked, who answered (or that none could), and how fast. The input
+// itself is never kept, only its hash; rows older than 30 days are pruned.
+export const decisionLog = pgTable(
+  'decision_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    purpose: varchar('purpose', { length: 64 }).notNull(),
+    outcome: varchar('outcome', { length: 16 }).$type<'answered' | 'unavailable' | 'unconfigured'>().notNull(),
+    providerId: varchar('provider_id', { length: 64 }),
+    model: varchar('model', { length: 128 }),
+    latencyMs: integer('latency_ms').notNull(),
+    /** Input tokens the answering provider billed, or an estimate when it didn't say (`costEstimated`). */
+    inputTokens: integer('input_tokens'),
+    /** What the answer cost, in billionths of a dollar (decision models bill input only). */
+    costNanodollars: integer('cost_nanodollars'),
+    costEstimated: boolean('cost_estimated').notNull().default(false),
+    inputSha256: varchar('input_sha256', { length: 64 }).notNull(),
+    answers: jsonb('answers').$type<Record<string, import('@ficus/shared').DecisionAnswer>>(),
+    errors: jsonb('errors').$type<Array<{ providerId: string; error: string }>>(),
+    /** Where the question came from, e.g. `{ kind: 'github', squadId }`. */
+    source: jsonb('source').$type<Record<string, string>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_decision_log_created_at').on(table.createdAt),
+    index('idx_decision_log_purpose_created_at').on(table.purpose, table.createdAt),
+  ]
+)
+
+/**
+ * A user's correction of a decision (a routing pill change, a composer mode override, "Wrong
+ * squad?"), saved as a candidate eval case for `bun run decisions:eval --inbox`. Opt-in, off by
+ * default, and never on hosted tenants: it holds what someone actually typed, so it stays on this
+ * instance unless a developer accepts it into an eval's cases.
+ */
+export const decisionEvalCandidates = pgTable(
+  'decision_eval_candidates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** The eval it is a case for, e.g. `composer-delivery`. */
+    evalName: varchar('eval_name', { length: 64 }).notNull(),
+    purpose: varchar('purpose', { length: 64 }).notNull(),
+    request: jsonb('request').$type<import('@ficus/shared').DecisionRequest>().notNull(),
+    /** What the eval's rule needs besides the answers (e.g. routing's option keys). */
+    context: jsonb('context'),
+    /** What the user said was right: `{ expect }` or `{ accept: [...] }`, in the eval's outcome terms. */
+    expected: jsonb('expected').$type<{ expect?: unknown; accept?: unknown[] }>().notNull(),
+    /** What the model had answered, when known. */
+    modelAnswers: jsonb('model_answers').$type<Record<string, import('@ficus/shared').DecisionAnswer>>(),
+    /** A one-line preview for the inbox. */
+    summary: text('summary').notNull(),
+    source: jsonb('source').$type<Record<string, string>>(),
+    status: varchar('status', { length: 16 }).$type<'new' | 'accepted' | 'dismissed'>().notNull().default('new'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_decision_eval_candidates_status_created_at').on(table.status, table.createdAt)]
+)

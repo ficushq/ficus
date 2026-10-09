@@ -880,6 +880,22 @@ async function startup(): Promise<void> {
     task: runQuestionAttentionMaintenance,
   }).start()
 
+  // Archiving a squad cancels its open Assistant tasks in the same transaction. This sweep closes
+  // the ones that predate that (squads archived earlier) and any delegation that committed while
+  // its squad was being archived: one batch at startup plus a 60-second tick, quiescent when clean.
+  const { closeArchivedSquadAssistantTasks } = await import('./services/assistant-activity/squad-archive')
+  const runArchivedSquadTaskSweep = async () => {
+    const closed = await closeArchivedSquadAssistantTasks()
+    if (closed > 0) log.info(`Closed ${closed} Assistant task(s) left open in archived squads`)
+  }
+  await runArchivedSquadTaskSweep()
+  createPeriodicRunner({
+    name: 'archived-squad-assistant-tasks',
+    intervalMs: 60_000,
+    runImmediately: false,
+    task: runArchivedSquadTaskSweep,
+  }).start()
+
   // `POST /api/system/restart` runs in the api process, which cannot reach this
   // one (separate systemd/pm2 units, no coupling) — it asks us to restart over
   // the same transport. Run the graceful shutdown (requeue owned executions)
@@ -940,6 +956,10 @@ async function startup(): Promise<void> {
       log.error('Invalid control signal:', payload, error)
     }
   })
+
+  // Robots the farm shows someone (robot moods): reports from the API, kept for 45s each.
+  const { startRobotMoodWatchingListener } = await import('./services/robot-moods')
+  await startRobotMoodWatchingListener()
 
   // Startup recovery
   log.info('Running startup recovery...')
@@ -1157,6 +1177,8 @@ async function startup(): Promise<void> {
   // Warm work-stream agents' sandboxes on spawn + assignment so handoffs are instant
   {
     const { reconcileFlows } = await import('./services/workflows/execution')
+    const { registerDecisionStepHandlers } = await import('./services/workflows/decision-steps')
+    registerDecisionStepHandlers()
     createPeriodicRunner({
       name: 'workflow-dispatch',
       intervalMs: 15_000,

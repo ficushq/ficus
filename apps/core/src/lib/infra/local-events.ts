@@ -4,9 +4,9 @@ import { createLogger } from './logger'
 /**
  * Authenticated HTTP transport for best-effort cross-process events.
  *
- * The API and worker exchange seven channels: `app_events`, `agent_control`,
+ * The API and worker exchange eight channels: `app_events`, `agent_control`,
  * `secret_changed`, `setting_changed`, `device_token_revoked`,
- * `instance_maintenance_changed`, and `system_restart`. Notifications dispatch
+ * `instance_maintenance_changed`, `system_restart`, and `farm_watching`. Notifications dispatch
  * locally and are forwarded to the configured peer without acknowledgement or
  * persistence. The ONE retry the transport performs is a short, bounded one
  * when the peer refuses the connection (nothing listening yet — see
@@ -60,6 +60,7 @@ export const LOCAL_EVENT_CHANNELS = [
   'device_token_revoked',
   'instance_maintenance_changed',
   'system_restart',
+  'farm_watching',
 ] as const
 
 export type LocalEventFailureCategory = 'http_rejection' | 'network' | 'timeout'

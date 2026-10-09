@@ -1,4 +1,6 @@
 import { SelectionPopup } from './ThemedPopup'
+import { ChatDropOverlay } from './ChatDropOverlay'
+import { isFileDrag, isTextEntry } from '../lib/dropScope'
 import { useToolRenderers } from '../lib/ToolRenderersContext'
 import { ConversationSkeleton } from './loading/Skeleton'
 import clsx from 'clsx'
@@ -27,6 +29,7 @@ import {
   MinimizeIcon,
   PlusIcon,
   SendIcon,
+  SparklesIcon,
   SpeakerOffIcon,
   SpeakerOnIcon,
   StopIcon,
@@ -38,7 +41,8 @@ import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
 import { ToolInlineActions } from './ToolInlineActions'
 import { ToolInlineActionModal, type ToolInlineActionModalProps } from './ToolInlineActionModal'
-import type { ToolInlineAction } from '../lib/tool-inline-actions'
+import { getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
+import { ToolFirewallBadge } from './ToolFirewallBadge'
 import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
 import { lastBlocksSegmentIndex, segmentAtNotices, type RenderedContentBlock } from '@ficus/client-core'
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
@@ -106,6 +110,10 @@ interface ChatViewProps {
   onCancelQueue?: () => void | Promise<void>
   deliveryMode?: DeliveryMode
   onDeliveryModeChange?: (m: DeliveryMode) => void
+  /** Set when the composer picked `deliveryMode` itself: shows the "Auto" indicator and why. */
+  suggestedDelivery?: { now: boolean } | null
+  /** Every change to the draft text (typing, voice, attachments, clearing after a send). */
+  onDraftChange?: (draft: string) => void
   // pagination
   onLoadOlder?: () => void
   isLoadingOlder?: boolean
@@ -148,6 +156,8 @@ interface ChatViewProps {
   sendButtonClassName?: string
   thinkingLabel?: string
   focusTrigger?: number
+  /** Text to put in the composer (after any draft) and focus; a new `id` puts it in again. */
+  composerDraft?: { id: number; text: string }
   /** Retained hidden chats must not register keyboard handlers. */
   keyboardShortcutsEnabled?: boolean
   tts?: {
@@ -313,7 +323,7 @@ function AssistantMessageRow({
             <button
               type="button"
               onClick={() => tts.stop()}
-              className="ficus-button flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors text-accent-light bg-accent/10 hover:bg-accent/20"
+              className="ficus-button ficus-button-secondary flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors text-accent-light bg-accent/10 hover:bg-accent/20"
               title={tts.isSynthesizing ? 'Loading...' : 'Stop'}
             >
               {tts.isSynthesizing ? (
@@ -368,7 +378,7 @@ function PendingMessageRow({
       <div
         className={clsx(
           'max-w-[90%] md:max-w-[80%] rounded-lg break-words',
-          auto ? '' : 'px-3 md:px-4 py-2 md:py-3 bg-accent text-on-accent'
+          !auto && 'px-3 md:px-4 py-2 md:py-3 bg-accent text-on-accent'
         )}
       >
         {deliveryMode && !auto && queued && (
@@ -389,7 +399,7 @@ function PendingMessageRow({
           <button
             type="button"
             onClick={onRetry}
-            className="ficus-button mt-1 text-xs text-on-accent underline hover:text-on-accent/80"
+            className="ficus-button ficus-button-link mt-1 text-xs text-on-accent underline hover:text-on-accent/80"
           >
             Retry
           </button>
@@ -430,6 +440,8 @@ export function ChatView({
   onCancelQueue,
   deliveryMode,
   onDeliveryModeChange,
+  suggestedDelivery,
+  onDraftChange,
   onLoadOlder,
   isLoadingOlder,
   hasOlderMessages,
@@ -461,6 +473,7 @@ export function ChatView({
   sendButtonClassName,
   thinkingLabel = 'Thinking...',
   focusTrigger,
+  composerDraft,
   keyboardShortcutsEnabled = true,
   tts,
   showRawText,
@@ -512,6 +525,7 @@ export function ChatView({
     })()
   )
   const [hasInput, setHasInput] = useState(() => !!inputRef.current.trim())
+  const onDraftChangeRef = useStableRef(onDraftChange)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const inputContainerRef = useRef<HTMLDivElement>(null)
@@ -579,8 +593,9 @@ export function ChatView({
         resizeTextarea(textareaRef.current)
       }
       setHasInput(!!value.trim())
+      onDraftChangeRef.current?.(value)
     },
-    [resizeTextarea]
+    [resizeTextarea, onDraftChangeRef]
   )
 
   // Reload draft when the storage key changes (e.g. navigating between agents)
@@ -1010,6 +1025,21 @@ export function ChatView({
     if (focusTrigger) textareaRef.current?.focus()
   }, [focusTrigger])
 
+  const composerDraftId = composerDraft?.id
+  const composerDraftRef = useStableRef(composerDraft)
+  useEffect(() => {
+    const draft = composerDraftRef.current
+    if (!composerDraftId || !draft) return
+    const current = inputRef.current.trimEnd()
+    const next = current ? `${current}\n\n${draft.text}` : draft.text
+    setInputValue(next)
+    saveDraft(next)
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.focus()
+    textarea.setSelectionRange(next.length, next.length)
+  }, [composerDraftId, composerDraftRef, setInputValue, saveDraft])
+
   // Coalesce streaming updates, then recheck the live follow state before scrolling.
   useEffect(() => {
     if (!autoScrollRef.current) return
@@ -1184,48 +1214,74 @@ export function ChatView({
     [addImages, agentFiles]
   )
 
-  // Drag and drop handlers
+  // Drag and drop: the whole chat surface (messages and composer) is the drop target. Only file
+  // drags count, so selecting text or dragging page elements never shows the overlay. Entering a
+  // child fires before leaving the last one, so a depth count settles where rect checks flicker.
+  const dragDepthRef = useRef(0)
+  const composerHidden = hideComposer || hideInput
+  const canDropFiles = !composerHidden && !inputDisabled
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
+      if (!isFileDrag(e)) return
+      // Never let the browser open a file dropped on a chat, even one that can't take it.
       e.preventDefault()
       e.stopPropagation()
+      dragDepthRef.current = 0
       setIsDragging(false)
 
-      if (inputDisabled || isSubmittingRef.current) return
+      if (composerHidden || inputDisabled || isSubmittingRef.current) return
       const files = Array.from(e.dataTransfer.files)
       const images = files.filter((file) => ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.type))
       if (imageAttachState.allowed) addImages(images)
       agentFiles.addFiles(files.filter((file) => !images.includes(file)))
     },
-    [addImages, agentFiles, imageAttachState.allowed, inputDisabled]
+    [addImages, agentFiles, imageAttachState.allowed, inputDisabled, composerHidden]
   )
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }, [])
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!isFileDrag(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = canDropFiles ? 'copy' : 'none'
+    },
+    [canDropFiles]
+  )
 
   const handleDragEnter = useCallback(
     (e: React.DragEvent) => {
+      if (!isFileDrag(e)) return
       e.preventDefault()
       e.stopPropagation()
-      if (inputDisabled || isSubmittingRef.current) return
+      dragDepthRef.current += 1
+      if (!canDropFiles || isSubmittingRef.current) return
       setIsDragging(true)
     },
-    [inputDisabled]
+    [canDropFiles]
   )
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
     e.preventDefault()
     e.stopPropagation()
-    // Only set dragging to false if we're leaving the drop zone entirely
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX
-    const y = e.clientY
-    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setIsDragging(false)
+  }, [])
+
+  // A drag that ends elsewhere (dropped outside, or cancelled with Escape) clears the overlay.
+  useEffect(() => {
+    if (!isDragging) return
+    const reset = () => {
+      dragDepthRef.current = 0
       setIsDragging(false)
     }
-  }, [])
+    window.addEventListener('dragend', reset)
+    window.addEventListener('drop', reset)
+    return () => {
+      window.removeEventListener('dragend', reset)
+      window.removeEventListener('drop', reset)
+    }
+  }, [isDragging])
 
   // Paste handler
   const handlePaste = useCallback(
@@ -1252,6 +1308,16 @@ export function ChatView({
       }
     },
     [addImages, agentFiles, imageAttachState.allowed, inputDisabled]
+  )
+
+  // Pastes with focus on the chat surface but outside its fields (after clicking the messages, say)
+  // attach to this chat, like pasting into the composer; text fields keep their own paste.
+  const handleSurfacePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      if (e.defaultPrevented || composerHidden || isTextEntry(e.target as Element)) return
+      handlePaste(e)
+    },
+    [handlePaste, composerHidden]
   )
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1381,6 +1447,25 @@ export function ChatView({
 
   const disabled = inputDisabled ?? false
 
+  // The delivery split button's labels. When the composer picked the mode itself, it says so and why.
+  const sendProgressLabel = isPreparingImages
+    ? 'Preparing...'
+    : isUploading
+      ? 'Uploading...'
+      : isSubmitting
+        ? 'Sending...'
+        : null
+  const deliveryLabel = deliveryMode === 'follow-up' ? 'Follow up' : 'Interrupt'
+  const deliveryTitle =
+    deliveryMode === 'follow-up'
+      ? 'Send after the agent finishes this turn'
+      : 'Send now: the agent reads it at its next step'
+  const suggestionReason = suggestedDelivery
+    ? suggestedDelivery.now
+      ? 'Suggested because this should reach the agent now'
+      : 'Suggested because this looks like separate work that can wait'
+    : null
+
   const handleTranscription = useCallback(
     (text: string) => {
       const prev = inputRef.current
@@ -1479,12 +1564,10 @@ export function ChatView({
         onClick={onToggleRawText}
         aria-pressed={!!showRawText}
         className={clsx(
-          'ficus-button',
+          'ficus-button ficus-button-ghost',
           'rounded-md flex items-center justify-center transition-colors shrink-0',
           place === 'composer' ? 'p-2.5 md:p-2 min-h-[44px] md:min-h-0' : 'p-1.5',
-          showRawText
-            ? 'text-accent-light bg-accent/10 hover:bg-accent/20'
-            : 'text-placeholder hover:text-secondary hover:bg-surface-hover'
+          showRawText && 'text-accent-light hover:text-accent-light bg-accent/10 hover:bg-accent/20'
         )}
         aria-label={showRawText ? 'Show rendered markdown' : 'Show raw text'}
         title={showRawText ? 'Show rendered markdown' : 'Show raw text'}
@@ -1501,7 +1584,7 @@ export function ChatView({
   const fullscreenButton = (enableFullscreen || isFullscreen) && (
     <button
       onClick={toggleFullscreen}
-      className="ficus-button p-1.5 rounded-md text-placeholder hover:text-secondary hover:bg-surface-hover transition-colors shrink-0"
+      className="ficus-button ficus-button-ghost p-1.5 rounded-md transition-colors shrink-0"
       aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
       title={isFullscreen ? 'Exit fullscreen (Escape)' : 'Fullscreen'}
     >
@@ -1511,12 +1594,21 @@ export function ChatView({
 
   const chatContent = (
     <div
+      // The whole chat is one drop and paste scope; clicking its messages focuses it (see handleSurfacePaste).
+      data-drop-scope="chat"
+      tabIndex={-1}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onPaste={handleSurfacePaste}
       className={clsx(
-        'flex flex-col bg-surface min-h-0 grow',
+        'relative flex flex-col bg-surface min-h-0 grow outline-none',
         isFullscreen ? 'h-full rounded-lg shadow-xl overflow-hidden' : 'rounded-lg',
         className
       )}
     >
+      {isDragging && <ChatDropOverlay />}
       {(header || headerRawTextToggle || fullscreenButton) && (
         <div
           className={clsx(
@@ -1537,6 +1629,7 @@ export function ChatView({
       {/* Messages */}
       <div
         ref={scrollContainerRef}
+        data-testid="chat-messages"
         onScroll={handleScroll}
         onWheel={markUserScrolling}
         onTouchMove={markUserScrolling}
@@ -1783,14 +1876,7 @@ export function ChatView({
           />
           <div
             ref={inputContainerRef}
-            className={clsx(
-              'px-3 py-2 md:px-4 md:py-2.5 border-t border-th-border shrink-0 relative z-10 bg-surface',
-              isDragging && 'ring-2 ring-accent-light ring-inset bg-accent/10'
-            )}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
+            className="px-3 py-2 md:px-4 md:py-2.5 border-t border-th-border shrink-0 relative z-10 bg-surface"
           >
             {/* Hidden file input - outside flow so space-y-3 doesn't add gap */}
             <input
@@ -1837,16 +1923,6 @@ export function ChatView({
                 </div>
               )}
 
-              {/* Drop overlay */}
-              {isDragging && (
-                <div className="absolute inset-0 bg-selection/90 flex items-center justify-center z-10 pointer-events-none rounded-b-lg">
-                  <div className="text-accent-light font-medium flex items-center gap-2">
-                    <FileIcon className="h-6 w-6" />
-                    Drop files here
-                  </div>
-                </div>
-              )}
-
               {inputPrefix}
 
               {/* Clear queue button */}
@@ -1857,11 +1933,10 @@ export function ChatView({
                     onClick={handleCancelQueueClick}
                     disabled={isClearingQueue}
                     className={clsx(
-                      'ficus-button',
+                      'ficus-button ficus-button-danger',
                       'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors disabled:opacity-50',
-                      confirmingClearQueue
-                        ? 'bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-100 dark:hover:bg-status-danger-900/50'
-                        : 'bg-status-attention-50 dark:bg-status-attention-900/30 text-status-attention-700 dark:text-status-attention-300 hover:bg-status-attention-100 dark:hover:bg-status-attention-900/50'
+                      !confirmingClearQueue &&
+                        'bg-status-attention-50 dark:bg-status-attention-900/30 text-status-attention-700 dark:text-status-attention-300 hover:bg-status-attention-100 dark:hover:bg-status-attention-900/50'
                     )}
                   >
                     {isClearingQueue ? (
@@ -1901,13 +1976,17 @@ export function ChatView({
                           <span role="alert" className="text-status-danger-600 dark:text-status-danger-400">
                             {agentFileErrorText(file.error)}
                           </span>
-                          <button className="ficus-button" type="button" onClick={() => agentFiles.retryFile(file.id)}>
+                          <button
+                            className="ficus-button ficus-button-link"
+                            type="button"
+                            onClick={() => agentFiles.retryFile(file.id)}
+                          >
                             Retry
                           </button>
                         </>
                       )}
                       <button
-                        className="ficus-button"
+                        className="ficus-button ficus-button-ghost"
                         type="button"
                         onClick={() => void agentFiles.removeFile(file.id)}
                         aria-label={`Remove ${file.file.name}`}
@@ -1990,7 +2069,7 @@ export function ChatView({
                         <button
                           type="button"
                           onClick={() => retryImageUpload(img.id)}
-                          className="ficus-button mt-1 block w-16 text-xs text-accent-light hover:text-link-hover hover:underline"
+                          className="ficus-button ficus-button-link mt-1 block w-16 text-xs"
                           aria-label="Retry image upload"
                         >
                           Re-upload
@@ -2002,7 +2081,7 @@ export function ChatView({
                         <button
                           type="button"
                           onClick={() => removeImage(img.id)}
-                          className="ficus-button absolute -top-1 -right-1 bg-status-danger-500 hover:bg-status-danger-600 text-on-strong rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="ficus-button ficus-button-danger absolute -top-1 -right-1 rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
                           title="Remove image"
                           aria-label="Remove image"
                         >
@@ -2017,7 +2096,7 @@ export function ChatView({
                     <button
                       type="button"
                       onClick={clearAllImages}
-                      className="ficus-button flex items-center gap-1 px-2 py-1 text-xs text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors self-center"
+                      className="ficus-button ficus-button-danger flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors self-center"
                     >
                       <TrashIcon className="h-3 w-3" />
                       Clear all
@@ -2050,6 +2129,7 @@ export function ChatView({
                     const val = e.target.value
                     inputRef.current = val
                     setHasInput(!!val.trim())
+                    onDraftChangeRef.current?.(val)
                     saveDraft(val)
                     resizeTextarea(e.currentTarget)
                     // Check for @ mention trigger
@@ -2127,7 +2207,7 @@ export function ChatView({
                       onClick={() => setAttachSheetOpen(true)}
                       aria-haspopup="dialog"
                       aria-expanded={attachSheetOpen}
-                      className="ficus-button chat-composer-attach md:hidden p-2.5 rounded-md text-muted hover:text-secondary hover:bg-surface-hover transition-colors shrink-0"
+                      className="ficus-button ficus-button-ghost chat-composer-attach md:hidden p-2.5 rounded-md transition-colors shrink-0"
                       aria-label="Attach or change controls"
                     >
                       <PlusIcon className="w-5 h-5" />
@@ -2138,7 +2218,7 @@ export function ChatView({
                         type="button"
                         onClick={() => imageAttachState.allowed && fileInputRef.current?.click()}
                         disabled={!imageAttachState.allowed || disabled || isUploading}
-                        className="ficus-button p-2.5 md:p-2 rounded-md text-muted hover:text-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors shrink-0"
+                        className="ficus-button ficus-button-ghost p-2.5 md:p-2 rounded-md disabled:opacity-50 transition-colors shrink-0"
                         title={imageAttachState.title}
                       >
                         <ImageIcon className="h-5 w-5" />
@@ -2155,7 +2235,7 @@ export function ChatView({
                         }}
                         onClick={() => agentId && agentFileInputRef.current?.click()}
                         disabled={!agentId || disabled}
-                        className="ficus-button p-2.5 md:p-2 rounded-md text-muted hover:text-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors shrink-0"
+                        className="ficus-button ficus-button-ghost p-2.5 md:p-2 rounded-md disabled:opacity-50 transition-colors shrink-0"
                         title="Attach a file"
                         aria-label="Attach a file"
                       >
@@ -2191,13 +2271,13 @@ export function ChatView({
                             onTouchEnd={() => endPress()}
                             disabled={disabled || voiceState === 'transcribing'}
                             className={clsx(
-                              'ficus-button',
+                              'ficus-button ficus-button-ghost',
                               'relative z-10 p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors disabled:opacity-50',
                               voiceState === 'recording'
                                 ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50'
                                 : voiceState === 'transcribing'
-                                  ? 'bg-surface-secondary text-placeholder'
-                                  : 'text-muted hover:text-secondary hover:bg-surface-hover'
+                                  ? 'bg-surface-secondary'
+                                  : ''
                             )}
                             title={
                               voiceState === 'recording'
@@ -2231,13 +2311,13 @@ export function ChatView({
                             type="button"
                             onClick={tts.toggle}
                             className={clsx(
-                              'ficus-button',
+                              'ficus-button ficus-button-ghost',
                               'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
                               tts.isPlaying || tts.isSynthesizing
-                                ? 'bg-accent/15 text-accent-light'
+                                ? 'bg-accent/15 hover:bg-accent/15 text-accent-light hover:text-accent-light'
                                 : tts.enabled
-                                  ? 'text-accent-light hover:bg-accent/10'
-                                  : 'text-placeholder hover:text-secondary hover:bg-surface-hover'
+                                  ? 'text-accent-light hover:text-accent-light hover:bg-accent/10'
+                                  : ''
                             )}
                             title={tts.enabled ? 'Disable auto-speak' : 'Enable auto-speak'}
                           >
@@ -2260,11 +2340,9 @@ export function ChatView({
                           if (next) pinTranscriptToBottom()
                         }}
                         className={clsx(
-                          'ficus-button',
+                          'ficus-button ficus-button-ghost',
                           'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
-                          autoScroll
-                            ? 'text-accent hover:bg-selection'
-                            : 'text-placeholder hover:text-secondary hover:bg-surface-hover'
+                          autoScroll && 'text-accent hover:text-accent hover:bg-selection'
                         )}
                         title={autoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
                       >
@@ -2280,7 +2358,7 @@ export function ChatView({
                       <button
                         type="button"
                         onClick={onStop}
-                        className="ficus-button chat-composer-stop px-2.5 py-2 md:py-1.5 rounded-md text-on-strong text-sm font-medium min-h-[44px] md:min-h-0 bg-status-danger-600 hover:bg-status-danger-700 active:bg-status-danger-800 transition-colors"
+                        className="ficus-button ficus-button-danger chat-composer-stop px-2.5 py-2 md:py-1.5 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 transition-colors"
                         title="Stop"
                       >
                         Stop
@@ -2301,21 +2379,9 @@ export function ChatView({
                         <button
                           type="submit"
                           aria-label={
-                            isPreparingImages
-                              ? 'Preparing...'
-                              : isUploading
-                                ? 'Uploading...'
-                                : isSubmitting
-                                  ? 'Sending...'
-                                  : deliveryMode === 'steer'
-                                    ? 'Interrupt'
-                                    : 'Follow up'
+                            sendProgressLabel ?? (suggestionReason ? `${deliveryLabel} (suggested)` : deliveryLabel)
                           }
-                          title={
-                            deliveryMode === 'steer'
-                              ? 'Send now: the agent reads it at its next step'
-                              : 'Send after the agent finishes this turn'
-                          }
+                          title={suggestionReason ? `${suggestionReason}. ${deliveryTitle}` : deliveryTitle}
                           disabled={
                             disabled ||
                             isUploading ||
@@ -2326,21 +2392,23 @@ export function ChatView({
                             (!hasInput && pendingImages.length === 0)
                           }
                           className={clsx(
-                            'chat-composer-submit whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 md:py-1.5',
+                            'chat-composer-submit inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 md:py-1.5',
                             deliveryMode === 'steer'
                               ? 'hover:bg-accent-hover active:bg-accent-active'
                               : 'hover:bg-status-attention-700 active:bg-status-attention-800'
                           )}
                         >
-                          {isPreparingImages
-                            ? 'Preparing...'
-                            : isUploading
-                              ? 'Uploading...'
-                              : isSubmitting
-                                ? 'Sending...'
-                                : deliveryMode === 'steer'
-                                  ? 'Interrupt'
-                                  : 'Follow up'}
+                          {sendProgressLabel ?? deliveryLabel}
+                          {suggestionReason && !sendProgressLabel && (
+                            <span
+                              className="chat-composer-auto inline-flex items-center gap-0.5 text-[11px] font-medium leading-none opacity-80"
+                              title={suggestionReason}
+                              aria-hidden="true"
+                            >
+                              <SparklesIcon className="h-3 w-3" />
+                              Auto
+                            </span>
+                          )}
                         </button>
                         <SelectionPopup
                           label="Message delivery"
@@ -2362,7 +2430,7 @@ export function ChatView({
                             },
                           ]}
                           className={clsx(
-                            'ficus-button chat-composer-mode flex min-h-[44px] md:min-h-0 items-center border-l px-2.5 transition-colors disabled:opacity-50',
+                            'ficus-button ficus-button-ghost text-inherit hover:text-inherit chat-composer-mode flex min-h-[44px] md:min-h-0 items-center border-l px-2.5 transition-colors disabled:opacity-50',
                             deliveryMode === 'steer'
                               ? 'border-accent-active hover:bg-accent-hover'
                               : 'border-status-attention-700 hover:bg-status-attention-700'
@@ -2393,10 +2461,10 @@ export function ChatView({
                           (!hasInput && pendingImages.length === 0)
                         }
                         className={clsx(
-                          'ficus-button',
+                          'ficus-button ficus-button-primary',
                           'px-3 py-2 md:py-1.5 rounded-md text-sm disabled:opacity-50 font-medium min-h-[44px] md:min-h-0',
-                          sendButtonClassName ? 'text-on-strong' : 'text-on-accent',
-                          sendButtonClassName ?? 'bg-accent hover:bg-accent-hover active:bg-accent-active'
+                          sendButtonClassName && 'text-on-strong',
+                          sendButtonClassName
                         )}
                       >
                         <SendIcon className="h-5 w-5 md:hidden" />
@@ -2427,7 +2495,7 @@ export function ChatView({
                     }}
                     disabled={!imageAttachState.allowed || disabled || isUploading}
                     title={imageAttachState.title}
-                    className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover disabled:opacity-50 disabled:hover:bg-transparent"
+                    className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary disabled:opacity-50 disabled:hover:bg-transparent"
                   >
                     <ImageIcon className="w-5 h-5 text-muted" />
                     Attach image
@@ -2445,7 +2513,7 @@ export function ChatView({
                       setAttachSheetOpen(false)
                     }}
                     disabled={!agentId || disabled}
-                    className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover disabled:opacity-50"
+                    className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary disabled:opacity-50"
                   >
                     <FileIcon className="w-5 h-5 text-muted" />
                     Attach file
@@ -2462,7 +2530,7 @@ export function ChatView({
                         setAttachSheetOpen(false)
                       }}
                       disabled={disabled || voiceState === 'transcribing'}
-                      className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover disabled:opacity-50"
+                      className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary disabled:opacity-50"
                     >
                       <MicIcon className="w-5 h-5 text-muted" />
                       {voiceState === 'recording' ? 'Stop voice recording' : 'Voice message'}
@@ -2475,7 +2543,7 @@ export function ChatView({
                         tts.toggle()
                         setAttachSheetOpen(false)
                       }}
-                      className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover"
+                      className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary"
                     >
                       {tts.enabled ? (
                         <SpeakerOnIcon className="w-5 h-5 text-muted" />
@@ -2493,7 +2561,7 @@ export function ChatView({
                       if (next) pinTranscriptToBottom()
                       setAttachSheetOpen(false)
                     }}
-                    className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover"
+                    className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary"
                   >
                     <AutoScrollIcon className="w-5 h-5 text-muted" />
                     {autoScroll ? 'Auto-scroll on' : 'Auto-scroll off'}
@@ -2505,7 +2573,7 @@ export function ChatView({
                         onToggleRawText()
                         setAttachSheetOpen(false)
                       }}
-                      className="ficus-button w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary hover:bg-surface-hover"
+                      className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary"
                     >
                       {showRawText ? (
                         <MarkdownIcon className="w-5 h-5 text-muted" />
@@ -2796,7 +2864,7 @@ function StreamingBlockGroupSection({
     <div className="text-xs">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="ficus-button w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors"
+        className="font-medium w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors"
       >
         <ChevronRightIcon
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
@@ -2860,6 +2928,10 @@ function StreamingToolCallItem({
   const isError = toolCall.isError || isIncomplete
   const result = toolCall.result || (isIncomplete ? 'Command aborted' : '')
   const [expanded, setExpanded] = useState(defaultExpanded)
+  const firewall = useMemo(
+    () => (toolCall._done ? getToolFirewallFlag({ result: toolCall.result }) : null),
+    [toolCall._done, toolCall.result]
+  )
 
   // When defaultExpanded changes (e.g. a new tool call pushes this one up), sync
   useEffect(() => {
@@ -2871,7 +2943,7 @@ function StreamingToolCallItem({
       <div data-tool-call-row={toolCall.toolCallId} className="flex items-center">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="ficus-button flex-1 flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
+          className="font-medium flex-1 flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
         >
           {inProgress ? (
             <span className="inline-block w-3 h-3 border-2 border-th-border border-t-secondary rounded-full animate-spin shrink-0" />
@@ -2886,6 +2958,7 @@ function StreamingToolCallItem({
           )}
           <span className="font-medium shrink-0">{toolCall.toolName}</span>
           <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+          {firewall && <ToolFirewallBadge flag={firewall} />}
           {isError && (
             <span className="text-status-danger-500 dark:text-status-danger-400 text-[10px] font-medium shrink-0">
               ERROR
@@ -2901,7 +2974,7 @@ function StreamingToolCallItem({
               e.stopPropagation()
               onAbortTool()
             }}
-            className="ficus-button px-2 py-0.5 ml-1 text-xs font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors shrink-0"
+            className="ficus-button ficus-button-danger px-2 py-0.5 ml-1 text-xs font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors shrink-0"
           >
             Abort
           </button>

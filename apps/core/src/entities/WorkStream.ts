@@ -134,6 +134,14 @@ export class WorkStreamNotReopenableError extends Error {
 }
 
 /** One observed integration event owns at most one live work stream. Routes map this to a 200 reuse. */
+/** An archived squad takes no new work: its agents are stopped and its sandbox cannot start. */
+export class SquadArchivedError extends Error {
+  constructor() {
+    super('Squad is archived')
+    this.name = 'SquadArchivedError'
+  }
+}
+
 export class WorkStreamEventAlreadyHandledError extends Error {
   constructor(public readonly workStreamId: string) {
     super(`This integration event is already tracked by work stream ${workStreamId}`)
@@ -663,6 +671,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         'Legacy work-stream creation is no longer supported. Use a workflow or ephemeral flow for participants, models, and delivery policy.'
       )
     const squad = await Squad.mustFind(input.squadId)
+    if (squad.isArchived) throw new SquadArchivedError()
     await validateAssignedReviewers(input.assignedReviewerIds ?? [], squad.id)
     const source = await resolveCreationWorkflow(input.workflow, squad)
     input = { ...input, workflow: source }

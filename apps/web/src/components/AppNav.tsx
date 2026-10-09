@@ -1,6 +1,6 @@
 import { DesktopHistoryControls } from './DesktopHistoryControls'
 import { SparklesIcon } from './icons'
-import { Presence } from './Presence'
+import { Menu, MenuItem, usePopover } from './popover'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
@@ -193,7 +193,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             {isChat && (
               <button
                 onClick={() => navigate('/chat?new')}
-                className="ficus-button md:hidden p-2 text-accent-light hover:text-accent-light"
+                className="ficus-button ficus-button-ghost md:hidden p-2 text-accent-light hover:text-accent-light"
                 title="New chat"
               >
                 <PencilIcon className="w-5 h-5" />
@@ -205,7 +205,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
               title="Assistant (⌘K / Ctrl+K)"
               aria-label="Assistant"
               aria-expanded={['open', 'expanded'].includes(new URLSearchParams(location.search).get('chat') ?? '')}
-              className="ficus-button group relative flex items-center gap-1.5 p-2 text-muted hover:text-accent-light hover:bg-surface-hover"
+              className="ficus-button ficus-button-ghost group relative flex items-center gap-1.5 p-2 hover:text-accent-light"
             >
               <SparklesIcon className="w-5 h-5 motion-safe:transition-transform motion-safe:duration-150 motion-safe:group-hover:rotate-6 motion-safe:group-hover:scale-110" />
               <span className="hidden lg:inline text-xs">Assistant</span>
@@ -216,7 +216,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
               href={farmHref()}
               title="Farm"
               aria-label="Open the farm"
-              className="ficus-button flex items-center justify-center p-2 rounded-md text-muted hover:text-primary hover:bg-surface-hover"
+              className="ficus-button ficus-button-ghost flex items-center justify-center p-2 rounded-md"
             >
               <SproutIcon className="w-5 h-5" />
             </a>
@@ -239,9 +239,9 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             <button
               onClick={() => window.dispatchEvent(new Event('open-inbox-popup'))}
               className={clsx(
-                'ficus-button',
+                'ficus-button ficus-button-ghost',
                 'relative hidden md:flex items-center justify-center p-2 rounded-md',
-                inboxPopupOpen ? 'text-accent-light' : 'text-muted hover:text-primary hover:bg-surface-hover'
+                inboxPopupOpen && 'text-accent-light hover:text-accent-light'
               )}
               title="Inbox (I)"
             >
@@ -280,23 +280,14 @@ export function MobileBottomNav({
 
   const dockItems = [...primaryMobileItems, ...(visibleMoreMenuItems.length === 1 ? visibleMoreMenuItems : [])]
 
-  const [moreOpen, setMoreOpen] = useState(false)
+  const more = usePopover({ kind: 'menu' })
+  const { open: moreOpen, setOpen: setMoreOpen } = more
   const isMoreActive = visibleMoreMenuItems.some((item) => location.pathname.startsWith(item.to))
-
-  // Close menu on click outside
-  useEffect(() => {
-    if (!moreOpen) return
-    function handleClick() {
-      setMoreOpen(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [moreOpen])
 
   // Close menu on navigation
   useEffect(() => {
     setMoreOpen(false)
-  }, [location.pathname])
+  }, [location.pathname, setMoreOpen])
 
   return (
     <nav className="ficus-glass md:hidden shrink-0 border-t border-panel-border safe-area-pb z-10 [[data-keyboard=open]_&]:hidden">
@@ -355,14 +346,14 @@ export function MobileBottomNav({
         {visibleMoreMenuItems.length > 1 && (
           <div className="relative flex-1 h-full min-w-0">
             <button
-              aria-expanded={moreOpen}
+              {...more.triggerProps}
               data-active={isMoreActive || moreOpen}
               onClick={(e) => {
                 e.stopPropagation()
-                setMoreOpen((v) => !v)
+                more.toggle()
               }}
               className={clsx(
-                'ficus-button ficus-dock-item',
+                'ficus-dock-item',
                 'flex flex-col items-center justify-center w-full h-full',
                 isMoreActive || moreOpen ? 'text-accent-light' : 'text-muted hover:text-primary'
               )}
@@ -371,29 +362,35 @@ export function MobileBottomNav({
               <span className="text-xs mt-1">More</span>
             </button>
 
-            <Presence
-              open={moreOpen}
-              className="ficus-overlay absolute bottom-full right-0 mb-2 mr-2 bg-surface rounded-lg shadow-theme-lg border border-th-border py-1 min-w-[160px]"
-              onMouseDown={(e) => e.stopPropagation()}
+            <Menu
+              {...more.popoverProps}
+              label="More"
+              side="above"
+              gap={8}
+              alignOffset={8}
+              className="ficus-overlay bg-surface rounded-lg shadow-theme-lg border border-th-border py-1 min-w-[160px]"
             >
               {visibleMoreMenuItems.map((item) => {
                 const isActive = location.pathname.startsWith(item.to)
                 return (
-                  <button
+                  <MenuItem
                     key={item.to}
+                    aria-current={isActive ? 'page' : undefined}
                     onClick={() => navigate(getTabNavigationTarget(location.pathname + location.search, item.to))}
                     className={clsx(
-                      'ficus-button',
+                      'ficus-button ficus-button-ghost',
                       'flex items-center gap-3 w-full px-4 py-3 text-sm',
-                      isActive ? 'text-accent-light bg-selection' : 'text-primary hover:bg-surface-hover'
+                      isActive
+                        ? 'text-accent-light hover:text-accent-light bg-selection hover:bg-selection'
+                        : 'text-primary'
                     )}
                   >
                     {item.icon}
                     {item.label}
-                  </button>
+                  </MenuItem>
                 )
               })}
-            </Presence>
+            </Menu>
           </div>
         )}
       </div>

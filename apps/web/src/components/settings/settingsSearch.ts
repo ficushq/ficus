@@ -23,6 +23,8 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   signup: 'registration allowed domains email allowlist',
   providers:
     'ai credentials oauth subscriptions api keys models fallback routing openrouter anthropic claude openai chatgpt gemini copilot ollama local server',
+  'decision-providers':
+    'decision models classifier yes no jev typesafe clef cloudflare openai decisions firewall prompt injection shell fetches gh curl wget spend cost price',
   git: 'commit author name email github defaults override',
   skills: 'markdown import instructions tools extensions',
   'agent-types':
@@ -229,6 +231,19 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     id: 'add-a-provider',
     label: 'Add a provider',
     keywords: 'anthropic claude openai chatgpt google gemini copilot oauth api key',
+  },
+  {
+    section: 'decision-providers',
+    id: 'decision-models',
+    label: 'Decision models',
+    keywords:
+      'classifier yes no choice jev clef cloudflare openai decisions github firewall workflow decision event rules screenshot filing images',
+  },
+  {
+    section: 'decision-providers',
+    id: 'add-decision-model',
+    label: 'Add a decision model',
+    keywords: 'jev typesafe clef cloudflare workers ai openai decisions local systemone ollama vllm sglang',
   },
   {
     section: 'amtp',

@@ -4,11 +4,18 @@
  * Renders every icon Core web, Platform web, Core docs, Desktop and Mobile
  * need from the three source SVGs in `brand/` (`ficus-mark.svg`,
  * `ficus-mark-dark.svg`, `ficus-favicon-16.svg`). Outputs are written to
- * `brand/generated/` and are NOT wired into any app by this script — that
- * swap happens in separate, later PRs.
+ * `brand/generated/`. Platform web (a separate, private repo) still needs
+ * its own copy by hand; Core's own copies (apps/web, apps/docs) are kept in
+ * sync automatically — see `publishIconCopies` / `PUBLISHED_ICON_COPIES`
+ * below. The farm app (apps/farm) reads `brand/generated/farm` directly, so
+ * it needs no copy.
  *
  * Usage: bun run brand:generate   (from repo root)
  *     or: bun run scripts/brand/generate.ts
+ *
+ * Run as a script, it then also publishes the icon copies, renders the
+ * social preview cards (scripts/brand/social-preview.ts, `bun run
+ * brand:social` on its own) and the App Store art.
  *
  * Determinism: every raster target is built by rasterizing a single
  * composite SVG (background shape + the source mark's own path data,
@@ -18,12 +25,79 @@
  * byte-identical files (see scripts/brand/generate.test.ts).
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import sharp from 'sharp'
 
-export const BRAND_DIR = join(import.meta.dir, '..', '..', 'brand')
+export const REPO_ROOT = join(import.meta.dir, '..', '..')
+export const BRAND_DIR = join(REPO_ROOT, 'brand')
 export const OUT_DIR = join(BRAND_DIR, 'generated')
+
+/**
+ * Byte-for-byte copies of generated icons (and the two source mark SVGs they
+ * embed) that apps outside `brand/` publish from their own public dirs,
+ * since Core web, Core docs and the farm app each need these files in their
+ * own trees rather than reading `brand/` directly. Paths are relative to the
+ * repo root. `bun run brand:generate` refreshes every copy after
+ * regenerating; `published-icons.test.ts` fails if any copy drifts from its
+ * source (see also PUBLISHED_COPIES in social-preview.ts, the same idea for
+ * the social card).
+ *
+ * The farm app (`apps/farm`) has no copy here: its Vite `publicDir` points at
+ * `brand/generated/farm` directly, so there's nothing to keep in sync.
+ */
+export const PUBLISHED_ICON_COPIES: ReadonlyArray<{ from: string; to: string }> = [
+  // brand/generated/web/** -> apps/web/public/icons/** (Core web), same relative path.
+  ...[
+    'favicon.svg',
+    'favicon-16x16.png',
+    'favicon-32x32.png',
+    'apple-touch-icon.png',
+    'icon-72x72.png',
+    'icon-96x96.png',
+    'icon-128x128.png',
+    'icon-144x144.png',
+    'icon-152x152.png',
+    'icon-192x192.png',
+    'icon-384x384.png',
+    'icon-512x512.png',
+    'icon-maskable-192x192.png',
+    'icon-maskable-512x512.png',
+    'shortcut-chat.png',
+    'shortcut-tasks.png',
+  ].map((file) => ({ from: `brand/generated/web/${file}`, to: `apps/web/public/icons/${file}` })),
+  ...[
+    'apple-touch-icon.png',
+    'favicon-16x16.png',
+    'favicon-32x32.png',
+    'icon-72x72.png',
+    'icon-96x96.png',
+    'icon-128x128.png',
+    'icon-144x144.png',
+    'icon-152x152.png',
+    'icon-192x192.png',
+    'icon-384x384.png',
+    'icon-512x512.png',
+    'icon-maskable-192x192.png',
+    'icon-maskable-512x512.png',
+  ].map((file) => ({ from: `brand/generated/web/dark/${file}`, to: `apps/web/public/icons/dark/${file}` })),
+  // The full-detail source mark, published alongside the generated icons so
+  // apps/web can reference the vector mark directly.
+  { from: 'brand/ficus-mark.svg', to: 'apps/web/public/icons/icon-source.svg' },
+  // Core docs (apps/docs) publishes the web favicon and both source marks.
+  { from: 'brand/generated/web/favicon.svg', to: 'apps/docs/public/favicon.svg' },
+  { from: 'brand/ficus-mark.svg', to: 'apps/docs/src/assets/ficus-mark.svg' },
+  { from: 'brand/ficus-mark-dark.svg', to: 'apps/docs/src/assets/ficus-mark-dark.svg' },
+]
+
+/** Copies every entry in `PUBLISHED_ICON_COPIES` from its brand source to its published path. */
+export async function publishIconCopies(root: string = REPO_ROOT): Promise<void> {
+  for (const { from, to } of PUBLISHED_ICON_COPIES) {
+    const dest = join(root, to)
+    await mkdir(dirname(dest), { recursive: true })
+    await copyFile(join(root, from), dest)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Brand constants (see brand/README.md for the human-readable version)
@@ -89,9 +163,21 @@ const FARM_STANDARD_SIZES = [192, 512]
 const FARM_HORIZON = { mark: 49, favicon16: 50 } as const
 const WEB_MASKABLE_SIZES = [192, 512]
 
+// Apple's macOS app icon template: an 824 continuous-corner tile centered in a
+// 1024 canvas, over a soft drop shadow (28px blur, 12px down, 30% black).
 const DESKTOP_CANVAS = 1024
-const DESKTOP_TILE = 824
+export const DESKTOP_TILE = 824
 const DESKTOP_CORNER_RADIUS = 185
+// Figma-style corner smoothing; 0.6 approximates Apple's continuous corners.
+const DESKTOP_CORNER_SMOOTHING = 0.6
+export const DESKTOP_SHADOW = { blur: 28, offsetY: 12, opacity: 0.3 } as const
+
+const DESKTOP_TILE_SPEC = {
+  size: DESKTOP_TILE,
+  cornerRadius: DESKTOP_CORNER_RADIUS,
+  smoothing: DESKTOP_CORNER_SMOOTHING,
+  shadow: DESKTOP_SHADOW,
+}
 
 const PNG_OPTIONS = {
   compressionLevel: 9,
@@ -122,6 +208,48 @@ function toDark(markup: string): string {
 /** Forces every fill color in the markup to pure white (for monochrome silhouettes). */
 function toWhiteSilhouette(markup: string): string {
   return markup.replace(/fill="#[0-9a-fA-F]{3,6}"/g, 'fill="#ffffff"')
+}
+
+/**
+ * A continuous-corner ("squircle") square of side `size` at (x, y): each corner
+ * eases from the straight edge into a circular arc through two cubic Béziers,
+ * so curvature changes gradually instead of jumping as a plain rounded rect's
+ * does. This is the corner-smoothing construction Figma uses (and that Apple's
+ * icon templates approximate); `smoothing` 0 is an ordinary rounded corner.
+ */
+export function squirclePath(x: number, y: number, size: number, radius: number, smoothing: number): string {
+  const rad = (deg: number) => (deg * Math.PI) / 180
+  const p = Math.min((1 + smoothing) * radius, size / 2)
+  const arcMeasure = 90 * (1 - smoothing)
+  const arc = Math.sin(rad(arcMeasure / 2)) * radius * Math.SQRT2
+  const angleAlpha = (90 - arcMeasure) / 2
+  const p3ToP4 = radius * Math.tan(rad(angleAlpha / 2))
+  const angleBeta = 45 * smoothing
+  const c = p3ToP4 * Math.cos(rad(angleBeta))
+  const d = c * Math.tan(rad(angleBeta))
+  const b = (p - arc - c - d) / 3
+  const a = 2 * b
+  const n = (v: number) => Number(v.toFixed(3)).toString()
+  const [ab, abc, bc] = [a + b, a + b + c, b + c]
+  return [
+    `M${n(x + size - p)} ${n(y)}`,
+    `c${n(a)} 0 ${n(ab)} 0 ${n(abc)} ${n(d)}`,
+    `a${n(radius)} ${n(radius)} 0 0 1 ${n(arc)} ${n(arc)}`,
+    `c${n(d)} ${n(c)} ${n(d)} ${n(bc)} ${n(d)} ${n(abc)}`,
+    `L${n(x + size)} ${n(y + size - p)}`,
+    `c0 ${n(a)} 0 ${n(ab)} ${n(-d)} ${n(abc)}`,
+    `a${n(radius)} ${n(radius)} 0 0 1 ${n(-arc)} ${n(arc)}`,
+    `c${n(-c)} ${n(d)} ${n(-bc)} ${n(d)} ${n(-abc)} ${n(d)}`,
+    `L${n(x + p)} ${n(y + size)}`,
+    `c${n(-a)} 0 ${n(-ab)} 0 ${n(-abc)} ${n(-d)}`,
+    `a${n(radius)} ${n(radius)} 0 0 1 ${n(-arc)} ${n(-arc)}`,
+    `c${n(-d)} ${n(-c)} ${n(-d)} ${n(-bc)} ${n(-d)} ${n(-abc)}`,
+    `L${n(x)} ${n(y + p)}`,
+    `c0 ${n(-a)} 0 ${n(-ab)} ${n(d)} ${n(-abc)}`,
+    `a${n(radius)} ${n(radius)} 0 0 1 ${n(arc)} ${n(-arc)}`,
+    `c${n(c)} ${n(-d)} ${n(bc)} ${n(-d)} ${n(abc)} ${n(-d)}`,
+    'Z',
+  ].join(' ')
 }
 
 interface BBox {
@@ -191,7 +319,7 @@ type FillSpec =
 
 /**
  * Builds a self-contained composite SVG: an optional background (full-canvas
- * or a centered rounded tile) plus the mark's inner markup, scaled and
+ * or a centered continuous-corner tile) plus the mark's inner markup, scaled and
  * centered on the content's bbox center. Either `fill` (the content's
  * longest bbox dimension, as a fraction of the effective canvas) or
  * `radial` (the content's measured max radius, scaled so its diameter is a
@@ -204,7 +332,13 @@ function buildCompositeSVG(
     markup: string
     bbox: BBox
     background?: string
-    tile?: { size: number; cornerRadius: number }
+    /** A centered continuous-corner tile behind the mark, with an optional drop shadow beneath it. */
+    tile?: {
+      size: number
+      cornerRadius: number
+      smoothing: number
+      shadow?: { blur: number; offsetY: number; opacity: number }
+    }
     /** A two-band backdrop instead of `background`: sky above, ground below `horizon` (in mark units). */
     scene?: { sky: string; ground: string; horizon: number }
   } & FillSpec
@@ -226,9 +360,17 @@ function buildCompositeSVG(
       `<rect x="0" y="0" width="${size}" height="${size}" fill="${scene.sky}"/>` +
       `<rect x="0" y="${horizonY}" width="${size}" height="${size - horizonY}" fill="${scene.ground}"/>`
   } else if (background && tile) {
-    const tileX = (size - tile.size) / 2
-    const tileY = (size - tile.size) / 2
-    backgroundShape = `<rect x="${tileX}" y="${tileY}" width="${tile.size}" height="${tile.size}" rx="${tile.cornerRadius}" ry="${tile.cornerRadius}" fill="${background}"/>`
+    const offset = (size - tile.size) / 2
+    const shape = squirclePath(offset, offset, tile.size, tile.cornerRadius, tile.smoothing)
+    if (tile.shadow) {
+      // Design tools' "blur" is twice the Gaussian standard deviation.
+      const { blur, offsetY, opacity } = tile.shadow
+      backgroundShape =
+        `<defs><filter id="tile-shadow" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">` +
+        `<feGaussianBlur stdDeviation="${blur / 2}"/></filter></defs>` +
+        `<path d="${shape}" transform="translate(0 ${offsetY})" fill="#000000" fill-opacity="${opacity}" filter="url(#tile-shadow)"/>`
+    }
+    backgroundShape += `<path d="${shape}" fill="${background}"/>`
   } else if (background) {
     backgroundShape = `<rect x="0" y="0" width="${size}" height="${size}" fill="${background}"/>`
   }
@@ -435,7 +577,7 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
       bbox: markMetrics,
       fill: FILL.desktopTile,
       background: COLORS.linen,
-      tile: { size: DESKTOP_TILE, cornerRadius: DESKTOP_CORNER_RADIUS },
+      tile: DESKTOP_TILE_SPEC,
     }),
     join(outDir, 'desktop', 'icon-1024.png')
   )
@@ -446,7 +588,7 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
       bbox: markMetrics,
       fill: FILL.desktopTile,
       background: COLORS.soil,
-      tile: { size: DESKTOP_TILE, cornerRadius: DESKTOP_CORNER_RADIUS },
+      tile: DESKTOP_TILE_SPEC,
     }),
     join(outDir, 'desktop', 'icon-1024-dark.png')
   )
@@ -501,8 +643,14 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
 }
 
 if (import.meta.main) {
-  generate().catch((err) => {
-    console.error(err)
-    process.exit(1)
-  })
+  // Icons first, then their published copies, then the social preview cards
+  // (which embed the mark and need Chrome), then the App Store art (Chrome too).
+  generate()
+    .then(() => publishIconCopies())
+    .then(async () => (await import('./social-preview')).generateSocialPreviews())
+    .then(async () => (await import('./app-store')).generateAppStoreArt())
+    .catch((err) => {
+      console.error(err)
+      process.exit(1)
+    })
 }

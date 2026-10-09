@@ -170,7 +170,7 @@ export function RejectionModal({
           type="button"
           onClick={handleClose}
           disabled={isLoading}
-          className="ficus-button px-4 py-2 text-sm font-medium text-secondary bg-surface-secondary rounded-md hover:bg-surface-hover disabled:opacity-50"
+          className="ficus-button ficus-button-secondary px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50"
         >
           Cancel
         </button>

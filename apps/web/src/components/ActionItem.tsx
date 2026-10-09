@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { assistantConversationSearch } from '../lib/assistantConversationSearch'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
@@ -11,6 +12,7 @@ import { useActionCenter } from './ActionCenterContext'
 import { MarkdownContent } from './MarkdownContent'
 import { WorkStreamFileList } from './WorkStreamFileCard'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
+import { WorkflowReviewLauncher } from './WorkflowReviewModal'
 import { WorkStreamApprovalConfirmation } from './WorkStreamApprovalConfirmation'
 import { sendAgentMessage, continueHaltedAgents } from '../api/agents'
 import { resolveWorkStreamWait } from '../api/squads'
@@ -47,17 +49,6 @@ const actionRoles: Record<PendingAction['type'], StatusRole> = {
   'workstream-review': 'review',
   'workstream-blocked': 'danger',
   'workstream-delivery': 'review',
-}
-
-/** Opens the saved Assistant conversation on the current page; the navigation reader picks it up. */
-function assistantConversationSearch(search: string, conversationId: string, taskId?: string): string {
-  const params = new URLSearchParams(search)
-  for (const key of ['commandStack', 'commandQuery', 'assistantChat']) params.delete(key)
-  params.set('chat', 'open')
-  params.set('assistantConversation', conversationId)
-  if (taskId) params.set('assistantTask', taskId)
-  else params.delete('assistantTask')
-  return params.toString()
 }
 
 // Link to an agent's conversation thread (squad agents open in the squad view; personal agents in chat).
@@ -198,7 +189,7 @@ export function ActionItem({
                   e.stopPropagation()
                   setShowWsModal(true)
                 }}
-                className="ficus-button font-medium text-sm text-primary hover:text-accent-light line-clamp-2 block text-left w-fit max-w-full"
+                className="font-medium text-sm text-primary hover:text-accent-light line-clamp-2 block text-left w-fit max-w-full"
               >
                 {title}
               </button>
@@ -224,7 +215,7 @@ export function ActionItem({
                 e.stopPropagation()
                 setExpanded(!expanded)
               }}
-              className="ficus-button self-center -my-1 -mr-1 p-2 text-muted hover:text-primary hover:bg-surface-hover shrink-0"
+              className="ficus-button ficus-button-ghost self-center -my-1 -mr-1 p-2 shrink-0"
               aria-expanded={expanded}
               aria-label={expanded ? 'Collapse' : 'Expand'}
             >
@@ -388,7 +379,7 @@ function DeliveryGateActionContent({
         {!hideWorkStreamLink && (
           <button
             onClick={() => setShowWsModal(true)}
-            className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
+            className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm"
           >
             View
           </button>
@@ -624,7 +615,7 @@ function AgentErrorActionContent({
             closeActionCenter()
             navigate(agentThreadPath(data.agentId, data.squadId))
           }}
-          className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
+          className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm"
         >
           View agent
         </button>
@@ -699,14 +690,14 @@ function WorkStreamReviewActionContent({
           <button
             onClick={() => setShowRejectModal(true)}
             disabled={isLoading}
-            className="ficus-button min-h-10 border border-th-border px-3 py-2 text-sm text-secondary hover:bg-surface-hover disabled:opacity-50"
+            className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
           >
             {sendBackLabel}
           </button>
           {!hideWorkStreamLink && (
             <button
               onClick={() => setShowWsModal(true)}
-              className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
+              className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm"
             >
               View
             </button>
@@ -818,7 +809,7 @@ function WorkStreamBlockedActionContent({
               key={opt}
               onClick={() => respondMutation.mutate(opt)}
               disabled={respondMutation.isPending}
-              className="ficus-button min-h-10 px-3 py-2 text-sm text-secondary border border-th-border hover:bg-surface-hover disabled:opacity-50"
+              className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
             >
               {opt}
             </button>
@@ -829,13 +820,24 @@ function WorkStreamBlockedActionContent({
       {(!hideWorkStreamLink || flowControlled) && (
         <button
           onClick={() => setShowWsModal(true)}
-          className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
+          className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm"
         >
           {flowControlled ? 'Review and decide' : 'View'}
         </button>
       )}
 
-      {showWsModal && (
+      {/* A flow-owned wait is a workflow gate: open its review surface (the work stream when it is not a gate). */}
+      {showWsModal && flowControlled && (
+        <WorkflowReviewLauncher
+          workStreamId={data.workStreamId}
+          squadId={data.squadId}
+          squadName={data.squadName}
+          focusWaitId={data.focus.waitId}
+          actionCanRespond={action.canRespond}
+          onClose={() => setShowWsModal(false)}
+        />
+      )}
+      {showWsModal && !flowControlled && (
         <WorkStreamViewModal
           workStreamId={data.workStreamId}
           squadId={data.squadId}

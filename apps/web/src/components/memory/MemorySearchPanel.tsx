@@ -52,10 +52,7 @@ export function MemorySearchPanel({ squadId }: { squadId: string }) {
           aria-label="Search memory"
           className="ficus-field min-w-0 flex-1 rounded-xl border border-th-border bg-surface px-3 py-2 text-sm"
         />
-        <button
-          type="submit"
-          className="ficus-button rounded-xl bg-accent/10 px-4 py-2 text-sm font-medium text-accent-light hover:bg-accent/15"
-        >
+        <button type="submit" className="ficus-button ficus-button-primary rounded-xl px-4 py-2 text-sm font-medium">
           Search
         </button>
       </form>

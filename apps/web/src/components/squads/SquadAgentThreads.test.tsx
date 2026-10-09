@@ -909,7 +909,7 @@ describe('SquadAgentThreads new consultant chat', () => {
     expect(search).toBeGreaterThan(newConsultant)
     expect(manager).toBeGreaterThan(search)
     expect(html).toContain('hidden md:flex')
-    expect(html).toContain('bg-accent px-2 text-xs font-medium text-on-accent')
+    expect(html).toContain('ficus-button ficus-button-primary flex h-[26px]')
   })
 
   test('shows a clean composing header and keeps it visible until the created consultant is loaded', async () => {

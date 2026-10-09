@@ -73,7 +73,7 @@ export function AmtpAllowRulesEditor({ agentId, canWrite }: AmtpAllowRulesEditor
               }}
               disabled={deleteRule.isPending}
               aria-label="Delete allow rule"
-              className="ficus-button shrink-0 text-xs font-medium text-status-danger-600 hover:text-status-danger-800 disabled:opacity-50 dark:text-status-danger-400 dark:hover:text-status-danger-300"
+              className="ficus-button ficus-button-danger px-2 py-1 shrink-0 text-xs font-medium disabled:opacity-50"
             >
               Delete
             </button>
@@ -121,7 +121,7 @@ export function AmtpAllowRulesEditor({ agentId, canWrite }: AmtpAllowRulesEditor
           <button
             type="submit"
             disabled={!canSubmit}
-            className="ficus-button ficus-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="ficus-button ficus-button-primary rounded px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
           >
             {addRule.isPending ? 'Adding…' : 'Add rule'}
           </button>

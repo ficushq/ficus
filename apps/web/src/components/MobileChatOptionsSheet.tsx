@@ -90,7 +90,7 @@ export function MobileChatOptionsSheet({
             type="button"
             onClick={onClose}
             aria-label="Close chat options"
-            className="ficus-button flex items-center justify-center w-11 h-11 rounded-md text-muted hover:bg-surface-hover"
+            className="ficus-button ficus-button-ghost flex items-center justify-center w-11 h-11 rounded-md"
           >
             <CloseIcon className="w-5 h-5" />
           </button>

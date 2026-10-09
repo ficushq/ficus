@@ -115,7 +115,10 @@ export function ViewportDebugOverlay({ onClose }: { onClose: () => void }) {
     >
       <div className="mb-1 flex items-center justify-between gap-4">
         <span className="font-bold text-on-strong">viewport debug</span>
-        <button onClick={onClose} className="ficus-button rounded bg-chrome-paper/20 px-2 text-on-strong">
+        <button
+          onClick={onClose}
+          className="ficus-button ficus-button-ghost rounded bg-chrome-paper/20 px-2 text-on-strong"
+        >
           ×
         </button>
       </div>
@@ -142,7 +145,7 @@ export function ViewportDebugSection() {
         </p>
         <button
           onClick={() => setEnabled((v) => !v)}
-          className="ficus-button px-4 py-2.5 md:py-2 bg-surface-secondary hover:bg-surface-hover rounded-md text-sm font-medium text-primary min-h-[44px] md:min-h-0"
+          className="ficus-button ficus-button-secondary px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0"
         >
           {enabled ? 'Hide overlay' : 'Show overlay'}
         </button>

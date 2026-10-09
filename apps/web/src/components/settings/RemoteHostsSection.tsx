@@ -159,7 +159,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setExpanded((v) => !v)}
-              className="ficus-button text-sm font-medium text-primary hover:text-accent-light"
+              className="ficus-button ficus-button-link text-sm font-medium text-primary"
               aria-expanded={expanded}
             >
               {expanded ? '▾' : '▸'} {host.name}
@@ -191,7 +191,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
             <button
               onClick={() => checkMutation.mutate()}
               disabled={isMutating}
-              className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium disabled:opacity-50"
+              className="ficus-button ficus-button-link text-xs font-medium disabled:opacity-50"
             >
               {checkMutation.isPending ? 'Checking…' : 'Check'}
             </button>
@@ -200,8 +200,6 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
               onConfirm={() => deleteMutation.mutate()}
               label="Delete"
               confirmLabel="Confirm?"
-              className="ficus-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
-              confirmClassName="text-xs text-status-danger-700 dark:text-status-danger-300 font-medium"
               disabled={isMutating}
             />
           </div>
@@ -247,7 +245,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
                       <button
                         onClick={() => revokeGrantMutation.mutate(squadId)}
                         disabled={revokeGrantMutation.isPending}
-                        className="ficus-button text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 disabled:opacity-50"
+                        className="ficus-button ficus-button-ghost hover:text-status-danger-600 dark:hover:text-status-danger-400 disabled:opacity-50"
                         title={`Revoke ${squadName(squadId)}'s access`}
                       >
                         ×
@@ -275,7 +273,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
                 <button
                   onClick={() => pickedSquadId && grantMutation.mutate(pickedSquadId)}
                   disabled={!pickedSquadId || grantMutation.isPending}
-                  className="ficus-button text-xs text-accent-light hover:text-link-hover font-medium disabled:opacity-50"
+                  className="ficus-button ficus-button-link text-xs font-medium disabled:opacity-50"
                 >
                   {grantMutation.isPending ? 'Granting…' : 'Grant'}
                 </button>
@@ -383,7 +381,7 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
           <button
             onClick={() => registerMutation.mutate()}
             disabled={!canSubmit}
-            className="ficus-button ficus-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+            className="ficus-button ficus-button-primary text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
           >
             {registerMutation.isPending ? 'Registering…' : 'Register'}
           </button>

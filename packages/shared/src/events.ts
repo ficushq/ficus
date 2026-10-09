@@ -2,6 +2,7 @@ import type { WorkStreamWaitActor, WorkStreamWaitType, InboxRecipientType } from
 import type { SquadActivityItem } from './squad-activity'
 import type { FarmChatMessage } from './farm-chat'
 import type { PresencePerson } from './farm-presence'
+import type { RobotMood, RobotMoodSource } from './robot-moods'
 
 /**
  * Minimal event payloads — IDs and basic fields only.
@@ -64,6 +65,11 @@ export type EventMap = {
    */
   'agent.new-message': { agentId: string; squadId: string | null }
   'agent.waiting-input': { agentId: string; squadId: string | null }
+  /**
+   * A watched robot's mood changed (see robot-moods.ts). Sent by the worker only while the farm
+   * shows that robot and robot moods are on. A label, never stream content.
+   */
+  'agent.mood': { agentId: string; squadId: string | null; mood: RobotMood; source: RobotMoodSource; at: number }
   'agent.terminated': { agentId: string; squadId: string | null }
   'agent.deleted': { agentId: string; squadId: string | null; ownerUserId: string | null }
   'agent-question.created': { questionId: string; agentId: string; squadId: string | null }

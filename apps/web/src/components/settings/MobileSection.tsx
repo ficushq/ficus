@@ -6,7 +6,14 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { serverConnectionQueries } from '../../queryOptions'
 import { devicePlatformLabel } from './deviceAuthorizationApprovalLogic'
 import { PairingCode } from './PairingCode'
-import { CopyButton, ExternalLink, QUIET_LINK, SETTINGS_BUTTON, SETTINGS_HEADING, SettingsRow } from './SettingsRow'
+import {
+  CopyButton,
+  ExternalLink,
+  QUIET_LINK,
+  SETTINGS_BUTTON_SIZE,
+  SETTINGS_HEADING,
+  SettingsRow,
+} from './SettingsRow'
 import { usePhonePairing } from './usePhonePairing'
 
 const FICUS_MOBILE_URL = 'https://ficus.sh/mobile'
@@ -56,7 +63,7 @@ export function MobileSection() {
                   type="button"
                   onClick={start}
                   disabled={starting}
-                  className={clsx(SETTINGS_BUTTON, 'ficus-button-primary')}
+                  className={clsx('ficus-button ficus-button-primary', SETTINGS_BUTTON_SIZE)}
                 >
                   {starting ? 'Generating…' : 'Pair a device'}
                 </button>

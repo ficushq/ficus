@@ -213,7 +213,7 @@ export function SignupPolicySection() {
                   type="button"
                   onClick={() => save.mutate()}
                   disabled={!canSave}
-                  className="ficus-button ficus-button-primary rounded-md bg-accent px-4 py-2 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
+                  className="ficus-button ficus-button-primary rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
                 >
                   {save.isPending ? 'Saving…' : 'Save policy'}
                 </button>
@@ -226,7 +226,7 @@ export function SignupPolicySection() {
                       setDraftDomains(null)
                       setDraftRoleId(undefined)
                     }}
-                    className="ficus-button text-sm text-secondary hover:underline"
+                    className="ficus-button ficus-button-secondary px-4 py-2 text-sm"
                   >
                     Cancel
                   </button>

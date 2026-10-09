@@ -275,3 +275,144 @@ test('Dependabot defaults render manager routing and editable severity, state an
     client.clear()
   }
 })
+
+test('decision conditions edit a yes/no or choice question, its matching answer and no-answer behavior', async () => {
+  const { githubOutputCatalog } = await import('@ficus/shared')
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(integrationQueries.outputs().queryKey, githubOutputCatalog)
+  client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
+  client.setQueryData(queries.workflows.list().queryKey, [])
+  const fetch = spyOn(globalThis, 'fetch')
+  let value: SquadEventRule[] = []
+  function Editor() {
+    const [rules, setRules] = useState(
+      ['urgent', 'fallback'].map((id) =>
+        squadEventRuleSchema.parse({
+          id,
+          source: { integration: 'github', output: 'issue.comment', version: 1 },
+          filters: { audience: 'any' },
+          action: { type: id === 'urgent' ? 'start-workstream' : 'notify-manager' },
+        })
+      )
+    )
+    value = rules
+    return <SquadEventRulesEditor squadId="test" provider="github" value={rules} onChange={setRules} disabled={false} />
+  }
+  const root = dom.createRoot()
+  const button = (text: string) =>
+    Array.from(document.querySelectorAll('button')).find((button) => button.textContent === text)!
+  const labelled = <T extends Element = HTMLElement>(label: string) =>
+    document.querySelector<T & Element>(`[aria-label="${label}"]`)!
+  const type = (label: string, text: string) =>
+    dom.act(async () => {
+      fireEvent.input(labelled(label), { target: { value: text } })
+    })
+  const segment = (group: string, text: string) =>
+    dom.act(async () =>
+      Array.from(labelled(group).querySelectorAll('button'))
+        .find((button) => button.textContent === text)!
+        .click()
+    )
+  const errors = () => document.querySelector('[role="alert"]')?.textContent ?? ''
+  try {
+    await dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={client}>
+          <Editor />
+        </QueryClientProvider>
+      )
+    )
+    await dom.act(async () =>
+      Array.from(document.querySelectorAll('button'))
+        .find((b) => b.textContent === 'Add decision condition')!
+        .click()
+    )
+    const prefix = 'Rule 1 condition 1'
+    expect(value[0]!.predicates).toEqual([
+      {
+        kind: 'decision',
+        question: { type: 'yesno', instructions: '' },
+        when: { type: 'yesno', op: 'at-least', probability: 0.5 },
+        onUnavailable: 'no-match',
+      },
+    ])
+    // An empty question cannot be saved.
+    expect(errors()).not.toBe('')
+    await type(`${prefix} question`, 'The comment reports something urgent.')
+    await type(`${prefix} threshold`, '')
+    expect(errors()).not.toBe('')
+    await type(`${prefix} threshold`, '0.2')
+    await segment(`${prefix} comparison`, 'At most')
+    await segment(`${prefix} when no decision model answers`, 'Match')
+    expect(value[0]!.predicates).toEqual([
+      {
+        kind: 'decision',
+        question: { type: 'yesno', instructions: 'The comment reports something urgent.' },
+        when: { type: 'yesno', op: 'at-most', probability: 0.2 },
+        onUnavailable: 'match',
+      },
+    ])
+    expect(squadEventRuleSchema.safeParse(value[0]).success).toBe(true)
+    expect(errors()).toBe('')
+    expect(document.body.textContent).toContain(
+      'Sends the event’s subject, issue.title, actor, actorType, labels and text'
+    )
+
+    // The preview asks no model; it states and applies an assumption.
+    await dom.act(async () => {
+      fireEvent.change(labelled('Sample event'), { target: { value: 'issue.comment@1' } })
+    })
+    expect(document.body.textContent).toContain('Selected: urgent → start-workstream')
+    expect(document.body.textContent).toContain('assumed to match in this preview')
+    await segment('Assume decision conditions', 'Don’t match')
+    expect(document.body.textContent).toContain('Selected: fallback → notify-manager')
+
+    // A choice question: options, the expected option, and a confidence floor.
+    await segment(`${prefix} question type`, 'Choice')
+    expect(value[0]!.predicates![0]).toMatchObject({
+      question: { type: 'choice', options: { option_1: '', option_2: '' } },
+      when: { type: 'choice', equals: 'option_1' },
+    })
+    await type(`${prefix} option 1 name`, 'bug')
+    await type(`${prefix} option 1 description`, 'Something is broken')
+    await type(`${prefix} option 2 name`, 'feature')
+    // Renaming to a name already taken is refused rather than merging two options.
+    await type(`${prefix} option 2 name`, 'bug')
+    await dom.act(async () => button('Add option').click())
+    await type(`${prefix} option 3 name`, 'question')
+    await dom.act(async () => labelled<HTMLButtonElement>(`${prefix} expected choice`).click())
+    await dom.act(async () => {
+      await new Promise((resolve) => dom.window.requestAnimationFrame(resolve))
+    })
+    await dom.act(async () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.startsWith('feature'))!
+        .click()
+    )
+    await type(`${prefix} minimum confidence`, '0.6')
+    expect(value[0]!.predicates![0]).toEqual({
+      kind: 'decision',
+      question: {
+        type: 'choice',
+        instructions: 'The comment reports something urgent.',
+        options: { bug: 'Something is broken', feature: '', question: '' },
+      },
+      when: { type: 'choice', equals: 'feature', minConfidence: 0.6 },
+      onUnavailable: 'match',
+    })
+    expect(squadEventRuleSchema.safeParse(value[0]).success).toBe(true)
+    // Removing the expected option moves the match to a remaining one.
+    await dom.act(async () => labelled<HTMLButtonElement>(`Remove ${prefix.toLowerCase()} option 2`).click())
+    expect(value[0]!.predicates![0]).toMatchObject({ when: { type: 'choice', equals: 'bug' } })
+    await type(`${prefix} option 1 name`, 'Bug Report')
+    expect(errors()).toContain('Use lowercase letters, digits and underscores.')
+    await dom.act(async () => labelled<HTMLButtonElement>(`Remove ${prefix.toLowerCase()}`).click())
+    expect(value[0]!.predicates).toEqual([])
+    expect(fetch).not.toHaveBeenCalled()
+  } finally {
+    fetch.mockRestore()
+    client.clear()
+    await dom.cleanup()
+  }
+})

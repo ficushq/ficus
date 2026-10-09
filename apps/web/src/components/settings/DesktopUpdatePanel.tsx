@@ -5,15 +5,13 @@ import type { DesktopUpdates, DesktopUpdateState } from '../../lib/desktop'
 const BUSY_PHASES = new Set<DesktopUpdateState['phase']>(['checking', 'downloading', 'installing'])
 
 const secondaryButton = clsx(
-  'ficus-button',
+  'ficus-button ficus-button-secondary',
   'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-  'bg-surface border border-th-border text-primary hover:bg-surface-hover',
   'disabled:opacity-50 disabled:cursor-not-allowed'
 )
 const primaryButton = clsx(
-  'ficus-button',
+  'ficus-button ficus-button-primary',
   'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-  'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
   'disabled:opacity-50 disabled:cursor-not-allowed'
 )
 
@@ -84,7 +82,7 @@ export function DesktopUpdatePanel({ updates, canWrite }: { updates: DesktopUpda
       </div>
       {!state ? (
         bridgeError ? (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {bridgeError}
           </p>
         ) : (
@@ -117,7 +115,7 @@ export function DesktopUpdatePanel({ updates, canWrite }: { updates: DesktopUpda
               <p className="text-sm text-muted">Last checked {formatLastChecked(state.lastCheckedAt)}</p>
             )}
             {bridgeError && (
-              <p role="alert" className="text-sm text-danger">
+              <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
                 {bridgeError}
               </p>
             )}
@@ -201,7 +199,7 @@ function DesktopUpdateStatus({
     case 'error':
       return (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {state.error || 'The update check failed.'}
           </p>
           {canWrite && (

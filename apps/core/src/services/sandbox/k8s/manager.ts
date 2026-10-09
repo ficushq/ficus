@@ -9,6 +9,7 @@ import type { IPty } from 'bun-pty'
 import {
   getSquadIdFromSandbox,
   type ISandboxManager,
+  type SandboxExecOptions,
   type SandboxOptions,
   type SpawnHook,
   type SandboxRuntime,
@@ -470,7 +471,7 @@ export class K8sSandboxManager implements ISandboxManager {
    * Execute a command in the sandbox and collect output.
    * @throws Error if command fails (non-zero exit code or error)
    */
-  async exec(sandboxId: string, args: string[]): Promise<Buffer> {
+  async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
     const state = this.sandboxes.get(sandboxId)
     if (!state) {
       throw new Error(`Sandbox not found: ${sandboxId}`)
@@ -483,7 +484,7 @@ export class K8sSandboxManager implements ISandboxManager {
 
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = []
-      const stream = state.client.bash({ command, cwd: state.workspaceMount })
+      const stream = state.client.bash({ command, cwd: state.workspaceMount, env: options?.env })
 
       stream.on('data', (response: BashResponse) => {
         if (response.stdout) {

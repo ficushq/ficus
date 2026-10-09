@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { createBlankWorkflow, createWorkflowRun, resolveWorkflow } from '@ficus/shared'
+import { createBlankWorkflow, createWorkflowRun, resolveWorkflow, type WorkflowStep } from '@ficus/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import {
@@ -248,7 +248,11 @@ describe('actionable squad demand', () => {
       createRequestHash: 'test',
       createdBy: 'test',
     })
-    state.attempts[0]!.step = { ...definition.steps[0]!, kind: 'human-approval', approver: 'assigned-reviewers' }
+    state.attempts[0]!.step = {
+      ...(definition.steps[0] as Extract<WorkflowStep, { kind: 'agent' }>),
+      kind: 'human-approval',
+      approver: 'assigned-reviewers',
+    }
     await db.update(workStreamFlowRuns).set({ state }).where(eq(workStreamFlowRuns.workStreamId, id))
     expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
     state.attempts.push({ ...state.attempts[0]!, id: 2, step: definition.steps[0]! })

@@ -53,7 +53,7 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
 
       {actionsError || actions.length > 0 ? (
         <details open className="mb-4 group">
-          <summary className="ficus-button flex cursor-pointer list-none items-center gap-2 py-2 text-left hover:bg-surface-hover marker:hidden [&::-webkit-details-marker]:hidden">
+          <summary className="ficus-button ficus-button-ghost flex cursor-pointer list-none items-center gap-2 py-2 text-left marker:hidden [&::-webkit-details-marker]:hidden">
             <span
               aria-hidden="true"
               className="shrink-0 text-placeholder transition-transform group-open:rotate-90 motion-reduce:transition-none"
@@ -79,7 +79,7 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
         <button
           type="button"
           disabled
-          className="ficus-button mb-4 flex w-full items-center gap-2 py-2 text-left text-muted"
+          className="ficus-button ficus-button-ghost mb-4 flex w-full items-center gap-2 py-2 text-left text-muted"
           aria-busy={actionsLoading || undefined}
         >
           <span aria-hidden="true" className="shrink-0 text-placeholder opacity-50">

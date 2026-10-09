@@ -66,7 +66,7 @@ export function MemoryTab({ squadId }: { squadId: string }) {
             <>
               <button
                 onClick={() => setMobilePane('files')}
-                className="ficus-button md:hidden shrink-0 w-full px-3 py-2 text-sm text-accent-light hover:text-link-hover border-b border-th-border bg-surface text-left"
+                className="ficus-button ficus-button-ghost md:hidden shrink-0 w-full px-3 py-2 text-sm text-accent-light hover:text-link-hover border-b border-th-border bg-surface text-left"
               >
                 ← Back to memory
               </button>

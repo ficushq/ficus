@@ -67,10 +67,7 @@ export function ActionCenterContent({
         {permissionError ? 'You do not have permission to view these actions.' : errorMessage}
       </p>
       {onRetry && (
-        <button
-          className="ficus-button ficus-button-primary px-3 py-1.5 rounded bg-accent text-on-accent"
-          onClick={onRetry}
-        >
+        <button className="ficus-button ficus-button-primary px-3 py-1.5 rounded" onClick={onRetry}>
           Retry
         </button>
       )}
@@ -171,7 +168,7 @@ function AgentErrorSection({
             <button
               onClick={() => mutation.mutate()}
               disabled={mutation.isPending}
-              className="ficus-button min-h-9 px-3 py-1.5 text-xs text-secondary hover:bg-surface-hover disabled:opacity-50 shrink-0"
+              className="ficus-button ficus-button-link min-h-9 py-1.5 text-xs disabled:opacity-50 shrink-0"
             >
               {mutation.isPending ? 'Continuing...' : `Continue all (${respondableErrors.length})`}
             </button>

@@ -3,6 +3,8 @@ import { and, eq, inArray } from 'drizzle-orm'
 import {
   ADDRESSABLE_AGENT_STATUSES,
   integrationValueAt,
+  type EventRuleDecisions,
+  type SquadEventRule,
   type WorkflowEventTrigger,
   selectSquadEventRule,
   eventRuleWorkflow,
@@ -25,17 +27,25 @@ import { eventTrackedResource, streamTracksEvent } from './tracked-match'
 import { consultantAgentId } from '../../chat/consultant-idempotency'
 export { matchesGitHubRouting } from '@ficus/shared'
 import { ciNotificationSchema, settleCiNotification } from '../../work-streams/ci-notifications'
+import { resolveSquadEventRule } from './event-rule-decisions'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 const record = (value: unknown): Record<string, any> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
-export function eventRuleTrigger(metadata: unknown, event: Event, login: string): WorkflowEventTrigger | undefined {
+/** `decisions`: answers from `resolveEventRuleDecisions`; without them a rule with decision conditions never matches. */
+export function eventRuleTrigger(
+  metadata: unknown,
+  event: Event,
+  login: string,
+  decisions?: EventRuleDecisions
+): WorkflowEventTrigger | undefined {
   const rule = selectSquadEventRule(
     metadata,
     event.integration,
     event.fact,
     login,
-    event.authority.kind === 'connection' ? event.authority.connectionId : undefined
+    event.authority.kind === 'connection' ? event.authority.connectionId : undefined,
+    decisions
   )
   if (rule?.action.type !== 'start-workstream') return
   if (
@@ -66,15 +76,46 @@ export function eventRuleTrigger(metadata: unknown, event: Event, login: string)
     },
   }
 }
-export function shouldNotifyManager(metadata: unknown, event: Event, login: string): boolean {
+export function shouldNotifyManager(
+  metadata: unknown,
+  event: Event,
+  login: string,
+  decisions?: EventRuleDecisions
+): boolean {
   return (
     selectSquadEventRule(
       metadata,
       event.integration,
       event.fact,
       login,
-      event.authority.kind === 'connection' ? event.authority.connectionId : undefined
+      event.authority.kind === 'connection' ? event.authority.connectionId : undefined,
+      decisions
     )?.action.type === 'notify-manager'
+  )
+}
+
+/**
+ * Ask the decision conditions a squad's rule selection reaches for this event, outside any transaction.
+ * The caller must already have authorized the squad for the event. Answers are cached per event, so every
+ * stage that selects a rule for it (and in-process retries) shares one model call per question.
+ */
+export async function resolveEventRuleDecisions(
+  event: Event,
+  squad: { id: string; metadata: unknown },
+  login: string,
+  actions?: SquadEventRule['action']['type'][]
+) {
+  return resolveSquadEventRule(
+    {
+      metadata: squad.metadata,
+      integration: event.integration,
+      fact: event.fact,
+      login,
+      connectionId: event.authority.kind === 'connection' ? event.authority.connectionId : undefined,
+      eventId: event.id,
+      squadId: squad.id,
+    },
+    { actions }
   )
 }
 
@@ -162,7 +203,8 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
     .where(and(eq(integrationOutputDeliveries.eventId, event.id), eq(workStreams.squadId, squadId)))
     .limit(1)
   if (matchedStream || delivery || latest?.handled.includes(squadId)) return
-  const rule = selectSquadEventRule(squad.metadata, event.integration, event.fact, login, event.authority.connectionId)
+  // Authorized above; any decision conditions are asked here, after the webhook was acknowledged.
+  const { rule } = await resolveEventRuleDecisions(event, squad, login, ['notify-manager', 'notify-consultant'])
   if (rule?.action.type === 'notify-manager' && squad.managerAgentId)
     await send(event, squad.managerAgentId, undefined, rule.action.additionalContext, squadId)
   if (rule?.action.type === 'notify-consultant') {

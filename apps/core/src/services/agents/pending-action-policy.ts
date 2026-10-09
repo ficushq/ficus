@@ -203,6 +203,8 @@ export async function evaluatePendingAction(
           (step.approver !== 'assigned-reviewers' ||
             !stream.assignedReviewerIds.length ||
             stream.assignedReviewerIds.includes(identity.userId))
+      // A decision step without an automatic decision waits for any reviewer to choose.
+      else if (step?.kind === 'decision') canRespond = await isWorkflowReviewer(identity.userId, squadId)
       else if (run.state.status === 'completion-ready' && run.state.definition.completion.mode === 'review-approval')
         canRespond =
           (await hasPermission(identity, 'workstreams:respond', squadId)) ||

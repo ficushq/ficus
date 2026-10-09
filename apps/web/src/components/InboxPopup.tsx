@@ -120,7 +120,7 @@ export function InboxPopup() {
               <button
                 onClick={() => markAllAsReadMutation.mutate()}
                 disabled={markAllAsReadMutation.isPending}
-                className="ficus-button text-xs text-accent-light hover:underline disabled:opacity-50"
+                className="ficus-button ficus-button-link text-xs disabled:opacity-50"
               >
                 Mark all read
               </button>
@@ -128,7 +128,7 @@ export function InboxPopup() {
             <button
               onClick={() => setIsOpen(false)}
               aria-label="Close inbox"
-              className="ficus-button rounded-lg text-muted hover:text-primary hover:bg-surface-hover p-2"
+              className="ficus-button ficus-button-ghost rounded-lg p-2"
             >
               <CloseIcon />
             </button>
@@ -176,7 +176,7 @@ export function InboxPopup() {
                   <button
                     onClick={() => setShowRead(!showRead)}
                     // Its focus ring sits inside: outside, the scrolling list clips it and it spills past the popup's edge.
-                    className="ficus-button w-full rounded-lg py-2 pl-6 pr-3 flex items-center gap-2 text-sm text-muted hover:text-primary hover:bg-surface-hover focus-visible:outline-offset-[-2px]"
+                    className="ficus-button ficus-button-ghost w-full rounded-lg py-2 pl-6 pr-3 flex items-center gap-2 text-sm focus-visible:outline-offset-[-2px]"
                   >
                     {showRead ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
                     <span>Read messages ({readMessages.length})</span>

@@ -13,7 +13,9 @@ import { ConfirmButton } from '../ConfirmButton'
 
 const field =
   'ficus-field w-full rounded-md border border-panel-border bg-surface-secondary px-3 py-2 text-sm text-primary'
-const button = 'ficus-button rounded-md border border-panel-border px-3 py-2 text-sm disabled:opacity-50'
+const buttonSize = 'rounded-md px-3 py-2 text-sm disabled:opacity-50'
+const button = `ficus-button ficus-button-secondary ${buttonSize}`
+const primaryButton = `ficus-button ficus-button-primary ${buttonSize}`
 export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
   const client = useQueryClient()
   const pool = useQuery(integrationQueries.pool('linear'))
@@ -96,11 +98,11 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
           <p className="text-xs text-muted">
             Create a key in Linear’s Security & Access settings. Give it read access to the teams you want Ficus to use.
           </p>
-          <button className={button} disabled={create.isPending}>
+          <button className={primaryButton} disabled={create.isPending}>
             {create.isPending ? 'Connecting…' : 'Create and validate'}
           </button>
           {create.isError && (
-            <p role="alert" className="text-sm text-danger">
+            <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
               {create.error.message}
             </p>
           )}
@@ -141,7 +143,7 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
                   </label>
                   <div className="flex flex-wrap gap-2">
                     <button
-                      className={button}
+                      className={primaryButton}
                       disabled={!secret.trim() || saveWebhook.isPending}
                       onClick={() => saveWebhook.mutate(secret)}
                     >
@@ -153,7 +155,7 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
                         confirmLabel="Confirm disable"
                         disabled={saveWebhook.isPending}
                         onConfirm={() => saveWebhook.mutate(null)}
-                        className={button}
+                        className={buttonSize}
                       />
                     )}
                   </div>
@@ -217,7 +219,7 @@ function LinearAccount({
               label="Disable account"
               confirmLabel="Disable for all squads"
               disabled={pending}
-              className={button}
+              className={buttonSize}
               onConfirm={() => action.mutate('disable')}
             />
           ) : (
@@ -232,7 +234,7 @@ function LinearAccount({
             label="Remove"
             confirmLabel="Remove from all squads"
             disabled={pending}
-            className={button}
+            className={buttonSize}
             onConfirm={() => remove.mutate()}
           />
         </div>
@@ -257,13 +259,14 @@ function LinearAccount({
             label="Replace key"
             confirmLabel="Confirm replacement"
             disabled={pending || !credential.trim()}
-            className={button}
+            variant="secondary"
+            className={buttonSize}
             onConfirm={() => replace.mutate()}
           />
         </div>
       )}
       {(action.error || remove.error || replace.error) && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {(action.error || remove.error || replace.error)?.message}
         </p>
       )}

@@ -51,7 +51,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
         {canEdit && !editing && (
           <button
             type="button"
-            className="ficus-button text-sm font-medium text-accent-light hover:text-link-hover"
+            className="ficus-button ficus-button-link text-sm font-medium"
             onClick={() => {
               setSource(saved ?? { kind: 'preset', id: 'solo', customizations: [] })
               setGuidance(setup?.guidance ?? '')
@@ -123,7 +123,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
             ))}
             <button
               type="button"
-              className="ficus-button text-sm font-medium text-accent-light hover:text-link-hover"
+              className="ficus-button ficus-button-link text-sm font-medium"
               disabled={choices.length >= 32 || save.isPending}
               onClick={() => setChoices([...choices, { when: '' }])}
             >
@@ -133,7 +133,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
           <div className="flex flex-wrap items-center gap-3 border-t border-th-border pt-4">
             <button
               type="button"
-              className="ficus-button ficus-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
+              className="ficus-button ficus-button-primary rounded-md px-3 py-2 text-sm disabled:opacity-50"
               disabled={save.isPending || !source || choices.some((choice) => !choice.when.trim() || !choice.source)}
               onClick={() => save.mutate()}
             >

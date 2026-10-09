@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+  decisionQuestionSchema,
   workflowDefinitionShapeSchema,
   normalizeWorkflowStep,
   workflowLimitsSchema,
@@ -17,6 +18,18 @@ const draftTransition = z.union([
   workflowTransitionSchema.options[1].extend({ parallel: z.array(z.string()).max(16) }),
   workflowTransitionSchema.options[2],
 ])
+// A decision step's questions may be half-written too (an empty prompt, a choice with one option).
+const draftQuestions = z.record(
+  z.string(),
+  z.discriminatedUnion('type', [
+    decisionQuestionSchema.options[0].extend({ instructions: z.string() }),
+    decisionQuestionSchema.options[1].extend({ instructions: z.string(), options: z.record(z.string(), z.string()) }),
+    decisionQuestionSchema.options[2].extend({
+      instructions: z.string(),
+      levels: z.array(z.object({ label: z.string(), description: z.string().optional() })),
+    }),
+  ])
+)
 const definition = workflowDefinitionShapeSchema.extend({
   name: z.string(),
   steps: z.array(
@@ -31,6 +44,11 @@ const definition = workflowDefinitionShapeSchema.extend({
         workflowStepSchema.options[1].extend({
           instructions: z.string(),
           output: z.string(),
+          outcomes: z.record(draftTransition),
+        }),
+        workflowStepSchema.options[2].extend({
+          instructions: z.string(),
+          questions: draftQuestions,
           outcomes: z.record(draftTransition),
         }),
       ])

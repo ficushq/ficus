@@ -604,7 +604,7 @@ export function CustomThemeEditor({
           <div className="flex items-center justify-end gap-1">
             <button
               type="button"
-              className="ficus-button flex h-8 w-8 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40"
+              className="ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-md disabled:opacity-40"
               aria-label="Undo"
               title="Undo"
               disabled={past.length === 0}
@@ -622,7 +622,7 @@ export function CustomThemeEditor({
             </button>
             <button
               type="button"
-              className="ficus-button flex h-8 w-8 items-center justify-center rounded-md text-secondary hover:bg-surface-hover hover:text-primary disabled:opacity-40"
+              className="ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-md disabled:opacity-40"
               aria-label="Redo"
               title="Redo"
               disabled={future.length === 0}

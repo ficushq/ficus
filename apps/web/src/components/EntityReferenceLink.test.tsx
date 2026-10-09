@@ -2,6 +2,7 @@ import { expect, test, spyOn } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { acquireDomHarness } from '../test/domHarness'
+import { webkitTap } from '../test/webkitTap'
 import { queries } from '../queryOptions'
 import { EntityReferenceLink } from './EntityReferenceLink'
 import type { EntityReference } from '../lib/entityReference'
@@ -109,7 +110,8 @@ async function fixture(reference: EntityReference, onOpenAgent?: (agent: import(
   const button = container.querySelector('button')!
   const hover = () =>
     dom.act(async () => button.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })))
-  const tooltip = () => dom.window.document.querySelector<HTMLElement>('[role="dialog"]')
+  // A dismissed card stays mounted (inert) only for its exit animation.
+  const tooltip = () => dom.window.document.querySelector<HTMLElement>('[role="dialog"]:not([data-state="closed"])')
   return {
     dom,
     client,
@@ -316,14 +318,17 @@ test('preview clamps to the viewport and moves above references near the bottom'
     await f.hover()
     await f.advance(250)
     const card = f.tooltip()!
-    const cardRect = spyOn(card, 'getBoundingClientRect').mockReturnValue({ width: 320, height: 180 } as DOMRect)
-    try {
-      await f.dom.act(async () => f.dom.window.dispatchEvent(new f.dom.window.Event('resize')))
-      expect(Number.parseFloat(card.style.left)).toBeLessThanOrEqual(f.dom.window.innerWidth - 328)
-      expect(Number.parseFloat(card.style.top)).toBe(552)
-    } finally {
-      cardRect.mockRestore()
-    }
+    // The card measures its layout box (happy-dom has no layout): 320 wide, 180 tall.
+    for (const [name, value] of [
+      ['offsetWidth', 320],
+      ['offsetHeight', 180],
+      ['clientHeight', 180],
+      ['scrollHeight', 180],
+    ] as const)
+      Object.defineProperty(card, name, { configurable: true, value })
+    await f.dom.act(async () => f.dom.window.dispatchEvent(new f.dom.window.Event('resize')))
+    expect(Number.parseFloat(card.style.left)).toBeLessThanOrEqual(f.dom.window.innerWidth - 328)
+    expect(Number.parseFloat(card.style.top)).toBe(552)
   } finally {
     rect.mockRestore()
     await f.cleanup()
@@ -342,7 +347,7 @@ test('opening another reference replaces the existing preview', async () => {
         .dispatchEvent(new f.dom.window.MouseEvent('mouseover', { bubbles: true }))
     )
     await f.advance(250)
-    expect(f.dom.window.document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+    expect(f.dom.window.document.querySelectorAll('[role="dialog"]:not([data-state="closed"])')).toHaveLength(1)
     expect(f.tooltip()?.getAttribute('aria-label')).toBe('Work stream preview')
     expect(f.button.getAttribute('aria-expanded')).toBe('false')
   } finally {
@@ -370,3 +375,39 @@ for (const reference of [
     }
   })
 }
+
+// A keyboard-opened preview holds itself open while focus is inside. A WebKit tap on its quick link blurs
+// that link to nothing (links never take focus on a tap) before the click; the link must still navigate.
+test('a WebKit tap on a focused preview quick link follows it', async () => {
+  const f = await fixture({ kind: 'ws', id: '42' })
+  const matches = spyOn(f.button, 'matches').mockReturnValue(true)
+  try {
+    await f.dom.act(async () => f.button.focus())
+    await f.dom.act(async () =>
+      f.button.dispatchEvent(new f.dom.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    )
+    const link = f.tooltip()!.querySelector<HTMLAnchorElement>('a[href*="agents"]')!
+    expect(f.dom.window.document.activeElement).toBe(link)
+    expect(await webkitTap(link, { touch: true })).toBe(true)
+    expect(f.container.querySelector('output')?.textContent).toBe(`/squads/squad/agents?agent=${agentId}`)
+    expect(f.tooltip()).toBeNull()
+  } finally {
+    matches.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('a press outside a keyboard-opened preview releases it without moving focus', async () => {
+  const f = await fixture({ kind: 'agent', id: agentId })
+  const matches = spyOn(f.button, 'matches').mockReturnValue(true)
+  try {
+    await f.dom.act(async () => f.button.focus())
+    expect(f.tooltip()).not.toBeNull()
+    await webkitTap(f.container.querySelector('output')!)
+    await f.advance(150)
+    expect(f.tooltip()).toBeNull()
+  } finally {
+    matches.mockRestore()
+    await f.cleanup()
+  }
+})

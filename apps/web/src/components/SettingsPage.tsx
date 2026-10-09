@@ -38,6 +38,7 @@ import { CheckIcon, ShareIcon, WifiOffIcon } from './icons'
 import { ConfirmButton } from './ConfirmButton'
 import { SecretsSection } from './settings/SecretsSection'
 import { ProviderAuthSection } from './settings/ProviderAuthSection'
+import { DecisionModelsSection } from './settings/DecisionModelsSection'
 import { AgentTypesSection } from './settings/AgentTypesSection'
 import { SkillsSection } from './settings/SkillsSection'
 import { WorkflowsSection } from './settings/WorkflowsSection'
@@ -192,6 +193,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
           {activeSection === 'mobile-pro' && <MobileProSection />}
           {activeSection === 'notification-rules' && <NotificationsConfigSection />}
           {activeSection === 'providers' && <ProviderAuthSection />}
+          {activeSection === 'decision-providers' && <DecisionModelsSection />}
           {activeSection === 'git' && <SecretsSection />}
           {activeSection === 'amtp' && <AmtpSection />}
           {activeSection === 'machines' && <MachinesSection />}
@@ -266,13 +268,9 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
                 onClick={isSubscribed ? unsubscribe : subscribe}
                 disabled={permission === 'denied'}
                 className={clsx(
-                  'ficus-button',
-                  'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-                  isSubscribed
-                    ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300'
-                    : permission === 'denied'
-                      ? 'bg-surface-secondary text-placeholder cursor-not-allowed'
-                      : 'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active'
+                  'ficus-button px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
+                  isSubscribed ? 'ficus-button-secondary' : 'ficus-button-primary',
+                  !isSubscribed && permission === 'denied' && 'cursor-not-allowed opacity-50'
                 )}
               >
                 {isSubscribed ? 'Disable' : 'Enable'}
@@ -301,7 +299,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
                       </div>
                       <button
                         onClick={() => removeSubscription(sub.id)}
-                        className="ficus-button text-sm text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 py-2 sm:py-0 font-medium"
+                        className="ficus-button ficus-button-danger px-2.5 text-sm py-2 sm:py-1 font-medium"
                       >
                         Remove
                       </button>
@@ -337,11 +335,8 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
               }
             }}
             className={clsx(
-              'ficus-button',
-              'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-              notificationSound.enabled
-                ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300'
-                : 'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active'
+              'ficus-button px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
+              notificationSound.enabled ? 'ficus-button-secondary' : 'ficus-button-primary'
             )}
           >
             {notificationSound.enabled ? 'Disable' : 'Enable'}
@@ -410,7 +405,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
               </div>
               <button
                 onClick={pwa.promptInstall}
-                className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
+                className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0"
               >
                 Install
               </button>
@@ -439,7 +434,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
               </div>
               <button
                 onClick={pwa.applyUpdate}
-                className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
+                className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0"
               >
                 Update Now
               </button>
@@ -481,7 +476,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
             <button
               onClick={handleClearCache}
               disabled={isClearing || (cacheStats?.entryCount ?? 0) === 0}
-              className="ficus-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="ficus-button ficus-button-danger px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isClearing ? 'Clearing...' : 'Clear Offline Cache'}
             </button>
@@ -681,7 +676,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                 <button
                   type="submit"
                   disabled={profileMutation.isPending}
-                  className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {profileMutation.isPending ? 'Saving...' : 'Save display name'}
                 </button>
@@ -738,7 +733,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                           <button
                             type="submit"
                             disabled={renameMutation.isPending}
-                            className="ficus-button ficus-button-primary px-3 py-1.5 bg-accent text-on-accent rounded-md text-xs font-medium hover:bg-accent-hover disabled:opacity-50"
+                            className="ficus-button ficus-button-primary px-3 py-1.5 rounded-md text-xs font-medium disabled:opacity-50"
                           >
                             {renameMutation.isPending ? 'Saving…' : 'Save'}
                           </button>
@@ -768,7 +763,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                         <button
                           onClick={() => startRename(cred.id, cred.displayName)}
                           aria-label={`Rename passkey ${credLabel}`}
-                          className="ficus-button text-sm font-medium py-2 sm:py-0 text-accent-light hover:text-link-hover"
+                          className="ficus-button ficus-button-link text-sm font-medium py-2 sm:py-0"
                           title="Rename passkey"
                         >
                           Rename
@@ -784,13 +779,9 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                           disabled={deleteMutation.isPending || credentials.length <= 1}
                           ariaLabel={`Remove passkey ${credLabel}`}
                           className={clsx(
-                            'ficus-button',
-                            'text-sm font-medium py-2 sm:py-0',
-                            credentials.length <= 1
-                              ? 'text-placeholder cursor-not-allowed'
-                              : 'text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300'
+                            'px-2.5 py-2 text-sm sm:py-1',
+                            credentials.length <= 1 && 'cursor-not-allowed'
                           )}
-                          confirmClassName="text-sm font-medium py-2 sm:py-0 text-status-danger-700 dark:text-status-danger-300 underline"
                           title={credentials.length <= 1 ? 'Cannot remove your only passkey' : 'Remove passkey'}
                         />
                       </div>
@@ -820,7 +811,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
               <button
                 onClick={handleAddPasskey}
                 disabled={isAdding}
-                className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="ficus-button ficus-button-primary px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isAdding ? 'Adding…' : 'Add Passkey'}
               </button>
@@ -843,7 +834,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
               <button
                 onClick={() => void handleDisconnect()}
                 disabled={isDisconnecting}
-                className="ficus-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="ficus-button ficus-button-danger px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
               </button>
@@ -853,7 +844,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
               <p className="text-sm text-muted">Sign out of this device</p>
               <button
                 onClick={logout}
-                className="ficus-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0"
+                className="ficus-button ficus-button-danger px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0"
               >
                 Logout
               </button>
@@ -948,7 +939,7 @@ function SystemSection() {
                     pauseMutation.mutate(active)
                   }
                 }}
-                className="ficus-button px-4 py-2 rounded-md bg-status-attention-100 text-status-attention-900 hover:bg-status-attention-200 dark:bg-status-attention-900/30 dark:text-status-attention-200 dark:hover:bg-status-attention-900/50 disabled:opacity-50"
+                className="ficus-button ficus-button-secondary px-4 py-2 rounded-md bg-status-attention-100 text-status-attention-900 hover:bg-status-attention-200 dark:bg-status-attention-900/30 dark:text-status-attention-200 dark:hover:bg-status-attention-900/50 disabled:opacity-50"
               >
                 {pauseMutation.isPending
                   ? 'Updating…'
@@ -990,7 +981,7 @@ function SystemSection() {
                 restartMutation.mutate()
               }}
               disabled={isRestarting}
-              className="ficus-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="ficus-button ficus-button-danger px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isRestarting ? 'Restarting…' : 'Restart System'}
             </button>

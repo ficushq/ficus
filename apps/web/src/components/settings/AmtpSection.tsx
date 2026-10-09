@@ -145,7 +145,7 @@ export function AmtpSection() {
                   <button
                     type="submit"
                     disabled={edit.isPending}
-                    className="ficus-button ficus-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
+                    className="ficus-button ficus-button-primary rounded px-3 py-1 text-xs font-medium disabled:opacity-50"
                   >
                     {edit.isPending ? 'Saving…' : 'Save'}
                   </button>
@@ -176,7 +176,7 @@ export function AmtpSection() {
                           status: p.status === 'disabled' ? 'disabled' : 'active',
                         })
                       }}
-                      className="ficus-button text-sm font-medium text-accent-light hover:text-link-hover"
+                      className="ficus-button ficus-button-link text-sm font-medium"
                     >
                       Edit
                     </button>
@@ -186,7 +186,7 @@ export function AmtpSection() {
                         if (confirm(`Remove peer ${p.localAlias}? This cannot be undone.`)) remove.mutate(p.id)
                       }}
                       disabled={remove.isPending}
-                      className="ficus-button text-sm font-medium text-status-danger-600 hover:text-status-danger-800 disabled:opacity-50 dark:text-status-danger-400 dark:hover:text-status-danger-300"
+                      className="ficus-button ficus-button-danger px-2 py-1 text-sm font-medium disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -256,7 +256,7 @@ export function AmtpSection() {
             <button
               type="submit"
               disabled={add.isPending || !form.localAlias || !form.instanceId || !form.baseUrl || !form.publicKeyPem}
-              className="ficus-button ficus-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+              className="ficus-button ficus-button-primary rounded px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
             >
               {add.isPending ? 'Adding…' : 'Add Peer'}
             </button>

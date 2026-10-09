@@ -73,7 +73,7 @@ function AgentScopesPanelContent({ agentId }: Props) {
             </SkeletonRows>
           </LoadingSurface>
         ) : isError ? (
-          <p className="text-sm text-danger">Failed to load extra scopes.</p>
+          <p className="text-sm text-status-danger-600 dark:text-status-danger-400">Failed to load extra scopes.</p>
         ) : scopes.length === 0 ? (
           <p className="text-sm italic text-muted">No extra scopes granted</p>
         ) : (
@@ -87,7 +87,7 @@ function AgentScopesPanelContent({ agentId }: Props) {
                 <Can permission="agents:scopes:manage">
                   <button
                     type="button"
-                    className="ficus-button text-muted hover:text-danger"
+                    className="ficus-button ficus-button-ghost hover:text-status-danger-600 dark:hover:text-status-danger-400"
                     aria-label={`Revoke ${scope.permission}`}
                     disabled={isMutating}
                     onClick={() => revokeMutation.mutate(scope.permission)}
@@ -107,15 +107,17 @@ function AgentScopesPanelContent({ agentId }: Props) {
               <p className="mt-1 text-xs text-muted">Select one or more permissions to grant to this agent.</p>
             </div>
             <PermissionPicker value={selectedPermissions} onChange={setSelectedPermissions} />
-            {error && <div className="text-sm text-danger">{(error as Error).message}</div>}
+            {error && (
+              <div className="text-sm text-status-danger-600 dark:text-status-danger-400">
+                {(error as Error).message}
+              </div>
+            )}
             <button
               type="button"
               className={clsx(
-                'ficus-button',
+                'ficus-button ficus-button-primary',
                 'rounded-md px-3 py-1.5 text-sm font-medium',
-                grantableSelections.length === 0 || isMutating
-                  ? 'cursor-not-allowed bg-surface text-muted'
-                  : 'bg-accent text-on-accent hover:bg-accent-hover'
+                grantableSelections.length === 0 || (isMutating && 'cursor-not-allowed opacity-50')
               )}
               disabled={grantableSelections.length === 0 || isMutating}
               onClick={() => void grantSelected()}

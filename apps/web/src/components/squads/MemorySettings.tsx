@@ -129,8 +129,7 @@ export function MemorySettings({ squadId }: Props) {
           onClick={handleToggleEnabled}
           disabled={updateMutation.isPending || !canWriteMemory}
           className={clsx(
-            'ficus-button',
-            'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out  focus:ring-2 focus:ring-accent focus:ring-offset-2',
+            'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-accent focus:ring-offset-2',
             memoryConfig.enabled ? 'bg-accent' : 'bg-th-border'
           )}
         >
@@ -153,10 +152,7 @@ export function MemorySettings({ squadId }: Props) {
                 Embedding Model
               </label>
               {!isEditing && canWriteMemory && (
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="ficus-button text-xs text-accent-light hover:underline"
-                >
+                <button onClick={() => setIsEditing(true)} className="ficus-button ficus-button-link text-xs">
                   Edit
                 </button>
               )}
@@ -180,14 +176,14 @@ export function MemorySettings({ squadId }: Props) {
                       setIsEditing(false)
                       setEmbeddingModel(memoryConfig.embeddingModel || 'text-embedding-3-small')
                     }}
-                    className="ficus-button px-3 py-1.5 text-sm rounded-md text-secondary hover:bg-surface-hover"
+                    className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm rounded-md"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSave}
                     disabled={updateMutation.isPending || !canWriteMemory}
-                    className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-on-accent hover:bg-accent/90"
+                    className="ficus-button ficus-button-primary px-3 py-1.5 text-sm rounded-md"
                   >
                     {updateMutation.isPending ? 'Saving...' : 'Save'}
                   </button>
@@ -205,7 +201,7 @@ export function MemorySettings({ squadId }: Props) {
           <div className="border-b border-panel-border last:border-b-0 p-3 mb-4">
             <button
               onClick={() => setShowWeights(!showWeights)}
-              className="ficus-button flex items-center justify-between w-full text-left"
+              className="flex items-center justify-between w-full text-left"
             >
               <span className="text-sm font-medium text-primary">Ranking Weights</span>
               <svg
@@ -242,11 +238,9 @@ export function MemorySettings({ squadId }: Props) {
                 onClick={() => reindexMutation.mutate()}
                 disabled={reindexMutation.isPending || !canWriteMemory}
                 className={clsx(
-                  'ficus-button',
+                  'ficus-button ficus-button-secondary',
                   'px-3 py-1.5 text-sm rounded-md font-medium transition-colors',
-                  reindexMutation.isPending || !canWriteMemory
-                    ? 'bg-surface-secondary text-muted cursor-not-allowed'
-                    : 'border border-th-border text-secondary hover:bg-surface-hover'
+                  reindexMutation.isPending || (!canWriteMemory && 'cursor-not-allowed opacity-50')
                 )}
               >
                 {reindexMutation.isPending ? 'Reindexing...' : 'Reindex'}

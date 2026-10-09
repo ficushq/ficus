@@ -145,6 +145,22 @@ bun run test:db:down && bun run --filter core test
   test counts, and timings. An interrupted, skipped, or unexecuted lane is not
   passing evidence. Format changes and run typechecks before handoff.
 
+## Decision features need evals
+
+Any change that asks a decision model, whether a new `DECISION_PURPOSES` entry, a new `decide(purpose, …)` call, or changed questions, options or thresholds, ships with a decision eval, run live before it merges.
+
+- **Write the eval next to the feature** as `<feature>.decision-eval.ts`, default-exporting `defineDecisionEval({...})` from `apps/core/src/services/decisions/evals/define.ts`. Its `build` and `decide` must call the feature's own request builder and decision rule. If they are inline, export them as pure functions first, as with `deliverySuggestionFrom`, `assistantRoutingVerdict`, and `toolFirewallRequest` / `partSeverity`. Never copy the prompt or thresholds into the eval: it must test what ships.
+- **Cases:** clear positives, clear negatives, the cases near each threshold, and every misfire someone reported. Mark the cases that must never regress `must: true`. Use `accept: [...]` for cases where more than one outcome is right. Declare `thresholds` for each yes/no question so the table shows how close each answer came to a cut-off.
+- **Run it live** with `bun run decisions:eval <name> --repeat 2`.
+  - Providers come from the root `.env` instance by default, from `--from env` with `FICUS_EVAL_<KIND>_API_KEY`, or from `--from backend:<CLI backend label>`. The backend route asks that instance's `POST /api/decisions/try`, which needs `provider-auth:write` there.
+  - Read the margins ("thin" passes) and the answers that flip between attempts, not only the pass count. Check at least Jev and one image-capable model when the request has images.
+  - Compare prompt rewrites with `variants` and `--variant <name>` before replacing the shipped questions.
+- **Record and commit** with `--record` whenever the questions or cases change, and commit `__decision-snapshots__/`. `replay.test.ts` replays recorded answers through the current rule in normal CI, with no provider, so a rule change that breaks a recorded passing case fails there. Re-record answers that it reports as stale (the prompt changed).
+- **Saving users' corrections** as candidate cases is opt-in: Settings → Decision Providers → For developers. It is off by default and refused on hosted instances, because it keeps what people typed.
+  - When a feature has a user correction (an override, a "wrong guess" control, a pick that replaces the model's), call `captureCorrection` from that path with the eval's name and the user's choice in the eval's outcome terms.
+  - Review with `bun run decisions:eval --inbox`, then `--accept <id>` or `--dismiss <id>`. Accepted cases go to a gitignored `*.decision-cases.local.json`. `--shared` writes the committed `*.decision-cases.json` instead: check those cases hold nothing private first.
+- **CI runs only the offline replay**, never live providers: run evals live yourself, then record and commit the snapshots.
+
 ## Monorepo Structure
 
 - `apps/core` — API server and worker (Hono/Bun)
@@ -226,19 +242,46 @@ Before building a control in `apps/web`, use the shared one. Hand-rolled
 copies drift in look, keyboard behaviour and accessibility. If a shared
 component almost fits, extend it rather than forking it.
 
-| Need                                                                             | Use (`apps/web/src/components/`)                                                                                                                  |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A single choice among a few options in a row (view switcher, mode, scope, range) | `SegmentedControl` (`size="compact"` in toolbars and headers)                                                                                     |
-| A dropdown to pick one value                                                     | `SelectionPopup` (`ThemedPopup.tsx`; see `ThemedPopup.md`) for new pickers, not a custom listbox (some older forms still use a native `<select>`) |
-| A menu of actions, or in-app section navigation from a button                    | `ActionPopup` (`ThemedPopup.tsx`)                                                                                                                 |
-| A "…" overflow of row actions                                                    | `OverflowMenu`                                                                                                                                    |
-| A dialog or sheet                                                                | `Modal` (follows the visual viewport on mobile; never position your own fixed overlay)                                                            |
-| A destructive action that needs a second tap                                     | `ConfirmButton`                                                                                                                                   |
-| A status or label pill                                                           | `Badge` (and `WorkStreamStatusBadges` for work stream state)                                                                                      |
-| Loading placeholders                                                             | `LoadingContent` and the skeletons in `loading/Skeleton.tsx`                                                                                      |
-| Buttons, fields, nav items and tables                                            | the `ficus-button`, `ficus-button-primary`, `ficus-field`, `ficus-nav-item` and `ficus-table` classes                                             |
-| Icons                                                                            | `components/icons` (see Icons below)                                                                                                              |
-| Colors in JS                                                                     | `useThemeColors` / `tokenReader` (see Theme colors above)                                                                                         |
+| Need                                                                                       | Use (`apps/web/src/components/`)                                                                                                                                                |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A single choice among a few options in a row (view switcher, mode, scope, range)           | `SegmentedControl` (`size="compact"` in toolbars and headers)                                                                                                                   |
+| A popup anchored to a button or field (menu, picker, panel, hover card, autocomplete list) | `Popover` and its variants in `popover/` (`Menu`, `Picker`, `Panel`, `HoverCard`, `ComboboxList`; see `popover/Popover.md`), never hand-rolled positioning, portal or dismissal |
+| A dropdown to pick one value                                                               | `SelectionPopup` (`ThemedPopup.tsx`, a trigger + `Picker`) for new pickers, not a custom listbox (some older forms still use a native `<select>`)                               |
+| A menu of actions, or in-app section navigation from a button                              | `ActionPopup` (`ThemedPopup.tsx`, a trigger + `Menu`), or `Menu` + `MenuItem` for custom rows                                                                                   |
+| A "…" overflow of row actions                                                              | `OverflowMenu` (a `Menu` over plain buttons)                                                                                                                                    |
+| A dialog or sheet                                                                          | `Modal` (follows the visual viewport on mobile; never position your own fixed overlay)                                                                                          |
+| A destructive action that needs a second tap                                               | `ConfirmButton`                                                                                                                                                                 |
+| A status or label pill                                                                     | `Badge` (and `WorkStreamStatusBadges` for work stream state)                                                                                                                    |
+| Loading placeholders                                                                       | `LoadingContent` and the skeletons in `loading/Skeleton.tsx`                                                                                                                    |
+| A button                                                                                   | `ficus-button` plus exactly one variant (see Buttons below); `ConfirmButton` for a two-tap destructive action                                                                   |
+| Fields, nav items and tables                                                               | the `ficus-field`, `ficus-nav-item` and `ficus-table` classes                                                                                                                   |
+| Icons                                                                                      | `components/icons` (see Icons below)                                                                                                                                            |
+| Colors in JS                                                                               | `useThemeColors` / `tokenReader` (see Theme colors above)                                                                                                                       |
+
+Any new floating UI must dismiss through `usePopupDismiss` (`hooks/usePopupDismiss.ts`) and be tap-tested
+with the WebKit tap helper (`test/webkitTap.ts`); the `Popover` variants already do both. The guard tests
+`components/popover.guard.test.ts` and `components/popupDismissal.guard.test.ts` enforce it.
+
+#### Buttons
+
+`ficus-button` is only a base (radius, weight, transitions): it has no fill and no border, so a padded
+`ficus-button` on its own renders as indented text that only shows a background on hover. Always pair it
+with exactly one variant from `design-system.css`; `components/buttonVariants.guard.test.ts` fails any
+className that carries the base without one (or with two, or a variant without the base). Pick the
+variant by role:
+
+| Variant                  | Use for                                                                                                                                                                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ficus-button-primary`   | The one main action of a page, dialog or form (Save, Approve, Connect, Send).                                                                                                                                                 |
+| `ficus-button-secondary` | Standalone actions in content: card CTAs ("Review and decide", "View"), row actions shown as buttons, "Mark all read", a dialog's Cancel. Visible at rest.                                                                    |
+| `ficus-button-ghost`     | Only icon-only buttons, and compact controls inside a toolbar, header, menu or segmented cluster whose chrome already reads as controls. A text-only ghost standing alone in content is the bug: make it secondary or a link. |
+| `ficus-button-link`      | Inline text actions in running text or a section header ("Dismiss", "Retry", "Edit"). No horizontal padding (the guard checks), so nothing looks indented.                                                                    |
+| `ficus-button-danger`    | Destructive actions (Delete, Remove, Revoke, Disconnect, Stop): secondary-shaped with danger text. A destructive icon-only button stays ghost with a `hover:text-status-danger-*` tint.                                       |
+
+Variants own the color, fill and hover; utilities add size and layout. A `hover:` utility still wins
+over a variant's hover, so a tinted or active state can keep its look. Choose the variant dynamically
+with a ternary among variants (`active ? 'ficus-button-primary' : 'ficus-button-secondary'`), never by
+adding or dropping one, and write shared class constants with the base and the variant together.
 
 ### Stable Refs
 

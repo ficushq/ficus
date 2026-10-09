@@ -1,9 +1,7 @@
 import { WorktreeCleanupSettings } from './WorktreeCleanupSettings'
 import { workStreamTitle, workStreamWaitActor } from '@ficus/shared'
-import { WORK_STREAM_STATUS_ROLE } from '@ficus/shared'
-import { webStatus } from '../lib/statusPresentation'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
-import { getWsDisplayState, workStreamStatusLabel, workStreamWaitBadge } from '../lib/workStreamStatusPresentation'
+import { workStreamWaitBadge } from '../lib/workStreamStatusPresentation'
 export { getWsDisplayState, WS_STATUS_LABELS, WS_STATUS_BADGE_COLORS } from '../lib/workStreamStatusPresentation'
 import { workStreamGithubRepository, workStreamPullRequests } from '../lib/workStreamGithub'
 import { WorkStreamPauseControls, useWorkStreamPauseControls } from './WorkStreamPauseControls'
@@ -22,6 +20,7 @@ import { MarkdownContent } from './MarkdownContent'
 import { Modal } from './Modal'
 import { Badge, type BadgeColor } from './Badge'
 import { WorkStreamFileList } from './WorkStreamFileCard'
+import { WaitAge, WorkStreamDependencies } from './WorkStreamDependencies'
 import { GitHubIcon, PullRequestIcon } from './icons'
 import { WorkStreamActionsMenu } from './WorkStreamActionsMenu'
 import type { WorkStream, WorkStreamPriority, WorkStreamWait, Squad, Agent } from '@ficus/shared'
@@ -173,7 +172,10 @@ export function WorkStreamDetailModal({
   // Fetch metrics separately (lazy load when modal opens)
   const { data: metrics, isLoading: metricsLoading } = useQuery(queries.squads.workStreamMetrics(workStream.id))
 
-  const missingDependencyIds = Array.from(new Set(workStream.dependsOn)).filter(
+  const dependencyWaitIds = (workStream.openWaits ?? []).flatMap((wait) =>
+    wait.type === 'dependency' && wait.referenceId ? [wait.referenceId] : []
+  )
+  const missingDependencyIds = Array.from(new Set([...workStream.dependsOn, ...dependencyWaitIds])).filter(
     (dependencyId) => !workStreamMap.has(dependencyId)
   )
   const dependencyQueries = useQueries({
@@ -231,7 +233,10 @@ export function WorkStreamDetailModal({
   const needsResponse = !!calloutWait && calloutWait.resolutionHandler !== 'workflow'
   const missingFocusedWait = !!focusWaitId && !actionableFocusedWait && focusedWait?.type !== 'question'
   const questionWaits = openWaits.filter((wait) => wait.type === 'question')
-  const remainingWaits = openWaits.filter((wait) => wait.id !== calloutWait?.id && wait.type !== 'question')
+  // Dependency waits read as "Blocking" rows in Dependencies, next to the stream they wait on.
+  const remainingWaits = openWaits.filter(
+    (wait) => wait.id !== calloutWait?.id && wait.type !== 'question' && wait.type !== 'dependency'
+  )
 
   const [isResponding, setIsResponding] = useState(false)
   const [response, setResponse] = useState('')
@@ -330,7 +335,7 @@ export function WorkStreamDetailModal({
               )}
             </div>
             <div className="text-sm text-secondary max-h-64 overflow-y-auto">
-              <MarkdownContent className="prose-xs">
+              <MarkdownContent variant="document">
                 {(reviewWait ? (reviewWait.message ?? workStream.handoffMessage) : manualWait?.message) ?? ''}
               </MarkdownContent>
             </div>
@@ -358,7 +363,7 @@ export function WorkStreamDetailModal({
                   <button
                     onClick={handleSubmit}
                     disabled={respondMutation.isPending || !canRespondToWait || !response.trim()}
-                    className="ficus-button ficus-button-primary px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded hover:bg-accent-hover disabled:opacity-50"
+                    className="ficus-button ficus-button-primary px-2 py-1 text-xs font-medium rounded disabled:opacity-50"
                     title={
                       canRespondToWait ? 'Submit response' : 'You do not have permission to respond to this work stream'
                     }
@@ -367,7 +372,7 @@ export function WorkStreamDetailModal({
                   </button>
                   <button
                     onClick={() => setIsResponding(false)}
-                    className="ficus-button px-2 py-1 text-xs font-medium text-secondary border border-th-border rounded hover:bg-surface-hover"
+                    className="ficus-button ficus-button-secondary px-2 py-1 text-xs font-medium rounded"
                   >
                     Cancel
                   </button>
@@ -378,7 +383,7 @@ export function WorkStreamDetailModal({
                 <button
                   onClick={() => setShowApprovalConfirmation(true)}
                   disabled={respondMutation.isPending || !canRespondToWait}
-                  className="ficus-button px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                  className="ficus-button ficus-button-primary px-2 py-1 text-xs font-medium rounded-lg disabled:opacity-50"
                   title={
                     canRespondToWait ? 'Approve review' : 'You do not have permission to respond to this work stream'
                   }
@@ -391,7 +396,7 @@ export function WorkStreamDetailModal({
                     setResponse('')
                   }}
                   disabled={!canRespondToWait}
-                  className="ficus-button px-2 py-1 text-xs font-medium text-secondary bg-surface-hover rounded-lg hover:bg-surface disabled:opacity-50"
+                  className="ficus-button ficus-button-secondary px-2 py-1 text-xs font-medium rounded-lg disabled:opacity-50"
                   title={
                     canRespondToWait ? 'Request changes' : 'You do not have permission to respond to this work stream'
                   }
@@ -403,7 +408,7 @@ export function WorkStreamDetailModal({
               <button
                 onClick={() => setIsResponding(true)}
                 disabled={!canRespondToWait}
-                className="ficus-button mt-2 px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                className="ficus-button ficus-button-primary mt-2 px-2 py-1 text-xs font-medium rounded-lg disabled:opacity-50"
                 title={canRespondToWait ? 'Respond' : 'You do not have permission to respond to this work stream'}
               >
                 Respond
@@ -411,6 +416,14 @@ export function WorkStreamDetailModal({
             )}
           </div>
         )}
+
+        {/* What this stream waits on, above the details and description so blockers are visible at once. */}
+        <WorkStreamDependencies
+          dependsOn={workStream.dependsOn}
+          waits={openWaits}
+          streams={resolvedWorkStreamMap}
+          onSelectWorkStream={onSelectWorkStream}
+        />
 
         {/* Metadata summary */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
@@ -575,11 +588,11 @@ export function WorkStreamDetailModal({
                   <div className="flex flex-wrap items-center gap-2">
                     <WaitBadge wait={wait} />
                     {wait.flowAttemptId != null && <span className="text-muted">Attempt {wait.flowAttemptId}</span>}
-                    <span className="text-muted ml-auto">{new Date(wait.openedAt).toLocaleString()}</span>
+                    <WaitAge wait={wait} className="text-muted ml-auto" />
                   </div>
                   {wait.message && (
                     <div className="mt-1 text-primary">
-                      <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
+                      <MarkdownContent variant="document">{wait.message}</MarkdownContent>
                     </div>
                   )}
                   <WorkStreamQuestionWait
@@ -609,11 +622,11 @@ export function WorkStreamDetailModal({
                     {wait.type === 'review' && workStream.reviewRounds != null && (
                       <span className="text-muted">Round {workStream.reviewRounds + 1}</span>
                     )}
-                    <span className="text-muted ml-auto shrink-0">{new Date(wait.openedAt).toLocaleString()}</span>
+                    <WaitAge wait={wait} className="text-muted ml-auto shrink-0" />
                   </div>
                   {wait.message && (
                     <div className="mt-1 text-primary">
-                      <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
+                      <MarkdownContent variant="document">{wait.message}</MarkdownContent>
                     </div>
                   )}
                 </li>
@@ -714,7 +727,7 @@ export function WorkStreamDetailModal({
           <div>
             <label className="text-xs font-medium text-secondary">Next Steps</label>
             <div className="mt-3 text-sm leading-relaxed text-secondary">
-              <MarkdownContent className="prose-xs">{nextSteps}</MarkdownContent>
+              <MarkdownContent variant="document">{nextSteps}</MarkdownContent>
             </div>
           </div>
         )}
@@ -724,7 +737,7 @@ export function WorkStreamDetailModal({
           <div className="min-w-0 [overflow-wrap:anywhere]">
             <label className="text-xs font-medium text-secondary">Description</label>
             <div className="mt-3 text-sm leading-relaxed text-secondary">
-              <MarkdownContent className="prose-xs">{workStream.description}</MarkdownContent>
+              <MarkdownContent variant="document">{workStream.description}</MarkdownContent>
             </div>
           </div>
         )}
@@ -734,40 +747,6 @@ export function WorkStreamDetailModal({
           <div>
             <label className="text-xs font-medium text-secondary">Files</label>
             <WorkStreamFileList files={workStream.files} squadId={workStream.squadId} />
-          </div>
-        )}
-
-        {/* Dependencies */}
-        {workStream.dependsOn.length > 0 && (
-          <div>
-            <label className="text-xs font-medium text-secondary">Depends On</label>
-            <ul className="mt-0.5 space-y-0.5">
-              {workStream.dependsOn.map((depId) => {
-                const dependency = resolvedWorkStreamMap.get(depId)
-                const label = dependency?.title ?? depId.slice(0, 8)
-                const dependencyState = dependency ? getWsDisplayState(dependency) : null
-                const dependencyTreatment = dependencyState
-                  ? webStatus(WORK_STREAM_STATUS_ROLE[dependencyState])
-                  : webStatus('neutral')
-                return (
-                  <li key={depId} className="text-xs">
-                    <button
-                      type="button"
-                      aria-label={`Open dependency ${label}`}
-                      onClick={() => onSelectWorkStream?.(depId)}
-                      disabled={!onSelectWorkStream}
-                      className="ficus-button inline-flex items-center gap-1.5 text-accent-light hover:underline disabled:text-secondary disabled:no-underline"
-                    >
-                      <span
-                        aria-label={dependency ? `${workStreamStatusLabel(dependency)} status` : 'Unknown status'}
-                        className={clsx('h-2 w-2 rounded-full', dependencyTreatment.markerClass)}
-                      />
-                      {label}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
           </div>
         )}
 
@@ -866,7 +845,7 @@ export function WorkStreamDetailModal({
                     </div>
                     {(wait.resolutionNote || wait.message) && (
                       <div className="mt-1 text-primary">
-                        <MarkdownContent className="prose-xs">
+                        <MarkdownContent variant="document">
                           {wait.resolutionNote || wait.message || ''}
                         </MarkdownContent>
                       </div>

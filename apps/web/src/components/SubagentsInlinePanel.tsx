@@ -54,9 +54,9 @@ export function SubagentsInlinePanel({ parentAgentId }: SubagentsInlinePanelProp
               type="button"
               onClick={() => setSelectedId(child.id)}
               className={clsx(
-                'ficus-button',
+                'ficus-button ficus-button-ghost',
                 'w-full text-left px-2 py-2 rounded-md transition-colors',
-                active ? 'bg-surface-secondary text-primary' : 'text-secondary hover:bg-surface-hover'
+                active && 'bg-surface-secondary text-primary'
               )}
               aria-current={active ? 'page' : undefined}
             >

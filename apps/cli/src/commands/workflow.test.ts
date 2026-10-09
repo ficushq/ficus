@@ -143,7 +143,8 @@ test('workstream flow commands preserve inspected versions and retry IDs, and re
     { method: 'POST', path: '/api/workflows/runs/stream-id/advance', body: { command, requestId } },
     { method: 'POST', path: '/api/workflows/runs/stream-id/finish', body: { version: 8 } },
   ])
-  await f.run('advance', 'stream-id', '--file', await file({ ...command, evidence: '' }))
+  // Whether empty evidence is acceptable depends on the step, so only the server decides that.
+  await f.run('advance', 'stream-id', '--file', await file({ ...command, evidence: undefined }))
   await f.run('finish', 'stream-id', '--version', '-1')
   expect(f.errors).toHaveLength(2)
   expect(f.calls).toHaveLength(3)
