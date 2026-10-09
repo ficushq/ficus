@@ -437,6 +437,26 @@ describe('work-streams routes', () => {
   })
 
   describe('POST /api/workstreams', () => {
+    it('refuses new work in an archived squad, from the route and from any other caller', async () => {
+      const [archived] = await db
+        .insert(squads)
+        .values({ name: `${testPrefix} archived`, purpose: 'Archived', status: 'archived', archivedAt: new Date() })
+        .returning()
+      try {
+        const res = await postJson('/api/workstreams', { squadId: archived!.id, title: `${testPrefix} late` })
+        const body = await res.json()
+        expect({ status: res.status, body }).toEqual({ status: 410, body: { error: 'Squad is archived' } })
+        // Schedules and other callers create through the entity, which refuses too.
+        await expect(WorkStream.create({ squadId: archived!.id, title: `${testPrefix} late` })).rejects.toThrow(
+          'Squad is archived'
+        )
+        const rows = await db.select().from(workStreams).where(eq(workStreams.squadId, archived!.id))
+        expect(rows).toHaveLength(0)
+      } finally {
+        await db.delete(squads).where(eq(squads.id, archived!.id))
+      }
+    })
+
     it('accepts ownerAgentId and resolves a prefix', async () => {
       const res = await postJson('/api/workstreams', {
         squadId: testSquadId,

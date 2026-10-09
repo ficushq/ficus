@@ -109,8 +109,16 @@ A decision step (`kind: decision`) routes work without an agent or a person. Whe
       type: score
       instructions: How risky is the change to production?
       levels: [{ label: Low }, { label: Medium }, { label: High }]
+    area:
+      type: choice
+      instructions: Which part of the product does the change touch?
+      options:
+        billing: Payments, invoices or refunds.
+        other: Anything else.
   routes: # checked in order; the first match wins
     - when: { type: score, question: risk, op: at-least, level: High }
+      outcome: review
+    - when: { type: choice, question: area, equals: billing, minConfidence: 0.7 }
       outcome: review
     - when: { type: yesno, question: ready, op: at-least, probability: 0.8 }
       outcome: ship
