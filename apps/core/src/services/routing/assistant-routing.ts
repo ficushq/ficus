@@ -401,14 +401,54 @@ export function isRoutableUserMessage(message: Pick<Message, 'role' | 'content' 
   )
 }
 
+/** Where a user's text goes: a confident hint, the conversation's earlier routing for a follow-up, or null. */
+export type AssistantTextRouting = { hint: AssistantRoutingHint } | { inherited: InheritedRouting } | null
+
 /**
- * Route one user message to the Assistant. Short acknowledgements are not asked about at all.
- * Otherwise one decision asks what kind of message it is and
- * where it belongs:
- * - a confident new request with a confident scope saves the hint on the message (the UI shows its
- *   chip; the model reads it with the message);
+ * Where a user's text goes, with the conversation before `at` as context. Short acknowledgements
+ * are not asked about at all. Otherwise one decision asks what kind of message it is and where it
+ * belongs: a confident follow-up keeps the conversation's latest routing; else a confident target
+ * is the hint. Used for a sent message and for the composer's preview of a draft. Never throws.
+ */
+export async function routeAssistantText(
+  identity: Identity,
+  at: Pick<Message, 'id' | 'agentId' | 'createdAt'>,
+  text: string,
+  deps: AssistantRoutingDeps = {},
+  source: Record<string, string> = { kind: 'assistant', agentId: at.agentId }
+): Promise<AssistantTextRouting> {
+  try {
+    if (!(deps.enabled ?? (() => isDecisionFeatureEnabled('assistant-routing')))()) return null
+    const user = await resolveActingUser(identity)
+    if (!user) return null
+    if (routingSkipReason(text)) return null
+    const context = await (deps.loadContext ?? loadRoutingContext)(at)
+    const squadList = await (deps.listSquads ?? listRoutableSquads)(user)
+    const { hint, kind } = await decideAssistantRouting(
+      { text, recent: context.recent, squads: squadList, withKind: true },
+      { ...deps, enabled: () => true },
+      source
+    )
+    // A confident follow-up keeps the conversation's earlier routing, when it has some.
+    if (kind?.kind === 'follow_up' && kind.confidence >= ASSISTANT_ROUTING_MIN_CONFIDENCE) {
+      const inherited = await (deps.findInherited ?? findInheritedRouting)(at)
+      if (inherited) return { inherited }
+    }
+    // Otherwise the message's target decides, whatever its kind: a question about a squad is for that squad.
+    if (!hint || hint.confidence < ASSISTANT_ROUTING_MIN_CONFIDENCE) return null
+    return { hint }
+  } catch (error) {
+    log.warn('Could not route Assistant text', error)
+    return null
+  }
+}
+
+/**
+ * Route one user message to the Assistant (see `routeAssistantText`):
+ * - a confident hint is saved on the message (the UI shows its chip; the model reads it with the message);
  * - a confident follow-up carries the conversation's latest routing to the model, unsaved, with no chip;
- * - anything else comes back unchanged. Never throws.
+ * - anything else comes back unchanged. A message sent with routing from the composer already has
+ *   it and is not asked about again. Never throws.
  */
 export async function annotateAssistantMessage(
   identity: Identity,
@@ -417,34 +457,20 @@ export async function annotateAssistantMessage(
 ): Promise<Message> {
   if (!isRoutableUserMessage(message)) return message
   try {
-    if (!(deps.enabled ?? (() => isDecisionFeatureEnabled('assistant-routing')))()) return message
-    const user = await resolveActingUser(identity)
-    if (!user) return message
-    if (routingSkipReason(message.content)) return message
-    const context = await (deps.loadContext ?? loadRoutingContext)(message)
-    const squadList = await (deps.listSquads ?? listRoutableSquads)(user)
-    const { hint, kind } = await decideAssistantRouting(
-      { text: message.content, recent: context.recent, squads: squadList, withKind: true },
-      { ...deps, enabled: () => true },
-      { kind: 'assistant', agentId: message.agentId }
-    )
-    // A confident follow-up keeps the conversation's earlier routing, when it has some.
-    if (kind?.kind === 'follow_up' && kind.confidence >= ASSISTANT_ROUTING_MIN_CONFIDENCE) {
-      const inherited = await (deps.findInherited ?? findInheritedRouting)(message)
-      if (inherited)
-        return {
-          ...message,
-          metadata: {
-            ...message.metadata,
-            assistantRoutingInherited: {
-              ...routingTarget(effectiveAssistantRouting(inherited.hint)),
-              fromMessageId: inherited.messageId,
-            },
+    const routing = await routeAssistantText(identity, message, message.content, deps)
+    if (!routing) return message
+    if ('inherited' in routing)
+      return {
+        ...message,
+        metadata: {
+          ...message.metadata,
+          assistantRoutingInherited: {
+            ...routingTarget(effectiveAssistantRouting(routing.inherited.hint)),
+            fromMessageId: routing.inherited.messageId,
           },
-        }
-    }
-    // Otherwise the message's target decides, whatever its kind: a question about a squad is for that squad.
-    if (!hint || hint.confidence < ASSISTANT_ROUTING_MIN_CONFIDENCE) return message
+        },
+      }
+    const { hint } = routing
     const [saved] = await db
       .update(messages)
       .set({

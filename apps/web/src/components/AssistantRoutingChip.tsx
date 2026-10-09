@@ -44,12 +44,15 @@ export function AssistantRoutingChip({
   squads,
   onCorrect,
   onAskToMove,
+  onPick,
 }: {
   hint: AssistantRoutingHint
   squads: readonly RoutingChipSquad[]
 } & (
-  | { onCorrect: (pick: AssistantRoutingPick) => Promise<unknown>; onAskToMove?: never }
-  | { onAskToMove: (target: AssistantRoutingTarget) => void; onCorrect?: never }
+  | { onCorrect: (pick: AssistantRoutingPick) => Promise<unknown>; onAskToMove?: never; onPick?: never }
+  | { onAskToMove: (target: AssistantRoutingTarget) => void; onCorrect?: never; onPick?: never }
+  /** Before sending (the composer): the pick, or null to go back to the decision model's. */
+  | { onPick: (target: AssistantRoutingTarget | null) => void; onCorrect?: never; onAskToMove?: never }
 )) {
   const [pending, setPending] = useState<AssistantRoutingTarget | null>(null)
   const [error, setError] = useState<string>()
@@ -80,6 +83,7 @@ export function AssistantRoutingChip({
     const target: AssistantRoutingTarget =
       choice === NO_SQUAD || !squad ? { scope: 'none' } : { scope: 'squad', squadId: squad.id, squadName: squad.name }
     if (onAskToMove) return onAskToMove(target)
+    if (onPick) return onPick(hint.correction && choice === choiceFor(hint) ? null : target)
     setError(undefined)
     setPending(target)
     void onCorrect(target.scope === 'squad' ? { scope: 'squad', squadId: target.squadId! } : { scope: 'none' }).then(
@@ -92,16 +96,21 @@ export function AssistantRoutingChip({
   }
   const action = onAskToMove ? 'Ask the Assistant to move it' : 'Change squad'
   return (
-    <div className="mt-1 flex flex-col items-end gap-0.5 pr-1" data-assistant-routing>
+    <div
+      className={onPick ? 'flex min-w-0 items-center' : 'mt-1 flex flex-col items-end gap-0.5 pr-1'}
+      data-assistant-routing={onPick ? 'draft' : ''}
+    >
       <SelectionPopup
         label={`Routing: ${label}${byUser ? ', set by you' : ''}. ${action}`}
         heading={onAskToMove ? 'Ask the Assistant to move this to' : 'Send this to'}
         title={
           onAskToMove
             ? 'Its work has already gone somewhere. Picking a squad writes a request you can edit and send.'
-            : byUser
-              ? 'You chose where this goes'
-              : 'Where the decision model thinks this goes'
+            : onPick && !byUser
+              ? 'Where the decision model thinks this message goes'
+              : byUser
+                ? 'You chose where this goes'
+                : 'Where the decision model thinks this goes'
         }
         value={choiceFor(shown)}
         options={options}
@@ -192,6 +201,31 @@ export function AssistantMessageRouting({
       hint={hint}
       squads={listed}
       onAskToMove={(target) => onDraft(assistantMoveRequest(content, effectiveAssistantRouting(hint), target))}
+    />
+  )
+}
+
+/**
+ * The pill by the composer: where the draft would go, from the routing preview, or the user's own
+ * pick. Shown for a squad or Ficus itself (never "general"), or once the user picked.
+ */
+export function AssistantDraftRouting({
+  hint,
+  pick,
+  onPick,
+}: {
+  hint: AssistantRoutingHint | null
+  pick: AssistantRoutingTarget | null
+  onPick: (target: AssistantRoutingTarget | null) => void
+}) {
+  const squads = useQuery(queries.squads.list('active'))
+  if (!pick && (!hint || hint.scope === 'general')) return null
+  const base: AssistantRoutingHint = hint ?? { scope: 'general', confidence: 0 }
+  return (
+    <AssistantRoutingChip
+      hint={pick ? { ...base, correction: { ...pick, at: '' } } : base}
+      squads={(squads.data ?? []).filter((squad) => !squad.isAnonymous)}
+      onPick={onPick}
     />
   )
 }

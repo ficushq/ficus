@@ -60,19 +60,31 @@ The user's message goes only in the decision's state, with the user's last four 
 the Assistant's latest reply (300 characters each). The question waits at most 1.5 seconds; no
 answer means no hint.
 
-- A `new_request` whose kind and scope are both at least 60% confident is saved on the message
+- A confident `follow_up` (at least 60%) carries the conversation's latest routing (the newest
+  message with a hint, or the user's correction of it) to the model, unsaved and with no chip.
+- Otherwise a scope at least 60% confident, whatever the kind, is saved on the message
   (`metadata.assistantRouting`) and added to the model's copy of it as a routing hint. The
-  conversation shows it as a chip under the message ("Chlea · 91%", "Not about a squad",
-  "General").
-- A confident `follow_up` carries the conversation's latest routing (the newest message with a
-  hint, or the user's correction of it) to the model, unsaved and with no chip. With no earlier
-  routing it gets nothing.
-- `conversation`, and anything less confident, gets nothing.
+  conversation shows it as a chip under the message ("Chlea", "Not about a squad"). A "general"
+  hint shows no chip, and chips show no confidence.
+- Anything less confident gets nothing.
 
-Choosing another squad, or No squad, from the chip (`POST /api/assistant/:conversationId/routing`)
-saves the correction on the message and sends the Assistant a short system message that carries
-it. The Assistant's `suggest_squad` tool asks the scope question for any phrasing, and falls back
-to the purpose heuristic without a decision model.
+While the user writes, the composer asks the same decision about the draft
+(`POST /api/assistant/:conversationId/routing/preview`, `{ draft }`). It asks after an 800ms pause
+in typing, for drafts of three words or more, with the conversation so far as context. A confident
+squad or "Ficus itself" shows as a pill by the composer, where the user can pick another squad
+before sending. The message is sent with `assistantRouting` (`AssistantRoutingSend`): the preview's
+pick if it was for exactly the sent text, and the user's pick as its correction. Core checks both
+against the squads the sender can see, and the turn then reads that routing without asking again.
+A message sent before the preview answers is routed by the turn as usual. Page editors are never
+routed.
+
+On the user's latest message, choosing another squad, or No squad, from the chip
+(`POST /api/assistant/:conversationId/routing`) saves the correction on the message. It also sends
+the Assistant a short system message that carries it and quotes the start of the message. Older
+messages can't be corrected in place (409): nothing ties a message to the tasks it led to. Their
+chip instead puts a request quoting the message in the composer ("Please move "…" to Billing."),
+for the user to edit and send. The Assistant's `suggest_squad` tool asks the scope question for
+any phrasing, and falls back to the purpose heuristic without a decision model.
 
 ## Forwarding images
 

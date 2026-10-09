@@ -16,8 +16,10 @@ import {
   assistantEditorSyncSchema,
   assistantEditorProposalSchema,
   assistantRoutingCorrectionRequestSchema,
+  assistantRoutingPreviewRequestSchema,
 } from '@ficus/shared'
 import { correctAssistantRouting } from '../services/routing/assistant-routing-correction'
+import { previewAssistantRouting } from '../services/routing/assistant-routing-preview'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { HTTPException } from 'hono/http-exception'
@@ -213,6 +215,9 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
   .post('/:id/agent', async (c) => c.json(await ensureAssistantConversationAgent(c.get('identity'), c.req.param('id'))))
   .post('/:id/routing', zValidator('json', assistantRoutingCorrectionRequestSchema), async (c) =>
     c.json(await correctAssistantRouting(c.get('identity'), c.req.param('id'), c.req.valid('json')))
+  )
+  .post('/:id/routing/preview', zValidator('json', assistantRoutingPreviewRequestSchema), async (c) =>
+    c.json(await previewAssistantRouting(c.get('identity'), c.req.param('id'), c.req.valid('json').draft))
   )
   .post('/:id/messages', zValidator('json', assistantMessageSchema), async (c) =>
     c.json(await sendAssistantTaskRequest(c.get('identity'), c.req.param('id'), c.req.valid('json')))

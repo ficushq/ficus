@@ -2,7 +2,9 @@ import { afterEach, expect, mock, test } from 'bun:test'
 import type { AssistantRoutingHint } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { queryKeys } from '../queryKeys'
 import {
+  AssistantDraftRouting,
   AssistantMessageRouting,
   AssistantRoutingChip,
   assistantMoveRequest,
@@ -196,4 +198,58 @@ test('the latest message is the newest one the user sent, not a system note, and
     ])
   ).toBe('a')
   expect(latestAssistantUserMessageId([])).toBeNull()
+})
+
+test("the composer pill shows the preview or the pick, and picking back the model's choice clears the pick", async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost' })
+  const { root, container } = dom.createRoot()
+  const client = new QueryClient()
+  client.setQueryData(queryKeys.squads.list('active'), [
+    { ...chlea, isAnonymous: false },
+    { ...billing, isAnonymous: false },
+  ] as never)
+  const onPick = mock(() => {})
+  const show = (props: Omit<React.ComponentProps<typeof AssistantDraftRouting>, 'onPick'>) =>
+    dom!.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <AssistantDraftRouting {...props} onPick={onPick} />
+        </QueryClientProvider>
+      )
+    )
+  const trigger = () => container.querySelector<HTMLButtonElement>('button[role="combobox"]')
+  const pickRow = async (label: string) => {
+    await dom!.act(async () => trigger()!.click())
+    await dom!.act(async () => {
+      await new Promise((resolve) => dom!.window.requestAnimationFrame(resolve))
+    })
+    const rows = [...dom!.window.document.querySelectorAll<HTMLElement>('[role="option"]')]
+    await dom!.act(async () =>
+      rows
+        .filter((row) => row.textContent?.startsWith(label))
+        .at(-1)!
+        .click()
+    )
+  }
+  // Nothing to say yet, or only "general": no pill.
+  await show({ hint: null, pick: null })
+  expect(trigger()).toBeNull()
+  await show({ hint: { scope: 'general', confidence: 0.9 }, pick: null })
+  expect(trigger()).toBeNull()
+
+  const model = { scope: 'squad' as const, squadId: chlea.id, squadName: 'Chlea', confidence: 0.8 }
+  await show({ hint: model, pick: null })
+  expect(trigger()!.textContent).toBe('Chlea')
+  expect(container.querySelector('[data-assistant-routing="draft"]')).not.toBeNull()
+  await pickRow('Billing')
+  expect(onPick).toHaveBeenLastCalledWith({ scope: 'squad', squadId: billing.id, squadName: 'Billing' })
+
+  await show({ hint: model, pick: { scope: 'squad', squadId: billing.id, squadName: 'Billing' } })
+  expect(trigger()!.textContent).toBe('Billing·you')
+  await pickRow('Chlea')
+  expect(onPick).toHaveBeenLastCalledWith(null)
+
+  // Picked before the preview answered.
+  await show({ hint: null, pick: { scope: 'none' } })
+  expect(trigger()!.textContent).toBe('No squad·you')
 })
