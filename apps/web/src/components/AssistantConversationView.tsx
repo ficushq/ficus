@@ -2,7 +2,8 @@ import { ToolRenderersContext } from '../lib/ToolRenderersContext'
 import { AssistantConversationContext } from '../voice/AssistantConversationContext'
 import { AssistantConversationLinkRow } from './AssistantConversationLinkRow'
 import { AssistantPageLinkRow } from './AssistantPageLinkRow'
-import { AssistantMessageRouting, latestAssistantUserMessageId } from './AssistantRoutingChip'
+import { AssistantDraftRouting, AssistantMessageRouting, latestAssistantUserMessageId } from './AssistantRoutingChip'
+import { useAssistantRoutingPreview } from '../hooks/useAssistantRoutingPreview'
 import { AssistantSummarySources } from './AssistantSummarySources'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -83,6 +84,20 @@ function DurableConversation(props: AssistantConversationViewProps) {
   const controller = useRef<AgentChatController | null>(null)
   const [latestUserMessageId, setLatestUserMessageId] = useState<string | null>(null)
   const [composerDraft, setComposerDraft] = useState<{ id: number; text: string }>()
+  // Where a draft would go, while it is written (not for page editors, which aren't routed).
+  const routing = useAssistantRoutingPreview({
+    conversationId: props.id,
+    enabled: Boolean(agentId) && !props.pageEditor,
+    fetchPreview: api.previewRouting,
+  })
+  const routingFor = routing.routingFor
+  const sendOptions = useCallback(
+    (message: string) => {
+      const assistantRouting = routingFor(message)
+      return assistantRouting ? { assistantRouting } : undefined
+    },
+    [routingFor]
+  )
   const draftInComposer = useCallback(
     (text: string) => setComposerDraft((current) => ({ id: (current?.id ?? 0) + 1, text })),
     []
@@ -409,6 +424,9 @@ function DurableConversation(props: AssistantConversationViewProps) {
             afterConversation={questions}
             inputStorageKey={`assistant:${props.id}`}
             composerDraft={composerDraft}
+            onDraftChange={routing.onDraftChange}
+            sendOptions={sendOptions}
+            composerStatus={<AssistantDraftRouting hint={routing.hint} pick={routing.pick} onPick={routing.setPick} />}
             placeholder="Ask anything…"
           />
         ) : (

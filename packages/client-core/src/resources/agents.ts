@@ -1,4 +1,11 @@
-import type { Agent, DeliveryMode, DeliverySuggestion, ExecutionStatus, Message } from '@ficus/shared'
+import type {
+  Agent,
+  AssistantRoutingSend,
+  DeliveryMode,
+  DeliverySuggestion,
+  ExecutionStatus,
+  Message,
+} from '@ficus/shared'
 import { parseSSEStream, type SSECallbacks } from '../sse'
 import type { Transport } from '../transport'
 
@@ -55,6 +62,8 @@ export interface SendAgentMessageOptions {
   imageIds?: string[]
   deliveryMode?: DeliveryMode
   clientId?: string
+  /** Assistant conversations: the composer's routing preview or the user's pick. */
+  assistantRouting?: AssistantRoutingSend
 }
 
 function openReconnectableAgentStream(
@@ -190,6 +199,7 @@ export function agentsResource(t: Transport) {
           imageIds: options?.imageIds,
           deliveryMode: options?.deliveryMode,
           clientId: options?.clientId,
+          ...(options?.assistantRouting ? { assistantRouting: options.assistantRouting } : {}),
         },
       }),
     /**

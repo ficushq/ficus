@@ -51,6 +51,40 @@ export const assistantRoutingCorrectionRequestSchema = z.discriminatedUnion('sco
 ])
 export type AssistantRoutingCorrectionRequest = z.infer<typeof assistantRoutingCorrectionRequestSchema>
 
+/** The longest draft the composer asks a routing preview for. */
+export const ASSISTANT_ROUTING_PREVIEW_MAX_DRAFT = 4000
+
+/** `POST /api/assistant/:id/routing/preview`: where a draft would go, asked while the user types. */
+export const assistantRoutingPreviewRequestSchema = z.object({
+  draft: z.string().max(ASSISTANT_ROUTING_PREVIEW_MAX_DRAFT),
+})
+
+/** The decision model's confident pick for a draft; null when it has none (or follows earlier routing). */
+export interface AssistantRoutingPreview {
+  hint: AssistantRoutingHint | null
+}
+
+/**
+ * Routing sent with an Assistant message from the composer, so the turn need not ask again:
+ * the preview's pick for exactly this text, and the user's own pick, if they made one.
+ */
+export const assistantRoutingSendSchema = z.object({
+  hint: z
+    .object({
+      scope: z.enum(['instance', 'general', 'squad']),
+      squadId: z.string().uuid().optional(),
+      confidence: z.number().min(0).max(1),
+    })
+    .optional(),
+  pick: z
+    .discriminatedUnion('scope', [
+      z.object({ scope: z.literal('squad'), squadId: z.string().uuid() }),
+      z.object({ scope: z.literal('none') }),
+    ])
+    .optional(),
+})
+export type AssistantRoutingSend = z.infer<typeof assistantRoutingSendSchema>
+
 /** The start of a message on one line, cut at a word near `max` characters. */
 export function assistantRoutingExcerpt(text: string, max = 120): string {
   const flat = text.replace(/\s+/g, ' ').trim()

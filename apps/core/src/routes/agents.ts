@@ -1,4 +1,5 @@
 import { getPostgresError, publicErrorMessage } from '../db/errors'
+import { sentAssistantRouting } from '../services/routing/assistant-routing-preview'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
 import { listActiveSlotHolds } from '../services/slots/active-holds'
 import { chatPagePathSchema } from '@ficus/shared'
@@ -659,6 +660,8 @@ export const agentsRouter = new Hono()
         imageIds?: string[]
         deliveryMode?: 'steer' | 'follow-up'
         clientId?: string
+        /** Assistant conversations: the composer's routing preview or the user's pick (`AssistantRoutingSend`). */
+        assistantRouting?: unknown
       }>()
       const pagePathResult = chatPagePathSchema.optional().safeParse(body.pagePath)
       if (!pagePathResult.success) return c.json({ error: 'Invalid page path' }, 400)
@@ -687,6 +690,10 @@ export const agentsRouter = new Hono()
           const user = await User.findById(identity.userId).catch(() => null)
           sender = { userId: identity.userId, name: user?.displayName || user?.email || 'a user' }
         }
+        const assistantRouting =
+          sender && identity && body.assistantRouting !== undefined && agent.agentTypeId === 'assistant'
+            ? await sentAssistantRouting(identity, body.assistantRouting)
+            : undefined
         const result = await agent.sendMessage(body.content, {
           imageIds: body.imageIds,
           deliveryMode: body.deliveryMode,
@@ -701,6 +708,7 @@ export const agentsRouter = new Hono()
                 sender,
                 ...(body.clientId ? { clientId: body.clientId } : {}),
                 ...(body.pagePath ? { pagePath: body.pagePath } : {}),
+                ...(assistantRouting ? { assistantRouting } : {}),
               }
             : body.clientId || body.pagePath
               ? {

@@ -2,10 +2,10 @@ import { AgentSlotWaitStatus } from './AgentSlotWaitStatus'
 import { useStableRef } from '../hooks/useStableRef'
 import { useDeliverySuggestion } from '../hooks/useDeliverySuggestion'
 import clsx from 'clsx'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAgentConversation } from '@ficus/client-react'
-import type { ChatScope, MessageMetadata } from '@ficus/shared'
+import type { AssistantRoutingSend, ChatScope, MessageMetadata } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { ChatView } from './ChatView'
 import { QuestionInput } from './QuestionInput'
@@ -26,6 +26,10 @@ interface AgentChatDependencies {
 export type AgentChatController = ReturnType<typeof useAgentConversation>
 interface AgentChatProps {
   beforeSend?: () => Promise<void>
+  /** Called with the composer's draft as it changes. */
+  onDraftChange?: (draft: string) => void
+  /** Extra options for a typed message, read as it is sent (e.g. the Assistant's routing). */
+  sendOptions?: (message: string) => { assistantRouting?: AssistantRoutingSend } | undefined
   onConversation?: (conversation: AgentChatController) => void
   renderMessageFooter?: React.ComponentProps<typeof ChatView>['renderMessageFooter']
   afterConversation?: React.ReactNode
@@ -125,6 +129,8 @@ export function AgentChat({
   dependencies,
   onConversation,
   beforeSend,
+  onDraftChange,
+  sendOptions,
   afterConversation,
   renderMessageFooter,
 }: AgentChatProps) {
@@ -137,6 +143,8 @@ export function AgentChat({
   }, [conv, onConversationRef])
 
   const beforeSendRef = useStableRef(beforeSend)
+  const sendOptionsRef = useStableRef(sendOptions)
+  const onDraftChangeRef = useStableRef(onDraftChange)
   const [preparationError, setPreparationError] = useState<string>()
   const [initialPreparationAttempt, setInitialPreparationAttempt] = useState(0)
 
@@ -235,6 +243,14 @@ export function AgentChat({
     fetchSuggestion: api.getDeliverySuggestion,
   })
   const deliveryMode = delivery.deliveryMode
+  const deliveryDraftChange = delivery.onDraftChange
+  const handleDraftChange = useCallback(
+    (draft: string) => {
+      deliveryDraftChange(draft)
+      onDraftChangeRef.current?.(draft)
+    },
+    [deliveryDraftChange, onDraftChangeRef]
+  )
 
   // Send routing: review feedback takes priority over normal send
   const handleSend = async (message: string, imageIds?: string[]) => {
@@ -244,7 +260,7 @@ export function AgentChat({
       return
     }
     await beforeSendRef.current?.()
-    await conv.sendAccepted(message, { imageIds, deliveryMode }).accepted
+    await conv.sendAccepted(message, { imageIds, deliveryMode, ...sendOptionsRef.current?.(message) }).accepted
     // The next draft starts from the default and takes a fresh suggestion.
     delivery.reset()
   }
@@ -426,7 +442,7 @@ export function AgentChat({
       deliveryMode={deliveryMode}
       onDeliveryModeChange={delivery.chooseMode}
       suggestedDelivery={delivery.suggested}
-      onDraftChange={delivery.onDraftChange}
+      onDraftChange={handleDraftChange}
       sendLabel={isReview ? 'Send Feedback' : undefined}
       focusTrigger={focusTrigger}
       keyboardShortcutsEnabled={keyboardShortcutsEnabled}

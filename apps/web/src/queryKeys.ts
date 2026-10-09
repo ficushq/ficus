@@ -14,6 +14,9 @@ export const composerQueryKeys = {
   all: ['composer'] as const,
   deliverySuggestion: (agentId: string, draft: string) =>
     [...composerQueryKeys.all, 'delivery-suggestion', agentId, draft] as const,
+  /** Where an Assistant draft would go (the routing preview), by conversation and normalized draft. */
+  assistantRouting: (conversationId: string, draft: string) =>
+    [...composerQueryKeys.all, 'assistant-routing', conversationId, draft] as const,
 }
 
 export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }

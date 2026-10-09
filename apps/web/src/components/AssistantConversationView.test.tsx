@@ -37,6 +37,7 @@ async function fixture(realtime = false) {
     acknowledge: mock(async () => ({})),
     release: mock(async () => ({})),
     correctRouting: mock(async () => ({ hint: {} })),
+    previewRouting: mock(async () => ({ hint: null })),
   }
   const sendAccepted = mock((_text: string, options?: { clientId?: string }) => ({
     clientId: options?.clientId ?? 'send',
@@ -521,6 +522,43 @@ test('the latest message corrects its routing in place; an older one asks the As
     await f.dom.act(async () => fireEvent.click(older.filter((row) => row.textContent?.startsWith('Billing')).at(-1)!))
     expect(f.api.correctRouting).not.toHaveBeenCalled()
     expect(f.chat.composerDraft).toEqual({ id: 1, text: 'Please move "The export button crashes" to Billing.' })
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test("the Assistant's composer routes drafts and sends the user's pick with the message", async () => {
+  const f = await fixture()
+  try {
+    await f.dom.act(async () => f.render())
+    await waitFor(() => expect(f.chat.sendOptions).toBeDefined())
+    expect(f.chat.onDraftChange).toBeDefined()
+    expect(f.chat.composerStatus).toBeDefined()
+    // Nothing picked or previewed: the message is routed by the turn as usual.
+    expect(f.chat.sendOptions!('The checkout button is broken')).toBeUndefined()
+    // A paused draft asks where it would go.
+    await f.dom.act(async () => f.chat.onDraftChange!('The checkout button is broken'))
+    await waitFor(() =>
+      expect(f.api.previewRouting).toHaveBeenCalledWith(
+        'conversation',
+        'The checkout button is broken',
+        expect.anything()
+      )
+    )
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('page editors are not routed while typing', async () => {
+  const f = await fixture()
+  try {
+    f.props.pageEditor = { prepare: async () => {} } as never
+    await f.dom.act(async () => f.render())
+    await waitFor(() => expect(f.chat.onDraftChange).toBeDefined())
+    await f.dom.act(async () => f.chat.onDraftChange!('The checkout button is broken'))
+    await new Promise((resolve) => setTimeout(resolve, 900))
+    expect(f.api.previewRouting).not.toHaveBeenCalled()
   } finally {
     await f.cleanup()
   }
