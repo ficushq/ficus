@@ -49,7 +49,15 @@ export interface ScreenshotGuess {
   /** Null when the model picked no squad. */
   squad: { id: string; name: string; probability: number } | null
   action: { id: ScreenshotAction; label: string; probability: number }
+  /**
+   * The squad's open work stream it is about, from a second question asked only when the squad has
+   * some: null when none of them matched clearly, absent when that question was not asked.
+   */
+  workStream?: { id: string; title: string; probability: number } | null
 }
+
+/** A work stream guess counts only at or above this probability. */
+export const SCREENSHOT_WORK_STREAM_MIN_PROBABILITY = 0.6
 
 export interface FileScreenshotResponse {
   conversationId: string

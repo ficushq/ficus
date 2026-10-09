@@ -5,7 +5,7 @@ import type { FileScreenshotResponse, ScreenshotCorrection, Squad } from '@ficus
 import { acquireDomHarness } from '../test/domHarness'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { queryKeys } from '../queryKeys'
-import { filingHeadline } from '../lib/screenshotFiling'
+import { filingDetail, filingHeadline } from '../lib/screenshotFiling'
 import { ScreenshotFiling } from './ScreenshotFiling'
 
 type Harness = Awaited<ReturnType<typeof acquireDomHarness>>
@@ -262,5 +262,19 @@ describe('ScreenshotFiling', () => {
       })
     ).toBe('Filing: looks like a bug')
     expect(filingHeadline({ status: 'filed', conversationId: 'c', guess: null })).toBe('Filing with the Assistant')
+  })
+
+  test('the detail names the work stream it seems to be part of', () => {
+    const workStream = { id: 'w', title: 'Fix the export crash', probability: 0.8 }
+    expect(filingDetail({ status: 'filed', conversationId: 'c', guess: { ...filedInChlea.guess!, workStream } })).toBe(
+      'Looks like part of “Fix the export crash”. The Assistant checks and adds it there.'
+    )
+    expect(filingDetail({ status: 'filed', ...filedInChlea })).toBe('The Assistant checks the guess and files it.')
+    expect(filingDetail({ status: 'filed', conversationId: 'c', guess: null })).toBe(
+      'No guess this time; the Assistant will look at it.'
+    )
+    expect(filingDetail({ status: 'filed', ...filedInChlea, correctedTo: 'Ops' })).toBe(
+      'Told the Assistant where it belongs.'
+    )
   })
 })

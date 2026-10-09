@@ -8,7 +8,7 @@ import { screenshotsApi } from '../api/screenshots'
 import { usePermissions } from '../hooks/usePermissions'
 import { useGlobalImageDrop } from '../hooks/useGlobalImageDrop'
 import { assistantConversationSearch } from '../lib/assistantConversationSearch'
-import { filingHeadline, type FilingState } from '../lib/screenshotFiling'
+import { filingDetail, filingHeadline, type FilingState } from '../lib/screenshotFiling'
 import { queries } from '../queryOptions'
 import { CloseIcon, ImageIcon, SpinnerIcon } from './icons'
 import { SelectionPopup } from './ThemedPopup'
@@ -161,15 +161,7 @@ export function ScreenshotFilingToast({
                 : filingHeadline(state)}
           </p>
           {state.status === 'failed' && <p className="mt-0.5 text-xs text-secondary">{state.message}</p>}
-          {filed && (
-            <p className="mt-0.5 text-xs text-secondary">
-              {filed.correctedTo
-                ? 'Told the Assistant where it belongs.'
-                : filed.guess
-                  ? 'The Assistant checks the guess and files it.'
-                  : 'No guess this time; the Assistant will look at it.'}
-            </p>
-          )}
+          {filed && <p className="mt-0.5 text-xs text-secondary">{filingDetail(filed)}</p>}
           {correctionError && <p className="mt-1 text-xs text-status-danger-600">{correctionError}</p>}
           {filed && (
             <div className="mt-2 flex flex-wrap items-center gap-2">

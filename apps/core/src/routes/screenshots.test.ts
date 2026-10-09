@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { DECISION_IMAGE_TARGET_BYTES, type DecisionRequest, type FileScreenshotResponse } from '@ficus/shared'
-import { agents, assistantConversations, db, images, messages, squads } from '../db'
+import { agents, assistantConversations, db, images, messages, squads, workStreams } from '../db'
 import { Image } from '../entities/Image'
 import { Squad } from '../entities/Squad'
 import { identityMiddleware } from '../middleware/identity'
@@ -33,6 +33,24 @@ function fakeDecide(answer: (request: DecisionRequest) => DecisionOutcome) {
   }) as typeof realDecide
   return { decide, asked }
 }
+
+const bugInChleaOutcome = (): DecisionOutcome => ({
+  ok: true,
+  result: {
+    providerId: 'clef',
+    model: 'clef',
+    latencyMs: 5,
+    answers: {
+      kind: { type: 'choice', choice: 'bug', probabilities: { bug: 0.88, idea: 0.12 } },
+      squad: {
+        type: 'choice',
+        choice: squadOptionKey(chlea.id),
+        probabilities: { [squadOptionKey(chlea.id)]: 0.72 },
+      },
+      action: { type: 'choice', choice: 'new_work_stream', probabilities: { new_work_stream: 0.61 } },
+    },
+  },
+})
 
 const bugInChlea = () =>
   fakeDecide(() => ({
@@ -310,4 +328,69 @@ test('"Wrong squad?" posts a correction into the conversation, for visible squad
   // Someone else's conversation is not found.
   const foreign = { conversationId, squadId: chlea.id, clientId: randomUUID() }
   expect((await post(server, '/api/screenshots/correction', foreign, other.token)).status).toBe(404)
+})
+
+test('with open work streams, a second question picks the one it is about, from the streams the user may read', async () => {
+  const [export_, docs] = await db
+    .insert(workStreams)
+    .values([
+      { squadId: chlea.id, title: 'Fix the export crash', description: 'Export to CSV crashes on big carts' },
+      { squadId: chlea.id, title: 'Rewrite the docs', status: 'queued' },
+    ])
+    .returning()
+  await db.insert(workStreams).values({ squadId: chlea.id, title: 'Shipped', status: 'done' })
+  try {
+    const { decide, asked } = fakeDecide((request) => {
+      if (request.questions.work_stream) {
+        const listed = (request.state as { workStreams: Array<{ option: string; title: string }> }).workStreams
+        const option = listed.find((stream) => stream.title === 'Fix the export crash')!.option
+        return {
+          ok: true,
+          result: {
+            providerId: 'clef',
+            model: 'clef',
+            latencyMs: 5,
+            answers: { work_stream: { type: 'choice', choice: option, probabilities: { [option]: 0.83 } } },
+          },
+        }
+      }
+      return bugInChleaOutcome()
+    })
+    const server = app({ decide, isEnabled: () => true })
+
+    // Without workstreams:read in the squad, its streams stay out of it.
+    await file(server, { imageId: await upload(server) })
+    expect(asked).toHaveLength(1)
+
+    const streamReader = await createTestRole({ prefix: `${prefix}-streams`, permissions: ['workstreams:read'] })
+    await assignRole({ userId: user.id, roleId: streamReader.id, scope: 'squad', squadId: chlea.id })
+    const response = await file(server, { imageId: await upload(server) })
+    const body = (await response.json()) as FileScreenshotResponse
+    expect(asked).toHaveLength(3)
+    const second = asked[2]!
+    expect(second.purpose).toBe('screenshot-filing')
+    expect(second.request.images).toHaveLength(1)
+    // Titles are data in state; the options only point at them. Closed streams are not offered.
+    const state = second.request.state as { workStreams: Array<{ title: string }> }
+    expect(state.workStreams.map((stream) => stream.title).sort()).toEqual(['Fix the export crash', 'Rewrite the docs'])
+    const question = second.request.questions.work_stream!
+    expect(question.type === 'choice' && Object.keys(question.options)).toEqual(['w1', 'w2', 'none'])
+    expect(JSON.stringify(question)).not.toContain('export crash')
+
+    // The stream wins over the first guess's "new work stream".
+    expect(body.guess).toMatchObject({
+      squad: { id: chlea.id },
+      action: { id: 'existing_work_stream', probability: 0.83 },
+      workStream: { id: export_!.id, title: 'Fix the export crash', probability: 0.83 },
+    })
+    const [conversation] = await db
+      .select()
+      .from(assistantConversations)
+      .where(eq(assistantConversations.id, body.conversationId))
+    const [first] = await db.select().from(messages).where(eq(messages.agentId, conversation!.agentId!))
+    expect(first!.content).toContain(`- Work stream: "Fix the export crash", work stream ID ${export_!.id} (83%)`)
+    expect(docs).toBeDefined()
+  } finally {
+    await db.delete(workStreams).where(eq(workStreams.squadId, chlea.id))
+  }
 })

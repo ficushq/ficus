@@ -319,7 +319,7 @@ export const DECISION_PURPOSE_INFO: Record<
   'screenshot-filing': {
     label: 'Screenshot filing',
     description:
-      'Guesses what a screenshot dropped into Ficus shows and which squad it belongs to, so the Assistant can file it. Needs a model that reads images (Clef or OpenAI).',
+      'Guesses what a screenshot dropped into Ficus shows, which squad it belongs to and, when that squad has open work streams, which one it is about, so the Assistant can file it. Needs a model that reads images (Clef or OpenAI).',
     scope: 'instance',
   },
   'robot-moods': {
