@@ -83,12 +83,13 @@ test('picking a squad saves it on the message and tells the Assistant which squa
   expect(metadata.source).toBe('assistant_routing_correction')
   expect(metadata.assistantRoutingCorrection).toEqual({
     messageId: f.messageId,
+    excerpt: 'The export button crashes',
     scope: 'squad',
     squadId: chlea.id,
     squadName: 'Chlea',
   })
   expect(messageTextForModel({ content: note!.content, metadata })).toContain(
-    `their message ${f.messageId} is for squad "Chlea" (squadId ${chlea.id})`
+    `their latest message ("The export button crashes") is for squad "Chlea" (squadId ${chlea.id})`
   )
 
   // The same pick again changes nothing and sends nothing.
@@ -114,6 +115,40 @@ test('squads the user cannot see, other messages and other users are refused', a
       scope: 'none',
     })
   ).rejects.toThrow()
+})
+
+test('only the latest message the user sent can be corrected; Assistant replies and notes after it do not count', async () => {
+  const f = await fixture()
+  const identity = { type: 'user' as const, userId: f.owner.id }
+  const body = () => ({ messageId: f.messageId, clientId: randomUUID(), scope: 'none' as const })
+  await db.insert(messages).values([
+    { agentId: f.agentId, role: 'assistant', content: 'On it.', pending: false },
+    {
+      agentId: f.agentId,
+      role: 'human',
+      content: '[System] A note',
+      pending: false,
+      metadata: { source: 'assistant_routing_correction' },
+    },
+  ])
+  await correctAssistantRouting(identity, f.id, body())
+
+  await db.insert(messages).values({
+    agentId: f.agentId,
+    role: 'human',
+    content: 'Also the import button',
+    pending: false,
+    metadata: { source: 'user_chat' },
+  })
+  const response = await f.request(`/${f.id}/routing`, {
+    ...body(),
+    scope: 'squad',
+    squadId: chlea.id,
+  })
+  expect(response.status).toBe(409)
+  expect(((await response.json()) as { error: string }).error).toBe(
+    'Only your latest message can change squad. Ask the Assistant to move older work.'
+  )
 })
 
 test('a message without a hint has nothing to correct', async () => {

@@ -156,6 +156,8 @@ interface ChatViewProps {
   sendButtonClassName?: string
   thinkingLabel?: string
   focusTrigger?: number
+  /** Text to put in the composer (after any draft) and focus; a new `id` puts it in again. */
+  composerDraft?: { id: number; text: string }
   /** Retained hidden chats must not register keyboard handlers. */
   keyboardShortcutsEnabled?: boolean
   tts?: {
@@ -471,6 +473,7 @@ export function ChatView({
   sendButtonClassName,
   thinkingLabel = 'Thinking...',
   focusTrigger,
+  composerDraft,
   keyboardShortcutsEnabled = true,
   tts,
   showRawText,
@@ -1021,6 +1024,21 @@ export function ChatView({
   useEffect(() => {
     if (focusTrigger) textareaRef.current?.focus()
   }, [focusTrigger])
+
+  const composerDraftId = composerDraft?.id
+  const composerDraftRef = useStableRef(composerDraft)
+  useEffect(() => {
+    const draft = composerDraftRef.current
+    if (!composerDraftId || !draft) return
+    const current = inputRef.current.trimEnd()
+    const next = current ? `${current}\n\n${draft.text}` : draft.text
+    setInputValue(next)
+    saveDraft(next)
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.focus()
+    textarea.setSelectionRange(next.length, next.length)
+  }, [composerDraftId, composerDraftRef, setInputValue, saveDraft])
 
   // Coalesce streaming updates, then recheck the live follow state before scrolling.
   useEffect(() => {

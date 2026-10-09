@@ -41,12 +41,15 @@ export function assistantRoutingInheritedNote(target: AssistantRoutingTarget): s
     : "Routing (follows this conversation's earlier routing): not for a squad. Keep using no squad for delegate_task unless the message says otherwise."
 }
 
-/** The note on the message that carries a user's routing correction. */
+/** The note on the message that carries a user's routing correction (always for their latest message). */
 export function assistantRoutingCorrectionNote(correction: AssistantRoutingCorrection): string {
   const target =
     correction.scope === 'squad' && correction.squadId ? `is for ${squadRef(correction)}` : 'is not for a squad'
+  const which = correction.excerpt
+    ? `their latest message (${JSON.stringify(correction.excerpt)})`
+    : 'their latest message'
   return (
-    `Routing correction from the user: their message ${correction.messageId} ${target}. ` +
+    `Routing correction from the user: ${which} ${target}. ` +
     `Use ${correction.scope === 'squad' ? 'this squad' : 'no squad'} for delegate_task for it. If that work already went ` +
     'to a different delegate and is still running, move it (cancel_task, then delegate_task) and say where it went.'
   )

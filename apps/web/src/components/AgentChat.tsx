@@ -56,6 +56,7 @@ interface AgentChatProps {
   isReview?: boolean
   onReviewFeedback?: (message: string) => Promise<void>
   inputStorageKey?: string
+  composerDraft?: React.ComponentProps<typeof ChatView>['composerDraft']
   squadId?: string
   tts?: {
     enabled: boolean
@@ -108,6 +109,7 @@ export function AgentChat({
   isReview,
   onReviewFeedback,
   inputStorageKey,
+  composerDraft,
   squadId,
   tts,
   showRawText,
@@ -410,6 +412,7 @@ export function AgentChat({
       placeholder={placeholder}
       thinkingLabel={thinkingLabel}
       inputStorageKey={inputStorageKey}
+      composerDraft={composerDraft}
       squadId={squadId}
       tts={tts}
       showRawText={showRawText}

@@ -454,7 +454,7 @@ test('viewing a conversation reads its task updates; a hidden or compact one doe
   await f.cleanup()
 })
 
-test('user messages show their routing chip, and picking a squad corrects it for this conversation', async () => {
+test('the latest message corrects its routing in place; an older one asks the Assistant in the composer', async () => {
   const f = await fixture()
   try {
     f.queryClient.setQueryData(queryKeys.squads.list('active'), [
@@ -462,37 +462,44 @@ test('user messages show their routing chip, and picking a squad corrects it for
       { id: 'squad-billing', name: 'Billing', purpose: 'Invoices', isAnonymous: false },
       { id: 'squad-anon', name: 'Scratch', purpose: '', isAnonymous: true },
     ] as any)
+    const human = (id: string, metadata: object, content = 'Fix it') =>
+      ({ kind: 'persisted', id, message: { id, role: 'human', content, metadata } }) as any
+    const routed = {
+      source: 'user_chat',
+      assistantRouting: { scope: 'squad', squadId: 'squad-chlea', squadName: 'Chlea', confidence: 0.91 },
+    }
+    ;(f.controller as { items: unknown[] }).items = [
+      human('m-0', routed, 'The export   button\ncrashes'),
+      human('m-1', { source: 'user_chat' }),
+      human('m-2', { source: 'assistant_routing_correction' }, '[System] You said this is for Chlea.'),
+    ]
     await f.dom.act(async () => f.render())
     await waitFor(() => expect(f.chat.renderMessageFooter).toBeDefined())
-    const human = (metadata: object) =>
-      ({ kind: 'persisted', id: 'm-1', message: { id: 'm-1', role: 'human', content: 'Fix it', metadata } }) as any
-    expect(f.chat.renderMessageFooter!(human({ source: 'user_chat' }))).toBeNull()
+    expect(f.chat.renderMessageFooter!(human('m-1', { source: 'user_chat' }))).toBeNull()
     // A follow-up's inherited routing reaches only the model: no chip.
     expect(
       f.chat.renderMessageFooter!(
-        human({
+        human('m-1', {
           source: 'user_chat',
           assistantRoutingInherited: { scope: 'squad', squadId: 'squad-chlea', fromMessageId: 'm-0' },
         })
       )
     ).toBeNull()
-    const footerRoot = f.dom.createRoot()
-    await f.dom.act(async () =>
-      footerRoot.root.render(
-        <QueryClientProvider client={f.queryClient}>
-          {f.chat.renderMessageFooter!(
-            human({
-              source: 'user_chat',
-              assistantRouting: { scope: 'squad', squadId: 'squad-chlea', squadName: 'Chlea', confidence: 0.91 },
-            })
-          )}
-        </QueryClientProvider>
+    const footer = async (item: unknown) => {
+      const footerRoot = f.dom.createRoot()
+      await f.dom.act(async () =>
+        footerRoot.root.render(
+          <QueryClientProvider client={f.queryClient}>{f.chat.renderMessageFooter!(item as never)}</QueryClientProvider>
+        )
       )
-    )
-    const chip = footerRoot.container.querySelector<HTMLButtonElement>('[data-assistant-routing] button')!
-    expect(chip.textContent).toBe('Chlea·91%')
-    await f.dom.act(async () => fireEvent.click(chip))
-    const options = [...f.dom.window.document.querySelectorAll<HTMLElement>('[role="option"]')]
+      const chip = footerRoot.container.querySelector<HTMLButtonElement>('[data-assistant-routing] button')!
+      expect(chip.textContent).toBe('Chlea')
+      await f.dom.act(async () => fireEvent.click(chip))
+      return [...f.dom.window.document.querySelectorAll<HTMLElement>('[role="option"]')]
+    }
+
+    // m-1 is the latest message the user sent (the system note after it doesn't count).
+    const options = await footer(human('m-1', routed))
     // Anonymous squads are not offered.
     expect(options.map((row) => row.textContent)).toEqual([
       'No squadFicus itself or general work',
@@ -506,6 +513,14 @@ test('user messages show their routing chip, and picking a squad corrects it for
       scope: 'squad',
       squadId: 'squad-billing',
     })
+    expect(f.chat.composerDraft).toBeUndefined()
+
+    // m-0's work has already gone somewhere: picking a squad writes a request instead.
+    f.api.correctRouting.mockClear()
+    const older = await footer(human('m-0', routed, 'The export   button\ncrashes'))
+    await f.dom.act(async () => fireEvent.click(older.filter((row) => row.textContent?.startsWith('Billing')).at(-1)!))
+    expect(f.api.correctRouting).not.toHaveBeenCalled()
+    expect(f.chat.composerDraft).toEqual({ id: 1, text: 'Please move "The export button crashes" to Billing.' })
   } finally {
     await f.cleanup()
   }

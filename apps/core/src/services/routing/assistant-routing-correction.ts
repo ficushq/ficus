@@ -1,7 +1,8 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, ne, sql } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
 import {
   assistantRoutingCorrectionRequestSchema,
+  assistantRoutingExcerpt,
   assistantRoutingLabel,
   effectiveAssistantRouting,
   type AssistantRoutingHint,
@@ -27,9 +28,12 @@ const sameTarget = (a: AssistantRoutingTarget, b: AssistantRoutingTarget) =>
   (a.scope === 'squad' ? a.squadId : 'none') === (b.scope === 'squad' ? b.squadId : 'none')
 
 /**
- * The user picked a different squad (or no squad) for one of their Assistant messages. Saves the
+ * The user picked a different squad (or no squad) for their latest Assistant message. Saves the
  * pick on the message, so its chip shows it, and tells the Assistant with a short system message
  * that also carries the correction to the model (see `assistantRoutingCorrectionNote`).
+ *
+ * Only the latest message can be corrected: by then older messages' work has gone somewhere, and
+ * nothing ties a message to the tasks it led to, so moving it is a request the user sends instead.
  */
 export async function correctAssistantRouting(
   identity: Identity | undefined,
@@ -52,6 +56,21 @@ export async function correctAssistantRouting(
   if (!row || metadata?.source !== 'user_chat') throw fail(404, 'Message not found')
   const previous = metadata.assistantRouting
   if (!previous) throw fail(409, 'This message has no routing hint')
+  const [later] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.agentId, conversation.agentId),
+        eq(messages.role, 'human'),
+        ne(messages.id, row.id),
+        sql`${messages.metadata}->>'source' = 'user_chat'`,
+        // Compared in SQL: a JS Date drops the microseconds Postgres keeps.
+        sql`(${messages.createdAt}, coalesce(${messages.enqueueOrder}, 0)) > (select created_at, coalesce(enqueue_order, 0) from messages where id = ${row.id})`
+      )
+    )
+    .limit(1)
+  if (later) throw fail(409, 'Only your latest message can change squad. Ask the Assistant to move older work.')
 
   let target: AssistantRoutingTarget = { scope: 'none' }
   if (input.scope === 'squad') {
@@ -84,7 +103,7 @@ export async function correctAssistantRouting(
         source: 'assistant_routing_correction',
         clientId: input.clientId,
         sender: { userId: user.userId, name: account?.displayName || account?.email || 'a user' },
-        assistantRoutingCorrection: { messageId: row.id, ...target },
+        assistantRoutingCorrection: { messageId: row.id, excerpt: assistantRoutingExcerpt(row.content), ...target },
       },
     }
   )
