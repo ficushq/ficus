@@ -52,6 +52,20 @@ describe('farm embed', () => {
     expect(embedTheme()).toEqual({ themeId: 'harbor', appearance: 'dark', customTheme: null })
   })
 
+  it('reads Android bootstrap from the native injected object before page scripts', () => {
+    inWebView()
+    window.ReactNativeWebView!.injectedObjectJson = () =>
+      JSON.stringify({ v: 1, theme: { themeId: 'harbor', appearance: 'dark' } })
+    expect(startEmbed()).toEqual({ handoff: null })
+    expect(embedTheme()).toEqual({ themeId: 'harbor', appearance: 'dark', customTheme: null })
+  })
+  it('ignores malformed Android bootstrap data', () => {
+    inWebView()
+    window.ReactNativeWebView!.injectedObjectJson = () => '{'
+    expect(startEmbed()).toEqual({ handoff: null })
+    expect(embedTheme()).toBeNull()
+  })
+
   it('follows theme messages from the app, on window or document', () => {
     inWebView()
     startEmbed()
