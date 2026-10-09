@@ -680,7 +680,10 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
     const { removeSquadWorkspace } = await import('../services/squad/workspace')
     const { removeSquadSsh } = await import('../services/squad/ssh')
 
+    const { closeSquadAssistantTasksInTransaction } = await import('../services/assistant-activity/squad-archive')
+
     const now = new Date()
+    const afterCommit: Array<() => void> = []
 
     // Perform all DB mutations atomically so a failure leaves the squad fully
     // live (not half-inert). archivedAt is written LAST inside the transaction
@@ -714,6 +717,10 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       const { retireSquadSlotStateInTransaction } = await import('../services/slots/store')
       await retireSquadSlotStateInTransaction(tx, this.id, now)
 
+      // Close Assistant tasks delegated here: cancelled, with a task update in
+      // each owner's conversation, so none waits on an inert squad.
+      await closeSquadAssistantTasksInTransaction(tx, { id: this.id, name: this.name }, afterCommit)
+
       // LAST: mark archived (authoritative marker = archivedAt; status for display)
       await tx.update(squads).set({ status: 'archived', archivedAt: now, updatedAt: now }).where(eq(squads.id, this.id))
 
@@ -726,6 +733,9 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
     this.status = 'archived'
     this.archivedAt = now
     this.updatedAt = now
+
+    // Committed Assistant task updates notify before any slower teardown.
+    for (const emit of afterCommit) emit()
 
     // Kill the sandbox (inert) — tolerate already-gone
     await getSandboxManager().removeSandbox(`squad_${this.id}`)

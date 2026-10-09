@@ -8,7 +8,17 @@ import { squadsRouter } from './squads'
 import { Squad } from '../entities/Squad'
 import { AgentType } from '../entities/AgentType'
 import { Agent } from '../entities/Agent'
-import { db, squads, squadPresets, agents } from '../db'
+import {
+  db,
+  squads,
+  squadPresets,
+  agents,
+  assistantConversations,
+  assistantTasks,
+  assistantUpdates,
+  inbox,
+} from '../db'
+import { assistantInboxRecipientId } from '@ficus/shared'
 import { sandboxToolchainActivations, sandboxToolchainProvisions } from '../db/schema'
 import {
   createLocalDeployment,
@@ -761,6 +771,60 @@ describe('squads routes', () => {
         body: JSON.stringify({ purpose: 'new purpose' }),
       })
       expect(patchRes.status).toBe(410)
+    })
+
+    it("closes the squad's open Assistant tasks once and leaves other squads' tasks alone", async () => {
+      const archived = await Squad.create({ name: `${testPrefix} Assistant tasks`, purpose: 'Archived' })
+      const kept = await Squad.create({ name: `${testPrefix} Assistant tasks kept`, purpose: 'Kept' })
+      const [conversation] = await db
+        .insert(assistantConversations)
+        .values({ ownerUserId: admin.id, title: 'Release' })
+        .returning()
+      try {
+        const task = (squadId: string, status: 'needs-input' | 'working' | 'completed', label: string) => {
+          const id = crypto.randomUUID()
+          return {
+            id,
+            conversationId: conversation.id,
+            currentRequestId: id,
+            kind: 'squad' as const,
+            squadId,
+            label,
+            status,
+          }
+        }
+        const rows = [
+          task(archived.id, 'needs-input', 'Approve the deploy'),
+          task(archived.id, 'working', 'Check the logs'),
+          task(archived.id, 'completed', 'Count schedules'),
+          task(kept.id, 'needs-input', 'Unrelated'),
+        ]
+        await db.insert(assistantTasks).values(rows)
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const res = await app.request(`/api/squads/${archived.id}`, {
+            method: 'DELETE',
+            headers: authHeaders(admin.token),
+          })
+          expect(res.status).toBe(204)
+        }
+        const statuses = new Map(
+          (await db.select().from(assistantTasks).where(eq(assistantTasks.conversationId, conversation.id))).map(
+            (row) => [row.id, row.status]
+          )
+        )
+        expect(rows.map((row) => statuses.get(row.id))).toEqual(['cancelled', 'cancelled', 'completed', 'needs-input'])
+        const updates = await db
+          .select()
+          .from(assistantUpdates)
+          .where(eq(assistantUpdates.conversationId, conversation.id))
+          .orderBy(assistantUpdates.sequence)
+        expect(updates.map((row) => row.sequence)).toEqual([1, 2])
+        expect(updates.every((row) => row.reportedStatus === 'cancelled')).toBe(true)
+        expect(updates.map((row) => row.taskId).sort()).toEqual([rows[0].id, rows[1].id].sort())
+      } finally {
+        await db.delete(inbox).where(eq(inbox.recipientId, assistantInboxRecipientId(conversation.id)))
+        await db.delete(assistantConversations).where(eq(assistantConversations.id, conversation.id))
+      }
     })
 
     it('returns 404 for non-existent squad', async () => {
