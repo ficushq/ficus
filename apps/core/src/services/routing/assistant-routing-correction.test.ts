@@ -9,6 +9,8 @@ import { assistantRouter } from '../../routes/assistant'
 import { assignRole, authHeaders, cleanupTestRbac, createTestRole, createTestUser } from '../../test-utils'
 import { messageTextForModel } from '../chat/message-context'
 import { correctAssistantRouting } from './assistant-routing-correction'
+import { decisionEvalCandidates } from '../../db'
+import { listCandidates, setEvalCapture } from '../decisions/evals/capture'
 
 const prefix = `assistant-routing-${randomUUID()}`
 const conversationIds: string[] = []
@@ -176,4 +178,36 @@ test('the route records No squad', async () => {
     .from(messages)
     .where(and(eq(messages.agentId, f.agentId), eq(messages.content, '[System] You said this is not for a squad.')))
   expect(sent).toHaveLength(1)
+})
+
+test('with saving corrections on, a pill correction becomes a candidate case for the routing eval', async () => {
+  const f = await fixture()
+  const identity = { type: 'user' as const, userId: f.owner.id }
+  try {
+    await setEvalCapture(true, 'test')
+    await correctAssistantRouting(
+      identity,
+      f.id,
+      { messageId: f.messageId, clientId: randomUUID(), scope: 'squad', squadId: chlea.id },
+      { listSquads: async () => [chlea] }
+    )
+    let candidates = await listCandidates()
+    for (let attempt = 0; attempt < 50 && !candidates.length; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      candidates = await listCandidates()
+    }
+    const [candidate] = candidates
+    expect(candidate).toMatchObject({
+      evalName: 'assistant-routing',
+      expected: { expect: 'squad:Chlea' },
+      source: { kind: 'routing-pill' },
+    })
+    expect(candidate!.summary).toBe('"The export button crashes" → Chlea')
+    expect((candidate!.request.state as { message: string }).message).toBe('The export button crashes')
+    expect(Object.keys(candidate!.request.questions)).toEqual(['kind', 'scope'])
+    expect(candidate!.context).toMatchObject({ earlierRouting: false })
+  } finally {
+    await setEvalCapture(false, 'test')
+    await db.delete(decisionEvalCandidates)
+  }
 })

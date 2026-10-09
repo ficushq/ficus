@@ -1,0 +1,666 @@
+{
+  "version": 1,
+  "eval": "assistant-routing",
+  "entries": {
+    "The playlist builder crashes when I add a track": {
+      "jev:jev-latest": {
+        "hash": "c9c4d07d2803d53ca3d2979b5732a2c5a73af36296d31ab17fafeca2130e701e",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.9,
+              "follow_up": 0.01,
+              "conversation": 0.09
+            },
+            "confidence": 0.85
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_1c4ea001",
+            "probabilities": {
+              "instance": 0.01,
+              "general": 0.01,
+              "squad_1c4ea001": 0.98,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 0.97
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "c9c4d07d2803d53ca3d2979b5732a2c5a73af36296d31ab17fafeca2130e701e",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.93,
+              "follow_up": 0.03,
+              "conversation": 0.04
+            },
+            "confidence": 0.89
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_1c4ea001",
+            "probabilities": {
+              "instance": 0.03,
+              "general": 0.06,
+              "squad_1c4ea001": 0.88,
+              "squad_2b5d0e02": 0.02,
+              "squad_3a7f8c03": 0.01
+            },
+            "confidence": 0.85
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    },
+    "Add a coupon code field to the checkout page": {
+      "jev:jev-latest": {
+        "hash": "548b3eb32190ab899c957e7c9cdbbbdf991f7c4957fd9d83aa240a01e4ecbc45",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 1,
+              "follow_up": 0,
+              "conversation": 0
+            },
+            "confidence": 1
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_2b5d0e02",
+            "probabilities": {
+              "instance": 0,
+              "general": 0,
+              "squad_1c4ea001": 0,
+              "squad_2b5d0e02": 1,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "548b3eb32190ab899c957e7c9cdbbbdf991f7c4957fd9d83aa240a01e4ecbc45",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.99,
+              "follow_up": 0.01,
+              "conversation": 0
+            },
+            "confidence": 0.99
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_2b5d0e02",
+            "probabilities": {
+              "instance": 0.01,
+              "general": 0,
+              "squad_1c4ea001": 0.03,
+              "squad_2b5d0e02": 0.96,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 0.95
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    },
+    "Write a blog post announcing our spring sale": {
+      "jev:jev-latest": {
+        "hash": "9987849ccfbde211ab2dc8439ebb36972fb7565e3d9f9153f913a8a9ab3b3b94",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 1,
+              "follow_up": 0,
+              "conversation": 0
+            },
+            "confidence": 1
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_3a7f8c03",
+            "probabilities": {
+              "instance": 0,
+              "general": 0.07,
+              "squad_1c4ea001": 0,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0.93
+            },
+            "confidence": 0.91
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "9987849ccfbde211ab2dc8439ebb36972fb7565e3d9f9153f913a8a9ab3b3b94",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.91,
+              "follow_up": 0.04,
+              "conversation": 0.05
+            },
+            "confidence": 0.86
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_3a7f8c03",
+            "probabilities": {
+              "instance": 0.01,
+              "general": 0.17,
+              "squad_1c4ea001": 0.02,
+              "squad_2b5d0e02": 0.06,
+              "squad_3a7f8c03": 0.74
+            },
+            "confidence": 0.68
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    },
+    "How is the listening journal coming along?": {
+      "jev:jev-latest": {
+        "hash": "64d814251120ead055e02e76c6a7e83b5fdd845188f9ff9884c5c778f45850c8",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "follow_up",
+            "probabilities": {
+              "new_request": 0.16,
+              "follow_up": 0.62,
+              "conversation": 0.22
+            },
+            "confidence": 0.43
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_1c4ea001",
+            "probabilities": {
+              "instance": 0,
+              "general": 0.04,
+              "squad_1c4ea001": 0.96,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 0.95
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "64d814251120ead055e02e76c6a7e83b5fdd845188f9ff9884c5c778f45850c8",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "conversation",
+            "probabilities": {
+              "new_request": 0.09,
+              "follow_up": 0.45,
+              "conversation": 0.46
+            },
+            "confidence": 0.19
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_1c4ea001",
+            "probabilities": {
+              "instance": 0.04,
+              "general": 0.36,
+              "squad_1c4ea001": 0.57,
+              "squad_2b5d0e02": 0.02,
+              "squad_3a7f8c03": 0.01
+            },
+            "confidence": 0.46
+          }
+        },
+        "passed": false,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    },
+    "Add a new user and give them the reviewer role": {
+      "jev:jev-latest": {
+        "hash": "2bf10bd692f7efd67ffb75c83d1c190750339d0cf4bbd1869e03e32ba125b5d4",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 1,
+              "follow_up": 0,
+              "conversation": 0
+            },
+            "confidence": 1
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "instance",
+            "probabilities": {
+              "instance": 1,
+              "general": 0,
+              "squad_1c4ea001": 0,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "2bf10bd692f7efd67ffb75c83d1c190750339d0cf4bbd1869e03e32ba125b5d4",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.95,
+              "follow_up": 0.03,
+              "conversation": 0.02
+            },
+            "confidence": 0.93
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "instance",
+            "probabilities": {
+              "instance": 0.98,
+              "general": 0.01,
+              "squad_1c4ea001": 0.01,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 0.98
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    },
+    "Connect our GitHub organization to Ficus": {
+      "jev:jev-latest": {
+        "hash": "9f85823cec1c22755f987209bbc77e62ed6f3a2575e5431be8ca25e64c8615c3",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 1,
+              "follow_up": 0,
+              "conversation": 0
+            },
+            "confidence": 1
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "instance",
+            "probabilities": {
+              "instance": 1,
+              "general": 0,
+              "squad_1c4ea001": 0,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "9f85823cec1c22755f987209bbc77e62ed6f3a2575e5431be8ca25e64c8615c3",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.98,
+              "follow_up": 0.01,
+              "conversation": 0.01
+            },
+            "confidence": 0.97
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "instance",
+            "probabilities": {
+              "instance": 0.97,
+              "general": 0.01,
+              "squad_1c4ea001": 0,
+              "squad_2b5d0e02": 0.01,
+              "squad_3a7f8c03": 0.01
+            },
+            "confidence": 0.96
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    },
+    "Research the best note-taking apps and summarize them for me": {
+      "jev:jev-latest": {
+        "hash": "09080ab00c539eb8db210b494b6ed86c335fc52264545ce67da15e40def502ae",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 1,
+              "follow_up": 0,
+              "conversation": 0
+            },
+            "confidence": 1
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "general",
+            "probabilities": {
+              "instance": 0,
+              "general": 1,
+              "squad_1c4ea001": 0,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "09080ab00c539eb8db210b494b6ed86c335fc52264545ce67da15e40def502ae",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.94,
+              "follow_up": 0.02,
+              "conversation": 0.04
+            },
+            "confidence": 0.91
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "general",
+            "probabilities": {
+              "instance": 0.03,
+              "general": 0.95,
+              "squad_1c4ea001": 0.01,
+              "squad_2b5d0e02": 0.01,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 0.94
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    },
+    "What's a good recipe for banana bread?": {
+      "jev:jev-latest": {
+        "hash": "d7145b844476c05a2c3ef58193eea362e9c1e020e33e3bafe1ad6cdcbf0b2d1f",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.96,
+              "follow_up": 0,
+              "conversation": 0.04
+            },
+            "confidence": 0.94
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "general",
+            "probabilities": {
+              "instance": 0,
+              "general": 1,
+              "squad_1c4ea001": 0,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "d7145b844476c05a2c3ef58193eea362e9c1e020e33e3bafe1ad6cdcbf0b2d1f",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.64,
+              "follow_up": 0.03,
+              "conversation": 0.33
+            },
+            "confidence": 0.46
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "general",
+            "probabilities": {
+              "instance": 0.01,
+              "general": 0.99,
+              "squad_1c4ea001": 0,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 0.99
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    },
+    "also make sure it works offline": {
+      "jev:jev-latest": {
+        "hash": "b93fcbc5c860869c85b33806a099c1891f699c5ab9a9faf3e5e5e6d5f9040aaa",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "follow_up",
+            "probabilities": {
+              "new_request": 0.36,
+              "follow_up": 0.64,
+              "conversation": 0
+            },
+            "confidence": 0.46
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_1c4ea001",
+            "probabilities": {
+              "instance": 0.03,
+              "general": 0.04,
+              "squad_1c4ea001": 0.93,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 0.91
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "b93fcbc5c860869c85b33806a099c1891f699c5ab9a9faf3e5e5e6d5f9040aaa",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "follow_up",
+            "probabilities": {
+              "new_request": 0.21,
+              "follow_up": 0.77,
+              "conversation": 0.02
+            },
+            "confidence": 0.66
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_1c4ea001",
+            "probabilities": {
+              "instance": 0.03,
+              "general": 0.02,
+              "squad_1c4ea001": 0.94,
+              "squad_2b5d0e02": 0.01,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 0.93
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    },
+    "Widget Shop": {
+      "jev:jev-latest": {
+        "hash": "aed33c03c88541d50ac6e2ae048ca30871a73a25fb353eb29c90da2f4673dacd",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.47,
+              "follow_up": 0.25,
+              "conversation": 0.28
+            },
+            "confidence": 0.2
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_2b5d0e02",
+            "probabilities": {
+              "instance": 0,
+              "general": 0.1,
+              "squad_1c4ea001": 0,
+              "squad_2b5d0e02": 0.9,
+              "squad_3a7f8c03": 0
+            },
+            "confidence": 0.87
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "aed33c03c88541d50ac6e2ae048ca30871a73a25fb353eb29c90da2f4673dacd",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.5,
+              "follow_up": 0.22,
+              "conversation": 0.28
+            },
+            "confidence": 0.25
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_2b5d0e02",
+            "probabilities": {
+              "instance": 0.01,
+              "general": 0.07,
+              "squad_1c4ea001": 0.03,
+              "squad_2b5d0e02": 0.87,
+              "squad_3a7f8c03": 0.02
+            },
+            "confidence": 0.84
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    },
+    "Actually, write the launch newsletter for it too": {
+      "jev:jev-latest": {
+        "hash": "c269a000491eb8730ea62983c7c931fe13f8c93f2eaf10a7353b0e906075a656",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.71,
+              "follow_up": 0.29,
+              "conversation": 0
+            },
+            "confidence": 0.56
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_3a7f8c03",
+            "probabilities": {
+              "instance": 0,
+              "general": 0.04,
+              "squad_1c4ea001": 0,
+              "squad_2b5d0e02": 0.11,
+              "squad_3a7f8c03": 0.85
+            },
+            "confidence": 0.81
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "c269a000491eb8730ea62983c7c931fe13f8c93f2eaf10a7353b0e906075a656",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "new_request",
+            "probabilities": {
+              "new_request": 0.61,
+              "follow_up": 0.38,
+              "conversation": 0.01
+            },
+            "confidence": 0.42
+          },
+          "scope": {
+            "type": "choice",
+            "choice": "squad_3a7f8c03",
+            "probabilities": {
+              "instance": 0.01,
+              "general": 0.08,
+              "squad_1c4ea001": 0.04,
+              "squad_2b5d0e02": 0.32,
+              "squad_3a7f8c03": 0.55
+            },
+            "confidence": 0.44
+          }
+        },
+        "passed": false,
+        "recordedAt": "2026-10-09T05:07:27.291Z"
+      }
+    }
+  }
+}

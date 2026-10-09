@@ -260,7 +260,10 @@ export function AgentChat({
       return
     }
     await beforeSendRef.current?.()
+    const overridden = delivery.overrideFor(message)
     await conv.sendAccepted(message, { imageIds, deliveryMode, ...sendOptionsRef.current?.(message) }).accepted
+    // The user overrode the composer's pick: a labelled example, kept only where saving corrections is on.
+    if (overridden && conv.agentId) void api.reportDeliveryCorrection(conv.agentId, message, overridden).catch(() => {})
     // The next draft starts from the default and takes a fresh suggestion.
     delivery.reset()
   }

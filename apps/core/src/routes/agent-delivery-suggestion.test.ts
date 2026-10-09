@@ -17,6 +17,8 @@ import {
 } from '../services/composer/delivery-suggestion'
 import { assignRole, authHeaders, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../test-utils'
 import { createAgentDeliverySuggestionRouter } from './agent-delivery-suggestion'
+import { decisionEvalCandidates } from '../db/schema'
+import { listCandidates, setEvalCapture } from '../services/decisions/evals/capture'
 
 const prefix = `delivery-suggestion-${crypto.randomUUID().slice(0, 8)}`
 const typeId = `${prefix}-type`
@@ -303,6 +305,43 @@ describe('POST /api/agents/:id/delivery-suggestion', () => {
     expect((await ask(busy.id, undefined)).status).toBe(400)
     expect((await ask(busy.id, 'x'.repeat(4001))).status).toBe(400)
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('POST /api/agents/:id/delivery-suggestion/correction', () => {
+  const correct = (body: unknown, user: TestUser | null = runner) =>
+    app.request(`/api/agents/${busy.id}/delivery-suggestion/correction`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(user ? authHeaders(user.token) : {}) },
+      body: JSON.stringify(body),
+    })
+
+  test('saves an override as a candidate eval case only when saving corrections is on', async () => {
+    try {
+      expect((await correct({ draft: DRAFT, chosen: 'follow-up' })).status).toBe(204)
+      expect(await listCandidates()).toEqual([])
+
+      await setEvalCapture(true, 'test')
+      expect((await correct({ draft: DRAFT, chosen: 'follow-up' })).status).toBe(204)
+      const [candidate] = await listCandidates()
+      expect(candidate).toMatchObject({
+        evalName: 'composer-delivery',
+        expected: { expect: 'follow-up' },
+        source: { kind: 'composer-override' },
+      })
+      // The same request the suggestion would have asked, from the agent's current work.
+      expect(candidate!.request.questions).toEqual(COMPOSER_DELIVERY_QUESTIONS)
+      expect((candidate!.request.state as ComposerDeliveryState).draft).toBe(DRAFT)
+      expect((candidate!.request.state as ComposerDeliveryState).workStream).toBe('Login page polish')
+
+      // Authorized like sending the agent a message; junk is ignored.
+      expect((await correct({ draft: DRAFT, chosen: 'steer' }, reader)).status).toBe(403)
+      expect((await correct({ draft: '', chosen: 'sideways' })).status).toBe(204)
+      expect(await listCandidates()).toHaveLength(1)
+    } finally {
+      await setEvalCapture(false, 'test')
+      await db.delete(decisionEvalCandidates)
+    }
   })
 })
 

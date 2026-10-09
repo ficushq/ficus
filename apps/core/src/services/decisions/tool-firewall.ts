@@ -22,6 +22,7 @@ import {
   type DecisionAnswer,
   type DecisionPurpose,
   type DecisionQuestions,
+  type DecisionRequest,
   type ToolFirewallFlag,
   type ToolFirewallIntent,
 } from '@ficus/shared'
@@ -221,8 +222,7 @@ export async function screenToolContent(
     }
     const partVerdicts = Array.from({ length: totalParts }, (_, index) => {
       const verdict = verdicts[index]
-      if (!verdict) return 'unscreened' as const
-      return isHigh(verdict) ? ('high' as const) : isFlagged(verdict) ? ('medium' as const) : ('clean' as const)
+      return verdict ? partSeverity(verdict) : ('unscreened' as const)
     })
     return { flag, screenedParts: answered.length, totalParts, parts: partVerdicts }
   } catch (error) {
@@ -244,15 +244,7 @@ async function screenPart(
   try {
     const outcome = await deps.decide(
       input.purpose ?? 'tool-results',
-      {
-        state: {
-          tool: input.tool,
-          source: input.source,
-          ...(totalParts > 1 ? { part: `${index + 1} of ${totalParts}` } : {}),
-          content: part,
-        },
-        questions: TOOL_FIREWALL_QUESTIONS,
-      },
+      toolFirewallRequest({ tool: input.tool, source: input.source, content: part, index, totalParts }),
       {
         source: { kind: 'tool', tool: input.tool, ...(input.agentId ? { agentId: input.agentId } : {}) },
         timeoutMs: FIREWALL_TIMEOUT_MS,
@@ -267,6 +259,31 @@ async function screenPart(
     log.warn('Tool result screening failed for a part', { tool: input.tool, error })
     return null
   }
+}
+
+/** The question for one part of a tool result. What the tool returned goes only in the state, as data. */
+export function toolFirewallRequest(input: {
+  tool: string
+  source: string
+  content: string
+  index?: number
+  totalParts?: number
+}): DecisionRequest {
+  const totalParts = input.totalParts ?? 1
+  return {
+    state: {
+      tool: input.tool,
+      source: input.source,
+      ...(totalParts > 1 ? { part: `${(input.index ?? 0) + 1} of ${totalParts}` } : {}),
+      content: input.content,
+    },
+    questions: TOOL_FIREWALL_QUESTIONS,
+  }
+}
+
+/** What a part's verdict means: withheld (high), flagged (medium), or clean. */
+export function partSeverity(verdict: PartVerdict): 'high' | 'medium' | 'clean' {
+  return isHigh(verdict) ? 'high' : isFlagged(verdict) ? 'medium' : 'clean'
 }
 
 /** A part's answers, or null when the model answered neither question. */

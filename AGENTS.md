@@ -145,6 +145,22 @@ bun run test:db:down && bun run --filter core test
   test counts, and timings. An interrupted, skipped, or unexecuted lane is not
   passing evidence. Format changes and run typechecks before handoff.
 
+## Decision features need evals
+
+Any change that asks a decision model, whether a new `DECISION_PURPOSES` entry, a new `decide(purpose, …)` call, or changed questions, options or thresholds, ships with a decision eval, run live before it merges.
+
+- **Write the eval next to the feature** as `<feature>.decision-eval.ts`, default-exporting `defineDecisionEval({...})` from `apps/core/src/services/decisions/evals/define.ts`. Its `build` and `decide` must call the feature's own request builder and decision rule. If they are inline, export them as pure functions first, as with `deliverySuggestionFrom`, `assistantRoutingVerdict`, and `toolFirewallRequest` / `partSeverity`. Never copy the prompt or thresholds into the eval: it must test what ships.
+- **Cases:** clear positives, clear negatives, the cases near each threshold, and every misfire someone reported. Mark the cases that must never regress `must: true`. Use `accept: [...]` for cases where more than one outcome is right. Declare `thresholds` for each yes/no question so the table shows how close each answer came to a cut-off.
+- **Run it live** with `bun run decisions:eval <name> --repeat 2`.
+  - Providers come from the root `.env` instance by default, from `--from env` with `FICUS_EVAL_<KIND>_API_KEY`, or from `--from backend:<CLI backend label>`. The backend route asks that instance's `POST /api/decisions/try`, which needs `provider-auth:write` there.
+  - Read the margins ("thin" passes) and the answers that flip between attempts, not only the pass count. Check at least Jev and one image-capable model when the request has images.
+  - Compare prompt rewrites with `variants` and `--variant <name>` before replacing the shipped questions.
+- **Record and commit** with `--record` whenever the questions or cases change, and commit `__decision-snapshots__/`. `replay.test.ts` replays recorded answers through the current rule in normal CI, with no provider, so a rule change that breaks a recorded passing case fails there. Re-record answers that it reports as stale (the prompt changed).
+- **Saving users' corrections** as candidate cases is opt-in: Settings → Decision Providers → For developers. It is off by default and refused on hosted instances, because it keeps what people typed.
+  - When a feature has a user correction (an override, a "wrong guess" control, a pick that replaces the model's), call `captureCorrection` from that path with the eval's name and the user's choice in the eval's outcome terms.
+  - Review with `bun run decisions:eval --inbox`, then `--accept <id>` or `--dismiss <id>`. Accepted cases go to a gitignored `*.decision-cases.local.json`. `--shared` writes the committed `*.decision-cases.json` instead: check those cases hold nothing private first.
+- **Live runs in GitHub** use the manual "Decision evals" workflow, which needs the `FICUS_EVAL_*` repository secrets.
+
 ## Monorepo Structure
 
 - `apps/core` — API server and worker (Hono/Bun)

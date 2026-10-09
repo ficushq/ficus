@@ -401,6 +401,20 @@ export function isRoutableUserMessage(message: Pick<Message, 'role' | 'content' 
   )
 }
 
+/**
+ * The rule on a routing decision: a confident follow-up keeps the conversation's earlier routing
+ * (when it has some); otherwise the message's target decides, whatever its kind (a question about a
+ * squad is for that squad), when it is confident. `hint` is what applies without earlier routing.
+ */
+export function assistantRoutingVerdict(decision: Pick<AssistantRoutingDecision, 'hint' | 'kind'>): {
+  followUp: boolean
+  hint: AssistantRoutingHint | null
+} {
+  const followUp = decision.kind?.kind === 'follow_up' && decision.kind.confidence >= ASSISTANT_ROUTING_MIN_CONFIDENCE
+  const hint = decision.hint && decision.hint.confidence >= ASSISTANT_ROUTING_MIN_CONFIDENCE ? decision.hint : null
+  return { followUp, hint }
+}
+
 /** Where a user's text goes: a confident hint, the conversation's earlier routing for a follow-up, or null. */
 export type AssistantTextRouting = { hint: AssistantRoutingHint } | { inherited: InheritedRouting } | null
 
@@ -429,14 +443,13 @@ export async function routeAssistantText(
       { ...deps, enabled: () => true },
       source
     )
+    const verdict = assistantRoutingVerdict({ hint, kind })
     // A confident follow-up keeps the conversation's earlier routing, when it has some.
-    if (kind?.kind === 'follow_up' && kind.confidence >= ASSISTANT_ROUTING_MIN_CONFIDENCE) {
+    if (verdict.followUp) {
       const inherited = await (deps.findInherited ?? findInheritedRouting)(at)
       if (inherited) return { inherited }
     }
-    // Otherwise the message's target decides, whatever its kind: a question about a squad is for that squad.
-    if (!hint || hint.confidence < ASSISTANT_ROUTING_MIN_CONFIDENCE) return null
-    return { hint }
+    return verdict.hint ? { hint: verdict.hint } : null
   } catch (error) {
     log.warn('Could not route Assistant text', error)
     return null

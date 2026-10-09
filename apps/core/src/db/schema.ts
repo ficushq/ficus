@@ -4092,3 +4092,32 @@ export const decisionLog = pgTable(
     index('idx_decision_log_purpose_created_at').on(table.purpose, table.createdAt),
   ]
 )
+
+/**
+ * A user's correction of a decision (a routing pill change, a composer mode override, "Wrong
+ * squad?"), saved as a candidate eval case for `bun run decisions:eval --inbox`. Opt-in, off by
+ * default, and never on hosted tenants: it holds what someone actually typed, so it stays on this
+ * instance unless a developer accepts it into an eval's cases.
+ */
+export const decisionEvalCandidates = pgTable(
+  'decision_eval_candidates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** The eval it is a case for, e.g. `composer-delivery`. */
+    evalName: varchar('eval_name', { length: 64 }).notNull(),
+    purpose: varchar('purpose', { length: 64 }).notNull(),
+    request: jsonb('request').$type<import('@ficus/shared').DecisionRequest>().notNull(),
+    /** What the eval's rule needs besides the answers (e.g. routing's option keys). */
+    context: jsonb('context'),
+    /** What the user said was right: `{ expect }` or `{ accept: [...] }`, in the eval's outcome terms. */
+    expected: jsonb('expected').$type<{ expect?: unknown; accept?: unknown[] }>().notNull(),
+    /** What the model had answered, when known. */
+    modelAnswers: jsonb('model_answers').$type<Record<string, import('@ficus/shared').DecisionAnswer>>(),
+    /** A one-line preview for the inbox. */
+    summary: text('summary').notNull(),
+    source: jsonb('source').$type<Record<string, string>>(),
+    status: varchar('status', { length: 16 }).$type<'new' | 'accepted' | 'dismissed'>().notNull().default('new'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_decision_eval_candidates_status_created_at').on(table.status, table.createdAt)]
+)

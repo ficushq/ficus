@@ -1,5 +1,6 @@
 import { getPostgresError, publicErrorMessage } from '../db/errors'
 import { sentAssistantRouting } from '../services/routing/assistant-routing-preview'
+import { captureRoutingCorrection } from '../services/routing/routing-eval-capture'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
 import { listActiveSlotHolds } from '../services/slots/active-holds'
 import { chatPagePathSchema } from '@ficus/shared'
@@ -694,6 +695,7 @@ export const agentsRouter = new Hono()
           sender && identity && body.assistantRouting !== undefined && agent.agentTypeId === 'assistant'
             ? await sentAssistantRouting(identity, body.assistantRouting)
             : undefined
+        const sentAt = new Date()
         const result = await agent.sendMessage(body.content, {
           imageIds: body.imageIds,
           deliveryMode: body.deliveryMode,
@@ -717,6 +719,16 @@ export const agentsRouter = new Hono()
                 }
               : undefined,
         })
+        // The user picked a squad before sending: a correction of the preview, when saving them is on.
+        if (assistantRouting?.correction && identity)
+          void captureRoutingCorrection({
+            identity,
+            agentId: agent.id,
+            sentAt,
+            text: body.content,
+            target: assistantRouting.correction,
+            source: 'routing-before-send',
+          })
         return c.json(result)
       } catch (error) {
         if (error instanceof InvalidAttachmentError) return c.json({ error: 'Invalid attachment' }, 400)

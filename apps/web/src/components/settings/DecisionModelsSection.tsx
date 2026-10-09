@@ -8,7 +8,13 @@ import {
   type DecisionProviderKind,
   type DecisionProviderView,
 } from '@ficus/shared'
-import { deleteDecisionProvider, updateDecisionProvider, type DecisionProviderPatch } from '../../api/decisions'
+import {
+  deleteDecisionProvider,
+  setEvalCapture,
+  updateDecisionProvider,
+  type DecisionProviderPatch,
+  type EvalCaptureState,
+} from '../../api/decisions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { queries } from '../../queryOptions'
 import { Badge } from '../Badge'
@@ -77,7 +83,50 @@ export function DecisionModelsSection() {
             canWrite={canWrite}
           />
           {data.providers.length > 0 && canWrite && <DecisionTryPanel providers={data.providers} />}
+          {canWrite && data.evalCapture?.available && <EvalCaptureSetting state={data.evalCapture} />}
         </>
+      )}
+    </section>
+  )
+}
+
+/**
+ * For people building decision features: keep users' corrections of decisions as candidate cases
+ * for the decision evals. Off by default, and not offered on hosted instances.
+ */
+function EvalCaptureSetting({ state }: { state: EvalCaptureState }) {
+  const queryClient = useQueryClient()
+  const change = useMutation({
+    mutationFn: setEvalCapture,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queries.decisions.settings().queryKey }),
+  })
+  return (
+    <section aria-labelledby="decision-eval-capture-heading" className="space-y-2">
+      <h4 id="decision-eval-capture-heading" className="text-sm font-medium text-secondary">
+        For developers
+      </h4>
+      <label className="flex items-start gap-2 text-sm text-primary">
+        <input
+          type="checkbox"
+          checked={state.enabled}
+          disabled={change.isPending}
+          onChange={(event) => change.mutate(event.target.checked)}
+        />
+        <span>
+          Save corrections as eval cases
+          <span className="block text-xs text-muted">
+            When someone changes a guessed squad, overrides Interrupt or Follow up, or picks “Wrong squad?”, keep what
+            was asked and what they chose on this instance, for testing decision prompts with{' '}
+            <code>bun run decisions:eval --inbox</code>. It keeps what people typed, so turn it on only where that is
+            fine.
+            {state.pending > 0 && ` ${state.pending} waiting for review.`}
+          </span>
+        </span>
+      </label>
+      {change.isError && (
+        <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
+          {errorText(change.error)}
+        </p>
       )}
     </section>
   )

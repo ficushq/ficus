@@ -1436,6 +1436,13 @@
       "when": 1791493391366,
       "tag": "0204_brown_leopardon",
       "breakpoints": true
+    },
+    {
+      "idx": 205,
+      "version": "7",
+      "when": 1791522057697,
+      "tag": "0205_elite_franklin_storm",
+      "breakpoints": true
     }
   ]
 }

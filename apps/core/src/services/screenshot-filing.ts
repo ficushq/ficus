@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { and, count, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
 import {
   DECISION_IMAGE_MEDIA_TYPES,
@@ -16,7 +16,7 @@ import {
   type ScreenshotGuess,
   type ScreenshotKind,
 } from '@ficus/shared'
-import { assistantConversations, db, workStreams } from '../db'
+import { assistantConversations, db, messages, workStreams } from '../db'
 import { Agent } from '../entities/Agent'
 import { Image } from '../entities/Image'
 import { User } from '../entities/User'
@@ -26,6 +26,7 @@ import { requireAssistantConversation } from './assistant-task-requests'
 import { InvalidAttachmentError } from './attachments/agent-scope'
 import { ChatIdempotencyConflictError } from './chat/consultant-idempotency'
 import { decide as defaultDecide, isDecisionFeatureEnabled } from './decisions/service'
+import { captureCorrection } from './decisions/evals/capture'
 import { listVisibleSquads } from './entity-search'
 import { hasPermission, resolveActingUser, type Identity } from './rbac'
 import { createLogger } from '../lib/infra/logger'
@@ -180,6 +181,18 @@ function chosen(answer: DecisionAnswer | undefined): { choice: string; probabili
   return { choice: answer.choice, probability: answer.probabilities[answer.choice] ?? answer.confidence ?? 0 }
 }
 
+/** The work stream question's pick, when it is clear enough; null for "none" or a weak pick. */
+export function pickWorkStream(
+  answer: DecisionAnswer | undefined,
+  streams: ScreenshotWorkStream[]
+): { id: string; title: string; probability: number } | null {
+  const picked = chosen(answer)
+  const stream = picked ? streams.find((_, index) => workStreamOptionKey(index) === picked.choice) : undefined
+  return stream && picked && picked.probability >= SCREENSHOT_WORK_STREAM_MIN_PROBABILITY
+    ? { id: stream.id, title: stream.title, probability: picked.probability }
+    : null
+}
+
 /**
  * The guess in a decision's answers, or null when the kind or action was refused. `workStreams` is
  * the second question's answer and the streams it was asked about, when it was asked.
@@ -194,17 +207,9 @@ export function readScreenshotGuess(
   if (!kind || !(kind.choice in SCREENSHOT_KINDS) || !action || !(action.choice in SCREENSHOT_ACTIONS)) return null
   const squadAnswer = chosen(answers.squad)
   const squad = squadAnswer ? squads.find((candidate) => squadOptionKey(candidate.id) === squadAnswer.choice) : null
-  let workStream: ScreenshotGuess['workStream']
-  if (workStreams) {
-    const picked = chosen(workStreams.answer)
-    const stream = picked
-      ? workStreams.streams.find((_, index) => workStreamOptionKey(index) === picked.choice)
-      : undefined
-    workStream =
-      stream && picked && picked.probability >= SCREENSHOT_WORK_STREAM_MIN_PROBABILITY
-        ? { id: stream.id, title: stream.title, probability: picked.probability }
-        : null
-  }
+  const workStream: ScreenshotGuess['workStream'] = workStreams
+    ? pickWorkStream(workStreams.answer, workStreams.streams)
+    : undefined
   if (workStream) {
     // It names the work it belongs to: add it there.
     action.choice = 'existing_work_stream'
@@ -439,19 +444,48 @@ export async function fileScreenshot(
   return { conversationId, guess }
 }
 
+/** The filing question for a filed screenshot, rebuilt from its conversation's first message. */
+async function screenshotRequestForConversation(identity: Identity, agentId: string) {
+  const [first] = await db
+    .select({ content: messages.content, metadata: messages.metadata })
+    .from(messages)
+    .where(and(eq(messages.agentId, agentId), eq(messages.role, 'human')))
+    .orderBy(asc(messages.createdAt))
+    .limit(1)
+  const imageId = (first?.metadata as { imageIds?: string[] } | null)?.imageIds?.[0]
+  const image = imageId ? await Image.find(imageId) : null
+  if (!image) return null
+  const copy = await decisionImageCopy(await image.getBuffer())
+  if (!copy) return null
+  const squads = await visibleSquads(identity)
+  const note = first?.content.match(/\nMy note: (.+)/)?.[1]
+  return { request: buildScreenshotDecision({ image: copy.image, note, squads }), context: { squads } }
+}
+
 /** "Wrong squad?": tell the screenshot's conversation where it really belongs. */
 export async function correctScreenshotSquad(identity: Identity | undefined, input: ScreenshotCorrection) {
   const { user, conversation } = await requireAssistantConversation(identity, input.conversationId)
   if (!conversation.agentId) throw filingError(404, 'Conversation not found')
   let text: string
+  let squadName: string | null = null
   if (input.squadId) {
     const squad = (await visibleSquads(user)).find((candidate) => candidate.id === input.squadId)
     if (!squad) throw filingError(404, 'Squad not found')
+    squadName = squad.name
     text = `Correction: this screenshot belongs in ${squad.name} (squad ID ${squad.id}). File it there instead.`
   } else {
     text = "Correction: this screenshot doesn't belong to any squad. Don't file it with one; just keep it."
   }
   const assistant = await Agent.mustFind(conversation.agentId)
+  const agentId = conversation.agentId
+  void captureCorrection({
+    evalName: 'screenshot-filing',
+    purpose: 'screenshot-filing',
+    build: () => screenshotRequestForConversation(user, agentId),
+    expect: { squad: squadName },
+    summary: `Screenshot → ${squadName ?? 'no squad'}`,
+    source: { kind: 'screenshot-wrong-squad' },
+  })
   try {
     await assistant.sendMessage(text, {
       metadata: { source: 'user_chat', sender: await senderOf(user.userId), clientId: input.clientId },
