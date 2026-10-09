@@ -281,9 +281,11 @@ describe('annotating a user message', () => {
     expect(result.content).toBe('Fix the crash')
     const text = messageTextForModel(result)
     expect(text).toStartWith('Fix the crash')
-    expect(text).toContain('Routing hint (decision model): likely squad "Chlea" (91%')
+    expect(text).toContain('Routing hint (decision model): likely about squad "Chlea" (91%')
+    // The hint is the target for questions too, not only for work handed off.
+    expect(text).toContain('look there for a question, and use this squad for delegate_task for work')
     expect(text).toContain(`squadId ${chlea.id}`)
-    expect(text).toContain('Use this squad for delegate_task unless the request says otherwise.')
+    expect(text).toContain('unless the message says otherwise.')
   })
 
   test('a target below the threshold gets nothing, whatever the kind', async () => {

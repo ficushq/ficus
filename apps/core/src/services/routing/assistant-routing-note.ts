@@ -24,11 +24,11 @@ export function assistantRoutingNote(hint: AssistantRoutingHint): string | null 
   switch (hint.scope) {
     case 'squad':
       if (!hint.squadId) return null
-      return `Routing hint (decision model): likely squad ${JSON.stringify(hint.squadName ?? 'unknown')} (${howSure}): a feature or bug in its project (squadId ${hint.squadId}). Use this squad for delegate_task unless the request says otherwise.`
+      return `Routing hint (decision model): likely about squad ${JSON.stringify(hint.squadName ?? 'unknown')} (${howSure}, squadId ${hint.squadId}). It's the target: look there for a question, and use this squad for delegate_task for work, unless the message says otherwise.`
     case 'instance':
-      return `Routing hint (decision model): about Ficus itself (settings, admin or the instance), not a squad's project (${howSure}). Use no squad for delegate_task unless the request says otherwise.`
+      return `Routing hint (decision model): about Ficus itself (settings, admin or the instance), not a squad's project (${howSure}). Use no squad for delegate_task unless the message says otherwise.`
     case 'general':
-      return `Routing hint (decision model): general work, not tied to one squad's project (${howSure}). Use no squad for delegate_task unless the request says otherwise.`
+      return `Routing hint (decision model): not about one squad (${howSure}). Use no squad for delegate_task unless the message says otherwise.`
     default:
       return null
   }
@@ -37,8 +37,8 @@ export function assistantRoutingNote(hint: AssistantRoutingHint): string | null 
 /** The note on a follow-up: the routing it inherits from earlier in the conversation. */
 export function assistantRoutingInheritedNote(target: AssistantRoutingTarget): string {
   return target.scope === 'squad' && target.squadId
-    ? `Routing (follows this conversation's earlier routing): ${squadRef(target)}. Keep using this squad for delegate_task unless the request says otherwise.`
-    : "Routing (follows this conversation's earlier routing): not for a squad. Keep using no squad for delegate_task unless the request says otherwise."
+    ? `Routing (follows this conversation's earlier routing): ${squadRef(target)}. Keep it as the target (look there, and use this squad for delegate_task) unless the message says otherwise.`
+    : "Routing (follows this conversation's earlier routing): not for a squad. Keep using no squad for delegate_task unless the message says otherwise."
 }
 
 /** The note on the message that carries a user's routing correction. */
