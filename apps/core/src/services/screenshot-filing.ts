@@ -215,11 +215,12 @@ export function readScreenshotGuess(
   ) {
     // "Add it to an existing work stream" makes no sense without one that fits: take the next likeliest action.
     const probabilities = answers.action?.type === 'choice' ? answers.action.probabilities : {}
-    const next = Object.keys(SCREENSHOT_ACTIONS)
-      .filter((id) => id !== 'existing_work_stream')
-      .sort((a, b) => (probabilities[b] ?? 0) - (probabilities[a] ?? 0))[0]!
+    const others = Object.keys(SCREENSHOT_ACTIONS).filter((id) => id !== 'existing_work_stream')
+    const next = others.sort((a, b) => (probabilities[b] ?? 0) - (probabilities[a] ?? 0))[0]!
+    // Its share among the actions still possible, so ruling "existing" out doesn't make it look unsure.
+    const rest = others.reduce((total, id) => total + (probabilities[id] ?? 0), 0)
     action.choice = next
-    action.probability = probabilities[next] ?? 0
+    action.probability = rest > 0 ? (probabilities[next] ?? 0) / rest : 0
   }
   return {
     kind: {
