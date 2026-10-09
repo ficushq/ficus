@@ -96,7 +96,7 @@ Steps define instructions, expected output, outcomes, and whether they are requi
 
 ### Decision steps
 
-A decision step (`kind: decision`) routes work without an agent or a person. When the run reaches it, the worker asks the decision models configured for **Workflow decisions** (Settings → Decision models) typed questions about the work so far, and follows an outcome automatically. Models answer with probabilities, options, or levels, never free text.
+A decision step (`kind: decision`) routes work without an agent or a person. When the run reaches it, the worker asks the decision models configured for **Workflow decisions** (Settings → Decision Providers) typed questions about the work so far, and follows an outcome automatically. Models answer with probabilities, options, or levels, never free text.
 
 ```yaml
 - id: triage
