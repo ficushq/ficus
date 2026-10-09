@@ -313,7 +313,7 @@ export const DECISION_PURPOSE_INFO: Record<
   'composer-delivery': {
     label: 'Composer interrupt or follow-up',
     description:
-      'While an agent works, suggests Interrupt when a message you are writing is about its current work and Follow up when it is not.',
+      'While an agent works, suggests Interrupt when a message you are writing is about its current work or needs it now, like a status question or asking it to stop, and Follow up for separate work that can wait.',
     scope: 'instance',
   },
   'screenshot-filing': {

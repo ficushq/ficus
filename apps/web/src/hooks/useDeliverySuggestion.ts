@@ -8,18 +8,13 @@ import { useStableRef } from './useStableRef'
 export const DELIVERY_SUGGESTION_DEBOUNCE_MS = 400
 /** Drafts shorter than this are too thin to judge (Core agrees and answers null). */
 export const DELIVERY_SUGGESTION_MIN_WORDS = 3
-/** A suggestion applies only when it is this sure: related at or above 0.7 interrupts… */
-export const DELIVERY_STEER_CONFIDENCE = 0.7
-/** …and related at or below 0.3 follows up. In between the current mode stays. */
-export const DELIVERY_FOLLOW_UP_CONFIDENCE = 0.3
-
 const DEFAULT_MODE: DeliveryMode = 'steer'
 
 /** The mode the composer picked on its own, and why. */
 export interface SuggestedDelivery {
   mode: DeliveryMode
-  /** The draft looks related to what the agent is doing (Interrupt), or not (Follow up). */
-  related: boolean
+  /** The draft should reach the agent now (Interrupt), or is separate work that can wait (Follow up). */
+  now: boolean
 }
 
 /** The draft as judged: whitespace runs collapsed, so spacing edits don't ask again. */
@@ -27,12 +22,10 @@ export function normalizeDraft(draft: string): string {
   return draft.replace(/\s+/g, ' ').trim().slice(0, DELIVERY_SUGGESTION_MAX_DRAFT_LENGTH)
 }
 
-/** The mode a suggestion is sure enough to pick, if any. */
+/** The mode a suggestion picks, if any. Core decides when it is sure enough (see delivery-suggestion.ts). */
 export function confidentSuggestion(result: DeliverySuggestion | undefined): SuggestedDelivery | null {
   if (!result || result.suggestion === null) return null
-  if (result.probability >= DELIVERY_STEER_CONFIDENCE) return { mode: 'steer', related: true }
-  if (result.probability <= DELIVERY_FOLLOW_UP_CONFIDENCE) return { mode: 'follow-up', related: false }
-  return null
+  return { mode: result.suggestion, now: result.suggestion === 'steer' }
 }
 
 function wordCount(text: string): number {
@@ -55,9 +48,10 @@ const scheduleTimeout = (callback: () => void, ms: number) => {
 
 /**
  * The composer's Interrupt / Follow up choice. While the agent works, a paused draft is judged for
- * whether it is about the current work; a confident answer pre-selects Interrupt (related) or
- * Follow up (unrelated). A manual choice wins for the rest of that draft; clearing or sending the
- * draft returns to Interrupt and lets the next suggestion apply. Sending is never blocked on it.
+ * whether it should reach the agent now (it is about the current work, or asks something of the agent
+ * right away); a confident answer pre-selects Interrupt, or Follow up for separate work that can
+ * wait. A manual choice wins for the rest of that draft; clearing or sending the draft returns to
+ * Interrupt and lets the next suggestion apply. Sending is never blocked on it.
  */
 export function useDeliverySuggestion({
   agentId,
@@ -95,7 +89,7 @@ export function useDeliverySuggestion({
   // Apply an answer only for the draft as it stands now, and only when it is sure; otherwise keep
   // the current mode. Derived while rendering, so a suggestion never lags a render behind.
   const next = manualMode === null && settledDraft === draft ? confidentSuggestion(data) : null
-  if (next && (next.mode !== suggested?.mode || next.related !== suggested.related)) setSuggested(next)
+  if (next && (next.mode !== suggested?.mode || next.now !== suggested.now)) setSuggested(next)
 
   const reset = useCallback(() => {
     setManualMode(null)

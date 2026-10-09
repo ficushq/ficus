@@ -1388,16 +1388,16 @@ describe('ChatView mobile options overlay', () => {
         executionStatus="running"
         deliveryMode="follow-up"
         onDeliveryModeChange={() => {}}
-        suggestedDelivery={{ related: false }}
+        suggestedDelivery={{ now: false }}
       />
     )
     const submit = window.document.querySelector('.chat-composer-delivery button[type="submit"]') as HTMLElement
     const indicator = submit.querySelector('.chat-composer-auto') as HTMLElement
     expect(indicator.textContent).toBe('Auto')
     expect(indicator.querySelector('svg')).not.toBeNull()
-    expect(indicator.getAttribute('title')).toBe('Suggested because this looks unrelated to what the agent is doing')
+    expect(indicator.getAttribute('title')).toBe('Suggested because this looks like separate work that can wait')
     expect(submit.getAttribute('aria-label')).toBe('Follow up (suggested)')
-    expect(submit.getAttribute('title')).toStartWith('Suggested because this looks unrelated')
+    expect(submit.getAttribute('title')).toStartWith('Suggested because this looks like separate work')
 
     await dom.act(async () =>
       root.render(
@@ -1409,7 +1409,7 @@ describe('ChatView mobile options overlay', () => {
               executionStatus="running"
               deliveryMode="steer"
               onDeliveryModeChange={() => {}}
-              suggestedDelivery={{ related: true }}
+              suggestedDelivery={{ now: true }}
               dependencies={chatViewDependencies}
             />
           </PermissionsProvider>
@@ -1417,7 +1417,7 @@ describe('ChatView mobile options overlay', () => {
       )
     )
     expect(window.document.querySelector('.chat-composer-auto')?.getAttribute('title')).toBe(
-      'Suggested because this looks related to what the agent is doing'
+      'Suggested because this should reach the agent now'
     )
 
     // A mode the person chose shows no indicator.
