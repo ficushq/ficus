@@ -1,3 +1,4 @@
+import { ASSISTANT_ROUTING_MIN_CONFIDENCE } from '@ficus/shared'
 import { defineDecisionEval } from '../decisions/evals/define'
 import { routingEvalContext, type RoutingEvalContext } from './routing-eval-capture'
 import {
@@ -47,6 +48,7 @@ export default defineDecisionEval<{ text: string; recent?: RecentEntry[] }, Outc
     if (!verdict.hint) return null
     return verdict.hint.scope === 'squad' ? `squad:${verdict.hint.squadName}` : verdict.hint.scope
   },
+  thresholds: { kind: [ASSISTANT_ROUTING_MIN_CONFIDENCE], scope: [ASSISTANT_ROUTING_MIN_CONFIDENCE] },
   caseName: ({ text }) => text,
   label: (outcome) => outcome ?? 'no hint',
   floor: 0.8,

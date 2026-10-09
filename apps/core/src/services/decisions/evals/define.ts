@@ -56,10 +56,17 @@ export interface DecisionEval<Input = unknown, Outcome = unknown> {
   label?: (outcome: Outcome) => string
   /** The run fails when fewer cases than this (0 to 1) pass for a provider. */
   floor?: number
-  /** Prompt variants to compare with `--variant`: replacement questions and, if it changes, the rule. */
+  /**
+   * Prompt variants to compare with `--variant`: replacement questions, or a whole replacement build
+   * (for questions made per request, like routing's squad options), and, if it changes, the rule.
+   */
   variants?: Record<
     string,
-    { questions?: DecisionQuestions; decide?: (answers: Record<string, DecisionAnswer>, context: unknown) => Outcome }
+    {
+      questions?: DecisionQuestions
+      build?: (input: Input) => BuiltRequest
+      decide?: (answers: Record<string, DecisionAnswer>, context: unknown) => Outcome
+    }
   >
 }
 
@@ -86,7 +93,10 @@ export function requestFor<Input, Outcome>(
   c: EvalCase<Input, Outcome>,
   variant?: string
 ): BuiltRequest {
-  const built = isRawCase(c) ? { request: c.request, context: c.context } : evaluation.build(c as Input)
+  const variantBuild = variant ? evaluation.variants?.[variant]?.build : undefined
+  const built = isRawCase(c)
+    ? { request: c.request, context: c.context }
+    : (variantBuild ?? evaluation.build)(c as Input)
   const questions = variant ? evaluation.variants?.[variant]?.questions : undefined
   return questions ? { ...built, request: { ...built.request, questions } } : built
 }
@@ -117,7 +127,7 @@ export function passes<Outcome>(labels: EvalCaseLabels<Outcome>, outcome: Outcom
 /**
  * How close the call was: how far the nearest answer could move before the outcome changes. For a
  * yes/no answer that is its distance to a threshold the rule uses (`thresholds`); for a choice, its
- * lead over the runner-up. With `decide`, only moves that would change the outcome count: an answer
+ * lead over the runner-up, and the distance of the pick's probability to any `thresholds` it has. With `decide`, only moves that would change the outcome count: an answer
  * next to a threshold that another answer already outweighs is not a close call. Null when no
  * single answer moving across a threshold would change it. Small margins pass by luck; watch them.
  */
@@ -141,6 +151,14 @@ export function margin(
         if (changes(name, { ...answer, probability: across })) consider(Math.abs(answer.probability - at))
       }
     } else if (answer.type === 'choice' || answer.type === 'score') {
+      // A rule that needs the pick to be sure enough (e.g. routing's 0.6): distance to that bar.
+      const picked = answer.type === 'choice' ? answer.choice : answer.level
+      const pickedP = answer.probabilities?.[picked] ?? 0
+      for (const at of thresholds[name] ?? []) {
+        const across = pickedP >= at ? at - 1e-6 : at
+        if (changes(name, { ...answer, probabilities: { ...answer.probabilities, [picked]: across } }))
+          consider(Math.abs(pickedP - at))
+      }
       const ranked = Object.entries(answer.probabilities ?? {}).sort((a, b) => b[1] - a[1])
       const [[top, topP] = ['', 0], [second, secondP] = ['', 0]] = ranked
       if (!second) continue

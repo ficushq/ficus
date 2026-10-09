@@ -81,6 +81,18 @@ test("the margin is the closest a yes/no answer came to a threshold, or a choice
   // "how's it going": related sits by 0.3, but now (0.82) decides; the close call is now's 0.12 to 0.7.
   expect(margin({ related: yes(0.29), now: yes(0.82) }, thresholds)).toBeCloseTo(0.01)
   expect(margin({ related: yes(0.29), now: yes(0.82) }, thresholds, rule)).toBeCloseTo(0.12)
+  // A rule that needs the pick at 0.6 or more: the distance to that bar.
+  const sure = (answers: Record<string, DecisionAnswer>) => {
+    const pick = answers.pick
+    return pick?.type === 'choice' && (pick.probabilities[pick.choice] ?? 0) >= 0.6 ? pick.choice : null
+  }
+  expect(
+    margin(
+      { pick: { type: 'choice', choice: 'a', probabilities: { a: 0.57, b: 0.36, c: 0.07 } } },
+      { pick: [0.6] },
+      sure
+    )
+  ).toBeCloseTo(0.03)
   // A choice whose runner-up would give the same outcome is no close call.
   expect(
     margin({ pick: { type: 'choice', choice: 'a', probabilities: { a: 0.6, b: 0.4 } } }, {}, () => 'same')

@@ -126,9 +126,10 @@ export function squadOptionKeys(list: readonly RoutingSquad[]): Map<string, Rout
 
 export const ROUTING_INSTRUCTIONS =
   'Who should handle the user’s latest message (state.message)? state.recent is the conversation just before it, ' +
-  'only for working out what the message refers to. Pick a squad only when the message is about a feature, bug ' +
-  'or work in that squad’s own project. Pick instance for Ficus itself, and general for work not tied to one ' +
-  'squad’s project.'
+  'only for working out what the message refers to. Pick a squad when the message is about that squad’s own ' +
+  'project: a feature, bug or work in it, or a question about its progress. When the message asks for work, pick ' +
+  'the squad that does that kind of work, even if the work is about another squad’s product. Pick instance for ' +
+  'Ficus itself, and general for work not tied to one squad’s project.'
 
 export const KIND_INSTRUCTIONS =
   'What is the user’s latest message (state.message)? state.recent is the conversation just before it: the ' +
@@ -190,7 +191,7 @@ export function buildRoutingRequest(input: {
   for (const [key, squad] of keys) {
     const purpose = squad.purpose?.trim()
     options[key] = truncate(
-      `The squad ${JSON.stringify(squad.name)}${purpose ? `: ${truncate(purpose, PURPOSE_CHARS)}` : ''}. A feature, bug or work in its project.`,
+      `The squad ${JSON.stringify(squad.name)}${purpose ? `: ${truncate(purpose, PURPOSE_CHARS)}` : ''}. Its project: features, bugs, work in it, or questions about them.`,
       1000
     )
   }

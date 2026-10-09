@@ -4,17 +4,17 @@
   "entries": {
     "The playlist builder crashes when I add a track": {
       "jev:jev-latest": {
-        "hash": "c9c4d07d2803d53ca3d2979b5732a2c5a73af36296d31ab17fafeca2130e701e",
+        "hash": "d4a7c7089a13ed40975ac60f007d1486dbf164d7f70cf6390778e412f44ea296",
         "answers": {
           "kind": {
             "type": "choice",
             "choice": "new_request",
             "probabilities": {
-              "new_request": 0.9,
+              "new_request": 0.92,
               "follow_up": 0.01,
-              "conversation": 0.09
+              "conversation": 0.07
             },
-            "confidence": 0.85
+            "confidence": 0.88
           },
           "scope": {
             "type": "choice",
@@ -30,10 +30,10 @@
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "c9c4d07d2803d53ca3d2979b5732a2c5a73af36296d31ab17fafeca2130e701e",
+        "hash": "d4a7c7089a13ed40975ac60f007d1486dbf164d7f70cf6390778e412f44ea296",
         "answers": {
           "kind": {
             "type": "choice",
@@ -49,22 +49,22 @@
             "type": "choice",
             "choice": "squad_1c4ea001",
             "probabilities": {
-              "instance": 0.03,
-              "general": 0.06,
-              "squad_1c4ea001": 0.88,
-              "squad_2b5d0e02": 0.02,
-              "squad_3a7f8c03": 0.01
+              "instance": 0,
+              "general": 0,
+              "squad_1c4ea001": 1,
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0
             },
-            "confidence": 0.85
+            "confidence": 1
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     },
     "Add a coupon code field to the checkout page": {
       "jev:jev-latest": {
-        "hash": "548b3eb32190ab899c957e7c9cdbbbdf991f7c4957fd9d83aa240a01e4ecbc45",
+        "hash": "7aa64322ee00b9a2570f990204039a08dbd8e00963947015773b7e8590df0cb3",
         "answers": {
           "kind": {
             "type": "choice",
@@ -90,10 +90,10 @@
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "548b3eb32190ab899c957e7c9cdbbbdf991f7c4957fd9d83aa240a01e4ecbc45",
+        "hash": "7aa64322ee00b9a2570f990204039a08dbd8e00963947015773b7e8590df0cb3",
         "answers": {
           "kind": {
             "type": "choice",
@@ -111,20 +111,20 @@
             "probabilities": {
               "instance": 0.01,
               "general": 0,
-              "squad_1c4ea001": 0.03,
-              "squad_2b5d0e02": 0.96,
+              "squad_1c4ea001": 0.01,
+              "squad_2b5d0e02": 0.98,
               "squad_3a7f8c03": 0
             },
-            "confidence": 0.95
+            "confidence": 0.98
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     },
     "Write a blog post announcing our spring sale": {
       "jev:jev-latest": {
-        "hash": "9987849ccfbde211ab2dc8439ebb36972fb7565e3d9f9153f913a8a9ab3b3b94",
+        "hash": "bc5711893c409c52923f815d44279adfa90188505d8f66f4db44bf0b84745eea",
         "answers": {
           "kind": {
             "type": "choice",
@@ -141,19 +141,19 @@
             "choice": "squad_3a7f8c03",
             "probabilities": {
               "instance": 0,
-              "general": 0.07,
+              "general": 0.02,
               "squad_1c4ea001": 0,
               "squad_2b5d0e02": 0,
-              "squad_3a7f8c03": 0.93
+              "squad_3a7f8c03": 0.98
             },
-            "confidence": 0.91
+            "confidence": 0.97
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "9987849ccfbde211ab2dc8439ebb36972fb7565e3d9f9153f913a8a9ab3b3b94",
+        "hash": "bc5711893c409c52923f815d44279adfa90188505d8f66f4db44bf0b84745eea",
         "answers": {
           "kind": {
             "type": "choice",
@@ -169,51 +169,51 @@
             "type": "choice",
             "choice": "squad_3a7f8c03",
             "probabilities": {
-              "instance": 0.01,
-              "general": 0.17,
-              "squad_1c4ea001": 0.02,
-              "squad_2b5d0e02": 0.06,
-              "squad_3a7f8c03": 0.74
+              "instance": 0.02,
+              "general": 0.05,
+              "squad_1c4ea001": 0.01,
+              "squad_2b5d0e02": 0.03,
+              "squad_3a7f8c03": 0.89
             },
-            "confidence": 0.68
+            "confidence": 0.86
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     },
     "How is the listening journal coming along?": {
       "jev:jev-latest": {
-        "hash": "64d814251120ead055e02e76c6a7e83b5fdd845188f9ff9884c5c778f45850c8",
+        "hash": "22387b26188dd570dc4f95c364073d16589ab8a812d60d8b0f89913658d4922d",
         "answers": {
           "kind": {
             "type": "choice",
             "choice": "follow_up",
             "probabilities": {
               "new_request": 0.16,
-              "follow_up": 0.62,
-              "conversation": 0.22
+              "follow_up": 0.64,
+              "conversation": 0.2
             },
-            "confidence": 0.43
+            "confidence": 0.46
           },
           "scope": {
             "type": "choice",
             "choice": "squad_1c4ea001",
             "probabilities": {
               "instance": 0,
-              "general": 0.04,
-              "squad_1c4ea001": 0.96,
+              "general": 0.03,
+              "squad_1c4ea001": 0.97,
               "squad_2b5d0e02": 0,
               "squad_3a7f8c03": 0
             },
-            "confidence": 0.95
+            "confidence": 0.96
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "64d814251120ead055e02e76c6a7e83b5fdd845188f9ff9884c5c778f45850c8",
+        "hash": "22387b26188dd570dc4f95c364073d16589ab8a812d60d8b0f89913658d4922d",
         "answers": {
           "kind": {
             "type": "choice",
@@ -229,22 +229,22 @@
             "type": "choice",
             "choice": "squad_1c4ea001",
             "probabilities": {
-              "instance": 0.04,
-              "general": 0.36,
-              "squad_1c4ea001": 0.57,
+              "instance": 0.02,
+              "general": 0.06,
+              "squad_1c4ea001": 0.88,
               "squad_2b5d0e02": 0.02,
-              "squad_3a7f8c03": 0.01
+              "squad_3a7f8c03": 0.02
             },
-            "confidence": 0.46
+            "confidence": 0.85
           }
         },
-        "passed": false,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "passed": true,
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     },
     "Add a new user and give them the reviewer role": {
       "jev:jev-latest": {
-        "hash": "2bf10bd692f7efd67ffb75c83d1c190750339d0cf4bbd1869e03e32ba125b5d4",
+        "hash": "72f0a384d8775e4cbc2bc648860f0396eae6c3d6320e0d48890daeef7016a90b",
         "answers": {
           "kind": {
             "type": "choice",
@@ -270,10 +270,10 @@
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "2bf10bd692f7efd67ffb75c83d1c190750339d0cf4bbd1869e03e32ba125b5d4",
+        "hash": "72f0a384d8775e4cbc2bc648860f0396eae6c3d6320e0d48890daeef7016a90b",
         "answers": {
           "kind": {
             "type": "choice",
@@ -289,22 +289,22 @@
             "type": "choice",
             "choice": "instance",
             "probabilities": {
-              "instance": 0.98,
+              "instance": 0.97,
               "general": 0.01,
               "squad_1c4ea001": 0.01,
               "squad_2b5d0e02": 0,
-              "squad_3a7f8c03": 0
+              "squad_3a7f8c03": 0.01
             },
-            "confidence": 0.98
+            "confidence": 0.96
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     },
     "Connect our GitHub organization to Ficus": {
       "jev:jev-latest": {
-        "hash": "9f85823cec1c22755f987209bbc77e62ed6f3a2575e5431be8ca25e64c8615c3",
+        "hash": "eb53cee41035b4f37b64fe44b51a026fdaf62a264590afdfb2462c4d6a81bcfb",
         "answers": {
           "kind": {
             "type": "choice",
@@ -330,10 +330,10 @@
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "9f85823cec1c22755f987209bbc77e62ed6f3a2575e5431be8ca25e64c8615c3",
+        "hash": "eb53cee41035b4f37b64fe44b51a026fdaf62a264590afdfb2462c4d6a81bcfb",
         "answers": {
           "kind": {
             "type": "choice",
@@ -349,22 +349,22 @@
             "type": "choice",
             "choice": "instance",
             "probabilities": {
-              "instance": 0.97,
+              "instance": 0.98,
               "general": 0.01,
               "squad_1c4ea001": 0,
-              "squad_2b5d0e02": 0.01,
+              "squad_2b5d0e02": 0,
               "squad_3a7f8c03": 0.01
             },
-            "confidence": 0.96
+            "confidence": 0.98
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     },
     "Research the best note-taking apps and summarize them for me": {
       "jev:jev-latest": {
-        "hash": "09080ab00c539eb8db210b494b6ed86c335fc52264545ce67da15e40def502ae",
+        "hash": "73beabdfb5d3545cb08e7b7dcf250bdbb397a04c9c75ee223948978d47aa08a9",
         "answers": {
           "kind": {
             "type": "choice",
@@ -390,10 +390,10 @@
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "09080ab00c539eb8db210b494b6ed86c335fc52264545ce67da15e40def502ae",
+        "hash": "73beabdfb5d3545cb08e7b7dcf250bdbb397a04c9c75ee223948978d47aa08a9",
         "answers": {
           "kind": {
             "type": "choice",
@@ -409,32 +409,32 @@
             "type": "choice",
             "choice": "general",
             "probabilities": {
-              "instance": 0.03,
-              "general": 0.95,
+              "instance": 0.01,
+              "general": 0.97,
               "squad_1c4ea001": 0.01,
-              "squad_2b5d0e02": 0.01,
-              "squad_3a7f8c03": 0
+              "squad_2b5d0e02": 0,
+              "squad_3a7f8c03": 0.01
             },
-            "confidence": 0.94
+            "confidence": 0.96
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     },
     "What's a good recipe for banana bread?": {
       "jev:jev-latest": {
-        "hash": "d7145b844476c05a2c3ef58193eea362e9c1e020e33e3bafe1ad6cdcbf0b2d1f",
+        "hash": "f13be84643ceffad04f91d16c041a7e68be3bf868d24a592ce6522ac1d39f6a0",
         "answers": {
           "kind": {
             "type": "choice",
             "choice": "new_request",
             "probabilities": {
-              "new_request": 0.96,
+              "new_request": 0.94,
               "follow_up": 0,
-              "conversation": 0.04
+              "conversation": 0.06
             },
-            "confidence": 0.94
+            "confidence": 0.91
           },
           "scope": {
             "type": "choice",
@@ -450,10 +450,10 @@
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "d7145b844476c05a2c3ef58193eea362e9c1e020e33e3bafe1ad6cdcbf0b2d1f",
+        "hash": "f13be84643ceffad04f91d16c041a7e68be3bf868d24a592ce6522ac1d39f6a0",
         "answers": {
           "kind": {
             "type": "choice",
@@ -470,50 +470,50 @@
             "choice": "general",
             "probabilities": {
               "instance": 0.01,
-              "general": 0.99,
-              "squad_1c4ea001": 0,
+              "general": 0.98,
+              "squad_1c4ea001": 0.01,
               "squad_2b5d0e02": 0,
               "squad_3a7f8c03": 0
             },
-            "confidence": 0.99
+            "confidence": 0.98
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     },
     "also make sure it works offline": {
       "jev:jev-latest": {
-        "hash": "b93fcbc5c860869c85b33806a099c1891f699c5ab9a9faf3e5e5e6d5f9040aaa",
+        "hash": "8e92aaf6e482b8b76b36fc687ddbef1395f4a106877d15211bef9c36fc1a3839",
         "answers": {
           "kind": {
             "type": "choice",
             "choice": "follow_up",
             "probabilities": {
-              "new_request": 0.36,
-              "follow_up": 0.64,
+              "new_request": 0.35,
+              "follow_up": 0.65,
               "conversation": 0
             },
-            "confidence": 0.46
+            "confidence": 0.48
           },
           "scope": {
             "type": "choice",
             "choice": "squad_1c4ea001",
             "probabilities": {
-              "instance": 0.03,
-              "general": 0.04,
-              "squad_1c4ea001": 0.93,
+              "instance": 0.01,
+              "general": 0.02,
+              "squad_1c4ea001": 0.97,
               "squad_2b5d0e02": 0,
               "squad_3a7f8c03": 0
             },
-            "confidence": 0.91
+            "confidence": 0.96
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "b93fcbc5c860869c85b33806a099c1891f699c5ab9a9faf3e5e5e6d5f9040aaa",
+        "hash": "8e92aaf6e482b8b76b36fc687ddbef1395f4a106877d15211bef9c36fc1a3839",
         "answers": {
           "kind": {
             "type": "choice",
@@ -529,51 +529,51 @@
             "type": "choice",
             "choice": "squad_1c4ea001",
             "probabilities": {
-              "instance": 0.03,
-              "general": 0.02,
-              "squad_1c4ea001": 0.94,
-              "squad_2b5d0e02": 0.01,
-              "squad_3a7f8c03": 0
+              "instance": 0.02,
+              "general": 0.04,
+              "squad_1c4ea001": 0.91,
+              "squad_2b5d0e02": 0.02,
+              "squad_3a7f8c03": 0.01
             },
-            "confidence": 0.93
+            "confidence": 0.89
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     },
     "Widget Shop": {
       "jev:jev-latest": {
-        "hash": "aed33c03c88541d50ac6e2ae048ca30871a73a25fb353eb29c90da2f4673dacd",
+        "hash": "563edd194b1a3b0af1faf537f978977c10a43b7be14893fc870e76a577ba6937",
         "answers": {
           "kind": {
             "type": "choice",
             "choice": "new_request",
             "probabilities": {
-              "new_request": 0.47,
-              "follow_up": 0.25,
-              "conversation": 0.28
+              "new_request": 0.46,
+              "follow_up": 0.27,
+              "conversation": 0.27
             },
-            "confidence": 0.2
+            "confidence": 0.19
           },
           "scope": {
             "type": "choice",
             "choice": "squad_2b5d0e02",
             "probabilities": {
               "instance": 0,
-              "general": 0.1,
+              "general": 0.07,
               "squad_1c4ea001": 0,
-              "squad_2b5d0e02": 0.9,
+              "squad_2b5d0e02": 0.93,
               "squad_3a7f8c03": 0
             },
-            "confidence": 0.87
+            "confidence": 0.91
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "aed33c03c88541d50ac6e2ae048ca30871a73a25fb353eb29c90da2f4673dacd",
+        "hash": "563edd194b1a3b0af1faf537f978977c10a43b7be14893fc870e76a577ba6937",
         "answers": {
           "kind": {
             "type": "choice",
@@ -589,51 +589,51 @@
             "type": "choice",
             "choice": "squad_2b5d0e02",
             "probabilities": {
-              "instance": 0.01,
-              "general": 0.07,
-              "squad_1c4ea001": 0.03,
-              "squad_2b5d0e02": 0.87,
-              "squad_3a7f8c03": 0.02
+              "instance": 0.02,
+              "general": 0.22,
+              "squad_1c4ea001": 0.05,
+              "squad_2b5d0e02": 0.67,
+              "squad_3a7f8c03": 0.04
             },
-            "confidence": 0.84
+            "confidence": 0.59
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     },
     "Actually, write the launch newsletter for it too": {
       "jev:jev-latest": {
-        "hash": "c269a000491eb8730ea62983c7c931fe13f8c93f2eaf10a7353b0e906075a656",
+        "hash": "ac8d448deea718afaa2d159b576afa90bd5f51a643ccb70c0266779d2e5f5441",
         "answers": {
           "kind": {
             "type": "choice",
             "choice": "new_request",
             "probabilities": {
-              "new_request": 0.71,
-              "follow_up": 0.29,
+              "new_request": 0.7,
+              "follow_up": 0.3,
               "conversation": 0
             },
-            "confidence": 0.56
+            "confidence": 0.55
           },
           "scope": {
             "type": "choice",
             "choice": "squad_3a7f8c03",
             "probabilities": {
               "instance": 0,
-              "general": 0.04,
+              "general": 0.02,
               "squad_1c4ea001": 0,
-              "squad_2b5d0e02": 0.11,
-              "squad_3a7f8c03": 0.85
+              "squad_2b5d0e02": 0.06,
+              "squad_3a7f8c03": 0.92
             },
-            "confidence": 0.81
+            "confidence": 0.9
           }
         },
         "passed": true,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       },
       "openai:gpt-6-luna": {
-        "hash": "c269a000491eb8730ea62983c7c931fe13f8c93f2eaf10a7353b0e906075a656",
+        "hash": "ac8d448deea718afaa2d159b576afa90bd5f51a643ccb70c0266779d2e5f5441",
         "answers": {
           "kind": {
             "type": "choice",
@@ -651,15 +651,15 @@
             "probabilities": {
               "instance": 0.01,
               "general": 0.08,
-              "squad_1c4ea001": 0.04,
-              "squad_2b5d0e02": 0.32,
-              "squad_3a7f8c03": 0.55
+              "squad_1c4ea001": 0.02,
+              "squad_2b5d0e02": 0.07,
+              "squad_3a7f8c03": 0.82
             },
-            "confidence": 0.44
+            "confidence": 0.77
           }
         },
-        "passed": false,
-        "recordedAt": "2026-10-09T05:07:27.291Z"
+        "passed": true,
+        "recordedAt": "2026-10-09T05:41:07.684Z"
       }
     }
   }
