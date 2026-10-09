@@ -405,3 +405,34 @@ test('flow inspection exposes effective active outcomes separately from the init
     await db.delete(workStreams).where(eq(workStreams.id, stream!.id))
   }
 })
+
+test('saving a preset with decision steps says when no decision model will answer them', async () => {
+  const { decisionChain } = await import('../services/decisions/service')
+  const decide: WorkflowDefinition = {
+    ...definition,
+    name: 'Decide',
+    participants: {},
+    entry: 'triage',
+    steps: [
+      {
+        id: 'triage',
+        kind: 'decision',
+        instructions: 'Is it a bug?',
+        questions: { is_bug: { type: 'yesno', instructions: 'It reports a bug.' } },
+        routes: [{ when: { type: 'yesno', question: 'is_bug', op: 'at-least', probability: 0.7 }, outcome: 'done' }],
+        otherwise: 'done',
+        unavailable: 'done',
+        outcomes: { done: { next: 'finish' } },
+      },
+    ],
+  } as unknown as WorkflowDefinition
+  const response = await request('', admin, 'POST', { id: `${prefix}-decide`, definition: decide })
+  expect(response.status).toBe(201)
+  const body = (await response.json()) as { warnings?: string[] }
+  if (decisionChain('workflow-steps').length) expect(body.warnings).toBeUndefined()
+  else expect(body.warnings).toEqual([expect.stringContaining("decision step 'triage' will not be asked")])
+
+  // Flows without decision steps never warn.
+  const plain = await request('', admin, 'POST', { id: `${prefix}-plain`, definition })
+  expect(((await plain.json()) as { warnings?: string[] }).warnings).toBeUndefined()
+})

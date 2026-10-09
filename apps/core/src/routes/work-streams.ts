@@ -900,9 +900,11 @@ export const workStreamsRouter = new Hono()
       const stream = await WorkStream.create({ ...input, requestingUserId, creatorAgentId })
       // Auto-subscribe the requester to the stream's lifecycle updates (like watching a GitHub PR).
       if (requestingUserId) await subscribeToWorkStream(stream.id, requestingUserId)
+      const { decisionStepSourceWarnings, withWarnings } = await import('../services/workflows/decision-step-warnings')
       return c.json(
         {
           ...stream.toJson(),
+          ...withWarnings(input.workflow ? await decisionStepSourceWarnings(input.workflow) : []),
           ...(identity.type === 'agent' ? { observing: await isObservingWorkStream(stream.id, identity.agentId) } : {}),
         },
         201
