@@ -2,7 +2,7 @@ import { ToolRenderersContext } from '../lib/ToolRenderersContext'
 import { AssistantConversationContext } from '../voice/AssistantConversationContext'
 import { AssistantConversationLinkRow } from './AssistantConversationLinkRow'
 import { AssistantPageLinkRow } from './AssistantPageLinkRow'
-import { AssistantMessageRouting } from './AssistantRoutingChip'
+import { AssistantMessageRouting, latestAssistantUserMessageId } from './AssistantRoutingChip'
 import { AssistantSummarySources } from './AssistantSummarySources'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -81,6 +81,12 @@ function DurableConversation(props: AssistantConversationViewProps) {
   const [voiceRequested, setVoiceRequested] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const controller = useRef<AgentChatController | null>(null)
+  const [latestUserMessageId, setLatestUserMessageId] = useState<string | null>(null)
+  const [composerDraft, setComposerDraft] = useState<{ id: number; text: string }>()
+  const draftInComposer = useCallback(
+    (text: string) => setComposerDraft((current) => ({ id: (current?.id ?? 0) + 1, text })),
+    []
+  )
   const voiceReceipts = useRef(new AssistantVoiceReceipts())
   const sourceIds = useRef(new Map<string, string>())
   const answerIds = useRef(new Map<string, string>())
@@ -190,6 +196,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
   const onConversation = useCallback(
     (value: AgentChatController) => {
       controller.current = value
+      setLatestUserMessageId(latestAssistantUserMessageId(value.items))
       speakReady()
     },
     [speakReady]
@@ -371,7 +378,10 @@ function DurableConversation(props: AssistantConversationViewProps) {
                 <AssistantMessageRouting
                   conversationId={props.id}
                   messageId={item.message.id}
+                  content={item.message.content}
                   hint={item.message.metadata.assistantRouting}
+                  latest={item.message.id === latestUserMessageId}
+                  onDraft={draftInComposer}
                   api={api}
                 />
               ) : item.message.role === 'assistant' && ownerId ? (
@@ -398,6 +408,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
             onNavigate={navigate}
             afterConversation={questions}
             inputStorageKey={`assistant:${props.id}`}
+            composerDraft={composerDraft}
             placeholder="Ask anything…"
           />
         ) : (

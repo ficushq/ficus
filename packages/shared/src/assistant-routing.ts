@@ -36,6 +36,8 @@ export interface AssistantRoutingHint extends AssistantRoutingTarget {
 export interface AssistantRoutingCorrection extends AssistantRoutingTarget {
   /** The user message it corrects. */
   messageId: string
+  /** The start of that message, so the Assistant knows which one it is. */
+  excerpt?: string
 }
 
 export const assistantRoutingCorrectionRequestSchema = z.discriminatedUnion('scope', [
@@ -48,6 +50,15 @@ export const assistantRoutingCorrectionRequestSchema = z.discriminatedUnion('sco
   z.object({ messageId: z.string().uuid(), clientId: z.string().uuid(), scope: z.literal('none') }),
 ])
 export type AssistantRoutingCorrectionRequest = z.infer<typeof assistantRoutingCorrectionRequestSchema>
+
+/** The start of a message on one line, cut at a word near `max` characters. */
+export function assistantRoutingExcerpt(text: string, max = 120): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  if (flat.length <= max) return flat
+  const cut = flat.slice(0, max)
+  const space = cut.lastIndexOf(' ')
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s.,;:!?-]+$/, '')}…`
+}
 
 /** The target the Assistant should use: the user's correction, else the decision model's pick. */
 export function effectiveAssistantRouting(hint: AssistantRoutingHint): AssistantRoutingTarget {

@@ -48,11 +48,11 @@ test('Assistant routing hints reach the model only at or above the confidence th
   const at = (confidence: number) =>
     messageTextForModel({ content: 'Fix the crash', metadata: { assistantRouting: { ...squad, confidence } } })
   expect(at(0.59)).toBe('Fix the crash')
-  expect(at(0.6)).toContain('Routing hint (decision model): likely squad "Chlea" (60%)')
-  expect(at(0.91)).toContain('(squadId 7c1d2f00-0000-4000-8000-000000000001)')
+  expect(at(0.6)).toContain('Routing hint (decision model): likely about squad "Chlea" (60%,')
+  expect(at(0.91)).toContain('(91%, squadId 7c1d2f00-0000-4000-8000-000000000001)')
   expect(
     messageTextForModel({ content: 'Hi', metadata: { assistantRouting: { scope: 'general', confidence: 0.75 } } })
-  ).toContain('general work, not tied to one squad')
+  ).toContain('not about one squad (75%)')
 })
 
 test("the user's routing correction overrides the hint, whatever its confidence", () => {
@@ -72,9 +72,10 @@ test("the user's routing correction overrides the hint, whatever its confidence"
     content: '[System] You said this is not for a squad.',
     metadata: {
       source: 'assistant_routing_correction',
-      assistantRoutingCorrection: { messageId: 'm-1', scope: 'none' },
+      assistantRoutingCorrection: { messageId: 'm-1', excerpt: 'Fix the crash', scope: 'none' },
     },
   })
-  expect(note).toContain('Routing correction from the user: their message m-1 is not for a squad.')
+  expect(note).toContain('Routing correction from the user: their latest message ("Fix the crash") is not for a squad.')
+  expect(note).not.toContain('m-1')
   expect(note).toContain('Use no squad for delegate_task')
 })

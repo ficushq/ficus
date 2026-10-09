@@ -2569,3 +2569,34 @@ for (const embedded of [false, true]) {
     expect(expandedRow.parentElement?.className).not.toMatch(/absolute|fixed/)
   })
 }
+
+describe('ChatView composer draft', () => {
+  test('a composer draft goes after any typed text, focused, and a new id adds it again', async () => {
+    const view = (composerDraft?: { id: number; text: string }) => (
+      <MemoryRouter initialEntries={['/chat/agent-1?scope=all']}>
+        <PermissionsProvider usePermissions={usePermissionsMock}>
+          <ChatView
+            items={[]}
+            onSend={() => undefined}
+            enableFullscreen={false}
+            composerDraft={composerDraft}
+            dependencies={chatViewDependencies}
+          />
+        </PermissionsProvider>
+      </MemoryRouter>
+    )
+    const { dom, root, window } = await renderChatView(
+      <ChatView items={[]} onSend={() => undefined} enableFullscreen={false} />
+    )
+    const textarea = () => window.document.querySelector('textarea')!
+    expect(textarea().value).toBe('')
+    await dom.act(async () => root.render(view({ id: 1, text: 'Please move "Fix it" to Billing.' })))
+    expect(textarea().value).toBe('Please move "Fix it" to Billing.')
+    expect(window.document.activeElement).toBe(textarea())
+    expect(textarea().selectionStart).toBe(textarea().value.length)
+    // The same draft again is not added twice; a new one goes after it.
+    await dom.act(async () => root.render(view({ id: 1, text: 'Please move "Fix it" to Billing.' })))
+    await dom.act(async () => root.render(view({ id: 2, text: 'Please move "Docs" to Chlea.' })))
+    expect(textarea().value).toBe('Please move "Fix it" to Billing.\n\nPlease move "Docs" to Chlea.')
+  })
+})
