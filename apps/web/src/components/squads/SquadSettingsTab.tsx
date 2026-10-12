@@ -22,7 +22,9 @@ import { queries } from '../../queryOptions'
 import { Can } from '../Can'
 import { SettingsNavigation } from '../settings/SettingsNavigation'
 import { SettingsSearchDestination } from '../settings/SettingsSearchDestination'
-import { SQUAD_SETTINGS_KEYWORDS, SQUAD_SETTINGS_SEARCH } from './squadSettingsSearch'
+import { SQUAD_SETTINGS_KEYWORDS, squadSettingsSearchEntries } from './squadSettingsSearch'
+import { SquadDangerZone } from './SquadDangerZone'
+import { usePermissions } from '../../hooks/usePermissions'
 
 interface Props {
   squadId: string
@@ -64,6 +66,8 @@ export function SquadSettingsTab({
   const hostRuntime = sandboxStatus?.runtime === 'host'
   const sections = SECTIONS
   const sandboxSectionReady = sandboxStatus !== undefined && !hostRuntime
+  const { can, isLoading: permissionsLoading } = usePermissions(squadId)
+  const canDeleteSquad = !permissionsLoading && can('squads:delete')
   const activeSection: SectionId = isValidSection(sectionParam) ? sectionParam : 'general'
 
   const setActiveSection = (section: string, target?: string) => {
@@ -99,12 +103,7 @@ export function SquadSettingsTab({
         scopeTitle="Squad settings"
         showOnboardingLink={false}
         pageKeywords={SQUAD_SETTINGS_KEYWORDS}
-        searchEntries={SQUAD_SETTINGS_SEARCH.filter((entry) => {
-          if (entry.id === 'host-workspace-directory') return hostRuntime
-          if (['sandbox-lifecycle', 'idle-timeout', 'ephemeral-storage-limit'].includes(entry.id))
-            return sandboxSectionReady
-          return true
-        })}
+        searchEntries={squadSettingsSearchEntries({ hostRuntime, sandboxSectionReady, canDeleteSquad })}
       />
       <div className="min-w-0 min-h-0 flex-1 overflow-y-auto">
         <SettingsSearchDestination section={activeSection} target={searchParams.get('setting') ?? undefined}>
@@ -125,6 +124,9 @@ export function SquadSettingsTab({
               />
             </div>
           )}
+
+          {/* Last in General, below its fields and save controls. Gates itself on squads:delete. */}
+          {activeSection === 'general' && <SquadDangerZone squadId={squadId} squadName={name} />}
 
           {activeSection === 'context' && (
             <div className="space-y-8">
