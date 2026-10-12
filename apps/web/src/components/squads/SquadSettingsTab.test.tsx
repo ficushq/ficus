@@ -79,3 +79,59 @@ describe('SquadSettingsTab sandbox section', () => {
     expect(html).not.toContain('Sandbox Logs')
   })
 })
+
+function renderSettingsTab(permissions: string[], entry = '/squads/squad-1/settings'): string {
+  const queryClient = new QueryClient()
+  queryClient.setQueryData(queryKeys.sandbox.status('squad-1'), { status: 'running', runtime: 'docker' })
+  queryClient.setQueryData(queryKeys.auth.permissions('squad-1'), {
+    permissions,
+    identity: { type: 'user', userId: 'user-1' },
+  })
+  return renderToStaticMarkup(
+    <MemoryRouter initialEntries={[entry]}>
+      <QueryClientProvider client={queryClient}>
+        <SquadSettingsTab
+          squadId="squad-1"
+          name="Squad"
+          purpose="test"
+          context={null}
+          typeContext={null}
+          globalCollaborationEnabled={false}
+          maxConcurrentWorkStreams={null}
+          blockedGraceMinutes={null}
+          hostWorkspacePath={null}
+        />
+      </QueryClientProvider>
+    </MemoryRouter>
+  )
+}
+
+describe('SquadSettingsTab danger zone', () => {
+  // squads:delete alone is enough: the Settings tab and its General section are
+  // not gated on squads:update, so this stays reachable for a delete-only user.
+  test('General ends with the archive block for a user with squads:delete but not squads:update', () => {
+    const html = renderSettingsTab(['squads:delete'])
+    expect(html).toContain('Danger zone')
+    expect(html).toContain('data-setting-target="archive-squad"')
+    expect(html).toContain('>Archive squad</button>')
+    // Below the General fields and their save controls.
+    expect(html.indexOf('>Save</button>')).toBeGreaterThan(-1)
+    expect(html.indexOf('>Save</button>')).toBeLessThan(html.indexOf('Danger zone'))
+    expect(html.indexOf('Global collaboration')).toBeLessThan(html.indexOf('Danger zone'))
+  })
+
+  test('is absent without squads:delete', () => {
+    const html = renderSettingsTab(['squads:update', 'squads:read'])
+    expect(html).toContain('Global collaboration')
+    expect(html).not.toContain('Danger zone')
+    expect(html).not.toContain('Archive')
+  })
+
+  test('belongs to General only', () => {
+    for (const section of ['workflows', 'context', 'workspace', 'access']) {
+      const html = renderSettingsTab(['squads:delete'], `/squads/squad-1/settings?section=${section}`)
+      expect(html).not.toContain('Danger zone')
+      expect(html).not.toContain('Archive squad')
+    }
+  })
+})

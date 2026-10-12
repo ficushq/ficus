@@ -238,7 +238,7 @@ Workspace indexing settings (include/exclude patterns, reindex button, scan resu
 The squad tab and settings registry is `apps/web/src/lib/squadNavigation.ts`.
 Squad settings use eight pages grouped by purpose:
 
-- **General:** avatar, name, description, and discovery by other squads.
+- **General:** avatar, name, description, and discovery by other squads. A **Danger zone** at the bottom holds **Archive squad**; it appears only with `squads:delete`, independent of `squads:update`, and opens the typed confirmation.
 - **Instructions:** shared squad context and instructions for individual agent types.
 - **Workflows:** default and alternate flows, selection guidance, concurrency limits, auto-parking, and merge policies.
 - **Integrations:** enabled apps, account selection, routing, and Git author overrides.
