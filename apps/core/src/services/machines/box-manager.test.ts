@@ -27,6 +27,7 @@ import {
   buildStreamRestoreCommand,
   checkDestinationBaseline,
   compareStateDirFacts,
+  classifyProvisioningMarkerDrift,
   computeProvisioningMarker,
   describeProvisioningMarkerDrift,
   detectArchiveCodec,
@@ -4871,40 +4872,252 @@ describe('removeBoxUserOnMachine (teardown budget)', () => {
 })
 
 describe('provisioning marker decomposition', () => {
-  // The marker is `<specHash>.<envHash>` (not an opaque digest) so a
-  // fast-path miss can LOG which half drifted. A spurious full re-provision
-  // restarts the box's systemd unit — killing shells and running agent
-  // commands — so when it happens the log must say why, in one line.
-  const env: Record<string, string> = { GITHUB_TOKEN: 'tok', FICUS_API_URL: 'http://127.0.0.1:1' }
+  // The marker is `<specHash>.<criticalEnvHash>.<identityEnvHash>` (not an
+  // opaque digest) so a fast-path miss can LOG which part drifted, and so a
+  // git-author-only change can be told apart from one that must be applied at
+  // once. A spurious full re-provision restarts the box's systemd unit —
+  // killing shells and running agent commands.
+  const env: Record<string, string> = {
+    SANDBOX_CALLBACK_SECRET: 'synthetic-secret',
+    FICUS_API_URL: 'http://127.0.0.1:1',
+    GIT_USER_NAME: 'Synthetic Person',
+    GIT_AUTHOR_NAME: 'Synthetic Person',
+    GIT_COMMITTER_NAME: 'Synthetic Person',
+    GIT_USER_EMAIL: 'synthetic@example.com',
+    GIT_AUTHOR_EMAIL: 'synthetic@example.com',
+    GIT_COMMITTER_EMAIL: 'synthetic@example.com',
+  }
+  const withoutIdentity = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('GIT_')))
+  const legacyMarker = (specHash: string, value: Record<string, string>) =>
+    // The formula every box was stamped with before the split.
+    `${specHash}.${createHash('sha256')
+      .update(
+        JSON.stringify(
+          Object.keys(value)
+            .sort()
+            .map((k) => [k, value[k]])
+        )
+      )
+      .digest('hex')
+      .slice(0, 16)}`
 
-  it('embeds the spec hash verbatim ahead of the env hash', () => {
+  it('embeds the spec hash verbatim ahead of the critical and identity env hashes', () => {
     const marker = computeProvisioningMarker('spec-abc', env)
     expect(marker.startsWith('spec-abc.')).toBe(true)
-    expect(marker.split('.')).toHaveLength(2)
+    expect(marker.split('.')).toHaveLength(3)
   })
 
-  it('an env-only change moves only the env half; a spec-only change only the spec half', () => {
-    const base = computeProvisioningMarker('spec-abc', env)
-    const envMoved = computeProvisioningMarker('spec-abc', { ...env, GITHUB_TOKEN: 'rotated' })
-    const specMoved = computeProvisioningMarker('spec-def', env)
-    expect(envMoved.split('.')[0]).toBe(base.split('.')[0])
-    expect(envMoved.split('.')[1]).not.toBe(base.split('.')[1])
-    expect(specMoved.split('.')[1]).toBe(base.split('.')[1])
-    expect(specMoved.split('.')[0]).not.toBe(base.split('.')[0])
+  it('each kind of change moves only its own part', () => {
+    const base = computeProvisioningMarker('spec-abc', env).split('.')
+    const secretMoved = computeProvisioningMarker('spec-abc', { ...env, SANDBOX_CALLBACK_SECRET: 'rotated' }).split('.')
+    const urlMoved = computeProvisioningMarker('spec-abc', { ...env, FICUS_API_URL: 'http://127.0.0.1:2' }).split('.')
+    const identityMoved = computeProvisioningMarker('spec-abc', withoutIdentity).split('.')
+    const specMoved = computeProvisioningMarker('spec-def', env).split('.')
+    expect(secretMoved).toEqual([base[0], expect.not.stringMatching(base[1]!), base[2]])
+    expect(urlMoved).toEqual([base[0], expect.not.stringMatching(base[1]!), base[2]])
+    expect(identityMoved).toEqual([base[0], base[1], expect.not.stringMatching(base[2]!)])
+    expect(specMoved).toEqual([expect.not.stringMatching(base[0]!), base[1], base[2]])
   })
 
-  it('describeProvisioningMarkerDrift names the drifted half', () => {
+  it('only the six git author keys are identity; a token or any unknown key is critical', () => {
+    const base = computeProvisioningMarker('spec-abc', env).split('.')
+    for (const key of [
+      'GITHUB_TOKEN',
+      'GH_TOKEN',
+      'GIT_SSH_COMMAND',
+      'GIT_ASKPASS',
+      'GIT_CONFIG_GLOBAL',
+      'EXECUTOR_X',
+    ]) {
+      const moved = computeProvisioningMarker('spec-abc', { ...env, [key]: 'synthetic' }).split('.')
+      expect(moved[1]).not.toBe(base[1])
+      expect(moved[2]).toBe(base[2])
+    }
+  })
+
+  it('classifies drift, and anything it cannot prove harmless is critical', () => {
     const base = computeProvisioningMarker('spec-abc', env)
-    const envMoved = computeProvisioningMarker('spec-abc', { ...env, GITHUB_TOKEN: 'rotated' })
+    expect(classifyProvisioningMarkerDrift(base, base, env)).toBe('none')
+    expect(classifyProvisioningMarkerDrift(legacyMarker('spec-abc', env), base, env)).toBe('legacy')
+    expect(
+      classifyProvisioningMarkerDrift(base, computeProvisioningMarker('spec-abc', withoutIdentity), withoutIdentity)
+    ).toBe('identity')
+    const rotated = { ...env, SANDBOX_CALLBACK_SECRET: 'rotated' }
+    expect(classifyProvisioningMarkerDrift(base, computeProvisioningMarker('spec-abc', rotated), rotated)).toBe(
+      'critical'
+    )
+    expect(classifyProvisioningMarkerDrift(base, computeProvisioningMarker('spec-def', env), env)).toBe('critical')
+    // A legacy stamp of a DIFFERENT env or spec is real drift, not a format change.
+    expect(classifyProvisioningMarkerDrift(legacyMarker('spec-abc', rotated), base, env)).toBe('critical')
+    expect(classifyProvisioningMarkerDrift(legacyMarker('spec-abc', withoutIdentity), base, env)).toBe('critical')
+    expect(classifyProvisioningMarkerDrift(legacyMarker('spec-def', env), base, env)).toBe('critical')
+    expect(classifyProvisioningMarkerDrift(null, base, env)).toBe('critical')
+    expect(classifyProvisioningMarkerDrift(base, undefined, env)).toBe('critical')
+    expect(classifyProvisioningMarkerDrift('0123456789abcdef', base, env)).toBe('critical')
+  })
+
+  it('describeProvisioningMarkerDrift names the drifted part', () => {
+    const base = computeProvisioningMarker('spec-abc', env)
+    const envMoved = computeProvisioningMarker('spec-abc', { ...env, SANDBOX_CALLBACK_SECRET: 'rotated' })
     const specMoved = computeProvisioningMarker('spec-def', env)
-    const bothMoved = computeProvisioningMarker('spec-def', { ...env, GITHUB_TOKEN: 'rotated' })
+    const identityMoved = computeProvisioningMarker('spec-abc', withoutIdentity)
+    const bothMoved = computeProvisioningMarker('spec-def', { ...env, SANDBOX_CALLBACK_SECRET: 'rotated' })
     expect(describeProvisioningMarkerDrift(base, envMoved)).toContain('env')
     expect(describeProvisioningMarkerDrift(base, envMoved)).not.toContain('spec hash')
+    expect(describeProvisioningMarkerDrift(base, envMoved)).not.toContain('git identity')
     expect(describeProvisioningMarkerDrift(base, specMoved)).toContain('spec hash')
     expect(describeProvisioningMarkerDrift(base, specMoved)).not.toContain('env')
+    expect(describeProvisioningMarkerDrift(base, identityMoved)).toContain('git identity')
+    expect(describeProvisioningMarkerDrift(base, identityMoved)).not.toContain('spec hash')
     expect(describeProvisioningMarkerDrift(base, bothMoved)).toContain('spec hash')
     expect(describeProvisioningMarkerDrift(base, bothMoved)).toContain('env')
-    // A pre-decomposition (opaque) stamp cannot be split — say so rather than guess.
+    // A stamp in an older format cannot be split — say so rather than guess.
     expect(describeProvisioningMarkerDrift('0123456789abcdef', envMoved)).toContain('legacy')
+    expect(describeProvisioningMarkerDrift(legacyMarker('spec-abc', env), envMoved)).toContain('legacy')
+    // Values never reach the log line.
+    expect(describeProvisioningMarkerDrift(base, bothMoved)).not.toContain('rotated')
+    expect(describeProvisioningMarkerDrift(base, identityMoved)).not.toContain('Synthetic')
+  })
+
+  describe('ensureBox on a ready box', () => {
+    const specHash = 'spec-abc'
+    const stamped = computeProvisioningMarker(specHash, env)
+
+    async function run(input: {
+      stamp: string
+      env: Record<string, string>
+      active?: boolean | 'query-fails'
+      status?: 'ready' | 'stopped'
+      healthy?: boolean
+    }) {
+      const events: string[] = []
+      const machine = makeMachine()
+      const box = makeBox({ status: input.status ?? 'ready', provisionedSpecHash: input.stamp })
+      const { deps, upserts } = happyDeps(events, machine, box)
+      deps.getMachineBox = async () => box
+      let activityQueries = 0
+      Object.assign(deps, {
+        hasActiveExecution: async () => {
+          activityQueries++
+          if (input.active === 'query-fails') throw new Error('synthetic activity outage')
+          return input.active ?? false
+        },
+      })
+      const desired = computeProvisioningMarker(specHash, input.env)
+      const result = await ensureBox(
+        { sandboxId: 'sb-1', machineId: machine.id, env: input.env, role: 'squad', specHash: desired },
+        deps
+      )
+      const reprovisioned = events.includes('provision') || events.includes('env') || events.includes('restart')
+      return { events, upserts, result, desired, reprovisioned, activityQueries: () => activityQueries }
+    }
+
+    it('defers identity-only drift while the box has an active execution, leaving the stamp stale', async () => {
+      const { events, upserts, result, reprovisioned } = await run({
+        stamp: stamped,
+        env: withoutIdentity,
+        active: true,
+      })
+      expect(reprovisioned).toBe(false)
+      expect(events).not.toContain('bundle')
+      expect(events).not.toContain('bind')
+      // Not restamped: the next idle ensure must still see the difference.
+      expect(upserts).toEqual([])
+      expect(result.box.provisionedSpecHash).toBe(stamped)
+      expect(result.box.status).toBe('ready')
+      expect(result.timings?.health).toBeDefined()
+    })
+
+    it('defers identity-only drift when activity cannot be determined', async () => {
+      const { upserts, reprovisioned } = await run({ stamp: stamped, env: withoutIdentity, active: 'query-fails' })
+      expect(reprovisioned).toBe(false)
+      expect(upserts).toEqual([])
+    })
+
+    it('applies identity-only drift at once when the box has no active execution', async () => {
+      const { events, upserts, desired } = await run({ stamp: stamped, env: withoutIdentity, active: false })
+      expect(events).toContain('env')
+      expect(events).toContain('restart')
+      expect(upserts.at(-1)).toMatchObject({ status: 'ready', provisionedSpecHash: desired })
+    })
+
+    it('a deferred identity change is applied by the first ensure that finds the box idle', async () => {
+      const busy = await run({ stamp: stamped, env: withoutIdentity, active: true })
+      expect(busy.reprovisioned).toBe(false)
+      // Same stale stamp, same desired env, work finished.
+      const idle = await run({ stamp: busy.result.box.provisionedSpecHash!, env: withoutIdentity, active: false })
+      expect(idle.reprovisioned).toBe(true)
+      expect(idle.upserts.at(-1)?.provisionedSpecHash).toBe(idle.desired)
+    })
+
+    it('reprovisions critical drift at once even with an active execution', async () => {
+      for (const changed of [
+        { ...env, SANDBOX_CALLBACK_SECRET: 'rotated' },
+        { ...env, FICUS_API_URL: 'http://127.0.0.1:2' },
+        { ...env, FICUS_SANDBOX_ROLE: 'agent' },
+        // Critical drift is not hidden by an identity change arriving with it.
+        { ...withoutIdentity, SANDBOX_CALLBACK_SECRET: 'rotated' },
+      ]) {
+        const { events, upserts, desired, activityQueries } = await run({ stamp: stamped, env: changed, active: true })
+        expect(events).toContain('env')
+        expect(events).toContain('restart')
+        expect(upserts.at(-1)).toMatchObject({ status: 'ready', provisionedSpecHash: desired })
+        expect(activityQueries()).toBe(0)
+      }
+    })
+
+    it('an unhealthy box is not kept just because its identity drift was deferred', async () => {
+      const events: string[] = []
+      const machine = makeMachine()
+      const box = makeBox({ status: 'ready', provisionedSpecHash: stamped })
+      const { deps, upserts } = happyDeps(events, machine, box)
+      deps.getMachineBox = async () => box
+      Object.assign(deps, establishedDeadFreshHealthyDeps(events), { hasActiveExecution: async () => true })
+      const desired = computeProvisioningMarker(specHash, withoutIdentity)
+      await ensureBox(
+        { sandboxId: 'sb-1', machineId: machine.id, env: withoutIdentity, role: 'squad', specHash: desired },
+        deps
+      )
+      expect(events).toContain('env')
+      expect(upserts.at(-1)).toMatchObject({ status: 'ready', provisionedSpecHash: desired })
+    })
+
+    it('rewrites a legacy stamp of the same spec and env without provisioning or restarting', async () => {
+      const { events, upserts, result, desired, reprovisioned, activityQueries } = await run({
+        stamp: legacyMarker(specHash, env),
+        env,
+      })
+      expect(reprovisioned).toBe(false)
+      expect(events).not.toContain('bundle')
+      expect(events).not.toContain('bind')
+      expect(upserts).toEqual([
+        expect.objectContaining({ status: 'ready', provisionedSpecHash: desired, authToken: 'tok-existing' }),
+      ])
+      expect(result.box.provisionedSpecHash).toBe(desired)
+      expect(activityQueries()).toBe(0)
+    })
+
+    it('a legacy stamp whose env really differs still reprovisions', async () => {
+      const { events } = await run({
+        stamp: legacyMarker(specHash, { ...env, SANDBOX_CALLBACK_SECRET: 'older' }),
+        env,
+        active: true,
+      })
+      expect(events).toContain('env')
+      expect(events).toContain('restart')
+    })
+
+    it('a parked box with a legacy stamp resumes without a provision and is restamped', async () => {
+      const { events, upserts, desired } = await run({ stamp: legacyMarker(specHash, env), env, status: 'stopped' })
+      expect(events).not.toContain('provision')
+      expect(events).not.toContain('env')
+      expect(upserts.at(-1)).toMatchObject({ status: 'ready', provisionedSpecHash: desired })
+    })
+
+    it('a parked box with identity drift takes the full path: nothing is running to protect', async () => {
+      const { events } = await run({ stamp: stamped, env: withoutIdentity, status: 'stopped', active: true })
+      expect(events).toContain('provision')
+      expect(events).toContain('env')
+    })
   })
 })
