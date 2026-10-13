@@ -55,11 +55,12 @@ export function createAgentDeliverySuggestionRouter(deps: DeliverySuggestionDeps
       /**
        * POST /api/agents/:id/delivery-suggestion/correction — the user sent a draft in the other mode
        * than the composer suggested. Saved as a candidate case for the `composer-delivery` eval only
-       * when saving corrections is on (off by default); answers 204 either way.
+       * when saving corrections is on (off by default); answers 204 either way. A body that is not
+       * JSON is the one exception: it gets the same 400 as on every other route.
        */
       async (c) => {
         const agent = await Agent.find(c.req.param('id'))
-        const body = correctionSchema.safeParse(await c.req.json().catch(() => null))
+        const body = correctionSchema.safeParse(await c.req.json())
         if (!agent || !body.success) return c.body(null, 204)
         const { draft, chosen } = body.data
         await captureCorrection({

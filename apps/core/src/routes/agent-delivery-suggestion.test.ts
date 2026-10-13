@@ -9,6 +9,7 @@ import { Agent } from '../entities/Agent'
 import { AgentType } from '../entities/AgentType'
 import { Squad } from '../entities/Squad'
 import { identityMiddleware } from '../middleware/identity'
+import { jsonBodyErrorHandler, jsonBodyErrorMiddleware } from '../middleware/json-body-errors'
 import {
   COMPOSER_DELIVERY_QUESTIONS,
   toolTarget,
@@ -42,6 +43,8 @@ const answered = (related: DecisionAnswer, now?: DecisionAnswer): DecisionOutcom
 })
 
 const app = new Hono()
+app.use('*', jsonBodyErrorMiddleware)
+app.onError(jsonBodyErrorHandler)
 app.use('*', identityMiddleware)
 app.route('/api/agents', createAgentDeliverySuggestionRouter({ decide, isEnabled: () => enabled }))
 
@@ -342,6 +345,21 @@ describe('POST /api/agents/:id/delivery-suggestion/correction', () => {
       await setEvalCapture(false, 'test')
       await db.delete(decisionEvalCandidates)
     }
+  })
+
+  test('a body that is not JSON is refused as one, not swallowed as junk', async () => {
+    const malformed = (user: TestUser | null) =>
+      app.request(`/api/agents/${busy.id}/delivery-suggestion/correction`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(user ? authHeaders(user.token) : {}) },
+        body: '{"draft":',
+      })
+    const response = await malformed(runner)
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'Invalid JSON body' })
+    // Authorization still answers first: the body is never read for a caller who may not send.
+    expect((await malformed(reader)).status).toBe(403)
+    expect((await malformed(null)).status).toBe(401)
   })
 })
 

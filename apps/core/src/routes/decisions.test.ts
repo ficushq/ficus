@@ -4,12 +4,15 @@ import { Hono } from 'hono'
 import type { DecisionFeatureView } from '@ficus/shared'
 import { db, settings } from '../db'
 import { identityMiddleware } from '../middleware/identity'
+import { jsonBodyErrorHandler, jsonBodyErrorMiddleware } from '../middleware/json-body-errors'
 import { DECISION_FEATURES_KEY } from '../services/decisions/store'
 import { getSettingsStore, resetSettingsStore } from '../services/settings'
 import { authHeaders, cleanupTestRbac, createTestAdmin, type TestUser } from '../test-utils'
 import decisionsRouter from './decisions'
 
 const app = new Hono()
+app.use('*', jsonBodyErrorMiddleware)
+app.onError(jsonBodyErrorHandler)
 app.use('*', identityMiddleware)
 app.route('/api/decisions', decisionsRouter)
 
@@ -65,5 +68,24 @@ describe('decision feature switches', () => {
   test('features without an instance switch are refused', async () => {
     expect((await put('github-firewall', 'off')).status).toBe(400)
     expect((await put('nonsense', 'off')).status).toBe(400)
+  })
+})
+
+describe('PUT /api/decisions/eval-capture', () => {
+  const putRaw = (body: string) =>
+    app.request('/api/decisions/eval-capture', {
+      method: 'PUT',
+      headers: { ...authHeaders(admin.token), 'content-type': 'application/json' },
+      body,
+    })
+
+  test('a body that is not JSON is refused as one; valid JSON of the wrong shape names the shape', async () => {
+    const malformed = await putRaw('{"enabled":')
+    expect(malformed.status).toBe(400)
+    expect(await malformed.json()).toEqual({ error: 'Invalid JSON body' })
+
+    const wrongShape = await putRaw(JSON.stringify({ enabled: 'yes' }))
+    expect(wrongShape.status).toBe(400)
+    expect(await wrongShape.json()).toEqual({ error: 'Send {enabled: true|false}' })
   })
 })

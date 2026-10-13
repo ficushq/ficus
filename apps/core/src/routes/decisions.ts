@@ -74,7 +74,7 @@ app.get('/', requirePermission('provider-auth:read'), async (c) =>
  * Off by default; refused on hosted instances, whose users' text is never kept for evals.
  */
 app.put('/eval-capture', requirePermission('provider-auth:write'), async (c) => {
-  const parsed = z.object({ enabled: z.boolean() }).safeParse(await c.req.json().catch(() => null))
+  const parsed = z.object({ enabled: z.boolean() }).safeParse(await c.req.json())
   if (!parsed.success) return c.json({ error: 'Send {enabled: true|false}' }, 400)
   try {
     await setEvalCapture(parsed.data.enabled, auditActor(c.get('identity') as Identity))
