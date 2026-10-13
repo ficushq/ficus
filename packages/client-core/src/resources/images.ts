@@ -40,5 +40,13 @@ export function imagesResource(t: Transport) {
       })
       return data.imageIds
     },
+
+    /**
+     * Delete the caller's own staged upload: an image they uploaded with no agent or squad that
+     * was never sent. Core refuses anything else, with the same answer as for an unknown image.
+     */
+    deleteStagedImage: async (id: string): Promise<void> => {
+      await t.request(`/images/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    },
   }
 }
