@@ -31,10 +31,17 @@ async function renderMessage(metadata: MessageMetadata, content = 'Look at this'
       </QueryClientProvider>
     )
   )
+  // Keys go to whatever holds focus, as in a browser, and travel the whole capture and bubble path.
   const pressKey = (key: string, init: KeyboardEventInit = {}) =>
     dom.act(async () => {
-      document.dispatchEvent(
-        new dom.window.KeyboardEvent('keydown', { key, bubbles: true, ...init }) as unknown as KeyboardEvent
+      const target = document.activeElement ?? document.body
+      target.dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', {
+          key,
+          bubbles: true,
+          cancelable: true,
+          ...init,
+        }) as unknown as KeyboardEvent
       )
     })
   return {
@@ -186,6 +193,31 @@ test('a message with several images can be stepped through with buttons and arro
     await view.click(thumbnails[1]!)
     expect(view.previewSrc()).toContain('img-b')
   } finally {
+    await view.cleanup()
+  }
+})
+
+test('the preview takes Escape and the arrow keys before the surface hosting the chat can react to them', async () => {
+  const view = await renderMessage({ imageIds: ['img-a', 'img-b'] })
+  // Fullscreen chats, the Assistant bar and the chat drawer close or step back on a document-level
+  // keydown; they must not also act on a key that only meant "close/step the picture".
+  const hostSaw: string[] = []
+  const host = (event: Event) => hostSaw.push((event as KeyboardEvent).key)
+  view.document.addEventListener('keydown', host)
+  try {
+    await view.click(view.thumbnails()[0]!)
+    await view.pressKey('ArrowRight')
+    expect(view.previewSrc()).toContain('img-b')
+    await view.pressKey('Escape')
+    expect(view.dialog()).toBeNull()
+    expect(hostSaw).toEqual([])
+
+    // With the preview closed the same keys reach the host again.
+    await view.pressKey('Escape')
+    await view.pressKey('ArrowRight')
+    expect(hostSaw).toEqual(['Escape', 'ArrowRight'])
+  } finally {
+    view.document.removeEventListener('keydown', host)
     await view.cleanup()
   }
 })

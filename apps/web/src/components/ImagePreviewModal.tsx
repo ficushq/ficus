@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { useStableRef } from '../hooks/useStableRef'
 import { ChevronRightIcon } from './icons'
 import { Modal } from './Modal'
 
@@ -38,19 +39,32 @@ export function ImagePreviewModal({
   const current = images[index]
   const canStep = count > 1
 
+  const imageRef = useRef<HTMLImageElement>(null)
+  const onCloseRef = useStableRef(onClose)
+  const onIndexChangeRef = useStableRef(onIndexChange)
+
   useEffect(() => {
-    if (!isOpen || !canStep) return
+    if (!isOpen) return
+    // Capture phase on window, like the shared popups: the surfaces that host a chat (fullscreen chat,
+    // the Assistant bar, the chat drawer) close or step back on a document-level keydown, and one
+    // Escape must close only the picture.
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
       // With a modifier the arrows belong to the browser and the desktop shell (history navigation).
-      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-      const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
-      if (step === 0) return
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const step = !canStep ? 0 : event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+      if (event.key !== 'Escape' && step === 0) return
+      // Only while this is the topmost dialog; anything opened above it gets its keys first.
+      const topmost = [...document.querySelectorAll('.ficus-modal-backdrop[data-state="open"]')].at(-1)
+      if (!topmost || !imageRef.current || !topmost.contains(imageRef.current)) return
       event.preventDefault()
-      onIndexChange((index + step + count) % count)
+      event.stopImmediatePropagation()
+      if (event.key === 'Escape') onCloseRef.current()
+      else onIndexChangeRef.current((index + step + count) % count)
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isOpen, canStep, index, count, onIndexChange])
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [isOpen, canStep, index, count, onCloseRef, onIndexChangeRef])
 
   const position = `${index + 1} of ${count}`
 
@@ -61,7 +75,6 @@ export function ImagePreviewModal({
       title="Image preview"
       size="content"
       noChildPadding
-      closeOnEscape
       headerExtra={
         canStep && (
           <span data-image-position aria-live="polite" className="text-xs text-muted tabular-nums">
@@ -96,6 +109,7 @@ export function ImagePreviewModal({
     >
       {current && (
         <img
+          ref={imageRef}
           key={current.id}
           src={current.src}
           alt={canStep ? `Attached image ${position}` : 'Attached image'}
