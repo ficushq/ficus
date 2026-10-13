@@ -1,0 +1,1 @@
+ALTER TABLE "work_streams" ADD COLUMN "dependency_edges" jsonb DEFAULT '{}'::jsonb NOT NULL;

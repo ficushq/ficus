@@ -2,7 +2,7 @@ import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stre
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { eq, like } from 'drizzle-orm'
 import { db } from '../../db'
-import { squads, workStreams } from '../../db/schema'
+import { squads, workStreams, workStreamWaits } from '../../db/schema'
 import { Squad } from '../../entities/Squad'
 import { computePriorityAnnotations } from './priority-annotations'
 import { openWait } from './waits'
@@ -55,6 +55,39 @@ describe('computePriorityAnnotations', () => {
     // Admitted streams get neither.
     expect(annotations.get(holder.id)?.queuePosition).toBeUndefined()
     expect(annotations.get(holder.id)?.waitingOnDependencies).toBeUndefined()
+  })
+
+  it('a ready edge that unlocked makes the stream eligible; one that has not still waits', async () => {
+    await squad.update({ maxConcurrentWorkStreams: 1 })
+    const holder = await storedLegacyWorkStream({ squadId: squad.id, title: `${testPrefix} holder` })
+    const waiting = await storedLegacyWorkStream({
+      squadId: squad.id,
+      title: `${testPrefix} waiting-ready`,
+      dependsOn: [{ id: holder.id, condition: 'ready' }],
+    })
+    const unlocked = await storedLegacyWorkStream({
+      squadId: squad.id,
+      title: `${testPrefix} unlocked-ready`,
+      dependsOn: [{ id: holder.id, condition: 'ready' }],
+    })
+    // The edge unlocked (its wait closed with it) while the cap kept the stream queued.
+    await db
+      .update(workStreams)
+      .set({
+        dependencyEdges: { [holder.id]: { condition: 'ready', readyUnlockedAt: new Date().toISOString() } },
+      })
+      .where(eq(workStreams.id, unlocked.id))
+    await db
+      .update(workStreamWaits)
+      .set({ closedAt: new Date(), resolution: 'satisfied' })
+      .where(eq(workStreamWaits.workStreamId, unlocked.id))
+
+    const annotations = await computePriorityAnnotations([holder, waiting, unlocked])
+
+    expect(annotations.get(waiting.id)?.waitingOnDependencies).toBe(true)
+    expect(annotations.get(waiting.id)?.queuePosition).toBeUndefined()
+    expect(annotations.get(unlocked.id)?.waitingOnDependencies).toBeUndefined()
+    expect(annotations.get(unlocked.id)?.queuePosition).toBe(1)
   })
 
   it('gives no queue position to a queued stream with any open wait', async () => {

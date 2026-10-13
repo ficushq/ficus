@@ -23,6 +23,9 @@ import { db, squads, workStreams, uuidPrefixCondition, AmbiguousPrefixError } fr
 import { executions, workStreamWaits, workStreamFlowRuns, workStreamWorktrees, worktreeCleanupJobs } from '../db/schema'
 import {
   describeCodeHostReference,
+  isDependencyEdgeSatisfied,
+  isStackedDependencyEdge,
+  normalizeDependencyInputs,
   WORK_STREAM_ADMITTED_STATUSES,
   workStreamSourceLinkKindSchema,
   workStreamWaitActor,
@@ -41,7 +44,15 @@ import type {
   WorkStreamMetrics,
   WorkStreamRuntime,
   WorkStreamSourceLink,
+  WorkStreamDependencyCondition,
+  WorkStreamDependencyEdge,
+  WorkStreamDependencyInput,
 } from '@ficus/shared'
+import {
+  assertNoStackedDeliveryHold,
+  nextDependencyEdges,
+  type DependencyEdges,
+} from '../services/work-streams/dependency-edges'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import { listWorkStreamSubscriberIds } from '../services/work-streams/subscriptions'
 import { BaseEntity } from './base'
@@ -425,6 +436,10 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   declare requestingUserId: string | null
   declare agentIds: string[] | null
   declare dependsOn: string[]
+  /** Server-owned state of `ready` edges, keyed by dependency ID. */
+  declare dependencyEdges: DependencyEdges
+  /** Per-edge view for responses; populated with the inverse edges. */
+  dependencies: WorkStreamDependencyEdge[] = []
   /** Computed inverse edges within this stream's squad; never persisted. */
   dependedOnBy: string[] = []
   declare handoffMessage: string | null
@@ -447,7 +462,24 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     this.metadata = (data.metadata as Record<string, unknown>) ?? {}
     this.assignedReviewerIds = data.assignedReviewerIds ?? []
     this.dependsOn = data.dependsOn ?? []
+    this.dependencyEdges = data.dependencyEdges ?? {}
     this.agentIds = data.agentIds ?? null
+  }
+
+  /** Resolve caller-written dependencies (IDs, prefixes or numbers) to full IDs with their conditions. */
+  private static async resolveDependencyInputs(inputs: readonly WorkStreamDependencyInput[]): Promise<{
+    ids: string[]
+    conditions: Record<string, WorkStreamDependencyCondition>
+  }> {
+    const requested = normalizeDependencyInputs(inputs)
+    const ids: string[] = []
+    const conditions: Record<string, WorkStreamDependencyCondition> = {}
+    for (const reference of requested.ids) {
+      const id = (await WorkStream.mustFind(reference)).id
+      if (!ids.includes(id)) ids.push(id)
+      conditions[id] = requested.conditions[reference]
+    }
+    return { ids, conditions }
   }
 
   /** Populate inverse dependency edges from authoritative same-squad forward edges. */
@@ -455,10 +487,47 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     if (streams.length === 0) return streams
     const squadIds = [...new Set(streams.map((stream) => stream.squadId))]
     const rows = await db
-      .select({ id: workStreams.id, squadId: workStreams.squadId, dependsOn: workStreams.dependsOn })
+      .select({
+        id: workStreams.id,
+        squadId: workStreams.squadId,
+        dependsOn: workStreams.dependsOn,
+        status: workStreams.status,
+      })
       .from(workStreams)
       .where(inArray(workStreams.squadId, squadIds))
     const requestedIds = new Set(streams.map((stream) => stream.id))
+    // Dependencies may live in another squad: resolve those statuses in one extra read.
+    const statusOf = new Map<string, string>(rows.map((row) => [row.id, row.status]))
+    const externalIds = [...new Set(streams.flatMap((stream) => stream.dependsOn))].filter((id) => !statusOf.has(id))
+    if (externalIds.length > 0) {
+      const external = await db
+        .select({ id: workStreams.id, status: workStreams.status })
+        .from(workStreams)
+        .where(inArray(workStreams.id, externalIds))
+      for (const row of external) statusOf.set(row.id, row.status)
+    }
+    for (const stream of streams) {
+      stream.dependencies = stream.dependsOn.map((id) => {
+        const edge = stream.dependencyEdges[id]
+        const status = statusOf.get(id)
+        return {
+          workStreamId: id,
+          condition: edge?.condition === 'ready' ? 'ready' : 'done',
+          satisfied: isDependencyEdgeSatisfied(stream.dependencyEdges, id, status),
+          ...(edge?.readyUnlockedAt ? { unlockedAt: edge.readyUnlockedAt } : {}),
+          ...(isStackedDependencyEdge(edge)
+            ? {
+                stack: {
+                  mode: edge.stack.mode,
+                  branch: edge.stack.branch,
+                  ...(edge.stack.headSha ? { headSha: edge.stack.headSha } : {}),
+                },
+                holdsDelivery: status !== 'done',
+              }
+            : {}),
+        }
+      })
+    }
     const inverse = new Map<string, string[]>()
     for (const row of rows) {
       for (const dependencyId of row.dependsOn ?? []) {
@@ -561,6 +630,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       assignedReviewerIds: workStreams.assignedReviewerIds,
       agentIds: workStreams.agentIds,
       dependsOn: workStreams.dependsOn,
+      dependencyEdges: workStreams.dependencyEdges,
       handoffMessage: workStreams.handoffMessage,
       files: workStreams.files,
       metadata: workStreams.metadata,
@@ -653,11 +723,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    * Create a new work stream.
    */
   static async create(input: CreateWorkStreamInput): Promise<WorkStream> {
-    if (input.dependsOn)
-      input = {
-        ...input,
-        dependsOn: await Promise.all(input.dependsOn.map(async (id) => (await WorkStream.mustFind(id)).id)),
-      }
+    const dependencies = await WorkStream.resolveDependencyInputs(input.dependsOn ?? [])
     // Creation has one path. Stored legacy streams retain their existing lifecycle.
     if (
       input.agents !== undefined ||
@@ -726,7 +792,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         squadId: input.squadId,
         metadata: mergedMetadata,
         resolved: attachmentCheck,
-        dependsOn: input.dependsOn ?? [],
+        dependsOn: dependencies.ids,
       })
       const [created] = await tx
         .insert(workStreams)
@@ -743,7 +809,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           assignedReviewerIds: input.assignedReviewerIds ?? [],
           agentIds: null,
           handoffMessage: input.handoffMessage ?? null,
-          dependsOn: input.dependsOn ?? [],
+          dependsOn: dependencies.ids,
+          dependencyEdges: nextDependencyEdges(dependencies.ids, dependencies.conditions, undefined),
           priority: input.priority ?? 'normal',
           metadata: mergedMetadata,
         })
@@ -769,6 +836,12 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     })
 
     const ws = new WorkStream(row)
+    // Before any participant is dispatched: a stream admitted on a `ready`
+    // dependency starts on that dependency's branch.
+    if (ws.status !== 'queued' && Object.keys(ws.dependencyEdges).length > 0) {
+      const { settleStackDecisionsSafely } = await import('../services/work-streams/dependency-stacking')
+      await settleStackDecisionsSafely(ws.id)
+    }
     const { ensureFlowDispatch } = await import('../services/workflows/execution')
     await ensureFlowDispatch(ws.id)
     eventEmitter.emit('workStream.created', { workStreamId: ws.id, squadId: ws.squadId })
@@ -1034,14 +1107,11 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       throw new Error('Cannot continue or assign a canceled work stream')
     }
 
-    if (input.dependsOn)
-      input = {
-        ...input,
-        dependsOn: await Promise.all(input.dependsOn.map(async (id) => (await WorkStream.mustFind(id)).id)),
-      }
+    const dependencies =
+      input.dependsOn !== undefined ? await WorkStream.resolveDependencyInputs(input.dependsOn) : undefined
     // dependsOn writes must keep the squad's dependency graph a DAG (cycles
     // would break effective-priority computation and admission eligibility).
-    if (input.dependsOn !== undefined && input.dependsOn.length > 0) {
+    if (dependencies && dependencies.ids.length > 0) {
       const { assertNoDependencyCycle } = await import('../services/work-streams/dependency-graph')
       const squadStreams = await db
         .select({ id: workStreams.id, title: workStreams.title, dependsOn: workStreams.dependsOn })
@@ -1050,7 +1120,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       assertNoDependencyCycle(
         squadStreams.map((s) => ({ ...s, dependsOn: s.dependsOn ?? [] })),
         this.id,
-        input.dependsOn
+        dependencies.ids
       )
     }
 
@@ -1109,6 +1179,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       branch: _branch,
       worktree: _worktree,
       baseBranch: _baseBranch,
+      dependsOn: _dependsOn,
       ...dbInput
     } = input
 
@@ -1229,7 +1300,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           worktreeAttachmentPaths(mergedMetadata ?? currentMetadata)
         ),
         resolved: attachmentCheck,
-        dependsOn: input.dependsOn ?? locked.dependsOn ?? [],
+        dependsOn: dependencies?.ids ?? locked.dependsOn ?? [],
       })
       const nextStatus = input.status ?? locked.status
 
@@ -1241,6 +1312,12 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         if (openWaits.length > 0) {
           throw new WorkStreamOpenWaitsError(openWaits.map((w) => ({ id: w.id, type: w.type })))
         }
+        // A stream built on a dependency's unmerged branch is delivered only
+        // after that dependency has merged.
+        await assertNoStackedDeliveryHold(tx, {
+          dependsOn: dependencies?.ids ?? locked.dependsOn,
+          dependencyEdges: locked.dependencyEdges,
+        })
       }
 
       let completionNow = now
@@ -1266,6 +1343,13 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         .update(workStreams)
         .set({
           ...dbInput,
+          ...(dependencies
+            ? {
+                dependsOn: dependencies.ids,
+                // Existing `ready` edges keep their unlock and stack state.
+                dependencyEdges: nextDependencyEdges(dependencies.ids, dependencies.conditions, locked.dependencyEdges),
+              }
+            : {}),
           ...(mergedMetadata !== undefined ? { metadata: mergedMetadata } : {}),
           updatedAt: now,
         })
@@ -1280,8 +1364,14 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
 
       // Keep the system-maintained dependency waits in lockstep with the
       // authoritative dependsOn edge list (same transaction as the write).
-      if (input.dependsOn !== undefined) {
+      if (dependencies) {
         await syncDependencyWaits(tx, this.id, updated.dependsOn ?? [])
+        // The sync may have unlocked a `ready` edge: return what is stored.
+        const [edges] = await tx
+          .select({ dependencyEdges: workStreams.dependencyEdges })
+          .from(workStreams)
+          .where(eq(workStreams.id, this.id))
+        if (edges) updated.dependencyEdges = edges.dependencyEdges
       }
 
       // Terminal transitions settle waits transactionally:
@@ -1338,6 +1428,12 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
 
     await this.assignMutationRow(row)
     await Promise.all(observerAfterCommit.map((callback) => callback()))
+    // A dependency added to an already admitted stream may have unlocked on the spot.
+    if (dependencies) {
+      const { settleStackDecisionsSafely } = await import('../services/work-streams/dependency-stacking')
+      await settleStackDecisionsSafely(this.id)
+      await this.assignMutationRow((await db.select().from(workStreams).where(eq(workStreams.id, this.id)))[0] ?? row)
+    }
 
     const payload = { workStreamId: this.id, squadId: this.squadId }
 
@@ -1690,6 +1786,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         return { row: updated, completed: false as const }
       }
 
+      await assertNoStackedDeliveryHold(tx, locked)
       const lockedMetadata = (locked.metadata as Record<string, unknown> | null) ?? {}
       const metadata = withTerminalCompletion(
         lockedMetadata,
@@ -2244,7 +2341,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     if (this.dependsOn.length === 0) return true
 
     const deps = await Promise.all(this.dependsOn.map((id) => WorkStream.find(id)))
-    return deps.every((dep) => dep?.status === 'done')
+    return this.dependsOn.every((id, index) => isDependencyEdgeSatisfied(this.dependencyEdges, id, deps[index]?.status))
   }
 
   // ---------------------------------------------------------------------------
@@ -2511,6 +2608,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       assignedReviewerIds: this.assignedReviewerIds,
       agentIds: this.agentIds,
       dependsOn: this.dependsOn,
+      dependencies: this.dependencies,
       dependedOnBy: this.dependedOnBy,
       handoffMessage: this.handoffMessage,
       files: this.files,

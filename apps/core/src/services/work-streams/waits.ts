@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import {
+  isDependencyEdgeSatisfied,
   workStreamWaitActor,
   type WorkStreamWait,
   type WorkStreamWaitActor,
@@ -9,6 +10,7 @@ import {
 } from '@ficus/shared'
 import { db } from '../../db'
 import { workStreams, workStreamWaits } from '../../db/schema'
+import { loadReadyDependencyIds, pendingReadyDependencyIds, unlockReadyEdge } from './dependency-edges'
 
 export type WorkStreamWaitRow = InferSelectModel<typeof workStreamWaits>
 
@@ -204,12 +206,45 @@ export async function listWaitHistory(dbx: DbHandle, workStreamId: string): Prom
  * Reconcile a stream's SYSTEM-maintained dependency waits against its
  * authoritative `dependsOn` edge list (called in the same transaction as the
  * create/update that set the edges):
+ * - unlock `ready` edges whose dependency is ready right now
  * - open one wait per unsatisfied dependency that has no open wait yet
- * - close (`satisfied`) open waits whose dependency is now done
+ * - close (`satisfied`) open waits whose edge is now satisfied
  * - close (`cleared`) open waits whose edge was removed
- * Terminal streams get no new waits.
+ * An edge is satisfied when its dependency is done, or when it is a `ready`
+ * edge that has unlocked. Terminal streams get no new waits or unlocks.
  */
 export async function syncDependencyWaits(tx: DbHandle, workStreamId: string, dependsOn: string[]): Promise<void> {
+  const deps = [...new Set(dependsOn)]
+  const [self] = await tx
+    .select({ status: workStreams.status, dependencyEdges: workStreams.dependencyEdges })
+    .from(workStreams)
+    .where(eq(workStreams.id, workStreamId))
+  const selfTerminal = !self || self.status === 'done' || self.status === 'canceled'
+  const edges = { ...(self?.dependencyEdges ?? {}) }
+
+  const depStatuses =
+    deps.length > 0
+      ? await tx
+          .select({ id: workStreams.id, status: workStreams.status })
+          .from(workStreams)
+          .where(inArray(workStreams.id, deps))
+      : []
+  const statusOf = new Map(depStatuses.map((d) => [d.id, d.status]))
+
+  if (!selfTerminal) {
+    const pending = pendingReadyDependencyIds({ dependsOn: deps, dependencyEdges: edges }).filter(
+      (dep) => statusOf.get(dep) !== 'done'
+    )
+    const ready = await loadReadyDependencyIds(tx, pending)
+    for (const dep of pending) {
+      if (!ready.has(dep)) continue
+      const at = new Date()
+      if (await unlockReadyEdge(tx, workStreamId, dep, at))
+        edges[dep] = { ...edges[dep], readyUnlockedAt: at.toISOString() }
+    }
+  }
+  const satisfiedDep = (dep: string) => isDependencyEdgeSatisfied(edges, dep, statusOf.get(dep))
+
   const openDepWaits = (
     await tx
       .select()
@@ -222,26 +257,9 @@ export async function syncDependencyWaits(tx: DbHandle, workStreamId: string, de
         )
       )
   ).filter((w): w is WorkStreamWaitRow & { referenceId: string } => w.referenceId !== null)
-
-  const deps = [...new Set(dependsOn)]
-  const depStatuses =
-    deps.length > 0
-      ? await tx
-          .select({ id: workStreams.id, status: workStreams.status })
-          .from(workStreams)
-          .where(inArray(workStreams.id, deps))
-      : []
-  const statusOf = new Map(depStatuses.map((d) => [d.id, d.status]))
-
-  const [self] = await tx
-    .select({ status: workStreams.status })
-    .from(workStreams)
-    .where(eq(workStreams.id, workStreamId))
-  const selfTerminal = !self || self.status === 'done' || self.status === 'canceled'
-
   const openByRef = new Map(openDepWaits.map((w) => [w.referenceId, w]))
 
-  // Close: edge removed -> cleared; dependency done -> satisfied.
+  // Close: edge removed -> cleared; edge satisfied -> satisfied.
   const removed = openDepWaits.filter((w) => !deps.includes(w.referenceId)).map((w) => w.id)
   if (removed.length > 0) {
     await tx
@@ -250,7 +268,7 @@ export async function syncDependencyWaits(tx: DbHandle, workStreamId: string, de
       .where(and(inArray(workStreamWaits.id, removed), isNull(workStreamWaits.closedAt)))
   }
   const satisfied = openDepWaits
-    .filter((w) => deps.includes(w.referenceId) && statusOf.get(w.referenceId) === 'done')
+    .filter((w) => deps.includes(w.referenceId) && satisfiedDep(w.referenceId))
     .map((w) => w.id)
   if (satisfied.length > 0) {
     await tx
@@ -259,9 +277,9 @@ export async function syncDependencyWaits(tx: DbHandle, workStreamId: string, de
       .where(and(inArray(workStreamWaits.id, satisfied), isNull(workStreamWaits.closedAt)))
   }
 
-  // Open: unsatisfied (not done) dependency without an open wait.
+  // Open: unsatisfied dependency without an open wait.
   if (!selfTerminal) {
-    const toOpen = deps.filter((dep) => statusOf.get(dep) !== 'done' && !openByRef.has(dep))
+    const toOpen = deps.filter((dep) => !satisfiedDep(dep) && !openByRef.has(dep))
     for (const dep of toOpen) {
       await tx.insert(workStreamWaits).values({
         workStreamId,

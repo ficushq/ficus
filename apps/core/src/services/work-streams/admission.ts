@@ -4,6 +4,7 @@ import {
   WORK_STREAM_ADMITTED_STATUSES,
   compareByEffectivePriorityThenCreatedAt,
   computeEffectivePriorities,
+  isDependencyEdgeSatisfied,
   isLiveAgentStatus,
   type AgentStatus,
   type ExecutionStatus,
@@ -16,6 +17,12 @@ import { createLogger } from '../../lib/infra/logger'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { collectWorkStreamAgentIds } from './agent-ids'
 import { invalidateContinuationCycle } from './continuation-state'
+import {
+  loadReadyDependencyIds,
+  pendingReadyDependencyIds,
+  unlockReadyEdge,
+  type DependencyEdges,
+} from './dependency-edges'
 
 /** Auto-park grace applied when squads.blocked_grace_minutes is NULL. */
 export const DEFAULT_BLOCKED_GRACE_MINUTES = 30
@@ -359,6 +366,7 @@ interface PromotionScanRow {
   status: WorkStreamRow['status']
   priority: WorkStreamRow['priority']
   dependsOn: string[] | null
+  dependencyEdges: DependencyEdges | null
   createdAt: Date
   metadata: unknown
 }
@@ -366,7 +374,8 @@ interface PromotionScanRow {
 /**
  * The in-transaction promotion pass. Caller MUST hold the squad-row lock (the
  * admission mutex) and pass the cap read under it. Eligible = every dependsOn
- * entry is `done` AND the stream has NO open wait (a queued stream parked on
+ * edge is satisfied (its dependency is `done`, or a `ready` edge has unlocked)
+ * AND the stream has NO open wait (a queued stream parked on
  * a review/question/manual/dependency wait holds no queue position). Each
  * winner is promoted `queued → active` with a status-guarded UPDATE so a
  * concurrent promotion can never double-admit.
@@ -383,6 +392,7 @@ async function promoteEligibleWithinTx(
       status: workStreams.status,
       priority: workStreams.priority,
       dependsOn: workStreams.dependsOn,
+      dependencyEdges: workStreams.dependencyEdges,
       createdAt: workStreams.createdAt,
       metadata: workStreams.metadata,
       pause: workStreams.pause,
@@ -390,6 +400,31 @@ async function promoteEligibleWithinTx(
     .from(workStreams)
     .where(eq(workStreams.squadId, squadId))
     .orderBy(asc(workStreams.createdAt), asc(workStreams.id))
+
+  // `ready` edges unlock here, for every live stream that still waits on one
+  // (a parked stream, or an active one inside its grace): two set-based reads,
+  // then one guarded write per edge that actually unlocks.
+  const awaitingReady = all
+    .filter((s) => s.status !== 'done' && s.status !== 'canceled')
+    .map((s) => ({ stream: s, pending: pendingReadyDependencyIds(s) }))
+    .filter((entry) => entry.pending.length > 0)
+  if (awaitingReady.length > 0) {
+    const ready = await loadReadyDependencyIds(
+      tx,
+      awaitingReady.flatMap((entry) => entry.pending)
+    )
+    for (const { stream, pending } of awaitingReady) {
+      for (const dep of pending) {
+        if (!ready.has(dep)) continue
+        const at = new Date()
+        if (await unlockReadyEdge(tx, stream.id, dep, at))
+          stream.dependencyEdges = {
+            ...stream.dependencyEdges,
+            [dep]: { ...stream.dependencyEdges![dep], readyUnlockedAt: at.toISOString() },
+          }
+      }
+    }
+  }
 
   const queued = all.filter((s) => s.status === 'queued' && !s.pause)
   if (queued.length === 0) return { promotedRows: [], canceledDepRows: [] }
@@ -412,7 +447,13 @@ async function promoteEligibleWithinTx(
     ...externalDeps.map((s): [string, string] => [s.id, s.status]),
   ])
 
-  const canceledDepRows = queued.filter((s) => (s.dependsOn ?? []).some((d) => statusOf.get(d) === 'canceled'))
+  // A `ready` edge that already unlocked is settled: its dependency being
+  // canceled afterwards is a notice to the dependent, not a stuck stream.
+  const canceledDepRows = queued.filter((s) =>
+    (s.dependsOn ?? []).some(
+      (d) => statusOf.get(d) === 'canceled' && !isDependencyEdgeSatisfied(s.dependencyEdges, d, 'canceled')
+    )
+  )
 
   if (freeSlots === 0) return { promotedRows: [], canceledDepRows }
 
@@ -434,7 +475,7 @@ async function promoteEligibleWithinTx(
 
   const eligible = queued
     .filter((s) => !hasOpenWait.has(s.id))
-    .filter((s) => (s.dependsOn ?? []).every((d) => statusOf.get(d) === 'done'))
+    .filter((s) => (s.dependsOn ?? []).every((d) => isDependencyEdgeSatisfied(s.dependencyEdges, d, statusOf.get(d))))
     .map((s) => ({ id: s.id, createdAt: s.createdAt, effective: effective.get(s.id)?.effective ?? s.priority }))
     .sort(compareByEffectivePriorityThenCreatedAt)
 
@@ -454,6 +495,12 @@ async function promoteEligibleWithinTx(
 async function emitPromotionEffects(promoted: WorkStream[]): Promise<void> {
   for (const ws of promoted) {
     eventEmitter.emit('workStream.updated', { workStreamId: ws.id, squadId: ws.squadId })
+    // A stream admitted on a `ready` dependency starts on that dependency's
+    // branch: settle it before anyone is dispatched or notified.
+    if (Object.keys(ws.dependencyEdges).length > 0) {
+      const { settleStackDecisionsSafely } = await import('./dependency-stacking')
+      await settleStackDecisionsSafely(ws.id)
+    }
     const { ensureFlowDispatch } = await import('../workflows/execution')
     if (await ensureFlowDispatch(ws.id)) continue
     if (ws.assigneeAgentId) {
@@ -677,13 +724,22 @@ export async function runSquadAdmissionMaintenanceWithRetry(
 export function registerAdmissionHandlers(): void {
   if (handlersRegistered) return
   handlersRegistered = true
-  eventEmitter.on('workStream.done', async ({ squadId }) => {
+  // Streams built on this one hear that it merged or was canceled (the reconciler is the backstop).
+  const tellStackedDependents = async (workStreamId: string) => {
+    const { deliverStackNoticesForDependency } = await import('./dependency-stacking')
+    await deliverStackNoticesForDependency(workStreamId).catch((err) =>
+      log.warn(`Stack notices for dependents of work stream ${workStreamId} failed:`, err)
+    )
+  }
+  eventEmitter.on('workStream.done', async ({ workStreamId, squadId }) => {
+    if (workStreamId) await tellStackedDependents(workStreamId)
     if (!squadId) return
     await promoteEligibleQueuedStreams(squadId).catch((err) =>
       log.warn(`Admission on workStream.done failed for squad ${squadId}:`, err)
     )
   })
-  eventEmitter.on('workStream.canceled', async ({ squadId }) => {
+  eventEmitter.on('workStream.canceled', async ({ workStreamId, squadId }) => {
+    if (workStreamId) await tellStackedDependents(workStreamId)
     if (!squadId) return
     await promoteEligibleQueuedStreams(squadId).catch((err) =>
       log.warn(`Admission on workStream.canceled failed for squad ${squadId}:`, err)
@@ -714,5 +770,36 @@ export async function runAdmissionReconcilerOnce(): Promise<void> {
     } catch (err) {
       log.warn(`Admission reconciler failed for squad ${squadId}:`, err)
     }
+  }
+  try {
+    const { reconcileStackedStreams } = await import('./dependency-stacking')
+    await reconcileStackedStreams()
+  } catch (err) {
+    log.warn('Stacked work-stream reconciliation failed:', err)
+  }
+}
+
+/**
+ * A stream's work became ready (its flow reached completion with a bound
+ * delivery pull request): run admission now in every squad holding a stream
+ * that waits on it through a `ready` edge, instead of at the next reconciler
+ * tick. One read; nothing happens for a stream nobody waits on.
+ */
+export async function admitDependentsOfReadyStream(workStreamId: string): Promise<void> {
+  const waiting = await db
+    .selectDistinct({ squadId: workStreams.squadId })
+    .from(workStreams)
+    .where(
+      and(
+        sql`${workStreams.dependsOn} @> ARRAY[${workStreamId}]::uuid[]`,
+        inArray(workStreams.status, ['active', 'queued']),
+        sql`${workStreams.dependencyEdges}->(${workStreamId}::text)->>'condition' = 'ready'`,
+        sql`${workStreams.dependencyEdges}->(${workStreamId}::text)->>'readyUnlockedAt' IS NULL`
+      )
+    )
+  for (const { squadId } of waiting) {
+    await promoteEligibleQueuedStreams(squadId).catch((err) =>
+      log.warn(`Admission after work stream ${workStreamId} became ready failed for squad ${squadId}:`, err)
+    )
   }
 }

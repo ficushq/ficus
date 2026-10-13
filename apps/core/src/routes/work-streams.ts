@@ -16,10 +16,12 @@ import { pauseWorkStream, resumeWorkStream } from '../services/work-streams/paus
 import { resolveActingUser } from '../services/rbac'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { Hono, type Context } from 'hono'
+import { WorkStreamStackedDeliveryHoldError } from '../services/work-streams/dependency-edges'
 import { createMiddleware } from 'hono/factory'
 import { zValidator } from '@hono/zod-validator'
 import {
   approveWorkStreamSchema,
+  InvalidDependencyConditionError,
   createWorkStreamSchema,
   updateWorkStreamSchema,
   resolveWorkStreamWaitSchema,
@@ -1192,6 +1194,9 @@ export const workStreamsRouter = new Hono()
       if (error instanceof WorkStreamTerminalTransitionError) {
         return c.json({ error: error.message, code: 'terminal_status' }, 409)
       }
+      if (error instanceof WorkStreamStackedDeliveryHoldError)
+        return c.json({ error: error.message, code: 'stacked_delivery_hold' }, 409)
+      if (error instanceof InvalidDependencyConditionError) return c.json({ error: error.message }, 400)
       if (error instanceof TrackedResourceError) return c.json({ error: error.message }, error.status)
       return c.json({ error: publicErrorMessage(error) }, 400)
     }

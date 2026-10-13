@@ -36,7 +36,7 @@ import type { VerifiedIngressEvent } from '../types'
 import { eventRuleTrigger, resolveEventRuleDecisions, routeDefaultNotifications } from './default-routing'
 import { eventTrackedResource, streamTracksEvent } from './tracked-match'
 import { bindChangeRequestFromEvent } from './delivery-binding'
-import { recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
+import { deliveryPullRequestHead, recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
 import { createLogger } from '../../../lib/infra/logger'
 
 const log = createLogger('integration-outputs')
@@ -375,6 +375,7 @@ async function routeOutputEvent(event: Event, only?: string[]) {
       )
     )
   for (const { id } of runs) {
+    let pushedHead = undefined as string | undefined
     const result = await db.transaction(async (tx) => {
       const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, id)).for('update')
       if (
@@ -408,8 +409,18 @@ async function routeOutputEvent(event: Event, only?: string[]) {
       }
       // Same locked row, same pass: what the event says about a designated delivery pull request.
       const observationChanged = await recordDeliveryObservation(tx, stream, event)
+      pushedHead = deliveryPullRequestHead(stream.metadata, event)
       return observationChanged || presentationChanged ? { workStreamId: stream.id, squadId: stream.squadId } : false
     })
+    // Streams built on this one's branch hear about its new head, once per head.
+    if (pushedHead) {
+      try {
+        const { recordDependencyHead } = await import('../../work-streams/dependency-stacking')
+        await recordDependencyHead(id, pushedHead)
+      } catch (error) {
+        log.warn(`Failed to record a new branch head for dependents of work stream ${id}:`, error)
+      }
+    }
     // Outside the transaction, and immediately: the watcher-facing event fires only once the
     // state it describes has committed, and a later stream's transaction throwing must not
     // swallow a notification for a stream whose write already committed. New delivery evidence

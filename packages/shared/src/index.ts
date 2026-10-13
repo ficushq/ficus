@@ -36,6 +36,7 @@ export * from './image-attachments'
 // That broke every tenant provision, because provisioning builds the web app
 // on the tenant VM. Server code imports it directly: `@ficus/shared/crypto`.
 export * from './work-stream-priority'
+export * from './work-stream-dependencies'
 export * from './work-stream-order'
 export * from './status-presentation'
 export * from './sandbox-processes'

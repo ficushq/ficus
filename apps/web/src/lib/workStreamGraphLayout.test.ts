@@ -121,4 +121,26 @@ describe('layoutWorkStreamGraph', () => {
     expect(byId.get('independent')!.y).toBeGreaterThan(byId.get('dependent')!.y)
     expect(result.edges.map(({ from, to }) => [from, to])).toEqual([['blocker', 'dependent']])
   })
+
+  test('edges carry the condition they wait on and whether it is satisfied', () => {
+    const result = layoutWorkStreamGraph([
+      stream({ id: 'base' }),
+      stream({ id: 'finished', status: 'done' }),
+      stream({
+        id: 'stacked',
+        dependsOn: ['base', 'finished'],
+        dependencies: [{ workStreamId: 'base', condition: 'ready', satisfied: true }],
+      }),
+      stream({
+        id: 'plain',
+        dependsOn: ['base'],
+        dependencies: [{ workStreamId: 'base', condition: 'done', satisfied: false }],
+      }),
+    ])
+    const edge = (from: string, to: string) => result.edges.find((entry) => entry.from === from && entry.to === to)!
+    expect(edge('base', 'stacked')).toMatchObject({ condition: 'ready', satisfied: true })
+    expect(edge('base', 'plain')).toMatchObject({ condition: 'done', satisfied: false })
+    // No per-edge state from the server: a plain done edge judged by the blocker's status.
+    expect(edge('finished', 'stacked')).toMatchObject({ condition: 'done', satisfied: true })
+  })
 })

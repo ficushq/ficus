@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import clsx from 'clsx'
-import { WORK_STREAM_STATUS_ROLE, workStreamTitle, type WorkStream, type WorkStreamWait } from '@ficus/shared'
+import {
+  WORK_STREAM_STATUS_ROLE,
+  workStreamTitle,
+  type WorkStream,
+  type WorkStreamDependencyEdge,
+  type WorkStreamWait,
+} from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 import { getWsDisplayState, workStreamStatusLabel } from '../lib/workStreamStatusPresentation'
 import { MarkdownContent } from './MarkdownContent'
@@ -32,6 +38,36 @@ interface DependencyRow {
   /** The stream depended on; null for a dependency wait that names none. */
   id: string | null
   wait?: WorkStreamWait
+  edge?: WorkStreamDependencyEdge
+}
+
+/**
+ * What an edge waits on and whether it is satisfied, in one line: "Waits until its pull request is
+ * ready", or "Unlocked when its pull request was ready · built on work/a · delivery held until it
+ * merges". Null when the server reported no per-edge state.
+ */
+export function dependencyConditionText(edge: WorkStreamDependencyEdge | undefined): string | null {
+  if (!edge) return null
+  const parts: string[] = []
+  if (edge.condition === 'ready')
+    parts.push(
+      !edge.satisfied
+        ? 'Waits until its pull request is ready'
+        : edge.unlockedAt
+          ? 'Unlocked when its pull request was ready'
+          : 'Satisfied'
+    )
+  else parts.push(edge.satisfied ? 'Satisfied' : 'Waits until it is done')
+  if (edge.stack)
+    parts.push(
+      edge.stack.mode === 'stacked'
+        ? `built on ${edge.stack.branch}`
+        : edge.stack.mode === 'included'
+          ? `${edge.stack.branch} is contained in this branch’s base`
+          : `merge ${edge.stack.branch} in by hand`
+    )
+  if (edge.holdsDelivery) parts.push('delivery held until it merges')
+  return parts.join(' · ')
 }
 
 /**
@@ -41,11 +77,14 @@ interface DependencyRow {
  */
 export function WorkStreamDependencies({
   dependsOn,
+  dependencies,
   waits,
   streams,
   onSelectWorkStream,
 }: {
   dependsOn: string[]
+  /** Per-edge condition and state; older servers omit it. */
+  dependencies?: WorkStreamDependencyEdge[]
   /** The stream's open waits; only dependency waits are used. */
   waits: WorkStreamWait[]
   streams: Map<string, WorkStream>
@@ -55,6 +94,7 @@ export function WorkStreamDependencies({
   const rows: DependencyRow[] = Array.from(new Set(dependsOn)).map((id) => ({
     id,
     wait: dependencyWaits.find((wait) => wait.referenceId === id),
+    edge: dependencies?.find((edge) => edge.workStreamId === id),
   }))
   for (const wait of dependencyWaits)
     if (!rows.some((row) => row.wait === wait)) rows.push({ id: wait.referenceId, wait })
@@ -83,6 +123,20 @@ export function WorkStreamDependencies({
                 </span>
               )}
             </div>
+            {dependencyConditionText(row.edge) && (
+              <div
+                data-condition={row.edge!.condition}
+                data-satisfied={row.edge!.satisfied}
+                className={clsx(
+                  'mt-0.5 pl-3.5 text-xs',
+                  row.edge!.holdsDelivery
+                    ? 'text-status-attention-700 dark:text-status-attention-300'
+                    : 'text-secondary'
+                )}
+              >
+                {dependencyConditionText(row.edge)}
+              </div>
+            )}
             {row.wait?.message && (
               <div className="mt-0.5 pl-3.5 text-xs text-secondary">
                 <MarkdownContent variant="document">{row.wait.message}</MarkdownContent>
