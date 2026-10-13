@@ -114,33 +114,117 @@ export async function unlockReadyEdge(
 }
 
 /**
- * Write an edge's `stack` state: `replace` records the one-time decision, otherwise the patch is
- * merged into the existing decision. No-op when the edge is gone. Returns whether a row changed.
+ * Take back an unlock the stream never started on (no `stack` decision), and
+ * reopen its dependency wait. Used when the dependency is canceled while the
+ * dependent is still queued: the stream is then exactly a stream whose
+ * dependency was canceled before unlocking. Returns whether the edge changed.
  */
+export async function relockUnstartedReadyEdge(tx: DbHandle, streamId: string, dependencyId: string): Promise<boolean> {
+  const relocked = await tx
+    .update(workStreams)
+    .set({
+      dependencyEdges: sql`${workStreams.dependencyEdges} #- ${`{${dependencyId},readyUnlockedAt}`}::text[]`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(workStreams.id, streamId),
+        eq(workStreams.status, 'queued'),
+        sql`${edgeOf(dependencyId)}->>'readyUnlockedAt' IS NOT NULL`,
+        sql`${edgeOf(dependencyId)}->'stack' IS NULL`
+      )
+    )
+    .returning({ id: workStreams.id })
+  if (relocked.length === 0) return false
+  const [open] = await tx
+    .select({ id: workStreamWaits.id })
+    .from(workStreamWaits)
+    .where(
+      and(
+        eq(workStreamWaits.workStreamId, streamId),
+        eq(workStreamWaits.type, 'dependency'),
+        eq(workStreamWaits.referenceId, dependencyId),
+        isNull(workStreamWaits.closedAt)
+      )
+    )
+  if (!open)
+    await tx
+      .insert(workStreamWaits)
+      .values({ workStreamId: streamId, type: 'dependency', referenceId: dependencyId, createdBy: 'system' })
+  return true
+}
+
+/**
+ * Claim the stack decision for these edges, all or none, in one guarded
+ * statement: each must be undecided, or hold a claim older than `staleBefore`
+ * (its holder died). The claim is what serializes concurrent deciders; no
+ * lock or transaction is held while the Git work runs.
+ */
+export async function claimStackDecisions(
+  tx: DbHandle,
+  streamId: string,
+  dependencyIds: string[],
+  claimId: string,
+  staleBefore: Date
+): Promise<boolean> {
+  if (dependencyIds.length === 0) return false
+  const claim = JSON.stringify({ mode: 'pending', decidedAt: new Date().toISOString(), claimId })
+  let next = sql`${workStreams.dependencyEdges}`
+  for (const id of dependencyIds) next = sql`jsonb_set(${next}, ${`{${id},stack}`}::text[], ${claim}::jsonb)`
+  const claimed = await tx
+    .update(workStreams)
+    .set({ dependencyEdges: next })
+    .where(
+      and(
+        eq(workStreams.id, streamId),
+        ...dependencyIds.map(
+          (id) =>
+            sql`(${edgeOf(id)}->>'condition' = 'ready' AND (${edgeOf(id)}->'stack' IS NULL OR (${edgeOf(id)}->'stack'->>'mode' = 'pending' AND (${edgeOf(id)}->'stack'->>'decidedAt')::timestamptz < ${staleBefore.toISOString()}::timestamptz)))`
+        )
+      )
+    )
+    .returning({ id: workStreams.id })
+  return claimed.length > 0
+}
+
+/** Replace a claim this caller holds with its decision, or drop it (`null`) so it can be retried. */
+export async function settleStackClaim(
+  tx: DbHandle,
+  streamId: string,
+  dependencyId: string,
+  claimId: string,
+  decision: Record<string, unknown> | null
+): Promise<boolean> {
+  const path = sql`${`{${dependencyId},stack}`}::text[]`
+  const rows = await tx
+    .update(workStreams)
+    .set({
+      dependencyEdges: decision
+        ? sql`jsonb_set(${workStreams.dependencyEdges}, ${path}, ${JSON.stringify(decision)}::jsonb)`
+        : sql`${workStreams.dependencyEdges} #- ${path}`,
+    })
+    .where(and(eq(workStreams.id, streamId), sql`${edgeOf(dependencyId)}->'stack'->>'claimId' = ${claimId}`))
+    .returning({ id: workStreams.id })
+  return rows.length > 0
+}
+
+/** Merge a server-owned patch into an edge's existing stack decision. No-op when there is none. */
 export async function patchEdgeStack(
   tx: DbHandle,
   streamId: string,
   dependencyId: string,
-  patch: Record<string, unknown>,
-  options: { replace?: boolean } = {}
+  patch: Record<string, unknown>
 ): Promise<boolean> {
-  const value = JSON.stringify(patch)
-  const next = options.replace
-    ? sql`${value}::jsonb`
-    : sql`coalesce(${edgeOf(dependencyId)}->'stack', '{}'::jsonb) || ${value}::jsonb`
   const rows = await tx
     .update(workStreams)
     .set({
-      dependencyEdges: sql`jsonb_set(${workStreams.dependencyEdges}, ${`{${dependencyId},stack}`}::text[], ${next})`,
+      dependencyEdges: sql`jsonb_set(${workStreams.dependencyEdges}, ${`{${dependencyId},stack}`}::text[], (${edgeOf(dependencyId)}->'stack') || ${JSON.stringify(patch)}::jsonb)`,
     })
     .where(
       and(
         eq(workStreams.id, streamId),
         sql`${edgeOf(dependencyId)}->>'condition' = 'ready'`,
-        // A decision is written once; a merge patch only refines an existing one.
-        options.replace
-          ? sql`${edgeOf(dependencyId)}->'stack' IS NULL`
-          : sql`${edgeOf(dependencyId)}->'stack' IS NOT NULL`
+        sql`${edgeOf(dependencyId)}->'stack'->>'mode' IN ('stacked', 'included', 'manual')`
       )
     )
     .returning({ id: workStreams.id })

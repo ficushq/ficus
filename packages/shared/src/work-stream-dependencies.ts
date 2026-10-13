@@ -27,8 +27,10 @@ export interface WorkStreamDependencyEdgeState {
   condition: 'ready'
   /**
    * When the edge was first observed satisfied while the dependency was not
-   * done. Sticky: the dependency returning to rework or being canceled later
-   * does not re-block the dependent.
+   * done. The dependency returning to rework does not re-block the dependent.
+   * Once the dependent has started on the edge (a `stack` decision exists),
+   * neither does the dependency being canceled; before that, a canceled
+   * dependency takes the unlock back.
    */
   readyUnlockedAt?: string
   /** Present once the unlock was evaluated for stacking. */
@@ -36,6 +38,8 @@ export interface WorkStreamDependencyEdgeState {
 }
 
 export type WorkStreamDependencyStackState =
+  /** A decision is being made right now by the holder of `claimId`. Never returned to clients. */
+  | { mode: 'pending'; decidedAt: string; claimId: string }
   /** Different repositories, or no repository: only the unlock applies. */
   | { mode: 'none'; decidedAt: string; reason: string }
   | {
@@ -76,6 +80,13 @@ export class InvalidDependencyConditionError extends Error {
   }
 }
 
+export class ConflictingDependencyConditionError extends Error {
+  constructor(id: string) {
+    super(`Dependency ${id} is listed more than once with different conditions. List it once.`)
+    this.name = 'ConflictingDependencyConditionError'
+  }
+}
+
 /** Parse the CLI form `<id>`, `<id>:done` or `<id>:ready`. */
 export function parseDependencySpec(spec: string): { id: string; condition: WorkStreamDependencyCondition } {
   const value = spec.trim()
@@ -100,6 +111,7 @@ export function normalizeDependencyInputs(inputs: readonly WorkStreamDependencyI
     const condition = typeof input === 'string' ? 'done' : (input.condition ?? 'done')
     if (!(WORK_STREAM_DEPENDENCY_CONDITIONS as readonly string[]).includes(condition))
       throw new InvalidDependencyConditionError(String(condition))
+    if (ids.includes(id) && conditions[id] !== condition) throw new ConflictingDependencyConditionError(id)
     if (!ids.includes(id)) ids.push(id)
     conditions[id] = condition
   }
@@ -113,7 +125,12 @@ export function dependencyEdgeCondition(
   return edges?.[dependencyId]?.condition === 'ready' ? 'ready' : 'done'
 }
 
-/** An edge is satisfied when its dependency is done, or a `ready` edge has unlocked. */
+/**
+ * An edge is satisfied when its dependency is done, or a `ready` edge has
+ * unlocked. An unlock the dependent never started on (no `stack` decision yet)
+ * does not survive the dependency being canceled: that stream is flagged like
+ * any other stream whose dependency was canceled, never admitted onto it.
+ */
 export function isDependencyEdgeSatisfied(
   edges: Record<string, WorkStreamDependencyEdgeState> | null | undefined,
   dependencyId: string,
@@ -121,14 +138,15 @@ export function isDependencyEdgeSatisfied(
 ): boolean {
   if (dependencyStatus === 'done') return true
   const edge = edges?.[dependencyId]
-  return edge?.condition === 'ready' && !!edge.readyUnlockedAt
+  if (edge?.condition !== 'ready' || !edge.readyUnlockedAt) return false
+  return dependencyStatus !== 'canceled' || !!edge.stack
 }
 
 /** The dependent builds on this dependency's branch, so its delivery waits for the merge. */
 export function isStackedDependencyEdge(edge: WorkStreamDependencyEdgeState | undefined): edge is {
   condition: 'ready'
   readyUnlockedAt?: string
-  stack: Exclude<WorkStreamDependencyStackState, { mode: 'none' }>
+  stack: Exclude<WorkStreamDependencyStackState, { mode: 'none' | 'pending' }>
 } {
-  return !!edge?.stack && edge.stack.mode !== 'none'
+  return !!edge?.stack && edge.stack.mode !== 'none' && edge.stack.mode !== 'pending'
 }

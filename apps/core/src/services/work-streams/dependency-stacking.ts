@@ -2,17 +2,17 @@ import { createHash } from 'node:crypto'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
   WORK_STREAM_ADMITTED_STATUSES,
-  isDependencyEdgeSatisfied,
   isStackedDependencyEdge,
   resolveCodeHostReference,
   workStreamTitle,
   type WorkStreamDependencyStackState,
 } from '@ficus/shared'
 import { db } from '../../db'
-import { workStreams } from '../../db/schema'
+import { workStreams, type integrationOutputEvents } from '../../db/schema'
+import { deliveryPullRequestHead } from './delivery-pull-requests'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
-import { patchEdgeStack, type DependencyEdges } from './dependency-edges'
+import { claimStackDecisions, patchEdgeStack, settleStackClaim, type DependencyEdges } from './dependency-edges'
 import { fetchRemoteBranchToRef, type RepositoryExec, type ResolveGitHubToken } from './repository-setup'
 
 /**
@@ -215,120 +215,204 @@ export async function stackOntoDependencies(
 
 const admitted = (status: string) => (WORK_STREAM_ADMITTED_STATUSES as readonly string[]).includes(status)
 
+/** A claim this old belongs to a decider that died; it may be taken over. */
+const CLAIM_STALE_MS = 5 * 60_000
+/** How long a caller waits for another decider before going on without it. */
+const CLAIM_WAIT_MS = 60_000
+/** After this long without a usable runtime, stop retrying and ask the assignee to merge. */
+const RUNTIME_RETRY_WINDOW_MS = 10 * 60_000
+
+type StackCandidateStream = { status: string; dependsOn: string[] | null; dependencyEdges: DependencyEdges | null }
+
+/** Unlocked `ready` edges of an admitted stream with no stack decision, or only an abandoned claim. */
+function undecidedStackIds(stream: StackCandidateStream, now = Date.now()): string[] {
+  if (!admitted(stream.status)) return []
+  const edges = stream.dependencyEdges ?? {}
+  return (stream.dependsOn ?? []).filter((id) => {
+    const edge = edges[id]
+    if (edge?.condition !== 'ready' || !edge.readyUnlockedAt) return false
+    return !edge.stack || (edge.stack.mode === 'pending' && now - Date.parse(edge.stack.decidedAt) >= CLAIM_STALE_MS)
+  })
+}
+
+const beingDecided = (stream: StackCandidateStream, now = Date.now()) =>
+  Object.values(stream.dependencyEdges ?? {}).some(
+    (edge) => edge.stack?.mode === 'pending' && now - Date.parse(edge.stack.decidedAt) < CLAIM_STALE_MS
+  )
+
+const loadStackCandidate = async (streamId: string) =>
+  (
+    await db
+      .select({
+        status: workStreams.status,
+        dependsOn: workStreams.dependsOn,
+        dependencyEdges: workStreams.dependencyEdges,
+      })
+      .from(workStreams)
+      .where(eq(workStreams.id, streamId))
+  )[0]
+
 /**
  * Decide, once per edge, how a stream admitted on `ready` dependencies relates
  * to their branches. Runs after admission commits and before participants are
- * dispatched. Serialized per stream by an advisory lock that holds no row
- * lock, so the admission mutex is never held across a Git command.
+ * dispatched.
+ *
+ * No transaction, lock or connection is held across the sandbox and Git work:
+ * every statement here is a single pooled query. Concurrent deciders are
+ * serialized by a claim written on the edges themselves (one guarded UPDATE);
+ * the loser waits for the winner's decision, so a caller about to dispatch
+ * never races a branch that is being moved. A claim whose holder died is taken
+ * over once it is stale.
  */
 export async function settleStackDecisions(streamId: string, resolveRuntime?: ResolveStackingRuntime): Promise<void> {
-  await db.transaction(async (lockTx) => {
-    const [lock] = await lockTx.execute<{ locked: boolean }>(
-      sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${`work-stream-stack:${streamId}`}, 0)) AS locked`
-    )
-    if (!lock?.locked) return
-    const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, streamId))
-    if (!stream || !admitted(stream.status)) return
-    const edges: DependencyEdges = stream.dependencyEdges ?? {}
-    const dependsOn = stream.dependsOn ?? []
-    const undecided = dependsOn.filter(
-      (id) => edges[id]?.condition === 'ready' && edges[id]?.readyUnlockedAt && !edges[id]?.stack
-    )
-    if (undecided.length === 0) return
-    const dependencies = await db
-      .select({ id: workStreams.id, status: workStreams.status, metadata: workStreams.metadata })
-      .from(workStreams)
-      .where(inArray(workStreams.id, dependsOn))
-    const byId = new Map(dependencies.map((row) => [row.id, row]))
-    // Decide with every dependency known: a stream still waiting on one is decided when that settles.
-    if (!dependsOn.every((id) => isDependencyEdgeSatisfied(edges, id, byId.get(id)?.status))) return
-
-    const decidedAt = new Date().toISOString()
-    const git = gitOf(stream.metadata)
-    const decisions: Record<string, StackDecision> = {}
-    const candidates: StackCandidate[] = []
-    for (const id of undecided) {
-      const dependency = byId.get(id)
-      const branch = text(gitOf(dependency?.metadata).branch)
-      if (dependency?.status === 'done')
-        decisions[id] = { mode: 'none', decidedAt, reason: 'the dependency had already merged' }
-      else if (!text(git.branch)) decisions[id] = { mode: 'none', decidedAt, reason: 'this stream has no repository' }
-      else if (!branch || !sameRepository(stream.metadata, dependency?.metadata))
-        decisions[id] = { mode: 'none', decidedAt, reason: 'the dependency is in a different repository' }
-      else candidates.push({ id, branch })
-    }
-    if (candidates.length > 0) {
-      const repository = text(git.repository)
-      const worktree = text(git.worktree)
-      if (!repository || !worktree) {
-        for (const candidate of candidates)
-          decisions[candidate.id] = {
-            mode: 'manual',
-            decidedAt,
-            branch: candidate.branch,
-            reason: 'this stream has no platform-provisioned worktree',
-          }
-      } else {
-        let stacked: Record<string, StackDecision>
+  const deadline = Date.now() + CLAIM_WAIT_MS
+  for (;;) {
+    const stream = await loadStackCandidate(streamId)
+    if (!stream) return
+    const undecided = undecidedStackIds(stream)
+    if (undecided.length > 0) {
+      const claimId = crypto.randomUUID()
+      if (await claimStackDecisions(db, streamId, undecided, claimId, new Date(Date.now() - CLAIM_STALE_MS))) {
+        const decisions: Record<string, StackDecision | null> = Object.fromEntries(undecided.map((id) => [id, null]))
         try {
-          const runtime = await (resolveRuntime ?? runtimeForTest ?? squadRuntime)(stream.squadId)
-          stacked = await stackOntoDependencies(runtime, {
-            repository,
-            worktree,
-            branch: text(git.branch)!,
-            remote: text(git.remote) ?? 'origin',
-            ...(text(git.baseCommit) ? { baseCommit: text(git.baseCommit)! } : {}),
-            candidates,
-          })
-        } catch (error) {
-          log.warn(`Stacking runtime unavailable for work stream ${streamId}:`, error)
-          stacked = Object.fromEntries(
-            candidates.map((candidate): [string, StackDecision] => [
-              candidate.id,
-              {
-                mode: 'manual',
-                decidedAt,
-                branch: candidate.branch,
-                reason: 'the squad runtime was unavailable',
-              },
-            ])
-          )
+          Object.assign(decisions, await decideStacks(streamId, undecided, resolveRuntime))
+        } finally {
+          // Every claim ends as a decision or is dropped for a later attempt; none is left behind.
+          for (const [id, decision] of Object.entries(decisions))
+            await settleStackClaim(db, streamId, id, claimId, decision)
         }
-        Object.assign(decisions, stacked)
+        await announceStackDecisions(streamId, decisions)
+        return
       }
-    }
+    } else if (!beingDecided(stream)) return
+    // Another decider holds the claim: wait for it rather than dispatch into a moving branch.
+    if (Date.now() >= deadline) return
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+}
 
-    let changed = false
-    for (const [id, decision] of Object.entries(decisions))
-      changed = (await patchEdgeStack(db, streamId, id, decision, { replace: true })) || changed
-    const [baseId, base] = Object.entries(decisions).find(([, decision]) => decision.mode === 'stacked') ?? []
-    if (baseId && base?.mode === 'stacked' && base.headSha) {
-      // The record the brief asks for: which branch and head this stream was built on.
-      const stackedOn = { workStreamId: baseId, branch: base.branch, headSha: base.headSha, stackedAt: decidedAt }
-      await db
-        .update(workStreams)
-        .set({
-          metadata: sql`jsonb_set(${workStreams.metadata}, '{git,stackedOn}', ${JSON.stringify(stackedOn)}::jsonb)`,
-          updatedAt: new Date(),
+/**
+ * The decision for edges this caller has claimed. `null` for an edge means "not decided this
+ * time" (a dependency still pending, or a passing runtime outage): its claim is dropped.
+ */
+async function decideStacks(
+  streamId: string,
+  undecided: string[],
+  resolveRuntime?: ResolveStackingRuntime
+): Promise<Record<string, StackDecision | null>> {
+  const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, streamId))
+  if (!stream) return {}
+  const edges: DependencyEdges = stream.dependencyEdges ?? {}
+  const dependsOn = stream.dependsOn ?? []
+  const dependencies = await db
+    .select({ id: workStreams.id, status: workStreams.status, metadata: workStreams.metadata })
+    .from(workStreams)
+    .where(inArray(workStreams.id, dependsOn))
+  const byId = new Map(dependencies.map((row) => [row.id, row]))
+  // Decide with every dependency known: a stream still waiting on one is decided when that settles.
+  // (An unlocked edge counts here even if its dependency was just canceled: that is decided below.)
+  if (!dependsOn.every((id) => byId.get(id)?.status === 'done' || !!edges[id]?.readyUnlockedAt)) return {}
+
+  const decidedAt = new Date().toISOString()
+  const git = gitOf(stream.metadata)
+  const decisions: Record<string, StackDecision | null> = {}
+  const candidates: StackCandidate[] = []
+  for (const id of undecided) {
+    const dependency = byId.get(id)
+    const branch = text(gitOf(dependency?.metadata).branch)
+    if (dependency?.status === 'done')
+      decisions[id] = { mode: 'none', decidedAt, reason: 'the dependency had already merged' }
+    // Never build on abandoned work, whatever order the cancel and the admission landed in.
+    else if (dependency?.status === 'canceled')
+      decisions[id] = { mode: 'none', decidedAt, reason: 'the dependency was canceled' }
+    else if (!text(git.branch)) decisions[id] = { mode: 'none', decidedAt, reason: 'this stream has no repository' }
+    else if (!branch || !sameRepository(stream.metadata, dependency?.metadata))
+      decisions[id] = { mode: 'none', decidedAt, reason: 'the dependency is in a different repository' }
+    else candidates.push({ id, branch })
+  }
+  if (candidates.length > 0) {
+    const repository = text(git.repository)
+    const worktree = text(git.worktree)
+    if (!repository || !worktree) {
+      for (const candidate of candidates)
+        decisions[candidate.id] = {
+          mode: 'manual',
+          decidedAt,
+          branch: candidate.branch,
+          reason: 'this stream has no platform-provisioned worktree',
+        }
+    } else {
+      let stacked: Record<string, StackDecision | null>
+      try {
+        const runtime = await (resolveRuntime ?? runtimeForTest ?? squadRuntime)(stream.squadId)
+        stacked = await stackOntoDependencies(runtime, {
+          repository,
+          worktree,
+          branch: text(git.branch)!,
+          remote: text(git.remote) ?? 'origin',
+          ...(text(git.baseCommit) ? { baseCommit: text(git.baseCommit)! } : {}),
+          candidates,
         })
-        .where(and(eq(workStreams.id, streamId), sql`jsonb_typeof(${workStreams.metadata}->'git') = 'object'`))
+      } catch (error) {
+        log.warn(`Stacking runtime unavailable for work stream ${streamId}:`, error)
+        // A passing outage must not turn a stackable branch into a manual merge for good:
+        // leave the edges undecided for the reconciler, for a bounded time.
+        const unlockedAt = Math.min(
+          ...candidates.map((candidate) => Date.parse(edges[candidate.id]?.readyUnlockedAt ?? ''))
+        )
+        const retry = Date.now() - unlockedAt < RUNTIME_RETRY_WINDOW_MS
+        stacked = Object.fromEntries(
+          candidates.map((candidate): [string, StackDecision | null] => [
+            candidate.id,
+            retry
+              ? null
+              : {
+                  mode: 'manual',
+                  decidedAt,
+                  branch: candidate.branch,
+                  reason: 'the squad runtime was unavailable',
+                },
+          ])
+        )
+      }
+      Object.assign(decisions, stacked)
     }
-    if (!changed) return
-    eventEmitter.emit('workStream.updated', { workStreamId: streamId, squadId: stream.squadId })
-    // A stream that already has an assignee (an edge added mid-work) hears it directly;
-    // otherwise the first assignment carries the same notice.
-    if (stream.assigneeAgentId && !stream.pause) {
-      const { loadStackedDependencies, stackedDependencyNotice } = await import('./dependency-edges')
-      const [fresh] = await db.select().from(workStreams).where(eq(workStreams.id, streamId))
-      const notice = fresh && stackedDependencyNotice(await loadStackedDependencies(db, fresh), gitOf(fresh.metadata))
-      if (fresh && notice)
-        await sendStackNotice(fresh, stream.assigneeAgentId, 'stacked', `${decidedAt}`, {
-          subject: `Stacked on a dependency: ${workStreamTitle(fresh)}`,
-          content: notice,
-          steer: true,
-        })
-    }
-  })
+  }
+
+  return decisions
+}
+
+/** After the decisions are stored: record what the stream was built on, and tell who is already working. */
+async function announceStackDecisions(streamId: string, decisions: Record<string, StackDecision | null>) {
+  if (!Object.values(decisions).some(Boolean)) return
+  const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, streamId))
+  if (!stream) return
+  const [baseId, base] = Object.entries(decisions).find(([, decision]) => decision?.mode === 'stacked') ?? []
+  if (baseId && base?.mode === 'stacked' && base.headSha) {
+    // The record the brief asks for: which branch and head this stream was built on.
+    const stackedOn = { workStreamId: baseId, branch: base.branch, headSha: base.headSha, stackedAt: base.decidedAt }
+    await db
+      .update(workStreams)
+      .set({
+        metadata: sql`jsonb_set(${workStreams.metadata}, '{git,stackedOn}', ${JSON.stringify(stackedOn)}::jsonb)`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(workStreams.id, streamId), sql`jsonb_typeof(${workStreams.metadata}->'git') = 'object'`))
+  }
+  eventEmitter.emit('workStream.updated', { workStreamId: streamId, squadId: stream.squadId })
+  // A stream that already has an assignee (an edge added mid-work) hears it directly;
+  // otherwise the first assignment carries the same notice.
+  if (stream.assigneeAgentId && !stream.pause) {
+    const { loadStackedDependencies, stackedDependencyNotice } = await import('./dependency-edges')
+    const notice = stackedDependencyNotice(await loadStackedDependencies(db, stream), gitOf(stream.metadata))
+    const decidedAt = Object.values(decisions).find(Boolean)!.decidedAt
+    if (notice)
+      await sendStackNotice(stream, stream.assigneeAgentId, 'stacked', decidedAt, {
+        subject: `Stacked on a dependency: ${workStreamTitle(stream)}`,
+        content: notice,
+        steer: true,
+      })
+  }
 }
 
 /** Stacking must never fail the admission or creation that triggered it. */
@@ -460,6 +544,8 @@ async function notifyStack(
     const owner = await resolveWorkStreamRecipient(new WorkStream(stream))
     if (owner && !recipients.has(owner.id)) recipients.set(owner.id, false)
   }
+  // Nobody to tell yet (no assignee between steps): keep it owed rather than record it as sent.
+  if (recipients.size === 0) return
   for (const [recipientId, steer] of recipients)
     await sendStackNotice(stream, recipientId, event, `${dependencyId}:${detail}`, { ...notice, steer })
   // Recorded only after every send: a crash in between re-sends into the same idempotency keys.
@@ -491,6 +577,39 @@ export async function recordDependencyHead(dependencyId: string, headSha: string
   await deliverStackNotices(updated.map((row) => row.id))
 }
 
+/**
+ * A code-host event may report a new head for a pull request some live stream is built on. Found
+ * from the dependents' side, so it does not matter whether the dependency's own flow subscribes to
+ * code-host changes. One read when no stream is stacked on anything; two otherwise. Correlation
+ * only: a dependency in a squad the event's authority does not cover is ignored.
+ */
+export async function recordDependencyHeadFromEvent(
+  event: typeof integrationOutputEvents.$inferSelect,
+  authorize: (squadId: string) => Promise<boolean>
+): Promise<void> {
+  if (event.fact.output !== 'pull_request.updated') return
+  const dependents = await db
+    .select({ dependsOn: workStreams.dependsOn, dependencyEdges: workStreams.dependencyEdges })
+    .from(workStreams)
+    .where(and(inArray(workStreams.status, ['active', 'queued']), sql`${workStreams.dependencyEdges} <> '{}'::jsonb`))
+  const dependencyIds = [
+    ...new Set(
+      dependents.flatMap((stream) =>
+        (stream.dependsOn ?? []).filter((id) => isStackedDependencyEdge(stream.dependencyEdges?.[id]))
+      )
+    ),
+  ]
+  if (dependencyIds.length === 0) return
+  const dependencies = await db
+    .select({ id: workStreams.id, squadId: workStreams.squadId, metadata: workStreams.metadata })
+    .from(workStreams)
+    .where(and(inArray(workStreams.id, dependencyIds), inArray(workStreams.status, ['active', 'queued'])))
+  for (const dependency of dependencies) {
+    const head = deliveryPullRequestHead(dependency.metadata, event)
+    if (head && (await authorize(dependency.squadId))) await recordDependencyHead(dependency.id, head)
+  }
+}
+
 /** A work stream merged or was canceled: tell the live streams built on it. */
 export async function deliverStackNoticesForDependency(dependencyId: string): Promise<void> {
   const dependents = await db
@@ -513,7 +632,12 @@ export async function deliverStackNoticesForDependency(dependencyId: string): Pr
  */
 export async function reconcileStackedStreams(): Promise<void> {
   const candidates = await db
-    .select({ id: workStreams.id, dependsOn: workStreams.dependsOn, dependencyEdges: workStreams.dependencyEdges })
+    .select({
+      id: workStreams.id,
+      status: workStreams.status,
+      dependsOn: workStreams.dependsOn,
+      dependencyEdges: workStreams.dependencyEdges,
+    })
     .from(workStreams)
     .where(
       and(
@@ -522,10 +646,6 @@ export async function reconcileStackedStreams(): Promise<void> {
         sql`${workStreams.dependencyEdges} <> '{}'::jsonb`
       )
     )
-  for (const stream of candidates) {
-    const edges = stream.dependencyEdges ?? {}
-    if ((stream.dependsOn ?? []).some((id) => edges[id]?.readyUnlockedAt && !edges[id]?.stack))
-      await settleStackDecisionsSafely(stream.id)
-  }
+  for (const stream of candidates) if (undecidedStackIds(stream).length > 0) await settleStackDecisionsSafely(stream.id)
   await deliverStackNotices()
 }

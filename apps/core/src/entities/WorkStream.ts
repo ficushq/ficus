@@ -23,6 +23,7 @@ import { db, squads, workStreams, uuidPrefixCondition, AmbiguousPrefixError } fr
 import { executions, workStreamWaits, workStreamFlowRuns, workStreamWorktrees, worktreeCleanupJobs } from '../db/schema'
 import {
   describeCodeHostReference,
+  ConflictingDependencyConditionError,
   isDependencyEdgeSatisfied,
   isStackedDependencyEdge,
   normalizeDependencyInputs,
@@ -476,6 +477,9 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     const conditions: Record<string, WorkStreamDependencyCondition> = {}
     for (const reference of requested.ids) {
       const id = (await WorkStream.mustFind(reference)).id
+      // Two references (a number and an ID, say) can name one stream.
+      if (ids.includes(id) && conditions[id] !== requested.conditions[reference])
+        throw new ConflictingDependencyConditionError(id)
       if (!ids.includes(id)) ids.push(id)
       conditions[id] = requested.conditions[reference]
     }
@@ -1428,8 +1432,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
 
     await this.assignMutationRow(row)
     await Promise.all(observerAfterCommit.map((callback) => callback()))
-    // A dependency added to an already admitted stream may have unlocked on the spot.
-    if (dependencies) {
+    // A `ready` dependency added to an already admitted stream may have unlocked on the spot.
+    if (dependencies && Object.keys(row.dependencyEdges ?? {}).length > 0) {
       const { settleStackDecisionsSafely } = await import('../services/work-streams/dependency-stacking')
       await settleStackDecisionsSafely(this.id)
       await this.assignMutationRow((await db.select().from(workStreams).where(eq(workStreams.id, this.id)))[0] ?? row)

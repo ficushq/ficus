@@ -20,6 +20,7 @@ import { invalidateContinuationCycle } from './continuation-state'
 import {
   loadReadyDependencyIds,
   pendingReadyDependencyIds,
+  relockUnstartedReadyEdge,
   unlockReadyEdge,
   type DependencyEdges,
 } from './dependency-edges'
@@ -447,7 +448,20 @@ async function promoteEligibleWithinTx(
     ...externalDeps.map((s): [string, string] => [s.id, s.status]),
   ])
 
-  // A `ready` edge that already unlocked is settled: its dependency being
+  // An unlock the stream never started on does not outlive its dependency:
+  // canceled while the dependent is still queued, the unlock is taken back and
+  // the stream is flagged below like any canceled-dependency stream. It is
+  // never admitted onto, or stacked on, abandoned work.
+  for (const stream of queued) {
+    for (const dep of stream.dependsOn ?? []) {
+      const edge = stream.dependencyEdges?.[dep]
+      if (statusOf.get(dep) !== 'canceled' || !edge?.readyUnlockedAt || edge.stack) continue
+      if (await relockUnstartedReadyEdge(tx, stream.id, dep))
+        stream.dependencyEdges = { ...stream.dependencyEdges, [dep]: { condition: 'ready' } }
+    }
+  }
+
+  // A `ready` edge the stream has started on is settled: its dependency being
   // canceled afterwards is a notice to the dependent, not a stuck stream.
   const canceledDepRows = queued.filter((s) =>
     (s.dependsOn ?? []).some(

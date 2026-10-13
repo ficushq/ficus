@@ -41,6 +41,7 @@ import {
   deliverStackNotices,
   deliverStackNoticesForDependency,
   recordDependencyHead,
+  recordDependencyHeadFromEvent,
   reconcileStackedStreams,
   setStackingRuntimeForTest,
   settleStackDecisions,
@@ -527,6 +528,280 @@ describe('ready dependencies', () => {
       expect(current.dependencyEdges[current.dependsOn[0]!]!.stack).toMatchObject({ mode: 'none' })
       await current.update({ status: 'done' })
       expect(await statusOf(dependent)).toBe('done')
+    })
+  })
+
+  describe('review regressions', () => {
+    const unlockedEdge = (dependency: { id: string }) => ({
+      [dependency.id]: { condition: 'ready' as const, readyUnlockedAt: new Date().toISOString() },
+    })
+
+    it('many concurrent stack decisions complete: the lock never holds a pooled connection', async () => {
+      // More concurrent settles than the pool has connections. Each used to open a pooled
+      // transaction and then need a second pooled connection inside it, which deadlocks the pool.
+      const dependency = await createStream('dependency', {
+        metadata: {
+          codeHost: { integration: 'github', repository: 'example/repo' },
+          git: { branch: 'work/dependency' },
+        },
+      })
+      await makeReady(dependency)
+      const dependents = await Promise.all(
+        Array.from({ length: 8 }, (_, index) =>
+          createStream(`dependent-${index}`, {
+            metadata: {
+              codeHost: { integration: 'github', repository: 'example/repo' },
+              git: { repository: '/nowhere/repo', worktree: `/nowhere/wt-${index}`, branch: `work/dependent-${index}` },
+            },
+          })
+        )
+      )
+      for (const dependent of dependents)
+        await db
+          .update(workStreams)
+          .set({ dependsOn: [dependency.id], dependencyEdges: unlockedEdge(dependency) })
+          .where(eq(workStreams.id, dependent.id))
+      let entered = 0
+      const runtime = async () => {
+        entered += 1
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        // Pool work while the lock is held, like the real sandbox and credential lookups.
+        await db.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.id, dependency.id))
+        return {
+          exec: async () => {
+            throw new Error('no git in this fixture')
+          },
+        }
+      }
+
+      await Promise.all(dependents.map((dependent) => settleStackDecisions(dependent.id, runtime)))
+
+      expect(entered).toBe(8)
+      for (const dependent of dependents)
+        expect((await reload(dependent)).dependencyEdges[dependency.id]!.stack).toMatchObject({ mode: 'manual' })
+      // The pool is still usable.
+      expect(await statusOf(dependency)).toBe('active')
+    })
+
+    it('two deciders for one stream: one decides, the other waits for that decision', async () => {
+      const dependency = await createStream('dependency', {
+        metadata: {
+          codeHost: { integration: 'github', repository: 'example/repo' },
+          git: { branch: 'work/dependency' },
+        },
+      })
+      const dependent = await createStream('dependent', {
+        metadata: {
+          codeHost: { integration: 'github', repository: 'example/repo' },
+          git: { repository: '/nowhere/repo', worktree: '/nowhere/wt', branch: 'work/dependent' },
+        },
+      })
+      await db
+        .update(workStreams)
+        .set({ dependsOn: [dependency.id], dependencyEdges: unlockedEdge(dependency) })
+        .where(eq(workStreams.id, dependent.id))
+      let entered = 0
+      const seenWhileDeciding: unknown[] = []
+      const runtime = async () => {
+        entered += 1
+        seenWhileDeciding.push((await reload(dependent)).dependencyEdges[dependency.id]!.stack?.mode)
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        return {
+          exec: async () => {
+            throw new Error('no git in this fixture')
+          },
+        }
+      }
+
+      const decidedWhenEachReturned = await Promise.all(
+        [0, 1].map(async () => {
+          await settleStackDecisions(dependent.id, runtime)
+          return (await reload(dependent)).dependencyEdges[dependency.id]!.stack?.mode
+        })
+      )
+
+      expect(entered).toBe(1)
+      expect(seenWhileDeciding).toEqual(['pending'])
+      // Neither caller went on before the decision existed.
+      expect(decidedWhenEachReturned).toEqual(['manual', 'manual'])
+      // A claim in progress is never shown as a stack.
+      expect((await reload(dependent)).dependencies[0]!.stack).toMatchObject({ mode: 'manual' })
+    })
+
+    it('a stream still queued when its ready dependency is canceled is flagged, not admitted or stacked', async () => {
+      fixture = await createStackingFixture()
+      const active = fixture
+      await active.pushDependencyBranch('work/dependency', 'dependency.txt')
+      setStackingRuntimeForTest(async () => ({ exec: gitFixtureExec }))
+      await squad.update({ maxConcurrentWorkStreams: 2 })
+      const codeHost = { integration: 'github', repository: 'example/repo' }
+      const dependency = await createStream('dependency', {
+        metadata: { codeHost, git: { branch: 'work/dependency', baseBranch: 'main' } },
+      })
+      const holder = await createStream('holder')
+      const dependent = await createStream('dependent', {
+        dependsOn: [ready(dependency)],
+        metadata: {
+          codeHost,
+          git: {
+            repository: active.repo,
+            worktree: active.worktree,
+            branch: 'work/dependent',
+            baseBranch: 'main',
+            remote: 'origin',
+            baseCommit: active.baseCommit,
+          },
+        },
+      })
+      await makeReady(dependency)
+      await promoteEligibleQueuedStreams(squad.id)
+      // Unlocked, but never started: the cap holds it.
+      const queued = await reload(dependent)
+      expect(queued.status).toBe('queued')
+      expect(typeof queued.dependencyEdges[dependency.id]!.readyUnlockedAt).toBe('string')
+
+      // Canceling frees the slot the dependent was waiting for.
+      await (await reload(dependency)).cancel()
+      await promoteEligibleQueuedStreams(squad.id)
+      await reconcileStackedStreams()
+
+      const flagged = await reload(dependent)
+      expect(flagged.status).toBe('queued')
+      expect(typeof (flagged.metadata.admission as Record<string, unknown>).canceledDependencyNotifiedAt).toBe('string')
+      expect(flagged.dependencyEdges).toEqual({ [dependency.id]: { condition: 'ready' } })
+      expect(flagged.dependencies).toEqual([{ workStreamId: dependency.id, condition: 'ready', satisfied: false }])
+      expect((await listOpenWaits(db, dependent.id)).map((wait) => wait.referenceId)).toEqual([dependency.id])
+      expect((flagged.metadata.git as Record<string, unknown>).stackedOn).toBeUndefined()
+      expect(await fixtureGit(active.worktree, 'rev-parse', 'HEAD')).toBe(active.baseCommit)
+      expect(await statusOf(holder)).toBe('active')
+    })
+
+    it('a branch is never moved onto a canceled dependency, even if the cancel lands after admission', async () => {
+      fixture = await createStackingFixture()
+      const active = fixture
+      await active.pushDependencyBranch('work/dependency', 'dependency.txt')
+      const codeHost = { integration: 'github', repository: 'example/repo' }
+      const dependency = await createStream('dependency', {
+        metadata: { codeHost, git: { branch: 'work/dependency', baseBranch: 'main' } },
+      })
+      const dependent = await createStream('dependent', {
+        metadata: {
+          codeHost,
+          git: { repository: active.repo, worktree: active.worktree, branch: 'work/dependent', remote: 'origin' },
+        },
+      })
+      await db
+        .update(workStreams)
+        .set({ dependsOn: [dependency.id], dependencyEdges: unlockedEdge(dependency) })
+        .where(eq(workStreams.id, dependent.id))
+      await dependency.cancel()
+
+      await settleStackDecisions(dependent.id, async () => ({ exec: gitFixtureExec }))
+
+      const current = await reload(dependent)
+      expect(current.dependencyEdges[dependency.id]!.stack).toMatchObject({ mode: 'none' })
+      expect(current.dependencies[0]!.holdsDelivery).toBeUndefined()
+      expect(await fixtureGit(active.worktree, 'rev-parse', 'HEAD')).toBe(active.baseCommit)
+      expect(current.status).toBe('active')
+    })
+
+    it('a passing runtime outage leaves the decision open, and the next attempt stacks', async () => {
+      const { active, head, dependent } = await stackedPairForRegression()
+      await promoteEligibleQueuedStreams(squad.id)
+      // The admission-time attempt found no runtime: nothing is decided, nothing is rewritten.
+      const pending = await reload(dependent)
+      expect(pending.status).toBe('active')
+      expect(pending.dependencyEdges[pending.dependsOn[0]!]!.stack).toBeUndefined()
+      expect(await fixtureGit(active.worktree, 'rev-parse', 'HEAD')).toBe(active.baseCommit)
+
+      setStackingRuntimeForTest(async () => ({ exec: gitFixtureExec }))
+      await reconcileStackedStreams()
+      expect((await reload(dependent)).dependencies[0]).toMatchObject({ stack: { mode: 'stacked', headSha: head } })
+      expect(await fixtureGit(active.worktree, 'rev-parse', 'HEAD')).toBe(head)
+    })
+
+    async function stackedPairForRegression() {
+      fixture = await createStackingFixture()
+      const active = fixture
+      const head = await active.pushDependencyBranch('work/dependency', 'dependency.txt')
+      setStackingRuntimeForTest(async () => {
+        throw new Error('sandbox unavailable')
+      })
+      const codeHost = { integration: 'github', repository: 'example/repo' }
+      const dependency = await createStream('dependency', {
+        metadata: { codeHost, git: { branch: 'work/dependency', baseBranch: 'main' } },
+      })
+      const dependent = await createStream('dependent', {
+        dependsOn: [ready(dependency)],
+        metadata: {
+          codeHost,
+          git: {
+            repository: active.repo,
+            worktree: active.worktree,
+            branch: 'work/dependent',
+            remote: 'origin',
+            baseCommit: active.baseCommit,
+          },
+        },
+      })
+      await makeReady(dependency)
+      return { active, head, dependency, dependent }
+    }
+
+    it('a merge with nobody to tell stays owed until the stream has an assignee', async () => {
+      const dependency = await createStream('dependency')
+      const dependent = await createStream('dependent', { dependsOn: [ready(dependency)] })
+      await makeReady(dependency)
+      await promoteEligibleQueuedStreams(squad.id)
+      await stackOn(dependent, dependency)
+      await db.update(workStreams).set({ status: 'done' }).where(eq(workStreams.id, dependency.id))
+
+      await deliverStackNoticesForDependency(dependency.id)
+      expect(await notices(dependent, 'dependency_merged')).toEqual([])
+
+      await db.update(workStreams).set({ assigneeAgentId: assigneeId }).where(eq(workStreams.id, dependent.id))
+      await reconcileStackedStreams()
+      await reconcileStackedStreams()
+      expect((await notices(dependent, 'dependency_merged')).map((notice) => notice.recipientId)).toEqual([assigneeId])
+    })
+
+    it('a push to the dependency pull request reaches its dependents without the dependency following changes', async () => {
+      const dependency = await createStream('dependency')
+      const dependent = await createStream('dependent', {
+        dependsOn: [ready(dependency)],
+        assigneeAgentId: assigneeId,
+      })
+      // makeReady binds example/repo#7; the fixture flow neither subscribes to nor follows code-host changes.
+      await makeReady(dependency)
+      await promoteEligibleQueuedStreams(squad.id)
+      await stackOn(dependent, dependency, 'a'.repeat(40))
+      const pushed = (number: number, headSha: string) =>
+        ({
+          id: crypto.randomUUID(),
+          integration: 'github',
+          authority: { kind: 'instance' },
+          fact: {
+            output: 'pull_request.updated',
+            version: 1,
+            eventKey: crypto.randomUUID(),
+            resourceKey: `example/repo#${number}`,
+            occurredAt: new Date().toISOString(),
+            data: { repository: 'example/repo', pullRequest: { number, headSha } },
+            subject: '',
+            body: '',
+          },
+        }) as unknown as Parameters<typeof recordDependencyHeadFromEvent>[0]
+
+      // Another pull request, and a squad the event's authority does not cover, tell nobody.
+      await recordDependencyHeadFromEvent(pushed(8, 'b'.repeat(40)), async () => true)
+      await recordDependencyHeadFromEvent(pushed(7, 'b'.repeat(40)), async () => false)
+      expect(await notices(dependent, 'dependency_head_changed')).toEqual([])
+
+      await recordDependencyHeadFromEvent(pushed(7, 'b'.repeat(40)), async () => true)
+      await recordDependencyHeadFromEvent(pushed(7, 'b'.repeat(40)), async () => true)
+      const sent = await notices(dependent, 'dependency_head_changed')
+      expect(sent.map((notice) => notice.recipientId).sort()).toEqual([assigneeId, ownerId].sort())
+      expect(sent[0]!.content).toContain('b'.repeat(40))
     })
   })
 

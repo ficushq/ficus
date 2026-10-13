@@ -29,6 +29,9 @@ describe('dependency conditions', () => {
       ids: ['a', 'b', 'c'],
       conditions: { a: 'done', b: 'ready', c: 'done' },
     })
+    expect(() => normalizeDependencyInputs(['a', { id: 'a', condition: 'ready' }])).toThrow(
+      'Dependency a is listed more than once with different conditions'
+    )
   })
 
   test('API schemas accept plain IDs and conditioned edges, and reject unknown conditions', () => {
@@ -49,8 +52,11 @@ describe('dependency conditions', () => {
     expect(isDependencyEdgeSatisfied(null, 'dep', undefined)).toBe(false)
     expect(isDependencyEdgeSatisfied({ dep: { condition: 'ready' } }, 'dep', 'active')).toBe(false)
     expect(isDependencyEdgeSatisfied(unlocked, 'dep', 'active')).toBe(true)
-    // Sticky: the dependency going back to rework or being canceled does not re-block.
-    expect(isDependencyEdgeSatisfied(unlocked, 'dep', 'canceled')).toBe(true)
+    // Sticky through rework. Through a cancel only once the dependent started on the edge.
+    expect(isDependencyEdgeSatisfied(unlocked, 'dep', 'queued')).toBe(true)
+    expect(isDependencyEdgeSatisfied(unlocked, 'dep', 'canceled')).toBe(false)
+    const started = { dep: { ...unlocked.dep, stack: { mode: 'none' as const, decidedAt: 'now', reason: 'x' } } }
+    expect(isDependencyEdgeSatisfied(started, 'dep', 'canceled')).toBe(true)
   })
 
   test('only a stack decision that builds on the branch counts as stacked', () => {
@@ -58,6 +64,9 @@ describe('dependency conditions', () => {
     expect(isStackedDependencyEdge(undefined)).toBe(false)
     expect(isStackedDependencyEdge({ condition: 'ready' })).toBe(false)
     expect(isStackedDependencyEdge({ condition: 'ready', stack: { mode: 'none', decidedAt, reason: 'x' } })).toBe(false)
+    expect(isStackedDependencyEdge({ condition: 'ready', stack: { mode: 'pending', decidedAt, claimId: 'c' } })).toBe(
+      false
+    )
     for (const mode of ['stacked', 'included', 'manual'] as const)
       expect(isStackedDependencyEdge({ condition: 'ready', stack: { mode, decidedAt, branch: 'work/a' } })).toBe(true)
   })
