@@ -188,21 +188,30 @@ function chosen(answer: DecisionAnswer | undefined): { choice: string; probabili
   return { choice: answer.choice, probability: answer.probabilities[answer.choice] ?? answer.confidence ?? 0 }
 }
 
+type WorkStreamPick = { id: string; title: string; probability: number }
+
+/** The stream the work stream question chose, however sure it was; null for "none" or no answer. */
+function chosenWorkStream(answer: DecisionAnswer | undefined, streams: ScreenshotWorkStream[]): WorkStreamPick | null {
+  const picked = chosen(answer)
+  const stream = picked ? streams.find((_, index) => workStreamOptionKey(index) === picked.choice) : undefined
+  return stream && picked ? { id: stream.id, title: stream.title, probability: picked.probability } : null
+}
+
 /** The work stream question's pick, when it is clear enough; null for "none" or a weak pick. */
 export function pickWorkStream(
   answer: DecisionAnswer | undefined,
   streams: ScreenshotWorkStream[]
-): { id: string; title: string; probability: number } | null {
-  const picked = chosen(answer)
-  const stream = picked ? streams.find((_, index) => workStreamOptionKey(index) === picked.choice) : undefined
-  return stream && picked && picked.probability >= SCREENSHOT_GUESS_MIN_PROBABILITY
-    ? { id: stream.id, title: stream.title, probability: picked.probability }
-    : null
+): WorkStreamPick | null {
+  const stream = chosenWorkStream(answer, streams)
+  return stream && stream.probability >= SCREENSHOT_GUESS_MIN_PROBABILITY ? stream : null
 }
 
 /**
  * The guess in a decision's answers, or null when the kind or action was refused. `workStreams` is
- * the second question's answer and the streams it was asked about, when it was asked.
+ * the second question's answer and the streams it was asked about, when it was asked. Only a clear
+ * work stream pick sets the action. A weak one is carried as `workStreamSuggestion` and changes
+ * nothing, except that an action already answered as "existing work stream" then has a stream to
+ * offer and so does not fall back.
  */
 export function readScreenshotGuess(
   answers: Record<string, DecisionAnswer>,
@@ -217,12 +226,16 @@ export function readScreenshotGuess(
   const workStream: ScreenshotGuess['workStream'] = workStreams
     ? pickWorkStream(workStreams.answer, workStreams.streams)
     : undefined
+  // A pick under the bar, in the squad it was asked about: shown as "not sure", never acted on.
+  const suggestion =
+    squad && workStreams && !workStream ? chosenWorkStream(workStreams.answer, workStreams.streams) : null
   if (workStream) {
     // It names the work it belongs to: add it there.
     action.choice = 'existing_work_stream'
     action.probability = workStream.probability
   } else if (
     action.choice === 'existing_work_stream' &&
+    !suggestion &&
     (!squad || squad.openWorkStreams === 0 || workStream === null)
   ) {
     // "Add it to an existing work stream" makes no sense without one that fits: take the next likeliest action.
@@ -248,6 +261,7 @@ export function readScreenshotGuess(
       probability: action.probability,
     },
     ...(workStream !== undefined ? { workStream } : {}),
+    ...(suggestion ? { workStreamSuggestion: suggestion } : {}),
   }
 }
 
@@ -306,6 +320,9 @@ export type ScreenshotCorrectedField = 'kind' | 'squad' | 'action' | 'workStream
  * Which fields the user changed from the guess. A field left unchosen is not a correction. For the
  * work stream, picking a different one (or one where none was guessed) is; dropping a guessed one
  * is only when the user also chose another action, which says it is not about work under way.
+ * `guessed` is what the card showed: it holds a weak work stream suggestion only when the card
+ * pre-selected it, so replacing or dropping one the user saw is a correction, and one they never
+ * saw is not.
  */
 export function screenshotCorrections(
   guessed: ScreenshotChoices | undefined,

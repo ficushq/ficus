@@ -53,11 +53,19 @@ export interface ScreenshotGuess {
    * some: null when none of them matched clearly, absent when that question was not asked.
    */
   workStream?: { id: string; title: string; probability: number } | null
+  /**
+   * The work stream that second question picked without being sure (under
+   * `SCREENSHOT_GUESS_MIN_PROBABILITY`), so `workStream` is null. Absent when it answered "none of
+   * them". It never decides the action: the card pre-selects it, marked "not sure", only with "add
+   * it to an existing work stream" in the guessed squad.
+   */
+  workStreamSuggestion?: { id: string; title: string; probability: number }
 }
 
 /**
- * How sure a guess must be. A work stream pick below it does not count at all; a kind, squad or
- * action below it is still the best guess, shown to the user as "not sure".
+ * How sure a guess must be. A kind, squad or action below it is still the best guess, shown to the
+ * user as "not sure". A work stream pick below it is only a suggestion (`workStreamSuggestion`):
+ * also "not sure" when shown, but unlike a sure pick it never sets the action.
  */
 export const SCREENSHOT_GUESS_MIN_PROBABILITY = 0.6
 
@@ -105,8 +113,9 @@ export const fileScreenshotRequestSchema = screenshotChoicesSchema
     imageId: z.string().uuid(),
     note: z.string().trim().max(2000).optional(),
     /**
-     * What the card was filled in with from the guess, when there was one. Used only to save the
-     * fields the user changed as candidate eval cases; filing never reads it.
+     * What the card was filled in with from the guess, when there was one: a weak work stream
+     * suggestion only when the card showed it pre-selected. Used only to save the fields the user
+     * changed as candidate eval cases; filing never reads it.
      */
     guessed: screenshotChoicesSchema.optional(),
   })
@@ -126,7 +135,8 @@ export interface FileScreenshotResponse {
 
 /**
  * The choices a guess fills the review card in with. The squad stays unchosen when the model was
- * not asked about squads (the user sees none) or gave no usable answer.
+ * not asked about squads (the user sees none) or gave no usable answer. A weak work stream
+ * suggestion is not among them: the card adds it when, and only when, it shows it.
  */
 export function screenshotChoicesFromGuess(guess: ScreenshotGuess): ScreenshotChoices {
   return {

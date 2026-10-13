@@ -27,6 +27,18 @@ const guess: ScreenshotGuess = {
 const after = (events: ReviewEvent[], from: ReviewState = INITIAL_REVIEW) => events.reduce(reviewReducer, from)
 const guessed = after([{ type: 'guessed', guess }])
 
+/** The action question answered "start a new work stream"; the work stream question weakly picked the export one. */
+const { workStream: _sure, ...withoutStream } = guess
+const suggesting: ScreenshotGuess = {
+  ...withoutStream,
+  squad: { id: CHLEA, name: 'Chlea', probability: 0.9 },
+  action: { id: 'new_work_stream', label: 'start a new work stream', probability: 0.7 },
+  workStream: null,
+  workStreamSuggestion: { ...EXPORT, probability: 0.45 },
+}
+const suggested = after([{ type: 'guessed', guess: suggesting }])
+const GUESSED_NEW = { kind: 'bug', squadId: CHLEA, action: 'new_work_stream' } as const
+
 test('the card opens with nothing chosen and the guess still loading; typing a note does not wait for it', () => {
   expect(INITIAL_REVIEW.guess).toBeUndefined()
   expect(INITIAL_REVIEW.choices).toEqual({ kind: null, squad: null, action: null, workStreamId: null })
@@ -174,4 +186,185 @@ test('confirming sends the note, the confirmed choices, and the guess they start
     action: 'existing_work_stream',
     guessed: { kind: 'bug', squadId: CHLEA, action: 'existing_work_stream', workStreamId: EXPORT.id },
   })
+})
+
+test('a weak work stream pick with the "existing" action is pre-selected and marked "not sure"', () => {
+  const weak = after([
+    {
+      type: 'guessed',
+      guess: {
+        ...suggesting,
+        action: { id: 'existing_work_stream', label: 'add it to an existing work stream', probability: 0.7 },
+      },
+    },
+  ])
+  expect(weak.choices).toEqual({ kind: 'bug', squad: CHLEA, action: 'existing_work_stream', workStreamId: EXPORT.id })
+  // The action was sure by its own answer; only the work stream is marked.
+  expect(unsureFields(weak)).toEqual(['workStream'])
+  // A weak action is marked too, on its own probability.
+  const both = after([
+    {
+      type: 'guessed',
+      guess: {
+        ...suggesting,
+        action: { id: 'existing_work_stream', label: 'add it to an existing work stream', probability: 0.5 },
+      },
+    },
+  ])
+  expect(unsureFields(both)).toEqual(['action', 'workStream'])
+  // Still open: it stays, marked.
+  const loaded = reviewReducer(weak, { type: 'workStreams', squad: CHLEA, workStreams: [EXPORT, DOCS] })
+  expect(loaded).toBe(weak)
+  // Picking a stream by hand, the same one included, removes the mark.
+  expect(unsureFields(reviewReducer(weak, { type: 'workStream', workStreamId: EXPORT.id }))).toEqual([])
+  expect(unsureFields(reviewReducer(weak, { type: 'workStream', workStreamId: DOCS.id }))).toEqual([])
+  // It counts as what the card was filled in with.
+  expect(fileScreenshotRequest(IMAGE, weak).guessed).toEqual({
+    kind: 'bug',
+    squadId: CHLEA,
+    action: 'existing_work_stream',
+    workStreamId: EXPORT.id,
+  })
+  // A sure pick is unchanged: pre-selected, unmarked.
+  expect(unsureFields(guessed)).not.toContain('workStream')
+})
+
+test('with another action a weak pick changes nothing until the user turns to "existing" in the guessed squad', () => {
+  // The card looks exactly as it does without the suggestion.
+  expect(suggested.choices).toEqual({ kind: 'bug', squad: CHLEA, action: 'new_work_stream', workStreamId: null })
+  expect(suggested.choices).toEqual(
+    after([{ type: 'guessed', guess: { ...suggesting, workStreamSuggestion: undefined } }]).choices
+  )
+  expect(unsureFields(suggested)).toEqual([])
+  expect(picksWorkStream(suggested.choices)).toBe(false)
+  // Filed as guessed, the suggestion was never shown: it is not sent, and not part of the guess.
+  expect(fileScreenshotRequest(IMAGE, suggested)).toEqual({ imageId: IMAGE, ...GUESSED_NEW, guessed: GUESSED_NEW })
+  // Another action than "existing" does not bring it up either.
+  const saved = reviewReducer(suggested, { type: 'action', action: 'just_save' })
+  expect(saved.choices.workStreamId).toBeNull()
+  expect(fileScreenshotRequest(IMAGE, saved).guessed).toEqual(GUESSED_NEW)
+
+  // "Existing", chosen by the user: the picker is pre-filled with it, marked "not sure".
+  const turned = after(
+    [
+      { type: 'workStreams', squad: CHLEA, workStreams: [EXPORT, DOCS] },
+      { type: 'action', action: 'existing_work_stream' },
+    ],
+    suggested
+  )
+  expect(turned.choices).toEqual({ kind: 'bug', squad: CHLEA, action: 'existing_work_stream', workStreamId: EXPORT.id })
+  expect(unsureFields(turned)).toEqual(['workStream'])
+  // Now it was shown: keeping it corrects only the action, replacing it corrects the work stream too.
+  expect(fileScreenshotRequest(IMAGE, turned)).toEqual({
+    imageId: IMAGE,
+    kind: 'bug',
+    squadId: CHLEA,
+    action: 'existing_work_stream',
+    workStreamId: EXPORT.id,
+    guessed: { ...GUESSED_NEW, workStreamId: EXPORT.id },
+  })
+  const replaced = reviewReducer(turned, { type: 'workStream', workStreamId: DOCS.id })
+  expect(unsureFields(replaced)).toEqual([])
+  expect(fileScreenshotRequest(IMAGE, replaced)).toMatchObject({
+    workStreamId: DOCS.id,
+    guessed: { ...GUESSED_NEW, workStreamId: EXPORT.id },
+  })
+  // Away and back again: still offered, until the user picks a stream themselves.
+  const away = reviewReducer(turned, { type: 'action', action: 'new_work_stream' })
+  expect(away.choices.workStreamId).toBeNull()
+  expect(fileScreenshotRequest(IMAGE, away)).toEqual({
+    imageId: IMAGE,
+    ...GUESSED_NEW,
+    guessed: { ...GUESSED_NEW, workStreamId: EXPORT.id },
+  })
+  expect(reviewReducer(away, { type: 'action', action: 'existing_work_stream' }).choices.workStreamId).toBe(EXPORT.id)
+  const ownPick = after(
+    [
+      { type: 'action', action: 'new_work_stream' },
+      { type: 'action', action: 'existing_work_stream' },
+    ],
+    replaced
+  )
+  expect(ownPick.choices.workStreamId).toBeNull()
+})
+
+test('changing the squad clears a weak pick, shown or still only a suggestion', () => {
+  // Still a suggestion: another squad, then "existing", pre-fills nothing.
+  const moved = after(
+    [
+      { type: 'squad', squad: OPS },
+      { type: 'action', action: 'existing_work_stream' },
+      { type: 'workStreams', squad: OPS, workStreams: [DOCS] },
+    ],
+    suggested
+  )
+  expect(moved.choices).toEqual({ kind: 'bug', squad: OPS, action: 'existing_work_stream', workStreamId: null })
+  expect(unsureFields(moved)).toEqual([])
+  expect(fileScreenshotRequest(IMAGE, moved).guessed).toEqual(GUESSED_NEW)
+  // Back in the guessed squad it is not offered again: the squad is the user's choice now.
+  const back = after(
+    [
+      { type: 'squad', squad: OPS },
+      { type: 'squad', squad: CHLEA },
+      { type: 'action', action: 'existing_work_stream' },
+    ],
+    suggested
+  )
+  expect(back.choices.workStreamId).toBeNull()
+  // "No squad" clears it too.
+  const none = after(
+    [
+      { type: 'squad', squad: NO_SQUAD },
+      { type: 'squad', squad: CHLEA },
+      { type: 'action', action: 'existing_work_stream' },
+    ],
+    suggested
+  )
+  expect(none.choices.workStreamId).toBeNull()
+
+  // Shown, then the squad changes: the pick and its mark go.
+  const shown = reviewReducer(suggested, { type: 'action', action: 'existing_work_stream' })
+  const cleared = reviewReducer(shown, { type: 'squad', squad: OPS })
+  expect(cleared.choices).toEqual({ kind: 'bug', squad: OPS, action: 'existing_work_stream', workStreamId: null })
+  expect(unsureFields(cleared)).toEqual([])
+})
+
+test('a weak pick that has closed since the guess is never shown', () => {
+  // Its squad's open work streams load without it, then the user turns to "existing".
+  const closed = after(
+    [
+      { type: 'workStreams', squad: CHLEA, workStreams: [DOCS] },
+      { type: 'action', action: 'existing_work_stream' },
+    ],
+    suggested
+  )
+  expect(closed.choices).toEqual({ kind: 'bug', squad: CHLEA, action: 'existing_work_stream', workStreamId: null })
+  expect(fileScreenshotRequest(IMAGE, closed).guessed).toEqual(GUESSED_NEW)
+  // Pre-filled while they were still loading: cleared before the picker shows, and not part of the guess.
+  const late = after(
+    [
+      { type: 'action', action: 'existing_work_stream' },
+      { type: 'workStreams', squad: CHLEA, workStreams: [DOCS] },
+    ],
+    suggested
+  )
+  expect(late.choices.workStreamId).toBeNull()
+  expect(unsureFields(late)).toEqual([])
+  expect(fileScreenshotRequest(IMAGE, late).guessed).toEqual({ ...GUESSED_NEW })
+  // The squad has none left at all: the usual fallback.
+  const empty = after(
+    [
+      { type: 'action', action: 'existing_work_stream' },
+      { type: 'workStreams', squad: CHLEA, workStreams: [] },
+    ],
+    suggested
+  )
+  expect(empty.choices).toEqual({ kind: 'bug', squad: CHLEA, action: 'new_work_stream', workStreamId: null })
+  // Without a guessed squad there is nothing to suggest a stream in.
+  const squadless = after([
+    { type: 'guessed', guess: { ...suggesting, squad: null } },
+    { type: 'squad', squad: CHLEA },
+    { type: 'action', action: 'existing_work_stream' },
+  ])
+  expect(squadless.choices.workStreamId).toBeNull()
 })

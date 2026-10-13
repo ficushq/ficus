@@ -408,6 +408,72 @@ describe('ScreenshotFiling', () => {
     }
   })
 
+  test('a weak work stream guess is "not sure": pre-selected with the "existing" action, otherwise only once the user turns to it', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      const { workStream: _sure, ...unsureOfStream } = bugInChlea
+      // The action question answered "existing"; the work stream question was not sure which one.
+      const deps = fakes({
+        ...unsureOfStream,
+        squad: { id: chlea.id, name: 'Chlea', probability: 0.9 },
+        workStream: null,
+        workStreamSuggestion: { ...exportCrash, probability: 0.45 },
+      })
+      await render(dom, deps)
+      await dropImage(dom)
+      await settle(dom, () => shown('Work stream') === 'Fix the export crash')
+      expect(shown('Action')).toBe('Add it to an existing work stream')
+      expect(unsure()).toEqual(['Work stream'])
+      // Picking a stream by hand removes the mark.
+      await pick(dom, 'Work stream', 'Rewrite the docs')
+      expect(shown('Work stream')).toBe('Rewrite the docs')
+      expect(unsure()).toEqual([])
+      await dom.act(async () => button('Dismiss')!.click())
+      expect(card()).toBeNull()
+
+      // The action question answered something else: the card shows no work stream, and nothing "not sure".
+      deps.answers.guess = async () => ({
+        guess: {
+          ...unsureOfStream,
+          squad: { id: chlea.id, name: 'Chlea', probability: 0.9 },
+          action: { id: 'new_work_stream', label: 'start a new work stream', probability: 0.7 },
+          workStream: null,
+          workStreamSuggestion: { ...exportCrash, probability: 0.45 },
+        },
+      })
+      await dropImage(dom)
+      await settle(dom, () => shown('Action') === 'Start a new work stream')
+      expect(picker('Work stream')).toBeNull()
+      expect(unsure()).toEqual([])
+      // The user turns to "existing" in the guessed squad: the picker is pre-filled with it, marked.
+      await pick(dom, 'Action', 'Add it to an existing work stream')
+      expect(shown('Work stream')).toBe('Fix the export crash')
+      expect(unsure()).toEqual(['Work stream'])
+      // Another squad: the suggestion goes with the mark, and does not come back with the squad.
+      await pick(dom, 'Squad', 'Ops')
+      await settle(dom, () => shown('Work stream') === 'Choose a work stream')
+      expect(unsure()).toEqual([])
+      await pick(dom, 'Squad', 'Chlea')
+      await settle(dom, () => shown('Work stream') === 'Choose a work stream')
+      expect(unsure()).toEqual([])
+
+      await dom.act(async () => button('File it')!.click())
+      await settle(dom, () => card() === null)
+      // It was shown, so it is part of what the card was filled in with.
+      expect(deps.filed).toEqual([
+        {
+          imageId: IMAGE_ID,
+          kind: 'bug',
+          squadId: chlea.id,
+          action: 'existing_work_stream',
+          guessed: { kind: 'bug', squadId: chlea.id, action: 'new_work_stream', workStreamId: exportCrash.id },
+        },
+      ])
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
   test('"File it" files the note and the confirmed choices, closes the card and opens the conversation', async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     try {
