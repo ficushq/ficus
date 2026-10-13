@@ -1,9 +1,16 @@
 import { expect, test } from 'bun:test'
-import type { DecisionAnswer } from '@ficus/shared'
+import {
+  fileScreenshotRequestSchema,
+  isUnsureScreenshotGuess,
+  screenshotChoicesFromGuess,
+  type DecisionAnswer,
+} from '@ficus/shared'
 import {
   buildScreenshotDecision,
   buildScreenshotWorkStreamDecision,
   readScreenshotGuess,
+  screenshotCorrections,
+  screenshotFilingMessage,
   squadOptionKey,
   type ScreenshotSquad,
 } from './screenshot-filing'
@@ -103,4 +110,157 @@ test('a clear work stream pick means adding to it; a weak one or "none" means no
   const unasked = readScreenshotGuess(existing, [busy])
   expect(unasked && 'workStream' in unasked).toBe(false)
   expect(unasked?.action.id).toBe('existing_work_stream')
+})
+
+test('a weak kind, squad or action is still the guess; "none of these squads" keeps how sure it was', () => {
+  const weak = readScreenshotGuess(
+    {
+      kind: choice('idea', { idea: 0.41, bug: 0.39 }),
+      squad: choice(squadOptionKey(busy.id), { [squadOptionKey(busy.id)]: 0.35 }),
+      action: choice('just_save', { just_save: 0.6 }),
+    },
+    [busy, empty]
+  )!
+  expect(weak).toMatchObject({ kind: { id: 'idea', probability: 0.41 }, squad: { id: busy.id, probability: 0.35 } })
+  expect('noSquadProbability' in weak).toBe(false)
+  // Under 0.6 is "not sure"; exactly 0.6 is sure, the same bar a work stream pick has to clear.
+  expect(isUnsureScreenshotGuess(weak.kind.probability)).toBe(true)
+  expect(isUnsureScreenshotGuess(weak.action.probability)).toBe(false)
+  expect(screenshotChoicesFromGuess(weak)).toEqual({ kind: 'idea', squadId: busy.id, action: 'just_save' })
+
+  const none = readScreenshotGuess(
+    {
+      kind: choice('reference', { reference: 0.9 }),
+      squad: choice('none', { none: 0.55 }),
+      action: choice('just_save', { just_save: 0.9 }),
+    },
+    [busy, empty]
+  )!
+  expect(none.squad).toBeNull()
+  expect(none.noSquadProbability).toBe(0.55)
+  // "No squad" is pre-selected; with no squad question at all the squad stays unchosen.
+  expect(screenshotChoicesFromGuess(none)).toEqual({ kind: 'reference', squadId: null, action: 'just_save' })
+  const unasked = readScreenshotGuess(
+    { kind: choice('reference', { reference: 0.9 }), action: choice('just_save', { just_save: 0.9 }) },
+    []
+  )!
+  expect(screenshotChoicesFromGuess(unasked)).toEqual({ kind: 'reference', action: 'just_save' })
+  // A guessed work stream fills the picker in.
+  const withStream = { ...weak, workStream: { id: streams[0]!.id, title: 'Fix the export crash', probability: 0.8 } }
+  expect(screenshotChoicesFromGuess(withStream).workStreamId).toBe(streams[0]!.id)
+})
+
+const IMAGE_ID = '55555555-0000-4000-8000-000000000005'
+const attached = `The screenshot is attached (image ID ${IMAGE_ID}). When you hand it to a squad, pass it as imageIds so they can see it.`
+
+test("the first message puts the note first, then the confirmed choices with their IDs, as the user's own", () => {
+  const message = screenshotFilingMessage({
+    imageId: IMAGE_ID,
+    note: 'This started after the coupon change.\nSee the total.',
+    confirmed: {
+      kind: 'bug',
+      squad: { id: busy.id, name: 'Shop' },
+      action: 'existing_work_stream',
+      workStream: { id: streams[0]!.id, title: 'Fix the "export" crash' },
+    },
+  })
+  expect(message).toBe(
+    [
+      'This started after the coupon change.\nSee the total.',
+      '',
+      'Please file the attached screenshot. I reviewed and confirmed these choices myself, so follow them:',
+      '- Kind: a bug',
+      `- Squad: Shop (squad ID ${busy.id})`,
+      '- Action: add it to an existing work stream',
+      `- Work stream: "Fix the \\"export\\" crash" (work stream ID ${streams[0]!.id})`,
+      '',
+      attached,
+    ].join('\n')
+  )
+  // Nothing in it reads as a model's guess to double-check.
+  expect(message).not.toMatch(/guess|%|can be wrong/i)
+})
+
+test('the first message says "no squad" outright and names what was left to the Assistant', () => {
+  expect(
+    screenshotFilingMessage({ imageId: IMAGE_ID, confirmed: { kind: 'reference', squad: null, action: 'just_save' } })
+  ).toBe(
+    [
+      'Please file the attached screenshot. I reviewed and confirmed these choices myself, so follow them:',
+      '- Kind: a reference',
+      "- Squad: none. Don't file it with a squad.",
+      '- Action: just save it',
+      '',
+      attached,
+    ].join('\n')
+  )
+  // Some fields unchosen, and "existing work stream" without picking which.
+  expect(
+    screenshotFilingMessage({
+      imageId: IMAGE_ID,
+      confirmed: { squad: { id: busy.id, name: 'Shop' }, action: 'existing_work_stream' },
+    })
+  ).toBe(
+    [
+      'Please file the attached screenshot. I reviewed and confirmed these choices myself, so follow them:',
+      `- Squad: Shop (squad ID ${busy.id})`,
+      '- Action: add it to an existing work stream',
+      'I left the rest for you to decide: what it shows, which work stream it is about.',
+      '',
+      attached,
+    ].join('\n')
+  )
+  // Only a note, or nothing at all: the Assistant decides everything.
+  expect(screenshotFilingMessage({ imageId: IMAGE_ID, note: 'From the standup', confirmed: {} })).toBe(
+    [
+      'From the standup',
+      '',
+      'Please look at the attached screenshot and file it in the right place.',
+      '',
+      attached,
+    ].join('\n')
+  )
+  expect(screenshotFilingMessage({ imageId: IMAGE_ID, confirmed: {} })).toStartWith('Please look at the attached')
+})
+
+test('corrections are the fields the user changed from the guess', () => {
+  const guessed = {
+    kind: 'bug',
+    squadId: busy.id,
+    action: 'existing_work_stream',
+    workStreamId: streams[0]!.id,
+  } as const
+  expect(screenshotCorrections(guessed, guessed)).toEqual([])
+  expect(screenshotCorrections(guessed, { ...guessed, kind: 'idea' })).toEqual(['kind'])
+  expect(screenshotCorrections(guessed, { ...guessed, workStreamId: streams[1]!.id })).toEqual(['workStream'])
+  // "No squad" is a choice; another squad's work stream goes with it.
+  expect(screenshotCorrections(guessed, { kind: 'bug', squadId: null, action: 'just_save' })).toEqual([
+    'squad',
+    'action',
+    'workStream',
+  ])
+  // A stream picked where none was guessed.
+  const fresh = { kind: 'bug', squadId: busy.id, action: 'new_work_stream' } as const
+  expect(
+    screenshotCorrections(fresh, { ...fresh, action: 'existing_work_stream', workStreamId: streams[0]!.id })
+  ).toEqual(['action', 'workStream'])
+  // Still "existing", with the stream left for the Assistant: nothing is known about the right one.
+  expect(screenshotCorrections(guessed, { kind: 'bug', squadId: busy.id, action: 'existing_work_stream' })).toEqual([])
+  // Fields left unchosen are not corrections, and without a guess there is nothing to correct.
+  expect(screenshotCorrections(guessed, {})).toEqual([])
+  expect(screenshotCorrections(undefined, { kind: 'idea', squadId: null })).toEqual([])
+})
+
+test('a filing request takes a work stream only with its squad and the "existing work stream" action', () => {
+  const base = { imageId: IMAGE_ID, squadId: busy.id, action: 'existing_work_stream', workStreamId: streams[0]!.id }
+  expect(fileScreenshotRequestSchema.safeParse(base).success).toBe(true)
+  expect(fileScreenshotRequestSchema.safeParse({ ...base, action: 'new_work_stream' }).success).toBe(false)
+  expect(fileScreenshotRequestSchema.safeParse({ ...base, squadId: null }).success).toBe(false)
+  expect(fileScreenshotRequestSchema.safeParse({ ...base, squadId: undefined }).success).toBe(false)
+  expect(fileScreenshotRequestSchema.safeParse({ ...base, kind: 'meme' }).success).toBe(false)
+  // Only the image: every field can be left to the Assistant.
+  expect(fileScreenshotRequestSchema.parse({ imageId: IMAGE_ID, note: '  hi  ' })).toEqual({
+    imageId: IMAGE_ID,
+    note: 'hi',
+  })
 })

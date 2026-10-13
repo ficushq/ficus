@@ -28,8 +28,11 @@ export default defineDecisionEval<{ image: keyof typeof SCREENSHOTS }, Outcome>(
       squadName: 'Widget Shop',
       workStreams: STREAMS,
     }),
+    context: { streams: STREAMS },
   }),
-  decide: (answers) => pickWorkStream(answers.work_stream, STREAMS)?.title ?? null,
+  // Saved corrections carry the streams they were asked about.
+  decide: (answers, context) =>
+    pickWorkStream(answers.work_stream, (context as { streams: ScreenshotWorkStream[] }).streams)?.title ?? null,
   caseName: ({ image }) => image,
   label: (outcome) => outcome ?? 'none',
   cases: [

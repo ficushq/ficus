@@ -115,10 +115,10 @@ function EvalCaptureSetting({ state }: { state: EvalCaptureState }) {
         <span>
           Save corrections as eval cases
           <span className="block text-xs text-muted">
-            When someone changes a guessed squad, overrides Interrupt or Follow up, or picks “Wrong squad?”, keep what
-            was asked and what they chose on this instance, for testing decision prompts with{' '}
-            <code>bun run decisions:eval --inbox</code>. It keeps what people typed, so turn it on only where that is
-            fine.
+            When someone changes a guessed squad, overrides Interrupt or Follow up, or corrects a screenshot’s guess
+            before filing it, keep what was asked and what they chose on this instance, for testing decision prompts
+            with <code>bun run decisions:eval --inbox</code>. It keeps what people typed, so turn it on only where that
+            is fine.
             {state.pending > 0 && ` ${state.pending} waiting for review.`}
           </span>
         </span>

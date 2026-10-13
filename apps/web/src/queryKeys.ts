@@ -19,6 +19,12 @@ export const composerQueryKeys = {
     [...composerQueryKeys.all, 'assistant-routing', conversationId, draft] as const,
 }
 
+/** The screenshot review card: a squad's open work streams for its picker. */
+export const screenshotQueryKeys = {
+  all: ['screenshots'] as const,
+  workStreams: (squadId: string) => [...screenshotQueryKeys.all, 'work-streams', squadId] as const,
+}
+
 export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
 
 /** Decision model providers, routing and the OpenAI services key state: one settings read. */
