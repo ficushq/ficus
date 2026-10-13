@@ -1848,10 +1848,11 @@ describe('ChatView whole-surface drops and pastes', () => {
     expect(attachedImages(window)).toBe(2)
   })
 
-  test('beside the page-wide screenshot drop: chats keep their drops and pastes, the page files', async () => {
+  test('beside the page-wide screenshot drop: chats keep their drops and pastes, the page opens the review card', async () => {
     const dom = await installDom()
     const { window } = dom
     const { root } = dom.createRoot()
+    const guessed: string[] = []
     const filed: string[] = []
     const { ScreenshotFiling } = await import('./ScreenshotFiling')
     const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
@@ -1873,11 +1874,14 @@ describe('ChatView whole-surface drops and pastes', () => {
                   {
                     upload: async () => ['image-1'],
                     api: {
-                      file: async (id: string) => {
-                        filed.push(id)
-                        return { conversationId: 'c', guess: null }
+                      guess: async (imageId: string) => {
+                        guessed.push(imageId)
+                        return { guess: null }
                       },
-                      correct: async () => ({ conversationId: 'c' }),
+                      file: async ({ imageId }: { imageId: string }) => {
+                        filed.push(imageId)
+                        return { conversationId: 'c' }
+                      },
                     },
                   } as never
                 }
@@ -1890,6 +1894,7 @@ describe('ChatView whole-surface drops and pastes', () => {
     await flushReact()
     const page = window.document.querySelector('[data-testid="page"]')!
     const pageOverlay = () => window.document.querySelector('[data-testid="screenshot-drop-overlay"]')
+    const reviewCard = () => window.document.querySelector('[data-testid="screenshot-review-card"]')
     const { surface, messages } = chat(window)
 
     // Outside the chat the page-wide target works; inside it only the chat's overlay shows.
@@ -1906,18 +1911,23 @@ describe('ChatView whole-surface drops and pastes', () => {
     await dom.act(async () => void drag(window, 'drop', messages, [image(window)]))
     await flushReact()
     expect(attachedImages(window)).toBe(1)
-    expect(filed).toEqual([])
+    expect(guessed).toEqual([])
+    expect(reviewCard()).toBeNull()
 
-    // A paste with focus on the chat attaches to it; with focus outside every chat, it files.
+    // A paste with focus on the chat attaches to it; with focus outside every chat, it opens the
+    // screenshot review card, which files nothing until it is confirmed.
     surface.focus()
     await dom.act(async () => void pasteFiles(window, surface, [image(window)]))
     await flushReact()
     expect(attachedImages(window)).toBe(2)
-    expect(filed).toEqual([])
+    expect(guessed).toEqual([])
+    expect(reviewCard()).toBeNull()
     surface.blur()
     await dom.act(async () => void pasteFiles(window, page, [image(window)]))
     await flushReact()
-    expect(filed).toEqual(['image-1'])
+    expect(reviewCard()).not.toBeNull()
+    expect(guessed).toEqual(['image-1'])
+    expect(filed).toEqual([])
     expect(attachedImages(window)).toBe(2)
   })
 })
