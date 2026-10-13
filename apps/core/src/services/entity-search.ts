@@ -89,21 +89,34 @@ export async function searchEntities(identity: Identity, request: unknown) {
   return { results: [...rows] }
 }
 
-export async function listVisibleSquads(identity: Identity, limit = 50) {
+async function visibleSquadsFilter(identity: Identity): Promise<SQL> {
   const scope = await resolvePermissionSquadScope(identity, 'squads:read')
   const accessible = await getAccessibleSquadIds(identity)
+  return sql`${withinScope(sql`${squads.id}`, scope)} AND ${accessible === 'all' ? sql`true` : withinScope(sql`${squads.id}`, { kind: 'some', squadIds: accessible })}`
+}
+
+const visibleSquadColumns = {
+  id: squads.id,
+  name: squads.name,
+  purpose: squads.purpose,
+  status: squads.status,
+  managerAgentId: squads.managerAgentId,
+}
+
+export async function listVisibleSquads(identity: Identity, limit = 50) {
   return db
-    .select({
-      id: squads.id,
-      name: squads.name,
-      purpose: squads.purpose,
-      status: squads.status,
-      managerAgentId: squads.managerAgentId,
-    })
+    .select(visibleSquadColumns)
     .from(squads)
-    .where(
-      sql`${withinScope(sql`${squads.id}`, scope)} AND ${accessible === 'all' ? sql`true` : withinScope(sql`${squads.id}`, { kind: 'some', squadIds: accessible })}`
-    )
+    .where(await visibleSquadsFilter(identity))
     .orderBy(squads.name, squads.id)
     .limit(Math.max(1, Math.min(limit, 100)))
+}
+
+/** One squad, when `listVisibleSquads` would list it for this identity (however many squads there are). */
+export async function findVisibleSquad(identity: Identity, squadId: string) {
+  const [squad] = await db
+    .select(visibleSquadColumns)
+    .from(squads)
+    .where(sql`${squads.id} = ${squadId}::uuid AND ${await visibleSquadsFilter(identity)}`)
+  return squad ?? null
 }

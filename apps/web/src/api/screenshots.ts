@@ -1,13 +1,22 @@
-import type { FileScreenshotResponse, ScreenshotCorrection } from '@ficus/shared'
+import type {
+  FileScreenshotRequest,
+  FileScreenshotResponse,
+  GuessScreenshotResponse,
+  ScreenshotWorkStreamsResponse,
+} from '@ficus/shared'
 import { webTransport as t } from './transport'
 
-/** "Drop a screenshot anywhere": Core guesses where it belongs and files it through a new Assistant conversation. */
+/**
+ * "Drop a screenshot anywhere": Core guesses what it is and where it belongs for the review card,
+ * and files it through a new Assistant conversation only when the user confirms.
+ */
 export const screenshotsApi = {
-  file: (imageId: string, note?: string) =>
-    t.request<FileScreenshotResponse>('/screenshots/file', {
-      method: 'POST',
-      body: { imageId, ...(note ? { note } : {}) },
-    }),
-  correct: (correction: ScreenshotCorrection) =>
-    t.request<{ conversationId: string }>('/screenshots/correction', { method: 'POST', body: correction }),
+  /** The guess for a staged image. Creates nothing and sends nothing. */
+  guess: (imageId: string) =>
+    t.request<GuessScreenshotResponse>('/screenshots/guess', { method: 'POST', body: { imageId } }),
+  /** A squad's open work streams, for the card's picker. */
+  workStreams: (squadId: string) =>
+    t.request<ScreenshotWorkStreamsResponse>(`/screenshots/work-streams?squadId=${encodeURIComponent(squadId)}`),
+  file: (request: FileScreenshotRequest) =>
+    t.request<FileScreenshotResponse>('/screenshots/file', { method: 'POST', body: request }),
 }

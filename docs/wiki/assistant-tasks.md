@@ -102,18 +102,36 @@ forwarded (not another user's, nor another conversation's), the recipient must b
 could reach anyway, its model must accept images, and the images together stay within the 10 MB
 per-message limit.
 
-Screenshot filing uses this: `POST /api/screenshots/file` (`{ imageId, note? }`, the user's own staged
-upload) asks one `screenshot-filing` decision (what it is, which visible squad, what to do) about a
-small JPEG copy of the image (at most 1024px and 180 KB, a GIF's first frame; see
-`DECISION_IMAGE_MAX_SIDE` in `packages/shared/src/decisions.ts`). When the guessed squad has open
-(active or queued) work streams the user may read, a second decision asks which one it is about. The
-streams' titles and descriptions go in its `state` as data, and the options only point at them. A
-pick at 60% or more (`SCREENSHOT_WORK_STREAM_MIN_PROBABILITY`) becomes "add it to that work stream",
-and "none" rules out adding to one. Then it creates a new Assistant conversation whose first message
-carries the image, the guess with its probabilities (and the work stream ID, if one was picked), and
-the image ID to forward. With the feature off, or no decision model that reads
-images answering, the conversation is created without a guess. `POST /api/screenshots/correction`
-(`{ conversationId, squadId | null, clientId }`) posts a "Wrong squad?" correction into it.
+Screenshot filing uses this, in two steps so that nothing reaches the Assistant before the user has
+checked it. Both need `chat:send` and only accept the user's own staged upload (pending, not bound to
+an agent or squad).
+
+`POST /api/screenshots/guess` (`{ imageId }`) asks one `screenshot-filing` decision (what it is,
+which visible squad, what to do) about a small JPEG copy of the image (at most 1024px and 180 KB, a
+GIF's first frame; see `DECISION_IMAGE_MAX_SIDE` in `packages/shared/src/decisions.ts`). When the
+guessed squad has open (active or queued) work streams the user may read, a second decision asks
+which one it is about. The streams' titles and descriptions go in its `state` as data, and the
+options only point at them. A pick at 60% or more (`SCREENSHOT_GUESS_MIN_PROBABILITY`) becomes "add
+it to that work stream", and "none" rules out adding to one. The same threshold marks a weaker kind,
+squad or action as "not sure" on the review card; it is still returned as the best guess. The call
+returns `{ guess }` and creates nothing: no conversation, no message. With the feature off, no
+decision model that reads images answering, or an image that cannot be prepared, `guess` is null.
+`GET /api/screenshots/work-streams?squadId=` lists a visible squad's open work streams for the
+card's picker (empty without `workstreams:read` there), so changing the squad never asks the
+decision model again.
+
+`POST /api/screenshots/file` (`{ imageId, note?, kind?, squadId?, action?, workStreamId?, guessed? }`)
+is the user's confirmation. A field left out is left to the Assistant; `squadId: null` is the
+explicit "No squad". The squad must be visible to the user and not archived, and the work stream
+(only with `action: existing_work_stream`) must be an open one in that squad that the user may read;
+otherwise it answers 404 before creating anything. Then it creates a new Assistant conversation whose
+first message carries the image, the user's note first, the confirmed choices stated as the user's
+own (with the squad ID and work stream ID), and the image ID to forward. The conversation and
+message IDs are derived from the user and image, so a retried confirmation lands on the same
+conversation and sends nothing twice. `guessed` is what the guess filled the card in with: every
+field the user changed from it is saved as a candidate eval case through `captureCorrection` (kind,
+squad and action for `screenshot-filing`, the work stream for `screenshot-work-stream`), with the
+request rebuilt to include the note. Filing asks no decision model.
 
 ## Continuing, recovering, and cancelling
 

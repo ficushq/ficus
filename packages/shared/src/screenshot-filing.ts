@@ -1,8 +1,9 @@
 import { z } from 'zod'
 
 /*
- * "Drop a screenshot anywhere": the web uploads an image, Core asks a decision model what it shows
- * and which squad it belongs to, then files it through a new Assistant conversation.
+ * "Drop a screenshot anywhere": the web uploads an image and Core asks a decision model what it
+ * shows and where it belongs. The user reviews that guess on a card, corrects it and adds a note;
+ * only when they confirm is it filed through a new Assistant conversation.
  */
 
 /** What a screenshot can be, with the description the decision model is given. */
@@ -36,18 +37,16 @@ export const SCREENSHOT_ACTIONS = {
 } as const
 export type ScreenshotAction = keyof typeof SCREENSHOT_ACTIONS
 
-export const fileScreenshotRequestSchema = z.object({
-  /** A staged upload from `POST /api/images` (no agent or squad), by the same user. */
-  imageId: z.string().uuid(),
-  note: z.string().trim().max(2000).optional(),
-})
-export type FileScreenshotRequest = z.infer<typeof fileScreenshotRequestSchema>
+const SCREENSHOT_KIND_IDS = Object.keys(SCREENSHOT_KINDS) as [ScreenshotKind, ...ScreenshotKind[]]
+const SCREENSHOT_ACTION_IDS = Object.keys(SCREENSHOT_ACTIONS) as [ScreenshotAction, ...ScreenshotAction[]]
 
 /** The decision model's guess; each probability is 0 to 1. */
 export interface ScreenshotGuess {
   kind: { id: ScreenshotKind; label: string; probability: number }
   /** Null when the model picked no squad. */
   squad: { id: string; name: string; probability: number } | null
+  /** How sure "none of these squads" was, when that is what the model picked. */
+  noSquadProbability?: number
   action: { id: ScreenshotAction; label: string; probability: number }
   /**
    * The squad's open work stream it is about, from a second question asked only when the squad has
@@ -56,24 +55,84 @@ export interface ScreenshotGuess {
   workStream?: { id: string; title: string; probability: number } | null
 }
 
-/** A work stream guess counts only at or above this probability. */
-export const SCREENSHOT_WORK_STREAM_MIN_PROBABILITY = 0.6
+/**
+ * How sure a guess must be. A work stream pick below it does not count at all; a kind, squad or
+ * action below it is still the best guess, shown to the user as "not sure".
+ */
+export const SCREENSHOT_GUESS_MIN_PROBABILITY = 0.6
 
-export interface FileScreenshotResponse {
-  conversationId: string
-  /** Null when the feature is off or no decision model answered; the Assistant files it anyway. */
+/** Whether a guessed field should be shown as "not sure". */
+export function isUnsureScreenshotGuess(probability: number): boolean {
+  return probability < SCREENSHOT_GUESS_MIN_PROBABILITY
+}
+
+export const guessScreenshotRequestSchema = z.object({
+  /** A staged upload from `POST /api/images` (no agent or squad), by the same user. */
+  imageId: z.string().uuid(),
+})
+export type GuessScreenshotRequest = z.infer<typeof guessScreenshotRequestSchema>
+
+export interface GuessScreenshotResponse {
+  /** Null when the feature is off or no decision model answered; the user fills the card in. */
   guess: ScreenshotGuess | null
 }
 
-export const screenshotCorrectionSchema = z.object({
-  conversationId: z.string().uuid(),
-  /** The squad it belongs to; null for none. */
-  squadId: z.string().uuid().nullable(),
-  clientId: z.string().uuid(),
-})
-export type ScreenshotCorrection = z.infer<typeof screenshotCorrectionSchema>
+/** An open (active or queued) work stream a screenshot can be added to. */
+export interface ScreenshotWorkStreamOption {
+  id: string
+  title: string
+}
 
-/** The short summary a filed screenshot is shown with, e.g. "looks like a bug". */
-export function screenshotGuessSummary(guess: ScreenshotGuess): string {
-  return `looks like ${guess.kind.label}`
+export interface ScreenshotWorkStreamsResponse {
+  workStreams: ScreenshotWorkStreamOption[]
+}
+
+/**
+ * The fields of the review card. In each, `undefined` means the user left it unchosen (the
+ * Assistant decides); for the squad, `null` is the explicit choice "No squad".
+ */
+const screenshotChoicesSchema = z.object({
+  kind: z.enum(SCREENSHOT_KIND_IDS).optional(),
+  squadId: z.string().uuid().nullable().optional(),
+  action: z.enum(SCREENSHOT_ACTION_IDS).optional(),
+  workStreamId: z.string().uuid().optional(),
+})
+export type ScreenshotChoices = z.infer<typeof screenshotChoicesSchema>
+
+export const fileScreenshotRequestSchema = screenshotChoicesSchema
+  .extend({
+    /** A staged upload from `POST /api/images` (no agent or squad), by the same user. */
+    imageId: z.string().uuid(),
+    note: z.string().trim().max(2000).optional(),
+    /**
+     * What the card was filled in with from the guess, when there was one. Used only to save the
+     * fields the user changed as candidate eval cases; filing never reads it.
+     */
+    guessed: screenshotChoicesSchema.optional(),
+  })
+  .refine((request) => !request.workStreamId || request.action === 'existing_work_stream', {
+    message: 'A work stream can only be chosen with "add it to an existing work stream"',
+    path: ['workStreamId'],
+  })
+  .refine((request) => !request.workStreamId || Boolean(request.squadId), {
+    message: 'A work stream needs its squad',
+    path: ['workStreamId'],
+  })
+export type FileScreenshotRequest = z.infer<typeof fileScreenshotRequestSchema>
+
+export interface FileScreenshotResponse {
+  conversationId: string
+}
+
+/**
+ * The choices a guess fills the review card in with. The squad stays unchosen when the model was
+ * not asked about squads (the user sees none) or gave no usable answer.
+ */
+export function screenshotChoicesFromGuess(guess: ScreenshotGuess): ScreenshotChoices {
+  return {
+    kind: guess.kind.id,
+    ...(guess.squad ? { squadId: guess.squad.id } : guess.noSquadProbability !== undefined ? { squadId: null } : {}),
+    action: guess.action.id,
+    ...(guess.workStream ? { workStreamId: guess.workStream.id } : {}),
+  }
 }
