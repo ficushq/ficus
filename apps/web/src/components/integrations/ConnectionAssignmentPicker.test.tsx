@@ -106,4 +106,68 @@ describe('ConnectionAssignmentPicker', () => {
     expect(client.getQueryState(integrationQueryKeys.squad('squad-1', 'bigbrain'))).toBeDefined()
     expect(client.getQueryState(integrationQueryKeys.pool('bigbrain'))?.isInvalidated).toBe(true)
   })
+  describe('GitHub commit signing', () => {
+    const account = (id: string, displayName: string) => ({
+      id,
+      providerKey: 'github',
+      displayName,
+      enabled: true,
+      healthState: 'healthy',
+    })
+    const github = (accounts: { connectionId: string; login: string; state: string; signsFor: string[] }[]) => ({
+      providerKey: 'github',
+      assignment: account('a', 'Agent account'),
+      connections: [account('a', 'Agent account'), account('b', 'Owner account'), account('c', 'Spare account')],
+      attached: [
+        { ...account('a', 'Agent account'), isDefault: true },
+        { ...account('b', 'Owner account'), isDefault: false },
+      ],
+      commitSigning: {
+        defaultConnectionId: 'a',
+        accounts: accounts.map((item) => ({ ...item, isDefault: item.connectionId === 'a' })),
+      },
+    })
+    const show = async (data: ReturnType<typeof github>) => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+      client.setQueryData(integrationQueryKeys.squad('squad-1', 'github'), data)
+      const { ConnectionAssignmentPicker } = await import('./ConnectionAssignmentPicker')
+      await harness.act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <ConnectionAssignmentPicker
+              squadId="squad-1"
+              provider="github"
+              presentation={{ label: 'GitHub' }}
+              canRead
+              canWrite={false}
+            />
+          </QueryClientProvider>
+        )
+      )
+    }
+
+    test('shows which attached accounts sign and that the committer email chooses the key', async () => {
+      await show(
+        github([
+          { connectionId: 'a', login: 'agent', state: 'on', signsFor: ['1+agent@users.noreply.github.com'] },
+          { connectionId: 'b', login: 'owner', state: 'off', signsFor: [] },
+        ])
+      )
+      expect(container.textContent).toContain('Signs commits committed as 1+agent@users.noreply.github.com')
+      expect(container.textContent).toContain('Commit signing is off for @owner')
+      expect(container.textContent).toContain('signed by the attached account its committer email belongs to')
+      expect(container.textContent).not.toContain('Spare accountSigns')
+    })
+
+    test('does not describe signing when no attached account signs', async () => {
+      await show(
+        github([
+          { connectionId: 'a', login: 'agent', state: 'needs_attention', signsFor: [] },
+          { connectionId: 'b', login: 'owner', state: 'off', signsFor: [] },
+        ])
+      )
+      expect(container.textContent).toContain('Commit signing for @agent needs attention')
+      expect(container.textContent).not.toContain('signed by the attached account')
+    })
+  })
 })

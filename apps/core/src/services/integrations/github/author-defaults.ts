@@ -35,10 +35,7 @@ export function gitHubAuthorFromProfile(
   return {
     login: account.login,
     gitUserName: profileText(matched?.name) ?? account.login,
-    gitUserEmail:
-      email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-        ? email
-        : `${account.userId}+${account.login}@users.noreply.github.com`,
+    gitUserEmail: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : gitHubNoreplyEmail(account),
   }
 }
 
@@ -134,6 +131,16 @@ export async function getGitHubAuthorDefaults(
     accessToken = async () => resolved.credential.accessToken
   }
 
+  return cachedAuthor(connectionId, account, accessToken, request, now)
+}
+
+async function cachedAuthor(
+  connectionId: string,
+  account: GitHubConnectionConfiguration,
+  accessToken: () => Promise<string | undefined>,
+  request: typeof fetch,
+  now: () => number
+): Promise<GitHubAuthorDefaults> {
   const cacheKey = `${connectionId}:${account.userId}`
   const cached = profiles.get(cacheKey)
   if (cached && cached.retryAt > now()) return gitHubAuthorFromProfile(account, cached.profile)
@@ -145,4 +152,30 @@ export async function getGitHubAuthorDefaults(
   if (profiles.size >= PROFILE_CACHE_LIMIT) profiles.delete(profiles.keys().next().value!)
   profiles.set(cacheKey, { profile, retryAt: now() + (loaded ? PROFILE_FRESH_MS : PROFILE_RETRY_MS) })
   return gitHubAuthorFromProfile(account, profile)
+}
+
+/** GitHub's own address for an account. Always verified, so a signature over it shows as Verified. */
+export function gitHubNoreplyEmail(account: { userId: number; login: string }): string {
+  return `${account.userId}+${account.login}@users.noreply.github.com`
+}
+
+/**
+ * Committer emails that belong to one connected GitHub account: its noreply
+ * address and, when it publishes one, its public profile email (GitHub only
+ * lets an account publish an address it has verified). Commit signing uses
+ * this to tie a committer email to the account that owns the signing key.
+ *
+ * The profile comes from the same cache as the author defaults, so this costs
+ * a request only when the profile was not read in the last few minutes, and
+ * `accessToken` is asked only then. The account's other verified addresses are
+ * not included: listing them needs an email permission the App does not request.
+ */
+export async function gitHubAccountEmails(
+  connection: { id: string; configuration: GitHubConnectionConfiguration },
+  accessToken: () => Promise<string | undefined>,
+  request: typeof fetch = fetch,
+  now: () => number = Date.now
+): Promise<string[]> {
+  const author = await cachedAuthor(connection.id, connection.configuration, accessToken, request, now)
+  return [...new Set([gitHubNoreplyEmail(connection.configuration), author.gitUserEmail])]
 }

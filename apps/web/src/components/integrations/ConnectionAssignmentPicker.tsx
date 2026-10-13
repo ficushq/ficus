@@ -113,20 +113,33 @@ export function ConnectionAssignmentPicker({
           )}
           {value.connections.map((connection) => {
             const attached = value.attached?.find((item) => item.id === connection.id)
+            const signing =
+              attached && value.commitSigning?.accounts.find((item) => item.connectionId === connection.id)
             return (
               <div key={connection.id} className="flex items-center justify-between gap-3 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={!!attached}
-                    disabled={!canWrite || accountMutation.isPending || (!attached && !connection.enabled)}
-                    onChange={() =>
-                      accountMutation.mutate({ id: connection.id, action: attached ? 'detach' : 'attach' })
-                    }
-                  />
-                  {connection.displayName}
-                  {!connection.enabled && ' (disabled)'}
-                </label>
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={!!attached}
+                      disabled={!canWrite || accountMutation.isPending || (!attached && !connection.enabled)}
+                      onChange={() =>
+                        accountMutation.mutate({ id: connection.id, action: attached ? 'detach' : 'attach' })
+                      }
+                    />
+                    {connection.displayName}
+                    {!connection.enabled && ' (disabled)'}
+                  </label>
+                  {signing && (
+                    <p className="ml-6 text-xs text-muted">
+                      {signing.state === 'on'
+                        ? `Signs commits committed as ${signing.signsFor.join(' or ')}`
+                        : signing.state === 'off'
+                          ? `Commit signing is off for @${signing.login}`
+                          : `Commit signing for @${signing.login} needs attention`}
+                    </p>
+                  )}
+                </div>
                 {attached &&
                   (attached.isDefault ? (
                     <span className="text-xs text-muted">Default</span>
@@ -147,6 +160,8 @@ export function ConnectionAssignmentPicker({
           })}
           <p className="text-xs text-muted">
             The default account is used for git and gh. Flows can select any account attached here.
+            {value.commitSigning?.accounts.some((account) => account.state === 'on') &&
+              ' Each commit is signed by the attached account its committer email belongs to; a commit with any other committer email is refused rather than signed by a different account.'}
           </p>
         </div>
       ) : canWrite ? (

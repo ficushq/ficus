@@ -9,7 +9,7 @@ import {
   githubSigningKeysApi,
   type GitHubCommitSigningDependencies,
 } from './commit-signing'
-import { githubSigningSecretKey, parseGitHubSigningRecord } from './commit-signing-store'
+import { githubSigningSecretKey, parseGitHubSigningRecord, type GitHubSigningAccount } from './commit-signing-store'
 
 const TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const commitAs = (email: string) =>
@@ -21,14 +21,24 @@ function harness(
     create?: GitHubCommitSigningDependencies['keys']['create']
     exists?: boolean | 'throw'
     connections?: string[]
-    squadConnection?: string
-    emails?: string[]
+    /** GitHub connections attached to squad s1; other squads have none. */
+    accounts?: Partial<GitHubSigningAccount>[]
+    /** Public profile email per connection, on top of the noreply address. */
+    profileEmails?: Record<string, string>
     setFails?: boolean
   } = {}
 ) {
   const secrets = new Map<string, string>()
   const calls: string[] = []
   let nextKeyId = 100
+  const accounts: GitHubSigningAccount[] = (options.accounts ?? []).map((account, index) => ({
+    connectionId: `c${index + 1}`,
+    login: 'octo',
+    userId: 7,
+    isDefault: index === 0,
+    canSign: true,
+    ...account,
+  }))
   const deps: GitHubCommitSigningDependencies = {
     secrets: {
       get: (key) => secrets.get(key),
@@ -63,8 +73,13 @@ function harness(
       calls.push(`list:${userId}`)
       return options.connections ?? ['c1']
     },
-    squadConnectionId: async () => options.squadConnection,
-    signerEmails: async () => options.emails ?? ['7+octo@users.noreply.github.com'],
+    squadAccounts: async (squadId) => (squadId === 's1' ? accounts : []),
+    connectionAccount: async (connectionId) => accounts.find((account) => account.connectionId === connectionId),
+    accountEmails: async (account) => {
+      calls.push(`emails:${account.connectionId}`)
+      const profile = options.profileEmails?.[account.connectionId]
+      return [`${account.userId}+${account.login}@users.noreply.github.com`, ...(profile ? [profile] : [])]
+    },
     reproject: async (id) => {
       calls.push(`reproject:${id}`)
     },
@@ -179,17 +194,22 @@ describe('GitHubCommitSigning', () => {
   })
 
   describe('sign', () => {
-    it('signs commits committed as an allowed identity with a signature ssh-keygen verifies', async () => {
-      const { signing, secrets } = harness({ squadConnection: 'c1', emails: ['Agent@Example.com'] })
-      await signing.enable('c1', 'u')
-      const payload = commitAs('agent@example.com')
-      const signature = await signing.sign({ squadId: 's1', agentId: 'a1', payload })
+    const OCTO = '7+octo@users.noreply.github.com'
+    const HUBOT = '9+hubot@users.noreply.github.com'
+    const two = [
+      { login: 'octo', userId: 7 },
+      { login: 'hubot', userId: 9 },
+    ]
+    const sign = (signing: GitHubCommitSigning, email: string, squadId = 's1') =>
+      signing.sign({ squadId, agentId: 'a1', payload: commitAs(email) })
 
+    /** True when `signature` over `payload` was made with the key stored for the connection. */
+    function signedBy(secrets: Map<string, string>, connectionId: string, payload: Buffer, signature: string) {
+      const stored = record(secrets, connectionId)
+      if (stored?.state !== 'on') throw new Error('expected an on record')
       const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-sign-')))
       try {
-        const stored = record(secrets)
-        if (stored?.state !== 'on') throw new Error('expected an on record')
-        writeFileSync(join(dir, 'allowed'), `agent@example.com ${stored.publicKey}\n`)
+        writeFileSync(join(dir, 'allowed'), `signer ${stored.publicKey}\n`)
         writeFileSync(join(dir, 'sig'), signature)
         const verify = Bun.spawnSync(
           [
@@ -199,7 +219,7 @@ describe('GitHubCommitSigning', () => {
             '-f',
             join(dir, 'allowed'),
             '-I',
-            'agent@example.com',
+            'signer',
             '-n',
             'git',
             '-s',
@@ -207,30 +227,186 @@ describe('GitHubCommitSigning', () => {
           ],
           { stdin: payload, stdout: 'pipe', stderr: 'pipe' }
         )
-        expect(verify.exitCode).toBe(0)
+        return verify.exitCode === 0
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }
+    }
+
+    it("signs a default-account commit with that account's key, without looking anything up", async () => {
+      const { signing, secrets, calls } = harness({ accounts: [{}] })
+      await signing.enable('c1', 'u')
+      const signature = await sign(signing, '7+Octo@Users.Noreply.GitHub.com')
+      expect(signedBy(secrets, 'c1', commitAs('7+Octo@Users.Noreply.GitHub.com'), signature)).toBe(true)
+      expect(calls.filter((call) => call.startsWith('emails:'))).toEqual([])
     })
 
-    it('refuses without a connection, with signing off, for non-git payloads and for other identities', async () => {
-      await expect(
-        harness().signing.sign({ squadId: 's1', agentId: 'a1', payload: commitAs('7+octo@users.noreply.github.com') })
-      ).rejects.toMatchObject({ code: 'not_configured' })
+    it("signs a commit committed as an account's public profile email", async () => {
+      const { signing, secrets } = harness({ accounts: [{}], profileEmails: { c1: 'Octo@Example.com' } })
+      await signing.enable('c1', 'u')
+      const signature = await sign(signing, 'octo@example.com')
+      expect(signedBy(secrets, 'c1', commitAs('octo@example.com'), signature)).toBe(true)
+    })
 
-      const off = harness({ squadConnection: 'c1' })
-      await expect(
-        off.signing.sign({ squadId: 's1', agentId: 'a1', payload: commitAs('7+octo@users.noreply.github.com') })
-      ).rejects.toMatchObject({ code: 'signing_off' })
+    it("signs a commit committed as a non-default attached account with THAT account's key", async () => {
+      const { signing, secrets } = harness({ accounts: two })
+      await signing.enable('c1', 'u')
+      await signing.enable('c2', 'u')
+      const asDefault = await sign(signing, OCTO)
+      const asOther = await sign(signing, HUBOT)
+      expect(signedBy(secrets, 'c1', commitAs(OCTO), asDefault)).toBe(true)
+      expect(signedBy(secrets, 'c2', commitAs(HUBOT), asOther)).toBe(true)
+      expect(signedBy(secrets, 'c1', commitAs(HUBOT), asOther)).toBe(false)
+      expect(signedBy(secrets, 'c2', commitAs(OCTO), asDefault)).toBe(false)
+    })
 
-      const on = harness({ squadConnection: 'c1' })
+    it('signs with a non-default account even when the default account has signing off', async () => {
+      const { signing, secrets } = harness({ accounts: two })
+      await signing.enable('c2', 'u')
+      expect(signedBy(secrets, 'c2', commitAs(HUBOT), await sign(signing, HUBOT))).toBe(true)
+      const asDefault = sign(signing, OCTO)
+      await expect(asDefault).rejects.toMatchObject({ code: 'signing_off' })
+      await expect(asDefault).rejects.toThrow('Commit signing is off for @octo')
+    })
+
+    it('refuses a committer no attached signing account owns, naming it and the accounts it can sign as', async () => {
+      const { signing } = harness({ accounts: two, profileEmails: { c2: 'hubot@example.com' } })
+      await signing.enable('c1', 'u')
+      await signing.enable('c2', 'u')
+      const refused = sign(signing, 'someone@else.com')
+      await expect(refused).rejects.toBeInstanceOf(GitHubSignRefused)
+      await expect(refused).rejects.toMatchObject({ code: 'identity_mismatch' })
+      const message = await refused.catch((error: Error) => error.message)
+      expect(message).toContain('committed as someone@else.com')
+      expect(message).toContain(`@octo (default): ${OCTO}`)
+      expect(message).toContain(`@hubot: ${HUBOT}, hubot@example.com`)
+      expect(message).toContain('GIT_COMMITTER_EMAIL')
+      expect(message).not.toMatch(/PRIVATE KEY|ssh-ed25519|SHA256:/)
+    })
+
+    it("never signs another account's email with the default key, whatever git identity the squad configured", async () => {
+      // The squad's githubIdentity / GIT_USER_EMAIL is not an input of the signer at all: only account emails are.
+      const attachedOff = harness({ accounts: two })
+      await attachedOff.signing.enable('c1', 'u')
+      await expect(sign(attachedOff.signing, HUBOT)).rejects.toMatchObject({ code: 'signing_off' })
+
+      const notAttached = harness({ accounts: [{}] })
+      await notAttached.signing.enable('c1', 'u')
+      await expect(sign(notAttached.signing, HUBOT)).rejects.toMatchObject({ code: 'identity_mismatch' })
+      await expect(sign(notAttached.signing, 'noah@example.com')).rejects.toMatchObject({ code: 'identity_mismatch' })
+    })
+
+    it('does not use a connection that may not sign, or one attached to another squad', async () => {
+      // Disabled, other-authority and reauthorization-required connections arrive as canSign: false.
+      const unusable = harness({ accounts: [{}, { login: 'hubot', userId: 9, canSign: false }] })
+      await unusable.signing.enable('c1', 'u')
+      await unusable.signing.enable('c2', 'u')
+      await expect(sign(unusable.signing, HUBOT)).rejects.toMatchObject({ code: 'identity_mismatch' })
+
+      const onlyUnusable = harness({ accounts: [{ canSign: false }] })
+      await onlyUnusable.signing.enable('c1', 'u')
+      await expect(sign(onlyUnusable.signing, OCTO)).rejects.toMatchObject({ code: 'not_configured' })
+
+      const otherSquad = harness({ accounts: two })
+      await otherSquad.signing.enable('c1', 'u')
+      await otherSquad.signing.enable('c2', 'u')
+      await expect(sign(otherSquad.signing, HUBOT, 's2')).rejects.toMatchObject({ code: 'not_configured' })
+    })
+
+    it('refuses an email two different attached accounts both claim', async () => {
+      const { signing } = harness({
+        accounts: two,
+        profileEmails: { c1: 'shared@example.com', c2: 'shared@example.com' },
+      })
+      await signing.enable('c1', 'u')
+      await signing.enable('c2', 'u')
+      await expect(sign(signing, 'shared@example.com')).rejects.toMatchObject({ code: 'identity_mismatch' })
+    })
+
+    it('refuses without a connection, with signing off and for non-git payloads', async () => {
+      await expect(sign(harness().signing, OCTO)).rejects.toMatchObject({ code: 'not_configured' })
+      await expect(sign(harness({ accounts: [{}] }).signing, OCTO)).rejects.toMatchObject({ code: 'signing_off' })
+
+      const on = harness({ accounts: [{}] })
       await on.signing.enable('c1', 'u')
       await expect(
         on.signing.sign({ squadId: 's1', agentId: 'a1', payload: Buffer.from('not a commit') })
       ).rejects.toMatchObject({ code: 'invalid_payload' })
-      const mismatch = on.signing.sign({ squadId: 's1', agentId: 'a1', payload: commitAs('someone@else.com') })
-      await expect(mismatch).rejects.toBeInstanceOf(GitHubSignRefused)
-      await expect(mismatch).rejects.toMatchObject({ code: 'identity_mismatch' })
+    })
+  })
+
+  describe('summaries', () => {
+    const leaks = (value: unknown) => /PRIVATE KEY|privateKey|ssh-ed25519|githubKeyId/.test(JSON.stringify(value))
+
+    it('shows per connection whether it signs, as whom and for which committer emails', async () => {
+      const { signing } = harness({ accounts: [{}], profileEmails: { c1: 'octo@example.com' } })
+      expect(await signing.summary('c1')).toEqual({ state: 'off', login: 'octo', signsFor: [] })
+      expect(await signing.summary('missing')).toBeUndefined()
+      await signing.enable('c1', 'u')
+      const on = await signing.summary('c1')
+      expect(on).toEqual({
+        state: 'on',
+        login: 'octo',
+        signsFor: ['7+octo@users.noreply.github.com', 'octo@example.com'],
+        fingerprint: expect.stringMatching(/^SHA256:/),
+      })
+      expect(leaks(on)).toBe(false)
+    })
+
+    it('needs attention when signing is on but the connection may not sign or its key left GitHub', async () => {
+      const unusable = harness({ accounts: [{ canSign: false }] })
+      await unusable.signing.enable('c1', 'u')
+      expect(await unusable.signing.summary('c1')).toMatchObject({ state: 'needs_attention', signsFor: [] })
+
+      const removed = harness({ accounts: [{}], exists: false })
+      await removed.signing.enable('c1', 'u')
+      expect(await removed.signing.summary('c1')).toMatchObject({ state: 'on' })
+      expect(await removed.signing.summary('c1', { checkGitHub: true })).toMatchObject({
+        state: 'needs_attention',
+        signsFor: [],
+      })
+    })
+
+    it('shows per squad which attached accounts it signs as and which is the default', async () => {
+      const { signing } = harness({
+        accounts: [
+          { login: 'octo', userId: 7 },
+          { login: 'hubot', userId: 9 },
+          { login: 'ghost', userId: 11, canSign: false },
+          { login: 'idle', userId: 13 },
+        ],
+      })
+      for (const id of ['c1', 'c2', 'c3']) await signing.enable(id, 'u')
+      const summary = await signing.squadSummary('s1')
+      expect(summary.defaultConnectionId).toBe('c1')
+      expect(
+        summary.accounts.map(({ connectionId, isDefault, login, state, signsFor }) => ({
+          connectionId,
+          isDefault,
+          login,
+          state,
+          signsFor,
+        }))
+      ).toEqual([
+        {
+          connectionId: 'c1',
+          isDefault: true,
+          login: 'octo',
+          state: 'on',
+          signsFor: ['7+octo@users.noreply.github.com'],
+        },
+        {
+          connectionId: 'c2',
+          isDefault: false,
+          login: 'hubot',
+          state: 'on',
+          signsFor: ['9+hubot@users.noreply.github.com'],
+        },
+        { connectionId: 'c3', isDefault: false, login: 'ghost', state: 'needs_attention', signsFor: [] },
+        { connectionId: 'c4', isDefault: false, login: 'idle', state: 'off', signsFor: [] },
+      ])
+      expect(leaks(summary)).toBe(false)
+      expect(await signing.squadSummary('s2')).toEqual({ defaultConnectionId: null, accounts: [] })
     })
   })
 })

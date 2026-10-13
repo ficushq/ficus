@@ -1,8 +1,19 @@
-import type { GitHubCommitSigningErrorCode, GitHubCommitSigningStatus } from '@ficus/shared'
+import type {
+  GitHubCommitSigningErrorCode,
+  GitHubCommitSigningStatus,
+  GitHubCommitSigningSummary,
+  GitHubSquadCommitSigning,
+} from '@ficus/shared'
 import { createLogger } from '../../../lib/infra/logger'
 import { generateSshSigningKey, signSshSig, sshKeyFingerprint } from './ssh-signature'
 import { parseGitSigningPayload } from './signing-payload'
-import { githubSigningSecretKey, parseGitHubSigningRecord, type GitHubSigningRecord } from './commit-signing-store'
+import { gitHubNoreplyEmail } from './author-defaults'
+import {
+  githubSigningSecretKey,
+  parseGitHubSigningRecord,
+  type GitHubSigningAccount,
+  type GitHubSigningRecord,
+} from './commit-signing-store'
 
 const log = createLogger('github-commit-signing')
 
@@ -52,10 +63,16 @@ export interface GitHubCommitSigningDependencies {
   account(connectionId: string): Promise<GitHubAccount | undefined>
   /** Enabled, authenticated GitHub connections this Ficus user connected or last reconnected. */
   connectionIdsFor(userId: string): Promise<string[]>
-  /** Connection whose credential a squad's `git` uses (its default assignment). */
-  squadConnectionId(squadId: string): Promise<string | undefined>
-  /** Emails the squad's commits may be signed as (its configured git identity and the account's noreply address). */
-  signerEmails(squadId: string, connectionId: string): Promise<string[]>
+  /** Every GitHub connection assigned to the squad, default first, each saying whether it may sign. */
+  squadAccounts(squadId: string): Promise<GitHubSigningAccount[]>
+  /** One GitHub connection outside a squad, or undefined when it does not exist. */
+  connectionAccount(connectionId: string): Promise<GitHubSigningAccount | undefined>
+  /**
+   * Committer emails that belong to the account behind the connection: its
+   * noreply address and its public profile email. Never an email configured in
+   * Ficus (squad git identity, secrets): those say nothing about who owns the key.
+   */
+  accountEmails(account: GitHubSigningAccount, squadId?: string): Promise<string[]>
   /** Re-render env files of squads using the connection so their `git` picks up the change. */
   reproject(connectionId: string): Promise<void>
   keyTitle(): string
@@ -190,13 +207,24 @@ export class GitHubCommitSigning {
     }
   }
 
-  /** Sign a git commit or tag for an agent in the squad with its connection's key. */
+  /**
+   * Sign a git commit or tag for an agent in the squad.
+   *
+   * The key is chosen by the object's committer (or tagger) email and nothing
+   * else: among the connections assigned to the squad that may sign and have
+   * signing on, the one whose GitHub account that email belongs to. A caller
+   * cannot name a connection, so it cannot get one account's signature over
+   * content committed as another, and no other account's key is ever a fallback.
+   */
   async sign(input: { squadId: string; agentId: string; payload: Buffer }): Promise<string> {
-    const connectionId = await this.deps.squadConnectionId(input.squadId)
-    if (!connectionId)
+    const accounts = (await this.deps.squadAccounts(input.squadId)).filter((account) => account.canSign)
+    if (accounts.length === 0)
       throw new GitHubSignRefused('not_configured', 'This squad has no usable GitHub account to sign commits with.')
-    const record = await this.#record(connectionId)
-    if (record?.state !== 'on')
+    const candidates = await Promise.all(
+      accounts.map(async (account) => ({ account, record: await this.#record(account.connectionId) }))
+    )
+    const signers = candidates.flatMap(({ account, record }) => (record?.state === 'on' ? [{ account, record }] : []))
+    if (signers.length === 0)
       throw new GitHubSignRefused(
         'signing_off',
         'Commit signing is off for this squad’s GitHub account. Turn it on in Settings → Integrations → GitHub.'
@@ -210,17 +238,106 @@ export class GitHubCommitSigning {
         `Ficus signs only git commits and tags: ${(error as Error).message}`
       )
     }
-    const allowed = (await this.deps.signerEmails(input.squadId, connectionId)).map((email) => email.toLowerCase())
-    if (!allowed.includes(parsed.signerEmail))
+
+    // The noreply address needs no lookup; the public profile email is read only when it could decide.
+    const noreply = (account: GitHubSigningAccount) => [gitHubNoreplyEmail(account).toLowerCase()]
+    const owns = (emails: string[]) => emails.includes(parsed.signerEmail)
+    let matches = signers.filter(({ account }) => owns(noreply(account)))
+    let emails = new Map<string, string[]>(accounts.map((account) => [account.connectionId, noreply(account)]))
+    if (matches.length === 0) {
+      emails = new Map(
+        await Promise.all(
+          accounts.map(
+            async (account) =>
+              [
+                account.connectionId,
+                (await this.deps.accountEmails(account, input.squadId)).map((email) => email.toLowerCase()),
+              ] as const
+          )
+        )
+      )
+      matches = signers.filter(({ account }) => owns(emails.get(account.connectionId) ?? []))
+    }
+    // One email can vouch for one GitHub account only; two connections of the same account are equivalent.
+    if (new Set(matches.map(({ account }) => account.userId)).size > 1) matches = []
+    const signer = matches[0]
+    if (!signer) {
+      const committer = parsed.signerEmail.slice(0, 254)
+      const action = parsed.kind === 'commit' ? 'committed' : 'tagged'
+      const owner = candidates.find(
+        ({ account, record }) => record?.state !== 'on' && owns(emails.get(account.connectionId) ?? [])
+      )
+      if (owner)
+        throw new GitHubSignRefused(
+          'signing_off',
+          `Commit signing is off for @${owner.account.login}, the GitHub account ${committer} belongs to. Turn it on in Settings → Integrations → GitHub.`
+        )
+      const signable = signers
+        .map(
+          ({ account }) =>
+            `@${account.login}${account.isDefault ? ' (default)' : ''}: ${(emails.get(account.connectionId) ?? []).join(', ')}`
+        )
+        .join('; ')
       throw new GitHubSignRefused(
         'identity_mismatch',
-        `Ficus signs only ${parsed.kind}s ${parsed.kind === 'commit' ? 'committed' : 'tagged'} as ${allowed.join(' or ')}, not ${parsed.signerEmail}.`
+        `Not signed: this ${parsed.kind} is ${action} as ${committer}, which is not an email of a GitHub account this squad can sign as. ` +
+          `It can sign as ${signable}. ` +
+          `Use one of those as the committer email (for example GIT_COMMITTER_EMAIL), or attach the GitHub account that owns ${committer} to this squad and turn its commit signing on.`
       )
-    const signature = signSshSig(record.privateKey, input.payload, 'git')
+    }
+    const signature = signSshSig(signer.record.privateKey, input.payload, 'git')
     log.info(
-      `Signed git ${parsed.kind} for agent ${input.agentId} in squad ${input.squadId} with connection ${connectionId}`
+      `Signed git ${parsed.kind} for agent ${input.agentId} in squad ${input.squadId} with connection ${signer.account.connectionId} (${signer.account.login})`
     )
     return signature
+  }
+
+  /**
+   * Signing state of one connection for `ficus integration list/get`. With
+   * `checkGitHub` it also asks GitHub whether the key is still registered (one
+   * request, so `get` does and `list` does not); a removed key needs attention.
+   */
+  async summary(
+    connectionId: string,
+    options: { checkGitHub?: boolean } = {}
+  ): Promise<GitHubCommitSigningSummary | undefined> {
+    const account = await this.deps.connectionAccount(connectionId)
+    if (!account) return undefined
+    const record = await this.#record(connectionId)
+    if (record?.state !== 'on') return { state: 'off', login: account.login, signsFor: [] }
+    const fingerprint = sshKeyFingerprint(record.publicKey)
+    const keyRemoved =
+      account.canSign && options.checkGitHub && (await this.status(connectionId)).registeredOnGitHub === false
+    if (!account.canSign || keyRemoved)
+      return { state: 'needs_attention', login: account.login, signsFor: [], fingerprint }
+    return { state: 'on', login: account.login, signsFor: await this.deps.accountEmails(account), fingerprint }
+  }
+
+  /**
+   * Which attached accounts sign a squad's commits. Reads only Ficus's own
+   * state (no GitHub key check), so a key someone removed on GitHub still shows
+   * as on here; the per-connection summary reports that.
+   */
+  async squadSummary(squadId: string): Promise<GitHubSquadCommitSigning> {
+    const accounts = await this.deps.squadAccounts(squadId)
+    return {
+      defaultConnectionId: accounts.find((account) => account.isDefault)?.connectionId ?? null,
+      accounts: await Promise.all(
+        accounts.map(async (account) => {
+          const record = await this.#record(account.connectionId)
+          const identity = { connectionId: account.connectionId, isDefault: account.isDefault, login: account.login }
+          if (record?.state !== 'on') return { ...identity, state: 'off' as const, signsFor: [] }
+          const fingerprint = sshKeyFingerprint(record.publicKey)
+          if (!account.canSign) return { ...identity, state: 'needs_attention' as const, signsFor: [], fingerprint }
+          return {
+            ...identity,
+            state: 'on' as const,
+            signsFor: await this.deps.accountEmails(account, squadId),
+            fingerprint,
+          }
+        })
+      ),
+    }
   }
 
   async #unregister(connectionId: string, record: Extract<GitHubSigningRecord, { state: 'on' }>): Promise<void> {

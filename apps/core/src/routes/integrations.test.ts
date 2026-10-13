@@ -355,6 +355,40 @@ describe('integration routes', () => {
     }
   })
 
+  test('squad selection shows which attached accounts sign, and nothing but the public signing state', async () => {
+    const { app, calls } = createApp({
+      type: 'system',
+      systemTokenId: 'signing-read',
+      name: 'test',
+      scopes: ['integrations:read'],
+    })
+    const account = {
+      connectionId: summary.id,
+      isDefault: true,
+      login: 'octo',
+      state: 'on' as const,
+      signsFor: ['7+octo@users.noreply.github.com'],
+      fingerprint: 'SHA256:abc',
+    }
+    calls.selection.mockImplementation(
+      async () =>
+        ({
+          providerKey: 'github',
+          assignment: summary,
+          connections: [summary],
+          commitSigning: {
+            defaultConnectionId: summary.id,
+            accounts: [{ ...account, privateKey: 'PRIVATE KEY', publicKey: 'ssh-ed25519 AAAA', githubKeyId: 5 }],
+          },
+        }) as any
+    )
+    const response = await app.request(`/api/squads/${squadId}/integrations/github`)
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(JSON.parse(text).commitSigning).toEqual({ defaultConnectionId: summary.id, accounts: [account] })
+    expect(text).not.toMatch(/PRIVATE KEY|privateKey|ssh-ed25519|githubKeyId/)
+  })
+
   test('missing GitHub account reports actionable configuration guidance instead of forbidden', async () => {
     const { app, calls } = createApp({
       type: 'system',

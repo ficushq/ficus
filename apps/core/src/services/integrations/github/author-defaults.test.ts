@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { db, squads, integrationConnections, integrationConnectionAssignments } from '../../../db'
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 import { createTestGitHubConnection } from '../../../test-utils/github-connection'
-import { gitHubAuthorFromProfile, getGitHubAuthorDefaults } from './author-defaults'
+import { gitHubAccountEmails, gitHubAuthorFromProfile, getGitHubAuthorDefaults } from './author-defaults'
 import { resolveGitHubConnection } from './resolve-connection'
 import { DbIntegrationConnectionRepository } from '../db-connection-repository'
 import { resolveOAuthAuthority } from '../authorization/authority'
@@ -218,4 +218,31 @@ test('a failed profile fetch keeps the loaded profile instead of downgrading to 
   } finally {
     await fixture.dispose()
   }
+})
+
+test('account emails are the noreply address plus the public profile email of that same account', async () => {
+  const connection = (id: string) => ({
+    id: `emails-${id}-${crypto.randomUUID()}`,
+    configuration: { version: 1 as const, userId: 42, login: 'octo' },
+  })
+  const profile = (body: unknown) => (async () => Response.json(body)) as unknown as typeof fetch
+  const noreply = '42+octo@users.noreply.github.com'
+
+  expect(
+    await gitHubAccountEmails(connection('public'), async () => 'token', profile({ id: 42, email: 'octo@example.com' }))
+  ).toEqual([noreply, 'octo@example.com'])
+  // A private profile, a profile of another account, and an unusable token add nothing.
+  expect(
+    await gitHubAccountEmails(connection('private'), async () => 'token', profile({ id: 42, email: null }))
+  ).toEqual([noreply])
+  expect(
+    await gitHubAccountEmails(connection('other'), async () => 'token', profile({ id: 7, email: 'other@example.com' }))
+  ).toEqual([noreply])
+  let asked = 0
+  const never = (async () => {
+    asked++
+    return Response.json({ id: 42, email: 'octo@example.com' })
+  }) as unknown as typeof fetch
+  expect(await gitHubAccountEmails(connection('no-token'), async () => undefined, never)).toEqual([noreply])
+  expect(asked).toBe(0)
 })

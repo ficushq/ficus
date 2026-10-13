@@ -38,6 +38,7 @@ import type {
   IntegrationAuthorizationStart,
   IntegrationDeviceAuthorizationStatus,
   GitHubCommitSigningStatus,
+  GitHubSquadCommitSigning,
   GitHubRepositoryAccess,
 } from '@ficus/shared'
 
@@ -169,6 +170,8 @@ export interface SquadIntegrationRoutesService {
     assignment: IntegrationConnectionSummary | null
     attached?: readonly (IntegrationConnectionSummary & { isDefault: boolean })[]
     connections: readonly IntegrationConnectionSummary[]
+    /** GitHub only: which attached accounts sign the squad's commits. Never key material. */
+    commitSigning?: GitHubSquadCommitSigning
     projection?: {
       status: 'pending' | 'installing' | 'ready' | 'degraded' | 'reconnect_required'
       lastErrorCode: string | null
@@ -725,6 +728,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
         ...(selection.attached
           ? { attached: selection.attached.map((row) => ({ ...redactSummary(row), isDefault: row.isDefault })) }
           : {}),
+        ...(selection.commitSigning ? { commitSigning: redactCommitSigning(selection.commitSigning) } : {}),
         ...(selection.projection === undefined ? {} : { projection: selection.projection }),
       })
     })
@@ -812,6 +816,21 @@ function redactSummary(connection: IntegrationConnectionSummary): IntegrationCon
     displayName: connection.displayName,
     enabled: connection.enabled,
     healthState: connection.healthState,
+  }
+}
+
+/** Rebuilt field by field so nothing but the public signing state can ride along. */
+function redactCommitSigning(value: GitHubSquadCommitSigning): GitHubSquadCommitSigning {
+  return {
+    defaultConnectionId: value.defaultConnectionId,
+    accounts: value.accounts.map((account) => ({
+      connectionId: account.connectionId,
+      isDefault: account.isDefault,
+      login: account.login,
+      state: account.state,
+      signsFor: [...account.signsFor],
+      ...(account.fingerprint ? { fingerprint: account.fingerprint } : {}),
+    })),
   }
 }
 

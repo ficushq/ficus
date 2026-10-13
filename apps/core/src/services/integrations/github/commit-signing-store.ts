@@ -1,4 +1,6 @@
-import { and, eq, or } from 'drizzle-orm'
+import { and, desc, eq, or, sql } from 'drizzle-orm'
+import { parseGitHubConfiguration } from '@ficus/shared/oauth-providers/github/config'
+import { resolveOAuthAuthority } from '../authorization/authority'
 import { db, integrationConnectionAssignments, integrationConnections } from '../../../db'
 import { getSecretStore } from '../../secrets'
 import { integrationEnabledPredicate } from '../provider-state'
@@ -50,30 +52,84 @@ export async function readGitHubSigningRecord(connectionId: string): Promise<Git
   return parseGitHubSigningRecord(getSecretStore().get(key))
 }
 
+/** A GitHub connection as commit signing sees it: who it is, and whether it may sign at all. */
+export interface GitHubSigningAccount {
+  connectionId: string
+  login: string
+  userId: number
+  /** The squad's default attachment; false outside a squad. */
+  isDefault: boolean
+  /**
+   * The connection may be used to sign: enabled (account and provider), issued
+   * under this instance's client authority, and authenticated. Disabled,
+   * other-authority and reauthorization-required connections never sign.
+   *
+   * Validation freshness and health are deliberately not required, unlike
+   * token use: a signature does not call GitHub, env files are rendered at
+   * arbitrary moments, and commits must not start failing because a 15-minute
+   * validation window lapsed or a token is mid-refresh.
+   */
+  canSign: boolean
+}
+
+const signingAccountColumns = {
+  id: integrationConnections.id,
+  configuration: integrationConnections.configuration,
+  canSign: sql<boolean>`${integrationConnections.enabled} and ${integrationEnabledPredicate()} and ${integrationConnections.authState} = 'authenticated' and ${integrationConnections.adapterVersion} = 1`,
+  clientAuthority: integrationConnections.clientAuthority,
+}
+
+function signingAccount(
+  row: { id: string; configuration: unknown; canSign: boolean; clientAuthority: unknown },
+  isDefault: boolean
+): GitHubSigningAccount[] {
+  try {
+    const { login, userId } = parseGitHubConfiguration(row.configuration)
+    return [
+      {
+        connectionId: row.id,
+        login,
+        userId,
+        isDefault,
+        canSign: row.canSign && row.clientAuthority === resolveOAuthAuthority(),
+      },
+    ]
+  } catch {
+    // A connection whose account cannot be read vouches for no one.
+    return []
+  }
+}
+
 /**
- * The GitHub connection a squad's `git` uses: its default assignment, the same
- * one `ficus integration exec github --squad` resolves without `--connection`.
- * Validation freshness is deliberately not required: env files are rendered at
- * arbitrary moments and must not drop signing because a 15-minute validation
- * window lapsed; the credential helper enforces usability per push.
+ * Every GitHub connection ASSIGNED to the squad, default first. Assignment is
+ * the only way a squad reaches a signing key: another squad's connection is
+ * never returned, and the same rule lets `ficus integration exec github
+ * --connection` use an attached account's token.
  */
-export async function defaultGitHubConnectionId(squadId: string): Promise<string | undefined> {
-  const [row] = await db
-    .select({ id: integrationConnections.id })
+export async function githubSigningAccountsForSquad(squadId: string): Promise<GitHubSigningAccount[]> {
+  const rows = await db
+    .select({ ...signingAccountColumns, isDefault: integrationConnectionAssignments.isDefault })
     .from(integrationConnectionAssignments)
     .innerJoin(integrationConnections, eq(integrationConnectionAssignments.connectionId, integrationConnections.id))
     .where(
       and(
         eq(integrationConnectionAssignments.squadId, squadId),
         eq(integrationConnectionAssignments.providerKey, 'github'),
-        eq(integrationConnectionAssignments.isDefault, true),
-        eq(integrationConnections.enabled, true),
-        integrationEnabledPredicate(),
-        eq(integrationConnections.authState, 'authenticated')
+        eq(integrationConnections.providerKey, 'github')
       )
     )
+    .orderBy(desc(integrationConnectionAssignments.isDefault), integrationConnections.id)
+  return rows.flatMap((row) => signingAccount(row, row.isDefault))
+}
+
+/** One GitHub connection outside any squad, for the per-connection signing summary. */
+export async function githubSigningAccount(connectionId: string): Promise<GitHubSigningAccount | undefined> {
+  const [row] = await db
+    .select(signingAccountColumns)
+    .from(integrationConnections)
+    .where(and(eq(integrationConnections.id, connectionId), eq(integrationConnections.providerKey, 'github')))
     .limit(1)
-  return row?.id
+  return row ? signingAccount(row, false)[0] : undefined
 }
 
 /** Enabled, authenticated GitHub connections this Ficus user connected or last reconnected. */
@@ -92,10 +148,18 @@ export async function githubConnectionIdsForUser(userId: string): Promise<string
   return rows.map((row) => row.id)
 }
 
-/** Public key the squad's git should sign with, or undefined when signing is off for its connection. */
+/**
+ * Public key the squad's git names as `user.signingkey`, or undefined when no
+ * attached account signs (git then commits unsigned). It only switches signing
+ * on in the sandbox: Core picks the key for each commit from the committer
+ * email, so the default account's key is named when it signs and otherwise the
+ * first attached account's that does.
+ */
 export async function githubSigningPublicKeyForSquad(squadId: string): Promise<string | undefined> {
-  const connectionId = await defaultGitHubConnectionId(squadId)
-  if (!connectionId) return undefined
-  const record = await readGitHubSigningRecord(connectionId)
-  return record?.state === 'on' ? record.publicKey : undefined
+  for (const account of await githubSigningAccountsForSquad(squadId)) {
+    if (!account.canSign) continue
+    const record = await readGitHubSigningRecord(account.connectionId)
+    if (record?.state === 'on') return record.publicKey
+  }
+  return undefined
 }

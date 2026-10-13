@@ -1,7 +1,11 @@
-import type { IntegrationAuthorizationStart, IntegrationDeviceAuthorizationStatus } from '@ficus/shared'
+import type {
+  GitHubCommitSigningSummary,
+  IntegrationAuthorizationStart,
+  IntegrationDeviceAuthorizationStatus,
+} from '@ficus/shared'
 import { Command } from 'commander'
 import { apiDelete, apiGet, apiPost, apiPut } from '../client'
-import { output, outputError } from '../output'
+import { isJsonMode, output, outputError } from '../output'
 
 const MAX_CREDENTIAL_BYTES = 16 * 1024
 
@@ -103,11 +107,26 @@ export function registerIntegrationCommands(
     .action(run(async () => output(await apiGet('/api/integrations/outputs'))))
   integration
     .command('list')
+    .description(
+      'List connections of a provider. GitHub connections include commitSigning: state, account login and the committer emails signed. With --squad, list the accounts attached to that squad instead, with which of them sign its commits'
+    )
     .requiredOption('--provider <key>')
-    .action(run(async ({ provider }) => output(await apiGet(`/api/integrations/connections?provider=${provider}`))))
+    .option('--squad <uuid>', 'Show the accounts attached to this squad and its commit signing')
+    .action(
+      run(async ({ provider, squad }) =>
+        showConnections(
+          await apiGet(
+            squad
+              ? `/api/squads/${encodeURIComponent(squad)}/integrations/${encodeURIComponent(provider)}`
+              : `/api/integrations/connections?provider=${encodeURIComponent(provider)}`
+          )
+        )
+      )
+    )
   integration
     .command('get <connection>')
-    .action(run(async (connection) => output(await apiGet(`/api/integrations/connections/${connection}`))))
+    .description('Show one connection. GitHub connections include commitSigning, checked against GitHub')
+    .action(run(async (connection) => showConnections(await apiGet(`/api/integrations/connections/${connection}`))))
   integration
     .command('create <provider>')
     .requiredOption('--api-base <url>')
@@ -226,6 +245,56 @@ export function registerIntegrationCommands(
       output({ state: 'disabled' })
     })
   )
+}
+
+const SIGNING_STATE = { on: 'on', off: 'off', needs_attention: 'needs attention' } as const
+
+function commitSigningLine(
+  signing: GitHubCommitSigningSummary,
+  connectionId: unknown,
+  isDefault?: boolean
+): string | undefined {
+  if (!signing || typeof signing !== 'object' || !(signing.state in SIGNING_STATE)) return undefined
+  const signsFor = Array.isArray(signing.signsFor) && signing.signsFor.length ? signing.signsFor.join(', ') : undefined
+  return (
+    `  @${signing.login}${isDefault ? ' (squad default)' : ''}: ${SIGNING_STATE[signing.state]}` +
+    (signsFor ? `, signs commits committed as ${signsFor}` : '') +
+    ` [connection ${String(connectionId)}]`
+  )
+}
+
+/**
+ * Plain-text commit-signing summary of what `list`/`get` returned: one line per
+ * GitHub account with its state and the committer emails it signs for. Empty
+ * for other providers.
+ */
+export function commitSigningLines(data: unknown): string[] {
+  const lines: (string | undefined)[] = []
+  const squad = (data as { commitSigning?: { accounts?: unknown } } | null)?.commitSigning
+  if (squad && Array.isArray(squad.accounts)) {
+    for (const account of squad.accounts as (GitHubCommitSigningSummary & {
+      connectionId: string
+      isDefault: boolean
+    })[])
+      lines.push(commitSigningLine(account, account?.connectionId, account?.isDefault))
+    if (lines.length === 0) return ['Commit signing: no GitHub account is attached to this squad.']
+    return [
+      'Commit signing (the key is chosen by the commit’s committer email; other emails are refused):',
+      ...lines.filter((line): line is string => !!line),
+    ]
+  }
+  for (const row of Array.isArray(data) ? data : [data]) {
+    const connection = row as { id?: unknown; commitSigning?: GitHubCommitSigningSummary } | null
+    if (connection?.commitSigning) lines.push(commitSigningLine(connection.commitSigning, connection.id))
+  }
+  const found = lines.filter((line): line is string => !!line)
+  return found.length ? ['Commit signing:', ...found] : []
+}
+
+function showConnections(data: unknown): void {
+  output(data)
+  const lines = isJsonMode() ? [] : commitSigningLines(data)
+  if (lines.length) output(lines, lines.join('\n'))
 }
 
 export async function readCredentialFromStdin(stream: AsyncIterable<Uint8Array> = Bun.stdin.stream()): Promise<string> {
