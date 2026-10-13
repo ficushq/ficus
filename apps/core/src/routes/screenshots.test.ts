@@ -9,7 +9,8 @@ import {
   type GuessScreenshotResponse,
   type ScreenshotWorkStreamsResponse,
 } from '@ficus/shared'
-import { agents, assistantConversations, db, images, messages, squads, workStreams } from '../db'
+import { agents, agentTypes, assistantConversations, db, images, messages, squads, workStreams } from '../db'
+import { AgentType } from '../entities/AgentType'
 import { Image } from '../entities/Image'
 import { Squad } from '../entities/Squad'
 import { identityMiddleware } from '../middleware/identity'
@@ -402,6 +403,84 @@ test('a confirmed squad must be visible and not archived, and nothing is created
   )
   expect(conversation.title).toBe('Screenshot: a reference')
   expect(sent[0]!.content).toContain("- Squad: none. Don't file it with a squad.")
+})
+
+/** Run `body` with the Assistant type on `model`, then put the type back as it was (the test database may have none). */
+async function withAssistantModel(model: string, body: () => Promise<void>) {
+  const [existing] = await db.select().from(agentTypes).where(eq(agentTypes.id, 'assistant'))
+  if (existing) await db.update(agentTypes).set({ model }).where(eq(agentTypes.id, 'assistant'))
+  else await AgentType.create({ id: 'assistant', name: 'Assistant', model, systemPrompt: 'test' })
+  AgentType.invalidateCache()
+  try {
+    await body()
+  } finally {
+    if (existing) await db.update(agentTypes).set({ model: existing.model }).where(eq(agentTypes.id, 'assistant'))
+    else await db.delete(agentTypes).where(eq(agentTypes.id, 'assistant'))
+    AgentType.invalidateCache()
+  }
+}
+
+test('a confirm refused because the Assistant cannot read images leaves no conversation, and a later one files it', async () => {
+  const { decide } = bugInChlea()
+  const server = app({ decide, isEnabled: () => true })
+  const imageId = await upload(server)
+  const before = await conversationCount()
+  const agentsBefore = (await db.select().from(agents).where(eq(agents.ownerUserId, user.id))).length
+  const request = { imageId, note: 'Checkout button overlaps', kind: 'bug', squadId: chlea.id }
+
+  await withAssistantModel('zai:glm-5.2', async () => {
+    // Twice: a retry while the model still cannot read images leaves nothing either.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const refused = await file(server, request)
+      expect(refused.status).toBe(400)
+      expect(await refused.json()).toEqual({
+        error: "The Assistant's model cannot read images. Choose a vision-capable model.",
+      })
+      expect(await conversationCount()).toBe(before)
+      expect((await db.select().from(agents).where(eq(agents.ownerUserId, user.id))).length).toBe(agentsBefore)
+    }
+    // The image is still the user's untouched staged upload.
+    const [image] = await db.select().from(images).where(eq(images.id, imageId))
+    expect(image).toMatchObject({ status: 'pending', agentId: null, squadId: null })
+  })
+
+  // With a model that reads images, the same confirm files it.
+  const filed = await file(server, request)
+  expect(filed.status).toBe(200)
+  const { conversationId } = (await filed.json()) as FileScreenshotResponse
+  expect(await conversationCount()).toBe(before + 1)
+  const { conversation, sent } = await filedConversation(conversationId)
+  expect(conversation.title).toBe(`Screenshot: a bug in ${chlea.name}`)
+  expect(sent).toHaveLength(1)
+  expect(sent[0]!.metadata).toMatchObject({ imageIds: [imageId] })
+
+  // A filed conversation is never removed: a retry after the model changed still lands on it.
+  await withAssistantModel('zai:glm-5.2', async () => {
+    const again = await file(server, request)
+    expect(again.status).toBe(200)
+    expect(((await again.json()) as FileScreenshotResponse).conversationId).toBe(conversationId)
+    expect((await filedConversation(conversationId)).sent).toHaveLength(1)
+  })
+})
+
+test("a screenshot whose conversation already exists is judged by that conversation's Assistant, which stays", async () => {
+  const { decide } = bugInChlea()
+  const server = app({ decide, isEnabled: () => true })
+  const imageId = await upload(server)
+  const filed = await file(server, { imageId })
+  const { conversationId } = (await filed.json()) as FileScreenshotResponse
+  const { conversation } = await filedConversation(conversationId)
+  // Put the image back as a staged upload and switch that Assistant to a model that cannot read
+  // images: the state of a confirm whose conversation was created before it was refused.
+  await db.update(agents).set({ modelOverride: 'zai:glm-5.2' }).where(eq(agents.id, conversation.agentId!))
+  await db.update(images).set({ agentId: null }).where(eq(images.id, imageId))
+  const before = await conversationCount()
+
+  const refused = await file(server, { imageId })
+  expect(refused.status).toBe(400)
+  // The conversation has a message: it is never removed.
+  expect(await conversationCount()).toBe(before)
+  expect((await filedConversation(conversationId)).sent).toHaveLength(1)
 })
 
 test('the routes need chat:send', async () => {
