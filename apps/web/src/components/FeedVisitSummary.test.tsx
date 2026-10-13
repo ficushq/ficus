@@ -145,6 +145,12 @@ test('waits for successful visible loading, freezes the visit baseline, and ackn
     link.textContent?.includes('Ship the fix')
   )
   expect(completedLink?.getAttribute('href')).toBe('/?squad=test&ws=completed-work')
+  // The header pads its hover highlight; the rows indent by the same amount so their markers
+  // stay under the header title (12px padding + 16px chevron + 8px gap).
+  const header = dom.window.document.querySelector('summary')!
+  expect(header.classList.contains('px-3')).toBe(true)
+  expect(assistantRows[0].classList.contains('pl-9')).toBe(true)
+  expect(completedLink?.classList.contains('pl-9')).toBe(true)
   const section = dom.window.document.querySelector('details')!
   expect(section.open).toBe(true)
   await dom.act(async () => {
@@ -159,6 +165,8 @@ test('waits for successful visible loading, freezes the visit baseline, and ackn
     'button[aria-label="Dismiss updates since your last visit"]'
   )!
   expect(dismiss).not.toBeNull()
+  // A link button has no inline padding of its own; its hit area extends into the header padding instead.
+  expect(dismiss.className).toContain('after:absolute')
   await dom.act(async () => dismiss.click())
   expect(dom.window.document.querySelector('[data-testid="feed-visit-summary"]')).toBeNull()
   await render()
