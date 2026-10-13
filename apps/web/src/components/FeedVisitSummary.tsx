@@ -88,7 +88,7 @@ export function AccountFeedVisit({
   if (!parts.length) return null
   return (
     <details open className="mb-4 group" data-testid="feed-visit-summary">
-      <summary className="ficus-button ficus-button-ghost flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 py-2 text-left marker:hidden [&::-webkit-details-marker]:hidden">
+      <summary className="ficus-button ficus-button-ghost flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left marker:hidden [&::-webkit-details-marker]:hidden">
         <span
           aria-hidden="true"
           className="shrink-0 text-placeholder transition-transform group-open:rotate-90 motion-reduce:transition-none"
@@ -97,9 +97,11 @@ export function AccountFeedVisit({
         </span>
         <span className="text-sm font-semibold text-secondary">Since your last visit</span>
         <span className="text-xs text-muted">{parts.join(' · ')}</span>
+        {/* A link button has no inline padding: the header's padding sets the visible gap, and the
+            pseudo-element extends the click target into that padding (and the row gap when wrapped). */}
         <button
           type="button"
-          className="ficus-button ficus-button-link ml-auto shrink-0 rounded py-1 text-xs text-muted hover:text-primary"
+          className="ficus-button ficus-button-link relative ml-auto shrink-0 rounded py-1 text-xs text-muted after:absolute after:-bottom-2 after:-left-2 after:-right-3 after:-top-1 hover:text-primary"
           aria-label="Dismiss updates since your last visit"
           onClick={(event) => {
             event.preventDefault()
@@ -123,7 +125,7 @@ export function AccountFeedVisit({
                 <li key={conversation.id}>
                   <Link
                     to={{ pathname: location.pathname, search: params.toString() }}
-                    className="flex items-start gap-2 rounded-lg py-2.5 pl-6 pr-3 hover:bg-surface-hover"
+                    className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-3 hover:bg-surface-hover"
                   >
                     <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
                     <span className="min-w-0 flex-1">
@@ -156,7 +158,7 @@ export function AccountFeedVisit({
                 <li key={stream.id}>
                   <Link
                     to={{ pathname: location.pathname, search: params.toString() }}
-                    className="flex items-start gap-2 rounded-lg py-2.5 pl-6 pr-3 hover:bg-surface-hover"
+                    className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-3 hover:bg-surface-hover"
                   >
                     <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-status-success-500" />
                     <span className="min-w-0 flex-1">
@@ -189,7 +191,7 @@ export function AccountFeedVisit({
         )}
         {completed.hasNextPage && (
           <button
-            className="ficus-button ficus-button-link ml-6 text-xs"
+            className="ficus-button ficus-button-link ml-9 text-xs"
             disabled={completed.isFetchingNextPage}
             onClick={() => void completed.fetchNextPage()}
           >
@@ -197,7 +199,7 @@ export function AccountFeedVisit({
           </button>
         )}
         {completed.isFetchNextPageError && (
-          <p role="alert" className="ml-6 text-sm text-status-danger-600 dark:text-status-danger-400">
+          <p role="alert" className="ml-9 text-sm text-status-danger-600 dark:text-status-danger-400">
             Could not load more updates. Try again.
           </p>
         )}
