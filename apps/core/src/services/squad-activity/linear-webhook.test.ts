@@ -17,9 +17,13 @@ afterEach(async () => {
   for (const webhookId of webhookIds.splice(0)) await db.delete(webhookEvents).where(eq(webhookEvents.id, webhookId))
 })
 
+// Activity repair only accepts windows inside the retention floor (30 days), so the
+// fixture day is always yesterday rather than a fixed date that ages out.
+const ACTIVITY_DAY = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+const DAY_START = Date.parse(`${ACTIVITY_DAY}T00:00:00Z`)
 // Inside the repair window used below, and before the receipts' own (live) created_at.
-const OCCURRED_AT = '2026-09-10T10:00:00Z'
-const WINDOW = { from: new Date('2026-09-10T00:00:00Z'), to: new Date('2026-09-11T00:00:00Z') }
+const OCCURRED_AT = `${ACTIVITY_DAY}T10:00:00Z`
+const WINDOW = { from: new Date(DAY_START), to: new Date(DAY_START + 86_400_000) }
 const issueUrl = 'https://linear.app/acme/issue/ENG-12/ship-the-tracked-issue'
 
 const issuePayload = (
@@ -62,8 +66,8 @@ const commentPayload = (identity: { issueId: string }, action: string, data: Rec
     issue: { id: identity.issueId, title: 'Ship the tracked issue', identifier: 'ENG-12', number: 12 },
     userId: 'user-9',
     url: `${issueUrl}#comment-comment-1`,
-    createdAt: '2026-09-10T11:00:00Z',
-    updatedAt: '2026-09-10T11:30:00Z',
+    createdAt: `${ACTIVITY_DAY}T11:00:00Z`,
+    updatedAt: `${ACTIVITY_DAY}T11:30:00Z`,
     ...data,
   },
 })
@@ -142,7 +146,7 @@ describe('verified Linear webhook Activity', () => {
       // The actor reads as the person Linear named, not the raw user id.
       summary: '[Issue ENG-12 moved to In Progress] Ship the tracked issue · by Ada',
     })
-    expect(streams.get(first.id)!.at.toISOString()).toBe('2026-09-10T10:00:00.000Z')
+    expect(streams.get(first.id)!.at.toISOString()).toBe(new Date(OCCURRED_AT).toISOString())
     // The oldest stream keeps the fact's own logical identity; the next gets a derived one.
     expect(streams.get(first.id)!.rowId).toBe(fact.logicalRowId)
     expect(streams.get(second.id)!.rowId).not.toBe(fact.logicalRowId)
