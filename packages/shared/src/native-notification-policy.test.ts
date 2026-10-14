@@ -7,8 +7,12 @@ import {
 } from './push-relay'
 const squad = '93b58062-77e5-4e3e-938a-30db82665830'
 const routing = { squadId: squad, eventType: 'question' as const, preview: { title: 'Secret', body: 'Private' } }
+test('previews are on by default and a device can turn them off', () => {
+  expect(defaults.showPreviews).toBe(true)
+  expect(decide(defaults, routing, false).routing.preview).toEqual(routing.preview)
+})
 test('privacy and muting remain free and do not mutate routing', () => {
-  expect(decide(defaults, routing, false).routing.preview).toBeUndefined()
+  expect(decide({ ...defaults, showPreviews: false }, routing, false).routing.preview).toBeUndefined()
   expect(routing.preview.title).toBe('Secret')
   expect(decide({ ...defaults, showPreviews: true }, routing, false).routing.preview).toEqual(routing.preview)
   expect(decide({ ...defaults, enabled: false }, routing, false).deliver).toBe(false)
@@ -52,6 +56,6 @@ test('the signed operation digest includes the device policy', () => {
     activationOperationPayload({ ...bind, notificationPolicy: defaults })
   )
   expect(activationOperationPayload({ ...bind, notificationPolicy: defaults })).not.toBe(
-    activationOperationPayload({ ...bind, notificationPolicy: { ...defaults, showPreviews: true } })
+    activationOperationPayload({ ...bind, notificationPolicy: { ...defaults, showPreviews: false } })
   )
 })
