@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import type { EventMap } from '@ficus/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { agentQuestions, agents, db, messages } from '../../db'
 import { Agent } from '../../entities/Agent'
@@ -73,7 +74,7 @@ async function metadataOf(messageId: string) {
 }
 
 function captureUpdates() {
-  const updates: Array<{ messageId: string; agentId: string; executionId?: string }> = []
+  const updates: Array<EventMap['message.updated']> = []
   cleanups.push(eventEmitter.on('message.updated', (data) => updates.push(data)))
   return updates
 }
