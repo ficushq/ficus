@@ -133,6 +133,11 @@ async function destination(deps: DesktopDeps, create: boolean): Promise<string> 
   }
   return personal
 }
+/** The installed app's path, or nothing when Desktop is not installed. */
+export async function findInstalledDesktop(deps: DesktopDeps): Promise<string | undefined> {
+  const path = await destination(deps, false)
+  return (await existing(path)) ? path : undefined
+}
 async function run(deps: DesktopDeps, command: string[], timeoutMs = 120_000): Promise<string> {
   const result = await deps.runner(command, { timeoutMs })
   if (result.code !== 0) throw new Error(`${command[0]} failed (${result.code})`)

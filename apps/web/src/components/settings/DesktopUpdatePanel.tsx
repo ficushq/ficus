@@ -95,9 +95,24 @@ export function DesktopUpdatePanel({ updates, canWrite }: { updates: DesktopUpda
             <dd className="text-primary">{state.appVersion || 'unknown'}</dd>
             <dt className="text-muted">Core commit</dt>
             <dd className="text-primary font-mono" title={state.coreCommit || undefined}>
-              {state.coreCommit ? state.coreCommit.slice(0, 7) : 'unknown'}
+              {/^[0-9a-f]{40}$/.test(state.coreCommit) ? (
+                <a
+                  href={`https://github.com/ficushq/ficus/commit/${state.coreCommit}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent-light hover:underline"
+                >
+                  {state.coreCommit.slice(0, 7)}
+                </a>
+              ) : (
+                'unknown'
+              )}
             </dd>
           </dl>
+          <p className="text-sm text-muted">
+            The bundled Core is built in public from that commit. Check that this app carries exactly that build with{' '}
+            <code className="font-mono text-primary">ficus desktop verify</code>.
+          </p>
           {!state.supported && (
             <div className="p-3 rounded bg-warning/10 text-warning text-sm">
               This build of Ficus Desktop doesn’t receive automatic updates.

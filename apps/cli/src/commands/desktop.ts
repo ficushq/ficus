@@ -1,5 +1,6 @@
 import { Command } from 'commander'
 import { defaultDesktopDeps, desktopStatus, installDesktop, type DesktopDeps } from '../desktop-installer'
+import { formatVerification, verifyDesktop } from '../desktop-verify'
 import { output, outputError } from '../output'
 
 export function registerDesktopCommands(program: Command, deps: DesktopDeps = defaultDesktopDeps()): void {
@@ -23,6 +24,21 @@ export function registerDesktopCommands(program: Command, deps: DesktopDeps = de
     .description('Install the latest signed Desktop release')
     .option('--no-open', 'Do not open Desktop after installation')
     .action(install)
+  desktop
+    .command('verify')
+    .description(
+      'Check that the Core inside Ficus Desktop is the public, attested build of its commit, file for file (needs gh)'
+    )
+    .argument('[app]', 'Path to Ficus.app (default: the installed app)')
+    .option('--archive <path>', 'Check against this Core archive instead of downloading it from the release')
+    .action(async (application: string | undefined, options: { archive?: string }) => {
+      try {
+        const result = await verifyDesktop(deps, { application, archive: options.archive })
+        output(result, formatVerification(result))
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
   desktop
     .command('status')
     .description('Show installed and latest Desktop versions')
