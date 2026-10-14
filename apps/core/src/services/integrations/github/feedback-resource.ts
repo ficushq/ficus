@@ -1,4 +1,4 @@
-import { githubApiGet } from '../../github/api-client'
+import { githubApiGet, GitHubApiUnavailableError } from '../../github/api-client'
 import type { IntegrationOutputFact } from '@ficus/shared'
 import type { IntegrationOutputAuthority } from '../outputs/types'
 import { githubNativeId } from './feedback-envelope'
@@ -11,15 +11,19 @@ const number = (value: unknown): value is number => Number.isSafeInteger(value) 
  * Assigned-access resource proof, NOT approval of provider text. At most three fixed-endpoint reads,
  * all outside transactions. No repository enumeration, sender inference, token override or raw URL fetch.
  * Historic allow-once snapshots need current access to the same object, not substitution of its new body.
+ *
+ * `unavailable` means GitHub could not answer (outage, rate limit, unusable token): nothing is
+ * authorized, and the caller must retry later rather than treat it as a denial.
  */
 export async function verifyGitHubOutputResource(source: {
   authority: IntegrationOutputAuthority
   fact: IntegrationOutputFact
-}): Promise<{ repositoryAuthorized: boolean; nativeAuthorized: boolean }> {
+}): Promise<{ repositoryAuthorized: boolean; nativeAuthorized: boolean; unavailable?: true }> {
   let repositoryAuthorized = false
   const result = (nativeAuthorized = false) => ({ repositoryAuthorized, nativeAuthorized })
   if (source.authority.kind !== 'connection' || !source.authority.connectionRevision) return result()
   const { squadId, connectionId } = source.authority
+  const get = (path: string) => githubApiGet(path, squadId, connectionId, { distinguishUnavailable: true })
   const content = source.fact.github?.content,
     status = source.fact.github?.status
   const repositoryId = content?.repositoryId ?? githubNativeId(status?.data.repositoryId)
@@ -31,9 +35,7 @@ export async function verifyGitHubOutputResource(source: {
   )
     return result()
   try {
-    const repo = record(
-      await githubApiGet(repositoryId ? `/repositories/${repositoryId}` : `/repos/${repository}`, squadId, connectionId)
-    )
+    const repo = record(await get(repositoryId ? `/repositories/${repositoryId}` : `/repos/${repository}`))
     if (
       !githubNativeId(repo.id) ||
       (repositoryId && githubNativeId(repo.id) !== repositoryId) ||
@@ -52,7 +54,7 @@ export async function verifyGitHubOutputResource(source: {
       const alertNumber = record(status.data.alert).number
       if (!number(alertNumber) || record(status.data.alert).externalId !== `${repositoryId}:${alertNumber}`)
         return result()
-      const alert = record(await githubApiGet(`${root}/dependabot/alerts/${alertNumber}`, squadId, connectionId))
+      const alert = record(await get(`${root}/dependabot/alerts/${alertNumber}`))
       return result(alert.number === alertNumber)
     }
     const data = status?.data ?? content?.delivery?.data
@@ -74,7 +76,7 @@ export async function verifyGitHubOutputResource(source: {
           : kind === 'review'
             ? `${root}/pulls/${parentNumber}/reviews/${nativeId}`
             : `${root}/${kind === 'pull_request' || (action && isPR) ? 'pulls' : 'issues'}/${parentNumber}`
-    const native = record(await githubApiGet(path, squadId, connectionId))
+    const native = record(await get(path))
     if (!githubNativeId(native.id) || (!status && githubNativeId(native.id) !== nativeId)) return result()
     if (!status && !action && content?.author && githubNativeId(record(native.user).id) !== content.author.accountId)
       return result()
@@ -97,7 +99,7 @@ export async function verifyGitHubOutputResource(source: {
     if (source.fact.output === 'pull_request.ci_completed') {
       const ci = record(status?.data.ci)
       if (!/^[1-9][0-9]*$/.test(String(ci.runId))) return result()
-      const run = record(await githubApiGet(`${root}/actions/runs/${ci.runId}`, squadId, connectionId))
+      const run = record(await get(`${root}/actions/runs/${ci.runId}`))
       return result(
         githubNativeId(run.id) === ci.runId &&
           githubNativeId(run.workflow_id) === ci.workflowId &&
@@ -107,7 +109,9 @@ export async function verifyGitHubOutputResource(source: {
       )
     }
     return result(true)
-  } catch {
+  } catch (error) {
+    if (error instanceof GitHubApiUnavailableError)
+      return { repositoryAuthorized: false, nativeAuthorized: false, unavailable: true }
     return result()
   }
 }

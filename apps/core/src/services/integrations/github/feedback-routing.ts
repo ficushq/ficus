@@ -244,7 +244,8 @@ async function prepareGitHubOutputInPass(
     if (known && known.decision !== 'automatic') return DEFER
   }
   const access = await readGitHubResource(source)
-  if (!access) return DEFER
+  // GitHub could not answer (outage, rate limit, unusable token): retry later, never a denial.
+  if (!access || access.unavailable) return DEFER
   if (!access.repositoryAuthorized) return settle('github_repository_unauthorized')
   const checkedAt = access.checkedAt,
     expiresAt = new Date(checkedAt.getTime() + TTL)
