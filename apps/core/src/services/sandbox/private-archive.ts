@@ -50,6 +50,8 @@ const log = createLogger('agent-private-archive-janitor')
 const JANITOR_INTERVAL_MS = 24 * 60 * 60 * 1000
 const LIFECYCLE_CONVERGENCE_INTERVAL_MS = 60 * 1000
 const ARCHIVE_BEARING_SWEEP_BUDGET = 5
+// Dormancy keeps storage and only stops compute, like the 25-per-tick completion sweep; stay below it.
+const IDLE_CONSULTANT_DORMANCY_BUDGET = 10
 
 /** Purge once using the configured retention. Injectable for tests; never throws. */
 export function runArchivePurgeOnce(
@@ -79,6 +81,7 @@ type LifecycleConvergenceDeps = {
   dormancyCompletion?: () => Promise<unknown>
   dormantRetention?: (options: { maxCandidates: number }) => Promise<unknown>
   finalCleanup?: (options: { maxCandidates: number; maxWorkItems: number }) => Promise<unknown>
+  idleConsultants?: (options: { maxAgents: number }) => Promise<unknown>
   warn?: (message: string, error: unknown) => void
 }
 
@@ -117,6 +120,14 @@ export async function runAgentLifecycleConvergenceOnce(deps: LifecycleConvergenc
         (deps.finalCleanup ?? (await import('../agents/cleanup')).runFinalAgentCleanupSweep)({
           maxCandidates: ARCHIVE_BEARING_SWEEP_BUDGET,
           maxWorkItems: ARCHIVE_BEARING_SWEEP_BUDGET,
+        }),
+    ],
+    [
+      // Squads opted in via consultant_idle_dormancy_days; same terminate→dormant path as a user.
+      'idle consultant dormancy',
+      async () =>
+        (deps.idleConsultants ?? (await import('../agents/idle-consultants')).runIdleConsultantDormancySweep)({
+          maxAgents: IDLE_CONSULTANT_DORMANCY_BUDGET,
         }),
     ],
   ]

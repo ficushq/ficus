@@ -112,9 +112,11 @@ If you need help, include the command, error text, OS, runtime, local status and
 
 ## Find what is using disk space
 
-On Ficus Cloud, or a self-hosted instance using VM sandbox machines, open **Settings → Storage**. This view requires the same system permission as **Logs**.
+Open **Settings → Storage**. This view requires the same system permission as **Logs**. The sandbox machine breakdown needs Ficus Cloud or a self-hosted instance using VM sandbox machines; the stored-files section and the cleanup settings work on every runtime.
 
-Each machine shows its used and total disk space. Squads are listed largest first; expand a squad and its folders to find repositories, worktrees, caches, and agent files. Folder sizes include their contents, so do not add a parent folder's size to its children.
+Each machine shows its used and total disk space. Squads are listed largest first. Expand a squad to see its **Squad workspace** (repositories, worktrees, caches), then its **Agents**: each agent's files with its name, type, status, and when it was last active, largest first. Dormant agents are collapsed into one line, such as `3 dormant · 4.2 GiB · removed automatically from 10/21/2026` (or `removal pending` once that date has passed and the background cleanup is working through them); expand it to see each one. Folder sizes include their contents, so do not add a parent folder's size to its children.
+
+**Files stored by Ficus** lists attachments and images kept on the Ficus server itself, per squad, totalled from Ficus's records rather than a disk scan. Files that belong to no squad, such as attachments in people's or the system inbox, are shown as **Unattributed**. A bar compares agent file, inbox and workflow handoff attachments with the shared attachment quota (`INBOX_MAX_TOTAL_STORAGE_BYTES`, 10 GB by default); images do not count toward it.
 
 You or the User Assistant can also use `ficus system storage --json` to read the breakdown and scan state, or `ficus system storage --refresh --json` to request a background scan. Both return immediately; read again after a few seconds while `scanning` is true. See the [CLI reference](/reference/cli/#inspect-disk-usage).
 
@@ -126,7 +128,18 @@ If a scan reaches its 45-second limit, measured child folders remain visible eve
 
 Hardlinked files count once per scan and may appear under whichever folder was visited first. Removing one link does not necessarily free the file's storage, so folder totals are not estimates of reclaimable space. Compare filesystem usage before and after an approved cleanup to verify actual recovery.
 
-Scans run at low CPU and idle I/O priority, but traversing a large directory tree can still generate disk activity. Inspection does not delete files or start agents. Worktree cleanup after work completes helps keep usage down, but the storage view itself only measures usage; do not manually remove a worktree that is still in use.
+Scans run at low CPU and idle I/O priority, but traversing a large directory tree can still generate disk activity. Inspection does not delete files or start agents. Worktree cleanup after work completes helps keep usage down; do not manually remove a worktree that is still in use.
+
+### Free space from agents
+
+Every cleanup action asks for confirmation and states what happens and how much space it frees. Disk sizes change only after the next scan; use **Refresh** to scan sooner.
+
+- **Make dormant** on an agent row stops the agent and releases its compute, the same as ending it elsewhere. It frees no disk space yet: a dormant agent keeps its files and wakes on a new message. Managers, the system manager, and Assistant agents are not offered. This needs `agents:terminate` for the squad.
+- **Make idle consultants dormant…** on a squad previews the consultants with no message for a number of days (90 by default), or never messaged and created that long ago, with their sizes. Consultants with queued work or a message waiting are not included. Confirming makes those consultants dormant; Ficus re-checks each one and leaves alone any that became active, without interrupting it. This needs `agents:terminate` for the squad. To do this automatically, turn on **Make consultants dormant after they've been idle** in the squad's **Settings → Workspace**.
+- **Remove now** on a dormant agent, or **Remove all now** on the dormant group, removes it without waiting for the retention period. Removal runs in the background over the next few minutes, and the agent shows **Removing…** until it finishes. If removal fails five times, the agent shows **Removal failed** with the reason, and you can try again. Its home is archived and removed from the machine, and the agent can no longer be woken or reused. This needs `system:cleanup`.
+- **Remove dormant agents after (days)**, under **Settings** at the bottom of the page with the background monitoring options, sets how long dormant agents keep their files before automatic removal (`AGENT_DORMANT_RETENTION_DAYS`, 7 days by default). This needs settings-write permission.
+
+**Ficus host cleanup**, for users with `system:cleanup`, runs the existing cleanups on the server running Ficus: **Scan Nix stores** finds the Nix stores of orphaned or terminated agents and reports how much can be reclaimed, and **Scan empty workspace folders** finds empty folders left by deleted squads. Nothing is removed until you confirm. The same actions are available as `ficus admin nix-gc` and `ficus admin workspace-gc`.
 
 ### Scheduled storage checks
 

@@ -7,6 +7,7 @@ import { InboxMessage } from '../../entities/InboxMessage'
 import { getSettingsStore } from '../settings'
 import { isVmRuntime } from '../sandbox/runtime'
 import { scanStorage } from './index'
+import { withCurrentAgentInfo } from './agents'
 
 const ID = 'default'
 const log = createLogger('storage-monitor')
@@ -20,6 +21,12 @@ export function storageMonitoringSettings() {
     alertsEnabled: store.get('STORAGE_ALERTS_ENABLED') === 'true',
     thresholds: store.get('STORAGE_ALERT_THRESHOLDS').split(',').map(Number),
   }
+}
+
+/** Same fallback as runDormantAgentSweep: invalid or non-positive values mean the 7-day default. */
+export function dormantRetentionDays(): number {
+  const configured = Number(getSettingsStore().getTyped('AGENT_DORMANT_RETENTION_DAYS'))
+  return Number.isFinite(configured) && configured > 0 ? configured : 7
 }
 
 /** Missing measurements retain the last warning as stale; they are never recovery. */
@@ -114,7 +121,13 @@ function status(row: Row | undefined): StorageStatus {
 export const storageMonitorService = {
   async read(): Promise<StorageSnapshot> {
     const row = await readRow()
-    return { ...(row?.snapshot ?? empty), ...status(row), ...(!isVmRuntime() ? { machines: [], warnings: [] } : {}) }
+    const snapshot: StorageSnapshot = {
+      ...(row?.snapshot ?? empty),
+      ...status(row),
+      ...(!isVmRuntime() ? { machines: [], warnings: [] } : {}),
+      dormantRetentionDays: dormantRetentionDays(),
+    }
+    return withCurrentAgentInfo(snapshot)
   },
   async status(): Promise<StorageStatus> {
     return status(await readRow(false))

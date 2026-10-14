@@ -75,6 +75,19 @@ describe('agent lifecycle retention settings', () => {
   })
 })
 
+test('dormant retention accepts whole days from 1 to 3650 only', async () => {
+  const store = getSettingsStore()
+  await store.initialize()
+  try {
+    for (const value of ['', '0', '-1', '1.5', 'NaN', '3651'])
+      await expect(store.set('AGENT_DORMANT_RETENTION_DAYS', value)).rejects.toThrow(SettingValidationError)
+    await store.set('AGENT_DORMANT_RETENTION_DAYS', '30')
+    expect(store.getTyped('AGENT_DORMANT_RETENTION_DAYS')).toBe(30)
+  } finally {
+    await store.delete('AGENT_DORMANT_RETENTION_DAYS')
+  }
+})
+
 describe('OPENROUTER_TIER_EXPANSION_ENABLED setting registration', () => {
   test('is listed as a default-off cross-process boolean setting', async () => {
     const seen: string[] = []

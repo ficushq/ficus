@@ -194,6 +194,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
   declare metadata: Record<string, unknown>
   declare maxConcurrentWorkStreams: number | null
   declare blockedGraceMinutes: number | null
+  declare consultantIdleDormancyDays: number | null
   declare sandboxStatus: 'none' | 'initializing' | 'ready' | 'failed'
   declare avatarImageId: string | null
   declare machineId: string | null
@@ -244,6 +245,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       metadata: squads.metadata,
       maxConcurrentWorkStreams: squads.maxConcurrentWorkStreams,
       blockedGraceMinutes: squads.blockedGraceMinutes,
+      consultantIdleDormancyDays: squads.consultantIdleDormancyDays,
       sandboxStatus: squads.sandboxStatus,
       avatarImageId: squads.avatarImageId,
       machineId: squads.machineId,
@@ -1123,6 +1125,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       metadata: this.metadata as Record<string, unknown>,
       maxConcurrentWorkStreams: this.maxConcurrentWorkStreams ?? null,
       blockedGraceMinutes: this.blockedGraceMinutes ?? null,
+      consultantIdleDormancyDays: this.consultantIdleDormancyDays ?? null,
       sandboxStatus: this.sandboxStatus,
       avatarImageId: this.avatarImageId ?? null,
       avatarUrl: this.avatarImageId ? buildSignedImageUrlPath(this.avatarImageId) : null,

@@ -139,6 +139,20 @@ export type ParentDormancyFence = {
   resourceGeneration: string
 }
 
+/** An opportunistic (idle-only) dormancy found the agent busy and changed nothing. */
+export class DormancyRefusedError extends Error {
+  constructor(readonly reason: string) {
+    super(reason)
+    this.name = 'DormancyRefusedError'
+  }
+}
+
+/**
+ * Re-checked under the agent queue lock by an idle-only dormancy. Return a
+ * refusal reason to leave the agent untouched, or null to proceed.
+ */
+export type IdleDormancyGuard = (tx: DbTransaction, agentId: string) => Promise<string | null>
+
 /** Live -> dormant, serialized with every execution producer and pickup. */
 export async function makeDormant(
   agent: Agent,
@@ -146,6 +160,13 @@ export async function makeDormant(
     metadata?: Record<string, unknown>
     expectedResourceGeneration?: string
     parentFence?: ParentDormancyFence
+    /**
+     * Idle-only mode for housekeeping (idle-consultant dormancy): refuse with
+     * DormancyRefusedError instead of stopping or deferring behind any active
+     * execution, and when the agent is not plainly idle or the guard objects.
+     * The ordinary terminate path never sets this.
+     */
+    idleOnly?: IdleDormancyGuard
   } = {}
 ): Promise<boolean> {
   const decision = await db.transaction(async (tx) => {
@@ -187,6 +208,13 @@ export async function makeDormant(
       .where(eq(agents.id, agent.id))
       .for('update')
     if (!locked) throw new Error(`Agent ${agent.id} not found`)
+    if (options.idleOnly) {
+      const lockedMeta = locked.metadata as Record<string, unknown> | null
+      if (active || locked.status !== 'idle' || lockedMeta?.wakeCompletionPending === true)
+        return { kind: 'refused' as const, reason: 'became active' }
+      const reason = await options.idleOnly(tx, agent.id)
+      if (reason) return { kind: 'refused' as const, reason }
+    }
     const effectiveMetadata = options.metadata ? { ...options.metadata } : undefined
     const lockedMetadata = locked.metadata as Record<string, unknown> | null
     if (
@@ -275,6 +303,7 @@ export async function makeDormant(
     drainSlotNotificationsSoon()
   }
 
+  if (decision.kind === 'refused') throw new DormancyRefusedError(decision.reason)
   if (decision.kind === 'superseded') return false
   if (decision.kind === 'already') {
     if (decision.dormancyCompletionId) await completeDormancy(agent.id, decision.dormancyCompletionId)

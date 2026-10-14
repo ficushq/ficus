@@ -1,11 +1,24 @@
 import { Agent } from '../../entities/Agent'
 import { isAutoDormancyExempt } from './crew-dormancy'
-import { claimAgentLifecycleSweepCandidates } from '../../entities/agent-queries'
+import {
+  claimAgentLifecycleSweepCandidates,
+  dormantAtEpochMsSql,
+  REMOVE_NOW_DORMANT_AT_KEY,
+  REMOVE_NOW_FAILED_DORMANT_AT_KEY,
+  REMOVE_NOW_FAILED_REASON_KEY,
+  REMOVE_NOW_FAILURES_KEY,
+  REMOVE_NOW_LAST_ERROR_KEY,
+  removeNowRequestedSql,
+} from '../../entities/agent-queries'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { monitorSupervisor } from '../monitors'
 import { getSettingsStore } from '../settings'
 import type { SandboxStopOutcome } from '../sandbox/types'
+import { and, eq, inArray, isNotNull, notInArray, sql } from 'drizzle-orm'
+import { STORAGE_DORMANCY_EXEMPT_AGENT_TYPES, type RemoveDormantAgentsResult } from '@ficus/shared'
+import { agents, db } from '../../db'
+import { publicErrorMessage } from '../../db/errors'
 
 const log = createLogger('agent-cleanup')
 
@@ -191,15 +204,52 @@ export async function stopPersonalSandbox(
   }
 }
 
+type DormantFinalizeDeps = {
+  completePending?: (agentId: string) => Promise<boolean>
+  finalize?: (agent: Agent, expectedDormantAt?: Date) => Promise<void>
+}
+
+/**
+ * Finalize one dormant agent: settle any pending dormancy completion, then
+ * terminate it (archiving /private and reclaiming its personal box). `cutoff`
+ * (epoch ms) refuses agents that became dormant after it, unless an operator
+ * asked to remove this exact dormancy episode now; null finalizes now.
+ */
+async function finalizeDormantAgent(
+  agentId: string,
+  cutoff: number | null,
+  deps: DormantFinalizeDeps
+): Promise<'finalized' | 'completion-pending' | 'not-finalized' | 'changed'> {
+  const completed = await (
+    deps.completePending ??
+    ((id) =>
+      import('../agent/lifecycle').then(({ completeDormancyIfPending }) =>
+        completeDormancyIfPending(id, { timeoutMs: 0 })
+      ))
+  )(agentId)
+  if (!completed) return 'completion-pending'
+
+  // The sweep list and completion preflight may both be stale after a wake.
+  const agent = await Agent.find(agentId, { eager: false })
+  if (agent?.status !== 'dormant' || !agent.dormantAt) return 'changed'
+  const removeNow =
+    (agent.metadata as Record<string, unknown> | null)?.[REMOVE_NOW_DORMANT_AT_KEY] === agent.dormantAt.getTime()
+  if (cutoff !== null && agent.dormantAt.getTime() > cutoff && !removeNow) return 'changed'
+  await (
+    deps.finalize ??
+    ((candidate, expectedDormantAt) =>
+      import('../agent/lifecycle').then(({ terminate }) => terminate(candidate, { expectedDormantAt })))
+  )(agent, agent.dormantAt)
+  return (await Agent.find(agent.id, { eager: false }))?.status === 'terminated' ? 'finalized' : 'not-finalized'
+}
+
 export async function runDormantAgentSweep(
   deps: {
     now?: Date
     getRetentionDays?: () => number
     listDormant?: () => Promise<Agent[]>
-    completePending?: (agentId: string) => Promise<boolean>
-    finalize?: (agent: Agent, expectedDormantAt?: Date) => Promise<void>
     maxCandidates?: number
-  } = {}
+  } & DormantFinalizeDeps = {}
 ): Promise<number> {
   const now = deps.now ?? new Date()
   const configured = deps.getRetentionDays?.() ?? Number(getSettingsStore().getTyped('AGENT_DORMANT_RETENTION_DAYS'))
@@ -222,29 +272,98 @@ export async function runDormantAgentSweep(
   let finalized = 0
   for (const listedAgent of dormant) {
     try {
-      const completed = await (
-        deps.completePending ??
-        ((agentId) =>
-          import('../agent/lifecycle').then(({ completeDormancyIfPending }) =>
-            completeDormancyIfPending(agentId, { timeoutMs: 0 })
-          ))
-      )(listedAgent.id)
-      if (!completed) continue
-
-      // The sweep list and completion preflight may both be stale after a wake.
-      const agent = await Agent.find(listedAgent.id, { eager: false })
-      if (agent?.status !== 'dormant' || !agent.dormantAt || agent.dormantAt.getTime() > cutoff) continue
-      await (
-        deps.finalize ??
-        ((candidate, expectedDormantAt) =>
-          import('../agent/lifecycle').then(({ terminate }) => terminate(candidate, { expectedDormantAt })))
-      )(agent, agent.dormantAt)
-      if ((await Agent.find(agent.id, { eager: false }))?.status === 'terminated') finalized++
+      const outcome = await finalizeDormantAgent(listedAgent.id, cutoff, deps)
+      if (outcome === 'finalized') finalized++
+      // 'completion-pending' (stopping the agent has not finished) is still in progress, not a
+      // failure: the next tick retries it without spending one of the remove-now attempts.
+      else if (outcome === 'not-finalized')
+        await recordRemoveNowFailure(listedAgent.id, 'The agent could not be removed.')
     } catch (error) {
       log.warn(`Dormant retention cleanup remains pending for agent ${listedAgent.id}`, error)
+      await recordRemoveNowFailure(listedAgent.id, publicErrorMessage(error)).catch(() => {})
     }
   }
   return finalized
+}
+
+/** Failed attempts allowed for an operator "remove now" before it is given up and reported. */
+export const REMOVE_NOW_MAX_ATTEMPTS = 5
+
+/**
+ * Count a failed attempt against an operator "remove now" request (only while
+ * the request still matches the agent's dormancy episode). After
+ * REMOVE_NOW_MAX_ATTEMPTS the mark is cleared so the agent stops showing as
+ * Removing…, and the last reason is kept for the storage view. Ordinary
+ * retention removal is unaffected and keeps retrying.
+ */
+async function recordRemoveNowFailure(agentId: string, reason: string): Promise<void> {
+  const attempts = sql`(COALESCE((${agents.metadata}->>${REMOVE_NOW_FAILURES_KEY})::int, 0) + 1)`
+  const [row] = await db
+    .update(agents)
+    .set({
+      metadata: sql`CASE WHEN ${attempts} >= ${REMOVE_NOW_MAX_ATTEMPTS}
+        THEN (COALESCE(${agents.metadata}, '{}'::jsonb) - ${REMOVE_NOW_DORMANT_AT_KEY}::text - ${REMOVE_NOW_FAILURES_KEY}::text - ${REMOVE_NOW_LAST_ERROR_KEY}::text)
+          || jsonb_build_object(${REMOVE_NOW_FAILED_REASON_KEY}::text, ${reason}::text, ${REMOVE_NOW_FAILED_DORMANT_AT_KEY}::text, ${dormantAtEpochMsSql})
+        ELSE COALESCE(${agents.metadata}, '{}'::jsonb)
+          || jsonb_build_object(${REMOVE_NOW_FAILURES_KEY}::text, ${attempts}, ${REMOVE_NOW_LAST_ERROR_KEY}::text, ${reason}::text)
+        END`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(agents.id, agentId), eq(agents.status, 'dormant'), removeNowRequestedSql))
+    .returning({ metadata: agents.metadata })
+  if (row && (row.metadata as Record<string, unknown> | null)?.[REMOVE_NOW_FAILED_REASON_KEY] !== undefined)
+    log.warn(`Gave up removing dormant agent ${agentId} now after ${REMOVE_NOW_MAX_ATTEMPTS} attempts: ${reason}`)
+}
+
+/**
+ * Operator "remove now": mark dormant agents so the next dormant-retention
+ * sweep ticks finalize them (archive and remove their homes) without waiting
+ * for AGENT_DORMANT_RETENTION_DAYS. Nothing slow happens here; the sweep stays
+ * bounded per tick. Irreversible once the sweep runs. Live agents and the
+ * types the storage view never offers are refused.
+ */
+export async function requestDormantRemoval(agentIds: string[]): Promise<RemoveDormantAgentsResult> {
+  const ids = [...new Set(agentIds)]
+  if (!ids.length) return { accepted: [], skipped: [] }
+  const marked = await db
+    .update(agents)
+    .set({
+      metadata: sql`(COALESCE(${agents.metadata}, '{}'::jsonb) - ${REMOVE_NOW_FAILURES_KEY}::text - ${REMOVE_NOW_LAST_ERROR_KEY}::text - ${REMOVE_NOW_FAILED_REASON_KEY}::text - ${REMOVE_NOW_FAILED_DORMANT_AT_KEY}::text) || jsonb_build_object(${REMOVE_NOW_DORMANT_AT_KEY}::text, ${dormantAtEpochMsSql})`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        inArray(agents.id, ids),
+        eq(agents.status, 'dormant'),
+        isNotNull(agents.dormantAt),
+        notInArray(agents.agentTypeId, [...STORAGE_DORMANCY_EXEMPT_AGENT_TYPES])
+      )
+    )
+    .returning({ id: agents.id })
+  const accepted = new Set(marked.map((row) => row.id))
+  const others = ids.filter((id) => !accepted.has(id))
+  const rows = others.length
+    ? await db
+        .select({ id: agents.id, status: agents.status, agentTypeId: agents.agentTypeId })
+        .from(agents)
+        .where(inArray(agents.id, others))
+    : []
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  const result: RemoveDormantAgentsResult = { accepted: ids.filter((id) => accepted.has(id)), skipped: [] }
+  for (const id of others) {
+    const row = byId.get(id)
+    result.skipped.push({
+      id,
+      reason: !row
+        ? 'Agent not found.'
+        : STORAGE_DORMANCY_EXEMPT_AGENT_TYPES.includes(row.agentTypeId)
+          ? `${row.agentTypeId} agents are not removed from here.`
+          : 'Only dormant agents can be removed now.',
+    })
+  }
+  if (result.accepted.length)
+    log.info(`Dormant agents queued for removal by operator request: ${result.accepted.join(', ')}`)
+  return result
 }
 
 export async function stopAndArchivePersonalSandbox(

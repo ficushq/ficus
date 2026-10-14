@@ -166,6 +166,10 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
     type: 'number',
     default: '7',
     description: 'Days a dormant agent remains recoverable before final termination',
+    validate: (value) =>
+      /^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= 3650
+        ? null
+        : 'Use a whole number of days from 1 to 3650.',
   },
   AGENT_PRIVATE_ARCHIVE_RETENTION_DAYS: {
     type: 'number',

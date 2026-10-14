@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { Machine } from '../machines/queries'
-import { measureMachineStorage, STORAGE_SCAN_COMMAND } from './index'
+import { buildStorageOwners, measureMachineStorage, STORAGE_SCAN_COMMAND } from './index'
 import { SshTimeoutError } from '../machines/ssh'
 
 const machine = { id: 'machine', name: 'Worker' } as Machine
@@ -102,4 +102,113 @@ test('distinguishes transport timeout from a missing home and preserves known ow
   expect(measured.diagnostics?.reasons).toEqual(['ssh_timeout'])
   expect(measured.squads[0].folders[0].bytes).toBeNull()
   expect(JSON.stringify(measured)).not.toContain('sensitive details')
+})
+
+test('builds owners with agent labels and metadata for each agent box on the machine', () => {
+  const created = new Date('2025-12-01T00:00:00Z')
+  const owners = buildStorageOwners(
+    'machine',
+    [
+      { machineId: 'machine', sandboxId: 'squad_s1', unixUser: 'box_aaaaaaaaaaaa' },
+      { machineId: 'machine', sandboxId: 'agent_a1', unixUser: 'box_bbbbbbbbbbbb' },
+      { machineId: 'machine', sandboxId: 'agent_a2', unixUser: 'box_cccccccccccc' },
+      { machineId: 'other', sandboxId: 'agent_a1', unixUser: 'box_dddddddddddd' },
+      { machineId: 'machine', sandboxId: 'agent_gone', unixUser: 'box_eeeeeeeeeeee' },
+    ],
+    [{ id: 's1', name: 'Product' }],
+    [
+      {
+        id: 'a1',
+        squadId: 's1',
+        agentTypeId: 'consultant',
+        status: 'dormant',
+        name: 'Ada',
+        purpose: 'Fix login',
+        lastMessageAt: new Date('2026-01-02T00:00:00Z'),
+        dormantAt: new Date('2026-02-01T00:00:00Z'),
+        createdAt: created,
+      },
+      {
+        id: 'a2',
+        squadId: 's1',
+        agentTypeId: 'engineer',
+        status: 'idle',
+        name: null,
+        purpose: null,
+        lastMessageAt: null,
+        dormantAt: null,
+        createdAt: created,
+      },
+    ]
+  )
+  expect(owners).toEqual([
+    {
+      home: '/home/box_aaaaaaaaaaaa',
+      squadId: 's1',
+      squadName: 'Product',
+      label: 'Squad workspace',
+      kind: 'squad-workspace',
+    },
+    {
+      home: '/home/box_bbbbbbbbbbbb',
+      squadId: 's1',
+      squadName: 'Product',
+      label: 'Fix login · Ada',
+      kind: 'agent',
+      agent: {
+        id: 'a1',
+        label: 'Fix login · Ada',
+        agentTypeId: 'consultant',
+        status: 'dormant',
+        lastMessageAt: '2026-01-02T00:00:00.000Z',
+        dormantAt: '2026-02-01T00:00:00.000Z',
+        createdAt: '2025-12-01T00:00:00.000Z',
+      },
+    },
+    {
+      home: '/home/box_cccccccccccc',
+      squadId: 's1',
+      squadName: 'Product',
+      label: 'engineer',
+      kind: 'agent',
+      agent: {
+        id: 'a2',
+        label: 'engineer',
+        agentTypeId: 'engineer',
+        status: 'idle',
+        lastMessageAt: null,
+        dormantAt: null,
+        createdAt: '2025-12-01T00:00:00.000Z',
+      },
+    },
+  ])
+})
+
+test('a VM scan reports each agent home with its agent metadata', async () => {
+  const agent = {
+    id: 'a1',
+    label: 'Fix login · Ada',
+    agentTypeId: 'consultant',
+    status: 'idle' as const,
+    lastMessageAt: null,
+    dormantAt: null,
+    createdAt: '2025-12-01T00:00:00.000Z',
+  }
+  const measured = await measureMachineStorage(
+    machine,
+    [
+      ...owners,
+      { home: '/home/box_b', squadId: 'squad', squadName: 'Product', label: agent.label, kind: 'agent', agent },
+    ],
+    {
+      run: async () => ({
+        exitCode: 0,
+        stdout: 'Used 1B-blocks\n1000 2000\n\0' + '100\t/home/box_a\0' + '40\t/home/box_b\0' + '140\t/home\0',
+        stderr: '',
+      }),
+    }
+  )
+  expect(measured.status).toBe('available')
+  const folder = measured.squads[0].folders.find((item) => item.path === '/home/box_b')
+  expect(folder).toMatchObject({ name: 'Fix login · Ada', kind: 'agent', bytes: 40, agent })
 })

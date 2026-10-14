@@ -18,6 +18,7 @@ import { SandboxLogs } from './SandboxLogs'
 import { SandboxProcesses } from '../sandbox/SandboxProcesses'
 import { IntegrationSettings } from './IntegrationSettings'
 import { DirectMergePolicySettings } from './DirectMergePolicySettings'
+import { ConsultantDormancySettings } from './ConsultantDormancySettings'
 import { queries } from '../../queryOptions'
 import { Can } from '../Can'
 import { SettingsNavigation } from '../settings/SettingsNavigation'
@@ -35,6 +36,7 @@ interface Props {
   globalCollaborationEnabled: boolean
   maxConcurrentWorkStreams: number | null
   blockedGraceMinutes: number | null
+  consultantIdleDormancyDays: number | null
   hostWorkspacePath: string | null
 }
 
@@ -55,6 +57,7 @@ export function SquadSettingsTab({
   globalCollaborationEnabled,
   maxConcurrentWorkStreams,
   blockedGraceMinutes,
+  consultantIdleDormancyDays,
   hostWorkspacePath,
 }: Props) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -161,6 +164,7 @@ export function SquadSettingsTab({
             <div className="space-y-8">
               <SquadGitIdentitySettings key={squadId} squadId={squadId} />
               <SquadEnvConfig squadId={squadId} />
+              <ConsultantDormancySettings squadId={squadId} consultantIdleDormancyDays={consultantIdleDormancyDays} />
             </div>
           )}
 

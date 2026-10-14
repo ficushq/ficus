@@ -5,7 +5,7 @@ export const SQUAD_SETTINGS_KEYWORDS: Record<string, string> = {
     'rename squad title Name purpose mission Description avatar collaboration archive delete remove danger zone Archive squad',
   context: 'instructions system prompt Squad Context per agent type instructions Type-Specific Context',
   workspace:
-    'git commit identity author name email Git Author Name Git Author Email host directory checkout path repository local folder runtime container restart pause Sandbox Lifecycle sleep dormant timeout Idle Timeout disk space size Ephemeral Storage Limit environment credentials secrets Exposed Secret Store Keys',
+    'git commit identity author name email Git Author Name Git Author Email host directory checkout path repository local folder runtime container restart pause Sandbox Lifecycle sleep dormant timeout Idle Timeout disk space size Ephemeral Storage Limit environment credentials secrets Exposed Secret Store Keys consultant idle dormant inactive cleanup Idle consultants',
   memory:
     'semantic vector model Embedding Model code semantic file search Workspace Indexing glob indexed files Include Patterns glob ignore files Exclude Patterns git sync remote repo providers Memory Sync',
   workflows:
@@ -128,6 +128,12 @@ export const SQUAD_SETTINGS_SEARCH: readonly SettingsSearchEntry[] = [
     id: 'merge-policies',
     label: 'Merge Policies',
     keywords: 'pull request direct merge approval',
+  },
+  {
+    section: 'workspace',
+    id: 'consultant-idle-dormancy',
+    label: 'Idle consultants',
+    keywords: 'consultant idle dormant inactive cleanup',
   },
   {
     section: 'workspace',

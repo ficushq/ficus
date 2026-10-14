@@ -93,7 +93,16 @@ export * from './event-predicates'
 export * from './event-rule-sample'
 export { workStreamRef, workStreamLabel, workStreamTitle } from './work-stream-reference'
 
+export { STORAGE_DORMANCY_EXEMPT_AGENT_TYPES, DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS } from './storage'
 export type {
+  StorageAgent,
+  StoredFileSource,
+  StoredFilesSquad,
+  StoredFilesSummary,
+  IdleConsultant,
+  IdleConsultantsPreview,
+  IdleConsultantsDormancyResult,
+  RemoveDormantAgentsResult,
   StorageFolder,
   StorageSquad,
   StorageMachine,

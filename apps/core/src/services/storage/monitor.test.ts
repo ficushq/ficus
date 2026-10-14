@@ -168,3 +168,71 @@ test('validates scan frequency and ordered capacity thresholds at the settings b
   for (const value of ['', '0', '101', '90,80', '80,80', '80,'])
     await expect(getSettingsStore().set(keys[1]!, value)).rejects.toThrow()
 })
+
+test('reads refresh saved agent details from the database and report dormant retention', async () => {
+  const { Squad } = await import('../../entities/Squad')
+  const { Agent } = await import('../../entities/Agent')
+  const { agents, squads } = await import('../../db/schema')
+  const squad = await Squad.create({ name: `storage-agents-${crypto.randomUUID()}`, purpose: 'storage fixture' })
+  const agent = await Agent.create({ agentTypeId: 'consultant', squadId: squad.id, persist: false })
+  try {
+    await db
+      .update(agents)
+      .set({ metadata: sql`coalesce(${agents.metadata}, '{}'::jsonb) || '{"purpose":"Plan launch"}'::jsonb` })
+      .where(eq(agents.id, agent.id))
+    const saved = snapshot(50)
+    saved.machines[0].squads = [
+      {
+        id: squad.id,
+        name: squad.name,
+        bytes: 10,
+        status: 'available',
+        folders: [
+          {
+            name: 'Old label',
+            path: '/home/box_a',
+            bytes: 10,
+            status: 'available',
+            children: [],
+            kind: 'agent',
+            agent: {
+              id: agent.id,
+              label: 'Old label',
+              agentTypeId: 'consultant',
+              status: 'idle',
+              lastMessageAt: null,
+              dormantAt: null,
+              createdAt: null,
+            },
+          },
+          // Saved before agent attribution: passes through unchanged.
+          { name: 'Agent files', path: '/home/box_b', bytes: 5, status: 'available', children: [] },
+        ],
+      },
+    ]
+    await runStorageMonitor(async () => saved)
+    const dormantAt = new Date('2026-03-01T00:00:00Z')
+    await db.update(agents).set({ status: 'dormant', dormantAt }).where(eq(agents.id, agent.id))
+    await getSettingsStore().set('AGENT_DORMANT_RETENTION_DAYS', '3')
+    const read = await storageMonitorService.read()
+    const folders = read.machines[0].squads[0].folders
+    expect(folders[0].name).toContain('Plan launch')
+    expect(folders[0].agent).toMatchObject({ id: agent.id, status: 'dormant', dormantAt: dormantAt.toISOString() })
+    expect(folders[1]).toEqual({
+      name: 'Agent files',
+      path: '/home/box_b',
+      bytes: 5,
+      status: 'available',
+      children: [],
+    })
+    expect(read.dormantRetentionDays).toBe(3)
+    expect(folders[0].agent?.removalPending).toBeUndefined()
+    const { requestDormantRemoval } = await import('../agents/cleanup')
+    expect((await requestDormantRemoval([agent.id])).accepted).toEqual([agent.id])
+    expect((await storageMonitorService.read()).machines[0].squads[0].folders[0].agent?.removalPending).toBe(true)
+  } finally {
+    await getSettingsStore().delete('AGENT_DORMANT_RETENTION_DAYS')
+    await db.delete(agents).where(eq(agents.id, agent.id))
+    await db.delete(squads).where(eq(squads.id, squad.id))
+  }
+})

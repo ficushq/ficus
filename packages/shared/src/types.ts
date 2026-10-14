@@ -1053,6 +1053,11 @@ export interface Squad {
    * null → default 30; 0 = park immediately. Negative values are rejected.
    */
   blockedGraceMinutes: number | null
+  /**
+   * Consultants idle at least this many days (no message since, or never messaged and
+   * created that long ago) are made dormant automatically. null = off.
+   */
+  consultantIdleDormancyDays: number | null
   /** host runtime: absolute directory this squad works in; null = default. Ignored by other runtimes. */
   hostWorkspacePath: string | null
   /** Avatar image id (in the images table) + a freshly-signed URL to display it (null if none). */
@@ -1089,6 +1094,8 @@ export interface UpdateSquadInput {
   maxConcurrentWorkStreams?: number | null
   /** Auto-park grace minutes for active streams with open waits; null → default 30; 0 = immediate. */
   blockedGraceMinutes?: number | null
+  /** Make consultants dormant after this many idle days (1–3650); null = off. */
+  consultantIdleDormancyDays?: number | null
   /**
    * vm runtime: pin the squad's box to a specific machine (`null` unpins →
    * placement default). Ignored by k8s/docker runtimes.

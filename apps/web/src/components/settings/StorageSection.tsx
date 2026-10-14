@@ -1,19 +1,16 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { StorageFolder, StorageMachine } from '@ficus/shared'
+import type { StorageMachine } from '@ficus/shared'
 import { refreshStorage } from '../../api/system'
 import { queryKeys } from '../../queryKeys'
 import { queries } from '../../queryOptions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { StorageMonitorSettings } from './StorageMonitorSettings'
-import { ChevronRightIcon } from '../icons'
-
-function storageSize(bytes: number | null): string {
-  if (bytes === null) return 'Unavailable'
-  if (bytes < 1024) return `${bytes} B`
-  const units = ['KiB', 'MiB', 'GiB', 'TiB']
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)) - 1, units.length - 1)
-  return `${(bytes / 1024 ** (index + 1)).toFixed(1)} ${units[index]}`
-}
+import { DormantRetentionSettings } from './storage/DormantRetentionSettings'
+import { HostCleanupSection } from './storage/HostCleanupSection'
+import { StorageSquadView } from './storage/StorageSquadView'
+import { StoredFilesSection } from './storage/StoredFilesSection'
+import { storageSize } from './storage/format'
 
 const scanReasons: Record<NonNullable<StorageMachine['diagnostics']>['reasons'][number], string> = {
   scan_timeout: 'The scan reached its 45-second time limit.',
@@ -27,36 +24,6 @@ const scanReasons: Record<NonNullable<StorageMachine['diagnostics']>['reasons'][
   machine_not_ready: 'The machine is offline, parked, or not ready to scan.',
 }
 
-function measuredSize(item: { bytes: number | null; status?: string }): string {
-  if (item.bytes === null) return 'Not measured'
-  return `${storageSize(item.bytes)}${item.status === 'partial' ? ' measured · Partial' : ''}`
-}
-
-function FolderRow({ folder }: { folder: StorageFolder }) {
-  const label = (
-    <span className="inline-flex w-full min-w-0 items-baseline justify-between gap-4">
-      <span className="min-w-0 break-all" title={folder.path}>
-        {folder.name}
-      </span>
-      <span className="shrink-0 tabular-nums text-secondary">{measuredSize(folder)}</span>
-    </span>
-  )
-  if (!folder.children.length) return <div className="py-2 pl-5 text-sm">{label}</div>
-  return (
-    <details className="text-sm [&[open]>summary>svg]:rotate-90">
-      <summary className="flex cursor-pointer list-none items-center gap-1 py-2 [&::-webkit-details-marker]:hidden">
-        <ChevronRightIcon className="h-4 w-4 shrink-0 text-secondary" />
-        {label}
-      </summary>
-      <div className="ml-4 border-l border-th-border pl-3">
-        {folder.children.map((child) => (
-          <FolderRow key={child.name} folder={child} />
-        ))}
-      </div>
-    </details>
-  )
-}
-
 export function StorageSection() {
   const { can } = usePermissions()
   const query = useQuery(queries.system.storage())
@@ -66,6 +33,19 @@ export function StorageSection() {
     onSuccess: (data) => client.setQueryData(queryKeys.system.storage(), data),
   })
   const data = query.data
+  const retentionDays = data?.dormantRetentionDays ?? 7
+  const [notice, setNotice] = useState<string | null>(null)
+  const firstMachineBySquad = new Map<string, string>()
+  for (const machine of data?.machines ?? [])
+    for (const squad of machine.squads)
+      if (!firstMachineBySquad.has(squad.id)) firstMachineBySquad.set(squad.id, machine.id)
+  // Actions change agents and files now; measured disk sizes change only on the next scan.
+  const actionDone = (message: string) => {
+    setNotice(message)
+    void client.invalidateQueries({ queryKey: queryKeys.system.all })
+    void client.invalidateQueries({ queryKey: queryKeys.agents.all })
+    void client.invalidateQueries({ queryKey: queryKeys.squads.all })
+  }
   return (
     <section className="space-y-6" aria-labelledby="storage-heading">
       <div className="flex items-start justify-between gap-4">
@@ -73,7 +53,9 @@ export function StorageSection() {
           <h2 id="storage-heading" className="text-lg font-semibold text-primary">
             Storage
           </h2>
-          <p className="mt-1 text-sm text-secondary">Find the squads and project folders using the most disk space.</p>
+          <p className="mt-1 text-sm text-secondary">
+            Find the squads, agents and files using the most disk space, and clean up what is no longer needed.
+          </p>
         </div>
         <button
           className="ficus-button ficus-button-secondary shrink-0 px-3 py-2 text-sm"
@@ -83,16 +65,6 @@ export function StorageSection() {
           {data?.scanning || refresh.isPending ? 'Scanning…' : 'Refresh'}
         </button>
       </div>
-      {data?.supported && data.monitoring && can('settings:write') && (
-        <StorageMonitorSettings
-          key={JSON.stringify([
-            data.monitoring.intervalHours,
-            data.monitoring.thresholds,
-            data.monitoring.alertsEnabled,
-          ])}
-          config={data.monitoring}
-        />
-      )}
       {data?.warnings?.map((warning) => (
         <p key={warning.machineId} role="status" className="text-sm text-status-attention-500">
           {warning.machineName}: {warning.percent.toFixed(1)}% full at {new Date(warning.measuredAt).toLocaleString()}.
@@ -106,6 +78,11 @@ export function StorageSection() {
           : ''}
         {data?.scannedAt ? `Last scanned ${new Date(data.scannedAt).toLocaleString()}.` : 'Waiting for the first scan.'}
       </p>
+      {notice && (
+        <p role="status" className="text-sm text-primary">
+          {notice} Sizes update after the next scan; use Refresh to scan sooner.
+        </p>
+      )}
       {(query.isError || refresh.isError || data?.error) && (
         <p role="alert" className="text-sm text-status-danger-400">
           {data?.error ?? 'Could not load storage. Try refreshing.'}
@@ -164,20 +141,13 @@ export function StorageSection() {
           )}
           <div className="divide-y divide-th-border">
             {machine.squads.map((squad) => (
-              <details key={squad.id} className="[&[open]>summary>svg]:rotate-90">
-                <summary className="flex cursor-pointer list-none items-center gap-2 py-3 [&::-webkit-details-marker]:hidden">
-                  <ChevronRightIcon className="h-4 w-4 shrink-0 text-secondary" />
-                  <span className="inline-flex w-full min-w-0 justify-between gap-4 text-sm">
-                    <span className="min-w-0 break-words font-medium">{squad.name}</span>
-                    <span className="shrink-0 tabular-nums">{measuredSize(squad)}</span>
-                  </span>
-                </summary>
-                <div className="pb-3 pl-5">
-                  {squad.folders.map((folder, index) => (
-                    <FolderRow key={index} folder={folder} />
-                  ))}
-                </div>
-              </details>
+              <StorageSquadView
+                key={squad.id}
+                squad={squad}
+                showSquadActions={firstMachineBySquad.get(squad.id) === machine.id}
+                retentionDays={retentionDays}
+                onDone={actionDone}
+              />
             ))}
             {machine.unattributedBytes !== null && (
               <div className="flex justify-between gap-4 py-3 text-sm text-secondary">
@@ -191,8 +161,9 @@ export function StorageSection() {
       {data?.supported && (
         <div className="space-y-2 text-xs text-secondary">
           <p>
-            Expand a squad to inspect its workspace, repositories, worktrees, caches, and agent files. Folder sizes
-            include their contents; they are not additional usage.
+            Expand a squad to inspect its workspace and each agent&apos;s files, largest first. Folder sizes include
+            their contents; they are not additional usage. Dormant agents keep their files until they are removed
+            automatically {retentionDays} days after becoming dormant.
           </p>
           <p>
             Other disk usage includes shared tools, system files, and storage not attributed to a squad. Sizes are
@@ -206,6 +177,26 @@ export function StorageSection() {
             minute and start on the next worker check. Scanning does not start agents or remove files.
           </p>
         </div>
+      )}
+      <StoredFilesSection />
+      {can('system:cleanup') && <HostCleanupSection onDone={actionDone} />}
+      {data && can('settings:write') && (
+        <section className="space-y-5 border-t border-th-border pt-6" aria-labelledby="storage-settings-heading">
+          <h3 id="storage-settings-heading" className="font-medium text-primary">
+            Settings
+          </h3>
+          {data.supported && data.monitoring && (
+            <StorageMonitorSettings
+              key={JSON.stringify([
+                data.monitoring.intervalHours,
+                data.monitoring.thresholds,
+                data.monitoring.alertsEnabled,
+              ])}
+              config={data.monitoring}
+            />
+          )}
+          <DormantRetentionSettings key={retentionDays} days={retentionDays} />
+        </section>
       )}
     </section>
   )
