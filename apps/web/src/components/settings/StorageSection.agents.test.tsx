@@ -6,6 +6,7 @@ import { PermissionsProvider } from '../../hooks/usePermissions'
 import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
 import { StorageSection } from './StorageSection'
+import { idleDormancySummary } from './storage/format'
 
 const GiB = 1024 ** 3
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
@@ -183,6 +184,33 @@ describe('StorageSection agents', () => {
     expect(cleanup).toContain('Remove all 2 now')
     expect(cleanup).toContain('Scan Nix stores')
     expect(cleanup).toContain('Scan empty workspace folders')
+  })
+
+  test('a squad spanning several machines offers its squad action once', () => {
+    const queryClient = client()
+    const data = snapshot()
+    data.machines.push({ ...data.machines[0]!, id: 'machine-2', name: 'Worker 2' })
+    queryClient.setQueryData(queryKeys.system.storage(), data)
+    try {
+      const html = renderToStaticMarkup(element(queryClient, ['system:logs', 'agents:terminate']))
+      expect(count(html, 'Make idle consultants dormant…')).toBe(1)
+    } finally {
+      queryClient.clear()
+    }
+  })
+
+  test('the idle-consultant summary states the real reason for each agent left alone', () => {
+    expect(
+      idleDormancySummary({
+        dormant: ['a'],
+        deferred: [],
+        skipped: [
+          { id: 'b', reason: 'became active' },
+          { id: 'c', reason: 'became active' },
+          { id: 'd', reason: 'Agent has active work streams.' },
+        ],
+      })
+    ).toBe('Made 1 idle consultant dormant. Left alone: 2 became active; 1 Agent has active work streams.')
   })
 
   test('shows files stored by Ficus per squad and the attachment quota', () => {

@@ -16,6 +16,8 @@ import { agentDetails, automaticRemovalDate, measuredSize, removalSummary, stora
 
 interface Props {
   squad: StorageSquad
+  /** False for the copies of a squad on its second and later machines: squad-wide actions appear once. */
+  showSquadActions?: boolean
   retentionDays: number
   onDone: (message: string) => void
 }
@@ -89,7 +91,7 @@ function RowButton({ label, onClick, danger = false }: { label: string; onClick:
   )
 }
 
-export function StorageSquadView({ squad, retentionDays, onDone }: Props) {
+export function StorageSquadView({ squad, showSquadActions = true, retentionDays, onDone }: Props) {
   const { can } = usePermissions(squad.id)
   const { can: canGlobal } = usePermissions()
   const canTerminate = can('agents:terminate')
@@ -134,7 +136,7 @@ export function StorageSquadView({ squad, retentionDays, onDone }: Props) {
         </span>
       </summary>
       <div className="space-y-2 pb-3 pl-5">
-        {canTerminate && (
+        {canTerminate && showSquadActions && (
           <div className="flex justify-end">
             <button
               type="button"

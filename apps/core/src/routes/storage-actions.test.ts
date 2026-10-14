@@ -180,6 +180,12 @@ describe('storage cleanup routes', () => {
       (await app.request(`/api/squads/${own.id}/idle-consultants?days=0`, { headers: authHeaders(token) })).status
     ).toBe(400)
 
+    // The ids previewed are required; a blanket apply is refused.
+    for (const body of [{ days: 90 }, { days: 90, agentIds: [] }])
+      expect(
+        (await app.request(`/api/squads/${own.id}/idle-consultants/dormant`, json(token, 'POST', body))).status
+      ).toBe(400)
+
     // The client sends what it previewed plus ids that are not idle consultants; only the intersection is applied.
     const response = await app.request(
       `/api/squads/${own.id}/idle-consultants/dormant`,
@@ -205,8 +211,12 @@ describe('storage cleanup routes', () => {
         (await app.request(`/api/squads/${other.id}/idle-consultants?days=90`, { headers: authHeaders(token) })).status
       ).toBe(403)
       expect(
-        (await app.request(`/api/squads/${other.id}/idle-consultants/dormant`, json(token, 'POST', { days: 90 })))
-          .status
+        (
+          await app.request(
+            `/api/squads/${other.id}/idle-consultants/dormant`,
+            json(token, 'POST', { days: 90, agentIds: [idle.id] })
+          )
+        ).status
       ).toBe(403)
     }
     expect((await app.request(`/api/squads/${other.id}/idle-consultants?days=90`)).status).toBe(401)

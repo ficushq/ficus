@@ -35,6 +35,10 @@ export function StorageSection() {
   const data = query.data
   const retentionDays = data?.dormantRetentionDays ?? 7
   const [notice, setNotice] = useState<string | null>(null)
+  const firstMachineBySquad = new Map<string, string>()
+  for (const machine of data?.machines ?? [])
+    for (const squad of machine.squads)
+      if (!firstMachineBySquad.has(squad.id)) firstMachineBySquad.set(squad.id, machine.id)
   // Actions change agents and files now; measured disk sizes change only on the next scan.
   const actionDone = (message: string) => {
     setNotice(message)
@@ -148,7 +152,13 @@ export function StorageSection() {
           )}
           <div className="divide-y divide-th-border">
             {machine.squads.map((squad) => (
-              <StorageSquadView key={squad.id} squad={squad} retentionDays={retentionDays} onDone={actionDone} />
+              <StorageSquadView
+                key={squad.id}
+                squad={squad}
+                showSquadActions={firstMachineBySquad.get(squad.id) === machine.id}
+                retentionDays={retentionDays}
+                onDone={actionDone}
+              />
             ))}
             {machine.unattributedBytes !== null && (
               <div className="flex justify-between gap-4 py-3 text-sm text-secondary">

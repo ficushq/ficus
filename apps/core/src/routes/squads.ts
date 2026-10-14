@@ -118,7 +118,8 @@ const idleDaysSchema = z.coerce.number().int().min(1).max(3650)
 const idleConsultantsDormancySchema = z
   .object({
     days: z.number().int().min(1).max(3650),
-    agentIds: z.array(z.string().uuid()).max(500).optional(),
+    // Required: the consultants the caller previewed. The server still re-checks each one.
+    agentIds: z.array(z.string().uuid()).min(1).max(500),
   })
   .strict()
 

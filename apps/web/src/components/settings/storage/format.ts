@@ -53,6 +53,12 @@ export function parseIdleDays(raw: string): number | null {
 export function idleDormancySummary(result: IdleConsultantsDormancyResult): string {
   const parts = [`Made ${result.dormant.length} idle consultant${result.dormant.length === 1 ? '' : 's'} dormant.`]
   if (result.deferred.length) parts.push(`${result.deferred.length} will become dormant after their current turn.`)
-  if (result.skipped.length) parts.push(`${result.skipped.length} were no longer idle and were left alone.`)
+  if (result.skipped.length) {
+    const byReason = new Map<string, number>()
+    for (const skipped of result.skipped) byReason.set(skipped.reason, (byReason.get(skipped.reason) ?? 0) + 1)
+    parts.push(
+      `Left alone: ${[...byReason].map(([reason, count]) => `${count} ${reason.replace(/\.$/, '')}`).join('; ')}.`
+    )
+  }
   return parts.join(' ')
 }
