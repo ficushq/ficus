@@ -1593,6 +1593,21 @@
   -webkit-app-region: drag;
 }
 
+/* Pages without the app header (sign-in, setup) drag the window by this strip
+   instead (added by useDesktopShellChrome). Clicks pass through it to the page;
+   controls under it stay clickable through the no-drag rule below. */
+.ficus-desktop-drag-strip {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 56px;
+  pointer-events: none;
+  -webkit-app-region: drag;
+}
+
+:root:has(.ficus-app-header) .ficus-desktop-drag-strip {
+  display: none;
+}
+
 :root[data-desktop-shell='inset'] .ficus-app-header-bar {
   height: 100%;
   padding-top: 0;

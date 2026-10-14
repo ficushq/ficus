@@ -65,6 +65,23 @@ test('marks the document inset while windowed and clears it in fullscreen', asyn
   expect(shell.unsubscribed()).toBe(1)
 })
 
+test('adds one window drag strip while inset, for pages without the app header', async () => {
+  const strips = () => document.querySelectorAll('.ficus-desktop-drag-strip')
+  const shell = installShell({ insetTitleBar: true })
+  const root = await mount()
+  expect(strips()).toHaveLength(1)
+  expect(strips()[0]!.getAttribute('aria-hidden')).toBe('true')
+
+  await harness.act(async () => shell.emit(true))
+  expect(strips()).toHaveLength(0)
+  await harness.act(async () => shell.emit(false))
+  await harness.act(async () => shell.emit(false))
+  expect(strips()).toHaveLength(1)
+
+  await harness.act(async () => root.unmount())
+  expect(strips()).toHaveLength(0)
+})
+
 test('a window that opens in fullscreen is not marked inset', async () => {
   installShell({ insetTitleBar: true }, true)
   await mount()
@@ -79,4 +96,5 @@ test('browsers and desktop windows with a standard title bar are unchanged', asy
   delete window.ficusDesktopApp
   await mount()
   expect(document.documentElement.hasAttribute('data-desktop-shell')).toBe(false)
+  expect(document.querySelector('.ficus-desktop-drag-strip')).toBeNull()
 })
