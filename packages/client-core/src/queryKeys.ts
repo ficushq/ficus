@@ -285,6 +285,9 @@ export const queryKeys = {
     all: ['system'] as const,
     storage: () => [...queryKeys.system.all, 'storage'] as const,
     storageStatus: () => [...queryKeys.system.all, 'storage-status'] as const,
+    storedFiles: () => [...queryKeys.system.all, 'stored-files'] as const,
+    idleConsultants: (squadId: string, days: number) =>
+      [...queryKeys.system.all, 'idle-consultants', squadId, days] as const,
     pause: () => [...queryKeys.system.all, 'pause'] as const,
     pauseDetails: () => [...queryKeys.system.pause(), 'details'] as const,
   },

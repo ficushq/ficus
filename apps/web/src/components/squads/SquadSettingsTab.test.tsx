@@ -38,6 +38,7 @@ function renderSandboxSection(squadId: string, status?: SandboxStatus): string {
           globalCollaborationEnabled={false}
           maxConcurrentWorkStreams={null}
           blockedGraceMinutes={null}
+          consultantIdleDormancyDays={null}
           hostWorkspacePath={null}
         />
       </QueryClientProvider>
@@ -99,6 +100,7 @@ function renderSettingsTab(permissions: string[], entry = '/squads/squad-1/setti
           globalCollaborationEnabled={false}
           maxConcurrentWorkStreams={null}
           blockedGraceMinutes={null}
+          consultantIdleDormancyDays={null}
           hostWorkspacePath={null}
         />
       </QueryClientProvider>

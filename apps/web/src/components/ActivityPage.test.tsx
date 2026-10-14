@@ -42,6 +42,7 @@ function squad(id: string, name: string, createdAt: string): Squad {
     metadata: {},
     maxConcurrentWorkStreams: null,
     blockedGraceMinutes: null,
+    consultantIdleDormancyDays: null,
     sandboxStatus: 'none',
     avatarImageId: null,
     machineId: null,

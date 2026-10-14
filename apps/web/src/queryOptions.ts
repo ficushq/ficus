@@ -19,7 +19,14 @@ import { getModelCatalog } from './api/modelCatalog'
 import { modelCatalogQueryKeys } from './queryKeys'
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { queryKeys, onboardingQueryKeys, integrationQueryKeys, themePresetQueryKeys } from './queryKeys'
-import { getStorageStatus, getStorage, getSystemPause, getSystemPauseDetails } from './api/system'
+import {
+  getIdleConsultants,
+  getStorageStatus,
+  getStorage,
+  getStoredFiles,
+  getSystemPause,
+  getSystemPauseDetails,
+} from './api/system'
 import { getGlobalActivityPresence, listGlobalActivity } from './api/activity'
 
 // API functions
@@ -838,6 +845,16 @@ export const queries = {
         queryKey: queryKeys.system.storage(),
         queryFn: getStorage,
         refetchInterval: (query) => (query.state.data?.scanning ? 2000 : 300000),
+      }),
+    storedFiles: () =>
+      queryOptions({
+        queryKey: queryKeys.system.storedFiles(),
+        queryFn: getStoredFiles,
+      }),
+    idleConsultants: (squadId: string, days: number) =>
+      queryOptions({
+        queryKey: queryKeys.system.idleConsultants(squadId, days),
+        queryFn: () => getIdleConsultants(squadId, days),
       }),
     pause: () =>
       queryOptions({

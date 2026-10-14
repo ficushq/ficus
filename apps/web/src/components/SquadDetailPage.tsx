@@ -510,6 +510,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
               globalCollaborationEnabled={squad.globalCollaborationEnabled}
               maxConcurrentWorkStreams={squad.maxConcurrentWorkStreams}
               blockedGraceMinutes={squad.blockedGraceMinutes}
+              consultantIdleDormancyDays={squad.consultantIdleDormancyDays ?? null}
               hostWorkspacePath={squad.hostWorkspacePath}
             />
           )}
