@@ -113,6 +113,7 @@ async function fixture(options: { handling?: 'hold' | 'screen'; filter?: boolean
             eq(integrationAuditEvents.action, 'github.feedback.screen_pending')
           )
         )
+        .orderBy(integrationAuditEvents.createdAt, integrationAuditEvents.id)
     },
     async close() {
       await db.delete(integrationAuditEvents).where(eq(integrationAuditEvents.targetId, squadId))
