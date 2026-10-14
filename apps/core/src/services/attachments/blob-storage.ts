@@ -257,6 +257,15 @@ async function deleteCollectionBlob(blobs: BlobCollection, ownerId: string, atta
   }
 }
 
+/** The directory holding one work stream's handoff attachments. */
+export function workflowAttachmentDirectory(workStreamId: string): string {
+  return join(
+    getHomeDir(),
+    WORKFLOW_ATTACHMENTS.directory,
+    normalizeUuid(workStreamId, WORKFLOW_ATTACHMENTS.ownerLabel)
+  )
+}
+
 /** Workflow handoff attachments: `<home>/workflow-attachments/<work stream>/<attachment>`. */
 export function workflowAttachmentBlobPath(workStreamId: string, attachmentId: string): string {
   return collectionBlobPath(WORKFLOW_ATTACHMENTS, workStreamId, attachmentId)

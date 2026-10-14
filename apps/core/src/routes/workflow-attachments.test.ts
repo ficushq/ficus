@@ -1,12 +1,21 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Hono } from 'hono'
 import { eq, inArray, like, sql } from 'drizzle-orm'
 import { WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT, type WorkflowDefinition } from '@ficus/shared'
-import { db, agents, agentTypes, squads, workflowAttemptAttachments, workStreamFlowRuns, workStreams } from '../db'
+import {
+  db,
+  agents,
+  agentTypes,
+  squads,
+  workflowAttemptAttachments,
+  workStreamFlowRuns,
+  workStreams,
+  worktreeCleanupJobs,
+} from '../db'
 import { identityMiddleware } from '../middleware/identity'
 import {
   authHeaders,
@@ -25,6 +34,7 @@ import { downloadDisposition } from '../services/attachments/http'
 import { attachmentStore } from '../services/amtp/adapters'
 import { AgentFileAttachment } from '../entities/AgentFileAttachment'
 import { InboxAttachment } from '../entities/InboxAttachment'
+import { WorkStream } from '../entities/WorkStream'
 import { workflowsRouter } from './workflows'
 
 const app = new Hono().use('*', identityMiddleware).route('/api/workflows', workflowsRouter)
@@ -351,4 +361,39 @@ test('chat-file, inbox and federation quota checks all see handoff file bytes', 
   expect(after.map((total, index) => total - before[index]!)).toEqual([19, 19, 19])
   // And one total serves all three, so they agree.
   expect(new Set(after).size).toBe(1)
+})
+
+test('deleting a work stream removes its handoff files and their directory', async () => {
+  const first = await (await upload(bound.token, { path: 'docs/design.md' })).json()
+  const second = await (await upload(bound.token, { name: 'notes.txt', content: 'notes' })).json()
+  const directory = dirname(workflowAttachmentBlobPath(streamId, first.id))
+  expect((await readdir(directory)).sort()).toEqual([first.id, second.id].sort())
+  await (await WorkStream.mustFind(streamId)).delete()
+  expect(await rows()).toEqual([])
+  expect(await Bun.file(directory).exists()).toBe(false)
+  expect(await readdir(dirname(directory))).toEqual([])
+})
+
+test('a work stream delete that rolls back keeps its handoff files', async () => {
+  const doc = await (await upload(bound.token)).json()
+  // A worktree removal in flight refuses the delete inside its transaction.
+  await db.insert(worktreeCleanupJobs).values({ workStreamId: streamId, status: 'removing' })
+  await expect((await WorkStream.mustFind(streamId)).delete()).rejects.toThrow('Worktree cleanup removal')
+  expect(await rows()).toHaveLength(1)
+  expect(await readFile(workflowAttachmentBlobPath(streamId, doc.id), 'utf8')).toBe('# Design\n\nThe plan.')
+  await db.delete(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, streamId))
+})
+
+test('a handoff file that cannot be removed does not fail the work stream delete', async () => {
+  const doc = await (await upload(bound.token)).json()
+  const directory = dirname(workflowAttachmentBlobPath(streamId, doc.id))
+  await chmod(directory, 0o500)
+  try {
+    await (await WorkStream.mustFind(streamId)).delete()
+    expect(await WorkStream.find(streamId)).toBeNull()
+    // The bytes stay behind (logged), and the delete still committed.
+    expect(await readdir(directory)).toEqual([doc.id])
+  } finally {
+    await chmod(directory, 0o700)
+  }
 })

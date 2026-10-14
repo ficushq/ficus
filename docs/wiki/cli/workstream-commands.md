@@ -32,7 +32,10 @@ snapshot (at most 10 files per attempt, each within `INBOX_MAX_ATTACHMENT_BYTES`
 them at `GET /api/workflows/runs/STREAM_ID/attachments/ATTACHMENT_ID` to anyone
 who can read the work stream. The review modal shows them as tabs after the handoff;
 PDFs are drawn page by page with pdf.js from the downloaded bytes (loaded on demand,
-with no network fetches of its own).
+with no network fetches of its own). Attachments are kept for the life of the work
+stream, including after it is done or canceled, as a record of what was reviewed; they
+are removed only when the work stream is deleted. Their bytes count toward the
+instance-wide `INBOX_MAX_TOTAL_STORAGE_BYTES` quota shared with inbox and chat files.
 
 When a transition immediately assigns work to the calling agent, its response
 includes `assignments` with the attempt ID, version, and full handoff content.

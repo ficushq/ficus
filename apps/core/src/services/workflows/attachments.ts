@@ -5,8 +5,11 @@ import {
   type WorkflowAttemptAttachment,
 } from '@ficus/shared'
 import { db, squads, workflowAttemptAttachments, workStreamFlowRuns, workStreams } from '../../db'
+import { rmdir } from 'node:fs/promises'
+import { createLogger } from '../../lib/infra/logger'
 import {
   deleteWorkflowAttachmentBlob,
+  workflowAttachmentDirectory,
   readVerifiedWorkflowAttachmentBlob,
   sha256Hex,
   writeWorkflowAttachmentBlob,
@@ -16,6 +19,8 @@ import { reserveAttachmentStorage } from '../attachments/storage-quota'
 import type { Identity } from '../rbac'
 import { WorkflowError } from './catalog'
 import { assertStreamAcceptsHandoffs, isAttemptAgent } from './execution'
+
+const log = createLogger('workflow-attachments')
 
 type Row = typeof workflowAttemptAttachments.$inferSelect
 type Run = typeof workStreamFlowRuns.$inferSelect
@@ -188,5 +193,30 @@ export async function readWorkflowAttachment(
     return { attachment: toJson(row), bytes }
   } catch (error) {
     throw isUnavailableBlob(error) ? new WorkflowAttachmentUnavailableError(error) : error
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  const failure = error as { code?: string; errno?: number }
+  return failure?.code === 'ENOENT' || failure?.errno === 2
+}
+
+/**
+ * Remove a deleted work stream's handoff bytes and then its (now empty) directory. Called after the
+ * delete commits; a failure is logged and left behind, never thrown back into the delete.
+ */
+export async function removeWorkflowAttachmentBlobs(workStreamId: string, attachmentIds: string[]): Promise<void> {
+  for (const id of attachmentIds) {
+    try {
+      await deleteWorkflowAttachmentBlob(workStreamId, id)
+    } catch (error) {
+      if (!isMissing(error))
+        log.warn(`Could not remove workflow attachment ${id} of work stream ${workStreamId}:`, error)
+    }
+  }
+  try {
+    await rmdir(workflowAttachmentDirectory(workStreamId))
+  } catch (error) {
+    if (!isMissing(error)) log.warn(`Could not remove the attachment directory of work stream ${workStreamId}:`, error)
   }
 }
