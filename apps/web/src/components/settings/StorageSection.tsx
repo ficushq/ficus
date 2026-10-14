@@ -65,17 +65,6 @@ export function StorageSection() {
           {data?.scanning || refresh.isPending ? 'Scanning…' : 'Refresh'}
         </button>
       </div>
-      {data?.supported && data.monitoring && can('settings:write') && (
-        <StorageMonitorSettings
-          key={JSON.stringify([
-            data.monitoring.intervalHours,
-            data.monitoring.thresholds,
-            data.monitoring.alertsEnabled,
-          ])}
-          config={data.monitoring}
-        />
-      )}
-      {data && can('settings:write') && <DormantRetentionSettings key={retentionDays} days={retentionDays} />}
       {data?.warnings?.map((warning) => (
         <p key={warning.machineId} role="status" className="text-sm text-status-attention-500">
           {warning.machineName}: {warning.percent.toFixed(1)}% full at {new Date(warning.measuredAt).toLocaleString()}.
@@ -169,8 +158,6 @@ export function StorageSection() {
           </div>
         </div>
       ))}
-      <StoredFilesSection />
-      {can('system:cleanup') && <HostCleanupSection onDone={actionDone} />}
       {data?.supported && (
         <div className="space-y-2 text-xs text-secondary">
           <p>
@@ -190,6 +177,26 @@ export function StorageSection() {
             minute and start on the next worker check. Scanning does not start agents or remove files.
           </p>
         </div>
+      )}
+      <StoredFilesSection />
+      {can('system:cleanup') && <HostCleanupSection onDone={actionDone} />}
+      {data && can('settings:write') && (
+        <section className="space-y-5 border-t border-th-border pt-6" aria-labelledby="storage-settings-heading">
+          <h3 id="storage-settings-heading" className="font-medium text-primary">
+            Settings
+          </h3>
+          {data.supported && data.monitoring && (
+            <StorageMonitorSettings
+              key={JSON.stringify([
+                data.monitoring.intervalHours,
+                data.monitoring.thresholds,
+                data.monitoring.alertsEnabled,
+              ])}
+              config={data.monitoring}
+            />
+          )}
+          <DormantRetentionSettings key={retentionDays} days={retentionDays} />
+        </section>
       )}
     </section>
   )

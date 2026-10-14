@@ -6,7 +6,7 @@ import { PermissionsProvider } from '../../hooks/usePermissions'
 import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
 import { StorageSection } from './StorageSection'
-import { idleDormancySummary } from './storage/format'
+import { idleDormancySummary, removalSummary } from './storage/format'
 import { queries } from '../../queryOptions'
 
 const GiB = 1024 ** 3
@@ -51,14 +51,14 @@ const snapshot = (): StorageSnapshot => ({
               agentTypeId: 'consultant',
               status: 'dormant',
               lastMessageAt: daysAgo(30),
-              dormantAt: '2026-10-01T12:00:00.000Z',
+              dormantAt: daysAgo(2),
             }),
             agentFolder('d2', GiB, {
               label: 'Old build',
               agentTypeId: 'engineer',
               status: 'dormant',
               lastMessageAt: daysAgo(30),
-              dormantAt: '2026-10-05T12:00:00.000Z',
+              dormantAt: daysAgo(1),
             }),
             agentFolder('b', 1000, {
               label: 'Build API · Bob',
@@ -161,12 +161,77 @@ describe('StorageSection agents', () => {
 
   test('collapses dormant agents into one summary with the automatic removal date, expandable to the list', () => {
     const html = render(['system:logs'])
-    const removal = new Date(Date.parse('2026-10-01T12:00:00.000Z') + 7 * 86_400_000).toLocaleDateString()
+    const removal = new Date(
+      Date.parse(snapshot().machines[0]!.squads[0]!.folders[0]!.agent!.dormantAt!) + 7 * 86_400_000
+    ).toLocaleDateString()
     expect(html).toContain(`2 dormant · 3.0 GiB · removed automatically from ${removal}`)
     const group = html.slice(html.indexOf('2 dormant'))
     expect(group).toContain('Old research')
     expect(group).toContain('Old build')
     expect(html.indexOf('Old research')).toBeGreaterThan(html.indexOf('2 dormant'))
+  })
+
+  test('says removal is pending once the earliest automatic removal date has passed', () => {
+    const queryClient = client()
+    const data = snapshot()
+    data.machines[0]!.squads[0]!.folders[0]!.agent!.dormantAt = daysAgo(30)
+    queryClient.setQueryData(queryKeys.system.storage(), data)
+    try {
+      const html = renderToStaticMarkup(element(queryClient, ['system:logs']))
+      expect(html).toContain('2 dormant · 3.0 GiB · removal pending')
+      expect(html).not.toContain('removed automatically from')
+    } finally {
+      queryClient.clear()
+    }
+  })
+
+  test('puts usage first and the settings last, under a Settings heading', () => {
+    const html = render(['system:logs', 'system:cleanup', 'settings:write'])
+    const order = [
+      'Last scanned',
+      '>Product<',
+      'Expand a squad to inspect',
+      'Files stored by Ficus',
+      'Ficus host cleanup',
+      '>Settings<',
+      'Background monitoring',
+      'Remove dormant agents after',
+    ].map((text) => html.indexOf(text))
+    expect(order.every((index) => index >= 0)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+  })
+
+  test('offers the idle-consultant action only to squads that have consultants', () => {
+    const queryClient = client()
+    const data = snapshot()
+    for (const folder of data.machines[0]!.squads[0]!.folders)
+      if (folder.agent?.agentTypeId === 'consultant') folder.agent.agentTypeId = 'engineer'
+    queryClient.setQueryData(queryKeys.system.storage(), data)
+    try {
+      const html = renderToStaticMarkup(element(queryClient, ['system:logs', 'agents:terminate']))
+      expect(html).not.toContain('Make idle consultants dormant')
+    } finally {
+      queryClient.clear()
+    }
+  })
+
+  test('a removal that was given up shows its reason, is offered again, and stops the fast refresh', () => {
+    const queryClient = client()
+    const data = snapshot()
+    data.machines[0]!.squads[0]!.folders[0]!.agent!.removalError = 'ssh timed out'
+    queryClient.setQueryData(queryKeys.system.storage(), data)
+    try {
+      const html = renderToStaticMarkup(element(queryClient, ['system:logs', 'system:cleanup']))
+      expect(html).toContain('Removal failed: ssh timed out')
+      expect(count(html, '>Remove now<')).toBe(2)
+      expect(html).not.toContain('Removing…')
+    } finally {
+      queryClient.clear()
+    }
+    const interval = queries.system.storage().refetchInterval as (query: {
+      state: { data?: StorageSnapshot }
+    }) => number
+    expect(interval({ state: { data } })).toBe(300000)
   })
 
   test('offers cleanup actions only with the matching permissions, never for managers or dormant agents', () => {
@@ -238,6 +303,12 @@ describe('StorageSection agents', () => {
         ],
       })
     ).toBe('Made 1 idle consultant dormant. Left alone: 2 became active; 1 Agent has active work streams.')
+    expect(idleDormancySummary({ dormant: ['a'], deferred: [], skipped: [], error: 'Server unavailable' })).toBe(
+      'Made 1 idle consultant dormant. Stopped after an error: Server unavailable'
+    )
+    expect(removalSummary({ accepted: ['a', 'b'], skipped: [], error: 'Gateway timeout' })).toBe(
+      'Removing 2 dormant agents in the background. Stopped after an error: Gateway timeout'
+    )
   })
 
   test('shows files stored by Ficus per squad and the attachment quota', () => {

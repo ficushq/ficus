@@ -28,20 +28,21 @@ export function agentDetails(agent: StorageAgent): string {
   return `${agent.agentTypeId} · ${status} · ${activity}`
 }
 
-/** When retention removes the earliest of these dormant agents. */
-export function automaticRemovalDate(dormantAt: Array<string | null>, retentionDays: number): string | null {
+/** When retention removes the earliest of these dormant agents, or null when none has a dormancy time. */
+export function automaticRemovalDate(dormantAt: Array<string | null>, retentionDays: number): Date | null {
   const times = dormantAt.flatMap((value) => (value ? [Date.parse(value)] : []))
   if (!times.length) return null
-  return new Date(Math.min(...times) + retentionDays * DAY_MS).toLocaleDateString()
+  return new Date(Math.min(...times) + retentionDays * DAY_MS)
 }
 
 export const sumBytes = (items: Array<{ bytes: number | null }>) =>
   items.reduce((sum, item) => sum + (item.bytes ?? 0), 0)
 
-export function removalSummary(result: RemoveDormantAgentsResult): string {
+export function removalSummary(result: RemoveDormantAgentsResult & { error?: string }): string {
   const n = result.accepted.length
   const parts = [`Removing ${n} dormant agent${n === 1 ? '' : 's'} in the background.`]
   for (const skipped of result.skipped) parts.push(`Not removed: ${skipped.reason}`)
+  if (result.error) parts.push(`Stopped after an error: ${result.error}`)
   return parts.join(' ')
 }
 
@@ -50,7 +51,7 @@ export function parseIdleDays(raw: string): number | null {
   return raw.trim() !== '' && Number.isInteger(value) && value >= 1 && value <= 3650 ? value : null
 }
 
-export function idleDormancySummary(result: IdleConsultantsDormancyResult): string {
+export function idleDormancySummary(result: IdleConsultantsDormancyResult & { error?: string }): string {
   const parts = [`Made ${result.dormant.length} idle consultant${result.dormant.length === 1 ? '' : 's'} dormant.`]
   if (result.deferred.length) parts.push(`${result.deferred.length} will become dormant after their current turn.`)
   if (result.skipped.length) {
@@ -60,5 +61,6 @@ export function idleDormancySummary(result: IdleConsultantsDormancyResult): stri
       `Left alone: ${[...byReason].map(([reason, count]) => `${count} ${reason.replace(/\.$/, '')}`).join('; ')}.`
     )
   }
+  if (result.error) parts.push(`Stopped after an error: ${result.error}`)
   return parts.join(' ')
 }

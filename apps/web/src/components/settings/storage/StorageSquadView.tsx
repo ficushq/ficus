@@ -43,6 +43,9 @@ function AgentRow({ folder, action }: { folder: StorageFolder; action?: ReactNod
         <span className="block text-xs text-secondary">
           {agent ? agentDetails(agent) : 'Details appear after the next scan'}
         </span>
+        {agent?.removalError && (
+          <span className="block text-xs text-status-danger-400">Removal failed: {agent.removalError}</span>
+        )}
       </span>
       <span className="flex shrink-0 items-center gap-3">
         <span className="tabular-nums text-secondary">{measuredSize(folder)}</span>
@@ -107,9 +110,15 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
     dormant.map((folder) => folder.agent!.dormantAt),
     retentionDays
   )
+  // Past the date, the dormant sweep is working through them (up to 5 a minute).
   const dormantSummary = `${dormant.length} dormant · ${storageSize(sumBytes(dormant))} · ${
-    removalDate ? `removed automatically from ${removalDate}` : `removed automatically after ${retentionDays} days`
+    !removalDate
+      ? `removed automatically after ${retentionDays} days`
+      : removalDate.getTime() <= Date.now()
+        ? 'removal pending'
+        : `removed automatically from ${removalDate.toLocaleDateString()}`
   }`
+  const hasConsultants = squad.folders.some((folder) => folder.agent?.agentTypeId === 'consultant')
 
   const makeDormantAction = (folder: StorageFolder) => {
     const agent = folder.agent
@@ -139,7 +148,7 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
         </span>
       </summary>
       <div className="space-y-2 pb-3 pl-5">
-        {canTerminate && showSquadActions && (
+        {canTerminate && showSquadActions && hasConsultants && (
           <div className="flex justify-end">
             <button
               type="button"
