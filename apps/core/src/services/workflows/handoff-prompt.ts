@@ -18,6 +18,10 @@ type HandoffStream = {
   metadata: unknown
 }
 
+/** Reviewers read handoff files inline, so deliverables are attached rather than pasted or only named. */
+const ATTACH_GUIDANCE =
+  'Attach the documents your result refers to (design docs, reports, plans, screenshots) by adding --attach <path> to the advance command, once per file (at most 10, 10 MB each); reviewers read them alongside your handoff. Keep evidence a concise summary that names each attached file; do not paste their contents.'
+
 /** Preserve requirements and evidence verbatim; keep shared operating rules out of each assignment. */
 export function flowMessage(
   stream: HandoffStream,
@@ -73,6 +77,7 @@ export function flowMessage(
       ? 'Parallel work is active in this shared workspace.'
       : '',
     `Prefer --content with single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer evidence; no temporary file is needed. Choose the appropriate outcome above and replace the evidence string:\n\`\`\`bash\nficus workstream advance ${workStreamRef(stream)} --stdin <<'FICUS_COMMAND'\n${JSON.stringify(example, null, 2)}\nFICUS_COMMAND\n\`\`\``,
+    step.kind === 'decision' ? '' : ATTACH_GUIDANCE,
   ]
     .filter(Boolean)
     .join('\n\n')

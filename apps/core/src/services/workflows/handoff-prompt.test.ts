@@ -30,6 +30,13 @@ test('handoffs retain requirements, show actual workspace, and provide a schema-
     attemptId: 1,
     evidence: expect.any(String),
   })
+  // Deliverables travel as attachments reviewers can read; evidence stays a summary.
+  expect(prompt).toContain(
+    'Attach the documents your result refers to (design docs, reports, plans, screenshots) by adding --attach <path> to the advance command, once per file'
+  )
+  expect(prompt).toContain(
+    'Keep evidence a concise summary that names each attached file; do not paste their contents.'
+  )
   expect(prompt).not.toContain('Incoming results:')
   expect(prompt).not.toContain('Open return requests:')
   expect(prompt).not.toContain('Parallel agents')
