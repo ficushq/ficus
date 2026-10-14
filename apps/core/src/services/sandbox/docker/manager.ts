@@ -462,13 +462,33 @@ let cachedSysboxAvailable: boolean | null = null
 let cachedSocketModeAvailable: boolean | null = null
 let cachedSelectedRuntime: SandboxRuntime | null = null
 
+/** How long each synchronous `docker info` check (sysbox, socket mode) may take. */
+export const SYSBOX_CHECK_TIMEOUT_MS = 3_000
+
+/**
+ * Run a synchronous, read-only probe command with a hard time bound.
+ *
+ * Returns the probe's stdout when it exited 0 within `timeoutMs`, or `null` otherwise (fail closed).
+ * The timeout kills with SIGKILL: Bun's default SIGTERM only asks the child to stop, and a child that
+ * handles or defers SIGTERM (as the Docker CLI can while waiting on a slow daemon) would keep
+ * `spawnSync` blocked well past the bound. A probe that is killed or overruns never counts as success,
+ * even if it managed to exit 0.
+ */
+export function runBoundedProbe(cmd: string[], timeoutMs: number = SYSBOX_CHECK_TIMEOUT_MS): string | null {
+  const result = Bun.spawnSync(cmd, {
+    stdout: 'pipe',
+    stderr: 'ignore',
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+  })
+  if (result.exitedDueToTimeout || result.exitCode !== 0) return null
+  return result.stdout?.toString() ?? ''
+}
+
 /**
  * Check if sysbox-runc is available on this system.
  * Sysbox only works on Linux with kernel 5.12+.
  */
-/** How long each synchronous `docker info` check (sysbox, socket mode) may take. */
-export const SYSBOX_CHECK_TIMEOUT_MS = 3_000
-
 export function isSysboxAvailable(): boolean {
   if (cachedSysboxAvailable !== null) return cachedSysboxAvailable
 
@@ -480,19 +500,15 @@ export function isSysboxAvailable(): boolean {
 
   // Check if sysbox-runc runtime is registered with Docker. Synchronous, so bounded: a slow or wedged
   // Docker daemon must not block the process (a timeout counts as "not available").
-  const result = Bun.spawnSync(['docker', 'info', '--format', '{{json .Runtimes}}'], {
-    stdout: 'pipe',
-    stderr: 'ignore',
-    timeout: SYSBOX_CHECK_TIMEOUT_MS,
-  })
+  const stdout = runBoundedProbe(['docker', 'info', '--format', '{{json .Runtimes}}'])
 
-  if (result.exitCode !== 0) {
+  if (stdout === null) {
     cachedSysboxAvailable = false
     return false
   }
 
   try {
-    const runtimes = JSON.parse(result.stdout.toString().trim())
+    const runtimes = JSON.parse(stdout.trim())
     cachedSysboxAvailable = 'sysbox-runc' in runtimes
   } catch {
     cachedSysboxAvailable = false
@@ -509,13 +525,7 @@ export function isSocketModeAvailable(): boolean {
   if (cachedSocketModeAvailable !== null) return cachedSocketModeAvailable
 
   // Check if Docker is running, bounded like the sysbox check (a timeout counts as "not running").
-  const result = Bun.spawnSync(['docker', 'info'], {
-    stdout: 'ignore',
-    stderr: 'ignore',
-    timeout: SYSBOX_CHECK_TIMEOUT_MS,
-  })
-
-  cachedSocketModeAvailable = result.exitCode === 0
+  cachedSocketModeAvailable = runBoundedProbe(['docker', 'info']) !== null
   return cachedSocketModeAvailable
 }
 
