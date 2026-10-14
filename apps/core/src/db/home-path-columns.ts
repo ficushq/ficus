@@ -37,6 +37,11 @@ export const HOME_PATH_COLUMNS: readonly HomePathColumn[] = [
   { table: 'inbox_attachments', column: 'storage_path', kind: 'text' },
   // The agent-visible attachment path; on the host runtime `<HOME>/private/<sandbox>/…`.
   { table: 'agent_file_attachments', column: 'private_path', kind: 'text' },
+  // `<HOME>/workflow-attachments/<work stream>/<attachment>` (blob-storage.ts).
+  { table: 'workflow_attempt_attachments', column: 'storage_path', kind: 'text' },
+  // The workspace path the agent reported for a handoff file (display only); on the host runtime it
+  // can sit under `<HOME>/workspaces/…`, so it moves with HOME like the other agent-visible paths.
+  { table: 'workflow_attempt_attachments', column: 'path', kind: 'text' },
   // Host runtime: the squad's workspace directory on the core's machine, when set.
   { table: 'squads', column: 'host_workspace_path', kind: 'text' },
   // Memory document paths (normally `/memory/…`); rebased in case one was stored absolute.
