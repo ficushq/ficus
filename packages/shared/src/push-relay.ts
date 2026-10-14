@@ -64,7 +64,11 @@ export const relaySendSchema = z
 export type RelayRouting = z.infer<typeof relayRoutingSchema>
 export type RelaySend = z.infer<typeof relaySendSchema>
 
-/** Device-authored policy. Missing preview consent always means generic text. */
+/**
+ * Device-authored policy. Previews are on by default, matching the account
+ * preference's default; either the device or the account can turn them off,
+ * and both must allow them before preview text is delivered.
+ */
 export const nativeNotificationPolicySchema = z
   .object({
     enabled: z.boolean(),
@@ -99,7 +103,7 @@ export const nativeNotificationPolicySchema = z
 export type NativeNotificationPolicy = z.infer<typeof nativeNotificationPolicySchema>
 export const defaultNativeNotificationPolicy: NativeNotificationPolicy = {
   enabled: true,
-  showPreviews: false,
+  showPreviews: true,
   mutedSquadIds: [],
 }
 /** Use the named zone at the event instant: repeated DST hours are both quiet. */
