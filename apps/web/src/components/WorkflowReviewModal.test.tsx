@@ -157,6 +157,7 @@ test('wide screens read the proposal in one scrolling column beside a decision r
     expect(layout.getAttribute('data-review-layout')).toBe('columns')
     const documentColumn = layout.querySelector<HTMLElement>('[data-review-document]')!
     expect(documentColumn.className).toContain('overflow-y-auto')
+    expect(documentColumn.hasAttribute('data-scroll-container')).toBe(true)
     // The document column is the only scroll area for the document: nothing inside it scrolls or clips.
     for (const node of documentColumn.querySelectorAll<HTMLElement>('*'))
       expect(node.className.toString()).not.toMatch(/overflow-(y-)?(auto|scroll)|max-h-(48|64)/)

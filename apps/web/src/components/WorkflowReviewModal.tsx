@@ -216,6 +216,8 @@ function ReviewLayout({
       <div
         ref={documentColumn}
         data-review-document
+        // The column that scrolls: lazy content (PDF pages) measures its look-ahead against it.
+        data-scroll-container
         tabIndex={-1}
         className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain outline-none"
       >

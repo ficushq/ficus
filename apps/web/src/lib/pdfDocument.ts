@@ -50,7 +50,9 @@ export async function openPdfWith(pdfjs: typeof Pdfjs, bytes: Uint8Array): Promi
               viewport: page.getViewport({ scale }),
               annotationMode: pdfjs.AnnotationMode.ENABLE,
             })
-            return { promise: task.promise, cancel: () => task.cancel() }
+            // Drop the page's parsed resources once drawn; the canvas holds the result.
+            const done = task.promise.finally(() => page.cleanup())
+            return { promise: done, cancel: () => task.cancel() }
           },
         }
       },

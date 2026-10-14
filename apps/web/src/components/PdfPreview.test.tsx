@@ -56,21 +56,30 @@ function fakePdf(pages: number) {
 /** An IntersectionObserver whose entries the test reports by hand. */
 function controlledObserver() {
   const watched: Array<{ element: Element; callback: IntersectionObserverCallback }> = []
+  const roots: Array<Element | Document | null | undefined> = []
   const original = globalThis.IntersectionObserver
   globalThis.IntersectionObserver = class {
-    constructor(private callback: IntersectionObserverCallback) {}
+    constructor(
+      private callback: IntersectionObserverCallback,
+      options?: IntersectionObserverInit
+    ) {
+      roots.push(options?.root)
+    }
     observe(element: Element) {
       watched.push({ element, callback: this.callback })
     }
     unobserve() {}
     disconnect() {}
   } as unknown as typeof IntersectionObserver
+  const report = (index: number, isIntersecting: boolean) => {
+    const { element, callback } = watched[index]!
+    callback([{ isIntersecting, target: element } as IntersectionObserverEntry], {} as IntersectionObserver)
+  }
   return {
-    show(index: number) {
-      const { element, callback } = watched[index]!
-      callback([{ isIntersecting: true, target: element } as IntersectionObserverEntry], {} as IntersectionObserver)
-    },
+    show: (index: number) => report(index, true),
+    hide: (index: number) => report(index, false),
     count: () => watched.length,
+    roots: () => roots,
     restore: () => {
       globalThis.IntersectionObserver = original
     },
@@ -92,9 +101,16 @@ test('the preview counts pages and draws each one to a canvas as it scrolls into
   try {
     const view = dom.createRoot()
     await dom.act(async () =>
-      view.root.render(<PdfPreview bytes={bytes} fileName="design.pdf" openPdf={pdf.open} onError={() => {}} />)
+      view.root.render(
+        <div data-scroll-container>
+          <PdfPreview bytes={bytes} fileName="design.pdf" openPdf={pdf.open} onError={() => {}} />
+        </div>
+      )
     )
     const doc = dom.window.document
+    // Visibility is measured against the scrolling column, so the look-ahead margin applies there.
+    expect(observer.roots()).toHaveLength(1)
+    expect(observer.roots()[0] === doc.querySelector('[data-scroll-container]')).toBe(true)
     expect(doc.body.textContent).toContain('3 pages')
     expect(pdf.opened()).toBe(bytes)
     const canvases = [...doc.querySelectorAll('canvas')]
@@ -116,6 +132,50 @@ test('the preview counts pages and draws each one to a canvas as it scrolls into
 
     await dom.act(async () => view.root.unmount())
     expect(pdf.destroyed()).toBe(1)
+  } finally {
+    observer.restore()
+    await dom.cleanup()
+  }
+})
+
+test('pages far from the view give up their canvas and draw again when they return', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const observer = controlledObserver()
+  const pdf = fakePdf(12)
+  try {
+    const view = dom.createRoot()
+    await dom.act(async () =>
+      view.root.render(
+        <PdfPreview bytes={new Uint8Array([1])} fileName="long.pdf" openPdf={pdf.open} onError={() => {}} />
+      )
+    )
+    const canvases = [...dom.window.document.querySelectorAll('canvas')]
+    await dom.act(async () => observer.show(0))
+    expect(pdf.drawn.map((entry) => entry.page)).toEqual([1])
+    expect([canvases[0]!.width, canvases[0]!.height]).toEqual([800, 1035])
+
+    // Page 3 is still near: page 1 keeps its drawing.
+    await dom.act(async () => {
+      observer.hide(0)
+      observer.show(2)
+    })
+    expect(canvases[0]!.width).toBe(800)
+
+    // Page 10 is far: page 1 releases its bitmap but keeps its size, so scrolling does not jump.
+    await dom.act(async () => {
+      observer.hide(2)
+      observer.show(9)
+    })
+    expect([canvases[0]!.width, canvases[0]!.height]).toEqual([0, 0])
+    expect(canvases[0]!.style.aspectRatio).toBe('612 / 792')
+    expect(canvases[9]!.width).toBe(800)
+
+    await dom.act(async () => {
+      observer.hide(9)
+      observer.show(0)
+    })
+    expect(pdf.drawn.map((entry) => entry.page)).toEqual([1, 3, 10, 1])
+    expect(canvases[0]!.width).toBe(800)
   } finally {
     observer.restore()
     await dom.cleanup()
