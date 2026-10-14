@@ -63,7 +63,7 @@ ficus ws get <id> [--json]           # shows the crew and each agent's live stat
 ficus ws create "<title>" -q <squadId> -d "<description>" \
     --agents architect,engineer,reviewer --assign-index 1 \
     --branch <branch> --base-branch main \
-    [--priority <p>] [--depends-on <id>] -m "<kickoff message>"
+    [--priority <p>] [--depends-on <id>[:ready]] -m "<kickoff message>"
 ficus ws request-review <id> -m "<what to review>" [--no-complete]
                                      # open the review wait; approval completes the
                                      # stream by default. --no-complete = mid-work
@@ -102,7 +102,8 @@ ficus ws watch <id>                  # subscribe to lifecycle updates
 Stored statuses are just `queued | active → done | canceled`. `queued` means
 not admitted under the squad's concurrency cap (or parked back into the
 queue) — visible, ordered, and auto-admitted when a slot frees, its
-dependencies are done, AND it has no open wait. Everything richer is a typed
+dependencies are satisfied (done, or for a `--depends-on <id>:ready` edge the
+dependency's pull request is ready), AND it has no open wait. Everything richer is a typed
 OPEN WAIT record (`dependency | question | review | manual`) plus a DERIVED
 display: `in progress` (live execution), `in review`, `waiting on answer`,
 `waiting on <dep>`, `blocked`, or `idle` (active with no execution and no

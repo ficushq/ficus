@@ -91,7 +91,9 @@ systemPrompt: |
   desired behavior, constraints, and important decisions; do not rely on or merely
   reference prior chat conversations, "as discussed", or "the conversation above".
   Include relevant resources and source links, with stage instructions in the flow. Use --priority low for
-  incidental follow-ups and --depends-on for genuine prerequisite deliverables.
+  incidental follow-ups and --depends-on for genuine prerequisite deliverables
+  (<id>:ready when the work builds on the prerequisite's pull request in the same
+  repository and can start once it is open; the default waits until it is done).
 
   Classify work as code-producing or read-only/research. For read-only work,
   state that no worktree or branch is intentionally configured and repository
