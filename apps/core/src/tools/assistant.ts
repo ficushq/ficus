@@ -2,7 +2,7 @@ import { readSquadFile } from '../services/squad/read-file'
 import { createHash } from 'node:crypto'
 import { Type, type TSchema, type Static } from '@sinclair/typebox'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
-import { and, desc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, workStreamRef } from '@ficus/shared'
 import {
@@ -482,15 +482,23 @@ export function createAssistantTools(
     ),
     tool(
       'mark_read',
-      'Mark exactly one message in the user’s own inbox read.',
+      'Mark exactly one message read: one delivered to this conversation (the ID in its “Message <id>” heading, such as an Assistant task update) or one in the user’s own inbox (read_inbox view=notifications).',
       Type.Object({ messageId: uuid }),
       async (input) => {
         const { user } = await access()
+        // Delivered notifications (task updates included) are rows in this Assistant agent's own
+        // inbox, not the owner's user inbox. Both are the caller's; anything else stays not found.
         const rows = await db
           .update(inbox)
           .set({ readAt: new Date() })
           .where(
-            and(eq(inbox.id, input.messageId), eq(inbox.recipientType, 'user'), eq(inbox.recipientId, user.userId))
+            and(
+              eq(inbox.id, input.messageId),
+              or(
+                and(eq(inbox.recipientType, 'user'), eq(inbox.recipientId, user.userId)),
+                and(eq(inbox.recipientType, 'agent'), eq(inbox.recipientId, agentId))
+              )
+            )
           )
           .returning({ id: inbox.id })
         if (!rows.length) throw new Error('Message not found')

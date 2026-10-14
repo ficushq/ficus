@@ -217,6 +217,11 @@ per delivery batch; longer reports remain available through `read_task_update`. 
 are never truncated in storage. Source cards load by their exact IDs, independently of the latest
 activity page. Every fragment of a grouped response contributes source IDs.
 
+The Assistant sees a forwarded update under the ID of its own agent-inbox row
+(`forwarded_message_id`). Its `mark_read` tool accepts that ID as well as messages in the owner's
+user inbox; every other recipient's message is reported as not found. Marking the forwarded row
+read changes neither `seen_at` nor the original report.
+
 ## Needs you
 
 A task in `needs-input` appears in the Action Center (`GET /api/actions/pending`, type
