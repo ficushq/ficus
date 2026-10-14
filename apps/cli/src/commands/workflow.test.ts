@@ -218,6 +218,10 @@ test('advance help distinguishes live outcomes from deliberate session restart',
   expect(help).toContain('outcomeUpdates')
 })
 
+/** A run detail at version 7 whose attempt 4 has the given status. */
+const runAt = (status = 'running', version = 7) => ({ version, state: { attempts: [{ id: 4, status }] } })
+const runPath = { method: 'GET', path: '/api/workflows/runs/stream-id' }
+
 test('advance --attach uploads each file to the completing attempt before advancing', async () => {
   const command = { action: 'complete', expectedVersion: 7, attemptId: 4, outcome: 'completed', evidence: 'See design' }
   const dir = await mkdtemp(join(tmpdir(), 'ficus-attach-cli-'))
@@ -228,10 +232,11 @@ test('advance --attach uploads each file to the completing attempt before advanc
   const notes = join(dir, 'notes.txt')
   const commandFile = await file(command)
 
-  const f = fixture(undefined, undefined, 'workstream')
+  const f = fixture(runAt(), undefined, 'workstream')
   await f.run('advance', 'stream-id', '--file', commandFile, '--attach', design, '--attach', notes)
   expect(f.errors).toEqual([])
   expect(f.calls).toEqual([
+    runPath,
     {
       method: 'UPLOAD',
       path: '/api/workflows/runs/stream-id/attempts/4/attachments',
@@ -250,12 +255,41 @@ test('advance --attach uploads each file to the completing attempt before advanc
   ])
 
   // A failed upload means the handoff would be missing a file: nothing is advanced.
-  const failing = fixture(undefined, undefined, 'workstream', (index) =>
+  const failing = fixture(runAt(), undefined, 'workstream', (index) =>
     index === 1 ? new Error('ATTACHMENT_TOO_LARGE') : undefined
   )
   await failing.run('advance', 'stream-id', '--file', commandFile, '--attach', design, '--attach', notes)
   expect(failing.errors.map((error) => error.message)).toEqual(['ATTACHMENT_TOO_LARGE'])
-  expect(failing.calls.map((call) => call.method)).toEqual(['UPLOAD', 'UPLOAD'])
+  expect(failing.calls.map((call) => call.method)).toEqual(['GET', 'UPLOAD', 'UPLOAD'])
+})
+
+test('advance --attach retries reach the advance receipt, and a stale version uploads nothing', async () => {
+  const command = { action: 'complete', expectedVersion: 7, attemptId: 4, outcome: 'completed', evidence: 'See design' }
+  const dir = await mkdtemp(join(tmpdir(), 'ficus-attach-cli-'))
+  dirs.push(dir)
+  const design = join(dir, 'design.md')
+  await Bun.write(design, '# Design')
+  const commandFile = await file(command)
+  const requestId = crypto.randomUUID()
+
+  // The first attempt already completed: re-sending the same request gets its receipt, not an upload error.
+  const retried = fixture(runAt('completed', 8), undefined, 'workstream')
+  await retried.run('advance', 'stream-id', '--file', commandFile, '--attach', design, '--request-id', requestId)
+  expect(retried.errors).toEqual([])
+  expect(retried.calls).toEqual([
+    runPath,
+    {
+      method: 'POST',
+      path: '/api/workflows/runs/stream-id/advance',
+      body: { command: { ...command, resume: false }, requestId },
+    },
+  ])
+
+  // The run moved on while the attempt is still open: fail as the server would, before uploading.
+  const stale = fixture(runAt('running', 9), undefined, 'workstream')
+  await stale.run('advance', 'stream-id', '--file', commandFile, '--attach', design)
+  expect(stale.errors.map((error) => error.message)).toEqual(['Stale flow version'])
+  expect(stale.calls).toEqual([runPath])
 })
 
 test('advance --attach checks every file locally before uploading any', async () => {
@@ -269,7 +303,7 @@ test('advance --attach checks every file locally before uploading any', async ()
   await Bun.write(large, new Uint8Array(10 * 1024 * 1024 + 1))
   await Bun.write(empty, '')
   const commandFile = await file(command)
-  const f = fixture(undefined, undefined, 'workstream')
+  const f = fixture(runAt(), undefined, 'workstream')
   await f.run('advance', 'stream-id', '--file', commandFile, '--attach', small, '--attach', large)
   await f.run('advance', 'stream-id', '--file', commandFile, '--attach', small, '--attach', empty)
   await f.run('advance', 'stream-id', '--file', commandFile, '--attach', join(dir, 'missing.md'))
@@ -284,5 +318,6 @@ test('advance --attach checks every file locally before uploading any', async ()
     'At most 10 files can be attached to one handoff',
     '--attach is only available when completing an attempt',
   ])
-  expect(f.calls).toEqual([])
+  // Only the run was read; nothing was uploaded or advanced.
+  expect(f.calls.every((call) => call.method === 'GET')).toBe(true)
 })

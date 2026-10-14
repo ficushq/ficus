@@ -22,7 +22,11 @@ alias for `ficus workstream`. `ficus workflow` manages reusable presets/template
 
 `advance --attach PATH` (repeatable, `complete` only) uploads each file to the
 attempt named in the command before the command is sent, so the next review gate
-opens with them; if any upload fails the attempt is not advanced. Core stores a
+opens with them; if any upload fails the attempt is not advanced. Files are keyed by
+attempt and path: re-sending the same bytes returns the stored file, and new bytes
+replace it without using another slot. When the attempt has already closed (a
+`--request-id` retry of a sent handoff) the uploads are skipped and the command is
+sent as-is; when the run's version no longer matches, the CLI stops before uploading. Core stores a
 snapshot (at most 10 files per attempt, each within `INBOX_MAX_ATTACHMENT_BYTES`,
 10 MB by default), lists them per attempt as `attachments` in `flow`, and serves
 them at `GET /api/workflows/runs/STREAM_ID/attachments/ATTACHMENT_ID` to anyone
