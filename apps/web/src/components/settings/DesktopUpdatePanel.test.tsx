@@ -76,6 +76,11 @@ test('shows the installed app version, short Core commit, up-to-date status, and
   expect(container.textContent).toContain('Up to date')
   expect(container.textContent).toContain('Last checked 5 minutes ago')
   expect(container.textContent).not.toContain('doesn’t receive automatic updates')
+  // The commit links to its public source, and the panel says how to check the app against it.
+  expect(container.querySelector('a')?.getAttribute('href')).toBe(
+    'https://github.com/ficushq/ficus/commit/0123456789abcdef0123456789abcdef01234567'
+  )
+  expect(container.textContent).toContain('ficus desktop verify')
 })
 
 test('Check now calls the native check and is disabled while checking', async () => {

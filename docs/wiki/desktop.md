@@ -14,6 +14,19 @@ Authentication remains Core's normal first-admin bootstrap and passkey flow. Loc
 
 Desktop-managed host agents run as the signed-in OS user and have filesystem access. The UI must explain that boundary. Browser automation still requires a supported locally installed Chromium browser; embedding Electron does not install a Playwright browser.
 
+## Verifying the bundled Core
+
+Desktop is closed source, so nothing it says about itself is the proof. The Core it bundles is built in public: `.github/workflows/desktop-core.yml` builds the `darwin-arm64` artifact for every `main` commit on a GitHub-hosted runner and attests it (Sigstore build provenance: this archive, with this digest, was built by this workflow from this commit). The Desktop release workflow bundles exactly that archive and publishes it, with its attestation bundle, next to the app download.
+
+`ficus desktop verify [path/to/Ficus.app]` checks an installed app against it:
+
+1. The app is signed by the Ficus Developer ID team and unmodified since (`codesign --verify --deep --strict`).
+2. The Core archive for the app's bundled commit has a valid attestation from that workflow, on `refs/heads/main`, for that exact commit, from a GitHub-hosted runner (`gh attestation verify`; the GitHub CLI is required).
+3. Every file in the app's `Contents/Resources/core` is byte-identical to the archive. Native binaries are the exception: packaging re-signs them with the Developer ID, so they must match once the signature is removed, with only `__LINKEDIT`'s vmsize (grown by signing, a memory-layout field) taken from the original. Files the app leaves out are fine; a file the archive lacks fails.
+4. Bun, which runs Core, matches Bun's official release (checked against Bun's published `SHASUMS256.txt`) in the same way.
+
+It does not cover PostgreSQL (repackaged from Postgres.app) or the Desktop shell itself, which starts Core and holds your sign-ins; the report says so. Releases before the attested archive was published cannot be checked.
+
 ## Web app bridge
 
 The web app detects the desktop preload bridge (`window.ficusDesktopApp`, `version: 1`; builds released before the rename expose it as `window.tauDesktopApp`, which the web app still reads when the new name is absent). Members added after the first release are optional and feature-detected individually, so older and newer desktop builds degrade gracefully:

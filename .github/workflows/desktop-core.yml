@@ -1,0 +1,70 @@
+# The Core that Ficus Desktop bundles, built here in public and attested.
+#
+# Every main commit gets a macOS (Apple silicon) Core artifact, built by the same
+# script as every other Core release, with a signed build provenance attestation
+# (Sigstore): this archive, with this digest, was built by this workflow from this
+# commit. The Desktop release workflow bundles exactly this archive; anyone can
+# check an installed app against it with `ficus desktop verify`, or check the
+# archive directly with:
+#
+#   gh attestation verify ficus-core-<commit>-darwin-arm64.tar.gz --repo ficushq/ficus \
+#     --signer-workflow ficushq/ficus/.github/workflows/desktop-core.yml \
+#     --source-ref refs/heads/main --source-digest <commit> --deny-self-hosted-runners
+name: desktop-core
+'on':
+  # Main only: attesting needs id-token and attestations write, which pull request
+  # workflows must never hold (see .github/public-contribution-workflows.test.ts).
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: desktop-core-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Build the macOS Core artifact
+        run: |
+          set -euo pipefail
+          [[ "$(uname -m)" == arm64 ]]
+          bash scripts/artifact/build-core-artifact.sh --smoke --out-dir "$RUNNER_TEMP/desktop-core"
+          artifact="$RUNNER_TEMP/desktop-core/artifact.json"
+          [[ "$(jq -r .commit "$artifact")" == "$GITHUB_SHA" ]]
+          [[ "$(jq -r .platform "$artifact")" == darwin-arm64 ]]
+          ls "$RUNNER_TEMP/desktop-core/ficus-core-$GITHUB_SHA-darwin-arm64.tar.gz"
+      - name: Attest build provenance
+        id: attest
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: '${{ runner.temp }}/desktop-core/ficus-core-${{ github.sha }}-darwin-arm64.tar.gz'
+      # The bundle travels with the archive, so it can be checked without asking GitHub for it.
+      - name: Keep the attestation bundle with the archive
+        run: cp "${{ steps.attest.outputs.bundle-path }}" "$RUNNER_TEMP/desktop-core/ficus-core-$GITHUB_SHA-darwin-arm64.tar.gz.sigstore.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: 'desktop-core-${{ github.sha }}'
+          path: |
+            ${{ runner.temp }}/desktop-core/ficus-core-${{ github.sha }}-darwin-arm64.tar.gz
+            ${{ runner.temp }}/desktop-core/ficus-core-${{ github.sha }}-darwin-arm64.tar.gz.sigstore.json
+            ${{ runner.temp }}/desktop-core/artifact.json
+          retention-days: 90
+          if-no-files-found: error
