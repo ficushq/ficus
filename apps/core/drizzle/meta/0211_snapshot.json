@@ -1,5 +1,5 @@
 {
-  "id": "f4feafd8-441e-4da9-9615-e669e96772b8",
+  "id": "04839bcb-a505-458c-bff2-30fdadaa5c78",
   "prevId": "7912bf0d-0721-43f7-9ac5-1650323ae578",
   "version": "7",
   "dialect": "postgresql",
@@ -20482,27 +20482,6 @@
         }
       },
       "indexes": {
-        "idx_workflow_attempt_attachments_attempt": {
-          "name": "idx_workflow_attempt_attachments_attempt",
-          "columns": [
-            {
-              "expression": "work_stream_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "attempt_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_workflow_attempt_attachments_path": {
           "name": "idx_workflow_attempt_attachments_path",
           "columns": [
