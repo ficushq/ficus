@@ -23,6 +23,8 @@ import {
   integrationConnections,
   integrationConnectionAssignments,
   integrationAuditEvents,
+  githubFeedbackScreenings,
+  decisionLog,
 } from '../../../db'
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 import { InboxMessage } from '../../../entities/InboxMessage'
@@ -290,6 +292,42 @@ for (const action of ['notify-manager', 'notify-consultant', 'start-workstream']
       await h.close()
     }
   })
+
+test('a screening squad queues a decision-model screen off the publish path; with no model it stays held', async () => {
+  const h = await fixture()
+  try {
+    await db.update(squads).set({ githubUntrustedHandling: 'screen' }).where(eq(squads.id, h.squadId))
+    const before = await h.effects()
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const [revision] = await db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    expect(revision).toMatchObject({ decision: 'pending', reason: 'untrusted_author' })
+    // Queued in the capture transaction; the publish did not wait for the model.
+    const screening = async () =>
+      (await db.select().from(githubFeedbackScreenings).where(eq(githubFeedbackScreenings.revisionId, revision!.id)))[0]
+    expect(await screening()).toBeDefined()
+    // Readiness boundary: the scheduled screen settles its row (no decision provider is configured here).
+    const deadline = Date.now() + 5_000
+    while ((await screening())?.state !== 'held' && Date.now() < deadline) await Bun.sleep(25)
+    expect(await screening()).toMatchObject({ state: 'held', outcome: 'unconfigured' })
+    expect(
+      (await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, revision!.id)))[0]
+    ).toMatchObject({ decision: 'pending', releaseState: 'held' })
+    expect(await h.effects()).toEqual(before)
+    const logged = () =>
+      db
+        .select()
+        .from(decisionLog)
+        .where(sql`${decisionLog.source}->>'revisionId' = ${revision!.id}`)
+    while (!(await logged()).length && Date.now() < deadline) await Bun.sleep(25)
+    expect((await logged()).map((row) => [row.purpose, row.outcome])).toEqual([['github-firewall', 'unconfigured']])
+    await db.delete(decisionLog).where(sql`${decisionLog.source}->>'revisionId' = ${revision!.id}`)
+  } finally {
+    await h.close()
+  }
+})
 
 test('tracked pre-flow and subscription audiences cannot bypass the production hold', async () => {
   const h = await fixture()

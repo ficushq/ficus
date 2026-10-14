@@ -3,9 +3,11 @@ import type {
   GitHubFeedbackDetail,
   GitHubFeedbackPage,
   GitHubFeedbackQueue,
+  GitHubFeedbackScreenPendingResult,
   GitHubFeedbackSummary,
   GitHubTrustOrigin,
   GitHubTrustedAuthorList,
+  GitHubUntrustedHandling,
   ModerateGitHubFeedback,
 } from '@ficus/shared'
 import { apiFetch, ApiError } from './client'
@@ -51,6 +53,21 @@ export const setGitHubAuthorFilter = (squadId: string, enabled: boolean, fetcher
     method: 'PUT',
     body: JSON.stringify({ enabled }),
   })
+
+/** Hold untrusted feedback for a person, or let a decision model screen it first. Human-only. */
+export const setGitHubUntrustedHandling = (
+  squadId: string,
+  handling: GitHubUntrustedHandling,
+  fetcher: ApiFetcher = apiFetch
+) =>
+  fetcher<{ handling: GitHubUntrustedHandling }>(`${base(squadId)}/untrusted-handling`, {
+    method: 'PUT',
+    body: JSON.stringify({ handling }),
+  })
+
+/** Queue decision-model screens for already-held untrusted feedback. 202: queued, not decided. */
+export const screenPendingGitHubFeedback = (squadId: string, fetcher: ApiFetcher = apiFetch) =>
+  fetcher<GitHubFeedbackScreenPendingResult>(`${base(squadId)}/screen-pending`, { method: 'POST', body: '{}' })
 
 export const listGitHubTrustedAuthors = (squadId: string, fetcher: ApiFetcher = apiFetch) =>
   fetcher<GitHubTrustedAuthorList>(`${base(squadId)}/trusted-authors`)
@@ -110,6 +127,8 @@ const MESSAGES: Record<string, string> = {
   unverified_personal_account: 'GitHub did not verify this as a personal account.',
   broker_unconfigured: 'GitHub sign-in is not configured on this Ficus instance.',
   invalid_cursor: 'The list changed. Reload it to continue.',
+  screening_not_enabled: 'Choose “Screen with a model” for untrusted feedback first.',
+  author_filter_off: 'Turn on author filtering first. Nothing is held while it’s off.',
 }
 
 export function githubFeedbackErrorMessage(error: unknown, fallback: string): string {

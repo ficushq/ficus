@@ -203,6 +203,8 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
   declare archivedAt: Date | null
   /** Human-only (setGitHubAuthorFilter); read-only on the entity. */
   declare githubAuthorFilter: boolean
+  /** Human-only (setGitHubUntrustedHandling); read-only on the entity. */
+  declare githubUntrustedHandling: import('@ficus/shared').GitHubUntrustedHandling
 
   // Relation cache
   private _managerAgent?: Agent | null
@@ -250,6 +252,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       updatedAt: squads.updatedAt,
       archivedAt: squads.archivedAt,
       githubAuthorFilter: squads.githubAuthorFilter,
+      githubUntrustedHandling: squads.githubUntrustedHandling,
     }
   }
 
@@ -466,6 +469,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
     if (hasReservedGitHubAuthorityMetadata(input.metadata)) throw new Error('Reserved GitHub authority metadata')
     // Human-only: changed exclusively through setGitHubAuthorFilter, never generic squad updates.
     if (Object.hasOwn(input, 'githubAuthorFilter')) throw new Error('Reserved GitHub author filter setting')
+    if (Object.hasOwn(input, 'githubUntrustedHandling')) throw new Error('Reserved GitHub author filter setting')
     // Loaded OUTSIDE the transaction: an AgentType.list pool read inside a
     // row-lock-holding transaction is hold-and-wait on the shared pool.
     const knownTypeIds = input.typeContext ? await loadKnownAgentTypeIds() : []

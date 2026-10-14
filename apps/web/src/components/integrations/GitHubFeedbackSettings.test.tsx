@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, waitFor } from '@testing-library/dom'
+import { MemoryRouter } from 'react-router-dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import {
   SQUAD,
@@ -51,7 +52,13 @@ afterEach(async () => {
 
 async function render(node = <GitHubFeedbackSettings squadId={SQUAD} />) {
   const { root, container } = dom.createRoot()
-  await dom.act(async () => root.render(<QueryClientProvider client={client}>{node}</QueryClientProvider>))
+  await dom.act(async () =>
+    root.render(
+      <MemoryRouter>
+        <QueryClientProvider client={client}>{node}</QueryClientProvider>
+      </MemoryRouter>
+    )
+  )
   await waitFor(() => expect(container.textContent).toContain('@maintainer'))
   return container
 }
@@ -194,4 +201,134 @@ test('closing the review dialog with Escape returns focus to the control that op
   expect(dialog.contains(document.activeElement)).toBe(true)
   await dom.act(async () => fireEvent.keyDown(dialog, { key: 'Escape' }))
   await waitFor(() => expect(document.activeElement).toBe(opener))
+})
+
+const handlingGroup = (container: HTMLElement) =>
+  container.querySelector('[role="radiogroup"][aria-label="Feedback from untrusted authors"]') as HTMLElement
+const radio = (group: HTMLElement, label: string) =>
+  [...group.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement
+
+test('untrusted feedback is held by default, and screening is offered with a link to set up a model', async () => {
+  const container = await render()
+  const group = handlingGroup(container)
+  expect(radio(group, 'Hold for review').getAttribute('aria-checked')).toBe('true')
+  expect(radio(group, 'Screen with a model').getAttribute('aria-checked')).toBe('false')
+  expect(radio(group, 'Screen with a model').title).toBe('Let a decision model screen it')
+  expect(container.textContent).toContain('waits here until someone allows it or trusts its author')
+  const setup = container.querySelector('a[href="/settings?section=decision-providers"]') as HTMLAnchorElement
+  expect(setup.textContent).toContain('Settings → Decision Providers')
+  expect(container.textContent).toContain('Screening needs a decision model.')
+})
+
+test('choosing screening saves it and explains that anything not clearly safe, or unscreened, stays held', async () => {
+  api.other = (method, path, body) => {
+    if (method !== 'PUT' || path !== '/untrusted-handling') return undefined
+    api.summary = { ...api.summary, untrustedHandling: (body as { handling: 'hold' | 'screen' }).handling }
+    return Response.json(body)
+  }
+  const container = await render()
+  await click(radio(handlingGroup(container), 'Screen with a model'))
+  await waitFor(() => expect(calls('PUT', '/untrusted-handling')).toHaveLength(1))
+  expect(calls('PUT', '/untrusted-handling')[0]!.body).toEqual({ handling: 'screen' })
+  await waitFor(() =>
+    expect(radio(handlingGroup(container), 'Screen with a model').getAttribute('aria-checked')).toBe('true')
+  )
+  expect(container.textContent).toContain('delivered once, and its author still isn’t trusted')
+  // No model yet: still selectable, because it fails closed, and the card says so.
+  expect(container.textContent).toContain('No decision model is set up for the GitHub firewall')
+  expect(container.querySelector('a[href="/settings?section=decision-providers"]')).not.toBeNull()
+})
+
+test('with a decision model set up there is no setup hint', async () => {
+  api.summary = { untrustedHandling: 'screen', decisionModelConfigured: true }
+  const container = await render()
+  expect(radio(handlingGroup(container), 'Screen with a model').getAttribute('aria-checked')).toBe('true')
+  expect(container.querySelector('a[href="/settings?section=decision-providers"]')).toBeNull()
+})
+
+test('the choice is read-only without squad update', async () => {
+  api.canModerate = false
+  const container = await render()
+  for (const button of handlingGroup(container).querySelectorAll('[role="radio"]'))
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+})
+
+test('the choice is hidden while the author filter is off, since nothing is held', async () => {
+  api.summary = { authorFilterEnabled: false }
+  const container = await render()
+  expect(handlingGroup(container)).toBeNull()
+})
+
+const maybeButton = (scope: ParentNode, text: string) =>
+  [...scope.querySelectorAll('button')].find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined
+
+test('with screening on, held untrusted feedback can be screened now: Screening…, then the result and a refresh', async () => {
+  api.summary = { untrustedHandling: 'screen', decisionModelConfigured: true, screenable: 3 }
+  let finish!: (response: Response) => void
+  api.other = (method, path) =>
+    method === 'POST' && path === '/screen-pending'
+      ? (new Promise<Response>((resolve) => (finish = resolve)) as unknown as Response)
+      : undefined
+  const container = await render()
+  const summaries = () => calls('GET', '/summary').length
+  const before = summaries()
+  await click(buttonNamed(container, 'Screen 3 waiting now'))
+  await waitFor(() => expect(buttonNamed(container, 'Screening…').disabled).toBe(true))
+  expect(calls('POST', '/screen-pending')).toHaveLength(1)
+  api.summary = { ...api.summary, screenable: 0 }
+  await dom.act(async () => finish(Response.json({ queued: 3, skipped: 0, more: false }, { status: 202 })))
+  await waitFor(() => expect(container.textContent).toContain('3 held events are being screened'))
+  await waitFor(() => expect(summaries()).toBeGreaterThan(before))
+  await waitFor(() => expect(maybeButton(container, 'Screen 0 waiting now')).toBeUndefined())
+  // A second press while it ran was impossible: the button was disabled.
+  expect(calls('POST', '/screen-pending')).toHaveLength(1)
+})
+
+test('switching to screening offers to screen what is already waiting', async () => {
+  api.summary = { untrustedHandling: 'hold', decisionModelConfigured: true, screenable: 2 }
+  api.other = (method, path, body) => {
+    if (method === 'PUT' && path === '/untrusted-handling') {
+      api.summary = { ...api.summary, untrustedHandling: (body as { handling: 'hold' | 'screen' }).handling }
+      return Response.json(body)
+    }
+    if (method === 'POST' && path === '/screen-pending')
+      return Response.json({ queued: 2, skipped: 0, more: true }, { status: 202 })
+    return undefined
+  }
+  const container = await render()
+  // Holding: nothing to screen from here.
+  expect(maybeButton(container, 'Screen 2 waiting now')).toBeUndefined()
+  await click(radio(handlingGroup(container), 'Screen with a model'))
+  await waitFor(() => expect(container.textContent).toContain('2 held events are waiting. Screen them now?'))
+  await click(buttonNamed(container, 'Screen them now'))
+  await waitFor(() => expect(container.textContent).toContain('More are waiting; screen again to continue.'))
+  expect(container.textContent).not.toContain('Screen them now?')
+})
+
+test('the screen-now button is absent with nothing waiting or without permission, and disabled without a model', async () => {
+  api.summary = { untrustedHandling: 'screen', decisionModelConfigured: true, screenable: 0 }
+  const container = await render()
+  expect(maybeButton(container, 'Screen 0 waiting now')).toBeUndefined()
+  await dom.act(async () => {
+    api.summary = { untrustedHandling: 'screen', decisionModelConfigured: false, screenable: 4 }
+    await client.invalidateQueries()
+  })
+  await waitFor(() => expect(buttonNamed(container, 'Screen 4 waiting now').disabled).toBe(true))
+  expect(buttonNamed(container, 'Screen 4 waiting now').title).toBe('Set up a decision model first')
+  await dom.act(async () => {
+    api.canModerate = false
+    await client.invalidateQueries()
+  })
+  await waitFor(() => expect(maybeButton(container, 'Screen 4 waiting now')).toBeUndefined())
+})
+
+test('a refused screen-now shows why', async () => {
+  api.summary = { untrustedHandling: 'screen', decisionModelConfigured: true, screenable: 1 }
+  api.other = (method, path) =>
+    method === 'POST' && path === '/screen-pending'
+      ? Response.json({ code: 'screening_not_enabled' }, { status: 409 })
+      : undefined
+  const container = await render()
+  await click(buttonNamed(container, 'Screen 1 waiting now'))
+  await waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain('Screen with a model'))
 })
