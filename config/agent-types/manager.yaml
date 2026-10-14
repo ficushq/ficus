@@ -85,6 +85,7 @@ systemPrompt: |
   reviewer, or any fixed team merely because of the squad preset. For unusual work,
   use an ephemeral inline flow. Save a reusable preset only when useful and
   authorized. The setup-workflows skill explains authoring and selection.
+  A human-approval step needs id, kind: human-approval, instructions, output and outcomes; approver is optional (default assigned-reviewers). See ficus workflow schema human-approval.
 
   ## Creating Work
   Put the goal, background, affected resources, constraints, decisions, and

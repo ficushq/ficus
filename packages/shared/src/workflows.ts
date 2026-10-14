@@ -2,13 +2,18 @@ import { z } from 'zod'
 import { integrationSubscriptionSchema, integrationDataPathSchema } from './integration-outputs'
 import { decisionQuestionsSchema } from './decisions'
 import { decisionConditionIssue, decisionConditionSchema } from './decision-conditions'
+import { explainedUnion } from './union-issues'
 
-const identifier = z
+/** Words a local ID cannot be: `finish` is the terminal destination, the others are object internals. */
+export const WORKFLOW_RESERVED_IDS = ['finish', 'constructor', 'prototype'] as const
+/** Local IDs: steps, participants, outcomes and presets. */
+export const workflowIdentifierSchema = z
   .string()
   .min(1)
   .max(100)
   .regex(/^[a-z][a-z0-9-]*$/, 'Use a lowercase identifier with optional hyphens')
-  .refine((id) => !['finish', 'constructor', 'prototype'].includes(id), 'Reserved identifier')
+  .refine((id) => !(WORKFLOW_RESERVED_IDS as readonly string[]).includes(id), 'Reserved identifier')
+const identifier = workflowIdentifierSchema
 const text = z.string().trim().min(1).max(64_000)
 const destination = z.union([identifier, z.literal('finish')])
 
@@ -27,41 +32,45 @@ export const workflowParticipantSchema = z
   })
   .strict()
 
-export const workflowTransitionSchema = z.union([
-  z.object({ next: destination }).strict(),
-  z.object({ parallel: z.array(identifier).min(2).max(16), join: destination.default('finish') }).strict(),
-  z.preprocess(
-    (value) => {
-      // Drafts saved by the early editor used a separate resume destination.
-      // Reopening them keeps their correction edge and uses the visible graph.
-      if (value && typeof value === 'object' && 'returnTo' in value && 'resumeAt' in value) {
-        const { resumeAt: _resumeAt, ...transition } = value
-        return transition
-      }
-      return value
-    },
-    z
-      .object({
-        returnTo: identifier.describe('Step that performs the requested revisions, for example create-assets.'),
-        afterRework: z
-          .enum(['follow-graph', 'return-to-requester'])
-          .optional()
-          .describe(
-            'Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows.'
-          ),
-      })
-      .strict()
-  ),
-])
+export const workflowTransitionSchema = explainedUnion(
+  [
+    z.object({ next: destination }).strict(),
+    z.object({ parallel: z.array(identifier).min(2).max(16), join: destination.default('finish') }).strict(),
+    z.preprocess(
+      (value) => {
+        // Drafts saved by the early editor used a separate resume destination.
+        // Reopening them keeps their correction edge and uses the visible graph.
+        if (value && typeof value === 'object' && 'returnTo' in value && 'resumeAt' in value) {
+          const { resumeAt: _resumeAt, ...transition } = value
+          return transition
+        }
+        return value
+      },
+      z
+        .object({
+          returnTo: identifier.describe('Step that performs the requested revisions, for example create-assets.'),
+          afterRework: z
+            .enum(['follow-graph', 'return-to-requester'])
+            .optional()
+            .describe(
+              'Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows.'
+            ),
+        })
+        .strict()
+    ),
+  ],
+  { label: 'transition' }
+)
 
 const outcomes = z
   .record(identifier, workflowTransitionSchema)
   .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 outcomes')
+  .describe('1–16 named outcomes, each with one transition.')
 const stepFields = {
-  id: identifier,
-  name: z.string().trim().min(1).max(200).optional(),
-  instructions: text,
-  output: text,
+  id: identifier.describe('Unique step ID; outcomes and entry refer to it.'),
+  name: z.string().trim().min(1).max(200).optional().describe('Display name; connections still use id.'),
+  instructions: text.describe('What to do and how to judge the result.'),
+  output: text.describe('The expected result or evidence; guidance, not a validated format.'),
   outcomes,
 }
 
@@ -82,47 +91,62 @@ export const DEFAULT_WORKFLOW_DECISION_INPUT: WorkflowDecisionInput[] = ['title'
 export const workflowDecisionRouteSchema = z.object({ when: decisionConditionSchema, outcome: identifier }).strict()
 export type WorkflowDecisionRoute = z.infer<typeof workflowDecisionRouteSchema>
 
-export const workflowStepSchema = z.union([
-  z
-    .object({
-      ...stepFields,
-      kind: z.literal('agent').default('agent'),
-      participant: identifier,
-    })
-    .strict(),
-  z
-    .object({
-      ...stepFields,
-      kind: z.literal('human-approval'),
-      approver: z.enum(['assigned-reviewers', 'reviewers']).default('assigned-reviewers'),
-    })
-    .strict(),
-  /**
-   * No agent works on a decision step: Core asks a decision model its questions about the
-   * selected input and follows the first route whose condition matches. Without a match it
-   * follows `otherwise`; without an answer (unconfigured, unavailable or refused) it follows
-   * `unavailable`. Either one omitted waits for a person to choose, like a human approval.
-   */
-  z
-    .object({
-      id: stepFields.id,
-      name: stepFields.name,
-      instructions: stepFields.instructions,
-      kind: z.literal('decision'),
-      input: z
-        .array(z.enum(WORKFLOW_DECISION_INPUTS))
-        .min(1, 'Choose what the decision looks at')
-        .max(WORKFLOW_DECISION_INPUTS.length)
-        .refine((input) => new Set(input).size === input.length, 'List each input once')
-        .default(DEFAULT_WORKFLOW_DECISION_INPUT),
-      questions: decisionQuestionsSchema,
-      routes: z.array(workflowDecisionRouteSchema).max(32, 'Use at most 32 routes').default([]),
-      otherwise: identifier.optional(),
-      unavailable: identifier.optional(),
-      outcomes,
-    })
-    .strict(),
-])
+export const workflowStepSchema = explainedUnion(
+  [
+    z
+      .object({
+        ...stepFields,
+        kind: z.literal('agent').default('agent'),
+        participant: identifier.describe('ID of an entry in the definition’s participants.'),
+      })
+      .strict()
+      .describe('A participant agent does the work and submits one of the outcomes with evidence.'),
+    z
+      .object({
+        ...stepFields,
+        kind: z.literal('human-approval'),
+        approver: z
+          .enum(['assigned-reviewers', 'reviewers'])
+          .default('assigned-reviewers')
+          .describe(
+            'assigned-reviewers: one of the work stream’s assigned reviewers who has review permission decides; with nobody assigned, anyone with review permission. reviewers: anyone with workstreams:review permission in the squad.'
+          ),
+      })
+      .strict()
+      .describe('A person with review permission chooses the outcome; no agent runs.'),
+    /**
+     * No agent works on a decision step: Core asks a decision model its questions about the
+     * selected input and follows the first route whose condition matches. Without a match it
+     * follows `otherwise`; without an answer (unconfigured, unavailable or refused) it follows
+     * `unavailable`. Either one omitted waits for a person to choose, like a human approval.
+     */
+    z
+      .object({
+        id: stepFields.id,
+        name: stepFields.name,
+        instructions: stepFields.instructions,
+        kind: z.literal('decision'),
+        input: z
+          .array(z.enum(WORKFLOW_DECISION_INPUTS))
+          .min(1, 'Choose what the decision looks at')
+          .max(WORKFLOW_DECISION_INPUTS.length)
+          .refine((input) => new Set(input).size === input.length, 'List each input once')
+          .default(DEFAULT_WORKFLOW_DECISION_INPUT),
+        questions: decisionQuestionsSchema,
+        routes: z.array(workflowDecisionRouteSchema).max(32, 'Use at most 32 routes').default([]),
+        otherwise: identifier.optional().describe('Outcome when no route matches; omit it to let a person choose.'),
+        unavailable: identifier
+          .optional()
+          .describe('Outcome when no decision model answers; omit it to let a person choose.'),
+        outcomes,
+      })
+      .strict()
+      .describe(
+        'A decision model answers typed questions and the first matching route picks the outcome; no agent runs. It cannot be a returnTo target.'
+      ),
+  ],
+  { discriminator: 'kind', label: 'step' }
+)
 export type WorkflowDecisionStep = Extract<z.infer<typeof workflowStepSchema>, { kind: 'decision' }>
 
 /** Problems a decision step's routes have with its own questions and outcomes, for the editor and validation. */

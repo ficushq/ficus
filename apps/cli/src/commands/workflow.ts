@@ -6,7 +6,13 @@ import {
 } from '../structured-input'
 import { registerWorkstreamFlowCommands } from './workstream-flow'
 import { Command } from 'commander'
-import { workflowPresetSchema, workflowSourceSchema } from '@ficus/shared'
+import {
+  formatWorkflowSchemaReference,
+  workflowPresetSchema,
+  workflowSchemaOverview,
+  workflowSourceSchema,
+  workflowStepKindReference,
+} from '@ficus/shared'
 import { apiGet, apiPost, apiPut, apiDelete, apiGetRaw } from '../client'
 import { output, outputError } from '../output'
 
@@ -101,6 +107,17 @@ export function registerWorkflowCommands(program: Command, deps: WorkflowDepende
     .action((id: string) =>
       run(async () => {
         deps.print(await (await deps.apiGetRaw(`${path(id)}/export`)).text())
+      })
+    )
+  // Offline and read-only: generated from the schema this CLI validates with, so it cannot drift from it.
+  // A separate command (not resolve --explain) because it needs no input, squad or server.
+  command
+    .command('schema [step-kind]')
+    .description("List workflow step kinds, or a kind's required and optional fields with allowed values")
+    .action((kind: string | undefined) =>
+      run(async () => {
+        const text = formatWorkflowSchemaReference(kind)
+        deps.output(kind === undefined ? workflowSchemaOverview() : workflowStepKindReference(kind), text)
       })
     )
   addStructuredInputOptions(command.command('resolve [file]'))

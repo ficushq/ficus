@@ -25,6 +25,7 @@ function fixture(
 ) {
   const calls: Array<{ method: string; path: string; body?: unknown }> = []
   const printed: unknown[] = []
+  const messages: string[] = []
   const errors: Error[] = []
   const request = (method: string) => async (path: string, body?: unknown) => {
     calls.push({ method, path, body })
@@ -40,8 +41,9 @@ function fixture(
       calls.push({ method: 'GET', path })
       return new Response('id: solo\n')
     },
-    output: (value: unknown) => {
+    output: (value: unknown, message?: string) => {
       printed.push(value)
+      if (message) messages.push(message)
     },
     print: (value: unknown) => {
       printed.push(value)
@@ -53,6 +55,7 @@ function fixture(
   return {
     calls,
     printed,
+    messages,
     errors,
     run: async (...args: string[]) => {
       const program = new Command().exitOverride().configureOutput({ writeErr: () => {} })
@@ -68,6 +71,28 @@ async function solo() {
   )
 }
 describe('workflow CLI', () => {
+  test('schema prints step kinds and a kind’s fields offline, generated from the validation schema', async () => {
+    const f = fixture()
+    await f.run('schema')
+    await f.run('schema', 'human-approval')
+    await f.run('schema', 'approval')
+    expect(f.calls).toEqual([])
+    expect(f.messages[0]).toContain('human-approval  A person with review permission chooses the outcome')
+    expect(f.messages[1]).toMatch(/^human-approval step/)
+    expect(f.messages[1]).toMatch(/Required:\n(?: {2}.+\n)* {2}output {8}text/)
+    expect(f.messages[1]).toContain('approver  assigned-reviewers | reviewers. default: "assigned-reviewers"')
+    // --json gets the same reference as data.
+    expect(f.printed[1]).toMatchObject({
+      kind: 'human-approval',
+      required: expect.arrayContaining([expect.objectContaining({ name: 'output' })]),
+      optional: expect.arrayContaining([
+        expect.objectContaining({ name: 'approver', type: 'assigned-reviewers | reviewers' }),
+      ]),
+    })
+    expect(f.errors.map((error) => error.message)).toEqual([
+      'Unknown step kind; use one of: agent, human-approval, decision',
+    ])
+  })
   test('publishes validated YAML and preserves the explicit revision when replacing a preset', async () => {
     const preset = await solo()
     const path = await file(preset)

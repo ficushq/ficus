@@ -37,6 +37,7 @@ An inline source contains `{ kind: inline, definition: ... }`. It is durable wit
 ficus workflow create --content '<JSON preset>'
 ficus workflow update PRESET_ID --content '<JSON preset>' --revision REVISION_FROM_GET
 ficus workflow export PRESET_ID
+ficus workflow schema human-approval   # step kinds and their fields, generated from the schema
 ficus workflow template-diff PRESET_ID
 ficus workflow revert PRESET_ID --revision REVISION_FROM_GET
 ficus workflow disable PRESET_ID --revision REVISION_FROM_GET
