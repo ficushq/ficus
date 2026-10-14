@@ -1,6 +1,7 @@
 import { $ } from 'bun'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { permissionMatches } from '@ficus/shared'
 import { MONOREPO_ROOT } from '../paths'
 
 let cliPathOverride: string | null = null
@@ -110,4 +111,160 @@ export function clearCliHelpCache(): void {
   for (const key of Object.keys(cache)) {
     delete cache[key]
   }
+}
+
+/**
+ * Permissions the Core API enforces for CLI commands that squad workers see in
+ * their reference. Keys are a top-level group (`agent-type`) or `<group>
+ * <subcommand>` (`workstream create`); values list the permissions that unlock
+ * the command (any one suffices). Each entry mirrors the route guard named in
+ * its comment, so a caller holding none of them would only get a 403.
+ *
+ * Commands absent from this map are always listed: the server still enforces
+ * every request, so the map only trims commands that are certain to fail.
+ */
+export const CLI_COMMAND_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  // Top-level groups whose every command calls a route guarded by these permissions.
+  admin: ['system:cleanup'], // routes/admin.ts
+  'agent-type': ['agent-types:read', 'agent-types:create', 'agent-types:update', 'agent-types:delete'], // routes/agent-types.ts
+  channel: ['channels:read', 'channels:create', 'channels:update', 'channels:delete'], // routes/channel-instances.ts
+  machines: ['machines:read', 'machines:write'], // routes/machines.ts
+  'provider-auth': ['provider-auth:read', 'provider-auth:write'], // routes/provider-auth.ts
+  role: ['roles:read', 'roles:create', 'roles:update', 'roles:delete'], // routes/roles.ts
+  'shared-prompt': ['agent-types:read', 'agent-types:update'], // routes/shared-prompts.ts
+  'squad-env': ['env:read', 'env:write', 'settings:read', 'settings:write'], // routes/squad-env.ts
+  'squad-preset': ['squad-presets:read', 'squad-presets:create', 'squad-presets:update', 'squad-presets:delete'], // routes/squad-presets.ts
+  user: ['users:read', 'users:create', 'users:update', 'users:delete'], // routes/users.ts
+  webhook: ['webhooks:read'], // routes/webhooks.ts
+
+  // ficus agent — routes/agents.ts
+  'agent rename': ['agents:update'], // PATCH /:id
+  'agent persist': ['agents:update'], // PATCH /:id
+  'agent model': ['agents:update'], // PATCH /:id
+  'agent message': ['agents:run'],
+  'agent stop': ['agents:run'],
+  'agent force-stop': ['agents:run'],
+  'agent abort-tool': ['agents:run'],
+  'agent compact': ['agents:run'],
+  'agent steer': ['agents:run'],
+  'agent follow-up': ['agents:run'],
+  'agent reset': ['agents:run'],
+  'agent clear-queue': ['agents:run'],
+  'agent continue': ['agents:run'],
+  'agent continue-halted': ['agents:run'],
+  'agent sandbox-ps': ['agents:run'], // /:id/sandbox/processes
+  'agent sandbox-kill': ['agents:run'],
+  'agent sandbox-stop-container': ['agents:run'],
+  'agent delete': ['agents:delete'],
+  'agent prune': ['agents:delete'],
+  'agent scope': ['agents:scopes:read', 'agents:scopes:manage'],
+
+  // ficus inbox — routes/inbox.ts
+  'inbox send-system': ['inbox:system'],
+
+  // ficus squad — routes/squads.ts, squad-relationships.ts, squad-ssh.ts, grants.ts
+  'squad create': ['squads:create'],
+  'squad update': ['squads:update'],
+  'squad set-meta': ['squads:update'],
+  'squad unset-meta': ['squads:update'],
+  'squad delete': ['squads:delete'],
+  'squad sandbox-ps': ['squads:update'],
+  'squad sandbox-kill': ['squads:update'],
+  'squad sandbox-stop-container': ['squads:update'],
+  'squad link': ['squad-relationships:write'],
+  'squad unlink': ['squad-relationships:write'],
+  'squad search-messages': ['chat:read'],
+  'squad spawn': ['agents:create'],
+  'squad unspawn': ['agents:terminate'],
+  'squad terminate-bulk': ['agents:terminate'],
+  'squad cleanup-agents': ['agents:terminate', 'system:cleanup'],
+  'squad ssh': ['ssh:read', 'ssh:write'],
+  'squad grant': ['grants:read', 'grants:write'],
+
+  // ficus workflow — routes/workflows.ts (catalog routes need workflows:*; resolve needs workstreams:create)
+  'workflow list': ['workflows:read'],
+  'workflow get': ['workflows:read'],
+  'workflow export': ['workflows:read'],
+  'workflow template-diff': ['workflows:read'],
+  'workflow create': ['workflows:create'],
+  'workflow update': ['workflows:update'],
+  'workflow enable': ['workflows:update'],
+  'workflow disable': ['workflows:update'],
+  'workflow revert': ['workflows:update'],
+  'workflow delete': ['workflows:delete'],
+  'workflow resolve': ['workstreams:create'],
+
+  // ficus workstream — routes/work-streams.ts. Commands that PATCH the stream, request
+  // input/review, or resolve waits are open to bound workers (workstreams:respond) and
+  // stay listed.
+  'workstream create': ['workstreams:create'],
+  'workstream wait-actor': ['workstreams:update'],
+  'workstream pause': ['workstreams:update'],
+  'workstream resume': ['workstreams:update'],
+  'workstream park': ['workstreams:update'],
+  'workstream reopen': ['workstreams:update'],
+  'workstream cancel': ['workstreams:update'],
+  'workstream notify-ci': ['inbox:system'], // also needs workstreams:update
+  'workstream add-agent': ['workstreams:manage-agents'], // also squad spawn (agents:create)
+  'workstream remove-agent': ['workstreams:manage-agents'],
+  'workstream delete': ['workstreams:delete'],
+}
+
+const OMITTED_COMMANDS_NOTE =
+  'Commands that need permissions you do not hold are omitted below. Route those requests to your squad manager.'
+
+/** The command group a help section documents, or '' for the top-level `ficus --help`. */
+function helpSectionGroup(section: string): string {
+  const usage = /^Usage: ficus (\S+)/m.exec(section)?.[1] ?? ''
+  return usage.startsWith('[') ? '' : (usage.split('|')[0] ?? '')
+}
+
+function mayUse(key: string, permissions: readonly string[]): boolean {
+  const required = CLI_COMMAND_PERMISSIONS[key]
+  if (!required) return true
+  return required.some((permission) => permissions.some((held) => permissionMatches(held, permission)))
+}
+
+/** Drops `Commands:` entries (and their wrapped description lines) the caller cannot use. */
+function filterHelpSection(section: string, permissions: readonly string[]): string {
+  const group = helpSectionGroup(section)
+  const out: string[] = []
+  let inCommands = false
+  let skipping = false
+  for (const line of section.split('\n')) {
+    if (/^\S/.test(line)) {
+      inCommands = line.startsWith('Commands:')
+      skipping = false
+    } else if (inCommands && /^ {2}\S/.test(line)) {
+      const name = line.trim().split(/\s/)[0]!.split('|')[0]!
+      skipping = !mayUse(group ? `${group} ${name}` : name, permissions)
+    } else if (inCommands && line.trim() === '') {
+      skipping = false
+    }
+    if (!skipping) out.push(line)
+  }
+  return out.join('\n')
+}
+
+/**
+ * Narrows generated CLI help to the commands an agent holding `permissions` can
+ * use (see {@link CLI_COMMAND_PERMISSIONS}). Help sections for a whole group the
+ * caller cannot use are dropped too. When anything is removed, a note tells the
+ * reader to route those requests to the manager.
+ */
+export function filterCliHelpForPermissions(help: string, permissions: readonly string[]): string {
+  const separator = '\n\n---\n\n'
+  const sections = help.split(separator)
+  const kept = sections
+    .filter((section) => {
+      const group = helpSectionGroup(section)
+      return !group || mayUse(group, permissions)
+    })
+    .map((section) => filterHelpSection(section, permissions))
+  const filtered = kept.join(separator)
+  if (filtered === help) return help
+  const intro = /^You have access to the `ficus` CLI\.[^\n]*\n/.exec(filtered)?.[0]
+  return intro
+    ? `${intro}\n${OMITTED_COMMANDS_NOTE}\n${filtered.slice(intro.length)}`
+    : `${OMITTED_COMMANDS_NOTE}\n\n${filtered}`
 }

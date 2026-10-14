@@ -35,6 +35,7 @@ describe('SharedPromptSync', () => {
     expect(ids).toEqual([
       'assistant-task-reporting',
       'entity-references',
+      'new-work-routing',
       'rules',
       'slot-manager',
       'squad-dynamic-context',

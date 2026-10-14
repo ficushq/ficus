@@ -353,6 +353,29 @@ async function waitAttribution(
   return { createdBy: 'system', createdByAgentId: null, createdByUserId: null }
 }
 
+const AGENT_CANNOT_CREATE_WORK_STREAMS =
+  'Forbidden: this agent cannot create work streams. Send the proposed title, description and repository settings to your manager (notify_contact or inbox).'
+const USER_CANNOT_CREATE_WORK_STREAMS =
+  'Forbidden: you do not have permission to create work streams in this squad. Ask an admin for access.'
+
+/**
+ * The 403 message for a refused `POST /api/workstreams`. It describes only the
+ * caller's own permission, never the target squad. An agent that cannot create
+ * work streams even in its own squad (a squad worker) is told to route the
+ * request to its manager; an agent that can create in its own squad was refused
+ * for another squad and keeps the generic message.
+ */
+async function workStreamCreateRefusal(identity: Identity): Promise<string> {
+  if (identity.type === 'user') return USER_CANNOT_CREATE_WORK_STREAMS
+  if (
+    identity.type === 'agent' &&
+    identity.squadId &&
+    !(await hasPermission(identity, 'workstreams:create', identity.squadId))
+  )
+    return AGENT_CANNOT_CREATE_WORK_STREAMS
+  return 'Forbidden'
+}
+
 /**
  * Load squadId from a workstream identified by route param `:id`.
  * Returns null when the workstream is not found or the id format is invalid —
@@ -823,7 +846,7 @@ export const workStreamsRouter = new Hono()
 
     const allowed = await hasPermission(identity, 'workstreams:create', input.squadId)
     c.set('authzChecked', true)
-    if (!allowed) return c.json({ error: 'Forbidden' }, 403)
+    if (!allowed) return c.json({ error: await workStreamCreateRefusal(identity) }, 403)
     if (
       input.observe &&
       (identity.type !== 'agent' || !(await hasPermission(identity, 'workstreams:read', input.squadId)))

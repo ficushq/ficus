@@ -1,7 +1,8 @@
 import type { SessionUsage, MessageMetadata } from '@ficus/shared'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
-import { getSquadWorkerCliHelp } from '../../lib/utils/cli-help'
+import { filterCliHelpForPermissions, getSquadWorkerCliHelp } from '../../lib/utils/cli-help'
+import { resolvePermissions } from '../../services/rbac'
 import { interpolateTemplate, prompt, buildMemorySystemPrompt, buildActiveSchedulesPrompt } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { readSquadMemoryFile } from '../../services/memory/paths'
@@ -57,6 +58,25 @@ export class SquadWorkerRunner extends AgentRunner {
   // Prompt builders
   // ---------------------------------------------------------------------------
 
+  /**
+   * The worker CLI reference without commands this agent's resolved permissions
+   * cannot use (for example `workstream create`), so workers route that work to
+   * the manager instead of discovering the 403. Falls back to the full reference
+   * when permissions cannot be resolved; the server enforces every call anyway.
+   */
+  private async buildWorkerCliHelp(): Promise<string> {
+    const help = await getSquadWorkerCliHelp()
+    try {
+      const permissions = await resolvePermissions(
+        { type: 'agent', agentId: this.agent.id, squadId: this.squad.id },
+        this.squad.id
+      )
+      return permissions.length > 0 ? filterCliHelpForPermissions(help, permissions) : help
+    } catch {
+      return help
+    }
+  }
+
   private async buildSquadWorkerPrompt(): Promise<string> {
     const { flowWorkerContext } = await import('../../services/workflows/execution')
     const flow = await flowWorkerContext(this.agent.id)
@@ -69,7 +89,7 @@ export class SquadWorkerRunner extends AgentRunner {
 
     const sandboxId = await this.agent.getSandboxId()
     const [cliHelp, activeSchedules] = await Promise.all([
-      getSquadWorkerCliHelp(),
+      this.buildWorkerCliHelp(),
       buildActiveSchedulesPrompt(this.squad.id, this.agent.id, 'worker'),
     ])
 

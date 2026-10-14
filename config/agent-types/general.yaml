@@ -6,6 +6,7 @@ tier: standard
 includes:
   - entity-references
   - rules
+  - new-work-routing
   - squad-rules
 tools: {}
 systemPrompt: |

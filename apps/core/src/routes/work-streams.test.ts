@@ -21,6 +21,7 @@ import {
   agentTypes,
   executions,
   roles,
+  agentExtraScopes,
 } from '../db/schema'
 import { openWait } from '../services/work-streams/waits'
 import { AgentType } from '../entities/AgentType'
@@ -3397,12 +3398,58 @@ describe('work-streams RBAC guards', () => {
     expect(res.status).toBe(403)
   })
 
-  it('POST /api/workstreams → 403 for unprivileged user', async () => {
+  it('POST /api/workstreams → 403 for unprivileged user, saying what is missing', async () => {
     const res = await guardPost(unprivileged.token, '/api/workstreams', {
       squadId,
       title: `${rbacPrefix} denied`,
     })
     expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({
+      error: 'Forbidden: you do not have permission to create work streams in this squad. Ask an admin for access.',
+    })
+  })
+
+  describe('POST /api/workstreams refused for agents', () => {
+    beforeEach(async () => {
+      await db.delete(roles).where(eq(roles.slug, 'default-worker'))
+      await db.insert(roles).values({
+        slug: 'default-worker',
+        name: 'Squad Worker',
+        permissions: ['workstreams:read', 'workstreams:respond'],
+      })
+    })
+
+    afterEach(async () => {
+      await db.delete(roles).where(eq(roles.slug, 'default-worker'))
+    })
+
+    async function workerToken(extraScopes: string[] = []): Promise<string> {
+      const worker = await Agent.create({ agentTypeId: `${rbacPrefix}-worker`, squadId })
+      for (const permission of extraScopes) await db.insert(agentExtraScopes).values({ agentId: worker.id, permission })
+      return (await worker.getOrCreateToken())!
+    }
+
+    it('tells a squad worker to route the request to its manager, with the same status', async () => {
+      const res = await guardPost(await workerToken(), '/api/workstreams', { squadId, title: `${rbacPrefix} worker` })
+      expect(res.status).toBe(403)
+      expect(await res.json()).toEqual({
+        error:
+          'Forbidden: this agent cannot create work streams. Send the proposed title, description and repository settings to your manager (notify_contact or inbox).',
+      })
+    })
+
+    it('keeps the generic refusal for an agent that may create work streams in its own squad', async () => {
+      const token = await workerToken(['workstreams:create'])
+      const res = await guardPost(token, '/api/workstreams', { squadId: otherSquadId, title: `${rbacPrefix} foreign` })
+      expect(res.status).toBe(403)
+      expect(await res.json()).toEqual({ error: 'Forbidden' })
+    })
+
+    it('leaves unrelated refusals for a squad worker unchanged', async () => {
+      const res = await guardPost(await workerToken(), `/api/workstreams/${wsId}/cancel`, {})
+      expect(res.status).toBe(403)
+      expect(await res.json()).toEqual({ error: 'Forbidden' })
+    })
   })
 
   it('POST /api/workstreams → 201 for admin', async () => {
