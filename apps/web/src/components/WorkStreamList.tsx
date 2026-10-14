@@ -15,7 +15,7 @@ import { webStatus } from '../lib/statusPresentation'
 import { queries } from '../queryOptions'
 import { WorkStreamDetailModal, WS_PRIORITY_BADGE_COLORS, getWsDisplayState } from './WorkStreamDetailModal'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
-import { workStreamStatusLabel } from '../lib/workStreamStatusPresentation'
+import { workStreamStatusLabel, WS_STATUS_ICONS } from '../lib/workStreamStatusPresentation'
 import { Badge, type BadgeColor } from './Badge'
 import { AgentActivityDot } from './AgentActivityDot'
 import { WorkStreamFiltersPopover } from './WorkStreamFiltersPopover'
@@ -64,29 +64,6 @@ const WS_WAITING_DERIVED_STATES: WorkStreamPresentationState[] = [
 // and a plain block would pin its text to the top of that box, above the separators.
 const FEED_METADATA_LINK_CLASS =
   'relative z-10 inline-flex items-center rounded-sm text-muted hover:text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
-
-const WS_STATUS_ICONS: Record<WorkStreamPresentationState, string> = {
-  delivery_approval: '◎',
-  delivery_review: '◎',
-  delivery_merge: '◎',
-  delivery_external: '⧗',
-  delivery_setup: '⊘',
-  delivery_failure: '✖',
-  active: '●',
-  in_progress: '●',
-  in_review: '◎',
-  waiting_on_answer: '?',
-  waiting_on_dependency: '⧗',
-  waiting_on_owner: '⧗',
-  waiting_for_slot: '⧗',
-  blocked: '⊘',
-  idle: '○',
-  execution_failed: '✖',
-  paused: 'Ⅱ',
-  queued: '○',
-  done: '✓',
-  canceled: '×',
-}
 
 // --- Priority constants ---
 
@@ -585,6 +562,8 @@ function WorkStreamRow({
       <div className="hidden md:flex items-center gap-2">
         <span
           className={clsx('w-4 text-center text-sm shrink-0', isInProgress && 'animate-pulse', statusColorClass)}
+          role="img"
+          aria-label={statusBadgeText}
           title={statusBadgeText}
         >
           {WS_STATUS_ICONS[state] ?? '○'}
@@ -663,6 +642,8 @@ function WorkStreamRow({
         <div className="flex items-start gap-2">
           <span
             className={clsx('text-sm shrink-0 pt-0.5', isInProgress && 'animate-pulse', statusColorClass)}
+            role="img"
+            aria-label={statusBadgeText}
             title={statusBadgeText}
           >
             {WS_STATUS_ICONS[state] ?? '○'}

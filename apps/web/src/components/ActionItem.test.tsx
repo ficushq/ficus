@@ -2,7 +2,14 @@ import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { acquireDomHarness } from '../test/domHarness'
-import { createBlankWorkflow, createWorkflowRun, type PendingAction } from '@ficus/shared'
+import {
+  createBlankWorkflow,
+  createWorkflowRun,
+  WORK_STREAM_STATUS_ROLE,
+  type PendingAction,
+  type WorkStreamActionData,
+} from '@ficus/shared'
+import { webStatus } from '../lib/statusPresentation'
 import { ActionItem } from './ActionItem'
 import { ActionCenterContent } from './ActionCenterContent'
 import { queryKeys } from '../queryKeys'
@@ -880,6 +887,128 @@ describe('ActionItem code-host delivery gate', () => {
       expect(document.body.textContent).not.toContain('do not have permission to respond')
       const link = document.querySelector('a[href="https://github.com/ficushq/ficus-mobile/pull/42"]')
       expect(link?.textContent).toBe('Review ficushq/ficus-mobile#42')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+})
+
+describe('ActionItem status icon', () => {
+  const workflowWait = (flowAttemptId: number | null, extra: Partial<WorkStreamActionData> = {}): PendingAction => {
+    const base = manualAction(flowAttemptId == null ? 'flow-stream-wait' : 'flow-gate-wait', 'Approve the design')
+    const data = base.data as WorkStreamActionData
+    return {
+      ...base,
+      data: { ...data, ...extra, wait: { ...data.wait, resolutionHandler: 'workflow', flowAttemptId } },
+    } as PendingAction
+  }
+  const agentError = {
+    id: 'agent-error:agent-1',
+    type: 'agent-error',
+    priority: 0,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    canRespond: true,
+    data: {
+      agentId: 'agent-1',
+      agentName: 'Engineer',
+      agentTypeId: 'engineer',
+      squadId: 'squad-1',
+      squadName: 'Ficus',
+      ownerUserId: null,
+      reason: 'Provider rate limit',
+    },
+  } as PendingAction
+
+  async function renderStatus(subject: PendingAction) {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionItem action={subject} />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      const icon = document.querySelector('span[role="img"]')!
+      return {
+        icon: icon.textContent,
+        label: icon.getAttribute('aria-label'),
+        title: icon.getAttribute('title'),
+        className: icon.className,
+        text: document.body.textContent ?? '',
+      }
+    } finally {
+      await dom.cleanup()
+    }
+  }
+
+  test('a workflow human-review gate shows the review icon, color and label, not the blocked icon', async () => {
+    const status = await renderStatus(workflowWait(1))
+    expect(status.icon).toBe('◎')
+    expect(status.label).toBe('In Review')
+    expect(status.title).toBe('In Review')
+    expect(status.className).toContain(webStatus('review').textClass)
+    expect(status.text).toContain('Ficus · review needed')
+  })
+
+  test('the final delivery approval presents as Approve Delivery', async () => {
+    const status = await renderStatus(workflowWait(null, { deliveryApproval: true }))
+    expect(status.icon).toBe('◎')
+    expect(status.label).toBe('Approve Delivery')
+    expect(status.className).toContain(webStatus('review').textClass)
+    expect(status.text).toContain('Ficus · approve delivery')
+  })
+
+  test('a manual wait a person must clear keeps the blocked icon in the work list blocked color', async () => {
+    for (const blocked of [manualAction('manual-wait', 'Grant the token'), workflowWait(null)]) {
+      const status = await renderStatus(blocked)
+      expect(status.icon).toBe('⊘')
+      expect(status.label).toBe('Blocked')
+      expect(status.className).toContain(webStatus(WORK_STREAM_STATUS_ROLE.blocked).textClass)
+    }
+  })
+
+  test('an error keeps the danger treatment and questions keep the waiting-on-you treatment', async () => {
+    const error = await renderStatus(agentError)
+    expect(error.icon).toBe('!')
+    expect(error.label).toBe('Agent halted')
+    expect(error.className).toContain(webStatus('danger').textClass)
+
+    const question = await renderStatus(failedDeliveryAction())
+    expect(question.icon).toBe('?')
+    expect(question.label).toBe('Needs your answer')
+    expect(question.className).toContain(webStatus('humanWait').textClass)
+  })
+
+  test('review gates are grouped with work stream reviews, not with work stream input', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const gate = { ...workflowWait(1), id: 'workstream-blocked:ws-1:gate' } as PendingAction
+    const gateData = gate.data as WorkStreamActionData
+    gate.data = { ...gateData, workStreamTitle: 'Design gate stream' }
+    const manual = manualAction('manual-wait', 'Grant the token')
+    manual.data = { ...(manual.data as WorkStreamActionData), workStreamTitle: 'Manual wait stream' }
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionCenterContent actions={[manual, gate]} isLoading={false} />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      const text = document.body.textContent ?? ''
+      const reviews = text.indexOf('Work stream reviews')
+      const input = text.indexOf('Work stream input')
+      expect(reviews).toBeGreaterThanOrEqual(0)
+      expect(input).toBeGreaterThan(reviews)
+      expect(text.indexOf('Design gate stream')).toBeGreaterThan(reviews)
+      expect(text.indexOf('Design gate stream')).toBeLessThan(input)
+      expect(text.indexOf('Manual wait stream')).toBeGreaterThan(input)
     } finally {
       await dom.cleanup()
     }

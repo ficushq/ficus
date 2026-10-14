@@ -33,6 +33,7 @@ import { EMPTY_USER_ATTENTION, loadUserAttention } from '../attention/resolver'
 import { evaluatePendingAction, loadQuestionWorkStreamOrigins } from './pending-action-policy'
 import { listOpenWaitsForStreams, toWaitJson } from '../work-streams/waits'
 import { loadDeliveryPresentations } from '../workflows/delivery-state'
+import { isDeliveryApprovalWait } from '../workflows/wait-policy'
 import { deliveryView } from '../work-streams/delivery-pull-requests'
 import { agentQuestionDeliveryAcknowledgements } from '../../db/schema'
 
@@ -300,6 +301,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       squadName: squad.name,
       waitId: wait.id,
       wait: toWaitJson(wait),
+      ...(isDeliveryApprovalWait(ws.id, wait) ? { deliveryApproval: true as const } : {}),
       focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },
       assigneeAgentId,
       assigneeName,

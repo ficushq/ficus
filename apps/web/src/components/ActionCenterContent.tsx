@@ -4,7 +4,8 @@ import { actionErrorMessage } from '../lib/actionError'
 import { ActionCenterContext } from './ActionCenterContext'
 import { continueHaltedAgents } from '../api/agents'
 import { queryKeys } from '../queryKeys'
-import type { PendingAction } from '@ficus/shared'
+import { WORK_STREAM_STATUS_ROLE, type PendingAction } from '@ficus/shared'
+import { workStreamActionPresentationState } from '../lib/workStreamStatusPresentation'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
 
@@ -39,8 +40,14 @@ export function ActionCenterContent({
     (action) =>
       action.type === 'agent-question' || action.type === 'squad-question' || action.type === 'assistant-needs-input'
   )
-  const workstreamReviews = actions.filter((a) => a.type === 'workstream-review' || a.type === 'workstream-delivery')
-  const workstreamBlocked = actions.filter((a) => a.type === 'workstream-blocked')
+  // Group by presented state, not the action type: a workflow review gate arrives as
+  // `workstream-blocked` but is a review, and belongs with the other reviews.
+  const isWorkStreamReview = (action: PendingAction) => {
+    const state = workStreamActionPresentationState(action)
+    return state !== null && WORK_STREAM_STATUS_ROLE[state] === 'review'
+  }
+  const workstreamReviews = actions.filter(isWorkStreamReview)
+  const workstreamBlocked = actions.filter((a) => a.type === 'workstream-blocked' && !isWorkStreamReview(a))
 
   const errorMessage = error instanceof Error ? error.message : 'Action Center is unavailable.'
   const permissionError = /(?:^|\b)403(?:\b|:)|forbidden/i.test(errorMessage)
