@@ -10,6 +10,14 @@ import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { workflowPresetSchema, workflowSourceSchema, workflowCommandSchema } from '@ficus/shared'
 import { advanceFlow, finishFlow, getFlow, activeOutcomeBindings, stackNotice } from '../services/workflows/execution'
+import {
+  assertCanAttach,
+  listWorkflowAttachments,
+  readWorkflowAttachment,
+  uploadWorkflowAttachment,
+  workflowAttachmentMaxBytes,
+} from '../services/workflows/attachments'
+import { downloadDisposition, readBoundedMultipart } from '../services/attachments/http'
 import { WorkStream } from '../entities/WorkStream'
 import { db, squads, workflows } from '../db'
 import { authorizeWorkflow, authorizeWorkflowSource, canAccessWorkflow } from '../services/workflows/access'
@@ -27,6 +35,16 @@ import {
 } from '../services/workflows/catalog'
 
 const revisionSchema = z.object({ revision: z.string().min(1).max(200) }).strict()
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** Multipart framing and the `path` field on top of the file's own bytes. */
+const MULTIPART_OVERHEAD = 64 * 1024
+
+/** A display filename: the last path segment, without control characters. */
+function attachmentFilename(name: string): string {
+  // eslint-disable-next-line no-control-regex
+  const base = (name.split(/[\\/]/).pop() ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  return base || 'attachment'
+}
 
 export const workflowsRouter = new Hono()
   .use('*', async (c, next) => {
@@ -81,8 +99,75 @@ export const workflowsRouter = new Hono()
             openWaits: (await listOpenWaits(db, stream.id)).map(toWaitJson),
             integrationDeliveries: await outputDeliveryHistory(stream.id),
             usage: await getFlowUsage(stream.id, run.state),
+            attachments: await listWorkflowAttachments(stream.id),
           }
         : null
+    )
+  })
+  // Anyone who can open the run (and so its review) can read the files its attempts handed off.
+  .get('/runs/:streamId/attachments/:attachmentId', async (c) => {
+    const stream = await WorkStream.find(c.req.param('streamId'))
+    if (!stream) return c.json({ error: 'Work stream not found' }, 404)
+    if (!(await hasPermission(c.get('identity')!, 'workstreams:read', stream.squadId)))
+      return c.json({ error: 'Forbidden' }, 403)
+    const attachmentId = c.req.param('attachmentId')
+    if (!UUID_RE.test(attachmentId)) return c.json({ error: 'Attachment not found' }, 404)
+    let found: Awaited<ReturnType<typeof readWorkflowAttachment>>
+    try {
+      found = await readWorkflowAttachment(stream.id, attachmentId.toLowerCase())
+    } catch {
+      // Missing or digest-mismatched bytes are never served.
+      return c.json({ error: 'Attachment unavailable' }, 409)
+    }
+    if (!found) return c.json({ error: 'Attachment not found' }, 404)
+    return new Response(new Uint8Array(found.bytes), {
+      headers: {
+        'Content-Type': found.attachment.contentType,
+        'Content-Disposition': downloadDisposition(found.attachment.filename),
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
+  })
+  // Agents attach handoff files before completing the attempt, so the next gate opens with them.
+  .post('/runs/:streamId/attempts/:attemptId/attachments', async (c) => {
+    const identity = c.get('identity')!
+    const attemptId = Number(c.req.param('attemptId'))
+    if (!Number.isSafeInteger(attemptId) || attemptId < 1) return c.json({ error: 'Invalid attempt id' }, 400)
+    const stream = await WorkStream.find(c.req.param('streamId'))
+    if (!stream) return c.json({ error: 'Work stream not found' }, 404)
+    // Refuse before buffering the body; the upload re-checks under the run lock.
+    assertCanAttach((await getFlow(stream.id)) ?? undefined, attemptId, identity)
+    const maxBytes = workflowAttachmentMaxBytes()
+    if (Number(c.req.header('content-length') ?? 0) > maxBytes + MULTIPART_OVERHEAD)
+      return c.json({ error: 'ATTACHMENT_TOO_LARGE' }, 413)
+    let form: FormData
+    try {
+      form = await readBoundedMultipart(c.req.raw, maxBytes + MULTIPART_OVERHEAD)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ATTACHMENT_TOO_LARGE')
+        return c.json({ error: 'ATTACHMENT_TOO_LARGE' }, 413)
+      return c.json({ error: 'Invalid multipart body' }, 400)
+    }
+    if ([...form.keys()].some((key) => key !== 'file' && key !== 'path'))
+      return c.json({ error: 'Invalid multipart fields' }, 400)
+    const files = form.getAll('file')
+    const paths = form.getAll('path')
+    const file = files[0]
+    if (files.length !== 1 || !(file instanceof File) || paths.length > 1 || (paths[0] && typeof paths[0] !== 'string'))
+      return c.json({ error: 'Exactly one file and at most one path are required' }, 400)
+    const filename = attachmentFilename(file.name)
+    const path = typeof paths[0] === 'string' && paths[0].trim() ? paths[0].trim() : filename
+    if (filename.length > 255 || path.length > 1024) return c.json({ error: 'Attachment name is too long' }, 400)
+    return c.json(
+      await uploadWorkflowAttachment({
+        workStreamId: stream.id,
+        attemptId,
+        identity,
+        filename,
+        path,
+        bytes: new Uint8Array(await file.arrayBuffer()),
+      }),
+      201
     )
   })
   .get(

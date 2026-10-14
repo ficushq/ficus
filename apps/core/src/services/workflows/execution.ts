@@ -66,6 +66,11 @@ export const actorKey = (identity: Identity) =>
       : identity.type === 'system'
         ? `system:${identity.systemTokenId}`
         : 'legacy'
+/** Whether this identity is the agent bound to the attempt: the one that may complete it or attach its files. */
+export function isAttemptAgent(run: Pick<Run, 'attemptAgents'>, attemptId: number, identity: Identity): boolean {
+  return identity.type === 'agent' && run.attemptAgents[String(attemptId)] === identity.agentId
+}
+
 export async function getFlow(id: string) {
   return (await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id)))[0] ?? null
 }
@@ -448,7 +453,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
             !stream.assignedReviewerIds.includes(identity.userId))
         )
           throw new WorkflowError('This step requires its designated human approver', 403)
-      } else if (identity.type === 'agent' && run.attemptAgents[String(command.attemptId)] !== identity.agentId)
+      } else if (identity.type === 'agent' && !isAttemptAgent(run, command.attemptId, identity))
         throw new WorkflowError('Only the active participant can advance this attempt', 403)
       else if (identity.type !== 'agent' && !(await hasPermission(identity, 'workstreams:revise-flow', stream.squadId)))
         throw new WorkflowError('Flow intervention requires management permission', 403)

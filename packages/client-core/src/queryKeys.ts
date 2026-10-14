@@ -18,6 +18,10 @@ export const queryKeys = {
     list: () => ['workflows', 'list'] as const,
     run: (id: string) => ['workflows', 'run', id] as const,
   },
+  /** Immutable handoff file bytes: outside `workflows` so run invalidations never refetch them. */
+  workflowAttachments: {
+    file: (workStreamId: string, attachmentId: string) => ['workflow-attachments', workStreamId, attachmentId] as const,
+  },
   agents: {
     all: ['agents'] as const,
     /**
