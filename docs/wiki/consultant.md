@@ -48,7 +48,8 @@ The `agent` SSE event returned at turn start carries `{ agentId, scope, executio
 Consultants are **ephemeral but retained**:
 
 - `persist: false` — terminable without force-protection (unlike the manager, which is force-persisted)
-- **Excluded from `Squad.cleanupFlexAgents`** — the periodic flex-cleanup sweep does not reap idle Consultant sessions; they stay until a user explicitly makes them dormant through the existing terminate action (final termination remains retention-driven)
+- **Excluded from `Squad.cleanupFlexAgents`** — the periodic flex-cleanup sweep does not reap idle Consultant sessions; they stay until a user explicitly makes them dormant through the existing terminate action (final termination remains retention-driven), or until the squad's idle-consultant setting does
+- **Idle-consultant dormancy (opt-in per squad)** — `squads.consultant_idle_dormancy_days` (null = off; the UI pre-fills 90) lets the minute-scale lifecycle convergence sweep (`runIdleConsultantDormancySweep`, at most 10 agents per tick) make consultants dormant once idle that many days: `last_message_at` older than the cutoff, or never messaged and `created_at` older. Only plain `idle`, non-persistent, top-level consultants not on an open work stream qualify; executing agents are skipped. It uses the same `tryTerminate` → dormant path as a user. Operators can also preview and apply this by hand from Settings → Storage (`GET/POST /api/squads/:id/idle-consultants`, `agents:terminate`); the server recomputes the idle set and treats submitted ids only as a filter
 - **Excluded from active-agent counts** — Consultants are filtered out of the active-agent count displayed in the squad detail view, so a pile of old sessions doesn't inflate headcount
 - **Mid-conversation safety** — termination defers while an execution is running; a Consultant with an active turn is never reaped mid-turn
 
