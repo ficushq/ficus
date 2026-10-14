@@ -13,7 +13,7 @@ export interface PreviewImage {
  * so the picture scales down to fit instead of scrolling. If the header wraps, the dialog body scrolls.
  */
 const IMAGE_MAX_HEIGHT =
-  'calc(var(--modal-viewport-height, 100dvh) - 6rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
+  'calc(var(--modal-panel-height, 100dvh) - 6rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
 
 const STEP_BUTTON = 'ficus-button ficus-button-ghost p-1.5 rounded-md transition-colors shrink-0'
 
