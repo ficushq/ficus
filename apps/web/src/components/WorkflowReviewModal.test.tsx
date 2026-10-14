@@ -412,3 +412,156 @@ test('notes requiredness follows the Core complete contract from one per-outcome
   expect(decisionNotesHint(step, outcomes.slice(0, 1))).toStartWith('Optional.')
   expect(decisionNotesHint(step, outcomes.slice(1))).toStartWith('Required.')
 })
+
+const designDoc = {
+  id: 'att-design',
+  attemptId: 3,
+  filename: 'design.md',
+  path: 'docs/plans/design.md',
+  contentType: 'text/markdown',
+  byteSize: 64,
+  createdAt: '2026-10-08T09:59:00.000Z',
+}
+const mockup = { ...designDoc, id: 'att-mockup', filename: 'mock.html', path: 'out/mock.html' }
+const bigLog = { ...designDoc, id: 'att-log', filename: 'run.log', path: 'out/run.log', byteSize: 2 * 1024 * 1024 }
+/** Attempt 3 is the source under review; attempt 1 is the draft that was sent back. */
+function withAttachments(f: Awaited<ReturnType<typeof fixture>>) {
+  const stale = { ...designDoc, id: 'att-old', attemptId: 1, filename: 'old-design.md' }
+  f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), {
+    ...gateRun(),
+    attachments: { '1': [stale], '3': [designDoc, mockup, bigLog] },
+  })
+}
+const tabs = (f: Awaited<ReturnType<typeof fixture>>) => [
+  ...f.dialog()!.querySelectorAll<HTMLButtonElement>('[role="tablist"] [role="tab"]'),
+]
+
+test('without attachments for the attempts under review the document has no tab row', async () => {
+  const f = await fixture()
+  try {
+    // Only the sent-back draft attached a file; the re-run under review attached none.
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), {
+      ...gateRun(),
+      attachments: { '1': [{ ...designDoc, attemptId: 1 }] },
+    })
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const documentColumn = f.dialog()!.querySelector('[data-review-document]')!
+    expect(documentColumn.querySelector('[role="tablist"]')).toBeNull()
+    expect(documentColumn.querySelector('[role="tabpanel"]')).toBeNull()
+    expect(documentColumn.textContent).toContain('one-page completion proposal')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('handed-off files open as tabs beside the handoff, loading only when selected', async () => {
+  const f = await fixture()
+  const download = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(
+    new TextEncoder().encode('# Design doc\n\nUse a queue.')
+  )
+  try {
+    withAttachments(f)
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const documentColumn = f.dialog()!.querySelector<HTMLElement>('[data-review-document]')!
+    const tablist = documentColumn.querySelector<HTMLElement>('[role="tablist"]')!
+    expect(tablist.getAttribute('aria-label')).toBe('Review documents')
+    expect(tablist.className).toContain('overflow-x-auto')
+    expect(tabs(f).map((tab) => tab.textContent)).toEqual(['Handoff', 'design.md', 'mock.html', 'run.log'])
+    expect(tabs(f).map((tab) => tab.title)).toEqual(['', 'docs/plans/design.md', 'out/mock.html', 'out/run.log'])
+    expect(tabs(f).map((tab) => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false'])
+    const panel = documentColumn.querySelector<HTMLElement>('[role="tabpanel"]')!
+    expect(panel.getAttribute('aria-labelledby')).toBe(tabs(f)[0]!.id)
+    expect(tabs(f)[0]!.getAttribute('aria-controls')).toBe(panel.id)
+    expect(panel.textContent).toContain('one-page completion proposal')
+    expect(download).not.toHaveBeenCalled()
+
+    await f.dom.act(async () => tabs(f)[1]!.click())
+    await f.settle()
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(download.mock.calls[0]!.slice(0, 2)).toEqual([stream.id, 'att-design'])
+    expect(tabs(f)[1]!.getAttribute('aria-selected')).toBe('true')
+    expect(panel.getAttribute('aria-labelledby')).toBe(tabs(f)[1]!.id)
+    const heading = panel.querySelector('h1')!
+    expect(heading.textContent).toBe('Design doc')
+    expect(heading.closest('.prose')!.classList.contains('prose-document')).toBe(true)
+    expect(panel.textContent).toContain('docs/plans/design.md')
+    expect(panel.textContent).not.toContain('one-page completion proposal')
+
+    // A file a browser could run is never rendered, only offered for download.
+    await f.dom.act(async () => tabs(f)[2]!.click())
+    await f.settle()
+    expect(panel.textContent).toContain('This file type cannot be previewed here.')
+    expect(panel.querySelector('iframe, script')).toBeNull()
+    expect(download).toHaveBeenCalledTimes(1)
+    const save = [...panel.querySelectorAll('button')].find((button) => button.textContent === 'Download')!
+    expect(save.className).toContain('ficus-button-secondary')
+    await f.dom.act(async () => save.click())
+    await f.settle()
+    expect(download.mock.calls.at(-1)!.slice(0, 2)).toEqual([stream.id, 'att-mockup'])
+
+    // Text over the inline cap is not fetched to render.
+    const calls = download.mock.calls.length
+    await f.dom.act(async () => tabs(f)[3]!.click())
+    await f.settle()
+    expect(panel.textContent).toContain('This file is too large to preview here.')
+    expect(download.mock.calls.length).toBe(calls)
+
+    await f.dom.act(async () => tabs(f)[0]!.click())
+    expect(panel.textContent).toContain('one-page completion proposal')
+  } finally {
+    download.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('arrow keys, Home and End move the selection between review tabs', async () => {
+  const f = await fixture()
+  const download = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(new TextEncoder().encode('# Doc'))
+  try {
+    withAttachments(f)
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const press = async (key: string) => {
+      await f.dom.act(async () =>
+        f.doc.activeElement!.dispatchEvent(new f.dom.window.KeyboardEvent('keydown', { key, bubbles: true }))
+      )
+    }
+    const selected = () => tabs(f).findIndex((tab) => tab.getAttribute('aria-selected') === 'true')
+    expect(tabs(f).map((tab) => tab.tabIndex)).toEqual([0, -1, -1, -1])
+    await f.dom.act(async () => tabs(f)[0]!.focus())
+    await press('ArrowRight')
+    expect(selected()).toBe(1)
+    expect(f.doc.activeElement).toBe(tabs(f)[1]!)
+    expect(tabs(f).map((tab) => tab.tabIndex)).toEqual([-1, 0, -1, -1])
+    await press('End')
+    expect(selected()).toBe(3)
+    await press('ArrowRight')
+    expect(selected()).toBe(0)
+    await press('ArrowLeft')
+    expect(selected()).toBe(3)
+    await press('Home')
+    expect(selected()).toBe(0)
+    expect(f.doc.activeElement).toBe(tabs(f)[0]!)
+  } finally {
+    download.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('phones keep the tab row inside the document column above the decision sheet', async () => {
+  const f = await fixture({ width: 390, height: 844 })
+  try {
+    withAttachments(f)
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const layout = f.dialog()!.querySelector<HTMLElement>('[data-review-layout]')!
+    expect(layout.getAttribute('data-review-layout')).toBe('stacked')
+    const [documentColumn, sheet] = [...layout.children] as HTMLElement[]
+    expect(documentColumn!.hasAttribute('data-review-document')).toBe(true)
+    expect(sheet!.hasAttribute('data-review-sheet')).toBe(true)
+    const row = documentColumn!.firstElementChild as HTMLElement
+    expect(row.className).toContain('sticky')
+    expect(row.querySelector('[role="tablist"]')!.className).toContain('overflow-x-auto')
+    expect(tabs(f).every((tab) => tab.className.includes('shrink-0'))).toBe(true)
+  } finally {
+    await f.cleanup()
+  }
+})

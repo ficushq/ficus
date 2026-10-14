@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { queries } from '../queryOptions'
 import { useFullscreen } from '../hooks/useFullscreen'
 import { Modal } from './Modal'
-import { MarkdownContent } from './MarkdownContent'
+import { FilePreview } from './FilePreview'
 import { SquadWorkspaceImageViewer } from './SquadWorkspaceImageViewer'
 import { DocumentSkeleton } from './loading/Skeleton'
 
@@ -77,42 +77,9 @@ function getFileName(filePath: string): string {
   return filePath.split('/').pop() || filePath
 }
 
-function getLanguageFromExt(ext: string | undefined): string {
-  if (!ext) return 'text'
-  const map: Record<string, string> = {
-    ts: 'typescript',
-    tsx: 'tsx',
-    js: 'javascript',
-    jsx: 'jsx',
-    json: 'json',
-    yml: 'yaml',
-    yaml: 'yaml',
-    py: 'python',
-    rb: 'ruby',
-    go: 'go',
-    rs: 'rust',
-    sql: 'sql',
-    sh: 'bash',
-    bash: 'bash',
-    html: 'html',
-    css: 'css',
-    csv: 'csv',
-  }
-  return map[ext] || 'text'
-}
-
-function isMarkdown(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase()
-  return ext === 'md' || ext === 'markdown'
-}
-
 function isImageFile(name: string): boolean {
   const ext = name.split('.').pop()?.toLowerCase()
   return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'].includes(ext ?? '')
-}
-
-function formatAsCodeBlock(content: string, language: string): string {
-  return '```' + language + '\n' + content + '\n```'
 }
 
 export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProps) {
@@ -172,30 +139,25 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
           </div>
         )}
         {data && !data.error && isImageFile(fileName) && (
-          <div className="grow overflow-auto flex items-center justify-center p-4 bg-[rgb(var(--syntax-image-bg))] min-h-[200px]">
-            <SquadWorkspaceImageViewer squadId={squadId} filePath={filePath} />
-          </div>
+          <FilePreview
+            fileName={fileName}
+            scroll
+            kind="image"
+            image={<SquadWorkspaceImageViewer squadId={squadId} filePath={filePath} />}
+          />
         )}
         {data && !data.error && !data.binary && !isImageFile(fileName) && (
-          <div className="grow overflow-auto">
-            {isMarkdown(fileName) ? (
-              <MarkdownContent variant="document">{data.content}</MarkdownContent>
-            ) : (
-              <MarkdownContent>
-                {formatAsCodeBlock(data.content, getLanguageFromExt(fileName.split('.').pop()?.toLowerCase()))}
-              </MarkdownContent>
-            )}
-          </div>
+          <FilePreview fileName={fileName} scroll kind="text" content={data.content} />
         )}
         {data?.error && (
-          <div className="flex items-center justify-center py-12 text-muted">
+          <FilePreview fileName={fileName} kind="unavailable">
             <span>{data.error}</span>
-          </div>
+          </FilePreview>
         )}
         {data?.binary && !isImageFile(fileName) && (
-          <div className="flex items-center justify-center py-12 text-muted">
+          <FilePreview fileName={fileName} kind="unavailable">
             <span>Binary file cannot be displayed</span>
-          </div>
+          </FilePreview>
         )}
       </Modal>
     </>
