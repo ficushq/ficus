@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Hono } from 'hono'
-import { eq, like } from 'drizzle-orm'
+import { eq, inArray, like, sql } from 'drizzle-orm'
 import { WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT, type WorkflowDefinition } from '@ficus/shared'
 import { db, agents, agentTypes, squads, workflowAttemptAttachments, workStreamFlowRuns, workStreams } from '../db'
 import { identityMiddleware } from '../middleware/identity'
@@ -21,6 +21,7 @@ import { WorkflowSync } from '../services/config-sync/workflow-sync'
 import { attachFlow } from '../services/workflows/execution'
 import { workflowAttachmentBlobPath } from '../services/attachments/blob-storage'
 import { getSettingsStore } from '../services/settings'
+import { downloadDisposition } from '../services/attachments/http'
 import { workflowsRouter } from './workflows'
 
 const app = new Hono().use('*', identityMiddleware).route('/api/workflows', workflowsRouter)
@@ -54,22 +55,27 @@ beforeAll(async () => {
   bound = await createTestAgentToken({ agentId: boundAgent!.id, squadId })
   other = await createTestAgentToken({ agentId: otherAgent!.id, squadId })
 })
-beforeEach(async () => {
-  home = await mkdtemp(join(tmpdir(), 'workflow-attachments-route-'))
-  process.env.HOME_DIR = home
+const streams: string[] = []
+/** A fresh active stream whose entry agent step (attempt 1) is bound to `bound`; it becomes `streamId`. */
+async function startRun() {
   const [stream] = await db.insert(workStreams).values({ squadId, title: prefix, status: 'active' }).returning()
   streamId = stream!.id
+  streams.push(streamId)
   await db.transaction(async (tx) => {
     await attachFlow(tx, stream!, { kind: 'inline', definition })
   })
-  // Attempt 1 is the entry agent step, bound to `bound`.
   await db
     .update(workStreamFlowRuns)
     .set({ attemptAgents: { '1': bound.agentId } })
     .where(eq(workStreamFlowRuns.workStreamId, streamId))
+}
+beforeEach(async () => {
+  home = await mkdtemp(join(tmpdir(), 'workflow-attachments-route-'))
+  process.env.HOME_DIR = home
+  await startRun()
 })
 afterEach(async () => {
-  await db.delete(workStreams).where(eq(workStreams.id, streamId))
+  await db.delete(workStreams).where(inArray(workStreams.id, streams.splice(0)))
   await rm(home, { recursive: true, force: true })
   await getSettingsStore().set('INBOX_MAX_ATTACHMENT_BYTES', String(10 * 1024 * 1024))
 })
@@ -202,4 +208,109 @@ test('attachments of another work stream are not readable through this one', asy
   } finally {
     await db.delete(workStreams).where(eq(workStreams.id, elsewhere!.id))
   }
+})
+
+test('re-uploading a path is idempotent, and changed content replaces the file without using a slot', async () => {
+  const first = await upload(bound.token, { path: 'docs/design.md' })
+  expect(first.status).toBe(201)
+  const original = await first.json()
+  const retry = await upload(bound.token, { path: 'docs/design.md' })
+  expect(retry.status).toBe(200)
+  expect(await retry.json()).toEqual(original)
+  expect(await rows()).toHaveLength(1)
+
+  const changed = await upload(bound.token, { path: 'docs/design.md', content: '# Design v2\n\nThe new plan.' })
+  expect(changed.status).toBe(201)
+  const replacement = await changed.json()
+  expect(replacement.id).not.toBe(original.id)
+  expect(replacement.byteSize).toBe(26)
+  const [row] = await rows()
+  expect(row!.id).toBe(replacement.id)
+  expect(await readFile(row!.storagePath, 'utf8')).toBe('# Design v2\n\nThe new plan.')
+  // The replaced bytes are gone, and its id no longer resolves.
+  expect(await Bun.file(workflowAttachmentBlobPath(streamId, original.id)).exists()).toBe(false)
+  expect((await get(`/attachments/${original.id}`, admin.token)).status).toBe(404)
+})
+
+test('a full attempt still accepts retries and replacements of its existing paths, but no new path', async () => {
+  for (let index = 0; index < WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT; index++)
+    expect((await upload(bound.token, { name: `note-${index}.txt`, content: `note ${index}` })).status).toBe(201)
+  expect((await upload(bound.token, { name: 'note-3.txt', content: 'note 3' })).status).toBe(200)
+  expect((await upload(bound.token, { name: 'note-4.txt', content: 'note 4, revised' })).status).toBe(201)
+  expect((await upload(bound.token, { name: 'note-new.txt' })).status).toBe(409)
+  expect(await rows()).toHaveLength(WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
+})
+
+test('a path with control characters is refused', async () => {
+  for (const path of ['docs/a\u0000b.md', 'docs/a\nb.md', 'docs/\u007f.md']) {
+    const response = await upload(bound.token, { path })
+    expect(response.status).toBe(400)
+    expect((await response.json()).error).toBe('Attachment path contains control characters')
+  }
+  expect(await rows()).toEqual([])
+})
+
+test('a paused or finished work stream accepts no attachments, as it accepts no handoff', async () => {
+  await db
+    .update(workStreams)
+    .set({ pause: { id: randomUUID(), pausedAt: new Date().toISOString(), reason: null, parkAt: null, agentIds: [] } })
+    .where(eq(workStreams.id, streamId))
+  const paused = await upload(bound.token)
+  expect(paused.status).toBe(409)
+  expect((await paused.json()).error).toBe('Work stream is paused; resume before advancing')
+  await db.update(workStreams).set({ pause: null, status: 'done' }).where(eq(workStreams.id, streamId))
+  const done = await upload(bound.token)
+  expect(done.status).toBe(409)
+  expect((await done.json()).error).toBe('Stream is terminal')
+  expect(await rows()).toEqual([])
+})
+
+test('an upload takes the squad and stream locks before the run lock, as completion does', async () => {
+  // Hold what advanceFlow holds before it reaches for the run row, then reach for the run row.
+  let release!: () => void
+  const held = new Promise<void>((resolve) => (release = resolve))
+  let streamLocked!: () => void
+  const locked = new Promise<void>((resolve) => (streamLocked = resolve))
+  const completion = db.transaction(async (tx) => {
+    await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, squadId)).for('update')
+    await tx.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.id, streamId)).for('update')
+    streamLocked()
+    await held
+    await tx
+      .select({ id: workStreamFlowRuns.workStreamId })
+      .from(workStreamFlowRuns)
+      .where(eq(workStreamFlowRuns.workStreamId, streamId))
+      .for('update')
+  })
+  await locked
+  const uploading = upload(bound.token)
+  // Readiness boundary: the upload is parked on a row lock held by the completion.
+  const deadline = Date.now() + 10_000
+  for (;;) {
+    const [{ waiting }] = (await db.execute(
+      sql`select count(*)::int as waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`
+    )) as unknown as Array<{ waiting: number }>
+    if (waiting > 0) break
+    if (Date.now() > deadline) throw new Error('upload never waited on the completion lock')
+    await Bun.sleep(10)
+  }
+  release()
+  // Taking the run row after the stream lock must not deadlock against the waiting upload.
+  await completion
+  expect((await uploading).status).toBe(201)
+})
+
+test('missing bytes read as unavailable, and download names are header-safe', async () => {
+  const doc = await (await upload(bound.token, { name: "résumé's plan.md" })).json()
+  const read = await get(`/attachments/${doc.id}`, admin.token)
+  expect(read.status).toBe(200)
+  expect(read.headers.get('content-disposition')).toBe(
+    `attachment; filename="r_sum__s_plan.md"; filename*=UTF-8''r%C3%A9sum%C3%A9's%20plan.md`
+  )
+  // Quotes and line breaks never reach the header unencoded.
+  expect(downloadDisposition('a"b\r\nc.md')).toBe(`attachment; filename="a_b__c.md"; filename*=UTF-8''a%22b%0D%0Ac.md`)
+  await rm(workflowAttachmentBlobPath(streamId, doc.id))
+  const missing = await get(`/attachments/${doc.id}`, admin.token)
+  expect(missing.status).toBe(409)
+  expect(await missing.json()).toEqual({ error: 'Attachment unavailable' })
 })

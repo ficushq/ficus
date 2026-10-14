@@ -16,6 +16,7 @@ import {
   readWorkflowAttachment,
   uploadWorkflowAttachment,
   workflowAttachmentMaxBytes,
+  WorkflowAttachmentUnavailableError,
 } from '../services/workflows/attachments'
 import { downloadDisposition, readBoundedMultipart } from '../services/attachments/http'
 import { WorkStream } from '../entities/WorkStream'
@@ -39,10 +40,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** Multipart framing and the `path` field on top of the file's own bytes. */
 const MULTIPART_OVERHEAD = 64 * 1024
 
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
+
 /** A display filename: the last path segment, without control characters. */
 function attachmentFilename(name: string): string {
-  // eslint-disable-next-line no-control-regex
-  const base = (name.split(/[\\/]/).pop() ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  const base = (name.split(/[\\/]/).pop() ?? '').replace(new RegExp(CONTROL_CHARACTERS, 'g'), '').trim()
   return base || 'attachment'
 }
 
@@ -115,9 +118,10 @@ export const workflowsRouter = new Hono()
     let found: Awaited<ReturnType<typeof readWorkflowAttachment>>
     try {
       found = await readWorkflowAttachment(stream.id, attachmentId.toLowerCase())
-    } catch {
-      // Missing or digest-mismatched bytes are never served.
-      return c.json({ error: 'Attachment unavailable' }, 409)
+    } catch (error) {
+      // Missing or digest-mismatched bytes are never served; anything else is a server fault.
+      if (error instanceof WorkflowAttachmentUnavailableError) return c.json({ error: error.message }, 409)
+      throw error
     }
     if (!found) return c.json({ error: 'Attachment not found' }, 404)
     return new Response(new Uint8Array(found.bytes), {
@@ -135,8 +139,8 @@ export const workflowsRouter = new Hono()
     if (!Number.isSafeInteger(attemptId) || attemptId < 1) return c.json({ error: 'Invalid attempt id' }, 400)
     const stream = await WorkStream.find(c.req.param('streamId'))
     if (!stream) return c.json({ error: 'Work stream not found' }, 404)
-    // Refuse before buffering the body; the upload re-checks under the run lock.
-    assertCanAttach((await getFlow(stream.id)) ?? undefined, attemptId, identity)
+    // Refuse before buffering the body; the upload re-checks under the flow locks.
+    assertCanAttach(stream, (await getFlow(stream.id)) ?? undefined, attemptId, identity)
     const maxBytes = workflowAttachmentMaxBytes()
     if (Number(c.req.header('content-length') ?? 0) > maxBytes + MULTIPART_OVERHEAD)
       return c.json({ error: 'ATTACHMENT_TOO_LARGE' }, 413)
@@ -156,19 +160,21 @@ export const workflowsRouter = new Hono()
     if (files.length !== 1 || !(file instanceof File) || paths.length > 1 || (paths[0] && typeof paths[0] !== 'string'))
       return c.json({ error: 'Exactly one file and at most one path are required' }, 400)
     const filename = attachmentFilename(file.name)
-    const path = typeof paths[0] === 'string' && paths[0].trim() ? paths[0].trim() : filename
+    const given = typeof paths[0] === 'string' ? paths[0] : ''
+    // The path is shown to reviewers and keys retries, so it is kept as given rather than cleaned up.
+    if (CONTROL_CHARACTERS.test(given)) return c.json({ error: 'Attachment path contains control characters' }, 400)
+    const path = given.trim() || filename
     if (filename.length > 255 || path.length > 1024) return c.json({ error: 'Attachment name is too long' }, 400)
-    return c.json(
-      await uploadWorkflowAttachment({
-        workStreamId: stream.id,
-        attemptId,
-        identity,
-        filename,
-        path,
-        bytes: new Uint8Array(await file.arrayBuffer()),
-      }),
-      201
-    )
+    const { attachment, created } = await uploadWorkflowAttachment({
+      workStreamId: stream.id,
+      squadId: stream.squadId,
+      attemptId,
+      identity,
+      filename,
+      path,
+      bytes: new Uint8Array(await file.arrayBuffer()),
+    })
+    return c.json(attachment, created ? 201 : 200)
   })
   .get(
     '/runs/:streamId/integration-deliveries',

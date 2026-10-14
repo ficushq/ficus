@@ -71,6 +71,15 @@ export function isAttemptAgent(run: Pick<Run, 'attemptAgents'>, attemptId: numbe
   return identity.type === 'agent' && run.attemptAgents[String(attemptId)] === identity.agentId
 }
 
+/** A paused stream takes no handoffs (only revisions), and a finished one takes nothing. */
+export function assertStreamAcceptsHandoffs(
+  stream: Pick<Stream, 'pause' | 'status'>,
+  { paused = false }: { paused?: boolean } = {}
+): void {
+  if (stream.pause && !paused) throw new WorkflowError('Work stream is paused; resume before advancing', 409)
+  if (['done', 'canceled'].includes(stream.status)) throw new WorkflowError('Stream is terminal', 409)
+}
+
 export async function getFlow(id: string) {
   return (await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id)))[0] ?? null
 }
@@ -405,9 +414,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         ...(command.action === 'revise' ? revisionOutcomeUpdates(run, prior.version) : {}),
       }
     }
-    if (stream.pause && command.action !== 'revise')
-      throw new WorkflowError('Work stream is paused; resume before advancing', 409)
-    if (['done', 'canceled'].includes(stream.status)) throw new WorkflowError('Stream is terminal', 409)
+    assertStreamAcceptsHandoffs(stream, { paused: command.action === 'revise' })
     if (command.expectedVersion !== run.version) throw new WorkflowError('Stale flow version', 409)
     const attempt = run.state.attempts.find((a) => a.id === command.attemptId)
     const step = attempt?.step ?? run.state.definition.steps.find((s) => s.id === attempt?.stepId)

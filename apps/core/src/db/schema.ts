@@ -1740,7 +1740,11 @@ export const workflowAttemptAttachments = pgTable(
     uploadedByAgentId: uuid('uploaded_by_agent_id').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
-  (table) => [index('idx_workflow_attempt_attachments_attempt').on(table.workStreamId, table.attemptId)]
+  (table) => [
+    index('idx_workflow_attempt_attachments_attempt').on(table.workStreamId, table.attemptId),
+    // One file per path per attempt: a retried upload finds it, a changed one replaces it.
+    uniqueIndex('idx_workflow_attempt_attachments_path').on(table.workStreamId, table.attemptId, table.path),
+  ]
 )
 
 export const workStreamOrderSnapshots = pgTable(

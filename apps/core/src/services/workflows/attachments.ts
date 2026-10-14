@@ -4,7 +4,7 @@ import {
   workflowAttachmentContentType,
   type WorkflowAttemptAttachment,
 } from '@ficus/shared'
-import { db, workflowAttemptAttachments, workStreamFlowRuns } from '../../db'
+import { db, squads, workflowAttemptAttachments, workStreamFlowRuns, workStreams } from '../../db'
 import {
   deleteWorkflowAttachmentBlob,
   readVerifiedWorkflowAttachmentBlob,
@@ -14,10 +14,11 @@ import {
 import { getSettingsStore } from '../settings'
 import type { Identity } from '../rbac'
 import { WorkflowError } from './catalog'
-import { isAttemptAgent } from './execution'
+import { assertStreamAcceptsHandoffs, isAttemptAgent } from './execution'
 
 type Row = typeof workflowAttemptAttachments.$inferSelect
 type Run = typeof workStreamFlowRuns.$inferSelect
+type Stream = typeof workStreams.$inferSelect
 
 /** The per-file cap shared with agent chat files and inbox attachments. */
 export function workflowAttachmentMaxBytes(): number {
@@ -37,51 +38,74 @@ function toJson(row: Row): WorkflowAttemptAttachment {
 }
 
 /**
- * Attaching follows completing: only the agent bound to the attempt, and only while it is still open,
- * so a review gate opens with exactly the files its source attempt handed off.
+ * Attaching follows completing: only the agent bound to the attempt, on a stream that accepts handoffs,
+ * and only while the attempt is still open, so a review gate opens with exactly the files its source
+ * attempt handed off.
  */
-export function assertCanAttach(run: Run | undefined, attemptId: number, identity: Identity): string {
-  if (!run?.activated) throw new WorkflowError('Flow not found', 404)
+export function assertCanAttach(
+  stream: Pick<Stream, 'pause' | 'status'> | undefined,
+  run: Run | undefined,
+  attemptId: number,
+  identity: Identity
+): string {
+  if (!stream || !run?.activated) throw new WorkflowError('Flow not found', 404)
   const attempt = run.state.attempts.find((entry) => entry.id === attemptId)
   if (!attempt) throw new WorkflowError('Attempt not found', 404)
   if (identity.type !== 'agent' || !isAttemptAgent(run, attemptId, identity))
     throw new WorkflowError('Only the agent working on this attempt can attach files to it', 403)
+  assertStreamAcceptsHandoffs(stream)
   if (attempt.status !== 'running') throw new WorkflowError('This attempt is no longer open', 409)
   return identity.agentId
 }
 
+/**
+ * Store a handoff file. Files are keyed by (attempt, path): sending the same bytes again returns the
+ * stored file (`created: false`, so a retried handoff is harmless), and new bytes for a path replace
+ * the old file. Only a new path takes one of the attempt's slots.
+ */
 export async function uploadWorkflowAttachment(input: {
   workStreamId: string
+  squadId: string
   attemptId: number
   identity: Identity
   filename: string
   path: string
   bytes: Uint8Array
-}): Promise<WorkflowAttemptAttachment> {
+}): Promise<{ attachment: WorkflowAttemptAttachment; created: boolean }> {
   if (input.bytes.byteLength === 0) throw new WorkflowError('Attachment is empty', 400)
   if (input.bytes.byteLength > workflowAttachmentMaxBytes()) throw new WorkflowError('ATTACHMENT_TOO_LARGE', 413)
   const id = crypto.randomUUID()
+  const sha256 = sha256Hex(input.bytes)
   let written = false
+  const after = { replaced: null as string | null }
   try {
-    return await db.transaction(async (tx) => {
-      // The run lock orders uploads against completion, which takes the same lock.
+    const result = await db.transaction(async (tx) => {
+      // Lock in advanceFlow's order (squad, stream, then run) so an upload racing the attempt's
+      // completion waits for it instead of deadlocking; completion takes the same run lock.
+      await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, input.squadId)).for('update')
+      const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, input.workStreamId)).for('update')
       const [run] = await tx
         .select()
         .from(workStreamFlowRuns)
         .where(eq(workStreamFlowRuns.workStreamId, input.workStreamId))
         .for('update')
-      const agentId = assertCanAttach(run, input.attemptId, input.identity)
+      const agentId = assertCanAttach(stream, run, input.attemptId, input.identity)
+      const attemptFiles = and(
+        eq(workflowAttemptAttachments.workStreamId, input.workStreamId),
+        eq(workflowAttemptAttachments.attemptId, input.attemptId)
+      )
       const [existing] = await tx
-        .select({ total: count() })
+        .select()
         .from(workflowAttemptAttachments)
-        .where(
-          and(
-            eq(workflowAttemptAttachments.workStreamId, input.workStreamId),
-            eq(workflowAttemptAttachments.attemptId, input.attemptId)
-          )
-        )
-      if ((existing?.total ?? 0) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
-        throw new WorkflowError(`An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
+        .where(and(attemptFiles, eq(workflowAttemptAttachments.path, input.path)))
+      if (existing?.sha256 === sha256) return { attachment: toJson(existing), created: false }
+      if (existing) {
+        await tx.delete(workflowAttemptAttachments).where(eq(workflowAttemptAttachments.id, existing.id))
+      } else {
+        const [stored] = await tx.select({ total: count() }).from(workflowAttemptAttachments).where(attemptFiles)
+        if ((stored?.total ?? 0) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
+          throw new WorkflowError(`An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
+      }
       const storagePath = await writeWorkflowAttachmentBlob(input.workStreamId, id, input.bytes)
       written = true
       const [row] = await tx
@@ -94,17 +118,38 @@ export async function uploadWorkflowAttachment(input: {
           path: input.path,
           contentType: workflowAttachmentContentType(input.filename),
           byteSize: input.bytes.byteLength,
-          sha256: sha256Hex(input.bytes),
+          sha256,
           storagePath,
           uploadedByAgentId: agentId,
         })
         .returning()
-      return toJson(row!)
+      after.replaced = existing?.id ?? null
+      return { attachment: toJson(row!), created: true }
     })
+    // The replaced bytes go only once the row that named them is gone for good.
+    if (after.replaced) await deleteWorkflowAttachmentBlob(input.workStreamId, after.replaced).catch(() => {})
+    return result
   } catch (error) {
     if (written) await deleteWorkflowAttachmentBlob(input.workStreamId, id).catch(() => {})
     throw error
   }
+}
+
+/** The stored bytes are missing or no longer match their recorded size and digest. */
+export class WorkflowAttachmentUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super('Attachment unavailable', { cause })
+  }
+}
+
+function isUnavailableBlob(error: unknown): boolean {
+  const failure = error as { message?: string; code?: string; errno?: number }
+  return (
+    failure?.message === 'ATTACHMENT_BLOB_CORRUPT' ||
+    failure?.code === 'ENOENT' ||
+    // openat(2) reports ENOENT by number.
+    failure?.errno === 2
+  )
 }
 
 /** Every attachment of a run, by attempt id, in upload order. */
@@ -131,6 +176,10 @@ export async function readWorkflowAttachment(
     .from(workflowAttemptAttachments)
     .where(and(eq(workflowAttemptAttachments.id, id), eq(workflowAttemptAttachments.workStreamId, workStreamId)))
   if (!row) return null
-  const bytes = await readVerifiedWorkflowAttachmentBlob(workStreamId, row.id, row.byteSize, row.sha256)
-  return { attachment: toJson(row), bytes }
+  try {
+    const bytes = await readVerifiedWorkflowAttachmentBlob(workStreamId, row.id, row.byteSize, row.sha256)
+    return { attachment: toJson(row), bytes }
+  } catch (error) {
+    throw isUnavailableBlob(error) ? new WorkflowAttachmentUnavailableError(error) : error
+  }
 }
