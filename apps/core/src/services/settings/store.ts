@@ -127,6 +127,14 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
     default: 'true',
     description: 'Enable automatic embedding generation for memory chunks',
   },
+  // Read and written in ficus-api only (the suggestions run there), so no cross-process broadcast.
+  REPLY_SUGGESTIONS_ENABLED: {
+    type: 'boolean',
+    default: 'true',
+    description:
+      'Suggest one-tap replies in chat when an agent asks you something in plain text. Uses the Lite model tier; nothing runs without a signed-in Lite model.',
+    validate: (value) => (['true', 'false'].includes(value) ? null : 'Use true or false.'),
+  },
   LOCAL_AUTO_UPDATE_ENABLED: {
     type: 'boolean',
     default: String(DEFAULT_LOCAL_AUTO_UPDATE_SETTINGS.enabled),

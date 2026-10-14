@@ -28,7 +28,7 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   git: 'commit author name email github defaults override',
   skills: 'markdown import instructions tools extensions',
   'agent-types':
-    'model tiers provider chain reasoning effort system prompt skills tools allow deny extensions agent templates',
+    'model tiers lite provider chain reasoning effort system prompt skills tools allow deny extensions agent templates reply suggestions quick replies chips',
   'squad-presets': 'templates manager instructions default agents schedules purpose context',
   workflows: 'flows presets participants handoffs loops parallel branches review solo engineering completion policy',
 

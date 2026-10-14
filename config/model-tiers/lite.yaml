@@ -1,0 +1,5 @@
+slug: lite
+label: Lite
+description: 'Cheapest one-shot calls: suggestions, labels, short summaries'
+chain: anthropic:claude-haiku-4-5:off,openai-codex:gpt-6-luna:off,zai:glm-5.3-flash:off
+sortOrder: 5

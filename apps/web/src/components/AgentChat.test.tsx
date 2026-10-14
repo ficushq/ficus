@@ -36,6 +36,7 @@ let _capturedOnStop: (() => void) | undefined
 let _capturedOnCancelQueue: (() => void) | undefined
 let _capturedOnDraftChange: ((draft: string) => void) | undefined
 let _capturedSuggestedDelivery: unknown
+let _capturedComposerDraft: { id: number; text: string } | undefined
 
 // ---------------------------------------------------------------------------
 // Module mocks — must be declared before any lazy imports
@@ -56,6 +57,7 @@ const TestChatView = ({
   onCancelQueue,
   onDraftChange,
   suggestedDelivery,
+  composerDraft,
 }: {
   items: RenderItem[]
   onSend: (message: string, imageIds?: string[]) => void | Promise<void>
@@ -70,8 +72,10 @@ const TestChatView = ({
   onCancelQueue?: () => void
   onDraftChange?: (draft: string) => void
   suggestedDelivery?: unknown
+  composerDraft?: { id: number; text: string }
   [key: string]: unknown
 }) => {
+  _capturedComposerDraft = composerDraft
   _capturedOnDraftChange = onDraftChange
   _capturedSuggestedDelivery = suggestedDelivery
   _capturedOnSend = onSend
@@ -1405,4 +1409,116 @@ test('mounted web conversation preserves live response through repeated leading-
     ).toBe(true)
   }
   expect(dom.window.document.body.textContent).toContain('Visible response tail')
+})
+
+describe('reply suggestions', () => {
+  const chatHistory = (metadata: Record<string, unknown> = { replySuggestions: ['Yes, start it', 'Not now'] }) => ({
+    messages: [
+      {
+        id: 'h1',
+        agentId: 'rs-1',
+        role: 'human',
+        content: 'The export crashes.',
+        pending: false,
+        createdAt: new Date('2026-10-14T12:00:00Z'),
+        metadata: { source: 'user_chat', sender: { userId: 'u', name: 'Pat' } },
+      },
+      {
+        id: 'a1',
+        agentId: 'rs-1',
+        role: 'assistant',
+        content: 'Found it. Want me to open a work stream?',
+        pending: false,
+        createdAt: new Date('2026-10-14T12:00:05Z'),
+        metadata,
+      },
+    ],
+    pagination: { hasMore: false, totalCount: 2 },
+  })
+
+  async function renderSuggestionChat({
+    status = 'idle',
+    questionData = null,
+    metadata,
+  }: { status?: string; questionData?: unknown; metadata?: Record<string, unknown> } = {}) {
+    _agentStore['rs-1'] = { id: 'rs-1', terminatedAt: null, status, questionData }
+    const dom = await installDom()
+    const mc = makeMockClient()
+    mc.client.agents.getMessages = async () => chatHistory(metadata) as never
+    const { Providers } = makeProviders(mc.client)
+    const { root } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <Providers>
+          <AgentChat dependencies={{ ChatViewComponent: TestChatView }} agentId="rs-1" />
+        </Providers>
+      )
+    )
+    // The transcript, the agent and its open questions have all loaded.
+    const settled = async () => {
+      await waitFor(() => expect(_capturedItems.some((item) => item.id === 'a1')).toBe(true))
+      await waitFor(() => expect(_agentQuestionFetchCount).toBeGreaterThan(0))
+      await flush(60)
+    }
+    const beforeComposer = () => dom.window.document.querySelector('[data-testid="before-composer"]')!
+    const chip = (label: string) =>
+      [...beforeComposer().querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === label)
+    return { dom, mc, chip, beforeComposer, settled }
+  }
+
+  afterEach(() => {
+    _openQuestions = []
+    _agentQuestionFetchCount = 0
+    delete _agentStore['rs-1']
+  })
+
+  test('the latest agent message’s replies sit above the composer; a tap sends one and they go', async () => {
+    const { dom, mc, chip } = await renderSuggestionChat()
+    await waitFor(() => expect(chip('Yes, start it')).toBeDefined())
+    expect(chip('Not now')).toBeDefined()
+    await dom.act(async () => chip('Yes, start it')!.click())
+    await waitFor(() => expect(mc.sent.map((sent) => sent.content)).toEqual(['Yes, start it']))
+    await waitFor(() => expect(chip('Not now')).toBeUndefined())
+  })
+
+  test('Shift+click fills the composer instead of sending', async () => {
+    const { dom, mc, chip } = await renderSuggestionChat()
+    await waitFor(() => expect(chip('Not now')).toBeDefined())
+    await dom.act(async () => {
+      chip('Not now')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, shiftKey: true }) as never)
+    })
+    expect(_capturedComposerDraft?.text).toBe('Not now')
+    expect(mc.sent).toHaveLength(0)
+  })
+
+  test('hidden once the user starts typing, and back when the draft is cleared', async () => {
+    const { dom, chip } = await renderSuggestionChat()
+    await waitFor(() => expect(chip('Not now')).toBeDefined())
+    await dom.act(async () => _capturedOnDraftChange?.('Yes, but'))
+    expect(chip('Not now')).toBeUndefined()
+    await dom.act(async () => _capturedOnDraftChange?.(''))
+    expect(chip('Not now')).toBeDefined()
+  })
+
+  test('hidden while the agent has open questions', async () => {
+    _openQuestions = [{ id: 'q', agentId: 'rs-1', status: 'open', questionData: { questions: [] } }]
+    const { beforeComposer, settled } = await renderSuggestionChat()
+    await settled()
+    expect(beforeComposer().querySelector('[aria-label="Suggested replies"]')).toBeNull()
+  })
+
+  test('hidden beside a question card', async () => {
+    const { beforeComposer, settled } = await renderSuggestionChat({
+      status: 'waiting-input',
+      questionData: { questions: [{ id: 'q1', question: 'Which region?', type: 'text' }] },
+    })
+    await settled()
+    expect(beforeComposer().querySelector('[aria-label="Suggested replies"]')).toBeNull()
+  })
+
+  test('nothing for a message without suggestions', async () => {
+    const { beforeComposer, settled } = await renderSuggestionChat({ metadata: {} })
+    await settled()
+    expect(beforeComposer().querySelector('[aria-label="Suggested replies"]')).toBeNull()
+  })
 })

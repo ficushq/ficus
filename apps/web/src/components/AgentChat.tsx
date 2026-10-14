@@ -10,6 +10,8 @@ import { queries } from '../queryOptions'
 import { ChatView } from './ChatView'
 import { QuestionInput } from './QuestionInput'
 import { PendingQuestionsBanner } from './PendingQuestionsBanner'
+import { ReplySuggestions } from './ReplySuggestions'
+import { latestReplySuggestions } from '../lib/replySuggestions'
 import { SpinnerIcon } from './icons'
 import { useChatApi } from '../api/ChatApiProvider'
 import { getAgentName } from '../lib/agentDisplay'
@@ -244,13 +246,23 @@ export function AgentChat({
   })
   const deliveryMode = delivery.deliveryMode
   const deliveryDraftChange = delivery.onDraftChange
+  // Whether the composer holds a draft: reply chips step aside once the user starts typing.
+  const [hasDraft, setHasDraft] = useState(false)
   const handleDraftChange = useCallback(
     (draft: string) => {
+      setHasDraft(draft.trim().length > 0)
       deliveryDraftChange(draft)
       onDraftChangeRef.current?.(draft)
     },
     [deliveryDraftChange, onDraftChangeRef]
   )
+
+  // Text for the composer: the caller's drafts and edited reply chips (negative ids, so the two never collide).
+  const [draftRequest, setDraftRequest] = useState(composerDraft)
+  const chipDraftId = useRef(0)
+  useEffect(() => {
+    if (composerDraft) setDraftRequest(composerDraft)
+  }, [composerDraft])
 
   // Send routing: review feedback takes priority over normal send
   const handleSend = async (message: string, imageIds?: string[]) => {
@@ -270,6 +282,35 @@ export function AgentChat({
 
   // Composer visibility
   const shouldHideComposer = hideComposer || isTerminated || readOnly || (isWaitingInput && agent?.questionData != null)
+
+  // One-tap replies to the latest agent message: never beside a question card or open questions,
+  // while the agent works, once the user types, or after one was used.
+  const [usedSuggestionsFor, setUsedSuggestionsFor] = useState<string>()
+  const suggestions = latestReplySuggestions(conv.items)
+  const showSuggestions =
+    !!suggestions &&
+    suggestions.messageId !== usedSuggestionsFor &&
+    !hasDraft &&
+    !shouldHideComposer &&
+    !inputDisabled &&
+    !isReview &&
+    !isWaitingInput &&
+    !executionBusy &&
+    !isStreaming &&
+    // Until this agent's open questions are known, assume there may be one.
+    (!questionAgentId || (!questionsArePlaceholder && openQuestions?.length === 0))
+  const replySuggestions = showSuggestions ? (
+    <ReplySuggestions
+      key={suggestions.messageId}
+      replies={suggestions.replies}
+      onSend={(reply) => {
+        setUsedSuggestionsFor(suggestions.messageId)
+        // A failed send stays in the transcript with its retry; nothing else to report here.
+        void handleSend(reply).catch(() => {})
+      }}
+      onEdit={(reply) => setDraftRequest({ id: --chipDraftId.current, text: reply })}
+    />
+  ) : null
 
   // Contextual placeholder (explicit prop overrides contextual default)
   const maintenanceQueued = conv.executionStatus === 'waiting-maintenance'
@@ -427,11 +468,20 @@ export function AgentChat({
           {afterConversation}
         </>
       }
-      beforeComposer={pendingQuestionsBanner}
+      beforeComposer={
+        replySuggestions ? (
+          <>
+            {pendingQuestionsBanner}
+            {replySuggestions}
+          </>
+        ) : (
+          pendingQuestionsBanner
+        )
+      }
       placeholder={placeholder}
       thinkingLabel={thinkingLabel}
       inputStorageKey={inputStorageKey}
-      composerDraft={composerDraft}
+      composerDraft={draftRequest}
       squadId={squadId}
       tts={tts}
       showRawText={showRawText}

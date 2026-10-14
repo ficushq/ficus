@@ -173,6 +173,11 @@ export interface MessageMetadata {
   assistantRoutingInherited?: AssistantRoutingTarget & { fromMessageId: string }
   /** Server-owned: the user's routing correction this message carries to the Assistant. */
   assistantRoutingCorrection?: AssistantRoutingCorrection
+  /**
+   * Server-owned, on an agent message that ends with a plain-text question: short one-tap replies
+   * (model-written, untrusted plain text) the chat offers above the composer. Suggestions only.
+   */
+  replySuggestions?: string[]
   /** Server-owned direct-chat provenance; request bodies must not set these fields. */
   executionId?: string
   externalExport?: 'disabled' | 'enabled'
