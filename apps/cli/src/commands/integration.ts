@@ -279,7 +279,7 @@ export function commitSigningLines(data: unknown): string[] {
       lines.push(commitSigningLine(account, account?.connectionId, account?.isDefault))
     if (lines.length === 0) return ['Commit signing: no GitHub account is attached to this squad.']
     return [
-      'Commit signing (the key is chosen by the commit’s committer email; other emails are refused):',
+      'Commit signing (the committer email chooses the account; an account that is off leaves its commits unsigned; emails of no attached account are refused):',
       ...lines.filter((line): line is string => !!line),
     ]
   }

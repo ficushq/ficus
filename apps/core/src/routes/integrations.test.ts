@@ -8,7 +8,11 @@ import { createIntegrationsRouter, createSquadIntegrationsRouter } from './integ
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
 import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
-import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
+import {
+  GitHubSignRefused,
+  GitHubSigningError,
+  type GitHubSignResult,
+} from '../services/integrations/github/commit-signing'
 
 const summary = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -76,7 +80,10 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
     enabled ? { state: 'on' as const, fingerprint: 'SHA256:abc', registeredOnGitHub: true } : { state: 'off' as const }
   )
   const signGitObject = mock(
-    async (_squadId: string, _agentId: string, _payload: Buffer) => '-----BEGIN SSH SIGNATURE-----\n'
+    async (_squadId: string, _agentId: string, _payload: Buffer): Promise<GitHubSignResult> => ({
+      signed: true,
+      signature: '-----BEGIN SSH SIGNATURE-----\n',
+    })
   )
   const app = new Hono()
   if (identity) {
@@ -336,6 +343,20 @@ describe('integration routes', () => {
         agent.id,
         'tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n',
       ])
+
+      // Deliberately unsigned is a success with an EMPTY signature, which any CLI version writes as is.
+      calls.signGitObject.mockImplementation(async () => ({
+        signed: false,
+        reason: 'signing_off',
+        login: 'octo',
+        message: 'Not signed: commit signing is off for @octo.',
+      }))
+      const unsigned = await sign(app)
+      expect(unsigned.status).toBe(200)
+      expect(await unsigned.json()).toEqual({
+        signature: '',
+        unsigned: { reason: 'signing_off', login: 'octo', message: 'Not signed: commit signing is off for @octo.' },
+      })
 
       for (const [code, status] of [
         ['identity_mismatch', 403],

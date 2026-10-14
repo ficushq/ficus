@@ -67,7 +67,9 @@ export interface GitHubSigningAccount {
    * Validation freshness and health are deliberately not required, unlike
    * token use: a signature does not call GitHub, env files are rendered at
    * arbitrary moments, and commits must not start failing because a 15-minute
-   * validation window lapsed or a token is mid-refresh.
+   * validation window lapsed. A token that is being refreshed is different: the
+   * connection is `invalid` for those seconds, so it does not sign until the
+   * refresh is validated (as before this rule existed).
    */
   canSign: boolean
 }

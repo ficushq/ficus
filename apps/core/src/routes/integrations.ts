@@ -31,7 +31,11 @@ import { describeGitHubAuthorizationError } from '../services/integrations/autho
 import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 import { createLogger } from '../lib/infra/logger'
 import { userSessionRequired } from '../services/auth/user-session-required'
-import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
+import {
+  GitHubSignRefused,
+  GitHubSigningError,
+  type GitHubSignResult,
+} from '../services/integrations/github/commit-signing'
 import { MAX_SIGNING_PAYLOAD_BYTES } from '../services/integrations/github/signing-payload'
 import type { SafeIntegrationCatalogEntry } from '../services/integrations/plugin'
 import type {
@@ -39,6 +43,7 @@ import type {
   IntegrationDeviceAuthorizationStatus,
   GitHubCommitSigningStatus,
   GitHubSquadCommitSigning,
+  GitHubSignResponse,
   GitHubRepositoryAccess,
 } from '@ficus/shared'
 
@@ -149,8 +154,8 @@ export interface IntegrationRoutesService extends Pick<
 }
 
 export interface SquadIntegrationRoutesService {
-  /** Sign a git commit or tag object with the squad's GitHub signing key (agents only). */
-  signGitObject?(squadId: string, agentId: string, payload: Buffer): Promise<string>
+  /** Sign a git commit or tag object for the squad, or decide it stays unsigned (agents only). */
+  signGitObject?(squadId: string, agentId: string, payload: Buffer): Promise<GitHubSignResult>
   configureScope?(
     squadId: string,
     providerKey: string,
@@ -705,7 +710,12 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
         c.header('Cache-Control', 'no-store')
         try {
           const payload = Buffer.from(c.req.valid('json').payload, 'base64')
-          return c.json({ signature: await service.signGitObject(resolvedSquadId(c), identity.agentId, payload) })
+          const result = await service.signGitObject(resolvedSquadId(c), identity.agentId, payload)
+          // An empty signature makes git create the object unsigned, with any CLI version.
+          const body: GitHubSignResponse = result.signed
+            ? { signature: result.signature }
+            : { signature: '', unsigned: { reason: result.reason, login: result.login, message: result.message } }
+          return c.json(body)
         } catch (error) {
           if (error instanceof GitHubSignRefused)
             return c.json(

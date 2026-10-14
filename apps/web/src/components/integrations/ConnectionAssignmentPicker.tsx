@@ -135,7 +135,7 @@ export function ConnectionAssignmentPicker({
                       {signing.state === 'on'
                         ? `Signs commits committed as ${signing.signsFor.join(' or ')}`
                         : signing.state === 'off'
-                          ? `Commit signing is off for @${signing.login}`
+                          ? `Commit signing is off for @${signing.login}: its commits are not signed`
                           : `Commit signing for @${signing.login} needs attention`}
                     </p>
                   )}
@@ -161,7 +161,7 @@ export function ConnectionAssignmentPicker({
           <p className="text-xs text-muted">
             The default account is used for git and gh. Flows can select any account attached here.
             {value.commitSigning?.accounts.some((account) => account.state === 'on') &&
-              ' Each commit is signed by the attached account its committer email belongs to; a commit with any other committer email is refused rather than signed by a different account.'}
+              ' Each commit is signed by the attached account its committer email belongs to. Commits made as an attached account with signing off are not signed. A commit whose committer email belongs to no attached account is refused rather than signed by a different account.'}
           </p>
         </div>
       ) : canWrite ? (

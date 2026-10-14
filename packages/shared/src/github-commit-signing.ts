@@ -42,3 +42,16 @@ export interface GitHubSquadCommitSigning {
   /** Every GitHub account attached to the squad. The key is chosen by the commit's committer email. */
   accounts: (GitHubCommitSigningSummary & { connectionId: string; isDefault: boolean })[]
 }
+
+/**
+ * Answer of `POST /api/squads/:squadId/integrations/github/sign` when Core does
+ * not refuse. `signature` is always a string so that a `ficus` CLI older than
+ * `unsigned` still does the right thing: it writes the string verbatim, and git
+ * creates the commit or tag without a signature when it is empty.
+ */
+export interface GitHubSignResponse {
+  /** Armored SSH signature, or `''` when the object is deliberately left unsigned. */
+  signature: string
+  /** Present exactly when `signature` is empty: why nothing was signed. */
+  unsigned?: { reason: 'signing_off'; login: string; message: string }
+}

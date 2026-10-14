@@ -200,8 +200,15 @@ describe('GitHubCommitSigning', () => {
       { login: 'octo', userId: 7 },
       { login: 'hubot', userId: 9 },
     ]
-    const sign = (signing: GitHubCommitSigning, email: string, squadId = 's1') =>
+    /** What the signer decided: signed, deliberately unsigned, or (rejecting) refused. */
+    const decide = (signing: GitHubCommitSigning, email: string, squadId = 's1') =>
       signing.sign({ squadId, agentId: 'a1', payload: commitAs(email) })
+    /** The signature, for cases that must be signed. */
+    const sign = async (signing: GitHubCommitSigning, email: string, squadId = 's1') => {
+      const result = await decide(signing, email, squadId)
+      if (!result.signed) throw new Error(`expected a signature, got: ${result.message}`)
+      return result.signature
+    }
 
     /** True when `signature` over `payload` was made with the key stored for the connection. */
     function signedBy(secrets: Map<string, string>, connectionId: string, payload: Buffer, signature: string) {
@@ -260,13 +267,30 @@ describe('GitHubCommitSigning', () => {
       expect(signedBy(secrets, 'c2', commitAs(OCTO), asDefault)).toBe(false)
     })
 
-    it('signs with a non-default account even when the default account has signing off', async () => {
+    it('leaves a commit as an attached account with signing off unsigned, and signs the others', async () => {
+      // Default off (never set up), another attached account on: what the default account commits stays unsigned.
       const { signing, secrets } = harness({ accounts: two })
       await signing.enable('c2', 'u')
       expect(signedBy(secrets, 'c2', commitAs(HUBOT), await sign(signing, HUBOT))).toBe(true)
-      const asDefault = sign(signing, OCTO)
-      await expect(asDefault).rejects.toMatchObject({ code: 'signing_off' })
-      await expect(asDefault).rejects.toThrow('Commit signing is off for @octo')
+      const asDefault = await decide(signing, OCTO)
+      expect(asDefault).toEqual({
+        signed: false,
+        reason: 'signing_off',
+        login: 'octo',
+        message: expect.stringContaining('commit signing is off for @octo'),
+      })
+      expect(JSON.stringify(asDefault)).not.toMatch(/SSH SIGNATURE|PRIVATE KEY/)
+      // No signature of any key comes back, and an unknown email is still refused.
+      await expect(decide(signing, 'someone@else.com')).rejects.toMatchObject({ code: 'identity_mismatch' })
+
+      // The same with signing explicitly turned off, and with a public profile email.
+      const explicit = harness({ accounts: two, profileEmails: { c2: 'hubot@example.com' } })
+      await explicit.signing.enable('c1', 'u')
+      await explicit.signing.enable('c2', 'u')
+      await explicit.signing.disable('c2', 'u')
+      expect(await decide(explicit.signing, HUBOT)).toMatchObject({ signed: false, login: 'hubot' })
+      expect(await decide(explicit.signing, 'hubot@example.com')).toMatchObject({ signed: false, login: 'hubot' })
+      expect((await decide(explicit.signing, OCTO)).signed).toBe(true)
     })
 
     it('refuses a committer no attached signing account owns, naming it and the accounts it can sign as', async () => {
@@ -288,7 +312,7 @@ describe('GitHubCommitSigning', () => {
       // The squad's githubIdentity / GIT_USER_EMAIL is not an input of the signer at all: only account emails are.
       const attachedOff = harness({ accounts: two })
       await attachedOff.signing.enable('c1', 'u')
-      await expect(sign(attachedOff.signing, HUBOT)).rejects.toMatchObject({ code: 'signing_off' })
+      expect(await decide(attachedOff.signing, HUBOT)).toMatchObject({ signed: false, login: 'hubot' })
 
       const notAttached = harness({ accounts: [{}] })
       await notAttached.signing.enable('c1', 'u')
@@ -301,7 +325,11 @@ describe('GitHubCommitSigning', () => {
       const unusable = harness({ accounts: [{}, { login: 'hubot', userId: 9, canSign: false }] })
       await unusable.signing.enable('c1', 'u')
       await unusable.signing.enable('c2', 'u')
-      await expect(sign(unusable.signing, HUBOT)).rejects.toMatchObject({ code: 'identity_mismatch' })
+      const needsAttention = decide(unusable.signing, HUBOT)
+      await expect(needsAttention).rejects.toMatchObject({ code: 'identity_mismatch' })
+      await expect(needsAttention).rejects.toThrow(
+        'commit signing is on for @hubot but that GitHub account needs attention'
+      )
 
       const onlyUnusable = harness({ accounts: [{ canSign: false }] })
       await onlyUnusable.signing.enable('c1', 'u')
@@ -320,7 +348,31 @@ describe('GitHubCommitSigning', () => {
       })
       await signing.enable('c1', 'u')
       await signing.enable('c2', 'u')
-      await expect(sign(signing, 'shared@example.com')).rejects.toMatchObject({ code: 'identity_mismatch' })
+      const refused = decide(signing, 'shared@example.com')
+      await expect(refused).rejects.toMatchObject({ code: 'identity_mismatch' })
+      await expect(refused).rejects.toThrow('@octo and @hubot both list as theirs')
+    })
+
+    it('refuses a doubly claimed email whatever the signing state of the accounts claiming it', async () => {
+      // Ownership is settled before signing state: neither "signed by the one that signs" nor "unsigned".
+      const claims = { c1: 'shared@example.com', c2: 'shared@example.com' }
+      const oneOff = harness({ accounts: two, profileEmails: claims })
+      await oneOff.signing.enable('c1', 'u')
+      await expect(decide(oneOff.signing, 'shared@example.com')).rejects.toMatchObject({ code: 'identity_mismatch' })
+
+      const oneUnusable = harness({
+        accounts: [{}, { login: 'hubot', userId: 9, canSign: false }],
+        profileEmails: claims,
+      })
+      await oneUnusable.signing.enable('c1', 'u')
+      await expect(decide(oneUnusable.signing, 'shared@example.com')).rejects.toMatchObject({
+        code: 'identity_mismatch',
+      })
+
+      // Two connections of the SAME account are not a conflict: the one that signs is used.
+      const sameAccount = harness({ accounts: [{}, {}] })
+      await sameAccount.signing.enable('c2', 'u')
+      expect(signedBy(sameAccount.secrets, 'c2', commitAs(OCTO), await sign(sameAccount.signing, OCTO))).toBe(true)
     })
 
     it('refuses without a connection, with signing off and for non-git payloads', async () => {

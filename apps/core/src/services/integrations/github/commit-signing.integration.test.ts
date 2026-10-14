@@ -102,8 +102,15 @@ function signedBy(connectionId: string, payload: Buffer, signature: string): boo
   }
 }
 
-const sign = (squadId: string, email: string) =>
+/** What the signer decided: signed, deliberately unsigned, or (rejecting) refused. */
+const decide = (squadId: string, email: string) =>
   githubCommitSigning.sign({ squadId, agentId: 'agent-fixture', payload: commitAs(email) })
+/** The signature, for cases that must be signed. */
+async function sign(squadId: string, email: string): Promise<string> {
+  const result = await decide(squadId, email)
+  if (!result.signed) throw new Error(`expected a signature, got: ${result.message}`)
+  return result.signature
+}
 
 const AGENT = '7001+fixture-agent@users.noreply.github.com'
 const OWNER = '7002+fixture-owner@users.noreply.github.com'
@@ -203,7 +210,26 @@ describe('commit signing as Core wires it', () => {
     const off = await squad()
     await attach(off, await account('fixture-agent', 7001), true)
     await attach(off, await account('fixture-owner', 7002, { signing: false }), false)
-    await expect(sign(off, OWNER)).rejects.toMatchObject({ code: 'signing_off' })
+    expect(await decide(off, OWNER)).toMatchObject({ signed: false, reason: 'signing_off', login: 'fixture-owner' })
+  })
+
+  it('default account with signing off, another attached account signing: default commits stay unsigned', async () => {
+    const squadId = await squad()
+    const agent = await account('fixture-agent', 7001, { signing: false })
+    const owner = await account('fixture-owner', 7002)
+    await attach(squadId, agent, true)
+    await attach(squadId, owner, false)
+
+    const asDefault = await decide(squadId, AGENT)
+    expect(asDefault).toEqual({
+      signed: false,
+      reason: 'signing_off',
+      login: 'fixture-agent',
+      message: expect.stringContaining('commit signing is off for @fixture-agent'),
+    })
+    expect(JSON.stringify(asDefault)).not.toMatch(/SSH SIGNATURE|PRIVATE KEY/)
+    expect(signedBy(owner, commitAs(OWNER), await sign(squadId, OWNER))).toBe(true)
+    await expect(decide(squadId, 'someone@example.com')).rejects.toMatchObject({ code: 'identity_mismatch' })
   })
 
   it('the squad integration view shows who signs, and no key material', async () => {

@@ -80,7 +80,7 @@ describe('commit signing visibility', () => {
         },
       })
     ).toEqual([
-      'Commit signing (the key is chosen by the commit’s committer email; other emails are refused):',
+      'Commit signing (the committer email chooses the account; an account that is off leaves its commits unsigned; emails of no attached account are refused):',
       '  @octo (squad default): on, signs commits committed as 7+octo@users.noreply.github.com, octo@example.com [connection c1]',
       '  @hubot: off [connection c2]',
     ])

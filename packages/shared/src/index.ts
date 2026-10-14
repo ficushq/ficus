@@ -70,6 +70,7 @@ export type {
   GitHubCommitSigningState,
   GitHubCommitSigningStatus,
   GitHubCommitSigningSummary,
+  GitHubSignResponse,
   GitHubSquadCommitSigning,
 } from './github-commit-signing'
 export type { IntegrationAuthorizationStart, IntegrationDeviceAuthorizationStatus } from './integration-authorization'
