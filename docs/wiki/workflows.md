@@ -175,6 +175,48 @@ Resolve questions through their question-answer interface. Dependency waits rema
 
 Automatic parking applies only when the whole stream is blocked: either a whole-stream wait exists or all active attempts are waiting. The full grace period starts when the last runnable branch becomes blocked. A single waiting branch does not park its runnable siblings.
 
+## Dependencies and stacked work
+
+`dependsOn` is the authoritative list of streams a stream waits for. Each edge has an unlock condition:
+
+| Condition        | The edge is satisfied when                                                                                                               |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `done` (default) | The dependency is `done`.                                                                                                                |
+| `ready`          | The dependency's flow is `completion-ready` under `pr-merge` or `pr-auto-merge` and its delivery pull request is bound, or it is `done`. |
+
+```sh
+ficus workstream create "Use the new parser" --squad SQUAD --repository repo --depends-on 412:ready
+ficus workstream update STREAM_ID --depends-on 412:ready --depends-on 398   # bare ID or ID:done means done
+```
+
+A pull request that merely exists while the dependency is still being implemented does not satisfy `ready`. A dependency without pull-request delivery (`deliverable`, `review-approval`, `direct-merge`, or a stream with no flow) satisfies `ready` only by being done. Unknown conditions are rejected. The API takes `dependsOn` entries as a plain ID or `{ "id": "...", "condition": "ready" }`; responses keep `dependsOn` as the ID list and add `dependencies`, one entry per ID with `condition`, `satisfied`, and, once unlocked, `unlockedAt`, `stack` and `holdsDelivery`. Streams and callers that use plain IDs behave exactly as before.
+
+A `ready` unlock closes that edge's dependency wait and nothing else: the concurrency cap, pauses, other open waits, flow gates and review requirements still apply, and it approves nothing. The dependency returning to rework never re-blocks an unlocked edge, and re-sending the same dependency list keeps the unlock. Once the dependent has started on the edge (it was admitted and its stacking was decided), the dependency being canceled does not pause, park or re-block it either. A dependency canceled while the dependent is still queued, whether before the edge unlocked or after it unlocked but before the dependent started, takes the unlock back and flags the dependent for an owner decision, as with `done` edges: nothing is admitted onto, or stacked on, canceled work. Listing one dependency twice with different conditions is rejected.
+
+### Stacking
+
+When a stream is admitted on a `ready` edge while the dependency is unmerged, and both streams are code-producing in the same repository, the dependent is stacked on the dependency's pushed branch:
+
+- Ficus fetches the dependency's branch through the squad's authorized Git credential (the same path as remote-base provisioning) and moves the dependent's branch to that head, only when the dependent's worktree is clean and its branch has no commits of its own. It records `metadata.git.stackedOn` (`workStreamId`, `branch`, `headSha`, `stackedAt`).
+- A worktree with uncommitted changes, a branch that already has commits, or a never-started branch that was already pushed is left exactly as it is. The assignee is told to merge the dependency branch in.
+- With several `ready` dependencies in the same repository, Ficus stacks on one only when every other one is an ancestor of it. Otherwise nothing is rewritten and the assignee is told which branches to merge in.
+- If the squad runtime is unavailable at admission, the decision is retried for up to ten minutes before falling back to asking the assignee to merge.
+- The dependency's branch and worktree are never touched. In different repositories, or when the dependent has no repository, only the unlock applies.
+
+Every assignment of a stacked stream, and its delivery instructions, name the branch it was built on and the hold below.
+
+### Delivery hold and notices
+
+A stream that builds on a dependency's unmerged branch cannot be completed until that dependency is `done`: `ficus workstream finish`, a completing review approval and a direct status write are all refused with the dependency named. Open the pull request as a draft if you like, but do not enable auto-merge until the dependency has merged and the base branch has been merged into the stream's branch. If the dependency was canceled, its commits must not be delivered as they are; the owner releases the hold by dropping the dependency (`--depends-on` without it, or `--clear-dependencies`).
+
+The dependent's assignee (as a steer) and owner are told, once per event:
+
+- the dependency's branch head changed after the dependent was admitted, with the new SHA (learned from the code host's push event for the dependency's bound delivery pull request, whether or not the dependency's own flow follows code-host changes; a squad that receives no events for that repository gets no such notice);
+- the dependency was canceled (work continues; nothing is paused or blocked);
+- the dependency merged (assignee only): merge the base branch in and proceed to delivery.
+
+A paused or parked dependent hears these when it runs again; done and canceled streams are not told. A merge notice with no assignee to receive it stays owed until the stream has one. Worktree cleanup of the delivered dependency keeps deferring while a dependent is live.
+
 ## Pause, park, and resume
 
 Pause means stop current work and wait for explicit resume. Ficus requests cancellation of current executions, cancels queued work, and prevents assigned flow agents from receiving automatic continuance. Cancellation must settle before resumed work can start; an external side effect already completed is not undone. Inbox messages remain durable while paused.

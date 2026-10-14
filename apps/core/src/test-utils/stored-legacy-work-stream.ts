@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm'
-import type { CreateWorkStreamInput } from '@ficus/shared'
+import { normalizeDependencyInputs, type CreateWorkStreamInput } from '@ficus/shared'
+import { nextDependencyEdges } from '../services/work-streams/dependency-edges'
 import { db, squads, workStreams } from '../db'
 import { WorkStream } from '../entities/WorkStream'
 import { resetContinuationCycle } from '../services/work-streams/continuation-state'
@@ -20,6 +21,7 @@ export async function storedLegacyWorkStream(input: CreateWorkStreamInput): Prom
   for (const field of ['branch', 'worktree', 'baseBranch'] as const)
     if (input[field] !== undefined) git[field] = input[field]
   if (Object.keys(git).length) metadata.git = git
+  const dependencies = normalizeDependencyInputs(input.dependsOn ?? [])
   const id = await db.transaction(async (tx) => {
     // Match WorkStream.create: take the admission mutex before the insert acquires
     // an FK key-share lock, otherwise concurrent fixtures deadlock upgrading it.
@@ -36,7 +38,8 @@ export async function storedLegacyWorkStream(input: CreateWorkStreamInput): Prom
         requestingUserId: input.requestingUserId ?? null,
         agentIds: input.agentIds ?? null,
         handoffMessage: input.handoffMessage ?? null,
-        dependsOn: input.dependsOn ?? [],
+        dependsOn: dependencies.ids,
+        dependencyEdges: nextDependencyEdges(dependencies.ids, dependencies.conditions, undefined),
         priority: input.priority ?? 'normal',
         metadata,
       })

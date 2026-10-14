@@ -1443,6 +1443,13 @@
       "when": 1791522057697,
       "tag": "0205_elite_franklin_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1791923031586,
+      "tag": "0206_real_molly_hayes",
+      "breakpoints": true
     }
   ]
 }

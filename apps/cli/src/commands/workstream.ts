@@ -7,6 +7,7 @@ import {
   parseTrackedResourceReference,
   parseTrackedResourceUrl,
   trackedResourceLabel,
+  parseDependencySpec,
 } from '@ficus/shared'
 import { addStructuredInputOptions, readWorkflowSource } from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
@@ -28,6 +29,8 @@ import type {
   WorkStreamPriority,
   WorkStreamSourceLink,
   WorkStreamAgentSummary as WorkStreamSpawnedAgentSummary,
+  WorkStreamDependencyEdge,
+  WorkStreamDependencyInput,
 } from '@ficus/shared'
 
 export interface WorkStream {
@@ -50,6 +53,8 @@ export interface WorkStream {
   assignedReviewerIds?: string[]
   agentIds: string[] | null
   dependsOn: string[]
+  /** Per-dependency unlock condition and state. Absent from servers that predate it. */
+  dependencies?: WorkStreamDependencyEdge[]
   derivedState?: string
   openWaits?: WorkStreamWaitSummary[]
   reviewRounds?: number
@@ -154,6 +159,27 @@ function formatDuration(ms: number): string {
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`
   const hours = Math.floor(minutes / 60)
   return `${hours}h ${minutes % 60}m`
+}
+
+const DEPENDS_ON_HELP =
+  '<wsId> or <wsId>:done waits until the dependency is done; <wsId>:ready unlocks when its work is implemented and its pull request is open, stacks this stream on its branch and holds delivery until it merges'
+
+/** `--depends-on` values as the API takes them: a bare ID for `done`, an object for `ready`. */
+export function parseDependsOnOptions(values: string[]): WorkStreamDependencyInput[] {
+  return values.map((value) => {
+    const { id, condition } = parseDependencySpec(value)
+    return condition === 'done' ? id : { id, condition }
+  })
+}
+
+/** "#12 (ready: unlocked, stacked on work/a, holds delivery)" */
+export function describeDependencyEdge(label: string, edge: WorkStreamDependencyEdge | undefined): string {
+  if (!edge) return label
+  const state = edge.satisfied ? (edge.unlockedAt ? 'unlocked' : 'satisfied') : 'waiting'
+  const stack = edge.stack
+    ? `, ${edge.stack.mode === 'manual' ? 'merge in' : edge.stack.mode === 'included' ? 'contains' : 'stacked on'} ${edge.stack.branch}`
+    : ''
+  return `${label} (${edge.condition}: ${state}${stack}${edge.holdsDelivery ? ', holds delivery until it merges' : ''})`
 }
 
 function collect(value: string, previous: string[]): string[] {
@@ -431,7 +457,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       ])
     )
     .option('--reviewer <userId>', 'Assign a reviewer user ID (can repeat)', collect, [])
-    .option('--depends-on <wsId>', 'Dependency work stream ID (can repeat)', collect, [])
+    .option('--depends-on <wsId[:condition]>', `Dependency work stream (can repeat). ${DEPENDS_ON_HELP}`, collect, [])
     .option('--priority <priority>', `Scheduling priority: ${WORK_STREAM_PRIORITIES.join(', ')} (default: normal)`)
     .option('--repository <path>', 'Create or validate a worktree from this repository in the squad workspace')
     .option(
@@ -479,7 +505,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           ...(options.reviewer?.length ? { assignedReviewerIds: options.reviewer } : {}),
           handoffMessage: options.message,
           ...(options.requestingUser ? { requestingUserId: options.requestingUser } : {}),
-          dependsOn: options.dependsOn,
+          dependsOn: parseDependsOnOptions(options.dependsOn ?? []),
           ...(priority !== undefined ? { priority } : {}),
           ...(sources !== undefined ? { metadata: { sources } } : {}),
           ...(options.branch !== undefined ? { branch: options.branch } : {}),
@@ -532,7 +558,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           if (ws.queuePosition !== undefined) {
             console.log(`Queue Pos:   ${ws.queuePosition}`)
           } else if (ws.waitingOnDependencies) {
-            console.log(`Queue Pos:   waiting on dependencies (not eligible until every dependency is done)`)
+            console.log(`Queue Pos:   waiting on dependencies (not eligible until every dependency is satisfied)`)
           }
           console.log(`Squad:       ${ws.squadId}`)
           console.log(`Task:        ${ws.taskId || '(none)'}`)
@@ -546,7 +572,20 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
             `Reviewers:   ${ws.assignedReviewerIds?.length ? ws.assignedReviewerIds.join(', ') : 'Anyone with review permission'}`
           )
           console.log(
-            `Depends On:  ${ws.dependsOn.length > 0 ? (await Promise.all(ws.dependsOn.map(async (id) => workStreamLabel(await apiGet<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`))))).join(', ') : '(none)'}`
+            `Depends On:  ${
+              ws.dependsOn.length > 0
+                ? (
+                    await Promise.all(
+                      ws.dependsOn.map(async (id) =>
+                        describeDependencyEdge(
+                          workStreamLabel(await apiGet<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`)),
+                          ws.dependencies?.find((edge) => edge.workStreamId === id)
+                        )
+                      )
+                    )
+                  ).join(', ')
+                : '(none)'
+            }`
           )
           if (ws.description) {
             console.log(`Description: ${ws.description}`)
@@ -625,7 +664,12 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .description('Update a work stream')
     .option('-s, --status <status>', 'New status')
     .option('--priority <priority>', `Scheduling priority: ${WORK_STREAM_PRIORITIES.join(', ')}`)
-    .option('--depends-on <wsId>', 'Replace dependencies with these work stream IDs (can repeat)', collect, [])
+    .option(
+      '--depends-on <wsId[:condition]>',
+      `Replace dependencies with these work streams (can repeat). ${DEPENDS_ON_HELP}`,
+      collect,
+      []
+    )
     .option('--clear-dependencies|--remove-dependency', 'Clear all dependencies (cannot be combined with --depends-on)')
     .option('--title <title>', 'New title')
     .option('-d, --description <desc>', 'New description')
@@ -696,7 +740,8 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         }
         if (priority !== undefined) updates.priority = priority
         if (clearDependencies) updates.dependsOn = []
-        else if (options.dependsOn && options.dependsOn.length > 0) updates.dependsOn = options.dependsOn
+        else if (options.dependsOn && options.dependsOn.length > 0)
+          updates.dependsOn = parseDependsOnOptions(options.dependsOn)
         if (options.title) updates.title = options.title
         if (options.description) updates.description = options.description
         if (options.assign) updates.assigneeAgentId = options.assign

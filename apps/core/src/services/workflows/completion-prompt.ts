@@ -81,12 +81,18 @@ export function deliveryBindingSelfCheck(
 export function deliveryInstructionsForRun(
   stream: { id: string; status: string; pause?: unknown; metadata?: unknown },
   state: WorkflowRun,
-  version: number
+  version: number,
+  /** Present when the stream was built on a dependency's unmerged branch: its delivery hold. */
+  stackNotice?: string
 ): string | undefined {
   if (stream.status !== 'active' || stream.pause || state.status !== 'completion-ready') return undefined
   const selfCheck = deliveryBindingSelfCheck(stream, state.definition.completion.mode)
   return [
+    // First, so a delivery hold is read before the mode's own merge steps.
+    stackNotice ?? '',
     flowCompletionInstructions(state.definition.completion.mode) + (selfCheck ? `\n\n${selfCheck}` : ''),
     `When the condition is met: ficus workstream finish ${stream.id} --version ${version}.`,
-  ].join('\n\n')
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }

@@ -4,6 +4,7 @@ import { squadEventRulesSchema } from './squad-event-rules'
 import { AGENT_STATUSES, WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES, WORK_STREAM_WAIT_ACTORS } from './types'
 import { IMAGE_ATTACHMENT_MIME_TYPES, MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from './image-attachments'
 import { reportableAssistantTaskStatusSchema } from './assistant-activity'
+import { WORK_STREAM_DEPENDENCY_CONDITIONS } from './work-stream-dependencies'
 
 export const chatScopeTypeSchema = z.enum(['system-manager', 'heartbeat', 'consultant'])
 
@@ -258,6 +259,17 @@ export const workStreamStatusWriteSchema = z
 export const workStreamWaitTypeSchema = z.enum(['dependency', 'question', 'review', 'manual'])
 export const workStreamWaitResolutionSchema = z.enum(['satisfied', 'answered', 'approved', 'sent_back', 'cleared'])
 export const workStreamPrioritySchema = z.enum(WORK_STREAM_PRIORITIES)
+
+const workStreamDependencyConditionSchema = z.enum(WORK_STREAM_DEPENDENCY_CONDITIONS, {
+  errorMap: () => ({
+    message: `Unknown dependency condition. Use one of: ${WORK_STREAM_DEPENDENCY_CONDITIONS.join(', ')}`,
+  }),
+})
+/** A bare ID waits for `done`; the object form names the unlock condition. */
+export const workStreamDependencyInputSchema = z.union([
+  z.string().min(1),
+  z.object({ id: z.string().min(1), condition: workStreamDependencyConditionSchema.optional() }).strict(),
+])
 export const workStreamPromptTypeSchema = z.enum(['text', 'select', 'multi_select'])
 export const workStreamCompletionModeSchema = z.enum(WORK_STREAM_COMPLETION_MODES)
 export const workStreamSourceLinkKindSchema = z.enum([
@@ -308,7 +320,7 @@ export const createWorkStreamSchema = z
     handoffMessage: z.string().nullable().optional(),
     /** Attribute the request to a specific user (agent creators only; ignored for direct user creates). */
     requestingUserId: z.string().uuid().nullable().optional(),
-    dependsOn: z.array(z.string()).optional().default([]),
+    dependsOn: z.array(workStreamDependencyInputSchema).optional().default([]),
     priority: workStreamPrioritySchema.optional(),
     metadata: z.record(z.unknown()).optional().default({}),
     /** Create from an observed integration event: tracks its resource and reuses the stream that already handles it. */
@@ -336,7 +348,7 @@ export const updateWorkStreamSchema = z.object({
   ownerAgentId: z.string().nullable().optional(),
   agentIds: z.array(z.string()).nullable().optional(),
   assignedReviewerIds: z.array(z.string().uuid()).max(64).optional(),
-  dependsOn: z.array(z.string()).optional(),
+  dependsOn: z.array(workStreamDependencyInputSchema).optional(),
   handoffMessage: z.string().nullable().optional(),
   files: z.array(z.string()).optional(),
   metadata: z.record(z.unknown()).optional(),

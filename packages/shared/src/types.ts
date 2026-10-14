@@ -1427,6 +1427,11 @@ export interface WorkStream {
   requestingUserName?: string | null
   agentIds: string[] | null
   dependsOn: string[]
+  /**
+   * One entry per `dependsOn` ID with its unlock condition and whether it is satisfied.
+   * Additive: `dependsOn` stays the authoritative ID list.
+   */
+  dependencies?: import('./work-stream-dependencies').WorkStreamDependencyEdge[]
   /** Work streams in this squad that depend on this stream. Computed server-side; never stored. */
   dependedOnBy: string[]
   /** Display state derived from executions + open waits. Populated by list/detail endpoints. */
@@ -1492,7 +1497,8 @@ export interface CreateWorkStreamInput {
   /** @deprecated Rejected at creation. Set participant model overrides in workflow. */
   agentModelOverrides?: Record<string, string>
   handoffMessage?: string | null
-  dependsOn?: string[]
+  /** A bare ID waits for `done`; `{ id, condition: 'ready' }` unlocks when the dependency's pull request is ready. */
+  dependsOn?: import('./work-stream-dependencies').WorkStreamDependencyInput[]
   /** Advisory scheduling priority. Defaults to 'normal'. */
   priority?: WorkStreamPriority
   metadata?: Record<string, unknown>
@@ -1524,7 +1530,8 @@ export interface UpdateWorkStreamInput {
   assigneeAgentId?: string | null
   ownerAgentId?: string | null
   agentIds?: string[] | null
-  dependsOn?: string[]
+  /** A bare ID waits for `done`; `{ id, condition: 'ready' }` unlocks when the dependency's pull request is ready. */
+  dependsOn?: import('./work-stream-dependencies').WorkStreamDependencyInput[]
   handoffMessage?: string | null
   files?: string[]
   metadata?: Record<string, unknown>

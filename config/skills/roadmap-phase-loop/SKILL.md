@@ -57,7 +57,7 @@ research phases need no worktree; changes to plan documents in a repository do.
    record `git.branch`, `git.worktree`, and `git.baseBranch`.
 5. Create the work with `ficus workstream create` and `--workflow <preset-id>`
    or `--flow-content '<JSON source>'` for short payloads; use `--flow-stdin`
-   with a quoted heredoc for longer JSON/YAML. Saved definitions can still use `--flow`. Set dependencies with `--depends-on` and record the
+   with a quoted heredoc for longer JSON/YAML. Saved definitions can still use `--flow`. Set dependencies with `--depends-on` (`<id>:ready` when a phase builds on the prerequisite's open pull request in the same repository; the default waits until it is done) and record the
    initiative and phase identifiers in metadata.
 6. Let flow outcomes, return paths, and joins route work. Participants start
    lazily when needed. Do not pre-spawn a crew, manually assign phase handoffs,

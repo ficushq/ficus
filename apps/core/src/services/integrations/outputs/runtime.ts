@@ -281,6 +281,18 @@ export async function publishIntegrationOutput(
   } catch (error) {
     triggerError = error
   }
+  // Before routing settles the event: streams built on a pull request's branch hear about its new
+  // head whether or not that pull request's own flow follows code-host changes.
+  if (!event.matchedAt && event.fact.output === 'pull_request.updated') {
+    try {
+      const { recordDependencyHeadFromEvent } = await import('../../work-streams/dependency-stacking')
+      await recordDependencyHeadFromEvent(event, (squadId) =>
+        authorized(db, event.integration, event.authority, squadId)
+      )
+    } catch (error) {
+      log.warn(`Failed to record a new branch head from event ${event.id}:`, error)
+    }
+  }
   const bound = await matchOutputEvent(event)
   const deliveries = await db
     .select({ id: integrationOutputDeliveries.workStreamId })

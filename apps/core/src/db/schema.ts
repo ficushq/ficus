@@ -1218,6 +1218,12 @@ export const workStreams = pgTable(
     agentIds: uuid('agent_ids').array(),
     assignedReviewerIds: uuid('assigned_reviewer_ids').array().notNull().default([]),
     dependsOn: uuid('depends_on').array().notNull().default([]),
+    // Server-owned state of `ready` edges, keyed by dependency ID. `dependsOn`
+    // stays the authoritative ID list; an ID without an entry waits for `done`.
+    dependencyEdges: jsonb('dependency_edges')
+      .$type<Record<string, import('@ficus/shared').WorkStreamDependencyEdgeState>>()
+      .notNull()
+      .default({}),
     handoffMessage: text('handoff_message'),
     files: jsonb('files').notNull().default([]),
     metadata: jsonb('metadata').notNull().default({}),

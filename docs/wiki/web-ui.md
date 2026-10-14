@@ -127,6 +127,11 @@ collapsed summary. Overall usage stays in the enclosing detail view without a du
 workflow total. Critical waits, human decisions and delivery checks remain in the leading
 attention callouts; checking delivery does not claim a merge or review has completed.
 Refreshes preserve expansion; switching streams or reopening details resets it.
+The **Dependencies** list shows, under each dependency, the condition its edge waits on and
+whether it is satisfied ("Waits until its pull request is ready", "Unlocked when its pull request
+was ready · built on `branch` · delivery held until it merges"); a delivery hold uses the attention
+text color. In the Work Stream Graph a `ready` edge is dashed, a satisfied edge uses the success
+color, each edge carries a title with both facts, and the legend names the three treatments.
 Descriptions wrap long paths, URLs and inline code within the modal; wide tables and code
 blocks retain contained scrolling. The focused, DB-free browser regression can be run from
 `apps/web` with `CHROMIUM_PATH=/path/to/chromium bun scripts/check-work-stream-detail-layout.ts`.

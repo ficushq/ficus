@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { createBlankWorkflow, createWorkflowRun, advanceWorkflowRun, workflowCommandSchema } from '@ficus/shared'
 import { flowMessage } from './handoff-prompt'
 import { deliveryInstructionsForRun } from './completion-prompt'
+import { stackedDependencyNotice, type StackedDependency } from '../work-streams/dependency-edges'
 
 const stream = {
   id: 'stream-1',
@@ -133,4 +134,47 @@ test('a kept attempt handoff uses the live outcome but not revised instructions'
   expect(message).toContain(initial.attempts[0]!.step!.instructions)
   expect(message).not.toContain('Future instructions')
   expect(message).toContain('"outcome": "waived"')
+})
+
+test('a stacked stream is told what it was built on and that delivery is held, in the handoff and at delivery', () => {
+  const dependency: StackedDependency = {
+    id: 'dep-1',
+    label: '#12 · Shared parser',
+    status: 'active',
+    mode: 'stacked',
+    branch: 'work/parser',
+    headSha: 'a'.repeat(40),
+  }
+  const git = { remote: 'origin', baseBranch: 'main' }
+  const notice = stackedDependencyNotice([dependency], git)!
+  expect(notice).toContain(
+    `"#12 · Shared parser": this stream's branch was built on its branch work/parser at ${'a'.repeat(40)}`
+  )
+  expect(notice).toContain('cannot finish, and its pull request must not merge, until that dependency has merged')
+  expect(notice).toContain('Opening the pull request as a draft is fine. Do not enable auto-merge until then')
+  expect(notice).toContain('merge main into this branch first')
+
+  const state = createWorkflowRun(createBlankWorkflow())
+  expect(flowMessage(stream, { state, version: 1 }, state.attempts[0]!, notice)).toContain(notice)
+  expect(flowMessage(stream, { state, version: 1 }, state.attempts[0]!)).not.toContain('Stacked dependencies')
+  const ready = { ...state, status: 'completion-ready' as const }
+  const delivery = deliveryInstructionsForRun({ ...stream, status: 'active' }, ready, 1, notice)!
+  expect(delivery).toContain(notice)
+  expect(delivery).toContain('ficus workstream finish stream-1 --version 1')
+  expect(deliveryInstructionsForRun({ ...stream, status: 'active' }, ready, 1)).not.toContain('Stacked dependencies')
+
+  // A manual merge names the command; a merged dependency releases the hold; a canceled one is called out.
+  const manual = stackedDependencyNotice(
+    [{ ...dependency, mode: 'manual', reason: 'the branch already has commits' }],
+    git
+  )!
+  expect(manual).toContain("was NOT merged into this stream's branch automatically (the branch already has commits)")
+  expect(manual).toContain('git fetch origin work/parser && git merge FETCH_HEAD')
+  const merged = stackedDependencyNotice([{ ...dependency, status: 'done' }], git)!
+  expect(merged).toContain('It has merged: merge main into this branch before delivery.')
+  expect(merged).not.toContain('Delivery hold')
+  expect(stackedDependencyNotice([{ ...dependency, status: 'canceled' }], git)).toContain(
+    'was canceled and will never merge'
+  )
+  expect(stackedDependencyNotice([], git)).toBeUndefined()
 })

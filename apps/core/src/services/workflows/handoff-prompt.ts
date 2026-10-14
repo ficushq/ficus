@@ -22,7 +22,9 @@ type HandoffStream = {
 export function flowMessage(
   stream: HandoffStream,
   run: { state: WorkflowRun; version: number },
-  attempt: WorkflowAttempt
+  attempt: WorkflowAttempt,
+  /** Present when the stream was built on a dependency's unmerged branch. */
+  stackNotice?: string
 ) {
   const step = effectiveWorkflowStep(run.state, attempt)
   const metadata = stream.metadata as { git?: Record<string, unknown>; codeHost?: Record<string, unknown> } | null
@@ -53,6 +55,7 @@ export function flowMessage(
     `Work stream ${workStreamLabel(stream)}: ${stream.title}\nStep: ${step.id} (attempt ${attempt.id}, version ${run.version})`,
     step.kind === 'decision' ? step.instructions : `${step.instructions}\nExpected output: ${step.output}`,
     workspace.length ? workspace.map(([label, value]) => `${label}: ${value}`).join('\n') : '',
+    stackNotice ?? '',
     attempt.feedback ? `Rework request:\n${attempt.feedback}` : '',
     results.length ? `Incoming results:\n\n${results.join('\n\n')}` : '',
     attempt.sourceAttemptIds === undefined

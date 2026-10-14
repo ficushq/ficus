@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createBlankWorkflow, createWorkflowRun, type WorkStream } from '@ficus/shared'
 import { WorkStreamDetailModal } from '../../src/components/WorkStreamDetailModal'
+import { WorkStreamGraph } from '../../src/components/WorkStreamGraph'
 import { queryKeys } from '../../src/queryKeys'
 import '../../src/index.css'
 const token = 'unbrokentoken'.repeat(35)
@@ -54,6 +55,54 @@ if (new URLSearchParams(location.search).has('paused')) {
     },
   })
 }
+/** A made-up neighbor stream for the dependency fixtures. */
+const neighbor = (id: string, number: number, title: string, extra: Record<string, unknown> = {}) => ({
+  ...stream,
+  id,
+  number,
+  title,
+  description: '',
+  dependsOn: [] as string[],
+  ...extra,
+})
+const dependencyStreams = [
+  neighbor('dep-ready', 438, 'Shared parser for import files'),
+  neighbor('dep-waiting', 440, 'Rate limit settings page', { status: 'active' }),
+  neighbor('dep-done', 431, 'Importer error codes', { status: 'done' }),
+]
+const dependencyEdges = [
+  {
+    workStreamId: 'dep-ready',
+    condition: 'ready',
+    satisfied: true,
+    unlockedAt: new Date().toISOString(),
+    stack: { mode: 'stacked', branch: 'work/shared-parser', headSha: 'a'.repeat(40) },
+    holdsDelivery: true,
+  },
+  { workStreamId: 'dep-waiting', condition: 'ready', satisfied: false },
+  { workStreamId: 'dep-done', condition: 'done', satisfied: true },
+]
+if (new URLSearchParams(location.search).has('dependencies')) {
+  Object.assign(stream, {
+    title: 'Import preview built on the shared parser',
+    description: 'Shows the first rows of an import file before it is committed.',
+    dependsOn: dependencyEdges.map((edge) => edge.workStreamId),
+    dependencies: dependencyEdges,
+    openWaits: [
+      {
+        id: 'wait-1',
+        workStreamId: stream.id,
+        type: 'dependency',
+        referenceId: 'dep-waiting',
+        message: null,
+        openedAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+        closedAt: null,
+      },
+    ],
+  })
+  for (const dependency of dependencyStreams)
+    cache.setQueryData(queryKeys.squads.workStreamDetail(dependency.id), dependency)
+}
 cache.setQueryData(queryKeys.squads.workStreamDetail(stream.id), stream)
 cache.setQueryData(queryKeys.workflows.run(stream.id), run)
 cache.setQueryData(queryKeys.squads.list(), [])
@@ -72,8 +121,32 @@ cache.setQueryData(queryKeys.squads.workStreamMetrics(stream.id), {
   byAgent: {},
 })
 cache.setQueryData(queryKeys.squads.workStreamTracked(stream.id), { resources: [], subscriptions: 'not-following' })
+function GraphFixture() {
+  const streams = [
+    ...dependencyStreams.filter((dependency) => dependency.status !== 'done'),
+    neighbor('fixture', 442, 'Import preview built on the shared parser', {
+      dependsOn: ['dep-ready', 'dep-waiting'],
+      dependencies: dependencyEdges.slice(0, 2),
+    }),
+    neighbor('plain', 444, 'Importer documentation', {
+      status: 'queued',
+      dependsOn: ['dep-ready'],
+      dependencies: [{ workStreamId: 'dep-ready', condition: 'done', satisfied: false }],
+    }),
+  ]
+  return (
+    <div className="p-6">
+      <WorkStreamGraph
+        workStreams={streams as unknown as WorkStream[]}
+        agentMap={new Map()}
+        onSelectWorkStream={() => undefined}
+      />
+    </div>
+  )
+}
 function App() {
   const [open, setOpen] = React.useState(true)
+  if (new URLSearchParams(location.search).has('graph')) return <GraphFixture />
   return (
     <MemoryRouter>
       <QueryClientProvider client={cache}>

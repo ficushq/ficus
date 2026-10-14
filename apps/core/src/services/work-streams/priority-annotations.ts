@@ -2,6 +2,7 @@ import { and, inArray, isNull } from 'drizzle-orm'
 import {
   compareByEffectivePriorityThenCreatedAt,
   computeEffectivePriorities,
+  isDependencyEdgeSatisfied,
   type WorkStreamPriority,
 } from '@ficus/shared'
 import { db } from '../../db'
@@ -39,6 +40,7 @@ export async function computePriorityAnnotations(
       status: workStreams.status,
       priority: workStreams.priority,
       dependsOn: workStreams.dependsOn,
+      dependencyEdges: workStreams.dependencyEdges,
       createdAt: workStreams.createdAt,
     })
     .from(workStreams)
@@ -61,8 +63,8 @@ export async function computePriorityAnnotations(
     ...rows.map((r): [string, string] => [r.id, r.status]),
     ...externalDeps.map((r): [string, string] => [r.id, r.status]),
   ])
-  const isDepsSatisfied = (dependsOn: string[] | null): boolean =>
-    (dependsOn ?? []).every((d) => statusOf.get(d) === 'done')
+  const isDepsSatisfied = (row: Pick<(typeof rows)[number], 'dependsOn' | 'dependencyEdges'>): boolean =>
+    (row.dependsOn ?? []).every((d) => isDependencyEdgeSatisfied(row.dependencyEdges, d, statusOf.get(d)))
 
   // Open waits gate admissibility exactly like the admission controller: a
   // queued stream with ANY open wait holds no queue position.
@@ -75,8 +77,7 @@ export async function computePriorityAnnotations(
           .where(and(inArray(workStreamWaits.workStreamId, queuedIds), isNull(workStreamWaits.closedAt)))
       : []
   const hasOpenWait = new Set(openWaitRows.map((r) => r.workStreamId))
-  const isEligible = (id: string, dependsOn: string[] | null): boolean =>
-    !hasOpenWait.has(id) && isDepsSatisfied(dependsOn)
+  const isEligible = (row: (typeof rows)[number]): boolean => !hasOpenWait.has(row.id) && isDepsSatisfied(row)
 
   const wanted = new Set(streams.map((s) => s.id))
   for (const squadId of squadIds) {
@@ -94,7 +95,7 @@ export async function computePriorityAnnotations(
     // Position counts ELIGIBLE queued streams only — a dep-blocked stream is
     // not "next in line" no matter how old or high-priority it is.
     const queueOrder = squadRows
-      .filter((r) => r.status === 'queued' && isEligible(r.id, r.dependsOn))
+      .filter((r) => r.status === 'queued' && isEligible(r))
       .map((r) => ({
         id: r.id,
         createdAt: r.createdAt,
@@ -113,7 +114,7 @@ export async function computePriorityAnnotations(
       }
       const position = positions.get(row.id)
       if (position !== undefined) annotations.queuePosition = position
-      if (row.status === 'queued' && !isDepsSatisfied(row.dependsOn)) annotations.waitingOnDependencies = true
+      if (row.status === 'queued' && !isDepsSatisfied(row)) annotations.waitingOnDependencies = true
       result.set(row.id, annotations)
     }
   }

@@ -420,6 +420,7 @@ export function WorkStreamDetailModal({
         {/* What this stream waits on, above the details and description so blockers are visible at once. */}
         <WorkStreamDependencies
           dependsOn={workStream.dependsOn}
+          dependencies={workStream.dependencies}
           waits={openWaits}
           streams={resolvedWorkStreamMap}
           onSelectWorkStream={onSelectWorkStream}
