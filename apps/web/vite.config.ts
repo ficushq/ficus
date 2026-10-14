@@ -499,7 +499,15 @@ export default defineConfig(({ mode, command }) => {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           // The link-preview image is for crawlers, not the offline shell.
           // The farm is built into dist/farm but is its own app: never precache it.
-          globIgnores: ['**/voice/dtln/dtln.js', '**/social-preview.png', 'farm/**'],
+          // pdf.js (~0.5 MB) only loads when someone opens a PDF attachment, so installed
+          // apps shouldn't download it in the background; PDF preview needs the network.
+          globIgnores: [
+            '**/voice/dtln/dtln.js',
+            '**/social-preview.png',
+            'farm/**',
+            '**/assets/pdf-*.js',
+            '**/assets/pdf.worker*',
+          ],
         },
         srcDir: 'src',
         filename: 'sw.ts',
