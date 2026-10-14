@@ -1,4 +1,5 @@
 import { Agent } from '../entities/Agent'
+import { InboxMessage, formatInboxMessages } from '../entities/InboxMessage'
 import { AgentSession } from '../entities/AgentSession'
 import { SystemManagerRunner } from '../entities/agent-runners/system-manager-runner'
 import { afterEach, expect, test, spyOn } from 'bun:test'
@@ -199,6 +200,83 @@ test('quick tools enforce private resource ownership even from an authorized con
   expect(JSON.stringify(result)).toContain(visible!.id)
   expect(JSON.stringify(result)).not.toContain(hidden!.id)
   expect((await db.select().from(inbox).where(eq(inbox.id, other.original.id)))[0]!.readAt).toBeNull()
+})
+
+test('mark_read marks a task-update notification by the ID the Assistant was shown', async () => {
+  const f = await fixture()
+  await forwardAssistantUpdates(50, noDelivery)
+  const [update] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, f.original.id))
+  const forwardedId = update!.forwardedMessageId!
+  inboxIds.push(forwardedId)
+  // The delivered prompt identifies the notification by its row in the Assistant agent's inbox.
+  const prompt = formatInboxMessages([(await InboxMessage.find(forwardedId))!])
+  expect(prompt).toContain(`### Message ${forwardedId}`)
+  expect(prompt).toContain('Assistant task update')
+
+  const [own] = await db
+    .insert(inbox)
+    .values({ recipientType: 'user', recipientId: f.user.id, senderType: 'system', content: 'Mine', metadata: {} })
+    .returning()
+  inboxIds.push(own!.id)
+
+  const tools = createAssistantTools(f.agentId, randomUUID(), f.conversation.id)
+  const markRead = tools.find((tool) => tool.name === 'mark_read')!
+  for (const messageId of [forwardedId, own!.id]) {
+    const result = await markRead.execute('call', { messageId } as never, undefined, undefined, {} as never)
+    expect(result.details).toEqual({ marked: true })
+    expect((await db.select().from(inbox).where(eq(inbox.id, messageId)))[0]!.readAt).toBeInstanceOf(Date)
+  }
+  // Read state is not human visibility: the original report stays unseen and unread.
+  expect((await db.select().from(inbox).where(eq(inbox.id, f.original.id)))[0]!.readAt).toBeNull()
+  expect(
+    (await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, f.original.id)))[0]!.seenAt
+  ).toBeNull()
+})
+
+test('mark_read reports another recipient’s message exactly like a missing one', async () => {
+  const own = await fixture(),
+    other = await fixture()
+  await forwardAssistantUpdates(50, noDelivery)
+  const [otherUpdate] = await db
+    .select()
+    .from(assistantUpdates)
+    .where(eq(assistantUpdates.messageId, other.original.id))
+  const [ownUpdate] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, own.original.id))
+  inboxIds.push(otherUpdate!.forwardedMessageId!, ownUpdate!.forwardedMessageId!)
+  const [otherUserMessage] = await db
+    .insert(inbox)
+    .values({
+      recipientType: 'user',
+      recipientId: other.user.id,
+      senderType: 'system',
+      content: 'Theirs',
+      metadata: {},
+    })
+    .returning()
+  // An agent row whose recipient ID is the caller's own user ID is not the caller's inbox either.
+  const [crossTyped] = await db
+    .insert(inbox)
+    .values({ recipientType: 'agent', recipientId: own.user.id, senderType: 'system', content: 'Typed', metadata: {} })
+    .returning()
+  inboxIds.push(otherUserMessage!.id, crossTyped!.id)
+
+  const markRead = createAssistantTools(own.agentId, randomUUID(), own.conversation.id).find(
+    (tool) => tool.name === 'mark_read'
+  )!
+  const missing = await markRead.execute(
+    'call',
+    { messageId: randomUUID() } as never,
+    undefined,
+    undefined,
+    {} as never
+  )
+  expect(missing.details).toEqual({ error: true })
+  for (const messageId of [otherUpdate!.forwardedMessageId!, otherUserMessage!.id, other.original.id, crossTyped!.id]) {
+    const result = await markRead.execute('call', { messageId } as never, undefined, undefined, {} as never)
+    expect(result.details).toEqual({ error: true })
+    expect(result.content).toEqual(missing.content)
+    expect((await db.select().from(inbox).where(eq(inbox.id, messageId)))[0]!.readAt).toBeNull()
+  }
 })
 
 test('durable Assistant sessions persist on the agent without allocating a sandbox or exposing shell tools', async () => {
