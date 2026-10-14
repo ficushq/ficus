@@ -20,6 +20,14 @@ authorized return, delegation, or revision. `finish` checks the completion polic
 once the graph is complete. All three take a **work stream ID**; `ficus ws` is an
 alias for `ficus workstream`. `ficus workflow` manages reusable presets/templates.
 
+`advance --attach PATH` (repeatable, `complete` only) uploads each file to the
+attempt named in the command before the command is sent, so the next review gate
+opens with them; if any upload fails the attempt is not advanced. Core stores a
+snapshot (at most 10 files per attempt, each within `INBOX_MAX_ATTACHMENT_BYTES`,
+10 MB by default), lists them per attempt as `attachments` in `flow`, and serves
+them at `GET /api/workflows/runs/STREAM_ID/attachments/ATTACHMENT_ID` to anyone
+who can read the work stream. The review modal shows them as tabs after the handoff.
+
 When a transition immediately assigns work to the calling agent, its response
 includes `assignments` with the attempt ID, version, and full handoff content.
 Continue that assignment directly; no duplicate inbox notification is sent.
