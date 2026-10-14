@@ -30,7 +30,12 @@ import {
 } from '../services/squad/subscriptions'
 import { Squad } from '../entities/Squad'
 import type { Squad as SquadEntity } from '../entities/Squad'
-import { isInsideWorkspaceRoot, resolveSquadWorkspaceHostPath, searchWorkspaceFiles } from '../services/squad/workspace'
+import {
+  isInsideWorkspaceRoot,
+  resolveSandboxWorkspacePath,
+  resolveSquadWorkspaceHostPath,
+  searchWorkspaceFiles,
+} from '../services/squad/workspace'
 import type { SquadStatus } from '@ficus/shared'
 import { terminalManager } from '../services/sandbox/docker/terminal'
 import {
@@ -501,8 +506,9 @@ export const squadsRouter = new Hono()
     const client = await getSquadClient(squad.id)
     if (client) {
       const { workspaceMount } = resolveWorkspaceLayout({ squadId: squad.id })
+      const listPath = resolveSandboxWorkspacePath(workspaceMount, relativePath)
+      if (!listPath) return c.json({ error: 'Invalid path' }, 400)
       try {
-        const listPath = relativePath ? `${workspaceMount}/${relativePath}` : workspaceMount
         const result = await client.list({ path: listPath, maxDepth: depth })
         const rootName = relativePath ? path.basename(relativePath) : 'workspace'
 
@@ -639,8 +645,9 @@ export const squadsRouter = new Hono()
     // K8s runtime: proxy through sandbox
     const client = await getSquadClient(squad.id)
     if (client) {
+      const filePath = resolveSandboxWorkspacePath(workspaceMount, relativePath)
+      if (!filePath) return c.json({ error: 'Invalid path' }, 400)
       try {
-        const filePath = `${workspaceMount}/${relativePath}`
         const result = await client.read({ path: filePath })
         const buffer = Buffer.from(result.content, 'base64')
         const binary = result.isBinary || buffer.slice(0, 8192).includes(0)
@@ -706,9 +713,10 @@ export const squadsRouter = new Hono()
     // K8s runtime: proxy through sandbox
     const client = await getSquadClient(squad.id)
     if (client) {
+      const filePath = resolveSandboxWorkspacePath(workspaceMount, relativePath)
+      if (!filePath) return c.json({ error: 'Invalid path' }, 400)
       try {
-        const filePath = `${workspaceMount}/${relativePath}`
-        const filename = path.basename(relativePath)
+        const filename = path.basename(filePath)
         return await createSandboxFileResponse(client, filePath, filename)
       } catch (err: any) {
         if (err.message?.includes('404') || err.message?.includes('not found')) {
@@ -775,10 +783,15 @@ export const squadsRouter = new Hono()
         const { workspaceMount } = resolveWorkspaceLayout({ squadId: squad.id })
         for (const { file, relativePath } of files) {
           const fullRelativePath = targetDir ? `${targetDir}/${relativePath}` : relativePath
+          const targetPath = resolveSandboxWorkspacePath(workspaceMount, fullRelativePath)
+          if (!targetPath) {
+            results.push({ path: fullRelativePath, status: 'error', error: 'Invalid path' })
+            continue
+          }
           try {
             if (!overwrite) {
               try {
-                const stat = await client.stat({ path: `${workspaceMount}/${fullRelativePath}` })
+                const stat = await client.stat({ path: targetPath })
                 if (stat.exists) {
                   results.push({ path: fullRelativePath, status: 'skipped' })
                   continue
@@ -792,7 +805,7 @@ export const squadsRouter = new Hono()
               // Raw-body transport: no base64 (+33%) and no multi-megabyte JSON
               // string on either side — large uploads broke both.
               await client.upload({
-                path: `${workspaceMount}/${fullRelativePath}`,
+                path: targetPath,
                 content: buffer,
                 createDirs: true,
               })
@@ -801,7 +814,7 @@ export const squadsRouter = new Hono()
               // the JSON write path so uploads keep working mid-rollout.
               if (!(err instanceof SandboxHttpError && err.status === 404)) throw err
               await client.write({
-                path: `${workspaceMount}/${fullRelativePath}`,
+                path: targetPath,
                 content: buffer.toString('base64'),
                 createDirs: true,
               })

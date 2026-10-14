@@ -68,6 +68,17 @@ export function isInsideWorkspaceRoot(root: string, target: string): boolean {
 }
 
 /**
+ * Resolve a request's workspace-relative path to an absolute path inside a sandbox's
+ * workspace mount, or `null` when it escapes (`..`). Sandbox clients read and write
+ * anywhere in the box, so this is the only boundary for VM and Kubernetes squads.
+ * Leading slashes are treated as workspace-relative, as the routes always have.
+ */
+export function resolveSandboxWorkspacePath(workspaceMount: string, relativePath: string): string | null {
+  const target = path.posix.resolve(workspaceMount, relativePath.replace(/^\/+/, ''))
+  return isInsideWorkspaceRoot(workspaceMount, target) ? target : null
+}
+
+/**
  * Ensure a squad workspace directory exists. Returns the absolute path. A workspace still under the
  * legacy dot dir is moved to `.ficus` here, before any sandbox writes into it.
  */
