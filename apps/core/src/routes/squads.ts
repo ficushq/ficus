@@ -119,7 +119,8 @@ const idleConsultantsDormancySchema = z
   .object({
     days: z.number().int().min(1).max(3650),
     // Required: the consultants the caller previewed. The server still re-checks each one.
-    agentIds: z.array(z.string().uuid()).min(1).max(500),
+    // Synchronous, so one request is kept small; the web sends chunks of 25.
+    agentIds: z.array(z.string().uuid()).min(1).max(100),
   })
   .strict()
 

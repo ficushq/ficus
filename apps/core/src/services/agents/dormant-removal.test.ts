@@ -6,6 +6,7 @@ import { Agent } from '../../entities/Agent'
 import { Squad } from '../../entities/Squad'
 import * as lifecycle from '../agent/lifecycle'
 import { makeDormant } from '../agent/lifecycle'
+import { storageAgentColumns, storageAgentInfo } from '../storage/agents'
 import { requestDormantRemoval, runDormantAgentSweep } from './cleanup'
 
 describe('remove dormant agents now (background)', () => {
@@ -77,5 +78,41 @@ describe('remove dormant agents now (background)', () => {
     expect(await status(marked.id)).toBe('terminated')
     expect(await status(unmarked.id)).toBe('dormant')
     expect(await status(rewoken.id)).toBe('dormant')
+  })
+
+  async function info(id: string) {
+    const [row] = await db.select(storageAgentColumns).from(agents).where(eq(agents.id, id))
+    return storageAgentInfo(row!)
+  }
+
+  it('records failed removals and, after five, clears the mark and reports the failure', async () => {
+    const dormant = await agent()
+    await makeDormant(dormant)
+    expect((await requestDormantRemoval([dormant.id])).accepted).toEqual([dormant.id])
+    const sweep = () =>
+      runDormantAgentSweep({
+        listDormant: async () => [dormant],
+        completePending: async () => true,
+        finalize: async () => {
+          throw new Error('ssh timed out')
+        },
+      })
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      await sweep()
+      const current = await info(dormant.id)
+      expect(current.removalPending).toBe(true)
+      expect(current.removalError).toBeUndefined()
+    }
+    await sweep()
+    const failed = await info(dormant.id)
+    expect(failed.removalPending).toBeUndefined()
+    expect(failed.removalError).toBe('ssh timed out')
+    expect(await status(dormant.id)).toBe('dormant')
+
+    // Asking again clears the failure and queues a fresh attempt.
+    expect((await requestDormantRemoval([dormant.id])).accepted).toEqual([dormant.id])
+    const retried = await info(dormant.id)
+    expect(retried.removalPending).toBe(true)
+    expect(retried.removalError).toBeUndefined()
   })
 })

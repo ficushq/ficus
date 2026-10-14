@@ -1,7 +1,11 @@
 import { inArray, sql } from 'drizzle-orm'
 import { formatAgentLabel, type StorageAgent, type StorageFolder, type StorageSnapshot } from '@ficus/shared'
 import { agents, db } from '../../db'
-import { REMOVE_NOW_DORMANT_AT_KEY } from '../../entities/agent-queries'
+import {
+  REMOVE_NOW_DORMANT_AT_KEY,
+  REMOVE_NOW_FAILED_DORMANT_AT_KEY,
+  REMOVE_NOW_FAILED_REASON_KEY,
+} from '../../entities/agent-queries'
 
 export const storageAgentColumns = {
   id: agents.id,
@@ -11,6 +15,8 @@ export const storageAgentColumns = {
   name: sql<string | null>`${agents.metadata}->>'name'`,
   purpose: sql<string | null>`${agents.metadata}->>'purpose'`,
   removeNowDormantAt: sql<string | null>`${agents.metadata}->>${REMOVE_NOW_DORMANT_AT_KEY}`,
+  removeNowFailedReason: sql<string | null>`${agents.metadata}->>${REMOVE_NOW_FAILED_REASON_KEY}`,
+  removeNowFailedDormantAt: sql<string | null>`${agents.metadata}->>${REMOVE_NOW_FAILED_DORMANT_AT_KEY}`,
   lastMessageAt: agents.lastMessageAt,
   dormantAt: agents.dormantAt,
   createdAt: agents.createdAt,
@@ -19,7 +25,13 @@ export const storageAgentColumns = {
 export type StorageAgentRow = Pick<
   typeof agents.$inferSelect,
   'id' | 'squadId' | 'agentTypeId' | 'status' | 'lastMessageAt' | 'dormantAt' | 'createdAt'
-> & { name: string | null; purpose: string | null; removeNowDormantAt?: string | null }
+> & {
+  name: string | null
+  purpose: string | null
+  removeNowDormantAt?: string | null
+  removeNowFailedReason?: string | null
+  removeNowFailedDormantAt?: string | null
+}
 
 const iso = (value: Date | null | undefined) => (value ? value.toISOString() : null)
 
@@ -39,6 +51,12 @@ export function storageAgentInfo(row: StorageAgentRow): StorageAgent {
     row.removeNowDormantAt != null &&
     Number(row.removeNowDormantAt) === row.dormantAt.getTime()
       ? { removalPending: true }
+      : {}),
+    ...(row.status === 'dormant' &&
+    row.dormantAt &&
+    row.removeNowFailedReason &&
+    Number(row.removeNowFailedDormantAt) === row.dormantAt.getTime()
+      ? { removalError: row.removeNowFailedReason }
       : {}),
   }
 }

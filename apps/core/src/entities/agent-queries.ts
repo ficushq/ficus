@@ -114,6 +114,12 @@ export async function convergeDormancyResourceGeneration(
  * fence: a later dormancy is never removed early by a stale request.
  */
 export const REMOVE_NOW_DORMANT_AT_KEY = 'removeNowDormantAt'
+/** Failed attempts and last error for the current remove-now request. */
+export const REMOVE_NOW_FAILURES_KEY = 'removeNowFailures'
+export const REMOVE_NOW_LAST_ERROR_KEY = 'removeNowLastError'
+/** Set when a remove-now request was given up: the reason, and the episode it was for. */
+export const REMOVE_NOW_FAILED_REASON_KEY = 'removeNowFailedReason'
+export const REMOVE_NOW_FAILED_DORMANT_AT_KEY = 'removeNowFailedDormantAt'
 export const dormantAtEpochMsSql = sql`round(extract(epoch from ${agents.dormantAt}) * 1000)::bigint`
 export const removeNowRequestedSql = sql`(${agents.metadata}->>${REMOVE_NOW_DORMANT_AT_KEY}) = (${dormantAtEpochMsSql})::text`
 

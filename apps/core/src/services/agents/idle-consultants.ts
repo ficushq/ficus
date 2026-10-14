@@ -11,6 +11,8 @@ import { storageAgentColumns, type StorageAgentRow } from '../storage/agents'
 const log = createLogger('idle-consultants')
 const DAY_MS = 24 * 60 * 60 * 1000
 const FAILURE_BACKOFF_MS = 60 * 60 * 1000
+/** Refusal reasons from the idle-only re-check: the consultant is in use, nothing is wrong. */
+const EXPECTED_REFUSALS = new Set(['became active', 'has a message waiting', 'was active recently'])
 
 type Executor = Pick<DbTransaction, 'select'>
 const activeExecutionOf = (agentId: SQL | typeof agents.id, executor: Executor = db) =>
@@ -218,7 +220,10 @@ export async function runIdleConsultantDormancySweep(
     const made = result.dormant.length + result.deferred.length
     for (const skipped of result.skipped) {
       backoffUntil.set(skipped.id, now.getTime() + FAILURE_BACKOFF_MS)
-      log.warn(`Idle consultant ${skipped.id} in squad ${squad.id} stays live for now: ${skipped.reason}`)
+      // Refusals because the consultant is in use are expected; only real failures warn.
+      const message = `Idle consultant ${skipped.id} in squad ${squad.id} stays live for now: ${skipped.reason}`
+      if (EXPECTED_REFUSALS.has(skipped.reason)) log.info(message)
+      else log.warn(message)
     }
     count += made
     remaining -= made

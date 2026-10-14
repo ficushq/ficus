@@ -185,7 +185,8 @@ describe('storage cleanup routes', () => {
     ).toBe(400)
 
     // The ids previewed are required; a blanket apply is refused.
-    for (const body of [{ days: 90 }, { days: 90, agentIds: [] }])
+    const tooManyIds = Array.from({ length: 101 }, () => randomUUID())
+    for (const body of [{ days: 90 }, { days: 90, agentIds: [] }, { days: 90, agentIds: tooManyIds }])
       expect(
         (await app.request(`/api/squads/${own.id}/idle-consultants/dormant`, json(token, 'POST', body))).status
       ).toBe(400)

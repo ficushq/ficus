@@ -4,6 +4,11 @@ import {
   claimAgentLifecycleSweepCandidates,
   dormantAtEpochMsSql,
   REMOVE_NOW_DORMANT_AT_KEY,
+  REMOVE_NOW_FAILED_DORMANT_AT_KEY,
+  REMOVE_NOW_FAILED_REASON_KEY,
+  REMOVE_NOW_FAILURES_KEY,
+  REMOVE_NOW_LAST_ERROR_KEY,
+  removeNowRequestedSql,
 } from '../../entities/agent-queries'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
@@ -13,6 +18,7 @@ import type { SandboxStopOutcome } from '../sandbox/types'
 import { and, eq, inArray, isNotNull, notInArray, sql } from 'drizzle-orm'
 import { STORAGE_DORMANCY_EXEMPT_AGENT_TYPES, type RemoveDormantAgentsResult } from '@ficus/shared'
 import { agents, db } from '../../db'
+import { publicErrorMessage } from '../../db/errors'
 
 const log = createLogger('agent-cleanup')
 
@@ -213,7 +219,7 @@ async function finalizeDormantAgent(
   agentId: string,
   cutoff: number | null,
   deps: DormantFinalizeDeps
-): Promise<'finalized' | 'pending' | 'changed'> {
+): Promise<'finalized' | 'completion-pending' | 'not-finalized' | 'changed'> {
   const completed = await (
     deps.completePending ??
     ((id) =>
@@ -221,7 +227,7 @@ async function finalizeDormantAgent(
         completeDormancyIfPending(id, { timeoutMs: 0 })
       ))
   )(agentId)
-  if (!completed) return 'pending'
+  if (!completed) return 'completion-pending'
 
   // The sweep list and completion preflight may both be stale after a wake.
   const agent = await Agent.find(agentId, { eager: false })
@@ -234,7 +240,7 @@ async function finalizeDormantAgent(
     ((candidate, expectedDormantAt) =>
       import('../agent/lifecycle').then(({ terminate }) => terminate(candidate, { expectedDormantAt })))
   )(agent, agent.dormantAt)
-  return (await Agent.find(agent.id, { eager: false }))?.status === 'terminated' ? 'finalized' : 'pending'
+  return (await Agent.find(agent.id, { eager: false }))?.status === 'terminated' ? 'finalized' : 'not-finalized'
 }
 
 export async function runDormantAgentSweep(
@@ -266,12 +272,47 @@ export async function runDormantAgentSweep(
   let finalized = 0
   for (const listedAgent of dormant) {
     try {
-      if ((await finalizeDormantAgent(listedAgent.id, cutoff, deps)) === 'finalized') finalized++
+      const outcome = await finalizeDormantAgent(listedAgent.id, cutoff, deps)
+      if (outcome === 'finalized') finalized++
+      else if (outcome === 'completion-pending')
+        await recordRemoveNowFailure(listedAgent.id, 'Stopping the agent has not finished yet.')
+      else if (outcome === 'not-finalized')
+        await recordRemoveNowFailure(listedAgent.id, 'The agent could not be removed.')
     } catch (error) {
       log.warn(`Dormant retention cleanup remains pending for agent ${listedAgent.id}`, error)
+      await recordRemoveNowFailure(listedAgent.id, publicErrorMessage(error)).catch(() => {})
     }
   }
   return finalized
+}
+
+/** Failed attempts allowed for an operator "remove now" before it is given up and reported. */
+export const REMOVE_NOW_MAX_ATTEMPTS = 5
+
+/**
+ * Count a failed attempt against an operator "remove now" request (only while
+ * the request still matches the agent's dormancy episode). After
+ * REMOVE_NOW_MAX_ATTEMPTS the mark is cleared so the agent stops showing as
+ * Removing…, and the last reason is kept for the storage view. Ordinary
+ * retention removal is unaffected and keeps retrying.
+ */
+async function recordRemoveNowFailure(agentId: string, reason: string): Promise<void> {
+  const attempts = sql`(COALESCE((${agents.metadata}->>${REMOVE_NOW_FAILURES_KEY})::int, 0) + 1)`
+  const [row] = await db
+    .update(agents)
+    .set({
+      metadata: sql`CASE WHEN ${attempts} >= ${REMOVE_NOW_MAX_ATTEMPTS}
+        THEN (COALESCE(${agents.metadata}, '{}'::jsonb) - ${REMOVE_NOW_DORMANT_AT_KEY}::text - ${REMOVE_NOW_FAILURES_KEY}::text - ${REMOVE_NOW_LAST_ERROR_KEY}::text)
+          || jsonb_build_object(${REMOVE_NOW_FAILED_REASON_KEY}::text, ${reason}::text, ${REMOVE_NOW_FAILED_DORMANT_AT_KEY}::text, ${dormantAtEpochMsSql})
+        ELSE COALESCE(${agents.metadata}, '{}'::jsonb)
+          || jsonb_build_object(${REMOVE_NOW_FAILURES_KEY}::text, ${attempts}, ${REMOVE_NOW_LAST_ERROR_KEY}::text, ${reason}::text)
+        END`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(agents.id, agentId), eq(agents.status, 'dormant'), removeNowRequestedSql))
+    .returning({ metadata: agents.metadata })
+  if (row && (row.metadata as Record<string, unknown> | null)?.[REMOVE_NOW_FAILED_REASON_KEY] !== undefined)
+    log.warn(`Gave up removing dormant agent ${agentId} now after ${REMOVE_NOW_MAX_ATTEMPTS} attempts: ${reason}`)
 }
 
 /**
@@ -287,7 +328,7 @@ export async function requestDormantRemoval(agentIds: string[]): Promise<RemoveD
   const marked = await db
     .update(agents)
     .set({
-      metadata: sql`COALESCE(${agents.metadata}, '{}'::jsonb) || jsonb_build_object(${REMOVE_NOW_DORMANT_AT_KEY}::text, ${dormantAtEpochMsSql})`,
+      metadata: sql`(COALESCE(${agents.metadata}, '{}'::jsonb) - ${REMOVE_NOW_FAILURES_KEY}::text - ${REMOVE_NOW_LAST_ERROR_KEY}::text - ${REMOVE_NOW_FAILED_REASON_KEY}::text - ${REMOVE_NOW_FAILED_DORMANT_AT_KEY}::text) || jsonb_build_object(${REMOVE_NOW_DORMANT_AT_KEY}::text, ${dormantAtEpochMsSql})`,
       updatedAt: new Date(),
     })
     .where(

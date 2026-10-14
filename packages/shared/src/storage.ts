@@ -12,6 +12,8 @@ export interface StorageAgent {
   createdAt: string | null
   /** An operator asked to remove this dormant agent now; the background sweep has not finished yet. */
   removalPending?: boolean
+  /** The last "remove now" request for this dormancy was given up after repeated failures. */
+  removalError?: string
 }
 
 /** Read-only, approximate allocated-byte accounting for VM sandbox machines. */
