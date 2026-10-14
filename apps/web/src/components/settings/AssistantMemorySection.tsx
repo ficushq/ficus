@@ -128,7 +128,7 @@ export function AssistantMemorySection({ onboarding = false }: { onboarding?: bo
           <h4 className="font-medium text-primary">OpenAI API services</h4>
           <p className="mt-1 text-sm text-muted">
             {onboarding
-              ? 'These features need an OpenAI API key, separate from a ChatGPT subscription. API usage is billed by OpenAI.'
+              ? 'These features need an OpenAI API key, separate from a ChatGPT subscription. API usage is billed by OpenAI. The same key can also run decision models.'
               : 'Use an OpenAI API key for realtime sessions, dictation, and embeddings. Ficus’s ChatGPT subscription login under AI Providers does not supply this key. These features use your API account and incur API usage charges.'}
           </p>
           {!onboarding && (
