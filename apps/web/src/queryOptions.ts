@@ -161,6 +161,13 @@ export const queries = {
     list: () => queryOptions({ queryKey: queryKeys.workflows.list(), queryFn: client.workflows.list }),
     run: (id: string) =>
       queryOptions({ queryKey: queryKeys.workflows.run(id), queryFn: () => client.workflows.run(id) }),
+    /** A handoff file's bytes; attachments never change, so one fetch serves every later view. */
+    attachment: (workStreamId: string, attachmentId: string) =>
+      queryOptions({
+        queryKey: queryKeys.workflowAttachments.file(workStreamId, attachmentId),
+        queryFn: ({ signal }) => client.workflows.downloadAttachment(workStreamId, attachmentId, signal),
+        staleTime: Infinity,
+      }),
   },
   themePresets: {
     list: (scope?: ThemePresetScope) =>

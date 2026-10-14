@@ -33,6 +33,7 @@ import { ExpandableMarkdown } from './ExpandableMarkdown'
 import { MarkdownContent } from './MarkdownContent'
 import { Modal } from './Modal'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
+import { AttachmentView, HANDOFF_TAB, ReviewTabs } from './WorkflowReviewAttachments'
 import { ChatIcon, PullRequestIcon, WorkStreamIcon } from './icons'
 
 /** At this width the review splits into the document and a decision rail; below it, a bottom sheet. */
@@ -164,46 +165,87 @@ function ReviewLayout({
   })
   const decision: DecisionState = { gate, run, notes, setNotes, advance }
   const navigation = { onOpenAgent, onOpenWorkStream }
+  // Each source attempt's own files: a re-run after a send-back shows only what that attempt attached.
+  const attachments = gate.sources.flatMap((source) => run.attachments?.[String(source.id)] ?? [])
+  const [tab, setTab] = useState(HANDOFF_TAB)
+  const openFile = attachments.find((attachment) => attachment.id === tab)
+  const tabsId = useId()
+  const documentColumn = useRef<HTMLDivElement>(null)
+  const selectTab = (id: string) => {
+    setTab(id)
+    // Each tab is its own document: open it at the top, not at the last one's scroll position.
+    if (documentColumn.current) documentColumn.current.scrollTop = 0
+  }
+  const handoff = (
+    <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
+      {!wide && (
+        <div className="mb-6">
+          <ReviewSummary stream={stream} run={run} gate={gate} {...navigation} />
+        </div>
+      )}
+      {gate.step.instructions.trim() && (
+        <section aria-label="Review instructions" className="rounded-xl bg-surface-secondary px-4 py-3.5 sm:px-5">
+          <h2 className="mb-1.5 text-xs font-medium text-muted">Instructions</h2>
+          <ExpandableMarkdown label="instructions" markdownClassName="text-sm leading-relaxed text-secondary">
+            {gate.step.instructions}
+          </ExpandableMarkdown>
+        </section>
+      )}
+      {gate.decisionNote && (
+        <section
+          aria-label="Automatic decision"
+          className="mt-4 rounded-xl border border-th-border px-4 py-3.5 sm:px-5"
+        >
+          <h2 className="mb-1.5 text-xs font-medium text-muted">Automatic decision</h2>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-secondary">{gate.decisionNote}</p>
+        </section>
+      )}
+      <ReviewDocument run={run} sources={gate.sources} />
+      {!wide && gate.history.length > 0 && (
+        <div className="mt-10 border-t border-panel-border pt-5">
+          <DecisionHistory gate={gate} />
+        </div>
+      )}
+    </div>
+  )
   return (
     <div
       data-review-layout={wide ? 'columns' : 'stacked'}
       className={clsx('flex min-h-0 flex-1', wide ? 'flex-row' : 'flex-col')}
     >
       <div
+        ref={documentColumn}
         data-review-document
+        // The column that scrolls: lazy content (PDF pages) measures its look-ahead against it.
+        data-scroll-container
         tabIndex={-1}
         className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain outline-none"
       >
-        <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
-          {!wide && (
-            <div className="mb-6">
-              <ReviewSummary stream={stream} run={run} gate={gate} {...navigation} />
-            </div>
-          )}
-          {gate.step.instructions.trim() && (
-            <section aria-label="Review instructions" className="rounded-xl bg-surface-secondary px-4 py-3.5 sm:px-5">
-              <h2 className="mb-1.5 text-xs font-medium text-muted">Instructions</h2>
-              <ExpandableMarkdown label="instructions" markdownClassName="text-sm leading-relaxed text-secondary">
-                {gate.step.instructions}
-              </ExpandableMarkdown>
-            </section>
-          )}
-          {gate.decisionNote && (
-            <section
-              aria-label="Automatic decision"
-              className="mt-4 rounded-xl border border-th-border px-4 py-3.5 sm:px-5"
+        {attachments.length === 0 ? (
+          handoff
+        ) : (
+          <>
+            <ReviewTabs
+              idPrefix={tabsId}
+              attachments={attachments}
+              selected={openFile?.id ?? HANDOFF_TAB}
+              onSelect={selectTab}
+            />
+            <div
+              role="tabpanel"
+              id={`${tabsId}-panel`}
+              aria-labelledby={`${tabsId}-tab-${openFile?.id ?? HANDOFF_TAB}`}
             >
-              <h2 className="mb-1.5 text-xs font-medium text-muted">Automatic decision</h2>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-secondary">{gate.decisionNote}</p>
-            </section>
-          )}
-          <ReviewDocument run={run} sources={gate.sources} />
-          {!wide && gate.history.length > 0 && (
-            <div className="mt-10 border-t border-panel-border pt-5">
-              <DecisionHistory gate={gate} />
+              {openFile ? (
+                <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
+                  <AttachmentView key={openFile.id} workStreamId={stream.id} attachment={openFile} />
+                </div>
+              ) : (
+                handoff
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
       {wide ? (
         <aside

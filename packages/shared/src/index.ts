@@ -61,6 +61,7 @@ export * from './union-issues'
 export * from './workflow-schema-reference'
 export * from './squad-event-rules'
 export * from './workflow-runtime'
+export * from './workflow-attachments'
 export * from './workflow-decision'
 
 export * from './workflow-usage'

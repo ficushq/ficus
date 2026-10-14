@@ -132,6 +132,8 @@ outcomes:
   revise: { returnTo: draft, afterRework: follow-graph }
 ```
 
+The review shows the handoff of the attempt being reviewed. When that attempt attached files with `--attach` (see below), the review adds a tab for each file after **Handoff**: Markdown reads as a document, text and code as highlighted blocks, PDFs page by page, and PNG, JPEG, GIF and WebP images inline. Other files (HTML, SVG, PDFs that are damaged or password-protected, and anything over 1 MB of text) offer a download instead. A step that is sent back and run again shows only the files its new attempt attached.
+
 A human gate waits for its designated decision. An ordinary question answer or generic unblock is not approval. You can place several gates at different points, independently of the final delivery policy.
 
 ## Handoffs and rework
@@ -410,6 +412,8 @@ ficus workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'FICUS_CO
 }
 FICUS_COMMAND
 ```
+
+To hand off files a reviewer should read (a design doc, a report, a screenshot), add `--attach PATH` once per file when completing a step: `ficus workstream advance STREAM_ID --stdin --attach docs/design.md <<'FICUS_COMMAND'`. Each file is uploaded to your attempt before the command is sent, and nothing is advanced if an upload fails. An attempt can attach at most 10 files of up to 10 MB each, and they count toward the instance's attachment storage limit. Attached files are kept for as long as the work stream exists, including after it is done or canceled, and are removed when it is deleted. Keep `evidence` a short summary that names the attached files.
 
 The numbers above are examples; always use the current run's values. For short commands you can also use single-quoted JSON with `--content`. Saved command files remain supported via `--file`. Reuse the request ID only when retrying that exact command. Parallel branches can change the run version; re-read on conflict and proceed only if your attempt remains current. Do not advance by changing the legacy assignee or status directly.
 

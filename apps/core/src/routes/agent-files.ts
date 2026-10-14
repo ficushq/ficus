@@ -7,6 +7,7 @@ import type { Identity } from '../services/rbac'
 import { InvalidAttachmentError, resolveAttachmentScope } from '../services/attachments/agent-scope'
 import { deleteMaterializedAttachment, materializeAttachmentBytes } from '../services/attachments/materialize'
 import { deleteAgentAttachmentBlob } from '../services/attachments/blob-storage'
+import { downloadDisposition, readBoundedMultipart } from '../services/attachments/http'
 import { getSettingsStore } from '../services/settings'
 import { getAgentPrivateStoragePath } from '../services/sandbox/ensure'
 import { ensureAgentSandbox } from '../services/sandbox/agent-warmup'
@@ -69,39 +70,6 @@ async function materializeForTarget(target: Agent, attachment: AgentFileAttachme
     storedName: attachment.storedName,
     content: bytes.toString('base64'),
   })
-}
-
-async function readBoundedMultipart(request: Request, maxBytes: number): Promise<FormData> {
-  if (!request.body) throw new Error('Missing multipart body')
-  const reader = request.body.getReader()
-  const chunks: Uint8Array[] = []
-  let total = 0
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      total += value.byteLength
-      if (total > maxBytes) {
-        await reader.cancel()
-        throw new Error('ATTACHMENT_TOO_LARGE')
-      }
-      chunks.push(value)
-    }
-  } finally {
-    reader.releaseLock()
-  }
-  const bytes = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return new Response(bytes, { headers: { 'content-type': request.headers.get('content-type') ?? '' } }).formData()
-}
-
-function downloadDisposition(filename: string): string {
-  const fallback = filename.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '') || 'attachment'
-  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`
 }
 
 async function findAuthorized(agentId: string, attachmentId: string) {

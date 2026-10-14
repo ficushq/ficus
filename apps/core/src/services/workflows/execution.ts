@@ -66,6 +66,20 @@ export const actorKey = (identity: Identity) =>
       : identity.type === 'system'
         ? `system:${identity.systemTokenId}`
         : 'legacy'
+/** Whether this identity is the agent bound to the attempt: the one that may complete it or attach its files. */
+export function isAttemptAgent(run: Pick<Run, 'attemptAgents'>, attemptId: number, identity: Identity): boolean {
+  return identity.type === 'agent' && run.attemptAgents[String(attemptId)] === identity.agentId
+}
+
+/** A paused stream takes no handoffs (only revisions), and a finished one takes nothing. */
+export function assertStreamAcceptsHandoffs(
+  stream: Pick<Stream, 'pause' | 'status'>,
+  { paused = false }: { paused?: boolean } = {}
+): void {
+  if (stream.pause && !paused) throw new WorkflowError('Work stream is paused; resume before advancing', 409)
+  if (['done', 'canceled'].includes(stream.status)) throw new WorkflowError('Stream is terminal', 409)
+}
+
 export async function getFlow(id: string) {
   return (await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id)))[0] ?? null
 }
@@ -400,9 +414,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         ...(command.action === 'revise' ? revisionOutcomeUpdates(run, prior.version) : {}),
       }
     }
-    if (stream.pause && command.action !== 'revise')
-      throw new WorkflowError('Work stream is paused; resume before advancing', 409)
-    if (['done', 'canceled'].includes(stream.status)) throw new WorkflowError('Stream is terminal', 409)
+    assertStreamAcceptsHandoffs(stream, { paused: command.action === 'revise' })
     if (command.expectedVersion !== run.version) throw new WorkflowError('Stale flow version', 409)
     const attempt = run.state.attempts.find((a) => a.id === command.attemptId)
     const step = attempt?.step ?? run.state.definition.steps.find((s) => s.id === attempt?.stepId)
@@ -448,7 +460,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
             !stream.assignedReviewerIds.includes(identity.userId))
         )
           throw new WorkflowError('This step requires its designated human approver', 403)
-      } else if (identity.type === 'agent' && run.attemptAgents[String(command.attemptId)] !== identity.agentId)
+      } else if (identity.type === 'agent' && !isAttemptAgent(run, command.attemptId, identity))
         throw new WorkflowError('Only the active participant can advance this attempt', 403)
       else if (identity.type !== 'agent' && !(await hasPermission(identity, 'workstreams:revise-flow', stream.squadId)))
         throw new WorkflowError('Flow intervention requires management permission', 403)

@@ -8,15 +8,31 @@ import { descriptorRelativeFs as descriptor } from './materialize'
 const log = createLogger('attachment-blob-storage')
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const COLLECTION = 'agent-file-attachments'
+
+/** A home-directory collection of immutable blobs, one directory per owner (`<home>/<directory>/<owner>/<id>`). */
+interface BlobCollection {
+  directory: string
+  ownerLabel: string
+}
+const AGENT_FILES: BlobCollection = { directory: 'agent-file-attachments', ownerLabel: 'agent' }
+const WORKFLOW_ATTACHMENTS: BlobCollection = { directory: 'workflow-attachments', ownerLabel: 'work stream' }
 
 function normalizeUuid(value: string, label: string): string {
   if (!UUID_RE.test(value)) throw new Error(`Invalid ${label} id`)
   return value.toLowerCase()
 }
 
+function collectionBlobPath(collection: BlobCollection, ownerId: string, attachmentId: string): string {
+  return join(
+    getHomeDir(),
+    collection.directory,
+    normalizeUuid(ownerId, collection.ownerLabel),
+    normalizeUuid(attachmentId, 'attachment')
+  )
+}
+
 export function agentAttachmentBlobPath(agentId: string, attachmentId: string): string {
-  return join(getHomeDir(), COLLECTION, normalizeUuid(agentId, 'agent'), normalizeUuid(attachmentId, 'attachment'))
+  return collectionBlobPath(AGENT_FILES, agentId, attachmentId)
 }
 
 export function sha256Hex(bytes: Uint8Array): string {
@@ -34,26 +50,37 @@ export async function writeAgentAttachmentBlob(
   bytes: Uint8Array,
   testHooks: BlobStorageTestHooks = {}
 ): Promise<string> {
+  return writeCollectionBlob(AGENT_FILES, agentId, attachmentId, bytes, testHooks)
+}
+
+async function writeCollectionBlob(
+  blobs: BlobCollection,
+  ownerId: string,
+  attachmentId: string,
+  bytes: Uint8Array,
+  testHooks: BlobStorageTestHooks = {}
+): Promise<string> {
+  const collectionName = blobs.directory
   const homePath = getHomeDir()
-  const normalizedAgentId = normalizeUuid(agentId, 'agent')
+  const normalizedOwnerId = normalizeUuid(ownerId, blobs.ownerLabel)
   const normalizedAttachmentId = normalizeUuid(attachmentId, 'attachment')
-  const collectionPath = join(homePath, COLLECTION)
-  const agentPath = join(collectionPath, normalizedAgentId)
-  const finalPath = join(agentPath, normalizedAttachmentId)
+  const collectionPath = join(homePath, collectionName)
+  const ownerPath = join(collectionPath, normalizedOwnerId)
+  const finalPath = join(ownerPath, normalizedAttachmentId)
   let published = false
   const home = openSync(homePath, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
   try {
     descriptor.assertHeldPath(home, homePath)
-    descriptor.mkdirAt(home, COLLECTION)
+    descriptor.mkdirAt(home, collectionName)
     const collectionIdentity = descriptor.pathIdentity(collectionPath)
-    const collection = descriptor.openHeldDirectory(home, homePath, COLLECTION, collectionIdentity)
+    const collection = descriptor.openHeldDirectory(home, homePath, collectionName, collectionIdentity)
     try {
-      descriptor.mkdirAt(collection, normalizedAgentId)
-      const agentIdentity = descriptor.pathIdentity(agentPath)
-      const directory = descriptor.openHeldDirectory(collection, collectionPath, normalizedAgentId, agentIdentity)
+      descriptor.mkdirAt(collection, normalizedOwnerId)
+      const ownerIdentity = descriptor.pathIdentity(ownerPath)
+      const directory = descriptor.openHeldDirectory(collection, collectionPath, normalizedOwnerId, ownerIdentity)
       try {
         await testHooks.afterAgentDirectoryOpened?.()
-        descriptor.assertHeldPath(directory, agentPath)
+        descriptor.assertHeldPath(directory, ownerPath)
         const temporary = descriptor.createTemporaryFile(homePath)
         let stagingAnchored = false
         let stagingRemoved = false
@@ -78,7 +105,7 @@ export async function writeAgentAttachmentBlob(
           fsyncSync(temporary.fd)
           descriptor.assertHeldPath(home, homePath)
           descriptor.assertHeldPath(collection, collectionPath)
-          descriptor.assertHeldPath(directory, agentPath)
+          descriptor.assertHeldPath(directory, ownerPath)
           descriptor.assertHeldPath(temporary.fd, temporary.path)
           if (testHooks.afterPrePublishValidation) {
             await testHooks.afterPrePublishValidation(temporary.basename)
@@ -141,7 +168,8 @@ export async function writeAgentAttachmentBlob(
 }
 
 function openBlobDescriptors(
-  agentId: string,
+  blobs: BlobCollection,
+  ownerId: string,
   attachmentId: string,
   includeFile = true
 ): {
@@ -150,16 +178,17 @@ function openBlobDescriptors(
   directory: number
   file: number
 } {
+  const collectionName = blobs.directory
   const homePath = getHomeDir()
-  const normalizedAgentId = normalizeUuid(agentId, 'agent')
+  const normalizedOwnerId = normalizeUuid(ownerId, blobs.ownerLabel)
   const normalizedAttachmentId = normalizeUuid(attachmentId, 'attachment')
-  const collectionPath = join(homePath, COLLECTION)
+  const collectionPath = join(homePath, collectionName)
   const home = openSync(homePath, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
   try {
     descriptor.assertHeldPath(home, homePath)
-    const collection = descriptor.openHeldDirectory(home, homePath, COLLECTION)
+    const collection = descriptor.openHeldDirectory(home, homePath, collectionName)
     try {
-      const directory = descriptor.openHeldDirectory(collection, collectionPath, normalizedAgentId)
+      const directory = descriptor.openHeldDirectory(collection, collectionPath, normalizedOwnerId)
       try {
         const file = includeFile
           ? descriptor.openAt(
@@ -189,7 +218,17 @@ export async function readVerifiedAgentAttachmentBlob(
   byteSize: number,
   sha256: string
 ): Promise<Buffer> {
-  const opened = openBlobDescriptors(agentId, attachmentId)
+  return readVerifiedCollectionBlob(AGENT_FILES, agentId, attachmentId, byteSize, sha256)
+}
+
+async function readVerifiedCollectionBlob(
+  blobs: BlobCollection,
+  ownerId: string,
+  attachmentId: string,
+  byteSize: number,
+  sha256: string
+): Promise<Buffer> {
+  const opened = openBlobDescriptors(blobs, ownerId, attachmentId)
   try {
     descriptor.assertSafeRegularFile(opened.file, byteSize)
     const bytes = readFileSync(opened.file)
@@ -206,10 +245,49 @@ export async function readVerifiedAgentAttachmentBlob(
 }
 
 export async function deleteAgentAttachmentBlob(agentId: string, attachmentId: string): Promise<void> {
-  const opened = openBlobDescriptors(agentId, attachmentId, false)
+  return deleteCollectionBlob(AGENT_FILES, agentId, attachmentId)
+}
+
+async function deleteCollectionBlob(blobs: BlobCollection, ownerId: string, attachmentId: string): Promise<void> {
+  const opened = openBlobDescriptors(blobs, ownerId, attachmentId, false)
   try {
     descriptor.unlinkAt(opened.directory, normalizeUuid(attachmentId, 'attachment'))
   } finally {
     descriptor.closeMaterializationDescriptors([opened.file, opened.directory, opened.collection, opened.home], false)
   }
+}
+
+/** The directory holding one work stream's handoff attachments. */
+export function workflowAttachmentDirectory(workStreamId: string): string {
+  return join(
+    getHomeDir(),
+    WORKFLOW_ATTACHMENTS.directory,
+    normalizeUuid(workStreamId, WORKFLOW_ATTACHMENTS.ownerLabel)
+  )
+}
+
+/** Workflow handoff attachments: `<home>/workflow-attachments/<work stream>/<attachment>`. */
+export function workflowAttachmentBlobPath(workStreamId: string, attachmentId: string): string {
+  return collectionBlobPath(WORKFLOW_ATTACHMENTS, workStreamId, attachmentId)
+}
+
+export async function writeWorkflowAttachmentBlob(
+  workStreamId: string,
+  attachmentId: string,
+  bytes: Uint8Array
+): Promise<string> {
+  return writeCollectionBlob(WORKFLOW_ATTACHMENTS, workStreamId, attachmentId, bytes)
+}
+
+export async function readVerifiedWorkflowAttachmentBlob(
+  workStreamId: string,
+  attachmentId: string,
+  byteSize: number,
+  sha256: string
+): Promise<Buffer> {
+  return readVerifiedCollectionBlob(WORKFLOW_ATTACHMENTS, workStreamId, attachmentId, byteSize, sha256)
+}
+
+export async function deleteWorkflowAttachmentBlob(workStreamId: string, attachmentId: string): Promise<void> {
+  return deleteCollectionBlob(WORKFLOW_ATTACHMENTS, workStreamId, attachmentId)
 }

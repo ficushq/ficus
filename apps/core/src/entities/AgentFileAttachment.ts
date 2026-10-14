@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import { agentAttachmentRoot, buildAgentAttachmentPath, sanitizeAgentAttachmentName } from '@ficus/shared'
 import { db } from '../db'
-import { agentFileAttachments, inboxAttachments } from '../db/schema'
+import { agentFileAttachments } from '../db/schema'
 import { getSettingsStore } from '../services/settings'
 import { resolveWorkspaceLayout } from '../services/sandbox/workspace-layout'
 import {
@@ -11,6 +11,7 @@ import {
   sha256Hex,
   writeAgentAttachmentBlob,
 } from '../services/attachments/blob-storage'
+import { lockAttachmentStorage, totalAttachmentStorageBytes } from '../services/attachments/storage-quota'
 
 export type AgentFileAttachmentRow = InferSelectModel<typeof agentFileAttachments>
 type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -101,7 +102,7 @@ export class AgentFileAttachment {
       const result = await db.transaction(async (tx) => {
         // Instance-global quota is correct only while each deployment serves one tenant.
         // Replace this with a tenant-scoped lock/accounting key before multi-tenant hosting.
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('attachment-storage-quota'))`)
+        await lockAttachmentStorage(tx)
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${normalizedInput.id}))`)
         const byteSize = normalizedInput.bytes.byteLength
         const sha256 = sha256Hex(normalizedInput.bytes)
@@ -224,14 +225,9 @@ export class AgentFileAttachment {
     return row ? new AgentFileAttachment(row) : null
   }
 
+  /** Every stored attachment's bytes (inbox, chat files and workflow handoff files share one quota). */
   static async totalStorageBytes(executor: DbExecutor = db): Promise<number> {
-    const [[agent], [inbox]] = await Promise.all([
-      executor
-        .select({ total: sql<number>`coalesce(sum(${agentFileAttachments.byteSize}), 0)` })
-        .from(agentFileAttachments),
-      executor.select({ total: sql<number>`coalesce(sum(${inboxAttachments.byteSize}), 0)` }).from(inboxAttachments),
-    ])
-    return Number(agent?.total ?? 0) + Number(inbox?.total ?? 0)
+    return totalAttachmentStorageBytes(executor)
   }
 
   async readVerifiedBlob(): Promise<Buffer> {

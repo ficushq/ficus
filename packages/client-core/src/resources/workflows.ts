@@ -7,6 +7,7 @@ import type {
   WorkflowPreset,
   WorkflowRun,
   WorkflowOutcomeBinding,
+  WorkflowAttemptAttachment,
   WorkflowUsage,
   WorkflowSource,
   WorkStreamWait,
@@ -29,6 +30,31 @@ export interface WorkflowRunDetail {
   openWaits?: WorkStreamWait[]
   integrationDeliveries?: IntegrationDeliveryView[]
   usage?: WorkflowUsage
+  /** Files each attempt handed off, keyed by attempt id (absent on servers without attachments). */
+  attachments?: Record<string, WorkflowAttemptAttachment[]>
+}
+
+/** Read a whole response body; the transport's stream reader is the one binary seam both hosts implement. */
+async function readAll(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      total += value.byteLength
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
 }
 export function workflowsResource(t: Transport) {
   const runPath = (id: string) => `/workflows/runs/${encodeURIComponent(id)}`
@@ -43,6 +69,11 @@ export function workflowsResource(t: Transport) {
     outputs: () => t.request<IntegrationOutputDescriptor[]>('/integrations/outputs'),
     list: () => t.request<WorkflowCatalogEntry[]>('/workflows'),
     run: (id: string) => t.request<WorkflowRunDetail | null>(runPath(id)),
+    /** The bytes of a file an attempt handed off (see `WorkflowRunDetail.attachments`). */
+    downloadAttachment: async (id: string, attachmentId: string, signal?: AbortSignal) =>
+      readAll(
+        await t.openStream(`${runPath(id)}/attachments/${encodeURIComponent(attachmentId)}`, { method: 'GET', signal })
+      ),
     create: (preset: WorkflowPreset) => t.request<WorkflowCatalogEntry>('/workflows', { method: 'POST', body: preset }),
     update: (id: string, revision: string, preset: WorkflowPreset) =>
       t.request<WorkflowCatalogEntry>(`/workflows/${encodeURIComponent(id)}`, {

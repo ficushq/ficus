@@ -1717,6 +1717,34 @@ export const workStreamFlowTransitions = pgTable(
   ]
 )
 
+/**
+ * Files an agent handed off with a flow attempt (a design doc, a report, a screenshot), snapshotted at
+ * handoff so a reviewer can read them after the workspace moves on. Attempt ids live in the run JSONB.
+ */
+export const workflowAttemptAttachments = pgTable(
+  'workflow_attempt_attachments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workStreamId: uuid('work_stream_id')
+      .notNull()
+      .references(() => workStreams.id, { onDelete: 'cascade' }),
+    attemptId: integer('attempt_id').notNull(),
+    filename: varchar('filename', { length: 255 }).notNull(),
+    /** The workspace path as the agent gave it; display only. */
+    path: text('path').notNull(),
+    contentType: varchar('content_type', { length: 255 }).notNull(),
+    byteSize: integer('byte_size').notNull(),
+    sha256: varchar('sha256', { length: 64 }).notNull(),
+    storagePath: text('storage_path').notNull(),
+    /** Provenance only: the bound agent may later be deleted. */
+    uploadedByAgentId: uuid('uploaded_by_agent_id').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  // One file per path per attempt: a retried upload finds it, a changed one replaces it. Its
+  // (work stream, attempt) prefix also serves per-stream and per-attempt lookups.
+  (table) => [uniqueIndex('idx_workflow_attempt_attachments_path').on(table.workStreamId, table.attemptId, table.path)]
+)
+
 export const workStreamOrderSnapshots = pgTable(
   'work_stream_order_snapshots',
   {

@@ -2272,6 +2272,9 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       await assertWorktreeCleanupMutable(tx, this.id)
       await tx.delete(workStreams).where(eq(workStreams.id, this.id))
     })
+    // Handoff files live as long as their stream: the rows cascade above, the bytes go once that commits.
+    const { removeWorkflowAttachmentDirectory } = await import('../services/workflows/attachments')
+    await removeWorkflowAttachmentDirectory(this.id)
     eventEmitter.emit('workStream.deleted', { workStreamId: this.id, squadId: this.squadId })
     for (const userId of directSubscriberIds) {
       eventEmitter.emit('liveActivity.interestChanged', { userId })
