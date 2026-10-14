@@ -44,8 +44,11 @@ without automatically invalidating every previous review.
 
 ## Configure the agreed choices
 
-Use the declarative schema documented by `ficus workflow get`, not prose as a
-substitute for executable steps. A source is either `{kind: "preset", id: ...}`
+Use the declarative schema, not prose as a substitute for executable steps.
+`ficus workflow schema` lists the step kinds and `ficus workflow schema <kind>`
+prints a kind's required and optional fields with allowed values. The full
+field reference with examples is this skill's `reference.md` support file;
+existing presets (`ficus workflow get <id>`) are working examples. A source is either `{kind: "preset", id: ...}`
 (with optional typed customizations) or `{kind: "inline", definition: ...}`.
 Agent types, participant IDs, models, sessions, steps, human gates, outcomes,
 returns, limits, and delivery policy belong in the definition. One participant
@@ -164,7 +167,7 @@ Blocking questions and manual requests from flow agents default to their own act
 
 Whole-stream pause interrupts work until explicit resume; park separately to release capacity.
 
-See `docs/wiki/workflows.md` for the reference. Flow `subscriptions` and squad `integrationTriggers` are supported. Graph integration connections visualize those definitions; do not invent additional graph attachment fields outside the accepted schema.
+See this skill's `reference.md` for the field reference. Flow `subscriptions` and squad `integrationTriggers` are supported. Graph integration connections visualize those definitions; do not invent additional graph attachment fields outside the accepted schema.
 
 ## Route with a decision step
 
@@ -225,6 +228,63 @@ output, and it cannot be a `returnTo` target.
   Without one they take `unavailable`, or wait for a reviewer. Saving or creating a flow with
   decision steps and no such model returns a `warnings` entry saying so; tell the user.
 
+## Gate with a human approval
+
+A human-approval step (`kind: human-approval`) waits until a person chooses one of its outcomes;
+no agent runs. It needs `id`, `kind`, `instructions` (what the approver checks), `output` (what
+the decision records), and `outcomes`. `approver` is optional:
+
+- `assigned-reviewers` (default): one of the work stream's assigned reviewers who has review
+  permission (`workstreams:review`) decides; with nobody assigned, anyone with review permission.
+- `reviewers`: anyone with review permission in the squad, assigned or not.
+
+This design gate sits between a design step and implementation. Approval moves on to
+implementation; requested changes send the design back for revision and then return to the gate.
+Preview it with `ficus workflow resolve` before using it:
+
+```bash
+ficus workflow resolve --squad <squad-id> --stdin <<'FICUS_FLOW'
+kind: inline
+definition:
+  schemaVersion: 1
+  name: Design approval before implementation
+  participants:
+    architect: { agentTypeId: architect, session: reuse-within-stream }
+    engineer: { agentTypeId: engineer, session: reuse-within-stream }
+  entry: design
+  routing: { mode: guided, returnTo: declared-only, delegation: disabled }
+  limits: { maxDelegations: 0, onLimit: request-owner-input }
+  steps:
+    - id: design
+      kind: agent
+      participant: architect
+      instructions: Write a design for the request with the approach, risks, and test plan.
+      output: A design document ready for approval.
+      outcomes:
+        ready: { next: design-approval }
+    - id: design-approval
+      kind: human-approval
+      approver: assigned-reviewers
+      instructions: Review the design. Approve it, or request changes with specific feedback.
+      output: The approval decision and any requested changes.
+      outcomes:
+        approved: { next: implement }
+        changes-requested: { returnTo: design }
+    - id: implement
+      kind: agent
+      participant: engineer
+      instructions: Implement the approved design and verify it with tests.
+      output: The committed change and its test evidence.
+      outcomes:
+        done: { next: finish }
+  completion: { mode: pr-merge }
+FICUS_FLOW
+```
+
+To add the gate to a preset instead, use a `put-step` customization for the approval step and a
+`set-outcome` that points the design step's outcome at it, in one batch. A question answer or an
+unblock never approves the gate; only its outcome does.
+
 ## Integration events
 
 For linked PR and issue updates, enable **Code hosting** in the workflow editor
@@ -245,7 +305,7 @@ prefix.
 
 Ask which external events should create new work versus update existing work. Use `ficus integration outputs` to inspect accepted output names, versions, and data fields. Add flow `subscriptions` for updates to existing work, selecting local participants/steps, active attempts, or delivery-owner. Match explicit typed event fields against stream metadata; missing bindings do not match. Choose retain or manager handling for an inactive consumer. Notifications do not approve gates or clear questions.
 
-Optional squad metadata `integrationTriggers` can create a saved or inline flow from a matched output (for example issue.assigned or pull_request.review_requested). Use explicit repository and assignee/reviewer matches, and map resource identities into stream metadata atomically. Repeated events reuse the trigger/resource receipt. Do not create a mandatory reviewer or wake unused participants. Explain that flows with GitHub subscriptions own their GitHub notifications, so include all outputs the user wants. See docs/wiki/workflows.md for complete examples.
+Optional squad metadata `integrationTriggers` can create a saved or inline flow from a matched output (for example issue.assigned or pull_request.review_requested). Use explicit repository and assignee/reviewer matches, and map resource identities into stream metadata atomically. Repeated events reuse the trigger/resource receipt. Do not create a mandatory reviewer or wake unused participants. Explain that flows with GitHub subscriptions own their GitHub notifications, so include all outputs the user wants. See this skill's `reference.md` for complete examples.
 
 For GitHub without webhooks, PR metadata and subscription bindings establish
 polling watches automatically. Issue-assignment triggers need an exact repository
@@ -254,5 +314,4 @@ matching only an assignee. The initial poll baselines old assignments. Do not
 promise historical replay or wildcard repository discovery. Polling uses authorized
 GitHub integration connections: `source.connectionId` selects an attached account
 for a subscription or trigger, and `codeHost.connectionId` (or legacy `github.connectionId`) selects one for work-stream
-metadata; otherwise the squad default applies. See
-`docs/wiki/workflows.md` for current polling coverage and credential behavior.
+metadata; otherwise the squad default applies.

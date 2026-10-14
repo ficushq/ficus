@@ -97,13 +97,13 @@ An agent-type reference does not grant extra permissions or integration access. 
 
 ## Steps: instructions, results, and decisions
 
-All steps have these fields:
+Agent and human-approval steps have these fields (a decision step has no `output`):
 
 | Field          | Meaning                                                                                                                       |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `id`           | Unique local step ID. Update all references when renaming it.                                                                 |
 | `name`         | Optional display name, 1–200 characters. Cards use this label; connections still use `id`. Omit it to display the ID.         |
-| `kind`         | `agent` (default when omitted) or `human-approval`.                                                                           |
+| `kind`         | `agent` (default when omitted), `human-approval`, or `decision`.                                                              |
 | `instructions` | What to do and how to judge the result; nonempty, up to 64,000 characters.                                                    |
 | `output`       | Expected deliverable or evidence; nonempty, up to 64,000 characters. This is guidance, not a machine-validated output schema. |
 | `outcomes`     | 1–16 named outcomes, each with exactly one transition shape described below.                                                  |
@@ -112,10 +112,10 @@ The graph defines which work runs. There is no per-step required flag: to make a
 
 An **agent** step also requires `participant`. Use distinct participants for writer and reviewer when you want separate agents, even if they use the same agent type. There is no extra independence flag.
 
-A **human-approval** step selects who can approve it:
+A **human-approval** step needs `id`, `kind: human-approval`, `instructions`, `output`, and `outcomes`. Its optional `approver` selects who can approve it:
 
-- `reviewers` (default): any human with `workstreams:review` permission for this squad. Admin and Operator roles include this permission; custom roles can grant it without allowing squad settings changes.
-- `assigned-reviewers`: any one user assigned in the work stream’s **Assigned reviewers** field who also has review permission for this squad. With nobody assigned, any human with review permission can decide. Assigning reviewers on an existing work stream requires `workstreams:update`.
+- `assigned-reviewers` (default): any one user assigned in the work stream’s **Assigned reviewers** field who also has review permission for this squad. With nobody assigned, any human with review permission can decide. Assigning reviewers on an existing work stream requires `workstreams:update`.
+- `reviewers`: any human with `workstreams:review` permission for this squad, whether or not they are assigned. Admin and Operator roles include this permission; custom roles can grant it without allowing squad settings changes.
 
 For example, insert this step before `finish`, and route the preceding step to `approval`:
 
@@ -415,6 +415,8 @@ The numbers above are examples; always use the current run's values. For short c
 In the editor conversation, the assistant's tools are deliberately narrower: read the current draft and apply targeted edits based on its revision. The `edit` tool accepts an atomic `operations` array for adding or updating participants and steps, changing connections, and setting flow options. It preserves everything not mentioned. A full `documentJson` replacement is available for complete redesigns; supply exactly one edit format. The assistant can also call `edit` with `historyAction: "undo"` or `"redo"`, using the same undo history as the preview buttons. `read.history` reports whether each action is available. It can brainstorm freely, but it cannot publish or start work. Valid edits apply automatically in the page and can be undone. Save explicitly to publish the preset. Use the interactive graph for direct edits. **Participants** and **Settings** in its header toggle their panels; selecting a card or arrow opens its inspector. **Make separate** copies a participant’s settings for one step without changing other steps. This is different from authorizing an operator agent to publish through the CLI.
 
 ## Validate before using a flow
+
+Run `ficus workflow schema` to list the step kinds, and `ficus workflow schema human-approval` (or another kind) for that kind's required and optional fields with their allowed values. The command is generated from the same schema the CLI validates with. When a step is invalid, the error names its kind and the field to fix, for example `definition.steps[1]: human-approval step: output is required`; an unknown kind lists the valid kinds.
 
 Check that every step is reachable from `entry` and has a path to `finish`; all participant, step, and subscription targets exist; forward edges have no cycles; rework targets differ from their requesters; parallel branches are distinct and converge correctly; and every successful path includes any mandatory checks. Schema validation catches structural errors, but clear instructions and an appropriate review process still need human judgment.
 

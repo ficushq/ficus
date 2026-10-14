@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import { Command, InvalidArgumentError } from 'commander'
 import { isScalar, parseDocument, visit } from 'yaml'
-import { workflowSourceSchema } from '@ficus/shared'
+import { describeZodIssue, workflowSourceSchema } from '@ficus/shared'
 
 const MAX_INPUT_BYTES = 1024 * 1024
 export interface StructuredInputOptions {
@@ -129,7 +129,7 @@ export async function readStructuredInput(
 }
 // Only fixed schema field names are safe to print. Participant/step IDs and unknown keys are caller data.
 const safeFields = new Set(
-  'action expectedVersion attemptId outcome evidence feedback resume targetStepId resumeAt operations op reason active participant task kind id definition customizations schemaVersion name description scope squadId participants steps entry routing limits completion mode agentTypeId instructions output outcomes input questions routes when otherwise unavailable type question op probability equals minConfidence level levels label options'.split(
+  'action expectedVersion attemptId outcome evidence feedback resume targetStepId resumeAt operations op reason active participant task kind id definition customizations schemaVersion name description scope squadId participants steps entry routing limits completion mode agentTypeId instructions output outcomes input questions routes when otherwise unavailable type question op probability equals minConfidence level levels label options approver tier session next parallel join returnTo afterRework maxStepAttempts maxDelegations maxParallelAttempts onLimit followChanges changeEventsTo step ids changes transition revision'.split(
     ' '
   )
 )
@@ -149,23 +149,29 @@ export function validateStructuredInput<T>(
     const path =
       issue.path
         .slice(0, 8)
-        .map((part) => (typeof part === 'number' ? '[index]' : safeFields.has(part) ? part : '[key]'))
-        .join('.') || 'root'
+        .map((part) => (typeof part === 'number' ? `[${part}]` : safeFields.has(part) ? part : '[key]'))
+        .join('.')
+        .replace(/\.\[/g, '[') || 'root'
     // Ficus's own checks (custom issues) say how to fix it, e.g. "Route 1: uses unknown outcome '…';
-    // add it to the step's outcomes". Anything they quote from the input is caller data, like the
-    // keys above, so quoted values and listed names are left out.
-    const message =
-      issue.code === 'custom'
-        ? issue.message
-            ?.replace(/'[^']*'/g, "'…'")
-            .replace(/\([^()]*\)/g, '(…)')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .slice(0, 200)
-        : undefined
-    return message ? `${path}: ${message}` : `${path}: ${issue.code}`
+    // add it to the step's outcomes". A failed step names its kind and the fields it is missing,
+    // e.g. "human-approval step: output is required". Anything these quote from the input is
+    // caller data, like the keys above, so quoted values and listed names are left out.
+    const message = (
+      issue.code === 'custom' || issue.code === 'invalid_union'
+        ? (issue.message ?? issue.code)
+        : describeZodIssue(issue as Parameters<typeof describeZodIssue>[0])
+    )
+      .replace(/'[^']*'/g, "'…'")
+      .replace(/\([^()]*\)/g, '(…)')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 400)
+    return `${path}: ${message}`
   })
-  throw new Error(`Invalid workflow input (${issues.join('; ')}). Check the command schema and supported fields.`)
+  const aboutSteps = result.error.issues.some((issue) => issue.path.includes('steps') || issue.path.includes('step'))
+  throw new Error(
+    `Invalid workflow input (${issues.join('; ')}). ${aboutSteps ? 'Run ficus workflow schema for step kinds and their fields.' : 'Check the command schema and supported fields.'}`
+  )
 }
 /** Creation accepts either a raw definition or a source; omission preserves inherited defaults. */
 export async function readWorkflowSource(options: FlowInputOptions) {

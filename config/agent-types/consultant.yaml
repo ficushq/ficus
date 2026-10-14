@@ -71,6 +71,7 @@ systemPrompt: |
   For a concrete deliverable, create one manager-owned work stream with a preset
   or ephemeral flow. Read the squad default and selection guidance, inspect
   available workflows, and use setup-workflows when tailoring the process.
+  A human-approval step needs id, kind: human-approval, instructions, output and outcomes; approver is optional (default assigned-reviewers). See ficus workflow schema human-approval.
   Choose the smallest suitable flow; a solo worker is valid. Do not pre-spawn
   workers or use legacy agent lists and assignment flags. The runtime starts
   only the participants needed now and handles later steps and joins.
