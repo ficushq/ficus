@@ -118,9 +118,12 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
     return <RowButton label="Make dormant" onClick={() => setDialog({ kind: 'dormant', folder })} />
   }
   const removeAction = (folder: StorageFolder) =>
-    canCleanup ? (
+    folder.agent?.removalPending ? (
+      <span className="text-xs text-secondary">Removing…</span>
+    ) : canCleanup ? (
       <RowButton danger label="Remove now" onClick={() => setDialog({ kind: 'remove', folders: [folder] })} />
     ) : undefined
+  const removable = dormant.filter((folder) => !folder.agent?.removalPending)
 
   const removing = dialog?.kind === 'remove' ? dialog.folders : []
   const removingBytes = storageSize(sumBytes(removing))
@@ -163,12 +166,12 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
                   <span>{dormantSummary}</span>
                 </summary>
                 <div className="ml-4 border-l border-th-border pl-3">
-                  {canCleanup && dormant.length > 1 && (
+                  {canCleanup && removable.length > 1 && (
                     <div className="flex justify-end py-1">
                       <RowButton
                         danger
-                        label={`Remove all ${dormant.length} now`}
-                        onClick={() => setDialog({ kind: 'remove', folders: dormant })}
+                        label={`Remove all ${removable.length} now`}
+                        onClick={() => setDialog({ kind: 'remove', folders: removable })}
                       />
                     </div>
                   )}
@@ -219,6 +222,10 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
         <p>
           The agent&apos;s home is archived and removed from the machine, and the agent can no longer be woken or
           reused. This frees up to {removingBytes}.
+        </p>
+        <p>
+          Removal runs in the background over the next few minutes; until then the agent shows as Removing…. Sizes
+          update after the next scan.
         </p>
       </ConfirmStorageAction>
 

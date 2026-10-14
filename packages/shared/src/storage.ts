@@ -10,6 +10,8 @@ export interface StorageAgent {
   lastMessageAt: string | null
   dormantAt: string | null
   createdAt: string | null
+  /** An operator asked to remove this dormant agent now; the background sweep has not finished yet. */
+  removalPending?: boolean
 }
 
 /** Read-only, approximate allocated-byte accounting for VM sandbox machines. */
@@ -157,9 +159,8 @@ export interface IdleConsultantsDormancyResult {
   skipped: Array<{ id: string; reason: string }>
 }
 
+/** Accepted agents are removed in the background by the next dormant-retention sweep ticks. */
 export interface RemoveDormantAgentsResult {
-  removed: string[]
-  /** Dormancy completion still pending; retry shortly. */
-  pending: string[]
+  accepted: string[]
   skipped: Array<{ id: string; reason: string }>
 }

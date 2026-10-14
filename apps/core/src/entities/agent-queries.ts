@@ -1,4 +1,18 @@
-import { and, asc, desc, eq, gt, inArray, InferSelectModel, isNotNull, isNull, lte, sql, type SQL } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  InferSelectModel,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core'
 import { agents, db, messages, type DbTx } from '../db'
 import { ADDRESSABLE_AGENT_STATUSES, AgentStatus, LIVE_AGENT_STATUSES, Message } from '@ficus/shared'
@@ -94,6 +108,15 @@ export async function convergeDormancyResourceGeneration(
  * Persistently rotate a bounded lifecycle batch before effects begin.
  * SKIP LOCKED prevents concurrent janitors from claiming the same candidates.
  */
+/**
+ * Metadata key holding the dormancy episode (dormant_at, epoch ms) an operator
+ * asked to remove now. Matching on the episode keeps the expectedDormantAt
+ * fence: a later dormancy is never removed early by a stale request.
+ */
+export const REMOVE_NOW_DORMANT_AT_KEY = 'removeNowDormantAt'
+export const dormantAtEpochMsSql = sql`round(extract(epoch from ${agents.dormantAt}) * 1000)::bigint`
+export const removeNowRequestedSql = sql`(${agents.metadata}->>${REMOVE_NOW_DORMANT_AT_KEY}) = (${dormantAtEpochMsSql})::text`
+
 type LifecycleSweepClaimInput = {
   kind: AgentLifecycleSweepKind
   maxCandidates: number
@@ -124,7 +147,11 @@ async function claimAgentLifecycleSweepCandidatesScoped(
         : input.kind === 'dormancy-completion'
           ? sql`${agents.status} = 'dormant' AND (${agents.metadata}->>'dormancyCompletionPending' = 'true' OR ${agents.metadata}->>'pendingInboxRedelivery' IS NOT NULL)`
           : input.kind === 'dormant-retention'
-            ? and(eq(agents.status, 'dormant'), lte(agents.dormantAt, input.dormantCutoff ?? new Date(0)))!
+            ? and(
+                eq(agents.status, 'dormant'),
+                // Retention elapsed, or an operator asked to remove this dormancy episode now.
+                or(lte(agents.dormantAt, input.dormantCutoff ?? new Date(0)), removeNowRequestedSql)
+              )!
             : sql`${agents.status} = 'terminated' AND ${agents.metadata}->>'finalCleanupPending' = 'true'`
   const scopedPredicate = input.agentIds ? and(predicate, inArray(agents.id, [...input.agentIds]))! : predicate
   const rows = await db.execute<{ id: string }>(sql`

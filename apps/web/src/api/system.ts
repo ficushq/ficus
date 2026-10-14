@@ -59,9 +59,19 @@ export function getStoredFiles(): Promise<StoredFilesSummary> {
   return apiFetch('/system/storage/files')
 }
 
-/** Finalize dormant agents now (system:cleanup). Irreversible. */
-export function removeDormantAgents(agentIds: string[]): Promise<RemoveDormantAgentsResult> {
-  return apiFetch('/system/storage/dormant-agents/remove', { method: 'POST', body: JSON.stringify({ agentIds }) })
+/** Queue dormant agents for background removal (system:cleanup). Irreversible once the sweep runs. */
+export async function removeDormantAgents(agentIds: string[]): Promise<RemoveDormantAgentsResult> {
+  const merged: RemoveDormantAgentsResult = { accepted: [], skipped: [] }
+  // The server bounds one request at 500 ids.
+  for (let start = 0; start < agentIds.length; start += 500) {
+    const result = await apiFetch<RemoveDormantAgentsResult>('/system/storage/dormant-agents/remove', {
+      method: 'POST',
+      body: JSON.stringify({ agentIds: agentIds.slice(start, start + 500) }),
+    })
+    merged.accepted.push(...result.accepted)
+    merged.skipped.push(...result.skipped)
+  }
+  return merged
 }
 
 export function getIdleConsultants(squadId: string, days: number): Promise<IdleConsultantsPreview> {

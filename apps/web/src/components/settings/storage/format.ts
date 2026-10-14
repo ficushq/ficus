@@ -39,8 +39,8 @@ export const sumBytes = (items: Array<{ bytes: number | null }>) =>
   items.reduce((sum, item) => sum + (item.bytes ?? 0), 0)
 
 export function removalSummary(result: RemoveDormantAgentsResult): string {
-  const parts = [`Removed ${result.removed.length} dormant agent${result.removed.length === 1 ? '' : 's'}.`]
-  if (result.pending.length) parts.push(`${result.pending.length} are still stopping; try again shortly.`)
+  const n = result.accepted.length
+  const parts = [`Removing ${n} dormant agent${n === 1 ? '' : 's'} in the background.`]
   for (const skipped of result.skipped) parts.push(`Not removed: ${skipped.reason}`)
   return parts.join(' ')
 }

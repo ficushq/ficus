@@ -83,7 +83,7 @@ describe('storage cleanup routes', () => {
     expect(await response.json()).toMatchObject({ sources: expect.any(Array), quotaBytes: expect.any(Number) })
   })
 
-  it('removes only dormant agents now, and only for system:cleanup', async () => {
+  it('queues only dormant agents for background removal, and only for system:cleanup', async () => {
     const dormant = await agent(own)
     await makeDormant(dormant)
     const live = await agent(own)
@@ -94,20 +94,24 @@ describe('storage cleanup routes', () => {
     expect((await app.request('/api/system/storage/dormant-agents/remove', json(reader, 'POST', body))).status).toBe(
       403
     )
-    expect(await status(dormant.id)).toBe('dormant')
     expect(
       (await app.request('/api/system/storage/dormant-agents/remove', json(cleaner, 'POST', { agentIds: ['x'] })))
         .status
     ).toBe(400)
+    const tooMany = Array.from({ length: 501 }, () => randomUUID())
+    expect(
+      (await app.request('/api/system/storage/dormant-agents/remove', json(cleaner, 'POST', { agentIds: tooMany })))
+        .status
+    ).toBe(400)
 
     const response = await app.request('/api/system/storage/dormant-agents/remove', json(cleaner, 'POST', body))
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(202)
     expect(await response.json()).toEqual({
-      removed: [dormant.id],
-      pending: [],
+      accepted: [dormant.id],
       skipped: [{ id: live.id, reason: 'Only dormant agents can be removed now.' }],
     })
-    expect(await status(dormant.id)).toBe('terminated')
+    // Nothing slow ran in the request: the agent is still dormant until the sweep reclaims it.
+    expect(await status(dormant.id)).toBe('dormant')
     expect(await status(live.id)).toBe('idle')
   })
 

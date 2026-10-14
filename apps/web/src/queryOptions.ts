@@ -134,7 +134,7 @@ import { getAgentQuestions } from './api/agentQuestions'
 import { getSystemTokens } from './api/systemTokens'
 import { getInstanceIdentity, listPeers, getAgentFederationStatus, listAgentAllowRules } from './api/amtp'
 import { getOnboardingStatus } from './api/onboarding'
-import type { NormalizedSquadActivityFilters, ThemePresetScope } from '@ficus/shared'
+import type { NormalizedSquadActivityFilters, StorageSnapshot, ThemePresetScope } from '@ficus/shared'
 
 /**
  * Centralized query option factories.
@@ -145,6 +145,14 @@ import type { NormalizedSquadActivityFilters, ThemePresetScope } from '@ficus/sh
  * For invalidation, use `queryKeys` directly — `queryKeys.tasks.all`
  * invalidates every query under that domain via prefix matching.
  */
+function storageRemovalPending(data: StorageSnapshot | undefined): boolean {
+  return Boolean(
+    data?.machines.some((machine) =>
+      machine.squads.some((squad) => squad.folders.some((folder) => folder.agent?.removalPending))
+    )
+  )
+}
+
 export const queries = {
   desktop: {
     enabled: () =>
@@ -844,7 +852,9 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.system.storage(),
         queryFn: getStorage,
-        refetchInterval: (query) => (query.state.data?.scanning ? 2000 : 300000),
+        // Fast while scanning; every 10s while a background removal is pending so it settles visibly.
+        refetchInterval: (query) =>
+          query.state.data?.scanning ? 2000 : storageRemovalPending(query.state.data) ? 10000 : 300000,
       }),
     storedFiles: () =>
       queryOptions({

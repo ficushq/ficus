@@ -226,6 +226,10 @@ test('reads refresh saved agent details from the database and report dormant ret
       children: [],
     })
     expect(read.dormantRetentionDays).toBe(3)
+    expect(folders[0].agent?.removalPending).toBeUndefined()
+    const { requestDormantRemoval } = await import('../agents/cleanup')
+    expect((await requestDormantRemoval([agent.id])).accepted).toEqual([agent.id])
+    expect((await storageMonitorService.read()).machines[0].squads[0].folders[0].agent?.removalPending).toBe(true)
   } finally {
     await getSettingsStore().delete('AGENT_DORMANT_RETENTION_DAYS')
     await db.delete(agents).where(eq(agents.id, agent.id))

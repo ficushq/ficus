@@ -7,6 +7,7 @@ import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
 import { StorageSection } from './StorageSection'
 import { idleDormancySummary } from './storage/format'
+import { queries } from '../../queryOptions'
 
 const GiB = 1024 ** 3
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
@@ -199,6 +200,32 @@ describe('StorageSection agents', () => {
     }
   })
 
+  test('agents queued for removal show Removing… and are not offered again', () => {
+    const queryClient = client()
+    const data = snapshot()
+    data.machines[0]!.squads[0]!.folders[0]!.agent!.removalPending = true
+    queryClient.setQueryData(queryKeys.system.storage(), data)
+    try {
+      const html = renderToStaticMarkup(element(queryClient, ['system:logs', 'system:cleanup']))
+      expect(count(html, 'Removing…')).toBe(1)
+      expect(count(html, '>Remove now<')).toBe(1)
+      expect(html).not.toContain('Remove all')
+    } finally {
+      queryClient.clear()
+    }
+  })
+
+  test('the storage view refetches often while a removal is pending', () => {
+    const interval = queries.system.storage().refetchInterval as (query: {
+      state: { data?: StorageSnapshot }
+    }) => number
+    const data = snapshot()
+    expect(interval({ state: { data } })).toBe(300000)
+    data.machines[0]!.squads[0]!.folders[0]!.agent!.removalPending = true
+    expect(interval({ state: { data } })).toBe(10000)
+    expect(interval({ state: { data: { ...data, scanning: true } } })).toBe(2000)
+  })
+
   test('the idle-consultant summary states the real reason for each agent left alone', () => {
     expect(
       idleDormancySummary({
@@ -244,7 +271,7 @@ async function interact(granted: string[]) {
       : url.endsWith('/system/storage')
         ? snapshot()
         : url.includes('dormant-agents/remove')
-          ? { removed: ['d1'], pending: [], skipped: [] }
+          ? { accepted: ['d1'], skipped: [] }
           : url.includes('/admin/nix-gc')
             ? {
                 candidates: [
@@ -334,13 +361,16 @@ describe('StorageSection cleanup dialogs', () => {
       const text = ui.dialog()?.textContent ?? ''
       expect(text).toContain('Old research')
       expect(text).toContain('archived and removed')
+      expect(text).toContain('in the background')
       expect(text).toContain('can no longer be woken or reused')
       expect(text).toContain('2.0 GiB')
 
       await ui.dom.act(async () => ui.button('Remove now', ui.dialog()!)!.click())
       await ui.settle(() => ui.calls.some((call) => call.url.includes('dormant-agents/remove')))
       expect(ui.calls.find((call) => call.url.includes('dormant-agents/remove'))?.body).toEqual({ agentIds: ['d1'] })
-      await ui.settle(() => (ui.document.body.textContent ?? '').includes('Sizes update after the next scan'))
+      await ui.settle(() =>
+        (ui.document.body.textContent ?? '').includes('Removing 1 dormant agent in the background.')
+      )
     } finally {
       await ui.restore()
     }
