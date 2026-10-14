@@ -274,8 +274,8 @@ export async function runDormantAgentSweep(
     try {
       const outcome = await finalizeDormantAgent(listedAgent.id, cutoff, deps)
       if (outcome === 'finalized') finalized++
-      else if (outcome === 'completion-pending')
-        await recordRemoveNowFailure(listedAgent.id, 'Stopping the agent has not finished yet.')
+      // 'completion-pending' (stopping the agent has not finished) is still in progress, not a
+      // failure: the next tick retries it without spending one of the remove-now attempts.
       else if (outcome === 'not-finalized')
         await recordRemoveNowFailure(listedAgent.id, 'The agent could not be removed.')
     } catch (error) {

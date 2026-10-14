@@ -115,4 +115,17 @@ describe('remove dormant agents now (background)', () => {
     expect(retried.removalPending).toBe(true)
     expect(retried.removalError).toBeUndefined()
   })
+
+  it('a stop that has not finished yet is still in progress and never counts as a failed removal', async () => {
+    const dormant = await agent()
+    await makeDormant(dormant)
+    expect((await requestDormantRemoval([dormant.id])).accepted).toEqual([dormant.id])
+    for (let tick = 0; tick < 8; tick++)
+      await runDormantAgentSweep({ listDormant: async () => [dormant], completePending: async () => false })
+    const current = await info(dormant.id)
+    expect(current.removalPending).toBe(true)
+    expect(current.removalError).toBeUndefined()
+    const [row] = await db.select({ metadata: agents.metadata }).from(agents).where(eq(agents.id, dormant.id))
+    expect((row?.metadata as Record<string, unknown>).removeNowFailures).toBeUndefined()
+  })
 })
