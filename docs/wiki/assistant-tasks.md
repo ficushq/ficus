@@ -112,9 +112,13 @@ GIF's first frame; see `DECISION_IMAGE_MAX_SIDE` in `packages/shared/src/decisio
 guessed squad has open (active or queued) work streams the user may read, a second decision asks
 which one it is about. The streams' titles and descriptions go in its `state` as data, and the
 options only point at them. A pick at 60% or more (`SCREENSHOT_GUESS_MIN_PROBABILITY`) becomes "add
-it to that work stream", and "none" rules out adding to one. The same threshold marks a weaker kind,
-squad or action as "not sure" on the review card; it is still returned as the best guess. The call
-returns `{ guess }` and creates nothing: no conversation, no message. With the feature off, no
+it to that work stream", and "none" rules out adding to one. A pick under 60% never sets or changes
+the action. It is returned separately as `guess.workStreamSuggestion` (with `guess.workStream`
+null), and its only effect on the guess is that an action the first decision already answered as
+"add it to an existing work stream" is kept instead of falling back to the next likeliest one. The
+same threshold marks a weaker kind, squad or action as "not sure" on the review card; it is still
+returned as the best guess. The call returns `{ guess }` and creates nothing: no conversation, no
+message. With the feature off, no
 decision model that reads images answering, or an image that cannot be prepared, `guess` is null.
 `GET /api/screenshots/work-streams?squadId=` lists a visible squad's open work streams for the
 card's picker (empty without `workstreams:read` there), so changing the squad never asks the
@@ -131,7 +135,8 @@ removed). Then it creates a new Assistant conversation whose
 first message carries the image, the user's note first, the confirmed choices stated as the user's
 own (with the squad ID and work stream ID), and the image ID to forward. The conversation and
 message IDs are derived from the user and image, so a retried confirmation lands on the same
-conversation and sends nothing twice. `guessed` is what the guess filled the card in with: every
+conversation and sends nothing twice. `guessed` is what the guess filled the card in with (a weak
+work stream suggestion only when the card showed it pre-selected): every
 field the user changed from it is saved as a candidate eval case through `captureCorrection` (kind,
 squad and action for `screenshot-filing`, the work stream for `screenshot-work-stream`), with the
 request rebuilt to include the note. Filing asks no decision model.

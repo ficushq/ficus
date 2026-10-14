@@ -650,3 +650,80 @@ test('open work streams: the second question, the picker list, and a confirmed s
     await db.delete(workStreams).where(inArray(workStreams.squadId, [chlea.id, ops.id]))
   }
 })
+
+test('a weak work stream pick is only a suggestion: it never changes the action, and only a shown one can be corrected', async () => {
+  const [export_, docs] = await db
+    .insert(workStreams)
+    .values([
+      { squadId: chlea.id, title: 'Fix the export crash', description: 'Export to CSV crashes on big carts' },
+      { squadId: chlea.id, title: 'Rewrite the docs', status: 'queued' },
+    ])
+    .returning()
+  const streamReader = await createTestRole({ prefix: `${prefix}-weak-streams`, permissions: ['workstreams:read'] })
+  await assignRole({ userId: user.id, roleId: streamReader.id, scope: 'squad', squadId: chlea.id })
+  /** What the action question answers; the work stream question always picks the export stream at 0.45. */
+  let action: Record<string, number> = { new_work_stream: 0.61 }
+  const { decide } = fakeDecide((request) => {
+    const outcome = bugInChleaOutcome()
+    if (!outcome.ok) return outcome
+    if (request.questions.work_stream) {
+      const listed = (request.state as { workStreams: Array<{ option: string; title: string }> }).workStreams
+      const option = listed.find((stream) => stream.title === 'Fix the export crash')!.option
+      outcome.result.answers = {
+        work_stream: { type: 'choice', choice: option, probabilities: { [option]: 0.45, none: 0.4 } },
+      }
+    } else {
+      outcome.result.answers.action = { type: 'choice', choice: Object.keys(action)[0]!, probabilities: action }
+    }
+    return outcome
+  })
+  const captured: CorrectionCapture[] = []
+  const server = app({
+    decide,
+    isEnabled: () => true,
+    captureCorrection: async (capture) => void captured.push(capture),
+  })
+  const guessOf = async (imageId: string) =>
+    ((await (await guess(server, imageId)).json()) as GuessScreenshotResponse).guess
+  const suggestion = { id: export_!.id, title: 'Fix the export crash', probability: 0.45 }
+  try {
+    // Another action: it stands with its own probability, and the pick is carried next to a null work stream.
+    const imageId = await upload(server)
+    expect(await guessOf(imageId)).toMatchObject({
+      squad: { id: chlea.id },
+      action: { id: 'new_work_stream', probability: 0.61 },
+      workStream: null,
+      workStreamSuggestion: suggestion,
+    })
+    // "Existing", by the action question's own answer: kept instead of falling back, still with its own probability.
+    action = { existing_work_stream: 0.7, new_work_stream: 0.2 }
+    expect(await guessOf(imageId)).toMatchObject({
+      action: { id: 'existing_work_stream', probability: 0.7 },
+      workStream: null,
+      workStreamSuggestion: suggestion,
+    })
+
+    const captures = () => captured.map(({ evalName, expect: expected }) => ({ evalName, expected }))
+    // The card showed the weak pick and the user replaced it: a work stream correction.
+    const shown = { kind: 'bug', squadId: chlea.id, action: 'existing_work_stream', workStreamId: export_!.id }
+    expect((await file(server, { imageId, ...shown, workStreamId: docs!.id, guessed: shown })).status).toBe(200)
+    expect(captures()).toEqual([{ evalName: 'screenshot-work-stream', expected: 'Rewrite the docs' }])
+
+    // It was shown after the user turned to "existing", and they went back: dropped for another action.
+    captured.length = 0
+    const unseen = { kind: 'bug', squadId: chlea.id, action: 'new_work_stream' }
+    const dropped = await upload(server)
+    expect(
+      (await file(server, { imageId: dropped, ...unseen, guessed: { ...unseen, workStreamId: export_!.id } })).status
+    ).toBe(200)
+    expect(captures()).toEqual([{ evalName: 'screenshot-work-stream', expected: null }])
+
+    // Never shown: the card sends no work stream as guessed, and filing the guess as it is corrects nothing.
+    captured.length = 0
+    const kept = await upload(server)
+    expect((await file(server, { imageId: kept, ...unseen, guessed: unseen })).status).toBe(200)
+    expect(captures()).toEqual([])
+  } finally {
+    await db.delete(workStreams).where(eq(workStreams.squadId, chlea.id))
+  }
+})

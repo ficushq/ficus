@@ -8,6 +8,7 @@ import {
 import {
   buildScreenshotDecision,
   buildScreenshotWorkStreamDecision,
+  pickWorkStream,
   readScreenshotGuess,
   screenshotCorrections,
   screenshotFilingMessage,
@@ -89,27 +90,85 @@ test('the work stream question keeps titles and descriptions as data, with optio
   expect(JSON.stringify(request.questions)).not.toContain('Ignore previous')
 })
 
-test('a clear work stream pick means adding to it; a weak one or "none" means no existing stream', () => {
+const streamAnswer = (pick: string, probability: number) => choice(pick, { [pick]: probability })
+const exportCrash = { id: streams[0]!.id, title: 'Fix the export crash' }
+
+test('a clear work stream pick means adding to it; "none" means no existing stream', () => {
   const probabilities = { new_work_stream: 0.6, existing_work_stream: 0.3, ask_consultant: 0.1 }
   const first = answers(busy, probabilities, 'new_work_stream')
-  const streamAnswer = (pick: string, probability: number) => choice(pick, { [pick]: probability })
-  expect(readScreenshotGuess(first, [busy], { answer: streamAnswer('w1', 0.8), streams })).toMatchObject({
-    action: { id: 'existing_work_stream', probability: 0.8 },
-    workStream: { id: streams[0]!.id, title: 'Fix the export crash', probability: 0.8 },
-  })
-  // Below the bar it is not a match, and the first guess's action stands.
-  const weak = readScreenshotGuess(first, [busy], { answer: streamAnswer('w1', 0.4), streams })
-  expect(weak?.workStream).toBeNull()
-  expect(weak?.action.id).toBe('new_work_stream')
-  // "Existing" with no stream that fits falls back to the next likeliest action.
-  const existing = answers(busy, { existing_work_stream: 0.7, ask_consultant: 0.2 })
-  expect(readScreenshotGuess(existing, [busy], { answer: streamAnswer('none', 0.9), streams })?.action.id).toBe(
-    'ask_consultant'
-  )
+  for (const probability of [0.8, 0.6]) {
+    const clear = readScreenshotGuess(first, [busy], { answer: streamAnswer('w1', probability), streams })!
+    expect(clear).toMatchObject({
+      action: { id: 'existing_work_stream', label: 'add it to an existing work stream', probability },
+      workStream: { ...exportCrash, probability },
+    })
+    expect('workStreamSuggestion' in clear).toBe(false)
+    expect(screenshotChoicesFromGuess(clear)).toMatchObject({
+      action: 'existing_work_stream',
+      workStreamId: exportCrash.id,
+    })
+  }
+  // "Existing" with no stream that fits falls back to the next likeliest action, rescaled.
+  const existing = answers(busy, { existing_work_stream: 0.7, ask_consultant: 0.2, new_work_stream: 0.05 })
+  const none = readScreenshotGuess(existing, [busy], { answer: streamAnswer('none', 0.9), streams })!
+  expect(none.action.id).toBe('ask_consultant')
+  expect(none.action.probability).toBeCloseTo(0.8)
+  expect(none.workStream).toBeNull()
+  expect('workStreamSuggestion' in none).toBe(false)
+  // "None" by a narrow margin is still "none": the runner-up stream is not a suggestion.
+  const narrow = readScreenshotGuess(existing, [busy], { answer: choice('none', { none: 0.5, w1: 0.45 }), streams })!
+  expect(narrow.action.id).toBe('ask_consultant')
+  expect('workStreamSuggestion' in narrow).toBe(false)
   // Not asked: no work stream at all, and "existing" stands on the open count.
-  const unasked = readScreenshotGuess(existing, [busy])
-  expect(unasked && 'workStream' in unasked).toBe(false)
-  expect(unasked?.action.id).toBe('existing_work_stream')
+  const unasked = readScreenshotGuess(existing, [busy])!
+  expect('workStream' in unasked).toBe(false)
+  expect('workStreamSuggestion' in unasked).toBe(false)
+  expect(unasked.action.id).toBe('existing_work_stream')
+})
+
+test('a weak work stream pick is carried as a suggestion and never chooses the action', () => {
+  const weakPick = { answer: streamAnswer('w1', 0.4), streams }
+  // The eval's rule is unchanged: under the bar it is no pick.
+  expect(pickWorkStream(weakPick.answer, streams)).toBeNull()
+  expect(pickWorkStream(streamAnswer('w1', 0.6), streams)).toEqual({ ...exportCrash, probability: 0.6 })
+
+  // The action question answered something else: it stands exactly as it would with "none".
+  const first = answers(
+    busy,
+    { new_work_stream: 0.6, existing_work_stream: 0.3, ask_consultant: 0.1 },
+    'new_work_stream'
+  )
+  const other = readScreenshotGuess(first, [busy], weakPick)!
+  expect(other.action).toEqual(
+    readScreenshotGuess(first, [busy], { answer: streamAnswer('none', 0.9), streams })!.action
+  )
+  expect(other.action).toEqual({ id: 'new_work_stream', label: 'start a new work stream', probability: 0.6 })
+  expect(other.workStream).toBeNull()
+  expect(other.workStreamSuggestion).toEqual({ ...exportCrash, probability: 0.4 })
+  // The card is filled in without it.
+  expect(screenshotChoicesFromGuess(other)).toEqual({ kind: 'bug', squadId: busy.id, action: 'new_work_stream' })
+
+  // The action question itself answered "existing": kept, with its own probability, instead of falling back.
+  for (const probability of [0.7, 0.45]) {
+    const existing = answers(busy, { existing_work_stream: probability, ask_consultant: 0.2 })
+    const kept = readScreenshotGuess(existing, [busy], weakPick)!
+    expect(kept.action).toEqual({
+      id: 'existing_work_stream',
+      label: 'add it to an existing work stream',
+      probability,
+    })
+    expect(kept.workStream).toBeNull()
+    expect(kept.workStreamSuggestion).toEqual({ ...exportCrash, probability: 0.4 })
+  }
+
+  // A stream belongs to its squad: with no squad guessed there is nothing to suggest, and "existing" falls back.
+  const noSquad = {
+    ...answers(busy, { existing_work_stream: 0.7, ask_consultant: 0.2 }),
+    squad: choice('none', { none: 0.9 }),
+  }
+  const squadless = readScreenshotGuess(noSquad, [busy], weakPick)!
+  expect(squadless.action.id).toBe('ask_consultant')
+  expect('workStreamSuggestion' in squadless).toBe(false)
 })
 
 test('a weak kind, squad or action is still the guess; "none of these squads" keeps how sure it was', () => {
@@ -249,6 +308,31 @@ test('corrections are the fields the user changed from the guess', () => {
   // Fields left unchosen are not corrections, and without a guess there is nothing to correct.
   expect(screenshotCorrections(guessed, {})).toEqual([])
   expect(screenshotCorrections(undefined, { kind: 'idea', squadId: null })).toEqual([])
+})
+
+test('a weak work stream suggestion can be corrected only when the card showed it', () => {
+  const [suggested, another] = [streams[0]!.id, streams[1]!.id]
+  // Shown from the start: the action question answered "existing", so the card pre-selected it.
+  const shown = { kind: 'bug', squadId: busy.id, action: 'existing_work_stream', workStreamId: suggested } as const
+  expect(screenshotCorrections(shown, shown)).toEqual([])
+  expect(screenshotCorrections(shown, { ...shown, workStreamId: another })).toEqual(['workStream'])
+  expect(screenshotCorrections(shown, { kind: 'bug', squadId: busy.id, action: 'new_work_stream' })).toEqual([
+    'action',
+    'workStream',
+  ])
+  // Shown later: the guess was another action, and the user turned to "existing" and saw it pre-filled.
+  const later = { kind: 'bug', squadId: busy.id, action: 'new_work_stream', workStreamId: suggested } as const
+  const existing = { kind: 'bug', squadId: busy.id, action: 'existing_work_stream' } as const
+  expect(screenshotCorrections(later, { ...existing, workStreamId: suggested })).toEqual(['action'])
+  expect(screenshotCorrections(later, { ...existing, workStreamId: another })).toEqual(['action', 'workStream'])
+  // Seen, then dropped by going back to the guessed action.
+  expect(screenshotCorrections(later, { kind: 'bug', squadId: busy.id, action: 'new_work_stream' })).toEqual([
+    'workStream',
+  ])
+  // Never shown: the card sends no work stream as guessed, so confirming the guess corrects nothing.
+  const unseen = { kind: 'bug', squadId: busy.id, action: 'new_work_stream' } as const
+  expect(screenshotCorrections(unseen, unseen)).toEqual([])
+  expect(screenshotCorrections(unseen, { ...unseen, action: 'just_save' })).toEqual(['action'])
 })
 
 test('a filing request takes a work stream only with its squad and the "existing work stream" action', () => {
