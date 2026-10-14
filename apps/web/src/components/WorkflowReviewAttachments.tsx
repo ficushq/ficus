@@ -2,33 +2,17 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workflowAttachmentContentType, type WorkflowAttemptAttachment } from '@ficus/shared'
 import { actionErrorMessage } from '../lib/actionError'
+import { attachmentPreviewMode } from '../lib/workflowAttachments'
 import { queries } from '../queryOptions'
 import { FilePreview } from './FilePreview'
+import { PdfPreview } from './PdfPreview'
 import { DocumentSkeleton } from './loading/Skeleton'
 
 /** The handoff tab's id; attachment tabs use their attachment id. */
 export const HANDOFF_TAB = 'handoff'
 
-/** Text larger than this is offered as a download instead of rendered inline. */
-const INLINE_TEXT_LIMIT = 1024 * 1024
-
 /** How long a programmatic download's blob URL stays alive. */
 const DOWNLOAD_URL_LIFETIME_MS = 60_000
-
-const INLINE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
-const TEXT_TYPES = new Set(['application/json', 'application/yaml'])
-
-/**
- * How a handoff file reads inline, decided from its name alone (the same rule Core stores its type by),
- * so a file that a browser could execute (HTML, SVG) is never rendered.
- */
-function attachmentPreviewMode(attachment: WorkflowAttemptAttachment): 'text' | 'image' | 'download' {
-  const type = workflowAttachmentContentType(attachment.filename)
-  if (INLINE_IMAGE_TYPES.has(type)) return 'image'
-  if (type.startsWith('text/') || TEXT_TYPES.has(type))
-    return attachment.byteSize <= INLINE_TEXT_LIMIT ? 'text' : 'download'
-  return 'download'
-}
 
 /**
  * The review document's tab row: the handoff first, then each handed-off file. It scrolls sideways when
@@ -135,6 +119,7 @@ export function AttachmentView({
   const { data: bytes, error } = useQuery({ ...options, enabled: mode !== 'download' })
   const queryClient = useQueryClient()
   const [downloadError, setDownloadError] = useState<string>()
+  const [pdfFailed, setPdfFailed] = useState(false)
   const imageUrl = useObjectUrl(
     mode === 'image' ? bytes : undefined,
     workflowAttachmentContentType(attachment.filename)
@@ -167,15 +152,17 @@ export function AttachmentView({
         This file could not be loaded. {actionErrorMessage(error)}
       </p>
     )
-  else if (mode === 'download' || text === null)
+  else if (mode === 'download' || text === null || pdfFailed)
     body = (
       <FilePreview fileName={attachment.filename} kind="unavailable">
         <p className="text-sm">
-          {text === null
-            ? 'This file is not plain text, so it cannot be previewed here.'
-            : attachmentPreviewMode({ ...attachment, byteSize: 0 }) === 'text'
-              ? 'This file is too large to preview here.'
-              : 'This file type cannot be previewed here.'}
+          {pdfFailed
+            ? 'This PDF cannot be previewed here. It may be damaged or password-protected.'
+            : text === null
+              ? 'This file is not plain text, so it cannot be previewed here.'
+              : attachmentPreviewMode({ ...attachment, byteSize: 0 }) === 'text'
+                ? 'This file is too large to preview here.'
+                : 'This file type cannot be previewed here.'}
         </p>
         {downloadButton}
       </FilePreview>
@@ -188,6 +175,8 @@ export function AttachmentView({
         image={<img src={imageUrl} alt={attachment.filename} className="max-w-full object-contain" />}
       />
     )
+  else if (mode === 'pdf' && bytes)
+    body = <PdfPreview bytes={bytes} fileName={attachment.filename} onError={() => setPdfFailed(true)} />
   else if (typeof text === 'string') body = <FilePreview fileName={attachment.filename} kind="text" content={text} />
   else body = <DocumentSkeleton label={`Loading ${attachment.filename}`} lines={10} className="min-h-64" />
   return (
@@ -196,7 +185,7 @@ export function AttachmentView({
         <p className="min-w-0 flex-1 truncate text-xs text-muted" title={attachment.path}>
           {attachment.path}
         </p>
-        {mode !== 'download' && text !== null && (
+        {mode !== 'download' && text !== null && !pdfFailed && (
           <button
             type="button"
             onClick={download}

@@ -587,7 +587,11 @@ test('an image attachment renders from a blob URL that is revoked when the tab c
   const f = await fixture()
   const png = { ...designDoc, id: 'att-shot', filename: 'screen.png', path: 'out/screen.png', contentType: 'image/png' }
   const download = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(new Uint8Array([137, 80, 78, 71]))
-  const create = spyOn(URL, 'createObjectURL').mockReturnValue('blob:review-image')
+  const created: string[] = []
+  const create = spyOn(URL, 'createObjectURL').mockImplementation(() => {
+    created.push(`blob:review-image-${created.length + 1}`)
+    return created.at(-1)!
+  })
   const revoke = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
   try {
     f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), { ...gateRun(), attachments: { '3': [png] } })
@@ -595,16 +599,46 @@ test('an image attachment renders from a blob URL that is revoked when the tab c
     await f.dom.act(async () => tabs(f)[1]!.click())
     await f.settle()
     const image = f.dialog()!.querySelector<HTMLImageElement>('[role="tabpanel"] img')!
-    expect(image.getAttribute('src')).toBe('blob:review-image')
+    expect(created.length).toBeGreaterThan(0)
+    expect(image.getAttribute('src')).toBe(created.at(-1)!)
     expect(image.alt).toBe('screen.png')
-    expect(create).toHaveBeenCalledTimes(1)
-    expect((create.mock.calls[0]![0] as Blob).type).toBe('image/png')
-    expect(revoke).not.toHaveBeenCalled()
+    expect((create.mock.calls.at(-1)![0] as Blob).type).toBe('image/png')
+    // Only superseded URLs (if the bytes were refetched) are gone while the image shows.
+    expect(revoke.mock.calls.map(([url]) => url)).toEqual(created.slice(0, -1))
     await f.dom.act(async () => tabs(f)[0]!.click())
-    expect(revoke).toHaveBeenCalledWith('blob:review-image')
+    // Closing the tab releases every URL it made.
+    expect(revoke.mock.calls.map(([url]) => url)).toEqual(created)
   } finally {
     create.mockRestore()
     revoke.mockRestore()
+    download.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('a PDF that cannot be read falls back to the download offer', async () => {
+  const f = await fixture()
+  const pdf = {
+    ...designDoc,
+    id: 'att-pdf',
+    filename: 'review.pdf',
+    path: 'out/review.pdf',
+    contentType: 'application/pdf',
+  }
+  const download = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(
+    new TextEncoder().encode('not really a PDF')
+  )
+  try {
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), { ...gateRun(), attachments: { '3': [pdf] } })
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    await f.dom.act(async () => tabs(f)[1]!.click())
+    const panel = f.dialog()!.querySelector<HTMLElement>('[role="tabpanel"]')!
+    // Readiness boundary: pdf.js loads on demand and then rejects the bytes.
+    for (let tries = 0; tries < 200 && !panel.textContent!.includes('cannot be previewed'); tries++) await f.settle()
+    expect(panel.textContent).toContain('This PDF cannot be previewed here.')
+    expect([...panel.querySelectorAll('button')].some((button) => button.textContent === 'Download')).toBe(true)
+    expect(panel.querySelector('canvas')).toBeNull()
+  } finally {
     download.mockRestore()
     await f.cleanup()
   }

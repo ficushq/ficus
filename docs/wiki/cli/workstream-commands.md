@@ -30,7 +30,9 @@ sent as-is; when the run's version no longer matches, the CLI stops before uploa
 snapshot (at most 10 files per attempt, each within `INBOX_MAX_ATTACHMENT_BYTES`,
 10 MB by default), lists them per attempt as `attachments` in `flow`, and serves
 them at `GET /api/workflows/runs/STREAM_ID/attachments/ATTACHMENT_ID` to anyone
-who can read the work stream. The review modal shows them as tabs after the handoff.
+who can read the work stream. The review modal shows them as tabs after the handoff;
+PDFs are drawn page by page with pdf.js from the downloaded bytes (loaded on demand,
+with no network fetches of its own).
 
 When a transition immediately assigns work to the calling agent, its response
 includes `assignments` with the attempt ID, version, and full handoff content.

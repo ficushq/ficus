@@ -131,7 +131,7 @@ outcomes:
   revise: { returnTo: draft, afterRework: follow-graph }
 ```
 
-The review shows the handoff of the attempt being reviewed. When that attempt attached files with `--attach` (see below), the review adds a tab for each file after **Handoff**: Markdown reads as a document, text and code as highlighted blocks, and PNG, JPEG, GIF and WebP images inline. Other files (PDF, HTML, SVG and anything over 1 MB of text) offer a download instead. A step that is sent back and run again shows only the files its new attempt attached.
+The review shows the handoff of the attempt being reviewed. When that attempt attached files with `--attach` (see below), the review adds a tab for each file after **Handoff**: Markdown reads as a document, text and code as highlighted blocks, PDFs page by page, and PNG, JPEG, GIF and WebP images inline. Other files (HTML, SVG, PDFs that are damaged or password-protected, and anything over 1 MB of text) offer a download instead. A step that is sent back and run again shows only the files its new attempt attached.
 
 A human gate waits for its designated decision. An ordinary question answer or generic unblock is not approval. You can place several gates at different points, independently of the final delivery policy.
 
