@@ -1,7 +1,17 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { StoredFilesSummary } from '@ficus/shared'
 import { db } from '../../db'
-import { agentFileAttachments, agents, images, inbox, inboxAttachments, squads } from '../../db/schema'
+import {
+  agentFileAttachments,
+  agents,
+  images,
+  inbox,
+  inboxAttachments,
+  squads,
+  workflowAttemptAttachments,
+  workStreams,
+} from '../../db/schema'
+import { totalAttachmentStorageBytes } from '../attachments/storage-quota'
 import { getSettingsStore } from '../settings'
 
 type SquadBytes = { squadId: string | null; bytes: number | string | null }
@@ -9,7 +19,7 @@ type SquadBytes = { squadId: string | null; bytes: number | string | null }
 /**
  * One kind of file Ficus keeps on the core host, totalled per owning squad from
  * its database rows (cheap aggregates, never a disk scan). A new blob kind
- * (e.g. workflow attachments, via work_stream → squad) is one more entry here.
+ * is one more entry here.
  */
 interface StoredFileSourceDefinition {
   key: string
@@ -44,6 +54,17 @@ export const STORED_FILE_SOURCES: StoredFileSourceDefinition[] = [
         .groupBy(agents.squadId),
   },
   {
+    key: 'workflowAttachments',
+    label: 'Workflow handoff files',
+    countsTowardQuota: true,
+    bySquad: () =>
+      db
+        .select({ squadId: workStreams.squadId, bytes: sql<string>`sum(${workflowAttemptAttachments.byteSize})` })
+        .from(workflowAttemptAttachments)
+        .leftJoin(workStreams, eq(workStreams.id, workflowAttemptAttachments.workStreamId))
+        .groupBy(workStreams.squadId),
+  },
+  {
     key: 'images',
     label: 'Images',
     countsTowardQuota: false,
@@ -60,7 +81,11 @@ export const STORED_FILE_SOURCES: StoredFileSourceDefinition[] = [
 
 /** Per-squad totals of files stored by Ficus, with the attachment quota they count against. */
 export async function summarizeStoredFiles(): Promise<StoredFilesSummary> {
-  const results = await Promise.all(STORED_FILE_SOURCES.map((source) => source.bySquad()))
+  const [results, quotaUsedBytes] = await Promise.all([
+    Promise.all(STORED_FILE_SOURCES.map((source) => source.bySquad())),
+    // The exact sum the quota check enforces (storage-quota.ts), not a re-derivation.
+    totalAttachmentStorageBytes(),
+  ])
   const squadIds = [...new Set(results.flat().flatMap((row) => (row.squadId ? [row.squadId] : [])))]
   const names = new Map(
     squadIds.length
@@ -95,7 +120,7 @@ export async function summarizeStoredFiles(): Promise<StoredFilesSummary> {
     squads: [...bySquad.values()].sort((a, b) => b.bytes - a.bytes),
     unattributed,
     totalBytes: sources.reduce((sum, source) => sum + source.bytes, 0),
-    quotaUsedBytes: sources.reduce((sum, source) => sum + (source.countsTowardQuota ? source.bytes : 0), 0),
+    quotaUsedBytes,
     quotaBytes: Number(getSettingsStore().getTyped('INBOX_MAX_TOTAL_STORAGE_BYTES')),
   }
 }
