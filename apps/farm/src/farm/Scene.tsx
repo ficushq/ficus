@@ -1,10 +1,14 @@
 import { memo, useMemo, type KeyboardEvent, type ReactNode } from 'react'
+import clsx from 'clsx'
+import type { RobotMood } from '@ficus/shared'
 import { depth, iso } from './iso'
 import type { FarmLayout, PlotLayout, RobotPlacement } from './types'
 import { plantStateLabel, roleLabel, selectionKey, type Selection } from './selection'
 import { agentLabel } from './agentLabels'
 import type { FarmSkin, HitBox } from '../skins/types'
 import { useSkin } from '../skins'
+import { moodLabel } from './moods'
+import { MOOD_MOTION, MoodMark } from './MoodMark'
 
 interface Drawable {
   key: string
@@ -32,6 +36,8 @@ interface SceneProps {
   /** Keyboard focus landed on a sprite at this world point: bring it into view. */
   onReveal: (x: number, y: number) => void
   hidden?: SceneHidden
+  /** Robots showing a mood (moods.ts `shownMoods`); null when moods are off. */
+  moods?: ReadonlyMap<string, RobotMood> | null
 }
 
 /** Wraps a sprite at a world position as a keyboard- and screen-reader-reachable button. */
@@ -43,11 +49,14 @@ function Hit({
   onActivate,
   box,
   onReveal,
+  title,
   children,
 }: {
   x: number
   y: number
   label: string
+  /** Hover text, for what the label says that the drawing only hints at. */
+  title?: string
   selected?: boolean
   onActivate: () => void
   /** Generous tap area around the anchor: [left, top, width, height]. */
@@ -73,6 +82,7 @@ function Hit({
         onKeyDown={onKeyDown}
         onFocus={() => onReveal(x, y + box[1] / 2)}
       >
+        {title && <title>{title}</title>}
         <rect className="g-hit-area" x={box[0]} y={box[1]} width={box[2]} height={box[3]} rx={14} />
         {children}
         <rect className="g-focus-ring" x={box[0]} y={box[1]} width={box[2]} height={box[3]} rx={14} />
@@ -81,7 +91,7 @@ function Hit({
   )
 }
 
-function robotLabel(r: RobotPlacement): string {
+function robotLabel(r: RobotPlacement, mood?: RobotMood): string {
   const name = agentLabel(r.agent).primary
   const face =
     r.face === 'question'
@@ -94,7 +104,7 @@ function robotLabel(r: RobotPlacement): string {
             ? 'asleep'
             : 'idle'
   const role = r.role === 'manager' ? 'farmer (squad manager)' : roleLabel(r.role).toLowerCase()
-  return `${name}, ${role}, ${face}`
+  return `${name}, ${role}, ${face}${mood ? `, ${moodLabel(mood).toLowerCase()}` : ''}`
 }
 
 function buildDrawables(
@@ -104,7 +114,8 @@ function buildDrawables(
   mailboxCount: number,
   onSelect: (s: Selection) => void,
   onReveal: (x: number, y: number) => void,
-  hidden: SceneHidden
+  hidden: SceneHidden,
+  moods: ReadonlyMap<string, RobotMood> | null = null
 ): { ground: ReactNode[]; items: Drawable[]; badges: ReactNode[] } {
   const yardGround: ReactNode[] = []
   const ground: ReactNode[] = []
@@ -125,6 +136,18 @@ function buildDrawables(
           <skin.Badge kind="question" />
         </g>
       )
+    const mood = moods?.get(r.agent.id)
+    // A mood beside the head, on the side away from the asking "?" (which a robot showing a mood never wears).
+    if (mood)
+      badges.push(
+        <g
+          key={`${keyPrefix}:${r.agent.id}:mood`}
+          transform={`translate(${x + skin.boxes.robot[0] + skin.boxes.robot[2] - 4} ${y + skin.boxes.robot[1] + 14})`}
+          aria-hidden="true"
+        >
+          <MoodMark mood={mood} />
+        </g>
+      )
     const key = `robot:${r.agent.id}`
     items.push({
       key: `${keyPrefix}:${r.agent.id}`,
@@ -135,12 +158,19 @@ function buildDrawables(
           key={`${keyPrefix}:${r.agent.id}`}
           x={x}
           y={y}
-          label={robotLabel(r)}
+          label={robotLabel(r, mood)}
+          title={mood ? `${agentLabel(r.agent).primary}: ${moodLabel(mood)}` : undefined}
           selected={selected === key}
           box={skin.boxes.robot}
           onActivate={() => onSelect({ kind: 'robot', agentId: r.agent.id })}
         >
-          <skin.Robot placement={r} extra={extra} />
+          {mood ? (
+            <g className={clsx('g-mood-body', MOOD_MOTION[mood])} data-mood={mood}>
+              <skin.Robot placement={r} extra={extra} />
+            </g>
+          ) : (
+            <skin.Robot placement={r} extra={extra} />
+          )}
         </Hit>
       ),
     })
@@ -392,12 +422,13 @@ export const SceneWorld = memo(function SceneWorld({
   onSelect,
   onReveal,
   hidden = NOTHING_HIDDEN,
+  moods = null,
 }: SceneProps) {
   const { skin } = useSkin()
   const selected = selectionKey(selection)
   const { ground, items, badges } = useMemo(
-    () => buildDrawables(skin, layout, selected, mailboxCount, onSelect, onReveal, hidden),
-    [skin, layout, selected, mailboxCount, onSelect, onReveal, hidden]
+    () => buildDrawables(skin, layout, selected, mailboxCount, onSelect, onReveal, hidden, moods),
+    [skin, layout, selected, mailboxCount, onSelect, onReveal, hidden, moods]
   )
   const { bounds } = layout
   return (

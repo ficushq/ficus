@@ -1,4 +1,4 @@
-import { compareCanonicalWorkStreams, type WorkStream } from '@ficus/shared'
+import { compareCanonicalWorkStreams, type WorkStream, type WorkStreamDependencyCondition } from '@ficus/shared'
 
 export const WORK_STREAM_GRAPH_NODE_WIDTH = 240
 export const WORK_STREAM_GRAPH_NODE_HEIGHT = 128
@@ -19,6 +19,10 @@ export interface WorkStreamGraphNodeLayout {
 export interface WorkStreamGraphEdgeLayout {
   from: string
   to: string
+  /** What the dependent waits for: the blocker being done, or its pull request being ready. */
+  condition: WorkStreamDependencyCondition
+  /** The edge no longer holds the dependent back. */
+  satisfied: boolean
   points: Array<{ x: number; y: number }>
 }
 
@@ -36,7 +40,7 @@ export function layoutWorkStreamGraph(streams: WorkStream[]): WorkStreamGraphLay
   const streamById = new Map(streams.map((stream) => [stream.id, stream]))
   const blockers = new Map<string, Set<string>>()
   const connected = new Set<string>()
-  const edges: Array<{ from: string; to: string }> = []
+  const edges: Array<Pick<WorkStreamGraphEdgeLayout, 'from' | 'to' | 'condition' | 'satisfied'>> = []
 
   for (const stream of streams) {
     const openBlockers = new Set(stream.dependsOn.filter((id) => streamById.has(id)))
@@ -44,7 +48,14 @@ export function layoutWorkStreamGraph(streams: WorkStream[]): WorkStreamGraphLay
     for (const blockerId of openBlockers) {
       connected.add(blockerId)
       connected.add(stream.id)
-      edges.push({ from: blockerId, to: stream.id })
+      const edge = stream.dependencies?.find((entry) => entry.workStreamId === blockerId)
+      edges.push({
+        from: blockerId,
+        to: stream.id,
+        condition: edge?.condition ?? 'done',
+        // Servers that predate per-edge state report nothing: fall back to the blocker's status.
+        satisfied: edge?.satisfied ?? streamById.get(blockerId)?.status === 'done',
+      })
     }
   }
 
@@ -115,12 +126,14 @@ export function layoutWorkStreamGraph(streams: WorkStream[]): WorkStreamGraphLay
   })
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]))
-  const routedEdges: WorkStreamGraphEdgeLayout[] = edges.map(({ from, to }) => {
+  const routedEdges: WorkStreamGraphEdgeLayout[] = edges.map(({ from, to, condition, satisfied }) => {
     const source = nodeById.get(from)!
     const target = nodeById.get(to)!
     return {
       from,
       to,
+      condition,
+      satisfied,
       points: [
         { x: source.x + WORK_STREAM_GRAPH_NODE_WIDTH, y: source.y + WORK_STREAM_GRAPH_NODE_HEIGHT / 2 },
         { x: target.x, y: target.y + WORK_STREAM_GRAPH_NODE_HEIGHT / 2 },

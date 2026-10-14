@@ -5,6 +5,8 @@ import { isJsonMode, output, outputError, outputTable, setOutputOptions } from '
 import {
   buildWorkStreamSourceLinks,
   buildWorkStreamSpawnAgentBody,
+  describeDependencyEdge,
+  parseDependsOnOptions,
   formatInvalidPriorityMessage,
   formatWorkStreamAgents,
   formatWorkStreamPriorityCell,
@@ -49,6 +51,53 @@ describe('workstream CLI commands', () => {
     registerWorkstreamCommands(program)
     await program.parseAsync(['--quiet', ...args], { from: 'user' })
   }
+
+  it('parses --depends-on <id>:ready, keeps bare IDs and <id>:done as plain IDs, and rejects unknown conditions', () => {
+    expect(parseDependsOnOptions(['12', '13:done', '14:ready', '9b3823c9-192c-4b18-bc22-49dbd564c96a:ready'])).toEqual([
+      '12',
+      '13',
+      { id: '14', condition: 'ready' },
+      { id: '9b3823c9-192c-4b18-bc22-49dbd564c96a', condition: 'ready' },
+    ])
+    expect(() => parseDependsOnOptions(['12:merged'])).toThrow('Unknown dependency condition "merged"')
+  })
+
+  it('sends the unlock condition on create and update, and nothing when the condition is unknown', async () => {
+    await run(['workstream', 'create', 'Stacked', '--squad', 's1', '--depends-on', '12:ready', '--depends-on', '13'])
+    expect((apiPost as ReturnType<typeof mock>).mock.calls[0]![1]).toMatchObject({
+      dependsOn: [{ id: '12', condition: 'ready' }, '13'],
+    })
+    await run(['workstream', 'update', 'ws1', '--depends-on', '12:done', '--depends-on', '14:ready'])
+    expect((apiPatch as ReturnType<typeof mock>).mock.calls[0]![1]).toEqual({
+      dependsOn: ['12', { id: '14', condition: 'ready' }],
+    })
+    ;(apiPatch as ReturnType<typeof mock>).mockClear()
+    await run(['workstream', 'update', 'ws1', '--depends-on', '12:soon'])
+    expect(apiPatch).not.toHaveBeenCalled()
+    expect(String((outputError as ReturnType<typeof mock>).mock.calls.at(-1)![0])).toContain(
+      'Unknown dependency condition "soon"'
+    )
+  })
+
+  it('describes each dependency with its condition, state, stack and delivery hold', () => {
+    expect(describeDependencyEdge('#12', undefined)).toBe('#12')
+    expect(describeDependencyEdge('#12', { workStreamId: 'a', condition: 'done', satisfied: false })).toBe(
+      '#12 (done: waiting)'
+    )
+    expect(describeDependencyEdge('#12', { workStreamId: 'a', condition: 'ready', satisfied: false })).toBe(
+      '#12 (ready: waiting)'
+    )
+    expect(
+      describeDependencyEdge('#12', {
+        workStreamId: 'a',
+        condition: 'ready',
+        satisfied: true,
+        unlockedAt: '2026-10-13T00:00:00.000Z',
+        stack: { mode: 'stacked', branch: 'work/a' },
+        holdsDelivery: true,
+      })
+    ).toBe('#12 (ready: unlocked, stacked on work/a, holds delivery until it merges)')
+  })
 
   it('preserves metadata lookup encoding, multiple criteria and legacy status filters', async () => {
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce([])

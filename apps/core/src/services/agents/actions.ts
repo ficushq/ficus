@@ -359,7 +359,9 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       ) latest`,
       sql`true`
     )
-    .where(eq(assistantTasks.status, 'needs-input'))
+    // Archiving a squad cancels its tasks (and a sweep closes older ones); never list a question no
+    // live squad can act on while that settles. Tasks with no squad join no row and stay listed.
+    .where(and(eq(assistantTasks.status, 'needs-input'), isNull(squads.archivedAt)))
     .orderBy(desc(assistantTasks.updatedAt))
   for (const row of waitingTasks) {
     const data: AssistantTaskActionData = {

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "eval": "screenshot-work-stream",
+  "entries": {
+    "checkout": {
+      "openai:gpt-6-luna": {
+        "hash": "af9df61c2353a574c7774f8da9abdd7b1ac8d73db56712d2cf0d50fa820ecf00",
+        "answers": {
+          "work_stream": {
+            "type": "choice",
+            "choice": "w1",
+            "probabilities": {
+              "w1": 1,
+              "w2": 0,
+              "none": 0
+            },
+            "confidence": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:36.928Z"
+      }
+    },
+    "product": {
+      "openai:gpt-6-luna": {
+        "hash": "4fa73eefb495b45d690a856d96d5d04c73b28768057ace7699364dd2cec23a85",
+        "answers": {
+          "work_stream": {
+            "type": "choice",
+            "choice": "none",
+            "probabilities": {
+              "w1": 0.02,
+              "w2": 0.01,
+              "none": 0.97
+            },
+            "confidence": 0.96
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:36.928Z"
+      }
+    }
+  }
+}

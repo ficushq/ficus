@@ -137,7 +137,9 @@ export function validateStructuredInput<T>(
   schema: {
     safeParse(
       value: unknown
-    ): { success: true; data: T } | { success: false; error: { issues: { code: string; path: (string | number)[] }[] } }
+    ):
+      | { success: true; data: T }
+      | { success: false; error: { issues: { code: string; path: (string | number)[]; message?: string }[] } }
   },
   value: unknown
 ): T {
@@ -149,7 +151,19 @@ export function validateStructuredInput<T>(
         .slice(0, 8)
         .map((part) => (typeof part === 'number' ? '[index]' : safeFields.has(part) ? part : '[key]'))
         .join('.') || 'root'
-    return `${path}: ${issue.code}`
+    // Ficus's own checks (custom issues) say how to fix it, e.g. "Route 1: uses unknown outcome '…';
+    // add it to the step's outcomes". Anything they quote from the input is caller data, like the
+    // keys above, so quoted values and listed names are left out.
+    const message =
+      issue.code === 'custom'
+        ? issue.message
+            ?.replace(/'[^']*'/g, "'…'")
+            .replace(/\([^()]*\)/g, '(…)')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 200)
+        : undefined
+    return message ? `${path}: ${message}` : `${path}: ${issue.code}`
   })
   throw new Error(`Invalid workflow input (${issues.join('; ')}). Check the command schema and supported fields.`)
 }

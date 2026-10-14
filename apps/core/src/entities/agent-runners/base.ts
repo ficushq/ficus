@@ -97,6 +97,7 @@ import * as rbacPermissions from '../../services/rbac/permissions'
 import type { RunnerTiming } from '../../services/execution/runner-timing'
 import { logRunnerMilestone } from '../../services/execution/runner-timing'
 import { withUsageDelta, withoutDelta, type UsageBaseline } from '../../services/execution/usage-delta'
+import { observeRobotMood } from '../../services/robot-moods'
 
 const log = createLogger('runner')
 const STRANDED_PENDING_RETRY_BUDGET = 3
@@ -248,6 +249,7 @@ export abstract class AgentRunner {
       getSession: () => this.session,
       deliveryOwner: this.deliveryOwner,
       isActive: () => getSession(this.agent.id)?.session === this.session,
+      prepare: async (message) => (await this.prepareMessagesForModel([message]))[0] ?? message,
     })
     this.storedSecretToolContainment = new StoredSecretToolContainment({
       agentId: agent.id,
@@ -960,6 +962,8 @@ export abstract class AgentRunner {
       }
 
       this.collector.handleEvent(event)
+      // Robot moods for the farm: a no-op unless someone watches this robot. Never throws or waits.
+      observeRobotMood(this.agent.id, this.agent.squadId, event)
 
       if (event.type === 'agent_settled') {
         // Kick the background pre-compaction bake before the turn finalizes and
@@ -1382,6 +1386,15 @@ export abstract class AgentRunner {
     await this.agent.update({ metadata: rest }).catch(() => {})
   }
 
+  /**
+   * Claimed messages, just before the model reads them (the first prompt and later steers and
+   * follow-ups alike). Runners may add server-owned context to their metadata here; it must not
+   * throw or hold the turn for long. The same messages come back, in order.
+   */
+  protected async prepareMessagesForModel(messages: Message[]): Promise<Message[]> {
+    return messages
+  }
+
   private buildInitialPromptText(messages: Message[]): string {
     return messages
       .map((message) => messageTextForModel(message).trim())
@@ -1431,9 +1444,10 @@ export abstract class AgentRunner {
     }
     if (getSession(this.agent.id)?.session !== this.session) return
     const claimed = await this.agent.claimInitialPendingMessagesForSessionDelivery(this.deliveryOwner)
+    const prepared = claimed.length > 0 ? await this.prepareMessagesForModel(claimed) : claimed
     const text =
-      claimed.length > 0 ? this.buildInitialPromptText(claimed) : this.execution.message?.trim() || 'Continue.'
-    const { imageIds, images } = await this.loadPendingMessageImages(claimed)
+      prepared.length > 0 ? this.buildInitialPromptText(prepared) : this.execution.message?.trim() || 'Continue.'
+    const { imageIds, images } = await this.loadPendingMessageImages(prepared)
 
     try {
       this.activeHealthAttempt = this.failover.captureActiveAttempt()

@@ -46,7 +46,7 @@ A stream's lifecycle is **Queued**, **Active**, **Done**, or **Canceled**. Its d
 | In Progress / active step   | Open the current agent conversation for progress and evidence                                         |
 | Idle                        | No current execution or more specific wait is shown; inspect the next step and latest conversation    |
 | Waiting on Answer / Blocked | Read the exact question or blocker; another branch may still be running                               |
-| Waiting on Dependency       | Inspect the prerequisite work; it must complete before dependent work can continue                    |
+| Waiting on Dependency       | Inspect the prerequisite work; it must finish, or have its pull request ready, before work continues  |
 | In Review                   | Use the review controls for the requested verdict                                                     |
 | Execution Failed            | Read the failed execution's error and correct its cause before continuing                             |
 | Paused                      | Work is waiting for an explicit resume                                                                |

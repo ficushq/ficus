@@ -4,7 +4,12 @@ import { eq, inArray } from 'drizzle-orm'
 import { trackedResourceKey, type IntegrationOutputFact, type TrackedResource } from '@ficus/shared'
 import { db, squads, workStreams, integrationOutputEvents } from '../../db'
 import type { IntegrationOutputAuthority } from '../integrations/outputs/types'
-import { deliveryView, recordDeliveryObservation, recordDeliveryVerification } from './delivery-pull-requests'
+import {
+  deliveryPullRequestHead,
+  deliveryView,
+  recordDeliveryObservation,
+  recordDeliveryVerification,
+} from './delivery-pull-requests'
 
 const prefix = `delivery-${randomUUID()}`
 const repo = `${prefix}/repo`
@@ -262,4 +267,27 @@ test('verification results are written under the stream lock without disturbing 
   await recordDeliveryVerification(stream.id, [{ key: primaryKey, state: 'merged', headSha: 'd'.repeat(40) }])
   expect((await metadataOf(stream.id)).delivery.pullRequests[primaryKey]).toMatchObject({ headSha: 'd'.repeat(40) })
   expect(await updatedAtOf(stream.id)).toBeGreaterThan(stale)
+})
+
+test('only a push to the primary delivery pull request reports a new head', async () => {
+  const head = 'b'.repeat(40)
+  const pushed = (repository: string, number: number, output = 'pull_request.updated') =>
+    insertEvent(prFact(repository, number, { output, data: { repository, pullRequest: { number, headSha: head } } }))
+  expect(deliveryPullRequestHead(baseMetadata, await pushed(repo, 10))).toBe(head)
+  // Late CI and reviews can name an older commit: they never move the head.
+  expect(deliveryPullRequestHead(baseMetadata, await pushed(repo, 10, 'pull_request.ci_completed'))).toBeUndefined()
+  expect(deliveryPullRequestHead(baseMetadata, await pushed(repo, 10, 'pull_request.merged'))).toBeUndefined()
+  // An additional designated pull request, another pull request, and an unbound stream are not the stream's branch.
+  expect(deliveryPullRequestHead(baseMetadata, await pushed(other, 20))).toBeUndefined()
+  expect(deliveryPullRequestHead(baseMetadata, await pushed(repo, 11))).toBeUndefined()
+  expect(
+    deliveryPullRequestHead({ codeHost: { integration: 'github', repository: repo } }, await pushed(repo, 10))
+  ).toBeUndefined()
+  const malformed = await insertEvent(
+    prFact(repo, 10, {
+      output: 'pull_request.updated',
+      data: { repository: repo, pullRequest: { number: 10, headSha: 'main' } },
+    })
+  )
+  expect(deliveryPullRequestHead(baseMetadata, malformed)).toBeUndefined()
 })

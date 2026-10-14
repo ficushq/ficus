@@ -24,6 +24,8 @@ import { getSettingsStore } from '../settings'
 export const DECISION_PROVIDERS_KEY = 'DECISION_PROVIDERS'
 export const DECISION_ROUTING_KEY = 'DECISION_ROUTING'
 export const DECISION_FEATURES_KEY = 'DECISION_FEATURES'
+/** The routing schema's cap on one order. */
+const DECISION_DEFAULT_ORDER_MAX = 8
 
 export interface StoredDecisionProvider {
   id: string
@@ -112,9 +114,11 @@ export async function addDecisionProvider(input: NewDecisionProvider): Promise<S
     ...(input.apiKey?.trim() ? { apiKey: input.apiKey.trim() } : {}),
   }
   await mutateProviders((providers) => providers.push(provider))
-  // A first provider answers every purpose until the owner orders them.
+  // A new provider joins the end of the default order, so it's asked (a provider outside the order
+  // never is). Features with their own order keep it: the owner chose those.
   const routing = getDecisionRouting()
-  if (!routing.default.length) await setDecisionRouting({ ...routing, default: [provider.id] }, 'decisions')
+  if (!routing.default.includes(provider.id) && routing.default.length < DECISION_DEFAULT_ORDER_MAX)
+    await setDecisionRouting({ ...routing, default: [...routing.default, provider.id] }, 'decisions')
   return provider
 }
 

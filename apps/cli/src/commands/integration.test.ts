@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import { Command } from 'commander'
 import { apiDelete, apiGet, apiPost, apiPut } from '../client'
-import { setOutputOptions } from '../output'
-import { readCredentialFromStdin, registerIntegrationCommands } from './integration'
+import { output, setOutputOptions } from '../output'
+import { commitSigningLines, readCredentialFromStdin, registerIntegrationCommands } from './integration'
 
 type AnyMock = ReturnType<typeof mock>
 
@@ -32,6 +32,62 @@ test('help permits credentials only through stdin and requires explicit export c
   expect(create).not.toContain('--credential <')
   const enable = integration.commands.find((command) => command.name() === 'export-enable')!.helpInformation()
   expect(enable).toContain('--consent')
+})
+
+describe('commit signing visibility', () => {
+  const on = {
+    state: 'on',
+    login: 'octo',
+    signsFor: ['7+octo@users.noreply.github.com', 'octo@example.com'],
+    fingerprint: 'SHA256:abc',
+  }
+
+  test('list --squad reads the accounts attached to that squad', async () => {
+    await run(['integration', 'list', '--provider', 'github', '--squad', 'squad-1'])
+    expect(apiGet).toHaveBeenCalledWith('/api/squads/squad-1/integrations/github')
+  })
+
+  test('list and get print each GitHub account’s signing state and the emails it signs for', async () => {
+    const connections = [
+      { id: 'c1', commitSigning: on },
+      { id: 'c2', commitSigning: { state: 'needs_attention', login: 'hubot', signsFor: [] } },
+      { id: 'c3', commitSigning: { state: 'off', login: 'idle', signsFor: [] } },
+    ]
+    ;(apiGet as AnyMock).mockResolvedValue(connections)
+    ;(output as AnyMock).mockClear()
+    await run(['integration', 'list', '--provider', 'github'])
+    const lines = [
+      'Commit signing:',
+      '  @octo: on, signs commits committed as 7+octo@users.noreply.github.com, octo@example.com [connection c1]',
+      '  @hubot: needs attention [connection c2]',
+      '  @idle: off [connection c3]',
+    ]
+    expect((output as AnyMock).mock.calls).toEqual([[connections], [lines, lines.join('\n')]])
+    expect(commitSigningLines(connections[0])).toEqual(lines.slice(0, 2))
+    expect(commitSigningLines([{ id: 'b1', providerKey: 'bigbrain' }])).toEqual([])
+  })
+
+  test('a squad shows which attached accounts it signs as and which is the default', () => {
+    expect(
+      commitSigningLines({
+        providerKey: 'github',
+        commitSigning: {
+          defaultConnectionId: 'c1',
+          accounts: [
+            { ...on, connectionId: 'c1', isDefault: true },
+            { state: 'off', login: 'hubot', signsFor: [], connectionId: 'c2', isDefault: false },
+          ],
+        },
+      })
+    ).toEqual([
+      'Commit signing (the committer email chooses the account; an account that is off leaves its commits unsigned; emails of no attached account are refused):',
+      '  @octo (squad default): on, signs commits committed as 7+octo@users.noreply.github.com, octo@example.com [connection c1]',
+      '  @hubot: off [connection c2]',
+    ])
+    expect(
+      commitSigningLines({ providerKey: 'github', commitSigning: { defaultConnectionId: null, accounts: [] } })
+    ).toEqual(['Commit signing: no GitHub account is attached to this squad.'])
+  })
 })
 
 describe('global connection lifecycle paths', () => {

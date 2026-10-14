@@ -171,12 +171,22 @@ describe('SquadDetailPage', () => {
     expect(html).not.toContain('Done work should not feed Home')
   })
 
-  test('hides squad delete actions unless squads:delete is allowed', () => {
+  // Archiving is rare and destructive, so it lives in Squad Settings > General
+  // rather than permanently in the header of every squad page.
+  test('keeps archive out of the squad header and offers it from Settings with squads:delete', () => {
+    const settingsEntry = `/squads/${squad.id}/settings`
     expect(renderSquadDetail()).not.toContain('Archive')
+    expect(renderSquadDetail({ entry: settingsEntry })).not.toContain('Archive')
 
     permissions.add('squads:delete')
 
-    expect(renderSquadDetail()).toContain('Archive')
+    const home = renderSquadDetail()
+    expect(home).not.toContain('Archive')
+    expect(home).not.toContain('Squad actions')
+    const settings = renderSquadDetail({ entry: settingsEntry })
+    expect(settings).not.toContain('Squad actions')
+    expect(settings.match(/Archive/g)).toHaveLength(1)
+    expect(settings).toMatch(/Danger zone.*>Archive squad<\/button>/s)
   })
 
   test('shows the primary destinations, Workspace and Apps included, and keeps secondary tools in More', () => {

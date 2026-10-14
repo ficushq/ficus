@@ -182,7 +182,7 @@ ficus workstream create|new [options] <title>
 | `--flow-stdin` | Read the source/definition from a pipe or quoted heredoc |
 | `--flow <file>` | Read a saved JSON/YAML workflow source or definition |
 | `-m, --message <msg>` | Handoff message (included in assignment notifications) |
-| `--depends-on <wsId>` | Dependency work stream ID (can be repeated) |
+| `--depends-on <wsId[:condition]>` | Dependency work stream (can be repeated). `<wsId>` or `<wsId>:done` waits until the dependency is done; `<wsId>:ready` unlocks when its work is implemented and its pull request is open, stacks this stream on its branch and holds delivery until it merges. See [Dependencies and stacked work](../workflows.md#dependencies-and-stacked-work) |
 | `--from-event <eventId>` | Create idempotently from an integration event's issue/PR; a replayed event returns the existing stream (`reusedFromEvent: true`) instead of a duplicate |
 
 **Examples:**
@@ -209,6 +209,9 @@ ficus workstream create "Fix bug Y" --squad squad-123 --flow-content '{"kind":"p
 ficus workstream create "Integration tests" \
   --depends-on ws-api \
   --depends-on ws-database
+
+# Start once the dependency's pull request is open, stacked on its branch
+ficus workstream create "Use the new parser" --squad squad-123 --depends-on ws-parser:ready
 
 # Create idempotently from an integration event (e.g. an issue-assignment
 # notification carrying "Event reference: <id>"); replays reuse the stream
@@ -267,7 +270,7 @@ ficus workstream update|edit [options] <id>
 | Option | Description |
 |--------|-------------|
 | `-s, --status <status>` | New status |
-| `--depends-on <wsId>` | Replace dependencies with these work stream IDs (can be repeated) |
+| `--depends-on <wsId[:condition]>` | Replace dependencies with these work streams (can be repeated); same `<wsId>`, `<wsId>:done` and `<wsId>:ready` forms as `create` |
 | `--clear-dependencies` / `--remove-dependency` | Clear all dependencies (removes every dependency; cannot be combined with `--depends-on`) |
 | `--title <title>` | New title |
 | `--description <desc>` | New description |

@@ -8,6 +8,17 @@ import { OAuthTransportError } from './transport'
 import { PlatformRequestError } from '../../platform/instance-client'
 import { BrokerUnconfiguredError } from './authority'
 import { parseNotionConfiguration } from '@ficus/shared/oauth-providers/notion/config'
+import { eq } from 'drizzle-orm'
+import { db, squads, integrationConnections } from '../../../db'
+import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
+import { createTestGitHubConnection } from '../../../test-utils/github-connection'
+import { DbIntegrationConnectionRepository } from '../db-connection-repository'
+import { getSecretStore } from '../../secrets'
+import { createGitHubPlugin } from '../github/plugin'
+import { getGitHubAuthorDefaults } from '../github/author-defaults'
+import { resolveGitHubConnection } from '../github/resolve-connection'
+import { resolveOAuthAuthority } from './authority'
+useEnabledIntegrationFixtures('github')
 
 const connection: IntegrationConnectionRecord = {
   id: '80000000-0000-4000-8000-000000000001',
@@ -645,4 +656,76 @@ describe('IntegrationRefreshService', () => {
     expect(harness.invalidations).toEqual([connection.id])
     expect(parseOAuthCredential(harness.raw()).tokenRevision).toBe(1)
   })
+})
+
+test('the git author identity resolved while a rotated GitHub token is being validated equals the pre-refresh identity', async () => {
+  const squadId = crypto.randomUUID()
+  await db.insert(squads).values({ id: squadId, name: 'Refresh window', purpose: 'test' })
+  const account = await createTestGitHubConnection({ squadId, login: 'rotating' })
+  const profileRequest = (async () =>
+    Response.json({ id: 123, name: 'Rotating Person', email: 'rotating@example.com' })) as unknown as typeof fetch
+  const store = getSecretStore()
+  const invalidations: string[] = []
+  let duringValidation:
+    | { identity: Awaited<ReturnType<typeof getGitHubAuthorDefaults>>; credentialWithheld: boolean; state: string }
+    | undefined
+  // The real GitHub plugin (so refreshInvalidatesPreviousTokens is the production value)
+  // over the real connection repository; only GitHub and the token endpoint are synthetic.
+  const plugin = createGitHubPlugin(
+    {
+      async currentUser() {
+        const [row] = await db.select().from(integrationConnections).where(eq(integrationConnections.id, account.id))
+        duringValidation = {
+          identity: await getGitHubAuthorDefaults(squadId, profileRequest),
+          credentialWithheld: (await resolveGitHubConnection(squadId)) === undefined,
+          state: `${row!.authState}/${row!.healthState}/${row!.lastErrorCode}`,
+        }
+        return { version: 1, userId: 123, login: 'rotating' }
+      },
+    },
+    async () => undefined
+  )
+  const service = new IntegrationRefreshService({
+    connections: new DbIntegrationConnectionRepository(),
+    credentials: {
+      get: (key) => store.get(key),
+      refreshKey: (key) => store.refreshKey(key),
+      mutateSecret: (key, mutate, actor) => store.mutateSecret(key, mutate, actor),
+    },
+    resolvePlugin: () => plugin as never,
+    transport: {
+      authority: resolveOAuthAuthority(),
+      async refresh() {
+        return {
+          tokens: {
+            accessToken: 'synthetic-access-new',
+            refreshToken: 'synthetic-refresh-new',
+            expiresAt: new Date(Date.now() + 8 * 3_600_000).toISOString(),
+          },
+          configuration: { version: 1, userId: 123, login: 'rotating' },
+          displayName: 'rotating',
+        }
+      },
+    },
+    lease: new ConnectionAuthorizationLease(),
+    invalidateAssignments: async (id) => void invalidations.push(id),
+  })
+  try {
+    const before = await getGitHubAuthorDefaults(squadId, profileRequest)
+    expect(before?.gitUserName).toBe('Rotating Person')
+
+    expect(await service.refresh(account.id, 'explicit')).toEqual({ status: 'refreshed' })
+
+    // The window really was the one that used to drop the identity...
+    expect(duringValidation?.state).toBe('invalid/degraded/refresh_validation_pending')
+    expect(duringValidation?.credentialWithheld).toBe(true)
+    // ...and both projection invalidations (before and after validation) fired.
+    expect(invalidations).toEqual([account.id, account.id])
+    expect(duringValidation?.identity).toEqual(before)
+    expect(await getGitHubAuthorDefaults(squadId, profileRequest)).toEqual(before)
+    expect((await resolveGitHubConnection(squadId))?.credential.accessToken).toBe('synthetic-access-new')
+  } finally {
+    await account.dispose()
+    await db.delete(squads).where(eq(squads.id, squadId))
+  }
 })

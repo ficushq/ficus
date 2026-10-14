@@ -32,7 +32,16 @@ import {
   assistantDelegationSchema,
 } from './assistant-activity/project'
 import { resolveOwnedAgent } from './assistant-agents'
+import {
+  ImageForwardError,
+  MAX_FORWARDED_IMAGES,
+  prepareForwardedImages,
+  withForwardedImages,
+  type ForwardedImages,
+} from './attachments/forward-images'
 import { requireConsultantCreationAccess } from './chat/consultant-access'
+import { SQUAD_ARCHIVED_TASK_REASON } from './assistant-activity/squad-archive'
+import { Squad } from '../entities/Squad'
 import { resolveActingUser, hasAgentResourcePermission, hasPermission, type Identity } from './rbac'
 
 function taskError(status: 400 | 403 | 404 | 409 | 500, options: { message: string }) {
@@ -53,6 +62,8 @@ export const assistantMessageSchema = z
     label: z.string().trim().min(1).max(80).optional(),
     inReplyTo: uuid.optional(),
     mode: z.enum(['steer', 'follow-up']).default('steer'),
+    /** Images this conversation received, copied to the delegate with the request. */
+    imageIds: z.array(uuid).min(1).max(MAX_FORWARDED_IMAGES).optional(),
   })
   .refine((input) => !(input.agentId && input.squadId), { message: 'agentId and squadId are mutually exclusive' })
 
@@ -80,6 +91,31 @@ export const assistantTaskCommandSchema = z.discriminatedUnion('operation', [
 ])
 type TaskCommand = z.infer<typeof assistantTaskCommandSchema>
 type Task = typeof assistantTasks.$inferSelect
+
+/**
+ * Gate a command on a squad task. A live squad still requires current consultant authority. When
+ * the squad is archived or gone, cancel needs no squad (it only stops tracking the task and wakes
+ * nobody), while continue and retry refuse with a 409 instead of a misleading 404.
+ * Returns whether the squad is inert.
+ */
+async function requireTaskSquad(
+  user: Identity,
+  squadId: string | null | undefined,
+  operation: TaskCommand['operation']
+): Promise<{ inert: boolean }> {
+  const squad = squadId ? await Squad.find(squadId) : null
+  const archived = squad ? squad.isArchived || squad.status === 'archived' : false
+  if (squad && !archived) {
+    await requireConsultantCreationAccess(user, squad.id)
+    return { inert: false }
+  }
+  if (operation === 'cancel') return { inert: true }
+  throw taskError(409, {
+    message: archived
+      ? `${SQUAD_ARCHIVED_TASK_REASON}. Start a new task in another squad.`
+      : 'The squad is no longer available. Start a new task in another squad.',
+  })
+}
 
 /** Continue, retry with an available owned helper, or cancel exactly one request generation. */
 export async function changeAssistantTask(
@@ -201,7 +237,10 @@ async function dispatchAssistantTaskRequest(
     if (!isDeepStrictEqual(accepted.metadata[ASSISTANT_REQUEST_KEY], snapshot))
       throw taskError(409, { message: 'Message receipt conflicts with this request' })
     const receipt = receiptFor(accepted)
-    if (receipt.kind === 'squad') await requireConsultantCreationAccess(user, receipt.squadId!)
+    if (receipt.kind === 'squad') {
+      if (action) await requireTaskSquad(user, receipt.squadId, action.command.operation)
+      else await requireConsultantCreationAccess(user, receipt.squadId!)
+    }
     if (receipt.kind === 'agent') {
       const target = await Agent.find(receipt.agentId)
       if (
@@ -241,14 +280,13 @@ async function dispatchAssistantTaskRequest(
   let kind: AssistantMessageReceipt['kind']
   let targetSquadId: string | null = null
   let cancelledRecipientId: string | undefined
+  // An archived or missing squad is inert: a cancel there records the request without waking its delegate.
+  let inertSquad = false
   if (action) {
     const { task, command } = action
     kind = task.kind
     targetSquadId = task.squadId
-    if (task.kind === 'squad') {
-      if (!task.squadId) throw taskError(409, { message: 'Task squad is unavailable' })
-      await requireConsultantCreationAccess(user, task.squadId)
-    }
+    if (task.kind === 'squad') inertSquad = (await requireTaskSquad(user, task.squadId, command.operation)).inert
     agent = task.agentId ? await Agent.find(task.agentId) : null
     if (task.kind === 'agent' && agent && !(await hasAgentResourcePermission(user, agent, 'chat:send')))
       throw taskError(404, { message: 'Agent not found' })
@@ -345,28 +383,49 @@ async function dispatchAssistantTaskRequest(
     )
     .orderBy(desc(inbox.createdAt))
     .limit(1)
-  const { message } = await InboxMessage.sendOnce(
-    {
-      recipientType: 'agent',
-      recipientId: agentId,
-      senderType: 'voice_assistant',
-      senderId: address,
-      content: requestContent,
-      deliveryMode: input.mode,
-      assistantRequest: snapshot,
-      assistantTaskMutation: mutation,
-      metadata: {
-        source: 'assistant_inbox',
-        inReplyTo: input.inReplyTo,
-        [ASSISTANT_DELEGATION_KEY]: { kind, squadId: targetSquadId, ...(input.label ? { label: input.label } : {}) },
-        ...(input.pagePath && previous?.pagePath !== input.pagePath ? { pagePath: input.pagePath } : {}),
-        assistantContext: history.reverse().map(({ entry }) => ({
-          role: (entry as AssistantEntry).role,
-          text: (entry as AssistantEntry).text.slice(-3000),
-        })),
+  // Forwarded images are copied to the delegate it has just been authorized to reach.
+  let forwarded: ForwardedImages | null = null
+  if (input.imageIds?.length) {
+    if (!agent || cancelledRecipientId) throw taskError(400, { message: 'Images cannot be sent with this request' })
+    try {
+      forwarded = await prepareForwardedImages({
+        sourceAgentId: conversation.agentId,
+        imageIds: input.imageIds,
+        target: agent,
+        userId: user.userId,
+      })
+    } catch (error) {
+      if (error instanceof ImageForwardError) throw taskError(400, { message: error.message })
+      throw error
+    }
+  }
+  const { message } = await withForwardedImages(forwarded, () =>
+    InboxMessage.sendOnce(
+      {
+        recipientType: 'agent',
+        recipientId: agentId,
+        senderType: 'voice_assistant',
+        senderId: address,
+        content: requestContent,
+        deliveryMode: input.mode,
+        assistantRequest: snapshot,
+        assistantTaskMutation: mutation,
+        persistInTransaction: forwarded?.insert,
+        ...(inertSquad ? { deferDelivery: true } : {}),
+        metadata: {
+          ...(forwarded ? { imageIds: forwarded.ids } : {}),
+          source: 'assistant_inbox',
+          inReplyTo: input.inReplyTo,
+          [ASSISTANT_DELEGATION_KEY]: { kind, squadId: targetSquadId, ...(input.label ? { label: input.label } : {}) },
+          ...(input.pagePath && previous?.pagePath !== input.pagePath ? { pagePath: input.pagePath } : {}),
+          assistantContext: history.reverse().map(({ entry }) => ({
+            role: (entry as AssistantEntry).role,
+            text: (entry as AssistantEntry).text.slice(-3000),
+          })),
+        },
       },
-    },
-    idempotencyKey
+      idempotencyKey
+    )
   )
   if (
     message.metadata[ASSISTANT_REQUEST_KEY] !== undefined

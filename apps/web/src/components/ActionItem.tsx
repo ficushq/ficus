@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { assistantConversationSearch } from '../lib/assistantConversationSearch'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
@@ -48,17 +49,6 @@ const actionRoles: Record<PendingAction['type'], StatusRole> = {
   'workstream-review': 'review',
   'workstream-blocked': 'danger',
   'workstream-delivery': 'review',
-}
-
-/** Opens the saved Assistant conversation on the current page; the navigation reader picks it up. */
-function assistantConversationSearch(search: string, conversationId: string, taskId?: string): string {
-  const params = new URLSearchParams(search)
-  for (const key of ['commandStack', 'commandQuery', 'assistantChat']) params.delete(key)
-  params.set('chat', 'open')
-  params.set('assistantConversation', conversationId)
-  if (taskId) params.set('assistantTask', taskId)
-  else params.delete('assistantTask')
-  return params.toString()
 }
 
 // Link to an agent's conversation thread (squad agents open in the squad view; personal agents in chat).

@@ -96,7 +96,7 @@ Steps define instructions, expected output, outcomes, and whether they are requi
 
 ### Decision steps
 
-A decision step (`kind: decision`) routes work without an agent or a person. When the run reaches it, the worker asks the decision models configured for **Workflow decisions** (Settings → Decision models) typed questions about the work so far, and follows an outcome automatically. Models answer with probabilities, options, or levels, never free text.
+A decision step (`kind: decision`) routes work without an agent or a person. When the run reaches it, the worker asks the decision models configured for **Workflow decisions** (Settings → Decision Providers) typed questions about the work so far, and follows an outcome automatically. Models answer with probabilities, options, or levels, never free text.
 
 ```yaml
 - id: triage
@@ -109,8 +109,16 @@ A decision step (`kind: decision`) routes work without an agent or a person. Whe
       type: score
       instructions: How risky is the change to production?
       levels: [{ label: Low }, { label: Medium }, { label: High }]
+    area:
+      type: choice
+      instructions: Which part of the product does the change touch?
+      options:
+        billing: Payments, invoices or refunds.
+        other: Anything else.
   routes: # checked in order; the first match wins
     - when: { type: score, question: risk, op: at-least, level: High }
+      outcome: review
+    - when: { type: choice, question: area, equals: billing, minConfidence: 0.7 }
       outcome: review
     - when: { type: yesno, question: ready, op: at-least, probability: 0.8 }
       outcome: ship
@@ -125,6 +133,7 @@ A decision step (`kind: decision`) routes work without an agent or a person. Whe
 - `questions` uses the decision-model question format: `yesno`, `choice` with `options`, or `score` with `levels` (lowest first).
 - A route's `when` tests one answer: a yes/no probability `at-least`/`at-most` a threshold from 0 to 1, a choice that `equals` an option (optionally with `minConfidence`), or a score whose level is `at-least`/`at-most` a level. `question` names the question it reads; a step that asks only one question may omit it (the editor always writes it).
 - Every route, `otherwise`, and `unavailable` outcome must be declared in `outcomes`. A decision step has no participant or expected output, and it cannot be the target of a `returnTo`.
+- Saving a preset, resolving a source, creating a work stream, or editing a draft in the Assistant with decision steps while no decision model is set up for Workflow decisions returns a `warnings` entry naming the steps, so whoever saves it can tell the user.
 - When `otherwise` or `unavailable` is omitted, the step waits for a person instead of guessing: it opens the same decision wait as a human approval, and any reviewer chooses an outcome from the review controls (or `ficus workstream advance` as a user). The step's instructions and the model's answers are shown with it.
 
 Each decision is recorded on its attempt (`state.attempts[].decision`: status, answers, matched route, provider, model, and latency) and as the attempt's result, which the next step receives with the result decided on. Its transition receipt uses the actor `workflow:decision-model` and a request ID derived from the attempt, so a retry or restart never advances it twice. A deliverable flow that a decision finishes completes on its own.
@@ -165,6 +174,48 @@ ficus workstream unblock STREAM_ID --wait WAIT_ID -m "Use the published threat m
 Resolve questions through their question-answer interface. Dependency waits remain whole-stream and are system-resolved. Human-approval flow steps own their decision waits: use the flow's decision controls, not generic unblock. In the web app these controls sit at the top of the work stream detail, with the step's instructions, the handoff being reviewed, and the pull request. Each outcome shows where it sends the work. Decision notes are optional for outcomes that move work forward (`next` or `parallel`) and required for outcomes that send it back (`returnTo`), because they become the returned step's rework feedback; the server enforces this by transition shape, not outcome name. Agent steps still require evidence for every outcome. Final delivery approval offers **Approve and complete** and **Send back**, which requests tracked rework with your feedback. An open human-approval gate shows the stream as **In Review**, not Blocked. In parallel flows a human gate holds its branch while unrelated branches continue.
 
 Automatic parking applies only when the whole stream is blocked: either a whole-stream wait exists or all active attempts are waiting. The full grace period starts when the last runnable branch becomes blocked. A single waiting branch does not park its runnable siblings.
+
+## Dependencies and stacked work
+
+`dependsOn` is the authoritative list of streams a stream waits for. Each edge has an unlock condition:
+
+| Condition        | The edge is satisfied when                                                                                                               |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `done` (default) | The dependency is `done`.                                                                                                                |
+| `ready`          | The dependency's flow is `completion-ready` under `pr-merge` or `pr-auto-merge` and its delivery pull request is bound, or it is `done`. |
+
+```sh
+ficus workstream create "Use the new parser" --squad SQUAD --repository repo --depends-on 412:ready
+ficus workstream update STREAM_ID --depends-on 412:ready --depends-on 398   # bare ID or ID:done means done
+```
+
+A pull request that merely exists while the dependency is still being implemented does not satisfy `ready`. A dependency without pull-request delivery (`deliverable`, `review-approval`, `direct-merge`, or a stream with no flow) satisfies `ready` only by being done. Unknown conditions are rejected. The API takes `dependsOn` entries as a plain ID or `{ "id": "...", "condition": "ready" }`; responses keep `dependsOn` as the ID list and add `dependencies`, one entry per ID with `condition`, `satisfied`, and, once unlocked, `unlockedAt`, `stack` and `holdsDelivery`. Streams and callers that use plain IDs behave exactly as before.
+
+A `ready` unlock closes that edge's dependency wait and nothing else: the concurrency cap, pauses, other open waits, flow gates and review requirements still apply, and it approves nothing. The dependency returning to rework never re-blocks an unlocked edge, and re-sending the same dependency list keeps the unlock. Once the dependent has started on the edge (it was admitted and its stacking was decided), the dependency being canceled does not pause, park or re-block it either. A dependency canceled while the dependent is still queued, whether before the edge unlocked or after it unlocked but before the dependent started, takes the unlock back and flags the dependent for an owner decision, as with `done` edges: nothing is admitted onto, or stacked on, canceled work. Listing one dependency twice with different conditions is rejected.
+
+### Stacking
+
+When a stream is admitted on a `ready` edge while the dependency is unmerged, and both streams are code-producing in the same repository, the dependent is stacked on the dependency's pushed branch:
+
+- Ficus fetches the dependency's branch through the squad's authorized Git credential (the same path as remote-base provisioning) and moves the dependent's branch to that head, only when the dependent's worktree is clean and its branch has no commits of its own. It records `metadata.git.stackedOn` (`workStreamId`, `branch`, `headSha`, `stackedAt`).
+- A worktree with uncommitted changes, a branch that already has commits, or a never-started branch that was already pushed is left exactly as it is. The assignee is told to merge the dependency branch in.
+- With several `ready` dependencies in the same repository, Ficus stacks on one only when every other one is an ancestor of it. Otherwise nothing is rewritten and the assignee is told which branches to merge in.
+- If the squad runtime is unavailable at admission, the decision is retried for up to ten minutes before falling back to asking the assignee to merge.
+- The dependency's branch and worktree are never touched. In different repositories, or when the dependent has no repository, only the unlock applies.
+
+Every assignment of a stacked stream, and its delivery instructions, name the branch it was built on and the hold below.
+
+### Delivery hold and notices
+
+A stream that builds on a dependency's unmerged branch cannot be completed until that dependency is `done`: `ficus workstream finish`, a completing review approval and a direct status write are all refused with the dependency named. Open the pull request as a draft if you like, but do not enable auto-merge until the dependency has merged and the base branch has been merged into the stream's branch. If the dependency was canceled, its commits must not be delivered as they are; the owner releases the hold by dropping the dependency (`--depends-on` without it, or `--clear-dependencies`).
+
+The dependent's assignee (as a steer) and owner are told, once per event:
+
+- the dependency's branch head changed after the dependent was admitted, with the new SHA (learned from the code host's push event for the dependency's bound delivery pull request, whether or not the dependency's own flow follows code-host changes; a squad that receives no events for that repository gets no such notice);
+- the dependency was canceled (work continues; nothing is paused or blocked);
+- the dependency merged (assignee only): merge the base branch in and proceed to delivery.
+
+A paused or parked dependent hears these when it runs again; done and canceled streams are not told. A merge notice with no assignee to receive it stays owed until the stream has one. Worktree cleanup of the delivered dependency keeps deferring while a dependent is live.
 
 ## Pause, park, and resume
 

@@ -1,5 +1,11 @@
 import { describe, expect, it, test } from 'bun:test'
-import { gitIdentityEnv, resolveGitHubIdentityFromMetadata } from './github-identity'
+import { eq } from 'drizzle-orm'
+import { db, squads, integrationConnections } from '../../db'
+import { useEnabledIntegrationFixtures } from '../../test-utils/enabled-integrations'
+import { createTestGitHubConnection } from '../../test-utils/github-connection'
+import { DbIntegrationConnectionRepository } from '../integrations/db-connection-repository'
+import { gitIdentityEnv, resolveGitHubIdentity, resolveGitHubIdentityFromMetadata } from './github-identity'
+useEnabledIntegrationFixtures('github')
 
 function secretStore(values: Record<string, string | undefined>) {
   return (key: string) => values[key]
@@ -163,4 +169,58 @@ test('GitHub defaults beat host config while explicit global and squad overrides
   expect(
     resolveGitHubIdentityFromMetadata({ ...base, metadata: { githubIdentity: { gitUserEmail: 'squad@example.com' } } })
   ).toEqual({ gitUserName: 'GitHub Name', gitUserEmail: 'squad@example.com' })
+})
+
+test('the git identity env is identical before, during and after a GitHub token refresh', async () => {
+  const squadId = crypto.randomUUID()
+  await db.insert(squads).values({ id: squadId, name: 'Refresh identity', purpose: 'test' })
+  const account = await createTestGitHubConnection({ squadId, login: 'refresher' })
+  const [row] = await db.select().from(integrationConnections).where(eq(integrationConnections.id, account.id))
+  const repository = new DbIntegrationConnectionRepository()
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () =>
+    Response.json({ id: 123, name: 'Refresh Person', email: 'refresh@example.com' })) as unknown as typeof fetch
+  try {
+    const before = gitIdentityEnv(await resolveGitHubIdentity(squadId))
+    expect(before).toEqual({
+      GIT_USER_NAME: 'Refresh Person',
+      GIT_AUTHOR_NAME: 'Refresh Person',
+      GIT_COMMITTER_NAME: 'Refresh Person',
+      GIT_USER_EMAIL: 'refresh@example.com',
+      GIT_AUTHOR_EMAIL: 'refresh@example.com',
+      GIT_COMMITTER_EMAIL: 'refresh@example.com',
+    })
+
+    // Rotated token persisted, validation not finished yet.
+    await repository.recordRefreshFailure({
+      id: account.id,
+      materialRevision: row!.materialRevision,
+      code: 'refresh_validation_pending',
+      invalidateAuthentication: true,
+    })
+    const during = gitIdentityEnv(await resolveGitHubIdentity(squadId))
+
+    const now = new Date()
+    await repository.recordValidation({
+      id: account.id,
+      materialRevision: row!.materialRevision,
+      validation: { ok: true, grantedScopes: [] },
+      now,
+      expiresAt: new Date(now.getTime() + 15 * 60_000),
+    })
+    const after = gitIdentityEnv(await resolveGitHubIdentity(squadId))
+
+    expect(during).toEqual(before)
+    expect(after).toEqual(before)
+
+    // Disabling the connection still removes the identity it supplied.
+    await db.update(integrationConnections).set({ enabled: false }).where(eq(integrationConnections.id, account.id))
+    const disabled = gitIdentityEnv(await resolveGitHubIdentity(squadId))
+    expect(Object.values(disabled)).not.toContain('Refresh Person')
+    expect(Object.values(disabled)).not.toContain('refresh@example.com')
+  } finally {
+    globalThis.fetch = realFetch
+    await account.dispose()
+    await db.delete(squads).where(eq(squads.id, squadId))
+  }
 })

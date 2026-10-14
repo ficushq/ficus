@@ -14,6 +14,7 @@ export type ImageUploadOptions = ImageUploadScope & {
 
 export const signImageUrls = client.images.signImageUrls
 export const uploadImagesSimple = client.images.uploadImagesSimple
+export const deleteStagedImage = client.images.deleteStagedImage
 
 /**
  * Upload images with progress tracking. Uses XMLHttpRequest for upload progress events.

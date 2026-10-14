@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { and, gte, isNotNull, lt, sql } from 'drizzle-orm'
 import {
+  decisionModelReadsImages,
   decisionPricePerMillion,
   DECISION_PURPOSE_INFO,
   DECISION_PURPOSES,
@@ -27,6 +28,12 @@ const log = createLogger('decisions')
 /** How long a provider that just failed is skipped while others can answer. */
 const COOLDOWN_MS = 30_000
 const LOG_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+/**
+ * A rough per-image input estimate for providers that don't report usage. Neither Clef nor OpenAI
+ * publishes an image token formula for decisions; this is the order of a typical vision model's
+ * screenshot cost, and counting base64 characters would overstate it a hundredfold.
+ */
+const ESTIMATED_TOKENS_PER_IMAGE = 1_000
 
 export type DecisionOutcome =
   | { ok: true; result: DecisionResult }
@@ -61,10 +68,11 @@ export function decisionCost(
   result: DecisionResult
 ): DecisionCost {
   const reported = result.usage?.inputTokens
+  const { images, ...text } = request
   const inputTokens =
     typeof reported === 'number' && Number.isFinite(reported) && reported >= 0
       ? Math.round(reported)
-      : Math.ceil(JSON.stringify(request).length / 4)
+      : Math.ceil(JSON.stringify(text).length / 4) + (images?.length ?? 0) * ESTIMATED_TOKENS_PER_IMAGE
   const price = decisionPricePerMillion(provider)
   // $/million tokens × tokens = micro-dollars; × 1000 = nanodollars.
   return {
@@ -76,12 +84,17 @@ export function decisionCost(
 
 const cooldownUntil = new Map<string, number>()
 
-/** The enabled providers a purpose asks, in order; `'default'` is the default order itself. */
+/**
+ * The enabled providers a purpose asks, in order; `'default'` is the default order itself. A
+ * sub-feature without an order of its own asks its parent's, then the default.
+ */
 export function decisionChain(purpose: DecisionPurpose | 'default'): StoredDecisionProvider[] {
   const routing = getDecisionRouting()
   const providers = listDecisionProviders().filter((provider) => provider.enabled)
+  const parent = purpose === 'default' ? undefined : DECISION_PURPOSE_INFO[purpose].parent
   const own = purpose === 'default' ? undefined : routing.purposes[purpose]
-  const order = own?.length ? own : routing.default
+  const inherited = parent ? routing.purposes[parent] : undefined
+  const order = own?.length ? own : inherited?.length ? inherited : routing.default
   const chain = order.flatMap((id) => providers.filter((provider) => provider.id === id))
   // Nothing ordered yet: every enabled provider, as added.
   return chain.length || order.length ? chain : providers
@@ -89,9 +102,12 @@ export function decisionChain(purpose: DecisionPurpose | 'default'): StoredDecis
 
 /**
  * Whether an instance feature (see DECISION_PURPOSE_INFO) should run: `off` never, `on` always (it
- * still needs a provider to answer), and by default exactly when a provider is set up for it.
+ * still needs a provider to answer), and by default exactly when a provider is set up for it. A
+ * sub-feature runs only while its parent does, and then by its own switch.
  */
 export function isDecisionFeatureEnabled(purpose: DecisionPurpose): boolean {
+  const parent = DECISION_PURPOSE_INFO[purpose].parent
+  if (parent && !isDecisionFeatureEnabled(parent)) return false
   const value = getDecisionFeatureSwitches()[purpose] ?? 'auto'
   if (value === 'off') return false
   if (value === 'on') return true
@@ -125,9 +141,15 @@ export async function decide(
   const routing = getDecisionRouting()
   const budget = Math.min(options.timeoutMs ?? routing.timeoutMs, routing.timeoutMs)
   const started = Date.now()
-  const chain = decisionChain(purpose)
+  const routed = decisionChain(purpose)
+  // A request with images only goes to providers whose model reads them.
+  const chain = request.images?.length ? routed.filter(decisionModelReadsImages) : routed
   if (!chain.length) {
-    const outcome: DecisionOutcome = { ok: false, reason: 'unconfigured', errors: [] }
+    const outcome: DecisionOutcome = {
+      ok: false,
+      reason: 'unconfigured',
+      errors: routed.map((provider) => ({ providerId: provider.id, error: 'Its model does not read images' })),
+    }
     record(purpose, request, outcome, Date.now() - started, options)
     return outcome
   }
@@ -195,6 +217,28 @@ export async function askProvider(
     latencyMs: Date.now() - started,
     ...(wire.usage ? { usage: wire.usage } : {}),
   }
+}
+
+/**
+ * Record a direct ask (Settings' try with a provider, a backend eval run) in the decision log, so
+ * its spend shows like any other decision's.
+ */
+export function recordProviderAnswer(
+  purpose: DecisionPurpose | 'default',
+  provider: Pick<StoredDecisionProvider, 'kind' | 'model' | 'pricePerMillionInput'>,
+  request: DecisionRequest,
+  outcome: DecisionOutcome,
+  latencyMs: number,
+  source: Record<string, string>
+) {
+  record(
+    purpose,
+    request,
+    outcome,
+    latencyMs,
+    { source },
+    outcome.ok ? decisionCost(provider, request, outcome.result) : undefined
+  )
 }
 
 /** One cheap question, to check a provider answers before it's saved. */

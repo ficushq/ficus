@@ -1,4 +1,5 @@
 import { deliveryInstructionsForRun } from '../services/workflows/completion-prompt'
+import { decisionStepWarnings, withWarnings } from '../services/workflows/decision-step-warnings'
 import { listWorkflowReviewers } from '../services/workflows/reviewers'
 import { outputDeliveryHistory, outputDeliveryHistoryPage } from '../services/integrations/outputs/runtime'
 import { listOpenWaits, toWaitJson } from '../services/work-streams/waits'
@@ -8,7 +9,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { workflowPresetSchema, workflowSourceSchema, workflowCommandSchema } from '@ficus/shared'
-import { advanceFlow, finishFlow, getFlow, activeOutcomeBindings } from '../services/workflows/execution'
+import { advanceFlow, finishFlow, getFlow, activeOutcomeBindings, stackNotice } from '../services/workflows/execution'
 import { WorkStream } from '../entities/WorkStream'
 import { db, squads, workflows } from '../db'
 import { authorizeWorkflow, authorizeWorkflowSource, canAccessWorkflow } from '../services/workflows/access'
@@ -71,7 +72,12 @@ export const workflowsRouter = new Hono()
             workStreamStatus: stream.status,
             attemptAgents: run.attemptAgents,
             activeOutcomes: activeOutcomeBindings(run),
-            deliveryInstructions: deliveryInstructionsForRun(stream, run.state, run.version),
+            deliveryInstructions: deliveryInstructionsForRun(
+              stream,
+              run.state,
+              run.version,
+              await stackNotice(db, stream)
+            ),
             openWaits: (await listOpenWaits(db, stream.id)).map(toWaitJson),
             integrationDeliveries: await outputDeliveryHistory(stream.id),
             usage: await getFlowUsage(stream.id, run.state),
@@ -112,7 +118,12 @@ export const workflowsRouter = new Hono()
         const current = await getFlow(stream.id)
         const currentStream = await WorkStream.mustFind(stream.id)
         if (current && current.version === result.version) {
-          const deliveryInstructions = deliveryInstructionsForRun(currentStream, current.state, current.version)
+          const deliveryInstructions = deliveryInstructionsForRun(
+            currentStream,
+            current.state,
+            current.version,
+            await stackNotice(db, currentStream)
+          )
           if (deliveryInstructions && current.state.definition.completion.mode === 'deliverable') {
             try {
               const finished = await finishFlow(stream.id, result.version, identity)
@@ -180,7 +191,8 @@ export const workflowsRouter = new Hono()
       const [squad] = await db.select({ id: squads.id }).from(squads).where(eq(squads.id, squadId))
       if (!squad) return c.json({ error: 'Squad not found' }, 404)
       // Preview only: no work stream, catalog record, or agent is created.
-      return c.json(await resolveStoredWorkflow(source))
+      const resolved = await resolveStoredWorkflow(source)
+      return c.json({ ...resolved, ...withWarnings(decisionStepWarnings(resolved.definition)) })
     }
   )
   .get(
@@ -201,7 +213,10 @@ export const workflowsRouter = new Hono()
     const preset = c.req.valid('json')
     if (!(await canAccessWorkflow(c.get('identity')!, 'workflows:create', preset.scope)))
       return c.json({ error: 'Forbidden' }, 403)
-    return c.json(serializeWorkflow(await createWorkflow(preset)), 201)
+    return c.json(
+      { ...serializeWorkflow(await createWorkflow(preset)), ...withWarnings(decisionStepWarnings(preset.definition)) },
+      201
+    )
   })
   .put(
     '/:id',
@@ -212,7 +227,10 @@ export const workflowsRouter = new Hono()
     zValidator('json', z.object({ revision: z.string().min(1).max(200), preset: workflowPresetSchema }).strict()),
     async (c) => {
       const { revision, preset } = c.req.valid('json')
-      return c.json(serializeWorkflow(await replaceWorkflow(c.req.param('id'), revision, preset)))
+      return c.json({
+        ...serializeWorkflow(await replaceWorkflow(c.req.param('id'), revision, preset)),
+        ...withWarnings(decisionStepWarnings(preset.definition)),
+      })
     }
   )
   .delete(

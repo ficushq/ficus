@@ -8,6 +8,8 @@ import { PlantingWalker, usePlantings } from './Planting'
 import { RobotWalker, useRobotWalks } from './RobotWalkers'
 import { FlyingLetters } from './FlyingLetters'
 import { useCamera } from './useCamera'
+import { shownMoods } from './moods'
+import { useMoodSnapshot, useRobotMoodWatching } from './useRobotMoods'
 import { useViewportSize } from './useViewportSize'
 import { FarmCard, selectionAnchor } from './FarmCard'
 import { FarmCardContext, type FarmCardEnv } from './cards/context'
@@ -100,6 +102,10 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
   }, [layout])
   const { camera, fit, zoomBy, focus, flyTo } = useCamera(viewport, world, focusBox, saved.camera)
   const cameraRef = useStableRef(camera)
+  // Robot moods: Core works them out only for the robots on screen here.
+  useRobotMoodWatching(layout, camera, size)
+  const moodSnapshot = useMoodSnapshot()
+  const moods = useMemo(() => shownMoods(layout, moodSnapshot), [layout, moodSnapshot])
   const sizeRef = useStableRef(size)
   /** Pan just enough to bring a world point into the comfortable middle of the screen. */
   const reveal = useCallback(
@@ -353,6 +359,7 @@ export function FarmScreen({ input, live }: { input: FarmInput; live: LiveStatus
               onSelect={onSelect}
               onReveal={reveal}
               hidden={hidden}
+              moods={moods}
             />
             {walks.walks.map((walk) => (
               <RobotWalker key={`${walk.agentId}:${walk.serial}`} walk={walk} onStep={walks.step} onDone={walks.done} />

@@ -33,6 +33,11 @@ import {
 } from '../test-utils'
 import { assistantRouter } from './assistant'
 import { sendAssistantTaskRequest, changeAssistantTask } from '../services/assistant-task-requests'
+import {
+  closeArchivedSquadAssistantTasks,
+  SQUAD_ARCHIVED_TASK_SOURCE,
+} from '../services/assistant-activity/squad-archive'
+import { eventEmitter } from '../lib/infra/event-emitter'
 const prefix = `assistant-${randomUUID()}`
 const conversationIds: string[] = [],
   agentIds: string[] = [],
@@ -1809,7 +1814,8 @@ test('task recovery and accepted request replay recheck squad consultant creatio
   const input = { clientId: randomUUID(), request: 'Review schedules', squadId: squad.id }
   const first = await sendAssistantTaskRequest(identity, f.id, input)
   agentIds.push(first.agentId)
-  await db.update(squads).set({ status: 'archived' }).where(eq(squads.id, squad.id))
+  // A live squad the owner cannot currently act in still hides every command behind a 404.
+  await db.update(squads).set({ status: 'paused' }).where(eq(squads.id, squad.id))
   await expect(sendAssistantTaskRequest(identity, f.id, input)).rejects.toMatchObject({ status: 404 })
   for (const operation of ['continue', 'retry', 'cancel'])
     await expect(
@@ -1850,4 +1856,162 @@ test('a terminated conversational agent cannot silently replace its transcript',
   await Agent.update(binding.agentId, { status: 'terminated' })
   expect((await f.request(`/${f.id}/agent`, {})).status).toBe(409)
   expect((await (await f.request(`/${f.id}`)).json()).conversation.agentId).toBe(binding.agentId)
+})
+
+/** Two squads the owner may delegate to, with helpers for squad-delegated tasks. */
+async function squadTaskFixture() {
+  const f = await fixture()
+  const role = await createTestRole({ prefix, permissions: ['chat:send'] })
+  const squad = await squadFixture(f.owner, role)
+  const otherSquad = await squadFixture(f.owner, role)
+  const identity = { type: 'user' as const, userId: f.owner.id }
+  const start = async (squadId: string, request: string) => {
+    const receipt = await sendAssistantTaskRequest(identity, f.id, { clientId: randomUUID(), request, squadId })
+    if (!agentIds.includes(receipt.agentId)) agentIds.push(receipt.agentId)
+    return receipt
+  }
+  const report = (receipt: { id: string; agentId: string }, content: string, status: ReportedStatus) =>
+    InboxMessage.send({
+      recipientType: 'voice_assistant',
+      recipientId: assistantInboxRecipientId(f.id),
+      senderType: 'agent',
+      senderId: receipt.agentId,
+      content,
+      metadata: { inReplyTo: receipt.id },
+      assistantTaskStatus: status,
+    })
+  const task = async (taskId: string) => {
+    const [row] = await db.select().from(assistantTasks).where(eq(assistantTasks.id, taskId))
+    return row
+  }
+  const needsYou = async () => {
+    const response = await app.request('/api/actions/pending', { headers: authHeaders(f.owner.token) })
+    expect(response.status).toBe(200)
+    return ((await response.json()) as Array<{ id: string }>)
+      .map((action) => action.id)
+      .filter((id) => id.startsWith('assistant-needs-input:'))
+  }
+  const archiveUpdates = async () =>
+    (
+      await db
+        .select({ update: assistantUpdates, message: inbox })
+        .from(assistantUpdates)
+        .innerJoin(inbox, eq(inbox.id, assistantUpdates.messageId))
+        .where(eq(assistantUpdates.conversationId, f.id))
+        .orderBy(assistantUpdates.sequence)
+    ).filter((row) => row.message.metadata.source === SQUAD_ARCHIVED_TASK_SOURCE)
+  const command = (taskId: string, body: unknown) => f.request(`/${f.id}/tasks/${taskId}/commands`, body)
+  return { ...f, squad, otherSquad, start, report, task, needsYou, archiveUpdates, command }
+}
+
+test('archiving a squad cancels its open Assistant tasks once and tells their conversation', async () => {
+  const f = await squadTaskFixture()
+  const asked = await f.start(f.squad.id, 'Deploy the release')
+  await f.report(asked, 'May I deploy to production?', 'needs-input')
+  const working = await f.start(f.squad.id, 'Check the logs')
+  const done = await f.start(f.squad.id, 'Count the schedules')
+  await f.report(done, 'Three schedules.', 'completed')
+  const elsewhere = await f.start(f.otherSquad.id, 'Unrelated research')
+  await f.report(elsewhere, 'Which region?', 'needs-input')
+  expect(await f.needsYou()).toEqual(
+    expect.arrayContaining([`assistant-needs-input:${asked.taskId}`, `assistant-needs-input:${elsewhere.taskId}`])
+  )
+  const notified: string[] = []
+  const off = eventEmitter.on('assistant.activityChanged', ({ conversationId }) => {
+    if (conversationId === f.id) notified.push(conversationId)
+  })
+  try {
+    await (await Squad.mustFind(f.squad.id)).archive()
+  } finally {
+    off()
+  }
+  expect(await f.task(asked.taskId)).toMatchObject({ status: 'cancelled', currentRequestId: asked.id })
+  expect(await f.task(working.taskId)).toMatchObject({ status: 'cancelled', currentRequestId: working.id })
+  // Finished tasks and other squads' tasks are untouched.
+  expect(await f.task(done.taskId)).toMatchObject({ status: 'completed' })
+  expect(await f.task(elsewhere.taskId)).toMatchObject({ status: 'needs-input' })
+  const updates = await f.archiveUpdates()
+  expect(updates.map((row) => row.update.taskId).sort()).toEqual([asked.taskId, working.taskId].sort())
+  for (const row of updates) {
+    expect(row.update).toMatchObject({ reportedStatus: 'cancelled', requestId: row.update.taskId })
+    expect(row.message.content).toContain('The squad was archived')
+  }
+  expect(notified).toHaveLength(2)
+  // The Assistant's mailbox carries both cancellations; only the other squad's task is pending.
+  const mailbox = await (await f.request(`/${f.id}/inbox`, { consumerId: randomUUID() })).json()
+  expect(mailbox.pending).toBe(1)
+  expect(
+    mailbox.messages
+      .filter((message: { reportedStatus: string }) => message.reportedStatus === 'cancelled')
+      .map((message: { taskId: string }) => message.taskId)
+      .sort()
+  ).toEqual([asked.taskId, working.taskId].sort())
+  const pending = await f.needsYou()
+  expect(pending).not.toContain(`assistant-needs-input:${asked.taskId}`)
+  expect(pending).toContain(`assistant-needs-input:${elsewhere.taskId}`)
+  // Archiving again, or sweeping afterwards, records nothing new.
+  await (await Squad.mustFind(f.squad.id)).archive()
+  await closeArchivedSquadAssistantTasks()
+  expect(await f.archiveUpdates()).toHaveLength(2)
+  expect(await f.task(elsewhere.taskId)).toMatchObject({ status: 'needs-input' })
+})
+
+test('a task left open in an archived or missing squad can be cancelled; continue and retry refuse with 409', async () => {
+  const f = await squadTaskFixture()
+  const asked = await f.start(f.squad.id, 'Deploy the release')
+  await f.report(asked, 'May I deploy to production?', 'needs-input')
+  const orphaned = await f.start(f.otherSquad.id, 'Rotate the keys')
+  // Archived before archiving closed tasks, so the task is still waiting on the owner.
+  await db.update(squads).set({ status: 'archived', archivedAt: new Date() }).where(eq(squads.id, f.squad.id))
+  await db.update(assistantTasks).set({ squadId: null }).where(eq(assistantTasks.id, orphaned.taskId))
+  expect(await f.task(asked.taskId)).toMatchObject({ status: 'needs-input' })
+  // Never listed, even before anything closes it.
+  expect(await f.needsYou()).not.toContain(`assistant-needs-input:${asked.taskId}`)
+  const cases = [
+    [asked, 'The squad was archived'],
+    [orphaned, 'The squad is no longer available'],
+  ] as const
+  for (const [receipt, reason] of cases) {
+    for (const operation of ['continue', 'retry']) {
+      const response = await f.command(receipt.taskId, {
+        operation,
+        clientId: randomUUID(),
+        expectedRequestId: receipt.id,
+        request: 'Go ahead',
+      })
+      expect(response.status).toBe(409)
+      expect((await response.json()).error).toContain(reason)
+    }
+    expect(await f.task(receipt.taskId)).toMatchObject({ currentRequestId: receipt.id })
+    const cancel = { operation: 'cancel', clientId: randomUUID(), expectedRequestId: receipt.id, reason: 'Not needed' }
+    const response = await f.command(receipt.taskId, cancel)
+    expect(response.status).toBe(200)
+    const cancelled = await response.json()
+    // The inert squad's delegate is not woken to stop work that cannot run.
+    expect(cancelled).toMatchObject({ taskId: receipt.taskId, delivered: false })
+    expect(await f.task(receipt.taskId)).toMatchObject({ status: 'cancelled', currentRequestId: cancelled.id })
+    const replay = await f.command(receipt.taskId, cancel)
+    expect(replay.status).toBe(200)
+    expect((await replay.json()).id).toBe(cancelled.id)
+  }
+  expect(await f.needsYou()).not.toContain(`assistant-needs-input:${asked.taskId}`)
+})
+
+test('the sweep closes tasks stuck in squads archived before archiving closed them', async () => {
+  const f = await squadTaskFixture()
+  const asked = await f.start(f.squad.id, 'Deploy the release')
+  await f.report(asked, 'May I deploy to production?', 'needs-input')
+  const elsewhere = await f.start(f.otherSquad.id, 'Unrelated research')
+  await db.update(squads).set({ status: 'archived', archivedAt: new Date() }).where(eq(squads.id, f.squad.id))
+  expect(await closeArchivedSquadAssistantTasks()).toBeGreaterThanOrEqual(1)
+  expect(await f.task(asked.taskId)).toMatchObject({ status: 'cancelled', currentRequestId: asked.id })
+  expect(await f.task(elsewhere.taskId)).toMatchObject({ status: 'working' })
+  const updates = await f.archiveUpdates()
+  expect(updates).toMatchObject([
+    { update: { taskId: asked.taskId, requestId: asked.id, reportedStatus: 'cancelled' } },
+  ])
+  expect((await (await f.request(`/${f.id}/activity`)).json()).pendingInputs).toEqual([])
+  await closeArchivedSquadAssistantTasks()
+  await (await Squad.mustFind(f.squad.id)).archive()
+  expect(await f.archiveUpdates()).toHaveLength(1)
 })

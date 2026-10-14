@@ -1,4 +1,11 @@
-import type { ContentBlock, DeliveryMode, ExecutionStatus, Message, MessageMetadata } from '@ficus/shared'
+import type {
+  AssistantRoutingSend,
+  ContentBlock,
+  DeliveryMode,
+  ExecutionStatus,
+  Message,
+  MessageMetadata,
+} from '@ficus/shared'
 import type { RenderedContentBlock, StreamingContentBlock } from './blocks'
 
 /** Connection state of the agent SSE stream, surfaced by the hook to the combiner. */
@@ -17,6 +24,8 @@ export interface PendingItem {
   content: string
   imageIds?: string[]
   deliveryMode?: DeliveryMode
+  /** Assistant conversations: routing sent with the message (kept for retries). */
+  assistantRouting?: AssistantRoutingSend
   /** Endpoint family that owns retries for this attempt. */
   /** Per-send queue placement, captured on send and reconciled with server acceptance. */
   queued?: boolean

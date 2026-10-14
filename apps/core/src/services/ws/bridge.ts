@@ -37,6 +37,8 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
     event === 'agent.updated' ||
     event === 'agent.new-message' ||
     event === 'agent.waiting-input' ||
+    // A watched robot's mood (the farm): a label, delivered under the agent's own read scope.
+    event === 'agent.mood' ||
     event === 'agent.terminated' ||
     event === 'agent.deleted' ||
     event === 'agent.queue-cleared'

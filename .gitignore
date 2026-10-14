@@ -53,3 +53,6 @@ apps/web/.test-artifacts/
 
 # Static documentation bundled with each Core release.
 apps/core/docs-dist/
+
+# Decision eval cases saved from real corrections: they hold what someone typed.
+*.decision-cases.local.json

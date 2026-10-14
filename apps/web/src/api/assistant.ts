@@ -8,6 +8,9 @@ import type {
   AssistantEntry,
   AssistantMessageReceipt,
   AssistantMailbox,
+  AssistantRoutingCorrectionRequest,
+  AssistantRoutingHint,
+  AssistantRoutingPreview,
 } from '@ficus/shared'
 import { webTransport as t } from './transport'
 export const assistantApi = {
@@ -36,6 +39,16 @@ export const assistantApi = {
       hasMore: boolean
       before?: number
     }>(`/assistant/${id}${before ? `?before=${before}` : ''}`),
+  /** The user picked a different squad (or none) for one of their messages; the Assistant is told. */
+  correctRouting: (id: string, correction: AssistantRoutingCorrectionRequest) =>
+    t.request<{ hint: AssistantRoutingHint }>(`/assistant/${id}/routing`, { method: 'POST', body: correction }),
+  /** Where a draft would go, asked while the user types (a decision model call; null when unsure). */
+  previewRouting: (id: string, draft: string, signal?: AbortSignal) =>
+    t.request<AssistantRoutingPreview>(`/assistant/${id}/routing/preview`, {
+      method: 'POST',
+      body: { draft },
+      signal,
+    }),
   append: (id: string, entries: AssistantEntry[]) =>
     t.request(`/assistant/${id}/entries`, { method: 'POST', body: { entries } }),
   message: (

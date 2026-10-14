@@ -24,6 +24,7 @@ export * from './farm-preferences'
 export * from './farm-chat'
 export * from './farm-presence'
 export * from './farm-look'
+export * from './robot-moods'
 export * from './federation'
 export * from './squadSlug'
 export * from './agent-file-attachments'
@@ -35,6 +36,7 @@ export * from './image-attachments'
 // That broke every tenant provision, because provisioning builds the web app
 // on the tenant VM. Server code imports it directly: `@ficus/shared/crypto`.
 export * from './work-stream-priority'
+export * from './work-stream-dependencies'
 export * from './work-stream-order'
 export * from './status-presentation'
 export * from './sandbox-processes'
@@ -51,6 +53,7 @@ export * from './local-instance'
 
 export type { ModelCatalogEntry } from './model-catalog'
 export * from './assistant'
+export * from './assistant-routing'
 export * from './assistant-activity'
 export * from './search'
 export * from './workflows'
@@ -63,7 +66,14 @@ export * from './workflow-editing'
 
 export * from './integration-outputs'
 export type { GitHubRepositoryAccess } from './github-repository-access'
-export type { GitHubCommitSigningErrorCode, GitHubCommitSigningStatus } from './github-commit-signing'
+export type {
+  GitHubCommitSigningErrorCode,
+  GitHubCommitSigningState,
+  GitHubCommitSigningStatus,
+  GitHubCommitSigningSummary,
+  GitHubSignResponse,
+  GitHubSquadCommitSigning,
+} from './github-commit-signing'
 export type { IntegrationAuthorizationStart, IntegrationDeviceAuthorizationStatus } from './integration-authorization'
 
 export * from './code-hosting'
@@ -98,5 +108,6 @@ export * from './theme-preset'
 export * from './theme-assistant'
 export * from './decisions'
 export * from './decision-conditions'
+export * from './screenshot-filing'
 
 export * from './github-feedback'

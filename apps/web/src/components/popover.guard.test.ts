@@ -41,7 +41,6 @@ const MIGRATED = [
   'components/settings/SettingsNavigation.tsx',
   'voice/VoiceCompanionWidget.tsx',
   // Found by this guard: hand-built menus with no dismissal at all.
-  'components/SquadDetailPage.tsx',
   'components/ChatDrawer.tsx',
 ]
 

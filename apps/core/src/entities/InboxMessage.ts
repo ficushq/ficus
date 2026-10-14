@@ -85,6 +85,12 @@ export interface SendInboxMessageInput {
    * agent never sees a message that is missing its blobs.
    */
   deferDelivery?: boolean
+  /**
+   * Server-side writes that must commit with a newly created message (and never for an idempotent
+   * replay that adopts an earlier one), e.g. the image copies a forwarded message carries. Runs
+   * inside the insert transaction; throwing rolls the message back.
+   */
+  persistInTransaction?: (tx: DbTransaction) => Promise<void>
 }
 
 export interface SendInboxMessageOnceResult {
@@ -483,6 +489,7 @@ export class InboxMessage
             .onConflictDoNothing({ target: inbox.idempotencyKey })
             .returning({ id: inbox.id })
         : await tx.insert(inbox).values(values).returning({ id: inbox.id })
+      if (created) await input.persistInTransaction?.(tx)
       const [identity] = created
         ? [created]
         : await tx.select({ id: inbox.id }).from(inbox).where(eq(inbox.idempotencyKey, idempotencyKey!)).limit(1)

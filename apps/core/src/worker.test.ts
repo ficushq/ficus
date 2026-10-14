@@ -19,7 +19,7 @@ describe('worker health diagnostics', () => {
     const body = (await response.json()) as {
       localEventForward: { channels: Array<Record<string, unknown>> }
     }
-    expect(body.localEventForward.channels).toHaveLength(8)
+    expect(body.localEventForward.channels).toHaveLength(9)
     expect(body.localEventForward.channels).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

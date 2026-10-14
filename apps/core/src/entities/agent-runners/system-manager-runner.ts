@@ -6,7 +6,12 @@ import { assistantEditorInstructionsByKind } from '@ficus/shared'
 import { createPageEditorTools } from '../../tools/page-editor'
 import { getAccessibleSquadIds, hasPermission, type Identity } from '../../services/rbac/permissions'
 import { findOwningConversation, isAssistantDelegate } from '../../services/assistant-agents'
-import type { SessionUsage, MessageMetadata } from '@ficus/shared'
+import type { SessionUsage, MessageMetadata, Message } from '@ficus/shared'
+import {
+  annotateAssistantMessage,
+  isRoutableUserMessage,
+  type AssistantRoutingDeps,
+} from '../../services/routing/assistant-routing'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 
@@ -34,6 +39,11 @@ import {
 } from '../../lib/prompts/agent-purpose-prompt'
 
 export class SystemManagerRunner extends AgentRunner {
+  /** Set once an app-wide Assistant conversation session exists: its user messages get routing hints. */
+  protected routesAssistantMessages = false
+  /** Test seam for the routing decision. */
+  protected assistantRoutingDeps: AssistantRoutingDeps = {}
+
   protected async isAssistantDelegate(): Promise<boolean> {
     return isAssistantDelegate(this.agent.id)
   }
@@ -254,8 +264,9 @@ export class SystemManagerRunner extends AgentRunner {
             undefined,
             { allowBlocking: false }
           ),
-          ...createAssistantTools(this.agent.id, this.execution.id, conversation.id),
+          ...createAssistantTools(this.agent.id, this.execution.id, conversation.id, this.assistantRoutingDeps),
         ]
+    this.routesAssistantMessages = !pageEditor
     return this.createPiSession(scope, async () =>
       AgentSession.create(
         await this.buildBaseSessionOptions({
@@ -267,6 +278,28 @@ export class SystemManagerRunner extends AgentRunner {
         })
       )
     )
+  }
+
+  /**
+   * Before the Assistant reads a user message, ask the routing decision where it belongs (bounded by
+   * its timeout) and attach the hint. Only the latest user message in a batch is routed: earlier
+   * queued ones are context for it.
+   */
+  /** Whose squads are offered: the Assistant acts as its owner. */
+  protected assistantRoutingIdentity(): Identity {
+    return { type: 'agent', agentId: this.agent.id, squadId: null }
+  }
+
+  protected override async prepareMessagesForModel(messages: Message[]): Promise<Message[]> {
+    if (!this.routesAssistantMessages) return messages
+    const index = messages.findLastIndex((message) => isRoutableUserMessage(message))
+    if (index < 0) return messages
+    const annotated = await annotateAssistantMessage(
+      this.assistantRoutingIdentity(),
+      messages[index]!,
+      this.assistantRoutingDeps
+    )
+    return messages.map((message, at) => (at === index ? annotated : message))
   }
 
   protected override pushAgentEvent(): void {

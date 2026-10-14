@@ -12,11 +12,14 @@ import {
   createTestAgentToken,
   createTestRole,
   createTestUser,
+  holdRowLock,
+  waitForBlockedBy,
   type TestUser,
 } from '../test-utils'
 import { db, squads, agents, roles, images } from '../db'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from '@ficus/shared'
+import { existsSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
 
 const PASSWORD = 'test-password-xyz'
@@ -275,6 +278,151 @@ describe('POST /api/images', () => {
     })
     const body = (await res.json()) as { urls: Record<string, string> }
     expect(body.urls[asset.id]).toBeDefined()
+  })
+})
+
+describe('DELETE /api/images/:id', () => {
+  const prefix = 'images-discard-staged'
+  const image = {
+    type: 'image' as const,
+    data: Buffer.from('staged image').toString('base64'),
+    mimeType: 'image/png',
+  }
+  let user: TestUser
+  let otherUser: TestUser
+  let squad: typeof squads.$inferSelect
+  let agent: typeof agents.$inferSelect
+  const createdImageIds: string[] = []
+
+  beforeAll(async () => {
+    user = await createTestUser({ prefix })
+    otherUser = await createTestUser({ prefix })
+    // An upload with no agent or squad takes agents:write everywhere; so does discarding it.
+    const role = await createTestRole({ prefix, permissions: ['agents:write'] })
+    for (const person of [user, otherUser]) await assignRole({ userId: person.id, roleId: role.id, scope: 'system' })
+    ;[squad] = await db
+      .insert(squads)
+      .values({ name: `${prefix} squad`, purpose: 'test' })
+      .returning()
+    ;[agent] = await db.insert(agents).values({ agentTypeId: 'engineer', squadId: squad.id }).returning()
+  })
+
+  afterAll(async () => {
+    await Image.deleteMany(createdImageIds)
+    await db.delete(agents).where(eq(agents.id, agent.id))
+    await db.delete(squads).where(eq(squads.id, squad.id))
+    await cleanupTestRbac(prefix)
+  })
+
+  /** Stage an image through the upload route, with no agent or squad. */
+  async function stage(token = user.token) {
+    const res = await buildApp().request('/api/images', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(token) },
+      body: JSON.stringify({ images: [image] }),
+    })
+    expect(res.status).toBe(200)
+    const [id] = ((await res.json()) as { imageIds: string[] }).imageIds
+    createdImageIds.push(id!)
+    return Image.mustFind(id!)
+  }
+
+  function discard(id: string, token?: string) {
+    return buildApp().request(`/api/images/${id}`, {
+      method: 'DELETE',
+      headers: token ? authHeaders(token) : {},
+    })
+  }
+
+  /** The route refused and the image is as it was, bytes included. */
+  async function expectUntouched(res: Response, before: Image) {
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'Image not found' })
+    const after = await Image.find(before.id)
+    expect(after).toMatchObject({
+      status: before.status,
+      agentId: before.agentId,
+      squadId: before.squadId,
+      uploadedByUserId: before.uploadedByUserId,
+    })
+    expect(existsSync(before.getFilePath())).toBe(true)
+  }
+
+  it("deletes the caller's own staged upload: the row and the stored bytes", async () => {
+    const staged = await stage()
+    expect(staged).toMatchObject({ status: 'pending', agentId: null, squadId: null, uploadedByUserId: user.id })
+    expect(existsSync(staged.getFilePath())).toBe(true)
+
+    const res = await discard(staged.id, user.token)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ success: true })
+    expect(await Image.find(staged.id)).toBeNull()
+    expect(existsSync(staged.getFilePath())).toBe(false)
+
+    // Discarding it twice is refused like any image that is not there.
+    expect((await discard(staged.id, user.token)).status).toBe(404)
+  })
+
+  it("refuses another user's staged upload exactly as it refuses an image that does not exist", async () => {
+    const theirs = await stage(otherUser.token)
+    const res = await discard(theirs.id, user.token)
+    await expectUntouched(res, theirs)
+
+    for (const id of ['11111111-1111-4111-8111-111111111111', 'not-a-uuid']) {
+      const missing = await discard(id, user.token)
+      expect(missing.status).toBe(404)
+      expect(await missing.json()).toEqual({ error: 'Image not found' })
+    }
+  })
+
+  it('refuses an image bound to an agent or a squad, or already sent', async () => {
+    const boundToAgent = await stage()
+    await db.update(images).set({ agentId: agent.id }).where(eq(images.id, boundToAgent.id))
+    const [boundToSquad] = await Image.createMany([image], { squadId: squad.id, uploadedByUserId: user.id })
+    createdImageIds.push(boundToSquad!.id)
+    const sent = await stage()
+    await Image.markManyUsed([sent.id])
+    const failed = await stage()
+    await Image.markManyFailed([failed.id])
+
+    for (const id of [boundToAgent.id, boundToSquad!.id, sent.id, failed.id]) {
+      const before = await Image.mustFind(id)
+      await expectUntouched(await discard(id, user.token), before)
+    }
+  })
+
+  it('leaves an image that is bound while the delete waits for it', async () => {
+    const staged = await stage()
+    // A claim in flight: it holds the row and binds the image when it commits.
+    const claim = await holdRowLock(sql`update images set agent_id = ${agent.id} where id = ${staged.id}`)
+    let released = false
+    try {
+      const discarding = discard(staged.id, user.token)
+      await waitForBlockedBy([claim.pid])
+      released = true
+      await claim.release()
+      const res = await discarding
+      await expectUntouched(res, await Image.mustFind(staged.id))
+      expect((await Image.mustFind(staged.id)).agentId).toBe(agent.id)
+    } finally {
+      if (!released) await claim.release()
+    }
+  })
+
+  it('needs a signed-in user who may upload', async () => {
+    const staged = await stage()
+    expect((await discard(staged.id)).status).toBe(401)
+
+    // Without agents:write the caller could not have staged it, and cannot discard it either.
+    const reader = await createTestUser({ prefix })
+    const res = await discard(staged.id, reader.token)
+    expect(res.status).toBe(403)
+    expect(await Image.find(staged.id)).not.toBeNull()
+
+    // A squad agent has no user to have staged an upload as.
+    const agentToken = await createTestAgentToken({ agentId: agent.id, squadId: squad.id })
+    expect((await discard(staged.id, agentToken.token)).status).toBe(403)
+    expect(await Image.find(staged.id)).not.toBeNull()
   })
 })
 

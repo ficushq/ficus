@@ -174,28 +174,33 @@ describe('AgentSession', () => {
     })
     const redactSpy = spyOn(toolOutputRedaction, 'wrapToolsWithOutputRedaction')
     const firewallSpy = spyOn(toolFirewall, 'wrapToolsWithFirewall')
+    const tool = (name: string) =>
+      ({
+        name,
+        label: name,
+        description: name,
+        parameters: {} as never,
+        execute: async () => ({ content: [] }),
+      }) as never
 
     try {
       const session = await AgentSession.create({
         model: 'anthropic:claude-sonnet-4-5',
         systemPrompt: 'You are a test agent.',
-        tools: {
-          core: [
-            {
-              name: 'webfetch',
-              label: 'webfetch',
-              description: 'webfetch',
-              parameters: {} as never,
-              execute: async () => ({ content: [] }),
-            } as never,
-          ],
-        },
+        tools: { core: [tool('webfetch'), tool('bash'), tool('read')] },
       })
 
       // The decision model must only ever see content with stored secrets already redacted.
       expect(firewallSpy).toHaveBeenCalledTimes(1)
       expect(firewallSpy.mock.calls[0]![0]).toBe(redactSpy.mock.results[0]!.value as never)
       expect(firewallSpy.mock.calls[0]![1]).toEqual({ agentId: undefined })
+      // Web tools and the shell (for commands that fetch) are screened; other tools are left as they are.
+      const redacted = redactSpy.mock.results[0]!.value as Array<{ name: string }>
+      const screened = firewallSpy.mock.results[0]!.value as Array<{ name: string }>
+      expect(screened.map((entry) => entry.name)).toEqual(['webfetch', 'bash', 'read'])
+      expect(screened[0]).not.toBe(redacted[0])
+      expect(screened[1]).not.toBe(redacted[1])
+      expect(screened[2]).toBe(redacted[2])
       session.dispose()
     } finally {
       firewallSpy.mockRestore()

@@ -8,7 +8,7 @@ import { CloseIcon } from './icons'
 import { useStableRef } from '../hooks/useStableRef'
 import './ResponsiveChat.css'
 
-type ModalSize = 'default' | 'viewport' | 'workspace' | 'editor'
+type ModalSize = 'default' | 'viewport' | 'workspace' | 'editor' | 'content'
 
 export const VIEWPORT_MODAL_HEIGHT =
   'calc(var(--modal-viewport-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
@@ -22,6 +22,12 @@ export const MODAL_SIZE_STYLE: Record<ModalSize, CSSProperties | undefined> = {
   },
   // Sized in ResponsiveChat.css so `mobileFullscreen` can still take the whole phone screen.
   workspace: undefined,
+  // Shrinks to what it shows (an image preview) instead of filling a width, capped to the viewport.
+  content: {
+    width: 'auto',
+    maxHeight: VIEWPORT_MODAL_HEIGHT,
+    maxWidth: 'calc(100vw - 2rem)',
+  },
 }
 
 interface ModalProps {

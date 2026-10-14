@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { writeFile, readFile, unlink, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../db'
 import { images } from '../db/schema'
 import { getHomeDir } from '../lib/utils/home'
@@ -44,8 +44,17 @@ function getImagesDir(): string {
   return join(getHomeDir(), IMAGES_DIR)
 }
 
-function getImagePath(filename: string): string {
+export function getImagePath(filename: string): string {
   return join(getImagesDir(), filename)
+}
+
+/** Remove an image's stored bytes once its row is gone: the row deletion is authoritative, this is best-effort. */
+async function unlinkStoredImage(filename: string): Promise<void> {
+  try {
+    await unlink(getImagePath(filename))
+  } catch {
+    // Already gone, or left as an orphan file: nothing refers to it any more.
+  }
 }
 
 /**
@@ -61,6 +70,7 @@ export class Image implements ImageRow {
   declare agentId: string | null
   declare squadId: string | null
   declare uploadedByUserId: string | null
+  declare forwardedFromImageId: string | null
   declare status: ImageStatus
   declare usedAt: Date | null
   declare createdAt: Date
@@ -322,13 +332,33 @@ export class Image implements ImageRow {
       }
       return tx.delete(images).where(inArray(images.id, imageIds)).returning({ filename: images.filename })
     })
-    for (const row of rows) {
-      try {
-        await unlink(getImagePath(row.filename))
-      } catch {
-        // The metadata deletion is authoritative; orphan cleanup is best-effort.
-      }
-    }
+    for (const row of rows) await unlinkStoredImage(row.filename)
+  }
+
+  /**
+   * Delete a user's own staged upload: still pending, uploaded by them, and bound to no agent or
+   * squad. The conditions are part of the delete itself, under the lock a claim takes, so an image
+   * that was claimed or sent in the meantime is left alone. Resolves to whether it was deleted.
+   */
+  static async deleteStagedUpload(imageId: string, uploadedByUserId: string): Promise<boolean> {
+    const [row] = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${imageId}))`)
+      return tx
+        .delete(images)
+        .where(
+          and(
+            eq(images.id, imageId),
+            eq(images.status, 'pending'),
+            eq(images.uploadedByUserId, uploadedByUserId),
+            isNull(images.agentId),
+            isNull(images.squadId)
+          )
+        )
+        .returning({ filename: images.filename })
+    })
+    if (!row) return false
+    await unlinkStoredImage(row.filename)
+    return true
   }
 
   /**
@@ -426,6 +456,7 @@ export class Image implements ImageRow {
       size: this.size,
       agentId: this.agentId,
       squadId: this.squadId,
+      forwardedFromImageId: this.forwardedFromImageId,
       status: this.status,
       usedAt: this.usedAt,
       createdAt: this.createdAt,

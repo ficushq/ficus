@@ -210,6 +210,34 @@ describe('tool result firewall badge', () => {
     expect(row('not json')).not.toContain('Possible injection')
   })
 
+  test('shell rows show the badge too, failed commands included', () => {
+    const firewall = { flagged: true, severity: 'high', instructsAgent: 0.94, intent: 'malicious', withheld: true }
+    for (const [toolName, isError] of [
+      ['bash', false],
+      ['bash', true],
+      ['squad_bash', false],
+    ] as const) {
+      const html = renderToStaticMarkup(
+        <SingleToolCallSection
+          toolCall={{
+            toolCallId: 'bash-1',
+            toolName,
+            args: JSON.stringify({ command: 'gh issue view 12 -R owner/repo' }),
+            result: JSON.stringify({
+              content: [{ type: 'text', text: '⛔ Ficus firewall withheld the output of this command' }],
+              details: { firewall },
+              ...(isError ? { isError: true } : {}),
+            }),
+            isError,
+          }}
+        />
+      )
+      expect(html).toContain('gh issue view 12')
+      expect(html).toContain('Withheld: likely injection')
+      if (isError) expect(html).toContain('ERROR')
+    }
+  })
+
   test('a collapsed group of tool calls shows the badge too', () => {
     const toolBlock = (id: string, result: string) => ({
       type: 'tool_use' as const,

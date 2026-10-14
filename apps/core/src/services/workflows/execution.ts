@@ -46,6 +46,12 @@ import { resolveStoredWorkflow, validateWorkflowParticipants, WorkflowError, wor
 import { codeHostingRegistry } from '../integrations/code-hosting'
 import { recordDeliveryVerification } from '../work-streams/delivery-pull-requests'
 import { recordChangeRequestBinding } from '../work-streams/change-request-binding'
+import {
+  assertNoStackedDeliveryHold,
+  loadStackedDependencies,
+  stackedDependencyNotice,
+  WorkStreamStackedDeliveryHoldError,
+} from '../work-streams/dependency-edges'
 import { resolveBranchChangeRequest } from '@ficus/shared'
 
 const log = createLogger('workflows')
@@ -311,7 +317,7 @@ async function dispatchFlowAttempt(
       requestId: caller.requestId,
       agentId: binding!.agentId,
       version: run.version,
-      content: flowMessage(stream, run, attempt),
+      content: flowMessage(stream, run, attempt, await stackNotice(tx, stream)),
     }
     await tx.update(workStreamFlowRuns).set({ state: run.state }).where(eq(workStreamFlowRuns.workStreamId, stream.id))
     return
@@ -321,7 +327,7 @@ async function dispatchFlowAttempt(
     {
       recipientId: binding!.agentId,
       subject: `Flow step: ${step.id}`,
-      content: flowMessage(stream, run, attempt),
+      content: flowMessage(stream, run, attempt, await stackNotice(tx, stream)),
       metadata: { workStreamId: stream.id, squadId: stream.squadId, source: 'workflow', attemptId: attempt.id },
       wakeEligible: true,
       recordOnly: true,
@@ -586,6 +592,8 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
     }
   })
   callbacks.forEach((callback) => callback())
+  // Streams waiting on this one through a `ready` dependency may now be admissible.
+  if (result.stateStatus === 'completion-ready') await admitDependentsSafely(id)
   if (command.action === 'rework') {
     const { promoteEligibleQueuedStreams } = await import('../work-streams/admission')
     await promoteEligibleQueuedStreams(streamBefore.squadId)
@@ -595,6 +603,27 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
   await reconcileOutputDeliveries(id)
   eventEmitter.emit('workStream.updated', { workStreamId: id, squadId: streamBefore.squadId })
   return result
+}
+
+async function admitDependentsSafely(id: string) {
+  try {
+    const { admitDependentsOfReadyStream } = await import('../work-streams/admission')
+    await admitDependentsOfReadyStream(id)
+  } catch {
+    // The admission reconciler is the backstop.
+  }
+}
+
+/** The stacked-dependency notice for a stream, from current statuses. */
+export async function stackNotice(
+  store: DbTx | typeof db,
+  stream: { dependsOn: string[] | null; dependencyEdges: Stream['dependencyEdges'] | null; metadata: unknown }
+) {
+  if (!Object.keys(stream.dependencyEdges ?? {}).length) return undefined
+  return stackedDependencyNotice(
+    await loadStackedDependencies(store, stream),
+    (stream.metadata as { git?: Record<string, unknown> } | null)?.git
+  )
 }
 
 /** Mandatory at the entity boundary, including callers outside HTTP routes. */
@@ -647,6 +676,13 @@ export async function finishFlow(id: string, version: number, identity: Identity
     throw new WorkflowError('Flow is not ready for completion or its version changed', 409)
   if (identity.type === 'agent' && !(stream.agentIds ?? []).includes(identity.agentId))
     throw new WorkflowError('Only a participant can finish this flow', 403)
+  // Checked first so the reason names the dependency, not this stream's own unmerged pull request.
+  try {
+    await assertNoStackedDeliveryHold(db, stream)
+  } catch (error) {
+    if (error instanceof WorkStreamStackedDeliveryHoldError) throw new WorkflowError(error.message, 409)
+    throw error
+  }
   let deliveredHead: string | undefined
   const mode = run.state.definition.completion.mode
   let metadata = stream.metadata as Record<string, any>
@@ -753,7 +789,8 @@ export async function finishFlow(id: string, version: number, identity: Identity
       }
     )
   } catch (error) {
-    if (error instanceof WorkStreamOpenWaitsError) throw new WorkflowError(error.message, 409)
+    if (error instanceof WorkStreamOpenWaitsError || error instanceof WorkStreamStackedDeliveryHoldError)
+      throw new WorkflowError(error.message, 409)
     throw error
   }
   return stream.toJson()
@@ -842,7 +879,9 @@ export async function flowWorkerContext(agentId: string) {
     workStreamId: binding.workStreamId,
     participantId: binding.participantId,
     state: run.state,
-    deliveryInstructions: stream ? deliveryInstructionsForRun(stream, run.state, run.version) : undefined,
+    deliveryInstructions: stream
+      ? deliveryInstructionsForRun(stream, run.state, run.version, await stackNotice(db, stream))
+      : undefined,
   }
 }
 

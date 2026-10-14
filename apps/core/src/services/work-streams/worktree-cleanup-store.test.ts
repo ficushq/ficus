@@ -91,7 +91,14 @@ test('unrelated workspace execution does not block a quiescent owned worktree', 
   expect(await claim()).not.toBeNull()
 })
 
-for (const reason of ['disabled', 'reopened', 'shared', 'dependent', 'metadata-changed'] as const) {
+for (const reason of [
+  'disabled',
+  'reopened',
+  'shared',
+  'dependent',
+  'stacked-dependent',
+  'metadata-changed',
+] as const) {
   test(`${reason} wins before the claim and prevents removal`, async () => {
     if (reason === 'disabled')
       await db.update(workStreams).set({ autoCleanupWorktree: false }).where(eq(workStreams.id, streamId))
@@ -103,6 +110,21 @@ for (const reason of ['disabled', 'reopened', 'shared', 'dependent', 'metadata-c
         .values({ squadId, title: 'shared', metadata: { git: { worktree: '/workspace/feature/../feature' } } })
     if (reason === 'dependent')
       await db.insert(workStreams).values({ squadId, title: 'dependent', dependsOn: [streamId] })
+    // A live stream built on this stream's branch through a `ready` edge that already unlocked.
+    if (reason === 'stacked-dependent')
+      await db.insert(workStreams).values({
+        squadId,
+        title: 'stacked dependent',
+        status: 'active',
+        dependsOn: [streamId],
+        dependencyEdges: {
+          [streamId]: {
+            condition: 'ready',
+            readyUnlockedAt: new Date().toISOString(),
+            stack: { mode: 'stacked', decidedAt: new Date().toISOString(), branch: 'feature', headSha: head },
+          },
+        },
+      })
     if (reason === 'metadata-changed')
       await db
         .update(workStreams)

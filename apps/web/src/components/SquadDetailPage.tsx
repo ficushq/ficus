@@ -8,10 +8,8 @@ import { queryKeys, githubFeedbackQueryKeys } from '../queryKeys'
 import { DONE_WORK_STREAM_STATUSES_KEY, listSquadAgentsWithRecent } from '../api/squads'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useInfiniteDoneWorkStreams } from '../hooks/useInfiniteDoneWorkStreams'
-import { usePermissions } from '../hooks/usePermissions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { BackLink } from './BackLink'
-import { Menu, MenuItem, usePopover } from './popover'
 import { Badge, type BadgeColor } from './Badge'
 import { AgentVisualization } from './squads/AgentVisualization'
 import { SquadAgentThreads } from './squads/SquadAgentThreads'
@@ -23,7 +21,6 @@ import { WorkStreamList } from './squads/WorkStreamList'
 import { RelationshipsList } from './squads/RelationshipsList'
 import { SchedulesList } from './schedules'
 import { SquadSettingsTab } from './squads/SquadSettingsTab'
-import { DeleteSquadModal } from './squads/DeleteSquadModal'
 import { SandboxStatusIndicator } from './squads/SandboxStatusIndicator'
 import { AttentionMenu } from './AttentionMenu'
 import { PullToRefresh } from './PullToRefresh'
@@ -32,7 +29,7 @@ import { MemoryTab } from './memory'
 import { AppsTab } from './squads/AppsTab'
 import { SharingTab } from './squads/grants'
 import { SquadMonitorsSection } from './monitors/SquadMonitorsSection'
-import { ChevronDownIcon, ChevronRightIcon, MoreIcon } from './icons'
+import { ChevronDownIcon, ChevronRightIcon } from './icons'
 import { countableSquadAgents } from '../lib/agentDisplay'
 import { LoadingContent, SkeletonBlock, SkeletonText } from './loading/Skeleton'
 import { GitHubFeedbackReviewProvider } from './integrations/GitHubFeedbackReviewProvider'
@@ -88,10 +85,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
     },
     [navigate, squadId, location.search, location.hash]
   )
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [headerExpanded, setHeaderExpanded] = useState(false)
-  const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
-  const headerMenu = usePopover({ kind: 'menu', open: headerMenuOpen, onOpenChange: setHeaderMenuOpen })
 
   const [searchParams] = useSearchParams()
   const agentParam = searchParams.get('agent')
@@ -113,8 +107,6 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
 
   // Dependent queries only use a canonical ID, never the route's unresolved slug.
   const resolvedId = squad?.id ?? knownId ?? (fullUuid ? squadId! : '')
-  const { can, isLoading: permissionsLoading } = usePermissions(resolvedId)
-  const canDeleteSquad = !permissionsLoading && can('squads:delete')
 
   // Normalize the address bar to the squad's pretty slug once loaded
   // (UUID or UUID-prefix → slug; a renamed squad re-derives to its new slug).
@@ -343,33 +335,6 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           >
             {headerExpanded ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
           </button>
-          {canDeleteSquad && (
-            <div className="relative">
-              <button
-                {...headerMenu.triggerProps}
-                onClick={headerMenu.toggle}
-                aria-label="Squad actions"
-                className="ficus-button ficus-button-ghost p-1 rounded-md transition-colors"
-              >
-                <MoreIcon className="w-4 h-4" />
-              </button>
-              <Menu
-                {...headerMenu.popoverProps}
-                label="Squad actions"
-                gap={4}
-                scroll={false}
-                className="min-w-28 rounded-md border border-th-border bg-surface overflow-hidden"
-              >
-                <MenuItem
-                  opensDialog
-                  onClick={() => setShowDeleteModal(true)}
-                  className="ficus-button ficus-button-ghost w-full px-3 py-2 text-left text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20"
-                >
-                  Archive
-                </MenuItem>
-              </Menu>
-            </div>
-          )}
         </div>
         {headerExpanded && <div className="mt-2 flex flex-wrap items-center gap-2">{statPills}</div>}
       </div>
@@ -418,14 +383,6 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
               )}
             </div>
           </div>
-          {canDeleteSquad && (
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              className="ficus-button ficus-button-danger shrink-0 px-2.5 py-1 text-xs font-medium rounded-md transition-colors"
-            >
-              Archive
-            </button>
-          )}
         </div>
 
         <div className="squad-detail-header-stats flex flex-wrap items-center gap-2 mt-3">{statPills}</div>
@@ -558,15 +515,6 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           )}
         </div>
       </GitHubFeedbackReviewProvider>
-
-      {canDeleteSquad && squad && (
-        <DeleteSquadModal
-          isOpen={showDeleteModal}
-          onClose={() => setShowDeleteModal(false)}
-          squadId={resolvedId}
-          squadName={squad.name}
-        />
-      )}
     </div>
   )
 }

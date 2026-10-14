@@ -1,3 +1,4 @@
+import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 export * from './grants'
 // Schema field definition for task type schemas
 export interface SchemaFieldDef {
@@ -131,6 +132,24 @@ export type ContentBlock =
 
 export type DeliveryMode = 'steer' | 'follow-up'
 
+/** The longest draft `POST /api/agents/:id/delivery-suggestion` accepts. */
+export const DELIVERY_SUGGESTION_MAX_DRAFT_LENGTH = 4000
+
+/**
+ * The composer's suggested delivery for a draft written while an agent works: `steer` when the
+ * draft is about its current work, `follow-up` when it is not. `probability` is how likely the
+ * draft is related. Null when there is nothing to suggest (idle agent, feature off, short draft,
+ * or no decision model answered).
+ */
+/**
+ * The composer's Interrupt / Follow up suggestion. `suggestion` is set only when the decision model is
+ * sure enough either way; `related` (about the agent's current work) and `now` (should reach the agent
+ * now rather than wait) are its answers, 0 to 1, when it answered.
+ */
+export type DeliverySuggestion =
+  | { suggestion: null; related?: number; now?: number }
+  | { suggestion: DeliveryMode; related?: number; now?: number }
+
 export type MonitorMessageKind = 'lines' | 'exited' | 'canceled' | 'timed-out' | 'overload' | 'failed'
 
 export interface MessageMetadata {
@@ -145,6 +164,15 @@ export interface MessageMetadata {
   assistantContext?: string
   /** Client-provided navigation context, separate from visible message content. */
   pagePath?: string
+  /** Server-owned: the Assistant's routing hint for this user message (and the user's correction). */
+  assistantRouting?: AssistantRoutingHint
+  /**
+   * Server-owned, never saved: a follow-up's routing, inherited from the conversation's latest
+   * routed message (hint or correction) for the model only. It has no chip.
+   */
+  assistantRoutingInherited?: AssistantRoutingTarget & { fromMessageId: string }
+  /** Server-owned: the user's routing correction this message carries to the Assistant. */
+  assistantRoutingCorrection?: AssistantRoutingCorrection
   /** Server-owned direct-chat provenance; request bodies must not set these fields. */
   executionId?: string
   externalExport?: 'disabled' | 'enabled'
@@ -1399,6 +1427,11 @@ export interface WorkStream {
   requestingUserName?: string | null
   agentIds: string[] | null
   dependsOn: string[]
+  /**
+   * One entry per `dependsOn` ID with its unlock condition and whether it is satisfied.
+   * Additive: `dependsOn` stays the authoritative ID list.
+   */
+  dependencies?: import('./work-stream-dependencies').WorkStreamDependencyEdge[]
   /** Work streams in this squad that depend on this stream. Computed server-side; never stored. */
   dependedOnBy: string[]
   /** Display state derived from executions + open waits. Populated by list/detail endpoints. */
@@ -1464,7 +1497,8 @@ export interface CreateWorkStreamInput {
   /** @deprecated Rejected at creation. Set participant model overrides in workflow. */
   agentModelOverrides?: Record<string, string>
   handoffMessage?: string | null
-  dependsOn?: string[]
+  /** A bare ID waits for `done`; `{ id, condition: 'ready' }` unlocks when the dependency's pull request is ready. */
+  dependsOn?: import('./work-stream-dependencies').WorkStreamDependencyInput[]
   /** Advisory scheduling priority. Defaults to 'normal'. */
   priority?: WorkStreamPriority
   metadata?: Record<string, unknown>
@@ -1496,7 +1530,8 @@ export interface UpdateWorkStreamInput {
   assigneeAgentId?: string | null
   ownerAgentId?: string | null
   agentIds?: string[] | null
-  dependsOn?: string[]
+  /** A bare ID waits for `done`; `{ id, condition: 'ready' }` unlocks when the dependency's pull request is ready. */
+  dependsOn?: import('./work-stream-dependencies').WorkStreamDependencyInput[]
   handoffMessage?: string | null
   files?: string[]
   metadata?: Record<string, unknown>
