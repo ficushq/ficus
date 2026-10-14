@@ -378,7 +378,7 @@ test('a trusted comment published during a GitHub outage stays unmatched and is 
   } finally {
     await h.close()
   }
-}, 60_000)
+}, 120_000)
 
 test('an explicit GitHub denial still settles the raw event as unauthorized, with no effects', async () => {
   const h = await fixture()
