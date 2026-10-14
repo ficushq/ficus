@@ -162,6 +162,8 @@ ficus ws list --status blocked
 
 Create a new work stream using an explicit workflow or the squad default. Every new stream has a flow; legacy manual staffing flags are rejected.
 
+Creating requires `workstreams:create` on the squad, which squad managers and consultants hold and squad workers do not. A refused agent gets `403` with `Forbidden: this agent cannot create work streams. Send the proposed title, description and repository settings to your manager (notify_contact or inbox).` Squad workers' prompts omit this and other commands their permissions do not allow.
+
 ```bash
 ficus workstream create|new [options] <title>
 ```

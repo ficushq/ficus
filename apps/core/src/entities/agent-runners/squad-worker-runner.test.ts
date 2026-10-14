@@ -11,6 +11,7 @@ import { SquadWorkerRunner } from './squad-worker-runner'
 import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from './constants'
 import * as tools from '../../tools'
 import * as cliHelp from '../../lib/utils/cli-help'
+import * as rbac from '../../services/rbac'
 import * as memoryPaths from '../../services/memory/paths'
 import * as prompts from '../../lib/prompts'
 import { createArtifactInAgentWorkspace } from '../../services/artifacts/artifactWorkspace'
@@ -564,6 +565,51 @@ describe('SquadWorkerRunner typeContext injection', () => {
     spies.forEach((s) => s.mockRestore())
     spies = []
     squadFindSpy?.mockRestore()
+  })
+
+  it('narrows the CLI reference to the commands the agent permissions allow', async () => {
+    squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
+      id: TEST_SQUAD_ID,
+      name: 'Custom squad',
+      defaultAgents: [],
+      purpose: 'Deliver useful work',
+      context: '',
+      sandboxId: 'sbx',
+      managerAgentId: 'm1',
+      isMemoryEnabled: false,
+      getActiveAgents: async () => [],
+      getTypeContext: () => null,
+    } as any)
+    getSquadWorkerCliHelpSpy.mockResolvedValue(
+      [
+        'Usage: ficus workstream|ws [options] [command]',
+        '',
+        'Commands:',
+        '  create|new [options] <title>  Create a work stream',
+        '  get|info <id>                 Get work stream details',
+        '',
+      ].join('\n')
+    )
+    const permissions = spyOn(rbac, 'resolvePermissions').mockResolvedValue(['workstreams:read'])
+    const flowContext = spyOn(workflowExecution, 'flowWorkerContext').mockResolvedValue(null)
+    spies.push(permissions, flowContext)
+    const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
+    const runner = new TestableSquadWorkerRunner(
+      makeExecution(agent.id),
+      agent,
+      makeAgentType({ id: 'worker', systemPrompt: '## CLI Reference\n\n{{cliHelp}}' })
+    )
+
+    await runner.exposeCreateSession()
+
+    const systemPrompt = agentSessionCreateSpy.mock.calls[0][0].systemPrompt
+    expect(permissions).toHaveBeenCalledWith(
+      { type: 'agent', agentId: agent.id, squadId: TEST_SQUAD_ID },
+      TEST_SQUAD_ID
+    )
+    expect(systemPrompt).toContain('get|info <id>')
+    expect(systemPrompt).not.toContain('create|new')
+    expect(systemPrompt).toContain('Route those requests to your squad manager.')
   })
 
   it('gives generalist flow workers delivery guidance only when ready, without legacy squad routing', async () => {
