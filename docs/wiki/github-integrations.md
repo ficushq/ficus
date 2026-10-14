@@ -454,8 +454,13 @@ revision pending and records the verdict for the review window. Like a human all
 a screen needs current source access (`hasCurrentSourceAccess`): without it the
 feedback is neither sent to a model nor released (`source_unavailable`, rechecked
 under the lock at release). A lease makes
-retries safe; a screen that crashes three times is left held as `unavailable`.
-Audit rows use actor `decision-model` and action `github.feedback.screen`.
+retries safe. A screen whose model did not answer (`unavailable`, including a thrown
+error or a crash) is asked again after a backoff (30 s, then 60 s) within three
+attempts in total, then left held as `unavailable`; `unconfigured` is held at once.
+A person can deny a `screened` revision while it is still releasing, exactly as
+for a human allow. Kicks run at most four screens at once per process; the rest
+wait for the sweep. Audit rows use actor `decision-model` and action
+`github.feedback.screen`.
 `POST .../github-feedback/screen-pending` (`feedback-screen-pending.ts`, human-only,
 409 `author_filter_off`/`screening_not_enabled` otherwise) queues screens for
 already-held `untrusted_author` revisions, 200 per call (`more` when others
@@ -463,7 +468,7 @@ remain). It re-queues a previous screen only when it ended without a verdict
 (`unavailable`, `unconfigured`, `skipped`, `source_unavailable`); verdicts (`unsafe`, `uncertain`,
 `too_long`) are final for that version, and queued or running screens are left
 alone, so repeating the call is a no-op. The summary's `screenable` counts what it
-would queue.
+would queue (0 unless the squad screens).
 
 **Human-only authority.** Trust edits, moderation and the filter setting require a
 literal enabled human identity with effective `squads:update` in the squad.

@@ -1,5 +1,5 @@
 {
-  "id": "d12acbf5-99c6-46ee-b8f3-4aa7db67ce11",
+  "id": "7912bf0d-0721-43f7-9ac5-1650323ae578",
   "prevId": "b36c5f1c-8d41-47b6-8400-1dab8144505a",
   "version": "7",
   "dialect": "postgresql",
@@ -6188,6 +6188,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "outcome": {
           "name": "outcome",
           "type": "varchar(32)",
@@ -6227,6 +6233,12 @@
           "columns": [
             {
               "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_attempt_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

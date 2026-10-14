@@ -17,7 +17,8 @@ import {
   requireGitHubHumanSquadUpdate,
 } from './feedback-trust'
 
-const ALLOWED = ['allow_once', 'allow_trust']
+/** Decisions that release content; `screened` is a decision model's, the others a person's. */
+const ALLOWED = ['allow_once', 'allow_trust', 'screened']
 const RELEASING = ['ready', 'retry', 'retained']
 
 /**
@@ -26,7 +27,8 @@ const RELEASING = ['ready', 'retry', 'retained']
  * It never fetches provider content or routes an event. Adding trust never releases other history.
  *
  * `deny` also accepts an allowed revision that is still releasing (ready, retry or retained): the
- * human's only way out of a release that can no longer reach anyone. Allowing requires the squad to
+ * human's only way out of a release that can no longer reach anyone, and the way to overrule a
+ * decision model's release before any agent has it. Allowing requires the squad to
  * still be able to read the source, so nobody approves or trusts text that was withheld from view.
  */
 export async function moderateGitHubFeedback(

@@ -87,6 +87,8 @@ const INJECTION_LABEL_AT = 0.5
  */
 export function screeningLabel(screening: GitHubFeedbackScreening | null): string | null {
   if (!screening) return null
+  if (screening.state === 'queued' && screening.outcome === 'unavailable')
+    return 'Decision model: didn’t answer; trying again'
   if (screening.state === 'queued' || screening.state === 'running') return 'Decision model: screening…'
   const { instructsAgent, intent, intentConfidence } = screening
   const confidence = intentConfidence === null ? '' : `, ${percent(intentConfidence)}`

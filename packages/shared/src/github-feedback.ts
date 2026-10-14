@@ -179,7 +179,10 @@ export type GitHubFeedbackScreenOutcome =
 
 /** A decision model's verdict on one held revision, as stored and shown to moderators. */
 export interface GitHubFeedbackScreening {
-  /** `queued`/`running`: waiting for the model. `passed`: released. `held`: left for a person. */
+  /**
+   * `queued`/`running`: waiting for the model (a queued screen with outcome `unavailable` is
+   * waiting to ask again). `passed`: released. `held`: left for a person.
+   */
   state: 'queued' | 'running' | 'passed' | 'held'
   outcome: GitHubFeedbackScreenOutcome | null
   /** Probability the text gives instructions to an agent reading it. */

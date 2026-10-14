@@ -120,6 +120,7 @@ export async function screenPendingGitHubFeedback(
               outcome: null,
               verdict: null,
               screenedAt: null,
+              nextAttemptAt: null,
               leaseToken: null,
               leaseExpiresAt: null,
               updatedAt: new Date(),

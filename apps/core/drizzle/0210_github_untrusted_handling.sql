@@ -7,6 +7,7 @@ CREATE TABLE "github_feedback_screenings" (
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"lease_token" uuid,
 	"lease_expires_at" timestamp with time zone,
+	"next_attempt_at" timestamp with time zone,
 	"outcome" varchar(32),
 	"verdict" jsonb,
 	"screened_at" timestamp with time zone,
@@ -22,7 +23,7 @@ ALTER TABLE "github_feedback_revisions" DROP CONSTRAINT "github_feedback_revisio
 ALTER TABLE "squads" ADD COLUMN "github_untrusted_handling" text DEFAULT 'hold' NOT NULL;--> statement-breakpoint
 ALTER TABLE "github_feedback_screenings" ADD CONSTRAINT "github_feedback_screenings_revision_id_github_feedback_revisions_id_fk" FOREIGN KEY ("revision_id") REFERENCES "public"."github_feedback_revisions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "github_feedback_screenings" ADD CONSTRAINT "github_feedback_screenings_squad_id_squads_id_fk" FOREIGN KEY ("squad_id") REFERENCES "public"."squads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "github_feedback_screening_due" ON "github_feedback_screenings" USING btree ("state","lease_expires_at");--> statement-breakpoint
+CREATE INDEX "github_feedback_screening_due" ON "github_feedback_screenings" USING btree ("state","next_attempt_at","lease_expires_at");--> statement-breakpoint
 CREATE INDEX "github_feedback_screening_squad" ON "github_feedback_screenings" USING btree ("squad_id");--> statement-breakpoint
 ALTER TABLE "github_feedback_revisions" ADD CONSTRAINT "github_feedback_revision_decision" CHECK ("github_feedback_revisions"."decision" in ('pending', 'allow_once', 'allow_trust', 'deny', 'automatic', 'historical', 'screened'));--> statement-breakpoint
 ALTER TABLE "github_feedback_revisions" ADD CONSTRAINT "github_feedback_revision_human_decision" CHECK (("github_feedback_revisions"."decision" in ('allow_once', 'allow_trust', 'deny') AND "github_feedback_revisions"."decided_by_user_id" is not null AND "github_feedback_revisions"."decided_at" is not null) OR ("github_feedback_revisions"."decision" in ('pending', 'automatic', 'historical', 'screened') AND "github_feedback_revisions"."decided_by_user_id" is null AND "github_feedback_revisions"."decided_at" is null));

@@ -90,7 +90,8 @@ export async function getGitHubFeedbackSummary(
     authorFilterEnabled: squad?.enabled ?? true,
     untrustedHandling: squad?.handling === 'screen' ? 'screen' : 'hold',
     decisionModelConfigured: decisionChain('github-firewall').length > 0,
-    screenable: await countScreenableGitHubFeedback(squadId),
+    // Only a screening squad can queue these, so a holding squad is spared the count on every poll.
+    screenable: squad?.handling === 'screen' ? await countScreenableGitHubFeedback(squadId) : 0,
     pending: counts?.pending ?? 0,
     releasing: counts?.releasing ?? 0,
     failing: counts?.failing ?? 0,

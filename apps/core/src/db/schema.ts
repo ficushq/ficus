@@ -1605,6 +1605,8 @@ export const githubFeedbackScreenings = pgTable(
     attempts: integer('attempts').notNull().default(0),
     leaseToken: uuid('lease_token'),
     leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    // A queued screen whose model did not answer waits here before it is asked again.
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
     outcome: varchar('outcome', { length: 32 }).$type<import('@ficus/shared').GitHubFeedbackScreenOutcome>(),
     verdict: jsonb('verdict').$type<import('../services/integrations/github/feedback-screen-policy').ScreenVerdict>(),
     screenedAt: timestamp('screened_at', { withTimezone: true }),
@@ -1612,7 +1614,7 @@ export const githubFeedbackScreenings = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index('github_feedback_screening_due').on(table.state, table.leaseExpiresAt),
+    index('github_feedback_screening_due').on(table.state, table.nextAttemptAt, table.leaseExpiresAt),
     index('github_feedback_screening_squad').on(table.squadId),
     check('github_feedback_screening_state', sql`${table.state} in ('queued', 'running', 'passed', 'held')`),
     check(

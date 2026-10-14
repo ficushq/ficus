@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, lte, or, sql } from 'drizzle-orm'
+import { and, eq, gte, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import {
   db,
   githubFeedbackObjects,
@@ -34,8 +34,15 @@ const log = createLogger('github-feedback-screening')
 
 /** Longer than the decision layer's maximum timeout, so a live screen is never taken over. */
 const LEASE = sql.raw(`interval '90 seconds'`)
-/** Crashed screens are retried this many times in total, then left held as unavailable. */
+/**
+ * A screen is attempted this many times in total (a crash or a model that does not answer counts
+ * as one), then left held as unavailable for a person.
+ */
 export const SCREEN_MAX_ATTEMPTS = 3
+/** Kicks (webhook and "screen pending") in flight at once per process; the rest wait their turn. */
+const KICK_CONCURRENCY = 4
+/** Kicks waiting per process; anything beyond this is left to the worker's sweep. */
+const KICK_QUEUE_LIMIT = 1000
 /** The audit actor for screening outcomes; there is no user. */
 export const SCREEN_AUDIT_ACTOR = 'decision-model'
 /** The revision reason a passing screen records. */
@@ -53,7 +60,13 @@ const claimable = () =>
   and(
     lt(githubFeedbackScreenings.attempts, SCREEN_MAX_ATTEMPTS),
     or(
-      eq(githubFeedbackScreenings.state, 'queued'),
+      and(
+        eq(githubFeedbackScreenings.state, 'queued'),
+        or(
+          isNull(githubFeedbackScreenings.nextAttemptAt),
+          lte(githubFeedbackScreenings.nextAttemptAt, sql`clock_timestamp()`)
+        )
+      ),
       and(
         eq(githubFeedbackScreenings.state, 'running'),
         lte(githubFeedbackScreenings.leaseExpiresAt, sql`clock_timestamp()`)
@@ -109,37 +122,51 @@ export async function isGitHubFeedbackScreenWaiting(revisionId: string): Promise
  * A lost run is harmless: the revision stays held and the worker's sweep picks the row up.
  */
 export function scheduleGitHubFeedbackScreening(revisionId: string, deps: ScreeningDependencies = {}) {
-  setTimeout(() => {
-    screenGitHubFeedback(revisionId, deps).catch((error) =>
-      log.warn('GitHub feedback screen failed; it stays held', {
-        revisionId,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    )
-  }, 0)
+  scheduleGitHubFeedbackScreenings([revisionId], deps)
 }
 
 /**
- * Run several queued screens one after another, off the caller's path, so a bulk request never
- * opens a burst of concurrent model calls. Anything left over is picked up by the worker's sweep.
+ * Run queued screens off the caller's path through one per-process queue, at most
+ * KICK_CONCURRENCY at a time, so neither a webhook burst nor a bulk request opens a flood of
+ * concurrent model calls. A revision already waiting or running here is not queued twice. Anything
+ * beyond the queue limit, or lost with the process, is picked up by the worker's sweep.
  */
 export function scheduleGitHubFeedbackScreenings(revisionIds: string[], deps: ScreeningDependencies = {}) {
-  if (!revisionIds.length) return
-  setTimeout(() => {
-    void (async () => {
-      for (const revisionId of revisionIds)
-        await screenGitHubFeedback(revisionId, deps).catch((error) =>
-          log.warn('GitHub feedback screen failed; it stays held', {
-            revisionId,
-            error: error instanceof Error ? error.message : String(error),
-          })
-        )
-    })()
-  }, 0)
+  for (const revisionId of revisionIds) {
+    if (kicked.has(revisionId) || kicks.length >= KICK_QUEUE_LIMIT) continue
+    kicked.add(revisionId)
+    kicks.push({ revisionId, deps })
+  }
+  if (kicks.length) setTimeout(drainKicks, 0)
+}
+
+const kicks: Array<{ revisionId: string; deps: ScreeningDependencies }> = []
+const kicked = new Set<string>()
+let kicksInFlight = 0
+
+function drainKicks() {
+  while (kicksInFlight < KICK_CONCURRENCY && kicks.length) {
+    const next = kicks.shift()!
+    kicksInFlight++
+    screenGitHubFeedback(next.revisionId, next.deps)
+      .catch((error) =>
+        log.warn('GitHub feedback screen failed; it stays held', {
+          revisionId: next.revisionId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      )
+      .finally(() => {
+        kicked.delete(next.revisionId)
+        kicksInFlight--
+        drainKicks()
+      })
+  }
 }
 
 export type ScreenRunResult =
   | { status: 'not_claimed' }
+  /** The model did not answer; the screen is queued again after a backoff. */
+  | { status: 'retrying'; attempts: number }
   | { status: 'settled'; released: boolean; outcome: ScreenEvaluation['outcome'] }
 
 /**
@@ -298,13 +325,19 @@ async function settle(
       released = !!updated
       if (!released && outcome === 'safe') outcome = 'skipped'
     }
+    // No answer (a provider outage, a timeout, a thrown error) is not a verdict: ask again after a
+    // backoff that doubles from 30 s, until the attempts run out. The revision stays held meanwhile.
+    const retry = !released && outcome === 'unavailable' && screening.attempts < SCREEN_MAX_ATTEMPTS
     await tx
       .update(githubFeedbackScreenings)
       .set({
-        state: released ? 'passed' : 'held',
+        state: retry ? 'queued' : released ? 'passed' : 'held',
         outcome,
         verdict: evaluation.verdict,
-        screenedAt: new Date(),
+        screenedAt: retry ? null : new Date(),
+        nextAttemptAt: retry
+          ? sql`clock_timestamp() + interval '30 seconds' * power(2, ${Math.max(screening.attempts - 1, 0)})`
+          : null,
         leaseToken: null,
         leaseExpiresAt: null,
         updatedAt: new Date(),
@@ -322,19 +355,21 @@ async function settle(
       targetId: screening.revisionId,
       action: 'github.feedback.screen',
       outcome: released ? 'allowed' : 'held',
-      code: outcome,
+      code: retry ? 'unavailable_retry' : outcome,
     })
-    return { released, outcome }
+    return retry
+      ? ({ status: 'retrying', attempts: screening.attempts } as const)
+      : ({ status: 'settled', released, outcome } as const)
   })
   if (!result) return { status: 'not_claimed' }
   // Content-free, post-commit: the queue counts or the shown verdict changed.
   eventEmitter.emit('githubFeedback.updated', { squadId: claimed.squadId })
-  return { status: 'settled', ...result }
+  return result
 }
 
 /**
- * Worker sweep: run screens nobody is running (a lost kick, a restart mid-screen), and give up on
- * screens that crashed SCREEN_MAX_ATTEMPTS times, leaving them held for a person.
+ * Worker sweep: run screens nobody is running (a lost kick, a restart mid-screen, a retry that is
+ * due), and give up on screens that crashed on their last attempt, leaving them held for a person.
  */
 export async function reconcileGitHubFeedbackScreenings(
   deps: ScreeningDependencies = {},

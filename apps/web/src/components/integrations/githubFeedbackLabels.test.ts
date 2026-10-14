@@ -42,6 +42,7 @@ test('decision model verdicts read as one line, leading with the strongest signa
     label({ state: 'passed', outcome: 'safe', instructsAgent: 0.01, intent: 'benign', intentConfidence: 0.97 })
   ).toBe('Decision model: likely safe, 97%')
   expect(label({ outcome: 'unavailable' })).toBe('Decision model: didn’t answer')
+  expect(label({ state: 'queued', outcome: 'unavailable' })).toBe('Decision model: didn’t answer; trying again')
   expect(label({ outcome: 'unconfigured' })).toBe('Decision model: none set up')
   expect(label({ outcome: 'too_long' })).toBe('Decision model: too long to screen')
   expect(label({ outcome: 'skipped' })).toBe('Decision model: not screened')

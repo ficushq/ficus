@@ -354,18 +354,12 @@ test('a safe verdict releases once through the existing release path, without tr
   }
 })
 
-test('injection, suspicious, uncertain, unavailable, unconfigured and errors stay held for a person', async () => {
+test('injection, suspicious, uncertain and unconfigured stay held for a person', async () => {
   const cases: Array<[string, DecisionOutcome | (() => Promise<DecisionOutcome>), GitHubFeedbackScreenOutcome]> = [
     ['injection', INJECTED, 'unsafe'],
     ['suspicious', answered(0.1, 'suspicious', 0.8), 'unsafe'],
     ['uncertain', answered(0.1, 'benign', 0.5), 'uncertain'],
-    [
-      'unavailable',
-      { ok: false, reason: 'unavailable', errors: [{ providerId: 'p', error: 'timeout' }] },
-      'unavailable',
-    ],
     ['unconfigured', { ok: false, reason: 'unconfigured', errors: [] }, 'unconfigured'],
-    ['throws', () => Promise.reject(new Error('boom')), 'unavailable'],
   ]
   for (const [name, outcome, expected] of cases) {
     const h = await fixture({ body: name === 'injection' ? INJECTION : undefined })
@@ -394,6 +388,135 @@ test('injection, suspicious, uncertain, unavailable, unconfigured and errors sta
     } finally {
       await h.close()
     }
+  }
+})
+
+test('no answer is asked again after a backoff, then held after the last attempt', async () => {
+  const UNAVAILABLE: DecisionOutcome = {
+    ok: false,
+    reason: 'unavailable',
+    errors: [{ providerId: 'p', error: 'timeout' }],
+  }
+  const due = (revisionId: string) =>
+    db
+      .update(githubFeedbackScreenings)
+      .set({ nextAttemptAt: new Date(Date.now() - 1_000) })
+      .where(eq(githubFeedbackScreenings.revisionId, revisionId))
+  const h = await fixture()
+  try {
+    const down = fakeDecide(UNAVAILABLE)
+    expect(await screenGitHubFeedback(h.revisionId, { decide: down.decide })).toEqual({
+      status: 'retrying',
+      attempts: 1,
+    })
+    const first = await h.screening()
+    expect(first).toMatchObject({
+      state: 'queued',
+      attempts: 1,
+      outcome: 'unavailable',
+      leaseToken: null,
+      screenedAt: null,
+      verdict: { errors: [{ providerId: 'p', error: 'timeout' }] },
+    })
+    expect(first!.nextAttemptAt!.getTime()).toBeGreaterThan(Date.now() + 20_000)
+    expect(await h.revision()).toMatchObject({ decision: 'pending', decisionVersion: 0, releaseState: 'held' })
+    // Not due yet: neither a kick nor the sweep asks again, and the list says it is being retried.
+    expect(await screenGitHubFeedback(h.revisionId, { decide: down.decide })).toEqual({ status: 'not_claimed' })
+    await reconcileGitHubFeedbackScreenings({ decide: down.decide })
+    expect(down.calls).toHaveLength(1)
+    const pending = await listGitHubFeedback(h.human, h.squadId, { queue: 'pending', limit: 10 })
+    expect(pending.items[0]!.screening).toMatchObject({ state: 'queued', outcome: 'unavailable' })
+    // A thrown error counts the same. The last attempt leaves it held for a person.
+    await due(h.revisionId)
+    const crash = fakeDecide(() => Promise.reject(new Error('boom')))
+    expect(await screenGitHubFeedback(h.revisionId, { decide: crash.decide })).toEqual({
+      status: 'retrying',
+      attempts: 2,
+    })
+    await due(h.revisionId)
+    await reconcileGitHubFeedbackScreenings({ decide: down.decide })
+    expect(down.calls).toHaveLength(2)
+    expect(await h.screening()).toMatchObject({
+      state: 'held',
+      attempts: SCREEN_MAX_ATTEMPTS,
+      outcome: 'unavailable',
+      nextAttemptAt: null,
+      leaseToken: null,
+    })
+    expect(await h.revision()).toMatchObject({ decision: 'pending', decisionVersion: 0, releaseState: 'held' })
+    expect((await h.audits()).map((row) => [row.outcome, row.code])).toEqual([
+      ['held', 'unavailable_retry'],
+      ['held', 'unavailable_retry'],
+      ['held', 'unavailable'],
+    ])
+  } finally {
+    await h.close()
+  }
+
+  // A model that answers on a later attempt releases as usual.
+  const recovered = await fixture()
+  try {
+    expect(await screenGitHubFeedback(recovered.revisionId, { decide: fakeDecide(UNAVAILABLE).decide })).toMatchObject({
+      status: 'retrying',
+    })
+    await due(recovered.revisionId)
+    const up = fakeDecide(SAFE)
+    expect(await reconcileGitHubFeedbackScreenings({ decide: up.decide })).toBe(1)
+    expect(up.calls).toHaveLength(1)
+    expect(await recovered.screening()).toMatchObject({ state: 'passed', attempts: 2, outcome: 'safe' })
+    expect(await recovered.revision()).toMatchObject({ decision: 'screened', releaseState: 'ready' })
+  } finally {
+    await recovered.close()
+  }
+})
+
+test('a person can still deny a screened item until it is delivered', async () => {
+  const h = await fixture()
+  try {
+    expect(await screenGitHubFeedback(h.revisionId, { decide: fakeDecide(SAFE).decide })).toMatchObject({
+      released: true,
+    })
+    const released = await h.revision()
+    expect(released).toMatchObject({ decision: 'screened', releaseState: 'ready', decisionVersion: 1 })
+    const selection = {
+      revisionId: released.id,
+      contentHash: released.contentHash,
+      decisionVersion: released.decisionVersion,
+    }
+    await moderateGitHubFeedback(h.human, h.squadId, {
+      requestId: crypto.randomUUID(),
+      action: 'deny',
+      selections: [selection],
+    })
+    expect(await h.revision()).toMatchObject({
+      decision: 'deny',
+      decisionVersion: 2,
+      releaseState: 'held',
+      reason: 'human_denied',
+      leaseToken: null,
+    })
+    // Nothing is left to release, and the denial is final.
+    const routed: string[] = []
+    await releaseGitHubFeedback(
+      {
+        authorizeSource: async () => true,
+        route: async (event) => {
+          routed.push(event.fact.body)
+          return { state: 'retained', reason: 'recipient_waiting' }
+        },
+      },
+      { revisionIds: [h.revisionId] }
+    )
+    expect(routed).toEqual([])
+    await expect(
+      moderateGitHubFeedback(h.human, h.squadId, {
+        requestId: crypto.randomUUID(),
+        action: 'allow_once',
+        selections: [{ ...selection, decisionVersion: 2 }],
+      })
+    ).rejects.toMatchObject({ code: 'moderation_selection_conflict' })
+  } finally {
+    await h.close()
   }
 })
 
@@ -623,9 +746,11 @@ test('untrusted handling defaults to hold, is human-only, and is not a generic s
   try {
     const [squad] = await db.select().from(squads).where(eq(squads.id, h.squadId))
     expect(squad!.githubUntrustedHandling).toBe('hold')
+    // Holding: the held untrusted revision is not counted as screenable until the squad screens.
     expect(await getGitHubFeedbackSummary(h.human, h.squadId)).toMatchObject({
       authorFilterEnabled: true,
       untrustedHandling: 'hold',
+      screenable: 0,
     })
     await expect(
       setGitHubUntrustedHandling({ type: 'agent', agentId: crypto.randomUUID() } as never, h.squadId, 'screen')
@@ -634,7 +759,10 @@ test('untrusted handling defaults to hold, is human-only, and is not a generic s
       'Reserved GitHub author filter setting'
     )
     expect(await setGitHubUntrustedHandling(h.human, h.squadId, 'screen')).toEqual({ handling: 'screen' })
-    expect((await getGitHubFeedbackSummary(h.human, h.squadId)).untrustedHandling).toBe('screen')
+    expect(await getGitHubFeedbackSummary(h.human, h.squadId)).toMatchObject({
+      untrustedHandling: 'screen',
+      screenable: 1,
+    })
     const audits = await db.select().from(integrationAuditEvents).where(eq(integrationAuditEvents.targetId, h.squadId))
     expect(audits.map((row) => [row.action, row.outcome])).toEqual(
       expect.arrayContaining([
