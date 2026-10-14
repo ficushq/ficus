@@ -12,6 +12,7 @@ import {
   writeWorkflowAttachmentBlob,
 } from '../attachments/blob-storage'
 import { getSettingsStore } from '../settings'
+import { reserveAttachmentStorage } from '../attachments/storage-quota'
 import type { Identity } from '../rbac'
 import { WorkflowError } from './catalog'
 import { assertStreamAcceptsHandoffs, isAttemptAgent } from './execution'
@@ -106,6 +107,12 @@ export async function uploadWorkflowAttachment(input: {
         if ((stored?.total ?? 0) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
           throw new WorkflowError(`An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
       }
+      // A replacement's old row is already gone, so only the size change counts against the quota.
+      await reserveAttachmentStorage(tx, input.bytes.byteLength).catch((error: unknown) => {
+        if (error instanceof Error && error.message === 'INBOX_STORAGE_QUOTA_EXCEEDED')
+          throw new WorkflowError(error.message, 400)
+        throw error
+      })
       const storagePath = await writeWorkflowAttachmentBlob(input.workStreamId, id, input.bytes)
       written = true
       const [row] = await tx

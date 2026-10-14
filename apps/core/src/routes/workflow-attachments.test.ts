@@ -22,6 +22,9 @@ import { attachFlow } from '../services/workflows/execution'
 import { workflowAttachmentBlobPath } from '../services/attachments/blob-storage'
 import { getSettingsStore } from '../services/settings'
 import { downloadDisposition } from '../services/attachments/http'
+import { attachmentStore } from '../services/amtp/adapters'
+import { AgentFileAttachment } from '../entities/AgentFileAttachment'
+import { InboxAttachment } from '../entities/InboxAttachment'
 import { workflowsRouter } from './workflows'
 
 const app = new Hono().use('*', identityMiddleware).route('/api/workflows', workflowsRouter)
@@ -78,6 +81,7 @@ afterEach(async () => {
   await db.delete(workStreams).where(inArray(workStreams.id, streams.splice(0)))
   await rm(home, { recursive: true, force: true })
   await getSettingsStore().set('INBOX_MAX_ATTACHMENT_BYTES', String(10 * 1024 * 1024))
+  await getSettingsStore().set('INBOX_MAX_TOTAL_STORAGE_BYTES', String(10 * 1024 * 1024 * 1024))
 })
 afterAll(async () => {
   if (originalHome === undefined) delete process.env.HOME_DIR
@@ -313,4 +317,38 @@ test('missing bytes read as unavailable, and download names are header-safe', as
   const missing = await get(`/attachments/${doc.id}`, admin.token)
   expect(missing.status).toBe(409)
   expect(await missing.json()).toEqual({ error: 'Attachment unavailable' })
+})
+
+test('handoff files count toward the instance attachment quota, replacements by their size change', async () => {
+  const base = await AgentFileAttachment.totalStorageBytes()
+  await getSettingsStore().set('INBOX_MAX_TOTAL_STORAGE_BYTES', String(base + 30))
+  expect((await upload(bound.token, { path: 'docs/design.md' })).status).toBe(201) // 19 bytes: base + 19
+  const over = await upload(bound.token, { name: 'more.txt', content: 'x'.repeat(12) }) // would be base + 31
+  expect(over.status).toBe(400)
+  expect(await over.json()).toEqual({ error: 'INBOX_STORAGE_QUOTA_EXCEEDED' })
+  // 26 new bytes replace 19: base + 26 fits, though base + 19 + 26 would not.
+  const replaced = await upload(bound.token, { path: 'docs/design.md', content: '# Design v2\n\nThe new plan.' })
+  expect(replaced.status).toBe(201)
+  // Sending the stored bytes again is free.
+  expect((await upload(bound.token, { path: 'docs/design.md', content: '# Design v2\n\nThe new plan.' })).status).toBe(
+    200
+  )
+  expect(await rows()).toHaveLength(1)
+})
+
+test('chat-file, inbox and federation quota checks all see handoff file bytes', async () => {
+  const before = await Promise.all([
+    AgentFileAttachment.totalStorageBytes(),
+    InboxAttachment.totalStorageBytes(),
+    attachmentStore.totalStoredBytes(),
+  ])
+  expect((await upload(bound.token)).status).toBe(201)
+  const after = await Promise.all([
+    AgentFileAttachment.totalStorageBytes(),
+    InboxAttachment.totalStorageBytes(),
+    attachmentStore.totalStoredBytes(),
+  ])
+  expect(after.map((total, index) => total - before[index]!)).toEqual([19, 19, 19])
+  // And one total serves all three, so they agree.
+  expect(new Set(after).size).toBe(1)
 })

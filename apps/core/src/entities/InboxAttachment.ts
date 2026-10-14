@@ -1,9 +1,10 @@
-import { eq, inArray, sql } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import { db } from '../db'
-import { agentFileAttachments, inboxAttachments } from '../db/schema'
+import { inboxAttachments } from '../db/schema'
 import { getSettingsStore } from '../services/settings'
 import { deleteAttachmentFile, sha256Hex, writeAttachmentFile } from '../services/inbox/attachment-storage'
+import { reserveAttachmentStorage, totalAttachmentStorageBytes } from '../services/attachments/storage-quota'
 import type { InboxAttachment as InboxAttachmentJson } from '@ficus/shared'
 
 export type InboxAttachmentRow = InferSelectModel<typeof inboxAttachments>
@@ -44,7 +45,6 @@ export class InboxAttachment {
   static async create(input: CreateInboxAttachmentInput): Promise<InboxAttachment> {
     const store = getSettingsStore()
     const maxAttachment = store.getTyped('INBOX_MAX_ATTACHMENT_BYTES') as number
-    const maxTotal = store.getTyped('INBOX_MAX_TOTAL_STORAGE_BYTES') as number
     const size = input.bytes.byteLength
 
     if (size > maxAttachment) throw new Error('ATTACHMENT_TOO_LARGE')
@@ -52,18 +52,7 @@ export class InboxAttachment {
     let storagePath: string | undefined
     try {
       return await db.transaction(async (tx) => {
-        // Instance-global quota is correct only while each deployment serves one tenant.
-        // Replace this with a tenant-scoped lock/accounting key before multi-tenant hosting.
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('attachment-storage-quota'))`)
-        const [[inboxTotal], [agentTotal]] = await Promise.all([
-          tx.select({ total: sql<number>`coalesce(sum(${inboxAttachments.byteSize}), 0)` }).from(inboxAttachments),
-          tx
-            .select({ total: sql<number>`coalesce(sum(${agentFileAttachments.byteSize}), 0)` })
-            .from(agentFileAttachments),
-        ])
-        if (Number(inboxTotal?.total ?? 0) + Number(agentTotal?.total ?? 0) + size > maxTotal) {
-          throw new Error('INBOX_STORAGE_QUOTA_EXCEEDED')
-        }
+        await reserveAttachmentStorage(tx, size)
         storagePath = await writeAttachmentFile(input.messageId, id, input.bytes)
         const [row] = await tx
           .insert(inboxAttachments)
@@ -115,11 +104,9 @@ export class InboxAttachment {
     return map
   }
 
+  /** Every stored attachment's bytes (inbox, chat files and workflow handoff files share one quota). */
   static async totalStorageBytes(): Promise<number> {
-    const [row] = await db
-      .select({ total: sql<number>`coalesce(sum(${inboxAttachments.byteSize}), 0)` })
-      .from(inboxAttachments)
-    return Number(row?.total ?? 0)
+    return totalAttachmentStorageBytes()
   }
 
   static async attachTo(messages: { id: string; attachments?: InboxAttachment[] }[]): Promise<void> {
