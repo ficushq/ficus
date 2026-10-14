@@ -158,6 +158,7 @@ async function fixture(options: { handling?: 'hold' | 'screen'; body?: string; p
             eq(integrationAuditEvents.action, 'github.feedback.screen')
           )
         )
+        .orderBy(integrationAuditEvents.createdAt, integrationAuditEvents.id)
     },
     async close() {
       const canonical = await db
