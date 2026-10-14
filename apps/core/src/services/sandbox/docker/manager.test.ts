@@ -9,6 +9,7 @@ import {
   waitForDockerExec,
   isSysboxAvailable,
   isSocketModeAvailable,
+  runBoundedProbe,
   selectRuntime,
   getRuntimeInfo,
   clearRuntimeCache,
@@ -1654,29 +1655,134 @@ describe('docker-sandbox-manager', () => {
     })
 
     /**
-     * Force `isSysboxAvailable()` to report "not installed" regardless of the
-     * host running the suite: on Linux the probe shells out to `docker info`,
-     * so a non-zero exit is the honest "no sysbox here" answer; on macOS the
-     * platform check short-circuits before the spawn.
+     * Stub every `Bun.spawnSync` call with a fixed probe result, so the
+     * runtime-detection tests never depend on the host's real Docker daemon
+     * (how fast it answers, or whether sysbox is installed). Records the
+     * commands it was asked to run.
      */
-    function pretendSysboxMissing(): () => void {
-      const spy = spyOn(Bun, 'spawnSync').mockImplementation(
-        () => ({ exitCode: 1, stdout: Buffer.from(''), stderr: Buffer.from('') }) as any
-      )
+    function stubDockerProbe(result: { exitCode: number | null; stdout?: string; exitedDueToTimeout?: boolean }) {
+      const calls: string[][] = []
+      const spy = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
+        calls.push(cmd)
+        return {
+          exitCode: result.exitCode,
+          success: result.exitCode === 0,
+          stdout: Buffer.from(result.stdout ?? ''),
+          stderr: Buffer.from(''),
+          exitedDueToTimeout: result.exitedDueToTimeout,
+        }
+      }) as any)
       clearRuntimeCache()
-      return () => spy.mockRestore()
+      return { calls, restore: () => spy.mockRestore() }
     }
 
-    it('isSysboxAvailable returns false on non-Linux', () => {
-      // This test will pass on macOS/Windows and may vary on Linux
-      // depending on whether sysbox is installed
-      const result = isSysboxAvailable()
-      expect(typeof result).toBe('boolean')
+    /** Pretend the suite runs on `platform`, restoring the real value afterwards. */
+    function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+      const original = Object.getOwnPropertyDescriptor(process, 'platform')!
+      Object.defineProperty(process, 'platform', { ...original, value: platform })
+      try {
+        return fn()
+      } finally {
+        Object.defineProperty(process, 'platform', original)
+      }
+    }
+
+    const RUNTIMES_WITH_SYSBOX = JSON.stringify({
+      runc: { path: 'runc' },
+      'sysbox-runc': { path: '/usr/bin/sysbox-runc' },
+    })
+    const RUNTIMES_WITHOUT_SYSBOX = JSON.stringify({ runc: { path: 'runc' } })
+
+    it('isSysboxAvailable returns false on non-Linux without probing Docker', () => {
+      const probe = stubDockerProbe({ exitCode: 0, stdout: RUNTIMES_WITH_SYSBOX })
+      try {
+        expect(withPlatform('darwin', () => isSysboxAvailable())).toBe(false)
+        clearRuntimeCache()
+        expect(withPlatform('win32', () => isSysboxAvailable())).toBe(false)
+        expect(probe.calls).toEqual([])
+      } finally {
+        probe.restore()
+      }
     })
 
-    it('isSocketModeAvailable checks if Docker is running', () => {
-      const result = isSocketModeAvailable()
-      expect(typeof result).toBe('boolean')
+    it('isSysboxAvailable on Linux reports true when Docker lists the sysbox-runc runtime', () => {
+      const probe = stubDockerProbe({ exitCode: 0, stdout: RUNTIMES_WITH_SYSBOX + '\n' })
+      try {
+        expect(withPlatform('linux', () => isSysboxAvailable())).toBe(true)
+        expect(probe.calls).toEqual([['docker', 'info', '--format', '{{json .Runtimes}}']])
+      } finally {
+        probe.restore()
+      }
+    })
+
+    it('isSysboxAvailable on Linux reports false when Docker does not list sysbox-runc', () => {
+      const probe = stubDockerProbe({ exitCode: 0, stdout: RUNTIMES_WITHOUT_SYSBOX })
+      try {
+        expect(withPlatform('linux', () => isSysboxAvailable())).toBe(false)
+      } finally {
+        probe.restore()
+      }
+    })
+
+    it('isSysboxAvailable on Linux fails closed when docker info fails, times out, or prints garbage', () => {
+      for (const result of [
+        { exitCode: 1 },
+        { exitCode: null, exitedDueToTimeout: true },
+        // Killed for overrunning, even though it managed to exit 0: still not trusted.
+        { exitCode: 0, stdout: RUNTIMES_WITH_SYSBOX, exitedDueToTimeout: true },
+        { exitCode: 0, stdout: 'not json' },
+      ]) {
+        const probe = stubDockerProbe(result)
+        try {
+          expect(withPlatform('linux', () => isSysboxAvailable())).toBe(false)
+        } finally {
+          probe.restore()
+        }
+      }
+    })
+
+    it('isSysboxAvailable caches the probe result until the cache is cleared', () => {
+      const probe = stubDockerProbe({ exitCode: 0, stdout: RUNTIMES_WITH_SYSBOX })
+      try {
+        withPlatform('linux', () => {
+          expect(isSysboxAvailable()).toBe(true)
+          expect(isSysboxAvailable()).toBe(true)
+        })
+        expect(probe.calls).toHaveLength(1)
+      } finally {
+        probe.restore()
+      }
+    })
+
+    it('isSocketModeAvailable reports whether docker info succeeds', () => {
+      let probe = stubDockerProbe({ exitCode: 0, stdout: 'Server: ...' })
+      try {
+        expect(isSocketModeAvailable()).toBe(true)
+        expect(probe.calls).toEqual([['docker', 'info']])
+      } finally {
+        probe.restore()
+      }
+      for (const result of [{ exitCode: 1 }, { exitCode: null, exitedDueToTimeout: true }]) {
+        probe = stubDockerProbe(result)
+        try {
+          expect(isSocketModeAvailable()).toBe(false)
+        } finally {
+          probe.restore()
+        }
+      }
+    })
+
+    it('runBoundedProbe kills a probe that ignores SIGTERM at the bound and fails closed', () => {
+      // Real process, no Docker: a child that ignores SIGTERM would hold a SIGTERM-only timeout
+      // open for its full 10s; the probe must give up at its bound instead.
+      const start = performance.now()
+      expect(runBoundedProbe(['sh', '-c', 'trap "" TERM; sleep 10'], 200)).toBeNull()
+      expect(performance.now() - start).toBeLessThan(3_000)
+    })
+
+    it('runBoundedProbe returns stdout of a successful probe and null on a non-zero exit', () => {
+      expect(runBoundedProbe(['sh', '-c', 'echo ok'], 2_000)).toBe('ok\n')
+      expect(runBoundedProbe(['sh', '-c', 'echo ok; exit 3'], 2_000)).toBeNull()
     })
 
     it('selectRuntime respects FICUS_SANDBOX_RUNTIME=docker-socket', () => {
@@ -1687,13 +1793,13 @@ describe('docker-sandbox-manager', () => {
 
     it('selectRuntime throws for docker-sysbox when sysbox is not installed (no silent socket fallback)', () => {
       process.env.FICUS_SANDBOX_RUNTIME = 'docker-sysbox'
-      const restore = pretendSysboxMissing()
+      const probe = stubDockerProbe({ exitCode: 0, stdout: RUNTIMES_WITHOUT_SYSBOX })
       try {
-        expect(() => selectRuntime()).toThrow(
+        expect(() => withPlatform('linux', () => selectRuntime())).toThrow(
           'docker-sysbox requested but the sysbox runtime is not installed on this host'
         )
       } finally {
-        restore()
+        probe.restore()
       }
     })
 
@@ -1721,14 +1827,16 @@ describe('docker-sandbox-manager', () => {
 
     it('getRuntimeInfo returns platform info', () => {
       process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
-      clearRuntimeCache()
-      const info = getRuntimeInfo()
-      expect(info).toHaveProperty('runtime')
-      expect(info).toHaveProperty('sysboxAvailable')
-      expect(info).toHaveProperty('platform')
-      expect(info.runtime).toBe('docker-socket')
-      expect(typeof info.sysboxAvailable).toBe('boolean')
-      expect(typeof info.platform).toBe('string')
+      const probe = stubDockerProbe({ exitCode: 0, stdout: RUNTIMES_WITHOUT_SYSBOX })
+      try {
+        expect(withPlatform('linux', () => getRuntimeInfo())).toEqual({
+          runtime: 'docker-socket',
+          sysboxAvailable: false,
+          platform: 'linux',
+        })
+      } finally {
+        probe.restore()
+      }
     })
 
     it('clearRuntimeCache resets cached values', () => {
