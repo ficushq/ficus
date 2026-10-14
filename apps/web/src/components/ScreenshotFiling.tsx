@@ -10,7 +10,7 @@ import {
   type ScreenshotKind,
   type ScreenshotWorkStreamOption,
 } from '@ficus/shared'
-import { uploadImages } from '../api/images'
+import { deleteStagedImage, uploadImages } from '../api/images'
 import { screenshotsApi } from '../api/screenshots'
 import { usePermissions } from '../hooks/usePermissions'
 import { useGlobalImageDrop } from '../hooks/useGlobalImageDrop'
@@ -67,15 +67,21 @@ type Card = ScreenshotReview | RejectedScreenshot
 const isReview = (card: Card | null): card is ScreenshotReview => Boolean(card && 'file' in card)
 
 export interface ScreenshotFilingProps {
-  dependencies?: { upload?: typeof uploadImages; api?: Pick<typeof screenshotsApi, 'guess' | 'file'> }
+  dependencies?: {
+    upload?: typeof uploadImages
+    discard?: typeof deleteStagedImage
+    api?: Pick<typeof screenshotsApi, 'guess' | 'file'>
+  }
 }
 
 /**
  * "Drop a screenshot anywhere": the full-window drop target, the paste target and the review card.
- * A dropped image is uploaded and guessed at, but only "File it" creates the Assistant conversation.
+ * A dropped image is uploaded and guessed at, but only "File it" creates the Assistant conversation;
+ * a card that closes any other way deletes its upload.
  */
 export function ScreenshotFiling({ dependencies }: ScreenshotFilingProps) {
   const upload = dependencies?.upload ?? uploadImages
+  const discard = useStableRef(dependencies?.discard ?? deleteStagedImage)
   const api = dependencies?.api ?? screenshotsApi
   const { can, isLoading } = usePermissions()
   // Filing starts an Assistant conversation (chat:send) from an image upload (agents:write).
@@ -86,6 +92,14 @@ export function ScreenshotFiling({ dependencies }: ScreenshotFilingProps) {
   const [card, setCard] = useState<Card | null>(null)
   const open = useStableRef(card)
   const nextId = useRef(0)
+  /**
+   * The open review's upload and filing as they are right now; null when no review is open. The
+   * card's own state is a render behind, and closing must never act on a stale view of either.
+   */
+  const live = useRef<{ id: number; preview: string; imageId: string | null; filing: boolean } | null>(null)
+
+  /** Delete a staged upload that nothing will file. Best effort: a failure is not the user's to deal with. */
+  const discardUpload = useCallback((imageId: string) => void discard.current(imageId).catch(() => {}), [discard])
 
   /** Change the review with this id, if it is still the open card. */
   const patch = useCallback(
@@ -107,6 +121,9 @@ export function ScreenshotFiling({ dependencies }: ScreenshotFilingProps) {
         return
       }
       const uploaded = imageId
+      // The card closed while it uploaded, or a doubled retry already gave it one: nothing will file this image.
+      if (live.current?.id !== id || live.current.imageId) return discardUpload(uploaded)
+      live.current.imageId = uploaded
       patch(id, (review) => ({ ...review, upload: { status: 'done', imageId: uploaded } }))
       // Filing never depends on the guess: without one the pickers are simply left unselected.
       const guess = await api.guess(uploaded).then(
@@ -115,20 +132,21 @@ export function ScreenshotFiling({ dependencies }: ScreenshotFilingProps) {
       )
       patch(id, (review) => ({ ...review, review: reviewReducer(review.review, { type: 'guessed', guess }) }))
     },
-    [api, patch, upload]
+    [api, discardUpload, patch, upload]
   )
 
   const onImage = (file: File) => {
-    const current = open.current
     // A second drop never replaces a screenshot under review (its note would be lost): it is ignored, visibly.
-    if (isReview(current)) return patch(current.id, (review) => ({ ...review, crowded: true }))
+    if (live.current) return patch(live.current.id, (review) => ({ ...review, crowded: true }))
     const id = ++nextId.current
     if (file.size > MAX_IMAGE_ATTACHMENT_BYTES)
       return setCard({ id, rejected: `Screenshots can be up to ${MAX_IMAGE_ATTACHMENT_BYTES / 1024 / 1024} MB.` })
+    const preview = URL.createObjectURL(file)
+    live.current = { id, preview, imageId: null, filing: false }
     setCard({
       id,
       file,
-      preview: URL.createObjectURL(file),
+      preview,
       upload: { status: 'uploading' },
       filing: { status: 'idle' },
       review: INITIAL_REVIEW,
@@ -137,28 +155,44 @@ export function ScreenshotFiling({ dependencies }: ScreenshotFilingProps) {
     void uploadAndGuess(id, file)
   }
 
-  const close = useCallback(() => {
-    const current = open.current
-    if (isReview(current)) URL.revokeObjectURL(current.preview)
-    setCard(null)
-  }, [open])
-  useEffect(() => close, [close])
+  /** Close the open card. Unless it was filed, its upload is abandoned and deleted. */
+  const close = useCallback(
+    (outcome: 'filed' | 'abandoned') => {
+      const closing = live.current
+      live.current = null
+      setCard(null)
+      if (!closing) return
+      URL.revokeObjectURL(closing.preview)
+      // A filing in flight may still file the image: it deletes the upload itself if it fails.
+      if (outcome === 'abandoned' && closing.imageId && !closing.filing) discardUpload(closing.imageId)
+    },
+    [discardUpload]
+  )
+  const dismiss = useCallback(() => close('abandoned'), [close])
+  useEffect(() => dismiss, [dismiss])
 
   const confirm = async () => {
     const current = open.current
-    if (!isReview(current) || current.upload.status !== 'done' || current.filing.status === 'filing') return
-    patch(current.id, (review) => ({ ...review, filing: { status: 'filing' } }))
+    const state = live.current
+    // One filing at a time, and none for a card that has closed: its upload is being deleted.
+    if (!isReview(current) || state?.id !== current.id || !state.imageId || state.filing) return
+    const { id, imageId } = state
+    state.filing = true
+    patch(id, (review) => ({ ...review, filing: { status: 'filing' } }))
     try {
-      const filed = await api.file(fileScreenshotRequest(current.upload.imageId, current.review))
-      close()
+      const filed = await api.file(fileScreenshotRequest(imageId, current.review))
+      close('filed')
       navigate({
         pathname: location.current.pathname,
         search: assistantConversationSearch(location.current.search, filed.conversationId),
       })
     } catch (error) {
+      // The card closed while it was filing, and nothing was filed: the upload is abandoned after all.
+      if (live.current !== state) return discardUpload(imageId)
+      state.filing = false
       // The note and the choices stay on the card for another try.
       const message = messageOf(error, 'Something went wrong.')
-      patch(current.id, (review) => ({ ...review, filing: { status: 'failed', message } }))
+      patch(id, (review) => ({ ...review, filing: { status: 'failed', message } }))
     }
   }
 
@@ -181,7 +215,7 @@ export function ScreenshotFiling({ dependencies }: ScreenshotFilingProps) {
               }
               onRetryUpload={() => void uploadAndGuess(card.id, card.file)}
               onConfirm={() => void confirm()}
-              onDismiss={close}
+              onDismiss={dismiss}
             />
           ) : (
             <div
@@ -195,7 +229,7 @@ export function ScreenshotFiling({ dependencies }: ScreenshotFilingProps) {
                 <p className="text-sm font-medium text-primary">Couldn't file the screenshot</p>
                 <p className="mt-0.5 text-xs text-secondary">{card.rejected}</p>
               </div>
-              <button type="button" onClick={close} className="ficus-button ficus-button-link shrink-0 text-sm">
+              <button type="button" onClick={dismiss} className="ficus-button ficus-button-link shrink-0 text-sm">
                 Dismiss
               </button>
             </div>

@@ -20,6 +20,7 @@ import {
 } from '@ficus/shared'
 import { assistantConversations, db, workStreams } from '../db'
 import { Agent } from '../entities/Agent'
+import { AgentType } from '../entities/AgentType'
 import { Image } from '../entities/Image'
 import { User } from '../entities/User'
 import { ensureAssistantConversationAgent } from './assistant-conversation-agent'
@@ -32,6 +33,7 @@ import { captureCorrection as defaultCaptureCorrection } from './decisions/evals
 import { findVisibleSquad, listVisibleSquads } from './entity-search'
 import { hasPermission, resolveActingUser, type Identity, type UserIdentity } from './rbac'
 import { createLogger } from '../lib/infra/logger'
+import { splitModelPriorityList, supportsImageInput } from '../lib/utils/model-spec'
 
 const log = createLogger('screenshot-filing')
 
@@ -568,6 +570,25 @@ function captureScreenshotCorrections(
     })
 }
 
+function imagesUnreadableError() {
+  return filingError(400, "The Assistant's model cannot read images. Choose a vision-capable model.")
+}
+
+/**
+ * Whether the Assistant a filing goes to can read images, asked before the filing creates anything;
+ * undefined when its model is not known. A conversation left by an earlier attempt keeps its own
+ * Assistant and that Assistant's model. A new one gets a new Assistant, on the Assistant type's model.
+ */
+async function assistantReadsImages(userId: string, conversationId: string): Promise<boolean | undefined> {
+  const [conversation] = await db
+    .select({ agentId: assistantConversations.agentId })
+    .from(assistantConversations)
+    .where(and(eq(assistantConversations.id, conversationId), eq(assistantConversations.ownerUserId, userId)))
+  if (conversation?.agentId) return (await Agent.find(conversation.agentId))?.supportsSelectedModelImages()
+  const model = (await AgentType.find('assistant'))?.model?.trim()
+  return model ? supportsImageInput(splitModelPriorityList(model)[0]!) : undefined
+}
+
 /**
  * File a screenshot the user confirmed on the review card: start a new Assistant conversation of
  * theirs with the image, their note and the choices they confirmed, so the Assistant files it with
@@ -596,8 +617,9 @@ export async function fileScreenshot(
     if (filed) return { conversationId }
   }
   if (!isStagedBy(image, user.userId)) throw filingError(404, 'Screenshot not found')
-  // Checked before anything is created, so a choice the user may not make leaves no conversation behind.
+  // Both checked before anything is created, so a refused confirm leaves no conversation behind.
   const confirmed = await confirmedScreenshot(user, input)
+  if ((await assistantReadsImages(user.userId, conversationId)) === false) throw imagesUnreadableError()
 
   await db
     .insert(assistantConversations)
@@ -606,8 +628,8 @@ export async function fileScreenshot(
   await requireAssistantConversation(identity, conversationId)
   const { agentId } = await ensureAssistantConversationAgent(identity, conversationId)
   const assistant = await Agent.mustFind(agentId)
-  if (assistant.supportsSelectedModelImages() === false)
-    throw filingError(400, "The Assistant's model cannot read images. Choose a vision-capable model.")
+  // Only reached when the model changed since the check above.
+  if (assistant.supportsSelectedModelImages() === false) throw imagesUnreadableError()
 
   await db
     .update(assistantConversations)

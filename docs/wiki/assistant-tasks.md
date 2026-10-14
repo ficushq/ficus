@@ -124,7 +124,10 @@ decision model again.
 is the user's confirmation. A field left out is left to the Assistant; `squadId: null` is the
 explicit "No squad". The squad must be visible to the user and not archived, and the work stream
 (only with `action: existing_work_stream`) must be an open one in that squad that the user may read;
-otherwise it answers 404 before creating anything. Then it creates a new Assistant conversation whose
+otherwise it answers 404 before creating anything. When the Assistant's model cannot read images it
+answers 400, also before creating anything, so a refused confirmation leaves no empty conversation
+(a conversation that already exists for the image is judged by its own Assistant and is never
+removed). Then it creates a new Assistant conversation whose
 first message carries the image, the user's note first, the confirmed choices stated as the user's
 own (with the squad ID and work stream ID), and the image ID to forward. The conversation and
 message IDs are derived from the user and image, so a retried confirmation lands on the same
@@ -132,6 +135,14 @@ conversation and sends nothing twice. `guessed` is what the guess filled the car
 field the user changed from it is saved as a candidate eval case through `captureCorrection` (kind,
 squad and action for `screenshot-filing`, the work stream for `screenshot-work-stream`), with the
 request rebuilt to include the note. Filing asks no decision model.
+
+`DELETE /api/images/:id` discards a staged upload that will not be filed: the review card calls it
+when a card closes without filing. It needs the permission the upload took (`agents:write`) and only
+deletes the caller's own staged upload, the row and the stored bytes. The conditions are part of the
+delete itself, so an image that was bound or sent in the meantime is left alone. Anything else (an
+unknown image, another user's, one bound to an agent or squad, one already sent) answers the same
+404 and changes nothing. No job sweeps old pending images, and one could not go by `status` alone:
+an image stays `pending` after it is bound to an agent, until its message is delivered.
 
 ## Continuing, recovering, and cancelling
 

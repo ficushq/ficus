@@ -43,3 +43,11 @@ describe('imagesResource.uploadImagesSimple', () => {
     expect(calls[0]?.options?.body).toEqual({ images })
   })
 })
+
+describe('imagesResource.deleteStagedImage', () => {
+  test('deletes the staged image by ID', async () => {
+    const { t, calls } = mockTransport()
+    await imagesResource(t).deleteStagedImage('image/id')
+    expect(calls).toEqual([{ path: '/images/image%2Fid', options: { method: 'DELETE' } }])
+  })
+})

@@ -1,5 +1,6 @@
 import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
+import { z } from 'zod'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { Image, type ImageContent } from '../entities/Image'
 import { Agent } from '../entities/Agent'
@@ -16,6 +17,8 @@ async function canAccessSquadlessImage(identity: Identity, perm: 'agents:read' |
   if (identity.type === 'agent' && !identity.userId) return false
   return hasPermission(identity, perm)
 }
+
+const imageIdSchema = z.string().uuid()
 
 export const imagesRouter = new Hono()
   .get('/:id', async (c) => {
@@ -159,4 +162,24 @@ export const imagesRouter = new Hono()
       const message = error instanceof Error ? publicErrorMessage(error) : 'Upload failed'
       return c.json({ error: message }, 400)
     }
+  })
+  .delete('/:id', async (c) => {
+    const identity = c.get('identity') as Identity | undefined
+    if (!identity) return c.json({ error: 'Unauthorized' }, 401)
+    c.set('authzChecked', true)
+
+    // Discarding an upload that was never sent: only the uploader's own staged image with no
+    // agent or squad, which takes the permission staging it took.
+    const userId = identityUserId(identity)
+    if (!userId || !(await canAccessSquadlessImage(identity, 'agents:write'))) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
+
+    // One answer for an image that does not exist, belongs to someone else, or was already bound
+    // or sent, so the route says nothing about images the caller may not discard.
+    const id = imageIdSchema.safeParse(c.req.param('id'))
+    if (!id.success || !(await Image.deleteStagedUpload(id.data, userId))) {
+      return c.json({ error: 'Image not found' }, 404)
+    }
+    return c.json({ success: true })
   })

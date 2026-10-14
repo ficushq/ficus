@@ -50,8 +50,11 @@ function fakes(guess: ScreenshotGuess | null = bugInChlea) {
   const uploads: Array<{ data: string; mimeType: string }> = []
   const guessed: string[] = []
   const filed: FileScreenshotRequest[] = []
+  /** The staged uploads the card asked Core to delete. */
+  const discarded: string[] = []
   const answers = {
     upload: async (): Promise<string[]> => [IMAGE_ID],
+    discard: async (): Promise<void> => {},
     guess: async (): Promise<GuessScreenshotResponse> => ({ guess }),
     file: async (): Promise<FileScreenshotResponse> => ({ conversationId: CONVERSATION_ID }),
   }
@@ -59,11 +62,16 @@ function fakes(guess: ScreenshotGuess | null = bugInChlea) {
     uploads,
     guessed,
     filed,
+    discarded,
     answers,
     dependencies: {
       upload: async (images: Array<{ data: string; mimeType: string }>) => {
         uploads.push(...images)
         return answers.upload()
+      },
+      discard: async (imageId: string) => {
+        discarded.push(imageId)
+        return answers.discard()
       },
       api: {
         guess: async (imageId: string) => {
@@ -91,33 +99,34 @@ async function render(dom: Harness, deps: ReturnType<typeof fakes>, permissions 
   client.setQueryData(screenshotQueryKeys.workStreams(ops.id), { workStreams: [rotation] })
   client.setQueryData(screenshotQueryKeys.workStreams(empty.id), { workStreams: [] })
   const { root } = dom.createRoot()
-  await dom.act(async () =>
-    root.render(
-      <MemoryRouter initialEntries={['/squads/x/work?tab=open']}>
-        <QueryClientProvider client={client}>
-          <PermissionsProvider
-            usePermissions={() => ({
-              can: (permission) => permissions.includes(permission),
-              permissions,
-              isLoading: false,
-              isError: false,
-            })}
-          >
-            <main>
-              <p>Page content</p>
-              <input aria-label="Search" />
-              <div data-drop-scope="chat" tabIndex={-1}>
-                <p>A chat message</p>
-                <textarea aria-label="Composer" />
-              </div>
-            </main>
-            <Where />
-            <ScreenshotFiling dependencies={deps.dependencies as never} />
-          </PermissionsProvider>
-        </QueryClientProvider>
-      </MemoryRouter>
-    )
+  const app = (filing: boolean) => (
+    <MemoryRouter initialEntries={['/squads/x/work?tab=open']}>
+      <QueryClientProvider client={client}>
+        <PermissionsProvider
+          usePermissions={() => ({
+            can: (permission) => permissions.includes(permission),
+            permissions,
+            isLoading: false,
+            isError: false,
+          })}
+        >
+          <main>
+            <p>Page content</p>
+            <input aria-label="Search" />
+            <div data-drop-scope="chat" tabIndex={-1}>
+              <p>A chat message</p>
+              <textarea aria-label="Composer" />
+            </div>
+          </main>
+          <Where />
+          {filing && <ScreenshotFiling dependencies={deps.dependencies as never} />}
+        </PermissionsProvider>
+      </QueryClientProvider>
+    </MemoryRouter>
   )
+  await dom.act(async () => root.render(app(true)))
+  /** Unmount the feature, as the app does on sign-out. */
+  return { unmount: () => dom.act(async () => root.render(app(false))) }
 }
 
 const PNG_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
@@ -432,6 +441,8 @@ describe('ScreenshotFiling', () => {
         },
       ])
       expect(revoked).toEqual(['blob:preview-1'])
+      // A filed screenshot's image is the conversation's now: it is never deleted.
+      expect(deps.discarded).toEqual([])
       // The same page, with the new Assistant conversation open.
       expect(where().pathname).toBe('/squads/x/work')
       expect(where().searchParams.get('tab')).toBe('open')
@@ -483,7 +494,7 @@ describe('ScreenshotFiling', () => {
     }
   })
 
-  test('dismissing files nothing', async () => {
+  test('dismissing files nothing and deletes the upload', async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     try {
       const deps = fakes()
@@ -492,9 +503,11 @@ describe('ScreenshotFiling', () => {
       await settle(dom, () => shown('Kind') === 'A bug')
       await type(dom, 'Never mind')
       expect(revoked).toEqual([])
+      expect(deps.discarded).toEqual([])
       await dom.act(async () => button('Dismiss')!.click())
       expect(card()).toBeNull()
       expect(deps.filed).toEqual([])
+      expect(deps.discarded).toEqual([IMAGE_ID])
       expect(where().search).toBe('?tab=open')
       // The thumbnail's object URL is released with the card.
       expect(revoked).toEqual(['blob:preview-1'])
@@ -503,6 +516,144 @@ describe('ScreenshotFiling', () => {
       await type(dom, 'Keep me')
       await webkitTap(document.querySelector('main p')!)
       expect(note().value).toBe('Keep me')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('dismissing a card whose filing failed deletes the upload; a filed one is never deleted', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      const deps = fakes()
+      deps.answers.upload = async () => ['first-image']
+      deps.answers.file = async () => {
+        throw new Error("The Assistant's model cannot read images.")
+      }
+      await render(dom, deps)
+      await dropImage(dom)
+      await settle(dom, () => shown('Kind') === 'A bug')
+      await dom.act(async () => button('File it')!.click())
+      await settle(dom, () => card()!.querySelector('[role="alert"]') !== null)
+      // Still on the card for another try: nothing is deleted yet.
+      expect(deps.discarded).toEqual([])
+      await dom.act(async () => button('Dismiss')!.click())
+      expect(card()).toBeNull()
+      expect(deps.discarded).toEqual(['first-image'])
+
+      // A failed try followed by one that files: the image stays.
+      deps.answers.upload = async () => ['second-image']
+      await dropImage(dom)
+      await settle(dom, () => shown('Kind') === 'A bug')
+      await dom.act(async () => button('File it')!.click())
+      await settle(dom, () => button('Try again') !== undefined)
+      deps.answers.file = async () => ({ conversationId: CONVERSATION_ID })
+      await dom.act(async () => button('Try again')!.click())
+      await settle(dom, () => card() === null)
+      expect(deps.filed.map((request) => request.imageId)).toEqual(['first-image', 'second-image', 'second-image'])
+      expect(deps.discarded).toEqual(['first-image'])
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('a delete that fails is silent: the card closes and the next screenshot works', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      const deps = fakes()
+      deps.answers.discard = async () => {
+        throw new Error('Image not found')
+      }
+      await render(dom, deps)
+      await dropImage(dom)
+      await settle(dom, () => shown('Kind') === 'A bug')
+      await dom.act(async () => button('Dismiss')!.click())
+      expect(deps.discarded).toEqual([IMAGE_ID])
+      expect(card()).toBeNull()
+      expect(document.querySelector('[role="alert"]')).toBeNull()
+      expect(document.body.textContent).not.toContain('Image not found')
+
+      await dropImage(dom)
+      await settle(dom, () => shown('Kind') === 'A bug')
+      expect(note().value).toBe('')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('an upload that finishes after its card was dismissed is deleted, and never guessed', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      const deps = fakes()
+      const upload = deferred<string[]>()
+      deps.answers.upload = () => upload.promise
+      await render(dom, deps)
+      await dropImage(dom)
+      await settle(dom, () => deps.uploads.length === 1)
+      await dom.act(async () => button('Dismiss')!.click())
+      expect(card()).toBeNull()
+      // Nothing to delete until the upload has an image.
+      expect(deps.discarded).toEqual([])
+      await dom.act(async () => upload.resolve(['late-image']))
+      await settle(dom, () => deps.discarded.length === 1)
+      expect(deps.discarded).toEqual(['late-image'])
+      expect(deps.guessed).toEqual([])
+      expect(card()).toBeNull()
+
+      // An upload that failed left no image: dismissing its card deletes nothing.
+      deps.answers.upload = async () => {
+        throw new Error('Network error during upload')
+      }
+      await dropImage(dom)
+      await settle(dom, () => card()!.querySelector('[role="alert"]') !== null)
+      await dom.act(async () => button('Dismiss')!.click())
+      expect(card()).toBeNull()
+      expect(deps.discarded).toEqual(['late-image'])
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('unmounting with a card open deletes its upload, but never one whose filing is still in flight', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      // A card under review when the feature unmounts.
+      const reviewing = fakes()
+      const first = await render(dom, reviewing)
+      await dropImage(dom)
+      await settle(dom, () => shown('Kind') === 'A bug')
+      await first.unmount()
+      expect(card()).toBeNull()
+      expect(reviewing.discarded).toEqual([IMAGE_ID])
+      expect(revoked).toEqual(['blob:preview-1'])
+
+      // Unmounted while it files: the image may be filed, so it is kept until the filing fails.
+      const failing = fakes()
+      const refused = deferred<FileScreenshotResponse>()
+      failing.answers.file = () => refused.promise
+      const second = await render(dom, failing)
+      await dropImage(dom)
+      await settle(dom, () => shown('Kind') === 'A bug')
+      await dom.act(async () => button('File it')!.click())
+      await settle(dom, () => failing.filed.length === 1)
+      await second.unmount()
+      expect(failing.discarded).toEqual([])
+      await dom.act(async () => refused.reject(new Error('Network error')))
+      await settle(dom, () => failing.discarded.length === 1)
+      expect(failing.discarded).toEqual([IMAGE_ID])
+
+      // And when that filing succeeds, the image is never deleted.
+      const filing = fakes()
+      const accepted = deferred<FileScreenshotResponse>()
+      filing.answers.file = () => accepted.promise
+      const third = await render(dom, filing)
+      await dropImage(dom)
+      await settle(dom, () => shown('Kind') === 'A bug')
+      await dom.act(async () => button('File it')!.click())
+      await settle(dom, () => filing.filed.length === 1)
+      await third.unmount()
+      await dom.act(async () => accepted.resolve({ conversationId: CONVERSATION_ID }))
+      await dom.act(async () => await Promise.resolve())
+      expect(filing.discarded).toEqual([])
     } finally {
       await dom.cleanup()
     }
