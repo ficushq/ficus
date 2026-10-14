@@ -8,7 +8,11 @@ import { createIntegrationsRouter, createSquadIntegrationsRouter } from './integ
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
 import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
-import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
+import {
+  GitHubSignRefused,
+  GitHubSigningError,
+  type GitHubSignResult,
+} from '../services/integrations/github/commit-signing'
 
 const summary = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -76,7 +80,10 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
     enabled ? { state: 'on' as const, fingerprint: 'SHA256:abc', registeredOnGitHub: true } : { state: 'off' as const }
   )
   const signGitObject = mock(
-    async (_squadId: string, _agentId: string, _payload: Buffer) => '-----BEGIN SSH SIGNATURE-----\n'
+    async (_squadId: string, _agentId: string, _payload: Buffer): Promise<GitHubSignResult> => ({
+      signed: true,
+      signature: '-----BEGIN SSH SIGNATURE-----\n',
+    })
   )
   const app = new Hono()
   if (identity) {
@@ -337,6 +344,20 @@ describe('integration routes', () => {
         'tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n',
       ])
 
+      // Deliberately unsigned is a success with an EMPTY signature, which any CLI version writes as is.
+      calls.signGitObject.mockImplementation(async () => ({
+        signed: false,
+        reason: 'signing_off',
+        login: 'octo',
+        message: 'Not signed: commit signing is off for @octo.',
+      }))
+      const unsigned = await sign(app)
+      expect(unsigned.status).toBe(200)
+      expect(await unsigned.json()).toEqual({
+        signature: '',
+        unsigned: { reason: 'signing_off', login: 'octo', message: 'Not signed: commit signing is off for @octo.' },
+      })
+
       for (const [code, status] of [
         ['identity_mismatch', 403],
         ['invalid_payload', 400],
@@ -353,6 +374,40 @@ describe('integration routes', () => {
     } finally {
       await db.delete(agents).where(eq(agents.id, agent.id))
     }
+  })
+
+  test('squad selection shows which attached accounts sign, and nothing but the public signing state', async () => {
+    const { app, calls } = createApp({
+      type: 'system',
+      systemTokenId: 'signing-read',
+      name: 'test',
+      scopes: ['integrations:read'],
+    })
+    const account = {
+      connectionId: summary.id,
+      isDefault: true,
+      login: 'octo',
+      state: 'on' as const,
+      signsFor: ['7+octo@users.noreply.github.com'],
+      fingerprint: 'SHA256:abc',
+    }
+    calls.selection.mockImplementation(
+      async () =>
+        ({
+          providerKey: 'github',
+          assignment: summary,
+          connections: [summary],
+          commitSigning: {
+            defaultConnectionId: summary.id,
+            accounts: [{ ...account, privateKey: 'PRIVATE KEY', publicKey: 'ssh-ed25519 AAAA', githubKeyId: 5 }],
+          },
+        }) as any
+    )
+    const response = await app.request(`/api/squads/${squadId}/integrations/github`)
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(JSON.parse(text).commitSigning).toEqual({ defaultConnectionId: summary.id, accounts: [account] })
+    expect(text).not.toMatch(/PRIVATE KEY|privateKey|ssh-ed25519|githubKeyId/)
   })
 
   test('missing GitHub account reports actionable configuration guidance instead of forbidden', async () => {
