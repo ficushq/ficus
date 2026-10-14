@@ -441,11 +441,23 @@ Unique provenance needle text for structured search results.`
       })
 
       const tool = getTool('memory_search')
-      const result = await exec(tool, { query: 'needle-github-only', sourceTypes: ['github_issue'] })
-      const text = (result.content[0] as { text: string }).text
+      // The document has no feedback provenance. With the GitHub author filter OFF it is ordinary
+      // indexed content; with the filter ON (the default for new squads) managed search withholds it.
+      try {
+        await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, testSquadId))
+        const result = await exec(tool, { query: 'needle-github-only', sourceTypes: ['github_issue'] })
+        const text = (result.content[0] as { text: string }).text
 
-      expect(text).toContain('GitHub Issue')
-      expect((result.details as any).results[0]).toMatchObject({ sourceType: 'github_issue' })
+        expect(text).toContain('GitHub Issue')
+        expect((result.details as any).results[0]).toMatchObject({ sourceType: 'github_issue' })
+
+        await db.update(squads).set({ githubAuthorFilter: true }).where(eq(squads.id, testSquadId))
+        const withheld = await exec(tool, { query: 'needle-github-only', sourceTypes: ['github_issue'] })
+        expect((withheld.content[0] as { text: string }).text).not.toContain('needle-github-only')
+        expect((withheld.content[0] as { text: string }).text).not.toContain('GitHub Issue')
+      } finally {
+        await db.update(squads).set({ githubAuthorFilter: true }).where(eq(squads.id, testSquadId))
+      }
     })
 
     it('does not return agent thread documents while thread search is temporarily disabled', async () => {

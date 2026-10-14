@@ -9,6 +9,7 @@ import type { Agent, AgentStatus, Squad, WorkStream } from '@ficus/shared'
 import { LoadingContent, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { AgentActivityDot } from '../AgentActivityDot'
 import type { ComponentProps, ComponentType } from 'react'
+import { PendingGitHubEventsSection } from '../integrations/PendingGitHubEventsSection'
 
 interface SquadHomeTabDependencies {
   WorkStreamList: ComponentType<ComponentProps<typeof WorkStreamList>>
@@ -87,6 +88,7 @@ export function SquadHomeTab({
           </Link>
         </div>
       </section>
+      <PendingGitHubEventsSection squadId={resolvedId} className="mx-3 shrink-0" />
       <section className="squad-home-work-streams shrink-0 border-t border-panel-border pt-4">
         <WorkStreamListComponent
           workStreams={workStreams}

@@ -17,6 +17,7 @@ import { expandReadScope, type AllowedScope, type ScopeRequest } from './access/
 import { anyTermQuery, documentSearchVector, escapeLike, headingSearchVector, queryTerms, termCoverage } from './fts'
 import { buildSections, type OutlineHeading, type OutlineSection } from './outline'
 import { scopeCondition } from './SearchService'
+import { withheldGitHubMemoryDocuments } from '../integrations/github/managed-content'
 
 export type OutlineScope = ScopeRequest
 
@@ -103,8 +104,13 @@ export class OutlineService {
         .select(documentColumns)
         .from(memoryDocuments)
         .where(and(documentScope(scopes), eq(memoryDocuments.path, path)))
-      if (documents.length > 0) {
-        const outlines = await this.withSections(documents)
+      const withheld = await withheldGitHubMemoryDocuments(
+        squadId,
+        documents.map((document) => document.documentId)
+      )
+      const visible = documents.filter((document) => !withheld.has(document.documentId))
+      if (visible.length > 0) {
+        const outlines = await this.withSections(visible)
         await this.audit(squadId, outlines, path)
         return { kind: 'document', documents: outlines }
       }
@@ -198,18 +204,28 @@ export class OutlineService {
       .orderBy(desc(headingScore), desc(memoryDocuments.updatedAt))
       .limit(limit * 3)
 
+    // GitHub titles/headings the author filter no longer admits are dropped before section assembly.
+    const withheld = await withheldGitHubMemoryDocuments(squadId, [
+      ...documentHits.map((hit) => hit.documentId),
+      ...headingHits.map((hit) => hit.documentId),
+    ])
+    const visibleDocumentHits = documentHits.filter((hit) => !withheld.has(hit.documentId))
+    const visibleHeadingHits = headingHits.filter((hit) => !withheld.has(hit.documentId))
     const sectionsByDocument = new Map(
-      (await this.withSections(uniqueDocuments(headingHits))).map((outline) => [outline.documentId, outline.sections])
+      (await this.withSections(uniqueDocuments(visibleHeadingHits))).map((outline) => [
+        outline.documentId,
+        outline.sections,
+      ])
     )
     const matches = new Map<string, OutlineMatch>()
-    for (const hit of headingHits) {
+    for (const hit of visibleHeadingHits) {
       const section = innermostSection(sectionsByDocument.get(hit.documentId) ?? [], hit.startLine)
       if (!section) continue
       const key = `${hit.documentId}:${section.startLine}`
       if (!matches.has(key)) matches.set(key, { document: pickDocument(hit), section, score: hit.score })
     }
     const documentsWithSections = new Set([...matches.values()].map((match) => match.document.documentId))
-    for (const hit of documentHits) {
+    for (const hit of visibleDocumentHits) {
       if (documentsWithSections.has(hit.documentId)) continue
       matches.set(hit.documentId, { document: pickDocument(hit), section: null, score: hit.score })
     }

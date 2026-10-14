@@ -5,6 +5,7 @@ import { SquadSourceConfig } from '../../../entities/SquadSourceConfig'
 import { githubApiGet, type GitHubIssueApiComment, type GitHubIssueApiItem } from '../../github/api-client'
 import { BaseMemorySourceAdapter, sourceCapabilities, type DiscoveredItem, type FetchedContent } from './adapter'
 import { IndexedDocumentWriter } from './IndexedDocumentWriter'
+import { projectGitHubThreadForMemory } from '../../integrations/github/managed-content'
 import { mergePolicyErrors, validateBaseIngestionPolicy, validateStringArrayScope } from './policy'
 import type { IndexResult } from './types'
 
@@ -33,24 +34,51 @@ export function parseGithubIssueSourceId(sourceId: string): Pick<GithubRef, 'rep
   return { repo: match[1], number: Number(match[2]) }
 }
 
-export function renderIssueMarkdown(detail: GitHubIssueApiItem, comments: GitHubIssueApiComment[] = []): string {
-  const lines = [
-    `# ${detail.title}`,
-    '',
-    `<!-- comment-meta actor=${detail.user?.login ?? 'unknown'} ts=${detail.updated_at} -->`,
-    '',
-  ]
-  if (detail.body) lines.push(detail.body, '')
+/** Comment bodies cannot forge the generated per-comment provenance marker. */
+function neutralizeMarkers(text: string): string {
+  return text.replace(/<!--(\s*comment-meta)/gi, '&lt;!--$1')
+}
+
+/** Content-free placeholders for prose withheld by the squad's GitHub author filter. */
+export interface WithheldIssueContent {
+  parent?: boolean
+  comments?: number
+}
+
+export function renderIssueMarkdown(
+  detail: GitHubIssueApiItem,
+  comments: GitHubIssueApiComment[] = [],
+  withheld: WithheldIssueContent = {}
+): string {
+  const lines = withheld.parent
+    ? [
+        `# ${detail.pull_request ? 'Pull request' : 'Issue'} #${detail.number}`,
+        '',
+        '_The title and description are withheld until they are reviewed in Ficus._',
+        '',
+      ]
+    : [
+        `# ${detail.title}`,
+        '',
+        `<!-- comment-meta actor=${detail.user?.login ?? 'unknown'} ts=${detail.updated_at} -->`,
+        '',
+      ]
+  if (!withheld.parent && detail.body) lines.push(neutralizeMarkers(detail.body), '')
   for (const comment of comments) {
     lines.push(
       `## Comment by ${comment.user?.login ?? 'unknown'} at ${comment.updated_at}`,
       '',
       `<!-- comment-meta actor=${comment.user?.login ?? 'unknown'} ts=${comment.updated_at} -->`,
       '',
-      comment.body ?? '',
+      neutralizeMarkers(comment.body ?? ''),
       ''
     )
   }
+  if (withheld.comments)
+    lines.push(
+      `_${withheld.comments} ${withheld.comments === 1 ? 'comment is' : 'comments are'} withheld until reviewed in Ficus._`,
+      ''
+    )
   return lines.join('\n')
 }
 
@@ -126,9 +154,20 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
         squadId
       )) ?? []
     const kind = detail.pull_request ? 'pull_request' : 'issue'
+    // A pull request's captured revisions are keyed by its PR id, which only `/pulls` reports.
+    const pull = detail.pull_request
+      ? await githubApiGet<{ id?: number }>(`/repos/${ref.repo}/pulls/${ref.number}`, squadId)
+      : null
+    // Only prose the squad's author filter admits is indexed; the projection records why.
+    const projected = await projectGitHubThreadForMemory(squadId, detail, comments, undefined, {
+      pullRequestId: pull?.id ?? null,
+    })
     return {
-      content: renderIssueMarkdown(detail, comments),
-      title: `${ref.repo}#${ref.number} ${detail.title}`,
+      content: renderIssueMarkdown(detail, projected.comments, {
+        parent: !projected.parentAdmitted,
+        comments: projected.projection.withheldComments,
+      }),
+      title: projected.parentAdmitted ? `${ref.repo}#${ref.number} ${detail.title}` : `${ref.repo}#${ref.number}`,
       frontmatter: {
         kind,
         sourceLinks: [detail.html_url],
@@ -136,7 +175,8 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
         number: ref.number,
         state: detail.state,
         labels: (detail.labels ?? []).map((label) => label.name).filter(Boolean),
-        author: detail.user?.login ?? null,
+        author: projected.parentAdmitted ? (detail.user?.login ?? null) : null,
+        githubProjection: projected.projection,
       },
       chunkMetadata: { sourceType: this.sourceType, parent: { repo: ref.repo, number: ref.number } },
       chunkMetadataForChunk: (chunk) => {

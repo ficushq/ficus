@@ -27,6 +27,8 @@ export class DbDeviceAuthorizationRepository implements DeviceAuthorizationRepos
         providerKey: 'github',
         authority: 'local',
         intent: input.connectionId ? 'reconnect' : 'connect',
+        purpose: input.purpose ?? 'integration',
+        linkGeneration: input.linkGeneration ?? null,
         initiatingUserId: input.userId,
         returnTo: input.returnTo,
         completionHandleHash: createHash('sha256').update(randomBytes(32)).digest('hex'),
@@ -102,6 +104,7 @@ export class DbDeviceAuthorizationRepository implements DeviceAuthorizationRepos
           !receipt ||
           receipt.terminalAt ||
           receipt.installKind ||
+          receipt.identityProofId ||
           receipt.authority !== 'local' ||
           receipt.providerKey !== 'github' ||
           receipt.initiatingUserId !== record.userId

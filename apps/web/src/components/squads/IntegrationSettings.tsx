@@ -8,6 +8,7 @@ import { queryKeys } from '../../queryKeys'
 import { usePermissions } from '../../hooks/usePermissions'
 import { SquadIntegrationCard } from './SquadIntegrationCard'
 import { FormSkeleton } from '../loading/Skeleton'
+import { GitHubFeedbackSettings } from '../integrations/GitHubFeedbackSettings'
 import {
   githubRoutingFromMetadata,
   githubRoutingToMetadata,
@@ -70,6 +71,9 @@ export function IntegrationSettings({ squadId }: { squadId: string }) {
           )}
         </div>
       )}
+      {/* Separate from the rule form's draft overlay and from integration-credential permissions:
+          trust and moderation follow squad permissions and refresh without touching rule drafts. */}
+      <GitHubFeedbackSettings squadId={squadId} />
     </div>
   )
 }

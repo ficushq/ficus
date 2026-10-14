@@ -10,12 +10,7 @@ import {
 } from '../../memory/sources'
 import type { IndexResult } from '../../memory/sources'
 import type { WebhookContext } from '../types'
-import {
-  handleGithubPullRequestConflict,
-  handleGithubWorkflowRun,
-  indexGithubIssueForConfiguredSquads,
-  squadsWithRepoConfigured,
-} from './github'
+import { handleGithubManagedIndexing, indexGithubIssueForConfiguredSquads, squadsWithRepoConfigured } from './github'
 
 class FakeGithubIssueAdapter implements MemorySourceAdapter {
   readonly sourceType = 'github_issue'
@@ -103,7 +98,7 @@ describe('GitHub webhook memory indexing', () => {
       rawBody: '{}',
     }
 
-    await handleGithubWorkflowRun(ctx)
+    await handleGithubManagedIndexing(ctx)
 
     expect(fake.indexed).toContainEqual({ squadId, sourceId: 'acme/api#43' })
   })
@@ -127,7 +122,7 @@ describe('GitHub webhook memory indexing', () => {
       rawBody: '{}',
     }
 
-    await handleGithubPullRequestConflict(ctx)
+    await handleGithubManagedIndexing(ctx)
 
     expect(fake.indexed).toContainEqual({ squadId, sourceId: 'acme/api#44' })
   })

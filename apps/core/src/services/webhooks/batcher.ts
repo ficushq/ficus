@@ -14,6 +14,7 @@ import { webhookScriptAuthEnv } from '../auth/system-tokens'
 
 const execAsync = promisify(exec)
 const log = createLogger('batcher')
+const RETIRED_BATCH_PROVIDER = 'github'
 
 // --- Types ---
 
@@ -111,6 +112,13 @@ export class WebhookBatcher {
    * Load batch configurations for a provider
    */
   loadConfig(provider: string, config: BatcherConfig): void {
+    // GitHub feedback batching ran operator shell commands on unmoderated comment/review text.
+    // It is retired: GitHub batches are never loaded, so nothing can batch, flush or resume them.
+    if (provider === RETIRED_BATCH_PROVIDER) {
+      if (config.batches && Object.keys(config.batches).length)
+        log.warn(`Ignoring retired GitHub webhook batches (${Object.keys(config.batches).sort().join(', ')})`)
+      return
+    }
     if (config.batches) {
       this.configs[provider] = config.batches
     }

@@ -108,7 +108,7 @@ describe('WebhookBatcher', () => {
     batcher.setFlushHandler(async (batch, config) => {
       flushedBatches.push({ batch: { ...batch }, config })
     })
-    batcher.loadConfig('github', {
+    batcher.loadConfig('example', {
       batches: {
         pr_review: prReviewConfig,
         issue_assignments: issueAssignmentConfig,
@@ -122,14 +122,14 @@ describe('WebhookBatcher', () => {
 
   describe('findMatchingBatch', () => {
     it('finds matching batch config for event type', () => {
-      const match = batcher.findMatchingBatch('github', 'pull_request_review')
+      const match = batcher.findMatchingBatch('example', 'pull_request_review')
       expect(match).not.toBeNull()
       expect(match!.name).toBe('pr_review')
       expect(match!.eventConfig.role).toBe('primary')
     })
 
     it('returns null for non-batched events', () => {
-      const match = batcher.findMatchingBatch('github', 'push')
+      const match = batcher.findMatchingBatch('example', 'push')
       expect(match).toBeNull()
     })
 
@@ -141,34 +141,34 @@ describe('WebhookBatcher', () => {
 
   describe('handleEvent', () => {
     it('returns true for batched events', () => {
-      const result = batcher.handleEvent('github', 'pull_request_review', {
+      const result = batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-123' },
       })
       expect(result).toBe(true)
     })
 
     it('returns false for non-batched events', () => {
-      const result = batcher.handleEvent('github', 'push', { ref: 'main' })
+      const result = batcher.handleEvent('example', 'push', { ref: 'main' })
       expect(result).toBe(false)
     })
 
     it('creates batch on primary event', () => {
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-123', body: 'LGTM' },
       })
       expect(batcher.getPendingCount()).toBe(1)
-      const batch = batcher.getPendingBatch('github:pr_review:rev-123')
+      const batch = batcher.getPendingBatch('example:pr_review:rev-123')
       expect(batch).not.toBeNull()
       expect(batch!.primary).toEqual({ review: { id: 'rev-123', body: 'LGTM' } })
       expect(batch!.isOrphan).toBe(false)
     })
 
     it('creates orphan batch on collect event without primary', () => {
-      batcher.handleEvent('github', 'pull_request_review_comment', {
+      batcher.handleEvent('example', 'pull_request_review_comment', {
         comment: { pull_request_review_id: 'rev-123', body: 'Fix this' },
       })
       expect(batcher.getPendingCount()).toBe(1)
-      const batch = batcher.getPendingBatch('github:pr_review:rev-123')
+      const batch = batcher.getPendingBatch('example:pr_review:rev-123')
       expect(batch).not.toBeNull()
       expect(batch!.primary).toBeNull()
       expect(batch!.isOrphan).toBe(true)
@@ -177,40 +177,40 @@ describe('WebhookBatcher', () => {
 
     it('adds to existing batch on collect event', () => {
       // Primary first
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-123' },
       })
       // Then comments
-      batcher.handleEvent('github', 'pull_request_review_comment', {
+      batcher.handleEvent('example', 'pull_request_review_comment', {
         comment: { pull_request_review_id: 'rev-123', body: 'Comment 1' },
       })
-      batcher.handleEvent('github', 'pull_request_review_comment', {
+      batcher.handleEvent('example', 'pull_request_review_comment', {
         comment: { pull_request_review_id: 'rev-123', body: 'Comment 2' },
       })
 
-      const batch = batcher.getPendingBatch('github:pr_review:rev-123')
+      const batch = batcher.getPendingBatch('example:pr_review:rev-123')
       expect(batch!.collected).toHaveLength(2)
     })
 
     it('claims orphan batch when primary arrives', () => {
       // Comments first (orphan)
-      batcher.handleEvent('github', 'pull_request_review_comment', {
+      batcher.handleEvent('example', 'pull_request_review_comment', {
         comment: { pull_request_review_id: 'rev-123', body: 'Comment 1' },
       })
-      batcher.handleEvent('github', 'pull_request_review_comment', {
+      batcher.handleEvent('example', 'pull_request_review_comment', {
         comment: { pull_request_review_id: 'rev-123', body: 'Comment 2' },
       })
 
-      let batch = batcher.getPendingBatch('github:pr_review:rev-123')
+      let batch = batcher.getPendingBatch('example:pr_review:rev-123')
       expect(batch!.isOrphan).toBe(true)
       expect(batch!.primary).toBeNull()
 
       // Primary claims orphans
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-123', body: 'Changes requested' },
       })
 
-      batch = batcher.getPendingBatch('github:pr_review:rev-123')
+      batch = batcher.getPendingBatch('example:pr_review:rev-123')
       expect(batch!.isOrphan).toBe(false)
       expect(batch!.primary).toEqual({ review: { id: 'rev-123', body: 'Changes requested' } })
       expect(batch!.collected).toHaveLength(2)
@@ -219,7 +219,7 @@ describe('WebhookBatcher', () => {
 
   describe('flush behavior', () => {
     it('flushes after timeout', async () => {
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-123', body: 'LGTM' },
       })
 
@@ -234,13 +234,13 @@ describe('WebhookBatcher', () => {
     })
 
     it('resets timeout on new events', async () => {
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-123' },
       })
 
       // Wait 50ms then add comment
       await new Promise((r) => setTimeout(r, 50))
-      batcher.handleEvent('github', 'pull_request_review_comment', {
+      batcher.handleEvent('example', 'pull_request_review_comment', {
         comment: { pull_request_review_id: 'rev-123', body: 'Comment' },
       })
 
@@ -255,7 +255,7 @@ describe('WebhookBatcher', () => {
     })
 
     it('flushes orphan batch with orphan_timeout', async () => {
-      batcher.handleEvent('github', 'pull_request_review_comment', {
+      batcher.handleEvent('example', 'pull_request_review_comment', {
         comment: { pull_request_review_id: 'rev-123', body: 'Orphan comment' },
       })
 
@@ -272,13 +272,13 @@ describe('WebhookBatcher', () => {
 
     it('flushes with primary after orphan is claimed', async () => {
       // Orphan first
-      batcher.handleEvent('github', 'pull_request_review_comment', {
+      batcher.handleEvent('example', 'pull_request_review_comment', {
         comment: { pull_request_review_id: 'rev-123', body: 'Comment' },
       })
 
       // Primary claims it before orphan timeout
       await new Promise((r) => setTimeout(r, 50))
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-123', body: 'LGTM' },
       })
 
@@ -290,7 +290,7 @@ describe('WebhookBatcher', () => {
     })
 
     it('removes batch after flush', async () => {
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-123' },
       })
       expect(batcher.getPendingCount()).toBe(1)
@@ -303,10 +303,10 @@ describe('WebhookBatcher', () => {
 
   describe('flushAll', () => {
     it('flushes all pending batches', async () => {
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-1' },
       })
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-2' },
       })
 
@@ -321,23 +321,23 @@ describe('WebhookBatcher', () => {
 
   describe('multiple batches', () => {
     it('keeps batches separate by key', async () => {
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-1' },
       })
-      batcher.handleEvent('github', 'pull_request_review', {
+      batcher.handleEvent('example', 'pull_request_review', {
         review: { id: 'rev-2' },
       })
-      batcher.handleEvent('github', 'pull_request_review_comment', {
+      batcher.handleEvent('example', 'pull_request_review_comment', {
         comment: { pull_request_review_id: 'rev-1', body: 'For rev 1' },
       })
-      batcher.handleEvent('github', 'pull_request_review_comment', {
+      batcher.handleEvent('example', 'pull_request_review_comment', {
         comment: { pull_request_review_id: 'rev-2', body: 'For rev 2' },
       })
 
       expect(batcher.getPendingCount()).toBe(2)
 
-      const batch1 = batcher.getPendingBatch('github:pr_review:rev-1')
-      const batch2 = batcher.getPendingBatch('github:pr_review:rev-2')
+      const batch1 = batcher.getPendingBatch('example:pr_review:rev-1')
+      const batch2 = batcher.getPendingBatch('example:pr_review:rev-2')
 
       expect(batch1!.collected).toHaveLength(1)
       expect(batch2!.collected).toHaveLength(1)
@@ -346,7 +346,7 @@ describe('WebhookBatcher', () => {
 
   describe('edge cases', () => {
     it('handles empty batch key gracefully', () => {
-      const result = batcher.handleEvent('github', 'pull_request_review', {
+      const result = batcher.handleEvent('example', 'pull_request_review', {
         review: { id: '' }, // Empty ID
       })
       // Should return false and not create batch
@@ -355,7 +355,7 @@ describe('WebhookBatcher', () => {
     })
 
     it('handles missing batch key path gracefully', () => {
-      const result = batcher.handleEvent('github', 'pull_request_review', {
+      const result = batcher.handleEvent('example', 'pull_request_review', {
         review: {}, // No id field
       })
       expect(result).toBe(false)
@@ -365,13 +365,13 @@ describe('WebhookBatcher', () => {
 
   describe('collect-only batches (no primary role)', () => {
     it('creates batch on first collect event', () => {
-      batcher.handleEvent('github', 'issues_assigned', {
+      batcher.handleEvent('example', 'issues_assigned', {
         repository: { full_name: 'org/repo' },
         issue: { number: 1 },
       })
 
       expect(batcher.getPendingCount()).toBe(1)
-      const batch = batcher.getPendingBatch('github:issue_assignments:org/repo')
+      const batch = batcher.getPendingBatch('example:issue_assignments:org/repo')
       expect(batch).not.toBeNull()
       expect(batch!.primary).toBeNull()
       expect(batch!.isOrphan).toBe(false) // Not orphan - this is collect-only
@@ -379,25 +379,25 @@ describe('WebhookBatcher', () => {
     })
 
     it('collects multiple events with same key', () => {
-      batcher.handleEvent('github', 'issues_assigned', {
+      batcher.handleEvent('example', 'issues_assigned', {
         repository: { full_name: 'org/repo' },
         issue: { number: 1 },
       })
-      batcher.handleEvent('github', 'issues_assigned', {
+      batcher.handleEvent('example', 'issues_assigned', {
         repository: { full_name: 'org/repo' },
         issue: { number: 2 },
       })
-      batcher.handleEvent('github', 'issues_assigned', {
+      batcher.handleEvent('example', 'issues_assigned', {
         repository: { full_name: 'org/repo' },
         issue: { number: 3 },
       })
 
-      const batch = batcher.getPendingBatch('github:issue_assignments:org/repo')
+      const batch = batcher.getPendingBatch('example:issue_assignments:org/repo')
       expect(batch!.collected).toHaveLength(3)
     })
 
     it('uses main timeout (not orphan timeout)', async () => {
-      batcher.handleEvent('github', 'issues_assigned', {
+      batcher.handleEvent('example', 'issues_assigned', {
         repository: { full_name: 'org/repo' },
         issue: { number: 1 },
       })
@@ -411,19 +411,19 @@ describe('WebhookBatcher', () => {
     })
 
     it('resets timeout on each new event', async () => {
-      batcher.handleEvent('github', 'issues_assigned', {
+      batcher.handleEvent('example', 'issues_assigned', {
         repository: { full_name: 'org/repo' },
         issue: { number: 1 },
       })
 
       await new Promise((r) => setTimeout(r, 50))
-      batcher.handleEvent('github', 'issues_assigned', {
+      batcher.handleEvent('example', 'issues_assigned', {
         repository: { full_name: 'org/repo' },
         issue: { number: 2 },
       })
 
       await new Promise((r) => setTimeout(r, 50))
-      batcher.handleEvent('github', 'issues_assigned', {
+      batcher.handleEvent('example', 'issues_assigned', {
         repository: { full_name: 'org/repo' },
         issue: { number: 3 },
       })
@@ -439,19 +439,19 @@ describe('WebhookBatcher', () => {
     })
 
     it('keeps separate batches for different keys', () => {
-      batcher.handleEvent('github', 'issues_assigned', {
+      batcher.handleEvent('example', 'issues_assigned', {
         repository: { full_name: 'org/repo-a' },
         issue: { number: 1 },
       })
-      batcher.handleEvent('github', 'issues_assigned', {
+      batcher.handleEvent('example', 'issues_assigned', {
         repository: { full_name: 'org/repo-b' },
         issue: { number: 2 },
       })
 
       expect(batcher.getPendingCount()).toBe(2)
 
-      const batchA = batcher.getPendingBatch('github:issue_assignments:org/repo-a')
-      const batchB = batcher.getPendingBatch('github:issue_assignments:org/repo-b')
+      const batchA = batcher.getPendingBatch('example:issue_assignments:org/repo-a')
+      const batchB = batcher.getPendingBatch('example:issue_assignments:org/repo-b')
 
       expect(batchA!.collected).toHaveLength(1)
       expect(batchB!.collected).toHaveLength(1)

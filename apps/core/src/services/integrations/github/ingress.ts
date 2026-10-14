@@ -29,18 +29,24 @@ export async function publishGitHubWebhookOutputs(event: VerifiedIngressEvent): 
   const streams = fact ? await listGitHubPrWorkStreamCandidates() : []
   const handled = new Set<string>()
   for (const assignment of assignments) {
+    let observation = event
     if (fact) {
       if (!(await canObserveGitHubDependabot(event, assignment, { squads: scopedSquads, streams }))) continue
     } else {
       // The API helper rechecks live assignment and credential. Correlation never grants access.
-      const access = await githubApiGet<{ full_name: string }>(
+      const access = await githubApiGet<{ id: number; full_name: string }>(
         `/repos/${repository}`,
         assignment.squadId,
         assignment.connectionId
       )
       if (!access || access.full_name.toLowerCase() !== repository.toLowerCase()) continue
+      const payload = event.payload as Record<string, unknown>
+      observation = {
+        ...event,
+        payload: { ...payload, repository: { ...(payload.repository as object), id: access.id } },
+      }
     }
-    for (const squadId of await publishIntegrationOutputs('github', event, { kind: 'connection', ...assignment }))
+    for (const squadId of await publishIntegrationOutputs('github', observation, { kind: 'connection', ...assignment }))
       handled.add(squadId)
   }
   return [...handled]

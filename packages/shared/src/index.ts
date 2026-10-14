@@ -109,3 +109,5 @@ export * from './theme-assistant'
 export * from './decisions'
 export * from './decision-conditions'
 export * from './screenshot-filing'
+
+export * from './github-feedback'

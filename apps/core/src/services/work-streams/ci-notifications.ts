@@ -2,16 +2,25 @@ import { resolveCodeHostReference } from '@ficus/shared'
 import { eq } from 'drizzle-orm'
 import { advanceWorkflowState, type Notification } from './ci-notification-state'
 export { ciNotificationSchema } from './ci-notification-state'
-import { agents, db, workStreams } from '../../db'
+import { agents, db, workStreams, type integrationOutputEvents } from '../../db'
 import { InboxMessage } from '../../entities/InboxMessage'
+import { isGitHubOutputAdmitted, lockGitHubOutputAuthority } from '../integrations/github/feedback-routing'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 
 const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 
-export async function settleCiNotification(workStreamId: string, input: Notification) {
+export async function settleCiNotification(
+  workStreamId: string,
+  input: Notification,
+  event?: typeof integrationOutputEvents.$inferSelect
+) {
   const afterCommit: Array<() => void> = []
   const result = await db.transaction(async (tx) => {
+    if (event) {
+      await lockGitHubOutputAuthority(tx, event)
+      if (!(await isGitHubOutputAdmitted(tx, event))) return { accepted: false, reason: 'event no longer admitted' }
+    }
     // Match pause and flow inbox acceptance: stream before agent queue and row.
     const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, workStreamId)).for('update')
     await acquireAgentQueueLock(tx, input.recipientId)
@@ -33,7 +42,12 @@ export async function settleCiNotification(workStreamId: string, input: Notifica
         recipientId: input.recipientId,
         subject: input.subject,
         content: input.content,
-        metadata: { source: 'workflow-run', workStreamId, workflowId: input.workflowId },
+        metadata: {
+          source: event ? 'integration-notification' : 'workflow-run',
+          workStreamId,
+          workflowId: input.workflowId,
+          ...(event ? { integrationEventId: event.id } : {}),
+        },
         wakeEligible: false,
         recordOnly: true,
       },

@@ -8,6 +8,7 @@ import { createLocalTransport, type OAuthTransport } from './transport'
 import { BrokerUnconfiguredError } from './authority'
 import { PlatformRequestError } from '../../platform/instance-client'
 import { registerOAuthProviderAdapterForTest } from '@ficus/shared/oauth-providers'
+import { GitHubFeedbackError } from '../github/feedback-trust'
 import { createFakeAdapter } from '@ficus/shared/oauth-providers/fake'
 
 class MemoryStateRepository implements OAuthStateRepository {
@@ -1140,5 +1141,181 @@ describe('IntegrationAuthorizationService: manual+managed provider (Slack-shaped
     } finally {
       restoreAdapter()
     }
+  })
+})
+
+describe('personal GitHub OAuth purpose fencing', () => {
+  function purposeFixture(authority: 'local' | 'platform_broker' = 'local', installError?: Error) {
+    const states = new MemoryStateRepository()
+    const integrationInstalls: unknown[] = []
+    const personalInstalls: unknown[] = []
+    const plugin = {
+      ...createPlugin(),
+      key: 'github',
+      authorization: {
+        kind: 'oauth2' as const,
+        adapter: 'github',
+        validate: async () => ({ ok: true as const, grantedScopes: [] }),
+      },
+    }
+    const service = new IntegrationAuthorizationService({
+      states,
+      transport: {
+        authority,
+        async authorizationUrl(input) {
+          return {
+            authorizationUrl: `https://github.com/login/oauth/authorize?state=${input.localFlowId}`,
+            expiresAt: '2026-08-29T00:10:00.000Z',
+          }
+        },
+        async completeAuthorization() {
+          return {
+            configuration: { version: 1, userId: 101, login: 'alice' },
+            tokens: { accessToken: 'IDENTITY_TOKEN_SENTINEL', refreshToken: null, expiresAt: null },
+            displayName: 'alice',
+          }
+        },
+        async refresh() {
+          throw new Error('unused')
+        },
+        async revoke() {},
+      },
+      resolvePlugin: (key) => (key === 'github' ? plugin : undefined),
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback',
+      installGrant: async (input) => {
+        integrationInstalls.push(input.state)
+        await input.exchange()
+      },
+      installIdentityGrant: async (input) => {
+        personalInstalls.push(input.state)
+        if (installError) throw installError
+        await input.exchange()
+      },
+      now: () => states.now,
+      uuid: () => '80000000-0000-4000-8000-000000000199',
+    })
+    return { service, states, integrationInstalls, personalInstalls }
+  }
+
+  test.each(['local', 'platform_broker'] as const)(
+    'stored personal purpose selects only the personal finalizer under %s authority',
+    async (authority) => {
+      const h = purposeFixture(authority)
+      const start = await h.service.start({
+        providerKey: 'github',
+        userId: 'human-1',
+        returnTo: '/settings',
+        intent: { kind: 'connect' },
+        purpose: 'github_identity',
+        linkGeneration: 3,
+      })
+      const stored = [...h.states.rows.values()][0]!
+      expect(stored).toMatchObject({ purpose: 'github_identity', linkGeneration: 3, userId: 'human-1', authority })
+      if (authority === 'local') {
+        expect(stored.localFlowId).toBe('80000000-0000-4000-8000-000000000199')
+        expect(new URL(start.authorizationUrl).searchParams.get('state')).not.toBe(stored.localFlowId)
+        await h.service.callback({
+          providerKey: 'github',
+          userId: 'human-1',
+          state: new URL(start.authorizationUrl).searchParams.get('state')!,
+          code: 'code',
+        })
+      } else
+        await h.service.complete({
+          providerKey: 'github',
+          userId: 'human-1',
+          localFlowId: stored.localFlowId!,
+          handle: completionHandle,
+        })
+      expect(h.integrationInstalls).toHaveLength(0)
+      expect(h.personalInstalls).toEqual([expect.objectContaining({ purpose: 'github_identity', linkGeneration: 3 })])
+    }
+  )
+
+  test.each(['local', 'platform_broker'] as const)(
+    'personal coordinator preserves only typed ownership errors under %s authority',
+    async (authority) => {
+      const domainError = new GitHubFeedbackError('identity_generation_changed', 409)
+      for (const error of [
+        domainError,
+        Object.assign(new Error('SECRET_PROVIDER_RESPONSE'), { code: 'identity_generation_changed', status: 409 }),
+      ]) {
+        const h = purposeFixture(authority, error)
+        const start = await h.service.start({
+          providerKey: 'github',
+          userId: 'human-1',
+          returnTo: '/settings',
+          intent: { kind: 'connect' },
+          purpose: 'github_identity',
+          linkGeneration: 3,
+        })
+        const operation =
+          authority === 'local'
+            ? h.service.callback({
+                providerKey: 'github',
+                userId: 'human-1',
+                state: new URL(start.authorizationUrl).searchParams.get('state')!,
+                code: 'code',
+              })
+            : h.service.complete({
+                providerKey: 'github',
+                userId: 'human-1',
+                localFlowId: [...h.states.rows.values()][0]!.localFlowId!,
+                handle: completionHandle,
+              })
+        if (error === domainError) await expect(operation).rejects.toBe(domainError)
+        else await expect(operation).rejects.toMatchObject({ code: 'grant_persistence_failed' })
+      }
+    }
+  )
+
+  test('integration flows retain their existing finalizer and cannot assert personal generation', async () => {
+    const h = purposeFixture()
+    const start = await h.service.start({
+      providerKey: 'github',
+      userId: 'human-1',
+      returnTo: '/settings/integrations',
+      intent: { kind: 'connect' },
+    })
+    await h.service.callback({
+      providerKey: 'github',
+      userId: 'human-1',
+      state: new URL(start.authorizationUrl).searchParams.get('state')!,
+      code: 'code',
+    })
+    expect(h.integrationInstalls).toHaveLength(1)
+    expect(h.personalInstalls).toHaveLength(0)
+    await expect(
+      h.service.start({
+        providerKey: 'github',
+        userId: 'human-1',
+        returnTo: '/settings',
+        intent: { kind: 'connect' },
+        linkGeneration: 3,
+      })
+    ).rejects.toMatchObject({ code: 'invalid_authorization_purpose' })
+  })
+
+  test('personal purpose requires GitHub, connect intent, and a valid server generation', async () => {
+    const h = purposeFixture()
+    for (const input of [
+      { purpose: 'github_identity' as const },
+      { purpose: 'github_identity' as const, linkGeneration: -1 },
+      {
+        purpose: 'github_identity' as const,
+        linkGeneration: 1,
+        intent: { kind: 'reconnect' as const, connectionId: 'c', expectedMaterialRevision: 'r' },
+      },
+    ])
+      await expect(
+        h.service.start({
+          providerKey: 'github',
+          userId: 'human-1',
+          returnTo: '/settings',
+          intent: { kind: 'connect' },
+          ...input,
+        })
+      ).rejects.toMatchObject({ code: 'invalid_authorization_purpose' })
+    expect(h.states.rows.size).toBe(0)
   })
 })

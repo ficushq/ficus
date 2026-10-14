@@ -794,6 +794,10 @@ if (testDbUnavailableReason !== undefined) {
         WHERE "role" = 'human' AND "metadata"->>'source' = 'sandbox-recovery'`,
         `CREATE UNIQUE INDEX IF NOT EXISTS "idx_owned_worktree_path"
         ON "work_stream_worktrees" ("squad_id", ("ownership"->>'worktree'))`,
+        // Personal ownership proof: one active Ficus user per stable GitHub account.
+        `CREATE UNIQUE INDEX IF NOT EXISTS "github_personal_identity_active_account"
+        ON "github_personal_identities" ("host", "account_id")
+        WHERE "unlinked_at" IS NULL`,
         // role_assignments: unique assignment when squadId IS NULL
         `CREATE UNIQUE INDEX IF NOT EXISTS "uq_role_assignment_no_squad"
         ON "role_assignments" ("subject_type", "subject_id", "role_id", "scope")

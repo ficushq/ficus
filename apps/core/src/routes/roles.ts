@@ -7,6 +7,9 @@ import { wsManager } from '../services/ws/manager'
 import { isGrantablePermission } from '../services/rbac/grantable'
 import { db } from '../db'
 import { roleAssignments } from '../db/schema'
+import { withGitHubTrustMutation } from '../services/integrations/github/trust-mutation-guard'
+import { GitHubFeedbackError } from '../services/integrations/github/feedback-trust'
+import type { Identity } from '../services/rbac/permissions'
 import { eventEmitter } from '../lib/infra/event-emitter'
 
 const permissionArraySchema = z.array(z.string()).refine((perms) => perms.every(isGrantablePermission), {
@@ -77,8 +80,9 @@ rolesRouter.put('/:id', requirePermission('roles:update'), async (c) => {
   const affectedUsers = parsed.data.permissions === undefined ? [] : await listAssignedHumanUsers(role.id)
 
   try {
-    await role.update(parsed.data)
+    await withGitHubTrustMutation(c.get('identity') as Identity, role.id, (tx) => role.update(parsed.data, tx))
   } catch (err) {
+    if (err instanceof GitHubFeedbackError) return c.json({ error: err.code }, err.status)
     if (err instanceof RoleProtectedError) return c.json({ error: err.message }, 403)
     throw err
   }
@@ -94,8 +98,9 @@ rolesRouter.delete('/:id', requirePermission('roles:delete'), async (c) => {
   // Capture affected users before the FK cascade removes assignment rows.
   const affectedUsers = await listAssignedHumanUsers(role.id)
   try {
-    await role.delete()
+    await withGitHubTrustMutation(c.get('identity') as Identity, role.id, (tx) => role.delete(tx))
   } catch (err) {
+    if (err instanceof GitHubFeedbackError) return c.json({ error: err.code }, err.status)
     if (err instanceof RoleProtectedError) return c.json({ error: err.message }, 403)
     throw err
   }

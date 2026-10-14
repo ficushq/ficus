@@ -29,7 +29,8 @@ const repository = `${prefix}/repo`
 const squadIds: string[] = []
 let squadId: string
 let send: ReturnType<typeof spyOn<Agent, 'sendMessage'>>
-const instance: IntegrationOutputAuthority = { kind: 'instance' }
+// Fixture squads have the GitHub author filter OFF: this file covers pre-filter binding/routing.
+let fixtureConnectionId: string
 
 function pull(
   number: number,
@@ -144,8 +145,10 @@ async function routed(id: string) {
     .where(eq(integrationOutputDeliveries.workStreamId, id))
   return rows.map((row) => row.subscriptionId).sort()
 }
-const publish = (event: VerifiedIngressEvent, authority: IntegrationOutputAuthority = instance) =>
-  publishIntegrationOutputs('github', event, authority)
+const publish = (
+  event: VerifiedIngressEvent,
+  authority: IntegrationOutputAuthority = { kind: 'connection', connectionId: fixtureConnectionId, squadId }
+) => publishIntegrationOutputs('github', event, authority)
 
 beforeAll(async () => {
   await db.insert(agentTypes).values({
@@ -155,8 +158,37 @@ beforeAll(async () => {
     systemPrompt: 'Test worker',
   })
   for (const name of [prefix, `${prefix}-other`])
-    squadIds.push((await db.insert(squads).values({ name, purpose: 'Delivery binding fixtures' }).returning())[0]!.id)
+    squadIds.push(
+      (
+        await db
+          .insert(squads)
+          .values({ name, purpose: 'Delivery binding fixtures', githubAuthorFilter: false })
+          .returning()
+      )[0]!.id
+    )
   squadId = squadIds[0]!
+  const revision = randomUUID()
+  fixtureConnectionId = (
+    await db
+      .insert(integrationConnections)
+      .values({
+        providerKey: 'github',
+        adapterVersion: 1,
+        displayName: `${prefix}-fixture`,
+        configuration: {},
+        credentialRef: `fixture:${prefix}:default`,
+        enabled: true,
+        authState: 'authenticated',
+        healthState: 'healthy',
+        materialRevision: revision,
+        validatedRevision: revision,
+        validationExpiresAt: new Date(Date.now() + 3_600_000),
+      })
+      .returning()
+  )[0]!.id
+  await db
+    .insert(integrationConnectionAssignments)
+    .values({ squadId, providerKey: 'github', connectionId: fixtureConnectionId })
   send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({ success: true, queued: true, status: 'queued' })
 })
 afterAll(async () => {
@@ -172,6 +204,13 @@ afterAll(async () => {
   await db
     .delete(integrationOutputEvents)
     .where(sql`${integrationOutputEvents.fact}->'data'->>'repository' = ${repository}`)
+  await db
+    .delete(integrationOutputEvents)
+    .where(sql`${integrationOutputEvents.authority}->>'connectionId' = ${fixtureConnectionId}`)
+  await db
+    .delete(integrationConnectionAssignments)
+    .where(eq(integrationConnectionAssignments.connectionId, fixtureConnectionId))
+  await db.delete(integrationConnections).where(eq(integrationConnections.id, fixtureConnectionId))
   await db.delete(workStreams).where(inArray(workStreams.squadId, squadIds))
   await db.delete(agents).where(inArray(agents.squadId, squadIds))
   await db.delete(squads).where(inArray(squads.id, squadIds))

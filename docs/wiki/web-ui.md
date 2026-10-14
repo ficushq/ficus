@@ -77,6 +77,20 @@ Initial agent-history loading uses message-shaped skeletons in the transcript, r
 
 Transcript timestamps are quiet clock times (never relative), shown once per group in the muted meta line: above a human bubble (joined to the sender name when that label shows) or at the start of an agent reply. A group is consecutive messages from the same sender, each within five minutes of the previous one; system rows, automated deliveries, and unsaved items reset it. Every saved message carries its full date and time as a hover tooltip, and a centered Today / Yesterday / date divider marks each new local day. The helpers live in `apps/web/src/lib/chatTimestamps.ts`.
 
+### Pending GitHub events
+
+`PendingGitHubEventsSection` appears on squad Home and the Work tab only when the
+summary confirms pending or failing GitHub feedback. It is hidden while loading,
+at zero and when the summary is refused. Both surfaces and the squad's
+integration settings (`GitHubFeedbackSettings`) open the same
+`GitHubFeedbackReviewModal` through one `GitHubFeedbackReviewProvider` per squad
+page. Moderation queries live under `githubFeedbackQueryKeys`, outside the squad
+and integration keys. The content-free `githubFeedback.updated` event refreshes
+only those queries, so refreshes never reset rule drafts or other settings.
+Selections keep the version the person reviewed, and the modal shows a "changed
+since you selected it" warning if a newer version arrives. External text renders
+as plain text, never markdown or HTML.
+
 ## Action Center
 
 Needs you actions use a subtle neutral surface without colored frames or shadows. Keep semantic color on the small status icon; identify the squad and requester in a quiet subtitle. Use the primary accent for the primary action, a neutral outline for secondary choices, and quiet text for navigation or dismissal. Embedded question forms share the surrounding action's surface and padding.

@@ -34,6 +34,7 @@ export function normalizeDependabot(event: VerifiedIngressEvent): IntegrationOut
     alert.number <= 0 ||
     !states.includes(alert.state) ||
     event.metadata?.synthetic === true ||
+    event.githubObservation?.kind === 'poll' ||
     !DEPENDABOT_ACTIONS.includes(action)
   )
     return []

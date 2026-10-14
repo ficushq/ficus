@@ -6,6 +6,7 @@ import { squadEventRuleSchema } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { integrationQueries, queries } from '../../queryOptions'
+import { githubFeedbackQueryKeys } from '../../queryKeys'
 import { IntegrationSettings } from './IntegrationSettings'
 
 function makeSquad(id: string) {
@@ -45,6 +46,20 @@ let pendingSave: ReturnType<typeof deferred<Response>> | undefined
 let pendingRead: ReturnType<typeof deferred<Response>> | undefined
 let submitted: ReturnType<typeof makeSquad>['metadata'] | undefined
 let readCount: number
+let moderationRequests: string[]
+let filterEnabled: boolean
+function moderation(url: string, init?: RequestInit) {
+  const path = new URL(url).pathname.replace('/api/squads/one/github-feedback', '')
+  moderationRequests.push(`${init?.method ?? 'GET'} ${path}`)
+  if (init?.method === 'PUT') {
+    filterEnabled = JSON.parse(String(init.body)).enabled
+    return Promise.resolve(response({ enabled: filterEnabled, released: 0 }))
+  }
+  if (path === '/trusted-authors') return Promise.resolve(response({ authors: [], canManage: true }))
+  return Promise.resolve(
+    response({ authorFilterEnabled: filterEnabled, pending: 0, releasing: 0, failing: 0, canModerate: true })
+  )
+}
 const response = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
 const flush = () =>
@@ -92,6 +107,8 @@ beforeEach(async () => {
   pendingRead = undefined
   submitted = undefined
   readCount = 0
+  moderationRequests = []
+  filterEnabled = true
   for (const id of ['one', 'two']) {
     client.setQueryData(queries.squads.basic(id).queryKey, makeSquad(id))
     for (const provider of ['github', 'linear']) {
@@ -120,6 +137,9 @@ beforeEach(async () => {
   originalFetch = globalThis.fetch
   globalThis.fetch = (async (url, init) => {
     expect(String(url)).toContain('/api/squads/one')
+    // The separately composed GitHub moderation section has its own endpoints; they are not
+    // squad reads and must never consume this suite's controlled squad responses.
+    if (String(url).includes('/github-feedback/')) return moderation(String(url), init)
     if (init?.method === 'PATCH') {
       submitted = JSON.parse(String(init.body)).metadata
       return pendingSave!.promise
@@ -295,4 +315,25 @@ test('a failed post-save refetch keeps the acknowledged saved baseline', async (
   expect(context().value).toBe('Acknowledged')
   expect(button('Save settings')).toBeUndefined()
   expect(document.body.textContent).toContain('✓ Saved.')
+})
+
+test('moderation refreshes and the author-filter switch never touch unsaved rule drafts', async () => {
+  const originalInput = context()
+  await input(context(), 'Unsaved rule')
+  await input(repo(), 'owner/draft')
+  await flush()
+  // Incoming moderation events (githubFeedback.updated) refresh only the moderation namespace.
+  await dom.act(async () => {
+    await client.invalidateQueries({ queryKey: githubFeedbackQueryKeys.squad('one') })
+  })
+  await flush()
+  const toggle = document.querySelector<HTMLInputElement>('input[role="switch"]')!
+  await dom.act(async () => toggle.click())
+  await click('Turn off author filtering')
+  expect(moderationRequests).toContain('PUT /author-filter')
+  expect(readCount).toBe(0)
+  expect(context()).toBe(originalInput)
+  expect(context().value).toBe('Unsaved rule')
+  expect(repo().value).toBe('owner/draft')
+  expect(button('Save settings')).toBeDefined()
 })

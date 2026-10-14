@@ -1,6 +1,6 @@
 import { isUserAssistantAgentType } from '@ficus/shared'
 import { consultantSandboxId } from '../services/sandbox/consultant-sandbox'
-import { lockFlowInboxDelivery } from '../services/work-streams/wait-scope'
+import { lockFlowInboxDelivery, assertCurrentIntegrationInbox } from '../services/work-streams/wait-scope'
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
 
 import {
@@ -343,7 +343,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     return takenNamesInSquad(squadId)
   }
 
-  static async create(input: CreateAgentInput): Promise<Agent> {
+  static async create(input: CreateAgentInput, authorizeInsert?: (tx: DbTransaction) => Promise<void>): Promise<Agent> {
     const id = input.id ?? crypto.randomUUID()
     // Auto-generated names are unique within a squad (best-effort: concurrent creates can still
     // collide, but squad agents are created serially by the manager). Explicit names pass through.
@@ -359,7 +359,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     // Manager agents are always persistent
     const persist = input.agentTypeId === 'manager' ? true : (input.persist ?? false)
 
-    await insertAgent({
+    const values = {
       id,
       agentTypeId: input.agentTypeId,
       squadId: input.squadId ?? null,
@@ -369,7 +369,15 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       context: input.context ?? {},
       persist,
       modelOverride: input.modelOverride ?? null,
-    })
+    }
+    // Internal ingress gate: the guard and insert share one transaction. Provider I/O must
+    // finish before this callback; ordinary creation keeps its existing behavior.
+    if (authorizeInsert)
+      await db.transaction(async (tx) => {
+        await authorizeInsert(tx)
+        await insertAgent(values, tx)
+      })
+    else await insertAgent(values)
 
     const agent = await Agent.mustFind(id)
     eventEmitter.emit('agent.created', { agentId: agent.id, squadId: agent.squadId })
@@ -1633,6 +1641,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     // single-arg constants, so an agent id whose hashtext collides with one of
     // them cannot serialize this queue behind a migration or a CLI-bundle build.
     await acquireAgentQueueLock(tx, this.id)
+    await assertCurrentIntegrationInbox(tx, this.id, metadata?.inboxMessageIds)
     const { assertAgentWorkStreamNotPaused } = await import('../services/work-streams/pause')
     await assertAgentWorkStreamNotPaused(this.id, tx)
 
@@ -1747,6 +1756,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     }
 
     validateNewAcceptance?.()
+    await assertCurrentIntegrationInbox(tx, this.id, metadata?.inboxMessageIds)
 
     if (imageIds?.length) {
       await Image.claimForTargetInTransaction(tx, imageIds, this, attachmentActorUserId ?? '', attachmentScope!)
@@ -1800,6 +1810,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       })
       persistedMessage = persisted
     }
+    await assertCurrentIntegrationInbox(tx, this.id, metadata?.inboxMessageIds)
     if (clientId && requestHash && persistedMessage) {
       await tx
         .update(chatSendReceipts)
@@ -1808,7 +1819,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
           messageId: persistedMessage.id,
           executionId: execution.id,
           disposition: 'turn',
-          acceptedAt: databaseNow,
+          acceptedAt: databaseClockNow(),
         })
         .where(and(eq(chatSendReceipts.agentId, this.id), eq(chatSendReceipts.clientId, clientId)))
     }
@@ -1915,6 +1926,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       const { assertAgentWorkStreamNotPaused } = await import('../services/work-streams/pause')
       await assertAgentWorkStreamNotPaused(this.id, tx)
       await sendMessageLockedHook?.(tx, this.id)
+      await assertCurrentIntegrationInbox(tx, this.id, metadata?.inboxMessageIds)
       const [authoritativeAgent] = await tx
         .select({
           status: agents.status,
@@ -2098,6 +2110,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
         },
         pending: true,
       })
+      await assertCurrentIntegrationInbox(tx, this.id, metadata?.inboxMessageIds)
       if (clientId) {
         await tx
           .update(chatSendReceipts)
@@ -2106,7 +2119,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
             messageId: persisted.id,
             executionId: active.id,
             disposition: 'intervention',
-            acceptedAt: new Date(),
+            acceptedAt: databaseClockNow(),
           })
           .where(and(eq(chatSendReceipts.agentId, this.id), eq(chatSendReceipts.clientId, clientId)))
       }

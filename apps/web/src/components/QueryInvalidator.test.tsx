@@ -36,7 +36,7 @@ function createFakeQueryClient() {
 let fakeQueryClient = createFakeQueryClient()
 
 import { QueryInvalidator } from './QueryInvalidator'
-import { assistantQueryKeys } from '../queryKeys'
+import { assistantQueryKeys, githubFeedbackQueryKeys, githubIdentityQueryKeys } from '../queryKeys'
 
 const subscribe = (topic: string, callback: Callback) => {
   captured.set(topic, callback)
@@ -472,5 +472,28 @@ describe('QueryInvalidator', () => {
       },
       { cancelRefetch: false }
     )
+  })
+
+  test('GitHub moderation events refresh only moderation/identity queries, never squad settings', async () => {
+    await dom.act(async () => {
+      root.render(<QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe }} />)
+    })
+    await dom.act(async () => {
+      captured.get('squads')!({ event: 'githubFeedback.updated', data: { squadId: 'squad-1' } })
+    })
+    const keys = fakeQueryClient.invalidateQueries.mock.calls.map(([options]) => options.queryKey)
+    expect(keys).toEqual([githubFeedbackQueryKeys.squad('squad-1')])
+  })
+
+  test('a personal GitHub identity change refreshes identity and trusted-author queries only', async () => {
+    await dom.act(async () => {
+      root.render(<QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe }} />)
+    })
+    await dom.act(async () => {
+      captured.get('squads')!({ event: 'githubIdentity.updated', data: { userId: 'user-1' } })
+    })
+    const keys = fakeQueryClient.invalidateQueries.mock.calls.map(([options]) => options.queryKey)
+    expect(keys).toEqual([githubIdentityQueryKeys.all, githubFeedbackQueryKeys.all])
+    expect(keys).not.toContainEqual(queryKeys.squads.all)
   })
 })

@@ -22,6 +22,7 @@ import { EmbeddingService } from './indexer/EmbeddingService'
 import { IndexingService } from './indexer/IndexingService'
 import type { LiveMemorySourceAdapter, LiveSearchResult } from './sources/live-adapter'
 import { defaultLiveRateLimiter, type LiveRateLimiter } from './sources/live-rate-limiter'
+import { withheldGitHubMemoryDocuments } from '../integrations/github/managed-content'
 
 // ============================================================================
 // Types
@@ -355,7 +356,13 @@ export class SearchService {
     const liveResultsPromise = this.searchLiveAdapters(squadId, query, liveScopesByType, limit)
 
     const [indexedResults, liveResults] = await Promise.all([indexedResultsPromise, liveResultsPromise])
-    const results = [...indexedResults, ...liveResults]
+    // GitHub prose the caller's (or source squad's) author filter no longer admits is dropped
+    // before any snippet, title or frontmatter leaves this service.
+    const withheld = await withheldGitHubMemoryDocuments(
+      squadId,
+      indexedResults.map((result) => result.documentId)
+    )
+    const results = [...indexedResults.filter((result) => !withheld.has(result.documentId)), ...liveResults]
 
     // Apply MMR reranking for diversity
     const reranked = this.applyMmrReranking(results, mmrLambda)

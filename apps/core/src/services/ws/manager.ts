@@ -7,6 +7,7 @@ import {
   type PresenceFocus,
   type PresencePerson,
   type SquadActivityProjectionEventData,
+  type CollectionTopic,
   type Topic,
 } from '@ficus/shared'
 import type { Identity } from '../rbac'
@@ -277,6 +278,23 @@ export class WebSocketManager {
     for (const client of this.clients.values()) {
       if (client.identity.type !== 'user' || !audience.has(client.identity.userId)) continue
       if (!this.isActiveSubscriber(client, 'actions')) continue
+      try {
+        client.ws.send(json)
+      } catch {
+        this.forget(client)
+      }
+    }
+  }
+
+  /**
+   * Private per-user event on a collection topic: only that human's own sockets receive it, never
+   * agents (even with a delegated userId) or administrators with full squad access.
+   */
+  broadcastToUser(userId: string, topic: CollectionTopic, event: string, data: unknown): void {
+    const json = JSON.stringify({ type: 'event', topic, event, data } satisfies ServerMessage)
+    for (const client of this.clients.values()) {
+      if (client.identity.type !== 'user' || client.identity.userId !== userId) continue
+      if (!this.isActiveSubscriber(client, topic)) continue
       try {
         client.ws.send(json)
       } catch {

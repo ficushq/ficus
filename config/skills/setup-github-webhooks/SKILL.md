@@ -53,9 +53,16 @@ use a custom App or a repository webhook for that instance.
 | `issues`                      | Issue assigned/unassigned → routed to matching squad                         |
 | `issue_comment`               | Comments on issues/PRs → routed to assigned agent                            |
 | `pull_request`                | PR review requests and merge/conflict detection → notifies work stream agent |
-| `pull_request_review`         | PR review submitted → batched with line comments                             |
-| `pull_request_review_comment` | PR line comments → batched with review                                       |
+| `pull_request_review`         | Submitted PR review → routed to the PR's work stream agent                   |
+| `pull_request_review_comment` | PR line comment → routed to the PR's work stream agent                       |
 | `workflow_run`                | Terminal CI conclusion → notifies work stream agent                          |
+
+Comments, reviews and line comments go through the squad's GitHub author filter.
+When it is ON (the default for new squads), feedback from authors the squad does
+not trust is held for a person to review in **Pending GitHub events** and is not
+delivered to agents until allowed. Webhook setup does not change trust: only a
+person with squad update permission can add trusted authors or allow events.
+Agents cannot do either, and should not try.
 
 Workflow-run attempt high-water suppression is sequential-delivery only. Concurrent delivery, crash-safe settlement, partial metadata recovery, and per-workflow state require the database-backed work tracked in `25da8cd9-55c3-40b2-a74c-42bf358cecb2`.
 

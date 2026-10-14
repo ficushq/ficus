@@ -70,6 +70,8 @@ function harness() {
     },
     repository: {
       create: async (input) => {
+        receipt.purpose = input.purpose ?? 'integration'
+        receipt.linkGeneration = input.linkGeneration ?? null
         record = {
           id,
           userId: input.userId,
@@ -123,6 +125,7 @@ function harness() {
         return { version: 1, userId: 123, login: 'octocat' }
       },
     },
+    verifyPersonal: async () => {},
     install: async ({ grant }) => {
       calls.push('install')
       expect(grant.credential).toBe(credential!)
@@ -317,4 +320,64 @@ test('database device authorization encrypts the code and atomically replaces it
     await db.delete(users).where(eq(users.id, userId))
     await fixture.dispose()
   }
+})
+
+test('personal device authorization persists its generation and bypasses all integration install/profile side effects', async () => {
+  const h = harness()
+  let proofs = 0
+  h.dependencies.installIdentity = async ({ state, credential }) => {
+    expect(state).toMatchObject({ purpose: 'github_identity', linkGeneration: 7, providerKey: 'github' })
+    expect(credential.accessToken).toBe('SECRET_ACCESS')
+    h.receipt.identityProofId = 'proof'
+    h.receipt.identityVerifiedAt = new Date('2026-09-07T12:00:05.000Z')
+    proofs++
+  }
+  await h.service.start({ ...start, purpose: 'github_identity', linkGeneration: 7 })
+  expect(h.receipt).toMatchObject({ purpose: 'github_identity', linkGeneration: 7 })
+  h.advance(5)
+  h.outcomes.push(authorized)
+  expect(await h.service.poll({ id: h.id, userId: 'user' })).toEqual({ status: 'complete', returnTo: start.returnTo })
+  expect(h.calls).toEqual(['start', 'poll', 'stage'])
+  expect(proofs).toBe(1)
+  expect(await h.service.poll({ id: h.id, userId: 'user' })).toEqual({ status: 'complete', returnTo: start.returnTo })
+  expect(proofs).toBe(1)
+  expect(h.receipt.installedConnectionId).toBeNull()
+})
+
+test('a personal device start without a valid generation or with a reconnect target cannot create a flow', async () => {
+  for (const input of [
+    { purpose: 'github_identity' as const },
+    { purpose: 'github_identity' as const, linkGeneration: -1 },
+    {
+      purpose: 'github_identity' as const,
+      linkGeneration: 1,
+      connectionId: 'connection',
+      expectedMaterialRevision: 'revision',
+    },
+    { linkGeneration: 1 },
+  ]) {
+    const h = harness()
+    await expect(h.service.start({ ...start, ...input })).rejects.toMatchObject({
+      code: 'invalid_authorization_purpose',
+    })
+    expect(h.calls).toEqual([])
+  }
+})
+
+test('retired personal device generation is checked before polling or reading a staged credential, but not immutable replay', async () => {
+  const { GitHubFeedbackError } = await import('../github/feedback-trust')
+  const h = harness()
+  const failure = new GitHubFeedbackError('identity_generation_changed', 409)
+  h.dependencies.verifyPersonal = async () => {
+    throw failure
+  }
+  await h.service.start({ ...start, purpose: 'github_identity', linkGeneration: 7 })
+  h.advance(5)
+  h.outcomes.push(authorized)
+  await expect(h.service.poll({ id: h.id, userId: 'user' })).rejects.toBe(failure)
+  expect(h.calls).toEqual(['start'])
+  expect(h.receipt.terminalCode).toBe('identity_generation_changed')
+  h.receipt.identityProofId = 'immutable-proof'
+  h.receipt.identityVerifiedAt = new Date()
+  expect(await h.service.poll({ id: h.id, userId: 'user' })).toEqual({ status: 'complete', returnTo: start.returnTo })
 })
