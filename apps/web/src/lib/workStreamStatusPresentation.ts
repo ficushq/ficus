@@ -12,6 +12,9 @@ import {
   type WorkStreamPresentationFacts,
   type WorkStreamPresentationState,
   type StatusRole,
+  type PendingAction,
+  type WorkStreamActionData,
+  type WorkStreamDeliveryActionData,
 } from '@ficus/shared'
 import { webStatus } from './statusPresentation'
 
@@ -42,6 +45,30 @@ export const WS_STATUS_LABELS: Record<WorkStreamPresentationState, string> = {
   waiting_for_slot: 'Waiting for slot',
   execution_failed: 'Execution Failed',
   paused: 'Paused',
+}
+
+/** Glyph per state; always paired with the role color and the state label so color is never the only cue. */
+export const WS_STATUS_ICONS: Record<WorkStreamPresentationState, string> = {
+  delivery_approval: '◎',
+  delivery_review: '◎',
+  delivery_merge: '◎',
+  delivery_external: '⧗',
+  delivery_setup: '⊘',
+  delivery_failure: '✖',
+  active: '●',
+  in_progress: '●',
+  in_review: '◎',
+  waiting_on_answer: '?',
+  waiting_on_dependency: '⧗',
+  waiting_on_owner: '⧗',
+  waiting_for_slot: '⧗',
+  blocked: '⊘',
+  idle: '○',
+  execution_failed: '✖',
+  paused: 'Ⅱ',
+  queued: '○',
+  done: '✓',
+  canceled: '×',
 }
 
 export const WS_STATUS_BADGE_COLORS: Record<WorkStreamPresentationState, StatusRole> = {
@@ -129,6 +156,33 @@ export const MANUAL_WAIT_ACTOR_LABELS: Record<WorkStreamWaitActor, string> = {
 const MANUAL_WAIT_ACTOR_BADGE_COLORS: Record<WorkStreamWaitActor, StatusRole> = {
   human: WS_STATUS_BADGE_COLORS[MANUAL_WAIT_ACTOR_STATE.human],
   owner: WS_STATUS_BADGE_COLORS[MANUAL_WAIT_ACTOR_STATE.owner],
+}
+
+/**
+ * The state a work-stream pending action presents, chosen from the same facts
+ * and vocabulary as the stream's row so one stream looks the same in Needs you
+ * and in the work list. A workflow human-approval/decision gate is stored as a
+ * manual wait but presents as `in_review`; the final delivery approval presents
+ * as `delivery_approval`; other manual waits a person must clear stay `blocked`.
+ * Returns null for actions that are not about a work stream.
+ */
+export function workStreamActionPresentationState(action: PendingAction): WorkStreamPresentationState | null {
+  switch (action.type) {
+    case 'workstream-review':
+      return 'in_review'
+    case 'workstream-blocked': {
+      const data = action.data as WorkStreamActionData
+      if (workStreamWaitDisplayType(data.wait) === 'review') return 'in_review'
+      if (data.deliveryApproval) return 'delivery_approval'
+      return MANUAL_WAIT_ACTOR_STATE[workStreamWaitActor(data.wait)]
+    }
+    case 'workstream-delivery':
+      return (action.data as WorkStreamDeliveryActionData).deliveryKind === 'merge'
+        ? 'delivery_merge'
+        : 'delivery_review'
+    default:
+      return null
+  }
 }
 
 /** Queued work with a retained wait or pause has released its admission slot. */

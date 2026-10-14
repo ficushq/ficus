@@ -709,7 +709,12 @@ test('review-approval completion requires a human even after every agent gate ha
   const deliveryWaits = await listOpenWaits(db, id)
   expect(deliveryWaits).toHaveLength(1)
   expect(deliveryWaits[0]!.resolutionHandler).toBe('workflow')
-  expect((await listPendingActions()).some((a) => 'workStreamId' in a.data && a.data.workStreamId === id)).toBe(true)
+  const deliveryAction = (await listPendingActions()).find(
+    (a) => 'workStreamId' in a.data && a.data.workStreamId === id
+  )
+  expect(deliveryAction).toBeDefined()
+  // Clients present the final delivery approval as a review, not as a blocker.
+  expect((deliveryAction!.data as import('@ficus/shared').WorkStreamActionData).deliveryApproval).toBe(true)
   await expect(guardFlowWaitResolution(db as any, id, deliveryWaits[0]!.id)).rejects.toThrow('workflow decision')
   const user = await createTestUser({ prefix })
   const role = await createTestRole({ prefix, permissions: ['workstreams:respond'] })
@@ -1277,6 +1282,7 @@ describe('attempt-scoped waits', () => {
     expect(wait.flowAttemptId).toBe(security.id)
     const action = (await listPendingActions()).find((a) => 'waitId' in a.data && a.data.waitId === wait.id)!
     expect((action.data as import('@ficus/shared').WorkStreamActionData).assigneeAgentId).toBe(securityAgent)
+    expect((action.data as import('@ficus/shared').WorkStreamActionData).deliveryApproval).toBeUndefined()
     expect(await admissionBlockingWaits(db, id)).toHaveLength(0)
     expect(await waitsForAgent(db, id, qaAgent)).toHaveLength(0)
     expect(await waitsForAgent(db, id, securityAgent)).toHaveLength(1)

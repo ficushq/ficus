@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import { workStreamRef } from '@ficus/shared'
 import { workStreamTitle } from '@ficus/shared'
 import { useEffect, useRef, useState } from 'react'
@@ -10,6 +11,7 @@ import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { formatAssistantUpdateTime } from '../lib/assistantActivityPresentation'
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronRightIcon } from './icons'
+import { webStatus } from '../lib/statusPresentation'
 import { ActionCenterContent } from './ActionCenterContent'
 
 export function FeedVisitSummary({ actions, ready }: { actions: PendingAction[]; ready: boolean }) {
@@ -160,7 +162,10 @@ export function AccountFeedVisit({
                     to={{ pathname: location.pathname, search: params.toString() }}
                     className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-3 hover:bg-surface-hover"
                   >
-                    <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-status-success-500" />
+                    <span
+                      aria-hidden="true"
+                      className={clsx('mt-1.5 h-2 w-2 shrink-0 rounded-full', webStatus('success').markerClass)}
+                    />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium text-primary break-words">
                         {workStreamTitle(stream)}

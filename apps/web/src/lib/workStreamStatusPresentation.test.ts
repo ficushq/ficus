@@ -1,12 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@ficus/shared'
+import {
+  WORK_STREAM_STATUS_ROLE,
+  type PendingAction,
+  type WorkStreamActionData,
+  type WorkStreamPresentationState,
+  type WorkStreamWait,
+} from '@ficus/shared'
 import {
   WS_STATUS_BADGE_COLORS,
+  WS_STATUS_ICONS,
   WS_STATUS_LABELS,
   externalDeliveryLabel,
   getWsDisplayState,
   isWorkStreamParked,
   workStreamStatusLabel,
+  workStreamActionPresentationState,
   workStreamWaitBadge,
 } from './workStreamStatusPresentation'
 import { BADGE_COLORS } from '../components/Badge'
@@ -97,5 +105,85 @@ describe('workStreamWaitBadge', () => {
 
   test('owner waits are parked like other retained waits when queued', () => {
     expect(isWorkStreamParked({ status: 'queued', openWaits: [{ type: 'manual', actor: 'owner' }] })).toBe(true)
+  })
+})
+
+describe('work-stream pending action presentation', () => {
+  const wait = (facts: Partial<WorkStreamWait>): WorkStreamWait => ({
+    id: 'wait-1',
+    workStreamId: 'ws-1',
+    type: 'manual',
+    referenceId: null,
+    message: null,
+    createdBy: 'agent',
+    createdByAgentId: null,
+    createdByUserId: null,
+    completesOnApproval: false,
+    openedAt: '2026-01-01T00:00:00.000Z',
+    closedAt: null,
+    resolution: null,
+    resolutionNote: null,
+    ...facts,
+  })
+  const action = (type: PendingAction['type'], data: Partial<WorkStreamActionData>): PendingAction =>
+    ({ id: 'a', type, priority: 1, createdAt: '', canRespond: true, data }) as PendingAction
+
+  test('presents each wait exactly as the stream row presents it', () => {
+    const cases: Array<[PendingAction['type'], WorkStreamWait]> = [
+      ['workstream-review', wait({ type: 'review', completesOnApproval: true })],
+      ['workstream-blocked', wait({ resolutionHandler: 'workflow', flowAttemptId: 3 })],
+      ['workstream-blocked', wait({})],
+      ['workstream-blocked', wait({ resolutionHandler: 'workflow', flowAttemptId: null })],
+    ]
+    for (const [type, open] of cases) {
+      expect(workStreamActionPresentationState(action(type, { wait: open }))).toBe(
+        getWsDisplayState({ status: 'active', openWaits: [open] })
+      )
+    }
+  })
+
+  test('a workflow gate is a review, the delivery approval is Approve Delivery, other waits stay blocked', () => {
+    const gate = wait({ resolutionHandler: 'workflow', flowAttemptId: 3 })
+    expect(workStreamActionPresentationState(action('workstream-blocked', { wait: gate }))).toBe('in_review')
+    const delivery = wait({ id: 'delivery', resolutionHandler: 'workflow', flowAttemptId: null })
+    expect(
+      workStreamActionPresentationState(action('workstream-blocked', { wait: delivery, deliveryApproval: true }))
+    ).toBe('delivery_approval')
+    // The stream row selects the same state from its delivery facts.
+    expect(
+      getWsDisplayState({
+        status: 'active',
+        openWaits: [delivery],
+        delivery: { kind: 'approval', approvalWaitId: 'delivery' },
+      })
+    ).toBe('delivery_approval')
+    expect(workStreamActionPresentationState(action('workstream-blocked', { wait: wait({}) }))).toBe('blocked')
+  })
+
+  test('code-host delivery gates map to their delivery state; other actions have none', () => {
+    expect(
+      workStreamActionPresentationState({
+        ...action('workstream-delivery', {}),
+        data: { deliveryKind: 'merge' },
+      } as PendingAction)
+    ).toBe('delivery_merge')
+    expect(
+      workStreamActionPresentationState({
+        ...action('workstream-delivery', {}),
+        data: { deliveryKind: 'review' },
+      } as PendingAction)
+    ).toBe('delivery_review')
+    expect(workStreamActionPresentationState(action('agent-error', {}))).toBeNull()
+  })
+
+  test('review states use the review glyph and only blocked/setup use the no-entry glyph', () => {
+    for (const state of ['in_review', 'delivery_approval', 'delivery_review', 'delivery_merge'] as const) {
+      expect(WS_STATUS_ICONS[state]).toBe('◎')
+      expect(WORK_STREAM_STATUS_ROLE[state]).toBe('review')
+    }
+    const noEntry = (Object.keys(WS_STATUS_ICONS) as WorkStreamPresentationState[]).filter(
+      (state) => WS_STATUS_ICONS[state] === '⊘'
+    )
+    expect(noEntry.sort()).toEqual(['blocked', 'delivery_setup'])
   })
 })

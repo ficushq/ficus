@@ -27,28 +27,48 @@ import type {
   WorkStreamActionData,
   WorkStreamDeliveryActionData,
 } from '@ficus/shared'
-import type { StatusRole } from '@ficus/shared'
+import { WORK_STREAM_STATUS_ROLE, type StatusRole } from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
+import {
+  workStreamActionPresentationState,
+  WS_STATUS_ICONS,
+  WS_STATUS_LABELS,
+} from '../lib/workStreamStatusPresentation'
 
-// Icons for each action type
-const actionIcons: Record<string, string> = {
-  'agent-error': '!',
-  'squad-question': '?',
-  'agent-question': '?',
-  'assistant-needs-input': '?',
-  'workstream-review': '◎',
-  'workstream-blocked': '⊘',
-  'workstream-delivery': '◎',
+/** Icon/role/label for actions that are not about a work stream. */
+const NON_WORK_STREAM_ACTION_STATUS: Record<
+  Exclude<PendingAction['type'], 'workstream-review' | 'workstream-blocked' | 'workstream-delivery'>,
+  ActionStatusPresentation
+> = {
+  'agent-error': { icon: '!', role: 'danger', label: 'Agent halted' },
+  'squad-question': { icon: '?', role: 'humanWait', label: 'Needs your input' },
+  'agent-question': { icon: '?', role: 'humanWait', label: 'Needs your answer' },
+  'assistant-needs-input': { icon: '?', role: 'humanWait', label: 'Needs your answer' },
 }
 
-const actionRoles: Record<PendingAction['type'], StatusRole> = {
-  'agent-error': 'danger',
-  'squad-question': 'humanWait',
-  'agent-question': 'humanWait',
-  'assistant-needs-input': 'humanWait',
-  'workstream-review': 'review',
-  'workstream-blocked': 'danger',
-  'workstream-delivery': 'review',
+interface ActionStatusPresentation {
+  icon: string
+  role: StatusRole
+  label: string
+}
+
+/**
+ * The status glyph, color role and accessible label for an action. Work-stream
+ * actions use the same state, glyph, role and label as the stream's row in the
+ * work list, so a review gate reads as a review (◎) and only a manual wait a
+ * person must clear reads as blocked (⊘). Errors keep the danger treatment.
+ */
+function actionStatusPresentation(action: PendingAction): ActionStatusPresentation {
+  const state = workStreamActionPresentationState(action)
+  if (state)
+    return { icon: WS_STATUS_ICONS[state], role: WORK_STREAM_STATUS_ROLE[state], label: WS_STATUS_LABELS[state] }
+  return (
+    NON_WORK_STREAM_ACTION_STATUS[action.type as keyof typeof NON_WORK_STREAM_ACTION_STATUS] ?? {
+      icon: '•',
+      role: 'neutral',
+      label: 'Pending action',
+    }
+  )
 }
 
 // Link to an agent's conversation thread (squad agents open in the squad view; personal agents in chat).
@@ -89,6 +109,7 @@ export function ActionItem({
 
   const isWorkStreamAction = action.type === 'workstream-review' || action.type === 'workstream-blocked'
   const deliveryGate = action.type === 'workstream-delivery' ? (action.data as WorkStreamDeliveryActionData) : null
+  const status = actionStatusPresentation(action)
 
   // Remove the successful action immediately, then refetch only authoritative affected domains.
   const completeAction = async () => {
@@ -165,18 +186,14 @@ export function ActionItem({
           )}
           onClick={embedded ? undefined : () => setExpanded(!expanded)}
         >
-          {/* Type icon */}
+          {/* Status icon: glyph + color + label, matching the stream's row in the work list */}
           <span
-            className={clsx(
-              'text-sm leading-5 shrink-0 w-4 text-center',
-              webStatus(
-                isWorkStreamAction && (action.data as WorkStreamActionData).wait.resolutionHandler === 'workflow'
-                  ? 'humanWait'
-                  : actionRoles[action.type]
-              ).textClass
-            )}
+            role="img"
+            aria-label={status.label}
+            title={status.label}
+            className={clsx('text-sm leading-5 shrink-0 w-4 text-center', webStatus(status.role).textClass)}
           >
-            {actionIcons[action.type]}
+            {status.icon}
           </span>
 
           {/* Title and subtitle */}
@@ -314,13 +331,15 @@ function ActionSubtitle({ action }: { action: PendingAction }) {
       return (
         <p className="text-xs text-muted truncate">
           {data.squadName}
-          {data.wait.resolutionHandler === 'workflow'
-            ? data.wait.flowAttemptId != null
-              ? ' · review needed'
-              : ' · workflow decision'
-            : assignee
-              ? ` · ${assignee} needs input`
-              : ' · needs input'}
+          {workStreamActionPresentationState(action) === 'in_review'
+            ? ' · review needed'
+            : data.deliveryApproval
+              ? ' · approve delivery'
+              : data.wait.resolutionHandler === 'workflow'
+                ? ' · workflow decision'
+                : assignee
+                  ? ` · ${assignee} needs input`
+                  : ' · needs input'}
         </p>
       )
     }

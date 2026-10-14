@@ -812,6 +812,12 @@ export interface WorkStreamActionData {
   /** The open review/manual wait this action resolves (POST /workstreams/:id/waits/:waitId/resolve). */
   waitId: string
   wait: WorkStreamWait
+  /**
+   * Server-classified: this wait is the stream's final delivery approval (a
+   * workflow `review-approval` completion gate). Clients present it as a review,
+   * not a blocker. Omitted when false and by older servers.
+   */
+  deliveryApproval?: true
   focus: {
     kind: 'workstream-wait'
     workStreamId: string
