@@ -17,6 +17,7 @@ import type { DecisionFeature, DecisionSettings } from '../../api/decisions'
 import { PermissionsProvider, type PermissionsResult } from '../../hooks/usePermissions'
 import { decisionQueryKeys } from '../../queryKeys'
 import { acquireDomHarness } from '../../test/domHarness'
+import { DecisionModelsStep } from '../onboarding/DecisionModelsStep'
 import { DecisionModelsSection } from './DecisionModelsSection'
 import { DEFAULT_TRY_QUESTION, DecisionTryResult } from './DecisionTryPanel'
 import { featureSwitchState, formatPercent, formatPrice, formatUsd } from './decisionUi'
@@ -61,7 +62,9 @@ const settings = (overrides: Partial<DecisionSettings> = {}): DecisionSettings =
 
 const permissions = (canWrite: boolean) => (): PermissionsResult => ({
   permissions: canWrite ? ['provider-auth:read', 'provider-auth:write'] : ['provider-auth:read'],
-  can: (permission) => permission === 'provider-auth:read' || (canWrite && permission === 'provider-auth:write'),
+  can: (permission) =>
+    permission === 'provider-auth:read' ||
+    (canWrite && (permission === 'provider-auth:write' || permission.endsWith(':openai-services'))),
   isLoading: false,
   isError: false,
 })
@@ -112,7 +115,8 @@ async function mount(
     act: (fn: () => void | Promise<void>) => Promise<void>
     button: (text: string) => HTMLButtonElement
     field: (label: string) => HTMLInputElement
-  }) => Promise<void>
+  }) => Promise<void>,
+  node?: ReactNode
 ) {
   const calls: Call[] = []
   const original = globalThis.fetch
@@ -134,7 +138,7 @@ async function mount(
   dom.window.fetch = globalThis.fetch
   try {
     const rendered = dom.createRoot()
-    await dom.act(async () => rendered.root.render(tree(client(data), true)))
+    await dom.act(async () => rendered.root.render(tree(client(data), true, node)))
     const document = dom.window.document as unknown as Document
     const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
     const act = async (fn: () => void | Promise<void>) =>
@@ -445,6 +449,87 @@ describe('Decision models settings', () => {
         expect(link.getAttribute('href')).toBe('/settings?section=integrations&setting=integration-openai-services')
         expect(card.querySelector('form')).toBeNull()
       }
+    )
+  })
+
+  test('onboarding takes the OpenAI key inline, enables it, then offers the OpenAI setup', async () => {
+    const keyField = (configured: boolean) => ({
+      fields: [
+        { key: 'OPENAI_API_KEY', label: 'API key', secret: true, placeholder: 'sk-…', configured, required: true },
+      ],
+    })
+    let saved = false
+    await mount(
+      settings({ providers: [], openAIServicesKey: false }),
+      (call) => {
+        if (call.url.endsWith('/integrations/providers/openai-services/service-settings')) {
+          if (call.method === 'PUT') saved = true
+          return Response.json(keyField(saved))
+        }
+        if (call.method === 'PUT' && call.url.endsWith('/integrations/providers/openai-services/enabled'))
+          return Response.json({ enabled: true })
+        if (call.url.endsWith('/integrations/catalog')) return Response.json({ integrations: [] })
+        if (call.method === 'GET' && call.url.endsWith('/decisions'))
+          return Response.json(settings({ providers: [], openAIServicesKey: saved }))
+        return undefined
+      },
+      async ({ document, calls, act, button }) => {
+        expect(document.body.textContent).toContain('checking tool output for instructions aimed at your agents')
+        expect(document.body.textContent).not.toContain('Add a decision modelNone yet')
+        const card = () =>
+          [...document.querySelectorAll('article')].find((article) =>
+            article.textContent?.includes('OpenAI Decisions')
+          )!
+        expect(card().textContent).toContain('Needs an OpenAI API key')
+        await act(() => fireEvent.click(card().querySelector('button')!))
+        expect(card().querySelector('a')).toBeNull()
+        expect(card().textContent).toContain('the same one voice and memory search use')
+        await act(() => fireEvent.input(card().querySelector('input')!, { target: { value: 'sk-test' } }))
+        await act(() => fireEvent.click(button('Save key')))
+        expect(calls.find((call) => call.method === 'PUT' && call.url.endsWith('/service-settings'))?.body).toEqual({
+          OPENAI_API_KEY: 'sk-test',
+        })
+        expect(calls.find((call) => call.url.endsWith('/openai-services/enabled'))?.body).toEqual({ enabled: true })
+        // With the key in place, the card shows OpenAI Decisions' own setup.
+        expect(card().textContent).toContain('Test and add')
+      },
+      <DecisionModelsStep />
+    )
+  })
+
+  test('onboarding turns a saved but disabled OpenAI key back on', async () => {
+    let enabled = false
+    await mount(
+      settings({ providers: [], openAIServicesKey: false }),
+      (call) => {
+        if (call.url.endsWith('/service-settings'))
+          return Response.json({
+            fields: [{ key: 'OPENAI_API_KEY', label: 'API key', secret: true, placeholder: '', configured: true }],
+          })
+        if (call.url.endsWith('/integrations/catalog'))
+          return Response.json({
+            integrations: [{ key: 'openai-services', enabled, setup: { state: 'configured' } }],
+          })
+        if (call.method === 'PUT' && call.url.endsWith('/openai-services/enabled')) {
+          enabled = true
+          return Response.json({ enabled: true })
+        }
+        if (call.method === 'GET' && call.url.endsWith('/decisions'))
+          return Response.json(settings({ providers: [], openAIServicesKey: enabled }))
+        return undefined
+      },
+      async ({ document, act, button }) => {
+        const card = () =>
+          [...document.querySelectorAll('article')].find((article) =>
+            article.textContent?.includes('OpenAI Decisions')
+          )!
+        await act(() => fireEvent.click(card().querySelector('button')!))
+        expect(card().textContent).toContain('Yours is saved but turned off.')
+        await act(() => fireEvent.click(button('Turn on your saved key')))
+        expect(enabled).toBe(true)
+        expect(card().textContent).toContain('Test and add')
+      },
+      <DecisionModelsStep />
     )
   })
 

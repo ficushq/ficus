@@ -16,6 +16,7 @@ import { AssistantMemorySection } from '../settings/AssistantMemorySection'
 import { ProviderAuthSection } from '../settings/ProviderAuthSection'
 import { GitHubIntegrationSettings } from '../integrations/GitHubIntegrationSettings'
 import { usePermissions } from '../../hooks/usePermissions'
+import { DecisionModelsStep } from './DecisionModelsStep'
 import { InviteTeamStep } from './InviteTeamStep'
 import { ChatChannelSetup } from './ChatChannelSetup'
 import { FirstSquadStep, pickMostRecentlyCreated } from './FirstSquadStep'
@@ -270,6 +271,7 @@ function SetupSteps({
 }
 
 const OPTIONAL_SETUP = [
+  { id: 'decision_models', title: 'Decision models', Content: DecisionModelsStep },
   { id: 'voice_memory', title: 'Voice & memory', Content: () => <AssistantMemorySection onboarding /> },
   { id: 'invite_users', title: 'Invite your team', Content: InviteTeamStep },
   { id: 'chat_channel', title: 'Connect a chat channel', Content: ChatChannelSetup },

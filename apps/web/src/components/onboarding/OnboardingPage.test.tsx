@@ -84,7 +84,11 @@ describe('OnboardingPage — static rendering', () => {
     // Optional headers are discoverable from the start; their forms stay closed.
     expect(html).not.toContain('/settings?section=users')
     expect(html).toContain('Optional setup')
-    expect(html).toContain('Voice &amp; memory')
+    // Decision models come first: they power core features, unlike the other extras.
+    const optional = html.slice(html.indexOf('data-optional-setup'))
+    expect(optional.indexOf('Decision models')).toBeGreaterThan(-1)
+    expect(optional.indexOf('Decision models')).toBeLessThan(optional.indexOf('Voice &amp; memory'))
+    expect(html).not.toContain('Quick judgment calls')
     expect(html).toContain('Invite your team')
     expect(html).not.toContain('/settings?section=remote-hosts')
   })

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { DECISION_PROVIDER_KIND_INFO, type DecisionProviderKind } from '@ficus/shared'
 import {
   addDecisionProvider,
@@ -8,6 +8,11 @@ import {
   type DecisionProviderInput,
   type DetectedDecisionServer,
 } from '../../api/decisions'
+import { setIntegrationEnabled } from '../../api/integrations'
+import { usePermissions } from '../../hooks/usePermissions'
+import { integrationQueryKeys } from '../../queryKeys'
+import { integrationQueries } from '../../queryOptions'
+import { IntegrationCredentialSettings } from '../integrations/IntegrationCredentialSettings'
 import { SegmentedControl } from '../SegmentedControl'
 import { DECISION_INPUT_CLASS, DecisionField } from './DecisionField'
 import { DECISION_KIND_FIELDS, errorText, invalidateDecisions, OPENAI_SERVICES_LINK } from './decisionUi'
@@ -19,11 +24,14 @@ import { DECISION_KIND_FIELDS, errorText, invalidateDecisions, OPENAI_SERVICES_L
 export function DecisionProviderSetup({
   kind,
   openAIServicesKey,
+  inlineOpenAIKey = false,
   onDone,
   onCancel,
 }: {
   kind: DecisionProviderKind
   openAIServicesKey: boolean
+  /** Take the OpenAI API services key here instead of sending the user to Integrations (onboarding). */
+  inlineOpenAIKey?: boolean
   onDone: () => void
   onCancel: () => void
 }) {
@@ -56,6 +64,7 @@ export function DecisionProviderSetup({
     if (server.models[0]) setModel(server.models[0])
   }
 
+  if (kind === 'openai' && !openAIServicesKey && inlineOpenAIKey) return <OpenAIServicesKeyInline />
   if (kind === 'openai' && !openAIServicesKey) {
     return (
       <div className="space-y-3 text-sm text-secondary">
@@ -279,5 +288,58 @@ export function DecisionProviderSetup({
         <span className="text-xs text-muted">Ficus asks it a test question before saving.</span>
       </div>
     </form>
+  )
+}
+
+/**
+ * The OpenAI API services key, entered where OpenAI Decisions is set up. It is the shared key, so
+ * saving it also enables the voice assistant and memory search features that use it.
+ */
+function OpenAIServicesKeyInline() {
+  const queryClient = useQueryClient()
+  const { can } = usePermissions()
+  const canWrite = can('integrations:write:openai-services')
+  const catalog = useQuery({ ...integrationQueries.catalog(), enabled: can('integrations:read:openai-services') })
+  // A key saved earlier but switched off: turning it back on is all it takes.
+  const savedButOff =
+    catalog.data?.integrations.find((item) => item.key === 'openai-services')?.setup?.state === 'configured'
+  const connect = async () => {
+    await setIntegrationEnabled('openai-services', true)
+    await Promise.all([
+      invalidateDecisions(queryClient),
+      queryClient.invalidateQueries({ queryKey: integrationQueryKeys.all }),
+    ])
+  }
+  const enable = useMutation({ mutationFn: connect })
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted">
+        OpenAI Decisions uses your OpenAI API key, the same one voice and memory search use.{' '}
+        {savedButOff ? 'Yours is saved but turned off.' : 'Add it here, then choose the model.'}
+      </p>
+      {savedButOff && (
+        <button
+          type="button"
+          disabled={!canWrite || enable.isPending}
+          onClick={() => enable.mutate()}
+          className="ficus-button ficus-button-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+        >
+          {enable.isPending ? 'Turning on…' : 'Turn on your saved key'}
+        </button>
+      )}
+      {enable.isError && (
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
+          {errorText(enable.error)}
+        </p>
+      )}
+      <IntegrationCredentialSettings
+        provider="openai-services"
+        kind="service"
+        canWrite={canWrite}
+        onSaved={connect}
+        saveLabel={savedButOff ? 'Save a new key' : 'Save key'}
+        compact
+      />
+    </div>
   )
 }

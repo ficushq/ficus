@@ -57,9 +57,9 @@ export function DecisionModelsSection() {
           Decision Providers
         </h3>
         <p className="mt-1 text-sm text-muted">
-          Fast models that answer quick yes/no and multiple-choice questions, never writing text. Ficus uses them to
-          screen what agents read for instructions aimed at them, and for workflow decision steps and event rule
-          conditions. They are separate from the agent models in AI Providers.
+          Fast models that answer quick yes/no and multiple-choice questions, never writing text. Ficus uses them for
+          judgment calls like checking tool output for instructions aimed at your agents, filing screenshots, and
+          routing Assistant requests. They are separate from the agent models in AI Providers.
         </p>
       </header>
       {isLoading ? (
@@ -132,17 +132,20 @@ function EvalCaptureSetting({ state }: { state: EvalCaptureState }) {
   )
 }
 
-function AddDecisionProviders({
+export function AddDecisionProviders({
   providers,
   openAIServicesKey,
+  onboarding = false,
 }: {
   providers: DecisionProviderView[]
   openAIServicesKey: boolean
+  /** Onboarding takes the OpenAI key inline and leaves the heading to the step. */
+  onboarding?: boolean
 }) {
   const [open, setOpen] = useState<DecisionProviderKind | null>(null)
   return (
     <section aria-labelledby="add-decision-model-heading" className="space-y-3">
-      <div>
+      <div className={clsx(onboarding && 'sr-only')}>
         <h4
           id="add-decision-model-heading"
           data-setting-target="add-decision-model"
@@ -150,7 +153,7 @@ function AddDecisionProviders({
         >
           Add a decision model
         </h4>
-        {providers.length === 0 && (
+        {providers.length === 0 && !onboarding && (
           <p className="mt-0.5 text-xs text-muted">
             None yet. The first one you add answers every purpose until you set an order.
           </p>
@@ -171,7 +174,9 @@ function AddDecisionProviders({
                 count
                   ? 'Connected'
                   : kind === 'openai' && !openAIServicesKey
-                    ? 'Needs the OpenAI API services key'
+                    ? onboarding
+                      ? 'Needs an OpenAI API key'
+                      : 'Needs the OpenAI API services key'
                     : 'Not configured'
               }
               action={count ? 'Add another' : 'Set up'}
@@ -181,6 +186,7 @@ function AddDecisionProviders({
               <DecisionProviderSetup
                 kind={kind}
                 openAIServicesKey={openAIServicesKey}
+                inlineOpenAIKey={onboarding}
                 onDone={() => setOpen(null)}
                 onCancel={() => setOpen(null)}
               />
