@@ -1,10 +1,12 @@
-import type { StorageFolder, StorageSquad } from '@ficus/shared'
+import type { StorageAgent, StorageFolder, StorageSquad } from '@ficus/shared'
 
 export interface StorageOwner {
   home: string
   squadId: string
   squadName: string
   label: string
+  kind?: StorageFolder['kind']
+  agent?: StorageAgent
 }
 
 /** Only accept complete NUL-delimited records; interrupted output may end mid-path. */
@@ -69,6 +71,8 @@ export function attributeStorage(
   }
   for (const owner of homes.values()) {
     const root = folder(owner.home, owner.label)
+    if (owner.kind) root.kind = owner.kind
+    if (owner.agent) root.agent = owner.agent
     const squad = squads.get(owner.squadId) ?? {
       id: owner.squadId,
       name: owner.squadName,

@@ -11,6 +11,8 @@ import { getSandboxManager } from '../services/sandbox/factory'
 import { sandboxRecoveryWatch } from '../services/sandbox/recovery-watch'
 import { wsManager } from '../services/ws/manager'
 import { storageMonitorService } from '../services/storage/monitor'
+import { summarizeStoredFiles } from '../services/storage/stored-files'
+import { removeDormantAgentsNow } from '../services/agents/cleanup'
 import { parseJsonBody } from './json-body'
 
 const log = createLogger('system')
@@ -21,6 +23,8 @@ const leaseSchema = z
   .object({ holder: z.string().trim().min(1).max(200), ttlSeconds: z.number().int().min(120).max(600) })
   .strict()
 const leaseIdSchema = z.string().uuid()
+// Each removal archives a home over SSH; keep one request bounded.
+const removeDormantSchema = z.object({ agentIds: z.array(z.string().uuid()).min(1).max(50) }).strict()
 
 const ensureMaintenanceInitialized: MiddlewareHandler = async (_c, next) => {
   // Idempotent INSERT ... ON CONFLICT is intentionally performed per request:
@@ -128,6 +132,20 @@ app.post('/storage/refresh', requirePermission('system:logs'), async (c) => {
 app.get('/storage/status', requirePermission('system:logs'), async (c) => {
   c.header('Cache-Control', 'no-store')
   return c.json(await storageMonitorService.status())
+})
+
+// Files Ficus keeps on the core host, per squad, from database rows (works on every runtime).
+app.get('/storage/files', requirePermission('system:logs'), async (c) => {
+  c.header('Cache-Control', 'no-store')
+  return c.json(await summarizeStoredFiles())
+})
+
+// Finalize dormant agents now instead of after AGENT_DORMANT_RETENTION_DAYS. Irreversible.
+app.post('/storage/dormant-agents/remove', requirePermission('system:cleanup'), async (c) => {
+  const body = await parseJsonBody(c)
+  const parsed = removeDormantSchema.safeParse(body.ok ? body.value : undefined)
+  if (!parsed.success) return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400)
+  return c.json(await removeDormantAgentsNow(parsed.data.agentIds))
 })
 
 app.get('/diagnostics', requirePermission('system:logs'), (c) => {

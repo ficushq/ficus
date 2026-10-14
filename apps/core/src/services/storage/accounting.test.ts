@@ -99,3 +99,26 @@ describe('storage accounting', () => {
     expect(result[0].folders[0].children).toEqual([])
   })
 })
+
+describe('agent attribution', () => {
+  test('agent box homes carry the agent label and metadata; squad homes are the squad workspace', () => {
+    const agent = {
+      id: 'agent-1',
+      label: 'Fix login · Ada',
+      agentTypeId: 'consultant',
+      status: 'idle' as const,
+      lastMessageAt: '2026-01-01T00:00:00.000Z',
+      dormantAt: null,
+      createdAt: '2025-12-01T00:00:00.000Z',
+    }
+    const result = attributeStorage(parseDirectoryUsage('70\t/home/box_a\0' + '30\t/home/box_b\0'), [
+      { home: '/home/box_a', squadId: 's', squadName: 'Product', label: 'Squad workspace', kind: 'squad-workspace' },
+      { home: '/home/box_b', squadId: 's', squadName: 'Product', label: agent.label, kind: 'agent', agent },
+    ])
+    expect(result[0].folders.map(({ name, kind, agent }) => ({ name, kind, agent }))).toEqual([
+      { name: 'Squad workspace', kind: 'squad-workspace', agent: undefined },
+      { name: 'Fix login · Ada', kind: 'agent', agent },
+    ])
+    expect(JSON.stringify(result)).not.toContain('Agent files')
+  })
+})

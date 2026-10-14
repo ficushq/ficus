@@ -1,0 +1,1 @@
+ALTER TABLE "squads" ADD COLUMN "consultant_idle_dormancy_days" integer;

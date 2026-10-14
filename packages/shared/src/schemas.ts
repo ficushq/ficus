@@ -218,6 +218,8 @@ export const updateSquadSchema = z.object({
   maxConcurrentWorkStreams: z.number().int().min(1).nullable().optional(),
   // Auto-park grace minutes for active streams with open waits; null → default 30; 0 = immediate.
   blockedGraceMinutes: z.number().int().min(0).nullable().optional(),
+  // Make consultants dormant after this many idle days; null = off.
+  consultantIdleDormancyDays: z.number().int().min(1).max(3650).nullable().optional(),
   // vm runtime: pin the squad's box to a machine (null unpins). Ignored by k8s/docker.
   machineId: z.string().uuid().nullable().optional(),
   // host runtime: absolute directory this squad works in (null = default storage path).

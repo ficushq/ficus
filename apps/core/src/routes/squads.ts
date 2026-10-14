@@ -6,6 +6,7 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { zValidator } from '@hono/zod-validator'
+import { z } from 'zod'
 import {
   createSquadSchema,
   updateSquadSchema,
@@ -36,7 +37,10 @@ import {
   resolveSquadWorkspaceHostPath,
   searchWorkspaceFiles,
 } from '../services/squad/workspace'
-import type { SquadStatus } from '@ficus/shared'
+import { DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS, type IdleConsultantsPreview, type SquadStatus } from '@ficus/shared'
+import { findIdleConsultants, makeIdleConsultantsDormant } from '../services/agents/idle-consultants'
+import { agentStorageBytes, storageAgentInfo } from '../services/storage/agents'
+import { storageMonitorService } from '../services/storage/monitor'
 import { terminalManager } from '../services/sandbox/docker/terminal'
 import {
   getSandboxManager,
@@ -109,6 +113,14 @@ async function prepareHostWorkspaceOverride(workspacePath: string): Promise<Prep
   }
   return ensureHostWorkspacePath(workspacePath)
 }
+
+const idleDaysSchema = z.coerce.number().int().min(1).max(3650)
+const idleConsultantsDormancySchema = z
+  .object({
+    days: z.number().int().min(1).max(3650),
+    agentIds: z.array(z.string().uuid()).max(500).optional(),
+  })
+  .strict()
 
 /**
  * Reject mutating an archived (soft-deleted) squad with 410 Gone.
@@ -243,6 +255,43 @@ export const squadsRouter = new Hono()
     const dryRun = c.req.query('dryRun') === 'true'
     return c.json(await Squad.cleanupFlexAgents(dryRun, resolvedSquadId(c)))
   })
+  // Preview consultants idle at least `days` (default 90) with their latest measured box sizes.
+  .get('/:id/idle-consultants', requireSquadPermission('agents:terminate'), async (c) => {
+    const days = idleDaysSchema.safeParse(c.req.query('days') ?? DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS)
+    if (!days.success) return c.json({ error: 'days must be a whole number from 1 to 3650' }, 400)
+    const squadId = resolvedSquadId(c)
+    const [idle, snapshot] = await Promise.all([findIdleConsultants(squadId, days.data), storageMonitorService.read()])
+    const sizes = agentStorageBytes(snapshot)
+    const preview: IdleConsultantsPreview = {
+      days: days.data,
+      agents: idle.map((row) => {
+        const info = storageAgentInfo(row)
+        return {
+          id: info.id,
+          label: info.label,
+          status: info.status,
+          lastMessageAt: info.lastMessageAt,
+          createdAt: info.createdAt!,
+          bytes: sizes.get(info.id) ?? null,
+        }
+      }),
+    }
+    return c.json(preview)
+  })
+  // Make idle consultants dormant. The server recomputes the idle set; client ids only narrow it.
+  .post(
+    '/:id/idle-consultants/dormant',
+    requireSquadPermission('agents:terminate'),
+    zValidator('json', idleConsultantsDormancySchema),
+    async (c) => {
+      const squad = await Squad.find(resolvedSquadId(c))
+      if (!squad) return c.json({ error: 'Squad not found' }, 404)
+      const archived = archivedGuard(c, squad)
+      if (archived) return archived
+      const { days, agentIds } = c.req.valid('json')
+      return c.json(await makeIdleConsultantsDormant(squad.id, days, { agentIds, reason: 'user request' }))
+    }
+  )
   .get('/:id/activity', requireSquadPermission('squads:read'), async (c) => {
     const squad = await Squad.find(c.req.param('id'))
     if (!squad || squad.isArchived) return c.json({ error: 'Squad not found' }, 404)

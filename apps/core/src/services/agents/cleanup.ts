@@ -6,6 +6,8 @@ import { createLogger } from '../../lib/infra/logger'
 import { monitorSupervisor } from '../monitors'
 import { getSettingsStore } from '../settings'
 import type { SandboxStopOutcome } from '../sandbox/types'
+import type { RemoveDormantAgentsResult } from '@ficus/shared'
+import { publicErrorMessage } from '../../db/errors'
 
 const log = createLogger('agent-cleanup')
 
@@ -191,15 +193,49 @@ export async function stopPersonalSandbox(
   }
 }
 
+type DormantFinalizeDeps = {
+  completePending?: (agentId: string) => Promise<boolean>
+  finalize?: (agent: Agent, expectedDormantAt?: Date) => Promise<void>
+}
+
+/**
+ * Finalize one dormant agent: settle any pending dormancy completion, then
+ * terminate it (archiving /private and reclaiming its personal box). `cutoff`
+ * (epoch ms) refuses agents that became dormant after it; null finalizes now.
+ */
+async function finalizeDormantAgent(
+  agentId: string,
+  cutoff: number | null,
+  deps: DormantFinalizeDeps
+): Promise<'finalized' | 'pending' | 'changed'> {
+  const completed = await (
+    deps.completePending ??
+    ((id) =>
+      import('../agent/lifecycle').then(({ completeDormancyIfPending }) =>
+        completeDormancyIfPending(id, { timeoutMs: 0 })
+      ))
+  )(agentId)
+  if (!completed) return 'pending'
+
+  // The sweep list and completion preflight may both be stale after a wake.
+  const agent = await Agent.find(agentId, { eager: false })
+  if (agent?.status !== 'dormant' || !agent.dormantAt || (cutoff !== null && agent.dormantAt.getTime() > cutoff))
+    return 'changed'
+  await (
+    deps.finalize ??
+    ((candidate, expectedDormantAt) =>
+      import('../agent/lifecycle').then(({ terminate }) => terminate(candidate, { expectedDormantAt })))
+  )(agent, agent.dormantAt)
+  return (await Agent.find(agent.id, { eager: false }))?.status === 'terminated' ? 'finalized' : 'pending'
+}
+
 export async function runDormantAgentSweep(
   deps: {
     now?: Date
     getRetentionDays?: () => number
     listDormant?: () => Promise<Agent[]>
-    completePending?: (agentId: string) => Promise<boolean>
-    finalize?: (agent: Agent, expectedDormantAt?: Date) => Promise<void>
     maxCandidates?: number
-  } = {}
+  } & DormantFinalizeDeps = {}
 ): Promise<number> {
   const now = deps.now ?? new Date()
   const configured = deps.getRetentionDays?.() ?? Number(getSettingsStore().getTyped('AGENT_DORMANT_RETENTION_DAYS'))
@@ -222,29 +258,47 @@ export async function runDormantAgentSweep(
   let finalized = 0
   for (const listedAgent of dormant) {
     try {
-      const completed = await (
-        deps.completePending ??
-        ((agentId) =>
-          import('../agent/lifecycle').then(({ completeDormancyIfPending }) =>
-            completeDormancyIfPending(agentId, { timeoutMs: 0 })
-          ))
-      )(listedAgent.id)
-      if (!completed) continue
-
-      // The sweep list and completion preflight may both be stale after a wake.
-      const agent = await Agent.find(listedAgent.id, { eager: false })
-      if (agent?.status !== 'dormant' || !agent.dormantAt || agent.dormantAt.getTime() > cutoff) continue
-      await (
-        deps.finalize ??
-        ((candidate, expectedDormantAt) =>
-          import('../agent/lifecycle').then(({ terminate }) => terminate(candidate, { expectedDormantAt })))
-      )(agent, agent.dormantAt)
-      if ((await Agent.find(agent.id, { eager: false }))?.status === 'terminated') finalized++
+      if ((await finalizeDormantAgent(listedAgent.id, cutoff, deps)) === 'finalized') finalized++
     } catch (error) {
       log.warn(`Dormant retention cleanup remains pending for agent ${listedAgent.id}`, error)
     }
   }
   return finalized
+}
+
+/**
+ * Operator "remove now": the dormant-retention finalization, without waiting
+ * for AGENT_DORMANT_RETENTION_DAYS. Irreversible — the agent's home is
+ * archived and removed and it can no longer be woken. Live agents are refused.
+ */
+export async function removeDormantAgentsNow(
+  agentIds: string[],
+  deps: DormantFinalizeDeps = {}
+): Promise<RemoveDormantAgentsResult> {
+  const result: RemoveDormantAgentsResult = { removed: [], pending: [], skipped: [] }
+  for (const id of new Set(agentIds)) {
+    try {
+      const agent = await Agent.find(id, { eager: false })
+      if (!agent) {
+        result.skipped.push({ id, reason: 'Agent not found.' })
+        continue
+      }
+      if (agent.status !== 'dormant') {
+        result.skipped.push({ id, reason: 'Only dormant agents can be removed now.' })
+        continue
+      }
+      const outcome = await finalizeDormantAgent(id, null, deps)
+      if (outcome === 'finalized') {
+        result.removed.push(id)
+        log.info(`Removed dormant agent ${id} before its retention period ended (operator request)`)
+      } else if (outcome === 'pending') result.pending.push(id)
+      else result.skipped.push({ id, reason: 'The agent changed state and was not removed.' })
+    } catch (error) {
+      log.warn(`Removing dormant agent ${id} failed`, error)
+      result.skipped.push({ id, reason: publicErrorMessage(error) })
+    }
+  }
+  return result
 }
 
 export async function stopAndArchivePersonalSandbox(

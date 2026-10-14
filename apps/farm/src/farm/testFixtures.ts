@@ -101,6 +101,7 @@ export function makeSquad(overrides: Partial<Squad> = {}): Squad {
     sandboxStatus: 'none',
     maxConcurrentWorkStreams: null,
     blockedGraceMinutes: null,
+    consultantIdleDormancyDays: null,
     hostWorkspacePath: null,
     avatarImageId: null,
     avatarUrl: null,
