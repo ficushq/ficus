@@ -12,6 +12,9 @@ export const HANDOFF_TAB = 'handoff'
 /** Text larger than this is offered as a download instead of rendered inline. */
 const INLINE_TEXT_LIMIT = 1024 * 1024
 
+/** How long a programmatic download's blob URL stays alive. */
+const DOWNLOAD_URL_LIFETIME_MS = 60_000
+
 const INLINE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 const TEXT_TYPES = new Set(['application/json', 'application/yaml'])
 
@@ -145,7 +148,8 @@ export function AttachmentView({
       link.href = url
       link.download = attachment.filename
       link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 0)
+      // Revoking at once can cancel the download (Safari); a minute is ample for it to start.
+      setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_LIFETIME_MS)
     } catch (failure) {
       setDownloadError(actionErrorMessage(failure))
     }

@@ -565,3 +565,47 @@ test('phones keep the tab row inside the document column above the decision shee
     await f.cleanup()
   }
 })
+
+test('switching tabs starts the new document at the top', async () => {
+  const f = await fixture()
+  const download = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(new TextEncoder().encode('# Doc'))
+  try {
+    withAttachments(f)
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const documentColumn = f.dialog()!.querySelector<HTMLElement>('[data-review-document]')!
+    documentColumn.scrollTop = 480
+    expect(documentColumn.scrollTop).toBe(480)
+    await f.dom.act(async () => tabs(f)[1]!.click())
+    expect(documentColumn.scrollTop).toBe(0)
+  } finally {
+    download.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('an image attachment renders from a blob URL that is revoked when the tab closes', async () => {
+  const f = await fixture()
+  const png = { ...designDoc, id: 'att-shot', filename: 'screen.png', path: 'out/screen.png', contentType: 'image/png' }
+  const download = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(new Uint8Array([137, 80, 78, 71]))
+  const create = spyOn(URL, 'createObjectURL').mockReturnValue('blob:review-image')
+  const revoke = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  try {
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), { ...gateRun(), attachments: { '3': [png] } })
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    await f.dom.act(async () => tabs(f)[1]!.click())
+    await f.settle()
+    const image = f.dialog()!.querySelector<HTMLImageElement>('[role="tabpanel"] img')!
+    expect(image.getAttribute('src')).toBe('blob:review-image')
+    expect(image.alt).toBe('screen.png')
+    expect(create).toHaveBeenCalledTimes(1)
+    expect((create.mock.calls[0]![0] as Blob).type).toBe('image/png')
+    expect(revoke).not.toHaveBeenCalled()
+    await f.dom.act(async () => tabs(f)[0]!.click())
+    expect(revoke).toHaveBeenCalledWith('blob:review-image')
+  } finally {
+    create.mockRestore()
+    revoke.mockRestore()
+    download.mockRestore()
+    await f.cleanup()
+  }
+})

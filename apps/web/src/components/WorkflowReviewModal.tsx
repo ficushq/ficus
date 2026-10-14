@@ -170,6 +170,12 @@ function ReviewLayout({
   const [tab, setTab] = useState(HANDOFF_TAB)
   const openFile = attachments.find((attachment) => attachment.id === tab)
   const tabsId = useId()
+  const documentColumn = useRef<HTMLDivElement>(null)
+  const selectTab = (id: string) => {
+    setTab(id)
+    // Each tab is its own document: open it at the top, not at the last one's scroll position.
+    if (documentColumn.current) documentColumn.current.scrollTop = 0
+  }
   const handoff = (
     <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
       {!wide && (
@@ -208,6 +214,7 @@ function ReviewLayout({
       className={clsx('flex min-h-0 flex-1', wide ? 'flex-row' : 'flex-col')}
     >
       <div
+        ref={documentColumn}
         data-review-document
         tabIndex={-1}
         className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain outline-none"
@@ -220,7 +227,7 @@ function ReviewLayout({
               idPrefix={tabsId}
               attachments={attachments}
               selected={openFile?.id ?? HANDOFF_TAB}
-              onSelect={setTab}
+              onSelect={selectTab}
             />
             <div
               role="tabpanel"
