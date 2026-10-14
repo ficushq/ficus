@@ -73,6 +73,25 @@ export function groupPersisted(messages: Message[]): PersistedTurn[] {
   return turns.sort((a, b) => compareByKey(a.sortAt, a.id, b.sortAt, b.id))
 }
 
+/**
+ * Do saved tool arguments describe the streamed ones? The stream carries the model's raw argument
+ * text (for example `{"command": "ls"}`), while the saved row holds the parsed call re-serialized
+ * (`{"command":"ls"}`), so complete arguments compare as JSON, not as text. Arguments still
+ * streaming (unfinished tools) may be a prefix of the saved ones.
+ */
+function toolArgsMatch(saved: string, streamed: string, unfinished: boolean): boolean {
+  if (unfinished ? saved.startsWith(streamed) : saved === streamed) return true
+  const canonical = (args: string) => {
+    try {
+      return JSON.stringify(JSON.parse(args))
+    } catch {
+      return undefined
+    }
+  }
+  const streamedJson = canonical(streamed)
+  return streamedJson !== undefined && streamedJson === canonical(saved)
+}
+
 /** Does a committed block cover this streamed content (including missed final text deltas)? */
 function blockContentMatches(
   streamed: StreamGroupSnapshot['blocks'][number],
@@ -91,15 +110,11 @@ function blockContentMatches(
         persisted.toolCall.toolName === streamed.toolCall.toolName &&
         // Matching identity/args alone also describes the pre-tool saved row.
         // A differing provisional result needs a read begun after exact terminal
-        // confirmation. Finalized tools (and legacy blocks) always require equality.
-        (streamed._done === false
-          ? persisted.toolCall.args.startsWith(streamed.toolCall.args) &&
-            (authoritativeCompletion ||
-              (persisted.toolCall.result === streamed.toolCall.result &&
-                persisted.toolCall.isError === streamed.toolCall.isError))
-          : persisted.toolCall.args === streamed.toolCall.args &&
-            persisted.toolCall.result === streamed.toolCall.result &&
-            persisted.toolCall.isError === streamed.toolCall.isError)
+        // confirmation. Finalized tools (and legacy blocks) always require an equal result.
+        toolArgsMatch(persisted.toolCall.args, streamed.toolCall.args, streamed._done === false) &&
+        ((streamed._done === false && authoritativeCompletion) ||
+          (persisted.toolCall.result === streamed.toolCall.result &&
+            persisted.toolCall.isError === streamed.toolCall.isError))
       )
   }
 }

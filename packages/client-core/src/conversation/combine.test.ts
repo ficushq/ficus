@@ -806,6 +806,40 @@ test('durable completed tools cover explicitly unfinished tools, but never overw
   ).toEqual([])
 })
 
+// The stream carries the model's raw argument text; the saved row re-serializes the parsed call.
+// Without a JSON comparison the live response never handed off to its saved rows, so everything
+// drawn only under saved replies (task and conversation cards) stayed missing until a reload.
+test('a finished tool whose raw streamed arguments differ only in formatting is covered by its saved row', () => {
+  const saved: ContentBlock = {
+    type: 'tool_use',
+    id: 't',
+    toolCall: {
+      toolCallId: 't',
+      toolName: 'delegate_task',
+      args: '{"request":"File the screenshot — kind: bug","imageIds":["i1"],"label":"File bug"}',
+      result: '{"id":"r","agentId":"d"}',
+      isError: false,
+    },
+  }
+  const rawArgs = '{"request": "File the screenshot \\u2014 kind: bug", "imageIds": ["i1"], "label": "File bug"}'
+  const history = groupPersisted([
+    msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: [saved] } }),
+  ])
+  for (const _done of [true, false, undefined]) {
+    const streamed = { ...saved, _done, toolCall: { ...saved.toolCall, args: rawArgs } }
+    const group = streamGroup({ streamGroupId: 'S', done: true, doneMessageIds: ['m'], blocks: [streamed] })
+    expect(completedGroupIds(history, [group], SESSION_LIVE)).toEqual(['S'])
+    expect(combine(history, [group], [], SESSION_LIVE)[0]).toMatchObject({ kind: 'persisted', blocks: [saved] })
+  }
+
+  // Arguments that mean something else, or are cut short, still do not hand off.
+  for (const args of ['{"request": "Something else", "imageIds": ["i1"], "label": "File bug"}', '{"request": "File']) {
+    const streamed = { ...saved, _done: true, toolCall: { ...saved.toolCall, args } }
+    const group = streamGroup({ streamGroupId: 'S', done: true, doneMessageIds: ['m'], blocks: [streamed] })
+    expect(completedGroupIds(history, [group], SESSION_LIVE)).toEqual([])
+  }
+})
+
 test.each(['result', 'error', 'legacy', 'id', 'name', 'args'] as const)(
   'tool coverage does not waive %s equality/identity beyond unfinished progress',
   (field) => {

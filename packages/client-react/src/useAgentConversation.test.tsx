@@ -2309,6 +2309,88 @@ test('a point-read started before queue clear cannot restore a confirmed deletio
 })
 
 describe('live response reconciliation regressions', () => {
+  // A filed screenshot starts its Assistant turn on the server before the chat opens, so the chat
+  // joins it through the catchup replay. The model streams spaced tool-call JSON; the saved row
+  // holds the re-serialized call. The response must still hand off to its saved rows, which carry
+  // the task and conversation cards.
+  test('a server-started turn joined mid-way hands off to its saved rows despite raw tool-call JSON', async () => {
+    const tool = {
+      type: 'tool_use' as const,
+      id: 'call-1',
+      toolCall: {
+        toolCallId: 'call-1',
+        toolName: 'delegate_task',
+        args: '{"request":"File it","imageIds":["image-1"]}',
+        result: '{"id":"receipt","agentId":"delegate"}',
+        isError: false,
+      },
+    }
+    const prompt: Message = {
+      id: 'prompt',
+      agentId: 'a',
+      role: 'human',
+      content: 'Please file the attached screenshot.',
+      pending: false,
+      createdAt: new Date(Date.now() - 1000),
+      metadata: { source: 'user_chat', imageIds: ['image-1'] },
+    }
+    const toolRow: Message = {
+      id: 'tool-row',
+      agentId: 'a',
+      role: 'assistant',
+      content: '',
+      pending: false,
+      createdAt: new Date(),
+      metadata: { executionId: 'exec-1', streamGroupId: 'S', content: [tool] },
+    }
+    const replyRow: Message = {
+      ...toolRow,
+      id: 'reply-row',
+      content: 'Filed it.',
+      createdAt: new Date(Date.now() + 10),
+      metadata: {
+        executionId: 'exec-1',
+        streamGroupId: 'S',
+        content: [{ type: 'text', id: 'x', content: 'Filed it.' }],
+      },
+    }
+    const m = makeMockClient({
+      messages: [prompt],
+      activeExecution: { active: true, status: 'running', executionId: 'exec-1' },
+      durableMessages: { [toolRow.id]: toolRow, [replyRow.id]: replyRow },
+    })
+    const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+      wrapper: wrapLive(m),
+    })
+    await waitFor(() => expect(m.subscribedExecutionIds).toContain('exec-1'))
+    await act(async () => {
+      m.emitCatchup([
+        { type: 'agent', agentId: 'a', executionId: 'exec-1' },
+        { type: 'flush_agent' },
+        { type: 'tool_start', toolCallId: 'call-1', toolName: 'delegate_task', args: '', streamGroupId: 'S' },
+        {
+          type: 'tool_args_delta',
+          toolCallId: 'call-1',
+          delta: '{"request": "File it", "imageIds": ["image-1"]}',
+          streamGroupId: 'S',
+        },
+        { type: 'tool_end', toolCallId: 'call-1', result: tool.toolCall.result, isError: false, streamGroupId: 'S' },
+      ] as StreamEvent[])
+      m.emitAgentEvent('a', 'message.created', { agentId: 'a', messageId: toolRow.id })
+      await Promise.resolve()
+    })
+    await act(async () => {
+      m.emit({ type: 'text', text: 'Filed it.', streamGroupId: 'S' })
+      m.emitAgentEvent('a', 'message.created', { agentId: 'a', messageId: replyRow.id })
+      m.emit({ type: 'done', response: 'Filed it.', streamGroupId: 'S', messageIds: [toolRow.id, replyRow.id] })
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(result.current.items.some((item) => item.kind === 'streaming')).toBe(false))
+    const reply = result.current.items.find((item) => item.kind === 'persisted' && item.id === toolRow.id)
+    expect(reply?.kind === 'persisted' ? reply.blocks.map((block) => block.type) : []).toEqual(['tool_use', 'text'])
+    unmount()
+  })
+
   test('full leading-flush replay never retracts text across intermediate renders or durable handoff', async () => {
     const partial: Message = {
       id: 'm1',
