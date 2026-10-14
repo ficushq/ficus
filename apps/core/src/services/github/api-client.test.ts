@@ -80,7 +80,9 @@ test('an outage, rate limit or unusable token is unavailable, never a denial', a
   ]
   for (const [reason, response] of cases) {
     stubGitHub({ 'https://api.github.com/repos/owner/repo': response() })
-    const error = await githubApiGet('/repos/owner/repo', 'squad', undefined, strict).catch((e) => e)
+    const error = (await githubApiGet('/repos/owner/repo', 'squad', undefined, strict).catch(
+      (e: unknown) => e
+    )) as GitHubApiUnavailableError
     expect(error).toBeInstanceOf(GitHubApiUnavailableError)
     expect(error.reason).toBe(reason)
     // Callers that do not ask keep the historic null.
@@ -95,12 +97,20 @@ test('a network failure or missing token is unavailable', async () => {
   const fetch = spyOn(globalThis, 'fetch')
   spies.push(fetch)
   expect(await githubApiGet('/repos/owner/repo', 'squad')).toBeNull()
-  expect(await githubApiGet('/repos/owner/repo', 'squad', undefined, strict).catch((e) => e.reason)).toBe('no_token')
+  expect(
+    await githubApiGet('/repos/owner/repo', 'squad', undefined, strict).catch(
+      (e: GitHubApiUnavailableError) => e.reason
+    )
+  ).toBe('no_token')
   expect(fetch).not.toHaveBeenCalled()
   for (const spy of spies.splice(0)) spy.mockRestore()
   stubGitHub({})
   spies.push(
     spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed')) as unknown as { mockRestore(): void }
   )
-  expect(await githubApiGet('/repos/owner/repo', 'squad', undefined, strict).catch((e) => e.reason)).toBe('network')
+  expect(
+    await githubApiGet('/repos/owner/repo', 'squad', undefined, strict).catch(
+      (e: GitHubApiUnavailableError) => e.reason
+    )
+  ).toBe('network')
 })
