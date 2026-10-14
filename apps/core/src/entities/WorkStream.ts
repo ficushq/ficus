@@ -20,14 +20,7 @@ import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import { notifyFlowWaitResolution } from '../services/work-streams/wait-scope'
 import { eq, desc, and, sql, inArray, type SQL } from 'drizzle-orm'
 import { db, squads, workStreams, uuidPrefixCondition, AmbiguousPrefixError } from '../db'
-import {
-  executions,
-  workflowAttemptAttachments,
-  workStreamWaits,
-  workStreamFlowRuns,
-  workStreamWorktrees,
-  worktreeCleanupJobs,
-} from '../db/schema'
+import { executions, workStreamWaits, workStreamFlowRuns, workStreamWorktrees, worktreeCleanupJobs } from '../db/schema'
 import {
   describeCodeHostReference,
   ConflictingDependencyConditionError,
@@ -2273,24 +2266,15 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   async delete(): Promise<void> {
     // Capture direct interest before FK cascade removes subscription rows.
     const directSubscriberIds = await listWorkStreamSubscriberIds(this.id)
-    let attachmentIds: string[] = []
     await db.transaction(async (tx) => {
       await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, this.squadId)).for('update')
       await tx.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.id, this.id)).for('update')
       await assertWorktreeCleanupMutable(tx, this.id)
-      // Handoff files live as long as their stream: the rows cascade here, the bytes go after commit.
-      attachmentIds = (
-        await tx
-          .select({ id: workflowAttemptAttachments.id })
-          .from(workflowAttemptAttachments)
-          .where(eq(workflowAttemptAttachments.workStreamId, this.id))
-      ).map((row) => row.id)
       await tx.delete(workStreams).where(eq(workStreams.id, this.id))
     })
-    if (attachmentIds.length) {
-      const { removeWorkflowAttachmentBlobs } = await import('../services/workflows/attachments')
-      await removeWorkflowAttachmentBlobs(this.id, attachmentIds)
-    }
+    // Handoff files live as long as their stream: the rows cascade above, the bytes go once that commits.
+    const { removeWorkflowAttachmentDirectory } = await import('../services/workflows/attachments')
+    await removeWorkflowAttachmentDirectory(this.id)
     eventEmitter.emit('workStream.deleted', { workStreamId: this.id, squadId: this.squadId })
     for (const userId of directSubscriberIds) {
       eventEmitter.emit('liveActivity.interestChanged', { userId })

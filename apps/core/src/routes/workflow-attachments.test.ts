@@ -28,7 +28,7 @@ import {
 } from '../test-utils/rbac'
 import { WorkflowSync } from '../services/config-sync/workflow-sync'
 import { attachFlow } from '../services/workflows/execution'
-import { workflowAttachmentBlobPath } from '../services/attachments/blob-storage'
+import { workflowAttachmentBlobPath, workflowAttachmentDirectory } from '../services/attachments/blob-storage'
 import { getSettingsStore } from '../services/settings'
 import { downloadDisposition } from '../services/attachments/http'
 import { attachmentStore } from '../services/amtp/adapters'
@@ -123,6 +123,13 @@ function upload(
 function get(path: string, token?: string) {
   return app.request(`/api/workflows/runs/${streamId}${path}`, { headers: token ? authHeaders(token) : {} })
 }
+/** The blob files on disk for the current stream, which must always match its rows. */
+async function blobs() {
+  return (await readdir(workflowAttachmentDirectory(streamId)).catch(() => [] as string[])).sort()
+}
+async function rowIds() {
+  return (await rows()).map((row) => row.id).sort()
+}
 async function rows() {
   return db.select().from(workflowAttemptAttachments).where(eq(workflowAttemptAttachments.workStreamId, streamId))
 }
@@ -174,6 +181,8 @@ test('a closed attempt, an empty file, an oversized file and an eleventh file ar
   const closed = await upload(bound.token, { name: 'late.md' })
   expect(closed.status).toBe(409)
   expect((await closed.json()).error).toBe('This attempt is no longer open')
+  // Refused uploads leave no bytes behind.
+  expect(await blobs()).toEqual(await rowIds())
 })
 
 test('the run detail lists attachments per attempt, and reading one streams verified bytes safely', async () => {
@@ -232,12 +241,16 @@ test('re-uploading a path is idempotent, and changed content replaces the file w
   expect(retry.status).toBe(200)
   expect(await retry.json()).toEqual(original)
   expect(await rows()).toHaveLength(1)
+  expect(await blobs()).toEqual([original.id])
 
   const changed = await upload(bound.token, { path: 'docs/design.md', content: '# Design v2\n\nThe new plan.' })
   expect(changed.status).toBe(201)
   const replacement = await changed.json()
   expect(replacement.id).not.toBe(original.id)
   expect(replacement.byteSize).toBe(26)
+  // A replacement keeps the original's place among the attempt's files.
+  expect(replacement.createdAt).toBe(original.createdAt)
+  expect(await blobs()).toEqual([replacement.id])
   const [row] = await rows()
   expect(row!.id).toBe(replacement.id)
   expect(await readFile(row!.storagePath, 'utf8')).toBe('# Design v2\n\nThe new plan.')
@@ -308,10 +321,13 @@ test('an upload takes the squad and stream locks before the run lock, as complet
     if (Date.now() > deadline) throw new Error('upload never waited on the completion lock')
     await Bun.sleep(10)
   }
+  const writtenBeforeLocks = await blobs()
   release()
   // Taking the run row after the stream lock must not deadlock against the waiting upload.
   await completion
   expect((await uploading).status).toBe(201)
+  // The bytes were written before the upload queued for locks, so no lock is held during file I/O.
+  expect(writtenBeforeLocks).toEqual(await rowIds())
 })
 
 test('missing bytes read as unavailable, and download names are header-safe', async () => {
@@ -336,6 +352,7 @@ test('handoff files count toward the instance attachment quota, replacements by 
   const over = await upload(bound.token, { name: 'more.txt', content: 'x'.repeat(12) }) // would be base + 31
   expect(over.status).toBe(400)
   expect(await over.json()).toEqual({ error: 'INBOX_STORAGE_QUOTA_EXCEEDED' })
+  expect(await blobs()).toEqual(await rowIds())
   // 26 new bytes replace 19: base + 26 fits, though base + 19 + 26 would not.
   const replaced = await upload(bound.token, { path: 'docs/design.md', content: '# Design v2\n\nThe new plan.' })
   expect(replaced.status).toBe(201)
@@ -368,6 +385,8 @@ test('deleting a work stream removes its handoff files and their directory', asy
   const second = await (await upload(bound.token, { name: 'notes.txt', content: 'notes' })).json()
   const directory = dirname(workflowAttachmentBlobPath(streamId, first.id))
   expect((await readdir(directory)).sort()).toEqual([first.id, second.id].sort())
+  // The directory belongs to the stream: anything else in it goes too.
+  await writeFile(join(directory, 'stray'), 'left by an interrupted upload')
   await (await WorkStream.mustFind(streamId)).delete()
   expect(await rows()).toEqual([])
   expect(await Bun.file(directory).exists()).toBe(false)
@@ -396,4 +415,13 @@ test('a handoff file that cannot be removed does not fail the work stream delete
   } finally {
     await chmod(directory, 0o700)
   }
+})
+
+test('replacing a file keeps its tab position among the attempt files', async () => {
+  const design = await (await upload(bound.token, { path: 'docs/design.md' })).json()
+  const notes = await (await upload(bound.token, { name: 'notes.txt', content: 'notes' })).json()
+  const replaced = await (await upload(bound.token, { path: 'docs/design.md', content: '# Design v2' })).json()
+  const detail = await (await get('', admin.token)).json()
+  expect(detail.attachments['1'].map((file: { id: string }) => file.id)).toEqual([replaced.id, notes.id])
+  expect(replaced.createdAt).toBe(design.createdAt)
 })

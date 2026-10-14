@@ -5,10 +5,11 @@ import {
   type WorkflowAttemptAttachment,
 } from '@ficus/shared'
 import { db, squads, workflowAttemptAttachments, workStreamFlowRuns, workStreams } from '../../db'
-import { rmdir } from 'node:fs/promises'
+import { rm } from 'node:fs/promises'
 import { createLogger } from '../../lib/infra/logger'
 import {
   deleteWorkflowAttachmentBlob,
+  workflowAttachmentBlobPath,
   workflowAttachmentDirectory,
   readVerifiedWorkflowAttachmentBlob,
   sha256Hex,
@@ -82,8 +83,19 @@ export async function uploadWorkflowAttachment(input: {
   if (input.bytes.byteLength > workflowAttachmentMaxBytes()) throw new WorkflowError('ATTACHMENT_TOO_LARGE', 413)
   const id = crypto.randomUUID()
   const sha256 = sha256Hex(input.bytes)
-  let written = false
-  const after = { replaced: null as string | null }
+  const samePath = and(
+    eq(workflowAttemptAttachments.workStreamId, input.workStreamId),
+    eq(workflowAttemptAttachments.attemptId, input.attemptId),
+    eq(workflowAttemptAttachments.path, input.path)
+  )
+  // A retried handoff usually finds its file already stored: answer it without writing or locking.
+  // Only the agent bound to the open attempt reaches this (the route checks before reading the body).
+  const [stored] = await db.select().from(workflowAttemptAttachments).where(samePath)
+  if (stored?.sha256 === sha256) return { attachment: toJson(stored), created: false }
+  // Write the bytes under their own new id before taking any lock, so no lock is held during file I/O.
+  // Every outcome but a committed insert of this id removes them again.
+  await writeWorkflowAttachmentBlob(input.workStreamId, id, input.bytes)
+  const after = { kept: false, replaced: null as string | null }
   try {
     const result = await db.transaction(async (tx) => {
       // Lock in advanceFlow's order (squad, stream, then run) so an upload racing the attempt's
@@ -96,20 +108,21 @@ export async function uploadWorkflowAttachment(input: {
         .where(eq(workStreamFlowRuns.workStreamId, input.workStreamId))
         .for('update')
       const agentId = assertCanAttach(stream, run, input.attemptId, input.identity)
-      const attemptFiles = and(
-        eq(workflowAttemptAttachments.workStreamId, input.workStreamId),
-        eq(workflowAttemptAttachments.attemptId, input.attemptId)
-      )
-      const [existing] = await tx
-        .select()
-        .from(workflowAttemptAttachments)
-        .where(and(attemptFiles, eq(workflowAttemptAttachments.path, input.path)))
+      const [existing] = await tx.select().from(workflowAttemptAttachments).where(samePath)
       if (existing?.sha256 === sha256) return { attachment: toJson(existing), created: false }
       if (existing) {
         await tx.delete(workflowAttemptAttachments).where(eq(workflowAttemptAttachments.id, existing.id))
       } else {
-        const [stored] = await tx.select({ total: count() }).from(workflowAttemptAttachments).where(attemptFiles)
-        if ((stored?.total ?? 0) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
+        const [files] = await tx
+          .select({ total: count() })
+          .from(workflowAttemptAttachments)
+          .where(
+            and(
+              eq(workflowAttemptAttachments.workStreamId, input.workStreamId),
+              eq(workflowAttemptAttachments.attemptId, input.attemptId)
+            )
+          )
+        if ((files?.total ?? 0) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
           throw new WorkflowError(`An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
       }
       // A replacement's old row is already gone, so only the size change counts against the quota.
@@ -118,8 +131,6 @@ export async function uploadWorkflowAttachment(input: {
           throw new WorkflowError(error.message, 400)
         throw error
       })
-      const storagePath = await writeWorkflowAttachmentBlob(input.workStreamId, id, input.bytes)
-      written = true
       const [row] = await tx
         .insert(workflowAttemptAttachments)
         .values({
@@ -131,19 +142,21 @@ export async function uploadWorkflowAttachment(input: {
           contentType: workflowAttachmentContentType(input.filename),
           byteSize: input.bytes.byteLength,
           sha256,
-          storagePath,
+          storagePath: workflowAttachmentBlobPath(input.workStreamId, id),
           uploadedByAgentId: agentId,
+          // A replacement keeps the original's place (attachments list in creation order).
+          ...(existing ? { createdAt: existing.createdAt } : {}),
         })
         .returning()
       after.replaced = existing?.id ?? null
       return { attachment: toJson(row!), created: true }
     })
+    after.kept = result.created
     // The replaced bytes go only once the row that named them is gone for good.
     if (after.replaced) await deleteWorkflowAttachmentBlob(input.workStreamId, after.replaced).catch(() => {})
     return result
-  } catch (error) {
-    if (written) await deleteWorkflowAttachmentBlob(input.workStreamId, id).catch(() => {})
-    throw error
+  } finally {
+    if (!after.kept) await deleteWorkflowAttachmentBlob(input.workStreamId, id).catch(() => {})
   }
 }
 
@@ -196,27 +209,15 @@ export async function readWorkflowAttachment(
   }
 }
 
-function isMissing(error: unknown): boolean {
-  const failure = error as { code?: string; errno?: number }
-  return failure?.code === 'ENOENT' || failure?.errno === 2
-}
-
 /**
- * Remove a deleted work stream's handoff bytes and then its (now empty) directory. Called after the
- * delete commits; a failure is logged and left behind, never thrown back into the delete.
+ * Remove a deleted work stream's handoff directory, which holds nothing but that stream's files.
+ * Called after the delete commits; a failure is logged and left behind, never thrown into the delete.
  */
-export async function removeWorkflowAttachmentBlobs(workStreamId: string, attachmentIds: string[]): Promise<void> {
-  for (const id of attachmentIds) {
-    try {
-      await deleteWorkflowAttachmentBlob(workStreamId, id)
-    } catch (error) {
-      if (!isMissing(error))
-        log.warn(`Could not remove workflow attachment ${id} of work stream ${workStreamId}:`, error)
-    }
-  }
+export async function removeWorkflowAttachmentDirectory(workStreamId: string): Promise<void> {
   try {
-    await rmdir(workflowAttachmentDirectory(workStreamId))
+    // rm does not follow symbolic links inside the tree; force makes an absent directory a no-op.
+    await rm(workflowAttachmentDirectory(workStreamId), { recursive: true, force: true })
   } catch (error) {
-    if (!isMissing(error)) log.warn(`Could not remove the attachment directory of work stream ${workStreamId}:`, error)
+    log.warn(`Could not remove the attachment directory of work stream ${workStreamId}:`, error)
   }
 }
