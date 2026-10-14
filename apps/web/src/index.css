@@ -1582,8 +1582,13 @@
    window controls sit over the top-left of the page, so the app header becomes
    the title bar: exactly 56px tall, a window drag region, with history arrows 24px after
    the window controls followed by the compact logo. Browsers and mobile never get the attribute. */
+:root[data-desktop-shell='inset'] {
+  /* Also reserved above dialogs (ResponsiveChat.css) so panels never sit under the window controls. */
+  --desktop-titlebar-height: 56px;
+}
+
 :root[data-desktop-shell='inset'] .ficus-app-header {
-  height: 56px;
+  height: var(--desktop-titlebar-height);
   padding-top: 0;
   -webkit-app-region: drag;
 }

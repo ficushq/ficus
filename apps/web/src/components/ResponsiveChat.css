@@ -4,23 +4,32 @@
   top: var(--modal-viewport-top, 0px);
   bottom: auto;
   height: var(--modal-viewport-height, 100dvh);
+  /* The height a dialog panel may use: the visible viewport less any band reserved at the top. */
+  --modal-panel-height: calc(var(--modal-viewport-height, 100dvh) - var(--modal-top-reserve, 0px));
+}
+
+/* Ficus Desktop draws the macOS window controls natively over the title bar, above any
+   web content, so a dialog can never cover them. The scrim still dims the whole window
+   (keeping the header unclickable), but panels sit below the title bar instead of under
+   the controls. */
+:root[data-desktop-shell='inset'] .ficus-modal-backdrop {
+  --modal-top-reserve: var(--desktop-titlebar-height);
+  padding-top: var(--modal-top-reserve);
 }
 
 .ficus-modal-backdrop > [data-modal-size='default'] {
-  max-height: calc(var(--modal-viewport-height, 100dvh) * 0.9 - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(var(--modal-panel-height, 100dvh) * 0.9 - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
 
 .ficus-modal-backdrop > [data-modal-size='editor'] {
-  height: calc(var(--modal-viewport-height, 100dvh) * 0.9);
-  max-height: calc(var(--modal-viewport-height, 100dvh) * 0.9);
+  height: calc(var(--modal-panel-height, 100dvh) * 0.9);
+  max-height: calc(var(--modal-panel-height, 100dvh) * 0.9);
 }
 
 /* A working surface (a review, a long document): nearly the whole viewport, capped on wide screens. */
 .ficus-modal-backdrop > [data-modal-size='workspace'] {
-  height: calc(var(--modal-viewport-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  max-height: calc(
-    var(--modal-viewport-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)
-  );
+  height: calc(var(--modal-panel-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(var(--modal-panel-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   max-width: min(80rem, calc(100vw - 2rem));
 }
 

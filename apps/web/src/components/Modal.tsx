@@ -11,7 +11,7 @@ import './ResponsiveChat.css'
 type ModalSize = 'default' | 'viewport' | 'workspace' | 'editor' | 'content'
 
 export const VIEWPORT_MODAL_HEIGHT =
-  'calc(var(--modal-viewport-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
+  'calc(var(--modal-panel-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
 export const MODAL_SIZE_STYLE: Record<ModalSize, CSSProperties | undefined> = {
   default: undefined,
   editor: undefined,

@@ -146,6 +146,26 @@ try {
   assert.equal(await back.evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-app-region')), 'no-drag')
   assert.ok((await back.boundingBox())!.x >= 96, 'Arrows clear traffic lights')
   assert.equal(await page.locator('header').evaluate((el) => el.getBoundingClientRect().height), 56)
+  // The macOS window controls are native and draw above any page content, so a near-full-window
+  // dialog must start below the title bar while its scrim still covers (and blocks) the header.
+  await page.getByRole('button', { name: 'Open review', exact: true }).click()
+  const panel = page.locator('[data-modal-size="workspace"]')
+  await panel.waitFor()
+  const panelBox = (await panel.boundingBox())!
+  assert.ok(panelBox.y >= 56, `Workspace dialog clears the title bar (top ${panelBox.y})`)
+  assert.ok(panelBox.y + panelBox.height <= 800, 'Workspace dialog still fits the window')
+  assert.equal(
+    await page.evaluate(() => document.elementFromPoint(400, 28)?.classList.contains('ficus-modal-backdrop')),
+    true,
+    'The scrim covers the title bar'
+  )
+  if (process.env.SCREENSHOT_DIR) {
+    await mkdir(process.env.SCREENSHOT_DIR, { recursive: true })
+    await page.waitForTimeout(400) // let the open transition settle
+    await page.screenshot({ path: resolve(process.env.SCREENSHOT_DIR, 'desktop-modal-windowed.png') })
+  }
+  await page.keyboard.press('Escape')
+  await panel.waitFor({ state: 'detached' })
   if (process.env.SCREENSHOT_DIR) {
     await mkdir(process.env.SCREENSHOT_DIR, { recursive: true })
     await page.screenshot({ path: resolve(process.env.SCREENSHOT_DIR, 'desktop-history-windowed.png') })
@@ -153,6 +173,11 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event('fixture-fullscreen')))
   assert.equal(await page.locator('html').getAttribute('data-desktop-shell'), null)
   assert.equal(await back.isVisible(), true, 'Fullscreen still has desktop history')
+  await page.getByRole('button', { name: 'Open review', exact: true }).click()
+  await panel.waitFor()
+  assert.ok((await panel.boundingBox())!.y < 56, 'Fullscreen hides the window controls, so no title-bar reserve')
+  await page.keyboard.press('Escape')
+  await panel.waitFor({ state: 'detached' })
   await page.keyboard.press('Meta+]')
   await at('/settings')
   if (process.env.SCREENSHOT_DIR)
@@ -172,7 +197,7 @@ try {
   )
   assert.deepEqual(errors, [])
   console.log(
-    'PASS desktop history: real Router push/replace/pop/reload, branching, shortcuts, editor, fullscreen, browser gating, header layout/no-drag'
+    'PASS desktop history: real Router push/replace/pop/reload, branching, shortcuts, editor, fullscreen, browser gating, header layout/no-drag, dialogs clear the title bar'
   )
 } finally {
   await browser?.close()
