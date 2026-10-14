@@ -1,5 +1,6 @@
 import { getPostgresError, publicErrorMessage } from '../db/errors'
-import { isUserAssistantAgentType } from '@ficus/shared'
+import { sentAssistantRouting } from '../services/routing/assistant-routing-preview'
+import { captureRoutingCorrection } from '../services/routing/routing-eval-capture'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
 import { listActiveSlotHolds } from '../services/slots/active-holds'
 import { chatPagePathSchema } from '@ficus/shared'
@@ -15,7 +16,6 @@ import { Execution } from '../entities/Execution'
 import { isSessionActive, isSessionCompacting, removeSession } from '../services/execution'
 import { getProxyWorkerSSE } from '../services/streaming/sse-proxy'
 import { Agent, AgentTargetUnavailableError, ListMessagesOptions } from '../entities/Agent'
-import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from '../entities/agent-runners/constants'
 import { and, eq } from 'drizzle-orm'
 import { db, agentExtraScopes, sandboxProvisionRecoveries } from '../db'
 import { AmbiguousPrefixError } from '../db/prefix-match'
@@ -50,6 +50,7 @@ import {
   type Identity,
 } from '../services/rbac'
 import { resumeHaltedAgentAuthoritatively, listErrorHaltedAgents } from '../services/agents/resume'
+import { isAllowedMessageTarget } from '../services/agents/message-target'
 import { listPendingActionsForIdentity } from '../services/agents/actions'
 import { User } from '../entities/User'
 import { Squad } from '../entities/Squad'
@@ -181,13 +182,6 @@ function parseDuration(duration: string): Date {
   }
 
   return new Date(now - ms)
-}
-
-function isAllowedMessageTarget(agent: Agent): boolean {
-  if (agent.agentTypeId === ARTIFACT_BUILDER_AGENT_TYPE_ID) return agent.status === 'waiting-input'
-  if (isUserAssistantAgentType(agent.agentTypeId)) return true
-  if (agent.squadId) return true
-  return false
 }
 
 export const agentsRouter = new Hono()
@@ -667,6 +661,8 @@ export const agentsRouter = new Hono()
         imageIds?: string[]
         deliveryMode?: 'steer' | 'follow-up'
         clientId?: string
+        /** Assistant conversations: the composer's routing preview or the user's pick (`AssistantRoutingSend`). */
+        assistantRouting?: unknown
       }>()
       const pagePathResult = chatPagePathSchema.optional().safeParse(body.pagePath)
       if (!pagePathResult.success) return c.json({ error: 'Invalid page path' }, 400)
@@ -695,6 +691,11 @@ export const agentsRouter = new Hono()
           const user = await User.findById(identity.userId).catch(() => null)
           sender = { userId: identity.userId, name: user?.displayName || user?.email || 'a user' }
         }
+        const assistantRouting =
+          sender && identity && body.assistantRouting !== undefined && agent.agentTypeId === 'assistant'
+            ? await sentAssistantRouting(identity, body.assistantRouting)
+            : undefined
+        const sentAt = new Date()
         const result = await agent.sendMessage(body.content, {
           imageIds: body.imageIds,
           deliveryMode: body.deliveryMode,
@@ -709,6 +710,7 @@ export const agentsRouter = new Hono()
                 sender,
                 ...(body.clientId ? { clientId: body.clientId } : {}),
                 ...(body.pagePath ? { pagePath: body.pagePath } : {}),
+                ...(assistantRouting ? { assistantRouting } : {}),
               }
             : body.clientId || body.pagePath
               ? {
@@ -717,6 +719,16 @@ export const agentsRouter = new Hono()
                 }
               : undefined,
         })
+        // The user picked a squad before sending: a correction of the preview, when saving them is on.
+        if (assistantRouting?.correction && identity)
+          void captureRoutingCorrection({
+            identity,
+            agentId: agent.id,
+            sentAt,
+            text: body.content,
+            target: assistantRouting.correction,
+            source: 'routing-before-send',
+          })
         return c.json(result)
       } catch (error) {
         if (error instanceof InvalidAttachmentError) return c.json({ error: 'Invalid attachment' }, 400)

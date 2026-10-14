@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { createBlankWorkflow, createWorkflowRun } from '@ficus/shared'
+import { createBlankWorkflow, createWorkflowRun, type WorkflowStep } from '@ficus/shared'
 import { hasRunnableStreamDemand } from './demand'
 
 function candidate() {
@@ -21,7 +21,7 @@ test('explicit workflow pauses and human approval attempts are not stalled agent
   expect(hasRunnableStreamDemand(stream)).toBe(false)
   stream.state.status = 'running'
   stream.state.attempts[0]!.step = {
-    ...stream.state.definition.steps[0]!,
+    ...(stream.state.definition.steps[0] as Extract<WorkflowStep, { kind: 'agent' }>),
     kind: 'human-approval',
     approver: 'assigned-reviewers',
   }

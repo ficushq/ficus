@@ -32,6 +32,7 @@ import { useAuth } from './providers/AuthProvider'
 import { useRef } from 'react'
 import { useVisualViewportShell } from './hooks/useVisualViewportShell'
 import { DesktopNotifications } from './components/DesktopNotifications'
+import { ScreenshotFiling } from './components/ScreenshotFiling'
 import { useDesktopShellChrome } from './hooks/useDesktopShellChrome'
 
 export default function App() {
@@ -160,6 +161,9 @@ export default function App() {
 
       {/* ?review=<work stream> opens a workflow gate's review over any page (notifications, links) */}
       <WorkflowReviewDeepLink />
+
+      {/* Drop or paste a screenshot anywhere to have the Assistant file it */}
+      <ScreenshotFiling />
 
       {/* Floating chat button - desktop only, hidden on chat page */}
       <Routes>

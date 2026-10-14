@@ -42,6 +42,55 @@ export function codeHostFromRemote(remote: string): { integration: string; repos
   return match ? { integration: 'github', repository: match[1] } : undefined
 }
 
+/**
+ * Fetch one remote branch into a private ref, through the squad's authorized
+ * credential when the remote is GitHub over HTTPS. The token travels only in
+ * the command's environment: never in argv, logs or metadata. Errors from Git
+ * can carry credential-bearing URLs, so callers must not surface them.
+ */
+export async function fetchRemoteBranchToRef(
+  exec: RepositoryExec,
+  input: {
+    repo: string
+    remote: string
+    /** The URL fetch will contact (`git remote get-url`, insteadOf applied). */
+    fetchUrl: string
+    branch: string
+    ref: string
+    resolveGitHubToken?: ResolveGitHubToken
+  }
+): Promise<void> {
+  // Never prompt: a server-side fetch has no terminal to answer one.
+  const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0' }
+  let credentialConfig: readonly string[] = []
+  // Private GitHub repos need the squad's authorized credential; the
+  // helper is scoped to github.com HTTPS and to this one command.
+  if (codeHostFromRemote(input.fetchUrl)?.integration === 'github' && input.fetchUrl.startsWith('https://')) {
+    const token = await input.resolveGitHubToken?.()
+    if (token !== undefined) {
+      if (!/^[\x21-\x7e]+$/.test(token)) throw new Error('Unusable GitHub credential')
+      env[GITHUB_FETCH_TOKEN_ENV] = token
+      credentialConfig = githubFetchCredentialConfig
+    }
+  }
+  await exec(
+    [
+      'git',
+      '-C',
+      input.repo,
+      ...credentialConfig,
+      'fetch',
+      '--no-tags',
+      '--no-recurse-submodules',
+      '--no-write-fetch-head',
+      '--refmap=',
+      input.remote,
+      `+refs/heads/${input.branch}:${input.ref}`,
+    ],
+    { env }
+  )
+}
+
 /** Runs Git in the squad runtime, not on the API host's potentially unrelated filesystem. */
 export async function prepareRepository(
   exec: RepositoryExec,
@@ -161,35 +210,14 @@ export async function prepareRepository(
           baseCommit = await git('rev-parse', '--verify', `refs/heads/${base}^{commit}`)
         } else {
           try {
-            // Never prompt: a server-side fetch has no terminal to answer one.
-            const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0' }
-            let credentialConfig: readonly string[] = []
-            // Private GitHub repos need the squad's authorized credential; the
-            // helper is scoped to github.com HTTPS and to this one command.
-            if (fetchIdentity?.integration === 'github' && fetchUrl.startsWith('https://')) {
-              const token = await resolveGitHubToken?.()
-              if (token !== undefined) {
-                if (!/^[\x21-\x7e]+$/.test(token)) throw new Error('Unusable GitHub credential')
-                env[GITHUB_FETCH_TOKEN_ENV] = token
-                credentialConfig = githubFetchCredentialConfig
-              }
-            }
-            await exec(
-              [
-                'git',
-                '-C',
-                repo,
-                ...credentialConfig,
-                'fetch',
-                '--no-tags',
-                '--no-recurse-submodules',
-                '--no-write-fetch-head',
-                '--refmap=',
-                remote,
-                `+refs/heads/${base}:${fetchedRef}`,
-              ],
-              { env }
-            )
+            await fetchRemoteBranchToRef(exec, {
+              repo,
+              remote,
+              fetchUrl,
+              branch: base,
+              ref: fetchedRef,
+              resolveGitHubToken,
+            })
             baseCommit = await git('rev-parse', '--verify', `${fetchedRef}^{commit}`)
           } catch {
             // Git/transport errors can contain credential-bearing URLs. Do not expose

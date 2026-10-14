@@ -10,10 +10,13 @@ import { useFarmCard } from './context'
 import { RobotActions } from './slots'
 import { AssistantCard } from './AssistantCard'
 import { PORCH_ASSISTANT_ID } from '../useFarmData'
+import { displayMood, moodLabel } from '../moods'
+import { useMoodSnapshot } from '../useRobotMoods'
 
 export function RobotCard({ agentId }: { agentId: string }) {
   const env = useFarmCard()
   const placed = findRobot(env.layout, agentId)
+  const moods = useMoodSnapshot()
   const known = env.agentsById.get(agentId)
   // Robots reached from a crew list or roster may not be on the field (finished, asleep).
   const detail = useQuery({
@@ -30,6 +33,7 @@ export function RobotCard({ agentId }: { agentId: string }) {
   if (role === 'assistant') return <AssistantCard />
   const label = agentLabel(agent)
   const halted = env.halted.has(agentId)
+  const mood = placed && moods.enabled ? displayMood(placed, moods.moods.get(agentId)) : null
   const working = env.layout.yards
     .flatMap((y) => y.plots)
     .filter((p) => p.tender?.agent.id === agentId || (p.stream.agentIds ?? []).includes(agentId))
@@ -47,12 +51,14 @@ export function RobotCard({ agentId }: { agentId: string }) {
         </div>
       </div>
       {label.secondary && <p className="g-card-text">{label.secondary}</p>}
-      <p className="g-state-tag">
+      <p className="g-state-tag" title={mood ? `Mood: ${moodLabel(mood)}` : undefined}>
         {halted
           ? 'Halted — needs a nudge'
           : placed?.asking
             ? 'Has a question for you'
-            : AGENT_STATUS_LABELS[agent.status]}
+            : mood
+              ? `${AGENT_STATUS_LABELS[agent.status]} · ${moodLabel(mood)}`
+              : AGENT_STATUS_LABELS[agent.status]}
       </p>
       <button
         type="button"

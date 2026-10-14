@@ -6,15 +6,26 @@
  *
  * Signing is forwarded to Core, which holds the private key and returns the
  * armored signature; it is written to `<buffer file>.sig` as ssh-keygen would.
+ *
+ * Core may instead decide the object stays unsigned (the committer's own GitHub
+ * account has commit signing off). It then returns an empty signature: git
+ * reads the empty `.sig` and creates the commit or tag without a signature
+ * header. Git adds the header only for a non-empty signature and has no
+ * empty-signature check for SSH signing (tested with git 2.43, read in git's
+ * source at 2.56). The reason is written to stderr, but git shows a signing
+ * program's stderr only when it fails, so `git commit` itself stays quiet.
+ *
  * Every other `-Y` operation (verify, find-principals, check-novalidate) runs
  * the real ssh-keygen unchanged.
  */
+
+import type { GitHubSignResponse } from '@ficus/shared'
 
 export interface GitSigningDependencies {
   env: Record<string, string | undefined>
   readFile(path: string): Promise<Buffer>
   writeFile(path: string, content: string): Promise<void>
-  sign(squadId: string, payload: Buffer): Promise<string>
+  sign(squadId: string, payload: Buffer): Promise<GitHubSignResponse>
   /** Run the real ssh-keygen with inherited stdio; resolves to its exit code. */
   passthrough(args: string[]): Promise<number>
   stderr(line: string): void
@@ -52,8 +63,11 @@ export async function runSshKeygenCompat(args: string[], deps: GitSigningDepende
   }
   const file = files[0]!
   try {
-    const signature = await deps.sign(squadId, await deps.readFile(file))
-    await deps.writeFile(`${file}.sig`, signature)
+    const result = await deps.sign(squadId, await deps.readFile(file))
+    if (typeof result?.signature !== 'string') throw new Error('Ficus returned no signature')
+    if (result.signature === '' && !result.unsigned) throw new Error('Ficus returned an empty signature')
+    await deps.writeFile(`${file}.sig`, result.signature)
+    if (result.unsigned) deps.stderr(`ficus: ${result.unsigned.message}`)
     return 0
   } catch (error) {
     deps.stderr(`ficus: commit signing failed: ${(error as Error).message}`)
@@ -70,11 +84,9 @@ export function defaultGitSigningDependencies(): GitSigningDependencies {
     },
     sign: async (squadId, payload) => {
       const { apiPost } = await import('./client')
-      const result = await apiPost<{ signature: string }>(
-        `/api/squads/${encodeURIComponent(squadId)}/integrations/github/sign`,
-        { payload: payload.toString('base64') }
-      )
-      return result.signature
+      return apiPost<GitHubSignResponse>(`/api/squads/${encodeURIComponent(squadId)}/integrations/github/sign`, {
+        payload: payload.toString('base64'),
+      })
     },
     passthrough: async (args) => {
       const sshKeygen = Bun.which('ssh-keygen')

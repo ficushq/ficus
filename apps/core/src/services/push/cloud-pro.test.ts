@@ -109,3 +109,21 @@ test('managed discovery advertises aggregate activity transport only with both c
     }
   }
 })
+
+test('Android Cloud push uses authenticated relay delivery and never direct APNs', async () => {
+  let path = ''
+  const result = await sendManagedCloudAlert(
+    { ...input, platform: 'android' },
+    {
+      request: async <T>(value: { path: string; schema: z.ZodType<T> }) => {
+        path = value.path
+        return value.schema.parse({ accepted: true })
+      },
+      send: async () => {
+        throw new Error('FCM token must not reach APNs')
+      },
+    }
+  )
+  expect(path).toBe('/api/cloud-mobile-pro/notifications/send')
+  expect(result.ok).toBe(true)
+})

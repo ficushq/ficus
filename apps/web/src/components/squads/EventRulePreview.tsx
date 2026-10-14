@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import {
+  assumeEventRuleDecisions,
   eventPredicateFields,
+  isEventDecisionPredicate,
   previewSquadEventRules,
   syntheticEventSampleSchema,
   syntheticEventFact,
@@ -8,6 +10,12 @@ import {
   type SquadEventRule,
   type SquadEventRulePreview,
 } from '@ficus/shared'
+import { SegmentedControl } from '../SegmentedControl'
+
+const DECISION_ASSUMPTIONS = [
+  { value: 'match', label: 'Match' },
+  { value: 'no-match', label: 'Don’t match' },
+] as const
 
 export function EventRulePreview({
   provider,
@@ -27,6 +35,8 @@ export function EventRulePreview({
   const [login, setLogin] = useState('')
   const [connectionId, setConnectionId] = useState('')
   const [mentioned, setMentioned] = useState(false)
+  const [decisionAssumption, setDecisionAssumption] = useState<'match' | 'no-match'>('match')
+  const hasDecisions = rules.some((rule) => rule.predicates?.some(isEventDecisionPredicate))
   const event = events.find((item) => `${item.output}@${item.version}` === eventKey) ?? events[0]
   let preview: SquadEventRulePreview | undefined
   let error: string | undefined
@@ -58,7 +68,9 @@ export function EventRulePreview({
             provider,
             syntheticEventFact(sample.data),
             login,
-            connectionId || undefined
+            connectionId || undefined,
+            // No model is asked from the preview: decision conditions take the stated assumption.
+            assumeEventRuleDecisions(decisionAssumption === 'match')
           )
         } catch {
           error = 'Fix invalid event rules before previewing.'
@@ -140,6 +152,21 @@ export function EventRulePreview({
           placeholder={'{"repository":"owner/repo","issue.number":15,"labels":["bug"]}'}
         />
       </label>
+      {hasDecisions && (
+        <div className="text-sm">
+          <p>Decision conditions</p>
+          <SegmentedControl
+            ariaLabel="Assume decision conditions"
+            options={DECISION_ASSUMPTIONS}
+            value={decisionAssumption}
+            onChange={setDecisionAssumption}
+            className="mt-1 max-w-xs"
+          />
+          <p className="mt-1 text-xs text-muted">
+            The preview asks no decision model; it assumes every decision condition answers this way.
+          </p>
+        </div>
+      )}
       <details className="text-xs text-muted">
         <summary>Supported fields and sample semantics</summary>
         <p>

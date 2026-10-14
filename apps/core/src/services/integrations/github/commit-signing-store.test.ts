@@ -3,9 +3,11 @@ import { randomUUID } from 'crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db, integrationConnectionAssignments, integrationConnections, settings, squads, users } from '../../../db'
 import { getSecretStore } from '../../secrets'
+import { resolveOAuthAuthority } from '../authorization/authority'
 import {
-  defaultGitHubConnectionId,
   githubConnectionIdsForUser,
+  githubSigningAccount,
+  githubSigningAccountsForSquad,
   githubSigningPublicKeyForSquad,
   githubSigningSecretKey,
 } from './commit-signing-store'
@@ -31,7 +33,14 @@ async function squad(): Promise<string> {
 }
 
 async function connection(
-  options: { enabled?: boolean; authState?: 'authenticated' | 'reauthorization_required'; by?: string } = {}
+  options: {
+    enabled?: boolean
+    authState?: 'authenticated' | 'reauthorization_required'
+    by?: string
+    login?: string
+    userId?: number
+    clientAuthority?: 'local' | 'platform_broker'
+  } = {}
 ) {
   const id = randomUUID()
   const revision = randomUUID()
@@ -43,7 +52,8 @@ async function connection(
     providerKey: 'github',
     adapterVersion: 1,
     displayName: `github-${id.slice(0, 8)}`,
-    configuration: { version: 1, userId: 7, login: 'octo' },
+    configuration: { version: 1, userId: options.userId ?? 7, login: options.login ?? 'octo' },
+    ...(options.clientAuthority ? { clientAuthority: options.clientAuthority } : {}),
     credentialRef,
     enabled: options.enabled ?? true,
     authState: options.authState ?? 'authenticated',
@@ -114,43 +124,78 @@ afterAll(async () => {
 })
 
 describe('commit signing store', () => {
-  it("resolves a squad's default GitHub connection even after its validation window lapsed", async () => {
+  it('lists every account attached to the squad, default first, even after validation lapsed', async () => {
     const squadId = await squad()
     const primary = await connection()
-    const secondary = await connection()
+    const secondary = await connection({ login: 'hubot', userId: 9 })
     await assign(squadId, secondary, false)
     await assign(squadId, primary, true)
-    expect(await defaultGitHubConnectionId(squadId)).toBe(primary)
+    expect(await githubSigningAccountsForSquad(squadId)).toEqual([
+      { connectionId: primary, login: 'octo', userId: 7, isDefault: true, canSign: true },
+      { connectionId: secondary, login: 'hubot', userId: 9, isDefault: false, canSign: true },
+    ])
+    expect(await githubSigningAccount(secondary)).toEqual({
+      connectionId: secondary,
+      login: 'hubot',
+      userId: 9,
+      isDefault: false,
+      canSign: true,
+    })
   })
 
-  it('ignores disabled and reauthorization-required defaults, and GitHub being turned off', async () => {
-    for (const options of [{ enabled: false }, { authState: 'reauthorization_required' as const }]) {
+  it('never offers a connection attached to another squad, or one attached to none', async () => {
+    const [mine, theirs] = [await squad(), await squad()]
+    const own = await connection()
+    const foreign = await connection({ login: 'hubot', userId: 9 })
+    await connection({ login: 'loose', userId: 11 })
+    await assign(mine, own, true)
+    await assign(theirs, foreign, true)
+    expect((await githubSigningAccountsForSquad(mine)).map((account) => account.connectionId)).toEqual([own])
+    expect((await githubSigningAccountsForSquad(theirs)).map((account) => account.connectionId)).toEqual([foreign])
+  })
+
+  it('marks disabled, reauthorization-required and other-authority connections, and GitHub turned off, as unable to sign', async () => {
+    const otherAuthority = resolveOAuthAuthority() === 'local' ? 'platform_broker' : 'local'
+    for (const options of [
+      { enabled: false },
+      { authState: 'reauthorization_required' as const },
+      { clientAuthority: otherAuthority } as const,
+    ]) {
       const squadId = await squad()
-      await assign(squadId, await connection(options), true)
-      expect(await defaultGitHubConnectionId(squadId)).toBeUndefined()
+      const id = await connection(options)
+      await assign(squadId, id, true)
+      await signingOn(id, 'ssh-ed25519 AAAA unusable')
+      expect(await githubSigningAccountsForSquad(squadId)).toMatchObject([{ connectionId: id, canSign: false }])
+      expect(await githubSigningAccount(id)).toMatchObject({ canSign: false })
+      expect(await githubSigningPublicKeyForSquad(squadId)).toBeUndefined()
     }
     const squadId = await squad()
     await assign(squadId, await connection(), true)
     await db.update(settings).set({ value: 'false' }).where(eq(settings.key, ENABLED_KEY))
     try {
-      expect(await defaultGitHubConnectionId(squadId)).toBeUndefined()
+      expect(await githubSigningAccountsForSquad(squadId)).toMatchObject([{ canSign: false }])
     } finally {
       await db.update(settings).set({ value: 'true' }).where(eq(settings.key, ENABLED_KEY))
     }
   })
 
-  it("renders the squad's signing key only while signing is on for its default connection", async () => {
+  it("switches the squad's git signing on while any attached account signs, naming the default's key first", async () => {
     const squadId = await squad()
     const id = await connection()
+    const other = await connection({ login: 'hubot', userId: 9 })
     await assign(squadId, id, true)
+    await assign(squadId, other, false)
     expect(await githubSigningPublicKeyForSquad(squadId)).toBeUndefined()
+    await signingOn(other, 'ssh-ed25519 AAAA other')
+    expect(await githubSigningPublicKeyForSquad(squadId)).toBe('ssh-ed25519 AAAA other')
     await signingOn(id, 'ssh-ed25519 AAAA test')
     expect(await githubSigningPublicKeyForSquad(squadId)).toBe('ssh-ed25519 AAAA test')
-    await getSecretStore().set(
-      githubSigningSecretKey(id),
-      JSON.stringify({ version: 1, state: 'off', updatedAt: new Date().toISOString(), updatedBy: 'test' }),
-      'test'
-    )
+    for (const connectionId of [id, other])
+      await getSecretStore().set(
+        githubSigningSecretKey(connectionId),
+        JSON.stringify({ version: 1, state: 'off', updatedAt: new Date().toISOString(), updatedBy: 'test' }),
+        'test'
+      )
     expect(await githubSigningPublicKeyForSquad(squadId)).toBeUndefined()
   })
 

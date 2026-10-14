@@ -18,6 +18,7 @@ import {
   workflowCommandSchema,
   type WorkflowSource,
   type WorkflowRun,
+  describeWorkflowDecision,
 } from '@ficus/shared'
 import {
   db,
@@ -45,6 +46,12 @@ import { resolveStoredWorkflow, validateWorkflowParticipants, WorkflowError, wor
 import { codeHostingRegistry } from '../integrations/code-hosting'
 import { recordDeliveryVerification } from '../work-streams/delivery-pull-requests'
 import { recordChangeRequestBinding } from '../work-streams/change-request-binding'
+import {
+  assertNoStackedDeliveryHold,
+  loadStackedDependencies,
+  stackedDependencyNotice,
+  WorkStreamStackedDeliveryHoldError,
+} from '../work-streams/dependency-edges'
 import { resolveBranchChangeRequest } from '@ficus/shared'
 
 const log = createLogger('workflows')
@@ -228,7 +235,8 @@ async function dispatchFlowAttempt(
 ) {
   if (attempt.responseAssignment) return
   const step = attempt.step ?? run.state.definition.steps.find((entry) => entry.id === attempt.stepId)!
-  if (step.kind === 'human-approval') {
+  // A decision step that got no automatic decision waits for a person exactly like an approval.
+  if (step.kind === 'human-approval' || (step.kind === 'decision' && attempt.decision?.awaitingPerson)) {
     const referenceId = flowWaitReference(stream.id, 'human', attempt.id)
     if (!(await listOpenWaits(tx, stream.id)).some((w) => w.referenceId === referenceId))
       await openWait(tx, {
@@ -237,11 +245,16 @@ async function dispatchFlowAttempt(
         resolutionHandler: 'workflow',
         flowAttemptId: attempt.id,
         referenceId,
-        message: step.instructions,
+        message:
+          step.kind === 'decision'
+            ? `${step.instructions}\n\n${describeWorkflowDecision(step, attempt.decision!)}`
+            : step.instructions,
       })
     await tx.update(workStreams).set({ assigneeAgentId: null }).where(eq(workStreams.id, stream.id))
     return
   }
+  // Core evaluates decision steps itself (decision-steps.ts); no agent is bound to them.
+  if (step.kind === 'decision') return
   if ((await waitsForAttempt(tx, stream.id, attempt.id)).length > 0) return
   const [sent] = await tx
     .select({ id: inbox.id })
@@ -304,7 +317,7 @@ async function dispatchFlowAttempt(
       requestId: caller.requestId,
       agentId: binding!.agentId,
       version: run.version,
-      content: flowMessage(stream, run, attempt),
+      content: flowMessage(stream, run, attempt, await stackNotice(tx, stream)),
     }
     await tx.update(workStreamFlowRuns).set({ state: run.state }).where(eq(workStreamFlowRuns.workStreamId, stream.id))
     return
@@ -314,7 +327,7 @@ async function dispatchFlowAttempt(
     {
       recipientId: binding!.agentId,
       subject: `Flow step: ${step.id}`,
-      content: flowMessage(stream, run, attempt),
+      content: flowMessage(stream, run, attempt, await stackNotice(tx, stream)),
       metadata: { workStreamId: stream.id, squadId: stream.squadId, source: 'workflow', attemptId: attempt.id },
       wakeEligible: true,
       recordOnly: true,
@@ -421,7 +434,12 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
           403
         )
     } else if (command.action !== 'revise') {
-      if (step?.kind === 'human-approval') {
+      if (step?.kind === 'decision') {
+        if (!attempt?.decision?.awaitingPerson)
+          throw new WorkflowError('A decision model is deciding this step; wait for its decision', 409)
+        if (identity.type !== 'user' || !canReview)
+          throw new WorkflowError('A person with review permission must choose this outcome', 403)
+      } else if (step?.kind === 'human-approval') {
         if (
           identity.type !== 'user' ||
           !canReview ||
@@ -446,7 +464,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         waits.some(
           (wait) =>
             !(
-              step?.kind === 'human-approval' &&
+              (step?.kind === 'human-approval' || step?.kind === 'decision') &&
               wait.resolutionHandler === 'workflow' &&
               wait.referenceId === flowWaitReference(id, 'human', attempt.id)
             )
@@ -522,7 +540,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
             .set({ readAt: new Date() })
             .where(eq(inbox.idempotencyKey, `flow:${id}:${attempt.id}`))
       }
-    } else if (step?.kind === 'human-approval')
+    } else if (step?.kind === 'human-approval' || step?.kind === 'decision')
       await closeOpenWaits(
         tx,
         { workStreamId: id, referenceId: flowWaitReference(id, 'human', attempt!.id) },
@@ -574,6 +592,8 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
     }
   })
   callbacks.forEach((callback) => callback())
+  // Streams waiting on this one through a `ready` dependency may now be admissible.
+  if (result.stateStatus === 'completion-ready') await admitDependentsSafely(id)
   if (command.action === 'rework') {
     const { promoteEligibleQueuedStreams } = await import('../work-streams/admission')
     await promoteEligibleQueuedStreams(streamBefore.squadId)
@@ -583,6 +603,27 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
   await reconcileOutputDeliveries(id)
   eventEmitter.emit('workStream.updated', { workStreamId: id, squadId: streamBefore.squadId })
   return result
+}
+
+async function admitDependentsSafely(id: string) {
+  try {
+    const { admitDependentsOfReadyStream } = await import('../work-streams/admission')
+    await admitDependentsOfReadyStream(id)
+  } catch {
+    // The admission reconciler is the backstop.
+  }
+}
+
+/** The stacked-dependency notice for a stream, from current statuses. */
+export async function stackNotice(
+  store: DbTx | typeof db,
+  stream: { dependsOn: string[] | null; dependencyEdges: Stream['dependencyEdges'] | null; metadata: unknown }
+) {
+  if (!Object.keys(stream.dependencyEdges ?? {}).length) return undefined
+  return stackedDependencyNotice(
+    await loadStackedDependencies(store, stream),
+    (stream.metadata as { git?: Record<string, unknown> } | null)?.git
+  )
 }
 
 /** Mandatory at the entity boundary, including callers outside HTTP routes. */
@@ -635,6 +676,13 @@ export async function finishFlow(id: string, version: number, identity: Identity
     throw new WorkflowError('Flow is not ready for completion or its version changed', 409)
   if (identity.type === 'agent' && !(stream.agentIds ?? []).includes(identity.agentId))
     throw new WorkflowError('Only a participant can finish this flow', 403)
+  // Checked first so the reason names the dependency, not this stream's own unmerged pull request.
+  try {
+    await assertNoStackedDeliveryHold(db, stream)
+  } catch (error) {
+    if (error instanceof WorkStreamStackedDeliveryHoldError) throw new WorkflowError(error.message, 409)
+    throw error
+  }
   let deliveredHead: string | undefined
   const mode = run.state.definition.completion.mode
   let metadata = stream.metadata as Record<string, any>
@@ -741,7 +789,8 @@ export async function finishFlow(id: string, version: number, identity: Identity
       }
     )
   } catch (error) {
-    if (error instanceof WorkStreamOpenWaitsError) throw new WorkflowError(error.message, 409)
+    if (error instanceof WorkStreamOpenWaitsError || error instanceof WorkStreamStackedDeliveryHoldError)
+      throw new WorkflowError(error.message, 409)
     throw error
   }
   return stream.toJson()
@@ -776,9 +825,12 @@ async function reconcileFlowsInPass() {
     .from(workStreamFlowRuns)
     .innerJoin(workStreams, eq(workStreams.id, workStreamFlowRuns.workStreamId))
     .where(and(eq(workStreamFlowRuns.activated, true), eq(workStreams.status, 'active')))
+  const { evaluateFlowDecisions } = await import('./decision-steps')
   for (const row of rows) {
     try {
       await ensureFlowDispatch(row.id)
+      // The backstop for decision steps whose change event was missed or whose evaluation crashed.
+      await evaluateFlowDecisions(row.id)
     } catch (error) {
       log.warn(`Flow dispatch deferred for ${row.id}`, error)
     }
@@ -827,7 +879,9 @@ export async function flowWorkerContext(agentId: string) {
     workStreamId: binding.workStreamId,
     participantId: binding.participantId,
     state: run.state,
-    deliveryInstructions: stream ? deliveryInstructionsForRun(stream, run.state, run.version) : undefined,
+    deliveryInstructions: stream
+      ? deliveryInstructionsForRun(stream, run.state, run.version, await stackNotice(db, stream))
+      : undefined,
   }
 }
 
@@ -840,7 +894,7 @@ export async function forbidUntrackedDelegation(agentId: string) {
 }
 
 /** Retry committed inbox intents without creating agents for queued or future work. */
-async function deliverFlow(id: string) {
+export async function deliverFlow(id: string) {
   const run = await getFlow(id)
   if (!run?.activated || run.state.status !== 'running') return
   for (const canceled of run.state.attempts.filter((entry) => entry.status === 'canceled')) {

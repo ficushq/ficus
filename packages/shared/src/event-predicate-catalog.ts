@@ -127,3 +127,12 @@ export function eventPredicateField(source: { integration: string; output: strin
   const fields = eventPredicateFields(source)
   return fields && Object.hasOwn(fields, path) ? fields[path] : undefined
 }
+
+/**
+ * Decision conditions (`kind: 'decision'` predicates) send the event's subject and text plus these fields,
+ * where the event has them, unless the condition names its own `input.fields` from the same allowlist.
+ */
+export const EVENT_DECISION_DEFAULT_FIELDS = ['issue.title', 'actor', 'actorType', 'labels'] as const
+export function eventDecisionDefaultFields(source: { integration: string; output: string; version: number }) {
+  return EVENT_DECISION_DEFAULT_FIELDS.filter((path) => !!eventPredicateField(source, path))
+}

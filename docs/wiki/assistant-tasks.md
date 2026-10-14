@@ -35,6 +35,120 @@ visible but cannot change status; a terminal status is never reopened by a later
 helpers never imply completion; a missing or terminated helper on an unfinished task is shown as
 `unavailable` without rewriting its status.
 
+## Choosing a squad
+
+When a decision model is set up and **Assistant squad routing** is on (Settings → Decision
+Providers → Features), Core may ask one decision before the Assistant reads a user chat message.
+It is not asked at all (no call, no cost) for a short acknowledgement ("ok", "thanks!", "sounds
+good", "👍": at most four words, all from a small acknowledgement vocabulary). A reply to the
+Assistant's own question is still asked about: the `kind` question, which sees the Assistant's
+latest reply, decides whether it is a new request or conversation.
+
+The one call asks two questions:
+
+- `kind`: `new_request` (asks for work not already under way, even as a reply to the Assistant,
+  including redoing earlier work somewhere else), `follow_up` (about work or a request already in
+  this conversation), or `conversation` (a confirmation or thanks, answering the Assistant's
+  question or brainstorming with it without asking for new work, or a question to the Assistant
+  itself).
+- `scope`: `instance` (Ficus itself: settings, admin, the instance), `general` (not tied to one
+  squad's project), or one `squad_<short id>` option per active squad the user can read,
+  described by the squad's name and purpose. Above 30 squads, the purpose heuristic from the
+  squad suggester keeps the likeliest.
+
+The user's message goes only in the decision's state, with the user's last four chat messages and
+the Assistant's latest reply (300 characters each). The question waits at most 1.5 seconds; no
+answer means no hint.
+
+- A confident `follow_up` (at least 60%) carries the conversation's latest routing (the newest
+  message with a hint, or the user's correction of it) to the model, unsaved and with no chip.
+- Otherwise a scope at least 60% confident, whatever the kind, is saved on the message
+  (`metadata.assistantRouting`) and added to the model's copy of it as a routing hint. The
+  conversation shows it as a chip under the message ("Chlea", "Not about a squad"). A "general"
+  hint shows no chip, and chips show no confidence.
+- Anything less confident gets nothing.
+
+While the user writes, the composer asks the same decision about the draft
+(`POST /api/assistant/:conversationId/routing/preview`, `{ draft }`). It asks after an 800ms pause
+in typing, for drafts of three words or more, with the conversation so far as context. A confident
+squad or "Ficus itself" shows as a pill by the composer, where the user can pick another squad
+before sending. The message is sent with `assistantRouting` (`AssistantRoutingSend`): the preview's
+pick if it was for exactly the sent text, and the user's pick as its correction. Core checks both
+against the squads the sender can see, and the turn then reads that routing without asking again.
+A message sent before the preview answers is routed by the turn as usual. Page editors are never
+routed.
+
+On the user's latest message, choosing another squad, or No squad, from the chip
+(`POST /api/assistant/:conversationId/routing`) saves the correction on the message. It also sends
+the Assistant a short system message that carries it and quotes the start of the message. Older
+messages can't be corrected in place (409): nothing ties a message to the tasks it led to. Their
+chip instead puts a request quoting the message in the composer ("Please move "…" to Billing."),
+for the user to edit and send. The Assistant's `suggest_squad` tool asks the scope question for
+any phrasing, and falls back to the purpose heuristic without a decision model.
+
+## Forwarding images
+
+The Assistant sees the images the user sent it as ordinary image input. `list_conversation_images`
+returns their IDs (images bound to the conversation's own agent, with the message each came with),
+and `delegate_task` and `message_agent` take up to 10 of them as `imageIds`. Each forwarded image is
+copied: a new `images` row and blob bound to the recipient (its squad, when it has one), uploaded by
+the same user, with `forwarded_from_image_id` naming the original. The copy rows are inserted in the
+same transaction as the inbox message, whose `metadata.imageIds` lists the copies, so ordinary inbox
+delivery sends them as image blocks. A replayed request adopts its first delivery's copies.
+
+This leaves the attachment scope rule alone: a squad consultant has no parent link to the Assistant
+and still cannot read the Assistant's images directly. Only images this conversation received can be
+forwarded (not another user's, nor another conversation's), the recipient must be one the request
+could reach anyway, its model must accept images, and the images together stay within the 10 MB
+per-message limit.
+
+Screenshot filing uses this, in two steps so that nothing reaches the Assistant before the user has
+checked it. Both need `chat:send` and only accept the user's own staged upload (pending, not bound to
+an agent or squad).
+
+`POST /api/screenshots/guess` (`{ imageId }`) asks one `screenshot-filing` decision (what it is,
+which visible squad, what to do) about a small JPEG copy of the image (at most 1024px and 180 KB, a
+GIF's first frame; see `DECISION_IMAGE_MAX_SIDE` in `packages/shared/src/decisions.ts`). When the
+guessed squad has open (active or queued) work streams the user may read, a second decision asks
+which one it is about. The streams' titles and descriptions go in its `state` as data, and the
+options only point at them. A pick at 60% or more (`SCREENSHOT_GUESS_MIN_PROBABILITY`) becomes "add
+it to that work stream", and "none" rules out adding to one. A pick under 60% never sets or changes
+the action. It is returned separately as `guess.workStreamSuggestion` (with `guess.workStream`
+null), and its only effect on the guess is that an action the first decision already answered as
+"add it to an existing work stream" is kept instead of falling back to the next likeliest one. The
+same threshold marks a weaker kind, squad or action as "not sure" on the review card; it is still
+returned as the best guess. The call returns `{ guess }` and creates nothing: no conversation, no
+message. With the feature off, no
+decision model that reads images answering, or an image that cannot be prepared, `guess` is null.
+`GET /api/screenshots/work-streams?squadId=` lists a visible squad's open work streams for the
+card's picker (empty without `workstreams:read` there), so changing the squad never asks the
+decision model again.
+
+`POST /api/screenshots/file` (`{ imageId, note?, kind?, squadId?, action?, workStreamId?, guessed? }`)
+is the user's confirmation. A field left out is left to the Assistant; `squadId: null` is the
+explicit "No squad". The squad must be visible to the user and not archived, and the work stream
+(only with `action: existing_work_stream`) must be an open one in that squad that the user may read;
+otherwise it answers 404 before creating anything. When the Assistant's model cannot read images it
+answers 400, also before creating anything, so a refused confirmation leaves no empty conversation
+(a conversation that already exists for the image is judged by its own Assistant and is never
+removed). Then it creates a new Assistant conversation whose
+first message carries the image, the user's note first, the confirmed choices stated as the user's
+own (with the squad ID and work stream ID), and the image ID to forward. The conversation and
+message IDs are derived from the user and image, so a retried confirmation lands on the same
+conversation and sends nothing twice. `guessed` is what the guess filled the card in with (a weak
+work stream suggestion only when the card showed it pre-selected): every
+field the user changed from it is saved as a candidate eval case through `captureCorrection` (kind,
+squad and action for `screenshot-filing`, the work stream for `screenshot-work-stream`), with the
+request rebuilt to include the note. Filing asks no decision model.
+
+`DELETE /api/images/:id` discards a staged upload that will not be filed: the review card calls it
+when a card closes without filing. It needs the permission the upload took (`agents:write`) and only
+deletes the caller's own staged upload, the row and the stored bytes. The conditions are part of the
+delete itself, so an image that was bound or sent in the meantime is left alone. Anything else (an
+unknown image, another user's, one bound to an agent or squad, one already sent) answers the same
+404 and changes nothing. No job sweeps old pending images, and one could not go by `status` alone:
+an image stays `pending` after it is bound to an agent, until its message is delivered.
+
 ## Continuing, recovering, and cancelling
 
 The owner can use `POST /api/assistant/:conversationId/tasks/:taskId/commands` with a durable
@@ -107,6 +221,11 @@ Forwarding is recoverable without a browser lease. Report context is bounded to 
 per delivery batch; longer reports remain available through `read_task_update`. Original reports
 are never truncated in storage. Source cards load by their exact IDs, independently of the latest
 activity page. Every fragment of a grouped response contributes source IDs.
+
+The Assistant sees a forwarded update under the ID of its own agent-inbox row
+(`forwarded_message_id`). Its `mark_read` tool accepts that ID as well as messages in the owner's
+user inbox; every other recipient's message is reported as not found. Marking the forwarded row
+read changes neither `seen_at` nor the original report.
 
 ## Needs you
 

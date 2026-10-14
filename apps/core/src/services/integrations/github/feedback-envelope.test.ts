@@ -183,7 +183,7 @@ test('Dependabot safe lifecycle projection has no arbitrary package, path or adv
   ).toEqual([])
 })
 
-test('assignment actions bind the verified webhook actor and never carry parent title/body', () => {
+test('assignment actions bind the verified webhook actor; the factual delivery never carries parent title/body', () => {
   const event = feedbackEvent()
   event.type = 'issues'
   event.payload.action = 'assigned'
@@ -196,7 +196,9 @@ test('assignment actions bind the verified webhook actor and never carry parent 
   expect(content.attribution).toBe('creation')
   expect(content.editor).toBeNull()
   expect(content.delivery!.data).toMatchObject({ assignee: 'bot-account', actor: 'trusted', projection: 'action' })
-  expect(JSON.stringify(content)).not.toContain('PARENT')
+  expect(JSON.stringify({ ...content, parentText: undefined })).not.toContain('PARENT')
+  // The parent-text alternative names the parent's CONTENT author (issue.user), not the actor.
+  expect(content.parentText!.author).toEqual({ accountId: '2', login: 'outside', accountType: 'User' })
   // A redelivery is the same action; a different assignee is a different reviewable action.
   expect(
     projection({ ...event, githubObservation: { kind: 'webhook', deliveryId: 'again' } }).content!.contentHash
@@ -205,7 +207,9 @@ test('assignment actions bind the verified webhook actor and never carry parent 
   other.payload.assignee = { id: 5, login: 'someone-else', type: 'User' }
   expect(projection(other).content!.nativeId).not.toBe(content.nativeId)
   // Polls have no signed actor: fail closed.
-  expect(projection({ ...event, githubObservation: { kind: 'poll' } }).content!.attribution).toBe('unknown')
+  const polled = projection({ ...event, githubObservation: { kind: 'poll' } }).content!
+  expect(polled.attribution).toBe('unknown')
+  expect(polled.parentText).toBeUndefined()
 })
 
 test('review requests and labels are actions; title/body edits remain held content', () => {
@@ -218,13 +222,96 @@ test('review requests and labels are actions; title/body edits remain held conte
   const request = projection(event).content!
   expect(request).toMatchObject({ objectKind: 'action', attribution: 'creation' })
   expect(request.delivery!.data).toMatchObject({ requestedReviewer: 'bot-account', pullRequest: { number: 3 } })
-  expect(JSON.stringify(request)).not.toContain('PARENT')
+  expect(JSON.stringify(request.delivery)).not.toContain('PARENT')
+  expect(request.parentText).toMatchObject({ objectKind: 'pull_request', nativeId: '100' })
   event.payload.action = 'labeled'
   event.payload.label = { name: 'bug' }
   expect(projection(event).content!.delivery!.data).toMatchObject({ action: 'labeled' })
   event.payload.action = 'edited'
   const edit = projection(event).content!
   expect(edit).toMatchObject({ objectKind: 'pull_request', attribution: 'unknown' })
+  // An edit is content, never an action that could carry the edited text as the parent's.
+  expect(edit.parentText).toBeUndefined()
+})
+
+function assignment(issue: Record<string, unknown> = {}) {
+  const event = feedbackEvent()
+  event.type = 'issues'
+  event.payload.action = 'assigned'
+  event.payload.issue = { ...event.payload.issue, user: owner, created_at: time, ...issue }
+  event.payload.assignee = { id: 4, login: 'bot-account', type: 'User' }
+  event.githubObservation = { kind: 'webhook', deliveryId: 'assignment-1' }
+  return event
+}
+
+test('the parent-text alternative is the factual message plus the current title and description, hash-bound', async () => {
+  const { githubActionReviewed, withoutGitHubParentText, githubParentTextReviewText } =
+    await import('./feedback-envelope')
+  const content = projection(assignment()).content!
+  const variant = content.parentText!
+  expect(variant).toMatchObject({ title: 'PARENT_TITLE_SENTINEL', body: 'PARENT_SENTINEL', unchanged: true })
+  expect(variant.delivery.body).toStartWith(content.delivery!.body)
+  expect(variant.delivery.body).toContain('written by @outside:\n\nPARENT_TITLE_SENTINEL\n\nPARENT_SENTINEL')
+  expect(variant.delivery.data.parentContent).toEqual({
+    author: { accountId: '2', login: 'outside', accountType: 'User' },
+    title: 'PARENT_TITLE_SENTINEL',
+    body: 'PARENT_SENTINEL',
+  })
+  expect(variant.delivery.subject).toBe(content.delivery!.subject)
+  expect(variant.contentHash).not.toBe(content.contentHash)
+  // Every word of the parent text, and its author, is part of the reviewed hash.
+  const edited = projection(assignment({ body: 'PARENT_SENTINEL!' })).content!
+  expect(edited.contentHash).toBe(content.contentHash)
+  expect(edited.parentText!.contentHash).not.toBe(variant.contentHash)
+  expect(projection(assignment({ title: 'Other' })).content!.parentText!.contentHash).not.toBe(variant.contentHash)
+  const otherAuthor = projection(assignment({ user: { id: 3, login: 'outside', type: 'User' } })).content!
+  expect(otherAuthor.parentText!.contentHash).not.toBe(variant.contentHash)
+  // Removing the parent text yields exactly the factual delivery and its hash (used to supersede).
+  const facts = withoutGitHubParentText(variant.delivery)
+  expect(facts).toEqual(content.delivery!)
+  expect(githubActionReviewed(content, facts)).toEqual({
+    contentHash: content.contentHash,
+    byteCount: content.byteCount,
+  })
+  expect(githubParentTextReviewText(variant.delivery)).toBe(variant.delivery.body)
+  expect(githubParentTextReviewText(content.delivery!)).toBeNull()
+  // A later updated_at is no longer provably unchanged since creation.
+  expect(projection(assignment({ updated_at: '2026-10-02T10:00:01Z' })).content!.parentText!.unchanged).toBe(false)
+})
+
+test('a missing or unverifiable parent author ID offers no parent text', () => {
+  for (const user of [
+    undefined,
+    { login: 'outside', type: 'User' },
+    { id: '2', login: 'outside', type: 'User' },
+    { id: 0, login: 'outside', type: 'User' },
+    { id: 2, login: 'outside', type: 'Organization' },
+    { id: 2, login: 'ghost', type: 'User' },
+  ]) {
+    const content = projection(assignment({ user })).content!
+    expect(content.objectKind).toBe('action')
+    expect(content.parentText).toBeUndefined()
+  }
+  // No parent ID or repository ID: no object to prove provenance against.
+  expect(projection(assignment({ id: undefined })).content!.parentText).toBeUndefined()
+  const noRepo = assignment()
+  noRepo.payload.repository = { full_name: 'Acme/Project' }
+  expect(projection(noRepo).content!.parentText).toBeUndefined()
+})
+
+test('parent text uses the comment size caps: bounded preview, full text hashed, oversize falls back to facts', () => {
+  const long = projection(assignment({ body: 'X'.repeat(30000) + 'END' })).content!
+  const variant = long.parentText!
+  expect(variant.delivery.body.length).toBe(24000)
+  expect(variant.delivery.body).toStartWith(long.delivery!.body)
+  expect(variant.delivery.data.notificationTruncated).toBe(true)
+  expect((variant.delivery.data.parentContent as { body: string }).body).toEndWith('END')
+  expect(projection(assignment()).content!.parentText!.delivery.data.notificationTruncated).toBe(false)
+  // Larger than the 256 KiB review cap: the factual message stands alone, never truncated into review.
+  const oversize = projection(assignment({ body: 'é'.repeat(140000) })).content!
+  expect(oversize.parentText).toBeUndefined()
+  expect(oversize.delivery).not.toBeNull()
+  expect(oversize.reason).toBeNull()
 })
 
 test('reviewed full text and the bounded notification preview are explicitly distinct and both approval-bound', () => {

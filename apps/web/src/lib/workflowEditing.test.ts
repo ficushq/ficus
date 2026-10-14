@@ -1,12 +1,14 @@
 import { FLOW_START_ID, layoutWorkflowGraph } from './workflowGraph'
 import { expect, test } from 'bun:test'
-import { createBlankWorkflow, workflowDefinitionSchema } from '@ficus/shared'
+import { createBlankWorkflow, workflowDefinitionSchema, type WorkflowDecisionStep } from '@ficus/shared'
 import {
   insertWorkflowStep,
   separateWorkflowParticipant,
   changedWorkflowSteps,
   removeWorkflowStep,
   connectWorkflowOutcome,
+  removeWorkflowConnection,
+  renameWorkflowOutcome,
 } from './workflowEditing'
 
 test('inserting a step splices one forward connection and preserves later work and the source snapshot', () => {
@@ -220,4 +222,56 @@ test('making a participant separate copies settings for only the selected step a
   separated.definition.participants['publish-agent-2']!.tier = 'exhaustive'
   expect(separated.definition.participants.worker!.tier).toBe('deep')
   expect(workflowDefinitionSchema.safeParse(separated.definition).success).toBe(true)
+})
+
+test('a new decision step asks one question, routes a confident yes onward and asks a person otherwise', () => {
+  const source = createBlankWorkflow()
+  const { definition, selected } = insertWorkflowStep(source, source.entry, 'decision')
+  const step = definition.steps.find((entry) => entry.id === selected)!
+  expect(selected).toBe('decision-1')
+  expect(step).toMatchObject({
+    kind: 'decision',
+    name: 'Decision 1',
+    input: ['title', 'description', 'incoming-results'],
+    questions: { ready: { type: 'yesno' } },
+    routes: [{ when: { type: 'yesno', question: 'ready', op: 'at-least', probability: 0.8 }, outcome: 'completed' }],
+    outcomes: { completed: { next: 'finish' } },
+  })
+  expect((step as WorkflowDecisionStep).otherwise).toBeUndefined()
+  // A decision step has no participant of its own.
+  expect(Object.keys(definition.participants)).toEqual(Object.keys(source.participants))
+  expect(workflowDefinitionSchema.safeParse(definition).success).toBe(true)
+})
+
+test('renaming or removing a decision outcome keeps its routes consistent', () => {
+  const source = createBlankWorkflow()
+  const inserted = insertWorkflowStep(source, source.entry, 'decision')
+  const draft = structuredClone(inserted.definition)
+  const step = draft.steps.find((entry) => entry.id === inserted.selected) as WorkflowDecisionStep
+  step.outcomes.review = { next: 'finish' }
+  step.otherwise = 'review'
+  step.unavailable = 'completed'
+  const renamed = renameWorkflowOutcome(draft, step.id, 'completed', 'ship')
+  const after = renamed.steps.find((entry) => entry.id === step.id) as WorkflowDecisionStep
+  expect(Object.keys(after.outcomes)).toEqual(['ship', 'review'])
+  expect(after.routes[0]!.outcome).toBe('ship')
+  expect(after.unavailable).toBe('ship')
+  expect(workflowDefinitionSchema.safeParse(renamed).success).toBe(true)
+
+  const removed = removeWorkflowConnection(renamed, step.id, 'ship')
+  const pruned = removed.steps.find((entry) => entry.id === step.id) as WorkflowDecisionStep
+  expect(pruned.routes).toEqual([])
+  expect(pruned.unavailable).toBeUndefined()
+  expect(pruned.otherwise).toBe('review')
+})
+
+test('a decision step cannot be the target of a revision loop', () => {
+  const source = createBlankWorkflow()
+  const { definition, selected } = insertWorkflowStep(source, source.entry, 'decision')
+  const onward = insertWorkflowStep(definition, selected)
+  expect(() => connectWorkflowOutcome(onward.definition, onward.selected, 'completed', selected)).toThrow(
+    'A decision step cannot do revisions'
+  )
+  // Removing the step it routes to prunes nothing it still needs.
+  expect(workflowDefinitionSchema.safeParse(removeWorkflowStep(onward.definition, onward.selected)).success).toBe(true)
 })

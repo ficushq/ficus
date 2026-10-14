@@ -21,6 +21,20 @@ export interface DecisionSettings {
   features: DecisionFeature[]
   /** Whether the OpenAI API services key is set; OpenAI Decisions has no key of its own. */
   openAIServicesKey: boolean
+  /** Saving corrections as candidate eval cases: opt-in, and unavailable on hosted instances. */
+  evalCapture?: EvalCaptureState
+}
+
+export interface EvalCaptureState {
+  available: boolean
+  enabled: boolean
+  /** Candidates waiting for review with `bun run decisions:eval --inbox`. */
+  pending: number
+}
+
+/** Turn saving corrections as candidate eval cases on or off. */
+export function setEvalCapture(enabled: boolean): Promise<EvalCaptureState> {
+  return apiFetch<EvalCaptureState>('/decisions/eval-capture', { method: 'PUT', body: JSON.stringify({ enabled }) })
 }
 
 /** A feature as Core sends it: its purpose info is spread in, including `offByDefault`. */

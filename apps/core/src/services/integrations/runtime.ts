@@ -105,8 +105,12 @@ import { materializeGitHubDispatch } from '../squad-activity/materialize'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { regenerateEnvFileForSquad } from '../squad/env'
 import { GitHubCommitSigning, githubSigningKeysApi } from './github/commit-signing'
-import { defaultGitHubConnectionId, githubConnectionIdsForUser } from './github/commit-signing-store'
-import { resolveGitHubIdentity } from '../sandbox/github-identity'
+import {
+  githubConnectionIdsForUser,
+  githubSigningAccount,
+  githubSigningAccountsForSquad,
+} from './github/commit-signing-store'
+import { gitHubAccountEmails } from './github/author-defaults'
 import { DbOAuthStateRepository } from './authorization/db-state-repository'
 import { DbAuthorizationFlowReceiptRepository } from './authorization/flow-repository'
 import { AuthorizationFlowRecoveryWorker } from './authorization/flow-recovery-worker'
@@ -185,17 +189,19 @@ export const githubCommitSigning = new GitHubCommitSigning({
     return { accessToken: resolved.credential.accessToken, login, userId }
   },
   connectionIdsFor: githubConnectionIdsForUser,
-  squadConnectionId: defaultGitHubConnectionId,
-  async signerEmails(squadId, connectionId) {
-    const emails: string[] = []
-    const connection = await integrationConnectionRepository.get(connectionId)
-    if (connection) {
-      const { login, userId } = parseGitHubConfiguration(connection.configuration)
-      emails.push(`${userId}+${login}@users.noreply.github.com`)
-    }
-    const identity = await resolveGitHubIdentity(squadId)
-    if (identity.gitUserEmail) emails.push(identity.gitUserEmail)
-    return [...new Set(emails)]
+  squadAccounts: githubSigningAccountsForSquad,
+  connectionAccount: githubSigningAccount,
+  accountEmails(account, squadId) {
+    // The token is read only to load the account's public profile, through the
+    // same strict resolvers token use goes through, pinned to this connection.
+    return gitHubAccountEmails(
+      { id: account.connectionId, configuration: { version: 1, userId: account.userId, login: account.login } },
+      async () =>
+        (squadId
+          ? await resolveGitHubConnection(squadId, account.connectionId)
+          : await resolveInstanceGitHubConnection(account.connectionId)
+        )?.credential.accessToken
+    )
   },
   reproject: (connectionId) => reprojectConnection(connectionId, 'github'),
   keyTitle() {
@@ -209,6 +215,13 @@ export const githubCommitSigning = new GitHubCommitSigning({
   },
   now: () => new Date(),
 })
+
+/** Commit-signing state shown with a GitHub connection in `ficus integration list/get`; nothing for other providers. */
+async function githubCommitSigningView(connection: { id: string; providerKey: string }, checkGitHub = false) {
+  if (connection.providerKey !== 'github') return {}
+  const commitSigning = await githubCommitSigning.summary(connection.id, { checkGitHub })
+  return commitSigning ? { commitSigning } : {}
+}
 export const integrationCredentialCleanupWorker = new IntegrationCredentialCleanupWorker(
   new DbIntegrationCredentialCleanupRepository(),
   getSecretStore()
@@ -666,12 +679,15 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
       (await integrationConnectionRepository.list(providerKey)).map(async (row) => ({
         ...(await integrationConnectionService.safeView(row)),
         isGlobalDefault: row.id === defaultId,
+        ...(await githubCommitSigningView(row)),
       }))
     )
   },
   async get(id: string) {
     const row = await integrationConnectionRepository.get(id)
-    return row ? integrationConnectionService.safeView(row) : null
+    return row
+      ? { ...(await integrationConnectionService.safeView(row)), ...(await githubCommitSigningView(row, true)) }
+      : null
   },
   providerFor: (id: string) => integrationConnectionRepository.providerFor(id),
   githubCommitSigning: (id: string) => githubCommitSigning.status(id),
@@ -810,6 +826,7 @@ export const squadIntegrationRoutesService = {
       assignment,
       attached,
       connections,
+      ...(providerKey === 'github' ? { commitSigning: await githubCommitSigning.squadSummary(squadId) } : {}),
       ...(hasSandboxProjection(providerKey)
         ? {
             projection:

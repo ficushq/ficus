@@ -195,6 +195,10 @@ Both the initial prompt batch and live interventions carry an opaque, server-gen
 
 A missed nudge does not lose the row. Settlement makes bounded requeue attempts while pending human messages remain. After that retry budget is exhausted, rows stay pending until another message wakes the agent. The `/steer` and `/follow-up` routes are deprecated compatibility surfaces; they use this same path, and neither delivery mode travels over `agent_control`.
 
+#### Composer suggestion
+
+While an agent works, the web composer suggests the mode by whether the draft should reach the agent now. A draft about the current work (same task, files, feature or goal, including follow-on steps) interrupts, and so does one that needs the agent now though it shares no topic with the work: a status question ("how's it going?", "are you stuck?"), "stop" or "wait". Separate work that can wait follows up. About 400ms after typing pauses it calls `POST /api/agents/:id/delivery-suggestion` with `{draft}` (at most 4,000 characters), authorized like `/message`. Core answers `{suggestion: null}` without a model call when the agent has no queued, sandbox-waiting or running turn, is waiting for input, the **Composer interrupt or follow-up** decision feature is off, the draft is under three words, or it is only an acknowledgement ("ok, sounds good"). Otherwise it builds a short, deterministic state from the database (the execution's starting message, the work stream title, the execution's last three tool calls with a short target, the tail of the agent's latest text, and the draft; about 800 tokens) and asks two yes/no questions in one `composer-delivery` decision with a 1.5s budget: `related` (about the current work) and `now` (should reach the agent now rather than wait). Either at 0.7 or more is `steer`; `related` at most 0.3 with `now` at most 0.5 is `follow-up`; anything else, or no answer, is `null`. Both answers come back as `related` and `now`. The composer pre-selects a suggestion and marks it "Auto"; a manual choice wins for the rest of the draft, and clearing or sending returns to Interrupt. Sending never waits for a suggestion.
+
 ### Stop / Continue
 
 1. **Stop:** persist `running → stopping`, then send a best-effort `agent_control` hint. The worker aborts on receipt. If the hint is missed, the runner detects the stored intent when the turn settles, worker startup completes stale stopping rows, and force-stop remains available for an immediate hard stop.
@@ -361,6 +365,7 @@ GET    /api/agents/:id/stream          — SSE stream (proxy from worker)
 GET    /api/agents/:id/active          — Get active execution
 GET    /api/agents/:id/executions      — List executions
 POST   /api/agents/:id/message         — Send a durable message; choose deliveryMode for steer/follow-up
+POST   /api/agents/:id/delivery-suggestion — Suggest steer or follow-up for a draft while the agent works
 POST   /api/agents/:id/steer           — Deprecated compatibility route for a steering message
 POST   /api/agents/:id/follow-up       — Deprecated compatibility route for a follow-up message
 POST   /api/agents/:id/stop            — Stop active execution

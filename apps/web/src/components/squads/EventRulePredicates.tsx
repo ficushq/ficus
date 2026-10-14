@@ -1,10 +1,23 @@
 import {
+  DECISION_YESNO_DEFAULT_THRESHOLD,
+  EVENT_DECISION_PREDICATES_MAX,
   eventPredicateFields,
   eventPredicateOperators,
+  isEventDecisionPredicate,
   squadEventRuleSchema,
+  type EventDecisionPredicate,
   type EventPredicate,
+  type EventRulePredicate,
   type SquadEventRule,
 } from '@ficus/shared'
+import { EventRuleDecisionCondition } from './EventRuleDecisionCondition'
+
+const initialDecisionPredicate = (): EventDecisionPredicate => ({
+  kind: 'decision',
+  question: { type: 'yesno', instructions: '' },
+  when: { type: 'yesno', op: 'at-least', probability: DECISION_YESNO_DEFAULT_THRESHOLD },
+  onUnavailable: 'no-match',
+})
 
 export function EventRulePredicates({
   rule,
@@ -13,11 +26,12 @@ export function EventRulePredicates({
 }: {
   rule: SquadEventRule
   position: number
-  onChange: (predicates: EventPredicate[]) => void
+  onChange: (predicates: EventRulePredicate[]) => void
 }) {
   const fields = eventPredicateFields(rule.source) ?? {}
   const predicates = rule.predicates ?? []
-  const update = (index: number, predicate: EventPredicate) =>
+  const decisionCount = predicates.filter(isEventDecisionPredicate).length
+  const update = (index: number, predicate: EventRulePredicate) =>
     onChange(predicates.map((item, i) => (i === index ? predicate : item)))
   const validation = squadEventRuleSchema.safeParse(rule)
   const initial = (field: string): EventPredicate => ({
@@ -31,11 +45,23 @@ export function EventRulePredicates({
       <p className="text-xs text-muted">
         All conditions must match, AND the shared scope and other filters. Missing or null values fail comparisons
         (including neq); exists treats both as absent. Collection contains checks one exact member. Empty collections
-        are present.
+        are present. A decision condition asks a decision model a question about the event; it is asked last, only when
+        everything else matches.
       </p>
       {predicates.map((predicate, index) => {
-        const field = fields[predicate.field]
         const prefix = `Rule ${position} condition ${index + 1}`
+        if (isEventDecisionPredicate(predicate))
+          return (
+            <EventRuleDecisionCondition
+              key={index}
+              rule={rule}
+              predicate={predicate}
+              label={prefix}
+              onChange={(next) => update(index, next)}
+              onRemove={() => onChange(predicates.filter((_, i) => i !== index))}
+            />
+          )
+        const field = fields[predicate.field]
         const boolean = predicate.op === 'exists' || (field?.type === 'boolean' && predicate.op !== 'in')
         return (
           <div key={index} className="flex flex-wrap items-end gap-2">
@@ -133,14 +159,26 @@ export function EventRulePredicates({
           {validation.error.issues.map((issue) => issue.message).join('; ')}
         </p>
       )}
-      <button
-        type="button"
-        className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm disabled:opacity-40"
-        disabled={!Object.keys(fields).length || predicates.length >= 16}
-        onClick={() => onChange([...predicates, initial(Object.keys(fields)[0]!)])}
-      >
-        Add condition
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm disabled:opacity-40"
+          disabled={!Object.keys(fields).length || predicates.length >= 16}
+          onClick={() => onChange([...predicates, initial(Object.keys(fields)[0]!)])}
+        >
+          Add condition
+        </button>
+        <button
+          type="button"
+          className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm disabled:opacity-40"
+          disabled={
+            !Object.keys(fields).length || predicates.length >= 16 || decisionCount >= EVENT_DECISION_PREDICATES_MAX
+          }
+          onClick={() => onChange([...predicates, initialDecisionPredicate()])}
+        >
+          Add decision condition
+        </button>
+      </div>
     </div>
   )
 }

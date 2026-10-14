@@ -10,7 +10,15 @@ import {
   type RenderItem,
   type StreamStatus,
 } from '@ficus/client-core'
-import type { ChatScope, DeliveryMode, ExecutionStatus, Message, MessageMetadata, SessionUsage } from '@ficus/shared'
+import type {
+  AssistantRoutingSend,
+  ChatScope,
+  DeliveryMode,
+  ExecutionStatus,
+  Message,
+  MessageMetadata,
+  SessionUsage,
+} from '@ficus/shared'
 import { focusManager, onlineManager, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useConversationEnvironment } from './ConversationClientProvider'
@@ -84,6 +92,8 @@ export interface UseAgentConversationResult {
 interface SendOpts {
   imageIds?: string[]
   deliveryMode?: DeliveryMode
+  /** Assistant conversations: the composer's routing preview or the user's pick. */
+  assistantRouting?: AssistantRoutingSend
 }
 
 // Query cache pages can outlive a hook or be shared by multiple mounted views.
@@ -1083,6 +1093,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         imageIds: item.imageIds,
         deliveryMode: item.deliveryMode,
         clientId: item.clientId,
+        ...(item.assistantRouting ? { assistantRouting: item.assistantRouting } : {}),
       })
       if (result?.success) {
         const queued = result.queued ?? (result.status === 'running' || item.queued === true)
@@ -1200,6 +1211,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
             : options.pagePath,
         imageIds: opts?.imageIds,
         deliveryMode: opts?.deliveryMode ?? 'steer',
+        ...(opts?.assistantRouting ? { assistantRouting: opts.assistantRouting } : {}),
         queued,
         origin: resolvedAgentId ? 'agent' : 'create',
         status: 'sending',

@@ -29,6 +29,7 @@ import { routeDecision, SessionUsage } from '@ficus/shared'
 import { filterToolsByPolicy } from '../lib'
 import { getContentSafetyRegistry } from '../services/security/content-safety-registry'
 import { wrapToolsWithOutputRedaction, type OnStoredToolResult } from '../services/security/tool-output-redaction'
+import { wrapToolsWithFirewall } from '../services/decisions/tool-firewall'
 import { PrecompactionController, type PrecompactionDeps } from '../services/agent/precompaction/controller'
 import {
   createFitCompactionFallback,
@@ -148,10 +149,16 @@ export class AgentSession {
     // Redact stored secrets out of tool results before the model reads them.
     // This is the security boundary: nothing downstream re-redacts, because
     // anything the agent authored is the operator's own data.
-    const customTools = wrapToolsWithOutputRedaction(
-      [...(tools?.core ?? []), ...filterToolsByPolicy(tools?.available ?? [], tools?.allow, tools?.deny)],
-      getContentSafetyRegistry(),
-      onStoredToolResult
+    // Then screen outside content (web pages, search results, browser text) for instructions aimed at
+    // the agent, and warn it when there are. After redaction, so the decision model never sees stored
+    // secrets; it fails open, so a tool never fails because of it.
+    const customTools = wrapToolsWithFirewall(
+      wrapToolsWithOutputRedaction(
+        [...(tools?.core ?? []), ...filterToolsByPolicy(tools?.available ?? [], tools?.allow, tools?.deny)],
+        getContentSafetyRegistry(),
+        onStoredToolResult
+      ),
+      { agentId: storage?.agentId }
     )
 
     const resourceLoader = await FicusResourceLoader.create(systemPrompt, skillPaths, extensionPaths)

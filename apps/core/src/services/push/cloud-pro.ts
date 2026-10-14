@@ -56,11 +56,20 @@ const admissionSchema = z.object({
 })
 /** New policy-bound Cloud devices keep direct APNs transport. Denial never falls back to an unfiltered send. */
 export async function sendManagedCloudAlert(
-  input: { bindingToken: string; deviceToken: string; environment: ApnsEnvironment; routing: RelayRouting },
+  input: {
+    bindingToken: string
+    deviceToken: string
+    environment: ApnsEnvironment
+    platform?: 'ios' | 'android'
+    routing: RelayRouting
+  },
   deps = { request: platformRequest, send: sendApnsNotification }
 ) {
   const admitted = await deps.request({
-    path: '/api/cloud-mobile-pro/notifications/admit',
+    path:
+      input.platform === 'android'
+        ? '/api/cloud-mobile-pro/notifications/send'
+        : '/api/cloud-mobile-pro/notifications/admit',
     body: {
       version: 1,
       bindingToken: input.bindingToken,
@@ -69,6 +78,12 @@ export async function sendManagedCloudAlert(
     },
     schema: admissionSchema,
   })
+  if (input.platform === 'android')
+    return {
+      ok: admitted.accepted,
+      status: admitted.reason === 'device_unregistered' ? 410 : 0,
+      reason: admitted.reason,
+    }
   if (!admitted.accepted || !admitted.notification) return { ok: admitted.accepted, status: 0, reason: admitted.reason }
   const data = admitted.notification
   const alert = pushAlertText(data)

@@ -178,7 +178,6 @@ function SectionHeader({
   onToggle,
   actions,
   alignDisclosure,
-  flush,
 }: {
   title: string
   count?: ReactNode
@@ -187,7 +186,6 @@ function SectionHeader({
   onToggle?: () => void
   actions?: ReactNode
   alignDisclosure?: boolean
-  flush?: boolean
 }) {
   const content = (
     <div className="flex items-center gap-2">
@@ -206,10 +204,7 @@ function SectionHeader({
   if (collapsible && onToggle) {
     return (
       <div className="flex items-center">
-        <button
-          onClick={onToggle}
-          className={clsx('ficus-button ficus-button-ghost min-w-0 flex-1 py-2 text-left', !flush && 'px-3')}
-        >
+        <button onClick={onToggle} className="ficus-button ficus-button-ghost min-w-0 flex-1 px-3 py-2 text-left">
           {content}
         </button>
         {actions && <div className="flex shrink-0 items-center gap-1 px-2">{actions}</div>}
@@ -219,7 +214,7 @@ function SectionHeader({
 
   return (
     <div className="flex items-center">
-      <div className={clsx('min-w-0 flex-1 py-2', !flush && 'px-3')}>{content}</div>
+      <div className="min-w-0 flex-1 px-3 py-2">{content}</div>
       {actions && <div className="flex shrink-0 items-center gap-1 px-2">{actions}</div>}
     </div>
   )
@@ -522,7 +517,7 @@ function WorkStreamRow({
   if (feedLayout) {
     const completedAt = new Date(workStream.completedAt ?? workStream.updatedAt)
     return (
-      <li className="relative rounded-lg pl-6 pr-3 py-2.5 hover:bg-surface-hover" data-testid="feed-work-row">
+      <li className="relative rounded-lg pl-9 pr-3 py-2.5 hover:bg-surface-hover" data-testid="feed-work-row">
         <button
           className="flex w-full items-start gap-2 text-left after:absolute after:inset-0 after:rounded-lg"
           onClick={onClick}
@@ -1007,7 +1002,6 @@ export function WorkStreamList({
               <SectionHeader
                 title={feedLayout ? 'Active work' : 'Active'}
                 alignDisclosure={feedLayout}
-                flush={feedLayout}
                 count={activePending ? <SkeletonText className="w-5" /> : activeStreams.length}
                 collapsible={activeCollapsible}
                 collapsed={activeCollapsed}
@@ -1049,7 +1043,6 @@ export function WorkStreamList({
             <section className="space-y-2">
               <SectionHeader
                 title={doneTitle}
-                flush={feedLayout}
                 count={
                   donePending ? (
                     <SkeletonText className="w-5" />
@@ -1143,7 +1136,7 @@ function WorkStreamRowsSkeleton({ count, label, feedLayout }: { count: number; l
       <div className="space-y-1">
         <SkeletonRows count={Math.max(1, count)}>
           {(index) => (
-            <div key={index} className={clsx('pr-3 py-3.5', feedLayout ? 'pl-6' : 'pl-3')}>
+            <div key={index} className={clsx('pr-3 py-3.5', feedLayout ? 'pl-9' : 'pl-3')}>
               <div className="hidden h-5 items-center gap-2 md:flex">
                 <SkeletonBlock className="h-3 w-3 shrink-0 rounded-full" />
                 <SkeletonLine className={index % 3 === 0 ? 'w-2/3' : 'w-1/2'} />

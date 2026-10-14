@@ -18,6 +18,7 @@ import { recordCanonicalGitHubFeedback } from './feedback-store'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 import { isTrustedGitHubFeedbackContent } from './feedback-trust'
+import { supersedeGitHubParentText } from './feedback-parent'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 const reasons = [
@@ -295,23 +296,27 @@ async function releaseInPass(
         await lockGitHubTrustAuthority(tx)
         const current = await readFeedbackRevision(tx, id, true)
         if (!current || current.leaseToken !== leaseToken) return // The lease was authoritatively taken over; a stale worker cannot settle it.
-        const revoked =
+        const untrusted =
           current.decision === 'automatic' &&
           state !== 'delivered' &&
           !(await isTrustedGitHubFeedbackContent(tx, current.squadId, current))
+        // Only the parent text's author lost trust, and no agent has it yet: the factual message
+        // replaces it as a new automatic revision. Any other revocation is held for a person.
+        const superseded = untrusted && !!(await supersedeGitHubParentText(tx, current))
+        const revoked = untrusted && !superseded
         await tx
           .update(githubFeedbackRevisions)
           .set({
             ...(revoked ? { decision: 'pending' as const, decisionVersion: current.decisionVersion + 1 } : {}),
-            releaseState: revoked ? 'held' : state,
-            reason: revoked ? 'trust_revoked' : reason,
+            releaseState: revoked ? 'held' : superseded ? 'obsolete' : state,
+            reason: revoked ? 'trust_revoked' : superseded ? 'parent_trust_revoked' : reason,
             leaseToken: null,
             leaseExpiresAt: null,
             // Exponential backoff from 30 s, doubling up to a one-hour ceiling: a retained release
             // (rotated connection, paused stream, recipient gone) must not re-check GitHub every
             // half minute for ever.
             nextAttemptAt:
-              revoked || state === 'delivered' || state === 'obsolete'
+              revoked || superseded || state === 'delivered' || state === 'obsolete'
                 ? null
                 : sql`clock_timestamp() + interval '30 seconds' * least(power(2, least(${current.attempts}, 7)), 120)`,
             updatedAt: new Date(),

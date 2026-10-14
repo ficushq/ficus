@@ -89,6 +89,21 @@ export async function recordDeliveryObservation(
   return true
 }
 
+/**
+ * The head a push event reports for the stream's primary delivery pull request, when the event is
+ * one. Only `pull_request.updated` moves a head: late CI and reviews can name an older commit.
+ */
+export function deliveryPullRequestHead(metadata: unknown, event: Event): string | undefined {
+  if (event.fact.output !== 'pull_request.updated') return undefined
+  const target = eventTrackedResource(event)
+  if (!target || target.kind !== 'pull_request') return undefined
+  const connectionId = event.authority.kind === 'connection' ? event.authority.connectionId : undefined
+  const primary = deliveryPullRequests(metadata).find((candidate) => candidate.source === 'delivery')
+  if (!primary || !trackedResourceMatches(primary, { ...target, connectionId })) return undefined
+  const headSha = readString((event.fact.data.pullRequest as Record<string, unknown> | undefined)?.headSha, 64)
+  return headSha && /^[a-f0-9]{40,64}$/.test(headSha) ? headSha : undefined
+}
+
 /** Record the live merge evidence gathered at completion. Squad row first, then the stream row. */
 export async function recordDeliveryVerification(
   streamId: string,

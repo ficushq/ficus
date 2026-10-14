@@ -36,6 +36,8 @@ async function fixture(realtime = false) {
     inbox: mock(async () => ({})),
     acknowledge: mock(async () => ({})),
     release: mock(async () => ({})),
+    correctRouting: mock(async () => ({ hint: {} })),
+    previewRouting: mock(async () => ({ hint: null })),
   }
   const sendAccepted = mock((_text: string, options?: { clientId?: string }) => ({
     clientId: options?.clientId ?? 'send',
@@ -451,4 +453,113 @@ test('viewing a conversation reads its task updates; a hidden or compact one doe
   await f.dom.act(async () => f.render())
   await waitFor(() => expect(f.api.seenThrough).toHaveBeenCalledWith('conversation', 5))
   await f.cleanup()
+})
+
+test('the latest message corrects its routing in place; an older one asks the Assistant in the composer', async () => {
+  const f = await fixture()
+  try {
+    f.queryClient.setQueryData(queryKeys.squads.list('active'), [
+      { id: 'squad-chlea', name: 'Chlea', purpose: 'The Chlea app', isAnonymous: false },
+      { id: 'squad-billing', name: 'Billing', purpose: 'Invoices', isAnonymous: false },
+      { id: 'squad-anon', name: 'Scratch', purpose: '', isAnonymous: true },
+    ] as any)
+    const human = (id: string, metadata: object, content = 'Fix it') =>
+      ({ kind: 'persisted', id, message: { id, role: 'human', content, metadata } }) as any
+    const routed = {
+      source: 'user_chat',
+      assistantRouting: { scope: 'squad', squadId: 'squad-chlea', squadName: 'Chlea', confidence: 0.91 },
+    }
+    ;(f.controller as { items: unknown[] }).items = [
+      human('m-0', routed, 'The export   button\ncrashes'),
+      human('m-1', { source: 'user_chat' }),
+      human('m-2', { source: 'assistant_routing_correction' }, '[System] You said this is for Chlea.'),
+    ]
+    await f.dom.act(async () => f.render())
+    await waitFor(() => expect(f.chat.renderMessageFooter).toBeDefined())
+    expect(f.chat.renderMessageFooter!(human('m-1', { source: 'user_chat' }))).toBeNull()
+    // A follow-up's inherited routing reaches only the model: no chip.
+    expect(
+      f.chat.renderMessageFooter!(
+        human('m-1', {
+          source: 'user_chat',
+          assistantRoutingInherited: { scope: 'squad', squadId: 'squad-chlea', fromMessageId: 'm-0' },
+        })
+      )
+    ).toBeNull()
+    const footer = async (item: unknown) => {
+      const footerRoot = f.dom.createRoot()
+      await f.dom.act(async () =>
+        footerRoot.root.render(
+          <QueryClientProvider client={f.queryClient}>{f.chat.renderMessageFooter!(item as never)}</QueryClientProvider>
+        )
+      )
+      const chip = footerRoot.container.querySelector<HTMLButtonElement>('[data-assistant-routing] button')!
+      expect(chip.textContent).toBe('Chlea')
+      await f.dom.act(async () => fireEvent.click(chip))
+      return [...f.dom.window.document.querySelectorAll<HTMLElement>('[role="option"]')]
+    }
+
+    // m-1 is the latest message the user sent (the system note after it doesn't count).
+    const options = await footer(human('m-1', routed))
+    // Anonymous squads are not offered.
+    expect(options.map((row) => row.textContent)).toEqual([
+      'No squadFicus itself or general work',
+      'ChleaThe Chlea app',
+      'BillingInvoices',
+    ])
+    await f.dom.act(async () => fireEvent.click(options[2]!))
+    expect(f.api.correctRouting).toHaveBeenCalledWith('conversation', {
+      messageId: 'm-1',
+      clientId: expect.any(String),
+      scope: 'squad',
+      squadId: 'squad-billing',
+    })
+    expect(f.chat.composerDraft).toBeUndefined()
+
+    // m-0's work has already gone somewhere: picking a squad writes a request instead.
+    f.api.correctRouting.mockClear()
+    const older = await footer(human('m-0', routed, 'The export   button\ncrashes'))
+    await f.dom.act(async () => fireEvent.click(older.filter((row) => row.textContent?.startsWith('Billing')).at(-1)!))
+    expect(f.api.correctRouting).not.toHaveBeenCalled()
+    expect(f.chat.composerDraft).toEqual({ id: 1, text: 'Please move "The export button crashes" to Billing.' })
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test("the Assistant's composer routes drafts and sends the user's pick with the message", async () => {
+  const f = await fixture()
+  try {
+    await f.dom.act(async () => f.render())
+    await waitFor(() => expect(f.chat.sendOptions).toBeDefined())
+    expect(f.chat.onDraftChange).toBeDefined()
+    expect(f.chat.composerStatus).toBeDefined()
+    // Nothing picked or previewed: the message is routed by the turn as usual.
+    expect(f.chat.sendOptions!('The checkout button is broken')).toBeUndefined()
+    // A paused draft asks where it would go.
+    await f.dom.act(async () => f.chat.onDraftChange!('The checkout button is broken'))
+    await waitFor(() =>
+      expect(f.api.previewRouting).toHaveBeenCalledWith(
+        'conversation',
+        'The checkout button is broken',
+        expect.anything()
+      )
+    )
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('page editors are not routed while typing', async () => {
+  const f = await fixture()
+  try {
+    f.props.pageEditor = { prepare: async () => {} } as never
+    await f.dom.act(async () => f.render())
+    await waitFor(() => expect(f.chat.onDraftChange).toBeDefined())
+    await f.dom.act(async () => f.chat.onDraftChange!('The checkout button is broken'))
+    await new Promise((resolve) => setTimeout(resolve, 900))
+    expect(f.api.previewRouting).not.toHaveBeenCalled()
+  } finally {
+    await f.cleanup()
+  }
 })

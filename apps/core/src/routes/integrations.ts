@@ -34,13 +34,19 @@ import { describeGitHubAuthorizationError } from '../services/integrations/autho
 import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 import { createLogger } from '../lib/infra/logger'
 import { userSessionRequired } from '../services/auth/user-session-required'
-import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
+import {
+  GitHubSignRefused,
+  GitHubSigningError,
+  type GitHubSignResult,
+} from '../services/integrations/github/commit-signing'
 import { MAX_SIGNING_PAYLOAD_BYTES } from '../services/integrations/github/signing-payload'
 import type { SafeIntegrationCatalogEntry } from '../services/integrations/plugin'
 import type {
   IntegrationAuthorizationStart,
   IntegrationDeviceAuthorizationStatus,
   GitHubCommitSigningStatus,
+  GitHubSquadCommitSigning,
+  GitHubSignResponse,
   GitHubRepositoryAccess,
 } from '@ficus/shared'
 
@@ -166,8 +172,8 @@ export interface IntegrationRoutesService extends Pick<
 }
 
 export interface SquadIntegrationRoutesService {
-  /** Sign a git commit or tag object with the squad's GitHub signing key (agents only). */
-  signGitObject?(squadId: string, agentId: string, payload: Buffer): Promise<string>
+  /** Sign a git commit or tag object for the squad, or decide it stays unsigned (agents only). */
+  signGitObject?(squadId: string, agentId: string, payload: Buffer): Promise<GitHubSignResult>
   configureScope?(
     squadId: string,
     providerKey: string,
@@ -187,6 +193,8 @@ export interface SquadIntegrationRoutesService {
     assignment: IntegrationConnectionSummary | null
     attached?: readonly (IntegrationConnectionSummary & { isDefault: boolean })[]
     connections: readonly IntegrationConnectionSummary[]
+    /** GitHub only: which attached accounts sign the squad's commits. Never key material. */
+    commitSigning?: GitHubSquadCommitSigning
     projection?: {
       status: 'pending' | 'installing' | 'ready' | 'degraded' | 'reconnect_required'
       lastErrorCode: string | null
@@ -762,7 +770,12 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
         c.header('Cache-Control', 'no-store')
         try {
           const payload = Buffer.from(c.req.valid('json').payload, 'base64')
-          return c.json({ signature: await service.signGitObject(resolvedSquadId(c), identity.agentId, payload) })
+          const result = await service.signGitObject(resolvedSquadId(c), identity.agentId, payload)
+          // An empty signature makes git create the object unsigned, with any CLI version.
+          const body: GitHubSignResponse = result.signed
+            ? { signature: result.signature }
+            : { signature: '', unsigned: { reason: result.reason, login: result.login, message: result.message } }
+          return c.json(body)
         } catch (error) {
           if (error instanceof GitHubSignRefused)
             return c.json(
@@ -785,6 +798,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
         ...(selection.attached
           ? { attached: selection.attached.map((row) => ({ ...redactSummary(row), isDefault: row.isDefault })) }
           : {}),
+        ...(selection.commitSigning ? { commitSigning: redactCommitSigning(selection.commitSigning) } : {}),
         ...(selection.projection === undefined ? {} : { projection: selection.projection }),
       })
     })
@@ -872,6 +886,21 @@ function redactSummary(connection: IntegrationConnectionSummary): IntegrationCon
     displayName: connection.displayName,
     enabled: connection.enabled,
     healthState: connection.healthState,
+  }
+}
+
+/** Rebuilt field by field so nothing but the public signing state can ride along. */
+function redactCommitSigning(value: GitHubSquadCommitSigning): GitHubSquadCommitSigning {
+  return {
+    defaultConnectionId: value.defaultConnectionId,
+    accounts: value.accounts.map((account) => ({
+      connectionId: account.connectionId,
+      isDefault: account.isDefault,
+      login: account.login,
+      state: account.state,
+      signsFor: [...account.signsFor],
+      ...(account.fingerprint ? { fingerprint: account.fingerprint } : {}),
+    })),
   }
 }
 

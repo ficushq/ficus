@@ -72,7 +72,7 @@ Open waits are typed records in `work_stream_waits`; review and blocked states a
 | `review`     | A verdict is required.                                     | Approve or send back the exact `workStreamId` + `waitId`.                       |
 | `manual`     | Operator input or an external action is required.          | Clear the exact wait with a response.                                           |
 | `question`   | A durable agent question is awaiting its answer lifecycle. | Read-only in work-stream detail; answer or dismiss its `agent-question` action. |
-| `dependency` | Another work stream must finish.                           | Read-only; the system satisfies it.                                             |
+| `dependency` | Another work stream must finish, or reach `ready`.         | Read-only; the system satisfies it.                                             |
 
 For checkpoint approval, review send-back, or manual clear, the wait closure and continuation-cycle reset/invalidation are durable transaction state. A completing approval durably records the terminal transition and invalidates the active continuation cycle.
 

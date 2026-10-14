@@ -1,8 +1,14 @@
-import { githubAccountIdSchema, type GitHubAccountIdentity, type GitHubTrustOrigin } from '@ficus/shared'
+import {
+  githubAccountIdSchema,
+  type GitHubAccountIdentity,
+  type GitHubTrustOrigin,
+  type IntegrationOutputFact,
+} from '@ficus/shared'
 import { and, eq, isNull } from 'drizzle-orm'
 import { db, type DbTx } from '../../../db'
 import { githubPersonalIdentities, githubTrustedAuthors, integrationAuditEvents, users } from '../../../db/schema'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
+import { githubParentTextAuthorId, hasGitHubParentText } from './feedback-envelope'
 import { isGitHubAuthorFilterEnabled } from './author-filter'
 import { hasUserPermissionWithExecutor, type Identity } from '../../rbac/permissions'
 
@@ -124,17 +130,31 @@ export async function resolveGitHubAuthorTrust(
 
 /**
  * Author AND actual editor must be currently trusted; transport origin is not an authority grant.
+ * An action that carries its parent's title and description (`envelope`/`delivery`) also needs that
+ * text's author to be currently trusted, by numeric ID; a malformed identity fails closed.
  * A squad with its author filter OFF ignores the trusted list: already-captured content is not
  * re-held or revoked for its author while the filter is off.
  */
 export async function isTrustedGitHubFeedbackContent(
   executor: Pick<typeof db, 'select'>,
   squadId: string,
-  content: { author: GitHubAccountIdentity | null; editor: GitHubAccountIdentity | null; attribution: string }
+  content: {
+    author: GitHubAccountIdentity | null
+    editor: GitHubAccountIdentity | null
+    attribution: string
+    envelope?: IntegrationOutputFact | null
+    delivery?: IntegrationOutputFact | null
+  }
 ): Promise<boolean> {
   if (!(await isGitHubAuthorFilterEnabled(executor as typeof db, squadId))) return true
   if (!content.author || !['creation', 'verified_edit'].includes(content.attribution)) return false
   if (!(await resolveGitHubAuthorTrust(executor, squadId, content.author.accountId)).length) return false
+  const delivered = content.envelope ?? content.delivery
+  if (
+    hasGitHubParentText(delivered) &&
+    !(await resolveGitHubAuthorTrust(executor, squadId, githubParentTextAuthorId(delivered))).length
+  )
+    return false
   return (
     content.attribution === 'creation' ||
     (!!content.editor && (await resolveGitHubAuthorTrust(executor, squadId, content.editor.accountId)).length > 0)

@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { connectWorkflowOutcome, removeWorkflowStep } from '../../lib/workflowEditing'
+import { connectWorkflowOutcome, removeWorkflowStep, renameWorkflowOutcome } from '../../lib/workflowEditing'
 import { useState, type ReactNode } from 'react'
 import {
   workflowStepSchema,
@@ -313,11 +313,7 @@ export function WorkflowStructureEditor({
                             event.target.value = name
                             return
                           }
-                          edit((draft) => {
-                            draft.steps[index]!.outcomes = Object.fromEntries(
-                              Object.entries(step.outcomes).map(([key, value]) => [key === name ? next : key, value])
-                            )
-                          })
+                          onChange(renameWorkflowOutcome(definition, step.id, name, next))
                           onSelectOutcome?.(next, name)
                         }}
                       />

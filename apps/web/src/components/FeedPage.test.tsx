@@ -196,6 +196,22 @@ describe('FeedPage', () => {
     expect(html).not.toContain('aria-label=')
   })
 
+  test('pads the Needs you header inside its highlight in both states', () => {
+    // The hover and focus highlight is the header box itself, so without inline padding the
+    // chevron sits on its edge. The caught-up button shares the padding to keep the titles aligned.
+    const headerTag = (html: string, tag: string) => {
+      const start = html.lastIndexOf(`<${tag}`, html.indexOf('Needs you'))
+      return html.slice(start, html.indexOf('>', start) + 1)
+    }
+    pendingActions = [action()]
+    expect(headerTag(renderFeedPage(), 'summary')).toMatch(/class="[^"]*\bpx-3\b/)
+
+    pendingActions = []
+    const caughtUp = headerTag(renderFeedPage(), 'button')
+    expect(caughtUp).toContain('disabled')
+    expect(caughtUp).toMatch(/class="[^"]*\bpx-3\b/)
+  })
+
   test('shows the Needs you loading state before the initial result resolves', () => {
     actionsLoading = true
     actionsFetching = true

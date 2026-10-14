@@ -9,6 +9,7 @@ import {
   decide,
   decisionChain,
   decisionCost,
+  decisionFeatures,
   decisionSpend,
   isDecisionFeatureEnabled,
   resetDecisionCooldownsForTests,
@@ -87,8 +88,8 @@ test('with nothing configured, a decision is unconfigured rather than a guess', 
 test('the first provider that answers wins; one that fails is tried last for a while', async () => {
   const first = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://first:11434' })
   const second = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://second:11434' })
-  // The first provider added becomes the default order; add the second after it.
-  await setDecisionRouting({ ...getDecisionRouting(), default: [first.id, second.id] }, 'test')
+  // Providers join the default order as they're added.
+  expect(getDecisionRouting().default).toEqual([first.id, second.id])
 
   const { fetcher, asked } = servers({ 'first:11434': { status: 503 }, 'second:11434': 0.97 })
   const outcome = await decide('github-firewall', question, { fetcher, skipLog: true })
@@ -199,6 +200,58 @@ test('an instance feature is on by default once a decision model exists, and can
   expect(isDecisionFeatureEnabled('tool-results')).toBe(false)
 })
 
+test('a sub-feature runs only while its parent does, and then by its own switch', async () => {
+  expect(isDecisionFeatureEnabled('tool-results-shell')).toBe(false)
+  await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://local:11434' })
+  expect(isDecisionFeatureEnabled('tool-results-shell')).toBe(true)
+  // The parent off turns it off, whatever its own switch says.
+  await setDecisionFeatureSwitch('tool-results', 'off', 'test')
+  for (const value of ['auto', 'on', 'off'] as const) {
+    await setDecisionFeatureSwitch('tool-results-shell', value, 'test')
+    expect(isDecisionFeatureEnabled('tool-results-shell')).toBe(false)
+  }
+  // Its own switch off with the parent on: shell screening is off, web screening still on.
+  await setDecisionFeatureSwitch('tool-results', 'auto', 'test')
+  expect(isDecisionFeatureEnabled('tool-results-shell')).toBe(false)
+  expect(isDecisionFeatureEnabled('tool-results')).toBe(true)
+  await setDecisionFeatureSwitch('tool-results-shell', 'auto', 'test')
+  expect(isDecisionFeatureEnabled('tool-results-shell')).toBe(true)
+  // Settings sees which feature it belongs to, and its own switch.
+  await setDecisionFeatureSwitch('tool-results-shell', 'off', 'test')
+  expect(decisionFeatures().find((feature) => feature.id === 'tool-results-shell')).toMatchObject({
+    parent: 'tool-results',
+    scope: 'instance',
+    switch: 'off',
+    enabled: false,
+  })
+  expect(decisionFeatures().find((feature) => feature.id === 'tool-results')).not.toHaveProperty('parent')
+})
+
+test('a sub-feature without its own order asks its parent’s, then the default', async () => {
+  const local = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://local:11434' })
+  const hosted = await addDecisionProvider({ kind: 'jev', apiKey: 'k' })
+  const chain = () => decisionChain('tool-results-shell').map((p) => p.id)
+  await setDecisionRouting({ default: [local.id], purposes: {}, timeoutMs: 5000 }, 'test')
+  expect(chain()).toEqual([local.id])
+  await setDecisionRouting({ default: [local.id], purposes: { 'tool-results': [hosted.id] }, timeoutMs: 5000 }, 'test')
+  expect(chain()).toEqual([hosted.id])
+  await setDecisionRouting(
+    {
+      default: [local.id],
+      purposes: { 'tool-results': [hosted.id], 'tool-results-shell': [local.id] },
+      timeoutMs: 5000,
+    },
+    'test'
+  )
+  expect(chain()).toEqual([local.id])
+  // An empty order of its own is no order: the parent's is asked.
+  await setDecisionRouting(
+    { default: [local.id], purposes: { 'tool-results': [hosted.id], 'tool-results-shell': [] }, timeoutMs: 5000 },
+    'test'
+  )
+  expect(chain()).toEqual([hosted.id])
+})
+
 test('an answer costs its reported input tokens at the provider price, or an estimate when unreported', () => {
   const result = (inputTokens?: number) => ({
     answers: {},
@@ -250,4 +303,61 @@ test('spend adds up by feature and provider from the decision log', async () => 
   const firewall = (s: typeof spend) => s.byPurpose.find((row) => row.purpose === 'github-firewall')
   expect((firewall(spend)?.costUsd ?? 0) - (firewall(before)?.costUsd ?? 0)).toBeCloseTo(0.168, 9)
   await db.delete(decisionLog).where(eq(decisionLog.providerId, hosted.id))
+})
+
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+const withImage: DecisionRequest = { ...question, images: [{ mediaType: 'image/png', base64: PNG }] }
+
+test('a request with images skips providers whose model cannot read them', async () => {
+  const jev = await addDecisionProvider({ kind: 'jev', apiKey: 'k' })
+  const text = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://text:11434', model: 'qwen3:8b' })
+  const clef = await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://clef:11434', model: 'clef' })
+  await setDecisionRouting({ default: [jev.id, text.id, clef.id], purposes: {}, timeoutMs: 5000 }, 'test')
+  const { fetcher, asked } = servers({ 'api.typesafe.ai': 0.5, 'text:11434': 0.5, 'clef:11434': 0.9 })
+
+  const outcome = await decide('screenshot-filing', withImage, { fetcher, skipLog: true })
+  expect(outcome.ok && outcome.result.providerId).toBe(clef.id)
+  expect(asked).toEqual(['clef:11434'])
+
+  // The same question without an image still goes to the first provider.
+  asked.length = 0
+  const plain = await decide('screenshot-filing', question, { fetcher, skipLog: true })
+  expect(plain.ok && plain.result.providerId).toBe(jev.id)
+  expect(asked).toEqual(['api.typesafe.ai'])
+})
+
+test('when no provider reads images, an image decision is unconfigured and says why', async () => {
+  const jev = await addDecisionProvider({ kind: 'jev', apiKey: 'k' })
+  const { fetcher, asked } = servers({ 'api.typesafe.ai': 0.5 })
+  const outcome = await decide('screenshot-filing', withImage, { fetcher, skipLog: true })
+  expect(outcome).toEqual({
+    ok: false,
+    reason: 'unconfigured',
+    errors: [{ providerId: jev.id, error: 'Its model does not read images' }],
+  })
+  expect(asked).toEqual([])
+})
+
+test('screenshot filing is an instance feature, on by default once a decision model exists', async () => {
+  expect(isDecisionFeatureEnabled('screenshot-filing')).toBe(false)
+  await addDecisionProvider({ kind: 'systemone', baseUrl: 'http://local:11434' })
+  expect(isDecisionFeatureEnabled('screenshot-filing')).toBe(true)
+  await setDecisionFeatureSwitch('screenshot-filing', 'off', 'test')
+  expect(isDecisionFeatureEnabled('screenshot-filing')).toBe(false)
+})
+
+test("an image's estimated cost is a fixed token count, not its base64 length", () => {
+  const unreported = { answers: {}, providerId: 'p', model: 'clef', latencyMs: 1 }
+  const plain = decisionCost({ kind: 'cloudflare', model: 'clef' }, question, unreported).inputTokens
+  const big = { ...question, images: [{ mediaType: 'image/png' as const, base64: 'A'.repeat(400_000) }] }
+  expect(decisionCost({ kind: 'cloudflare', model: 'clef' }, big, unreported).inputTokens).toBe(plain + 1_000)
+})
+
+test('each new provider joins the end of the default order, but not a feature with its own order', async () => {
+  const jev = await addDecisionProvider({ kind: 'jev', apiKey: 'k' })
+  await setDecisionRouting({ ...getDecisionRouting(), purposes: { 'event-rules': [jev.id] } }, 'test')
+  const openai = await addDecisionProvider({ kind: 'openai' })
+  expect(getDecisionRouting()).toMatchObject({ default: [jev.id, openai.id], purposes: { 'event-rules': [jev.id] } })
+  // So an image decision (which Jev can't read) reaches OpenAI without the owner reordering anything.
+  expect(decisionChain('workflow-steps').map((p) => p.id)).toEqual([jev.id, openai.id])
 })

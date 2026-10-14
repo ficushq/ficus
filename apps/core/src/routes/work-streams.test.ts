@@ -116,6 +116,86 @@ describe('work-streams routes', () => {
     expect(await isSubscribedToWorkStream(row!.id, admin.id)).toBe(true)
   })
 
+  it('accepts and returns a per-dependency unlock condition, and rejects unknown conditions', async () => {
+    const [dependency] = await db.insert(workStreams).values({ squadId: testSquadId, title: 'Dependency' }).returning()
+    const [other] = await db.insert(workStreams).values({ squadId: testSquadId, title: 'Other' }).returning()
+    const post = (dependsOn: unknown) =>
+      apiFetch('/api/workstreams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ squadId: testSquadId, title: `${testPrefix} conditioned`, dependsOn }),
+      })
+
+    const created = await post([{ id: String(dependency!.number), condition: 'ready' }, other!.id])
+    expect(created.status).toBe(201)
+    const body = await created.json()
+    // dependsOn stays the plain ID list older clients read; the condition is additive.
+    expect(body.dependsOn).toEqual([dependency!.id, other!.id])
+    expect(body.dependencies).toEqual([
+      { workStreamId: dependency!.id, condition: 'ready', satisfied: false },
+      { workStreamId: other!.id, condition: 'done', satisfied: false },
+    ])
+    expect(body.status).toBe('queued')
+
+    const rejected = await post([{ id: dependency!.id, condition: 'merged' }])
+    expect(rejected.status).toBe(400)
+    expect(JSON.stringify(await rejected.json())).toContain('Unknown dependency condition. Use one of: done, ready')
+
+    // A plain ID on update means done again; the detail read reports the same shape.
+    const updated = await patchJson(`/api/workstreams/${body.id}`, {
+      dependsOn: [dependency!.id, { id: other!.id, condition: 'ready' }],
+    })
+    expect(updated.status).toBe(200)
+    expect((await updated.json()).dependencies).toEqual([
+      { workStreamId: dependency!.id, condition: 'done', satisfied: false },
+      { workStreamId: other!.id, condition: 'ready', satisfied: false },
+    ])
+    const detail = await (await apiFetch(`/api/workstreams/${body.id}`)).json()
+    expect(detail.dependsOn).toEqual([dependency!.id, other!.id])
+    expect(detail.dependencies.map((edge: { condition: string }) => edge.condition)).toEqual(['done', 'ready'])
+    const patchRejected = await patchJson(`/api/workstreams/${body.id}`, {
+      dependsOn: [{ id: other!.id, condition: 'x' }],
+    })
+    expect(patchRejected.status).toBe(400)
+  })
+
+  it('refuses to complete a stream stacked on an unmerged dependency with a 409 and the reason', async () => {
+    const [dependency] = await db
+      .insert(workStreams)
+      .values({ squadId: testSquadId, title: 'Unmerged base' })
+      .returning()
+    const [dependent] = await db
+      .insert(workStreams)
+      .values({
+        squadId: testSquadId,
+        title: 'Stacked',
+        dependsOn: [dependency!.id],
+        dependencyEdges: {
+          [dependency!.id]: {
+            condition: 'ready',
+            readyUnlockedAt: new Date().toISOString(),
+            stack: { mode: 'stacked', decidedAt: new Date().toISOString(), branch: 'work/base' },
+          },
+        },
+      })
+      .returning()
+    const held = await patchJson(`/api/workstreams/${dependent!.id}`, { status: 'done' })
+    expect(held.status).toBe(409)
+    const body = await held.json()
+    expect(body.code).toBe('stacked_delivery_hold')
+    expect(body.error).toContain('Delivery is held')
+    expect(body.error).toContain('(branch work/base) has not merged yet')
+    expect((await WorkStream.mustFind(dependent!.id)).status).toBe('active')
+    const detail = await (await apiFetch(`/api/workstreams/${dependent!.id}`)).json()
+    expect(detail.dependencies[0]).toMatchObject({
+      holdsDelivery: true,
+      stack: { mode: 'stacked', branch: 'work/base' },
+    })
+
+    await db.update(workStreams).set({ status: 'done' }).where(eq(workStreams.id, dependency!.id))
+    expect((await patchJson(`/api/workstreams/${dependent!.id}`, { status: 'done' })).status).toBe(200)
+  })
+
   it('rejects a malformed codeHost binding at write time and explains the allowed shape', async () => {
     const [row] = await db.insert(workStreams).values({ squadId: testSquadId, title: 'Binding' }).returning()
     const binding = { integration: 'github', repository: 'example/repo', changeRequest: { number: 7 } }
@@ -437,6 +517,26 @@ describe('work-streams routes', () => {
   })
 
   describe('POST /api/workstreams', () => {
+    it('refuses new work in an archived squad, from the route and from any other caller', async () => {
+      const [archived] = await db
+        .insert(squads)
+        .values({ name: `${testPrefix} archived`, purpose: 'Archived', status: 'archived', archivedAt: new Date() })
+        .returning()
+      try {
+        const res = await postJson('/api/workstreams', { squadId: archived!.id, title: `${testPrefix} late` })
+        const body = await res.json()
+        expect({ status: res.status, body }).toEqual({ status: 410, body: { error: 'Squad is archived' } })
+        // Schedules and other callers create through the entity, which refuses too.
+        await expect(WorkStream.create({ squadId: archived!.id, title: `${testPrefix} late` })).rejects.toThrow(
+          'Squad is archived'
+        )
+        const rows = await db.select().from(workStreams).where(eq(workStreams.squadId, archived!.id))
+        expect(rows).toHaveLength(0)
+      } finally {
+        await db.delete(squads).where(eq(squads.id, archived!.id))
+      }
+    })
+
     it('accepts ownerAgentId and resolves a prefix', async () => {
       const res = await postJson('/api/workstreams', {
         squadId: testSquadId,

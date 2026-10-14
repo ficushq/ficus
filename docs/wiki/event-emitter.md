@@ -55,6 +55,7 @@ Every post is authenticated. The token resolves in this order:
 | `device_token_revoked`         | Currently API publishes; API registry consumes | Durable device-token UUID only. The worker route accepts the channel but has no production consumer.                                         | Synchronous same-process revocation, DB admission, and 1-second registry revalidation.                                                                        |
 | `instance_maintenance_changed` | API → worker                                   | Durable maintenance generation as a convergence nudge.                                                                                       | DB maintenance state; the worker reconciles at startup and every 5 seconds.                                                                                   |
 | `system_restart`               | API → worker                                   | JSON restart request; the worker shuts down gracefully and exits nonzero.                                                                    | Best effort only; no durable replay. The API restarts itself regardless; abandoned-lease recovery protects work if a received restart cannot requeue cleanly. |
+| `farm_watching`                | API → worker                                   | JSON `{ agentIds, ttlMs }`: the robots the farm shows someone, for robot moods (`services/robot-moods`).                                     | Best effort; each report lapses after 45 seconds and the farm reports again every 20 seconds while it is visible, so a lost post heals.                       |
 
 `agent_control` recovery is action-specific. Stop persists `stopping`; the runner checks it at settlement, startup completes stale rows, and force-stop is available. Compact and reset persist transitional state with watchdog/startup recovery. Clear-queue deletes pending DB rows on acknowledgement timeout but truthfully reports failure because it cannot prove that the live SDK queue was cleared. `abort-tool` has no replay.
 
@@ -67,7 +68,7 @@ Forwarding counters are process-local and reset on restart:
 - API: protected `GET /api/system/diagnostics` → `resources.local_event_forward`
 - Worker: `GET /health` → `localEventForward`
 
-Each of the seven fixed channels plus `other` reports attempts, failure counts for `http_rejection`, `network`, and `timeout`, and one `lastFailure` containing only `at`, category, and HTTP status. A 401 commonly indicates a token mismatch; other statuses are peer HTTP rejection. Network and timeout failures have no status.
+Each of the eight fixed channels plus `other` reports attempts, failure counts for `http_rejection`, `network`, and `timeout`, and one `lastFailure` containing only `at`, category, and HTTP status. A 401 commonly indicates a token mismatch; other statuses are peer HTTP rejection. Network and timeout failures have no status.
 
 Diagnostics never retain payloads, tokens, peer URLs, response bodies, or exception text. Counts are since process start and do not aggregate across roles.
 

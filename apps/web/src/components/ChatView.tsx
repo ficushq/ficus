@@ -1,4 +1,6 @@
 import { SelectionPopup } from './ThemedPopup'
+import { ChatDropOverlay } from './ChatDropOverlay'
+import { isFileDrag, isTextEntry } from '../lib/dropScope'
 import { useToolRenderers } from '../lib/ToolRenderersContext'
 import { ConversationSkeleton } from './loading/Skeleton'
 import clsx from 'clsx'
@@ -27,6 +29,7 @@ import {
   MinimizeIcon,
   PlusIcon,
   SendIcon,
+  SparklesIcon,
   SpeakerOffIcon,
   SpeakerOnIcon,
   StopIcon,
@@ -38,7 +41,8 @@ import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
 import { ToolInlineActions } from './ToolInlineActions'
 import { ToolInlineActionModal, type ToolInlineActionModalProps } from './ToolInlineActionModal'
-import type { ToolInlineAction } from '../lib/tool-inline-actions'
+import { getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
+import { ToolFirewallBadge } from './ToolFirewallBadge'
 import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
 import { lastBlocksSegmentIndex, segmentAtNotices, type RenderedContentBlock } from '@ficus/client-core'
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
@@ -106,6 +110,10 @@ interface ChatViewProps {
   onCancelQueue?: () => void | Promise<void>
   deliveryMode?: DeliveryMode
   onDeliveryModeChange?: (m: DeliveryMode) => void
+  /** Set when the composer picked `deliveryMode` itself: shows the "Auto" indicator and why. */
+  suggestedDelivery?: { now: boolean } | null
+  /** Every change to the draft text (typing, voice, attachments, clearing after a send). */
+  onDraftChange?: (draft: string) => void
   // pagination
   onLoadOlder?: () => void
   isLoadingOlder?: boolean
@@ -148,6 +156,8 @@ interface ChatViewProps {
   sendButtonClassName?: string
   thinkingLabel?: string
   focusTrigger?: number
+  /** Text to put in the composer (after any draft) and focus; a new `id` puts it in again. */
+  composerDraft?: { id: number; text: string }
   /** Retained hidden chats must not register keyboard handlers. */
   keyboardShortcutsEnabled?: boolean
   tts?: {
@@ -430,6 +440,8 @@ export function ChatView({
   onCancelQueue,
   deliveryMode,
   onDeliveryModeChange,
+  suggestedDelivery,
+  onDraftChange,
   onLoadOlder,
   isLoadingOlder,
   hasOlderMessages,
@@ -461,6 +473,7 @@ export function ChatView({
   sendButtonClassName,
   thinkingLabel = 'Thinking...',
   focusTrigger,
+  composerDraft,
   keyboardShortcutsEnabled = true,
   tts,
   showRawText,
@@ -512,6 +525,7 @@ export function ChatView({
     })()
   )
   const [hasInput, setHasInput] = useState(() => !!inputRef.current.trim())
+  const onDraftChangeRef = useStableRef(onDraftChange)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const inputContainerRef = useRef<HTMLDivElement>(null)
@@ -579,8 +593,9 @@ export function ChatView({
         resizeTextarea(textareaRef.current)
       }
       setHasInput(!!value.trim())
+      onDraftChangeRef.current?.(value)
     },
-    [resizeTextarea]
+    [resizeTextarea, onDraftChangeRef]
   )
 
   // Reload draft when the storage key changes (e.g. navigating between agents)
@@ -1010,6 +1025,21 @@ export function ChatView({
     if (focusTrigger) textareaRef.current?.focus()
   }, [focusTrigger])
 
+  const composerDraftId = composerDraft?.id
+  const composerDraftRef = useStableRef(composerDraft)
+  useEffect(() => {
+    const draft = composerDraftRef.current
+    if (!composerDraftId || !draft) return
+    const current = inputRef.current.trimEnd()
+    const next = current ? `${current}\n\n${draft.text}` : draft.text
+    setInputValue(next)
+    saveDraft(next)
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.focus()
+    textarea.setSelectionRange(next.length, next.length)
+  }, [composerDraftId, composerDraftRef, setInputValue, saveDraft])
+
   // Coalesce streaming updates, then recheck the live follow state before scrolling.
   useEffect(() => {
     if (!autoScrollRef.current) return
@@ -1184,48 +1214,74 @@ export function ChatView({
     [addImages, agentFiles]
   )
 
-  // Drag and drop handlers
+  // Drag and drop: the whole chat surface (messages and composer) is the drop target. Only file
+  // drags count, so selecting text or dragging page elements never shows the overlay. Entering a
+  // child fires before leaving the last one, so a depth count settles where rect checks flicker.
+  const dragDepthRef = useRef(0)
+  const composerHidden = hideComposer || hideInput
+  const canDropFiles = !composerHidden && !inputDisabled
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
+      if (!isFileDrag(e)) return
+      // Never let the browser open a file dropped on a chat, even one that can't take it.
       e.preventDefault()
       e.stopPropagation()
+      dragDepthRef.current = 0
       setIsDragging(false)
 
-      if (inputDisabled || isSubmittingRef.current) return
+      if (composerHidden || inputDisabled || isSubmittingRef.current) return
       const files = Array.from(e.dataTransfer.files)
       const images = files.filter((file) => ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.type))
       if (imageAttachState.allowed) addImages(images)
       agentFiles.addFiles(files.filter((file) => !images.includes(file)))
     },
-    [addImages, agentFiles, imageAttachState.allowed, inputDisabled]
+    [addImages, agentFiles, imageAttachState.allowed, inputDisabled, composerHidden]
   )
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }, [])
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!isFileDrag(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = canDropFiles ? 'copy' : 'none'
+    },
+    [canDropFiles]
+  )
 
   const handleDragEnter = useCallback(
     (e: React.DragEvent) => {
+      if (!isFileDrag(e)) return
       e.preventDefault()
       e.stopPropagation()
-      if (inputDisabled || isSubmittingRef.current) return
+      dragDepthRef.current += 1
+      if (!canDropFiles || isSubmittingRef.current) return
       setIsDragging(true)
     },
-    [inputDisabled]
+    [canDropFiles]
   )
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
     e.preventDefault()
     e.stopPropagation()
-    // Only set dragging to false if we're leaving the drop zone entirely
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX
-    const y = e.clientY
-    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setIsDragging(false)
+  }, [])
+
+  // A drag that ends elsewhere (dropped outside, or cancelled with Escape) clears the overlay.
+  useEffect(() => {
+    if (!isDragging) return
+    const reset = () => {
+      dragDepthRef.current = 0
       setIsDragging(false)
     }
-  }, [])
+    window.addEventListener('dragend', reset)
+    window.addEventListener('drop', reset)
+    return () => {
+      window.removeEventListener('dragend', reset)
+      window.removeEventListener('drop', reset)
+    }
+  }, [isDragging])
 
   // Paste handler
   const handlePaste = useCallback(
@@ -1252,6 +1308,16 @@ export function ChatView({
       }
     },
     [addImages, agentFiles, imageAttachState.allowed, inputDisabled]
+  )
+
+  // Pastes with focus on the chat surface but outside its fields (after clicking the messages, say)
+  // attach to this chat, like pasting into the composer; text fields keep their own paste.
+  const handleSurfacePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      if (e.defaultPrevented || composerHidden || isTextEntry(e.target as Element)) return
+      handlePaste(e)
+    },
+    [handlePaste, composerHidden]
   )
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1381,6 +1447,25 @@ export function ChatView({
 
   const disabled = inputDisabled ?? false
 
+  // The delivery split button's labels. When the composer picked the mode itself, it says so and why.
+  const sendProgressLabel = isPreparingImages
+    ? 'Preparing...'
+    : isUploading
+      ? 'Uploading...'
+      : isSubmitting
+        ? 'Sending...'
+        : null
+  const deliveryLabel = deliveryMode === 'follow-up' ? 'Follow up' : 'Interrupt'
+  const deliveryTitle =
+    deliveryMode === 'follow-up'
+      ? 'Send after the agent finishes this turn'
+      : 'Send now: the agent reads it at its next step'
+  const suggestionReason = suggestedDelivery
+    ? suggestedDelivery.now
+      ? 'Suggested because this should reach the agent now'
+      : 'Suggested because this looks like separate work that can wait'
+    : null
+
   const handleTranscription = useCallback(
     (text: string) => {
       const prev = inputRef.current
@@ -1509,12 +1594,21 @@ export function ChatView({
 
   const chatContent = (
     <div
+      // The whole chat is one drop and paste scope; clicking its messages focuses it (see handleSurfacePaste).
+      data-drop-scope="chat"
+      tabIndex={-1}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onPaste={handleSurfacePaste}
       className={clsx(
-        'flex flex-col bg-surface min-h-0 grow',
+        'relative flex flex-col bg-surface min-h-0 grow outline-none',
         isFullscreen ? 'h-full rounded-lg shadow-xl overflow-hidden' : 'rounded-lg',
         className
       )}
     >
+      {isDragging && <ChatDropOverlay />}
       {(header || headerRawTextToggle || fullscreenButton) && (
         <div
           className={clsx(
@@ -1535,6 +1629,7 @@ export function ChatView({
       {/* Messages */}
       <div
         ref={scrollContainerRef}
+        data-testid="chat-messages"
         onScroll={handleScroll}
         onWheel={markUserScrolling}
         onTouchMove={markUserScrolling}
@@ -1781,14 +1876,7 @@ export function ChatView({
           />
           <div
             ref={inputContainerRef}
-            className={clsx(
-              'px-3 py-2 md:px-4 md:py-2.5 border-t border-th-border shrink-0 relative z-10 bg-surface',
-              isDragging && 'ring-2 ring-accent-light ring-inset bg-accent/10'
-            )}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
+            className="px-3 py-2 md:px-4 md:py-2.5 border-t border-th-border shrink-0 relative z-10 bg-surface"
           >
             {/* Hidden file input - outside flow so space-y-3 doesn't add gap */}
             <input
@@ -1832,16 +1920,6 @@ export function ChatView({
                     : imageError
                       ? `Image upload failed: ${imageError}`
                       : `Message was not sent: ${sendError}`}
-                </div>
-              )}
-
-              {/* Drop overlay */}
-              {isDragging && (
-                <div className="absolute inset-0 bg-selection/90 flex items-center justify-center z-10 pointer-events-none rounded-b-lg">
-                  <div className="text-accent-light font-medium flex items-center gap-2">
-                    <FileIcon className="h-6 w-6" />
-                    Drop files here
-                  </div>
                 </div>
               )}
 
@@ -2051,6 +2129,7 @@ export function ChatView({
                     const val = e.target.value
                     inputRef.current = val
                     setHasInput(!!val.trim())
+                    onDraftChangeRef.current?.(val)
                     saveDraft(val)
                     resizeTextarea(e.currentTarget)
                     // Check for @ mention trigger
@@ -2300,21 +2379,9 @@ export function ChatView({
                         <button
                           type="submit"
                           aria-label={
-                            isPreparingImages
-                              ? 'Preparing...'
-                              : isUploading
-                                ? 'Uploading...'
-                                : isSubmitting
-                                  ? 'Sending...'
-                                  : deliveryMode === 'steer'
-                                    ? 'Interrupt'
-                                    : 'Follow up'
+                            sendProgressLabel ?? (suggestionReason ? `${deliveryLabel} (suggested)` : deliveryLabel)
                           }
-                          title={
-                            deliveryMode === 'steer'
-                              ? 'Send now: the agent reads it at its next step'
-                              : 'Send after the agent finishes this turn'
-                          }
+                          title={suggestionReason ? `${suggestionReason}. ${deliveryTitle}` : deliveryTitle}
                           disabled={
                             disabled ||
                             isUploading ||
@@ -2325,21 +2392,23 @@ export function ChatView({
                             (!hasInput && pendingImages.length === 0)
                           }
                           className={clsx(
-                            'chat-composer-submit whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 md:py-1.5',
+                            'chat-composer-submit inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 md:py-1.5',
                             deliveryMode === 'steer'
                               ? 'hover:bg-accent-hover active:bg-accent-active'
                               : 'hover:bg-status-attention-700 active:bg-status-attention-800'
                           )}
                         >
-                          {isPreparingImages
-                            ? 'Preparing...'
-                            : isUploading
-                              ? 'Uploading...'
-                              : isSubmitting
-                                ? 'Sending...'
-                                : deliveryMode === 'steer'
-                                  ? 'Interrupt'
-                                  : 'Follow up'}
+                          {sendProgressLabel ?? deliveryLabel}
+                          {suggestionReason && !sendProgressLabel && (
+                            <span
+                              className="chat-composer-auto inline-flex items-center gap-0.5 text-[11px] font-medium leading-none opacity-80"
+                              title={suggestionReason}
+                              aria-hidden="true"
+                            >
+                              <SparklesIcon className="h-3 w-3" />
+                              Auto
+                            </span>
+                          )}
                         </button>
                         <SelectionPopup
                           label="Message delivery"
@@ -2859,6 +2928,10 @@ function StreamingToolCallItem({
   const isError = toolCall.isError || isIncomplete
   const result = toolCall.result || (isIncomplete ? 'Command aborted' : '')
   const [expanded, setExpanded] = useState(defaultExpanded)
+  const firewall = useMemo(
+    () => (toolCall._done ? getToolFirewallFlag({ result: toolCall.result }) : null),
+    [toolCall._done, toolCall.result]
+  )
 
   // When defaultExpanded changes (e.g. a new tool call pushes this one up), sync
   useEffect(() => {
@@ -2885,6 +2958,7 @@ function StreamingToolCallItem({
           )}
           <span className="font-medium shrink-0">{toolCall.toolName}</span>
           <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+          {firewall && <ToolFirewallBadge flag={firewall} />}
           {isError && (
             <span className="text-status-danger-500 dark:text-status-danger-400 text-[10px] font-medium shrink-0">
               ERROR

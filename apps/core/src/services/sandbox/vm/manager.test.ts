@@ -13,7 +13,9 @@ import {
 } from './manager'
 import {
   boxUnixUser,
+  classifyProvisioningMarkerDrift,
   computeProvisioningMarker,
+  ensureBox as realEnsureBox,
   type BoxChainHealth,
   type BoxEnv,
   type EnsureBoxOpts,
@@ -2327,6 +2329,130 @@ describe('VmSandboxManager', () => {
     await mgr.ensureSandbox('squad_s1', squadOpts)
     expect(h.ensureCalls[1].specHash).toBe(before)
     expect(h.ensureCalls[1].env.GITHUB_TOKEN).toBeUndefined()
+  })
+
+  describe('GitHub token refresh window', () => {
+    // The manager over the REAL box-manager ensure (fake SSH/tunnel/row), so the
+    // assertion is on what would reach the machine: box-provision.sh, the
+    // server.env push and the unit restart.
+    function realBoxHarness() {
+      const h = makeHarness()
+      const commands: string[] = []
+      let row: any = null
+      let identity: { gitUserName?: string; gitUserEmail?: string } = {
+        gitUserName: 'Synthetic Person',
+        gitUserEmail: 'synthetic@example.com',
+      }
+      let active = true
+      h.deps.resolveGitHubIdentity = async () => identity
+      const boxDeps = {
+        runner: {
+          async run(_machine: unknown, command: string) {
+            if (command.includes('box-provision.sh')) commands.push('provision')
+            else if (command.includes('server.env')) commands.push('env')
+            else if (command.includes('systemctl') && command.includes('restart')) commands.push('restart')
+            return {
+              exitCode: 0,
+              stdout: command.includes('box-provision.sh') ? 'FICUS_BOX_UID=4321\n' : '',
+              stderr: '',
+            }
+          },
+        },
+        tunnels: {
+          ensureMaster: async () => {},
+          addForward: async () => 59999,
+          removeForward: async () => {},
+          endpointFor: () => 'http://127.0.0.1:59999',
+          checkHealth: async () => true,
+        },
+        fetch: async () => ({ ok: true, status: 200 }),
+        getMachine: async (id: string) => ({
+          id,
+          name: id,
+          provider: 'ssh',
+          sshHost: '10.0.0.5',
+          sshPort: 22,
+          sshUser: 'ficus',
+          status: 'ready',
+          capabilities: { forwarding: 'yes' },
+          scope: 'shared',
+          artifactVersions: {},
+        }),
+        getMachineBox: async () => row,
+        findPrivateArchive: async () => null,
+        clearBoxSyncedHashes: async () => {},
+        ensureMachineArtifacts: async () => {},
+        listMachineBoxes: async () => [],
+        findUnverifiedStopRemnant: async () => null,
+        bindMachineBox: async (b: { sandboxId: string; machineId: string; unixUser: string }) =>
+          (row = { port: 50100, authToken: 'synthetic-box-token', status: 'ensuring', ...row, ...b }),
+        upsertMachineBox: async (b: Record<string, unknown>) => {
+          const defined = Object.fromEntries(Object.entries(b).filter(([, value]) => value !== undefined))
+          return (row = { ...row, ...defined })
+        },
+        hasActiveExecution: async () => active,
+        healthBudgetMs: 10_000,
+        sleep: async () => {},
+      }
+      h.deps.ensureBox = (options) => {
+        h.ensureCalls.push(options)
+        return realEnsureBox(options, boxDeps as never)
+      }
+      return {
+        h,
+        commands,
+        stamp: () => row?.provisionedSpecHash as string | undefined,
+        setIdentity: (value: typeof identity) => void (identity = value),
+        setActive: (value: boolean) => void (active = value),
+      }
+    }
+
+    test('an ensure during the refresh window does not provision or restart a working box', async () => {
+      const box = realBoxHarness()
+      const mgr = new VmSandboxManager(box.h.deps)
+
+      await mgr.ensureSandbox('squad_s1', squadOpts)
+      expect(box.commands).toEqual(expect.arrayContaining(['provision', 'env', 'restart']))
+      const provisioned = [...box.commands]
+      const stamp = box.stamp()
+      expect(stamp?.split('.')).toHaveLength(3)
+
+      // Fixed resolver: the identity is the same while the token is being validated.
+      await mgr.ensureSandbox('squad_s1', squadOpts)
+      expect(box.commands).toEqual(provisioned)
+
+      // Defense in depth: even if the author keys drop out of the env (what the
+      // refresh used to cause), a box with active work is left alone.
+      box.setIdentity({})
+      await mgr.ensureSandbox('squad_s1', squadOpts)
+      const during = box.h.ensureCalls.at(-1)!
+      expect(Object.keys(during.env).filter((key) => key.startsWith('GIT_'))).toEqual([])
+      expect(classifyProvisioningMarkerDrift(stamp, during.specHash, during.env)).toBe('identity')
+      expect(box.commands).toEqual(provisioned)
+      expect(box.stamp()).toBe(stamp)
+
+      // Refresh finished: the keys are back and the marker matches the stamp again.
+      box.setIdentity({ gitUserName: 'Synthetic Person', gitUserEmail: 'synthetic@example.com' })
+      await mgr.ensureSandbox('squad_s1', squadOpts)
+      expect(box.h.ensureCalls.at(-1)!.specHash).toBe(stamp)
+      expect(box.commands).toEqual(provisioned)
+    })
+
+    test('a lasting identity change reaches the box once it is idle', async () => {
+      const box = realBoxHarness()
+      const mgr = new VmSandboxManager(box.h.deps)
+      await mgr.ensureSandbox('squad_s1', squadOpts)
+      const provisioned = box.commands.length
+
+      box.setIdentity({ gitUserName: 'Renamed Person', gitUserEmail: 'synthetic@example.com' })
+      await mgr.ensureSandbox('squad_s1', squadOpts)
+      expect(box.commands).toHaveLength(provisioned)
+
+      box.setActive(false)
+      await mgr.ensureSandbox('squad_s1', squadOpts)
+      expect(box.commands.slice(provisioned)).toEqual(expect.arrayContaining(['provision', 'env', 'restart']))
+      expect(box.stamp()).toBe(box.h.ensureCalls.at(-1)!.specHash)
+    })
   })
 
   describe('caller-independent provisioning marker', () => {

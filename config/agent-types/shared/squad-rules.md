@@ -86,7 +86,7 @@ the current flow attempt. Sibling branches can continue; their join waits for
 you. Use `--scope stream` for a manual blocker that affects everyone (or
 `waitScope: stream` for a shared blocking question). End the turn while waiting;
 do not arrange automatic continuations. Input answers are not review approvals.
-Use a declared human-approval step for an enforced human decision. When several
+Use a declared human-approval step for an enforced human decision, and a decision step (`kind: decision`, see the setup-workflows skill) for a quick model judgment that routes work. When several
 waits exist, inspect their IDs and target the intended wait explicitly.
 
 A paused stream requires explicit resume. Parking releases admission capacity;

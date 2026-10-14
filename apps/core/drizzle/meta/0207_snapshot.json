@@ -1,6 +1,6 @@
 {
-  "id": "d61143e2-f5f8-48f3-9fba-ae5fddf7ed17",
-  "prevId": "53d9dece-632c-44e6-878c-7883c0a0c707",
+  "id": "54ab01c9-86cc-4f05-b054-f24baa2851c3",
+  "prevId": "8799d31b-c75a-4daa-948b-9c3c9df6505c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3389,6 +3389,110 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.decision_eval_candidates": {
+      "name": "decision_eval_candidates",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "eval_name": {
+          "name": "eval_name",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request": {
+          "name": "request",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context": {
+          "name": "context",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expected": {
+          "name": "expected",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_answers": {
+          "name": "model_answers",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'new'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_decision_eval_candidates_status_created_at": {
+          "name": "idx_decision_eval_candidates_status_created_at",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.decision_log": {
       "name": "decision_log",
       "schema": "",
@@ -6013,7 +6117,7 @@
         },
         "github_feedback_revision_decision": {
           "name": "github_feedback_revision_decision",
-          "value": "\"github_feedback_revisions\".\"decision\" in ('pending', 'allow_once', 'allow_trust', 'deny', 'automatic', 'historical', 'screened')"
+          "value": "\"github_feedback_revisions\".\"decision\" in ('pending', 'allow_once', 'allow_trust', 'deny', 'automatic', 'historical')"
         },
         "github_feedback_revision_release_state": {
           "name": "github_feedback_revision_release_state",
@@ -6021,183 +6125,11 @@
         },
         "github_feedback_revision_human_decision": {
           "name": "github_feedback_revision_human_decision",
-          "value": "(\"github_feedback_revisions\".\"decision\" in ('allow_once', 'allow_trust', 'deny') AND \"github_feedback_revisions\".\"decided_by_user_id\" is not null AND \"github_feedback_revisions\".\"decided_at\" is not null) OR (\"github_feedback_revisions\".\"decision\" in ('pending', 'automatic', 'historical', 'screened') AND \"github_feedback_revisions\".\"decided_by_user_id\" is null AND \"github_feedback_revisions\".\"decided_at\" is null)"
+          "value": "(\"github_feedback_revisions\".\"decision\" in ('allow_once', 'allow_trust', 'deny') AND \"github_feedback_revisions\".\"decided_by_user_id\" is not null AND \"github_feedback_revisions\".\"decided_at\" is not null) OR (\"github_feedback_revisions\".\"decision\" in ('pending', 'automatic', 'historical') AND \"github_feedback_revisions\".\"decided_by_user_id\" is null AND \"github_feedback_revisions\".\"decided_at\" is null)"
         },
         "github_feedback_revision_lease_pair": {
           "name": "github_feedback_revision_lease_pair",
           "value": "(\"github_feedback_revisions\".\"lease_token\" is null) = (\"github_feedback_revisions\".\"lease_expires_at\" is null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.github_feedback_screenings": {
-      "name": "github_feedback_screenings",
-      "schema": "",
-      "columns": {
-        "revision_id": {
-          "name": "revision_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_hash": {
-          "name": "content_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decision_version": {
-          "name": "decision_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'queued'"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "lease_token": {
-          "name": "lease_token",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_expires_at": {
-          "name": "lease_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verdict": {
-          "name": "verdict",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "screened_at": {
-          "name": "screened_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "github_feedback_screening_due": {
-          "name": "github_feedback_screening_due",
-          "columns": [
-            {
-              "expression": "state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "lease_expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "github_feedback_screening_squad": {
-          "name": "github_feedback_screening_squad",
-          "columns": [
-            {
-              "expression": "squad_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "github_feedback_screenings_revision_id_github_feedback_revisions_id_fk": {
-          "name": "github_feedback_screenings_revision_id_github_feedback_revisions_id_fk",
-          "tableFrom": "github_feedback_screenings",
-          "tableTo": "github_feedback_revisions",
-          "columnsFrom": [
-            "revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "github_feedback_screenings_squad_id_squads_id_fk": {
-          "name": "github_feedback_screenings_squad_id_squads_id_fk",
-          "tableFrom": "github_feedback_screenings",
-          "tableTo": "squads",
-          "columnsFrom": [
-            "squad_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "github_feedback_screening_state": {
-          "name": "github_feedback_screening_state",
-          "value": "\"github_feedback_screenings\".\"state\" in ('queued', 'running', 'passed', 'held')"
-        },
-        "github_feedback_screening_lease_pair": {
-          "name": "github_feedback_screening_lease_pair",
-          "value": "(\"github_feedback_screenings\".\"lease_token\" is null) = (\"github_feedback_screenings\".\"lease_expires_at\" is null)"
-        },
-        "github_feedback_screening_counters": {
-          "name": "github_feedback_screening_counters",
-          "value": "\"github_feedback_screenings\".\"attempts\" >= 0 AND \"github_feedback_screenings\".\"decision_version\" >= 0"
         }
       },
       "isRLSEnabled": false
@@ -6880,6 +6812,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "forwarded_from_image_id": {
+          "name": "forwarded_from_image_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "status": {
           "name": "status",
           "type": "image_status",
@@ -6936,6 +6874,19 @@
           "tableTo": "users",
           "columnsFrom": [
             "uploaded_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "images_forwarded_from_image_id_images_id_fk": {
+          "name": "images_forwarded_from_image_id_images_id_fk",
+          "tableFrom": "images",
+          "tableTo": "images",
+          "columnsFrom": [
+            "forwarded_from_image_id"
           ],
           "columnsTo": [
             "id"
@@ -17755,20 +17706,6 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
-        "github_author_filter": {
-          "name": "github_author_filter",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "github_untrusted_handling": {
-          "name": "github_untrusted_handling",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'hold'"
-        },
         "max_concurrent_work_streams": {
           "name": "max_concurrent_work_streams",
           "type": "integer",
@@ -20105,6 +20042,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'"
+        },
+        "dependency_edges": {
+          "name": "dependency_edges",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
         },
         "handoff_message": {
           "name": "handoff_message",

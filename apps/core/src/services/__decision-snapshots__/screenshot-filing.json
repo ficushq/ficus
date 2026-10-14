@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "eval": "screenshot-filing",
+  "entries": {
+    "checkout": {
+      "openai:gpt-6-luna": {
+        "hash": "3f9d0497f08450ae3a42c8d9192da443e6df7eee4fd3e500c4c8292e336b59df",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "bug",
+            "probabilities": {
+              "bug": 0.99,
+              "design_feedback": 0,
+              "error_message": 0.01,
+              "idea": 0,
+              "reference": 0
+            },
+            "confidence": 0.99
+          },
+          "squad": {
+            "type": "choice",
+            "choice": "s_5c4ee000000040008000000000000001",
+            "probabilities": {
+              "s_5c4ee000000040008000000000000001": 1,
+              "s_5c4ee000000040008000000000000002": 0,
+              "s_5c4ee000000040008000000000000003": 0,
+              "none": 0
+            },
+            "confidence": 1
+          },
+          "action": {
+            "type": "choice",
+            "choice": "new_work_stream",
+            "probabilities": {
+              "new_work_stream": 0.57,
+              "existing_work_stream": 0.42,
+              "ask_consultant": 0.01,
+              "just_save": 0
+            },
+            "confidence": 0.43
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:36.637Z"
+      }
+    },
+    "product": {
+      "openai:gpt-6-luna": {
+        "hash": "8a11cc9dc439eb1d0fe811bc7f4a90d0cd306659fb9cf54f3c8957d8ce80b2ec",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "bug",
+            "probabilities": {
+              "bug": 0.99,
+              "design_feedback": 0,
+              "error_message": 0.01,
+              "idea": 0,
+              "reference": 0
+            },
+            "confidence": 0.99
+          },
+          "squad": {
+            "type": "choice",
+            "choice": "s_5c4ee000000040008000000000000001",
+            "probabilities": {
+              "s_5c4ee000000040008000000000000001": 1,
+              "s_5c4ee000000040008000000000000002": 0,
+              "s_5c4ee000000040008000000000000003": 0,
+              "none": 0
+            },
+            "confidence": 1
+          },
+          "action": {
+            "type": "choice",
+            "choice": "existing_work_stream",
+            "probabilities": {
+              "new_work_stream": 0.32,
+              "existing_work_stream": 0.65,
+              "ask_consultant": 0.02,
+              "just_save": 0.01
+            },
+            "confidence": 0.53
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:36.637Z"
+      }
+    },
+    "product: just keeping this for the redesign mood board, nothing to fix": {
+      "openai:gpt-6-luna": {
+        "hash": "308bfc58cb2659254d6f1a1d84f80c510cb7a9fc9ce16b30ab1b15d2760031e5",
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "reference",
+            "probabilities": {
+              "bug": 0.45,
+              "design_feedback": 0.07,
+              "error_message": 0,
+              "idea": 0.01,
+              "reference": 0.47
+            },
+            "confidence": 0.34
+          },
+          "squad": {
+            "type": "choice",
+            "choice": "s_5c4ee000000040008000000000000001",
+            "probabilities": {
+              "s_5c4ee000000040008000000000000001": 1,
+              "s_5c4ee000000040008000000000000002": 0,
+              "s_5c4ee000000040008000000000000003": 0,
+              "none": 0
+            },
+            "confidence": 1
+          },
+          "action": {
+            "type": "choice",
+            "choice": "just_save",
+            "probabilities": {
+              "new_work_stream": 0,
+              "existing_work_stream": 0,
+              "ask_consultant": 0,
+              "just_save": 1
+            },
+            "confidence": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:36.637Z"
+      }
+    }
+  }
+}

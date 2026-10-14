@@ -1,4 +1,9 @@
-import type { MessageToolCall } from '@ficus/shared'
+import {
+  TOOL_FIREWALL_INTENTS,
+  type MessageToolCall,
+  type ToolFirewallFlag,
+  type ToolFirewallIntent,
+} from '@ficus/shared'
 
 type JsonRecord = Record<string, unknown>
 
@@ -67,4 +72,20 @@ const extractors: Partial<Record<string, ActionExtractor>> = {
 export function getToolInlineActions(input: { toolCall: MessageToolCall; completed: boolean }): ToolInlineAction[] {
   if (!input.completed || input.toolCall.isError || !input.toolCall.result) return []
   return extractors[input.toolCall.toolName]?.(input.toolCall) ?? []
+}
+
+/** The tool result firewall's flag on a tool call, when it found instructions aimed at the agent. */
+export function getToolFirewallFlag(toolCall: Pick<MessageToolCall, 'result'>): ToolFirewallFlag | null {
+  const firewall = extractToolResultDetails(toolCall.result ?? '')?.firewall
+  if (!isRecord(firewall) || firewall.flagged !== true || typeof firewall.instructsAgent !== 'number') return null
+  return {
+    flagged: true,
+    severity: firewall.severity === 'high' ? 'high' : 'medium',
+    instructsAgent: firewall.instructsAgent,
+    ...(TOOL_FIREWALL_INTENTS.includes(firewall.intent as ToolFirewallIntent)
+      ? { intent: firewall.intent as ToolFirewallIntent }
+      : {}),
+    ...(firewall.partial === true ? { partial: true } : {}),
+    ...(firewall.withheld === true ? { withheld: true } : {}),
+  }
 }

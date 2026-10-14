@@ -4,6 +4,7 @@ import {
   CodeIcon,
   PlayIcon,
   HumanApprovalIcon,
+  DecisionIcon,
   FlagIcon,
   LinkIcon,
   WorkStreamIcon,
@@ -23,6 +24,7 @@ import {
   integrationValueAt,
   resolveCodeHostReference,
   activeWorkflowAttempts,
+  describeWorkflowDecisionRouting,
   type IntegrationDeliveryView,
   type WorkStreamWait,
   type WorkflowDefinition,
@@ -413,7 +415,7 @@ export function WorkflowGraph({
         ? `Waiting for branches (${frame.arrived.length}/${frame.branches.length})`
         : 'Waits for parallel branches'
     }
-    return step?.kind === 'human-approval' ? 'Human approval' : 'Agent step'
+    return step?.kind === 'human-approval' ? 'Human approval' : step?.kind === 'decision' ? 'Decision' : 'Agent step'
   }
   return (
     <section
@@ -718,6 +720,7 @@ export function WorkflowGraph({
                 const current = active.some((attempt) => attempt.stepId === node.id)
                 const label = status(node)
                 const isApproval = node.kind === 'step' && step?.kind === 'human-approval'
+                const isDecision = node.kind === 'step' && step?.kind === 'decision'
                 const isStart = node.kind === 'start'
                 const isCompletion = node.kind === 'finish'
                 const terminal = isStart || isCompletion
@@ -729,22 +732,26 @@ export function WorkflowGraph({
                     ? FlagIcon
                     : isApproval
                       ? HumanApprovalIcon
-                      : node.kind === 'step'
-                        ? AgentIcon
-                        : node.kind === 'code-host'
-                          ? CodeIcon
-                          : node.kind === 'integration'
-                            ? LinkIcon
-                            : WorkStreamIcon
+                      : isDecision
+                        ? DecisionIcon
+                        : node.kind === 'step'
+                          ? AgentIcon
+                          : node.kind === 'code-host'
+                            ? CodeIcon
+                            : node.kind === 'integration'
+                              ? LinkIcon
+                              : WorkStreamIcon
                 const typeLabel = isStart
                   ? 'Start'
                   : isCompletion
                     ? 'Completion'
                     : isApproval
                       ? 'Approval'
-                      : node.kind === 'step'
-                        ? 'Agent'
-                        : undefined
+                      : isDecision
+                        ? 'Decision'
+                        : node.kind === 'step'
+                          ? 'Agent'
+                          : undefined
                 return (
                   <div key={node.id}>
                     <button
@@ -773,7 +780,8 @@ export function WorkflowGraph({
                         label,
                         step?.kind === 'agent' ? definition.participants[step.participant]?.agentTypeId : '',
                         step?.instructions,
-                        step?.output ? `Expected: ${step.output}` : '',
+                        step && step.kind !== 'decision' ? `Expected: ${step.output}` : '',
+                        step?.kind === 'decision' ? describeWorkflowDecisionRouting(step) : '',
                         step ? JSON.stringify(step.outcomes) : '',
                       ]
                         .filter(Boolean)
@@ -1109,11 +1117,17 @@ export function WorkflowGraph({
             {selectedStep.id}
             {selectedStep.kind === 'agent'
               ? ` · ${definition.participants[selectedStep.participant]?.agentTypeId ?? selectedStep.participant}`
-              : ' · Human approval'}
+              : selectedStep.kind === 'decision'
+                ? ' · Decision'
+                : ' · Human approval'}
           </p>
           {renderStepDetails?.(selectedStep.id)}
           <p className="whitespace-pre-wrap">{selectedStep.instructions}</p>
-          <p className="text-secondary">Expected: {selectedStep.output}</p>
+          {selectedStep.kind === 'decision' ? (
+            <p className="whitespace-pre-wrap text-secondary">{describeWorkflowDecisionRouting(selectedStep)}</p>
+          ) : (
+            <p className="text-secondary">Expected: {selectedStep.output}</p>
+          )}
           {Object.entries(selectedStep.outcomes).map(([name, target]) => (
             <p key={name} className="text-secondary">
               {name} →{' '}

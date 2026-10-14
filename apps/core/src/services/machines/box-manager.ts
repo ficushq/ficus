@@ -62,7 +62,10 @@ const log = createLogger('box-manager')
  *      marker (spec hash + env hash) is UNCHANGED and that still passes
  *      /healthz is returned as-is (no re-provision) — health is ALWAYS
  *      checked, and a drifted marker (rotated secret / changed env) falls
- *      through to a full re-provision so the new env reaches the box
+ *      through to a full re-provision so the new env reaches the box. Two
+ *      exceptions never restart a healthy box: a legacy-format stamp of the
+ *      same spec and env is rewritten in place, and a change to ONLY the git
+ *      author keys is deferred while the box has an active execution
  *   5. resume fast-path: a PARKED (stopped) box whose stamped
  *      `provisionedSpecHash` still matches the caller's desired PROVISIONING
  *      marker (spec hash + a hash of the caller env — see the column's doc
@@ -222,34 +225,88 @@ function computeEnvHash(env: BoxEnv): string {
  * (SandboxClient, the tunnel manager, ...).
  */
 export function computeProvisioningMarker(specHash: string, env: BoxEnv): string {
-  // Deliberately DECOMPOSABLE (`<specHash>.<envHash>`), not an opaque digest:
-  // a marker mismatch on an otherwise-healthy box forces a full re-provision
-  // that RESTARTS the box's systemd unit (killing shells and running agent
-  // commands), so the fast-path miss log must be able to say WHICH half
-  // drifted (see describeProvisioningMarkerDrift). specHash never contains
-  // '.' (hex), so the split is unambiguous.
-  return `${specHash}.${computeEnvHash(env)}`
+  // Deliberately DECOMPOSABLE (`<specHash>.<criticalEnvHash>.<identityEnvHash>`),
+  // not an opaque digest: a marker mismatch on an otherwise-healthy box forces
+  // a full re-provision that RESTARTS the box's systemd unit (killing shells
+  // and running agent commands), so the fast-path miss log must be able to say
+  // WHICH part drifted (see describeProvisioningMarkerDrift), and the ensure
+  // must be able to tell a git-author-only change — which can wait for the box
+  // to go idle — from one that cannot (see classifyProvisioningMarkerDrift).
+  // specHash never contains '.' (hex), so the split is unambiguous.
+  const critical: BoxEnv = {}
+  const identity: BoxEnv = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (IDENTITY_ENV_KEYS.has(key)) identity[key] = value
+    else critical[key] = value
+  }
+  return `${specHash}.${computeEnvHash(critical)}.${computeEnvHash(identity)}`
+}
+
+/**
+ * The env keys that carry ONLY the git author/committer name and email
+ * (`gitIdentityEnv` in sandbox/github-identity.ts). They are attribution, not
+ * authority: no credential, endpoint or executor setting lives here, so a box
+ * that is running work may keep its current values until it goes idle. Every
+ * other key is critical and reprovisions at once. Keep this list closed — a key
+ * added here stops forcing an immediate re-push when it changes.
+ */
+const IDENTITY_ENV_KEYS: ReadonlySet<string> = new Set([
+  'GIT_USER_NAME',
+  'GIT_USER_EMAIL',
+  'GIT_AUTHOR_NAME',
+  'GIT_AUTHOR_EMAIL',
+  'GIT_COMMITTER_NAME',
+  'GIT_COMMITTER_EMAIL',
+])
+
+/**
+ * How a box's stamped marker relates to the one the caller wants now.
+ *  - `none`: identical — nothing to apply.
+ *  - `legacy`: the stamp is the pre-split `<specHash>.<envHash>` form of the
+ *    SAME spec and env. Nothing on the box differs; only the stamp's format is
+ *    old, so it is rewritten in place. Without this, deploying the split
+ *    format would itself reprovision (and restart) every box once.
+ *  - `identity`: spec and critical env are unchanged; only the git author
+ *    keys differ.
+ *  - `critical`: anything else, including a missing or unparseable stamp.
+ */
+export type ProvisioningMarkerDrift = 'none' | 'legacy' | 'identity' | 'critical'
+
+export function classifyProvisioningMarkerDrift(
+  stamped: string | null | undefined,
+  desired: string | undefined,
+  env: BoxEnv
+): ProvisioningMarkerDrift {
+  if (stamped === desired) return 'none'
+  if (!stamped || !desired) return 'critical'
+  const want = desired.split('.')
+  if (want.length !== 3) return 'critical'
+  if (stamped === `${want[0]}.${computeEnvHash(env)}`) return 'legacy'
+  const have = stamped.split('.')
+  if (have.length === 3 && have[0] === want[0] && have[1] === want[1]) return 'identity'
+  return 'critical'
 }
 
 /**
  * One-line explanation of a provisioning-marker mismatch, for the ensure log
  * at the moment a full re-provision (env re-push + unit restart) is chosen
- * over the fast path. Both markers are `<specHash>.<envHash>`
- * ({@link computeProvisioningMarker}); a stamp that doesn't split is from
- * before the decomposable format (or absent) and is reported as such.
+ * over the fast path. Both markers are
+ * `<specHash>.<criticalEnvHash>.<identityEnvHash>`
+ * ({@link computeProvisioningMarker}); a stamp that doesn't split that way is
+ * from an older format (or absent) and is reported as such. Only hashes are
+ * ever printed, never env values.
  */
 export function describeProvisioningMarkerDrift(previous: string | null | undefined, next: string): string {
   const prevParts = previous?.split('.')
   const nextParts = next.split('.')
-  if (!prevParts || prevParts.length !== 2 || nextParts.length !== 2) {
+  if (!prevParts || prevParts.length !== 3 || nextParts.length !== 3) {
     return `legacy or missing stamp (${previous ?? 'none'} -> ${next})`
   }
-  const specDrifted = prevParts[0] !== nextParts[0]
-  const envDrifted = prevParts[1] !== nextParts[1]
-  if (specDrifted && envDrifted) return `spec hash (${prevParts[0]} -> ${nextParts[0]}) and env both drifted`
-  if (specDrifted) return `spec hash drifted (${prevParts[0]} -> ${nextParts[0]})`
-  if (envDrifted) return `env drifted (env hash ${prevParts[1]} -> ${nextParts[1]})`
-  return 'no drift (markers equal)'
+  const drifted: string[] = []
+  if (prevParts[0] !== nextParts[0]) drifted.push(`spec hash (${prevParts[0]} -> ${nextParts[0]})`)
+  if (prevParts[1] !== nextParts[1]) drifted.push(`env (env hash ${prevParts[1]} -> ${nextParts[1]})`)
+  if (prevParts[2] !== nextParts[2]) drifted.push(`git identity (identity hash ${prevParts[2]} -> ${nextParts[2]})`)
+  return drifted.length ? `${drifted.join(' and ')} drifted` : 'no drift (markers equal)'
 }
 
 /** Minimal fetch surface the health probes need (real `fetch` satisfies it).
@@ -1379,12 +1436,35 @@ export async function ensureBox(
     // and restarts the unit — exactly as the PARKED-box resume fast path below
     // already does. A legacy row (null provisionedSpecHash) also falls through,
     // self-healing its stamp on the next provision, mirroring the authToken rule.
+    //
+    // Two kinds of mismatch do NOT force that restart (see
+    // classifyProvisioningMarkerDrift):
+    //  - a `legacy` stamp (same spec and env, old marker format) is rewritten
+    //    in place once the box proves healthy;
+    //  - an `identity`-only difference (git author name/email) is DEFERRED
+    //    while the box has an active execution: the box is returned as is and
+    //    its stamp is left stale, so the first ensure that finds it idle
+    //    applies the change. Restarting the unit kills whatever is running, and
+    //    an author name is never worth that. Without active work it
+    //    reprovisions at once, as before.
+    const markerDrift = classifyProvisioningMarkerDrift(existing?.provisionedSpecHash, opts.specHash, opts.env)
+    let deferIdentityDrift = false
+    if (markerDrift === 'identity' && existing?.status === 'ready' && existing.machineId === machine.id) {
+      try {
+        deferIdentityDrift = await (deps.hasActiveExecution ?? sandboxHasActiveExecution)(opts.sandboxId)
+      } catch (error) {
+        // Unknown activity is treated as active: deferring costs a stale author
+        // name for a while, restarting can cost a running command.
+        deferIdentityDrift = true
+        log.warn(`box ${opts.sandboxId}: activity query failed; deferring git identity update:`, error)
+      }
+    }
     if (
       existing &&
       existing.machineId === machine.id &&
       existing.status === 'ready' &&
       existing.authToken &&
-      existing.provisionedSpecHash === opts.specHash
+      (markerDrift === 'none' || markerDrift === 'legacy' || deferIdentityDrift)
     ) {
       const healthy = await timer.time('health', async () => {
         await tunnels.ensureMaster(machine)
@@ -1404,7 +1484,29 @@ export async function ensureBox(
         return { ok: decision.healthy, endpoint: decision.healthy ? decision.endpoint : endpoint }
       })
       if (healthy.ok) {
-        return { machine, box: existing, endpoint: healthy.endpoint, timings: timer.steps }
+        let box = existing
+        if (markerDrift === 'legacy') {
+          try {
+            box = await upsert({
+              sandboxId: existing.sandboxId,
+              machineId: existing.machineId,
+              unixUser,
+              port: existing.port,
+              status: 'ready',
+              authToken: existing.authToken,
+              provisionedSpecHash: opts.specHash,
+            })
+          } catch (error) {
+            // The box is fine either way; the next ensure retries the restamp.
+            log.warn(`box ${opts.sandboxId}: failed to rewrite its legacy provisioning stamp:`, error)
+          }
+        } else if (deferIdentityDrift) {
+          log.info(
+            `box ${opts.sandboxId}: git identity env changed while the box has active work; ` +
+              `keeping the running box and applying it on a later idle ensure`
+          )
+        }
+        return { machine, box, endpoint: healthy.endpoint, timings: timer.steps }
       }
       // Unhealthy → fall through to a full (re-)provision below.
     }
@@ -1433,7 +1535,9 @@ export async function ensureBox(
       existing.status === 'stopped' &&
       existing.authToken &&
       existing.provisionedSpecHash != null &&
-      existing.provisionedSpecHash === opts.specHash
+      // A legacy-format stamp of the same spec and env resumes too, and is
+      // rewritten by the 'ready' upsert below.
+      (markerDrift === 'none' || markerDrift === 'legacy')
     ) {
       beginPhysicalWork('runtime_start')
       try {
@@ -1462,6 +1566,7 @@ export async function ensureBox(
           port: existing.port,
           status: 'ready',
           authToken: existing.authToken,
+          ...(markerDrift === 'legacy' ? { provisionedSpecHash: opts.specHash } : {}),
           lastActivityAt: new Date(),
         })
         eventEmitter.emit('box.status', {
@@ -1513,7 +1618,7 @@ export async function ensureBox(
 
     beginPhysicalWork(
       existing?.status === 'ready'
-        ? existing.provisionedSpecHash === opts.specHash
+        ? markerDrift === 'none' || markerDrift === 'legacy'
           ? 'runtime_reconnect'
           : 'spec_reconcile'
         : 'runtime_start'

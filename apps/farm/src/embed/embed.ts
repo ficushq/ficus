@@ -18,6 +18,7 @@ import { apiUrl } from '../api/base'
 
 interface NativeWebView {
   postMessage(message: string): void
+  injectedObjectJson?(): string
 }
 
 declare global {
@@ -111,7 +112,16 @@ export function startEmbed(): { handoff: string | null } {
   if (viewport && !viewport.content.includes('user-scalable')) {
     viewport.content = `${viewport.content}, maximum-scale=1, user-scalable=no`
   }
-  const bootstrap = parseFarmEmbedBootstrap(window.__FICUS_EMBED__)
+  // Android's before-content injection is not reliable. WebView supplies this object
+  // through its native bridge before page scripts execute; it contains theme only.
+  let injected: unknown
+  try {
+    const json = window.ReactNativeWebView?.injectedObjectJson?.()
+    if (json) injected = JSON.parse(json)
+  } catch {
+    /* optional theme bootstrap */
+  }
+  const bootstrap = parseFarmEmbedBootstrap(window.__FICUS_EMBED__) ?? parseFarmEmbedBootstrap(injected)
   // Don't leave a sign-in code lying around on the page.
   delete window.__FICUS_EMBED__
   if (bootstrap?.theme) setAppTheme(bootstrap.theme)

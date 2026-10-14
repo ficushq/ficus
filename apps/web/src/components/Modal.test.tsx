@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
 import { Modal, VIEWPORT_MODAL_HEIGHT } from './Modal'
 
-async function renderModal(size?: 'default' | 'viewport') {
+async function renderModal(size?: 'default' | 'viewport' | 'content') {
   const dom = await acquireDomHarness({})
   const rendered = dom.createRoot()
   await dom.act(async () =>
@@ -36,6 +36,20 @@ test('viewport modal applies observable viewport geometry', async () => {
     const style = panel.getAttribute('style') ?? ''
     expect(style).toContain(VIEWPORT_MODAL_HEIGHT)
     expect(style).toContain('calc(100vw - 2rem)')
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('content modal shrinks to what it shows and stays inside the viewport', async () => {
+  const { dom, panel } = await renderModal('content')
+  try {
+    expect(panel.dataset.modalSize).toBe('content')
+    const style = panel.getAttribute('style') ?? ''
+    // Inline width beats the panel's `w-full`, so the dialog is only as wide as its content.
+    expect(style).toContain('width: auto')
+    expect(style).toContain(`max-height: ${VIEWPORT_MODAL_HEIGHT}`)
+    expect(style).toContain('max-width: calc(100vw - 2rem)')
   } finally {
     await dom.cleanup()
   }

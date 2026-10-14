@@ -683,3 +683,72 @@ test('arrows select and delete individual connections, preserve positions, and u
     cache.clear()
   }
 })
+
+test('decision steps are added from the toolbar, edited in the inspector and shown on the canvas', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows' })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  queryClient.setQueryData(queries.agentTypes.list().queryKey, [{ id: 'general', name: 'General' }])
+  queryClient.setQueryData(integrationQueries.outputs().queryKey, [])
+  queryClient.setQueryData(queries.workflows.list().queryKey, [])
+  let value: WorkflowSource | undefined
+  function Editor() {
+    const [source, setSource] = useState<WorkflowSource | undefined>({
+      kind: 'inline',
+      definition: createBlankWorkflow(),
+    })
+    value = source
+    return <WorkflowEditor definitionOnly value={source} onChange={setSource} />
+  }
+  const click = async (text: string) => {
+    const button = Array.from(document.querySelectorAll('button')).find((el) => el.textContent === text)!
+    expect(button).toBeDefined()
+    await dom.act(async () => button.click())
+  }
+  const steps = () => (value?.kind === 'inline' ? value.definition.steps : [])
+  const root = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={queryClient}>
+          <PermissionsProvider
+            usePermissions={() => ({ can: () => false, permissions: [], isLoading: false, isError: false })}
+          >
+            <Editor />
+          </PermissionsProvider>
+        </QueryClientProvider>
+      )
+    )
+    await click('Add decision')
+    expect(steps().map((step) => step.kind)).toEqual(['agent', 'decision'])
+    expect(document.body.textContent).toContain('No agent works on this step')
+    expect(document.body.textContent).not.toContain('Expected result')
+    expect(document.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toBe('Decision')
+    const card = document.querySelector('[data-flow-node-id="decision-1"]')!
+    expect(card.getAttribute('data-flow-kind')).toBe('decision')
+    expect(card.getAttribute('title')).toContain('1. ready ≥ 80% → completed')
+    expect(card.getAttribute('title')).toContain('Otherwise → ask a person')
+
+    // Editing the decision updates the draft; the threshold is a percentage.
+    const threshold = document.querySelector<HTMLInputElement>('[aria-label="Route 1 probability percent"]')!
+    await dom.act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(threshold, '90')
+      threshold.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    })
+    const decision = steps()[1]!
+    expect(decision.kind === 'decision' && decision.routes[0]!.when).toMatchObject({ probability: 0.9 })
+
+    // Switching kinds keeps the shared fields; switching back restores a fresh decision.
+    await click('Human approval')
+    expect(steps()[1]).toMatchObject({ kind: 'human-approval', output: 'Approval decision and feedback.' })
+    expect(document.body.textContent).toContain('Expected result')
+    await click('Decision')
+    expect(steps()[1]).toMatchObject({ kind: 'decision', outcomes: { completed: { next: 'finish' } } })
+    await click('Undo')
+    await click('Undo')
+    await click('Undo')
+    expect(steps()[1]!.kind === 'decision' && steps()[1]!).toMatchObject({ routes: [{ when: { probability: 0.8 } }] })
+  } finally {
+    await dom.cleanup()
+    queryClient.clear()
+  }
+})

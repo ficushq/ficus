@@ -58,6 +58,39 @@ describe('WorkStreamGraph', () => {
     expect(edge).not.toBeNull()
   })
 
+  test('shows which condition each edge waits on and whether it is satisfied', async () => {
+    const stacked = {
+      ...stream('b', ['a']),
+      dependencies: [{ workStreamId: 'a', condition: 'ready' as const, satisfied: true }],
+    }
+    const plain = {
+      ...stream('c', ['a']),
+      dependencies: [{ workStreamId: 'a', condition: 'done' as const, satisfied: false }],
+    }
+    await domHarness!.act(async () =>
+      root.render(
+        <WorkStreamGraph
+          workStreams={[stream('a'), stacked, plain]}
+          agentMap={new Map()}
+          onSelectWorkStream={() => undefined}
+        />
+      )
+    )
+
+    const ready = container.querySelector('[data-from="a"][data-to="b"]')!
+    expect(ready.getAttribute('data-condition')).toBe('ready')
+    expect(ready.getAttribute('data-satisfied')).toBe('true')
+    expect(ready.getAttribute('stroke-dasharray')).toBe('6 4')
+    expect(ready.querySelector('title')!.textContent).toBe(
+      'Waits until the dependency’s pull request is ready (satisfied)'
+    )
+    const done = container.querySelector('[data-from="a"][data-to="c"]')!
+    expect(done.getAttribute('data-condition')).toBe('done')
+    expect(done.getAttribute('stroke-dasharray')).toBeNull()
+    expect(done.querySelector('title')!.textContent).toBe('Waits until the dependency is done (waiting)')
+    expect(container.textContent).toContain('Waits until PR is ready')
+  })
+
   test('opens the selected stream when a node is clicked', async () => {
     const selected: string[] = []
     await domHarness!.act(async () =>

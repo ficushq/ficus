@@ -263,6 +263,29 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Workflow preview:' }).getAttribute('aria-expanded'), 'false')
     assert.equal(await page.getByText('Unattributed usage:', { exact: false }).count(), 0)
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `delivery-collapsed-${width}.png`) })
+    // Each dependency states the condition its edge waits on and whether it is satisfied.
+    await page.goto(server.resolvedUrls!.local[0]! + 'detail-fixture?dependencies')
+    const dependencies = page.getByRole('region', { name: 'Dependencies' })
+    await dependencies.waitFor()
+    for (const text of [
+      'Unlocked when its pull request was ready · built on work/shared-parser · delivery held until it merges',
+      'Waits until its pull request is ready',
+      'Satisfied',
+    ])
+      assert.equal(await dependencies.getByText(text, { exact: true }).isVisible(), true, text)
+    assert.equal(
+      await dependencies.evaluate((element) => element.scrollWidth <= element.clientWidth),
+      true,
+      'Dependency conditions wrap inside the modal'
+    )
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `dependencies-${width}.png`) })
+    await page.goto(server.resolvedUrls!.local[0]! + 'detail-fixture?graph')
+    await page.getByRole('img', { name: /Dependency graph/ }).waitFor()
+    assert.equal(await page.locator('path[data-condition="ready"][data-satisfied="true"]').count(), 1)
+    assert.equal(await page.locator('path[data-condition="ready"][data-satisfied="false"]').count(), 1)
+    assert.equal(await page.locator('path[data-condition="done"]').count(), 1)
+    await page.getByText('Graph legend').click()
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `dependency-graph-${width}.png`) })
   }
   assert.deepEqual(errors, [], 'No browser runtime errors')
   console.log(JSON.stringify(measurements, null, 2))

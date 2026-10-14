@@ -1,7 +1,8 @@
 import { useToolRenderers } from '../lib/ToolRenderersContext'
 import clsx from 'clsx'
 import { ToolInlineActions } from './ToolInlineActions'
-import type { ToolInlineAction } from '../lib/tool-inline-actions'
+import { getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
+import { ToolFirewallBadge } from './ToolFirewallBadge'
 import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { MarkdownContent } from './MarkdownContent'
 import { CollapsibleMarkdown } from './CollapsibleMarkdown'
@@ -10,6 +11,7 @@ import { parseMessageContent } from '../lib/message-parser'
 import {
   isWorkspaceVoiceRecipient,
   type MessageMetadata,
+  type ToolFirewallFlag,
   type MessageToolCall,
   type ContentBlock,
   type MonitorMessageKind,
@@ -17,6 +19,7 @@ import {
 import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
 import { ActivityIcon, ChevronRightIcon, ClockIcon, MailIcon, WarningIcon, WorkStreamIcon } from './icons'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
+import { ImagePreviewModal } from './ImagePreviewModal'
 import { useImageSrcs } from '../hooks/useImageSrcs'
 
 const LONG_HUMAN_MESSAGE_LIMIT = 1600
@@ -75,6 +78,17 @@ function getGroupSummary(blocks: ContentBlock[]): string {
   }
 
   return parts.join(' • ')
+}
+
+/** A collapsed group still shows that one of its tool results was flagged by the firewall. */
+function mostSevereFirewallFlag(blocks: ContentBlock[]): ToolFirewallFlag | null {
+  let worst: ToolFirewallFlag | null = null
+  for (const block of blocks) {
+    if (block.type !== 'tool_use') continue
+    const flag = getToolFirewallFlag(block.toolCall)
+    if (flag && (!worst || (flag.severity === 'high' && worst.severity !== 'high'))) worst = flag
+  }
+  return worst
 }
 
 interface AssistantMessageContentProps {
@@ -242,37 +256,60 @@ function StandardHumanMessageContent({
 
 function ImageAttachments({ imageIds, variant = 'standard' }: { imageIds: string[]; variant?: 'standard' | 'inbox' }) {
   const srcs = useImageSrcs(imageIds)
+  const images = useMemo(() => imageIds.map((id) => ({ id, src: srcs[id] })), [imageIds, srcs])
+  const [preview, setPreview] = useState({ isOpen: false, index: 0 })
+  const thumbnails = useRef<Array<HTMLButtonElement | null>>([])
+  const openedFrom = useRef(0)
+  const inbox = variant === 'inbox'
 
-  if (variant === 'inbox') {
-    return (
-      <div className="mt-3 flex max-w-full gap-2 overflow-x-auto pb-1">
-        {imageIds.map((id) => (
-          <a key={id} href={srcs[id]} target="_blank" rel="noopener noreferrer" className="block shrink-0">
-            <img
-              src={srcs[id]}
-              alt="Inbox attachment"
-              className="h-20 w-20 rounded border border-accent/30 object-cover transition-colors hover:border-accent-light"
-              loading="lazy"
-            />
-          </a>
-        ))}
-      </div>
-    )
+  const openPreview = (index: number) => {
+    openedFrom.current = index
+    setPreview({ isOpen: true, index })
+  }
+  const closePreview = () => {
+    setPreview((current) => ({ ...current, isOpen: false }))
+    // Back to the thumbnail that opened it, without moving the transcript.
+    thumbnails.current[openedFrom.current]?.focus({ preventScroll: true })
   }
 
   return (
-    <div className="flex flex-wrap gap-2 mb-2">
-      {imageIds.map((id) => (
-        <a key={id} href={srcs[id]} target="_blank" rel="noopener noreferrer" className="block">
-          <img
-            src={srcs[id]}
-            alt="Attached image"
-            className="max-h-40 max-w-full rounded border border-accent/30 hover:border-accent-light transition-colors"
-            loading="lazy"
-          />
-        </a>
-      ))}
-    </div>
+    <>
+      <div className={inbox ? 'mt-3 flex max-w-full gap-2 overflow-x-auto pb-1' : 'mb-2 flex flex-wrap gap-2'}>
+        {images.map((image, index) => (
+          // A button, never a link to the image: the desktop shell has no tabs, so a same-origin
+          // link loads the bare image in the app window and leaves no way back.
+          <button
+            key={image.id}
+            ref={(element) => {
+              thumbnails.current[index] = element
+            }}
+            type="button"
+            onClick={() => openPreview(index)}
+            aria-label={
+              images.length > 1 ? `Preview attached image ${index + 1} of ${images.length}` : 'Preview attached image'
+            }
+            className={clsx('ficus-button ficus-button-ghost block p-0', inbox ? 'shrink-0' : 'max-w-full')}
+          >
+            <img
+              src={image.src}
+              alt={inbox ? 'Inbox attachment' : 'Attached image'}
+              className={clsx(
+                'block rounded border border-accent/30 transition-colors hover:border-accent-light',
+                inbox ? 'h-20 w-20 object-cover' : 'max-h-40 max-w-full'
+              )}
+              loading="lazy"
+            />
+          </button>
+        ))}
+      </div>
+      <ImagePreviewModal
+        images={images}
+        index={preview.index}
+        isOpen={preview.isOpen}
+        onIndexChange={(index) => setPreview((current) => ({ ...current, index }))}
+        onClose={closePreview}
+      />
+    </>
   )
 }
 
@@ -579,6 +616,7 @@ export function SingleToolCallSection({
   const isIncomplete = !toolCall.result && !toolCall.isError
   const isError = toolCall.isError || isIncomplete
   const result = toolCall.result || (isIncomplete ? 'Command aborted' : '')
+  const firewall = useMemo(() => getToolFirewallFlag({ result: toolCall.result }), [toolCall.result])
 
   return (
     <div className="text-xs">
@@ -598,6 +636,7 @@ export function SingleToolCallSection({
         )}
         <span className="font-medium shrink-0">{toolCall.toolName}</span>
         <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+        {firewall && <ToolFirewallBadge flag={firewall} />}
         {isError && (
           <span className="text-status-danger-500 dark:text-status-danger-400 text-[10px] font-medium shrink-0">
             ERROR
@@ -719,6 +758,7 @@ function BlockGroupSection({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const summary = getGroupSummary(blocks)
+  const firewall = useMemo(() => mostSevereFirewallFlag(blocks), [blocks])
 
   return (
     <div className="text-xs">
@@ -730,6 +770,7 @@ function BlockGroupSection({
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
         />
         <span className="font-medium">{summary}</span>
+        {firewall && <ToolFirewallBadge flag={firewall} />}
       </button>
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-2">

@@ -940,6 +940,36 @@ const trackedDeliveryPullRequest = (number: number, overrides: Record<string, un
   ...overrides,
 })
 
+describe('WorkStreamList feed section headers', () => {
+  const tagBefore = (html: string, tag: string, text: string) => {
+    const start = html.lastIndexOf(`<${tag}`, html.indexOf(text))
+    return html.slice(start, html.indexOf('>', start) + 1)
+  }
+  const feedProps = { feedLayout: true, hideFilters: true, doneTitle: 'Recently completed' }
+  const streams = [workStream(), workStream({ id: 'ws-done', status: 'done' })]
+
+  test('pad the highlight like every other caller of the header', () => {
+    const feed = renderWorkStreamList(streams, feedProps, '/?collapsed=0')
+    // The Feed toggle used to drop its inline padding, so the chevron sat on the highlight edge.
+    expect(tagBefore(feed, 'button', 'Recently completed')).toMatch(/class="[^"]*\bpx-3\b/)
+    // "Active work" cannot collapse on the Feed: it keeps the padding and reserves the chevron's width.
+    expect(feed).toMatch(
+      /<div class="[^"]*\bpx-3\b[^"]*"><div class="flex items-center gap-2"><span aria-hidden="true" class="h-4 w-4 shrink-0"><\/span><span[^>]*>Active work</
+    )
+
+    const standard = renderWorkStreamList(streams, { hideFilters: true }, '/?collapsed=0')
+    expect(tagBefore(standard, 'button', 'Done')).toMatch(/class="[^"]*\bpx-3\b/)
+  })
+
+  test('indent feed rows so their status dot stays under the header title', () => {
+    const feed = renderWorkStreamList(streams, feedProps, '/?collapsed=0')
+    const rows = feed.match(/<li class="[^"]*" data-testid="feed-work-row"/g) ?? []
+    expect(rows).toHaveLength(2)
+    // 12px header padding + 16px chevron + 8px gap.
+    for (const row of rows) expect(row).toMatch(/\bpl-9\b/)
+  })
+})
+
 describe('WorkStreamList inline pull request links', () => {
   test('feed rows link every tracked delivery pull request in order', () => {
     const html = renderWorkStreamList(

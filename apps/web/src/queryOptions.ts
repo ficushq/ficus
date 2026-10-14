@@ -33,10 +33,12 @@ import {
   getAgentSandboxStatus,
   getAgentSandboxProcesses,
   listAgentScopes,
+  getDeliverySuggestion,
 } from './api/agents'
 import { listAgentTypes } from './api/agentTypes'
 import { getModelTiers, getSquadPresets } from './api/config'
-import { modelTierQueryKeys, decisionQueryKeys } from './queryKeys'
+import { modelTierQueryKeys, decisionQueryKeys, composerQueryKeys, screenshotQueryKeys } from './queryKeys'
+import { screenshotsApi } from './api/screenshots'
 import { getDecisionSettings, getDecisionSpend, type DecisionSpendDays } from './api/decisions'
 import { schedulesApi, type ListSchedulesParams } from './api/schedules'
 import { monitorsApi, type ListMonitorsParams } from './api/monitors'
@@ -269,6 +271,37 @@ export const queries = {
         queryKey: decisionQueryKeys.spend(days),
         queryFn: () => getDecisionSpend(days),
         staleTime: 60_000,
+      }),
+  },
+
+  screenshots: {
+    /**
+     * A squad's open work streams for the screenshot review card's picker. The card is short-lived,
+     * so each one reads them afresh instead of trusting a list from an earlier screenshot.
+     */
+    workStreams: (squadId: string) =>
+      queryOptions({
+        queryKey: screenshotQueryKeys.workStreams(squadId),
+        queryFn: () => screenshotsApi.workStreams(squadId),
+        gcTime: 0,
+        retry: false,
+      }),
+  },
+
+  composer: {
+    /**
+     * Interrupt or Follow up for a draft written while the agent works. One answer per draft: never
+     * refetched on focus or reconnect, and an abandoned draft's request is cancelled.
+     */
+    deliverySuggestion: (agentId: string, draft: string) =>
+      queryOptions({
+        queryKey: composerQueryKeys.deliverySuggestion(agentId, draft),
+        queryFn: ({ signal }) => getDeliverySuggestion(agentId, draft, signal),
+        staleTime: Infinity,
+        gcTime: 60_000,
+        retry: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
       }),
   },
 

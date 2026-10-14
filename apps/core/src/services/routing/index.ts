@@ -3,6 +3,7 @@ export {
   scoreKeywordOverlap,
   suggestSquad,
   suggestSquadWithRecommendation,
+  suggestSquadsByPurpose,
   MIN_ROUTE_CONFIDENCE,
   TIE_EPSILON,
 } from './squad-suggester'

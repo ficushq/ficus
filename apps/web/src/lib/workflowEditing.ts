@@ -3,7 +3,9 @@ import {
   workflowDefinitionSchema,
   workflowParticipantSchema,
   workflowStepSchema,
+  type WorkflowDecisionStep,
   type WorkflowDefinition,
+  type WorkflowStep,
 } from '@ficus/shared'
 
 /** Copy shared settings for one step without changing other assignments or graph references. */
@@ -27,10 +29,31 @@ export function workflowHistoryKey(definition: WorkflowDefinition) {
   return JSON.stringify({ ...definition, name: undefined })
 }
 
-export function insertWorkflowStep(definition: WorkflowDefinition, selected: string | undefined, human = false) {
+export type WorkflowStepKind = WorkflowStep['kind']
+
+/** A decision step that asks one yes/no question and sends a confident yes to `outcome`; anything else asks a person. */
+export function newWorkflowDecisionStep(
+  fields: Pick<WorkflowDecisionStep, 'id' | 'outcomes'> & Partial<Pick<WorkflowDecisionStep, 'name' | 'instructions'>>
+): WorkflowDecisionStep {
+  const outcome = Object.keys(fields.outcomes)[0]
+  return workflowStepSchema.parse({
+    ...fields,
+    kind: 'decision',
+    instructions: fields.instructions?.trim() || 'Decide whether the work is ready to continue.',
+    questions: { ready: { type: 'yesno', instructions: 'The result is complete and meets the instructions.' } },
+    routes: outcome ? [{ when: { type: 'yesno', question: 'ready', op: 'at-least', probability: 0.8 }, outcome }] : [],
+  }) as WorkflowDecisionStep
+}
+
+export function insertWorkflowStep(
+  definition: WorkflowDefinition,
+  selected: string | undefined,
+  kind: WorkflowStepKind | boolean = 'agent'
+) {
+  if (typeof kind === 'boolean') kind = kind ? 'human-approval' : 'agent'
   const draft = structuredClone(definition)
   let index = 1
-  const prefix = human ? 'approval' : 'step'
+  const prefix = kind === 'human-approval' ? 'approval' : kind === 'decision' ? 'decision' : 'step'
   while (
     draft.steps.some((step) => step.id === `${prefix}-${index}`) ||
     Object.hasOwn(draft.participants, `${prefix}-${index}`)
@@ -41,25 +64,52 @@ export function insertWorkflowStep(definition: WorkflowDefinition, selected: str
   const onward = Object.entries(previous?.outcomes ?? {}).find(([, target]) => 'next' in target)
   const next = onward ? structuredClone(onward[1]) : { next: 'finish' as const }
   if (onward && previous) previous.outcomes[onward[0]] = { next: id }
-  if (!human)
+  if (kind === 'agent')
     draft.participants[id] = workflowParticipantSchema.parse({
       agentTypeId: 'general',
       session: 'reuse-within-stream',
     })
   if (!previous) draft.entry = id
+  const human = kind === 'human-approval'
   draft.steps.push(
-    workflowStepSchema.parse({
-      id,
-      name: human ? `Approval ${index}` : `Step ${index}`,
-      ...(human ? { kind: 'human-approval', approver: 'assigned-reviewers' } : { kind: 'agent', participant: id }),
-      instructions: human
-        ? 'Review the result and approve or request changes.'
-        : 'Complete this step and verify the result.',
-      output: human ? 'Approval decision and feedback.' : 'Result and evidence.',
-      outcomes: { completed: next },
-    })
+    kind === 'decision'
+      ? newWorkflowDecisionStep({ id, name: `Decision ${index}`, outcomes: { completed: next } })
+      : workflowStepSchema.parse({
+          id,
+          name: human ? `Approval ${index}` : `Step ${index}`,
+          ...(human ? { kind: 'human-approval', approver: 'assigned-reviewers' } : { kind: 'agent', participant: id }),
+          instructions: human
+            ? 'Review the result and approve or request changes.'
+            : 'Complete this step and verify the result.',
+          output: human ? 'Approval decision and feedback.' : 'Result and evidence.',
+          outcomes: { completed: next },
+        })
   )
   return { definition: draft, selected: id }
+}
+
+/** Rename one outcome of a step, keeping a decision step's routes and fallbacks pointed at it. */
+export function renameWorkflowOutcome(definition: WorkflowDefinition, stepId: string, previous: string, next: string) {
+  const draft = structuredClone(definition)
+  const step = draft.steps.find((entry) => entry.id === stepId)
+  if (!step || !Object.hasOwn(step.outcomes, previous)) return draft
+  step.outcomes = Object.fromEntries(
+    Object.entries(step.outcomes).map(([key, value]) => [key === previous ? next : key, value])
+  )
+  if (step.kind === 'decision') {
+    for (const route of step.routes) if (route.outcome === previous) route.outcome = next
+    if (step.otherwise === previous) step.otherwise = next
+    if (step.unavailable === previous) step.unavailable = next
+  }
+  return draft
+}
+
+/** Drop decision routes and fallbacks whose outcome was removed; a dropped fallback asks a person. */
+function pruneDecisionReferences(step: WorkflowStep) {
+  if (step.kind !== 'decision') return
+  step.routes = step.routes.filter((route) => Object.hasOwn(step.outcomes, route.outcome))
+  if (step.otherwise && !Object.hasOwn(step.outcomes, step.otherwise)) delete step.otherwise
+  if (step.unavailable && !Object.hasOwn(step.outcomes, step.unavailable)) delete step.unavailable
 }
 
 export function changedWorkflowSteps(before: WorkflowDefinition, after: WorkflowDefinition) {
@@ -159,6 +209,8 @@ export function connectWorkflowOutcome(
     to !== 'finish' &&
     (forwardReachable(definition, to, from) || ('returnTo' in target && !forwardReachable(definition, from, to)))
   if (rework) {
+    if (draft.steps.find((step) => step.id === to)?.kind === 'decision')
+      throw new Error('A decision step cannot do revisions. Send the work back to an agent step.')
     if ('parallel' in target)
       throw new Error('Use a separate outcome to request revisions; parallel branches move forward together.')
     draft.steps.find((step) => step.id === from)!.outcomes[outcome] = {
@@ -225,6 +277,7 @@ export function removeWorkflowStep(definition: WorkflowDefinition, id: string) {
         else if (target.join === id) target.join = onward && onward !== step.id ? onward : 'finish'
       } else if ('returnTo' in target && target.returnTo === id) delete step.outcomes[name]
     }
+    pruneDecisionReferences(step)
   }
   // Participants can be shared by other steps or reused later. Keep their configuration.
   return draft
@@ -258,6 +311,7 @@ export function removeWorkflowConnection(
       else if (!target.parallel.length) delete step.outcomes[outcome]
     }
   } else delete step.outcomes[outcome]
+  pruneDecisionReferences(step)
   return draft
 }
 

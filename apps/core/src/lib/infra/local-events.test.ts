@@ -234,7 +234,7 @@ describe('local-events transport', () => {
       })
       await api.notify('sensitive-unknown-channel', 'sensitive-payload')
       const snapshot = api.getDiagnostics()
-      expect(snapshot.channels).toHaveLength(8)
+      expect(snapshot.channels).toHaveLength(9)
       expect(diagnostic(api, 'other')).toMatchObject({ attempts: 1, failures: { http_rejection: 1 } })
       expect(JSON.stringify(snapshot)).not.toMatch(
         /sensitive-unknown-channel|sensitive-payload|sensitive-response-body|peer\.invalid/

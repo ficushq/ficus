@@ -69,5 +69,14 @@ export async function recordChangeRequestBinding(
       .where(eq(workStreams.id, streamId))
     return true
   })
+  // A bound delivery pull request can make this stream `ready` for its dependents.
+  if (changed) {
+    try {
+      const { admitDependentsOfReadyStream } = await import('./admission')
+      await admitDependentsOfReadyStream(streamId)
+    } catch {
+      // The admission reconciler is the backstop.
+    }
+  }
   return changed
 }

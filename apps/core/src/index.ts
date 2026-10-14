@@ -15,6 +15,7 @@ import { modelTiersRoutes } from './routes/model-tiers'
 import { skillsRoutes } from './routes/skills'
 import { sharedPromptsRoutes } from './routes/shared-prompts'
 import { assistantRouter } from './routes/assistant'
+import { screenshotsRouter } from './routes/screenshots'
 import { assistantTasksRouter } from './routes/assistant-tasks'
 import { chatRouter } from './routes/chat'
 import { pushRouter } from './routes/push'
@@ -35,6 +36,7 @@ import { systemTokensRouter } from './routes/system-tokens'
 import { imagesRouter } from './routes/images'
 import { agentsRouter } from './routes/agents'
 import { agentFilesRouter } from './routes/agent-files'
+import { agentDeliverySuggestionRouter } from './routes/agent-delivery-suggestion'
 import { artifactsRouter } from './routes/artifacts'
 import { inboxRouter } from './routes/inbox'
 import { squadPresetsRouter } from './routes/squad-presets'
@@ -72,6 +74,8 @@ import { amtpRouter } from './routes/amtp'
 import { userPreferencesRouter } from './routes/user-preferences'
 import { farmPreferencesRouter } from './routes/farm-preferences'
 import { farmChatRouter } from './routes/farm-chat'
+import { farmRouter } from './routes/farm'
+import { startRobotMoodCache } from './services/robot-moods'
 import { themePresetsRouter } from './routes/theme-presets'
 import { notificationConfigRouter } from './routes/notification-config'
 import secretsRouter from './routes/secrets'
@@ -283,6 +287,7 @@ app.route('/api/agent-types', agentTypesRoutes)
 app.route('/api/model-tiers', modelTiersRoutes)
 app.route('/api/chat', chatRouter)
 app.route('/api/assistant', assistantRouter)
+app.route('/api/screenshots', screenshotsRouter)
 app.route('/api/assistant-tasks', assistantTasksRouter)
 app.route('/api/actions', actionsRouter)
 app.route('/api/agent-questions', agentQuestionsRouter)
@@ -296,6 +301,7 @@ app.route('/api/ai/extract', aiExtractRouter)
 
 app.route('/api/images', imagesRouter)
 app.route('/api/agents', agentFilesRouter)
+app.route('/api/agents', agentDeliverySuggestionRouter)
 app.route('/api/agents', agentsRouter)
 app.route(
   '/api/agents',
@@ -334,6 +340,7 @@ app.route('/api/notification-config', notificationConfigRouter)
 app.route('/api/user-preferences', userPreferencesRouter)
 app.route('/api/farm-preferences', farmPreferencesRouter)
 app.route('/api/farm-chat', farmChatRouter)
+app.route('/api/farm', farmRouter)
 app.route('/api/theme-presets', themePresetsRouter)
 app.route('/api/secrets', secretsRouter)
 app.route('/api/settings', settingsRouter)
@@ -748,6 +755,8 @@ if (import.meta.main) {
   installPgTeardownRejectionGuard()
   // Set up WebSocket event bridge
   setupEventBridge(wsManager)
+  // The worker's latest robot moods, for farms that open later (POST /api/farm/watching).
+  startRobotMoodCache()
 
   // In Kubernetes, bind to all interfaces so pod-IP readiness/liveness probes
   // and other pods can reach the API. Otherwise default to localhost for security.

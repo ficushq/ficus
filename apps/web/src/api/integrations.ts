@@ -2,6 +2,7 @@ import type {
   IntegrationAuthorizationStart,
   IntegrationDeviceAuthorizationStatus,
   GitHubCommitSigningStatus,
+  GitHubSquadCommitSigning,
   GitHubRepositoryAccess,
 } from '@ficus/shared'
 import { apiFetch } from './client'
@@ -145,6 +146,8 @@ export interface SquadIntegrationSelection {
   assignment: IntegrationConnectionSummary | null
   connections: IntegrationConnectionSummary[]
   attached?: (IntegrationConnectionSummary & { isDefault: boolean })[]
+  /** GitHub only: which attached accounts sign this squad's commits. */
+  commitSigning?: GitHubSquadCommitSigning
   projection?: {
     status: 'pending' | 'installing' | 'ready' | 'degraded' | 'reconnect_required'
     lastErrorCode: string | null

@@ -1,6 +1,6 @@
 ---
 name: setup-workflows
-description: "Help a squad choose how it works: select a default workflow, configure when to use different flows, tailor specialist steps, and save reusable presets without spawning participants. Use during squad onboarding or when the user wants to change their team's process."
+description: "Help a squad choose how it works: select a default workflow, configure when to use different flows, tailor specialist steps or decision-model routing steps, and save reusable presets without spawning participants. Use during squad onboarding or when the user wants to change their team's process."
 ---
 
 # Set up how this squad works
@@ -160,9 +160,70 @@ wake paused participants, or schedule messages to bypass the hold.
 
 ## Explain waits and pause when choosing a flow
 
-Blocking questions and manual requests from flow agents default to their own active attempt. Other branches continue, and the join waits. Use `waitScope: stream` for a shared question blocker or `ficus workstream request-input ID --scope stream -m "Reason"` for a shared manual blocker. A response provides input without approving the step. Use a human-approval step for an enforced decision. Whole-stream pause interrupts work until explicit resume; park separately to release capacity.
+Blocking questions and manual requests from flow agents default to their own active attempt. Other branches continue, and the join waits. Use `waitScope: stream` for a shared question blocker or `ficus workstream request-input ID --scope stream -m "Reason"` for a shared manual blocker. A response provides input without approving the step. Use a human-approval step for an enforced decision.
+
+Whole-stream pause interrupts work until explicit resume; park separately to release capacity.
 
 See `docs/wiki/workflows.md` for the reference. Flow `subscriptions` and squad `integrationTriggers` are supported. Graph integration connections visualize those definitions; do not invent additional graph attachment fields outside the accepted schema.
+
+## Route with a decision step
+
+Pick each step's kind by what it needs:
+
+- **Agent step**: the work, or any judgment that needs tools, investigation, or a written result.
+- **Human approval**: a person must sign off before work moves on.
+- **Decision step** (`kind: decision`): a quick routing judgment a decision model can make from
+  the work's text or the previous steps' results, such as "a bug or a feature request?", "risky or
+  safe to ship?", or "which track?". It answers in about a second for a fraction of a cent, but it
+  cannot investigate, use tools, or produce anything.
+
+A decision step has `instructions`, `input` (any of `title`, `description`, `handoff`,
+`incoming-results`; default: title, description and incoming results), typed `questions`, ordered
+`routes` (first match wins), `otherwise`, `unavailable`, and `outcomes`. It has no participant or
+output, and it cannot be a `returnTo` target.
+
+```yaml
+- id: triage
+  kind: decision
+  instructions: Decide whether the change can ship without a human review.
+  input: [title, description, incoming-results]
+  questions:
+    ready: { type: yesno, instructions: The change is complete and its tests pass. }
+    risk:
+      type: score
+      instructions: How risky is the change to production?
+      levels: [{ label: Low }, { label: Medium }, { label: High }]
+    area:
+      type: choice
+      instructions: Which part of the product does the change touch?
+      options:
+        billing: Payments, invoices or refunds.
+        other: Anything else.
+  routes:
+    - when: { type: score, question: risk, op: at-least, level: High }
+      outcome: review
+    - when: { type: choice, question: area, equals: billing, minConfidence: 0.7 }
+      outcome: review
+    - when: { type: yesno, question: ready, op: at-least, probability: 0.8 }
+      outcome: ship
+  otherwise: review
+  unavailable: review
+  outcomes:
+    ship: { next: finish }
+    review: { next: human-review }
+```
+
+- Questions are `yesno`, `choice` (2 to 64 `options`), or `score` (2 to 10 `levels`, lowest
+  first); ask 1 to 64. Question and option names use lowercase letters, digits, and underscores
+  (`is_bug`), unlike step IDs and outcomes, which use hyphens.
+- A route's `when` reads one answer: a yes/no probability `at-least`/`at-most` a threshold, a
+  choice that `equals` an option (optionally with `minConfidence`), or a score level
+  `at-least`/`at-most` a level. `question` may be left out only when the step asks one question.
+- Where a wrong guess matters, send `otherwise` and `unavailable` to a human approval, or omit them
+  so a reviewer chooses instead of the step guessing.
+- Decision steps need a decision model for **Workflow decisions** (Settings → Decision Providers).
+  Without one they take `unavailable`, or wait for a reviewer. Saving or creating a flow with
+  decision steps and no such model returns a `warnings` entry saying so; tell the user.
 
 ## Integration events
 

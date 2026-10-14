@@ -114,11 +114,8 @@ test('StrictMode keeps the editor open, synchronizes current drafts, and closes 
     const mic = document.querySelector('[aria-label="Enable microphone"]') as HTMLButtonElement
     await dom.act(async () => mic.click())
     expect(setLiveAudio.mock.calls).toEqual([[true]])
-    const inlineMic = [...document.querySelectorAll('button')].find(
-      (button) => button.textContent === 'enable your microphone'
-    )!
-    await dom.act(async () => inlineMic.click())
-    expect(setLiveAudio).toHaveBeenCalledTimes(2)
+    // The header's microphone button is the only way in: no extra inline link.
+    expect(document.body.textContent).not.toContain('enable your microphone')
     Object.assign(voice, { error: 'Connection failed', status: 'error' })
     await dom.act(async () => render(1))
     const reconnect = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Reconnect')!
@@ -126,7 +123,7 @@ test('StrictMode keeps the editor open, synchronizes current drafts, and closes 
     expect(document.body.textContent).not.toContain('Continue in text')
     await dom.act(async () => reconnect.click())
     expect(retryConnection).toHaveBeenCalledTimes(1)
-    expect(setLiveAudio).toHaveBeenCalledTimes(2) // Reconnecting must not enable the microphone.
+    expect(setLiveAudio).toHaveBeenCalledTimes(1) // Reconnecting must not enable the microphone.
     expect(document.querySelector('[aria-label="Enable microphone"]')).not.toBeNull()
     await dom.act(async () => root.root.render(null))
     await closeBoundary

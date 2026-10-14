@@ -155,9 +155,17 @@ With author filtering on, Ficus checks who wrote or did each event:
   edit also needs the person who edited it to be trusted.
 - **Assignments, review requests, labels, and closing or reopening an issue** are
   checked against the person who did it. They arrive as a short fixed message
-  (who did what, the assignee or reviewer, the label and a link) without the
-  issue or pull request title or description, so a trusted person assigning
-  someone else's issue doesn't pass that issue's text to agents.
+  (who did what, the assignee or reviewer, the label and a link). An issue
+  assignment or a review request also includes the issue or pull request's
+  current title and description, but only when the person who wrote it is
+  trusted and Ficus can confirm the text is still theirs, so a trusted person
+  assigning someone else's issue doesn't pass that issue's text to agents.
+  Ficus can confirm this when the issue or pull request hasn't changed since it
+  was opened, or when its title and description still match what its author
+  wrote when Ficus received the opening event.
+  GitHub doesn't say who last edited a title or description, so text that may
+  have been edited by someone else is left out. If the author stops being
+  trusted before the message is delivered, agents get the short message instead.
 - **New issues and pull requests** are checked against their author.
 
 Some events are held even when everyone involved is trusted, because Ficus can't

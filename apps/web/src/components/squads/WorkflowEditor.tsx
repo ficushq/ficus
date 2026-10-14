@@ -380,7 +380,12 @@ export function WorkflowEditor({
                   {definition.steps.map((step, index) => (
                     <li key={step.id} className="border-t border-th-border pt-3 space-y-2">
                       <div className="text-sm font-medium">
-                        {index + 1}. {step.id} · {step.kind === 'agent' ? step.participant : 'Human approval'}
+                        {index + 1}. {step.id} ·{' '}
+                        {step.kind === 'agent'
+                          ? step.participant
+                          : step.kind === 'decision'
+                            ? 'Decision'
+                            : 'Human approval'}
                       </div>
                       <label className="block text-xs text-secondary">
                         Instructions
@@ -394,18 +399,21 @@ export function WorkflowEditor({
                           }
                         />
                       </label>
-                      <label className="block text-xs text-secondary">
-                        Expected result
-                        <input
-                          className={field}
-                          value={step.output}
-                          onChange={(e) =>
-                            edit((draft) => {
-                              draft.steps[index]!.output = e.target.value
-                            })
-                          }
-                        />
-                      </label>
+                      {step.kind !== 'decision' && (
+                        <label className="block text-xs text-secondary">
+                          Expected result
+                          <input
+                            className={field}
+                            value={step.output}
+                            onChange={(e) =>
+                              edit((draft) => {
+                                const target = draft.steps[index]!
+                                if (target.kind !== 'decision') target.output = e.target.value
+                              })
+                            }
+                          />
+                        </label>
+                      )}
                       <div className="text-xs text-secondary">
                         {Object.entries(step.outcomes)
                           .map(

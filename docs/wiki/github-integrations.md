@@ -38,8 +38,13 @@ Legacy `GH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN_*`, `GITHUB_TOKEN_*`, `GITHUB_USER`
 Agents' commits and annotated tags are signed with an SSH key Ficus registers on the connected GitHub account, so GitHub shows them as **Verified**. The GitHub card shows the state per account and turns it on or off; connecting an account turns it on automatically unless it was turned off for that account before.
 
 - **Key custody.** Core generates an ed25519 key per connection, registers the public half with `POST /user/ssh_signing_keys` (the App's **SSH signing keys** account permission) and keeps the private half in the secret store under `__integration-github-signing:<connectionId>`. The private key never enters a sandbox. Turning signing off or disconnecting the account deletes the key from GitHub and from Ficus; an explicit off is remembered so connect-time setup does not re-enable it.
-- **How git signs.** When signing is on for a squad's default GitHub connection, the squad env's `git` wrapper adds `-c gpg.format=ssh -c commit.gpgsign=true -c tag.gpgsign=true -c user.signingkey=key::<public key> -c gpg.ssh.program=ficus`. Command-line settings outrank repository config. Git runs `ficus -Y sign …`, which sends the object git is signing to `POST /api/squads/:squadId/integrations/github/sign` with the agent's own token and writes the returned signature. Other `-Y` operations (`git verify-commit`, `git log --show-signature`) pass through to the real `ssh-keygen`.
-- **What Core signs.** Only for agent identities with `integrations:use` on the squad, only git commit or tag objects, and only when the committer (or tagger) email is the squad's configured git identity or the account's `users.noreply.github.com` address. GitHub marks a signature Verified only when that email is verified on the account, which the noreply address always is.
+- **How git signs.** When signing is on for at least one GitHub connection attached to a squad, the squad env's `git` wrapper adds `-c gpg.format=ssh -c commit.gpgsign=true -c tag.gpgsign=true -c user.signingkey=key::<public key> -c gpg.ssh.program=ficus`. Command-line settings outrank repository config. Git runs `ficus -Y sign …`, which sends the object git is signing to `POST /api/squads/:squadId/integrations/github/sign` with the agent's own token and writes the returned signature. The `user.signingkey` value only switches signing on; it does not choose the key. Other `-Y` operations (`git verify-commit`, `git log --show-signature`) pass through to the real `ssh-keygen`.
+- **Which account signs.** Core chooses the key from the commit's committer email (the tagger email for a tag) and nothing else. Among the connections attached to the squad that have signing on, it signs with the one whose GitHub account that email belongs to. An account's emails are its `<id>+<login>@users.noreply.github.com` address and, if it publishes one, its public profile email (GitHub only lets an account publish an address it has verified, and Ficus reads it from the profile it already loads for the author defaults). Other verified addresses are not recognised: listing them needs an email permission the App does not request. The request cannot name a connection or a key, so an agent cannot get one account's signature over a commit committed as another.
+- **When the account's signing is off.** If the committer email belongs to an attached account whose signing is off (or was never set up), the commit or tag is created **unsigned** and `git` succeeds, exactly as it would in a squad where nothing signs. Nothing is signed with any other account's key. So in a squad whose default account has signing off and another attached account has it on, default-account commits keep going through unsigned. Core answers the sign request with an empty signature and the reason; `ficus` writes the empty signature file and git, which adds a signature header only for a non-empty signature, writes a normal unsigned object (tested with git 2.43, the version in the Ubuntu 24.04 sandbox images, and read in git's source at 2.56; the Alpine-based image takes whatever git its package repository ships). The empty-signature answer also works with a `ficus` CLI that predates it, because the older CLI writes the returned signature as is. `ficus` writes the reason to stderr, but git shows a signing program's stderr only when it fails, so `git commit` stays quiet: use `ficus integration list --provider github --squad <squad>` to see which accounts sign.
+- **When nothing matches.** If the committer email belongs to no account attached to the squad, Core refuses with `identity_mismatch` and never falls back to another account's key. `ficus` exits non-zero, so `git commit` fails (`fatal: failed to write commit object`, nothing is committed) and prints the reason: the committer email and the accounts and emails the squad can sign as. The same refusal, with its own explanation, covers an email that two different attached accounts both list (whatever their signing state), and an email of an attached account that has signing on but cannot be used until it is reconnected or enabled. The squad's git author override (`githubIdentity` metadata or the `GIT_USER_EMAIL` secret) is not a reason to sign: an override that is not one of the attached accounts' emails makes agents' commits fail until it is changed to one of them, the owning account is attached, or signing is turned off for every attached account.
+- **Committing as a non-default account.** The squad's default account is used unless the commit says otherwise, and default-account commits need nothing. To commit as another attached account, set that account's email as the committer for the command, for example `GIT_COMMITTER_EMAIL=<id>+<login>@users.noreply.github.com GIT_AUTHOR_EMAIL=<same> git commit …` (the sandbox sets these variables, so they outrank `git config user.email`). `ficus integration list --provider github --squad <squad>` lists the emails. No key or token is handled. Pushing still uses the default account's credential unless the push runs under `ficus integration exec github --squad <squad> --connection <id> -- git push …`.
+- **What Core signs.** Only for agent identities with `integrations:use` on the squad, only git commit or tag objects, and only with connections assigned to that squad that are enabled (account and provider), authenticated and issued under the instance's current client authority. Unassigned, disabled, reauthorization-required and other-authority connections never sign, and neither does another squad's connection. Using a non-default attached account has no per-agent restriction for tokens (`--connection` needs only `integrations:use` and the assignment), and signing follows the same rule. Unlike token use, signing does not require a fresh validation window: no call to GitHub is made, and commits must not start failing while a token is being refreshed.
+- **Seeing the state.** `ficus integration list --provider github` and `ficus integration get <connection>` include `commitSigning` for each connection: `state` (`on`, `off` or `needs_attention`), the account `login`, `signsFor` (the committer emails it signs) and the public key `fingerprint`. `needs_attention` means signing is on but nothing is signed until the account is fixed: it is disabled or needs reconnecting, or (`get` only, which asks GitHub) its key was removed on GitHub. `ficus integration list --provider github --squad <squad>` and `GET /api/squads/:squadId/integrations/github` add a squad view: `commitSigning.defaultConnectionId` and one entry per attached account with `isDefault`. The squad's GitHub settings show the same per attached account. Private keys are never returned. To fill `signsFor`, listing may read each signing account's public profile from GitHub (one request per account, cached for five minutes, three-second timeout).
 - **Where it applies.** Everywhere Ficus already provides GitHub credentials: agent commands in squad shells on every sandbox runtime. Shells without an agent token (human terminals) keep committing unsigned rather than failing.
 
 ## App configuration
@@ -145,8 +150,13 @@ field changed or provide a historical diff. Agents can retrieve full details wit
 
 Opening, assignment, and review-request events retain their description context
 in squads with the author filter OFF. With it ON, assignment and review-request
-deliveries are fixed action projections without the parent title or description
-(see [Author trust and held feedback](#author-trust-and-held-feedback)).
+deliveries are fixed action projections that add the parent's current title and
+description only when its author is trusted and provably wrote that text (see
+[Author trust and held feedback](#author-trust-and-held-feedback)). Issue
+assignments and review requests present that message in full. Pull request
+assignments, labels, unassignments and close/reopen use the compact
+presentation below in both modes, so they show neither the projection's text
+nor the parent's.
 Comments (including edits), submitted reviews, review-thread file/line links, and
 CI results retain their existing event text and identifiers. Unchanged parent
 descriptions are not added to feedback. Existing provider text-size limits still
@@ -195,9 +205,38 @@ Fields are allowlisted per provider, event and version in the authenticated outp
 - GitHub repository/login fields and assignee collection members compare case-insensitively. Labels, review states, workflow names, paths and Linear identifiers are case-sensitive. Only the existing repository-pattern filter interprets `*` as a wildcard; typed equality does not.
 - At most 16 conditions per rule, 100 operands per `in`, and 2,000 characters per string. Unsupported fields/operators, wrong operand types, null operands and extra properties are rejected on squad configuration writes. Changing the event in the editor clears incompatible conditions. An omitted or empty conditions list adds no restriction.
 
+#### Decision conditions
+
+A **decision condition** (`"kind": "decision"` in `predicates`) asks a decision model a typed question about the event and matches on its answer — for example, start a work stream only if an issue is a bug report, or notify the manager only if a comment looks urgent. Providers are configured under the **Event rule conditions** decision purpose; Ficus never asks the agent model.
+
+```json
+{
+  "id": "urgent-comments",
+  "source": { "integration": "github", "output": "issue.comment", "version": 1 },
+  "filters": { "squadRouting": true, "audience": "any" },
+  "predicates": [
+    { "field": "actorType", "op": "eq", "value": "User" },
+    {
+      "kind": "decision",
+      "question": { "type": "yesno", "instructions": "The comment reports something urgent, such as an outage." },
+      "when": { "type": "yesno", "op": "at-least", "probability": 0.7 },
+      "onUnavailable": "no-match"
+    }
+  ],
+  "action": { "type": "notify-manager" }
+}
+```
+
+- `question` is a decision question: `yesno`, `choice` (with `options`, name → description) or `score` (with ordered `levels`).
+- `when` is the answer that matches, in the same condition format as [workflow decision routes](workflows.md) but without `question` (the condition asks only one): `{ "type": "yesno", "op": "at-least" | "at-most", "probability": 0.7 }`, `{ "type": "choice", "equals": "bug", "minConfidence"?: 0.6 }`, or `{ "type": "score", "op": "at-least" | "at-most", "level": "high" }` with a level label. Bounds are inclusive. Omitted, a yes/no condition matches at least 0.5; choice and score questions require it. A refusal never matches.
+- `input` (optional) chooses what is sent: by default the event's subject, text (body or comment) and its `issue.title`, `actor`, `actorType` and `labels` where present. `{ "fields": [...] }` replaces those fields (from the same predicate allowlist, at most 8) and `{ "body": false }` drops the text. Text is capped at 6,000 characters, strings at 500 and lists at 50 items. Event content is sent only as the decision's data, never in the question.
+- `onUnavailable` (`no-match` by default, or `match`) applies when no provider is configured or none answers within the routing timeout.
+- At most 4 decision conditions per rule. They run last: only when every other check of the rule passes, and never for a rule after the first match. A rule's questions about the same input are asked in one call, and the answer is reused for the rest of that event's routing (for 15 minutes, per Core process), so each event normally costs at most one call per rule. Calls are recorded in the decision log with source `event-rule`, the squad and the rule.
+- Rules are evaluated after the webhook is acknowledged and before any database lock is taken, so a slow provider delays only that event's routing, by at most the routing timeout.
+
 **Match preview** runs locally against unsaved rules and shared scope using the same evaluator as live rule selection. Enter a synthetic JSON object with flat field-name keys (for example `{"repository":"owner/repo","issue.number":15,"labels":["bug"]}`). The supported-fields disclosure lists types. Omit absent fields or use null. Select an attached connection if testing an account-specific rule; enter a hypothetical GitHub login and mention checkbox for account-involvement checks. The login is not read from the connection.
 
-The trace explains failed filters, empty/ignored shared scope, disabled rules, self-comment suppression, the selected action, and first-match shadowing. It contains no event values, configured operands or additional instructions. The preview reads no stored events, accepts no raw bodies/credentials, saves nothing and sends nothing. Legacy matches on fields outside the sample allowlist cannot be populated in a synthetic sample.
+The trace explains failed filters, empty/ignored shared scope, disabled rules, self-comment suppression, the selected action, and first-match shadowing. It contains no event values, configured operands or additional instructions. The preview asks no decision model: when a rule has decision conditions, choose whether to assume they match or not. The preview reads no stored events, accepts no raw bodies/credentials, saves nothing and sends nothing. Legacy matches on fields outside the sample allowlist cannot be populated in a synthetic sample.
 
 This is a **rule-selection preview, not a delivery guarantee**. It assumes an authorized normalized event; connection access, provider suppression, existing work-stream subscriptions, paused/waiting work, resource bindings, and deduplication still govern actual dispatch. Changing rules or previewing an event never replays previously handled events.
 
@@ -261,8 +300,8 @@ Set `github.connectionId` to choose an attached account explicitly. Otherwise th
 Public GitHub authors can write prose that reaches fully privileged agents. Each
 squad therefore has an **author filter** (`squads.github_author_filter`, a column
 rather than metadata so generic squad updates cannot change it). Migrations
-`0205_github_author_filter` (added OFF, for squads that existed at rollout) and
-`0206_github_author_filter_default_on` (ON for new squads) set it. User documentation: `apps/docs/src/content/docs/connect/github.mdx`.
+`0208_github_author_filter` (added OFF, for squads that existed at rollout) and
+`0209_github_author_filter_default_on` (ON for new squads) set it. User documentation: `apps/docs/src/content/docs/connect/github.mdx`.
 
 - **OFF** keeps pre-feature routing: no capture, hold, queue or trust lookup.
   Exact connection and repository authorization still apply. Notices are accepted
@@ -305,10 +344,46 @@ not try to tell a person's comment from their agent's.
 as the creator, so a trusted actor's assignment or review request is delivered
 automatically and an untrusted actor's is held. The delivered fact is a fixed
 projection: repository, number, action, actor, assignee, requested reviewer or
-team, label names, assignee logins and the canonical URL. It never includes the
-parent's title or body, whoever wrote them; agents fetch those themselves. Each
-action is its own object (parent ID plus a digest of action, target and time),
-so out-of-order actions are not stale versions of each other. Rule matching and
+team, label names, assignee logins and the canonical URL. Each action is its own
+object (parent ID plus a digest of action, target and time), so out-of-order
+actions are not stale versions of each other.
+
+**Parent text on actions** (`feedback-parent.ts`). A trusted actor's action
+does not vouch for the parent's title and body, so by default the projection
+omits them. A signed webhook also offers a `parentText` variant: the same
+factual message followed by the parent's current title and description, with
+the full text in `data.parentContent` next to the author's identity. Capture
+selects it, under the trust authority lock and only for a new revision, when
+both hold:
+
+- the parent's content author (`issue.user` / `pull_request.user`, by numeric
+  account ID; a missing, malformed or login-only identity offers nothing) is
+  trusted in the squad now, through `resolveGitHubAuthorTrust`, the same live
+  check as comment authors;
+- the text is provably theirs. Issue and PR payloads name the creator but not
+  who last edited the title or description, and `updated_at` moves on any
+  activity. As in managed memory reads, the latest captured revision of the
+  parent (`issue`/`pull_request` object, same squad and repository) with exactly
+  this title and body decides: an automatic or human-allowed revision attributed
+  to its creation by the same account proves it, a pending or denied one refuses
+  it. Without such a revision only an unchanged payload (`created_at` equals
+  `updated_at`) proves it. Otherwise the factual message is captured.
+
+The variant is a different reviewed object: its hash covers the parent text and
+author, so a moderator's approval and the canonical event's admission bind to
+the version with the text. Its preview uses the comment caps (24,000 characters,
+`notificationTruncated`) and a variant over the 256 KiB review cap is not
+offered. A replay matches either candidate hash and never upgrades history.
+Final acceptance (`isTrustedGitHubFeedbackContent`) rechecks the parent author's
+trust along with the actor's. When only the parent author lost trust and no
+agent has received the action (no delivered notice or flow delivery, no trigger
+run), release settlement or renewal supersedes it: a new automatic revision
+carries exactly the factual message, takes over the original source
+associations, and the old one becomes `obsolete` (`parent_trust_revoked`).
+Anything else follows the normal revocation hold (`trust_revoked`). Polled
+actions offer no variant and stay held.
+
+Rule matching and
 work-stream bindings still read the source fact, so predicates such as
 `requestedReviewer`, `assignee` and `issue.title` keep working. Polled actions
 have no signed actor and are held (`unknown_editor`). Issue and PR `edited`

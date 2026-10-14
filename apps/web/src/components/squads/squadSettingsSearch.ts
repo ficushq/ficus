@@ -1,7 +1,8 @@
 import type { SettingsSearchEntry } from '../settings/settingsSearch'
 
 export const SQUAD_SETTINGS_KEYWORDS: Record<string, string> = {
-  general: 'rename squad title Name purpose mission Description avatar collaboration',
+  general:
+    'rename squad title Name purpose mission Description avatar collaboration archive delete remove danger zone Archive squad',
   context: 'instructions system prompt Squad Context per agent type instructions Type-Specific Context',
   workspace:
     'git commit identity author name email Git Author Name Git Author Email host directory checkout path repository local folder runtime container restart pause Sandbox Lifecycle sleep dormant timeout Idle Timeout disk space size Ephemeral Storage Limit environment credentials secrets Exposed Secret Store Keys',
@@ -15,6 +16,9 @@ export const SQUAD_SETTINGS_KEYWORDS: Record<string, string> = {
   access:
     'public private key authentication SSH Keys ssh fingerprints host key verification Known Hosts remote hosts machines server tunnel',
 }
+
+/** Search target for the archive action in Squad Settings > General; anchored in SquadDangerZone. */
+export const ARCHIVE_SQUAD_SETTING_ID = 'archive-squad'
 
 export const SQUAD_SETTINGS_SEARCH: readonly SettingsSearchEntry[] = [
   {
@@ -34,6 +38,12 @@ export const SQUAD_SETTINGS_SEARCH: readonly SettingsSearchEntry[] = [
     id: 'description',
     label: 'Description',
     keywords: 'purpose mission',
+  },
+  {
+    section: 'general',
+    id: ARCHIVE_SQUAD_SETTING_ID,
+    label: 'Archive squad',
+    keywords: 'delete remove danger zone',
   },
   {
     section: 'workflows',
@@ -198,3 +208,21 @@ export const SQUAD_SETTINGS_SEARCH: readonly SettingsSearchEntry[] = [
     keywords: 'ssh machines server tunnel',
   },
 ]
+
+/** Entries whose destination this squad and this user can actually reach. */
+export function squadSettingsSearchEntries({
+  hostRuntime,
+  sandboxSectionReady,
+  canDeleteSquad,
+}: {
+  hostRuntime: boolean
+  sandboxSectionReady: boolean
+  canDeleteSquad: boolean
+}): SettingsSearchEntry[] {
+  return SQUAD_SETTINGS_SEARCH.filter((entry) => {
+    if (entry.id === 'host-workspace-directory') return hostRuntime
+    if (['sandbox-lifecycle', 'idle-timeout', 'ephemeral-storage-limit'].includes(entry.id)) return sandboxSectionReady
+    if (entry.id === ARCHIVE_SQUAD_SETTING_ID) return canDeleteSquad
+    return true
+  })
+}

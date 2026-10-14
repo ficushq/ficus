@@ -10,12 +10,46 @@ import {
   layoutWorkStreamGraph,
   WORK_STREAM_GRAPH_NODE_HEIGHT,
   WORK_STREAM_GRAPH_NODE_WIDTH,
+  type WorkStreamGraphEdgeLayout,
 } from '../lib/workStreamGraphLayout'
 
 interface WorkStreamGraphProps {
   workStreams: WorkStream[]
   agentMap: Map<string, Agent>
   onSelectWorkStream: (id: string) => void
+}
+
+/** "Waits until its pull request is ready (satisfied)": what an edge waits on and whether it still does. */
+function dependencyEdgeTitle(edge: Pick<WorkStreamGraphEdgeLayout, 'condition' | 'satisfied'>): string {
+  const condition =
+    edge.condition === 'ready'
+      ? 'Waits until the dependency’s pull request is ready'
+      : 'Waits until the dependency is done'
+  return `${condition} (${edge.satisfied ? 'satisfied' : 'waiting'})`
+}
+
+function EdgeLegend({ label, dashed, satisfied }: { label: string; dashed?: boolean; satisfied?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <svg
+        width="24"
+        height="8"
+        aria-hidden="true"
+        className={satisfied ? 'text-status-success-fg' : 'text-placeholder'}
+      >
+        <line
+          x1="0"
+          y1="4"
+          x2="24"
+          y2="4"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeDasharray={dashed ? '6 4' : undefined}
+        />
+      </svg>
+      {label}
+    </span>
+  )
 }
 
 export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: WorkStreamGraphProps) {
@@ -49,12 +83,18 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
                 key={`${edge.from}-${edge.to}`}
                 data-from={edge.from}
                 data-to={edge.to}
+                data-condition={edge.condition}
+                data-satisfied={edge.satisfied}
                 d={`M ${start.x} ${start.y} L ${end.x} ${end.y}`}
                 fill="none"
-                className="stroke-placeholder"
+                stroke="currentColor"
+                className={edge.satisfied ? 'text-status-success-fg' : 'text-placeholder'}
                 strokeWidth="2"
+                strokeDasharray={edge.condition === 'ready' ? '6 4' : undefined}
                 markerEnd="url(#work-stream-arrow)"
-              />
+              >
+                <title>{dependencyEdgeTitle(edge)}</title>
+              </path>
             )
           })}
           {layout.nodes.map((node) => {
@@ -136,6 +176,10 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
             </Badge>
           ))}
           <span className="rounded border-2 border-status-external-wait-400 px-2 py-0.5">Boosted priority</span>
+          <span aria-hidden="true">·</span>
+          <EdgeLegend label="Waits until done" />
+          <EdgeLegend label="Waits until PR is ready" dashed />
+          <EdgeLegend label="Satisfied" satisfied />
         </div>
       </details>
     </div>

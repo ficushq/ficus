@@ -63,6 +63,12 @@ export function webStreamUrl(squadId: string, workStreamId: string): string {
   return webAppUrl(`/squads/${encodeURIComponent(squadId)}/work?ws=${encodeURIComponent(workStreamId)}`)
 }
 
+/** An approval, or a decision step that got no automatic decision and waits for a person. */
+function isPersonGate(state: WorkflowRunDetail['state'], attempt: WorkflowAttempt): boolean {
+  const step = stepOf(state, attempt)
+  return step?.kind === 'human-approval' || (step?.kind === 'decision' && !!attempt.decision?.awaitingPerson)
+}
+
 /** Which decisions a run is waiting on (WorkflowReviewCallout's conditions). */
 export function workflowDecisions(run: WorkflowRunDetail, stream: WorkStream, focusWaitId?: string) {
   if (stream.pause || stream.status === 'done' || stream.status === 'canceled') return { gates: [], delivery: false }
@@ -71,7 +77,7 @@ export function workflowDecisions(run: WorkflowRunDetail, stream: WorkStream, fo
   const gates =
     run.state.status === 'running'
       ? activeWorkflowAttempts(run.state)
-          .filter((attempt) => stepOf(run.state, attempt)?.kind === 'human-approval')
+          .filter((attempt) => isPersonGate(run.state, attempt))
           .sort((a, b) => Number(b.id === focusedAttemptId) - Number(a.id === focusedAttemptId))
       : []
   const delivery = run.state.status === 'completion-ready' && run.state.definition.completion.mode === 'review-approval'
@@ -184,7 +190,7 @@ function HumanGate({
     },
   })
   const step = stepOf(run.state, attempt)
-  if (step?.kind !== 'human-approval') return null
+  if (!step || step.kind === 'agent' || !isPersonGate(run.state, attempt)) return null
   const waits = run.openWaits ?? stream.openWaits ?? []
   const blockingWaits = waits.filter(
     (wait) =>
@@ -192,7 +198,7 @@ function HumanGate({
       !(wait.resolutionHandler === 'workflow' && wait.flowAttemptId === attempt.id)
   )
   const assigned = stream.assignedReviewerIds ?? []
-  const restricted = step.approver === 'assigned-reviewers' && assigned.length > 0
+  const restricted = step.kind === 'human-approval' && step.approver === 'assigned-reviewers' && assigned.length > 0
   const canDecide =
     can('workstreams:review') && (!restricted || (identity?.type === 'user' && assigned.includes(identity.userId)))
   const sources = (attempt.sourceAttemptIds ?? [])

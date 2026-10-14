@@ -1,0 +1,614 @@
+{
+  "version": 1,
+  "eval": "composer-delivery",
+  "entries": {
+    "how's it going": {
+      "jev:jev-latest": {
+        "hash": "f87a0b5f0312bdf90f35e3510080150b2af91d66b3c27bb08d285ff50cfd593f",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.32
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.84
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "f87a0b5f0312bdf90f35e3510080150b2af91d66b3c27bb08d285ff50cfd593f",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.54
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "what are you working on right now?": {
+      "jev:jev-latest": {
+        "hash": "5be0760d9a490b2280a5001aae3b2e5b8e6179ae703ac251e90ac2b7a275b770",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.42
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.84
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "5be0760d9a490b2280a5001aae3b2e5b8e6179ae703ac251e90ac2b7a275b770",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.76
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.89
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "hello? are you stuck?": {
+      "jev:jev-latest": {
+        "hash": "28a28a2a9f58c29f4f3c846cb6806c5c28690bba7975c7134cfbca92d7638d5d",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.41
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.78
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "28a28a2a9f58c29f4f3c846cb6806c5c28690bba7975c7134cfbca92d7638d5d",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.66
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.81
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "any blockers so far?": {
+      "jev:jev-latest": {
+        "hash": "7b33bf6f1bf96675d1fb57febed4654d0db9dd7857f72c03d6ad4bdf8412c590",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.72
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.85
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "7b33bf6f1bf96675d1fb57febed4654d0db9dd7857f72c03d6ad4bdf8412c590",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.45
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "how long until this is done?": {
+      "jev:jev-latest": {
+        "hash": "6afc43213555b86c1ac00fe8966a4f0fb1cf3af5b8fbf8cb4d015f42dbb20af1",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.73
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.89
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "6afc43213555b86c1ac00fe8966a4f0fb1cf3af5b8fbf8cb4d015f42dbb20af1",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.93
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "is the build passing?": {
+      "jev:jev-latest": {
+        "hash": "8634943d2e6a58127965e285f0b271880a19a3cc2f28b11e6e22d2b73ec83568",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.77
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.83
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "8634943d2e6a58127965e285f0b271880a19a3cc2f28b11e6e22d2b73ec83568",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.95
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.99
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "did you see my last message?": {
+      "jev:jev-latest": {
+        "hash": "6959a34442b61c5382a501adbdf0996826e2b047e146f866ef93ab512388d812",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.54
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.71
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "6959a34442b61c5382a501adbdf0996826e2b047e146f866ef93ab512388d812",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.41
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.56
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "stop, don't push anything yet": {
+      "jev:jev-latest": {
+        "hash": "30bfedfdd76c19bfaeacf827a4c02b2c5276e894573af773f887b694db146878",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.69
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.89
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "30bfedfdd76c19bfaeacf827a4c02b2c5276e894573af773f887b694db146878",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.21
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "wait, use semicolons as the delimiter": {
+      "jev:jev-latest": {
+        "hash": "24fe5daa4af958113df588167e5b10b458cb1ebf8b125f74121036a9f217acef",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.86
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.83
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "24fe5daa4af958113df588167e5b10b458cb1ebf8b125f74121036a9f217acef",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.95
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "make sure the export respects the date filter": {
+      "jev:jev-latest": {
+        "hash": "eba64f39f7eb39437de85bd9d203c74421defdeaed81543f754f117a6a624ada",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.91
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.83
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "eba64f39f7eb39437de85bd9d203c74421defdeaed81543f754f117a6a624ada",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 1
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "after that, also add a PDF export option": {
+      "jev:jev-latest": {
+        "hash": "138285d17b6c93c13ea762f92f61286d2c8ba3a705a3063df095320958342c24",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.8
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.75
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "138285d17b6c93c13ea762f92f61286d2c8ba3a705a3063df095320958342c24",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.39
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 1
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "can you look up the weather in Lisbon next week": {
+      "jev:jev-latest": {
+        "hash": "a64afccaf53644036cb9ea0b83a41bf6fe9653ddbaac47422bbe097fab9bb4fc",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.03
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.24
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "a64afccaf53644036cb9ea0b83a41bf6fe9653ddbaac47422bbe097fab9bb4fc",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "write release notes for the mobile app 2.3 launch": {
+      "jev:jev-latest": {
+        "hash": "62cb233ae22f3df88b180d9d59a8c964b5e740553f6f4a4eeb3cc199d093b706",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.04
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.28
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "62cb233ae22f3df88b180d9d59a8c964b5e740553f6f4a4eeb3cc199d093b706",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.02
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "schedule a dependency audit for the platform repo next week": {
+      "jev:jev-latest": {
+        "hash": "cf7327c749822d1bc055d16523ebfffd34c80cd591d810a1ce10a7212c22463c",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.08
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.29
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "cf7327c749822d1bc055d16523ebfffd34c80cd591d810a1ce10a7212c22463c",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.01
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "draft a blog post about our hiring plans": {
+      "jev:jev-latest": {
+        "hash": "6cdafa077dd6176c762d6196fad0e41a5d5e308a2ed864c66511d2aec5bf6805",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.04
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.29
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "6cdafa077dd6176c762d6196fad0e41a5d5e308a2ed864c66511d2aec5bf6805",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.03
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "can you check whether the docs site is down?": {
+      "jev:jev-latest": {
+        "hash": "d3c515211decc23a2972d43ad8b261a33c719bcd3df8c286b178bf1f42b7697d",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.06
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.33
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "d3c515211decc23a2972d43ad8b261a33c719bcd3df8c286b178bf1f42b7697d",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.02
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "what's the capital of Australia?": {
+      "jev:jev-latest": {
+        "hash": "41e703d7f8fb1da77bc40d8f384cd1b48bbbe19856f9d8dffe31714df4534ebd",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.03
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.28
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "41e703d7f8fb1da77bc40d8f384cd1b48bbbe19856f9d8dffe31714df4534ebd",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.15
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "separately, please rename the mobile app's settings tab": {
+      "jev:jev-latest": {
+        "hash": "9960bd1fe1a47c68eef95b48fa4dafaed397ace8d39d0e75e23bc6d3315ac88c",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.06
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.42
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "9960bd1fe1a47c68eef95b48fa4dafaed397ace8d39d0e75e23bc6d3315ac88c",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.01
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    },
+    "thanks, looks great so far": {
+      "jev:jev-latest": {
+        "hash": "69296fa324ec5aec5ffd0a9ebad2cde41342a146542408069e52228447160a8b",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.56
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.52
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      },
+      "openai:gpt-6-luna": {
+        "hash": "69296fa324ec5aec5ffd0a9ebad2cde41342a146542408069e52228447160a8b",
+        "answers": {
+          "related": {
+            "type": "yesno",
+            "probability": 0.97
+          },
+          "now": {
+            "type": "yesno",
+            "probability": 0.03
+          }
+        },
+        "passed": true,
+        "recordedAt": "2026-10-09T05:06:34.120Z"
+      }
+    }
+  }
+}

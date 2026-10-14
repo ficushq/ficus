@@ -19,7 +19,7 @@ function fakeDeps(overrides: Partial<GitSigningDependencies> = {}) {
     },
     sign: async (squadId, payload) => {
       calls.sign.push({ squadId, payload: payload.toString() })
-      return '-----BEGIN SSH SIGNATURE-----\nabc\n-----END SSH SIGNATURE-----\n'
+      return { signature: '-----BEGIN SSH SIGNATURE-----\nabc\n-----END SSH SIGNATURE-----\n' }
     },
     passthrough: async (args) => {
       calls.passthrough.push(args)
@@ -73,6 +73,25 @@ describe('ficus as gpg.ssh.program', () => {
     }
   })
 
+  it('writes an empty signature and says why when Core leaves the object unsigned', async () => {
+    const message = 'Not signed: commit signing is off for @octo, the GitHub account a@b.c belongs to.'
+    const { deps, calls, written } = fakeDeps({
+      sign: async () => ({ signature: '', unsigned: { reason: 'signing_off', login: 'octo', message } }),
+    })
+    expect(await runSshKeygenCompat(['-Y', 'sign', '-n', 'git', '-f', 'k', '-U', 'buf'], deps)).toBe(0)
+    expect(written.get('buf.sig')).toBe('')
+    expect(calls.errors).toEqual([`ficus: ${message}`])
+  })
+
+  it('fails rather than leave a commit unsigned on an answer that does not say so', async () => {
+    for (const answer of [{ signature: '' }, {}, { signature: null }]) {
+      const { deps, calls, written } = fakeDeps({ sign: async () => answer as never })
+      expect(await runSshKeygenCompat(['-Y', 'sign', '-n', 'git', '-f', 'k', '-U', 'buf'], deps)).toBe(1)
+      expect(written.size).toBe(0)
+      expect(calls.errors).toHaveLength(1)
+    }
+  })
+
   it("reports Core's refusal and leaves no signature behind", async () => {
     const { deps, calls, written } = fakeDeps({
       sign: async () => {
@@ -111,7 +130,8 @@ describe('git signing through the real ficus entrypoint', () => {
     return { code, stdout, stderr }
   }
 
-  it('commits signed via Core and verifies through the ssh-keygen passthrough', async () => {
+  /** A repository whose git signs through the real `ficus` entrypoint and a stand-in for Core's sign endpoint. */
+  async function fixture(answer?: unknown) {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-git-sign-e2e-')))
     dirs.push(dir)
     const repo = join(dir, 'repo')
@@ -138,6 +158,7 @@ describe('git signing through the real ficus entrypoint', () => {
           stderr: 'pipe',
         })
         if (signed.exitCode !== 0) return Response.json({ error: signed.stderr.toString() }, { status: 500 })
+        if (answer) return Response.json(answer)
         return Response.json({ signature: readFileSync(`${file}.sig`, 'utf8') })
       },
     })
@@ -177,6 +198,11 @@ describe('git signing through the real ficus entrypoint', () => {
       `gpg.ssh.allowedSignersFile=${join(dir, 'allowed')}`,
     ]
     expect(run(['git', 'init', '-q'], repo, env).code).toBe(0)
+    return { dir, repo, env, signing, requests }
+  }
+
+  it('commits signed via Core and verifies through the ssh-keygen passthrough', async () => {
+    const { repo, env, signing, requests } = await fixture()
     const commit = await runAsync(
       ['git', ...signing, 'commit', '-q', '--allow-empty', '-m', 'signed by ficus'],
       repo,
@@ -191,5 +217,47 @@ describe('git signing through the real ficus entrypoint', () => {
     const verify = await runAsync(['git', ...signing, 'verify-commit', 'HEAD'], repo, env)
     expect(verify.stderr).toContain('Good "git" signature for agent@example.com')
     expect(verify.code).toBe(0)
+  }, 30_000)
+
+  it('creates an unsigned commit and an unsigned tag when Core answers with an empty signature', async () => {
+    const message = 'Not signed: commit signing is off for @octo, the GitHub account agent@example.com belongs to.'
+    const { repo, env, signing, requests } = await fixture({
+      signature: '',
+      unsigned: { reason: 'signing_off', login: 'octo', message },
+    })
+    const withTags = [...signing, '-c', 'tag.gpgsign=true']
+
+    const commit = await runAsync(
+      ['git', ...withTags, 'commit', '-q', '--allow-empty', '-m', 'left unsigned'],
+      repo,
+      env
+    )
+    expect(commit.code).toBe(0)
+    // Git shows a signing program's stderr only when it fails.
+    expect(commit.stderr).toBe('')
+    const object = run(['git', 'cat-file', '-p', 'HEAD'], repo, env).stdout
+    expect(object).toContain('committer Agent <agent@example.com>')
+    expect(object).not.toContain('gpgsig')
+    expect(object).not.toContain('SSH SIGNATURE')
+
+    // An explicit -S is answered the same way.
+    const explicit = await runAsync(
+      ['git', ...withTags, 'commit', '-q', '-S', '--allow-empty', '-m', 'asked'],
+      repo,
+      env
+    )
+    expect(explicit.code).toBe(0)
+    expect(run(['git', 'cat-file', '-p', 'HEAD'], repo, env).stdout).not.toContain('gpgsig')
+
+    const tag = await runAsync(['git', ...withTags, 'tag', '-a', 'v1', '-m', 'left unsigned'], repo, env)
+    expect(tag.code).toBe(0)
+    const tagObject = run(['git', 'cat-file', '-p', 'v1'], repo, env).stdout
+    expect(tagObject).toContain('tagger Agent <agent@example.com>')
+    expect(tagObject).not.toContain('SSH SIGNATURE')
+
+    expect(requests).toHaveLength(3)
+    expect(run(['git', 'fsck', '--strict', '--no-dangling'], repo, env)).toMatchObject({ code: 0, stderr: '' })
+    const verify = await runAsync(['git', ...withTags, 'verify-commit', 'HEAD'], repo, env)
+    expect(verify.code).not.toBe(0)
   }, 30_000)
 })

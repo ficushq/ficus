@@ -293,6 +293,33 @@ machine. It exits 1 if any failed and 2 for an unknown machine id.
    as-is, no re-provision. Health is checked every time. A legacy row with no
    token (pre-hardening) deliberately misses the fast path ONCE so the full
    path below mints + delivers its token (and the current server bundle).
+   The box's stamped **provisioning marker** must also still match what the
+   caller wants. The marker is `<specHash>.<criticalEnvHash>.<identityEnvHash>`
+   (hashes only, never env values):
+   - **Critical env** is everything in the box env except the git author keys:
+     the callback secret, `FICUS_API_URL`, `APP_URL`, role and executor settings.
+     A change here, or to the spec hash, takes the full path at once — the env
+     is re-pushed and the unit restarted, which ends whatever the box is running.
+   - **Identity env** is exactly `GIT_USER_NAME`, `GIT_USER_EMAIL`,
+     `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and
+     `GIT_COMMITTER_EMAIL`. When only these differ and the box has an active
+     execution, the box is returned as-is and its stamp is left stale; the first
+     ensure that finds the box idle applies the change. If activity cannot be
+     determined the change is deferred. A parked box always takes the full path.
+   - A stamp in the older `<specHash>.<envHash>` format that matches the same
+     spec and env is rewritten in place (also on the parked-box resume path), so
+     a Core upgrade that changes the marker format does not restart the fleet.
+
+   The git author identity itself comes from the squad's assigned, enabled
+   GitHub connection and does not depend on that connection's momentary health.
+   It stays the same while a token refresh is being validated, while a periodic
+   validation has failed, and after the validation window lapses; it is removed
+   when the connection is disabled, unassigned, needs reauthorization, or is
+   rejected by GitHub. The public profile (name, email) is cached per Core
+   process and a failed profile request keeps the last loaded one. Before this,
+   each GitHub token refresh (every 7h55m) dropped the author keys for a few
+   seconds and every box of the squad was fully reprovisioned twice.
+
 5. **Provision.** `ensureServerBundle` (push the bundle if the machine's
    recorded version is stale) → `bindMachineBox` (allocate the box's port +
    mint its auth token atomically) → `box-provision.sh` (create the user, dirs,
@@ -1437,6 +1464,17 @@ Slice 6 shipped the events surface, the pin setter + migrate-with-teardown
 fix, and the web Machines admin section (above). These remain open follow-ups,
 none blocking the above:
 
+- **`box-provision.sh` restarts rootless Docker on every provision.** Any full
+  (re-)provision of a running box therefore stops its containers even when
+  nothing about Docker changed. Making that conditional changes the script,
+  which is hashed into the spec hash, so shipping it reprovisions every box
+  once and has to be scheduled.
+- **Persist the GitHub public profile on the connection.** The author name and
+  email are cached per Core process. A process that has not loaded the profile
+  yet resolves the login-only identity while the token is unusable (mid-refresh
+  or GitHub unreachable), and an idle box is then reprovisioned when the profile
+  loads. Storing the profile at validation time needs a new column and writes in
+  every validation path.
 - **Concurrent same-key provision dedupe** (from slice 5). Two placement calls
   racing to provision the _same_ target machine name (e.g. two boxes for the
   same new squad) both reach `provider.provision(...)` — the existing
