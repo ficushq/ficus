@@ -20,7 +20,10 @@ export interface GitHubOutputPass {
   current: Map<string, Promise<{ contentHash: string } | null>>
   resources: number
   deliveries?: Map<string, Array<{ eventId: string; deliveryId: string }>>
-  native: Map<string, Promise<{ repositoryAuthorized: boolean; nativeAuthorized: boolean; checkedAt: Date }>>
+  native: Map<
+    string,
+    Promise<{ repositoryAuthorized: boolean; nativeAuthorized: boolean; unavailable?: true; checkedAt: Date }>
+  >
 }
 const passes = new AsyncLocalStorage<GitHubOutputPass>()
 export const githubOutputPass = () => passes.getStore()

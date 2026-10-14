@@ -328,6 +328,79 @@ test('irrelevant feedback is recorded but never captured or queried from GitHub'
   }
 })
 
+test('a trusted comment published during a GitHub outage stays unmatched and is delivered once after recovery', async () => {
+  const { reconcileFlows } = await import('../../workflows/execution')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const fixtureRead = h.read.getMockImplementation()!
+    const before = await h.effects()
+    for (const reason of ['http_503', 'http_429', 'no_token', 'network']) {
+      h.read.mockImplementation(async () => {
+        throw new api.GitHubApiUnavailableError(reason)
+      })
+      const eventId = await publishIntegrationOutput('github', h.fact(), h.authority)
+      const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+      // Not settled: a provider failure is not a denial, so the reconciler retries it.
+      expect(event!.matchedAt).toBeNull()
+      expect(event!.lastErrorCode).not.toBe('github_repository_unauthorized')
+      expect(await h.effects()).toEqual(before)
+      expect(
+        await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+      ).toHaveLength(0)
+      await reconcileUnmatchedOutputs()
+      await reconcileFlows()
+      expect(await h.effects()).toEqual(before)
+      await db.delete(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+    }
+    // The outage event of the probe: published while GitHub is down, retried after it recovers.
+    h.read.mockImplementation(async () => {
+      throw new api.GitHubApiUnavailableError('http_502')
+    })
+    const eventId = await publishIntegrationOutput('github', h.fact(), h.authority)
+    h.read.mockImplementation(fixtureRead)
+    const delivered = () => db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))
+    // The unmatched cursor walks events left by earlier tests; keep passing until it reaches ours.
+    for (let pass = 0; pass < 50 && (await delivered()).length === 0; pass++) {
+      await reconcileUnmatchedOutputs()
+      await reconcileFlows()
+    }
+    const messages = await delivered()
+    expect(messages).toHaveLength(1)
+    expect(messages[0]!.content).toContain('HELD_SENTINEL')
+    const [source] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+    expect(source!.lastErrorCode).not.toBe('github_repository_unauthorized')
+    for (let pass = 0; pass < 3; pass++) {
+      await reconcileUnmatchedOutputs()
+      await reconcileFlows()
+    }
+    expect(await delivered()).toHaveLength(1)
+  } finally {
+    await h.close()
+  }
+}, 60_000)
+
+test('an explicit GitHub denial still settles the raw event as unauthorized, with no effects', async () => {
+  const h = await fixture()
+  try {
+    await h.trust()
+    const before = await h.effects()
+    // githubApiGet answers null only for an explicit 404/410/403 denial under a usable token.
+    h.read.mockImplementation(async () => null)
+    const eventId = await publishIntegrationOutput('github', h.fact(), h.authority)
+    const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+    expect(event!.matchedAt).not.toBeNull()
+    expect(event!.lastErrorCode).toBe('github_repository_unauthorized')
+    expect(await h.effects()).toEqual(before)
+    const reads = h.read.mock.calls.length
+    await reconcileUnmatchedOutputs()
+    expect(h.read.mock.calls.length).toBe(reads)
+    expect(await h.effects()).toEqual(before)
+  } finally {
+    await h.close()
+  }
+})
+
 test('trust does not authorize a different native resource, nor a connection changed during provider I/O', async () => {
   const h = await fixture()
   try {

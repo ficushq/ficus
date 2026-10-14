@@ -44,6 +44,18 @@ A human making these changes for a user who is dynamically trusted in a squad
 also needs `squads:update` in that squad. Each attempt is recorded in the
 integration audit log.
 
+A role that carries `squads:update` makes a person's linked GitHub account
+trusted, so three more actions are refused to agents and system tokens, even
+with `users:create`, `users:update` or `settings:write`:
+
+- Creating a user (`POST /users`) whose assigned roles carry `squads:update`.
+  Automation can still create users with other roles.
+- Granting a role that carries `squads:update` (`POST /users/:id/roles`) to
+  someone who does not already hold `squads:update` at that scope. A redundant
+  grant to someone who already holds it stays available to automation.
+- Changing the sign-up policy (`PUT /auth/settings`), which decides who can
+  become a person on the instance and in which role.
+
 ## Exact grants and wildcards
 
 Selecting permissions saves their exact names. Selecting every permission in a
