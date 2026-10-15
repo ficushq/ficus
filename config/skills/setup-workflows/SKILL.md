@@ -39,6 +39,13 @@ Recommend the smallest useful default. Solo is a good fit for many routine
 requests. A separate review step can be reserved for complex or sensitive
 work. Avoid assuming software roles, mandatory architecture, or mandatory
 review for every domain. Explain the proposed choices using task examples.
+When the user wants to approve the design before implementation ("approve the
+design first"), use the shipped `engineering-design-approval` preset
+(Engineering with design approval) instead of writing an inline flow: an
+architect designs, a human-approval gate (`approver: reviewers`) approves it or
+returns it to the architect, then an engineer implements and an independent
+reviewer checks the change. Customize its completion with `set-completion` as
+for the other coding presets.
 Leave maxStepAttempts unset by default for unlimited attempts; set an explicit attempt cap only when requested. Keep specialist delegation bounded by maxDelegations. Offer parallel reviews when independent checks can run together; use branches and a join to coordinate independent checks. Leave maxParallelAttempts unset by default so global agent capacity controls execution. Set a workflow-specific cap only when requested, and coordinate workspace edits between branches. Let agents request explicit rework
 without automatically invalidating every previous review.
 
@@ -57,7 +64,8 @@ even when they use the same agent type/model.
 
 Choose delivery separately from the participant sequence. `completion.mode` keeps
 `pr-merge`, `pr-auto-merge`, and `direct-merge`; it also supports `deliverable`
-and `review-approval`. Solo Coding, Reviewed Coding, and Planned Coding default to `pr-merge`; their
+and `review-approval`. Solo Coding, Reviewed Coding, Planned Coding, and Engineering with design approval
+default to `pr-merge`; their
 sources can use a `set-completion` customization without duplicating the steps.
 Preserve the full squad workflow source, including `set-completion` customizations;
 explicit user or flow delivery choices override the default. Inherit the squad

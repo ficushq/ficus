@@ -1,0 +1,72 @@
+id: engineering-design-approval
+description: >-
+  An architect designs a change, a human approves the design before implementation starts, then an engineer
+  implements it and an independent reviewer checks it.
+definition:
+  schemaVersion: 1
+  name: Engineering with design approval
+  participants:
+    architect:
+      agentTypeId: architect
+      session: reuse-within-stream
+    engineer:
+      agentTypeId: engineer
+      session: reuse-within-stream
+    reviewer:
+      agentTypeId: reviewer
+      session: reuse-within-stream
+  entry: design
+  routing:
+    mode: flexible
+    returnTo: earlier-steps
+    delegation: disabled
+  limits:
+    maxDelegations: 0
+    onLimit: request-owner-input
+  steps:
+    - id: design
+      participant: architect
+      instructions: >-
+        Design a solution that satisfies the request and document implementation guidance. A human approves this
+        design before any implementation starts, so make the handoff self-contained: state the requirements,
+        the proposed approach, tradeoffs and alternatives considered, risks, and the validation plan. Attach a
+        longer design document to the handoff when useful. When the design is sent back, address every point of
+        the feedback.
+      output: A design with requirements, tradeoffs, and a validation plan, ready for human approval.
+      outcomes:
+        completed:
+          next: design-approval
+    - id: design-approval
+      name: Design approval
+      kind: human-approval
+      approver: reviewers
+      instructions: >-
+        Review the proposed design before implementation starts. Approve it to start implementation, or request
+        changes with specific feedback for the architect.
+      output: Your decision and any feedback on the design.
+      outcomes:
+        approved:
+          next: implement
+        changes-requested:
+          returnTo: design
+    - id: implement
+      participant: engineer
+      instructions: Implement the approved design and run the required validation in the work-stream workspace.
+      output: Committed implementation and validation evidence.
+      outcomes:
+        completed:
+          next: review
+    - id: review
+      participant: reviewer
+      instructions: >-
+        Review the implementation against the requirements and the approved design. Request targeted
+        implementation changes when necessary. Prepare the change request for delivery when ready.
+      output: Review findings, validation evidence, and a change request ready for delivery.
+      outcomes:
+        approved:
+          next: finish
+        changes-requested:
+          returnTo: implement
+  completion:
+    mode: pr-merge
+    followChanges: true

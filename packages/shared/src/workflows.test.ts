@@ -32,6 +32,7 @@ describe('declarative workflows', () => {
     'solo',
     'builder-reviewer',
     'engineering',
+    'engineering-design-approval',
     'solo-coding',
     'reviewed-coding',
     'research-brief',
@@ -419,6 +420,7 @@ test('shipped presets follow the visible graph after rework rather than skipping
     'builder-reviewer',
     'reviewed-coding',
     'engineering',
+    'engineering-design-approval',
     'research-brief',
     'code-review',
     'security-review',
@@ -446,7 +448,7 @@ test('shipped presets follow the visible graph after rework rather than skipping
         }
       }
   }
-  expect(paths).toBe(7)
+  expect(paths).toBe(9)
 })
 
 describe('atomic final step order', () => {
@@ -532,6 +534,29 @@ test('participant tier overrides round-trip and reject ambiguous or malformed se
   expect(workflowParticipantSchema.safeParse({ ...base, model: 'provider:model' }).success).toBe(false)
 })
 
+test('Engineering with design approval gates implementation on a human design approval', async () => {
+  const { definition } = await preset('engineering-design-approval')
+  expect(definition.name).toBe('Engineering with design approval')
+  expect(definition.entry).toBe('design')
+  expect(definition.steps.map((step) => step.id)).toEqual(['design', 'design-approval', 'implement', 'review'])
+  const [design, approval, implement, review] = definition.steps
+  expect(design).toMatchObject({ kind: 'agent', participant: 'architect' })
+  expect(design!.outcomes).toEqual({ completed: { next: 'design-approval' } })
+  expect(approval).toMatchObject({ kind: 'human-approval', approver: 'reviewers' })
+  expect(approval!.outcomes).toEqual({
+    approved: { next: 'implement' },
+    'changes-requested': { returnTo: 'design' },
+  })
+  expect(implement).toMatchObject({ kind: 'agent', participant: 'engineer' })
+  expect(implement!.outcomes).toEqual({ completed: { next: 'review' } })
+  expect(review).toMatchObject({ kind: 'agent', participant: 'reviewer' })
+  expect(review!.outcomes).toEqual({ approved: { next: 'finish' }, 'changes-requested': { returnTo: 'implement' } })
+  expect(definition.routing.delegation).toBe('disabled')
+  expect(definition.limits.maxStepAttempts).toBeUndefined()
+  expect(definition.completion).toEqual({ mode: 'pr-merge', followChanges: true })
+  expect(definition.subscriptions).toBeUndefined()
+})
+
 test('Code Review has one reviewer and finishes with a report while following attached code-host events', async () => {
   const { definition } = await preset('code-review')
   expect(definition.participants).toEqual({ reviewer: { agentTypeId: 'reviewer', session: 'reuse-within-stream' } })
@@ -550,6 +575,7 @@ test('shipped workflow roles describe the work and every participant is used', a
     'solo-coding': ['engineer'],
     'reviewed-coding': ['engineer', 'reviewer'],
     engineering: ['architect', 'engineer', 'reviewer'],
+    'engineering-design-approval': ['architect', 'engineer', 'reviewer'],
     'research-brief': ['researcher', 'reviewer'],
     'security-review': ['assessor', 'reviewer'],
     'code-review': ['reviewer'],

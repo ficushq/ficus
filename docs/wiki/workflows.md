@@ -317,7 +317,7 @@ Polling uses the squad's authorized GitHub integration connection. Set `github.c
 
 ## Built-in workflow collection and squad-preset recommendations
 
-The built-in collection contains Solo (`solo`), With Review (`builder-reviewer`), Solo Coding (`solo-coding`), Reviewed Coding (`reviewed-coding`), Planned Coding (`engineering`), Research Brief (`research-brief`), Security Review (`security-review`), Code Review (`code-review`). IDs of earlier presets remain stable. See the [user guide](../../apps/docs/src/content/docs/use/workflows.mdx) for intended uses.
+The built-in collection contains Solo (`solo`), With Review (`builder-reviewer`), Solo Coding (`solo-coding`), Reviewed Coding (`reviewed-coding`), Planned Coding (`engineering`), Engineering with design approval (`engineering-design-approval`), Research Brief (`research-brief`), Security Review (`security-review`), Code Review (`code-review`). IDs of earlier presets remain stable. See the [user guide](../../apps/docs/src/content/docs/use/workflows.mdx) for intended uses.
 
 A squad preset's optional `workflows` field selects existing instance-scoped presets or inline definitions:
 
@@ -334,7 +334,7 @@ workflows:
 
 Creation copies the default into `metadata.workflow` and guidance/choices into `metadata.workflowSetup`. Explicit creation values win. Existing squads are not rewritten on type sync; existing streams retain their resolved snapshots. References are validated and must not cross scope boundaries. The squad-preset editor exposes these recommendations; Workflows remains the definition editor. Neither a recommendation nor a flow participant creates a persistent squad member.
 
-The Engineering squad preset includes all five engineering choices and defaults to Solo Coding. Built-in workflows disable additional delegation to keep their advertised staffing predictable; a custom flow can enable tracked delegation. Security Review and Release Validation deliver reports, while the three coding workflows default to `pr-merge`. Completion policies remain independently customizable; there are no separate copies for auto-merge or direct merge.
+The Engineering squad preset includes five engineering choices (Solo Coding, Reviewed Coding, Planned Coding, Code Review, and Security Review) and defaults to Solo Coding. Built-in workflows disable additional delegation to keep their advertised staffing predictable; a custom flow can enable tracked delegation. Security Review and Release Validation deliver reports, while the coding workflows default to `pr-merge`. Completion policies remain independently customizable; there are no separate copies for auto-merge or direct merge.
 
 ## Code-hosting adapters
 

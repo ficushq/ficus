@@ -9,16 +9,17 @@ A workflow defines how a work stream gets done: who works on it, which steps run
 
 Ficus ships these starting workflows. An administrator can customize or disable them, so inspect the available workflows in your workspace.
 
-| Workflow        | Process                                                   | Good starting point for                   |
-| --------------- | --------------------------------------------------------- | ----------------------------------------- |
-| Solo            | One worker produces and verifies the result               | A bounded task or investigation           |
-| With Review     | An engineer builds a deliverable for independent review   | A deliverable needing a second assessment |
-| Solo Coding     | One engineer implements, validates, and prepares delivery | Routine changes and fixes                 |
-| Reviewed Coding | Implementation followed by independent code review        | Changes needing a second pair of eyes     |
-| Planned Coding  | Architecture, implementation, and independent review      | Changes needing design decisions          |
-| Research Brief  | Research and an independent source/evidence review        | A decision supported by cited findings    |
-| Code Review     | One reviewer assesses existing code and delivers findings | A holistic PR, diff, or codebase review   |
-| Security Review | Security assessment and independent finding validation    | A report on risks and mitigations         |
+| Workflow                         | Process                                                                     | Good starting point for                    |
+| -------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------ |
+| Solo                             | One worker produces and verifies the result                                 | A bounded task or investigation            |
+| With Review                      | An engineer builds a deliverable for independent review                     | A deliverable needing a second assessment  |
+| Solo Coding                      | One engineer implements, validates, and prepares delivery                   | Routine changes and fixes                  |
+| Reviewed Coding                  | Implementation followed by independent code review                          | Changes needing a second pair of eyes      |
+| Planned Coding                   | Architecture, implementation, and independent review                        | Changes needing design decisions           |
+| Engineering with design approval | Architecture, human design approval, implementation, and independent review | Changes where you approve the design first |
+| Research Brief                   | Research and an independent source/evidence review                          | A decision supported by cited findings     |
+| Code Review                      | One reviewer assesses existing code and delivers findings                   | A holistic PR, diff, or codebase review    |
+| Security Review                  | Security assessment and independent finding validation                      | A report on risks and mitigations          |
 
 Code Review has no implementation step and finishes when its report is delivered, rather than waiting for a merge. It follows code-hosting events when a resource is attached. Security Review uses two reviewer agents: the first produces a security assessment and the second independently validates the findings.
 
@@ -26,7 +27,9 @@ These are ordinary workflows in **Administration → Workflows**, not a separate
 
 In Planned Coding, a reviewer-requested redesign goes back to the architect, then through implementation and review again. Targeted implementation changes go to the engineer, whose normal next step is review. All shipped presets follow their ordinary graph after rework.
 
-Solo Coding, Reviewed Coding, and Planned Coding wait for a human to merge their change request. The other shipped workflows deliver a report or artifact. Security Review does not automatically implement fixes. Choose the delivery policy separately from the number of agents.
+Use **Engineering with design approval** (`engineering-design-approval`) when you want to approve the design before implementation starts. The architect's design goes to a human approval step that any squad member with review permission can decide. **Approved** starts implementation; **Changes requested** sends your feedback back to the architect, whose revised design returns for approval. After implementation, an independent reviewer approves the change or sends it back to the engineer. Rework is unlimited unless you add an attempt cap.
+
+Solo Coding, Reviewed Coding, Planned Coding, and Engineering with design approval wait for a human to merge their change request. The other shipped workflows deliver a report or artifact. Security Review does not automatically implement fixes. Choose the delivery policy separately from the number of agents.
 
 ## Build your own flow
 
@@ -58,7 +61,7 @@ You can also select a preset in the work-stream creation controls. Inspect its s
 
 ## Set a squad default
 
-The Engineering squad preset starts new squads with Solo Coding and recommends all four engineering workflows above. A squad preset can choose a default and a collection of alternatives without defining the flows itself. Editing a squad preset does not change existing squads. Creating a squad copies its settings and provisions any declared persistent members and schedules; flow workers still start only when needed.
+The Engineering squad preset starts new squads with Solo Coding and recommends Solo Coding, Reviewed Coding, Planned Coding, Code Review, and Security Review. Add Engineering with design approval to a squad's choices when it should approve designs first. A squad preset can choose a default and a collection of alternatives without defining the flows itself. Editing a squad preset does not change existing squads. Creating a squad copies its settings and provisions any declared persistent members and schedules; flow workers still start only when needed.
 
 Every new work stream uses a flow. Without an explicit choice, it inherits the squad default. Engineering copies Solo Coding as its squad default at creation. If a squad has no saved default, Ficus uses Solo. Running streams retain their saved flow when defaults change.
 
