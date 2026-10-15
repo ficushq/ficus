@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import {
+  WORK_STREAM_ADMITTED_STATUSES,
   isDependencyEdgeSatisfied,
   workStreamWaitActor,
   type WorkStreamWait,
@@ -211,7 +212,9 @@ export async function listWaitHistory(dbx: DbHandle, workStreamId: string): Prom
  * - close (`satisfied`) open waits whose edge is now satisfied
  * - close (`cleared`) open waits whose edge was removed
  * An edge is satisfied when its dependency is done, or when it is a `ready`
- * edge that has unlocked. Terminal streams get no new waits or unlocks.
+ * edge that has unlocked (for a queued stream, an unlock it never started on
+ * does not survive the dependency being canceled; an admitted stream has
+ * started on it). Terminal streams get no new waits or unlocks.
  */
 export async function syncDependencyWaits(tx: DbHandle, workStreamId: string, dependsOn: string[]): Promise<void> {
   const deps = [...new Set(dependsOn)]
@@ -243,7 +246,12 @@ export async function syncDependencyWaits(tx: DbHandle, workStreamId: string, de
         edges[dep] = { ...edges[dep], readyUnlockedAt: at.toISOString() }
     }
   }
-  const satisfiedDep = (dep: string) => isDependencyEdgeSatisfied(edges, dep, statusOf.get(dep))
+  // An admitted stream has started on every edge it unlocked, whether or not its stack
+  // decision is recorded yet: a cancel in that window is a notice, never a new wait.
+  const selfAdmitted = !!self && (WORK_STREAM_ADMITTED_STATUSES as readonly string[]).includes(self.status)
+  const satisfiedDep = (dep: string) =>
+    (selfAdmitted && edges[dep]?.condition === 'ready' && !!edges[dep]?.readyUnlockedAt) ||
+    isDependencyEdgeSatisfied(edges, dep, statusOf.get(dep))
 
   const openDepWaits = (
     await tx

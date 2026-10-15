@@ -35,13 +35,26 @@ export interface WorkStreamDependencyEdgeState {
   readyUnlockedAt?: string
   /** Present once the unlock was evaluated for stacking. */
   stack?: WorkStreamDependencyStackState
+  /**
+   * When a stack decision first found the squad runtime unavailable. The
+   * decision is retried for a bounded time from here (not from the unlock,
+   * which can be long before admission).
+   */
+  stackRetryingSince?: string
 }
 
 export type WorkStreamDependencyStackState =
   /** A decision is being made right now by the holder of `claimId`. Never returned to clients. */
   | { mode: 'pending'; decidedAt: string; claimId: string }
-  /** Different repositories, or no repository: only the unlock applies. */
-  | { mode: 'none'; decidedAt: string; reason: string }
+  /** Different repositories, no repository, or a dependency already merged or canceled: only the unlock applies. */
+  | {
+      mode: 'none'
+      decidedAt: string
+      reason: string
+      /** Decided after the dependency was canceled: its assignee and owner are owed a notice. */
+      dependencyCanceled?: true
+      canceledNotifiedAt?: string
+    }
   | {
       mode: WorkStreamDependencyStackMode
       decidedAt: string
