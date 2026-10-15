@@ -1,0 +1,106 @@
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { focusInPopover, initialTarget } from './focus'
+import { listItems } from './listNavigation'
+import { MENU_ITEM_SELECTOR } from './Menu'
+import type { PopoverState } from './usePopover'
+
+export interface HoverOpenOptions {
+  /** Off: the trigger only opens on click/keyboard, as without this hook. */
+  enabled: boolean
+  /** Leaving the trigger and the popover waits this long before closing, so the pointer can cross the gap. Default 150ms. */
+  closeDelay?: number
+  /** What gets focus when the popover opens by click/keyboard, or a hover-opened one is pinned. Default `first`. */
+  initialFocus?: 'first' | 'selected'
+}
+
+export interface HoverOpenState {
+  /** Whether it is open because of the mouse, so leaving closes it. A click pins it (false again). */
+  hoverOpened: boolean
+  /** Spread on the trigger. `onClick` toggles, or pins a hover-opened popover instead of closing it. */
+  triggerProps: {
+    onClick: () => void
+    onPointerEnter: (event: ReactPointerEvent) => void
+    onPointerLeave: (event: ReactPointerEvent) => void
+  }
+  /** Spread on the popover (`Menu`, `Popover`, …). */
+  popoverProps: {
+    initialFocus: 'first' | 'selected' | 'none'
+    restoreFocus: boolean
+    onPointerEnter: (event: ReactPointerEvent) => void
+    onPointerLeave: (event: ReactPointerEvent) => void
+  }
+}
+
+/**
+ * Hover-to-open for a click popover (`usePopover`), for a mouse only: touch and pen keep tap-to-open.
+ * Hovering the trigger opens it without taking focus; leaving both the trigger and the popover closes it
+ * after `closeDelay` (re-entering either cancels that), handing focus back to where it was before the
+ * hover if the pointer had moved it onto a row. Opened by click or keyboard, it behaves exactly
+ * as without this hook; clicking the trigger of a hover-opened popover pins it open (focusing its
+ * `initialFocus` item, as a click-open would) rather than closing it.
+ */
+export function useHoverOpen<T extends HTMLElement>(
+  popover: PopoverState<T>,
+  { enabled, closeDelay = 150, initialFocus = 'first' }: HoverOpenOptions
+): HoverOpenState {
+  const [byHover, setByHover] = useState(false)
+  // Any close (leaving, Escape, an outside press, a choice) ends the hover mode, so a later keyboard open is not one.
+  if (byHover && !popover.open) setByHover(false)
+  const hoverOpened = byHover && popover.open
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const focusBefore = useRef<Element | null>(null)
+  const cancelClose = () => clearTimeout(closeTimer.current)
+  useEffect(() => () => clearTimeout(closeTimer.current), [])
+
+  const isMouse = (event: ReactPointerEvent) => enabled && event.pointerType === 'mouse'
+  const enter = (event: ReactPointerEvent) => {
+    if (isMouse(event)) cancelClose()
+  }
+  const leave = (event: ReactPointerEvent) => {
+    if (!isMouse(event) || !hoverOpened) return
+    cancelClose()
+    closeTimer.current = setTimeout(() => {
+      // A pointer over the rows focuses them; leaving returns focus to what had it before the hover (the
+      // composer, say), not to the trigger, where the popover itself would put it.
+      const doc = popover.triggerRef.current?.ownerDocument
+      const active = doc?.activeElement
+      if (active instanceof HTMLElement && doc?.getElementById(popover.id)?.contains(active)) {
+        const before = focusBefore.current
+        if (before instanceof HTMLElement && before.isConnected && before !== doc.body)
+          before.focus({ preventScroll: true })
+        else active.blur()
+      }
+      popover.setOpen(false)
+    }, closeDelay)
+  }
+
+  return {
+    hoverOpened,
+    triggerProps: {
+      onClick: () => {
+        cancelClose()
+        if (!hoverOpened) return popover.toggle()
+        setByHover(false)
+        const surface = popover.triggerRef.current?.ownerDocument.getElementById(popover.id)
+        // Menu items are out of the Tab order, so the first one is not a tabbable: fall back to it explicitly.
+        if (surface) focusInPopover(initialTarget(surface, initialFocus) ?? listItems(surface, MENU_ITEM_SELECTOR)[0])
+      },
+      onPointerEnter: (event) => {
+        enter(event)
+        if (!isMouse(event) || popover.open) return
+        focusBefore.current = popover.triggerRef.current?.ownerDocument.activeElement ?? null
+        setByHover(true)
+        popover.setOpen(true)
+      },
+      onPointerLeave: leave,
+    },
+    popoverProps: {
+      // Opening under a passing pointer never steals focus from what the user is doing (typing, say).
+      initialFocus: hoverOpened ? 'none' : initialFocus,
+      // Nor does Escape send it to the trigger; focus inside still returns there as the popover closes.
+      restoreFocus: !hoverOpened,
+      onPointerEnter: enter,
+      onPointerLeave: leave,
+    },
+  }
+}

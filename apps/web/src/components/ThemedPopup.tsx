@@ -1,5 +1,14 @@
 import { useEffect, useId, type ReactNode } from 'react'
-import { Menu, MenuItem, Picker, PopoverHeading, PopoverRowContent, popoverRowClass, usePopover } from './popover'
+import {
+  Menu,
+  MenuItem,
+  Picker,
+  PopoverHeading,
+  PopoverRowContent,
+  popoverRowClass,
+  useHoverOpen,
+  usePopover,
+} from './popover'
 import type { PickerOption } from './popover'
 
 /**
@@ -84,8 +93,14 @@ export function ActionPopup({
   disabled,
   heading,
   width = 192,
-}: PopupTrigger & { items: readonly PopupAction[] }) {
+  openOnHover = false,
+}: PopupTrigger & {
+  items: readonly PopupAction[]
+  /** A mouse hovering the trigger opens it, and leaving closes it again unless a click pinned it (`useHoverOpen`). */
+  openOnHover?: boolean
+}) {
   const popover = usePopover({ kind: 'menu' })
+  const hover = useHoverOpen(popover, { enabled: openOnHover, initialFocus: 'selected' })
   const id = useId()
   useCloseWhenDisabled(popover, disabled)
   return (
@@ -97,14 +112,14 @@ export function ActionPopup({
         title={title}
         disabled={disabled}
         className={className}
-        onClick={popover.toggle}
+        {...hover.triggerProps}
       >
         {children}
       </button>
       <Menu
         {...popover.popoverProps}
+        {...hover.popoverProps}
         label={heading ?? label}
-        initialFocus="selected"
         width={width}
         maxHeight={360}
         className="ficus-overlay scroll-py-1.5 p-1.5"
