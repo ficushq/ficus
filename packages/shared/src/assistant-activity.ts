@@ -42,6 +42,25 @@ export function isTerminalAssistantTaskStatus(status: AssistantTaskStatus): bool
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
+/** Progress statuses that need nothing from the user: no Assistant reply, just a timeline chip. */
+export const ROUTINE_ASSISTANT_TASK_STATUSES = ['working', 'waiting'] as const satisfies readonly AssistantTaskStatus[]
+
+/**
+ * Routine progress on a tracked task. The Assistant is not woken to summarize it; the conversation
+ * shows it as a compact chip instead. Untracked or status-less updates are never routine, so they
+ * still get a reply.
+ */
+export function isRoutineAssistantUpdate(update: {
+  taskId: string | null
+  reportedStatus: AssistantTaskStatus | null
+}): boolean {
+  return (
+    update.taskId !== null &&
+    update.reportedStatus !== null &&
+    (ROUTINE_ASSISTANT_TASK_STATUSES as readonly AssistantTaskStatus[]).includes(update.reportedStatus)
+  )
+}
+
 /**
  * Apply one update's reported status. Updates never reopen a finished request, never change a
  * task through an older request, and never change anything without an explicit status. A new
@@ -81,6 +100,8 @@ export interface AssistantActivityUpdate {
   subject: string | null
   senderName: string
   processedAt: string | null
+  /** An Assistant reply covers this update (its sources list it). */
+  summarized: boolean
   seenAt: string | null
   createdAt: string
 }

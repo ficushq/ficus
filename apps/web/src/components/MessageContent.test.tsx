@@ -1,4 +1,5 @@
 import { ToolRenderersContext } from '../lib/ToolRenderersContext'
+import { siteAssistantToolRenderers } from '../lib/tool-renderers'
 import { SingleToolCallSection } from './MessageContent'
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -253,5 +254,36 @@ describe('tool result firewall badge', () => {
     const html = renderToStaticMarkup(<AssistantMessageContent content="" metadata={metadata} />)
     expect(html).toContain('2 tools')
     expect(html).toContain('Possible injection')
+  })
+})
+
+describe('hidden bookkeeping tool calls', () => {
+  const toolBlock = (id: string, toolName: string) => ({
+    type: 'tool_use' as const,
+    id,
+    toolCall: { toolCallId: id, toolName, args: '{"messageId":"m1"}', result: '{"marked":true}', isError: false },
+  })
+  const metadata = {
+    content: [
+      toolBlock('a', 'mark_read'),
+      toolBlock('b', 'mark_read'),
+      { type: 'text' as const, id: 't', content: 'The outline fix is merged.' },
+    ],
+  } satisfies MessageMetadata
+
+  test('the Assistant transcript leaves out mark_read rows entirely', () => {
+    const html = renderToStaticMarkup(
+      <ToolRenderersContext.Provider value={siteAssistantToolRenderers}>
+        <AssistantMessageContent content="" metadata={metadata} />
+      </ToolRenderersContext.Provider>
+    )
+    expect(html).not.toContain('mark_read')
+    expect(html).not.toContain('2 tools')
+    expect(html).toContain('The outline fix is merged.')
+  })
+
+  test('other transcripts still show the call', () => {
+    const html = renderToStaticMarkup(<AssistantMessageContent content="" metadata={metadata} />)
+    expect(html).toContain('2 tools')
   })
 })

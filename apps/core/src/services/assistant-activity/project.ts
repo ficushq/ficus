@@ -4,6 +4,7 @@ import { HTTPException } from 'hono/http-exception'
 import {
   applyAssistantTaskStatus,
   assistantTaskStatusSchema,
+  isRoutineAssistantUpdate,
   parseAssistantInboxConversationId,
   type AssistantMessageTargetKind,
 } from '@ficus/shared'
@@ -233,6 +234,9 @@ async function projectIncomingUpdate(tx: AssistantActivityTransaction, message: 
     requestId,
     sequence,
     reportedStatus,
+    // Routine progress is deliberately not presented: no Assistant summary (text or Realtime). The
+    // conversation shows it as a timeline chip and read/seen state stays independent.
+    processedAt: isRoutineAssistantUpdate({ taskId, reportedStatus }) ? message.createdAt : null,
     createdAt: message.createdAt,
   })
   return { row: message, invalidation: { conversationId, recipientId: message.recipientId, update: decision } }

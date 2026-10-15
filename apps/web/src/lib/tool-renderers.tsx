@@ -14,6 +14,18 @@ export interface ToolRenderer {
   summary: (args: Record<string, any>) => string
   ArgsView: FC<{ args: Record<string, any> }>
   ResultView: FC<{ result: string; isError: boolean; autoScroll?: boolean }>
+  /** Pure bookkeeping (e.g. marking a message read): chat transcripts leave the call out entirely. */
+  hidden?: boolean
+}
+
+/** Drop tool calls whose renderer marks them hidden; every other block keeps its order. */
+export function withoutHiddenToolCalls<B extends { type: string }>(blocks: B[], renderers: ToolRenderers): B[] {
+  const visible = blocks.filter((block) => {
+    if (block.type !== 'tool_use') return true
+    const toolName = (block as { toolCall?: { toolName?: string } }).toolCall?.toolName
+    return !(toolName && renderers[toolName]?.hidden)
+  })
+  return visible.length === blocks.length ? blocks : visible
 }
 
 // --- Helpers ---
@@ -989,8 +1001,17 @@ const searchFicusRenderer: ToolRenderer = {
   ResultView: ({ result, isError }) => <CodeBlock isError={isError}>{extractResultText(result)}</CodeBlock>,
 }
 
+// The Assistant's read state for task updates is recorded for it; a call here is bookkeeping only.
+const markReadRenderer: ToolRenderer = {
+  hidden: true,
+  summary: (args) => args.messageId ?? '',
+  ArgsView: ({ args }) => <InlineCode>{args.messageId ?? 'unknown'}</InlineCode>,
+  ResultView: ({ result, isError }) => <CodeBlock isError={isError}>{extractResultText(result)}</CodeBlock>,
+}
+
 /** Site assistant tools share only these semantics with the normal agent tools. */
 export const siteAssistantToolRenderers: ToolRenderers = {
+  mark_read: markReadRenderer,
   navigate: navigateRenderer,
   memory_search: memorySearchRenderer,
   memory_get: memoryGetRenderer,

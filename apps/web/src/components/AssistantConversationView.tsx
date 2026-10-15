@@ -5,11 +5,14 @@ import { AssistantPageLinkRow } from './AssistantPageLinkRow'
 import { AssistantDraftRouting, AssistantMessageRouting, latestAssistantUserMessageId } from './AssistantRoutingChip'
 import { useAssistantRoutingPreview } from '../hooks/useAssistantRoutingPreview'
 import { AssistantSummarySources } from './AssistantSummarySources'
+import { AssistantUpdateChip } from './AssistantUpdateChip'
+import { routineUpdateSlots, timelineAnchors, type TimelineAnchor } from '../lib/assistantRoutineUpdates'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAssistantPageNavigation } from '../hooks/useAssistantPageNavigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { type AssistantEntry, type MessageMetadata } from '@ficus/shared'
+import type { RenderItem } from '@ficus/client-core'
 import { assistantApi } from '../api/assistant'
 import { assistantQueries } from '../queryOptions'
 import { assistantQueryKeys, queryKeys } from '../queryKeys'
@@ -83,6 +86,8 @@ function DurableConversation(props: AssistantConversationViewProps) {
   const [attempt, setAttempt] = useState(0)
   const controller = useRef<AgentChatController | null>(null)
   const [latestUserMessageId, setLatestUserMessageId] = useState<string | null>(null)
+  // Where routine task progress sits in the transcript; only changes when shown rows do.
+  const [anchors, setAnchors] = useState<TimelineAnchor[]>([])
   const [composerDraft, setComposerDraft] = useState<{ id: number; text: string }>()
   // Where a draft would go, while it is written (not for page editors, which aren't routed).
   const routing = useAssistantRoutingPreview({
@@ -212,6 +217,13 @@ function DurableConversation(props: AssistantConversationViewProps) {
     (value: AgentChatController) => {
       controller.current = value
       setLatestUserMessageId(latestAssistantUserMessageId(value.items))
+      const next = timelineAnchors(value.items)
+      setAnchors((current) =>
+        current.length === next.length &&
+        current.every((anchor, i) => anchor.id === next[i]!.id && anchor.at === next[i]!.at)
+          ? current
+          : next
+      )
       speakReady()
     },
     [speakReady]
@@ -257,8 +269,27 @@ function DurableConversation(props: AssistantConversationViewProps) {
     controller.current?.refresh()
   }, [queryClient])
   const data = activity.data
-  const updates = data?.updates ?? []
-  // Viewing the conversation reads its updates: they're shown inline under the replies that cover them.
+  const updates = useMemo(() => data?.updates ?? [], [data?.updates])
+  // Routine progress gets no Assistant reply; it shows as coalesced chips at its time instead.
+  const routineSlots = useMemo(() => routineUpdateSlots(anchors, updates), [anchors, updates])
+  const taskLabels = useMemo(() => new Map((data?.tasks ?? []).map((task) => [task.id, task.label])), [data?.tasks])
+  const routineProgress = (itemId: string) => {
+    const groups = routineSlots.get(itemId)
+    if (!groups?.length) return null
+    return (
+      <section aria-label="Task progress" className="min-w-0 space-y-0.5 pb-1 text-sm">
+        {groups.map((group) => (
+          <AssistantUpdateChip
+            key={`${group.taskId}:${group.updates[0]!.messageId}`}
+            updates={group.updates}
+            taskLabel={taskLabels.get(group.taskId)}
+            preview
+          />
+        ))}
+      </section>
+    )
+  }
+  // Viewing the conversation reads its updates: each shows as a chip, under the reply that covers it or at its time.
   const viewing = props.visible && !props.compact
   const unread = data?.conversation.unreadUpdates ?? 0
   const latestSequence = data?.conversation.latestUpdateSequence ?? 0
@@ -269,6 +300,30 @@ function DurableConversation(props: AssistantConversationViewProps) {
       .then(refresh)
       .catch(() => {})
   }, [viewing, unread, latestSequence, props.id, refresh])
+  const messageFooter = (item: Extract<RenderItem, { kind: 'persisted' }>) =>
+    item.message.role === 'human' && item.message.metadata?.assistantRouting ? (
+      <AssistantMessageRouting
+        conversationId={props.id}
+        messageId={item.message.id}
+        content={item.message.content}
+        hint={item.message.metadata.assistantRouting}
+        latest={item.message.id === latestUserMessageId}
+        onDraft={draftInComposer}
+        api={api}
+      />
+    ) : item.message.role === 'assistant' && ownerId ? (
+      <>
+        {props.onOpenConversation &&
+          durableAssistantConversationLinks(item).map((link) => (
+            <AssistantConversationLinkRow key={link.agentId} conversation={link} onOpen={props.onOpenConversation!} />
+          ))}
+        {durableAssistantPageLinks(item).map((path) => (
+          <AssistantPageLinkRow key={path} path={path} onOpen={navigate} />
+        ))}
+        <AssistantSummarySources ownerId={ownerId} conversationId={props.id} item={item} />
+      </>
+    ) : null
+
   const questions = data && (
     <div
       className="min-w-0 space-y-2 px-3 py-2 [overflow-wrap:anywhere]"
@@ -378,34 +433,16 @@ function DurableConversation(props: AssistantConversationViewProps) {
             className="min-w-0 flex-1 min-h-0"
             pagePath={pagePath}
             initialMessage={props.initialMessage ? { content: props.initialMessage.text } : undefined}
-            renderMessageFooter={(item) =>
-              item.message.role === 'human' && item.message.metadata?.assistantRouting ? (
-                <AssistantMessageRouting
-                  conversationId={props.id}
-                  messageId={item.message.id}
-                  content={item.message.content}
-                  hint={item.message.metadata.assistantRouting}
-                  latest={item.message.id === latestUserMessageId}
-                  onDraft={draftInComposer}
-                  api={api}
-                />
-              ) : item.message.role === 'assistant' && ownerId ? (
+            renderMessageFooter={(item) => {
+              const footer = messageFooter(item)
+              const progress = routineProgress(item.id)
+              return footer || progress ? (
                 <>
-                  {props.onOpenConversation &&
-                    durableAssistantConversationLinks(item).map((link) => (
-                      <AssistantConversationLinkRow
-                        key={link.agentId}
-                        conversation={link}
-                        onOpen={props.onOpenConversation!}
-                      />
-                    ))}
-                  {durableAssistantPageLinks(item).map((path) => (
-                    <AssistantPageLinkRow key={path} path={path} onOpen={navigate} />
-                  ))}
-                  <AssistantSummarySources ownerId={ownerId} conversationId={props.id} item={item} />
+                  {footer}
+                  {progress}
                 </>
               ) : null
-            }
+            }}
             onConversation={onConversation}
             beforeSend={() => propsRef.current.pageEditor?.prepare() ?? Promise.resolve()}
             keyboardShortcutsEnabled={props.visible && !props.compact}

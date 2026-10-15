@@ -1,11 +1,12 @@
 import { PermissionsProvider } from '../hooks/usePermissions'
-import { expect, mock, test } from 'bun:test'
+import { expect, mock, spyOn, test } from 'bun:test'
 import { StrictMode, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { fireEvent, waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
+import { assistantApi } from '../api/assistant'
 import { AssistantConversationView, type AssistantConversationViewProps } from './AssistantConversationView'
 import type { AgentChat, AgentChatController } from './AgentChat'
 import type { VoiceAssistantController } from '../voice/useRealtimeVoiceAssistant'
@@ -348,7 +349,7 @@ test('the first voice click waits for the durable conversation and then starts a
   }
 })
 
-test('assistant summaries show nested conversations as full rows and task updates as cards', async () => {
+test('assistant summaries show nested conversations as full rows and task updates as compact chips', async () => {
   const f = await fixture()
   const { queries, assistantQueries } = await import('../queryOptions')
   f.queryClient.setQueryData(queries.agents.detail('delegate').queryKey, {
@@ -358,7 +359,7 @@ test('assistant summaries show nested conversations as full rows and task update
     status: 'active',
     metadata: { name: 'Riley', purpose: 'Fix inline PR rows' },
   } as any)
-  f.queryClient.setQueryData(assistantQueries.updates('owner', 'conversation', ['update-1']).queryKey, [
+  const covered = [
     {
       messageId: 'update-1',
       taskId: 'task-1',
@@ -370,10 +371,14 @@ test('assistant summaries show nested conversations as full rows and task update
       subject: null,
       senderName: 'Riley',
       processedAt: null,
+      summarized: true,
       seenAt: null,
       createdAt: new Date().toISOString(),
     },
-  ])
+  ]
+  // Mounting refreshes Assistant queries, so the sources load through the API like they do live.
+  const readUpdates = spyOn(assistantApi, 'readUpdates').mockImplementation(async () => covered as any)
+  f.queryClient.setQueryData(assistantQueries.updates('owner', 'conversation', ['update-1']).queryKey, covered as any)
   const onOpenConversation = mock(() => {})
   f.props.onOpenConversation = onOpenConversation
   await f.dom.act(async () => f.render())
@@ -421,15 +426,107 @@ test('assistant summaries show nested conversations as full rows and task update
   expect(page.textContent).toContain('Appearance')
   expect(page.textContent).toContain('Settings')
 
-  // The task updates it covers show inline under it, no toggle, and nothing to mark: viewing reads them.
+  // Each update it covers is one muted line under it; the reply already said what matters.
   const updates = footer.querySelector('[aria-label="Task updates"]')!
-  expect(updates.querySelector('[aria-expanded]')).toBeNull()
-  const card = updates.querySelector('li')!
-  expect(card.textContent).toContain('Fix inline PR rows')
-  expect(card.textContent).toContain('Riley')
-  expect(card.textContent).toContain('Found the row components.')
-  expect(card.querySelector('button')).toBeNull()
+  const chip = updates.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+  expect(chip.getAttribute('aria-expanded')).toBe('false')
+  expect(chip.textContent).toContain('Fix inline PR rows')
+  expect(chip.textContent).toContain('Working')
+  expect(chip.querySelector('[aria-label="Unread"]')).not.toBeNull()
+  // Under a reply there is no preview, and the report itself stays folded away.
+  expect(chip.textContent).not.toContain('Found the row components.')
+  expect(updates.textContent).not.toContain('Found the row components.')
+  await f.dom.act(async () => fireEvent.click(chip))
+  expect(chip.getAttribute('aria-expanded')).toBe('true')
+  const report = updates.querySelector(`[id="${chip.getAttribute('aria-controls')}"]`)!
+  expect(report.textContent).toContain('Found the row components.')
+  expect(report.textContent).toContain('Riley')
+  await f.dom.act(async () => fireEvent.click(chip))
+  expect(updates.textContent).not.toContain('Found the row components.')
+  readUpdates.mockRestore()
   await f.cleanup()
+})
+
+test('routine progress no reply covers shows as one coalesced chip at its time', async () => {
+  const f = await fixture()
+  const at = (minute: number) => new Date(Date.UTC(2026, 9, 15, 9, minute)).toISOString()
+  const persisted = (id: string, role: string, minute: number, metadata: object = {}) =>
+    ({ kind: 'persisted', id, message: { id, role, content: id, createdAt: at(minute), metadata }, blocks: [] }) as any
+  const request = persisted('request', 'human', 0)
+  const delegated = persisted('delegated', 'assistant', 1)
+  // A hidden inbox delivery is not a place to show anything.
+  const delivery = persisted('delivery', 'human', 5, { source: 'inbox' })
+  const finished = persisted('finished', 'assistant', 9, { assistantUpdateIds: ['done'] })
+  ;(f.controller as { items: unknown[] }).items = [request, delegated, delivery, finished]
+  const update = (messageId: string, sequence: number, minute: number, reportedStatus: string, extra: object = {}) => ({
+    messageId,
+    taskId: 'task-1',
+    requestId: 'request-1',
+    sequence,
+    reportedStatus,
+    content: `Report ${messageId}`,
+    subject: null,
+    senderName: 'Riley',
+    processedAt: at(minute),
+    summarized: false,
+    seenAt: null,
+    createdAt: at(minute),
+    ...extra,
+  })
+  f.api.conversationActivity.mockImplementation(
+    async () =>
+      ({
+        conversation: { latestUpdateSequence: 4, unreadUpdates: 0 },
+        tasks: [{ id: 'task-1', label: 'File nav focus outline', status: 'completed' }],
+        updates: [
+          update('w1', 1, 2, 'working'),
+          update('w2', 2, 4, 'working', { content: 'Reproduced the **clipped** outline\nin Safari.' }),
+          update('w3', 3, 6, 'waiting'),
+          update('done', 4, 8, 'completed', { summarized: true }),
+        ],
+        pendingInputs: [],
+        hasMore: false,
+        beforeSequence: null,
+      }) as any
+  )
+  try {
+    await f.dom.act(async () => f.render())
+    await waitFor(() => expect(f.api.conversationActivity).toHaveBeenCalled())
+    const footerOf = async (item: unknown) => {
+      const footer = f.dom.createRoot()
+      await f.dom.act(async () =>
+        footer.root.render(
+          <QueryClientProvider client={f.queryClient}>
+            <MemoryRouter>{f.chat.renderMessageFooter!(item as any)}</MemoryRouter>
+          </QueryClientProvider>
+        )
+      )
+      return footer.container
+    }
+    // w1 and w2 follow the delegation reply; w3 arrived after a hidden delivery, so it still sits there.
+    await waitFor(async () =>
+      expect((await footerOf(delegated)).querySelector('[aria-label="Task progress"]')).not.toBeNull()
+    )
+    const slot = (await footerOf(delegated)).querySelector('[aria-label="Task progress"]')!
+    const chips = slot.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')
+    expect(chips).toHaveLength(1)
+    const chip = chips[0]!
+    expect(chip.textContent).toContain('File nav focus outline')
+    expect(chip.textContent).toContain('Waiting')
+    expect(chip.textContent).toContain('3 updates')
+    // No reply summarizes it, so the line previews the latest report.
+    expect(chip.textContent).toContain('Report w3')
+    await f.dom.act(async () => fireEvent.click(chip))
+    const items = slot.querySelectorAll('li')
+    expect([...items].map((li) => li.textContent?.includes('Report w1'))).toEqual([true, false, false])
+    expect(items[1]!.textContent).toContain('Reproduced the clipped outline')
+    expect(items[1]!.querySelector('strong')?.textContent).toBe('clipped')
+    // Nothing routine sits under the user's request, and the summarized completion is not repeated.
+    expect((await footerOf(request)).querySelector('[aria-label="Task progress"]')).toBeNull()
+    expect((await footerOf(finished)).querySelector('[aria-label="Task progress"]')).toBeNull()
+  } finally {
+    await f.cleanup()
+  }
 })
 
 test('viewing a conversation reads its task updates; a hidden or compact one does not', async () => {

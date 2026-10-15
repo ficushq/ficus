@@ -1424,6 +1424,31 @@ test('reported status is accepted only from the contacted agent on its own reque
   expect(formatted).toContain(`--in-reply-to ${receipt.id}`)
 })
 
+test('routine progress is processed on arrival and stays unread; other updates wait for a summary', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  const working = await f.update(receipt.id, 'Reproduced it.', 'working')
+  const waiting = await f.update(receipt.id, 'Waiting on CI.', 'waiting')
+  const question = await f.update(receipt.id, 'Which browser?', 'needs-input')
+  const plain = await f.update(receipt.id, 'A note without a status.')
+  const rows = await db.select().from(assistantUpdates).where(eq(assistantUpdates.conversationId, f.id))
+  const row = (id: string) => rows.find((entry) => entry.messageId === id)!
+  expect(row(working.id).processedAt).not.toBeNull()
+  expect(row(waiting.id).processedAt).not.toBeNull()
+  expect(row(question.id).processedAt).toBeNull()
+  expect(row(plain.id).processedAt).toBeNull()
+  // Processing is not visibility: the routine updates still count as unread.
+  expect(rows.every((entry) => entry.seenAt === null)).toBe(true)
+  const activity = await (await f.request(`/${f.id}/activity`)).json()
+  expect(activity.conversation.unreadUpdates).toBe(4)
+  expect(
+    activity.updates.map((update: { messageId: string; summarized: boolean }) => [update.messageId, update.summarized])
+  ).toEqual([working.id, waiting.id, question.id, plain.id].map((id) => [id, false]))
+  // Realtime does not present routine progress either.
+  const mailbox = await (await f.request(`/${f.id}/inbox`, { consumerId: randomUUID() })).json()
+  expect(mailbox.messages.map((message: { messageId: string }) => message.messageId)).toEqual([question.id, plain.id])
+})
+
 test('mailbox acknowledgment requires a saved final response covering every update in this conversation', async () => {
   const f = await activityFixture()
   const receipt = await f.start()

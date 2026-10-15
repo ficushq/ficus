@@ -217,15 +217,27 @@ Updates retain separate delivery, summary, and visibility facts:
 - `seen_at` records human acknowledgment through a visible original-update card or an explicit
   mark-read action. Summarization and speech alone never mark an update seen.
 
+Routine progress (`working` or `waiting` on a tracked task) is not forwarded: it never wakes the
+Assistant for a summary, in text or Realtime. It is marked processed as it arrives, so neither the
+forwarding outbox nor the Realtime mailbox retries it, and its unread (`seen_at`) state is unchanged.
+The conversation shows it at its time as a compact chip, one per task between two transcript rows,
+showing the latest update with a one-line preview and expanding to each report. `needs-input`,
+`completed`, `failed`, `cancelled`, untracked, and status-less updates are still forwarded. A
+forwarded update names the task's routine updates since its last forwarded one (count, latest
+preview, and IDs for `read_task_update`); `list_task_updates` lists any conversation update.
+
 Forwarding is recoverable without a browser lease. Report context is bounded to 12,000 characters
 per delivery batch; longer reports remain available through `read_task_update`. Original reports
 are never truncated in storage. Source cards load by their exact IDs, independently of the latest
-activity page. Every fragment of a grouped response contributes source IDs.
+activity page. Every fragment of a grouped response contributes source IDs. Under the reply each
+source is a single muted chip (task, status, time, unread dot) that expands to the full report.
 
 The Assistant sees a forwarded update under the ID of its own agent-inbox row
-(`forwarded_message_id`). Its `mark_read` tool accepts that ID as well as messages in the owner's
-user inbox; every other recipient's message is reported as not found. Marking the forwarded row
-read changes neither `seen_at` nor the original report.
+(`forwarded_message_id`). Inbox prompts for Assistant agents leave out the generic "mark as read"
+footer: linking the summarizing response marks the forwarded row read. Its `mark_read` tool still
+accepts that ID as well as messages in the owner's user inbox; every other recipient's message is
+reported as not found. Marking the forwarded row read changes neither `seen_at` nor the original
+report, and the conversation hides `mark_read` calls as bookkeeping.
 
 ## Needs you
 
