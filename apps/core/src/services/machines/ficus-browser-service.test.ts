@@ -5,11 +5,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 // Plain-JS machine script (runs directly under bun on machine hosts, no build
 // step, no .d.ts) — see scripts/machine/browser/ficus-browser.js's header.
-// @ts-expect-error no type declarations for this untyped machine script
 import {
   createService,
   screenshotPng,
   waitForRenderedFrame,
+  // The directive must sit on the line before the module specifier, which is
+  // where TypeScript reports the missing declaration file.
+  // @ts-expect-error no type declarations for this untyped machine script
 } from '../../../../../scripts/machine/browser/ficus-browser.js'
 
 // --- Helpers -----------------------------------------------------------
