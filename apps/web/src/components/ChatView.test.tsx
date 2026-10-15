@@ -284,27 +284,34 @@ test('a mounted composer banner that renders nothing leaves no padding gap', asy
   expect(slot.classList.contains('empty:hidden')).toBe(true)
 })
 
-test('the peeking plant sits above composer banners instead of drawing over them', async () => {
-  const { window } = await renderChatView(
-    <ChatView
-      items={[{ kind: 'working', id: '__working__' }]}
-      onSend={() => {}}
-      beforeComposer={<div data-testid="banner">1 pending question</div>}
-    />
+test('composer banners slide up to make room for the plant peeking from behind the composer', async () => {
+  const banner = <div data-testid="banner">1 pending question</div>
+  const { dom, root, window } = await renderChatView(
+    <ChatView items={[{ kind: 'working', id: '__working__' }]} onSend={() => {}} beforeComposer={banner} />
   )
+  const slot = () => window.document.querySelector('[data-testid="chat-before-composer"]')!
+  // The plant still peeks up from behind the composer, not from above the banners...
   const plantAnchor = window.document.querySelector('.ficus-plant-peek')!.parentElement!
-  const group = plantAnchor.parentElement!
-  const slot = window.document.querySelector('[data-testid="banner"]')!.parentElement!
-  // The plant hangs off the top of the group holding both the banners and the composer...
-  expect(plantAnchor.classList.contains('bottom-full')).toBe(true)
-  expect(group.classList.contains('relative')).toBe(true)
-  expect(group.firstElementChild).toBe(plantAnchor)
-  expect(slot.parentElement).toBe(group)
-  expect(group.contains(window.document.querySelector('textarea'))).toBe(true)
-  // ...and its half-hidden pot tucks behind the opaque banner slot rather than over it.
-  expect(plantAnchor.classList.contains('z-0')).toBe(true)
-  expect(slot.classList.contains('z-10')).toBe(true)
-  expect(slot.classList.contains('bg-surface')).toBe(true)
+  expect(plantAnchor.parentElement!.contains(window.document.querySelector('textarea'))).toBe(true)
+  expect(plantAnchor.parentElement!.contains(slot())).toBe(false)
+  // ...so while the agent works the banners leave room for it below them, sliding rather than jumping.
+  expect(slot().classList.contains('pb-9')).toBe(true)
+  expect(slot().classList.contains('transition-[padding]')).toBe(true)
+  expect(slot().classList.contains('motion-reduce:transition-none')).toBe(true)
+
+  // Once work ends they settle back, after the plant has dropped out of sight.
+  await dom.act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={['/chat/agent-1?scope=all']}>
+        <PermissionsProvider usePermissions={usePermissionsMock}>
+          <ChatView items={[]} onSend={() => {}} beforeComposer={banner} dependencies={chatViewDependencies} />
+        </PermissionsProvider>
+      </MemoryRouter>
+    )
+  )
+  expect(slot().classList.contains('pb-9')).toBe(false)
+  expect(slot().classList.contains('pb-2')).toBe(true)
+  expect(slot().classList.contains('delay-[600ms]')).toBe(true)
 })
 
 describe('ChatView image upload targeting and recovery', () => {
