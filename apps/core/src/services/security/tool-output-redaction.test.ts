@@ -420,9 +420,13 @@ describe('streamed partial updates', () => {
   })
 })
 
-/** pi's real bash tool over synthetic operations that stream `chunks` with a pause between them. */
+/**
+ * pi's real bash tool, configured as Core's bash tools are (no full output file), over synthetic
+ * operations that stream `chunks` with a pause between them.
+ */
 function streamingBash(chunks: string[], pauseMs = 0) {
   return createBashToolDefinition('/', {
+    persistFullOutput: false,
     operations: {
       exec: async (_command, _cwd, options) => {
         for (const chunk of chunks) {

@@ -15,8 +15,8 @@ import { CONFIG_DIR, AGENT_DIR, SKILLS_DIR } from '../lib/paths'
 import { MATERIALIZED_SKILLS_DIR, getSandboxSkillsDir } from '../services/agent/skill-materializer'
 import { join } from 'path'
 import { createHash } from 'crypto'
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs'
-import { tmpdir } from 'os'
+import * as fs from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'fs'
 import { createReadTool } from '@earendil-works/pi-coding-agent'
 import type { K8sSandboxManager } from '../services/sandbox/k8s'
 import { resolveSandboxApiUrl } from '../services/sandbox/k8s/pod-spec'
@@ -146,23 +146,21 @@ describe('sandboxed bash output beyond the display limit', () => {
     )!
   }
 
-  async function withPrivateTmpdir(body: (dir: string) => Promise<void>) {
-    const dir = mkdtempSync(join(tmpdir(), 'ficus-bash-full-output-'))
-    const previous = process.env.TMPDIR
-    process.env.TMPDIR = dir
+  // Throws (writing nothing) if pi opens its full output file; restored after each test.
+  async function withoutDiskWrites(body: () => Promise<void>) {
+    const createWriteStream = spyOn(fs, 'createWriteStream').mockImplementation(() => {
+      throw new Error('bash output written to disk')
+    })
     try {
-      // pi resolves its temp file directory through os.tmpdir() at write time.
-      expect(tmpdir()).toBe(dir)
-      await body(dir)
+      await body()
+      expect(createWriteStream).not.toHaveBeenCalled()
     } finally {
-      if (previous === undefined) delete process.env.TMPDIR
-      else process.env.TMPDIR = previous
-      rmSync(dir, { recursive: true, force: true })
+      createWriteStream.mockRestore()
     }
   }
 
   test('truncated output is not written to disk and names no full output file', async () => {
-    await withPrivateTmpdir(async (dir) => {
+    await withoutDiskWrites(async () => {
       const lines = Array.from({ length: 3000 }, (_, i) => `line ${i + 1}`)
       const updates: any[] = []
       const result: any = await bashEmitting([
@@ -170,7 +168,6 @@ describe('sandboxed bash output beyond the display limit', () => {
         lines.slice(1500).join('\n'),
       ]).execute('tool-1', { command: 'print lines' } as any, undefined, (update: any) => updates.push(update))
 
-      expect(readdirSync(dir)).toEqual([])
       const text = result.content[0].text as string
       expect(text.endsWith('\n\n[Showing lines 1001-3000 of 3000.]')).toBe(true)
       expect(text).not.toContain('Full output')
@@ -186,7 +183,7 @@ describe('sandboxed bash output beyond the display limit', () => {
   })
 
   test('output past 1 MiB keeps its first and last 512 KiB in memory', async () => {
-    await withPrivateTmpdir(async (dir) => {
+    await withoutDiskWrites(async () => {
       const half = 512 * 1024
       // Chunks straddle both cut points; the last one is larger than the whole tail window.
       const head = 'h'.repeat(half - 10) + '0123456789'
@@ -196,7 +193,6 @@ describe('sandboxed bash output beyond the display limit', () => {
         command: 'print a lot',
       } as any)
 
-      expect(readdirSync(dir)).toEqual([])
       const total = head.length + middle.length + tail.length
       expect(result.structuredContent.truncated).toBe(true)
       expect(result.structuredContent).not.toHaveProperty('full_output_path')
