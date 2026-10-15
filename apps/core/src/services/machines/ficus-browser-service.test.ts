@@ -6,7 +6,11 @@ import { join } from 'node:path'
 // Plain-JS machine script (runs directly under bun on machine hosts, no build
 // step, no .d.ts) — see scripts/machine/browser/ficus-browser.js's header.
 // @ts-expect-error no type declarations for this untyped machine script
-import { createService } from '../../../../../scripts/machine/browser/ficus-browser.js'
+import {
+  createService,
+  screenshotPng,
+  waitForRenderedFrame,
+} from '../../../../../scripts/machine/browser/ficus-browser.js'
 
 // --- Helpers -----------------------------------------------------------
 
@@ -28,6 +32,8 @@ class FakePage {
   wheelCalls: Array<{ x: number; y: number }> = []
   waitedTimeouts: number[] = []
   evalCalls = 0
+  /** Ordered page activity: 'frame-wait' (screenshotPng's paint wait), 'evaluate' (any other), 'screenshot'. */
+  events: string[] = []
   nullTextContentSelectors = new Set<string>()
 
   private consoleHandler: ((msg: { type: () => string; text: () => string }) => void) | null = null
@@ -48,6 +54,7 @@ class FakePage {
 
   async screenshot(_opts?: unknown) {
     this.screenshotCalls++
+    this.events.push('screenshot')
     return Buffer.from('fake-png-bytes')
   }
 
@@ -85,8 +92,13 @@ class FakePage {
     this.waitedTimeouts.push(ms)
   }
 
-  async evaluate(_fn: unknown) {
+  async evaluate(fn: unknown) {
+    if (String(fn).includes('requestAnimationFrame')) {
+      this.events.push('frame-wait')
+      return undefined
+    }
     this.evalCalls++
+    this.events.push('evaluate')
     return 'body-inner-text'
   }
 
@@ -661,6 +673,71 @@ describe('ficus-browser service', () => {
       })
       expect(status).toBe(200)
       expect(json).toEqual({ deltaPx: 500, screenshotBase64: Buffer.from('fake-png-bytes').toString('base64') })
+    })
+  })
+
+  // Chrome fails Page.captureScreenshot ("Unable to capture screenshot") when
+  // the page's render widget has no frame to copy yet — e.g. right after a
+  // navigation committed into a new widget. Every verb's screenshot must
+  // first wait for the current document to render a frame.
+  describe('screenshots wait for a rendered frame', () => {
+    it('every screenshotting verb waits for a frame immediately before its screenshot', async () => {
+      const { launch, browser } = makeLaunch()
+      const service = createService({ launch, tokensDir })
+      await req(service, '/open', { body: { runId: 'r1', url: 'http://x' } })
+      await req(service, '/click', { body: { runId: 'r1', x: 1, y: 2, returnScreenshot: true } })
+      await req(service, '/type', { body: { runId: 'r1', text: 'hi', returnScreenshot: true } })
+      await req(service, '/scroll', { body: { runId: 'r1', direction: 'down', returnScreenshot: true } })
+      await req(service, '/screenshot', { body: { runId: 'r1' } })
+      const page = browser.contexts[0].pages[0]
+      expect(page.screenshotCalls).toBe(5)
+      expect(page.events).toEqual(Array.from({ length: 5 }, () => ['frame-wait', 'screenshot']).flat())
+    })
+
+    it('waitForRenderedFrame resolves after the page renders two animation frames', async () => {
+      let rafCallbacks = 0
+      const page = {
+        // Runs the page function against a fake requestAnimationFrame, the
+        // way Playwright would run it in the page.
+        evaluate: async (fn: () => Promise<unknown>) => {
+          const g = globalThis as { requestAnimationFrame?: (cb: () => void) => void }
+          const saved = g.requestAnimationFrame
+          g.requestAnimationFrame = (cb) => {
+            rafCallbacks++
+            setTimeout(cb, 0)
+          }
+          try {
+            return await fn()
+          } finally {
+            g.requestAnimationFrame = saved
+          }
+        },
+      }
+      await waitForRenderedFrame(page, 60_000)
+      expect(rafCallbacks).toBe(2)
+    })
+
+    it('waitForRenderedFrame gives up after its bound when the page never renders', async () => {
+      const page = { evaluate: () => new Promise(() => {}) }
+      const started = Date.now()
+      await waitForRenderedFrame(page, 50)
+      expect(Date.now() - started).toBeLessThan(5_000)
+    })
+
+    it('screenshotPng still screenshots when the frame wait fails (document replaced mid-wait)', async () => {
+      const events: string[] = []
+      const page = {
+        evaluate: async () => {
+          events.push('frame-wait')
+          throw new Error('Execution context was destroyed, most likely because of a navigation')
+        },
+        screenshot: async (opts: unknown) => {
+          events.push(`screenshot ${JSON.stringify(opts)}`)
+          return Buffer.from('png')
+        },
+      }
+      expect(await screenshotPng(page)).toEqual(Buffer.from('png'))
+      expect(events).toEqual(['frame-wait', 'screenshot {"type":"png"}'])
     })
   })
 

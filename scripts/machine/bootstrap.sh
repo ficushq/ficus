@@ -467,6 +467,46 @@ function toBase64(data) {
   return (Buffer.isBuffer(data) ? data : Buffer.from(data)).toString('base64')
 }
 
+// Upper bound on waitForRenderedFrame: a page that never runs animation
+// frames (main thread busy, page hidden) still gets its screenshot attempted.
+export const FRAME_WAIT_MS = 2000
+
+// Resolves once the page's CURRENT document has rendered a frame, or after
+// timeoutMs (FRAME_WAIT_MS by default). Page.captureScreenshot copies the
+// render widget's compositor surface, and Chrome fails it outright ("Unable to
+// capture screenshot") when that copy comes back empty, as it does before the
+// widget has a frame to copy. Chrome's own retries are back-to-back, not paced
+// by frames. With
+// RenderDocument at its desktop default by Chrome 154 (all frames; 145 only
+// swapped subframes), every main-frame navigation commits into a brand-new
+// widget, so a capture right after goto()/click() can land before that
+// widget's first frame. The second requestAnimationFrame callback runs only
+// after the first frame was produced.
+export async function waitForRenderedFrame(page, timeoutMs = FRAME_WAIT_MS) {
+  let timer
+  try {
+    await Promise.race([
+      page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined))))
+      ),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, timeoutMs)
+      }),
+    ])
+  } catch {
+    // The document went away mid-wait (navigation, close). Nothing to wait
+    // for; the screenshot that follows reports any real failure itself.
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Every verb's screenshot goes through here, never page.screenshot directly.
+export async function screenshotPng(page) {
+  await waitForRenderedFrame(page)
+  return page.screenshot({ type: 'png' })
+}
+
 // SSRF guard (R-B9 / R-B14). Blocks host-local, link-local and cloud-metadata
 // surfaces — used both by open()'s own check and the per-context route()
 // handler below (defense in depth for redirects/iframes/subresources).
@@ -927,7 +967,7 @@ export function createService(deps = {}) {
       const pageEntry = await openPage(boxUser, runId)
       await pageEntry.page.goto(parsedUrl.href, { waitUntil: 'domcontentloaded', timeout: 30000 })
       const title = await pageEntry.page.title()
-      const screenshot = await pageEntry.page.screenshot({ type: 'png' })
+      const screenshot = await screenshotPng(pageEntry.page)
       return jsonResponse(200, { title, screenshotBase64: toBase64(screenshot) })
     }
 
@@ -950,7 +990,7 @@ export function createService(deps = {}) {
         }
         const result = { ok: true }
         if (body.returnScreenshot === true) {
-          result.screenshotBase64 = toBase64(await pageEntry.page.screenshot({ type: 'png' }))
+          result.screenshotBase64 = toBase64(await screenshotPng(pageEntry.page))
         }
         return jsonResponse(200, result)
       }
@@ -962,7 +1002,7 @@ export function createService(deps = {}) {
         }
         const result = { ok: true }
         if (body.returnScreenshot === true) {
-          result.screenshotBase64 = toBase64(await pageEntry.page.screenshot({ type: 'png' }))
+          result.screenshotBase64 = toBase64(await screenshotPng(pageEntry.page))
         }
         return jsonResponse(200, result)
       }
@@ -972,12 +1012,12 @@ export function createService(deps = {}) {
         await pageEntry.page.waitForTimeout(300)
         const result = { deltaPx: delta }
         if (body.returnScreenshot === true) {
-          result.screenshotBase64 = toBase64(await pageEntry.page.screenshot({ type: 'png' }))
+          result.screenshotBase64 = toBase64(await screenshotPng(pageEntry.page))
         }
         return jsonResponse(200, result)
       }
       case 'screenshot': {
-        const screenshot = await pageEntry.page.screenshot({ type: 'png' })
+        const screenshot = await screenshotPng(pageEntry.page)
         return jsonResponse(200, { screenshotBase64: toBase64(screenshot) })
       }
       case 'read': {

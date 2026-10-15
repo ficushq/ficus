@@ -15,6 +15,9 @@ import {
 import { SandboxHttpError } from '../client/http-client'
 import type { BrowserBackend } from '../browser-backend'
 import { HostSandboxManager } from './manager'
+// Plain-JS machine script (no .d.ts); see browser.ts's header.
+// @ts-expect-error no type declarations for this untyped machine script
+import { screenshotPng } from '../../../../../../scripts/machine/browser/ficus-browser.js'
 
 // --- resolveHostChromium fakes ---------------------------------------------
 
@@ -757,7 +760,10 @@ describe('real local browser', () => {
       try {
         const page = await browser.newPage()
         await page.goto('about:blank')
-        const shot = await page.screenshot({ type: 'png' })
+        // Through the engine's capture path, which waits for the new
+        // document's first frame. Capturing straight after goto() can land
+        // before it and fail with "Unable to capture screenshot".
+        const shot = await screenshotPng(page)
         expect(shot.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
       } finally {
         await browser.close()
