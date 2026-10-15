@@ -27,6 +27,13 @@ export const screenshotQueryKeys = {
 
 export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
 
+/** Settings → Spend: the inference cost ledger, per range, filters and grouping. */
+export const spendQueryKeys = {
+  all: ['spend'] as const,
+  summary: (query: object) => [...spendQueryKeys.all, 'summary', query] as const,
+  breakdown: (query: object) => [...spendQueryKeys.all, 'breakdown', query] as const,
+}
+
 /** Decision model providers, routing and the OpenAI services key state: one settings read. */
 export const decisionQueryKeys = {
   all: ['decisions'] as const,

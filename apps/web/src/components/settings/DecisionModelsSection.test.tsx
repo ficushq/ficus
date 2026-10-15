@@ -678,7 +678,14 @@ describe('Decision models settings', () => {
       totalUsd: 1.2345,
       approximate: true,
       byPurpose: [
-        { purpose: 'tool-results', calls: 1204, answered: 1200, inputTokens: 9_000_000, outputTokens: 0, costUsd: 0.42 },
+        {
+          purpose: 'tool-results',
+          calls: 1204,
+          answered: 1200,
+          inputTokens: 9_000_000,
+          outputTokens: 0,
+          costUsd: 0.42,
+        },
         { purpose: 'github-firewall', calls: 3, answered: 3, inputTokens: 900, outputTokens: 0, costUsd: 0.00004 },
         { purpose: 'workflow-steps', calls: 0, answered: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
       ],

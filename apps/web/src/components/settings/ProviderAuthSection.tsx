@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import type { ProviderHealthKind } from '@ficus/shared'
@@ -980,6 +981,18 @@ export function ProviderAccountsList({
                           ? 'Claude Code sign-in failed: run `claude auth login`, then Reset.'
                           : null}
                     </span>
+                  )}
+                  {account.subscription && (
+                    <Link
+                      className="ficus-button ficus-button-link text-xs"
+                      to="/settings?section=spend&setting=spend-subscriptions"
+                      title="Plan and monthly price, used for Settings → Spend"
+                    >
+                      {account.subscription.planLabel ?? 'Plan unknown'}
+                      {account.subscription.monthlyPriceUsd !== null
+                        ? ` · $${account.subscription.monthlyPriceUsd}/mo`
+                        : ''}
+                    </Link>
                   )}
                   {account.capabilities && (
                     <span

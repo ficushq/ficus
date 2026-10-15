@@ -137,6 +137,11 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         label: 'Storage',
         description: 'Disk usage by squad, repositories, worktrees, and tools.',
       },
+      {
+        id: 'spend',
+        label: 'Spend',
+        description: 'What model usage costs, by squad, work stream, agent, feature, model and account.',
+      },
       { id: 'system-logs', label: 'Logs', description: 'System logs.' },
       {
         id: 'ops-insights',
@@ -176,6 +181,7 @@ const SECTION_PERMISSIONS: Partial<Record<SectionId, string>> = {
   'remote-hosts': 'remote-hosts:read',
   system: 'squads:read',
   storage: 'system:logs',
+  spend: 'usage:read',
   'system-logs': 'system:logs',
   updates: 'updates:read',
 }
