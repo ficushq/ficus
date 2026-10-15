@@ -24,6 +24,7 @@
     "./bigbrain-palettes": "./src/bigbrain-palettes.ts",
     "./crypto": "./src/crypto.ts",
     "./node": "./src/node/index.ts",
+    "./confined-fs": "./src/node/confined-fs.ts",
     "./provider-health": "./src/provider-health.ts",
     "./test-fixtures/work-stream-presentation": "./src/test-fixtures/work-stream-presentation.ts",
     "./testDbLock": "./src/testDbLock.ts",

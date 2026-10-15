@@ -1,6 +1,6 @@
 /**
- * Displays an image from a squad's workspace.
- * Fetches via the workspace download API with auth and renders as an img.
+ * Displays an image from a workspace (the squad's shared workspace or an
+ * agent's private area). Fetches the download URL with auth and renders it.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -8,27 +8,29 @@ import { getSquadWorkspaceDownloadUrl } from '../api/workspace'
 import { authFetch } from '../api/client'
 import { LoadingSurface, SkeletonBlock } from './loading/Skeleton'
 
-export interface SquadWorkspaceImageViewerProps {
-  squadId: string
-  filePath: string
+export interface WorkspaceImageViewerProps {
+  /** API path of the image download (e.g. a workspace or private-area download URL). */
+  downloadUrl: string
+  alt?: string
   className?: string
 }
 
-export function SquadWorkspaceImageViewer({ squadId, filePath, className }: SquadWorkspaceImageViewerProps) {
+export function WorkspaceImageViewer({ downloadUrl, alt, className }: WorkspaceImageViewerProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const urlRef = useRef<string | null>(null)
 
   useEffect(() => {
-    const downloadUrl = getSquadWorkspaceDownloadUrl(squadId, filePath)
-
+    setLoading(true)
+    setError(null)
     authFetch(downloadUrl)
       .then((response) => {
         if (!response.ok) throw new Error('Failed to load image')
         return response.blob()
       })
       .then((blob) => {
+        // Downloads may be served as opaque bytes; the <img> only needs the bytes.
         const url = window.URL.createObjectURL(blob)
         urlRef.current = url
         setImageUrl(url)
@@ -45,7 +47,7 @@ export function SquadWorkspaceImageViewer({ squadId, filePath, className }: Squa
         urlRef.current = null
       }
     }
-  }, [squadId, filePath])
+  }, [downloadUrl])
 
   if (loading) {
     return (
@@ -60,10 +62,22 @@ export function SquadWorkspaceImageViewer({ squadId, filePath, className }: Squa
   }
 
   return (
-    <img
-      src={imageUrl || ''}
+    <img src={imageUrl || ''} alt={alt || 'Image'} className={className ?? 'max-w-full max-h-full object-contain'} />
+  )
+}
+
+export interface SquadWorkspaceImageViewerProps {
+  squadId: string
+  filePath: string
+  className?: string
+}
+
+export function SquadWorkspaceImageViewer({ squadId, filePath, className }: SquadWorkspaceImageViewerProps) {
+  return (
+    <WorkspaceImageViewer
+      downloadUrl={getSquadWorkspaceDownloadUrl(squadId, filePath)}
       alt={filePath.split('/').pop() || 'Image'}
-      className={className ?? 'max-w-full max-h-full object-contain'}
+      className={className}
     />
   )
 }

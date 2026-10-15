@@ -592,7 +592,7 @@ export class K8sSandboxManager implements ISandboxManager {
    * Spawn an interactive shell in the sandbox.
    * Returns an IPty-compatible wrapper around the WebSocket shell stream.
    */
-  spawnShell(sandboxId: string, cols: number, rows: number, _workspacePath?: string): IPty | null {
+  spawnShell(sandboxId: string, cols: number, rows: number, _workspacePath?: string, cwd?: string): IPty | null {
     const state = this.sandboxes.get(sandboxId)
     if (!state) {
       log.warn(`Cannot spawn shell - sandbox not found: ${sandboxId}`)
@@ -614,7 +614,7 @@ export class K8sSandboxManager implements ISandboxManager {
       spawn: {
         cols,
         rows,
-        cwd: state.workspaceMount,
+        cwd: cwd ?? state.workspaceMount,
         useDevboxRc: true,
         env: { FICUS_API_URL: resolveSandboxApiUrl(this.podManager.namespace) },
       },

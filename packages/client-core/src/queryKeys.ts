@@ -52,6 +52,21 @@ export const queryKeys = {
     childrenPrefix: () => [...queryKeys.agents.all, 'children'] as const,
   },
 
+  /**
+   * One agent's private area (Workspace tab, agent target). Its own root, NOT
+   * under `agents`, so agent status events never refetch file listings.
+   */
+  agentPrivate: {
+    all: ['agentPrivate'] as const,
+    agent: (agentId: string) => [...queryKeys.agentPrivate.all, agentId] as const,
+    status: (agentId: string) => [...queryKeys.agentPrivate.all, agentId, 'status'] as const,
+    tree: (agentId: string, path?: string) =>
+      path === undefined
+        ? ([...queryKeys.agentPrivate.all, agentId, 'tree'] as const)
+        : ([...queryKeys.agentPrivate.all, agentId, 'tree', path] as const),
+    file: (agentId: string, filePath: string) => [...queryKeys.agentPrivate.all, agentId, 'file', filePath] as const,
+  },
+
   skills: {
     all: ['skills'] as const,
     list: () => [...queryKeys.skills.all, 'list'] as const,

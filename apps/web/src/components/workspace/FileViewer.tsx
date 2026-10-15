@@ -5,21 +5,21 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { queries } from '../../queryOptions'
 import type { FileContent } from '../../api/workspace'
-import { getSquadWorkspaceDownloadUrl } from '../../api/workspace'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { syntaxTheme } from '../../theme/syntax'
 import { authFetch } from '../../api/client'
 import { DownloadIcon } from '../icons'
-import { SquadWorkspaceImageViewer } from '../SquadWorkspaceImageViewer'
+import { WorkspaceImageViewer } from '../SquadWorkspaceImageViewer'
 import { DocumentSkeleton, SkeletonBlock, SkeletonLine } from '../loading/Skeleton'
+import { CopyPathButton } from './CopyPathButton'
+import type { WorkspaceSource } from './workspaceSource'
 
 // Image file extensions
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp'])
 
 export interface FileViewerProps {
-  squadId: string
+  source: WorkspaceSource
   filePath: string
 }
 
@@ -134,8 +134,8 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function FileViewer({ squadId, filePath }: FileViewerProps) {
-  const queryOpts = queries.squadWorkspace.file(squadId, filePath)
+export function FileViewer({ source, filePath }: FileViewerProps) {
+  const queryOpts = source.fileQuery(filePath)
   const {
     data: file,
     isLoading,
@@ -178,7 +178,7 @@ export function FileViewer({ squadId, filePath }: FileViewerProps) {
   if (file.error) {
     return (
       <div className="h-full flex flex-col">
-        <FileHeader path={filePath} size={file.size} squadId={squadId} />
+        <FileHeader path={filePath} size={file.size} source={source} />
         <div className="flex-1 flex items-center justify-center text-muted">{file.error}</div>
       </div>
     )
@@ -188,9 +188,9 @@ export function FileViewer({ squadId, filePath }: FileViewerProps) {
   if (isImageFile(filePath)) {
     return (
       <div className="h-full flex flex-col">
-        <FileHeader path={filePath} size={file.size} squadId={squadId} />
+        <FileHeader path={filePath} size={file.size} source={source} />
         <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-[rgb(var(--syntax-image-bg))]">
-          <SquadWorkspaceImageViewer squadId={squadId} filePath={filePath} />
+          <WorkspaceImageViewer downloadUrl={source.downloadUrl(filePath)} alt={filePath.split('/').pop()} />
         </div>
       </div>
     )
@@ -200,7 +200,7 @@ export function FileViewer({ squadId, filePath }: FileViewerProps) {
   if (file.binary) {
     return (
       <div className="h-full flex flex-col">
-        <FileHeader path={filePath} size={file.size} squadId={squadId} />
+        <FileHeader path={filePath} size={file.size} source={source} />
         <div className="flex-1 flex items-center justify-center text-muted">Binary file — cannot display</div>
       </div>
     )
@@ -214,7 +214,7 @@ export function FileViewer({ squadId, filePath }: FileViewerProps) {
 
   return (
     <div className="h-full flex flex-col">
-      <FileHeader path={filePath} size={file.size} language={language} squadId={squadId} />
+      <FileHeader path={filePath} size={file.size} language={language} source={source} />
       <div className="flex-1 overflow-auto min-w-0 [&_code_span:not(.linenumber)]:!inline">
         <SyntaxHighlighter
           language={language}
@@ -250,19 +250,22 @@ function FileHeader({
   path,
   size,
   language,
-  squadId,
+  source,
 }: {
   path: string
   size: number
   language?: string
-  squadId: string
+  source: WorkspaceSource
 }) {
   const handleDownload = () => {
-    const downloadUrl = getSquadWorkspaceDownloadUrl(squadId, path)
+    const downloadUrl = source.downloadUrl(path)
     const fileName = path.split('/').pop() || 'download'
 
     authFetch(downloadUrl)
-      .then((response) => response.blob())
+      .then((response) => {
+        if (!response.ok) throw new Error(`Download failed: ${response.status}`)
+        return response.blob()
+      })
       .then((blob) => {
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -284,6 +287,7 @@ function FileHeader({
       <div className="flex items-center gap-3 text-xs text-muted shrink-0">
         {language && language !== 'text' && <span className="bg-surface-hover px-2 py-0.5 rounded">{language}</span>}
         <span>{formatSize(size)}</span>
+        {source.agentPath && <CopyPathButton path={source.agentPath(path)} label="Copy path" />}
         <button
           onClick={handleDownload}
           className="ficus-button ficus-button-ghost p-1 rounded transition-colors"

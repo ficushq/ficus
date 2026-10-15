@@ -52,6 +52,7 @@ import {
   handleMaterializeAttachment,
   handleDeleteMaterializedAttachment,
 } from './services/filesystem'
+import { handleConfinedList, handleConfinedRead, handleConfinedUpload } from './services/confined'
 import {
   BoxProcessError,
   listBoxContainers,
@@ -142,6 +143,8 @@ const JSON_BODY_PATHS = new Set([
   '/delete-materialized-attachment',
   '/list',
   '/stat',
+  '/confined/list',
+  '/confined/read',
   '/watch',
   '/browser/open',
   '/browser/click',
@@ -305,6 +308,9 @@ async function main(): Promise<void> {
           if (pathname === '/upload') {
             return handleUpload(url, req)
           }
+          if (pathname === '/confined/upload') {
+            return handleConfinedUpload(url, req)
+          }
           if (!JSON_BODY_PATHS.has(pathname)) {
             return new Response('Not found', { status: 404 })
           }
@@ -382,6 +388,10 @@ async function main(): Promise<void> {
               return handleList(body)
             case '/stat':
               return handleStat(body)
+            case '/confined/list':
+              return handleConfinedList(body)
+            case '/confined/read':
+              return handleConfinedRead(body)
             case '/browser/open':
             case '/browser/click':
             case '/browser/type':

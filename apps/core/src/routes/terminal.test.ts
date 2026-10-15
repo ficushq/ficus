@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { Hono } from 'hono'
-import { db, squads } from '../db'
+import { agents, db, squads } from '../db'
 import { inArray } from 'drizzle-orm'
 import { identityMiddleware } from '../middleware/identity'
 import { terminalRouter } from './terminal'
@@ -9,6 +9,7 @@ import {
   authHeaders,
   cleanupTestRbac,
   createTestAdmin,
+  createTestAgentToken,
   createTestRole,
   createTestUser,
   type TestUser,
@@ -32,6 +33,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  await db.delete(agents).where(inArray(agents.squadId, [squadId, otherSquadId]))
   await cleanupTestRbac(rbacPrefix)
   await db.delete(squads).where(inArray(squads.id, [squadId, otherSquadId]))
 })
@@ -80,5 +82,41 @@ describe('terminal routes', () => {
     })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual([])
+  })
+})
+
+describe('terminal routes for an agent’s own box', () => {
+  async function agentIn(squad: string) {
+    const [row] = await db.insert(agents).values({ agentTypeId: 'engineer', squadId: squad }).returning()
+    return row!
+  }
+  async function userWith(permissions: string[], squad = squadId) {
+    const user = await createTestUser({ prefix: rbacPrefix })
+    const role = await createTestRole({ prefix: rbacPrefix, permissions })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: squad })
+    return user
+  }
+  const list = (sandbox: string, token: string) =>
+    app.request(`/api/terminal/sessions?sandboxId=${sandbox}`, { headers: authHeaders(token) })
+
+  it('needs private-area access and terminal access in the agent’s squad', async () => {
+    const agent = await agentIn(squadId)
+    const sandbox = `agent_${agent.id}`
+    expect((await list(sandbox, admin.token)).status).toBe(200)
+    expect((await list(sandbox, (await userWith(['agents:private-access', 'terminal:access'])).token)).status).toBe(200)
+    expect((await list(sandbox, (await userWith(['terminal:access'])).token)).status).toBe(403)
+    expect((await list(sandbox, (await userWith(['agents:private-access'])).token)).status).toBe(403)
+    expect(
+      (await list(sandbox, (await userWith(['agents:private-access', 'terminal:access'], otherSquadId)).token)).status
+    ).toBe(403)
+  })
+
+  it('refuses agent identities, unknown agents and malformed agent sandbox ids', async () => {
+    const agent = await agentIn(squadId)
+    const token = await createTestAgentToken({ agentId: agent.id, squadId })
+    expect((await list(`agent_${agent.id}`, token.token)).status).toBe(403)
+    expect((await list(`agent_${crypto.randomUUID()}`, admin.token)).status).toBe(403)
+    expect((await list('agent_not-a-uuid', admin.token)).status).toBe(403)
+    expect((await list(`agent_${agent.id}/../squad_${squadId}`, admin.token)).status).toBe(403)
   })
 })

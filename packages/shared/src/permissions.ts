@@ -16,6 +16,8 @@ export const Permissions = {
   AGENTS_TERMINATE: 'agents:terminate', // unspawn a flex agent (manager/operator); NOT DB deletion
   AGENTS_SCOPES_READ: 'agents:scopes:read',
   AGENTS_SCOPES_MANAGE: 'agents:scopes:manage',
+  /** Browse and upload files in one agent's private area (its terminal also needs terminal:access). */
+  AGENTS_PRIVATE_ACCESS: 'agents:private-access',
 
   // Workstreams
   WORKSTREAMS_READ: 'workstreams:read',

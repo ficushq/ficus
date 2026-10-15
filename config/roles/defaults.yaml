@@ -25,6 +25,9 @@ roles:
       - agents:run
       - agents:update
       - agents:terminate
+      # An agent's private area holds its keys and private files: browsing it
+      # (and, with terminal:*, a shell in the agent's own box) is operator/admin only.
+      - agents:private-access
       # agents:scopes:* is intentionally admin-only; do not grant it to operators.
       - workstreams:*
       - workflows:*

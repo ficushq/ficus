@@ -14,6 +14,8 @@ export interface TreeNode {
   name: string
   type: 'file' | 'directory'
   size?: number
+  /** A symbolic link (agent private area only): listed, never followed. */
+  symlink?: boolean
   children?: TreeNode[]
 }
 
@@ -23,6 +25,8 @@ export interface FileContent {
   size: number
   binary: boolean
   error?: string
+  /** Absolute path as the agent sees it in its own sandbox (agent private area only). */
+  agentPath?: string
 }
 
 export interface SessionInfo {
@@ -389,6 +393,8 @@ export interface UploadResult {
   path: string
   status: 'created' | 'overwritten' | 'skipped' | 'error'
   error?: string
+  /** Absolute path as the agent sees it (agent private area only). */
+  agentPath?: string
 }
 
 export interface UploadResponse {
@@ -406,7 +412,7 @@ export interface UploadOptions {
 /**
  * Upload files with progress tracking using XMLHttpRequest.
  */
-function uploadWithProgress(
+export function uploadWithProgress(
   url: string,
   files: { file: File; relativePath: string }[],
   options: UploadOptions = {}

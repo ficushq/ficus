@@ -7,6 +7,9 @@ import { SquadSandboxStatusCard } from './sandbox/SquadSandboxStatusCard'
 import { AmtpMailboxSection } from './AmtpMailboxSection'
 import { ExternalExportControl } from './ExternalExportControl'
 import { usePermissions } from '../hooks/usePermissions'
+import { Link } from 'react-router-dom'
+import { KeyIcon } from './icons'
+import { agentWorkspaceHref, hasPrivateArea } from './workspace/agentPrivateTargets'
 import { useQuery } from '@tanstack/react-query'
 import { integrationQueries, modelCatalogQuery, queries } from '../queryOptions'
 import { formatTokens } from '../lib/format'
@@ -186,6 +189,14 @@ export function AgentInfoPanel({ agent, agentType }: AgentInfoPanelProps) {
           <h4 className="ficus-section-title">Sandboxes</h4>
           <AgentSandboxControls agentId={agent.id} compact />
           {agent.squadId && <SquadSandboxStatusCard squadId={agent.squadId} compact />}
+          {agent.squadId && hasPrivateArea(agent) && can('agents:private-access') && (
+            <Link
+              to={agentWorkspaceHref(agent.squadId, agent.id)}
+              className="ficus-button ficus-button-ghost inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs"
+            >
+              <KeyIcon className="h-3.5 w-3.5" /> Open private workspace
+            </Link>
+          )}
         </div>
         <AmtpMailboxSection agentId={agent.id} squadId={agent.squadId ?? undefined} />
         <AgentSecretsPanel agentId={agent.id} squadId={agent.squadId ?? undefined} />

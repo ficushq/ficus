@@ -15,6 +15,9 @@ import { WSEvents } from 'hono/ws'
 import { Squad } from '../../entities/Squad'
 import { createLogger } from '../../lib/infra/logger'
 import { SandboxProvisionError } from '../sandbox/k8s/provision-errors'
+import { parseAgentSandboxId, resolveAgentPrivateTarget, type AgentPrivateTarget } from '../agent-private/access'
+import { startAgentSandbox, type StartAgentSandboxOutcome } from '../agent-private/sandbox'
+import { agentVisiblePrivateRoot } from '../agent-private/files'
 
 const log = createLogger('terminal')
 
@@ -46,9 +49,73 @@ function isResizeMessage(data: unknown): data is ResizeMessage {
 /**
  * Create WebSocket handlers for terminal connections.
  */
+/** Where a terminal's shell starts, or why the socket is closed instead. */
+export type TerminalSandboxPreparation =
+  | { ok: true; workspacePath?: string; cwd?: string }
+  | { ok: false; code: number; reason: string }
+
+export interface TerminalSandboxDeps {
+  findSquad: (squadId: string) => Promise<Squad | null>
+  ensureSquad: (squad: Squad) => Promise<string>
+  findAgentTarget: (agentId: string) => Promise<AgentPrivateTarget | null>
+  startAgent: (target: AgentPrivateTarget) => Promise<StartAgentSandboxOutcome>
+  privateRoot: (target: AgentPrivateTarget) => string
+}
+
+const defaultTerminalSandboxDeps: TerminalSandboxDeps = {
+  findSquad: (squadId) => Squad.find(squadId),
+  ensureSquad: (squad) => ensureSquadSandbox(squad),
+  findAgentTarget: resolveAgentPrivateTarget,
+  startAgent: (target) => startAgentSandbox(target),
+  privateRoot: agentVisiblePrivateRoot,
+}
+
+/**
+ * Ensure the sandbox behind a terminal (lazily creating it if needed).
+ *
+ * - `squad_<id>`: the shared squad box, shell in the squad workspace.
+ * - `agent_<id>`: the agent's own box, ensured through the same path as the
+ *   warmups (no execution, no status change, so the agent is not woken), shell
+ *   in the agent's private dir. A dormant agent's box is not started.
+ *
+ * Authorization happened at the upgrade (authorizeTerminalRequest); the agent
+ * is re-read here from its row so a stale or spoofed id cannot pick the box.
+ */
+export async function prepareTerminalSandbox(
+  sandboxId: string,
+  deps: TerminalSandboxDeps = defaultTerminalSandboxDeps
+): Promise<TerminalSandboxPreparation> {
+  const squadId = getSquadIdFromSandbox(sandboxId)
+  if (squadId) {
+    log.info(`Ensuring squad sandbox for terminal: ${sandboxId}`)
+    const squad = await deps.findSquad(squadId)
+    if (!squad) {
+      log.error(`Squad not found: ${squadId}`)
+      return { ok: false, code: 4004, reason: 'Squad not found' }
+    }
+    return { ok: true, workspacePath: await deps.ensureSquad(squad) }
+  }
+  const agentId = parseAgentSandboxId(sandboxId)
+  if (agentId) {
+    const target = await deps.findAgentTarget(agentId)
+    if (!target || target.sandboxId !== sandboxId) return { ok: false, code: 4004, reason: 'Agent sandbox not found' }
+    log.info(`Ensuring agent sandbox for terminal: ${sandboxId}`)
+    const started = await deps.startAgent(target)
+    if (!started.ok) return { ok: false, code: 4009, reason: started.message.slice(0, 123) }
+    return { ok: true, cwd: deps.privateRoot(target) }
+  }
+  log.error(`Unknown sandbox type: ${sandboxId}`)
+  return { ok: false, code: 4004, reason: 'Unknown sandbox type' }
+}
+
+/**
+ * Create WebSocket handlers for terminal connections. `actor` (the audit label
+ * of the authorized person) is logged when a session is opened or resumed.
+ */
 export function createTerminalWebSocketHandlers(
   sandboxId: string,
-  sessionId: string | null
+  sessionId: string | null,
+  actor = 'unknown'
 ): WSEvents<ServerWebSocket> {
   return {
     async onOpen(_event, ws) {
@@ -57,23 +124,9 @@ export function createTerminalWebSocketHandlers(
       try {
         // Ensure sandbox exists — lazily create if not yet running
         // Always try to ensure sandbox (handles deleted containers, restarts, etc.)
-        let workspacePath: string | undefined
-        const squadId = getSquadIdFromSandbox(sandboxId)
+        let prepared: TerminalSandboxPreparation
         try {
-          if (squadId) {
-            log.info(`Ensuring squad sandbox for terminal: ${sandboxId}`)
-            const squad = await Squad.find(squadId)
-            if (!squad) {
-              log.error(`Squad not found: ${squadId}`)
-              ws.raw.close(4004, 'Squad not found')
-              return
-            }
-            workspacePath = await ensureSquadSandbox(squad)
-          } else {
-            log.error(`Unknown sandbox type: ${sandboxId}`)
-            ws.raw.close(4004, 'Unknown sandbox type')
-            return
-          }
+          prepared = await prepareTerminalSandbox(sandboxId)
         } catch (error) {
           const provisioningClose = getProvisioningWebSocketClose(error)
           if (provisioningClose) {
@@ -82,6 +135,10 @@ export function createTerminalWebSocketHandlers(
           }
           log.error(`Failed to ensure sandbox ${sandboxId}:`, error)
           ws.raw.close(4004, 'Failed to create sandbox')
+          return
+        }
+        if (!prepared.ok) {
+          ws.raw.close(prepared.code, prepared.reason)
           return
         }
 
@@ -99,8 +156,11 @@ export function createTerminalWebSocketHandlers(
           }
         } else {
           // Create new session with workspacePath for devbox activation
-          session = await terminalManager.createSession(sandboxId, 80, 24, workspacePath)
+          session = await terminalManager.createSession(sandboxId, 80, 24, prepared.workspacePath, prepared.cwd)
         }
+        log.info(
+          `Terminal session ${session.sessionId} ${sessionId ? 'resumed' : 'opened'} in ${sandboxId} by ${actor}`
+        )
 
         // Track the session for this WebSocket
         wsSessionMap.set(ws.raw, session.sessionId)

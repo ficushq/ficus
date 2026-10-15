@@ -36,6 +36,7 @@ import { systemTokensRouter } from './routes/system-tokens'
 import { imagesRouter } from './routes/images'
 import { agentsRouter } from './routes/agents'
 import { agentFilesRouter } from './routes/agent-files'
+import { agentPrivateRouter } from './routes/agent-private'
 import { agentSecretsRouter } from './routes/agent-secrets'
 import { agentDeliverySuggestionRouter } from './routes/agent-delivery-suggestion'
 import { artifactsRouter } from './routes/artifacts'
@@ -131,6 +132,10 @@ import { createLogsWebSocketHandlers, getLogsParams } from './services/ws/logs'
 import { createSystemLogsWebSocketHandlers, getSystemLogsParams } from './services/ws/system-logs'
 import { initializeSystemLogProvider } from './services/system-logs/factory'
 import { getSquadIdFromSandbox } from './services/sandbox/types'
+import { canAccessSandboxTerminal } from './services/sandbox/terminal-access'
+import { closeAgentTerminalsWhenAgentStops } from './services/agent-private/terminal-cleanup'
+import { findAgentLifecycleState } from './entities/agent-queries'
+import { auditActor } from './services/rbac/audit-actor'
 import { terminalManager } from './services/sandbox/docker/terminal'
 import { getSandboxManager, isHostRuntime, isK8sRuntime, isVmRuntime, validateSandboxSetup } from './services/sandbox'
 import { ignoredK8sEnvWarning, requireSandboxRuntime } from './services/sandbox/runtime'
@@ -305,6 +310,7 @@ app.route('/api/ai/extract', aiExtractRouter)
 
 app.route('/api/images', imagesRouter)
 app.route('/api/agents', agentFilesRouter)
+app.route('/api/agents', agentPrivateRouter)
 app.route('/api/agents', agentSecretsRouter)
 app.route('/api/agents', agentDeliverySuggestionRouter)
 app.route('/api/agents', agentsRouter)
@@ -401,10 +407,11 @@ export async function authorizeTerminalRequest(
   const sandboxId = directSandboxId ?? (squadParam ? Squad.getSandboxId(squadParam) : null)
   if (!sandboxId) return { ok: false, status: 403 }
 
-  const squadId = getSquadIdFromSandbox(sandboxId)
-  const allowed = squadId
-    ? await hasPermission(identity, Permissions.TERMINAL_ACCESS, squadId)
-    : await hasPermission(identity, Permissions.TERMINAL_ACCESS)
+  // Squad and agent boxes have their own rule (services/sandbox/terminal-access);
+  // any other sandbox kind needs instance-wide terminal access.
+  const allowed =
+    (await canAccessSandboxTerminal(identity, sandboxId)) ??
+    (await hasPermission(identity, Permissions.TERMINAL_ACCESS))
   if (!allowed) return { ok: false, status: 403 }
 
   return { ok: true, identity, authContext, params: { sandboxId, sessionId } }
@@ -497,7 +504,7 @@ app.get(
   upgradeWebSocket((c): WSEvents<ServerWebSocket> => {
     const params = getTerminalParams(c)
     const handlers = params
-      ? createTerminalWebSocketHandlers(params.sandboxId, params.sessionId)
+      ? createTerminalWebSocketHandlers(params.sandboxId, params.sessionId, auditActor(c.get('identity')))
       : {
           onOpen(_: Event, ws: Parameters<NonNullable<WSEvents<ServerWebSocket>['onOpen']>>[1]) {
             ws.raw?.close(4000, 'sandboxId, taskId, or squadId query parameter is required')
@@ -1071,6 +1078,12 @@ if (import.meta.main) {
   // Subscribe to archival events to clean up terminal sessions
   eventEmitter.on('squad.archived', ({ squadId }) => {
     terminalManager.killSandboxSessions(Squad.getSandboxId(squadId))
+  })
+  // Shells in an agent's own box end when the agent stops being live.
+  closeAgentTerminalsWhenAgentStops({
+    on: (event, handler) => eventEmitter.on(event, handler),
+    terminals: terminalManager,
+    findAgentStatus: async (agentId) => (await findAgentLifecycleState(agentId))?.status ?? null,
   })
 
   // Add graceful shutdown handling

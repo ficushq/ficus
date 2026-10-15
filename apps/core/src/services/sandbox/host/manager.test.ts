@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { EventEmitter } from 'events'
-import { existsSync, mkdtempSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { HostSandboxManager, setHostStopBeforeFenceHookForTest, whenChildSettles } from './manager'
@@ -239,6 +239,19 @@ describe('HostSandboxManager', () => {
     pty!.write('pwd; exit\r')
     await new Promise<void>((resolve) => pty!.onExit(() => resolve()))
     expect(data).toContain(join(home, 'workspaces', 'squads', SQUAD))
+  })
+
+  test('spawnShell starts in the requested cwd', async () => {
+    await manager.ensureSandbox('agent_a1', { workspacePath: '', squadId: SQUAD })
+    const privateDir = join(home, 'private', 'agent_a1')
+    mkdirSync(privateDir, { recursive: true })
+    const pty = manager.spawnShell('agent_a1', 80, 24, undefined, privateDir)
+    expect(pty).not.toBeNull()
+    let data = ''
+    pty!.onData((d) => (data += d))
+    pty!.write('pwd; exit\r')
+    await new Promise<void>((resolve) => pty!.onExit(() => resolve()))
+    expect(data).toContain(privateDir)
   })
 
   test('spawnShell on an untracked sandbox returns null', () => {

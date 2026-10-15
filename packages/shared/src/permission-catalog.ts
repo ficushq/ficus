@@ -16,6 +16,8 @@ export const PERMISSION_DESCRIPTIONS = {
   'agents:scopes:manage': 'Grant or revoke extra agent permissions, within the caller’s own authority.',
   'agents:update': 'Edit agent settings, including model and execution configuration.',
   'agents:delete': 'Delete agent records.',
+  'agents:private-access':
+    'Browse, read, and upload files in an agent’s private folder, and open a terminal in its own sandbox (with terminal:access). People only.',
   'workstreams:read': 'View work streams, their flow, progress, history, and metadata.',
   'workstreams:create': 'Create work streams, including ones with an inline custom flow.',
   'workstreams:update': 'Edit work streams and control their lifecycle, including pause, resume, and waits.',
