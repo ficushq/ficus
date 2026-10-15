@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { workflowPresetSchema } from './workflows'
-import { advanceWorkflowRun, createWorkflowRun, type WorkflowRun } from './workflow-runtime'
+import { advanceWorkflowRun, createWorkflowRun, workflowReworkAttempt, type WorkflowRun } from './workflow-runtime'
 
 async function run(preset = 'engineering'): Promise<WorkflowRun> {
   const file = resolve(import.meta.dir, `../../../config/workflows/${preset}.yaml`)
@@ -560,6 +560,29 @@ test('completion-ready rework honors the configured code-host engineer and repea
   state = complete(state)
   expect(active(state)).toBe('review')
   expect(complete(state, 'approved').status).toBe('completion-ready')
+})
+
+test('reviewed-coding defaults rework the implement attempt at completion-ready, then return to review', async () => {
+  const initial = await run('reviewed-coding')
+  expect(initial.definition.completion.changeEventsTo).toEqual({ step: 'implement' })
+  const ready = complete(complete(initial), 'approved')
+  expect(ready.status).toBe('completion-ready')
+  expect(workflowReworkAttempt(ready)?.id).toBe(1)
+  expect(() =>
+    advanceWorkflowRun(ready, { action: 'rework', expectedVersion: ready.version, attemptId: 2, feedback: 'CI failed' })
+  ).toThrow('delivery agent')
+  let state = advanceWorkflowRun(ready, {
+    action: 'rework',
+    expectedVersion: ready.version,
+    attemptId: 1,
+    feedback: 'CI failed after approval',
+  })
+  expect(active(state)).toBe('implement')
+  state = complete(state)
+  expect(active(state)).toBe('review')
+  state = complete(state, 'approved')
+  expect(state.status).toBe('completion-ready')
+  expect(workflowReworkAttempt(state)?.stepId).toBe('implement')
 })
 
 describe('live outcome revisions', () => {

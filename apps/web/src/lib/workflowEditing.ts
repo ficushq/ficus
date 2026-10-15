@@ -185,7 +185,7 @@ export function connectWorkflowOutcome(
 ) {
   if (from === 'code-host:delivery') {
     if (to !== 'finish' && definition.steps.find((step) => step.id === to)?.kind !== 'agent')
-      throw new Error('Send code hosting events to an agent step, or Finish for the delivery owner.')
+      throw new Error('Send code hosting change events to an agent step, or Finish for the delivery owner.')
     return {
       ...definition,
       completion: {

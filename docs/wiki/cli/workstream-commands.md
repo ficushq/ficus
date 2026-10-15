@@ -65,7 +65,8 @@ Use the current version and the latest completed attempt ID for `completion.chan
 when configured, otherwise the last completed **agent** attempt. Use single-quoted
 `--content` JSON for short payloads, or the quoted heredoc above for longer JSON/YAML.
 Saved commands can still use `--file`; no temporary file is required.
-The delivery participant or a flow manager may request rework. While final delivery
+The agent that owns that attempt (the delivery participant by default; the engineer when
+`changeEventsTo` names its step, as in the reviewed built-in workflows) or a flow manager may request rework. While final delivery
 approval is open, a person who may approve delivery (`workstreams:respond` or
 `workstreams:update`) may also send it back this way; the web app's **Send back** does this. It creates a tracked
 attempt at that delivery step; normal outcomes can return corrections to an engineer

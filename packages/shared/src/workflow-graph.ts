@@ -215,7 +215,7 @@ export function layoutWorkflowGraph(definition: WorkflowDefinition): FlowGraph {
       edges.push({
         from: 'code-host:delivery',
         to: target,
-        label: typeof recipient === 'object' ? 'code hosting events' : 'code hosting events → delivery owner',
+        label: typeof recipient === 'object' ? 'code hosting change events' : 'code hosting events → delivery owner',
         rework: false,
       })
   }

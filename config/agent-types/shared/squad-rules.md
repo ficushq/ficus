@@ -134,8 +134,10 @@ If new CI failures, review findings, or merge conflicts require changes at
 `completion-ready`, verify they apply to the current PR head, then use the
 `rework` action through `ficus workstream advance --content` (or `--stdin`): provide the current
 `expectedVersion`, the latest completed attempt for `completion.changeEventsTo.step`
-(or the last agent attempt by default), and `feedback`. The delivery
-participant or flow manager can request it. Follow the new tracked attempt and
+(or the last agent attempt by default), and `feedback`. The participant that owns
+that attempt (the delivery participant by default) or a flow manager can request it.
+CI, push and review events go to that step; merged and closed events always go to
+the delivery participant, which finishes the stream. Follow the new tracked attempt and
 its normal return/review paths; never edit against a completed attempt. Rework
 from a closed parallel branch replays its outer fork, including sibling checks
 and joins. Final
