@@ -401,7 +401,8 @@ function PullRequestLink({
   deliveryKind: WorkStreamDeliveryActionData['deliveryKind']
   compact?: boolean
 }) {
-  const verb = deliveryKind === 'merge' ? 'Merge' : 'Review'
+  // The link only opens the pull request; "Merge" would read as if clicking merges it.
+  const verb = deliveryKind === 'merge' ? 'Open' : 'Review'
   const reference = `${pullRequest.repository}#${pullRequest.number}`
   return (
     <a

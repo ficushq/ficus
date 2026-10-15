@@ -922,7 +922,7 @@ describe('ActionItem code-host delivery gate', () => {
     }
   })
 
-  test('labels a merge gate Merge', async () => {
+  test('labels a merge gate Open, since the link opens the PR rather than merging it', async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     try {
       const merge = {
@@ -930,8 +930,30 @@ describe('ActionItem code-host delivery gate', () => {
         data: { ...(deliveryAction.data as WorkStreamDeliveryActionData), deliveryKind: 'merge' },
       } as PendingAction
       await renderItems(dom, <ActionItem action={merge} />)
-      expect(document.querySelector('a[href^="https://github.com"]')?.textContent).toBe('Merge #42')
+      const link = document.querySelector('a[href^="https://github.com"]')!
+      expect(link.textContent).toBe('Open #42')
+      expect(link.getAttribute('aria-label')).toBe('Open #42, pull request ficushq/ficus-mobile#42')
+      expect(link.getAttribute('title')).toBe('Open ficushq/ficus-mobile#42')
+      expect(document.body.textContent).not.toContain('Merge #42')
       expect(document.body.textContent).toContain('Ficus · Merge pull request')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('a merge gate with several PRs lists Open links with full references', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      const merge = withPullRequests([
+        { repository: 'ficushq/ficus', number: 7, url: 'https://github.com/ficushq/ficus/pull/7' },
+        { repository: 'ficushq/ficus-mobile', number: 42, url: 'https://github.com/ficushq/ficus-mobile/pull/42' },
+      ])
+      ;(merge.data as WorkStreamDeliveryActionData).deliveryKind = 'merge'
+      await renderItems(dom, <ActionItem action={merge} defaultExpanded />)
+      expect([...document.querySelectorAll('a[href^="https://github.com"]')].map((link) => link.textContent)).toEqual([
+        'Open ficushq/ficus#7',
+        'Open ficushq/ficus-mobile#42',
+      ])
     } finally {
       await dom.cleanup()
     }
