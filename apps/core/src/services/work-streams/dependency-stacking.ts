@@ -12,7 +12,13 @@ import { workStreams, type integrationOutputEvents } from '../../db/schema'
 import { deliveryPullRequestHead } from './delivery-pull-requests'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
-import { claimStackDecisions, patchEdgeStack, settleStackClaim, type DependencyEdges } from './dependency-edges'
+import {
+  claimStackDecisions,
+  markStackRetrying,
+  patchEdgeStack,
+  settleStackClaim,
+  type DependencyEdges,
+} from './dependency-edges'
 import { fetchRemoteBranchToRef, type RepositoryExec, type ResolveGitHubToken } from './repository-setup'
 
 /**
@@ -324,7 +330,7 @@ async function decideStacks(
       decisions[id] = { mode: 'none', decidedAt, reason: 'the dependency had already merged' }
     // Never build on abandoned work, whatever order the cancel and the admission landed in.
     else if (dependency?.status === 'canceled')
-      decisions[id] = { mode: 'none', decidedAt, reason: 'the dependency was canceled' }
+      decisions[id] = { mode: 'none', decidedAt, reason: 'the dependency was canceled', dependencyCanceled: true }
     else if (!text(git.branch)) decisions[id] = { mode: 'none', decidedAt, reason: 'this stream has no repository' }
     else if (!branch || !sameRepository(stream.metadata, dependency?.metadata))
       decisions[id] = { mode: 'none', decidedAt, reason: 'the dependency is in a different repository' }
@@ -356,11 +362,17 @@ async function decideStacks(
       } catch (error) {
         log.warn(`Stacking runtime unavailable for work stream ${streamId}:`, error)
         // A passing outage must not turn a stackable branch into a manual merge for good:
-        // leave the edges undecided for the reconciler, for a bounded time.
-        const unlockedAt = Math.min(
-          ...candidates.map((candidate) => Date.parse(edges[candidate.id]?.readyUnlockedAt ?? ''))
+        // leave the edges undecided for the reconciler, for a bounded time measured from
+        // the first attempt that found no runtime (the unlock can be long before admission).
+        const since = await markStackRetrying(
+          db,
+          streamId,
+          candidates.map((candidate) => candidate.id)
         )
-        const retry = Date.now() - unlockedAt < RUNTIME_RETRY_WINDOW_MS
+        const firstAttempt = Math.min(
+          ...candidates.map((candidate) => Date.parse(since[candidate.id] ?? new Date().toISOString()))
+        )
+        const retry = Date.now() - firstAttempt < RUNTIME_RETRY_WINDOW_MS
         stacked = Object.fromEntries(
           candidates.map((candidate): [string, StackDecision | null] => [
             candidate.id,
@@ -413,6 +425,8 @@ async function announceStackDecisions(streamId: string, decisions: Record<string
         steer: true,
       })
   }
+  // Anything already owed, e.g. a dependency canceled before the decision landed.
+  await deliverStackNotices([streamId])
 }
 
 /** Stacking must never fail the admission or creation that triggered it. */
@@ -457,7 +471,8 @@ async function sendStackNotice(
  * Send what is owed to live, unpaused stacked streams, once per event:
  * - the dependency's branch head changed since the stream was built on it
  * - the dependency merged
- * - the dependency was canceled
+ * - the dependency was canceled (also when that was before the stream's stack
+ *   decision, which is then `none`: the stream may already be working)
  * A paused or parked stream is skipped and hears it once it runs again;
  * done and canceled streams are never told. Nothing here pauses, parks or
  * blocks a stream. With no IDs, every live stacked stream is considered (the
@@ -478,7 +493,15 @@ export async function deliverStackNotices(streamIds?: string[]): Promise<void> {
     )
   const stackedIds = (stream: StreamRow) =>
     (stream.dependsOn ?? []).filter((id) => isStackedDependencyEdge(stream.dependencyEdges?.[id]))
-  const dependencyIds = [...new Set(streams.flatMap(stackedIds))]
+  // Decided after the dependency was canceled (the stream may already be working): told once, too.
+  const canceledBeforeDecisionIds = (stream: StreamRow) =>
+    (stream.dependsOn ?? []).filter((id) => {
+      const stack = stream.dependencyEdges?.[id]?.stack
+      return stack?.mode === 'none' && stack.dependencyCanceled && !stack.canceledNotifiedAt
+    })
+  const dependencyIds = [
+    ...new Set(streams.flatMap((stream) => [...stackedIds(stream), ...canceledBeforeDecisionIds(stream)])),
+  ]
   if (dependencyIds.length === 0) return
   const dependencies = await db
     .select({ id: workStreams.id, number: workStreams.number, title: workStreams.title, status: workStreams.status })
@@ -487,6 +510,20 @@ export async function deliverStackNotices(streamIds?: string[]): Promise<void> {
   const byId = new Map(dependencies.map((row) => [row.id, row]))
 
   for (const stream of streams) {
+    for (const dependencyId of canceledBeforeDecisionIds(stream)) {
+      const dependency = byId.get(dependencyId)
+      if (!dependency) continue
+      try {
+        await notifyStack(stream, dependencyId, 'dependency_canceled_after_unlock', '', {
+          subject: `Ready dependency canceled: ${workStreamTitle(dependency)}`,
+          content: `"${workStreamTitle(dependency)}" was canceled after "${workStreamTitle(stream)}" was admitted on its ready unlock. This stream's branch was not built on it and nothing was paused, blocked or held, so work can continue. Its changes will never merge: if this work relies on them, decide with the owner how to proceed.`,
+          patch: { canceledNotifiedAt: new Date().toISOString() },
+          owner: true,
+        })
+      } catch (error) {
+        log.warn(`Failed to deliver stack notice for work stream ${stream.id} (dependency ${dependencyId}):`, error)
+      }
+    }
     for (const dependencyId of stackedIds(stream)) {
       const edge = stream.dependencyEdges[dependencyId]
       const dependency = byId.get(dependencyId)
