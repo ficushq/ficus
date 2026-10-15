@@ -21,6 +21,7 @@ import { createDispatchTool } from '../../tools/dispatch'
 import { filterToolsByPolicy } from '../../lib/tools'
 import { createSubagentLifecycleTools } from '../../tools/subagents'
 import { buildWorkspacePrompt, workspaceToolNamesForPolicy } from '../../lib/prompts/workspace-prompt'
+import { agentSecretsPromptForSandbox } from '../../lib/prompts/agent-secrets-prompt'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { Squad } from '../Squad'
 import { ensureSquadSandbox, ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
@@ -140,6 +141,11 @@ export class SquadWorkerRunner extends AgentRunner {
           toolNames: workspaceToolNamesForPolicy(this.agentType.toolsAllow, this.agentType.toolsDeny, true),
           mayShareWithSubagents: true,
         })
+      )
+      .text(
+        workspaceToolNamesForPolicy(this.agentType.toolsAllow, this.agentType.toolsDeny, true).includes('bash')
+          ? await agentSecretsPromptForSandbox(sandboxId)
+          : ''
       )
 
     if (flow) {

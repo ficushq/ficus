@@ -1527,6 +1527,13 @@
       "when": 1792083946824,
       "tag": "0217_backfilled_agent_turns_unbilled",
       "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1792087773605,
+      "tag": "0218_agent_secret_exposures",
+      "breakpoints": true
     }
   ]
 }

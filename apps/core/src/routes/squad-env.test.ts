@@ -512,4 +512,161 @@ describe('squad-env routes', () => {
       expect(res.status).toBe(400)
     })
   })
+
+  /**
+   * Adding a key to an exposure needs read access to that key in the Secret Store, on top of
+   * env:write / settings:write. Synthetic key names only: exposure stores names, never values, and
+   * these keys are never set in the store. `DEPLOY_*` is in the `integration` group and `OPENAI_*`
+   * in `provider` (config/secrets/groups.yaml).
+   */
+  describe('exposing a key requires Secret Store read access to it', () => {
+    const INTEGRATION_KEY = 'DEPLOY_SYNTH_EXPOSE_TEST_TOKEN'
+    const PROVIDER_KEY = 'OPENAI_SYNTH_EXPOSE_TEST_KEY'
+    const UNKNOWN_PROVIDER_KEY = 'OPENAI_SYNTH_NEVER_STORED_KEY'
+
+    async function userWith(permissions: string[]): Promise<TestUser> {
+      const user = await createTestUser({ prefix: rbacPrefix })
+      const role = await createTestRole({ prefix: rbacPrefix, permissions })
+      await assignRole({ userId: user.id, roleId: role.id, scope: 'system' })
+      return user
+    }
+
+    function send(user: TestUser, method: string, path: string, keys: string[]) {
+      return app.request(`/api/squads/workspace${path}`, {
+        method,
+        headers: { 'Content-Type': 'application/json', ...authHeaders(user.token) },
+        body: JSON.stringify({ keys }),
+      })
+    }
+
+    async function squadExposure(): Promise<string[]> {
+      const res = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
+      return (await res.json()).exposedSecretKeys
+    }
+
+    async function globalExposure(): Promise<string[]> {
+      const res = await app.request('/api/squads/workspace/env/global-secrets', { headers: authHeaders(admin.token) })
+      return (await res.json()).globallyExposedSecretKeys
+    }
+
+    it('refuses env:write without read access on both squad add paths, storing nothing', async () => {
+      const writer = await userWith(['env:read', 'env:write'])
+      for (const method of ['PUT', 'POST']) {
+        const res = await send(writer, method, `/${squadId}/env/secrets`, [INTEGRATION_KEY])
+        expect(res.status).toBe(403)
+        expect((await res.json()).error).toContain(INTEGRATION_KEY)
+      }
+      expect(await squadExposure()).toEqual([])
+    })
+
+    it('answers an unreadable key the same whether or not it exists in the store', async () => {
+      const operator = await userWith(['env:read', 'env:write', 'secrets:read:integration'])
+      const listed = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
+        headers: authHeaders(admin.token),
+      })
+      const existing = (await listed.json()).secrets.find((secret: any) => secret.key.startsWith('OPENAI_'))
+      expect(existing).toBeDefined()
+
+      const known = await send(operator, 'PUT', `/${squadId}/env/secrets`, [existing.key])
+      const unknown = await send(operator, 'PUT', `/${squadId}/env/secrets`, [UNKNOWN_PROVIDER_KEY])
+      expect(known.status).toBe(403)
+      expect(unknown.status).toBe(403)
+      const knownBody = JSON.stringify(await known.json()).replace(existing.key, 'KEY')
+      const unknownBody = JSON.stringify(await unknown.json()).replace(UNKNOWN_PROVIDER_KEY, 'KEY')
+      expect(knownBody).toBe(unknownBody)
+    })
+
+    it("lets a group reader add only its group's keys, and refuses a mixed change whole", async () => {
+      const operator = await userWith(['env:read', 'env:write', 'secrets:read:integration'])
+
+      expect((await send(operator, 'PUT', `/${squadId}/env/secrets`, [PROVIDER_KEY])).status).toBe(403)
+      expect((await send(operator, 'POST', `/${squadId}/env/secrets`, [INTEGRATION_KEY, PROVIDER_KEY])).status).toBe(
+        403
+      )
+      expect(await squadExposure()).toEqual([])
+
+      const res = await send(operator, 'PUT', `/${squadId}/env/secrets`, [INTEGRATION_KEY])
+      expect(res.status).toBe(200)
+      expect((await res.json()).exposedSecretKeys).toEqual([INTEGRATION_KEY])
+    })
+
+    it('always allows removal, and does not re-check keys that are already exposed', async () => {
+      expect((await send(admin, 'POST', `/${squadId}/env/secrets`, [PROVIDER_KEY])).status).toBe(200)
+      const operator = await userWith(['env:read', 'env:write', 'secrets:read:integration'])
+
+      // The unreadable key stays exposed while the operator adds a readable one, by append or replace.
+      expect((await send(operator, 'PUT', `/${squadId}/env/secrets`, [INTEGRATION_KEY])).status).toBe(200)
+      expect((await squadExposure()).sort()).toEqual([INTEGRATION_KEY, PROVIDER_KEY].sort())
+      expect((await send(operator, 'POST', `/${squadId}/env/secrets`, [PROVIDER_KEY, INTEGRATION_KEY])).status).toBe(
+        200
+      )
+
+      // A writer with no Secret Store read access at all can still remove, by DELETE or by replace.
+      const writer = await userWith(['env:read', 'env:write'])
+      expect((await send(writer, 'POST', `/${squadId}/env/secrets`, [PROVIDER_KEY])).status).toBe(200)
+      expect(await squadExposure()).toEqual([PROVIDER_KEY])
+      expect((await send(writer, 'DELETE', `/${squadId}/env/secrets`, [PROVIDER_KEY])).status).toBe(200)
+      expect(await squadExposure()).toEqual([])
+    })
+
+    it('lists only keys the caller may read, plus keys already exposed to the squad, marking which it may add', async () => {
+      const operator = await userWith(['env:read', 'env:write', 'secrets:read:integration'])
+      const list = async (user: TestUser): Promise<any[]> => {
+        const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
+          headers: authHeaders(user.token),
+        })
+        expect(res.status).toBe(200)
+        return (await res.json()).secrets
+      }
+
+      const all = await list(admin)
+      const provider = all.find((secret) => secret.key.startsWith('OPENAI_'))
+      const otherProvider = all.find((secret) => secret.key === 'APNS_KEY_ID')
+      expect(provider).toBeDefined()
+      expect(otherProvider).toBeDefined()
+
+      let listed = await list(operator)
+      const integration = listed.find((secret) => secret.key.startsWith('DEPLOY_'))
+      expect(integration.canExpose).toBe(true)
+      // No unreadable (non-integration) key name is listed while none is exposed.
+      expect(listed.every((secret) => secret.canExpose)).toBe(true)
+      expect(listed.some((secret) => secret.key === provider.key)).toBe(false)
+
+      // Exposed unreadable keys stay listed (squad: so they can be removed; global: already in the env).
+      expect((await send(admin, 'PUT', `/${squadId}/env/secrets`, [provider.key])).status).toBe(200)
+      expect((await send(admin, 'PUT', '/env/global-secrets', [otherProvider.key])).status).toBe(200)
+      listed = await list(operator)
+      const squadExposed = listed.find((secret) => secret.key === provider.key)
+      expect(squadExposed).toMatchObject({ squadExposed: true, canExpose: false })
+      const globallyExposed = listed.find((secret) => secret.key === otherProvider.key)
+      expect(globallyExposed).toMatchObject({ globallyExposed: true, canExpose: false })
+      expect(
+        listed
+          .filter((secret) => !secret.canExpose)
+          .map((secret) => secret.key)
+          .sort()
+      ).toEqual([provider.key, otherProvider.key].sort())
+    })
+
+    it('applies the same rule to global exposure', async () => {
+      const settingsWriter = await userWith(['settings:read', 'settings:write'])
+      for (const method of ['PUT', 'POST']) {
+        expect((await send(settingsWriter, method, '/env/global-secrets', [INTEGRATION_KEY])).status).toBe(403)
+      }
+      expect(await globalExposure()).toEqual([])
+
+      const operator = await userWith(['settings:read', 'settings:write', 'secrets:read:integration'])
+      expect((await send(operator, 'PUT', '/env/global-secrets', [PROVIDER_KEY])).status).toBe(403)
+      expect((await send(operator, 'POST', '/env/global-secrets', [INTEGRATION_KEY, PROVIDER_KEY])).status).toBe(403)
+      expect(await globalExposure()).toEqual([])
+      expect((await send(operator, 'PUT', '/env/global-secrets', [INTEGRATION_KEY])).status).toBe(200)
+
+      // Already-exposed keys are not re-checked, and removal needs no read access.
+      expect((await send(admin, 'PUT', '/env/global-secrets', [PROVIDER_KEY])).status).toBe(200)
+      expect((await send(operator, 'POST', '/env/global-secrets', [PROVIDER_KEY, INTEGRATION_KEY])).status).toBe(200)
+      expect((await send(settingsWriter, 'DELETE', '/env/global-secrets', [PROVIDER_KEY])).status).toBe(200)
+      expect((await send(settingsWriter, 'POST', '/env/global-secrets', [])).status).toBe(200)
+      expect(await globalExposure()).toEqual([])
+    })
+  })
 })

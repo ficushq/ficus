@@ -333,6 +333,28 @@ async function doEnsureAgentIdentityForSandbox(sandboxId: string): Promise<void>
   }
 }
 
+/**
+ * Re-render the agent's per-agent secrets file (services/agent/secrets.ts) on
+ * every ensure, so exposure, rotation and squad changes apply from the next
+ * turn. Only `agent_<id>` sandboxes have one. Fails closed: if it cannot be
+ * rendered, the file is removed and the turn runs without per-agent secrets
+ * rather than with stale ones.
+ */
+async function refreshAgentSecretsForSandbox(sandboxId: string): Promise<void> {
+  if (!sandboxId.startsWith(AGENT_SANDBOX_PREFIX)) return
+  const { materializeAgentSecretsFile, removeAgentSecretsFile } = await import('../agent/secrets')
+  try {
+    await materializeAgentSecretsFile(sandboxId)
+  } catch (error) {
+    log.error(`Per-agent secrets unavailable for ${sandboxId}; continuing without them`, error)
+    try {
+      removeAgentSecretsFile(sandboxId)
+    } catch {
+      // Nothing more to do; the asset sync reads whatever is (not) there.
+    }
+  }
+}
+
 /** In-flight agent-box drift recreates, keyed by sandboxId (see the drift block below). */
 const inflightDriftRecreates = new Map<string, Promise<void>>()
 
@@ -352,6 +374,8 @@ export async function ensureWorkspaceSandbox(
   // Must run before the manifest sync below (see the doc comment on
   // ensureAgentIdentityForSandbox for why ordering matters).
   await ensureAgentIdentityForSandbox(sandboxId)
+  // Same ordering reason: the vm sync snapshots the per-agent secrets file.
+  await refreshAgentSecretsForSandbox(sandboxId)
   // The sandbox owner row is authoritative. Callers (warmup, runners, direct
   // projection refresh) cannot select a different generation/spec identity.
   const consultantSquadId = consultantSandboxSquadId(sandboxId)

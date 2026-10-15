@@ -836,6 +836,71 @@ export async function pushSquadSshToBox(
 }
 
 // ---------------------------------------------------------------------------
+// pushAgentSecretsToBox — on-demand per-agent secrets refresh (no re-ensure)
+// ---------------------------------------------------------------------------
+
+/** Injectable seams for {@link pushAgentSecretsToBox}; each defaults to production. */
+export type PushAgentSecretsToBoxDeps = Pick<
+  PushSquadSshToBoxDeps,
+  'getMachineBox' | 'getClient' | 'boxHome' | 'bashFence' | 'stampBoxSyncedHash'
+>
+
+/**
+ * Re-sync ONE agent box's `agent-secrets` asset right away, so exposing,
+ * rotating or REVOKING a per-agent secret reaches a running vm box without
+ * waiting for the next ensure. Same contract as the asset's step in
+ * {@link syncBoxFiles}: the same dest root, file list and hash (so the next
+ * ensure sees a matching stamp), a 0600 create-mode write when the core-host
+ * file exists, and removal of the previously pushed file when it does not.
+ *
+ * Like {@link pushSquadSshToBox}, a sandbox with no `machine_boxes` row is a
+ * live mount (docker/k8s: the core-host file IS the sandbox file) and a box
+ * this process cannot reach reports `box-unreachable` — its next ensure
+ * re-syncs before any command runs there.
+ */
+export async function pushAgentSecretsToBox(
+  sandboxId: string,
+  deps: PushAgentSecretsToBoxDeps = {}
+): Promise<{ pushed: boolean; reason?: string }> {
+  const asset = SANDBOX_ASSETS.find((candidate) => candidate.name === 'agent-secrets')
+  if (!asset) throw new Error('agent-secrets asset is not declared')
+  const source = await asset.source({ sandboxId, role: 'agent' })
+  if (!source) return { pushed: false, reason: 'not-an-agent-box' }
+
+  const box = await (deps.getMachineBox ?? getMachineBoxReal)(sandboxId)
+  if (!box) return { pushed: false, reason: 'live-mount' }
+  const client = await (deps.getClient ?? defaultGetClient)(sandboxId)
+  if (!client) return { pushed: false, reason: 'box-unreachable' }
+
+  const home = (deps.boxHome ?? defaultBoxHome)(sandboxId)
+  const root = resolveBoxDest(home, asset.dest.base)
+  const files: PushableFile[] = sortByRelPath(await source.files()).map((f) => ({
+    relPath: [asset.dest.relPath, f.relPath].filter((seg) => seg.length > 0).join('/'),
+    bytes: f.bytes,
+    mode: f.mode,
+  }))
+  const previous = parseSyncedAssetState(box.syncedHashes?.[asset.name])
+  const currentFiles = files.map((file) => file.relPath).sort()
+  currentFiles.forEach((relPath) => validatedManagedPath(root, relPath))
+  // Same guard as a full sync: never write through a symlinked settings dir.
+  await runBash(client, boxWorkspaceDotDirCommand([root]), 'file_sync', undefined, deps.bashFence)
+  if (files.length) await pushAssetFiles(client, root, files, deps.bashFence)
+  const current = new Set(currentFiles)
+  // A box stamped before per-file manifests (or never stamped) still gets the
+  // fixed file path removed: revocation must not depend on stamp history.
+  const stale = previous?.files ?? [asset.dest.relPath]
+  await removeManagedFiles(
+    client,
+    root,
+    stale.filter((path) => !current.has(path)),
+    deps.bashFence
+  )
+  const stamp = deps.stampBoxSyncedHash ?? stampBoxSyncedHashReal
+  await stamp(box.machineId, sandboxId, asset.name, computeAssetHash(root, files), currentFiles)
+  return { pushed: true }
+}
+
+// ---------------------------------------------------------------------------
 // resolveBoxApiUrl — the box's callback URL (BoxEnv.FICUS_API_URL)
 // ---------------------------------------------------------------------------
 

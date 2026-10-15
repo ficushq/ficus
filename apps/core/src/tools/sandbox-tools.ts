@@ -58,6 +58,11 @@ import {
   vmWorkspaceLayout,
 } from '../services/sandbox/workspace-layout'
 import type { SandboxedToolWithKey } from '../services/sandbox/types'
+import {
+  agentIdFromAgentSandboxId,
+  agentSecretsSandboxPath,
+  withAgentSecretsSourced,
+} from '../services/sandbox/agent-secrets-file'
 import { AGENT_DIR, SKILLS_DIR } from '../lib/paths'
 import { MATERIALIZED_SKILLS_DIR, SANDBOX_SKILLS_DIR } from '../services/agent/skill-materializer'
 import {
@@ -566,7 +571,7 @@ export function createHttpBashOperations(
   manager: SandboxToolsManager,
   sandboxId: string,
   ficusToken?: string,
-  opts?: { agentId?: string; invocationId?: string }
+  opts?: { agentId?: string; invocationId?: string; agentSecretsPath?: string }
 ): BashOperations {
   const mapFailure = createOutageMapper(manager, sandboxId, opts?.agentId)
   return {
@@ -592,7 +597,9 @@ export function createHttpBashOperations(
       let cancelForRestart: () => Promise<void> = async () => {}
       const running = new Promise<{ exitCode: number | null }>((resolve, reject) => {
         const stream = client.bash({
-          command,
+          // An agent's OWN bash sources its per-agent secrets file per command
+          // (services/agent/secrets.ts); squad_bash never passes a path.
+          command: opts?.agentSecretsPath ? withAgentSecretsSourced(command, opts.agentSecretsPath) : command,
           cwd,
           invocationId: opts?.invocationId,
           timeoutSeconds: timeout,
@@ -851,7 +858,7 @@ export function createK8sSandboxedBashTool(
   sandboxId: string,
   manager: SandboxToolsManager,
   ficusToken?: string,
-  opts?: { agentId?: string; invocationOwnerId?: string }
+  opts?: { agentId?: string; invocationOwnerId?: string; agentSecretsPath?: string }
 ): AgentTool<any> {
   const makeTool = (invocationId?: string) =>
     createBashTool(cwd, {
@@ -870,6 +877,15 @@ export function createK8sSandboxedBashTool(
   }
   tool.description = `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds (default: 180s / 3 minutes, max: 3600s / 1 hour). ${FOREGROUND_BASH_GUIDANCE}`
   return tool
+}
+
+/**
+ * The per-agent secrets file an agent's OWN bash sources, or undefined for
+ * shared sandboxes (squad box, system manager, consultants). Subagents run in
+ * their root's `agent_<rootId>` box and therefore inherit the root's secrets.
+ */
+export function agentOwnBashSecretsPath(sandboxId: string): string | undefined {
+  return agentIdFromAgentSandboxId(sandboxId) ? agentSecretsSandboxPath(sandboxId) : undefined
 }
 
 /** Canonical keys for K8s sandboxed tools; use these in agent type YAML tools.allow / tools.deny. */
@@ -917,7 +933,11 @@ export function createK8sSandboxedCodingTools(
     createK8sSandboxedEditTool(workspaceMount, sandboxId, manager, squadRoute),
     workspaceMount
   )
-  const rawBash = createK8sSandboxedBashTool(bashCwd, sandboxId, manager, ficusToken, { invocationOwnerId, agentId })
+  const rawBash = createK8sSandboxedBashTool(bashCwd, sandboxId, manager, ficusToken, {
+    invocationOwnerId,
+    agentId,
+    agentSecretsPath: agentOwnBashSecretsPath(sandboxId),
+  })
   // vm-only: a squad member's private bash cannot reach the squad box's paths
   // (separate unix user). Answer a denied touch of them with a `squad_bash`
   // hint instead of leaving the model to conclude the tool does not exist.
