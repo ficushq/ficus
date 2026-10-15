@@ -3028,7 +3028,12 @@ function StreamingToolCallItem({
             </span>
           )}
           <span className="font-medium shrink-0">{toolCall.toolName}</span>
-          <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+          <ToolSummary
+            renderers={toolRenderers}
+            toolName={toolCall.toolName}
+            args={toolCall.args}
+            inProgress={inProgress}
+          />
           {firewall && <ToolFirewallBadge flag={firewall} />}
           {isError && (
             <span className="text-status-danger-500 dark:text-status-danger-400 text-[10px] font-medium shrink-0">
