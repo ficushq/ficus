@@ -197,7 +197,7 @@ describe('AgentSlotWaitStatus', () => {
     expect(text()).not.toContain('Holding')
   })
 
-  test('cached ownership is hidden during revalidation, including an in-flight reconnect', async () => {
+  test('cached ownership from before mount is hidden until confirmed, including an in-flight reconnect', async () => {
     client.setQueryData(agentSlotHoldQueryKeys.agent('squad-a', 'agent-a'), [held('old-private')])
     let resolve!: (response: Response) => void
     pendingHoldResponse = new Promise((r) => {
@@ -280,7 +280,7 @@ describe('AgentSlotWaitStatus', () => {
     expect(text()).not.toContain('Waiting for slot')
   })
 
-  test('does not present a stale cached wait as live while revalidating it', async () => {
+  test('does not present a wait cached before mount as live while revalidating it', async () => {
     client.setQueryData(agentSlotWaitQueryKeys.agent('squad-a', 'agent-a'), [queued('old-pool')])
     let resolve!: (response: Response) => void
     pendingResponse = new Promise((r) => {
@@ -397,5 +397,149 @@ describe('AgentSlotWaitStatus', () => {
     await emit('slots.updated')
     await eventually(() => expect(text()).not.toContain('shared-box-intensive'))
     expect(text()).not.toContain('Queued')
+  })
+
+  function deferred() {
+    let resolve!: (response: Response) => void
+    const promise = new Promise<Response>((r) => {
+      resolve = r
+    })
+    return { promise, resolve: (body: unknown) => dom.act(async () => resolve(new Response(JSON.stringify(body)))) }
+  }
+  async function emitAgentUpdated(agentId = 'agent-a') {
+    await dom.act(async () => {
+      captured.get('agents')!({ event: 'agent.updated', data: { agentId, squadId: 'squad-a' } })
+    })
+  }
+
+  test('keeps the rows mounted without DOM churn while unchanged data refetches', async () => {
+    holds = [held('shared-box-intensive')]
+    await render('agent-a', false, false)
+    await eventually(() => expect(text()).toBe('Holding slot: shared-box-intensiveSlot queue: shared-box-intensive'))
+    const container = dom.window.document.querySelector('.border-b')!
+    const mutations: MutationRecord[] = []
+    const observer = new dom.window.MutationObserver((records) => mutations.push(...records))
+    observer.observe(dom.window.document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+    })
+    try {
+      for (const trigger of [() => emitAgentUpdated(), () => emit('slots.updated')]) {
+        const holdResponse = deferred()
+        const waitResponse = deferred()
+        pendingHoldResponse = holdResponse.promise
+        pendingResponse = waitResponse.promise
+        const before = holdRequests.length
+        await trigger()
+        await eventually(() => expect(holdRequests.length).toBe(before + 1))
+        await eventually(() => expect(client.isFetching()).toBeGreaterThan(0))
+        expect(text()).toBe('Holding slot: shared-box-intensiveSlot queue: shared-box-intensive')
+        pendingHoldResponse = undefined
+        pendingResponse = undefined
+        await holdResponse.resolve(holds)
+        await waitResponse.resolve([queued('shared-box-intensive')])
+        await eventually(() => expect(client.isFetching()).toBe(0))
+        expect(text()).toBe('Holding slot: shared-box-intensiveSlot queue: shared-box-intensive')
+      }
+      expect(dom.window.document.querySelector('.border-b')).toBe(container)
+      expect(container.isConnected).toBe(true)
+      expect(mutations).toHaveLength(0)
+    } finally {
+      observer.disconnect()
+    }
+  })
+
+  test('updates in place when refetched data changes, and removes the row once released', async () => {
+    holds = [held('build')]
+    await render()
+    await eventually(() => expect(text()).toBe('Holding slot: buildWaiting for slot: shared-box-intensive'))
+    const holdResponse = deferred()
+    const waitResponse = deferred()
+    pendingHoldResponse = holdResponse.promise
+    pendingResponse = waitResponse.promise
+    await emit('slots.updated')
+    await eventually(() => expect(holdRequests).toHaveLength(2))
+    expect(text()).toBe('Holding slot: buildWaiting for slot: shared-box-intensive')
+    pendingHoldResponse = undefined
+    pendingResponse = undefined
+    await holdResponse.resolve([held('deploy')])
+    await eventually(() => expect(text()).toBe('Holding slot: deployWaiting for slot: shared-box-intensive'))
+    await waitResponse.resolve([queued('production-change')])
+    await eventually(() => expect(text()).toBe('Holding slot: deployWaiting for slot: production-change'))
+    holds = []
+    responses.set('agent-a', [])
+    await emitAgentUpdated()
+    await eventually(() => expect(text()).toBe(''))
+    expect(dom.window.document.querySelector('.border-b')).toBeNull()
+  })
+
+  test('a lease still expires at its deadline while a refetch is pending', async () => {
+    let now = 1_800_000_000_000
+    const clock = spyOn(Date, 'now').mockImplementation(() => now)
+    const realTimeout = globalThis.setTimeout
+    const realClear = globalThis.clearTimeout
+    const deadlines = new Map<unknown, { callback: () => void; cleared: boolean }>()
+    globalThis.setTimeout = ((callback: () => void, delay: number, ...args: unknown[]) => {
+      const id = realTimeout(callback, delay, ...args)
+      if (delay === 60_000) deadlines.set(id, { callback, cleared: false })
+      return id
+    }) as typeof setTimeout
+    globalThis.clearTimeout = ((id: Parameters<typeof clearTimeout>[0]) => {
+      const deadline = deadlines.get(id)
+      if (deadline) deadline.cleared = true
+      return realClear(id)
+    }) as typeof clearTimeout
+    try {
+      responses.set('agent-a', [])
+      holds = [held('build')]
+      await render()
+      await eventually(() => expect(text()).toBe('Holding slot: build'))
+      const holdResponse = deferred()
+      pendingHoldResponse = holdResponse.promise
+      await emit('slots.updated')
+      await eventually(() => expect(holdRequests).toHaveLength(2))
+      // Let the in-flight state reach React before checking the deadline.
+      await dom.act(async () => new Promise((resolve) => realTimeout(resolve, 20)))
+      expect(client.isFetching()).toBeGreaterThan(0)
+      expect(text()).toBe('Holding slot: build')
+      const live = [...deadlines.values()].filter((deadline) => !deadline.cleared)
+      expect(live).toHaveLength(1)
+      now += 60_000
+      await dom.act(async () => live[0]!.callback())
+      expect(text()).toBe('')
+      expect(client.isFetching()).toBeGreaterThan(0)
+      pendingHoldResponse = undefined
+      await holdResponse.resolve([])
+      await eventually(() => expect(client.isFetching()).toBe(0))
+      expect(text()).toBe('')
+    } finally {
+      globalThis.setTimeout = realTimeout
+      globalThis.clearTimeout = realClear
+      clock.mockRestore()
+    }
+  })
+
+  test('switching agents never shows the previous agent slots, even while the next read is pending', async () => {
+    holds = [held('agent-a-slot')]
+    await render()
+    await eventually(() => expect(text()).toContain('Holding slot: agent-a-slot'))
+    client.setQueryData(agentSlotHoldQueryKeys.agent('squad-a', 'agent-b'), [held('agent-b-stale')])
+    const holdResponse = deferred()
+    const waitResponse = deferred()
+    pendingHoldResponse = holdResponse.promise
+    pendingResponse = waitResponse.promise
+    await render('agent-b')
+    expect(text()).toBe('')
+    await eventually(() => expect(holdRequests).toContain('/api/agents/agent-b/slot-holds'))
+    expect(text()).toBe('')
+    pendingHoldResponse = undefined
+    pendingResponse = undefined
+    await holdResponse.resolve([held('agent-b-slot')])
+    await waitResponse.resolve([])
+    await eventually(() => expect(text()).toBe('Holding slot: agent-b-slot'))
+    expect(text()).not.toContain('agent-a-slot')
+    expect(text()).not.toContain('agent-b-stale')
   })
 })
