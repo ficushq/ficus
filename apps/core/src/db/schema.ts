@@ -958,8 +958,10 @@ export const squads = pgTable('squads', {
   // NULL -> default 30; 0 = park immediately. Negative rejected at the API.
   blockedGraceMinutes: integer('blocked_grace_minutes'),
   // Idle consultants (no message for this many days, or never messaged and
-  // created that long ago) are made dormant by the lifecycle sweep. NULL = off.
-  consultantIdleDormancyDays: integer('consultant_idle_dormancy_days'),
+  // created that long ago) are made dormant by the lifecycle sweep. On by default
+  // (DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS in @ficus/shared; keep in sync).
+  // NULL = explicitly turned off in squad settings.
+  consultantIdleDormancyDays: integer('consultant_idle_dormancy_days').default(30),
   sandboxStatus: sandboxStatusEnum('sandbox_status').notNull().default('none'),
   avatarImageId: uuid('avatar_image_id').references((): AnyPgColumn => images.id, { onDelete: 'set null' }),
   // VM sandbox runtime (machines): the machine this squad's box is pinned to,

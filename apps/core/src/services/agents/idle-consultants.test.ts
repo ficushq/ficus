@@ -39,10 +39,12 @@ describe('idle consultant dormancy', () => {
     if (squadIds.length) await db.delete(squads).where(inArray(squads.id, squadIds))
   })
 
-  async function squad(consultantIdleDormancyDays: number | null) {
+  /** A fixture squad; omit the setting to keep what a new squad starts with. */
+  async function squad(consultantIdleDormancyDays?: number | null) {
     const created = await Squad.create({ name: `idle-${randomUUID()}`, purpose: 'idle consultant fixture' })
     squadIds.push(created.id)
-    await db.update(squads).set({ consultantIdleDormancyDays }).where(eq(squads.id, created.id))
+    if (consultantIdleDormancyDays !== undefined)
+      await db.update(squads).set({ consultantIdleDormancyDays }).where(eq(squads.id, created.id))
     return created
   }
 
@@ -141,6 +143,26 @@ describe('idle consultant dormancy', () => {
     expect(await status(compacting.id)).toBe('compacting')
     expect(await status(worker.id)).toBe('idle')
     expect(await status(unconfigured.id)).toBe('idle')
+  })
+
+  it('sweeps a new squad at 30 days by default, respects a custom value, and skips a squad that turned it off', async () => {
+    const byDefault = await squad()
+    const custom = await squad(60)
+    const off = await squad(null)
+    expect((await Squad.find(byDefault.id))?.consultantIdleDormancyDays).toBe(30)
+    const defaultIdle = await agent(byDefault.id, { lastMessageAt: daysAgo(31), createdAt: daysAgo(100) })
+    const defaultRecent = await agent(byDefault.id, { lastMessageAt: daysAgo(29), createdAt: daysAgo(100) })
+    const customIdle = await agent(custom.id, { lastMessageAt: daysAgo(61), createdAt: daysAgo(100) })
+    const customNotYet = await agent(custom.id, { lastMessageAt: daysAgo(45), createdAt: daysAgo(100) })
+    const turnedOff = await agent(off.id, { lastMessageAt: daysAgo(365), createdAt: daysAgo(400) })
+
+    const count = await runIdleConsultantDormancySweep({ now, squadIds: [byDefault.id, custom.id, off.id] })
+    expect(count).toBe(2)
+    expect(await status(defaultIdle.id)).toBe('dormant')
+    expect(await status(defaultRecent.id)).toBe('idle')
+    expect(await status(customIdle.id)).toBe('dormant')
+    expect(await status(customNotYet.id)).toBe('idle')
+    expect(await status(turnedOff.id)).toBe('idle')
   })
 
   it('caps the agents one sweep tick makes dormant', async () => {

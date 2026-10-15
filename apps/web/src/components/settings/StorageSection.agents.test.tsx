@@ -452,7 +452,7 @@ describe('StorageSection cleanup dialogs', () => {
     try {
       await ui.dom.act(async () => ui.button('Make idle consultants dormant…')!.click())
       await ui.settle(() => (ui.dialog()?.textContent ?? '').includes('Plan launch · Ada'))
-      expect(ui.calls.some((call) => call.url.endsWith('/squads/squad/idle-consultants?days=90'))).toBe(true)
+      expect(ui.calls.some((call) => call.url.endsWith('/squads/squad/idle-consultants?days=30'))).toBe(true)
       const text = ui.dialog()!.textContent ?? ''
       expect(text).toContain('Last active 120 days ago')
       expect(text).toContain('No space is freed now')
@@ -461,7 +461,7 @@ describe('StorageSection cleanup dialogs', () => {
       await ui.dom.act(async () => ui.button('Make 1 dormant', ui.dialog()!)!.click())
       await ui.settle(() => ui.calls.some((call) => call.url.includes('/idle-consultants/dormant')))
       expect(ui.calls.find((call) => call.url.includes('/idle-consultants/dormant'))?.body).toEqual({
-        days: 90,
+        days: 30,
         agentIds: ['a'],
       })
       await ui.settle(() => (ui.document.body.textContent ?? '').includes('Made 1 idle consultant dormant.'))

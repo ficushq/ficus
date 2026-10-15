@@ -185,7 +185,8 @@ export function resetIdleConsultantBackoffForTest(): void {
 
 /**
  * Lifecycle-sweep step: for each squad with `consultant_idle_dormancy_days`
- * set, make its idle consultants dormant. At most `maxAgents` become dormant
+ * set (every squad by default; null means the squad turned it off), make its
+ * idle consultants dormant. At most `maxAgents` become dormant
  * per tick (failures are not charged), with a bounded number of attempts.
  * @returns the number of agents made (or requested to become) dormant.
  */

@@ -123,7 +123,7 @@ export async function relockUnstartedReadyEdge(tx: DbHandle, streamId: string, d
   const relocked = await tx
     .update(workStreams)
     .set({
-      dependencyEdges: sql`${workStreams.dependencyEdges} #- ${`{${dependencyId},readyUnlockedAt}`}::text[]`,
+      dependencyEdges: sql`${workStreams.dependencyEdges} #- ${`{${dependencyId},readyUnlockedAt}`}::text[] #- ${`{${dependencyId},stackRetryingSince}`}::text[]`,
       updatedAt: new Date(),
     })
     .where(
@@ -208,6 +208,33 @@ export async function settleStackClaim(
   return rows.length > 0
 }
 
+/**
+ * Stamp when stacking first found no runtime for these edges, keeping an
+ * earlier stamp. One guarded statement; returns the stamps now stored.
+ */
+export async function markStackRetrying(
+  tx: DbHandle,
+  streamId: string,
+  dependencyIds: string[],
+  at = new Date()
+): Promise<Record<string, string>> {
+  if (dependencyIds.length === 0) return {}
+  let next = sql`${workStreams.dependencyEdges}`
+  for (const id of dependencyIds)
+    next = sql`jsonb_set(${next}, ${`{${id},stackRetryingSince}`}::text[], coalesce(${edgeOf(id)}->'stackRetryingSince', to_jsonb(${at.toISOString()}::text)))`
+  const [row] = await tx
+    .update(workStreams)
+    .set({ dependencyEdges: next })
+    .where(and(eq(workStreams.id, streamId), ...dependencyIds.map((id) => sql`${edgeOf(id)}->>'condition' = 'ready'`)))
+    .returning({ dependencyEdges: workStreams.dependencyEdges })
+  const stored: Record<string, string> = {}
+  for (const id of dependencyIds) {
+    const since = row?.dependencyEdges?.[id]?.stackRetryingSince
+    if (since) stored[id] = since
+  }
+  return stored
+}
+
 /** Merge a server-owned patch into an edge's existing stack decision. No-op when there is none. */
 export async function patchEdgeStack(
   tx: DbHandle,
@@ -224,7 +251,7 @@ export async function patchEdgeStack(
       and(
         eq(workStreams.id, streamId),
         sql`${edgeOf(dependencyId)}->>'condition' = 'ready'`,
-        sql`${edgeOf(dependencyId)}->'stack'->>'mode' IN ('stacked', 'included', 'manual')`
+        sql`${edgeOf(dependencyId)}->'stack'->>'mode' IN ('stacked', 'included', 'manual', 'none')`
       )
     )
     .returning({ id: workStreams.id })

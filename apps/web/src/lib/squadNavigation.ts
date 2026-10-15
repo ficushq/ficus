@@ -17,7 +17,8 @@ export const SQUAD_TABS = [
 export const SQUAD_SETTINGS_SECTIONS = [
   { id: 'general', label: 'General' },
   { id: 'context', label: 'Instructions' },
-  { id: 'workflows', label: 'Workflows' },
+  // Default workflow, work capacity and merge policies. Old 'workflows' links resolve here.
+  { id: 'work', label: 'Work' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'workspace', label: 'Workspace' },
@@ -30,7 +31,7 @@ export function resolveSquadSettingsSection(section: string | null, target?: str
     (!section || section === 'general') &&
     ['max-concurrent-work-streams', 'auto-park-grace-minutes', 'default-workflow'].includes(target ?? '')
   )
-    return 'workflows'
+    return 'work'
   if (
     (!section || section === 'integrations') &&
     ['sandbox-github-identity', 'git-author-name', 'git-author-email'].includes(target ?? '')
@@ -40,7 +41,8 @@ export function resolveSquadSettingsSection(section: string | null, target?: str
   return (
     (
       {
-        policies: 'workflows',
+        policies: 'work',
+        workflows: 'work',
         sandbox: 'workspace',
         environment: 'workspace',
         ssh: 'access',

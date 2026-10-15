@@ -720,7 +720,7 @@ describe('ready dependencies', () => {
       expect(await fixtureGit(active.worktree, 'rev-parse', 'HEAD')).toBe(head)
     })
 
-    async function stackedPairForRegression() {
+    async function stackedPairForRegression(dependentOverrides: Partial<Parameters<typeof WorkStream.create>[0]> = {}) {
       fixture = await createStackingFixture()
       const active = fixture
       const head = await active.pushDependencyBranch('work/dependency', 'dependency.txt')
@@ -743,10 +743,97 @@ describe('ready dependencies', () => {
             baseCommit: active.baseCommit,
           },
         },
+        ...dependentOverrides,
       })
       await makeReady(dependency)
       return { active, head, dependency, dependent }
     }
+
+    it('a ready dependency canceled while the admitted stream is undecided opens no wait when the edges are re-sent', async () => {
+      // The reviewer probe: admitted during an outage, so no stack decision yet; then the
+      // dependency is canceled and the dependency list is re-sent before the reconciler runs.
+      await squad.update({ blockedGraceMinutes: 0 })
+      const { dependency, dependent } = await stackedPairForRegression({ assigneeAgentId: assigneeId })
+      await promoteEligibleQueuedStreams(squad.id)
+      expect(await statusOf(dependent)).toBe('active')
+      expect((await reload(dependent)).dependencyEdges[dependency.id]!.stack).toBeUndefined()
+
+      await (await reload(dependency)).cancel()
+      await (await reload(dependent)).update({ dependsOn: [ready(dependency)] })
+
+      expect(await listOpenWaits(db, dependent.id)).toEqual([])
+      const { parked } = await runSquadAdmissionMaintenance(squad.id, { removeSandbox: async () => {} })
+      expect(parked).toEqual([])
+      expect(await statusOf(dependent)).toBe('active')
+    })
+
+    it('a dependency canceled before the stack decision is told once to the assignee and the owner', async () => {
+      const { active, dependency, dependent } = await stackedPairForRegression({ assigneeAgentId: assigneeId })
+      await promoteEligibleQueuedStreams(squad.id)
+      await (await reload(dependency)).cancel()
+      await deliverStackNoticesForDependency(dependency.id)
+
+      setStackingRuntimeForTest(async () => ({ exec: gitFixtureExec }))
+      await reconcileStackedStreams()
+      await reconcileStackedStreams()
+      await deliverStackNoticesForDependency(dependency.id)
+
+      const current = await reload(dependent)
+      expect(current.dependencyEdges[dependency.id]!.stack).toMatchObject({ mode: 'none', dependencyCanceled: true })
+      expect(current.dependencies[0]!.holdsDelivery).toBeUndefined()
+      expect(await fixtureGit(active.worktree, 'rev-parse', 'HEAD')).toBe(active.baseCommit)
+      const sent = await notices(dependent, 'dependency_canceled_after_unlock')
+      expect(sent.map((notice) => notice.recipientId).sort()).toEqual([assigneeId, ownerId].sort())
+      expect(sent.find((notice) => notice.recipientId === assigneeId)!.deliveryMode).toBe('steer')
+      expect(sent[0]!.content).toContain('was not built on it')
+    })
+
+    it('the outage retry window runs from the first attempt after admission, not from the unlock', async () => {
+      await squad.update({ maxConcurrentWorkStreams: 2 })
+      await createStream('holder')
+      const { active, head, dependency, dependent } = await stackedPairForRegression()
+      // The edge unlocks, but the stream waits behind the cap (here: for half an hour).
+      await promoteEligibleQueuedStreams(squad.id)
+      expect(await statusOf(dependent)).toBe('queued')
+      const unlocked = (await reload(dependent)).dependencyEdges[dependency.id]!
+      expect(unlocked.readyUnlockedAt).toBeDefined()
+      await setEdges(dependent, {
+        [dependency.id]: { ...unlocked, readyUnlockedAt: new Date(Date.now() - 30 * 60_000).toISOString() },
+      })
+      // Admitted only now, during an outage.
+      await squad.update({ maxConcurrentWorkStreams: null })
+      await promoteEligibleQueuedStreams(squad.id)
+      const pending = await reload(dependent)
+      expect(pending.status).toBe('active')
+      expect(pending.dependencyEdges[dependency.id]!.stack).toBeUndefined()
+      const since = pending.dependencyEdges[dependency.id]!.stackRetryingSince!
+      expect(Date.now() - Date.parse(since)).toBeLessThan(60_000)
+
+      // Still within the window: another failed attempt keeps the first stamp and stays open.
+      await reconcileStackedStreams()
+      const retried = await reload(dependent)
+      expect(retried.dependencyEdges[dependency.id]!.stack).toBeUndefined()
+      expect(retried.dependencyEdges[dependency.id]!.stackRetryingSince).toBe(since)
+
+      setStackingRuntimeForTest(async () => ({ exec: gitFixtureExec }))
+      await reconcileStackedStreams()
+      expect((await reload(dependent)).dependencies[0]).toMatchObject({ stack: { mode: 'stacked', headSha: head } })
+      expect(await fixtureGit(active.worktree, 'rev-parse', 'HEAD')).toBe(head)
+    })
+
+    it('after ten minutes of outage from the first attempt, the assignee is asked to merge', async () => {
+      const { dependency, dependent } = await stackedPairForRegression()
+      await promoteEligibleQueuedStreams(squad.id)
+      const edge = (await reload(dependent)).dependencyEdges[dependency.id]!
+      await setEdges(dependent, {
+        [dependency.id]: { ...edge, stackRetryingSince: new Date(Date.now() - 11 * 60_000).toISOString() },
+      })
+      await reconcileStackedStreams()
+      expect((await reload(dependent)).dependencyEdges[dependency.id]!.stack).toMatchObject({
+        mode: 'manual',
+        reason: 'the squad runtime was unavailable',
+      })
+    })
 
     it('a merge with nobody to tell stays owed until the stream has an assignee', async () => {
       const dependency = await createStream('dependency')

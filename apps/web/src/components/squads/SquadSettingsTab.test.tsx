@@ -130,10 +130,21 @@ describe('SquadSettingsTab danger zone', () => {
   })
 
   test('belongs to General only', () => {
-    for (const section of ['workflows', 'context', 'workspace', 'access']) {
+    for (const section of ['work', 'context', 'workspace', 'access']) {
       const html = renderSettingsTab(['squads:delete'], `/squads/squad-1/settings?section=${section}`)
       expect(html).not.toContain('Danger zone')
       expect(html).not.toContain('Archive squad')
+    }
+  })
+})
+
+describe('SquadSettingsTab Work section', () => {
+  test('the work id and old workflows links both open the Work page', () => {
+    for (const section of ['work', 'workflows']) {
+      const html = renderSettingsTab(['squads:update'], `/squads/squad-1/settings?section=${section}`)
+      expect(html).toContain('Work capacity')
+      expect(html).toContain('squad-max-concurrent-work-streams')
+      expect(html).not.toContain('id="squad-name"')
     }
   })
 })

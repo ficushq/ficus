@@ -9,7 +9,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { SquadAvatarSettings } from './SquadAvatarSettings'
 import { updateSquadSchema, type UpdateSquadInput } from '@ficus/shared'
 
-type SettingsSection = 'general' | 'workflows' | 'workspace'
+type SettingsSection = 'general' | 'work' | 'workspace'
 
 interface Props {
   section?: SettingsSection
@@ -99,7 +99,7 @@ export function SquadGeneralSettings({
   const dirty =
     section === 'general'
       ? nameValue !== name || purposeValue !== purpose || globalCollaborationEnabledValue !== globalCollaborationEnabled
-      : section === 'workflows'
+      : section === 'work'
         ? maxConcurrentWorkStreamsValue !== maxConcurrentWorkStreams || blockedGraceMinutesValue !== blockedGraceMinutes
         : hostWorkspacePathValue !== hostWorkspacePath
   const graceError = blockedGraceMinutesError(blockedGraceMinutesValue)
@@ -107,7 +107,7 @@ export function SquadGeneralSettings({
   const isValid =
     section === 'general'
       ? nameValue.trim().length > 0 && purposeValue.trim().length > 0
-      : section === 'workflows'
+      : section === 'work'
         ? graceError === null
         : hostError === null
 
@@ -134,7 +134,7 @@ export function SquadGeneralSettings({
             purpose: purposeValue.trim(),
             globalCollaborationEnabled: globalCollaborationEnabledValue,
           }
-        : section === 'workflows'
+        : section === 'work'
           ? { maxConcurrentWorkStreams: maxConcurrentWorkStreamsValue, blockedGraceMinutes: blockedGraceMinutesValue }
           : { hostWorkspacePath: hostWorkspacePathValue }
     )
@@ -163,15 +163,15 @@ export function SquadGeneralSettings({
   return (
     <div>
       {section === 'general' && <SquadAvatarSettings squadId={squadId} name={name} />}
-      {section === 'workflows' && <SquadWorkflowSettings squadId={squadId} canEdit={canUpdateSquad} />}
+      {section === 'work' && <SquadWorkflowSettings squadId={squadId} canEdit={canUpdateSquad} />}
       <div className="mb-4">
         <h3 className="text-sm font-medium text-primary">
-          {section === 'general' ? 'General' : section === 'workflows' ? 'Work capacity' : 'Workspace directory'}
+          {section === 'general' ? 'General' : section === 'work' ? 'Work capacity' : 'Workspace directory'}
         </h3>
         <p className="text-xs text-muted mt-1">
           {section === 'general'
             ? 'The squad’s identity and how other squads discover it.'
-            : section === 'workflows'
+            : section === 'work'
               ? 'Control how much work runs at once and when waiting work frees a slot.'
               : 'Choose where this squad works on the Ficus host.'}
         </p>
@@ -236,7 +236,7 @@ export function SquadGeneralSettings({
             </div>
           </>
         )}
-        {section === 'workflows' && (
+        {section === 'work' && (
           <>
             {/* Max Concurrent Work Streams */}
             <div>

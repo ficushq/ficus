@@ -53,9 +53,15 @@ test('app paths are named from the navigation definitions', () => {
     title: 'Agent conversation',
     squadId: 'ficus',
   })
-  expect(describeAppPath('/squads/ficus/settings?section=workflows')).toEqual({
+  for (const section of ['work', 'workflows'])
+    expect(describeAppPath(`/squads/ficus/settings?section=${section}`)).toEqual({
+      kind: 'settings',
+      title: 'Work settings',
+      squadId: 'ficus',
+    })
+  expect(describeAppPath('/squads/ficus/settings')).toEqual({
     kind: 'settings',
-    title: 'Workflows settings',
+    title: 'Squad settings',
     squadId: 'ficus',
   })
   expect(describeAppPath('/squads/ficus/memory')).toEqual({ kind: 'squad', title: 'Memory', squadId: 'ficus' })
