@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import type { InboxMessageResponse } from '../api/inbox'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { queries } from '../queryOptions'
+import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
 import { InboxPage } from './InboxPage'
 
@@ -38,7 +39,12 @@ describe('InboxPage responsive list gutters', () => {
         },
       ] as InboxMessageResponse[]
       if (mixed) messages.unshift({ ...messages[0], id: 'unread', readAt: null })
-      client.setQueryData(queries.inbox.mine(true).queryKey, messages)
+      const page = (items: InboxMessageResponse[]) => ({
+        pages: [{ items, hasMore: false, nextCursor: null, totalCount: items.length }],
+        pageParams: [null],
+      })
+      client.setQueryData(queryKeys.inbox.mineInfinite('unread'), page(messages.filter((m) => !m.readAt)))
+      client.setQueryData(queryKeys.inbox.mineInfinite('read'), page(messages.filter((m) => m.readAt)))
 
       const container = document.createElement('div')
       container.innerHTML = renderToStaticMarkup(
