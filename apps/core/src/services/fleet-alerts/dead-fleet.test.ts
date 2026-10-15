@@ -1,9 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { and, eq, inArray, isNull, like } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, executions, fleetIncidentNotifications, fleetIncidents, inbox, squads } from '../../db/schema'
+import { createBlankWorkflow, createWorkflowRun, resolveWorkflow } from '@ficus/shared'
+import {
+  agents,
+  executions,
+  fleetIncidentNotifications,
+  fleetIncidents,
+  inbox,
+  monitors,
+  squads,
+  workStreamFlowRuns,
+  workStreams,
+} from '../../db/schema'
 import { eventEmitter } from '../../lib/infra/event-emitter'
-import type { SquadDemandSnapshot } from './demand'
+import { getSquadDemandSnapshots, SUPERVISED_ACTIVITY_WINDOW_MS, type SquadDemandSnapshot } from './demand'
 import { reconcileDeadFleet } from './dead-fleet'
 import { FleetIncidentNotifier } from './notifier'
 
@@ -336,6 +347,81 @@ describe('dead fleet reconciliation', () => {
       'alert:manager',
       'recovery:manager',
     ])
+  })
+
+  test('an idle worker supervising a live monitor is not stalled; a silent monitor alerts and new output recovers', async () => {
+    // A flow attempt is running with no waits; its agent is idle between monitor events.
+    const streamId = crypto.randomUUID()
+    await db.insert(workStreams).values({
+      id: streamId,
+      squadId,
+      title: `supervised-${streamId}`,
+      status: 'active',
+      assigneeAgentId: agentId,
+      createdAt: START,
+      updatedAt: START,
+    })
+    const definition = createBlankWorkflow()
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: streamId,
+      activated: true,
+      state: createWorkflowRun(definition),
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      attemptAgents: { '1': agentId },
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+    })
+    const monitorId = crypto.randomUUID()
+    await db.insert(monitors).values({
+      id: monitorId,
+      agentId,
+      sandboxId: 'fixture-sandbox',
+      label: 'download log',
+      command: 'tail -F app.log | grep --line-buffered DONE',
+      status: 'running',
+      processId: `fixture-${monitorId}`,
+      timeoutMs: 86_400_000,
+      maxBatchLines: 20,
+      maxBatchBytes: 4096,
+      batchDebounceMs: 750,
+      createdAt: START,
+      startedAt: START,
+      launchedAt: START,
+      lastBatchAt: START,
+    })
+    // The last event woke the worker, which then went idle.
+    await db
+      .insert(executions)
+      .values({ agentId, status: 'completed', startedAt: START, runStartedAt: START, endedAt: at(60_000) })
+    const reconcileAt = async (now: Date) => {
+      const snapshots = await getSquadDemandSnapshots({ now })
+      await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshots.get(squadId)!]]) })
+    }
+
+    // 45 minutes idle: past the 30-minute stall window, but the monitor is live.
+    await reconcileAt(at(45 * 60_000))
+    expect(await incidents()).toEqual([])
+
+    // The monitor stays silent past the activity window: a real stall, alerted at once.
+    const stalledAt = at(SUPERVISED_ACTIVITY_WINDOW_MS + 60_000)
+    await reconcileAt(stalledAt)
+    const [incident] = await incidents()
+    expect(incident).toMatchObject({ startedAt: START, resolvedAt: null })
+    expect((await notifications(incident!.id)).some((row) => row.kind === 'alert')).toBe(true)
+    await db
+      .update(fleetIncidentNotifications)
+      .set({ status: 'delivered', deliveredAt: stalledAt })
+      .where(
+        and(eq(fleetIncidentNotifications.incidentId, incident!.id), eq(fleetIncidentNotifications.audience, 'manager'))
+      )
+
+    // New output proves the job is advancing again: the incident resolves with a recovery.
+    const recoveredAt = new Date(stalledAt.getTime() + 60_000)
+    await db.update(monitors).set({ lastBatchAt: recoveredAt }).where(eq(monitors.id, monitorId))
+    await reconcileAt(recoveredAt)
+    expect((await incidents())[0]?.resolvedAt).toEqual(recoveredAt)
+    expect((await notifications(incident!.id)).some((row) => row.kind === 'recovery')).toBe(true)
   })
 
   test('does not persist incidents for quiet, parked, or open-wait demand represented by zero', async () => {

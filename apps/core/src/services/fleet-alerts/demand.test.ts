@@ -7,13 +7,15 @@ import {
   executions,
   inbox,
   instanceMaintenanceState,
+  localDeployments,
+  monitors,
   schedules,
   squads,
   workStreamWaits,
   workStreamFlowRuns,
   workStreams,
 } from '../../db/schema'
-import { getSquadDemandSnapshots } from './demand'
+import { getSquadDemandSnapshots, SUPERVISED_ACTIVITY_WINDOW_MS } from './demand'
 
 const NOW = new Date('2026-08-18T12:00:00.000Z')
 const at = (minutesBeforeNow: number) => new Date(NOW.getTime() - minutesBeforeNow * 60_000)
@@ -269,6 +271,109 @@ describe('actionable squad demand', () => {
       })
       .where(eq(workStreams.id, id))
     expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
+  })
+
+  test('an idle attempt agent supervising a live monitor or local app is not a stall until its signal goes stale', async () => {
+    const id = await addWorkStream({ assigneeAgentId: targetAgentId })
+    const definition = createBlankWorkflow()
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: id,
+      activated: true,
+      state: createWorkflowRun(definition),
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      attemptAgents: { '1': targetAgentId },
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+    })
+    const count = async () => (await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count
+    const windowMinutes = SUPERVISED_ACTIVITY_WINDOW_MS / 60_000
+    // No run, no monitor, no app: a real stall.
+    expect(await count()).toBe(1)
+
+    const monitorId = crypto.randomUUID()
+    await db.insert(monitors).values({
+      id: monitorId,
+      agentId: targetAgentId,
+      sandboxId: 'fixture-sandbox',
+      label: 'download log',
+      command: 'tail -F app.log | grep --line-buffered DONE',
+      status: 'running',
+      processId: `fixture-${monitorId}`,
+      timeoutMs: 86_400_000,
+      maxBatchLines: 20,
+      maxBatchBytes: 4096,
+      batchDebounceMs: 750,
+      createdAt: at(windowMinutes + 60),
+      startedAt: at(windowMinutes + 60),
+      launchedAt: at(windowMinutes + 60),
+      lastBatchAt: at(40),
+    })
+    // Recent output: the agent is idle between events of live work.
+    expect(await count()).toBe(0)
+    // Silent past the window: the monitor no longer masks the stall.
+    await db
+      .update(monitors)
+      .set({ lastBatchAt: at(windowMinutes + 1) })
+      .where(eq(monitors.id, monitorId))
+    expect(await count()).toBe(1)
+    // A recent relaunch is a fresh sign of life.
+    await db
+      .update(monitors)
+      .set({ launchedAt: at(5) })
+      .where(eq(monitors.id, monitorId))
+    expect(await count()).toBe(0)
+    // A lost or finished monitor is not activity.
+    await db.update(monitors).set({ status: 'exited' }).where(eq(monitors.id, monitorId))
+    expect(await count()).toBe(1)
+    // Another squad agent's monitor does not cover this stream's attempt agent.
+    await db.update(monitors).set({ status: 'running', agentId: secondTargetAgentId }).where(eq(monitors.id, monitorId))
+    expect(await count()).toBe(1)
+
+    const appId = crypto.randomUUID()
+    await db.insert(localDeployments).values({
+      id: appId,
+      squadId: targetSquadId,
+      sandboxId: 'fixture-sandbox',
+      name: 'archive-download',
+      port: 20_000 + Math.floor(Math.random() * 40_000),
+      portScope: `sandbox:fixture-${appId}`,
+      targetHost: '127.0.0.1',
+      mode: 'managed',
+      status: 'running',
+      restartPolicy: 'always',
+      createdByAgentId: targetAgentId,
+      createdAt: at(windowMinutes + 300),
+      updatedAt: at(windowMinutes + 300),
+    })
+    // A long-running app whose owner has not checked in within the window can mask nothing.
+    await db.insert(executions).values({
+      agentId: targetAgentId,
+      status: 'completed',
+      startedAt: at(windowMinutes + 10),
+      runStartedAt: at(windowMinutes + 10),
+    })
+    expect(await count()).toBe(1)
+    // The owner checked on it recently: the running app is the stream's progress.
+    await db
+      .insert(executions)
+      .values({ agentId: targetAgentId, status: 'completed', startedAt: at(50), runStartedAt: at(50) })
+    expect(await count()).toBe(0)
+    // Crashed, stopped, attached, foreign-squad or another agent's apps are not this stream's activity.
+    await db.update(localDeployments).set({ status: 'crashed' }).where(eq(localDeployments.id, appId))
+    expect(await count()).toBe(1)
+    await db.update(localDeployments).set({ status: 'running', mode: 'attached' }).where(eq(localDeployments.id, appId))
+    expect(await count()).toBe(1)
+    await db
+      .update(localDeployments)
+      .set({ mode: 'managed', createdByAgentId: secondTargetAgentId })
+      .where(eq(localDeployments.id, appId))
+    expect(await count()).toBe(1)
+    await db
+      .update(localDeployments)
+      .set({ createdByAgentId: targetAgentId, archivedAt: at(1) })
+      .where(eq(localDeployments.id, appId))
+    expect(await count()).toBe(1)
   })
 
   test('obsolete resume notices for finished streams are not inbox demand', async () => {

@@ -21,6 +21,18 @@ const liveAgentStatusSql = sql.join(
   sql`, `
 )
 
+/**
+ * How long a stream agent's supervised background work counts as progress
+ * without a fresh signal. An agent that waits on a long job through an
+ * event-only monitor (or a managed local app plus periodic check-ins) is idle
+ * between events, often for 30-45 minutes at a time, while the job advances.
+ * Two hours is four times the 30-minute dead-fleet alert window, so such gaps
+ * do not raise false stalls, while a monitor that has gone silent (or an app
+ * whose owner stopped checking it) still raises a stall alert at most two hours
+ * after its last sign of life rather than masking a real stall indefinitely.
+ */
+export const SUPERVISED_ACTIVITY_WINDOW_MS = 2 * 60 * 60_000
+
 interface StreamDemand {
   createdAt: string
   metadata: unknown
@@ -29,27 +41,41 @@ interface StreamDemand {
   waits: Array<{ flowAttemptId: number | null }>
   state: WorkflowRun | null
   attemptAgents: Record<string, string>
+  /**
+   * Stream agents (assignee, participants, flow attempt agents) whose supervised
+   * background work proves progress within {@link SUPERVISED_ACTIVITY_WINDOW_MS}:
+   * a running monitor with recent output or (re)launch, or a running managed
+   * local app the agent created in the stream's squad while the agent ran recently.
+   */
+  supervisingAgents?: string[]
 }
 
 /** Match workflow dispatch: a blocked branch must not hide a runnable sibling. */
 export function hasRunnableStreamDemand(stream: StreamDemand): boolean {
   if (stream.waits.some((wait) => wait.flowAttemptId == null)) return false
-  if (!stream.state) return !stream.busy && stream.waits.length === 0 && stream.participants.length > 0
+  const supervising = new Set(stream.supervisingAgents ?? [])
+  // Without a per-attempt owner, any stream agent's live background work is the stream's progress.
+  if (!stream.state)
+    return !stream.busy && stream.waits.length === 0 && stream.participants.length > 0 && supervising.size === 0
   if (stream.state.status === 'paused' || awaitsCodeHostDelivery(stream.state, stream.metadata)) return false
   if (stream.state.status === 'completion-ready') {
     // Human delivery approval is external; missing PR/delivery setup still needs an agent.
     return (
-      !stream.busy && stream.state.definition.completion.mode !== 'review-approval' && stream.participants.length > 0
+      !stream.busy &&
+      stream.state.definition.completion.mode !== 'review-approval' &&
+      stream.participants.length > 0 &&
+      supervising.size === 0
     )
   }
   if (stream.state.status !== 'running') return false
   return activeWorkflowAttempts(stream.state).some((attempt) => {
     const step = attempt.step ?? stream.state!.definition.steps.find((step) => step.id === attempt.stepId)
+    const attemptAgent = stream.attemptAgents[String(attempt.id)]
     return (
       step?.kind === 'agent' &&
       !stream.waits.some((wait) => wait.flowAttemptId === attempt.id) &&
-      (!stream.attemptAgents[String(attempt.id)] ||
-        stream.participants.includes(stream.attemptAgents[String(attempt.id)]!))
+      // A live agent idle between events of work it supervises is progressing, not stalled.
+      (!attemptAgent || (stream.participants.includes(attemptAgent) && !supervising.has(attemptAgent)))
     )
   })
 }
@@ -80,6 +106,7 @@ interface DemandRow extends Record<string, unknown> {
  */
 export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map<string, SquadDemandSnapshot>> {
   const now = input.now.toISOString()
+  const activityCutoff = new Date(input.now.getTime() - SUPERVISED_ACTIVITY_WINDOW_MS).toISOString()
   const rows = await db.execute<DemandRow>(sql`
     WITH active_squads AS (
       SELECT id, manager_agent_id
@@ -209,6 +236,33 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         'attemptAgents', COALESCE(flow.attempt_agents, '{}'::jsonb),
         'waits', (SELECT COALESCE(jsonb_agg(jsonb_build_object('flowAttemptId', wait.flow_attempt_id)), '[]'::jsonb)
           FROM work_stream_waits AS wait WHERE wait.work_stream_id = stream.id AND wait.closed_at IS NULL),
+        -- Idle agents whose supervised background work is still advancing
+        -- (see SUPERVISED_ACTIVITY_WINDOW_MS). Liveness is the supervisors':
+        -- a monitor leaves 'running' once its process is lost, and a local app
+        -- leaves 'running' when its health poll fails.
+        'supervisingAgents', (SELECT COALESCE(jsonb_agg(owner.id), '[]'::jsonb)
+          FROM agents AS owner
+          WHERE owner.squad_id = stream.squad_id
+            AND (owner.id = stream.assignee_agent_id OR owner.id = ANY(COALESCE(stream.agent_ids, '{}'::uuid[]))
+              OR owner.id::text IN (SELECT value FROM jsonb_each_text(COALESCE(flow.attempt_agents, '{}'::jsonb))))
+            AND (
+              EXISTS (SELECT 1 FROM monitors AS monitor
+                WHERE monitor.agent_id = owner.id AND monitor.status = 'running'
+                  -- Output or a (re)launch is the freshness signal: a monitor
+                  -- that stays silent past the window no longer masks a stall.
+                  AND GREATEST(monitor.last_batch_at, monitor.launched_at, monitor.started_at, monitor.created_at)
+                    >= ${activityCutoff}::timestamptz)
+              OR EXISTS (SELECT 1 FROM local_deployments AS app
+                WHERE app.created_by_agent_id = owner.id AND app.squad_id = stream.squad_id
+                  AND app.archived_at IS NULL AND app.mode = 'managed' AND app.status = 'running'
+                  -- An app has no output signal here, so it counts only while it
+                  -- recently (re)started or its owner recently checked in.
+                  AND (app.updated_at >= ${activityCutoff}::timestamptz OR EXISTS (
+                    SELECT 1 FROM executions AS execution
+                    WHERE execution.agent_id = owner.id
+                      AND execution.run_started_at >= ${activityCutoff}::timestamptz
+                      AND execution.run_started_at <= ${now}::timestamptz)))
+            )),
         'participants', (SELECT COALESCE(jsonb_agg(participant.id), '[]'::jsonb)
           FROM agents AS participant
           WHERE participant.squad_id = stream.squad_id
