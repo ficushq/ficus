@@ -66,8 +66,9 @@ When a run ends, the supervisor reads any output the stream had not reached yet 
 
 ### Exit, loss and unavailability
 
-Each poll checks tmux liveness first, then the `exitCode` file. The launcher writes `exitCode` before its session ends, so the order makes the result unambiguous:
+Each poll checks tmux liveness first, then the `timedOut` marker, then the `exitCode` file. The launcher writes `exitCode` before its session ends, so the order makes the result unambiguous:
 
+- **`timedOut` present: timed out** in the sandbox (see [Deadline](#deadline)). This is checked before everything else, so a run the watchdog stopped is never treated as a loss, even when no `exitCode` was written.
 - **`exitCode` present: exited.** The monitor ends with that exit code. Exits never restart, whatever the code.
 - **Work dir gone (box recreated), or no session and no `exitCode`: a loss.** The restart policy decides what happens. Treating a vanished session as still running would leave the monitor silent in `running` until its timeout.
 - **Exec fails:** after 5 consecutive failures the sandbox counts as unreachable. The supervisor re-ensures the sandbox at most once a minute, the same way the outage recovery watch does, and waits. Unavailability alone is not a loss: the first successful probe decides whether the run survived. If the sandbox stays unreachable for 15 minutes, the monitor fails with `sandbox unavailable for 15m; gave up waiting for it to come back`.
@@ -83,7 +84,7 @@ The row is authoritative across Core processes. If another process (the API, or 
 
 A relaunch appends to the existing log. If the box was recreated and the log is now shorter than the delivered offset, reading starts again from byte 0.
 
-Cancel, timeout and overload are deliberate stops: they never restart.
+Cancel, timeout (from Core or from the sandbox watchdog) and overload are deliberate stops: they never restart.
 
 **Restart counting**
 
@@ -98,7 +99,18 @@ All of this state is stored on the monitor row so it survives Core restarts: `re
 
 ### Deadline
 
-The timeout is an absolute `deadline_at`, fixed at the first launch. Relaunches and Core restarts never move it. A loss detected after the deadline ends the monitor as `timed-out` instead of relaunching it.
+The timeout is an absolute `deadline_at`, fixed at the first launch. Relaunches and Core restarts never move it. A loss detected after the deadline, or a relaunch that comes due after it, ends the monitor as `timed-out` instead of relaunching it.
+
+The deadline is enforced in two places. Whichever fires first wins, and the agent is notified once:
+
+- **Core:** the supervisor's timer kills the tmux session at `deadline_at`.
+- **The sandbox:** the launcher runs a watchdog, so the deadline holds while Core is down or restarting. Each launch gets `FICUS_MONITOR_TIMEOUT_SECONDS`. The first launch gets the full timeout. An `on-loss` relaunch, including one after a Core restart, gets only the time left until `deadline_at`, rounded up to whole seconds. The watchdog turns this into a deadline on the sandbox's own clock, so clock skew between Core and the box cannot move it. It rechecks wall time at least every 10 seconds, so a box that was suspended notices soon after it resumes.
+
+When the watchdog fires, it first writes the `timedOut` marker. It then sends SIGTERM to the command's process group, waits 5 seconds, and sends SIGKILL to whatever is left. The launcher records `exitCode` 124. The next poll, or the probe a recovering Core runs, finds the marker and ends the monitor as `timed-out`, with the same status and `timed out.` message as a Core timeout. Output the stream had not delivered yet is delivered first.
+
+The watchdog is a shell watchdog, not coreutils `timeout`. Stock macOS (the host runtime) has no `timeout`, and busybox's `timeout` only signals its direct child, which leaves the rest of a pipeline running. The watchdog needs only bash, `date` and `sleep`.
+
+**Process groups.** The launcher starts the command as a bash job-control job (`set -m`), so the command, its pipeline and everything it spawns get a new process group of their own. Every signal the launcher or watchdog sends goes to that group, never to the launcher's own group, the tmux server, other sessions or unrelated processes. Because the command is no longer in the tmux pane's process group, the launcher traps the SIGHUP from `tmux kill-session` (cancel, or a Core timeout). It stops the command's group the same way: SIGTERM, then SIGKILL after the grace period. It then exits without an `exitCode`, as before. When the command exits on its own, the launcher sends SIGHUP to the group, as the closing pane used to. If the launcher itself is killed outright, the watchdog notices within 10 seconds and stops the command without a marker, so Core sees a loss. If job control is unavailable, only the job's own process is signalled, and its children may survive; Core's timeout still applies. A process that leaves the group on purpose (`setsid`) is not covered. The command's stdin is `/dev/null`.
 
 ### Core restarts and deploys
 
@@ -116,11 +128,11 @@ On startup, `recoverOnStartup` processes every active monitor:
 
 A sandbox that is not reachable yet goes through the unavailability path above; recovery does not fail it outright.
 
-If Core is down when a deadline passes, the monitor runs on until Core recovers, and is then stopped as `timed-out`.
+If Core is down when a deadline passes, the sandbox watchdog stops the command on time. When Core recovers, it records the monitor as `timed-out` and does not relaunch it.
 
 ## Debugging
 
-Use `monitor` with `action: "get"` to inspect recent lines. In a sandbox shell, monitor state lives under `<work root>/.ficus/monitors/<monitorId>/` with `run.sh`, `logs/current.log` (appended across relaunches), `exitCode` (removed before each relaunch), and timestamp files.
+Use `monitor` with `action: "get"` to inspect recent lines. In a sandbox shell, monitor state lives under `<work root>/.ficus/monitors/<monitorId>/` with `run.sh`, `logs/current.log` (appended across relaunches), `exitCode` (removed before each relaunch), `timedOut` (written by the deadline watchdog, also removed before each relaunch), and timestamp files.
 
 ## Management
 
