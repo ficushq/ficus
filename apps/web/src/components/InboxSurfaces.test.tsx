@@ -45,14 +45,14 @@ test('page and popup share rounded, spaced cards for personal/system and unread/
         },
       ],
     }) as InboxMessageResponse
-  client.setQueryData(queryKeys.inbox.mine(true), [
-    message('Personal unread', false, false),
-    message('Personal read', true, false),
-  ])
-  client.setQueryData(queryKeys.inbox.system(true), [
-    message('System unread', false, true),
-    message('System read', true, true),
-  ])
+  const pageOf = (items: InboxMessageResponse[]) => ({
+    pages: [{ items, hasMore: false, nextCursor: null, totalCount: items.length }],
+    pageParams: [null],
+  })
+  client.setQueryData(queryKeys.inbox.mineInfinite('unread'), pageOf([message('Personal unread', false, false)]))
+  client.setQueryData(queryKeys.inbox.mineInfinite('read'), pageOf([message('Personal read', true, false)]))
+  client.setQueryData(queryKeys.inbox.systemInfinite('unread'), pageOf([message('System unread', false, true)]))
+  client.setQueryData(queryKeys.inbox.systemInfinite('read'), pageOf([message('System read', true, true)]))
   const { container, root } = dom.createRoot()
   await dom.act(async () =>
     root.render(

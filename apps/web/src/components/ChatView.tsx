@@ -2987,7 +2987,12 @@ function StreamingToolCallItem({
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-1">
           {toolCall.args && (
-            <ToolArgsView renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+            <ToolArgsView
+              renderers={toolRenderers}
+              toolName={toolCall.toolName}
+              args={toolCall.args}
+              follow={inProgress}
+            />
           )}
           {result && (
             <ToolResultView
