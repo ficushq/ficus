@@ -38,6 +38,7 @@ import { listPendingActionsForIdentity } from '../services/agents/actions'
 import { resolveGlobalActivityAccess } from '../services/squad-activity/access'
 import { projectGlobalActivity } from '../services/squad-activity/global-activity'
 import { computeDerivedStates, type DerivedStreamInfo } from '../services/work-streams/derived-state'
+import { activityPreview } from '../services/assistant-activity/read'
 
 const uuid = Type.String({ format: 'uuid' })
 const request = Type.String({ minLength: 1, maxLength: 20000 })
@@ -254,6 +255,33 @@ export function createAssistantTools(
           content: row.content.slice(offset, offset + 12000),
           nextOffset: offset + 12000 < row.content.length ? offset + 12000 : null,
         }
+      }
+    ),
+    tool(
+      'list_task_updates',
+      'List the updates delegates reported in this conversation, newest first, with a one-line preview. Includes routine progress (working/waiting) that was shown to the user without a summary. Read one in full with read_task_update.',
+      Type.Object({ taskId: Type.Optional(uuid), limit }),
+      async (input) => {
+        const rows = await db
+          .select({ update: assistantUpdates, content: inbox.content })
+          .from(assistantUpdates)
+          .innerJoin(inbox, eq(inbox.id, assistantUpdates.messageId))
+          .where(
+            and(
+              eq(assistantUpdates.conversationId, conversationId),
+              input.taskId ? eq(assistantUpdates.taskId, input.taskId) : undefined
+            )
+          )
+          .orderBy(desc(assistantUpdates.sequence))
+          .limit(input.limit ?? 20)
+        return rows.map(({ update, content }) => ({
+          messageId: update.messageId,
+          taskId: update.taskId,
+          reportedStatus: update.reportedStatus,
+          createdAt: update.createdAt.toISOString(),
+          summarized: update.summarizedMessageId !== null,
+          preview: activityPreview(content),
+        }))
       }
     ),
     tool(

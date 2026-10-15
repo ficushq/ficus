@@ -2,8 +2,8 @@
  * Helpers for the agent-facing inbox delivery prompt (services/inbox/inboxDelivery.ts
  * formatInboxMessages): "You have N unread message(s) …", one `### Message <id>`
  * section per message (with **From:** / **Sent at:** / **Subject:** lines, then
- * the body), sections separated by `---`, and a trailing "**Mark one or more
- * messages as read …**" footer. Both apps render that delivery as cards showing
+ * the body), sections separated by `---`, and usually a trailing "**Mark one or
+ * more messages as read …**" footer (left out for Assistant agents). Both apps render that delivery as cards showing
  * each message's SUBJECT and BODY, not the framing — and the persisted
  * `inboxMessageSummaries` only carry a short preview, so the full bodies must
  * be recovered from the prompt itself.

@@ -2,10 +2,11 @@ import { assistantSummaryUpdateIds } from '../lib/assistantSummarySources'
 import { useQuery } from '@tanstack/react-query'
 import type { RenderItem } from '@ficus/client-core'
 import { assistantQueries } from '../queryOptions'
-import { AssistantUpdateCard } from './AssistantUpdateCard'
+import { AssistantUpdateChip } from './AssistantUpdateChip'
 
 /**
- * The task updates an Assistant reply covers, shown inline under it. Source IDs come from every
+ * The task updates an Assistant reply covers, one compact chip each under it (the reply already says
+ * what matters; a chip expands to the full report). Source IDs come from every
  * grouped row; retrieval does not depend on the latest update page. Viewing the conversation marks
  * its updates read (AssistantConversationView), so there's nothing to mark here.
  */
@@ -25,7 +26,7 @@ export function AssistantSummarySources({
   })
   if (!ids.length) return null
   return (
-    <section aria-label="Task updates" className="min-w-0 pb-2 text-sm">
+    <section aria-label="Task updates" className="min-w-0 pb-1 text-sm">
       {query.isError ? (
         <button
           type="button"
@@ -41,13 +42,10 @@ export function AssistantSummarySources({
           Loading updates…
         </p>
       ) : (
-        <ul className="mt-1 space-y-1">
+        <ul className="mt-0.5 space-y-0.5">
           {query.data.map((update) => (
-            <li
-              key={update.messageId}
-              className="rounded-xl bg-surface-secondary px-3 py-2 text-sm [overflow-wrap:anywhere]"
-            >
-              <AssistantUpdateCard update={update} taskLabel={update.taskLabel} />
+            <li key={update.messageId} className="min-w-0">
+              <AssistantUpdateChip updates={[update]} taskLabel={update.taskLabel} />
             </li>
           ))}
         </ul>

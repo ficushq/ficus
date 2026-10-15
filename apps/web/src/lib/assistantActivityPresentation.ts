@@ -1,4 +1,4 @@
-import type { AssistantConversationActivity } from '@ficus/shared'
+import type { AssistantActivityUpdate, AssistantConversationActivity } from '@ficus/shared'
 
 /** Short task-state summary for a conversation row; empty when nothing is in progress. */
 export function summarizeAssistantTasks(
@@ -26,4 +26,12 @@ export function formatAssistantUpdateTime(iso: string, now = new Date()): string
   return sameDay
     ? date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
     : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+/** One plain line of a markdown report: whitespace and common markup collapsed, the rest left to CSS truncation. */
+export function updatePreviewLine(update: Pick<AssistantActivityUpdate, 'content'>): string {
+  return update.content
+    .replace(/[`*_#>]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
