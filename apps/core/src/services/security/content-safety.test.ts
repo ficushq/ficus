@@ -370,7 +370,9 @@ test('dropping query payloads preserves matching stored-key audit metadata', () 
 })
 
 describe('ContentSafety.trimStoredValueFragments', () => {
-  const value = `S3CR3T-${randomUUID()}`
+  // Fixed, not random: edge-fragment expectations depend on which characters the
+  // value starts and ends with, so a random tail would make them flaky.
+  const value = 'S3CR3T-7f1d0b52-9a4e-4c38-b6d2-0e5a91c7f4ab'
   const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
 
   test('drops every trailing prefix of a stored value, and nothing else', () => {
@@ -416,9 +418,18 @@ describe('ContentSafety.trimStoredValueFragments', () => {
     ])
     expect(several.trimStoredValueFragments(`k=${value.slice(0, 10)}`, { trailing: true })).toBe('k=')
     expect(several.trimStoredValueFragments('zz', { trailing: true })).toBe('')
+    // An interior slice is neither a prefix nor a suffix of any value, so it is kept.
     expect(several.trimStoredValueFragments(value.slice(1, 5), { leading: true, trailing: true })).toBe(
       value.slice(1, 5)
     )
+  })
+
+  test('trims an interior slice whose edge is also a fragment of the value', () => {
+    // The value ends with the slice's first character, so that character could
+    // be the end of the value cut off by truncation and is trimmed.
+    const overlapping = ContentSafety.fromSecretEntries([{ key: 'LONG', value: 'S3CR3T-tail-3' }])
+    expect(overlapping.trimStoredValueFragments('3CR3', { leading: true, trailing: true })).toBe('CR3')
+    expect(overlapping.trimStoredValueFragments('3CR3', { trailing: true })).toBe('3CR3')
   })
 
   test('follows Secret Store updates', () => {
