@@ -4,6 +4,7 @@ import {
   parseSlotCapacity,
   parseSlotDuration,
   parseSlotHistoryLimit,
+  parseSlotUsage,
   registerSlotCommands,
   renderSlotAcquire,
   renderSlotHistory,
@@ -15,13 +16,15 @@ import {
   type SlotCommandDependencies,
 } from './slot'
 
-test('registers the singular slot command and all ten subcommands', () => {
+test('registers the singular slot command and all twelve subcommands', () => {
   const program = new Command()
   registerSlotCommands(program)
   const slot = program.commands.find((command) => command.name() === 'slot')
 
   expect(slot?.commands.map((command) => command.name()).sort()).toEqual([
     'claim',
+    'disable',
+    'enable',
     'history',
     'list',
     'register',
@@ -34,7 +37,7 @@ test('registers the singular slot command and all ten subcommands', () => {
   ])
   // Pool-scoped commands still need a squad; UUID-addressed ones resolve it
   // server-side from the claim/waiter id, so they must NOT ask for it.
-  const squadScoped = ['list', 'history', 'register', 'update', 'unregister', 'claim', 'subscribe']
+  const squadScoped = ['list', 'history', 'register', 'update', 'unregister', 'disable', 'enable', 'claim', 'subscribe']
   const uuidAddressed = ['renew', 'release', 'unsubscribe']
   for (const name of squadScoped) {
     const command = slot?.commands.find((entry) => entry.name() === name)
@@ -123,8 +126,40 @@ test('command actions call the exact encoded squad API paths and bodies', async 
       },
     },
     {
+      args: ['register', 'heavy/tests', '--usage', '  Claim before DB-backed tests.  '],
+      expected: {
+        method: 'POST',
+        path: '/api/squads/squad%2Fone/slots',
+        body: { key: 'heavy/tests', usage: 'Claim before DB-backed tests.' },
+      },
+    },
+    {
       args: ['update', 'heavy/tests', '--capacity', '3'],
       expected: { method: 'PATCH', path: '/api/squads/squad%2Fone/slots/heavy%2Ftests', body: { capacity: 3 } },
+    },
+    {
+      args: ['update', 'heavy/tests', '--usage', 'Claim before builds.'],
+      expected: {
+        method: 'PATCH',
+        path: '/api/squads/squad%2Fone/slots/heavy%2Ftests',
+        body: { usage: 'Claim before builds.' },
+      },
+    },
+    {
+      args: ['update', 'heavy/tests', '--clear-usage'],
+      expected: { method: 'PATCH', path: '/api/squads/squad%2Fone/slots/heavy%2Ftests', body: { usage: null } },
+    },
+    {
+      args: ['update', 'heavy/tests', '--usage', ''],
+      expected: { method: 'PATCH', path: '/api/squads/squad%2Fone/slots/heavy%2Ftests', body: { usage: null } },
+    },
+    {
+      args: ['disable', 'heavy/tests'],
+      expected: { method: 'PATCH', path: '/api/squads/squad%2Fone/slots/heavy%2Ftests', body: { enabled: false } },
+    },
+    {
+      args: ['enable', 'heavy/tests'],
+      expected: { method: 'PATCH', path: '/api/squads/squad%2Fone/slots/heavy%2Ftests', body: { enabled: true } },
     },
     {
       args: ['unregister', 'heavy/tests'],
@@ -317,6 +352,43 @@ test('parses bounded slot history limits', () => {
   }
 })
 
+test('parses usage guidance within the prompt budget', () => {
+  expect(parseSlotUsage('  Claim before tests.  ')).toBe('Claim before tests.')
+  expect(parseSlotUsage('   ')).toBe('')
+  expect(parseSlotUsage('x'.repeat(1000))).toHaveLength(1000)
+  expect(() => parseSlotUsage('x'.repeat(1001))).toThrow('at most 1000 characters')
+})
+
+test('update rejects conflicting or missing settings before any API call', async () => {
+  const patch = mock(async () => ({ outcome: 'updated', message: 'updated', pool: {} }))
+  const dependencies = {
+    apiGet: mock(async () => ({})),
+    apiPost: mock(async () => ({})),
+    apiPatch: patch,
+    apiDelete: mock(async () => ({})),
+    output: mock(() => {}),
+  } as unknown as SlotCommandDependencies
+  const exit = spyOn(process, 'exit').mockImplementation((() => {
+    throw new Error('exit')
+  }) as never)
+  const stderr = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    for (const args of [
+      ['update', 'tests'],
+      ['update', 'tests', '--usage', 'x', '--clear-usage'],
+      ['update', 'tests', '--usage', 'x'.repeat(1001)],
+    ]) {
+      const program = new Command()
+      registerSlotCommands(program, dependencies)
+      await program.parseAsync(['node', 'ficus', 'slot', ...args, '--squad', 'squad-id']).catch(() => {})
+    }
+    expect(patch).not.toHaveBeenCalled()
+  } finally {
+    exit.mockRestore()
+    stderr.mockRestore()
+  }
+})
+
 test('parses bounded slot durations', () => {
   expect(parseSlotDuration('1h')).toBe(3_600_000)
   expect(parseSlotDuration('60s')).toBe(60_000)
@@ -349,6 +421,41 @@ test('renders actionable acquire outcomes with mandatory release guidance', () =
   // outcome, so it has to say so as loudly as the granted case says the opposite.
   expect(queued).toContain('YOU DO NOT OWN CAPACITY YET.')
   expect(queued).not.toContain('--squad')
+})
+
+test('renders a disabled acquire outcome as neither ownership nor a queue position', () => {
+  const text = renderSlotAcquire(
+    {
+      outcome: 'disabled',
+      message: 'Slot pool "tests" is disabled, so it is not enforced right now.',
+      pool: { key: 'tests' },
+    },
+    'squad-id'
+  )
+  expect(text).toContain('is disabled')
+  expect(text).toContain('YOU DO NOT OWN CAPACITY AND ARE NOT QUEUED')
+  expect(text).not.toContain('Subscribe:')
+})
+
+test('renders usage guidance and the disabled state in list and detail output', () => {
+  const pool = {
+    key: 'tests',
+    capacity: 2,
+    activeCount: 1,
+    availableCount: 1,
+    queuedCount: 0,
+    usage: 'Claim before DB-backed tests.\nRelease after test:db:down.',
+    enabled: false,
+  }
+  expect(renderSlotPools([pool], 'squad')).toBe(
+    [
+      'tests: 1/2 active, 1 available, 0 queued (disabled: not enforced)',
+      '  Usage: Claim before DB-backed tests. Release after test:db:down.',
+    ].join('\n')
+  )
+  expect(renderSlotPools({ ...pool, enabled: true, usage: null }, 'squad')).toBe(
+    'tests: 1/2 active, 1 available, 0 queued'
+  )
 })
 
 test('renders compact terminal history and an empty state', () => {

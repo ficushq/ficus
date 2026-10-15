@@ -3,7 +3,14 @@ import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { filterCliHelpForPermissions, getSquadWorkerCliHelp } from '../../lib/utils/cli-help'
 import { resolvePermissions } from '../../services/rbac'
-import { interpolateTemplate, prompt, buildMemorySystemPrompt, buildActiveSchedulesPrompt } from '../../lib/prompts'
+import {
+  interpolateTemplate,
+  prompt,
+  buildMemorySystemPrompt,
+  buildActiveSchedulesPrompt,
+  buildSlotPoolsPrompt,
+  slotPoolsPromptFallback,
+} from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { readSquadMemoryFile } from '../../services/memory/paths'
 import { createWebTools } from '../../tools/web-search'
@@ -88,9 +95,10 @@ export class SquadWorkerRunner extends AgentRunner {
       : ''
 
     const sandboxId = await this.agent.getSandboxId()
-    const [cliHelp, activeSchedules] = await Promise.all([
+    const [cliHelp, activeSchedules, slotPools] = await Promise.all([
       this.buildWorkerCliHelp(),
       buildActiveSchedulesPrompt(this.squad.id, this.agent.id, 'worker'),
+      buildSlotPoolsPrompt(this.squad.id),
     ])
 
     // Build context for template interpolation
@@ -113,6 +121,8 @@ export class SquadWorkerRunner extends AgentRunner {
       cliHelp,
       activeSchedules,
       'squad.context': this.squad.context ?? '',
+      // Generated from the live pool registry, right after the squad context.
+      'squad.slotPools': slotPools,
       'manager.id': this.squad.managerAgentId ?? '',
     }
 
@@ -120,6 +130,7 @@ export class SquadWorkerRunner extends AgentRunner {
 
     const p = prompt()
       .text(typePrompt)
+      .text(slotPoolsPromptFallback(typePrompt, slotPools))
       .text(
         buildWorkspacePrompt({
           squadId: this.squad.id,

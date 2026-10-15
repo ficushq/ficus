@@ -4,7 +4,14 @@ import type { AdmissionScope } from '../../services/maintenance/admission-reserv
 import { Squad } from '../Squad'
 import { isAssistantDelegate } from '../../services/assistant-agents'
 import { getSquadManagerCliHelp } from '../../lib/utils/cli-help'
-import { prompt, interpolateTemplate, buildActiveSchedulesPrompt, buildPlatformUrlsPrompt } from '../../lib/prompts'
+import {
+  prompt,
+  interpolateTemplate,
+  buildActiveSchedulesPrompt,
+  buildPlatformUrlsPrompt,
+  buildSlotPoolsPrompt,
+  slotPoolsPromptFallback,
+} from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { ensureSquadSandbox, ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
 import { createNotifyContactTool } from '../../tools/notify-contact'
@@ -80,6 +87,8 @@ export class SquadManagerRunner extends AgentRunner {
       'squad.purpose': squad.purpose,
       'squad.defaultAgents': squad.defaultAgents.join(', ') || 'none',
       'squad.context': squad.context ?? '',
+      // Pools need a database read; this synchronous helper omits them.
+      'squad.slotPools': '',
     })
   }
 
@@ -146,12 +155,17 @@ export class SquadManagerRunner extends AgentRunner {
 
   private async buildSquadManagerPrompt(): Promise<string> {
     const sandboxId = await this.agent.getSandboxId()
-    const [cliHelp, squadContext] = await Promise.all([getSquadManagerCliHelp(), this.buildSquadContext()])
+    const [cliHelp, squadContext, slotPools] = await Promise.all([
+      getSquadManagerCliHelp(),
+      this.buildSquadContext(),
+      buildSlotPoolsPrompt(this.squad.id),
+    ])
 
     const typePrompt = await composeAgentTypePrompt(this.agentType)
 
     const p = prompt()
       .text(typePrompt)
+      .text(slotPoolsPromptFallback(typePrompt, slotPools))
       .text(
         buildWorkspacePrompt({
           agentId: this.agent.id,
@@ -229,6 +243,8 @@ export class SquadManagerRunner extends AgentRunner {
       'squad.purpose': this.squad.purpose,
       'squad.defaultAgents': this.squad.defaultAgents.join(', ') || 'none',
       'squad.context': this.squad.context ?? '',
+      // Generated from the live pool registry, right after the squad context.
+      'squad.slotPools': slotPools,
       // The squad's manager agent id. For the manager this is its own id; for a
       // consultant (same runner) it's the manager to hand work off to.
       'manager.id': this.squad.managerAgentId ?? '',

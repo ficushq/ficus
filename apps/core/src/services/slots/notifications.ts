@@ -14,13 +14,16 @@ export interface SlotNotificationClaim {
   poolId: string
   poolKey: string
   squadId: string
-  claimId: string
+  /** Set for granted/expired notices. */
+  claimId: string | null
+  /** Set for pool_disabled notices: the queued waiter the disable canceled. */
+  waiterId: string | null
   recipientAgentId: string
-  kind: 'granted' | 'expired'
+  kind: 'granted' | 'expired' | 'pool_disabled'
   idempotencyKey: string
   claimToken: string
   attempts: number
-  expiresAt: Date
+  expiresAt: Date | null
 }
 
 export async function claimDueSlotNotifications(input: {
@@ -69,6 +72,7 @@ export async function claimDueSlotNotifications(input: {
         poolKey: slotPools.key,
         squadId: slotPools.squadId,
         claimId: slotNotifications.claimId,
+        waiterId: slotNotifications.waiterId,
         recipientAgentId: slotNotifications.recipientAgentId,
         kind: slotNotifications.kind,
         idempotencyKey: slotNotifications.idempotencyKey,
@@ -78,7 +82,7 @@ export async function claimDueSlotNotifications(input: {
       })
       .from(slotNotifications)
       .innerJoin(slotPools, eq(slotPools.id, slotNotifications.poolId))
-      .innerJoin(slotClaims, eq(slotClaims.id, slotNotifications.claimId))
+      .leftJoin(slotClaims, eq(slotClaims.id, slotNotifications.claimId))
       .where(
         inArray(
           slotNotifications.id,
@@ -93,12 +97,19 @@ export async function claimDueSlotNotifications(input: {
 }
 
 export function renderSlotNotification(claim: SlotNotificationClaim): string {
+  if (claim.kind === 'pool_disabled') {
+    return [
+      `Slot pool "${claim.poolKey}" was disabled, so your queued wait ${claim.waiterId} was canceled. You were not granted capacity and are no longer queued.`,
+      'A disabled pool is not enforced right now: the work it protects is not slot-gated, so continue under the remaining squad rules without waiting for a grant.',
+      `If the pool is re-enabled later, claim it again before protected work: ficus slot claim ${claim.poolKey} --squad ${claim.squadId}`,
+    ].join('\n')
+  }
   if (claim.kind === 'expired') {
     // Expiry frees capacity but cannot stop what the owner started under it.
     // Detached containers and test databases outlive the claim and silently
     // overload the shared box, so the owner must clean up explicitly.
     return [
-      `Your claim ${claim.claimId} on slot pool "${claim.poolKey}" expired at ${claim.expiresAt.toISOString()} because it was not released or renewed. You no longer hold this capacity.`,
+      `Your claim ${claim.claimId} on slot pool "${claim.poolKey}" expired at ${claim.expiresAt?.toISOString()} because it was not released or renewed. You no longer hold this capacity.`,
       'Ficus did not stop any work you started under this claim. Clean up now:',
       "- Stop every heavy process, container and test database you started under it: run the repository's project-scoped test:db:down (for example `bun run test:db:down`), docker stop the containers you started, and kill your background jobs.",
       `- Claim again before resuming heavy work: ficus slot claim ${claim.poolKey} --squad ${claim.squadId}`,
@@ -109,7 +120,7 @@ export function renderSlotNotification(claim: SlotNotificationClaim): string {
     `Your wait for slot pool "${claim.poolKey}" was granted.`,
     'YOU MUST RELEASE THIS CLAIM AS SOON AS YOU ARE DONE.',
     `Claim ID: ${claim.claimId}`,
-    `Expires: ${claim.expiresAt.toISOString()}`,
+    `Expires: ${claim.expiresAt?.toISOString()}`,
     'If there is any doubt, query authoritative state before relying on this grant.',
     `Release: ficus slot release ${claim.claimId}`,
     `Renew: ficus slot renew ${claim.claimId}`,
@@ -211,7 +222,7 @@ export class SlotNotificationNotifier {
         recipientStatus: agents.status,
       })
       .from(slotNotifications)
-      .innerJoin(slotClaims, eq(slotClaims.id, slotNotifications.claimId))
+      .leftJoin(slotClaims, eq(slotClaims.id, slotNotifications.claimId))
       .leftJoin(agents, eq(agents.id, slotNotifications.recipientAgentId))
       .where(eq(slotNotifications.id, claim.notificationId))
       .limit(1)
@@ -239,9 +250,16 @@ export class SlotNotificationNotifier {
           subject:
             claim.kind === 'granted'
               ? `Slot granted: ${claim.poolKey}`
-              : `Slot expired: ${claim.poolKey} (clean up now)`,
+              : claim.kind === 'pool_disabled'
+                ? `Slot pool disabled: ${claim.poolKey} (no longer queued)`
+                : `Slot expired: ${claim.poolKey} (clean up now)`,
           content: renderSlotNotification(claim),
-          metadata: { source: 'slot', poolId: claim.poolId, claimId: claim.claimId },
+          metadata: {
+            source: 'slot',
+            poolId: claim.poolId,
+            ...(claim.claimId ? { claimId: claim.claimId } : {}),
+            ...(claim.waiterId ? { waiterId: claim.waiterId } : {}),
+          },
         },
         claim.idempotencyKey
       )

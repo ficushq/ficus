@@ -114,7 +114,7 @@ test('delivery revalidates claim status and settles stale grants without sending
   await db
     .update(slotClaims)
     .set({ status: 'released', endedAt: new Date(), terminalReason: 'released' })
-    .where(eq(slotClaims.id, notification.claimId))
+    .where(eq(slotClaims.id, notification.claimId!))
 
   await new SlotNotificationNotifier().drain({ now: notification!.nextAttemptAt, notificationId: notification.id })
 
@@ -227,13 +227,14 @@ test('a crash after sendOnce is recovered without duplicating the durable inbox 
 
 test('expiry text states that ownership is invalid without claiming external work stopped', async () => {
   const { notification } = await createFixture()
-  const [claim] = await db.select().from(slotClaims).where(eq(slotClaims.id, notification.claimId))
+  const [claim] = await db.select().from(slotClaims).where(eq(slotClaims.id, notification.claimId!))
   const text = renderSlotNotification({
     notificationId: notification.id,
     poolId: notification.poolId,
     poolKey: 'tests',
     squadId: crypto.randomUUID(),
     claimId: notification.claimId,
+    waiterId: null,
     recipientAgentId: notification.recipientAgentId,
     kind: 'expired',
     idempotencyKey: notification.idempotencyKey,
@@ -248,13 +249,14 @@ test('expiry text states that ownership is invalid without claiming external wor
 
 test('grant text gives the release and renew commands the CLI accepts', async () => {
   const { notification } = await createFixture()
-  const [claim] = await db.select().from(slotClaims).where(eq(slotClaims.id, notification.claimId))
+  const [claim] = await db.select().from(slotClaims).where(eq(slotClaims.id, notification.claimId!))
   const text = renderSlotNotification({
     notificationId: notification.id,
     poolId: notification.poolId,
     poolKey: 'tests',
     squadId: crypto.randomUUID(),
     claimId: notification.claimId,
+    waiterId: null,
     recipientAgentId: notification.recipientAgentId,
     kind: 'granted',
     idempotencyKey: notification.idempotencyKey,

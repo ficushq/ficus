@@ -18,6 +18,7 @@ import {
   MAX_SLOT_CAPACITY,
   MAX_SLOT_CLAIM_TIMEOUT_MS,
   MAX_SLOT_HISTORY_LIMIT,
+  MAX_SLOT_USAGE_LENGTH,
   MIN_SLOT_CLAIM_TIMEOUT_MS,
   SLOT_KEY_PATTERN,
   SlotServiceError,
@@ -33,23 +34,39 @@ import {
   subscribeSlot,
   unregisterPool,
   unsubscribeSlot,
-  updatePool,
+  updatePoolDetailed,
   type SlotPoolMutationResponse,
   type SlotPoolRecord,
 } from '../services/slots'
+import { formatSlotClaimTimeout } from '../services/slots/format'
 
 const keySchema = z.string().trim().toLowerCase().regex(SLOT_KEY_PATTERN)
 const uuidSchema = z.string().uuid()
+// Guidance is trimmed before the length check so surrounding whitespace never
+// counts against the prompt budget; blank or null clears it.
+const usageSchema = z
+  .string()
+  .trim()
+  .max(MAX_SLOT_USAGE_LENGTH, `usage must be at most ${MAX_SLOT_USAGE_LENGTH} characters`)
+  .nullable()
 const registerSchema = z.object({
   key: keySchema,
   capacity: z.number().int().min(1).max(MAX_SLOT_CAPACITY).optional(),
   claimTimeoutMs: z.number().int().min(MIN_SLOT_CLAIM_TIMEOUT_MS).max(MAX_SLOT_CLAIM_TIMEOUT_MS).optional(),
+  usage: usageSchema.optional(),
 })
+/** Partial update: send only the fields to change. */
 const updateSchema = registerSchema
   .omit({ key: true })
-  .refine((body) => body.capacity !== undefined || body.claimTimeoutMs !== undefined, {
-    message: 'capacity or claimTimeoutMs is required',
-  })
+  .extend({ enabled: z.boolean().optional() })
+  .refine(
+    (body) =>
+      body.capacity !== undefined ||
+      body.claimTimeoutMs !== undefined ||
+      body.usage !== undefined ||
+      body.enabled !== undefined,
+    { message: 'capacity, claimTimeoutMs, usage, or enabled is required' }
+  )
 const historyQuerySchema = z.object({
   limit: z.preprocess(
     (value) =>
@@ -103,35 +120,39 @@ function validUuid(raw: string, kind: 'claim' | 'waiter'): string {
   return parsed.data
 }
 
-function describeClaimTimeout(claimTimeoutMs: number): string {
-  if (claimTimeoutMs % 86_400_000 === 0) return `${claimTimeoutMs / 86_400_000}d`
-  if (claimTimeoutMs % 3_600_000 === 0) return `${claimTimeoutMs / 3_600_000}h`
-  if (claimTimeoutMs % 60_000 === 0) return `${claimTimeoutMs / 60_000}m`
-  return `${Math.round(claimTimeoutMs / 1_000)}s`
-}
-
 function registerResponse(pool: SlotPoolRecord): SlotPoolMutationResponse {
   return {
     outcome: 'registered',
-    message: `Slot pool "${pool.key}" is registered with capacity ${pool.capacity} and a ${describeClaimTimeout(
+    message: `Slot pool "${pool.key}" is registered with capacity ${pool.capacity} and a ${formatSlotClaimTimeout(
       pool.claimTimeoutMs
-    )} claim timeout.`,
+    )} claim timeout${pool.usage ? ' and usage guidance' : ''}.`,
     pool,
   }
 }
 
 function updateResponse(
   pool: SlotPoolRecord,
-  input: { capacity?: number; claimTimeoutMs?: number }
+  input: { capacity?: number; claimTimeoutMs?: number; usage?: string | null; enabled?: boolean },
+  releasedWaiters: number
 ): SlotPoolMutationResponse {
   const changes: string[] = []
   if (input.capacity !== undefined) changes.push(`capacity ${pool.capacity}`)
-  if (input.claimTimeoutMs !== undefined) changes.push(`${describeClaimTimeout(pool.claimTimeoutMs)} claim timeout`)
-  return {
-    outcome: 'updated',
-    message: `Slot pool "${pool.key}" now has ${changes.join(' and ')}.`,
-    pool,
+  if (input.claimTimeoutMs !== undefined) changes.push(`a ${formatSlotClaimTimeout(pool.claimTimeoutMs)} claim timeout`)
+  if (input.usage !== undefined) changes.push(pool.usage ? 'updated usage guidance' : 'no usage guidance')
+  const sentences = changes.length > 0 ? [`Slot pool "${pool.key}" now has ${changes.join(' and ')}.`] : []
+  if (input.enabled !== undefined) {
+    if (pool.disabledAt) {
+      sentences.push(
+        `Slot pool "${pool.key}" is disabled: it is not enforced and is omitted from agent prompts.` +
+          (releasedWaiters > 0
+            ? ` ${releasedWaiters} queued waiter${releasedWaiters === 1 ? ' was' : 's were'} canceled and notified.`
+            : '')
+      )
+    } else {
+      sentences.push(`Slot pool "${pool.key}" is enabled.`)
+    }
   }
+  return { outcome: 'updated', message: sentences.join(' '), pool }
 }
 
 function unregisterResponse(pool: SlotPoolRecord): SlotPoolMutationResponse {
@@ -201,7 +222,12 @@ slotsRouter.post('/:squadId/slots', writeGuard, notArchivedGuard, zValidator('js
 
 slotsRouter.patch('/:squadId/slots/:key', writeGuard, notArchivedGuard, zValidator('json', updateSchema), async (c) => {
   const input = c.req.valid('json')
-  return c.json(updateResponse(await updatePool(c.req.param('squadId'), validKey(c.req.param('key')), input), input))
+  const { pool, releasedWaiters } = await updatePoolDetailed(
+    c.req.param('squadId'),
+    validKey(c.req.param('key')),
+    input
+  )
+  return c.json(updateResponse(pool, input, releasedWaiters))
 })
 
 slotsRouter.delete('/:squadId/slots/:key', writeGuard, notArchivedGuard, async (c) => {

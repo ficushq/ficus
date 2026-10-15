@@ -141,6 +141,7 @@ import { getAgentQuestions } from './api/agentQuestions'
 import { getSystemTokens } from './api/systemTokens'
 import { getInstanceIdentity, listPeers, getAgentFederationStatus, listAgentAllowRules } from './api/amtp'
 import { getOnboardingStatus } from './api/onboarding'
+import { listSlotPools } from './api/slots'
 import type { NormalizedSquadActivityFilters, StorageSnapshot, ThemePresetScope } from '@ficus/shared'
 
 /**
@@ -591,6 +592,11 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.squads.sshKeys(squadId),
         queryFn: () => listSshKeys(squadId),
+      }),
+    slotPools: (squadId: string) =>
+      queryOptions({
+        queryKey: queryKeys.squads.slotPools(squadId),
+        queryFn: () => listSlotPools(squadId),
       }),
     localDeployments: (squadId: string) =>
       queryOptions({

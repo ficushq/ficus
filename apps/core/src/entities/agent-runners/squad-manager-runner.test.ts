@@ -177,6 +177,52 @@ describe('SquadManagerRunner typeContext injection', () => {
     expect(systemPrompt).toContain('/private')
   })
 
+  it('publishes the generated slot pools section once, even though manager prompts repeat squad context', async () => {
+    const section = '## Slot Pools\n\n- `tests`: capacity 2, claim timeout 45m\n  Claim before tests.'
+    const slotPoolsSpy = spyOn(prompts, 'buildSlotPoolsPrompt').mockResolvedValue(section)
+    spies.push(slotPoolsSpy)
+    squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
+      id: TEST_SQUAD_ID,
+      name: 'S',
+      purpose: 'p',
+      defaultAgents: [],
+      context: 'CTX-MARKER',
+      sandboxId: 'sbx',
+      managerAgentId: 'm1',
+      isMemoryEnabled: false,
+      getActiveAgents: async () => [],
+      getTypeContext: () => null,
+      withRelationships: async () => null,
+    } as any)
+    const agent = {
+      id: 'm1',
+      agentTypeId: 'manager',
+      squadId: TEST_SQUAD_ID,
+      metadata: null,
+      modelOverride: null,
+      selectedModel: null,
+      getOrCreateToken: async () => undefined,
+      getSandboxId: async () => 'agent_manager_m1',
+      getEffectiveModelSpec: async (m: string) => m,
+    } as any
+    // Mirrors manager.yaml: "Your Squad" repeats the context, and the
+    // squad-rules include places the generated section after its copy.
+    const runner = new TestableSquadManagerRunner(
+      { id: 'e1', agentId: 'm1', message: 'go', imageIds: null } as any,
+      agent,
+      makeAgentType({
+        systemPrompt:
+          'You manage the squad. {{squad.context}}\n\n## Run Identity\n\n{{squad.context}}\n\n{{squad.slotPools}}',
+      })
+    )
+    await runner.exposeCreateSession()
+
+    const systemPrompt: string = sessionSpy.mock.calls[0][0].systemPrompt
+    expect(slotPoolsSpy).toHaveBeenCalledWith(TEST_SQUAD_ID)
+    expect(systemPrompt.split('## Slot Pools')).toHaveLength(2)
+    expect(systemPrompt).toContain(`## Run Identity\n\nCTX-MARKER\n\n${section}`)
+  })
+
   it('does not add Type-Specific Context section when absent', async () => {
     squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
       id: TEST_SQUAD_ID,

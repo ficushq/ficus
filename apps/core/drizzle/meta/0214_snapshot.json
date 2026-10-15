@@ -1,5 +1,5 @@
 {
-  "id": "086bfab7-1821-4333-8752-411506f58b46",
+  "id": "8adc09f7-f28a-40fb-a88b-5cb14b48c96c",
   "prevId": "1ae1b4a3-3eaa-4d88-b433-cda1a741b266",
   "version": "7",
   "dialect": "postgresql",
@@ -7394,535 +7394,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.inference_usage": {
-      "name": "inference_usage",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "feature": {
-          "name": "feature",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "model": {
-          "name": "model",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "billing": {
-          "name": "billing",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'unknown'"
-        },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "cache_read_tokens": {
-          "name": "cache_read_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "cache_write_tokens": {
-          "name": "cache_write_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "units": {
-          "name": "units",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cost_nanodollars": {
-          "name": "cost_nanodollars",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "list_cost_nanodollars": {
-          "name": "list_cost_nanodollars",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cost_estimated": {
-          "name": "cost_estimated",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "work_stream_id": {
-          "name": "work_stream_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempt_id": {
-          "name": "attempt_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "step_id": {
-          "name": "step_id",
-          "type": "varchar(100)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "execution_id": {
-          "name": "execution_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "parent_agent_id": {
-          "name": "parent_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "parent_execution_id": {
-          "name": "parent_execution_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source": {
-          "name": "source",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "dedupe_key": {
-          "name": "dedupe_key",
-          "type": "varchar(160)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_inference_usage_occurred_at": {
-          "name": "idx_inference_usage_occurred_at",
-          "columns": [
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_inference_usage_squad_occurred": {
-          "name": "idx_inference_usage_squad_occurred",
-          "columns": [
-            {
-              "expression": "squad_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_inference_usage_work_stream_occurred": {
-          "name": "idx_inference_usage_work_stream_occurred",
-          "columns": [
-            {
-              "expression": "work_stream_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_inference_usage_agent_occurred": {
-          "name": "idx_inference_usage_agent_occurred",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_inference_usage_execution": {
-          "name": "idx_inference_usage_execution",
-          "columns": [
-            {
-              "expression": "execution_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_inference_usage_dedupe_key": {
-          "name": "idx_inference_usage_dedupe_key",
-          "columns": [
-            {
-              "expression": "dedupe_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"inference_usage\".\"dedupe_key\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "inference_usage_billing_valid": {
-          "name": "inference_usage_billing_valid",
-          "value": "\"inference_usage\".\"billing\" IN ('api', 'subscription', 'self-hosted', 'unknown')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.inference_usage_daily": {
-      "name": "inference_usage_daily",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "day": {
-          "name": "day",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "feature": {
-          "name": "feature",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "model": {
-          "name": "model",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "billing": {
-          "name": "billing",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "work_stream_id": {
-          "name": "work_stream_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "calls": {
-          "name": "calls",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "cache_read_tokens": {
-          "name": "cache_read_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "cache_write_tokens": {
-          "name": "cache_write_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "cost_nanodollars": {
-          "name": "cost_nanodollars",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "list_cost_nanodollars": {
-          "name": "list_cost_nanodollars",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "list_unknown_calls": {
-          "name": "list_unknown_calls",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "estimated_calls": {
-          "name": "estimated_calls",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_inference_usage_daily_day": {
-          "name": "idx_inference_usage_daily_day",
-          "columns": [
-            {
-              "expression": "day",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_inference_usage_daily_squad_day": {
-          "name": "idx_inference_usage_daily_squad_day",
-          "columns": [
-            {
-              "expression": "squad_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "day",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_inference_usage_daily_work_stream_day": {
-          "name": "idx_inference_usage_daily_work_stream_day",
-          "columns": [
-            {
-              "expression": "work_stream_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "day",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_inference_usage_daily_agent_day": {
-          "name": "idx_inference_usage_daily_agent_day",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "day",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -16864,7 +16335,13 @@
           "name": "claim_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "waiter_id": {
+          "name": "waiter_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "recipient_agent_id": {
           "name": "recipient_agent_id",
@@ -17008,6 +16485,19 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
+        "slot_notifications_waiter_id_slot_waiters_id_fk": {
+          "name": "slot_notifications_waiter_id_slot_waiters_id_fk",
+          "tableFrom": "slot_notifications",
+          "tableTo": "slot_waiters",
+          "columnsFrom": [
+            "waiter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
         "slot_notifications_inbox_id_inbox_id_fk": {
           "name": "slot_notifications_inbox_id_inbox_id_fk",
           "tableFrom": "slot_notifications",
@@ -17037,6 +16527,10 @@
         "slot_notifications_delivery_claim_pair": {
           "name": "slot_notifications_delivery_claim_pair",
           "value": "(\"slot_notifications\".\"claimed_at\" IS NULL) = (\"slot_notifications\".\"claim_token\" IS NULL)"
+        },
+        "slot_notifications_subject": {
+          "name": "slot_notifications_subject",
+          "value": "(\"slot_notifications\".\"kind\"::text = 'pool_disabled' AND \"slot_notifications\".\"waiter_id\" IS NOT NULL AND \"slot_notifications\".\"claim_id\" IS NULL) OR (\"slot_notifications\".\"kind\"::text <> 'pool_disabled' AND \"slot_notifications\".\"claim_id\" IS NOT NULL AND \"slot_notifications\".\"waiter_id\" IS NULL)"
         }
       },
       "isRLSEnabled": false
@@ -17078,6 +16572,12 @@
           "notNull": true,
           "default": 3600000
         },
+        "usage": {
+          "name": "usage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by": {
           "name": "created_by",
           "type": "varchar(255)",
@@ -17097,6 +16597,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "disabled_at": {
+          "name": "disabled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "unregistered_at": {
           "name": "unregistered_at",
@@ -17159,6 +16665,10 @@
         "slot_pools_claim_timeout_bounds": {
           "name": "slot_pools_claim_timeout_bounds",
           "value": "\"slot_pools\".\"claim_timeout_ms\" >= 60000 AND \"slot_pools\".\"claim_timeout_ms\" <= 86400000"
+        },
+        "slot_pools_usage_length": {
+          "name": "slot_pools_usage_length",
+          "value": "char_length(\"slot_pools\".\"usage\") <= 1000"
         }
       },
       "isRLSEnabled": false
@@ -21781,7 +21291,8 @@
       "schema": "public",
       "values": [
         "granted",
-        "expired"
+        "expired",
+        "pool_disabled"
       ]
     },
     "public.slot_notification_status": {

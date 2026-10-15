@@ -3,7 +3,8 @@ import type { SettingsSearchEntry } from '../settings/settingsSearch'
 export const SQUAD_SETTINGS_KEYWORDS: Record<string, string> = {
   general:
     'rename squad title Name purpose mission Description avatar collaboration archive delete remove danger zone Archive squad',
-  context: 'instructions system prompt Squad Context per agent type instructions Type-Specific Context',
+  context:
+    'instructions system prompt Squad Context per agent type instructions Type-Specific Context slot pools capacity claim queue usage guidance Slot Pools',
   workspace:
     'git commit identity author name email Git Author Name Git Author Email host directory checkout path repository local folder runtime container restart pause Sandbox Lifecycle sleep dormant timeout Idle Timeout disk space size Ephemeral Storage Limit environment credentials secrets Exposed Secret Store Keys consultant idle dormant inactive cleanup Idle consultants',
   memory:
@@ -73,6 +74,12 @@ export const SQUAD_SETTINGS_SEARCH: readonly SettingsSearchEntry[] = [
     id: 'type-specific-context',
     label: 'Type-Specific Context',
     keywords: 'per agent type instructions',
+  },
+  {
+    section: 'context',
+    id: 'slot-pools',
+    label: 'Slot Pools',
+    keywords: 'slot capacity claim queue usage guidance concurrency',
   },
   {
     section: 'workspace',

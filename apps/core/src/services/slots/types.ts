@@ -3,11 +3,14 @@ export const DEFAULT_SLOT_CLAIM_TIMEOUT_MS = 60 * 60 * 1000
 export const MIN_SLOT_CLAIM_TIMEOUT_MS = 60 * 1000
 export const MAX_SLOT_CLAIM_TIMEOUT_MS = 24 * 60 * 60 * 1000
 export const SLOT_KEY_PATTERN = /^[a-z][a-z0-9._-]{0,63}$/
+/** Usage guidance is published into every agent prompt, so keep it short. */
+export const MAX_SLOT_USAGE_LENGTH = 1_000
 
 export type SlotServiceErrorCode =
   | 'invalid_slot_key'
   | 'invalid_capacity'
   | 'invalid_timeout'
+  | 'invalid_usage'
   | 'invalid_history_limit'
   | 'invalid_cursor'
   | 'pool_not_found'
@@ -79,6 +82,11 @@ export interface SlotPoolSummary {
   key: string
   capacity: number
   claimTimeoutMs: number
+  /** Optional "how to use" guidance published to agent prompts. */
+  usage: string | null
+  /** False while the pool is disabled: not enforced, no queueing, omitted from prompts. */
+  enabled: boolean
+  disabledAt: Date | null
   activeCount: number
   availableCount: number
   queuedCount: number
@@ -94,9 +102,11 @@ export interface SlotPoolRecord {
   key: string
   capacity: number
   claimTimeoutMs: number
+  usage: string | null
   createdBy: string
   createdAt: Date
   updatedAt: Date
+  disabledAt: Date | null
   unregisteredAt: Date | null
 }
 
@@ -171,3 +181,5 @@ export type SlotAcquireResult =
   | { outcome: 'granted'; message: string; pool: SlotAcquirePoolSnapshot; claim: SlotAcquireClaim }
   | { outcome: 'queued'; message: string; pool: SlotAcquirePoolSnapshot; waiter: SlotAcquireWaiter }
   | { outcome: 'unavailable'; message: string; pool: SlotAcquirePoolSnapshot }
+  /** The pool is registered but disabled: nothing was claimed or queued. */
+  | { outcome: 'disabled'; message: string; pool: SlotAcquirePoolSnapshot }
