@@ -209,3 +209,83 @@ test('first visit establishes a watermark without claiming previous completions'
   expect(saved).toEqual([observedAt])
   expect(dom.window.document.body.textContent).not.toContain('Since your last visit')
 })
+
+test('a squad filter scopes completions to the selected squads and hides account-level Assistant updates', async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const { root } = dom.createRoot()
+  const completedKeys: unknown[][] = []
+  const hooks = {
+    useQuery: ((options: { queryKey: unknown[] }) =>
+      options.queryKey[0] === 'auth'
+        ? {
+            isSuccess: true,
+            isFetchedAfterMount: true,
+            data: { lastVisitedAt: '2026-01-01T00:00:00.000Z', observedAt: '2026-01-03T00:00:00.000Z' },
+          }
+        : { isSuccess: true }) as never,
+    useInfiniteQuery: ((options: { queryKey: unknown[] }) => {
+      completedKeys.push(options.queryKey)
+      const filtered = (options.queryKey[5] as string[]).length > 0
+      return {
+        isSuccess: true,
+        data: {
+          pages: [
+            filtered
+              ? { totalCount: 1, items: [{ id: 'ficus-work', title: 'Ficus fix', completedAt: null }] }
+              : { totalCount: 0, items: [] },
+          ],
+        },
+      }
+    }) as never,
+  }
+  const useActivity = (() => ({
+    ownerId: 'one',
+    unreadConversations: 1,
+    isError: false,
+    activity: {
+      totals: {},
+      hasMore: false,
+      conversations: [
+        {
+          id: '507a9ac0-164e-4f49-9441-e57522bdc52b',
+          title: 'Hosting comparison',
+          unreadUpdates: 1,
+          latestUpdate: null,
+        },
+      ],
+    },
+  })) as never
+  const render = (squadIds: string[]) =>
+    dom!.act(async () => {
+      root.render(
+        <MemoryRouter>
+          <ReactQueryHooksProvider hooks={hooks}>
+            <AccountFeedVisit
+              userId="one"
+              ActionCenter={({ actions }) => <div>{actions.length} new question</div>}
+              actions={[]}
+              ready
+              squadIds={squadIds}
+              acknowledge={async (at) => ({ lastVisitedAt: at })}
+              useActivity={useActivity}
+            />
+          </ReactQueryHooksProvider>
+        </MemoryRouter>
+      )
+    })
+
+  await render(['squad-2', 'squad-1'])
+  // The completed query asks the server for the selected squads only (sorted for a stable key).
+  expect(completedKeys.at(-1)?.slice(5)).toEqual([['squad-1', 'squad-2']])
+  const text = () => dom!.window.document.body.textContent ?? ''
+  expect(text()).toContain('1 completed')
+  expect(text()).toContain('Ficus fix')
+  expect(text()).not.toContain('Assistant update')
+  expect(text()).not.toContain('Hosting comparison')
+
+  // All squads keeps the account-level Assistant updates.
+  await render([])
+  expect(completedKeys.at(-1)?.slice(5)).toEqual([[]])
+  expect(text()).toContain('1 Assistant update')
+  expect(text()).toContain('Hosting comparison')
+})

@@ -8,10 +8,18 @@ import { pendingActionsPresentation, usePendingActions } from '../hooks/usePendi
 import { queryKeys } from '../queryKeys'
 import { SkeletonBlock } from './loading/Skeleton'
 import { ChevronRightIcon } from './icons'
+import { useURLStringArrayState } from '../hooks/useURLState'
+import { filterPendingActionsBySquads } from '../lib/pendingActionSquads'
+
+/** The Feed's squad filter, shared through the `squad` URL param with the work stream list's Filters menu. */
+function useFeedSquadFilters(): string[] {
+  return useURLStringArrayState('squad')[0]
+}
 
 interface FeedPageDependencies {
   FeedVisitSummary: typeof FeedVisitSummary
   usePendingActions: typeof usePendingActions
+  useSquadFilters: () => string[]
   WorkStreamListAll: ComponentType<ComponentProps<typeof WorkStreamListAll>>
   ActionCenterContent: ComponentType<ComponentProps<typeof ActionCenterContent>>
 }
@@ -24,13 +32,18 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
   const {
     FeedVisitSummary: VisitSummary = FeedVisitSummary,
     usePendingActions: usePendingActionsHook = usePendingActions,
+    useSquadFilters = useFeedSquadFilters,
     WorkStreamListAll: WorkStreamList = WorkStreamListAll,
     ActionCenterContent: ActionCenter = ActionCenterContent,
   } = dependencies
   const queryClient = useQueryClient()
   const [filterContainer, setFilterContainer] = useState<HTMLDivElement | null>(null)
   const pendingQuery = usePendingActionsHook()
-  const { actions, count: actionCount, status: actionsStatus } = pendingActionsPresentation(pendingQuery)
+  const { actions: allActions, status: actionsStatus } = pendingActionsPresentation(pendingQuery)
+  // The squad filter is display-only: every section shows the selected squads' share of the same data.
+  const squadFilters = useSquadFilters()
+  const actions = filterPendingActionsBySquads(allActions, squadFilters)
+  const hiddenByFilter = allActions.length > actions.length
   const { error, refetch } = pendingQuery
   const actionsLoading = actionsStatus === 'loading'
   const actionsError = actionsStatus === 'error'
@@ -49,7 +62,7 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
         <div ref={setFilterContainer} />
       </div>
 
-      <VisitSummary actions={actions} ready={actionsStatus === 'ready'} />
+      <VisitSummary actions={actions} ready={actionsStatus === 'ready'} squadIds={squadFilters} />
 
       {actionsError || actions.length > 0 ? (
         <details open className="mb-4 group">
@@ -62,7 +75,7 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
             </span>
             <span className="text-sm font-semibold text-secondary">Needs you</span>
             <span className="text-xs text-muted tabular-nums">
-              {actionsError ? 'Unavailable' : `${actionCount} pending`}
+              {actionsError ? 'Unavailable' : `${actions.length} pending`}
             </span>
           </summary>
           <div className="pb-3 pt-3">
@@ -92,7 +105,9 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
               <SkeletonBlock className="h-4 w-28" />
             </span>
           ) : (
-            <span className="text-xs">You’re all caught up</span>
+            <span className="text-xs">
+              {hiddenByFilter ? 'Nothing pending in the selected squads' : 'You’re all caught up'}
+            </span>
           )}
         </button>
       )}

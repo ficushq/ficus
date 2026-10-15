@@ -14,10 +14,27 @@ import { ChevronRightIcon } from './icons'
 import { webStatus } from '../lib/statusPresentation'
 import { ActionCenterContent } from './ActionCenterContent'
 
-export function FeedVisitSummary({ actions, ready }: { actions: PendingAction[]; ready: boolean }) {
+const ALL_SQUADS: readonly string[] = []
+
+export function FeedVisitSummary({
+  actions,
+  ready,
+  squadIds = ALL_SQUADS,
+}: {
+  actions: PendingAction[]
+  ready: boolean
+  /** The Feed's squad filter; empty means all squads. `actions` arrive already filtered. */
+  squadIds?: readonly string[]
+}) {
   const { identity } = usePermissions()
   return identity?.type === 'user' ? (
-    <AccountFeedVisit key={identity.userId} userId={identity.userId} actions={actions} ready={ready} />
+    <AccountFeedVisit
+      key={identity.userId}
+      userId={identity.userId}
+      actions={actions}
+      ready={ready}
+      squadIds={squadIds}
+    />
   ) : null
 }
 
@@ -25,6 +42,7 @@ export function AccountFeedVisit({
   userId,
   actions,
   ready,
+  squadIds = ALL_SQUADS,
   acknowledge = acknowledgeFeedVisit,
   ActionCenter = ActionCenterContent,
   useActivity = useAssistantActivity,
@@ -32,6 +50,7 @@ export function AccountFeedVisit({
   userId: string
   actions: PendingAction[]
   ready: boolean
+  squadIds?: readonly string[]
   acknowledge?: typeof acknowledgeFeedVisit
   ActionCenter?: typeof ActionCenterContent
   useActivity?: typeof useAssistantActivity
@@ -39,9 +58,11 @@ export function AccountFeedVisit({
   const location = useLocation()
   const visit = useQuery(feedQueries.visit(userId))
   // Passive: unread Assistant task updates are listed here as a pointer into the conversation,
-  // never as a Needs-you action. Opening the row does not mark anything seen.
+  // never as a Needs-you action. Opening the row does not mark anything seen. Assistant
+  // conversations belong to the account rather than a squad, so a squad filter hides them.
   const activity = useActivity()
-  const unreadConversations = (activity.activity?.conversations ?? []).filter((row) => row.unreadUpdates > 0)
+  const unreadConversations =
+    squadIds.length > 0 ? [] : (activity.activity?.conversations ?? []).filter((row) => row.unreadUpdates > 0)
   const work = useQuery(queries.squads.attentionWorkStreams())
   const [snapshot, setSnapshot] = useState<FeedVisit | null>(null)
   const [dismissed, setDismissed] = useState(false)
@@ -52,7 +73,7 @@ export function AccountFeedVisit({
     if (visit.isSuccess && visit.isFetchedAfterMount) setSnapshot((current) => current ?? visit.data)
   }, [visit.isSuccess, visit.isFetchedAfterMount, visit.data])
   const completed = useInfiniteQuery({
-    ...feedQueries.completed(snapshot?.lastVisitedAt ?? '', snapshot?.observedAt ?? ''),
+    ...feedQueries.completed(snapshot?.lastVisitedAt ?? '', snapshot?.observedAt ?? '', squadIds),
     enabled: Boolean(snapshot?.lastVisitedAt),
   })
   const loaded = ready && work.isSuccess && snapshot && (!snapshot.lastVisitedAt || completed.isSuccess)
