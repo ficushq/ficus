@@ -217,7 +217,11 @@ export interface ISandboxManager {
   stopWatch?(squadId: string): Promise<void>
 
   // --- Interactive Terminal ---
-  spawnShell(sandboxId: string, cols: number, rows: number, workspacePath?: string): IPty | null
+  /**
+   * Open an interactive shell. `cwd` (a sandbox-side absolute path) overrides
+   * where it starts; by default it starts in the box's work root.
+   */
+  spawnShell(sandboxId: string, cols: number, rows: number, workspacePath?: string, cwd?: string): IPty | null
 
   // --- Spec reconciliation (K8s only) ---
   /** Hash of the spec these options would produce, for drift comparison. */

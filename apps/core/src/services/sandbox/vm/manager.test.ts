@@ -1818,6 +1818,24 @@ describe('VmSandboxManager', () => {
     expect(mgr.getLastActivityAt('squad_s1')).toBe(3000)
   })
 
+  test('spawnShell starts in the requested cwd, defaulting to the work root', async () => {
+    const h = makeHarness()
+    const mgr = new VmSandboxManager(h.deps)
+    await mgr.ensureSandbox('squad_s1', squadOpts)
+    const client = [...h.clients.values()][0] as any
+    const spawns: any[] = []
+    client.shell = () => {
+      const stream = makeShellStream()
+      stream.write = (message: any) => spawns.push(message.spawn) > 0
+      return stream
+    }
+    mgr.spawnShell('squad_s1', 80, 24, undefined, '/home/box_agent/.private')
+    mgr.spawnShell('squad_s1', 80, 24)
+    expect(spawns[0].cwd).toBe('/home/box_agent/.private')
+    expect(spawns[1].cwd).not.toBe('/home/box_agent/.private')
+    expect(spawns[1].cwd).toBeTruthy()
+  })
+
   test('spawnShell on an unknown sandbox returns null', () => {
     const h = makeHarness()
     const mgr = new VmSandboxManager(h.deps)

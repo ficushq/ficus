@@ -2,7 +2,7 @@ import { beforeEach, afterEach, describe, expect, test } from 'bun:test'
 import { authenticateWsRequest, authorizeSystemLogsRequest, authorizeTerminalRequest } from './index'
 import { assignRole, cleanupTestRbac, createTestAdmin, createTestRole, createTestUser } from './test-utils/rbac'
 
-import { db, squads } from './db'
+import { agents, db, squads } from './db'
 import { inArray } from 'drizzle-orm'
 const prefix = `ws-auth-${crypto.randomUUID()}`
 const squadId = crypto.randomUUID()
@@ -15,6 +15,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  await db.delete(agents).where(inArray(agents.squadId, [squadId, otherSquadId]))
   await cleanupTestRbac(prefix)
   await db.delete(squads).where(inArray(squads.id, [squadId, otherSquadId]))
 })
@@ -171,5 +172,33 @@ describe('terminal websocket auth', () => {
     await expect(
       authorizeTerminalRequest(`http://localhost/ws/terminal?sandboxId=unknown-runtime&token=${admin.token}`)
     ).resolves.toMatchObject({ ok: true, params: { sandboxId: 'unknown-runtime', sessionId: null } })
+  })
+})
+
+describe('terminal websocket auth for an agent’s own box', () => {
+  test('resolves the agent from its row and applies the private-area rule', async () => {
+    const [agent] = await db.insert(agents).values({ agentTypeId: 'engineer', squadId }).returning()
+    const sandboxId = `agent_${agent!.id}`
+    const admin = await createTestAdmin({ canonicalAdmin: true, prefix })
+    const operator = await createTestUser({ prefix })
+    const operatorRole = await createTestRole({ prefix, permissions: ['agents:private-access', 'terminal:access'] })
+    await assignRole({ userId: operator.id, roleId: operatorRole.id, scope: 'squad', squadId })
+    const terminalOnly = await createTestUser({ prefix })
+    const terminalRole = await createTestRole({ prefix, permissions: ['terminal:access'] })
+    await assignRole({ userId: terminalOnly.id, roleId: terminalRole.id, scope: 'system' })
+    const elsewhere = await createTestUser({ prefix })
+    await assignRole({ userId: elsewhere.id, roleId: operatorRole.id, scope: 'squad', squadId: otherSquadId })
+
+    const url = (token: string, id = sandboxId) => `http://localhost/ws/terminal?sandboxId=${id}&token=${token}`
+    await expect(authorizeTerminalRequest(url(admin.token))).resolves.toMatchObject({ ok: true, params: { sandboxId } })
+    await expect(authorizeTerminalRequest(url(operator.token))).resolves.toMatchObject({ ok: true })
+    // Instance-wide terminal access is not enough for an agent's private box.
+    expect(await authorizeTerminalRequest(url(terminalOnly.token))).toEqual({ ok: false, status: 403 })
+    expect(await authorizeTerminalRequest(url(elsewhere.token))).toEqual({ ok: false, status: 403 })
+    expect(await authorizeTerminalRequest(url(admin.token, `agent_${crypto.randomUUID()}`))).toEqual({
+      ok: false,
+      status: 403,
+    })
+    expect(await authorizeTerminalRequest(url(admin.token, 'agent_whatever'))).toEqual({ ok: false, status: 403 })
   })
 })

@@ -74,12 +74,14 @@ export class TerminalManager {
   /**
    * Create a new terminal session for a sandbox.
    * Will ensure the sandbox container is running, creating it if necessary.
+   * `cwd` (sandbox-side) overrides where the shell starts.
    */
   async createSession(
     sandboxId: string,
     cols: number = 80,
     rows: number = 24,
-    workspacePath?: string
+    workspacePath?: string,
+    cwd?: string
   ): Promise<TerminalSession> {
     const sessionId = randomBytes(16).toString('hex')
 
@@ -102,7 +104,7 @@ export class TerminalManager {
 
     // Spawn shell inside the Docker sandbox container
     // Pass workspacePath so devbox environment can be auto-activated if available
-    const pty = this.getManager().spawnShell(sandboxId, cols, rows, workspacePath)
+    const pty = this.getManager().spawnShell(sandboxId, cols, rows, workspacePath, cwd)
     if (!pty) {
       throw new Error(`No sandbox container found for ${sandboxId}. Ensure it has been started.`)
     }
@@ -310,6 +312,11 @@ export class TerminalManager {
         this.sandboxSessions.delete(session.sandboxId)
       }
     }
+  }
+
+  /** Whether any session (live or exited but not yet removed) exists for a sandbox. */
+  hasSessions(sandboxId: string): boolean {
+    return this.sandboxSessions.has(sandboxId)
   }
 
   /**

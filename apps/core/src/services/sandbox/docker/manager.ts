@@ -1615,7 +1615,7 @@ export class DockerSandboxManager implements ISandboxManager {
     })
   }
 
-  spawnShell(sandboxId: string, cols: number, rows: number, workspacePath?: string): IPty | null {
+  spawnShell(sandboxId: string, cols: number, rows: number, workspacePath?: string, cwd?: string): IPty | null {
     let containerId: string | null = null
 
     // Check in-memory cache first
@@ -1689,7 +1689,7 @@ export class DockerSandboxManager implements ISandboxManager {
     // Use devbox bashrc if it exists (created during sandbox init)
     const hasDevboxBashrc = workspacePath && fs.existsSync(workspaceDotPath(workspacePath, '.bashrc'))
 
-    const shellWorkspaceMount = sandbox?.workspaceMount ?? containerWorkspaceLayout().workspaceMount
+    const shellWorkspaceMount = cwd ?? sandbox?.workspaceMount ?? containerWorkspaceLayout().workspaceMount
     // Inject the live Core URL so the terminal's `ficus` CLI reaches the current Core
     // even if the container baked a now-stale port. No token/password: the box is
     // shared with squad agents, so the terminal stays a token-free environment.

@@ -1358,7 +1358,7 @@ export class VmSandboxManager implements ISandboxManager {
   // user a permanently empty stream; absence makes that guard close the socket
   // with a clear "log streaming not supported for this runtime".
 
-  spawnShell(sandboxId: string, cols: number, rows: number, _workspacePath?: string): IPty | null {
+  spawnShell(sandboxId: string, cols: number, rows: number, _workspacePath?: string, cwd?: string): IPty | null {
     const state = this.sandboxes.get(sandboxId)
     if (!state) {
       log.warn(`Cannot spawn shell - box not found: ${sandboxId}`)
@@ -1373,7 +1373,7 @@ export class VmSandboxManager implements ISandboxManager {
       spawn: {
         cols,
         rows,
-        cwd: state.workRoot,
+        cwd: cwd ?? state.workRoot,
         useDevboxRc: true,
         env: state.apiUrl ? { FICUS_API_URL: state.apiUrl } : undefined,
       },

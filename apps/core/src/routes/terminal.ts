@@ -1,14 +1,12 @@
 import { Hono } from 'hono'
 import { terminalManager } from '../services/sandbox/docker/terminal'
-import { getSquadIdFromSandbox } from '../services/sandbox/types'
-import { hasPermission } from '../services/rbac'
+import { canAccessSandboxTerminal } from '../services/sandbox/terminal-access'
 import type { Identity } from '../services/rbac'
 
+/** Squad and agent boxes only; every other sandbox kind is refused here. */
 async function canAccessSandbox(identity: Identity | undefined, sandboxId: string): Promise<Response | null> {
   if (!identity) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
-  const squadId = getSquadIdFromSandbox(sandboxId)
-  if (!squadId) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 })
-  return (await hasPermission(identity, 'terminal:access', squadId))
+  return (await canAccessSandboxTerminal(identity, sandboxId))
     ? null
     : new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 })
 }

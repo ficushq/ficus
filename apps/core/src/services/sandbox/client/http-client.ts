@@ -12,6 +12,7 @@
 import { EventEmitter } from 'events'
 import { randomUUID } from 'node:crypto'
 import type { SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@ficus/shared'
+import type { ConfinedEntry, ConfinedWriteStatus } from '@ficus/shared/confined-fs'
 
 export type SandboxTransportKind = 'connection_refused' | 'connection_reset' | 'timeout' | 'network' | 'socket_closed'
 
@@ -665,6 +666,47 @@ export class SandboxClient {
 
   async stat(request: StatRequest): Promise<StatResponse> {
     return this.post('/stat', request)
+  }
+
+  /**
+   * Symlink-safe listing below `root` (see `@ficus/shared/confined-fs`). A box
+   * bundle that predates the confined routes answers a plain 404 with no
+   * `code`; callers treat that as "box needs a restart", never as not-found.
+   */
+  async confinedList(request: { root: string; path: string }): Promise<{ entries: ConfinedEntry[] }> {
+    return this.post('/confined/list', request)
+  }
+
+  /** Symlink-safe read of a regular file below `root`; `content` is base64. */
+  async confinedRead(request: {
+    root: string
+    path: string
+    maxBytes: number
+  }): Promise<{ content: string; size: number; truncated: boolean }> {
+    return this.post('/confined/read', request)
+  }
+
+  /** Symlink-safe raw-body write of a regular file below `root`. */
+  async confinedUpload(request: {
+    root: string
+    path: string
+    content: Uint8Array
+    overwrite?: boolean
+    createDirs?: boolean
+  }): Promise<{ status: ConfinedWriteStatus }> {
+    const params = new URLSearchParams({ root: request.root, path: request.path })
+    if (request.overwrite) params.set('overwrite', 'true')
+    if (request.createDirs) params.set('createDirs', 'true')
+    return this.withUnary(
+      `/confined/upload?${params.toString()}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream', ...this.authHeaders },
+        body: request.content as unknown as BodyInit,
+      },
+      (resp) => this.consumeJsonResponse<{ status: ConfinedWriteStatus }>(resp),
+      UPLOAD_TIMEOUT_MS
+    )
   }
 
   /**

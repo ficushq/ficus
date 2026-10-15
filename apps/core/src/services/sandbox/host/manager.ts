@@ -349,13 +349,19 @@ export class HostSandboxManager implements ISandboxManager {
   // has a host-workspace override — the tracked `state.workRoot` is already
   // override-aware (set by ensureSandbox from hostWorkspaceLayout) and is the
   // one true cwd for this sandboxId.
-  spawnShell(sandboxId: string, cols: number, rows: number, _workspacePath?: string): IPty | null {
+  spawnShell(
+    sandboxId: string,
+    cols: number,
+    rows: number,
+    _workspacePath?: string,
+    cwdOverride?: string
+  ): IPty | null {
     const state = this.sandboxes.get(sandboxId)
     if (!state) {
       log.warn(`spawnShell: no host sandbox tracked for ${sandboxId}`)
       return null
     }
-    const cwd = state.workRoot
+    const cwd = cwdOverride ?? state.workRoot
     const env: Record<string, string> = {
       ...buildHostCommandEnv({ squadId: state.squadId, base: this.baseEnv() }),
       PWD: cwd,
