@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { assistantConversationSearch } from '../lib/assistantConversationSearch'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
@@ -109,6 +109,10 @@ export function ActionItem({
 
   const isWorkStreamAction = action.type === 'workstream-review' || action.type === 'workstream-blocked'
   const deliveryGate = action.type === 'workstream-delivery' ? (action.data as WorkStreamDeliveryActionData) : null
+  const linkedPullRequests = deliveryGate ? deliveryGate.pullRequests.filter((pullRequest) => pullRequest.url) : []
+  // A delivery gate's only actions are its pull request links. One link sits inline on the header,
+  // so the card has nothing to expand; several stay in the expandable list.
+  const expandable = !deliveryGate || linkedPullRequests.length > 1
   const status = actionStatusPresentation(action)
 
   // Remove the successful action immediately, then refetch only authoritative affected domains.
@@ -143,6 +147,12 @@ export function ActionItem({
     }
     await Promise.all(invalidations)
   }
+
+  // A halted agent's Continue sits on the header, so the mutation lives with the card, not its body.
+  const continueMutation = useMutation({
+    mutationFn: () => continueHaltedActions([action.id]),
+    onSuccess: completeAction,
+  })
 
   // Determine link and title
   const wsData = isWorkStreamAction ? (action.data as WorkStreamActionData) : null
@@ -182,9 +192,10 @@ export function ActionItem({
         <div
           className={clsx(
             'flex items-start gap-3 py-3 min-w-0',
-            !embedded && 'px-4 cursor-pointer hover:bg-surface-hover transition-colors'
+            !embedded && 'px-4',
+            !embedded && expandable && 'cursor-pointer hover:bg-surface-hover transition-colors'
           )}
-          onClick={embedded ? undefined : () => setExpanded(!expanded)}
+          onClick={embedded || !expandable ? undefined : () => setExpanded(!expanded)}
         >
           {/* Status icon: glyph + color + label, matching the stream's row in the work list */}
           <span
@@ -206,7 +217,7 @@ export function ActionItem({
                   e.stopPropagation()
                   setShowWsModal(true)
                 }}
-                className="font-medium text-sm text-primary hover:text-accent-light line-clamp-2 block text-left w-fit max-w-full"
+                className="font-medium text-sm text-primary hover:text-accent-light line-clamp-2 text-left w-fit max-w-full"
               >
                 {title}
               </button>
@@ -217,16 +228,28 @@ export function ActionItem({
                   e.stopPropagation()
                   closeActionCenter()
                 }}
-                className="font-medium text-sm text-primary hover:text-accent-light line-clamp-2 block w-fit max-w-full"
+                className="font-medium text-sm text-primary hover:text-accent-light line-clamp-2 w-fit max-w-full"
               >
                 {title}
               </Link>
             )}
             <ActionSubtitle action={action} />
+            {continueMutation.isError && (
+              <p role="alert" className="mt-1 text-xs text-status-danger-600">
+                {actionErrorMessage(continueMutation.error)}
+              </p>
+            )}
           </div>
 
+          <ActionInlineControl
+            action={action}
+            title={title}
+            linkedPullRequests={linkedPullRequests}
+            continueAgent={continueMutation}
+          />
+
           {/* Expand/collapse chevron */}
-          {!embedded && (
+          {!embedded && expandable && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -242,20 +265,23 @@ export function ActionItem({
         </div>
 
         {/* Expanded content: pt-2 on top of the header's py-3 keeps the body off the header row */}
-        {expanded && (
+        {expanded && expandable && (
           <div className={clsx('pt-2 pb-4 space-y-4', !embedded && 'px-4 sm:pl-11')}>
             {/* Action controls */}
             {deliveryGate ? (
-              <DeliveryGateActionContent data={deliveryGate} hideWorkStreamLink={embedded} />
+              <div className="flex flex-wrap items-center gap-2">
+                {linkedPullRequests.map((pullRequest) => (
+                  <PullRequestLink
+                    key={`${pullRequest.repository}#${pullRequest.number}`}
+                    pullRequest={pullRequest}
+                    deliveryKind={deliveryGate.deliveryKind}
+                  />
+                ))}
+              </div>
             ) : action.canRespond ||
               (action.type === 'agent-question' &&
                 (action.data as AgentQuestionActionData).answerDelivery?.status === 'failed') ? (
-              <ActionContent
-                action={action}
-                onComplete={completeAction}
-                continueHaltedActions={continueHaltedActions}
-                hideWorkStreamLink={embedded}
-              />
+              <ActionContent action={action} onComplete={completeAction} />
             ) : (
               <p className="text-xs text-muted">You can view this action but do not have permission to respond.</p>
             )}
@@ -360,105 +386,165 @@ function deliveryGateLabel(data: WorkStreamDeliveryActionData): string {
   return data.deliveryKind === 'merge' ? 'Merge pull request' : 'Review pull request'
 }
 
+type DeliveryPullRequest = WorkStreamDeliveryActionData['pullRequests'][number]
+
 /**
- * A pull request needs a person on the code host. Ficus cannot approve or merge
- * it here, so this links out to the pull request and to the work stream.
+ * A pull request needs a person on the code host. Ficus cannot approve or merge it here, so the
+ * card links out to it; the card title already opens the work stream.
  */
-function DeliveryGateActionContent({
-  data,
-  hideWorkStreamLink,
+function PullRequestLink({
+  pullRequest,
+  deliveryKind,
+  compact = false,
 }: {
-  data: WorkStreamDeliveryActionData
-  hideWorkStreamLink: boolean
+  pullRequest: DeliveryPullRequest
+  deliveryKind: WorkStreamDeliveryActionData['deliveryKind']
+  compact?: boolean
 }) {
-  const [showWsModal, setShowWsModal] = useState(false)
-  const verb = data.deliveryKind === 'merge' ? 'merged' : 'approved'
+  // The link only opens the pull request; "Merge" would read as if clicking merges it.
+  const verb = deliveryKind === 'merge' ? 'Open' : 'Review'
+  const reference = `${pullRequest.repository}#${pullRequest.number}`
   return (
-    <div className="space-y-3">
-      <p className="text-sm leading-relaxed text-secondary">
-        {data.deliveryKind === 'merge'
-          ? 'The pull request is ready and waits for a person to merge it.'
-          : 'The pull request needs an approving human review before it can merge.'}{' '}
-        Delivery completes on its own once it is {verb} on the code host.
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        {data.pullRequests
-          .filter((pullRequest) => pullRequest.url)
-          .map((pullRequest) => (
-            <a
-              key={`${pullRequest.repository}#${pullRequest.number}`}
-              href={pullRequest.url}
-              target="_blank"
-              rel="noreferrer"
-              className="ficus-button ficus-button-primary inline-flex min-h-10 items-center px-3 py-2 text-sm"
-            >
-              {data.deliveryKind === 'merge' ? 'Merge' : 'Review'} {pullRequest.repository}#{pullRequest.number}
-            </a>
-          ))}
-        {!hideWorkStreamLink && (
-          <button
-            onClick={() => setShowWsModal(true)}
-            className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm"
-          >
-            View
-          </button>
-        )}
-      </div>
-      {showWsModal && (
-        <WorkStreamViewModal
-          workStreamId={data.workStreamId}
-          squadId={data.squadId}
-          squadName={data.squadName}
-          actionCanRespond={false}
-          onClose={() => setShowWsModal(false)}
-        />
+    <a
+      href={pullRequest.url}
+      target="_blank"
+      rel="noreferrer"
+      // The compact header label drops the repository; the accessible name and tooltip keep it.
+      aria-label={compact ? `${verb} #${pullRequest.number}, pull request ${reference}` : undefined}
+      title={compact ? `${verb} ${reference}` : undefined}
+      className={clsx(
+        'ficus-button ficus-button-primary inline-flex items-center',
+        compact ? INLINE_ACTION_SIZE : 'min-h-10 px-3 py-2 text-sm'
       )}
+    >
+      {compact ? `${verb} #${pullRequest.number}` : `${verb} ${reference}`}
+    </a>
+  )
+}
+
+/** Compact sizing for a primary action on the collapsed header row: fits beside a two-line title on phones. */
+const INLINE_ACTION_SIZE = 'min-h-8 whitespace-nowrap px-3 py-1.5 text-xs'
+
+/**
+ * The card's single primary action, on the header row so it takes one click from the collapsed
+ * card. Only cards whose action needs no input get one: a delivery gate with one pull request, a
+ * halted agent's Continue, an Assistant task's Answer and a workflow gate's review surface. Cards
+ * that take an answer, a choice or review feedback keep their controls in the expandable body.
+ */
+function ActionInlineControl({
+  action,
+  title,
+  linkedPullRequests,
+  continueAgent,
+}: {
+  action: PendingAction
+  title: string | undefined
+  linkedPullRequests: DeliveryPullRequest[]
+  continueAgent: { mutate: () => void; isPending: boolean }
+}) {
+  const location = useLocation()
+  const { closeActionCenter } = useActionCenter()
+  const [showDecision, setShowDecision] = useState(false)
+
+  let control: ReactNode = null
+  if (action.type === 'workstream-delivery') {
+    const pullRequest = linkedPullRequests.length === 1 ? linkedPullRequests[0] : null
+    if (pullRequest)
+      control = (
+        <PullRequestLink
+          pullRequest={pullRequest}
+          deliveryKind={(action.data as WorkStreamDeliveryActionData).deliveryKind}
+          compact
+        />
+      )
+  } else if (!action.canRespond) {
+    control = null
+  } else if (action.type === 'agent-error') {
+    control = (
+      <button
+        type="button"
+        onClick={() => continueAgent.mutate()}
+        disabled={continueAgent.isPending}
+        aria-label={title ? `${continueAgent.isPending ? 'Continuing' : 'Continue'} ${title}` : undefined}
+        className={clsx('ficus-button ficus-button-primary disabled:opacity-50', INLINE_ACTION_SIZE)}
+      >
+        {continueAgent.isPending ? 'Continuing…' : 'Continue'}
+      </button>
+    )
+  } else if (action.type === 'assistant-needs-input') {
+    const data = action.data as AssistantTaskActionData
+    control = (
+      <Link
+        to={{
+          pathname: location.pathname,
+          search: assistantConversationSearch(location.search, data.conversationId, data.taskId),
+        }}
+        onClick={closeActionCenter}
+        aria-label={`Answer ${data.taskLabel} in Assistant`}
+        className={clsx('ficus-button ficus-button-primary inline-flex items-center', INLINE_ACTION_SIZE)}
+      >
+        Answer
+      </Link>
+    )
+  } else if (
+    action.type === 'workstream-blocked' &&
+    (action.data as WorkStreamActionData).wait.resolutionHandler === 'workflow'
+  ) {
+    const data = action.data as WorkStreamActionData
+    control = (
+      <>
+        <button
+          type="button"
+          onClick={() => setShowDecision(true)}
+          aria-label={title ? `Review and decide on ${title}` : 'Review and decide'}
+          title="Review and decide"
+          className={clsx('ficus-button ficus-button-primary', INLINE_ACTION_SIZE)}
+        >
+          Review
+        </button>
+        {/* A flow-owned wait is a workflow gate: open its review surface (the work stream when it is not a gate). */}
+        {showDecision && (
+          <WorkflowReviewLauncher
+            workStreamId={data.workStreamId}
+            squadId={data.squadId}
+            squadName={data.squadName}
+            focusWaitId={data.focus.waitId}
+            actionCanRespond={action.canRespond}
+            onClose={() => setShowDecision(false)}
+          />
+        )}
+      </>
+    )
+  }
+
+  if (!control) return null
+  // Clicks inside (including from the review modal rendered in a portal) must not toggle the card.
+  return (
+    <div className="flex shrink-0 items-center self-center -my-1" onClick={(event) => event.stopPropagation()}>
+      {control}
     </div>
   )
 }
 
-function ActionContent({
-  action,
-  onComplete,
-  continueHaltedActions,
-  hideWorkStreamLink,
-}: {
-  action: PendingAction
-  onComplete: () => void | Promise<void>
-  continueHaltedActions: typeof continueHaltedAgents
-  hideWorkStreamLink: boolean
-}) {
+function ActionContent({ action, onComplete }: { action: PendingAction; onComplete: () => void | Promise<void> }) {
   switch (action.type) {
     case 'squad-question':
       return <SquadQuestionActionContent action={action} onComplete={onComplete} />
     case 'agent-question':
       return <AgentQuestionActionContent action={action} onComplete={onComplete} />
     case 'agent-error':
+      // Continue sits on the header; the body explains why the agent halted.
       return (
-        <AgentErrorActionContent
-          action={action}
-          onComplete={onComplete}
-          continueHaltedActions={continueHaltedActions}
-        />
+        <p className="text-sm leading-relaxed text-secondary whitespace-pre-wrap">
+          {(action.data as AgentErrorActionData).reason}
+        </p>
       )
     case 'assistant-needs-input':
       return <AssistantTaskActionContent action={action} />
     case 'workstream-review':
-      return (
-        <WorkStreamReviewActionContent
-          action={action}
-          onComplete={onComplete}
-          hideWorkStreamLink={hideWorkStreamLink}
-        />
-      )
+      return <WorkStreamReviewActionContent action={action} onComplete={onComplete} />
     case 'workstream-blocked':
-      return (
-        <WorkStreamBlockedActionContent
-          action={action}
-          onComplete={onComplete}
-          hideWorkStreamLink={hideWorkStreamLink}
-        />
-      )
+      return <WorkStreamBlockedActionContent action={action} onComplete={onComplete} />
     default:
       return null
   }
@@ -595,66 +681,15 @@ function AgentQuestionActionContent({
   )
 }
 
-function AgentErrorActionContent({
-  action,
-  onComplete,
-  continueHaltedActions,
-}: {
-  action: PendingAction
-  onComplete: () => void | Promise<void>
-  continueHaltedActions: typeof continueHaltedAgents
-}) {
-  const data = action.data as AgentErrorActionData
-  const navigate = useNavigate()
-  const { closeActionCenter } = useActionCenter()
-
-  const mutation = useMutation({
-    mutationFn: () => continueHaltedActions([action.id]),
-    onSuccess: onComplete,
-  })
-
-  return (
-    <div className="space-y-3">
-      <p className="text-sm leading-relaxed text-secondary whitespace-pre-wrap">{data.reason}</p>
-      {mutation.isError && (
-        <p role="alert" className="text-xs text-status-danger-600">
-          {actionErrorMessage(mutation.error)}
-        </p>
-      )}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => mutation.mutate()}
-          disabled={mutation.isPending}
-          className="ficus-button ficus-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
-        >
-          {mutation.isPending ? 'Continuing…' : 'Continue'}
-        </button>
-        <button
-          onClick={() => {
-            closeActionCenter()
-            navigate(agentThreadPath(data.agentId, data.squadId))
-          }}
-          className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm"
-        >
-          View agent
-        </button>
-      </div>
-    </div>
-  )
-}
-
 function WorkStreamReviewActionContent({
   action,
   onComplete,
-  hideWorkStreamLink,
 }: {
   action: PendingAction
-  hideWorkStreamLink: boolean
   onComplete: () => void | Promise<void>
 }) {
   const data = action.data as WorkStreamActionData
   const [showRejectModal, setShowRejectModal] = useState(false)
-  const [showWsModal, setShowWsModal] = useState(false)
   const [showApprovalConfirmation, setShowApprovalConfirmation] = useState(false)
 
   const approveMutation = useMutation({
@@ -685,7 +720,7 @@ function WorkStreamReviewActionContent({
         <div className="min-w-0 text-sm text-secondary">
           <MarkdownContent
             compactPullRequestLinks
-            className="text-sm leading-relaxed text-secondary prose-p:my-2 [&>:first-child]:mt-0 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline hover:prose-a:underline"
+            className="text-sm leading-relaxed text-secondary prose-p:my-2 [&>:first-child]:mt-0 [&>:last-child]:mb-0 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline hover:prose-a:underline"
           >
             {data.wait.message ?? data.prompt.message}
           </MarkdownContent>
@@ -713,14 +748,6 @@ function WorkStreamReviewActionContent({
           >
             {sendBackLabel}
           </button>
-          {!hideWorkStreamLink && (
-            <button
-              onClick={() => setShowWsModal(true)}
-              className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm"
-            >
-              View
-            </button>
-          )}
         </div>
       </div>
 
@@ -743,17 +770,6 @@ function WorkStreamReviewActionContent({
         loadingLabel="Sending..."
         placeholder="Describe what needs to be changed..."
       />
-
-      {showWsModal && (
-        <WorkStreamViewModal
-          workStreamId={data.workStreamId}
-          squadId={data.squadId}
-          squadName={data.squadName}
-          focusWaitId={data.focus.waitId}
-          actionCanRespond={action.canRespond}
-          onClose={() => setShowWsModal(false)}
-        />
-      )}
     </>
   )
 }
@@ -761,16 +777,14 @@ function WorkStreamReviewActionContent({
 function WorkStreamBlockedActionContent({
   action,
   onComplete,
-  hideWorkStreamLink,
 }: {
   action: PendingAction
-  hideWorkStreamLink: boolean
   onComplete: () => void | Promise<void>
 }) {
   const data = action.data as WorkStreamActionData
+  // A workflow gate's review surface opens from the header (ActionInlineControl); the body shows its message.
   const flowControlled = data.wait.resolutionHandler === 'workflow'
   const [response, setResponse] = useState('')
-  const [showWsModal, setShowWsModal] = useState(false)
 
   const respondMutation = useMutation({
     mutationFn: (resp: string) =>
@@ -783,7 +797,7 @@ function WorkStreamBlockedActionContent({
       <div className="min-w-0 text-sm text-secondary">
         <MarkdownContent
           compactPullRequestLinks
-          className="text-sm leading-relaxed text-secondary prose-p:my-2 [&>:first-child]:mt-0 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline hover:prose-a:underline"
+          className="text-sm leading-relaxed text-secondary prose-p:my-2 [&>:first-child]:mt-0 [&>:last-child]:mb-0 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline hover:prose-a:underline"
         >
           {data.wait.message ?? data.prompt.message}
         </MarkdownContent>
@@ -835,52 +849,17 @@ function WorkStreamBlockedActionContent({
           ))}
         </div>
       )}
-
-      {(!hideWorkStreamLink || flowControlled) && (
-        <button
-          onClick={() => setShowWsModal(true)}
-          className="ficus-button ficus-button-secondary min-h-10 px-3 py-2 text-sm"
-        >
-          {flowControlled ? 'Review and decide' : 'View'}
-        </button>
-      )}
-
-      {/* A flow-owned wait is a workflow gate: open its review surface (the work stream when it is not a gate). */}
-      {showWsModal && flowControlled && (
-        <WorkflowReviewLauncher
-          workStreamId={data.workStreamId}
-          squadId={data.squadId}
-          squadName={data.squadName}
-          focusWaitId={data.focus.waitId}
-          actionCanRespond={action.canRespond}
-          onClose={() => setShowWsModal(false)}
-        />
-      )}
-      {showWsModal && !flowControlled && (
-        <WorkStreamViewModal
-          workStreamId={data.workStreamId}
-          squadId={data.squadId}
-          squadName={data.squadName}
-          focusWaitId={data.focus.waitId}
-          actionCanRespond={action.canRespond}
-          onClose={() => setShowWsModal(false)}
-        />
-      )}
     </div>
   )
 }
 
-/** Fetches a work stream and renders the detail modal */
-
 /**
  * A delegated Assistant task waiting on the owner's answer. The answer is given inside the
  * conversation so it stays correlated to the task (`inReplyTo`); this card only presents the
- * question and takes the user there. Opening it marks nothing seen.
+ * question; the header's Answer (like the title) takes the user there. Opening it marks nothing seen.
  */
 function AssistantTaskActionContent({ action }: { action: PendingAction }) {
   const data = action.data as AssistantTaskActionData
-  const location = useLocation()
-  const { closeActionCenter } = useActionCenter()
   return (
     <div className="space-y-3">
       <MarkdownContent className="text-sm">{data.question}</MarkdownContent>
@@ -897,16 +876,6 @@ function AssistantTaskActionContent({ action }: { action: PendingAction }) {
           </time>
         )}
       </div>
-      <Link
-        to={{
-          pathname: location.pathname,
-          search: assistantConversationSearch(location.search, data.conversationId, data.taskId),
-        }}
-        onClick={closeActionCenter}
-        className="ficus-button ficus-button-primary inline-flex min-h-10 items-center px-3 py-2 text-sm"
-      >
-        Answer in Assistant
-      </Link>
     </div>
   )
 }
