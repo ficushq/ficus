@@ -11,6 +11,7 @@ import type { GitHubFeedbackContent } from '@ficus/shared'
 import { readOutputEvent, readFeedbackRevision } from './feedback-pass-read'
 import { githubContentHash, githubParentTextContent } from './feedback-envelope'
 import { readCurrentGitHubFeedback } from './feedback-provider'
+import { GitHubApiUnavailableError } from '../../github/api-client'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 import { isTrustedGitHubFeedbackContent } from './feedback-trust'
 import { isGitHubAuthorFilterEnabled } from './author-filter'
@@ -20,7 +21,10 @@ type Event = typeof integrationOutputEvents.$inferSelect
 export interface FeedbackCaptureDependencies {
   /** Must check live connection revision AND exact repository/native resource. No provider I/O under locks. */
   authorizeSource(event: Event): Promise<boolean>
-  /** Authenticated current-object read. Null/mismatch/error cannot establish freshness. */
+  /**
+   * Authenticated current-object read. Null/mismatch/error cannot establish freshness. A
+   * {@link GitHubApiUnavailableError} (GitHub could not answer) defers the capture instead.
+   */
   readCurrent?(event: Event, content: GitHubFeedbackContent): Promise<{ contentHash: string } | null>
   /** Verified native delivery ID, never payload/metadata.synthetic. Poll fingerprints are not transport receipts. */
   transportKey?: string
@@ -90,8 +94,10 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   ) {
     try {
       currentHash = (await (deps.readCurrent ?? readCurrentGitHubFeedback)(event, content))?.contentHash ?? null
-    } catch {
-      /* fail uncertainty closed */
+    } catch (error) {
+      // GitHub could not answer: nothing is written; the caller retries this capture later.
+      if (error instanceof GitHubApiUnavailableError) throw new Error('feedback_provider_unavailable')
+      /* any other failure is uncertainty: fail closed (held for review) */
     }
   }
   // The callback's authorization is fresh immediately before entering the transaction.

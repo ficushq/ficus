@@ -283,6 +283,8 @@ async function prepareGitHubOutputInPass(
         // route the raw event as the filter-OFF path would, instead of holding it.
         if (error instanceof Error && error.message === 'feedback_filter_disabled')
           return (await isUnfilteredGitHubEvent(db, input)) ? ready(input) : settle('github_not_routable')
+        // GitHub could not answer the current-version witness: retry later, never hold as ambiguous.
+        if (error instanceof Error && error.message === 'feedback_provider_unavailable') return DEFER
         throw error
       }
       // Content-free, after the capture transaction committed: the human queue count changed.

@@ -1,8 +1,9 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import type { IntegrationOutputFact } from '@ficus/shared'
 import type { VerifiedIngressEvent } from '../types'
 import { githubOutputAdapter } from '../outputs/github'
 import * as provider from './feedback-provider'
+import * as api from '../../github/api-client'
 
 const squadId = crypto.randomUUID(),
   connectionId = crypto.randomUUID()
@@ -112,4 +113,36 @@ test('current object ID alone cannot certify a different parent resource', async
         : { ...native, html_url: 'https://github.com/acme/project/pull/4#pullrequestreview-9' }
     )
   ).toBeNull()
+})
+
+test('the current-version witness tells a GitHub outage apart from an explicit denial', async () => {
+  const fact = githubOutputAdapter.normalize(input)[0]!,
+    content = fact.github!.content!
+  const repo = { id: 10, full_name: 'acme/project' }
+  for (const failAt of ['/repositories/', '/repos/']) {
+    await expect(
+      provider.readCurrentGitHubFeedback(source(fact), content, async (path) => {
+        if (path.startsWith(failAt)) throw new api.GitHubApiUnavailableError('http_503')
+        return path.startsWith('/repositories/') ? repo : native
+      })
+    ).rejects.toBeInstanceOf(api.GitHubApiUnavailableError)
+  }
+  // An explicit 404/403 (null under distinguishUnavailable) stays a non-witness, not an outage.
+  expect(
+    await provider.readCurrentGitHubFeedback(source(fact), content, async (path) =>
+      path.startsWith('/repositories/') ? repo : null
+    )
+  ).toBeNull()
+  // The default reader asks githubApiGet to distinguish an outage from a denial.
+  const get = spyOn(api, 'githubApiGet').mockImplementation(async () => {
+    throw new api.GitHubApiUnavailableError('no_token')
+  })
+  try {
+    await expect(provider.readCurrentGitHubFeedback(source(fact), content)).rejects.toBeInstanceOf(
+      api.GitHubApiUnavailableError
+    )
+    expect(get.mock.calls[0]).toEqual(['/repositories/10', squadId, connectionId, { distinguishUnavailable: true }])
+  } finally {
+    get.mockRestore()
+  }
 })
