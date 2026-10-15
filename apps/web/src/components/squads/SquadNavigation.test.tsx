@@ -143,3 +143,24 @@ test('later active tool gets initial focus and arrows do not navigate until Ente
   expect(changes).toEqual(['skills'])
   expect(dom.window.document.activeElement).toBe(trigger)
 })
+
+test('tabs and More draw an inset focus ring so the scrolling row cannot clip it', async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost/squads/test' })
+  const { container, root } = dom.createRoot()
+  const tabs = ['home', 'agents', 'memory'].map((path) => ({ path, label: path }))
+  await dom.act(async () => root.render(<SquadNavigation tabs={tabs} activeTab="home" onChange={() => {}} />))
+  // The tab row scrolls sideways, which also clips vertically; an outset ring would lose its edges.
+  expect(container.querySelector('[role="tablist"]')!.className).toContain('overflow-x-auto')
+  const controls = [
+    ...container.querySelectorAll<HTMLElement>('[role="tab"]'),
+    container.querySelector<HTMLElement>('[aria-label="More squad tools"]')!,
+  ]
+  expect(controls).toHaveLength(3)
+  for (const control of controls) expect(control.classList.contains('focus-visible:outline-offset-[-2px]')).toBe(true)
+  // A focused tab partly past the scroller's edge is brought fully into view, ring included.
+  const scrolls: unknown[] = []
+  const tab = controls[1]!
+  tab.scrollIntoView = (options?: boolean | ScrollIntoViewOptions) => void scrolls.push(options)
+  await dom.act(async () => tab.focus())
+  expect(scrolls).toEqual([{ block: 'nearest', inline: 'nearest' }])
+})
