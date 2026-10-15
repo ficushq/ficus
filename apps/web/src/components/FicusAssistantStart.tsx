@@ -189,7 +189,10 @@ export function FicusAssistantStart({
           <div className="mb-1 px-3 flex items-center justify-between">
             <h4 className="text-xs font-medium text-muted">Recent chats</h4>
             {recentChats.length > 5 && (
-              <button onClick={onViewAllChats} className="ficus-button ficus-button-link text-xs text-muted py-1">
+              <button
+                onClick={onViewAllChats}
+                className="ficus-button ficus-button-ghost -mr-2 rounded px-2 py-1 text-xs text-muted"
+              >
                 View all
               </button>
             )}

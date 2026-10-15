@@ -143,7 +143,7 @@ export function SystemTokensSection() {
           </div>
           <button
             onClick={() => setCreated(null)}
-            className="ficus-button ficus-button-link text-xs text-muted hover:text-secondary"
+            className="ficus-button ficus-button-secondary px-2 py-1.5 text-xs font-medium rounded"
           >
             Dismiss
           </button>

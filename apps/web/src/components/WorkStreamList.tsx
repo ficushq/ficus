@@ -234,7 +234,7 @@ function SquadManagerChatMenu({ squads, agentMap }: { squads: Squad[]; agentMap:
             onClick={() => setCustomizing((current) => !current)}
             aria-pressed={customizing}
             aria-label={customizing ? 'Finish customizing squad quick links' : 'Customize squad quick links'}
-            className="ficus-button ficus-button-link py-2 text-xs text-muted hover:text-primary"
+            className="ficus-button ficus-button-ghost -mr-2 rounded px-2 py-2 text-xs text-muted"
           >
             {customizing ? 'Done' : 'Customize'}
           </button>

@@ -181,7 +181,7 @@ export function NotificationSettings({ squadId }: Props) {
                 {cfg?.instanceId && (
                   <button
                     onClick={() => clearProvider(provider.key)}
-                    className="ficus-button ficus-button-link text-xs text-muted hover:text-status-danger-500"
+                    className="ficus-button ficus-button-danger -my-1 px-2 py-1 text-xs font-medium"
                   >
                     Clear
                   </button>

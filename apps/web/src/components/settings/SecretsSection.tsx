@@ -431,7 +431,7 @@ function SecretRow({
           </code>
           <button
             onClick={handleCancel}
-            className="ficus-button ficus-button-link text-xs text-muted hover:text-primary shrink-0"
+            className="ficus-button ficus-button-secondary px-2 py-1 text-xs font-medium rounded shrink-0"
           >
             Hide
           </button>

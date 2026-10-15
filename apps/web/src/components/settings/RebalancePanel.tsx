@@ -150,7 +150,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
             <button
               onClick={() => setPlan(null)}
               disabled={busy}
-              className="ficus-button ficus-button-link text-xs text-muted hover:text-primary font-medium disabled:opacity-50"
+              className="ficus-button ficus-button-secondary text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50"
             >
               {plan.moves.length > 0 ? 'Cancel' : 'Dismiss'}
             </button>
@@ -163,7 +163,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
           <AppliedResultsView plan={applied} />
           <button
             onClick={() => setApplied(null)}
-            className="ficus-button ficus-button-link text-xs text-muted hover:text-primary font-medium"
+            className="ficus-button ficus-button-secondary text-xs px-3 py-1.5 rounded font-medium"
           >
             Dismiss
           </button>
