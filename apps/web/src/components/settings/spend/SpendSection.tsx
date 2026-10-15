@@ -47,10 +47,10 @@ export function SpendSection() {
   const addFilter = (dimension: SpendDimension, key: string | null, label?: string) =>
     setActive((current) => ({ ...current, [dimension]: { key, label: label ?? key ?? 'none' } }))
   const filterFrom = (source: typeof breakdown.data) => (dimension: SpendDimension, key: string | null) => {
-    const row = source?.rows.find((candidate) =>
-      dimension === source.by ? candidate.key === key : candidate.key2 === key
-    )
-    addFilter(dimension, key, dimension === source?.by ? row?.label : row?.label2)
+    if (!source) return addFilter(dimension, key)
+    const first = dimension === source.by
+    const row = source.rows.find((candidate) => (first ? candidate.key : candidate.key2) === key)
+    addFilter(dimension, key, first ? row?.label : row?.label2)
   }
 
   const periodLabel = period === 'custom' ? `${custom.from} – ${custom.to}` : SPEND_PERIOD_LABELS[period].toLowerCase()
