@@ -428,3 +428,48 @@ describe('ContentSafety.trimStoredValueFragments', () => {
     expect(local.trimStoredValueFragments(`x ${value.slice(0, 6)}`, { trailing: true })).toBe('x ')
   })
 })
+
+describe('ContentSafety.trimStoredValueFragments cut placement', () => {
+  test('never splits a complete stored value, even when another value cuts into it', () => {
+    const shared = 'OVL9'
+    const first = `AAAA7${shared}`
+    const second = `${shared}Q2BBBB`
+    const safety = ContentSafety.fromSecretEntries([
+      { key: 'FIRST', value: first },
+      { key: 'SECOND', value: second },
+    ])
+    // The first value printed whole, then the second starting inside it and still streaming.
+    expect(safety.trimStoredValueFragments(`x ${first}Q2B`, { trailing: true })).toBe('x ')
+    // Truncation began inside the first value, whose end starts a complete second value.
+    expect(safety.trimStoredValueFragments(`7${shared}Q2BBBB tail`, { leading: true })).toBe(' tail')
+  })
+
+  test('only the original edges are examined: a value exposed by a cut is kept whole', () => {
+    const value = '%&^&?!=*|!%|%|^=*!^^&'
+    const safety = ContentSafety.fromSecretEntries([
+      { key: 'A', value },
+      { key: 'B', value: '^&?!' },
+      { key: 'C', value: '^&++!=~?!!?' },
+      { key: 'D', value: '!%!%' },
+    ])
+    expect(safety.trimStoredValueFragments(`!%|%|^=*!^^&${value}^&`, { leading: true, trailing: true })).toBe(value)
+  })
+
+  test('stays fast and bounded on 50 KB of one repeated character', () => {
+    const dashes = ContentSafety.fromSecretEntries(
+      Array.from({ length: 200 }, (_, index) => ({ key: `PEM_${index}`, value: `-----BEGIN ${index} KEY-----` }))
+    )
+    const repeatedA = ContentSafety.fromSecretEntries([{ key: 'AX', value: 'aX' }])
+    const dashText = `x${'-'.repeat(50_000)}`
+    const aText = 'a'.repeat(50_000)
+
+    const started = performance.now()
+    const dashResult = dashes.trimStoredValueFragments(dashText, { leading: true, trailing: true })
+    const aResult = repeatedA.trimStoredValueFragments(aText, { leading: true, trailing: true })
+    const elapsed = performance.now() - started
+
+    expect(elapsed).toBeLessThan(50)
+    expect(dashResult.length).toBeGreaterThanOrEqual(dashText.length - '-----BEGIN 199 KEY-----'.length)
+    expect(aResult).toBe('a'.repeat(49_999))
+  })
+})

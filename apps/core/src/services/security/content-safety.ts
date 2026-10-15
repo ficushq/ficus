@@ -16,7 +16,7 @@ export interface ContentSafetyPort {
    * fragment that ends one (the start was truncated away). Run it on raw text
    * before redaction: replacing a stored value that sits inside another one
    * hides the outer value's fragment from matching. Returns the text without
-   * those fragments, repeated until no edge fragment remains; never returns a fragment.
+   * those fragments (a cut never splits a complete stored value); never returns a fragment.
    */
   trimStoredValueFragments(text: string, edges: StoredValueFragmentEdges): string
 }
@@ -138,18 +138,10 @@ export class ContentSafety implements ContentSafetyPort {
           backward: failureTable(reversed),
         }
       })
-    // Cutting one fragment can expose another: with overlapping values, the text
-    // left before a cut can itself end in the start of a different value. Repeat
-    // until the edges are clean; each round shortens the text, so this ends.
-    let current = text
-    for (;;) {
-      const next = this.#trimEdgesOnce(current, edges, this.#fragmentMatchers)
-      if (next === current) return current
-      current = next
-    }
-  }
-
-  #trimEdgesOnce(text: string, edges: StoredValueFragmentEdges, matchers: readonly FragmentMatcher[]): string {
+    const matchers = this.#fragmentMatchers
+    // Fragments are only possible at the ORIGINAL edges: that is where output may
+    // continue (or was truncated away). Characters inside the text are known
+    // output, so a cut point is never re-examined as a new edge.
     let start = 0
     let end = text.length
     for (const matcher of matchers) {
@@ -171,7 +163,38 @@ export class ContentSafety implements ContentSafetyPort {
       }
     }
     if (start === 0 && end === text.length) return text
+    // A cut that lands inside a complete stored value (overlapping values: one
+    // value's fragment starts within another printed in full) would leave part of
+    // that value behind, unrecognisable to exact redaction. Move the cut out to
+    // the edge of the overlapping run of complete occurrences it falls in.
+    for (const [runStart, runEnd] of this.#occurrenceRuns(text)) {
+      if (runStart < end && end < runEnd) end = runStart
+      if (runStart < start && start < runEnd) start = runEnd
+    }
     return start >= end ? '' : text.slice(start, end)
+  }
+
+  /**
+   * Complete stored-value occurrences in `text`, merged into disjoint runs of
+   * overlapping occurrences. A point strictly inside a run is strictly inside
+   * some occurrence, and moving out of that occurrence repeatedly ends at the
+   * run's edge, so one lookup per run replaces an unbounded cascade.
+   */
+  #occurrenceRuns(text: string): Array<[number, number]> {
+    const spans: Array<[number, number]> = []
+    for (const entry of this.#entries) {
+      for (let at = text.indexOf(entry.value); at >= 0; at = text.indexOf(entry.value, at + 1)) {
+        spans.push([at, at + entry.value.length])
+      }
+    }
+    spans.sort((left, right) => left[0] - right[0])
+    const runs: Array<[number, number]> = []
+    for (const [spanStart, spanEnd] of spans) {
+      const run = runs.at(-1)
+      if (run && spanStart < run[1]) run[1] = Math.max(run[1], spanEnd)
+      else runs.push([spanStart, spanEnd])
+    }
+    return runs
   }
 
   static fromSecretEntries(entries: readonly SecretEntry[]): ContentSafety {

@@ -687,4 +687,31 @@ describe('nested and overlapping stored values', () => {
 
     expect(detections.flatMap((event) => event.storedKeys)).toContain('SYNTH_DB_USER')
   })
+
+  test('a complete value exposed by cuts at both edges of a partial is redacted whole', async () => {
+    const value = '%&^&?!=*|!%|%|^=*!^^&'
+    const safety = ContentSafety.fromSecretEntries([
+      { key: 'SYNTH_A', value },
+      { key: 'SYNTH_B', value: '^&?!' },
+      { key: 'SYNTH_C', value: '^&++!=~?!!?' },
+      { key: 'SYNTH_D', value: '!%!%' },
+    ])
+    const text = `!%|%|^=*!^^&${value}^&`
+    const partials: Partial[] = []
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async (...args: unknown[]) => {
+        ;(args[3] as (partial: Partial) => void)({
+          content: [{ type: 'text', text }],
+          details: { truncation: { truncated: true, content: text } },
+        })
+        return { content: [{ type: 'text', text: 'done' }] }
+      }),
+      safety
+    ) as never as Executable
+
+    await wrapped.execute('call-n8', {}, undefined, (partial) => partials.push(partial))
+
+    expect(partials[0]!.content![0]!.text).toBe('[REDACTED_SECRET_ENV:SYNTH_A]')
+    expect(containsFragment(JSON.stringify(partials), value, 3)).toBe(false)
+  })
 })
