@@ -85,7 +85,7 @@ ficus squad-env expose-secrets <squad-id> DEPLOY_VERCEL_TOKEN
 ficus squad-env expose-global DEPLOY_VERCEL_TOKEN
 ```
 
-You can also configure this in the squad **Environment** settings UI. The UI lists Secret Store key names, set status, and exposure status only; it never displays secret values.
+You can also configure this in the squad **Environment** settings UI. The UI lists Secret Store key names, set status, and exposure status only; it never displays secret values. Both the UI and `ficus squad-env secrets` list only the keys you may read in the Secret Store, plus keys already exposed to the squad (so you can remove them).
 
 Secret exposure storage model:
 
