@@ -11,6 +11,7 @@ import {
 import { githubOutputAdapter } from '../outputs/github'
 import type { VerifiedIngressEvent } from '../types'
 import * as store from './feedback-store'
+import { GitHubApiUnavailableError } from '../../github/api-client'
 
 const time = '2026-10-02T10:00:00Z'
 function event(body = 'A', updatedAt = time, review = false, transportId?: string): VerifiedIngressEvent {
@@ -65,14 +66,19 @@ async function fixture() {
     },
     async capture(
       input: VerifiedIngressEvent,
-      options: { squadId?: string; current?: string | null; transportKey?: string } = {}
+      options: { squadId?: string; current?: string | null | Error; transportKey?: string } = {}
     ) {
       const id = await this.source(input, options.squadId)
       return store.captureGitHubFeedback(id, {
         authorizeSource: async () => true,
         transportKey: options.transportKey,
         ...(options.current !== undefined
-          ? { readCurrent: async () => (options.current === null ? null : { contentHash: options.current! }) }
+          ? {
+              readCurrent: async () => {
+                if (options.current instanceof Error) throw options.current
+                return options.current === null ? null : { contentHash: options.current! }
+              },
+            }
           : {}),
       })
     },
@@ -160,7 +166,7 @@ test('ambiguous, stale and vanished current observations stay held without repla
     expect(stale.revision.reason).toBe('stale_observation')
     expect(stale.revision.decision).toBe('pending')
     const review = await h.capture(event('R', time, true))
-    for (const current of [undefined, null, 'a'.repeat(64)]) {
+    for (const current of [null, 'a'.repeat(64), new Error('unexpected witness failure')]) {
       const changed = await h.capture(event('EDIT', time, true), { current })
       expect(changed.revision.reason).toBe('ambiguous_observation')
       expect(changed.revision.releaseState).toBe('held')
@@ -217,7 +223,7 @@ test('equal-clock conflicting content is ambiguous without a fresh exact-current
   const h = await fixture()
   try {
     const a = await h.capture(event('A'))
-    const b = await h.capture(event('B'))
+    const b = await h.capture(event('B'), { current: null })
     expect(b.revision.reason).toBe('ambiguous_observation')
     const [object] = await db
       .select()
@@ -338,6 +344,37 @@ test('exact current-version replays dedupe before any provider-current requests'
     })
     expect(replay.revision.id).toBe(first.revision.id)
     expect(providerReads).toBe(0)
+  } finally {
+    await h.close()
+  }
+})
+
+test('a GitHub outage during the current-version witness defers the capture instead of holding it as ambiguous', async () => {
+  const h = await fixture()
+  try {
+    const a = await h.capture(event('A'))
+    const revisions = () =>
+      db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.objectId, a.revision.objectId))
+    for (const reason of ['http_503', 'http_429', 'no_token', 'network']) {
+      await expect(h.capture(event('B'), { current: new GitHubApiUnavailableError(reason) })).rejects.toThrow(
+        'feedback_provider_unavailable'
+      )
+    }
+    // Nothing was written: no held review item, and the known head is untouched.
+    expect((await revisions()).map((row) => row.id)).toEqual([a.revision.id])
+    // After recovery the same version is captured normally from the current-version witness.
+    const inputB = event('B')
+    const b = await h.capture(inputB, {
+      current: githubOutputAdapter.normalize(inputB)[0]!.github!.content!.contentHash,
+    })
+    expect(b.revision.reason).not.toBe('ambiguous_observation')
+    expect(b.revision.sequence).toBe(2)
+    const [object] = await db
+      .select()
+      .from(githubFeedbackObjects)
+      .where(eq(githubFeedbackObjects.id, a.revision.objectId))
+    expect(object!.currentRevisionId).toBe(b.revision.id)
+    expect((await revisions()).some((row) => row.reason === 'ambiguous_observation')).toBe(false)
   } finally {
     await h.close()
   }
