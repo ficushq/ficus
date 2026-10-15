@@ -33,7 +33,7 @@ export function registerAgentQuestionCommands(program: Command) {
             ID: q.id.slice(0, 8),
             Status: q.status,
             Question: questionText(q).slice(0, 50),
-            Answer: q.answer ? q.answer.slice(0, 30) : '-',
+            Answer: q.answer ? `${q.answerRelayedByAgentId ? '(relayed) ' : ''}${q.answer}`.slice(0, 30) : '-',
           })),
           ['ID', 'Status', 'Question', 'Answer']
         )
@@ -44,7 +44,7 @@ export function registerAgentQuestionCommands(program: Command) {
 
   // ficus agent-question answer <id> <answer>
   aq.command('answer <id> <answer>')
-    .description('Answer an open agent question (delivered to the agent, which wakes it)')
+    .description('Answer an open agent question as yourself (for humans; delivered to the agent, which wakes it)')
     .action(async (id, answer) => {
       try {
         const q = await apiPost<AgentQuestion>(`/api/agent-questions/${id}/answer`, { answer })
@@ -56,7 +56,10 @@ export function registerAgentQuestionCommands(program: Command) {
 
   // ficus agent-question dismiss <id> [--reason <text>]
   aq.command('dismiss <id>')
-    .description('Dismiss an open question without answering it (the asking agent is NOT notified)')
+    .description(
+      'Dismiss an open question without answering it; nothing is recorded as an answer and the asking ' +
+        'agent is NOT notified. If a human already answered your own question elsewhere, use resolve instead.'
+    )
     .option('-r, --reason <reason>', 'Short reason recorded with the dismissal')
     .option('--json', 'Output in JSON format')
     .action(async (id, options) => {
@@ -67,6 +70,30 @@ export function registerAgentQuestionCommands(program: Command) {
           options.reason ? { reason: options.reason } : undefined
         )
         output(q, `Dismissed question ${q.id.slice(0, 8)}`)
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // ficus agent-question resolve <id> --answer <text> --source <url-or-reference>
+  aq.command('resolve <id>')
+    .description(
+      'Close YOUR OWN open question with the answer a human already gave in another channel ' +
+        '(PR comment, chat, inbox). Recorded as answered, relayed by you, with its source; nothing is ' +
+        'delivered back to you. Only the asking agent can do this. Never use it for your own or ' +
+        "another agent's inferred answer, to unblock yourself, or in place of a human approval."
+    )
+    .requiredOption('-a, --answer <text>', "The human's answer, verbatim or a faithful summary")
+    .requiredOption('-s, --source <url-or-reference>', 'Where the human answered (e.g. the PR comment URL)')
+    .option('--json', 'Output in JSON format')
+    .action(async (id, options) => {
+      if (options.json) setOutputOptions({ json: true })
+      try {
+        const q = await apiPost<AgentQuestion>(`/api/agent-questions/${id}/resolve`, {
+          answer: options.answer,
+          source: options.source,
+        })
+        output(q, `Resolved question ${q.id.slice(0, 8)} with the answer from ${q.answerSource ?? options.source}`)
       } catch (error) {
         outputError(error as Error)
       }

@@ -7,6 +7,8 @@ import {
   answerAgentQuestion,
   dismissAgentQuestion,
   listAgentQuestions,
+  RELAYED_ANSWER_SOURCE_MAX_LENGTH,
+  resolveAgentQuestionWithRelayedAnswer,
   retryAgentQuestionAnswerDelivery,
   setQuestionBlocking,
 } from '../services/agents/questions'
@@ -15,6 +17,7 @@ import { acknowledgeQuestionDeliveryFailure } from '../services/agents/question-
 import { canReceiveAgentQuestionAttention } from '../services/agents/pending-action-policy'
 import { loadUserAttention } from '../services/attention/resolver'
 import { canAnswerAgentQuestion } from '../services/agents/question-authorization'
+import { isUuid } from '../services/work-streams/execution-provenance'
 
 export const agentQuestionsRouter = new Hono()
   // GET /api/agent-questions/by-agent/:agentId?status=open|answered — for the conversation view.
@@ -110,6 +113,42 @@ export const agentQuestionsRouter = new Hono()
       expectedAgentScope: { ownerUserId: target.ownerUserId, squadId: target.squadId },
     })
     if (!updated) return c.json({ error: 'Question already answered' }, 409)
+    return c.json(updated)
+  })
+
+  // POST /api/agent-questions/:id/resolve { answer, source } — the ASKING agent closes its own open
+  // question with a human answer given in another channel (PR comment, chat, inbox). Only that
+  // agent's identity may call it; humans answer or dismiss instead. The answer is recorded as
+  // relayed by the agent (never as a human's direct answer) and is not delivered back to it.
+  .post('/:id/resolve', async (c) => {
+    const identity = c.get('identity') as Identity | undefined
+    if (!identity) return c.json({ error: 'Unauthorized' }, 401)
+    const id = c.req.param('id')
+    const question = isUuid(id) ? await getAgentQuestion(id) : null
+    if (!question) return c.json({ error: 'Question not found' }, 404)
+    if (identity.type !== 'agent' || identity.agentId !== question.agentId) {
+      return c.json({ error: 'Only the agent that asked this question can resolve it' }, 403)
+    }
+    const target = await Agent.find(question.agentId)
+    if (!target) return c.json({ error: 'Question not found' }, 404)
+    c.set('authzChecked', true)
+
+    const body = (await c.req.json()) as { answer?: unknown; source?: unknown }
+    const answer = typeof body.answer === 'string' ? body.answer.trim() : ''
+    const source = typeof body.source === 'string' ? body.source.trim() : ''
+    if (!answer) return c.json({ error: 'answer is required' }, 400)
+    if (!source) return c.json({ error: 'source is required' }, 400)
+    if (source.length > RELAYED_ANSWER_SOURCE_MAX_LENGTH) {
+      return c.json({ error: `source must be at most ${RELAYED_ANSWER_SOURCE_MAX_LENGTH} characters` }, 400)
+    }
+
+    const updated = await resolveAgentQuestionWithRelayedAnswer(id, {
+      relayedByAgentId: identity.agentId,
+      answer,
+      source,
+      expectedAgentScope: { ownerUserId: target.ownerUserId, squadId: target.squadId },
+    })
+    if (!updated) return c.json({ error: 'Question is not open' }, 409)
     return c.json(updated)
   })
 

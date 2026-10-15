@@ -83,13 +83,27 @@ export function AgentQuestionCard({
   if (question.status === 'answered') {
     return (
       <div className={clsx('space-y-1 text-sm', !embedded && 'rounded-xl bg-surface p-4')}>
-        <div className="text-xs text-muted mb-1">Answered question</div>
+        <div className="text-xs text-muted mb-1">
+          {question.answerRelayedByAgentId ? 'Answered elsewhere · relayed by the agent' : 'Answered question'}
+        </div>
         {question.questionData.questions.map((q) => (
           <p key={q.id} className="font-medium text-primary">
             {q.question}
           </p>
         ))}
         {question.answer && <p className="mt-1 text-secondary whitespace-pre-wrap">{question.answer}</p>}
+        {question.answerRelayedByAgentId && question.answerSource && (
+          <p className="mt-1 text-xs text-muted break-all">
+            Source:{' '}
+            {/^https?:\/\//i.test(question.answerSource) ? (
+              <a href={question.answerSource} target="_blank" rel="noreferrer" className="underline">
+                {question.answerSource}
+              </a>
+            ) : (
+              question.answerSource
+            )}
+          </p>
+        )}
       </div>
     )
   }

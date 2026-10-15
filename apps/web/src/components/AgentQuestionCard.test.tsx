@@ -175,6 +175,41 @@ test('AgentQuestionCard renders a dismissed question read-only with its reason',
   }
 })
 
+test('AgentQuestionCard labels an answer the agent relayed from another channel, with its source', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const rendered = dom.createRoot()
+  const source = 'https://github.com/ficushq/ficus/pull/1#issuecomment-1'
+  try {
+    await dom.act(async () =>
+      rendered.root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <AgentQuestionCard
+            question={{
+              ...question,
+              status: 'answered',
+              answer: 'Go ahead.',
+              answeredAt: '2026-08-28T01:00:00.000Z',
+              answerRelayedByAgentId: 'agent-1',
+              answerSource: source,
+            }}
+          />
+          <AgentQuestionCard
+            question={{ ...question, id: 'question-2', status: 'answered', answer: 'Direct', answeredByUserId: 'u' }}
+          />
+        </QueryClientProvider>
+      )
+    )
+    const text = dom.window.document.body.textContent ?? ''
+    expect(text).toContain('Answered elsewhere · relayed by the agent')
+    expect(text).toContain('Go ahead.')
+    expect(dom.window.document.querySelector('a')?.getAttribute('href')).toBe(source)
+    expect(text).toContain('Answered question')
+    expect(text.match(/Source:/g)).toHaveLength(1)
+  } finally {
+    await dom.cleanup()
+  }
+})
+
 test('AgentQuestionCard keeps a failed answer visible without invalidating successful caches', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const rendered = dom.createRoot()

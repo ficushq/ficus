@@ -33,6 +33,7 @@ import {
   listAgentQuestionAttentionUserIds,
   listAgentQuestionNotifyUserIds,
   reconcileTerminatedAgentQuestionsOnce,
+  resolveAgentQuestionWithRelayedAnswer,
   retryAgentQuestionAnswerDelivery,
   setQuestionBlocking,
 } from './questions'
@@ -1421,6 +1422,168 @@ describe('async agent questions', () => {
 
       const dismissed = await dismissAgentQuestion(q.id, { dismissedBy: { type: 'user', userId: user.id } })
       expect(dismissed?.status).toBe('dismissed')
+    })
+  })
+
+  describe('relayed answer resolution', () => {
+    async function createStreamFor(agentId: string, title: string): Promise<WorkStream> {
+      return storedLegacyWorkStream({
+        squadId: squad.id,
+        title: `${prefix} ${title}`,
+        assigneeAgentId: agentId,
+        agentIds: [agentId],
+      })
+    }
+
+    afterEach(async () => {
+      await db.delete(workStreams).where(eq(workStreams.squadId, squad.id))
+    })
+
+    const SOURCE = 'https://github.com/ficushq/ficus/pull/1#discussion_r1'
+
+    it('records the relayed answer, closes only its own question waits, and delivers nothing', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const otherAgent = await createAgent({ squadId: squad.id })
+      const origin = await createStreamFor(agent.id, 'relay-wait')
+      await db
+        .update(workStreams)
+        .set({ agentIds: [agent.id, otherAgent.id] })
+        .where(eq(workStreams.id, origin.id))
+      await db
+        .update(workStreamContinuations)
+        .set({ generation: 4, status: 'pending', claimToken: crypto.randomUUID(), claimedAt: new Date() })
+        .where(eq(workStreamContinuations.workStreamId, origin.id))
+      const q = await createQuestion(agent, { blocking: true }, [origin.id])
+      const otherQuestion = await createQuestion(otherAgent, { blocking: true }, [origin.id])
+      const unrelated = await db.transaction(async (tx) => {
+        const { openWait } = await import('../work-streams/waits')
+        const review = await openWait(tx, { workStreamId: origin.id, type: 'review', scope: 'stream' })
+        const manual = await openWait(tx, { workStreamId: origin.id, type: 'manual', scope: 'stream' })
+        return [review.wait.id, manual.wait.id]
+      })
+      const answeredEvents: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.answered', (event) => answeredEvents.push(event))
+      const ensureFlowDispatch = spyOn(await import('../workflows/execution'), 'ensureFlowDispatch')
+
+      let resolved: Awaited<ReturnType<typeof resolveAgentQuestionWithRelayedAnswer>> = null
+      try {
+        resolved = await resolveAgentQuestionWithRelayedAnswer(q.id, {
+          relayedByAgentId: agent.id,
+          answer: '  Yes, ship it.  ',
+          source: ` ${SOURCE} `,
+        })
+        expect(ensureFlowDispatch).toHaveBeenCalledWith(origin.id)
+      } finally {
+        ensureFlowDispatch.mockRestore()
+        unsubscribe()
+      }
+      await waitForQuestionAnswerDeliveryDrains()
+
+      expect(resolved).toMatchObject({
+        status: 'answered',
+        answer: 'Yes, ship it.',
+        answerSource: SOURCE,
+        answerRelayedByAgentId: agent.id,
+        answeredByUserId: null,
+      })
+      expect(resolved?.answeredAt).toBeTruthy()
+      expect(resolved?.answerDelivery).toBeUndefined()
+      expect(answeredEvents).toEqual([{ questionId: q.id, agentId: agent.id, squadId: squad.id }])
+      expect((await listAgentQuestions(agent.id, { statuses: ['answered', 'dismissed'] })).map((x) => x.id)).toEqual([
+        q.id,
+      ])
+
+      const [ownWait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.referenceId, q.id))
+      expect(ownWait.closedAt).not.toBeNull()
+      expect(ownWait.resolution).toBe('answered')
+      expect(ownWait.resolutionNote).toBe(`Answered outside Ficus; relayed by the asking agent from ${SOURCE}`)
+      const [otherWait] = await db
+        .select()
+        .from(workStreamWaits)
+        .where(eq(workStreamWaits.referenceId, otherQuestion.id))
+      expect(otherWait.closedAt).toBeNull()
+      const stillOpen = await db.select().from(workStreamWaits).where(inArray(workStreamWaits.id, unrelated))
+      expect(stillOpen.every((wait) => wait.closedAt === null)).toBe(true)
+      expect((await getAgentQuestion(otherQuestion.id))?.status).toBe('open')
+
+      const [cycle] = await db
+        .select()
+        .from(workStreamContinuations)
+        .where(eq(workStreamContinuations.workStreamId, origin.id))
+      expect(cycle.status).toBe('idle')
+      expect(cycle.claimToken).toBeNull()
+
+      const msgs = await db
+        .select()
+        .from(inbox)
+        .where(and(eq(inbox.recipientType, 'agent'), eq(inbox.recipientId, agent.id)))
+      expect(msgs).toHaveLength(0)
+      const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, q.id))
+      expect(row.answerDeliveryStatus).toBeNull()
+    })
+
+    it("refuses another agent's question and any question that is no longer open", async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const otherAgent = await createAgent({ squadId: squad.id })
+      const q = await createQuestion(agent)
+
+      expect(
+        await resolveAgentQuestionWithRelayedAnswer(q.id, {
+          relayedByAgentId: otherAgent.id,
+          answer: 'yes',
+          source: SOURCE,
+        })
+      ).toBeNull()
+      expect((await getAgentQuestion(q.id))?.status).toBe('open')
+
+      await answerAgentQuestion(q.id, 'direct', user.id)
+      expect(
+        await resolveAgentQuestionWithRelayedAnswer(q.id, { relayedByAgentId: agent.id, answer: 'yes', source: SOURCE })
+      ).toBeNull()
+      expect(await getAgentQuestion(q.id)).toMatchObject({ answer: 'direct', answerRelayedByAgentId: null })
+
+      const dismissedQuestion = await createQuestion(agent)
+      await dismissAgentQuestion(dismissedQuestion.id, { dismissedBy: { type: 'user', userId: user.id } })
+      expect(
+        await resolveAgentQuestionWithRelayedAnswer(dismissedQuestion.id, {
+          relayedByAgentId: agent.id,
+          answer: 'yes',
+          source: SOURCE,
+        })
+      ).toBeNull()
+      expect((await getAgentQuestion(dismissedQuestion.id))?.status).toBe('dismissed')
+    })
+
+    it('requires a non-blank answer and source', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const q = await createQuestion(agent)
+      await expect(
+        resolveAgentQuestionWithRelayedAnswer(q.id, { relayedByAgentId: agent.id, answer: '  ', source: SOURCE })
+      ).rejects.toThrow('answer is required')
+      await expect(
+        resolveAgentQuestionWithRelayedAnswer(q.id, { relayedByAgentId: agent.id, answer: 'yes', source: ' ' })
+      ).rejects.toThrow('source is required')
+      expect((await getAgentQuestion(q.id))?.status).toBe('open')
+    })
+
+    it('rolls back the answer when the wait close fails', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await createStreamFor(agent.id, 'relay-rollback')
+      const q = await createQuestion(agent, { blocking: true }, [origin.id])
+
+      await expect(
+        resolveAgentQuestionWithRelayedAnswer(q.id, {
+          relayedByAgentId: agent.id,
+          answer: 'yes',
+          source: SOURCE,
+          testHooks: { duringWaitClose: () => Promise.reject(new Error('boom')) },
+        })
+      ).rejects.toThrow('boom')
+
+      expect(await getAgentQuestion(q.id)).toMatchObject({ status: 'open', answer: null, answerSource: null })
+      const waits = await db.select().from(workStreamWaits).where(eq(workStreamWaits.referenceId, q.id))
+      expect(waits.length).toBeGreaterThan(0)
+      expect(waits.every((wait) => wait.closedAt === null)).toBe(true)
     })
   })
 })
