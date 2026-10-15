@@ -232,13 +232,20 @@ describe('storage cleanup routes', () => {
     const token = await user(['squads:update'], { squadId: own.id })
     const patch = (value: unknown) =>
       app.request(`/api/squads/${own.id}`, json(token, 'PATCH', { consultantIdleDormancyDays: value }))
+    // Every squad starts on at the default.
+    expect((await Squad.find(own.id))?.consultantIdleDormancyDays).toBe(30)
     for (const value of [0, -1, 1.5, 3651, '90']) expect((await patch(value)).status).toBe(400)
     const on = await patch(90)
     expect(on.status).toBe(200)
     expect(((await on.json()) as { consultantIdleDormancyDays: number }).consultantIdleDormancyDays).toBe(90)
     expect((await Squad.find(own.id))?.consultantIdleDormancyDays).toBe(90)
+    // Turning it off persists as an explicit null; an unrelated update does not restore the default.
     const off = await patch(null)
     expect(off.status).toBe(200)
+    expect((await Squad.find(own.id))?.consultantIdleDormancyDays).toBeNull()
+    expect((await app.request(`/api/squads/${own.id}`, json(token, 'PATCH', { purpose: 'still off' }))).status).toBe(
+      200
+    )
     expect((await Squad.find(own.id))?.consultantIdleDormancyDays).toBeNull()
   })
 })

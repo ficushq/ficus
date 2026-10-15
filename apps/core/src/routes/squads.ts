@@ -257,7 +257,7 @@ export const squadsRouter = new Hono()
     const dryRun = c.req.query('dryRun') === 'true'
     return c.json(await Squad.cleanupFlexAgents(dryRun, resolvedSquadId(c)))
   })
-  // Preview consultants idle at least `days` (default 90) with their latest measured box sizes.
+  // Preview consultants idle at least `days` (default DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS) with their latest measured box sizes.
   .get('/:id/idle-consultants', requireSquadPermission('agents:terminate'), async (c) => {
     const days = idleDaysSchema.safeParse(c.req.query('days') ?? DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS)
     if (!days.success) return c.json({ error: 'days must be a whole number from 1 to 3650' }, 400)

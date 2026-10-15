@@ -8,7 +8,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 
 interface Props {
   squadId: string
-  /** Saved threshold in days; null = off. */
+  /** Saved threshold in days (every squad starts at the default); null = turned off. */
   consultantIdleDormancyDays: number | null
 }
 
@@ -51,7 +51,9 @@ export function ConsultantDormancySettings({ squadId, consultantIdleDormancyDays
           Idle consultants
         </h3>
         <p className="mt-1 text-xs text-muted">
-          Consultant conversations stay live until someone ends them. Let Ficus make old ones dormant instead.
+          Ficus makes consultant conversations dormant once they have been idle for a while (
+          {DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS} days by default). Turn this off to keep them live until someone ends
+          them.
         </p>
       </div>
       <label

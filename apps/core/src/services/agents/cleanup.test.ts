@@ -65,6 +65,7 @@ describe('agent-cleanup', () => {
   it('runs all production lifecycle convergence defaults in order with archive budgets', async () => {
     const lifecycleModule = await import('../agent/lifecycle')
     const cleanupModule = await import('./cleanup')
+    const idleConsultantsModule = await import('./idle-consultants')
     const calls: string[] = []
     const spies = [
       spyOn(lifecycleModule, 'runLegacyTerminatedAgentSweep').mockImplementation(async (options) => {
@@ -87,10 +88,15 @@ describe('agent-cleanup', () => {
         calls.push(`cleanup:${options?.maxCandidates}:${options?.maxWorkItems}`)
         return 0
       }),
+      // Every squad has idle-consultant dormancy on by default: never sweep other fixtures' consultants here.
+      spyOn(idleConsultantsModule, 'runIdleConsultantDormancySweep').mockImplementation(async (options) => {
+        calls.push(`idle-consultants:${options?.maxAgents}`)
+        return 0
+      }),
     ]
     try {
       await runAgentLifecycleConvergenceOnce()
-      expect(calls).toEqual(['legacy:5', 'pending', 'dormancy', 'retention:5', 'cleanup:5:5'])
+      expect(calls).toEqual(['legacy:5', 'pending', 'dormancy', 'retention:5', 'cleanup:5:5', 'idle-consultants:10'])
     } finally {
       for (const spy of spies) spy.mockRestore()
     }

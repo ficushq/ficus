@@ -67,22 +67,40 @@ describe('ConsultantDormancySettings', () => {
     const client = new QueryClient()
     const on = renderToStaticMarkup(element(client, 30))
     expect(on).toContain('Make consultants dormant after they&#x27;ve been idle')
+    expect(on).toContain('30 days by default')
     expect(on).toContain('value="30"')
     const readOnly = renderToStaticMarkup(element(client, 30, []))
     expect(readOnly).toContain('disabled=""')
     expect(renderToStaticMarkup(element(client, null))).not.toContain('id="squad-consultant-idle-dormancy-days"')
   })
 
-  test('turning the toggle on pre-fills 90 days and saves it', async () => {
+  test('shows each saved state: default on, custom days, and turned off', async () => {
+    for (const [days, checked, shown] of [
+      [30, true, '30'],
+      [120, true, '120'],
+      [null, false, null],
+    ] as const) {
+      const ui = await harness(days)
+      try {
+        expect(ui.toggle().checked).toBe(checked)
+        expect(ui.daysInput()?.value ?? null).toBe(shown)
+        expect(ui.save().disabled).toBe(true)
+      } finally {
+        await ui.restore()
+      }
+    }
+  })
+
+  test('turning the toggle back on pre-fills the 30-day default and saves it', async () => {
     const ui = await harness(null)
     try {
       expect(ui.toggle().checked).toBe(false)
       await ui.dom.act(async () => ui.toggle().click())
       expect(ui.toggle().checked).toBe(true)
-      expect(ui.daysInput()?.value).toBe('90')
+      expect(ui.daysInput()?.value).toBe('30')
       await ui.dom.act(async () => ui.save().click())
       await ui.settle(() => ui.patches.length === 1)
-      expect(ui.patches[0]).toEqual({ consultantIdleDormancyDays: 90 })
+      expect(ui.patches[0]).toEqual({ consultantIdleDormancyDays: 30 })
     } finally {
       await ui.restore()
     }
