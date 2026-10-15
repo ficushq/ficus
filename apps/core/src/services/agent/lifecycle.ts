@@ -161,7 +161,7 @@ export async function makeDormant(
     expectedResourceGeneration?: string
     parentFence?: ParentDormancyFence
     /**
-     * Idle-only mode for housekeeping (idle-consultant dormancy): refuse with
+     * Idle-only mode for housekeeping (idle-consultant and idle-worker dormancy): refuse with
      * DormancyRefusedError instead of stopping or deferring behind any active
      * execution, and when the agent is not plainly idle or the guard objects.
      * The ordinary terminate path never sets this.
