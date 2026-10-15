@@ -1492,6 +1492,13 @@
       "when": 1792011501024,
       "tag": "0212_consultant_idle_dormancy",
       "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1792036609561,
+      "tag": "0213_consultant_idle_dormancy_default_on",
+      "breakpoints": true
     }
   ]
 }
