@@ -245,8 +245,7 @@ export class AgentSession {
     }
 
     let precompaction: PrecompactionController | undefined
-    const onSummarized: PiCompactionBakerOptions['onSummarized'] = (info) =>
-      recordCompactionSummary(usageContext, info)
+    const onSummarized: PiCompactionBakerOptions['onSummarized'] = (info) => recordCompactionSummary(usageContext, info)
     const bakerOptions: PiCompactionBakerOptions = storage
       ? {
           onSummarized,

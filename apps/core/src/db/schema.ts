@@ -4526,7 +4526,9 @@ export const inferenceUsage = pgTable(
     index('idx_inference_usage_work_stream_occurred').on(table.workStreamId, table.occurredAt),
     index('idx_inference_usage_agent_occurred').on(table.agentId, table.occurredAt),
     index('idx_inference_usage_execution').on(table.executionId),
-    uniqueIndex('idx_inference_usage_dedupe_key').on(table.dedupeKey).where(sql`${table.dedupeKey} IS NOT NULL`),
+    uniqueIndex('idx_inference_usage_dedupe_key')
+      .on(table.dedupeKey)
+      .where(sql`${table.dedupeKey} IS NOT NULL`),
     check('inference_usage_billing_valid', sql`${table.billing} IN ('api', 'subscription', 'self-hosted', 'unknown')`),
   ]
 )
