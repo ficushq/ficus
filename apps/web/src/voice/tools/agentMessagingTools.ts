@@ -108,6 +108,8 @@ export function createAgentMessagingTools(deps: AgentMessagingDependencies) {
         asVoiceAssistant: true,
         content: withWorkspaceVoiceReplyGuidance(content),
         deliveryMode: mode,
+        // The user asked for this message by voice, so it may wake a dormant agent.
+        wake: true,
         metadata: {
           sourceTool: 'message_agent',
         },

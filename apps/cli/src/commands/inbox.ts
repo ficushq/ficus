@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import { Command, Option } from 'commander'
 import { apiGet, apiGetRaw, apiPost } from '../client'
+import { explainDormantRecipient, WAKE_OPTION_DESCRIPTION } from '../dormant-agent'
 import { output, outputError, isJsonMode } from '../output'
 import {
   isWorkspaceVoiceRecipient,
@@ -101,7 +102,9 @@ export function registerInboxCommands(program: Command): void {
   // The sender is your authenticated identity (your agent/user) — you always author as yourself.
   inbox
     .command('send <recipientId> <content>')
-    .description('Send a message as yourself (use "system" for the system inbox)')
+    .description(
+      'Send a message as yourself (use "system" for the system inbox). A dormant agent is refused unless you pass --wake.'
+    )
     .option('-s, --subject <subject>', 'Message subject')
     .option(
       '--recipient-type <type>',
@@ -109,6 +112,7 @@ export function registerInboxCommands(program: Command): void {
     )
     .option('--steer', 'Interrupt the recipient immediately (default)')
     .option('--follow-up', 'Queue until the recipient agent becomes idle')
+    .option('--wake', WAKE_OPTION_DESCRIPTION)
     .option('--url <url>', 'URL to attach to message (used for push notification links)')
     .option('--attach <file>', 'Attach a file (repeatable)', collectAttachments, [])
     .option(
@@ -151,6 +155,7 @@ export function registerInboxCommands(program: Command): void {
           metadata,
           ...(options.inReplyTo ? { inReplyTo: options.inReplyTo } : {}),
           ...(options.assistantTaskStatus ? { assistantTaskStatus: options.assistantTaskStatus } : {}),
+          ...(options.wake ? { wake: true } : {}),
           deliveryMode,
         })
 
@@ -166,7 +171,7 @@ export function registerInboxCommands(program: Command): void {
 
         output(message, `Message sent to ${recipientId} (${message.id.slice(0, 8)})`)
       } catch (error) {
-        outputError(error as Error)
+        outputError((await explainDormantRecipient(error, recipientId)) as Error)
       }
     })
 

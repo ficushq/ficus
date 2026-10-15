@@ -301,6 +301,10 @@ ficus inbox send <agent-id> "Your message here" -s "Subject" --follow-up
 
 Use the agent IDs from your Squad Teammates list.
 
+An agent whose work is finished is dormant, and sending to it is refused. Do
+not wake it to acknowledge or confirm finished work. Add `--wake` only when it
+must do more work: that restarts its sandbox.
+
 Use steering/interrupting inbox messages when you need to provide immediate
 direction, clarification, corrections, or pivots. This is acceptable: agents
 will resume their current work after reading the steering message. Follow-up

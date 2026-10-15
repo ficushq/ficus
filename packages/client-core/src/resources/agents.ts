@@ -64,6 +64,8 @@ export interface SendAgentMessageOptions {
   clientId?: string
   /** Assistant conversations: the composer's routing preview or the user's pick. */
   assistantRouting?: AssistantRoutingSend
+  /** Required to message a dormant agent: without it the server refuses with AGENT_DORMANT. */
+  wake?: boolean
 }
 
 function openReconnectableAgentStream(
@@ -200,6 +202,7 @@ export function agentsResource(t: Transport) {
           deliveryMode: options?.deliveryMode,
           clientId: options?.clientId,
           ...(options?.assistantRouting ? { assistantRouting: options.assistantRouting } : {}),
+          ...(options?.wake ? { wake: true } : {}),
         },
       }),
     /**

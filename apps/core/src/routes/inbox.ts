@@ -545,6 +545,9 @@ export const inboxRouter = new Hono()
         metadata: { ...body.metadata, ...(body.inReplyTo ? { inReplyTo: body.inReplyTo } : {}) },
         deliveryMode: body.deliveryMode,
         assistantTaskStatus: body.assistantTaskStatus,
+        // A direct send must not wake a finished agent by accident; system-authored sends keep
+        // their own wake policy (system messages do not wake unless they opt in).
+        refuseDormantRecipient: senderType !== 'system' && body.wake !== true,
       })
       return c.json(message.toJson(), 201)
     } catch (error) {

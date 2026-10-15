@@ -11,6 +11,8 @@ export interface SendInboxMessageInput {
   content: string
   metadata?: Record<string, unknown>
   deliveryMode?: DeliveryMode
+  /** Required to message a dormant agent: without it the server refuses with AGENT_DORMANT. */
+  wake?: boolean
 }
 
 export interface InboxMessageResponse extends Omit<InboxMessage, 'createdAt' | 'deliveredAt' | 'readAt'> {

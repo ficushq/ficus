@@ -1,5 +1,5 @@
 import { config } from './config'
-import { formatApiErrorPayload } from './client-errors'
+import { ApiRequestError, formatApiErrorPayload } from './client-errors'
 
 function getAuthHeaders(): Record<string, string> {
   return config.password ? { Authorization: `Bearer ${config.password}` } : {}
@@ -8,7 +8,11 @@ function getAuthHeaders(): Record<string, string> {
 async function throwApiError(response: Response): Promise<never> {
   const fallback = `Request failed: ${response.status}`
   const payload = await response.json().catch(() => undefined)
-  throw new Error(formatApiErrorPayload(payload, fallback))
+  const code =
+    payload && typeof payload === 'object' && typeof (payload as { code?: unknown }).code === 'string'
+      ? (payload as { code: string }).code
+      : undefined
+  throw new ApiRequestError(formatApiErrorPayload(payload, fallback), response.status, code)
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
