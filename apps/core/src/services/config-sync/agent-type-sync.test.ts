@@ -179,7 +179,9 @@ describe('AgentTypeSync', () => {
     expect(manager.systemPrompt).toContain('### Asking Humans')
     expect(manager.systemPrompt).toContain('you never block on a human')
     expect(manager.systemPrompt).toContain('Never ask a decision through an inbox message')
-    expect(manager.systemPrompt).toContain('goes through\n`ask_human` exactly once, not as a question in your chat text')
+    expect(manager.systemPrompt).toContain(
+      'goes through\n`ask_human` exactly once, not as a question in your chat text'
+    )
     expect(manager.systemPrompt).toContain('they never re-ask or recap an open question')
     expect(manager.systemPrompt).toContain('casual, non-blocking conversation')
     expect(manager.systemPrompt).toContain('check `requestingUserId`')
