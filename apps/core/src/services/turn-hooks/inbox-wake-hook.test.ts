@@ -210,6 +210,30 @@ describe('formatInboxMessages', () => {
     expect(result).toContain('ficus inbox read')
   })
 
+  it('asks other agents to mark messages read, but not Assistant agents or forwarded task updates', () => {
+    const message = (metadata: Record<string, unknown> = {}) =>
+      ({
+        id: '12345678-1234-1234-1234-123456789abc',
+        subject: 'Assistant task update',
+        content: 'Merged the fix.',
+        senderType: 'system',
+        metadata,
+        createdAt: new Date('2024-01-15T10:30:00Z'),
+      }) as InboxMessage
+    const footer = 'Mark one or more messages as read'
+    expect(formatInboxMessages([message()])).toContain(footer)
+    expect(formatInboxMessages([message()], { recipientAgentTypeId: 'engineer' })).toContain(footer)
+    const forAssistant = formatInboxMessages([message()], { recipientAgentTypeId: 'assistant' })
+    expect(forAssistant).not.toContain(footer)
+    expect(forAssistant).not.toContain('ficus inbox read')
+    expect(forAssistant).toContain('### Message 12345678-1234-1234-1234-123456789abc')
+    expect(forAssistant).toContain('Merged the fix.')
+    const forwarded = message({ source: 'assistant_task_update' })
+    expect(formatInboxMessages([forwarded, forwarded])).not.toContain(footer)
+    // A mixed batch for another agent keeps the instruction.
+    expect(formatInboxMessages([forwarded, message()])).toContain(footer)
+  })
+
   it('formats multiple messages', () => {
     const messages = [
       {

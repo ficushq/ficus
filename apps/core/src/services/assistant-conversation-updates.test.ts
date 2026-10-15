@@ -5,7 +5,17 @@ import { SystemManagerRunner } from '../entities/agent-runners/system-manager-ru
 import { afterEach, expect, test, spyOn } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
-import { agents, agentQuestions, assistantConversations, assistantUpdates, db, inbox, messages, users } from '../db'
+import {
+  agents,
+  agentQuestions,
+  assistantConversations,
+  assistantTasks,
+  assistantUpdates,
+  db,
+  inbox,
+  messages,
+  users,
+} from '../db'
 import { assignRole, createTestRole, createTestUser, cleanupTestRbac } from '../test-utils'
 import { ensureAssistantConversationAgent } from './assistant-conversation-agent'
 import { forwardAssistantUpdates, linkAssistantSummaries } from './assistant-conversation-updates'
@@ -136,6 +146,111 @@ test('summary links require confirmed consumption in the exact execution and res
     content: [{ type: 'text', text: 'summary' }],
     assistantUpdateIds: [f.original.id],
   })
+  // Summarizing is the forwarded prompt's read state: the Assistant never needs a mark_read call.
+  expect((await db.select().from(inbox).where(eq(inbox.id, update!.forwardedMessageId!)))[0]!.readAt).toBeInstanceOf(
+    Date
+  )
+})
+
+test('routine progress never wakes the Assistant; the next summary-worthy update names it', async () => {
+  const f = await fixture()
+  const taskId = randomUUID(),
+    otherTaskId = randomUUID(),
+    requestId = randomUUID()
+  await db.insert(assistantTasks).values(
+    [taskId, otherTaskId].map((id, index) => ({
+      id,
+      conversationId: f.conversation.id,
+      currentRequestId: requestId,
+      kind: 'background' as const,
+      label: `Task ${index}`,
+      status: 'working' as const,
+    }))
+  )
+  const base = Date.now() + 60_000
+  const report = async (
+    sequence: number,
+    task: string | null,
+    reportedStatus: 'working' | 'waiting' | 'needs-input' | 'completed' | null,
+    content: string
+  ) => {
+    const createdAt = new Date(base + sequence * 1000)
+    const [row] = await db
+      .insert(inbox)
+      .values({
+        recipientType: 'voice_assistant',
+        recipientId: `assistant:${f.conversation.id}`,
+        senderType: 'system',
+        content,
+        metadata: {},
+        createdAt,
+      })
+      .returning()
+    inboxIds.push(row!.id)
+    const routine = task !== null && (reportedStatus === 'working' || reportedStatus === 'waiting')
+    await db.insert(assistantUpdates).values({
+      messageId: row!.id,
+      conversationId: f.conversation.id,
+      taskId: task,
+      requestId: task ? requestId : null,
+      sequence,
+      reportedStatus,
+      // Arrival marks routine progress processed (assistant-activity/project.ts).
+      processedAt: routine ? createdAt : null,
+      createdAt,
+    })
+    return row!.id
+  }
+  const working = await report(2, taskId, 'working', 'Reproduced the clipped outline.')
+  const waiting = await report(3, taskId, 'waiting', 'Waiting on CI for the fix.')
+  const untrackedWorking = await report(4, null, 'working', 'An untracked progress note.')
+  const otherWorking = await report(5, otherTaskId, 'working', 'Other task progress.')
+  const question = await report(6, otherTaskId, 'needs-input', 'Which browser?')
+  const completed = await report(7, taskId, 'completed', 'Merged the outline fix.')
+
+  await forwardAssistantUpdates(50, noDelivery)
+  const rows = await db.select().from(assistantUpdates).where(eq(assistantUpdates.conversationId, f.conversation.id))
+  const forwardedFor = (id: string) => rows.find((row) => row.messageId === id)!.forwardedMessageId
+  for (const row of rows) if (row.forwardedMessageId) inboxIds.push(row.forwardedMessageId)
+  expect([working, waiting, otherWorking].map(forwardedFor)).toEqual([null, null, null])
+  for (const id of [f.original.id, untrackedWorking, question, completed]) expect(forwardedFor(id)).toBeTruthy()
+
+  // The completion names the progress shown since this task's last forwarded update, newest first.
+  const completion = (await InboxMessage.find(forwardedFor(completed)!))!
+  expect(completion.content).toContain('Merged the outline fix.')
+  expect(completion.content).toContain('Earlier progress on this task (2 updates)')
+  expect(completion.content).toContain('Latest: "Waiting on CI for the fix."')
+  expect(completion.content).toContain(`read_task_update: ${waiting}, ${working}.`)
+  expect(completion.content).not.toContain(otherWorking)
+  // The needs-input report's earlier progress ends at nothing forwarded before it for its task.
+  const asked = (await InboxMessage.find(forwardedFor(question)!))!
+  expect(asked.content).toContain(`read_task_update: ${otherWorking}.`)
+  expect((await InboxMessage.find(forwardedFor(untrackedWorking)!))!.content).not.toContain('Earlier progress')
+  // Forwarded updates' prompts do not ask for a mark-read call.
+  expect(formatInboxMessages([completion, asked])).not.toContain('ficus inbox read')
+
+  // Routine progress is not pending for the outbox to retry.
+  await forwardAssistantUpdates(50, noDelivery)
+  const after = await db
+    .select()
+    .from(assistantUpdates)
+    .where(inArray(assistantUpdates.messageId, [working, waiting, otherWorking]))
+  expect(after.map((row) => row.forwardedMessageId)).toEqual([null, null, null])
+
+  // The Assistant can still find routine progress when asked.
+  const listUpdates = createAssistantTools(f.agentId, randomUUID(), f.conversation.id).find(
+    (tool) => tool.name === 'list_task_updates'
+  )!
+  const listed = await listUpdates.execute('call', { taskId } as never, undefined, undefined, {} as never)
+  expect(listed.details).toEqual([
+    expect.objectContaining({ messageId: completed, reportedStatus: 'completed', preview: 'Merged the outline fix.' }),
+    expect.objectContaining({ messageId: waiting, reportedStatus: 'waiting', summarized: false }),
+    expect.objectContaining({
+      messageId: working,
+      reportedStatus: 'working',
+      preview: 'Reproduced the clipped outline.',
+    }),
+  ])
 })
 
 test('every in-process tool rejects another owner’s conversation and revoked users', async () => {

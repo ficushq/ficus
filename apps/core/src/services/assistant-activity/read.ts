@@ -171,6 +171,7 @@ export function toAssistantActivityUpdate({
     subject: message.subject,
     senderName: senderName(message.metadata),
     processedAt: update.processedAt?.toISOString() ?? null,
+    summarized: update.summarizedMessageId !== null,
     seenAt: update.seenAt?.toISOString() ?? null,
     createdAt: update.createdAt.toISOString(),
   }

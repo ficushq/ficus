@@ -95,7 +95,7 @@ async function deliverInboxInPass(agentId: string, githubMessageIds: string[]): 
       // A stable chat receipt, rather than a pre-send deliveredAt claim, closes
       // both crash windows: before acceptance and after acceptance before ack.
       // Keep the mode/payload stable even if the conversation becomes active.
-      const delivery = prepareInboxDelivery([message], 'follow-up', 'follow-up')
+      const delivery = prepareInboxDelivery([message], 'follow-up', 'follow-up', agent.agentTypeId)
       try {
         const result = await agent.sendMessage(delivery.prompt, {
           deliveryMode: 'follow-up',
@@ -157,7 +157,7 @@ async function deliverInboxBatch(
   const claimedMessages = await InboxMessage.claimForDelivery(messages, deliveredAt)
   if (claimedMessages.length === 0) return
 
-  const delivery = prepareInboxDelivery(claimedMessages, batchMode, effectiveMode)
+  const delivery = prepareInboxDelivery(claimedMessages, batchMode, effectiveMode, agent.agentTypeId)
 
   try {
     const result = await agent.sendMessage(delivery.prompt, {
@@ -173,9 +173,15 @@ async function deliverInboxBatch(
   }
 }
 
-export function prepareInboxDelivery(messages: InboxMessage[], batchMode: DeliveryMode, effectiveMode: DeliveryMode) {
+/** `recipientAgentTypeId` tailors the prompt to the recipient (see formatInboxMessages). */
+export function prepareInboxDelivery(
+  messages: InboxMessage[],
+  batchMode: DeliveryMode,
+  effectiveMode: DeliveryMode,
+  recipientAgentTypeId?: string | null
+) {
   return {
-    prompt: formatInboxMessages(messages),
+    prompt: formatInboxMessages(messages, { recipientAgentTypeId }),
     imageIds: messages.flatMap((message) => {
       const value = message.metadata?.imageIds
       return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
@@ -225,7 +231,7 @@ async function acceptGitHubNotification(agent: Agent, message: InboxMessage, eve
       if (agent.status === 'terminated' || (agent.status === 'dormant' && !isInboxMessageWakeEligible(message))) return
       const { isCurrentFlowMessage } = await import('../workflows/execution')
       if (!(await isCurrentFlowMessage(message))) return
-      const prepared = prepareInboxDelivery([message], message.deliveryMode, message.deliveryMode)
+      const prepared = prepareInboxDelivery([message], message.deliveryMode, message.deliveryMode, agent.agentTypeId)
       const result = await agent.sendMessage(prepared.prompt, {
         deliveryMode: message.deliveryMode,
         metadata: { ...prepared.metadata, clientId },

@@ -16,7 +16,7 @@ import {
   type ContentBlock,
   type MonitorMessageKind,
 } from '@ficus/shared'
-import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
+import { ToolSummary, ToolArgsView, ToolResultView, withoutHiddenToolCalls } from '../lib/tool-renderers'
 import { ActivityIcon, ChevronRightIcon, ClockIcon, MailIcon, WarningIcon, WorkStreamIcon } from './icons'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { ImagePreviewModal } from './ImagePreviewModal'
@@ -559,7 +559,11 @@ function OrderedBlocksRenderer({
   agentId?: string
   onToolInlineAction?: (action: ToolInlineAction) => void
 }) {
-  const groups = useMemo(() => groupConsecutiveBlocks(blocks), [blocks])
+  const toolRenderers = useToolRenderers()
+  const groups = useMemo(
+    () => groupConsecutiveBlocks(withoutHiddenToolCalls(blocks, toolRenderers)),
+    [blocks, toolRenderers]
+  )
 
   return (
     <div className="space-y-2 [&>*:first-child]:mt-0 [&>*:first-child>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>*:last-child>*:last-child]:mb-0">

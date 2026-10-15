@@ -290,6 +290,7 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
           (message.metadata.sender as { agentTypeName?: string })?.agentTypeName ||
           'Agent',
         processedAt: null,
+        summarized: update.summarizedMessageId !== null,
         seenAt: update.seenAt?.toISOString() ?? null,
         createdAt: message.createdAt.toISOString(),
       })),

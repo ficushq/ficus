@@ -10,7 +10,7 @@ import { flushSync } from 'react-dom'
 import type { MessageMetadata, MessageToolCall, ContentBlock, DeliveryMode, ExecutionStatus } from '@ficus/shared'
 import { AssistantMessageContent, HumanMessageContent, ThinkingSection, ParsedTextContent } from './MessageContent'
 import { TypingIndicator } from './TypingIndicator'
-import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
+import { ToolSummary, ToolArgsView, ToolResultView, withoutHiddenToolCalls } from '../lib/tool-renderers'
 import { getImageAttachState } from '../lib/imageAttach'
 import {
   AutoScrollIcon,
@@ -2721,7 +2721,7 @@ function getStreamingGroupSummary(blocks: StreamingContentBlock[]): string {
 }
 
 function StreamingBlocksRenderer({
-  blocks,
+  blocks: allBlocks,
   isStreaming = true,
   onAbortTool,
   showRaw,
@@ -2735,6 +2735,9 @@ function StreamingBlocksRenderer({
   agentId?: string
   onToolInlineAction?: (action: ToolInlineAction) => void
 }) {
+  const toolRenderers = useToolRenderers()
+  // Hidden (bookkeeping) tool calls never render, so the streaming indices below skip them too.
+  const blocks = useMemo(() => withoutHiddenToolCalls(allBlocks, toolRenderers), [allBlocks, toolRenderers])
   const groups = useMemo(() => groupStreamingBlocks(blocks), [blocks])
 
   // Determine streaming state indices

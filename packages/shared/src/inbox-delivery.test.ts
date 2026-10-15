@@ -36,6 +36,11 @@ describe('extractInboxBodies', () => {
     expect(extractInboxBodies(content)).toEqual(['This is the actual body.\n\nSecond paragraph.'])
   })
 
+  test('a delivery without the mark-as-read footer (Assistant agents) still yields its body', () => {
+    const content = `You have 1 unread message(s) in your inbox. Process them and take any required action.\n\n${section('a1', 'Assistant task update', 'Done: fixed the outline.')}`
+    expect(extractInboxBodies(content)).toEqual(['Done: fixed the outline.'])
+  })
+
   test('content without framing yields no attributable bodies (callers fall back to previews)', () => {
     expect(extractInboxBodies('just a plain message')).toEqual([])
     expect(extractInboxBodies('   ')).toEqual([])

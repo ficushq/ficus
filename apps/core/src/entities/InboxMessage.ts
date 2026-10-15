@@ -1197,10 +1197,20 @@ function formatInboxMessageAttachments(message: InboxMessage): string {
   return `\n\n**Attachments:**\n${attachments}`
 }
 
+/** Forwarded Assistant task updates: their read state is recorded when a reply summarizes them. */
+const ASSISTANT_TASK_UPDATE_SOURCE = 'assistant_task_update'
+
 /**
  * Format inbox messages into a readable prompt section for agent processing.
+ *
+ * The "mark as read" footer is left out for Assistant agents and for batches made only of forwarded
+ * Assistant task updates: the conversation records their read state itself (summary attribution and
+ * viewing), so asking for a mark-read call only adds a redundant tool round-trip and a visible row.
  */
-export function formatInboxMessages(messages: InboxMessage[]): string {
+export function formatInboxMessages(
+  messages: InboxMessage[],
+  options: { recipientAgentTypeId?: string | null } = {}
+): string {
   const formatted = messages
     .map((m) => {
       const subject = m.subject ? `**${m.subject}**\n` : ''
@@ -1221,9 +1231,14 @@ ${m.content}${formatInboxMessageAttachments(m)}${assistantReply}${assistantReply
     })
     .join('\n\n---\n\n')
 
-  return `You have ${messages.length} unread message(s) in your inbox. Process them and take any required action.
+  const readStateTracked =
+    options.recipientAgentTypeId === 'assistant' ||
+    messages.every((m) => m.metadata?.source === ASSISTANT_TASK_UPDATE_SOURCE)
+  const header = `You have ${messages.length} unread message(s) in your inbox. Process them and take any required action.
 
-${formatted}
+${formatted}`
+  if (readStateTracked) return header
+  return `${header}
 
 **Mark one or more messages as read after processing:**
 \`\`\`
