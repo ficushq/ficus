@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { SquadGeneralSettings } from './SquadGeneralSettings'
 import { SquadContextEditor } from './SquadContextEditor'
 import { SquadAgentContextEditor } from './SquadAgentContextEditor'
+import { SlotPoolsSettings } from './SlotPoolsSettings'
 import { SquadSshKeys } from './SquadSshKeys'
 import { SquadSshConfig } from './SquadSshConfig'
 import { RemoteHostsSettings } from './RemoteHostsSettings'
@@ -135,6 +136,7 @@ export function SquadSettingsTab({
             <div className="space-y-8">
               <SquadContextEditor squadId={squadId} context={context} />
               <SquadAgentContextEditor squadId={squadId} typeContext={typeContext} agentTypes={agentTypes ?? []} />
+              <SlotPoolsSettings squadId={squadId} />
             </div>
           )}
 

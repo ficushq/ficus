@@ -162,6 +162,8 @@ export const queryKeys = {
     workspaceSessions: (squadId: string) => [...queryKeys.squads.all, 'workspaceSessions', squadId] as const,
     sshKeys: (squadId: string) => [...queryKeys.squads.all, squadId, 'ssh-keys'] as const,
     remoteHosts: (squadId: string) => [...queryKeys.squads.all, squadId, 'remote-hosts'] as const,
+    // Under squads.all so squad `slots.updated` events refresh live usage.
+    slotPools: (squadId: string) => [...queryKeys.squads.all, squadId, 'slot-pools'] as const,
     memory: {
       syncStatus: (squadId: string) => [...queryKeys.squads.all, squadId, 'memory', 'sync-status'] as const,
       tree: (squadId: string, path = '/memory', depth?: number) =>
