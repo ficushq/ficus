@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, waitFor } from '@testing-library/dom'
+import { notifyManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent } from '@testing-library/dom'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import type { Squad, WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
@@ -134,9 +134,29 @@ function Navigator() {
   )
 }
 
+/**
+ * Runs `action` in an act scope, then keeps flushing in act scopes until every fetch and mutation it
+ * started (and any follow-up fetch a commit's effects start) has finished and React has committed
+ * the results. No response lands between scopes, so callers assert synchronously instead of polling
+ * with `waitFor`, whose outcome depended on real timers racing unwrapped query updates.
+ */
+async function settle(action: () => unknown = () => undefined) {
+  await dom.act(async () => {
+    await action()
+  })
+  let idlePasses = 0
+  for (let pass = 0; idlePasses < 2; pass++) {
+    if (pass === 50)
+      throw new Error(`queries never settled: ${client.isFetching()} fetching, ${client.isMutating()} mutating`)
+    // react-query batches observer notifications onto a zero-delay timer; drain them in this scope.
+    await dom.act(() => new Promise<void>((resolve) => notifyManager.schedule(resolve)))
+    idlePasses = client.isFetching() === 0 && client.isMutating() === 0 ? idlePasses + 1 : 0
+  }
+}
+
 async function renderPage(path = `/squads/${SQUAD}`) {
   const { root } = dom.createRoot()
-  await dom.act(async () =>
+  await settle(() =>
     root.render(
       <MemoryRouter initialEntries={[path]}>
         <QueryClientProvider client={client}>
@@ -159,7 +179,7 @@ const buttonNamed = (text: string, scope: ParentNode = document) => {
   if (!found) throw new Error(`no "${text}" button in: ${document.body.textContent?.slice(0, 400)}`)
   return found as HTMLButtonElement
 }
-const click = (element: HTMLElement) => dom.act(async () => fireEvent.click(element))
+const click = (element: HTMLElement) => settle(() => fireEvent.click(element))
 const tab = (label: string) =>
   [...document.querySelectorAll('[role="tab"]')].find((b) => b.textContent === label) as HTMLElement
 
@@ -173,19 +193,20 @@ function touchEvent(window: Awaited<ReturnType<typeof acquireDomHarness>>['windo
 /** Simulates the native pull-down-to-refresh gesture that drives `onRefresh` on mobile. */
 const pullToRefresh = (testid: string) => {
   const target = document.querySelector(`[data-testid="${testid}"]`) as HTMLElement
-  return dom.act(async () => {
+  return settle(() => {
     target.dispatchEvent(touchEvent(dom.window, 'touchstart', 10))
     target.dispatchEvent(touchEvent(dom.window, 'touchmove', 95))
     target.dispatchEvent(touchEvent(dom.window, 'touchend', 95))
-    await Promise.resolve()
   })
 }
+const invalidateModeration = () =>
+  settle(() => client.invalidateQueries({ queryKey: githubFeedbackQueryKeys.squad(SQUAD) }))
 
 test('Home and Work both surface pending events and open ONE shared modal that keeps selections', async () => {
   await renderPage()
-  await waitFor(() => expect(region()?.textContent).toContain('2'))
+  expect(region()?.textContent).toContain('2')
   await click(buttonNamed('Review', region()!))
-  await waitFor(() => expect(dialogs()[0]?.textContent).toContain('@outsider1'))
+  expect(dialogs()[0]?.textContent).toContain('@outsider1')
   expect(dialogs()).toHaveLength(1)
   const checkbox = () => dialogs()[0]!.querySelector('input[type="checkbox"][data-revision-id]') as HTMLInputElement
   await click(checkbox())
@@ -193,40 +214,40 @@ test('Home and Work both surface pending events and open ONE shared modal that k
   await click(buttonNamed('Close', dialogs()[0]!))
 
   await click(tab('Work'))
-  await waitFor(() => expect(region()?.textContent).toContain('2'))
+  expect(region()?.textContent).toContain('2')
   await click(buttonNamed('Review', region()!))
-  await waitFor(() => expect(dialogs()[0]?.textContent).toContain('1 selected'))
+  expect(dialogs()[0]?.textContent).toContain('1 selected')
   expect(dialogs()).toHaveLength(1)
 
   // Decide; the content-free refresh then confirms zero and BOTH surfaces hide the section.
   await click(buttonNamed('Deny', dialogs()[0]!))
-  await waitFor(() => expect(api.requests.some((r) => r.path === '/decisions')).toBe(true))
+  expect(api.requests.some((r) => r.path === '/decisions')).toBe(true)
   api.pending = []
-  await dom.act(() => client.invalidateQueries({ queryKey: githubFeedbackQueryKeys.squad(SQUAD) }))
+  await invalidateModeration()
   await click(buttonNamed('Close', dialogs()[0]!))
-  await waitFor(() => expect(region()).toBeNull())
+  expect(region()).toBeNull()
   await click(tab('Home'))
-  await waitFor(() => expect(document.body.textContent).toContain('Start with a conversation'))
+  expect(document.body.textContent).toContain('Start with a conversation')
   expect(region()).toBeNull()
 })
 
 test('an incoming event makes the hidden section appear without reloading the page', async () => {
   api.pending = []
   await renderPage(`/squads/${SQUAD}/work`)
-  await waitFor(() => expect(api.requests.some((r) => r.path === '/summary')).toBe(true))
+  expect(api.requests.some((r) => r.path === '/summary')).toBe(true)
   expect(region()).toBeNull()
   api.pending = [item(7)]
-  await dom.act(() => client.invalidateQueries({ queryKey: githubFeedbackQueryKeys.squad(SQUAD) }))
-  await waitFor(() => expect(region()?.textContent).toContain('1'))
+  await invalidateModeration()
+  expect(region()?.textContent).toContain('1')
 })
 
 test('squad settings open the same modal instance through the page provider', async () => {
   await renderPage()
-  await waitFor(() => expect(region()).not.toBeNull())
+  expect(region()).not.toBeNull()
   await click(document.querySelector('[data-testid="go-settings"]') as HTMLElement)
-  await waitFor(() => expect(document.body.textContent).toContain('GitHub feedback review'))
+  expect(document.body.textContent).toContain('GitHub feedback review')
   await click(buttonNamed('Review events'))
-  await waitFor(() => expect(dialogs()[0]?.textContent).toContain('@outsider1'))
+  expect(dialogs()[0]?.textContent).toContain('@outsider1')
   expect(dialogs()).toHaveLength(1)
 })
 
@@ -243,11 +264,11 @@ test('pulling to refresh on Home catches up the pending GitHub count', async () 
   }) as typeof fetch
   try {
     await renderPage()
-    await waitFor(() => expect(region()?.textContent).toContain('2'))
+    expect(region()?.textContent).toContain('2')
     // A third event lands server-side without the websocket topic firing (e.g. missed/offline).
     api.pending = [item(1), item(2), item(3)]
     await pullToRefresh('squad-home-pull-to-refresh')
-    await waitFor(() => expect(region()?.textContent).toContain('3'))
+    expect(region()?.textContent).toContain('3')
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -267,10 +288,10 @@ test('pulling to refresh on Work catches up the pending GitHub count', async () 
   }) as typeof fetch
   try {
     await renderPage(`/squads/${SQUAD}/work`)
-    await waitFor(() => expect(region()?.textContent).toContain('2'))
+    expect(region()?.textContent).toContain('2')
     api.pending = [item(1), item(2), item(3)]
     await pullToRefresh('squad-work-pull-to-refresh')
-    await waitFor(() => expect(region()?.textContent).toContain('3'))
+    expect(region()?.textContent).toContain('3')
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -284,8 +305,7 @@ test('users the server refuses see no moderation surface and no counts', async (
         ? Response.json([])
         : undefined
   await renderPage()
-  await waitFor(() => expect(api.requests.some((r) => r.path === '/summary')).toBe(true))
-  await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
+  expect(api.requests.some((r) => r.path === '/summary')).toBe(true)
   expect(region()).toBeNull()
   expect(dialogs()).toHaveLength(0)
 })
