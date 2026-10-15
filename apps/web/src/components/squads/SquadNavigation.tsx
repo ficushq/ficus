@@ -21,7 +21,10 @@ export function SquadNavigation<T extends SquadTab>({
   const selectedSecondary = secondary.find((tab) => tab.path === activeTab)
   return (
     <div className="squad-detail-tabs mb-4 flex shrink-0 items-center gap-0.5 border-b border-panel-border pb-2">
-      {/* Scrolls sideways on narrow screens rather than squeezing the tabs; More stays pinned. */}
+      {/* Scrolls sideways on narrow screens rather than squeezing the tabs; More stays pinned.
+          The scroller clips overflow on both axes, so the tabs (and More, to match) draw their
+          focus ring inside their own box instead of the shared offset ring. Browsers leave a
+          mostly visible focused tab where it is, so focus also brings the whole tab into view. */}
       <nav
         className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         role="tablist"
@@ -36,7 +39,8 @@ export function SquadNavigation<T extends SquadTab>({
               role="tab"
               aria-selected={activeTab === tab.path}
               onClick={() => onChange(tab.path)}
-              className="ficus-button ficus-button-ghost ficus-nav-item shrink-0 whitespace-nowrap px-2 py-2.5 text-xs font-medium sm:px-4 sm:text-sm"
+              onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' })}
+              className="ficus-button ficus-button-ghost ficus-nav-item shrink-0 whitespace-nowrap px-2 py-2.5 text-xs font-medium focus-visible:outline-offset-[-2px] sm:px-4 sm:text-sm"
             >
               {tab.label}
             </button>
@@ -47,7 +51,7 @@ export function SquadNavigation<T extends SquadTab>({
           label="More squad tools"
           heading="Squad tools"
           className={clsx(
-            'ficus-button ficus-button-ghost flex max-w-20 sm:max-w-36 items-center gap-1 rounded-lg px-2 py-2.5 text-xs sm:text-sm',
+            'ficus-button ficus-button-ghost flex max-w-20 sm:max-w-36 items-center gap-1 rounded-lg px-2 py-2.5 text-xs focus-visible:outline-offset-[-2px] sm:text-sm',
             selectedSecondary && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
           )}
           items={secondary.map((tab) => ({
