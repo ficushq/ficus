@@ -6,14 +6,13 @@ import { messageEventData } from '../../entities/message-event'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { completeWithTier } from '../model-tiers/light-completion-runtime'
-import { getSettingsStore } from '../settings'
 import {
-  REPLY_SUGGESTIONS_SETTING,
   ReplySuggestionLimiter,
   suggestRepliesAfterTurn,
   type ReplySuggestionDeps,
   type SuggestionRow,
 } from './service'
+import { replySuggestionsEnabled } from './visibility'
 
 const log = createLogger('reply-suggestions')
 
@@ -50,7 +49,7 @@ const rowColumns = {
 }
 
 export const replySuggestionRuntimeDeps: ReplySuggestionDeps = {
-  isEnabled: () => getSettingsStore().getTyped(REPLY_SUGGESTIONS_SETTING) === true,
+  isEnabled: replySuggestionsEnabled,
   loadAgent: async (agentId) => {
     const [agent] = await db
       .select({ status: agents.status, questionData: agents.questionData })

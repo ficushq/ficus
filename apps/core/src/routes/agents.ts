@@ -6,6 +6,7 @@ import { listActiveSlotHolds } from '../services/slots/active-holds'
 import { chatPagePathSchema } from '@ficus/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
 import { withChatQueueState } from '../services/chat/queued-messages'
+import { replySuggestionsEnabled, withVisibleReplySuggestions } from '../services/reply-suggestions/visibility'
 import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'
 import { Hono, type Context } from 'hono'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
@@ -844,7 +845,8 @@ export const agentsRouter = new Hono()
 
     try {
       const result = await agent.listMessages(options)
-      return c.json({ ...result, messages: await withChatQueueState(agent.id, result.messages) })
+      const visible = withVisibleReplySuggestions(result.messages, replySuggestionsEnabled())
+      return c.json({ ...result, messages: await withChatQueueState(agent.id, visible) })
     } catch (error) {
       if (error instanceof InvalidMessageCursorError)
         return c.json({ error: 'Invalid cursor', code: 'MESSAGES_CURSOR_INVALID' }, 400)
@@ -859,7 +861,8 @@ export const agentsRouter = new Hono()
     try {
       const message = await Agent.findMessage(c.req.param('messageId'))
       if (!message || message.agentId !== agent.id) return c.json({ error: 'Message not found' }, 404)
-      return c.json((await withChatQueueState(agent.id, [message]))[0])
+      const visible = withVisibleReplySuggestions([message], replySuggestionsEnabled())
+      return c.json((await withChatQueueState(agent.id, visible))[0])
     } catch (err) {
       if (err instanceof AmbiguousPrefixError) return c.json({ error: err.message }, 400)
       throw err

@@ -10,6 +10,7 @@ import {
   getOpenRouterExpansionStateForCurrentEnv,
   inspectOpenRouterFallbacks,
   invalidOpenRouterFallbackWarning,
+  usableModelCandidatesForCurrentEnv,
 } from '../services/model-selection'
 
 import { getModelCatalog } from '../services/model-selection/model-catalog'
@@ -25,6 +26,9 @@ modelTiersRoutes.get('/', requirePermission('agent-types:read'), async (c) => {
       ...tier,
       usedByCount: types.filter((type) => type.tier === tier.slug).length,
       derivedOpenRouterFallbacks: openRouterActive ? inspectOpenRouterFallbacks(tier.chain).fallbacks : [],
+      // What a one-shot tier call (e.g. reply suggestions) can use right now: enabled, signed in,
+      // healthy, with no OpenRouter fallbacks. Empty means such a feature silently does nothing.
+      usableCandidates: tier.disabled ? [] : usableModelCandidatesForCurrentEnv(tier.chain),
     }))
   )
 })

@@ -1329,7 +1329,7 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
             derivedFallbacks={tier.derivedOpenRouterFallbacks}
             onSave={(next) => mutation.mutate(next)}
           />
-          {tier.slug === 'lite' && <ReplySuggestionsSetting />}
+          {tier.slug === 'lite' && <ReplySuggestionsSetting usableCandidates={tier.usableCandidates} />}
         </div>
       ))}
       <button
