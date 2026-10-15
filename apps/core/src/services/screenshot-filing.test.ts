@@ -210,9 +210,9 @@ test('a weak kind, squad or action is still the guess; "none of these squads" ke
 })
 
 const IMAGE_ID = '55555555-0000-4000-8000-000000000005'
-const attached = `The screenshot is attached (image ID ${IMAGE_ID}). When you hand it to a squad, pass it as imageIds so they can see it.`
+const attached = `Image ID ${IMAGE_ID} (pass it as imageIds when handing it to a squad)`
 
-test("the first message puts the note first, then the confirmed choices with their IDs, as the user's own", () => {
+test('the first message puts the note first, then one compact line of the confirmed choices with their IDs', () => {
   const message = screenshotFilingMessage({
     imageId: IMAGE_ID,
     note: 'This started after the coupon change.\nSee the total.',
@@ -227,32 +227,18 @@ test("the first message puts the note first, then the confirmed choices with the
     [
       'This started after the coupon change.\nSee the total.',
       '',
-      'Please file the attached screenshot. I reviewed and confirmed these choices myself, so follow them:',
-      '- Kind: a bug',
-      `- Squad: Shop (squad ID ${busy.id})`,
-      '- Action: add it to an existing work stream',
-      `- Work stream: "Fix the \\"export\\" crash" (work stream ID ${streams[0]!.id})`,
-      '',
+      `Confirmed filing: a bug · squad Shop (ID ${busy.id}) · add it to an existing work stream · work stream "Fix the \\"export\\" crash" (ID ${streams[0]!.id})`,
       attached,
     ].join('\n')
   )
-  // Nothing in it reads as a model's guess to double-check.
-  expect(message).not.toMatch(/guess|%|can be wrong/i)
+  // Nothing in it reads as a model's guess to double-check, or as boilerplate about who reviewed it.
+  expect(message).not.toMatch(/guess|%|can be wrong|reviewed|please/i)
 })
 
 test('the first message says "no squad" outright and names what was left to the Assistant', () => {
   expect(
     screenshotFilingMessage({ imageId: IMAGE_ID, confirmed: { kind: 'reference', squad: null, action: 'just_save' } })
-  ).toBe(
-    [
-      'Please file the attached screenshot. I reviewed and confirmed these choices myself, so follow them:',
-      '- Kind: a reference',
-      "- Squad: none. Don't file it with a squad.",
-      '- Action: just save it',
-      '',
-      attached,
-    ].join('\n')
-  )
+  ).toBe(['Confirmed filing: a reference · no squad · just save it', attached].join('\n'))
   // Some fields unchosen, and "existing work stream" without picking which.
   expect(
     screenshotFilingMessage({
@@ -261,25 +247,18 @@ test('the first message says "no squad" outright and names what was left to the 
     })
   ).toBe(
     [
-      'Please file the attached screenshot. I reviewed and confirmed these choices myself, so follow them:',
-      `- Squad: Shop (squad ID ${busy.id})`,
-      '- Action: add it to an existing work stream',
-      'I left the rest for you to decide: what it shows, which work stream it is about.',
-      '',
+      `Confirmed filing: squad Shop (ID ${busy.id}) · add it to an existing work stream`,
+      'Left to you: what it shows, which work stream',
       attached,
     ].join('\n')
   )
   // Only a note, or nothing at all: the Assistant decides everything.
   expect(screenshotFilingMessage({ imageId: IMAGE_ID, note: 'From the standup', confirmed: {} })).toBe(
-    [
-      'From the standup',
-      '',
-      'Please look at the attached screenshot and file it in the right place.',
-      '',
-      attached,
-    ].join('\n')
+    ['From the standup', '', 'File this screenshot where it belongs.', attached].join('\n')
   )
-  expect(screenshotFilingMessage({ imageId: IMAGE_ID, confirmed: {} })).toStartWith('Please look at the attached')
+  expect(screenshotFilingMessage({ imageId: IMAGE_ID, confirmed: {} })).toBe(
+    ['File this screenshot where it belongs.', attached].join('\n')
+  )
 })
 
 test('corrections are the fields the user changed from the guess', () => {

@@ -300,14 +300,14 @@ test('with no answer, the feature off, or a failing decision there is no guess, 
   )
   expect(conversation.title).toBe('Filed screenshot')
   expect(sent).toHaveLength(1)
-  expect(sent[0]!.content).toStartWith('Please look at the attached screenshot and file it in the right place.')
+  expect(sent[0]!.content).toStartWith('File this screenshot where it belongs.')
   expect(sent[0]!.metadata).toMatchObject({ imageIds: [imageId] })
 
   // Only a note.
   const noteOnly = await upload(server)
   const noted = await file(server, { imageId: noteOnly, note: 'From the standup' })
   const second = await filedConversation(((await noted.json()) as FileScreenshotResponse).conversationId)
-  expect(second.sent[0]!.content).toStartWith('From the standup\n\nPlease look at the attached screenshot')
+  expect(second.sent[0]!.content).toStartWith('From the standup\n\nFile this screenshot where it belongs.')
 })
 
 test("only the uploader's own staged image can be guessed or filed", async () => {
@@ -364,12 +364,8 @@ test('confirming files it once: one conversation whose first message has the not
     [
       'Checkout button overlaps',
       '',
-      'Please file the attached screenshot. I reviewed and confirmed these choices myself, so follow them:',
-      '- Kind: a bug',
-      `- Squad: ${chlea.name} (squad ID ${chlea.id})`,
-      '- Action: start a new work stream',
-      '',
-      `The screenshot is attached (image ID ${imageId}). When you hand it to a squad, pass it as imageIds so they can see it.`,
+      `Confirmed filing: a bug · squad ${chlea.name} (ID ${chlea.id}) · start a new work stream`,
+      `Image ID ${imageId} (pass it as imageIds when handing it to a squad)`,
     ].join('\n')
   )
   // Nothing changed from the guess: no correction.
@@ -413,7 +409,7 @@ test('a confirmed squad must be visible and not archived, and nothing is created
     ((await response.json()) as FileScreenshotResponse).conversationId
   )
   expect(conversation.title).toBe('Screenshot: a reference')
-  expect(sent[0]!.content).toContain("- Squad: none. Don't file it with a squad.")
+  expect(sent[0]!.content).toContain('Confirmed filing: a reference · no squad · just save it')
 })
 
 /**
@@ -690,8 +686,9 @@ test('open work streams: the second question, the picker list, and a confirmed s
       ((await response.json()) as FileScreenshotResponse).conversationId
     )
     expect(conversation.title).toBe(`Screenshot: an error message or log in ${chlea.name}`)
-    expect(sent[0]!.content).toContain('- Action: add it to an existing work stream')
-    expect(sent[0]!.content).toContain(`- Work stream: "Rewrite the docs" (work stream ID ${docs!.id})`)
+    expect(sent[0]!.content).toContain(
+      `· add it to an existing work stream · work stream "Rewrite the docs" (ID ${docs!.id})`
+    )
 
     expect(
       captured.map(({ evalName, expect: expected, summary, source }) => ({ evalName, expected, summary, source }))
