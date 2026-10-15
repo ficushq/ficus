@@ -52,6 +52,16 @@ test('isolated files cannot contaminate each other in either order', async () =>
   await runTests({ cwd, roots: ['src'], isolated: true, reverse: true })
 })
 
+test('extra bun test arguments reach every batch, such as a test name pattern', async () => {
+  const cwd = await fixture({
+    'src/a.test.ts':
+      'import { test, expect } from "bun:test"; test("wanted", () => expect(1).toBe(1)); test("other", () => expect(1).toBe(2))',
+  })
+  await expect(runTests({ cwd, roots: ['src'] })).rejects.toThrow('Test suite failed')
+  await runTests({ cwd, roots: ['src'], args: ['--test-name-pattern=wanted'] })
+  await runTests({ cwd, roots: ['src'], isolated: true, args: ['--test-name-pattern=wanted'] })
+})
+
 test('discovery is nonempty, unique and covers supported extensions without fixtures or dependencies', async () => {
   const cwd = await fixture({ 'src/a.test.ts': '', 'src/b.spec.tsx': '', 'src/node_modules/hidden.test.ts': '' })
   expect(discoverTests(cwd, ['src', 'src'])).toEqual(['./src/a.test.ts', './src/b.spec.tsx'])

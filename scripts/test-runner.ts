@@ -56,8 +56,10 @@ export async function runTests(options: {
   concurrency?: number
   reverse?: boolean
   cacheSchema?: boolean
+  /** Extra `bun test` arguments placed before the files, such as a test name pattern. */
+  args?: string[]
 }) {
-  const { cwd, roots, isolated = false, concurrency = 1, reverse = false } = options
+  const { cwd, roots, isolated = false, concurrency = 1, reverse = false, args = [] } = options
   if (options.cacheSchema && (!isolated || concurrency !== 1))
     throw new Error('Schema cache requires sequential isolated files')
   if (!Number.isSafeInteger(concurrency) || concurrency < 1 || (!isolated && concurrency !== 1)) {
@@ -89,7 +91,7 @@ export async function runTests(options: {
           const fd = openSync(log, 'w')
           let child: ReturnType<typeof Bun.spawn> | undefined
           try {
-            child = Bun.spawn([process.execPath, 'test', ...batch], {
+            child = Bun.spawn([process.execPath, 'test', ...args, ...batch], {
               cwd,
               env: {
                 ...process.env,
