@@ -76,6 +76,8 @@ function presentStream(stream: Pick<StreamRow, 'status' | 'pause'>, facts: Deriv
     delivery: facts?.delivery,
     derivedState: facts?.derivedState,
     openWaits: facts?.openWaits,
+    hasActiveSlotWait: facts?.hasActiveSlotWait,
+    hasActiveMonitor: facts?.hasActiveMonitor,
   }
   return {
     state: selectWorkStreamPresentationState(presentation),

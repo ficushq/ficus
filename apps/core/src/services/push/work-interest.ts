@@ -27,6 +27,7 @@ export interface WorkInterestCandidate {
 
 interface DerivedFacts {
   hasActiveSlotWait?: boolean
+  hasActiveMonitor?: boolean
   delivery?: WorkStream['delivery']
   derivedState: WorkStreamDerivedState
   openWaits: WorkStreamWait[]

@@ -85,6 +85,7 @@ const KANBAN_COLUMNS: WorkStreamPresentationState[] = [
   'delivery_failure',
   'queued',
   'idle',
+  'monitoring',
   'in_progress',
   'in_review',
   'waiting_on_answer',

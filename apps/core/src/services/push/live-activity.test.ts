@@ -382,3 +382,63 @@ test('slot lifecycle uses scoped, coalesced snapshot refresh and unregisters cle
   }
   expect(listeners.size).toBe(0)
 })
+
+test('monitor start and end refresh the scoped snapshot so rows flip to and from Monitoring', async () => {
+  const listeners = new Map<string, (payload: unknown) => void>()
+  const timers = fakeTimers()
+  const lookups: unknown[] = []
+  const sent: Array<{ token: string; payload: unknown }> = []
+  let monitoring = true
+  const fanout = registerLiveActivityFanout(
+    {
+      on: (event, handler) => {
+        listeners.set(event, handler as (payload: unknown) => void)
+        return () => {
+          listeners.delete(event)
+        }
+      },
+    },
+    {
+      resolveUserIds: async (input) => {
+        lookups.push(input)
+        return input.squadId === 'affected' && input.includeDirectStreamSubscribers ? ['watcher'] : []
+      },
+      loadUserStreams: async () => [
+        { ...running('monitored'), derivedState: 'idle', openWaits: [], hasActiveMonitor: monitoring },
+      ],
+      loadSnapshot: undefined,
+      hasApnsConfig: () => true,
+      listTokens: async (userIds) => userIds.map((userId) => ({ ...UPDATE_TOKEN, userId, apnsToken: userId })),
+      send: (async (token, payload) => {
+        sent.push({ token, payload })
+        return { ok: true, status: 200 }
+      }) as LiveActivityFanoutDeps['send'],
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    }
+  )
+  const emit = async (event: string, squadId: string | null) => {
+    listeners.get(event)!({ monitorId: 'm', agentId: 'a', squadId, status: 'running' })
+    await Promise.resolve()
+    await Promise.resolve()
+    await timers.run()
+  }
+  try {
+    expect(listeners.has('monitor.created')).toBe(true)
+    expect(listeners.has('monitor.ended')).toBe(true)
+    // Intermediate updates keep the monitor live, so they cannot change the row.
+    expect(listeners.has('monitor.updated')).toBe(false)
+    await emit('monitor.created', 'affected')
+    expect(sent).toHaveLength(1)
+    expect(lookups[0]).toEqual({ squadId: 'affected', includeDirectStreamSubscribers: true })
+    monitoring = false
+    await emit('monitor.ended', 'affected')
+    expect(sent).toHaveLength(2)
+    // Squadless agents have no stream audience to refresh.
+    await emit('monitor.ended', null)
+    expect(lookups).toHaveLength(2)
+  } finally {
+    fanout.stop()
+  }
+  expect(listeners.size).toBe(0)
+})

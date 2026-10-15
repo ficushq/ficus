@@ -26,7 +26,8 @@ import type { BadgeKind, PlantState, RobotFace } from './types'
  * | done, canceled                          | null      |
  * | queued (deps not all done)              | waiting   |
  * | queued                                  | queued    |
- * | waiting_on_dependency                   | waiting   |
+ * | waiting_on_dependency, waiting_for_slot | waiting   |
+ * | monitoring (idle on a live monitor)     | waiting   |
  * | paused                                  | paused    |
  * | in_progress, active                     | growing   |
  * | delivery_external                       | delivering |
@@ -61,6 +62,8 @@ const PLANT_FOR_STATE: Record<WorkStreamPresentationState, PlantRule> = {
   queued: (stream) => (stream.waitingOnDependencies ? 'waiting' : 'queued'),
   waiting_on_dependency: 'waiting',
   waiting_for_slot: 'waiting',
+  // Deliberately idle while an agent's monitor waits for events: not stalled.
+  monitoring: 'waiting',
   // A manual wait the stream's owner agent must clear: nobody here has to act.
   waiting_on_owner: 'waiting',
   paused: 'paused',

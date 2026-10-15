@@ -1471,6 +1471,11 @@ export interface WorkStream {
   /** Display state derived from executions + open waits. Populated by list/detail endpoints. */
   /** Server-owned, current-flow resource wait context; no pool or participant details. */
   hasActiveSlotWait?: boolean
+  /**
+   * Server-owned: an agent bound to this active stream (or its subagent) has a
+   * live background monitor. Presentation-only; no monitor details.
+   */
+  hasActiveMonitor?: boolean
   derivedState?: WorkStreamDerivedState
   /** Open (unresolved) wait records, newest first. Populated by list/detail endpoints. */
   openWaits?: WorkStreamWait[]

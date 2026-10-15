@@ -84,6 +84,14 @@ The clients validate held response names/expiry directly from raw JSON. Reads re
 
 Widget summary `top[]` rows carry the same optional boolean, including explicit false for clearing. Detailed native rows can use it without changing their aggregate protocol. Proven idle slot waits use the **existing** `externalWait` aggregate bucket; ordinary idle retains its historical aggregate bucket while its detailed label is neutral Idle. Vocabulary, total count and ranking algorithm are unchanged. Slot lifecycle events also refresh the existing coalesced Live Activity fanout: recomputation includes squad subscribers and direct subscribers to nonterminal streams in that squad, with effective attention, authorization, token checks and unchanged-state suppression still applied. No synthetic work-stream lifecycle event or agent wake is emitted.
 
+## Live agent monitors and ordinary idle
+
+`WorkStream.hasActiveMonitor?: boolean` is the same kind of additive, server-owned context. It is true when an agent bound to the stream (the assignee or any `agentIds` member), or a direct subagent of one, has a background monitor in a live status (`starting`, `running` or `canceling`). An **otherwise idle** stream with `true` presents as `monitoring` (“Monitoring”), using the non-alarming `externalWait` palette: the agent is deliberately idle, waiting on events, not stalled. It never counts as needing human attention, sorts in the same tier as idle, and uses the existing `externalWait` native bucket. Web lists offer a Monitoring status filter and squad board column; the farm draws it as `waiting`.
+
+It only replaces plain `idle`. Terminal states, pause, explicit waits, failures, delivery gates, the admission queue and live execution all keep precedence, and a proven slot wait outranks it (`waiting_for_slot` wins when both facts are true). `derivedState` stays `idle` for older clients. Missing or false never implies monitoring. Core evaluates it with one batched query per derivation, only for active, unpaused streams without open waits (the only streams it can present for), and returns false otherwise. The boolean carries no monitor labels, commands or counts; monitor details stay behind the existing monitor endpoints and their permissions.
+
+`monitor.created` and `monitor.ended` (the `monitors` topic) refresh web stream projections through the same coalesced invalidation as slot changes, and refresh the Live Activity fanout for the monitor's squad, with the same recomputation audience and checks as slot lifecycle events. `monitor.updated` cannot change the fact (the monitor stays live), so it does not refresh streams.
+
 ## Native projection and version skew
 
 `workBucket` deliberately aggregates human review, questions and human-actor manual blockers into amber `needsYou`. Owner-actor manual waits use `externalWait`. It preserves execution failures as `blocked`, uses neutral `paused`, and distinguishes orange `externalWait` from failures. Neither paused nor external work contributes to running or Needs you counts. Terminal rows are not part of Core's nonterminal interest query.
@@ -95,6 +103,8 @@ Native clients should decode `bucket` as extensible text, ignore additive summar
 ### Mobile adoption
 
 Actor-aware manual waits need the same adoption: map the `waiting_on_owner` label in JS adapters, and let native decoders tolerate the optional wait `actor`. Until then, older mobile builds render owner waits as Needs you in their own rows, while server-owned widget buckets and counts already exclude them.
+
+`monitoring` needs the same: when the mobile app repacks the shared package, its exhaustive label/role/marker maps must add `monitoring` (“Monitoring”, `externalWait`). Older builds ignore `hasActiveMonitor` and keep showing Idle; server-owned widget buckets already use `externalWait`.
 
 Repack the shared package from the **independently reviewed, merged Core commit**, recording the actual source SHA and package checksum. Do not use an unreviewed branch archive. Update JS adapters plus both Swift attribute copies, native bucket/label/color mapping and widget summary decoding together. Map `paused` to neutral and `externalWait` to orange; retain amber Needs you. Preserve unknown-value fallback. Consume optional new count keys with zero defaults, and prefer the server's summary bucket. Run foreground/APNs parity, legacy-payload decoding and widget fixtures before release. This contract does not authorize a mobile release.
 

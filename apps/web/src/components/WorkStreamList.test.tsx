@@ -540,6 +540,21 @@ describe('WorkStreamList', () => {
     expect(html).not.toContain('Ordinary idle')
   })
 
+  test('Monitoring filter and row label show idle streams with a live monitor, not ordinary idle', () => {
+    const streams = [
+      workStream({ id: 'monitored', title: 'Watching a monitor', derivedState: 'idle', hasActiveMonitor: true }),
+      workStream({ id: 'idle', title: 'Ordinary idle', derivedState: 'idle' }),
+    ]
+    const monitoring = renderWorkStreamList(streams, {}, '/?status=monitoring')
+    expect(monitoring).toContain('Watching a monitor')
+    expect(monitoring).not.toContain('Ordinary idle')
+    const idle = renderWorkStreamList(streams, {}, '/?status=idle')
+    expect(idle).toContain('Ordinary idle')
+    expect(idle).not.toContain('Watching a monitor')
+    // A live monitor is not a wait the user should chase.
+    expect(renderWorkStreamList(streams, {}, '/?status=waiting')).not.toContain('Watching a monitor')
+  })
+
   test('toggles multiple status and squad filters, with All clearing each group', async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/feed' })
     const rendered = dom.createRoot()
@@ -1089,6 +1104,12 @@ describe('squad WorkStreamList canonical ordering', () => {
                     hasActiveSlotWait: true,
                     openWaits: [],
                   }),
+                  workStream({
+                    title: 'Monitoring stream',
+                    derivedState: 'idle',
+                    hasActiveMonitor: true,
+                    openWaits: [],
+                  }),
                 ]}
                 squadId={squad.id}
                 squad={squad}
@@ -1101,6 +1122,8 @@ describe('squad WorkStreamList canonical ordering', () => {
       expect(html.indexOf('Squad Queue One')).toBeLessThan(html.indexOf('Squad Queue Two'))
       expect(html).toContain('Slot waiting stream')
       expect(html).toContain('Waiting for slot')
+      expect(html).toContain('Monitoring stream')
+      expect(html).toContain('Monitoring')
     } finally {
       await dom.cleanup()
     }

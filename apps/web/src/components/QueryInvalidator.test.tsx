@@ -422,6 +422,34 @@ describe('QueryInvalidator', () => {
     )
   })
 
+  test('monitor start and end refresh stream presentation; intermediate updates do not', async () => {
+    await dom.act(async () => {
+      root.render(<QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe }} />)
+    })
+    const squadsRefresh = [{ queryKey: queryKeys.squads.all }, { cancelRefetch: false }]
+    const monitor = { monitorId: 'monitor-1', agentId: 'agent-1', squadId: 'squad-1', status: 'running' }
+    await dom.act(async () => {
+      captured.get('monitors')!({ event: 'monitor.updated', data: monitor })
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    })
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledWith(
+      { queryKey: queryKeys.monitors.all },
+      { cancelRefetch: false }
+    )
+    expect(fakeQueryClient.invalidateQueries).not.toHaveBeenCalledWith(...squadsRefresh)
+    for (const event of ['monitor.created', 'monitor.ended'] as const) {
+      fakeQueryClient.invalidateQueries.mockClear()
+      await dom.act(async () => {
+        captured.get('monitors')!({
+          event,
+          data: { ...monitor, status: event === 'monitor.ended' ? 'exited' : 'running' },
+        })
+        await new Promise((resolve) => setTimeout(resolve, 200))
+      })
+      expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledWith(...squadsRefresh)
+    }
+  })
+
   test('workStream.updated invalidates the squad query prefix used by home and work graphs', async () => {
     await dom.act(async () => {
       root.render(<QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe }} />)

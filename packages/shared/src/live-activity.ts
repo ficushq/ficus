@@ -20,6 +20,7 @@ export function workBucket(stream: WorkBucketFacts): WorkBucket {
   // value is introduced, so older native binaries keep rendering them.
   if (
     state === 'waiting_for_slot' ||
+    state === 'monitoring' ||
     state === 'waiting_on_dependency' ||
     state === 'delivery_external' ||
     state === 'waiting_on_owner'
@@ -65,6 +66,8 @@ export interface WidgetWorkStreamSummary {
   delivery?: WorkStream['delivery']
   /** Detailed row presentation only; never exposes slot pool details. */
   hasActiveSlotWait?: boolean
+  /** Detailed row presentation only; never exposes monitor details. */
+  hasActiveMonitor?: boolean
   derivedState?: WorkStreamDerivedState
   assigneeAgentId?: string
   /** An explicit empty array is authoritative and must survive serialization. */
@@ -94,6 +97,7 @@ type SnapshotSource = Pick<
   | 'status'
   | 'derivedState'
   | 'hasActiveSlotWait'
+  | 'hasActiveMonitor'
   | 'assigneeAgentId'
   | 'openWaits'
   | 'updatedAt'
@@ -136,6 +140,7 @@ function toWidgetSummary(stream: SnapshotSource): WidgetWorkStreamSummary {
     updatedAt: new Date(stream.updatedAt).toISOString(),
   }
   if (stream.hasActiveSlotWait !== undefined) row.hasActiveSlotWait = stream.hasActiveSlotWait
+  if (stream.hasActiveMonitor !== undefined) row.hasActiveMonitor = stream.hasActiveMonitor
   if (stream.pause) row.pause = true
   if (stream.delivery) row.delivery = stream.delivery
   if (stream.derivedState) row.derivedState = stream.derivedState
