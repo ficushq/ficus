@@ -5,7 +5,7 @@ import { db, agents, inbox, systemInboxReads, squads } from '../db'
 import { Agent } from '../entities/Agent'
 import { identityMiddleware } from '../middleware/identity'
 import { inboxRouter } from './inbox'
-import { SYSTEM_RECIPIENT_ID, workspaceVoiceRecipientId } from '@ficus/shared'
+import { INBOX_SEARCH_MAX_LENGTH, SYSTEM_RECIPIENT_ID, workspaceVoiceRecipientId } from '@ficus/shared'
 import {
   assignRole,
   authHeaders,
@@ -311,6 +311,19 @@ describe('inbox routes', () => {
       expect(await contents('100%')).toEqual(['Rollout 100% done'])
       expect(await contents('snake_case')).toEqual(['snake_case key'])
       expect(await contents('a\\b')).toEqual(['path a\\b'])
+    })
+
+    it('rejects a search term longer than the limit and ignores surrounding whitespace', async () => {
+      await db
+        .insert(inbox)
+        .values({ recipientType: 'user', recipientId: admin.id, senderType: 'system', content: 'x' })
+      const longest = 'x'.repeat(INBOX_SEARCH_MAX_LENGTH)
+      expect((await pageOf(`limit=50&readState=all&search=${longest}`)).totalCount).toBe(0)
+      expect((await pageOf(`limit=50&readState=all&search=%20%20x%20`)).totalCount).toBe(1)
+      const res = await app.request(`/api/inbox/user/me?limit=50&readState=all&search=${longest}x`, {
+        headers: authHeaders(admin.token),
+      })
+      expect(res.status).toBe(400)
     })
   })
 

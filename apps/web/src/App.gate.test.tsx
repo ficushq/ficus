@@ -53,7 +53,11 @@ describe('App auth gate', () => {
       if (url.includes('/auth/validate')) {
         return validSession ? Response.json(validation) : Response.json({ error: 'nope' }, { status: 401 })
       }
-      // Everything the app shell fetches on mount: empty collections.
+      // The inbox popup reads the paged inbox API, which answers with a page rather than a list.
+      if (url.includes('/inbox/') && url.includes('limit=')) {
+        return Response.json({ items: [], hasMore: false, nextCursor: null, totalCount: 0 })
+      }
+      // Everything else the app shell fetches on mount: empty collections.
       return Response.json([])
     }) as typeof fetch
 

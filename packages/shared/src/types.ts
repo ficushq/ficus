@@ -1753,6 +1753,9 @@ export type InboxRecipientType = 'agent' | 'user' | 'voice_assistant' | 'system'
 /** Reserved recipientId for the shared, permissioned system/announcements inbox. */
 export const SYSTEM_RECIPIENT_ID = 'system'
 
+/** Longest inbox search term (after trimming) the paged inbox API accepts. */
+export const INBOX_SEARCH_MAX_LENGTH = 200
+
 /**
  * URL/CLI shorthands that resolve, server-side, to the authenticated user's own id.
  * 'user' is kept for backward compatibility with the previous singleton human inbox.

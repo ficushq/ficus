@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { INBOX_SEARCH_MAX_LENGTH } from '@ficus/shared'
 import { SearchIcon } from './icons'
 
 interface InboxSearchInputProps {
@@ -19,6 +20,7 @@ export function InboxSearchInput({ value, onChange, className }: InboxSearchInpu
         aria-label="Search inbox"
         placeholder="Search all messages…"
         value={value}
+        maxLength={INBOX_SEARCH_MAX_LENGTH}
         onChange={(event) => onChange(event.target.value)}
         className="ficus-field w-full py-2 pl-9 pr-3 text-sm"
       />
