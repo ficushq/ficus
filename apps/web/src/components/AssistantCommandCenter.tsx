@@ -352,7 +352,7 @@ export function AssistantCommandCenter({
         <div className="flex shrink-0 min-w-0 items-center gap-2 px-4 py-2 text-xs border-b border-th-border">
           <button
             onClick={onBack}
-            className="ficus-button ficus-button-link flex shrink-0 items-center gap-1 py-1.5 text-muted"
+            className="ficus-button ficus-button-ghost -ml-2 flex shrink-0 items-center gap-1 rounded px-2 py-1.5 text-muted"
             aria-label={backLabel ?? (stack.length > 1 ? 'Back to preview' : 'Back to search')}
           >
             <ChevronRightIcon className="w-3.5 h-3.5 rotate-180" />
@@ -534,7 +534,7 @@ export function AssistantCommandCenter({
           {!squadScope && (
             <button
               onClick={onBrowseAssistant}
-              className="ficus-button ficus-button-link ml-auto py-1 text-xs text-muted"
+              className="ficus-button ficus-button-ghost -mr-2 ml-auto rounded px-2 py-1 text-xs text-muted"
             >
               Assistant conversations →
             </button>

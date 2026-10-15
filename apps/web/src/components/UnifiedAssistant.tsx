@@ -262,11 +262,14 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       )}
       {!small && open && viewing && (
         <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-xs">
-          <button className="ficus-button ficus-button-link text-muted py-1" onClick={navigation.back}>
+          <button
+            className="ficus-button ficus-button-ghost -ml-2 rounded px-2 py-1 text-muted"
+            onClick={navigation.back}
+          >
             {navigation.entries.length > 1 ? '← Back' : '← Back to search'}
           </button>
           <button
-            className="ficus-button ficus-button-link text-muted ml-auto py-1"
+            className="ficus-button ficus-button-ghost ml-auto rounded px-2 py-1 text-muted"
             disabled={live}
             title={live ? 'End voice before switching conversations' : undefined}
             onClick={() => {
@@ -319,7 +322,10 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       {!small && open && !viewing && browse && (
         <div className="min-h-0 overflow-y-auto">
           <section className="px-5 pb-4 space-y-2">
-            <button className="ficus-button ficus-button-link py-2 text-xs text-muted" onClick={navigation.back}>
+            <button
+              className="ficus-button ficus-button-ghost -ml-2 rounded px-2 py-2 text-xs text-muted"
+              onClick={navigation.back}
+            >
               ← Back to search
             </button>
             <div className="flex items-center justify-between">
@@ -403,7 +409,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
             ))}
             {!browse && ((recent.data?.conversations.length ?? 0) > 5 || recent.data?.hasMore) && (
               <button
-                className="ficus-button ficus-button-link text-xs text-muted"
+                className="ficus-button ficus-button-secondary rounded px-2 py-1.5 text-xs font-medium"
                 onClick={() => navigation.push({ kind: 'recent', id: 'recent', label: 'Recent chats' })}
               >
                 View all chats →
