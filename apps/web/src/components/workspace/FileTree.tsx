@@ -8,20 +8,19 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { queries } from '../../queryOptions'
-import { queryKeys } from '../../queryKeys'
 import clsx from 'clsx'
 import type { TreeNode } from '../../api/workspace'
-import { getSquadWorkspaceDownloadUrl } from '../../api/workspace'
 import { FolderIcon } from '../icons/FolderIcon'
-import { DownloadIcon, SpinnerIcon, FileIcon, ChevronDownIcon, ChevronRightIcon, RefreshIcon } from '../icons'
+import { DownloadIcon, SpinnerIcon, FileIcon, ChevronDownIcon, ChevronRightIcon, RefreshIcon, LinkIcon } from '../icons'
 import { authFetch } from '../../api/client'
 import { FileUpload } from './FileUpload'
+import { CopyPathButton } from './CopyPathButton'
+import type { WorkspaceSource } from './workspaceSource'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingContent, LoadingSurface, SkeletonBlock, SkeletonRows } from '../loading/Skeleton'
 
 export interface FileTreeProps {
-  squadId: string
+  source: WorkspaceSource
   onSelectFile: (path: string) => void
   selectedPath?: string
 }
@@ -30,7 +29,7 @@ interface TreeItemProps {
   node: TreeNode
   path: string
   depth: number
-  squadId: string
+  source: WorkspaceSource
   selectedPath?: string
   onSelectFile: (path: string) => void
   expandedPaths: Set<string>
@@ -44,7 +43,7 @@ function TreeItem({
   node,
   path,
   depth,
-  squadId,
+  source,
   selectedPath,
   onSelectFile,
   expandedPaths,
@@ -62,7 +61,7 @@ function TreeItem({
 
   // Fetch subtree when expanding an unloaded directory
   const { data: subtree, isLoading } = useQuery({
-    ...queries.squadWorkspace.tree(squadId, path),
+    ...source.treeQuery(path),
     enabled: needsLoad,
     staleTime: 30000, // Cache for 30 seconds
   })
@@ -85,11 +84,12 @@ function TreeItem({
     if (isDownloading) return
 
     setIsDownloading(true)
-    const downloadUrl = getSquadWorkspaceDownloadUrl(squadId, path)
+    const downloadUrl = source.downloadUrl(path)
 
     try {
       // Create a temporary link with auth headers via fetch
       const response = await authFetch(downloadUrl)
+      if (!response.ok) throw new Error(`Download failed: ${response.status}`)
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -109,6 +109,7 @@ function TreeItem({
 
   // Use loaded subtree children, or initial children if already loaded
   const children = subtree?.children ?? node.children ?? []
+  const canDownload = !node.symlink && (!isDirectory || source.directoryDownload)
 
   return (
     <div>
@@ -145,14 +146,31 @@ function TreeItem({
           <SpinnerIcon className="w-4 h-4 animate-spin text-accent-light flex-shrink-0" />
         ) : (
           <span className="text-muted">
-            {isDirectory ? <FolderIcon className="h-4 w-4" /> : <FileIcon className="h-4 w-4" />}
+            {isDirectory ? (
+              <FolderIcon className="h-4 w-4" />
+            ) : node.symlink ? (
+              <LinkIcon className="h-4 w-4" />
+            ) : (
+              <FileIcon className="h-4 w-4" />
+            )}
           </span>
         )}
-        <span className={clsx('truncate flex-1', isPending && 'text-muted italic')}>{node.name}</span>
+        <span
+          className={clsx('truncate flex-1', (isPending || node.symlink) && 'text-muted italic')}
+          title={node.symlink ? 'Symbolic link: not followed' : undefined}
+        >
+          {node.name}
+        </span>
         {!isDirectory && node.size !== undefined && !isPending && (
           <span className="text-xs text-muted">{formatSize(node.size)}</span>
         )}
-        {!isPending && (
+        {!isPending && source.agentPath && (
+          <CopyPathButton
+            path={source.agentPath(path)}
+            className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+          />
+        )}
+        {!isPending && canDownload && (
           <button
             onClick={handleDownload}
             disabled={isDownloading}
@@ -182,7 +200,7 @@ function TreeItem({
               node={child}
               path={path ? `${path}/${child.name}` : child.name}
               depth={depth + 1}
-              squadId={squadId}
+              source={source}
               selectedPath={selectedPath}
               onSelectFile={onSelectFile}
               expandedPaths={expandedPaths}
@@ -285,7 +303,7 @@ function getExpandPathsForPending(pendingPaths: Set<string>): string[] {
   return [...dirs]
 }
 
-export function FileTree({ squadId, onSelectFile, selectedPath }: FileTreeProps) {
+export function FileTree({ source, onSelectFile, selectedPath }: FileTreeProps) {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [loadedPaths, setLoadedPaths] = useState<Set<string>>(new Set())
   const [pendingUploads, setPendingUploads] = useState<Set<string>>(new Set())
@@ -318,14 +336,15 @@ export function FileTree({ squadId, onSelectFile, selectedPath }: FileTreeProps)
     data: rootTree,
     isLoading,
     isError,
+    error,
     isSuccess,
     refetch,
   } = useQuery({
-    ...queries.squadWorkspace.tree(squadId, '', 1),
+    ...source.treeQuery(''),
     staleTime: 30000,
   })
   const rootSkeletonCount = useLoadingShapeCount(
-    `squads:${squadId}:workspace-tree-root`,
+    `${source.id}:workspace-tree-root`,
     isSuccess ? (rootTree?.children?.length ?? 0) : undefined,
     { fallbackCount: 8, maxCount: 16 }
   )
@@ -353,13 +372,13 @@ export function FileTree({ squadId, onSelectFile, selectedPath }: FileTreeProps)
   const handleRefresh = useCallback(() => {
     // Invalidate all cached tree data (marks as stale)
     queryClient.invalidateQueries({
-      queryKey: queryKeys.squads.workspaceTree(squadId),
+      queryKey: source.treeQueryPrefix,
     })
     // Clear loaded paths - this re-enables queries which will refetch since they're now stale
     setLoadedPaths(new Set())
     // Don't clear expandedPaths - keep folders open during refresh
     // Don't clear pendingUploads - they should persist until upload completes
-  }, [queryClient, squadId])
+  }, [queryClient, source.treeQueryPrefix])
 
   const handleUploadStart = useCallback((paths: string[]) => {
     setPendingUploads(new Set(paths))
@@ -402,7 +421,7 @@ export function FileTree({ squadId, onSelectFile, selectedPath }: FileTreeProps)
         <LoadingContent
           loading={isLoading && !rootTree}
           fallback={
-            <LoadingSurface label="Loading workspace files">
+            <LoadingSurface label={source.loadingLabel}>
               <SkeletonRows count={Math.max(1, rootSkeletonCount)}>
                 {(index) => (
                   <div key={index} className="flex min-h-9 items-center gap-2 px-2 py-1.5">
@@ -418,14 +437,17 @@ export function FileTree({ squadId, onSelectFile, selectedPath }: FileTreeProps)
           {isError ? (
             <div className="p-3 text-sm text-muted">
               <p>Failed to load files</p>
+              {error instanceof Error && error.message && <p className="mt-1 text-xs">{error.message}</p>}
               <button onClick={handleRefresh} className="ficus-button ficus-button-link mt-2">
                 Retry
               </button>
             </div>
           ) : empty ? (
             <div className="px-3 py-8 text-center">
-              <p className="text-sm text-secondary">Workspace is empty</p>
-              <p className="mt-2 text-xs text-muted">Drop files here or use the upload buttons below.</p>
+              <p className="text-sm text-secondary">{source.emptyTitle}</p>
+              {source.canWrite && (
+                <p className="mt-2 text-xs text-muted">Drop files here or use the upload buttons below.</p>
+              )}
             </div>
           ) : null}
           {mergedTree?.children?.map((child) => (
@@ -434,7 +456,7 @@ export function FileTree({ squadId, onSelectFile, selectedPath }: FileTreeProps)
               node={child}
               path={child.name}
               depth={0}
-              squadId={squadId}
+              source={source}
               selectedPath={selectedPath}
               onSelectFile={onSelectFile}
               expandedPaths={expandedPaths}
@@ -446,7 +468,7 @@ export function FileTree({ squadId, onSelectFile, selectedPath }: FileTreeProps)
           ))}
         </LoadingContent>
       </div>
-      <FileUpload squadId={squadId} onUploadStart={handleUploadStart} onUploadComplete={handleUploadComplete} />
+      <FileUpload source={source} onUploadStart={handleUploadStart} onUploadComplete={handleUploadComplete} />
     </div>
   )
 }

@@ -7,14 +7,13 @@
 import { DROP_SCOPE_ATTRIBUTE } from '../../lib/dropScope'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { uploadToSquadWorkspace } from '../../api/workspace'
 import { useStableRef } from '../../hooks/useStableRef'
 import { FileIcon } from '../icons'
 import { FolderIcon } from '../icons/FolderIcon'
-import { usePermissions } from '../../hooks/usePermissions'
+import type { WorkspaceSource } from './workspaceSource'
 
 interface FileUploadProps {
-  squadId: string
+  source: WorkspaceSource
   targetDir?: string
   onUploadStart?: (paths: string[]) => void
   onUploadComplete?: () => void
@@ -25,7 +24,7 @@ interface FileWithPath {
   relativePath: string
 }
 
-export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadComplete }: FileUploadProps) {
+export function FileUpload({ source, targetDir = '', onUploadStart, onUploadComplete }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [showOverwriteDialog, setShowOverwriteDialog] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<FileWithPath[]>([])
@@ -38,8 +37,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
   const containerRef = useRef<HTMLDivElement>(null)
   const dragCounterRef = useRef(0)
   const queryClient = useQueryClient()
-  const { can, isLoading: permissionsLoading } = usePermissions(squadId)
-  const canWriteWorkspace = !permissionsLoading && can('workspace:write')
+  const canWriteWorkspace = source.canWrite
 
   // Stable refs for callbacks
   const onUploadStartRef = useStableRef(onUploadStart)
@@ -101,7 +99,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
 
       const onProgress = (progress: number) => setUploadProgress(progress)
 
-      return uploadToSquadWorkspace(squadId, files, { targetDir, overwrite, signal, onProgress })
+      return source.upload(files, { targetDir, overwrite, signal, onProgress })
     },
     onSuccess: (data) => {
       abortControllerRef.current = null
@@ -122,7 +120,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
       } else {
         // Refresh the file tree (some files may have succeeded even when
         // others failed)
-        queryClient.invalidateQueries({ queryKey: ['squadWorkspace', squadId] })
+        queryClient.invalidateQueries({ queryKey: source.treeQueryPrefix })
         onUploadCompleteRef.current?.()
       }
     },
@@ -252,7 +250,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
     setPendingFiles([])
     setSkippedFiles([])
     // Refresh to show what was uploaded
-    queryClient.invalidateQueries({ queryKey: ['squadWorkspace', squadId] })
+    queryClient.invalidateQueries({ queryKey: source.treeQueryPrefix })
     onUploadCompleteRef.current?.()
   }
 

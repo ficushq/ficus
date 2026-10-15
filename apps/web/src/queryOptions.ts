@@ -1,3 +1,4 @@
+import { getAgentPrivateStatus } from './api/agentPrivate'
 import { serverConnectionQueryKeys } from './queryKeys'
 import { getRelayAvailability, getServerConnection } from './api/serverConnection'
 import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
@@ -470,6 +471,14 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.squads.workspaceSessions(squadId),
         queryFn: () => getSquadWorkspaceSessions(squadId),
+      }),
+  },
+
+  agentPrivate: {
+    status: (agentId: string) =>
+      queryOptions({
+        queryKey: queryKeys.agentPrivate.status(agentId),
+        queryFn: () => getAgentPrivateStatus(agentId),
       }),
   },
 
