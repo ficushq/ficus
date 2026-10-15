@@ -5,6 +5,11 @@
  *
  * Authorization mirrors squad exposures (routes/squad-env.ts): `env:read` /
  * `env:write` on the agent's squad, or at system scope for a squad-less agent.
+ * Exposing a key additionally requires permission to READ that key in the
+ * Secret Store (`secrets:read` or its group's `secrets:read:<group>`, as for
+ * `GET /api/secrets/:key`): otherwise someone could expose a secret they may
+ * not read to an agent they can talk to, and read it through that agent.
+ * Removing a key never needs it.
  * Changing an exposure is additionally refused for agent identities: a person
  * decides which agent holds a credential, so no agent (not even a squad
  * manager holding `env:write`) can grant itself or another agent a secret.
@@ -17,7 +22,8 @@ import { createMiddleware } from 'hono/factory'
 import { Agent } from '../entities/Agent'
 import { AmbiguousPrefixError } from '../db/prefix-match'
 import { requireEntityPermission } from '../middleware/require-entity-permission'
-import type { Identity } from '../services/rbac'
+import { resolvePermissions, type Identity } from '../services/rbac'
+import { secretAccessible } from '../services/secrets/groups'
 import { getSecretStore } from '../services/secrets'
 import { normalizeSecretKeys } from '../services/squad/env'
 import {
@@ -72,11 +78,17 @@ function errorResponse(c: Context, error: unknown) {
   throw error
 }
 
+/** Which Secret Store keys the caller may read (system-scoped, exactly as the Secret Store routes check). */
+async function secretReader(c: Context): Promise<(key: string) => boolean> {
+  const held = await resolvePermissions(c.get('identity') as Identity)
+  return (key) => secretAccessible(held, key, 'read')
+}
+
 async function applyChange(c: Context, mode: AgentSecretsChange['mode'], keys: string[]) {
   const agentId = await resolveTarget(c)
   if (!agentId) return c.json({ error: 'Agent not found' }, 404)
   try {
-    const result = await changeAgentExposedSecretKeys(agentId, { mode, keys })
+    const result = await changeAgentExposedSecretKeys(agentId, { mode, keys }, { mayReadSecret: await secretReader(c) })
     return c.json({ success: true, ...result })
   } catch (error) {
     return errorResponse(c, error)
@@ -92,7 +104,9 @@ export const agentSecretsRouter = new Hono()
       const status = await getAgentSecretsStatus(agentId)
       const exposed = new Set(status.exposedSecretKeys)
       const listed = await getSecretStore().list()
-      const exposable = new Set(normalizeSecretKeys(listed.map((secret) => secret.key)))
+      const mayRead = await secretReader(c)
+      // Offer only keys the caller could expose; keys already exposed stay listed so they can be removed.
+      const exposable = new Set(normalizeSecretKeys(listed.map((secret) => secret.key)).filter(mayRead))
       return c.json({
         agentId,
         ...status,
@@ -102,6 +116,7 @@ export const agentSecretsRouter = new Hono()
             key: secret.key,
             isSet: secret.isSet,
             exposed: exposed.has(secret.key),
+            canExpose: exposable.has(secret.key),
             updatedAt: secret.updatedAt,
           })),
       })

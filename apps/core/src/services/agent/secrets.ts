@@ -55,7 +55,7 @@ const GENERATED_MARKER = '# Generated from the Ficus Secret Store for this agent
 export class AgentSecretsError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 404
+    readonly status: 400 | 403 | 404
   ) {
     super(message)
     this.name = 'AgentSecretsError'
@@ -159,7 +159,15 @@ export interface AgentSecretsChangeResult {
 export async function changeAgentExposedSecretKeys(
   agentId: string,
   change: AgentSecretsChange,
-  deps: { syncSandbox?: (sandboxId: string) => Promise<{ pushed: boolean; reason?: string }> } = {}
+  deps: {
+    syncSandbox?: (sandboxId: string) => Promise<{ pushed: boolean; reason?: string }>
+    /**
+     * Whether the caller may read `key` in the Secret Store. Every key the change ADDS must pass:
+     * exposing a key hands its value to an agent the caller can talk to, so it must never grant
+     * more than the caller could already read. Removal is never checked.
+     */
+    mayReadSecret?: (key: string) => boolean
+  } = {}
 ): Promise<AgentSecretsChangeResult> {
   const row = await loadAgentRow(agentId)
   if (!row) throw new AgentSecretsError('Agent not found', 404)
@@ -175,6 +183,13 @@ export async function changeAgentExposedSecretKeys(
   if (adds.length > 0) {
     const reason = agentSecretsUnsupportedReason(row)
     if (reason) throw new AgentSecretsError(reason, 400)
+    const unreadable = deps.mayReadSecret ? adds.filter((key) => !deps.mayReadSecret!(key)) : []
+    if (unreadable.length > 0) {
+      throw new AgentSecretsError(
+        `You can only expose secrets you are allowed to read in the Secret Store. Not allowed: ${unreadable.join(', ')}.`,
+        403
+      )
+    }
   }
   if (change.mode !== 'remove' && requested.length !== new Set(change.keys.map((key) => key.trim())).size) {
     throw new AgentSecretsError(

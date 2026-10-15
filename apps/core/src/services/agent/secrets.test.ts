@@ -147,6 +147,21 @@ describe('exposing a Secret Store key to one agent', () => {
     expect(await getAgentExposedSecretKeys(agentA)).toEqual([])
   })
 
+  it('refuses to add keys the caller cannot read, but never blocks removing them', async () => {
+    const cannotRead = { syncSandbox: noSync, mayReadSecret: () => false }
+    await expect(changeAgentExposedSecretKeys(agentA, { mode: 'add', keys: [KEY] }, cannotRead)).rejects.toMatchObject({
+      status: 403,
+    })
+    expect(existsSync(fileOf(agentA))).toBe(false)
+
+    await changeAgentExposedSecretKeys(agentA, { mode: 'add', keys: [KEY] }, { syncSandbox: noSync })
+    // Keeping an existing key in a replace is not an addition.
+    await changeAgentExposedSecretKeys(agentA, { mode: 'replace', keys: [KEY] }, cannotRead)
+    const removed = await changeAgentExposedSecretKeys(agentA, { mode: 'remove', keys: [KEY] }, cannotRead)
+    expect(removed.exposedSecretKeys).toEqual([])
+    expect(existsSync(fileOf(agentA))).toBe(false)
+  })
+
   it('refuses platform-managed, GitHub and Ficus identity names', async () => {
     for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'FICUS_TOKEN', '__internal']) {
       await expect(

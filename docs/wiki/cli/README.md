@@ -290,8 +290,9 @@ To give a credential to ONE agent rather than a whole squad, expose a Secret Sto
 key to that agent. Only its own sandbox receives the value, as environment variables
 in its `bash` commands (subagents it dispatches share its sandbox and inherit them).
 `squad_bash`, other agents and the shared workspace never see it. Listing returns
-names only. Changing an exposure needs `env:write` on the agent's squad and is
-refused for agent tokens: a person decides. See
+names only. Changing an exposure needs `env:write` on the agent's squad, and
+adding a key also needs permission to read that key in the Secret Store. Agent
+tokens are refused: a person decides. See
 [Per-agent secrets](../secret-store.md#per-agent-secrets).
 
 ```bash

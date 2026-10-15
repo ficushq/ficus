@@ -18,8 +18,9 @@ interface Props {
 /**
  * Per-agent secrets: which Secret Store keys only this agent's own sandbox can
  * read (as env vars in its bash). Names only; values are never fetched or
- * shown. Viewing needs env:read, changing needs env:write; a new value can be
- * saved to the Secret Store from here with secrets:write.
+ * shown. Viewing needs env:read, changing needs env:write plus read access to
+ * each exposed key; a new value can be saved to the Secret Store from here with
+ * secrets:write and secrets:read.
  */
 export function AgentSecretsPanel({ agentId, squadId }: Props) {
   const { can, isLoading } = usePermissions(squadId)
@@ -28,7 +29,8 @@ export function AgentSecretsPanel({ agentId, squadId }: Props) {
     <AgentSecretsPanelContent
       agentId={agentId}
       canWrite={can('env:write')}
-      canSetSecret={can('env:write') && can('secrets:write')}
+      // Saving then exposing needs both write and read access to the new key.
+      canSetSecret={can('env:write') && can('secrets:write') && can('secrets:read')}
     />
   )
 }
@@ -85,7 +87,7 @@ function AgentSecretsPanelContent({
         <p className="mt-1 text-xs text-muted">
           Secret Store keys only this agent can read, as environment variables in its own bash commands (subagents it
           dispatches share its sandbox and inherit them). Other agents and the shared squad workspace never see them.
-          Values are never shown here.
+          Values are never shown here, and you can only expose secrets you are allowed to read.
         </p>
       </div>
 
@@ -114,12 +116,19 @@ function AgentSecretsPanelContent({
                               {checked ? 'not set; uncheck to remove' : 'not set'}
                             </span>
                           )}
+                          {secret.isSet && !secret.canExpose && (
+                            <span className="ml-2 font-sans text-xs text-muted">
+                              {checked
+                                ? 'you cannot read this secret; you can only remove it'
+                                : 'you cannot read this secret'}
+                            </span>
+                          )}
                         </span>
                         <input
                           type="checkbox"
                           aria-label={`Expose ${secret.key} to this agent`}
                           checked={checked}
-                          disabled={!editable || (!secret.isSet && !checked)}
+                          disabled={!editable || (!checked && (!secret.isSet || !secret.canExpose))}
                           onChange={() =>
                             setSelected((current) =>
                               current.includes(secret.key)

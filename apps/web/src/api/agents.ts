@@ -136,6 +136,8 @@ export interface AgentSecretKeyStatus {
   key: string
   isSet: boolean
   exposed: boolean
+  /** Whether the caller may expose this key (needs read access to it in the Secret Store). */
+  canExpose: boolean
   updatedAt: string | null
 }
 

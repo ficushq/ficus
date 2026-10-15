@@ -11,8 +11,8 @@ const status: AgentSecretsStatus = {
   unsupportedReason: null,
   secretsFilePath: '/private/.ficus/agent-secrets.env',
   secrets: [
-    { key: 'SYNTH_CLOUD_TOKEN', isSet: true, exposed: true, updatedAt: null },
-    { key: 'SYNTH_OTHER_KEY', isSet: true, exposed: false, updatedAt: null },
+    { key: 'SYNTH_CLOUD_TOKEN', isSet: true, exposed: true, canExpose: true, updatedAt: null },
+    { key: 'SYNTH_OTHER_KEY', isSet: true, exposed: false, canExpose: false, updatedAt: null },
   ],
 }
 
@@ -46,9 +46,17 @@ describe('AgentSecretsPanel', () => {
     expect(exposeOnly).toContain('Save exposed secrets')
     expect(exposeOnly).not.toContain('Add a secret for this agent')
 
-    const withSecrets = renderPanel(['env:read', 'env:write', 'secrets:write'])
+    expect(renderPanel(['env:read', 'env:write', 'secrets:write'])).not.toContain('Add a secret for this agent')
+
+    const withSecrets = renderPanel(['env:read', 'env:write', 'secrets:write', 'secrets:read'])
     expect(withSecrets).toContain('Add a secret for this agent')
     expect(withSecrets).toContain('type="password"')
+  })
+
+  test('marks keys the user cannot read as not exposable', () => {
+    const html = renderPanel(['env:read', 'env:write'])
+    expect(html).toMatch(/SYNTH_OTHER_KEY<span[^>]*>you cannot read this secret<\/span>/)
+    expect(html).toMatch(/aria-label="Expose SYNTH_OTHER_KEY to this agent"[^>]*disabled/)
   })
 
   test('explains why an agent cannot hold per-agent secrets', () => {

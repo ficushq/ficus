@@ -33,6 +33,9 @@ app.route('/api/agents', agentSecretsRouter)
 const prefix = `agent-secrets-route-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const KEY = `SYNTH_ROUTE_SECRET_${Math.random().toString(36).slice(2, 8).toUpperCase()}`
 const VALUE = `synthetic-route-value-${crypto.randomUUID()}`
+// In the `integration` secret group (config/secrets/groups.yaml: DEPLOY_*).
+const GROUP_KEY = `DEPLOY_SYNTH_${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+const GROUP_VALUE = `synthetic-group-value-${crypto.randomUUID()}`
 const originalHome = process.env.HOME_DIR
 const originalRuntime = process.env.FICUS_SANDBOX_RUNTIME
 const originalEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
@@ -51,12 +54,15 @@ beforeAll(async () => {
   resetSecretStore()
   await getSecretStore().initialize()
   await getSecretStore().set(KEY, VALUE, 'test')
+  await getSecretStore().set(GROUP_KEY, GROUP_VALUE, 'test')
 })
 
 afterAll(async () => {
-  await getSecretStore()
-    .delete(KEY)
-    .catch(() => {})
+  for (const key of [KEY, GROUP_KEY]) {
+    await getSecretStore()
+      .delete(key)
+      .catch(() => {})
+  }
   if (originalEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
   else process.env.FICUS_ENCRYPTION_KEY = originalEncryptionKey
   resetSecretStore()
@@ -154,6 +160,85 @@ describe('per-agent secrets routes', () => {
     expect(del.status).toBe(200)
     expect((await del.json()).exposedSecretKeys).toEqual([])
     expect(existsSync(agentSecretsHostPath(`agent_${agentA}`))).toBe(false)
+  })
+
+  it('refuses to expose a secret the caller cannot read, but lets them remove it', async () => {
+    const user = await createTestUser({ prefix })
+    const role = await createTestRole({ prefix, permissions: ['env:read', 'env:write'] })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId })
+
+    for (const method of ['PUT', 'POST']) {
+      const res = await app.request(`/api/agents/${agentA}/secrets`, {
+        method,
+        headers: json(user.token),
+        body: JSON.stringify({ keys: [KEY] }),
+      })
+      expect(res.status).toBe(403)
+      expect((await res.json()).error).toMatch(/allowed to read/)
+    }
+    expect(existsSync(agentSecretsHostPath(`agent_${agentA}`))).toBe(false)
+
+    const listed = await (
+      await app.request(`/api/agents/${agentA}/secrets`, { headers: authHeaders(user.token) })
+    ).json()
+    // Keys the caller cannot read are not offered at all.
+    expect(listed.secrets.find((s: { key: string }) => s.key === KEY)).toBeUndefined()
+
+    // A key someone allowed exposed stays removable by this user (revocation is never blocked).
+    await app.request(`/api/agents/${agentA}/secrets`, {
+      method: 'PUT',
+      headers: json(admin.token),
+      body: JSON.stringify({ keys: [KEY] }),
+    })
+    const afterExpose = await (
+      await app.request(`/api/agents/${agentA}/secrets`, { headers: authHeaders(user.token) })
+    ).json()
+    // Already exposed: listed so it can be removed, but marked as not exposable by this user.
+    expect(afterExpose.secrets.find((s: { key: string }) => s.key === KEY)).toMatchObject({
+      exposed: true,
+      canExpose: false,
+    })
+    const keep = await app.request(`/api/agents/${agentA}/secrets`, {
+      method: 'POST',
+      headers: json(user.token),
+      body: JSON.stringify({ keys: [KEY] }),
+    })
+    expect(keep.status).toBe(200)
+    const del = await app.request(`/api/agents/${agentA}/secrets`, {
+      method: 'DELETE',
+      headers: json(user.token),
+      body: JSON.stringify({ keys: [KEY] }),
+    })
+    expect(del.status).toBe(200)
+    expect((await del.json()).exposedSecretKeys).toEqual([])
+    expect(existsSync(agentSecretsHostPath(`agent_${agentA}`))).toBe(false)
+  })
+
+  it('a group-scoped secret reader can expose only keys in that group', async () => {
+    const user = await createTestUser({ prefix })
+    const envRole = await createTestRole({ prefix, permissions: ['env:read', 'env:write'] })
+    const readRole = await createTestRole({ prefix, permissions: ['secrets:read:integration'] })
+    await assignRole({ userId: user.id, roleId: envRole.id, scope: 'squad', squadId })
+    await assignRole({ userId: user.id, roleId: readRole.id, scope: 'system' })
+
+    const allowed = await app.request(`/api/agents/${agentA}/secrets`, {
+      method: 'PUT',
+      headers: json(user.token),
+      body: JSON.stringify({ keys: [GROUP_KEY] }),
+    })
+    expect(allowed.status).toBe(200)
+    expect(await allowed.text()).not.toContain(GROUP_VALUE)
+
+    const refused = await app.request(`/api/agents/${agentA}/secrets`, {
+      method: 'PUT',
+      headers: json(user.token),
+      body: JSON.stringify({ keys: [KEY] }),
+    })
+    expect(refused.status).toBe(403)
+    const listed = await (
+      await app.request(`/api/agents/${agentA}/secrets`, { headers: authHeaders(user.token) })
+    ).json()
+    expect(listed.exposedSecretKeys).toEqual([GROUP_KEY])
   })
 
   it('refuses agent identities even when they hold env:write', async () => {

@@ -128,8 +128,13 @@ them.
   replaces them in tool output and logs (values shorter than 12 characters are not
   matched). The agent's prompt lists the env var names it holds, never the values.
 - **Who can change them.** People with `env:write` on the agent's squad (system scope for
-  a squad-less agent), i.e. admins and operators. Agent tokens are refused even when they
-  hold `env:write`. Listing needs `env:read`.
+  a squad-less agent). Adding a key also needs permission to **read that key** in the Secret
+  Store (`secrets:read`, or `secrets:read:<group>` for a key in that group), the same check
+  as `GET /api/secrets/:key`. Otherwise someone could expose a secret they cannot read to an
+  agent they can talk to, and read it through the agent. Keys the caller cannot read are not
+  offered; removing a key never needs it. Agent tokens are refused even when they hold
+  `env:write`. Listing needs `env:read`. No route returns a value, so exposing a key never
+  lets a person read it here.
 
 | Method   | Endpoint                  | Body              | Description                                    |
 | -------- | ------------------------- | ----------------- | ---------------------------------------------- |
