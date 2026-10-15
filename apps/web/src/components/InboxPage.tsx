@@ -1,11 +1,14 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { markAsRead, markMyInboxAllRead, markSystemInboxAllRead } from '../api/inbox'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'
+import { useInboxView } from '../hooks/useInboxFeed'
 import { useURLBooleanState } from '../hooks/useURLState'
 import { MessageList, MessageRow, SectionHeader } from './InboxMessageRow'
+import { InboxLoadMore } from './InboxLoadMore'
+import { InboxSearchInput } from './InboxSearchInput'
 import { PullToRefresh } from './PullToRefresh'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonLine, SkeletonRows } from './loading/Skeleton'
@@ -17,23 +20,9 @@ export function InboxPage() {
 
   const { data: squads = [] } = useQuery(queries.squads.list())
 
-  // The user's own inbox, plus the shared system inbox (if permitted), merged inline.
-  const { data: mine = [], isLoading: mineLoading } = useQuery({ ...queries.inbox.mine(true), refetchInterval: 10000 })
-  const { data: system = [], isLoading: systemLoading } = useQuery({
-    ...queries.inbox.system(true),
-    refetchInterval: 10000,
-    enabled: canSystem,
-  })
-
-  const isLoading = mineLoading || (canSystem && systemLoading)
-
-  const messages = useMemo(
-    () =>
-      [...mine, ...(canSystem ? system : [])].sort((a, b) =>
-        a.readAt && !b.readAt ? 1 : !a.readAt && b.readAt ? -1 : Date.parse(b.createdAt) - Date.parse(a.createdAt)
-      ),
-    [mine, system, canSystem]
-  )
+  // The user's own inbox, plus the shared system inbox (if permitted), merged and paged from the server.
+  const { query, setQuery, searching, unread, read, results } = useInboxView({ includeSystem: canSystem, active: true })
+  const isLoading = unread.isLoading || read.isLoading
 
   const invalidateInboxes = useCallback(() => {
     const invalidations = [queryClient.invalidateQueries({ queryKey: queryKeys.inbox.minePrefix() })]
@@ -63,17 +52,21 @@ export function InboxPage() {
   // URL-synced collapse state for read section
   const [readCollapsed, setReadCollapsed] = useURLBooleanState('collapsed', false)
 
-  // Split messages into unread and read
-  const unreadMessages = messages.filter((m) => !m.readAt)
-  const readMessages = messages.filter((m) => m.readAt)
-  const loadingRowCount = useLoadingShapeCount('inbox:list', isLoading ? undefined : messages.length, {
-    fallbackCount: 5,
-    maxCount: 12,
-  })
+  const unreadMessages = unread.messages
+  const readMessages = read.messages
+  const loadingRowCount = useLoadingShapeCount(
+    'inbox:list',
+    isLoading ? undefined : unreadMessages.length + readMessages.length,
+    {
+      fallbackCount: 5,
+      maxCount: 12,
+    }
+  )
 
-  const unreadTotal = unreadMessages.length
+  // Counts are the server's totals, not the number of messages loaded so far.
+  const unreadTotal = unread.totalCount
   const hasUnread = unreadMessages.length > 0
-  const hasRead = readMessages.length > 0
+  const hasRead = read.totalCount > 0
   const isEmpty = !hasUnread && !hasRead
 
   return (
@@ -100,7 +93,9 @@ export function InboxPage() {
         )}
       </div>
 
-      {isLoading ? (
+      <InboxSearchInput value={query} onChange={setQuery} className="mb-4" />
+
+      {(searching ? results.isLoading : isLoading) ? (
         <LoadingSurface label="Loading inbox">
           <div className="px-3 py-2">
             <SkeletonLine className="w-20" />
@@ -118,6 +113,27 @@ export function InboxPage() {
             </SkeletonRows>
           </div>
         </LoadingSurface>
+      ) : searching ? (
+        results.messages.length === 0 ? (
+          <div className="ficus-section text-muted p-6 text-center">No messages match your search</div>
+        ) : (
+          <div className="-mx-2 md:mx-0">
+            <section className="ficus-section py-2 md:p-2" aria-live="polite">
+              <SectionHeader title="Results" count={results.totalCount} />
+              <MessageList>
+                {results.messages.map((message) => (
+                  <MessageRow
+                    key={message.id}
+                    squads={squads}
+                    message={message}
+                    onMarkAsRead={message.readAt ? undefined : () => markAsReadMutation.mutate(message.id)}
+                  />
+                ))}
+              </MessageList>
+              {results.hasMore && <InboxLoadMore isFetching={results.isFetchingMore} onLoadMore={results.loadMore} />}
+            </section>
+          </div>
+        )
       ) : isEmpty ? (
         <div className="ficus-section text-muted p-6 text-center">No messages</div>
       ) : (
@@ -127,7 +143,7 @@ export function InboxPage() {
           {/* Unread Section */}
           {hasUnread && (
             <section className="ficus-section py-2 md:p-2">
-              <SectionHeader title="Unread" count={unreadMessages.length} />
+              <SectionHeader title="Unread" count={unreadTotal} />
               <MessageList>
                 {unreadMessages.map((message) => (
                   <MessageRow
@@ -138,6 +154,7 @@ export function InboxPage() {
                   />
                 ))}
               </MessageList>
+              {unread.hasMore && <InboxLoadMore isFetching={unread.isFetchingMore} onLoadMore={unread.loadMore} />}
             </section>
           )}
 
@@ -146,17 +163,20 @@ export function InboxPage() {
             <section className="ficus-section py-2 md:p-2">
               <SectionHeader
                 title="Read"
-                count={readMessages.length}
+                count={read.totalCount}
                 collapsible
                 collapsed={readCollapsed}
                 onToggle={() => setReadCollapsed(!readCollapsed)}
               />
               {!readCollapsed && (
-                <MessageList>
-                  {readMessages.map((message) => (
-                    <MessageRow key={message.id} squads={squads} message={message} />
-                  ))}
-                </MessageList>
+                <>
+                  <MessageList>
+                    {readMessages.map((message) => (
+                      <MessageRow key={message.id} squads={squads} message={message} />
+                    ))}
+                  </MessageList>
+                  {read.hasMore && <InboxLoadMore isFetching={read.isFetchingMore} onLoadMore={read.loadMore} />}
+                </>
               )}
             </section>
           )}

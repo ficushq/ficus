@@ -2,11 +2,12 @@ import { SUBAGENT_STATUS_ROLE } from '@ficus/shared'
 import { extractToolResultDetails } from './tool-inline-actions'
 import { webStatus } from './statusPresentation'
 import clsx from 'clsx'
-import { type FC, type ReactNode, useRef, useEffect, useState, useCallback } from 'react'
+import { type FC, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AnsiText } from '../components/AnsiText'
 import { parseMemoryProvenance, stripProvenanceBlock } from './memory-provenance'
 import { ClockIcon, QuestionIcon, StopIcon } from '../components/icons'
+import { ArgsScrollBox, FollowScrollBox, ToolArgsFollowProvider } from './follow-scroll'
 
 // --- Types ---
 
@@ -96,17 +97,10 @@ function basename(path: string): string {
 // --- Shared sub-components ---
 
 function CodeBlock({ children, isError, autoScroll }: { children: string; isError?: boolean; autoScroll?: boolean }) {
-  const ref = useRef<HTMLPreElement>(null)
-
-  useEffect(() => {
-    if (autoScroll && ref.current) {
-      ref.current.scrollTop = ref.current.scrollHeight
-    }
-  }, [autoScroll, children])
-
   return (
-    <pre
-      ref={ref}
+    <FollowScrollBox
+      as="pre"
+      follow={autoScroll ?? false}
       className={clsx(
         'rounded p-1.5 text-[11px] whitespace-pre-wrap break-all overflow-hidden max-h-48 overflow-y-auto',
         isError
@@ -115,7 +109,7 @@ function CodeBlock({ children, isError, autoScroll }: { children: string; isErro
       )}
     >
       {children}
-    </pre>
+    </FollowScrollBox>
   )
 }
 
@@ -186,82 +180,29 @@ function BashCodeBlock({
   isError?: boolean
   autoScroll?: boolean
 }) {
-  const ref = useRef<HTMLPreElement>(null)
-  const [localAutoScroll, setLocalAutoScroll] = useState(true)
-  const userScrollingRef = useRef(false)
-  const userScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Track user-initiated scrolling (wheel/touch)
-  const markUserScrolling = useCallback(() => {
-    userScrollingRef.current = true
-    if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current)
-    userScrollTimeoutRef.current = setTimeout(() => {
-      userScrollingRef.current = false
-    }, 150)
-  }, [])
-
-  // Handle scroll: disable auto-scroll if user scrolls up, re-enable when at bottom
-  const handleScroll = useCallback(() => {
-    const el = ref.current
-    if (!el) return
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-
-    if (userScrollingRef.current && localAutoScroll && distFromBottom > 30) {
-      setLocalAutoScroll(false)
-    } else if (!localAutoScroll && distFromBottom < 10) {
-      setLocalAutoScroll(true)
-    }
-  }, [localAutoScroll])
-
-  // Auto-scroll when content changes (if enabled)
-  useEffect(() => {
-    if (autoScroll && localAutoScroll && ref.current) {
-      ref.current.scrollTop = ref.current.scrollHeight
-    }
-  }, [autoScroll, localAutoScroll, children])
-
-  // Show scroll-to-bottom button when auto-scroll is paused and streaming
-  const showScrollButton = autoScroll && !localAutoScroll
-
   return (
-    <div className="relative">
-      <pre
-        ref={ref}
-        onScroll={handleScroll}
-        onWheel={markUserScrolling}
-        onTouchMove={markUserScrolling}
-        className={clsx(
-          'rounded p-1.5 text-[11px] whitespace-pre-wrap break-all overflow-hidden max-h-48 overflow-y-auto',
-          isError
-            ? 'bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300'
-            : 'bg-code-bg text-code-text'
-        )}
-      >
-        <AnsiText>{children}</AnsiText>
-      </pre>
-      {showScrollButton && (
-        <button
-          onClick={() => {
-            setLocalAutoScroll(true)
-            if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
-          }}
-          className="ficus-button ficus-button-primary absolute bottom-2 right-2 p-1 rounded text-[10px] shadow-sm"
-          title="Resume auto-scroll"
-        >
-          ↓ Follow
-        </button>
+    <FollowScrollBox
+      as="pre"
+      follow={autoScroll ?? false}
+      className={clsx(
+        'rounded p-1.5 text-[11px] whitespace-pre-wrap break-all overflow-hidden max-h-48 overflow-y-auto',
+        isError
+          ? 'bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300'
+          : 'bg-code-bg text-code-text'
       )}
-    </div>
+    >
+      <AnsiText>{children}</AnsiText>
+    </FollowScrollBox>
   )
 }
 
 const bashRenderer: ToolRenderer = {
   summary: (args) => truncate(args.command ?? '', 60),
   ArgsView: ({ args }) => (
-    <div className="bg-code-bg text-code-text rounded p-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+    <ArgsScrollBox className="bg-code-bg text-code-text rounded p-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
       <span className="text-muted select-none">$ </span>
       {args.command ?? ''}
-    </div>
+    </ArgsScrollBox>
   ),
   ResultView: ({ result, isError, autoScroll }) => {
     const text = extractResultText(result)
@@ -280,16 +221,22 @@ const editRenderer: ToolRenderer = {
       <InlineCode>{args.path ?? 'unknown'}</InlineCode>
       {args.oldText && (
         <LabeledField label="Old">
-          <pre className="bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-800 dark:text-status-danger-300 rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
+          <ArgsScrollBox
+            as="pre"
+            className="bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-800 dark:text-status-danger-300 rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto"
+          >
             {args.oldText}
-          </pre>
+          </ArgsScrollBox>
         </LabeledField>
       )}
       {args.newText && (
         <LabeledField label="New">
-          <pre className="bg-status-success-50 dark:bg-status-success-900/30 text-status-success-800 dark:text-status-success-300 rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
+          <ArgsScrollBox
+            as="pre"
+            className="bg-status-success-50 dark:bg-status-success-900/30 text-status-success-800 dark:text-status-success-300 rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto"
+          >
             {args.newText}
-          </pre>
+          </ArgsScrollBox>
         </LabeledField>
       )}
     </div>
@@ -906,10 +853,13 @@ export function ToolArgsView({
   toolName,
   args,
   renderers,
+  follow,
 }: {
   toolName: string
   args: string
   renderers: ToolRenderers
+  /** The call is still in progress (its arguments may still be streaming): keep the args box pinned to the bottom. */
+  follow?: boolean
 }) {
   const renderer = renderers[toolName]
   const parsed = tryParseArgs(args)
@@ -917,13 +867,21 @@ export function ToolArgsView({
   if (!renderer || !parsed) {
     // Fallback: raw JSON
     return (
-      <pre className="bg-code-bg rounded p-1 text-[11px] text-code-text whitespace-pre-wrap break-all overflow-hidden max-h-32 overflow-y-auto">
+      <FollowScrollBox
+        as="pre"
+        follow={follow ?? false}
+        className="bg-code-bg rounded p-1 text-[11px] text-code-text whitespace-pre-wrap break-all overflow-hidden max-h-32 overflow-y-auto"
+      >
         {args}
-      </pre>
+      </FollowScrollBox>
     )
   }
 
-  return <renderer.ArgsView args={parsed} />
+  return (
+    <ToolArgsFollowProvider value={follow ?? false}>
+      <renderer.ArgsView args={parsed} />
+    </ToolArgsFollowProvider>
+  )
 }
 
 export function ToolResultView({

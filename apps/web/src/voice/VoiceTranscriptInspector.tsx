@@ -221,7 +221,12 @@ function ToolTranscriptEntry({
             {entry.toolArgs && (
               <div className="space-y-1">
                 <div className="text-xs font-medium text-muted">Arguments</div>
-                <ToolArgsView renderers={toolRenderers} toolName={toolName} args={entry.toolArgs} />
+                <ToolArgsView
+                  renderers={toolRenderers}
+                  toolName={toolName}
+                  args={entry.toolArgs}
+                  follow={!entry.final}
+                />
               </div>
             )}
             {entry.toolResult && (

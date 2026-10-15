@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { markAsRead, markMyInboxAllRead, markSystemInboxAllRead } from '../api/inbox'
 import { usePermissions } from '../hooks/usePermissions'
+import { useInboxView } from '../hooks/useInboxFeed'
 import { CloseIcon, ChevronDownIcon, ChevronRightIcon } from './icons'
 import { MessageList, MessageRow } from './InboxMessageRow'
+import { InboxLoadMore } from './InboxLoadMore'
+import { InboxSearchInput } from './InboxSearchInput'
 import { Presence } from './Presence'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
@@ -19,20 +22,10 @@ export function InboxPopup() {
 
   const { data: squads = [] } = useQuery(queries.squads.list())
 
-  const { data: mine = [], isLoading } = useQuery({ ...queries.inbox.mine(true), refetchInterval: 10000 })
-  const { data: system = [], isLoading: systemLoading } = useQuery({
-    ...queries.inbox.system(true),
-    refetchInterval: 10000,
-    enabled: canSystem,
+  const { query, setQuery, searching, unread, read, results } = useInboxView({
+    includeSystem: canSystem,
+    active: isOpen,
   })
-
-  const messages = useMemo(
-    () =>
-      [...mine, ...(canSystem ? system : [])].sort((a, b) =>
-        a.readAt && !b.readAt ? 1 : !a.readAt && b.readAt ? -1 : Date.parse(b.createdAt) - Date.parse(a.createdAt)
-      ),
-    [mine, system, canSystem]
-  )
 
   const invalidateInboxes = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.inbox.minePrefix() })
@@ -89,15 +82,29 @@ export function InboxPopup() {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [isOpen])
 
-  const unreadMessages = messages.filter((m) => !m.readAt)
-  const readMessages = messages.filter((m) => m.readAt)
+  const unreadMessages = unread.messages
   const loadingRowCount = useLoadingShapeCount(
     'inbox:popup',
-    isLoading || (canSystem && systemLoading) ? undefined : messages.length,
+    unread.isLoading ? undefined : unreadMessages.length + read.messages.length,
     {
       fallbackCount: 4,
       maxCount: 8,
     }
+  )
+  const loadingRows = (
+    <LoadingSurface label="Loading inbox" className="space-y-1">
+      <SkeletonRows count={Math.max(1, loadingRowCount)}>
+        {(index) => (
+          <div key={index} className="flex min-h-16 items-center gap-3 px-4 py-3">
+            <SkeletonBlock className="h-2 w-2 shrink-0 !rounded-full" />
+            <div className="flex-1 space-y-2">
+              <SkeletonLine className={index % 2 ? 'w-2/5' : 'w-1/2'} />
+              <SkeletonLine className="w-4/5" />
+            </div>
+          </div>
+        )}
+      </SkeletonRows>
+    </LoadingSurface>
   )
 
   return (
@@ -113,10 +120,10 @@ export function InboxPopup() {
         <div className="flex items-center justify-between px-4 py-3 ">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold text-primary">Inbox</h2>
-            {unreadMessages.length > 0 && <span className="text-xs text-muted">{unreadMessages.length} unread</span>}
+            {unread.totalCount > 0 && <span className="text-xs text-muted">{unread.totalCount} unread</span>}
           </div>
           <div className="flex items-center gap-2">
-            {unreadMessages.length > 0 && (
+            {unread.totalCount > 0 && (
               <button
                 onClick={() => markAllAsReadMutation.mutate()}
                 disabled={markAllAsReadMutation.isPending}
@@ -134,23 +141,38 @@ export function InboxPopup() {
             </button>
           </div>
         </div>
+        <div className="px-4 pb-2">
+          <InboxSearchInput value={query} onChange={setQuery} />
+        </div>
         <div className="overflow-y-auto flex-1 px-2 pb-2">
-          {(isLoading || (canSystem && systemLoading)) && messages.length === 0 ? (
-            <LoadingSurface label="Loading inbox" className="space-y-1">
-              <SkeletonRows count={Math.max(1, loadingRowCount)}>
-                {(index) => (
-                  <div key={index} className="flex min-h-16 items-center gap-3 px-4 py-3">
-                    <SkeletonBlock className="h-2 w-2 shrink-0 !rounded-full" />
-                    <div className="flex-1 space-y-2">
-                      <SkeletonLine className={index % 2 ? 'w-2/5' : 'w-1/2'} />
-                      <SkeletonLine className="w-4/5" />
-                    </div>
-                  </div>
-                )}
-              </SkeletonRows>
-            </LoadingSurface>
-          ) : messages.length === 0 ? (
-            <p className="p-4 text-sm text-muted">No messages</p>
+          {searching ? (
+            results.isLoading ? (
+              loadingRows
+            ) : results.messages.length === 0 ? (
+              <p className="p-4 text-sm text-muted">No messages match your search</p>
+            ) : (
+              <>
+                <p className="pl-6 pr-3 py-2 text-xs text-muted" aria-live="polite">
+                  {results.totalCount} {results.totalCount === 1 ? 'result' : 'results'}
+                </p>
+                <MessageList>
+                  {results.messages.map((message) => (
+                    <MessageRow
+                      key={message.id}
+                      message={message}
+                      squads={squads}
+                      compact
+                      onMarkAsRead={message.readAt ? undefined : () => markAsReadMutation.mutate(message.id)}
+                    />
+                  ))}
+                </MessageList>
+                {results.hasMore && <InboxLoadMore isFetching={results.isFetchingMore} onLoadMore={results.loadMore} />}
+              </>
+            )
+          ) : unread.isLoading && unreadMessages.length === 0 ? (
+            loadingRows
+          ) : unreadMessages.length === 0 && read.totalCount === 0 ? (
+            <p className="p-4 text-sm text-muted">{read.isLoading ? 'No unread messages' : 'No messages'}</p>
           ) : (
             <>
               {/* Unread messages */}
@@ -169,9 +191,10 @@ export function InboxPopup() {
               ) : (
                 <p className="p-4 text-sm text-muted">No unread messages</p>
               )}
+              {unread.hasMore && <InboxLoadMore isFetching={unread.isFetchingMore} onLoadMore={unread.loadMore} />}
 
-              {/* Read messages - collapsible */}
-              {readMessages.length > 0 && (
+              {/* Read messages - collapsible; the count is the server's total, not the loaded page. */}
+              {read.totalCount > 0 && (
                 <div className="mt-2 border-t border-panel-border pt-2">
                   <button
                     onClick={() => setShowRead(!showRead)}
@@ -179,14 +202,17 @@ export function InboxPopup() {
                     className="ficus-button ficus-button-ghost w-full rounded-lg py-2 pl-6 pr-3 flex items-center gap-2 text-sm focus-visible:outline-offset-[-2px]"
                   >
                     {showRead ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
-                    <span>Read messages ({readMessages.length})</span>
+                    <span>Read messages ({read.totalCount})</span>
                   </button>
                   {showRead && (
-                    <MessageList>
-                      {readMessages.map((message) => (
-                        <MessageRow key={message.id} message={message} squads={squads} compact />
-                      ))}
-                    </MessageList>
+                    <>
+                      <MessageList>
+                        {read.messages.map((message) => (
+                          <MessageRow key={message.id} message={message} squads={squads} compact />
+                        ))}
+                      </MessageList>
+                      {read.hasMore && <InboxLoadMore isFetching={read.isFetchingMore} onLoadMore={read.loadMore} />}
+                    </>
                   )}
                 </div>
               )}

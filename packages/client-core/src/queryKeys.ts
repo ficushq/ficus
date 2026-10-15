@@ -227,14 +227,14 @@ export const queryKeys = {
     // The authenticated user's own inbox (cache is cleared on auth change, so no userId in the key).
     minePrefix: () => [...queryKeys.inbox.all, 'mine'] as const,
     mine: (includeRead = false) => [...queryKeys.inbox.minePrefix(), includeRead] as const,
-    mineInfinite: (readState: 'read' | 'unread' | 'all') =>
-      [...queryKeys.inbox.minePrefix(), 'infinite', readState] as const,
+    mineInfinite: (readState: 'read' | 'unread' | 'all', search = '') =>
+      [...queryKeys.inbox.minePrefix(), 'infinite', readState, search] as const,
     mineCount: () => [...queryKeys.inbox.minePrefix(), 'count'] as const,
     // The shared system/announcements inbox.
     systemPrefix: () => [...queryKeys.inbox.all, 'system'] as const,
     system: (includeRead = false) => [...queryKeys.inbox.systemPrefix(), includeRead] as const,
-    systemInfinite: (readState: 'read' | 'unread' | 'all') =>
-      [...queryKeys.inbox.systemPrefix(), 'infinite', readState] as const,
+    systemInfinite: (readState: 'read' | 'unread' | 'all', search = '') =>
+      [...queryKeys.inbox.systemPrefix(), 'infinite', readState, search] as const,
     systemCount: () => [...queryKeys.inbox.systemPrefix(), 'count'] as const,
   },
   terminal: {
