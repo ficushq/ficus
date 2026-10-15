@@ -5,6 +5,11 @@
  *
  * Only usage from before the ledger went live is imported (the cutoff is the first live ledger row, saved
  * in the backfill state), so nothing is counted twice: afterwards the same calls are recorded live.
+ *
+ * Agent turns bill $0. Which account served them is not known, and their session cost is pi's list-price
+ * estimate even when a subscription (ChatGPT/Codex, Claude Code) paid for them, so counting it as billed
+ * would charge subscription usage at API prices. They keep it as their list cost, so they still count in
+ * the preview without subscriptions. Migration 0217 applied the same rule to rows imported before this.
  */
 import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import type { ExecutionStatus, SessionUsage } from '@ficus/shared'
@@ -159,7 +164,6 @@ async function agentRows(
     for (const key of Object.keys(summed) as Array<keyof Tokens>) summed[key] += count(tokens[key])
     summedCost += count(delta.cost)
     if (count(tokens.total) === 0 && count(delta.cost) === 0) continue
-    const cost = nanodollars(delta.cost)
     const flow = row.flowContext
     result.push({
       ...baseRow(),
@@ -169,8 +173,7 @@ async function agentRows(
       outputTokens: count(tokens.output),
       cacheReadTokens: count(tokens.cacheRead),
       cacheWriteTokens: count(tokens.cacheWrite),
-      costNanodollars: cost,
-      listCostNanodollars: cost,
+      listCostNanodollars: nanodollars(delta.cost),
       squadId: agent.squadId,
       agentId: agent.id,
       executionId: row.id,
@@ -192,7 +195,6 @@ async function agentRows(
     const remainder = (key: keyof Tokens) => Math.max(0, count(stats.tokens[key]) - summed[key])
     const extraCost = Math.max(0, count(stats.cost) - summedCost)
     if (remainder('total') > 0) {
-      const cost = nanodollars(extraCost)
       gap = {
         ...baseRow(),
         occurredAt: agent.updatedAt,
@@ -201,8 +203,7 @@ async function agentRows(
         outputTokens: remainder('output'),
         cacheReadTokens: remainder('cacheRead'),
         cacheWriteTokens: remainder('cacheWrite'),
-        costNanodollars: cost,
-        listCostNanodollars: cost,
+        listCostNanodollars: nanodollars(extraCost),
         squadId: agent.squadId,
         agentId: agent.id,
         parentAgentId: agent.parentAgentId,

@@ -197,6 +197,39 @@ describe('spend queries', () => {
     expect(bySquad.rows.find((row) => row.key === squadB)?.label).toBe(`Deleted (${squadB.slice(0, 8)})`)
   })
 
+  test('backfilled agent turns count at list price only, under a before-tracking label', async () => {
+    const agentId = crypto.randomUUID()
+    await db.insert(inferenceUsage).values({
+      occurredAt: new Date('2026-09-02T08:00:00Z'),
+      feature: 'agent-turn',
+      billing: 'unknown',
+      inputTokens: 4000,
+      costNanodollars: 0,
+      listCostNanodollars: 7_000_000_000,
+      costEstimated: true,
+      squadId: squadB,
+      agentId,
+      source: { marker, backfilled: true, from: 'executions' },
+      dedupeKey: `exec:${crypto.randomUUID()}`,
+    })
+    const byAgent = await spendBreakdown(september, { squadId: squadB }, 'agent', undefined, 5, options())
+    // Ranked by billed spend: the backfilled agent bills nothing, so it comes after anything that does.
+    expect(byAgent.rows.find((row) => row.key === agentId)).toMatchObject({
+      calls: 1,
+      billedUsd: 0,
+      listUsd: 7,
+      approximate: true,
+    })
+    const byBilling = await spendBreakdown(september, { squadId: squadB }, 'billing', undefined, 50, options())
+    expect(byBilling.rows.find((row) => row.key === 'unknown')).toMatchObject({
+      label: 'Before tracking: billing unknown',
+      billedUsd: 0,
+      listUsd: 7,
+    })
+    const summary = await spendSummary(september, { squadId: squadB }, options())
+    expect(summary.totals).toMatchObject({ calls: 2, billedUsd: 0, listUsd: 12 })
+  })
+
   test('the account filter matches provider and id', async () => {
     const other = await spendSummary(september, { accountId: `anthropic/acc_${marker}` }, options())
     expect(other.totals.calls).toBe(0)

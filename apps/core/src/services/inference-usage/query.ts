@@ -350,7 +350,8 @@ const BILLING_LABELS: Record<InferenceBilling, string> = {
   api: 'API key',
   subscription: 'Subscription',
   'self-hosted': 'Self-hosted',
-  unknown: 'Unknown (before tracking)',
+  // Almost always usage imported from before the ledger (billed $0, list cost kept; see backfill.ts).
+  unknown: 'Before tracking: billing unknown',
 }
 
 const UNATTRIBUTED: Record<SpendDimension, string> = {

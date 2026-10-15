@@ -192,11 +192,14 @@ describe('backfillInferenceUsage', () => {
     const legacy = backfilled
       .filter((row) => row.agentId === legacyAgent && row.dedupeKey?.startsWith('exec:'))
       .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
-    // Steps of the cumulative series: 100, 350 (+50 out), 400 (+50 out).
-    expect(legacy.map((row) => [row.inputTokens, row.outputTokens, row.costNanodollars])).toEqual([
-      [100, 0, 10_000_000],
-      [300, 50, 35_000_000],
-      [400, 50, 45_000_000],
+    // Steps of the cumulative series: 100, 350 (+50 out), 400 (+50 out). The session's cost is pi's list-price
+    // estimate, whatever account ran it: kept as the list cost, never billed.
+    expect(
+      legacy.map((row) => [row.inputTokens, row.outputTokens, row.costNanodollars, row.listCostNanodollars])
+    ).toEqual([
+      [100, 0, 0, 10_000_000],
+      [300, 50, 0, 35_000_000],
+      [400, 50, 0, 45_000_000],
     ])
     expect(legacy[0]).toMatchObject({
       feature: 'agent-turn',
@@ -211,17 +214,25 @@ describe('backfillInferenceUsage', () => {
     })
 
     const gap = backfilled.find((row) => row.dedupeKey === `agent-gap:${legacyAgent}`)
-    expect(gap).toMatchObject({ inputTokens: 700, outputTokens: 300, source: { from: 'agents.session_usage' } })
+    expect(gap).toMatchObject({
+      inputTokens: 700,
+      outputTokens: 300,
+      billing: 'unknown',
+      costNanodollars: 0,
+      listCostNanodollars: 210_000_000,
+      source: { from: 'agents.session_usage' },
+    })
 
     const delta = backfilled.filter((row) => row.agentId === deltaAgent)
     // Only the pre-cutoff execution; its session total is fully explained by it.
     expect(delta.map((row) => row.dedupeKey?.split(':')[0])).toEqual(['exec'])
-    expect(delta[0]).toMatchObject({ inputTokens: 60, costNanodollars: 60_000_000 })
+    expect(delta[0]).toMatchObject({ inputTokens: 60, costNanodollars: 0, listCostNanodollars: 60_000_000 })
 
     expect(backfilled.filter((row) => row.agentId === liveAgent)).toHaveLength(0)
 
     const decisions = backfilled.filter((row) => row.feature === `decision:${decisionPurpose}`)
     expect(decisions).toHaveLength(1)
+    // A decision call's billing is known from its provider, so it still bills.
     expect(decisions[0]).toMatchObject({
       accountId: 'gone-provider',
       provider: null,
@@ -229,6 +240,7 @@ describe('backfillInferenceUsage', () => {
       billing: 'api',
       inputTokens: 1000,
       costNanodollars: 42_000,
+      listCostNanodollars: 42_000,
       agentId: legacyAgent,
       source: { backfilled: true, from: 'decision_log' },
     })
@@ -244,6 +256,9 @@ describe('backfillInferenceUsage', () => {
       const august = { from: at('2026-08-01T00:00:00Z'), to: at('2026-09-01T00:00:00Z') }
       const before = await spendSummary(august, { agentId: legacyAgent })
       expect(before.totals.calls).toBe(5) // three executions, the session gap, the decision
+      // Only the decision bills; the agent turns count at list price only.
+      expect(before.totals.billedUsd).toBeCloseTo(0.000042, 9)
+      expect(before.totals.listUsd).toBeCloseTo(0.3 + 0.000042, 9)
 
       const again = await backfillInferenceUsage({ apply: true, cutoff })
       expect(again.inserted).toBe(0)

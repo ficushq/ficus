@@ -29,9 +29,18 @@ function DimensionPicker<T extends string>({
   )
 }
 
+/** Amounts, counts and shares never break inside (a "≈" stays with its amount), with a gap before each. */
+const FIGURE = 'whitespace-nowrap pl-3 text-right tabular-nums'
+/** Calls and tokens get their own columns from `sm` up; on a phone they sit under the row's label. */
+const WIDE_ONLY = 'hidden sm:table-cell'
+
+const countLabel = (count: number, one: string, many: string) =>
+  `${count.toLocaleString('en-US')} ${count === 1 ? one : many}`
+
 /**
  * Spend grouped by one dimension (and optionally split by a second), largest first. Each row can narrow the
- * whole view to its value.
+ * whole view to its value. The table never widens the page: it fits a phone, and scrolls inside its own
+ * container when a second dimension or the list price makes it wider.
  */
 export function SpendBreakdownTable({
   breakdown,
@@ -61,7 +70,7 @@ export function SpendBreakdownTable({
   const dimension = breakdown?.by ?? by
   const second = breakdown?.by2
   return (
-    <section aria-labelledby={headingId} className="space-y-2">
+    <section aria-labelledby={headingId} className="min-w-0 space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <h3 id={headingId} className="text-sm font-medium text-primary">
           {title}
@@ -82,7 +91,7 @@ export function SpendBreakdownTable({
       {rows.length === 0 ? (
         <p className="text-sm text-muted">{loading ? 'Loading…' : 'No spend in this period.'}</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="max-w-full overflow-x-auto">
           <table className="ficus-table w-full text-sm">
             <thead>
               <tr>
@@ -94,21 +103,21 @@ export function SpendBreakdownTable({
                     {DIMENSION_LABELS[second]}
                   </th>
                 )}
-                <th scope="col" className="text-right">
+                <th scope="col" className={`${FIGURE} ${WIDE_ONLY}`}>
                   Calls
                 </th>
-                <th scope="col" className="text-right">
+                <th scope="col" className={`${FIGURE} ${WIDE_ONLY}`}>
                   Tokens
                 </th>
-                <th scope="col" className="text-right">
+                <th scope="col" className={FIGURE}>
                   Billed
                 </th>
                 {showList && (
-                  <th scope="col" className="text-right">
+                  <th scope="col" className={FIGURE}>
                     At list price
                   </th>
                 )}
-                <th scope="col" className="text-right">
+                <th scope="col" className={FIGURE}>
                   Share
                 </th>
               </tr>
@@ -116,7 +125,7 @@ export function SpendBreakdownTable({
             <tbody>
               {rows.map((row) => (
                 <tr key={`${row.key ?? ''}|${row.key2 ?? ''}`}>
-                  <td>
+                  <td className="break-words">
                     {dimension ? (
                       <button
                         type="button"
@@ -129,9 +138,12 @@ export function SpendBreakdownTable({
                     ) : (
                       row.label
                     )}
+                    <span className="block text-xs text-muted sm:hidden">
+                      {`${countLabel(row.calls, 'call', 'calls')} · ${formatTokens(row.tokens)} tokens`}
+                    </span>
                   </td>
                   {second && (
-                    <td>
+                    <td className="break-words">
                       <button
                         type="button"
                         className="ficus-button ficus-button-link text-left"
@@ -142,11 +154,11 @@ export function SpendBreakdownTable({
                       </button>
                     </td>
                   )}
-                  <td className="text-right tabular-nums">{row.calls.toLocaleString('en-US')}</td>
-                  <td className="text-right tabular-nums">{formatTokens(row.tokens)}</td>
-                  <td className="text-right tabular-nums">{formatSpend(row.billedUsd, row.approximate)}</td>
-                  {showList && <td className="text-right tabular-nums text-muted">{formatUsd(row.listUsd)}</td>}
-                  <td className="text-right tabular-nums text-muted">
+                  <td className={`${FIGURE} ${WIDE_ONLY}`}>{row.calls.toLocaleString('en-US')}</td>
+                  <td className={`${FIGURE} ${WIDE_ONLY}`}>{formatTokens(row.tokens)}</td>
+                  <td className={FIGURE}>{formatSpend(row.billedUsd, row.approximate)}</td>
+                  {showList && <td className={`${FIGURE} text-muted`}>{formatUsd(row.listUsd)}</td>}
+                  <td className={`${FIGURE} text-muted`}>
                     {total > 0 ? `${Math.round((row.billedUsd / total) * 100)}%` : '—'}
                   </td>
                 </tr>

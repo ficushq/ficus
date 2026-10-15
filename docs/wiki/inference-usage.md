@@ -65,6 +65,9 @@ Attribution: agent turns carry the agent, its execution, squad, workflow step (w
 | OAuth sign-in (ChatGPT/Codex, Copilot, ...) and Claude Code   | `subscription`                    | $0              | yes             |
 | OpenAI-compatible endpoint, a free self-hosted decision model | `self-hosted`                     | $0              | no              |
 | No stored account (environment key)                           | `api` when priced, else `unknown` | list price      | yes             |
+| Imported from before the ledger (agent turns)                 | `unknown`                         | $0              | yes             |
+
+Agent sessions record the account their requests authenticate with: the account the session's account-scoped credential store has selected for the message's provider. Account rotation and provider failover change that selection, so each turn is billed to the account that answered it.
 
 `cost_nanodollars` is what was billed and `list_cost_nanodollars` is the same call at list price. Claude Code is priced as Anthropic's model of the same name, so its list price is real even though the bridge reports $0.
 
@@ -101,7 +104,10 @@ Usage recorded before the ledger existed is imported once by the worker (`backfi
 - An agent's session total beyond its executions (for example a manual compaction), for agents with no live ledger rows.
 - Every answered `decision_log` row with tokens or a cost.
 
-Backfilled rows have `source.backfilled = true` and billing `unknown`. Their provider and model are empty when not known. Only usage from before the cutoff is imported: the first live ledger row's time, worked out once and saved in the backfill state, so live calls are never imported again. Rows inside the read window have a dedupe key (`exec:<id>`, `agent-gap:<agentId>`, `decision_log:<id>`). Rows for days already pruned are left out on every run after the worker's first (their dedupe keys are gone with the per-call rows, and their days' rollups already count them). Running it again therefore writes nothing new.
+Backfilled rows have `source.backfilled = true`. Their provider and model are empty when not known.
+
+- Agent turns (from executions and session gaps) have billing `unknown` and bill $0. Which account ran them is not recorded, and their cost is pi's list-price estimate even when a ChatGPT/Codex or Claude Code subscription paid for them, so billing it would charge subscription usage at API prices. The estimate is kept as their list cost, so they still count in the preview without subscriptions and in call and token totals. The viewer labels this billing "Before tracking: billing unknown". Migration `0217_backfilled_agent_turns_unbilled` applied the same rule to rows imported before it, in both the per-call rows and the daily rollups; no row is deleted.
+- Decision calls keep the billing their provider gives them (`api`, or `self-hosted` for a free self-hosted model) and bill their recorded cost. Only usage from before the cutoff is imported: the first live ledger row's time, worked out once and saved in the backfill state, so live calls are never imported again. Rows inside the read window have a dedupe key (`exec:<id>`, `agent-gap:<agentId>`, `decision_log:<id>`). Rows for days already pruned are left out on every run after the worker's first (their dedupe keys are gone with the per-call rows, and their days' rollups already count them). Running it again therefore writes nothing new.
 
 To check or re-run by hand: `bun run --filter core usage:ledger-backfill [--squad <uuid> | --agent <uuid>...] [--apply]`. Without `--apply` it is a dry run.
 

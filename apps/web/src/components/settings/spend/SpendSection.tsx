@@ -56,7 +56,9 @@ export function SpendSection() {
   const periodLabel = period === 'custom' ? `${custom.from} – ${custom.to}` : SPEND_PERIOD_LABELS[period].toLowerCase()
 
   return (
-    <section className="space-y-6" aria-labelledby="spend-heading">
+    // min-w-0 throughout: nothing on this page may widen it past a phone's viewport. Wide tables scroll inside
+    // their own container instead.
+    <section className="min-w-0 space-y-6" aria-labelledby="spend-heading">
       <div className="space-y-1">
         <h2 id="spend-heading" className="text-lg font-semibold text-primary">
           Spend
@@ -67,16 +69,18 @@ export function SpendSection() {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        {/* On a phone the six periods are wider than the screen: they wrap inside their tray. */}
         <SegmentedControl
           ariaLabel="Period"
           size="compact"
+          className="max-w-full flex-wrap"
           options={SPEND_PERIODS.map((value) => ({ value, label: SPEND_PERIOD_LABELS[value] }))}
           value={period}
           onChange={setPeriod}
         />
         {period === 'custom' && (
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <label className="flex items-center gap-1">
               <span className="text-secondary">From</span>
               <input
@@ -106,9 +110,11 @@ export function SpendSection() {
           {(Object.entries(active) as Array<[SpendDimension, { label: string }]>).map(([dimension, value]) => (
             <span
               key={dimension}
-              className="inline-flex items-center gap-1 rounded-full border border-th-border px-2 py-0.5 text-xs text-primary"
+              className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border border-th-border px-2 py-0.5 text-xs text-primary"
             >
-              {DIMENSION_LABELS[dimension]}: {value.label}
+              <span className="min-w-0 break-words">
+                {DIMENSION_LABELS[dimension]}: {value.label}
+              </span>
               <button
                 type="button"
                 className="ficus-button ficus-button-ghost px-1 text-xs"
@@ -149,7 +155,7 @@ export function SpendSection() {
         </>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <SpendBreakdownTable
           title="Top work streams"
           breakdown={topWorkStreams.data}
