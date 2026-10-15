@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import type { PendingAction } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
+import { MemoryRouter } from 'react-router-dom'
 
 let domHarness: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 
@@ -12,6 +13,7 @@ let pendingActions: PendingAction[] = []
 let actionsLoading = false
 let actionsError = false
 let actionsFetching = false
+let squadFilters: string[] = []
 let invalidatedQueries: unknown[] = []
 let finishInvalidations: Array<() => void> = []
 let currentQueryClient: ReturnType<typeof createTrackingQueryClient> | null = null
@@ -43,6 +45,7 @@ const dependencies = {
     error: actionsError ? new Error('Needs attention unavailable') : null,
     refetch: () => Promise.resolve(),
   }),
+  useSquadFilters: () => squadFilters,
   WorkStreamListAll: () => <div data-test-slot="feed">Work stream fixture</div>,
   ActionCenterContent: ({ actions, isLoading }: { actions: PendingAction[]; isLoading: boolean }) => (
     <div data-test-slot="actions">
@@ -170,6 +173,7 @@ describe('FeedPage', () => {
     actionsLoading = false
     actionsError = false
     actionsFetching = false
+    squadFilters = []
     invalidatedQueries = []
     finishInvalidations = []
   })
@@ -313,6 +317,77 @@ describe('FeedPage', () => {
 
     expect(html).toContain('<details')
     expect(html).toContain('action-1')
+  })
+
+  test('limits Needs you and its count to the selected squads', () => {
+    pendingActions = [
+      action({ id: 'ficus-review', squadId: 'squad-1', squadName: 'Ficus' }),
+      action({
+        id: 'source-review',
+        squadId: 'squad-2',
+        squadName: 'Source',
+        data: { ...action().data, squadId: 'squad-2', squadName: 'Source' } as PendingAction['data'],
+      }),
+    ]
+
+    squadFilters = ['squad-1']
+    const filtered = renderFeedPage()
+    expect(filtered).toContain('1 pending')
+    expect(filtered).toContain('ficus-review')
+    expect(filtered).not.toContain('source-review')
+
+    squadFilters = ['squad-1', 'squad-2']
+    expect(renderFeedPage()).toContain('2 pending')
+
+    squadFilters = []
+    const all = renderFeedPage()
+    expect(all).toContain('2 pending')
+    expect(all).toContain('source-review')
+  })
+
+  test('says nothing is pending in the selected squads rather than caught up when the filter hides every item', () => {
+    pendingActions = [action({ id: 'source-review', squadId: 'squad-2' })]
+    squadFilters = ['squad-1']
+
+    const html = renderFeedPage()
+
+    expect(html).toContain('Nothing pending in the selected squads')
+    expect(html).not.toContain('You’re all caught up')
+    expect(html).not.toContain('source-review')
+  })
+
+  test('reads the squad filter from the URL shared with the work stream Filters menu', () => {
+    pendingActions = [
+      action({ id: 'ficus-review', squadId: 'squad-1' }),
+      action({ id: 'source-review', squadId: 'squad-2' }),
+    ]
+    const visitSquads: Array<readonly string[] | undefined> = []
+    const { useSquadFilters: _stub, ...urlDependencies } = dependencies
+    const html = renderToStaticMarkup(
+      <MemoryRouter initialEntries={['/feed?squad=squad-2']}>
+        <ReactQueryHooksProvider hooks={reactQueryOverrides}>
+          {withQueryClient(
+            <FeedPage
+              dependencies={{
+                ...urlDependencies,
+                FeedVisitSummary: ({ actions, squadIds }) => {
+                  visitSquads.push(squadIds)
+                  return <div>{actions.map((a) => `visit:${a.id}`).join(',')}</div>
+                },
+              }}
+            />
+          )}
+        </ReactQueryHooksProvider>
+      </MemoryRouter>
+    )
+
+    expect(html).toContain('1 pending')
+    expect(html).toContain('source-review')
+    expect(html).not.toContain('ficus-review')
+    // The visit summary receives the same squad selection and only the selected squads' actions.
+    expect(visitSquads).toEqual([['squad-2']])
+    expect(html).toContain('visit:source-review')
+    expect(html).not.toContain('visit:ficus-review')
   })
 
   test('pulling down at the top refreshes feed work stream and action queries', async () => {
