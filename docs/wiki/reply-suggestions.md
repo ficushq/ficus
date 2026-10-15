@@ -13,9 +13,19 @@ edited there. No shipped agent type uses it.
 
 One-shot calls go through `completeWithTier` (`apps/core/src/services/model-tiers/`). It walks the
 tier's chain, skipping candidates that agent model selection would skip (disabled, unauthenticated or
-unhealthy providers) and accounts that run Claude Code, and uses the stored provider accounts through
-the shared model runtime. Each candidate gets a short timeout and the whole call has an overall
-deadline and a small output cap. It never throws; a failure resolves to `null`.
+unhealthy providers), and uses the stored provider accounts through the shared model runtime. Each
+candidate gets a short timeout and the whole call has an overall deadline and a small output cap. It
+never throws; a failure resolves to `null`.
+
+When the account selected for a candidate is Claude Code, the call goes through a one-shot Claude Code
+query (`apps/core/src/services/agent/claude-code/one-shot.ts`), not the agent session bridge. It
+sends a plain string prompt with no tools, no user or project settings, a single turn and no saved
+session, in an empty working directory, and closes the query (ending the `claude` process) as soon as
+the answer arrives, and on a timeout, an abort or an error. Claude Code uses its own sign-in; none of
+Core's credentials reach it. Because starting `claude` takes a few seconds, that candidate waits at
+least 10 seconds; the request's overall deadline still bounds it, and later candidates get what is
+left. The output cap is passed to Claude Code and enforced again on the answer. Usage of these calls is
+not recorded anywhere yet, as with the other Lite candidates.
 
 ## When suggestions run
 
@@ -46,7 +56,8 @@ mobile stop showing them without checking the setting themselves; turning it bac
 ## In Settings
 
 `GET /api/model-tiers` reports each tier's `usableCandidates`: the models a one-shot call could use
-right now (enabled, signed in, healthy; OpenRouter fallbacks excluded). When the Lite tier has none
+right now (enabled, signed in, healthy; OpenRouter fallbacks excluded). A signed-in Claude Code
+account counts, so a setup whose only sign-in is Claude Code gets suggestions. When the Lite tier has none
 and the switch is on, Settings says "No Lite model is signed in" beside it. The saved preference is not
 changed.
 
