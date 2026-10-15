@@ -47,6 +47,7 @@ export const SETTINGS_SECTION_ICONS = {
   devices: MonitorIcon,
   sessions: CalendarIcon,
   workflows: WorkflowIcon,
+  work: WorkflowIcon,
   'agent-types': AgentIcon,
   skills: PuzzleIcon,
   integrations: LinkIcon,

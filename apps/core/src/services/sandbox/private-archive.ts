@@ -125,7 +125,7 @@ export async function runAgentLifecycleConvergenceOnce(deps: LifecycleConvergenc
         }),
     ],
     [
-      // Squads opted in via consultant_idle_dormancy_days; same terminate→dormant path as a user.
+      // Every squad unless turned off (consultant_idle_dormancy_days null); same terminate→dormant path as a user.
       'idle consultant dormancy',
       async () =>
         (deps.idleConsultants ?? (await import('../agents/idle-consultants')).runIdleConsultantDormancySweep)({

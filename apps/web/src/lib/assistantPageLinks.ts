@@ -1,7 +1,7 @@
 import type { RenderItem } from '@ficus/client-core'
 import { navItems } from '../components/navModel'
 import { ALL_SECTIONS } from '../components/settings/settingsSections'
-import { SQUAD_SETTINGS_SECTIONS, SQUAD_TABS } from './squadNavigation'
+import { SQUAD_SETTINGS_SECTIONS, SQUAD_TABS, resolveSquadSettingsSection } from './squadNavigation'
 
 export type AppPathKind = 'page' | 'squad' | 'work-stream' | 'settings' | 'conversation'
 export interface AppPathDescription {
@@ -49,7 +49,8 @@ export function describeAppPath(path: string): AppPathDescription {
     if (ws) return { kind: 'work-stream', title: /^\d+$/.test(ws) ? `Work stream #${ws}` : 'Work stream', squadId }
     if (tab === 'agents' && params.get('agent')) return { kind: 'conversation', title: 'Agent conversation', squadId }
     if (tab === 'settings') {
-      const section = SQUAD_SETTINGS_SECTIONS.find((item) => item.id === params.get('section'))
+      const id = params.get('section') && resolveSquadSettingsSection(params.get('section'), params.get('setting'))
+      const section = SQUAD_SETTINGS_SECTIONS.find((item) => item.id === id)
       return { kind: 'settings', title: section ? `${section.label} settings` : 'Squad settings', squadId }
     }
     return { kind: 'squad', title: SQUAD_TABS.find((item) => item.path === tab)?.label ?? 'Squad', squadId }

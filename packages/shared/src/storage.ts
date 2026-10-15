@@ -109,8 +109,12 @@ export const STORAGE_DORMANCY_EXEMPT_AGENT_TYPES: readonly string[] = [
   'assistant-worker',
 ]
 
-/** Default idle threshold, in days, for making idle consultants dormant. */
-export const DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS = 90
+/**
+ * Default idle threshold, in days, for making idle consultants dormant. Every squad starts
+ * with this value (the `squads.consultant_idle_dormancy_days` column default; keep in sync);
+ * null there means the squad turned the sweep off.
+ */
+export const DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS = 30
 
 /** One source of files Ficus stores on the core host (counted from database rows, not a disk scan). */
 export interface StoredFileSource {
