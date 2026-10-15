@@ -686,8 +686,9 @@ test('open work streams: the second question, the picker list, and a confirmed s
       ((await response.json()) as FileScreenshotResponse).conversationId
     )
     expect(conversation.title).toBe(`Screenshot: an error message or log in ${chlea.name}`)
-    expect(sent[0]!.content).toContain('- Action: add it to an existing work stream')
-    expect(sent[0]!.content).toContain(`- Work stream: "Rewrite the docs" (work stream ID ${docs!.id})`)
+    expect(sent[0]!.content).toContain(
+      `· add it to an existing work stream · work stream "Rewrite the docs" (ID ${docs!.id})`
+    )
 
     expect(
       captured.map(({ evalName, expect: expected, summary, source }) => ({ evalName, expected, summary, source }))
