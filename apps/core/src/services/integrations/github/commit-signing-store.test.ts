@@ -35,7 +35,9 @@ async function squad(): Promise<string> {
 async function connection(
   options: {
     enabled?: boolean
-    authState?: 'authenticated' | 'reauthorization_required'
+    authState?: 'authenticated' | 'invalid' | 'reauthorization_required'
+    healthState?: 'healthy' | 'degraded' | 'unreachable'
+    lastErrorCode?: string
     by?: string
     login?: string
     userId?: number
@@ -57,7 +59,8 @@ async function connection(
     credentialRef,
     enabled: options.enabled ?? true,
     authState: options.authState ?? 'authenticated',
-    healthState: 'healthy',
+    healthState: options.healthState ?? 'healthy',
+    ...(options.lastErrorCode ? { lastErrorCode: options.lastErrorCode } : {}),
     materialRevision: revision,
     validatedRevision: revision,
     validatedAt: new Date(),
@@ -176,6 +179,73 @@ describe('commit signing store', () => {
       expect(await githubSigningAccountsForSquad(squadId)).toMatchObject([{ canSign: false }])
     } finally {
       await db.update(settings).set({ value: 'true' }).where(eq(settings.key, ENABLED_KEY))
+    }
+  })
+
+  // The state the refresh service records for the seconds a rotated token is validated.
+  const refreshPending = {
+    authState: 'invalid' as const,
+    healthState: 'degraded' as const,
+    lastErrorCode: 'refresh_validation_pending',
+  }
+
+  it('keeps signing while the token is being refreshed', async () => {
+    const squadId = await squad()
+    const id = await connection(refreshPending)
+    await assign(squadId, id, true)
+    await signingOn(id, 'ssh-ed25519 AAAA refreshing')
+    expect(await githubSigningAccountsForSquad(squadId)).toMatchObject([{ connectionId: id, canSign: true }])
+    expect(await githubSigningAccount(id)).toMatchObject({ canSign: true })
+    expect(await githubSigningPublicKeyForSquad(squadId)).toBe('ssh-ed25519 AAAA refreshing')
+  })
+
+  it('does not sign mid-refresh when the connection is otherwise unusable', async () => {
+    const otherAuthority = resolveOAuthAuthority() === 'local' ? 'platform_broker' : 'local'
+    for (const options of [
+      { ...refreshPending, enabled: false },
+      { ...refreshPending, clientAuthority: otherAuthority },
+    ]) {
+      const squadId = await squad()
+      const id = await connection(options)
+      await assign(squadId, id, true)
+      await signingOn(id, 'ssh-ed25519 AAAA unusable')
+      expect(await githubSigningAccountsForSquad(squadId)).toMatchObject([{ connectionId: id, canSign: false }])
+      expect(await githubSigningPublicKeyForSquad(squadId)).toBeUndefined()
+    }
+    // Unassigned or attached elsewhere: never offered to this squad, so none of its commits is signed with it.
+    const [mine, theirs] = [await squad(), await squad()]
+    await connection(refreshPending)
+    await assign(theirs, await connection(refreshPending), true)
+    expect(await githubSigningAccountsForSquad(mine)).toEqual([])
+    expect(await githubSigningPublicKeyForSquad(mine)).toBeUndefined()
+  })
+
+  it('does not sign once GitHub rejected the token or the refresh failed', async () => {
+    for (const options of [
+      // Validation answered invalid_auth.
+      { authState: 'invalid' as const, healthState: 'unreachable' as const, lastErrorCode: 'invalid_auth' },
+      // Health says rejected, whatever the last code.
+      {
+        authState: 'invalid' as const,
+        healthState: 'unreachable' as const,
+        lastErrorCode: 'refresh_validation_pending',
+      },
+      // The pending refresh failed for another reason and recorded its own code.
+      { authState: 'invalid' as const, healthState: 'degraded' as const, lastErrorCode: 'provider_unavailable' },
+      { authState: 'invalid' as const, healthState: 'degraded' as const },
+      {
+        authState: 'reauthorization_required' as const,
+        healthState: 'unreachable' as const,
+        lastErrorCode: 'refresh_validation_pending',
+      },
+    ]) {
+      const squadId = await squad()
+      const id = await connection(options)
+      await assign(squadId, id, true)
+      await signingOn(id, 'ssh-ed25519 AAAA rejected')
+      expect(await githubSigningAccountsForSquad(squadId)).toMatchObject([{ connectionId: id, canSign: false }])
+      expect(await githubSigningAccount(id)).toMatchObject({ canSign: false })
+      expect(await githubSigningPublicKeyForSquad(squadId)).toBeUndefined()
     }
   })
 
