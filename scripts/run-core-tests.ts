@@ -19,7 +19,8 @@ Options:
                                    every isolated file must contain a match)
   --list                           Print the selected files per lane and exit without running
   --reverse                        Run files in reverse order
-  --subprocess                     Full suite: run only the isolated lane (CI subprocess job)
+  --subprocess                     Run the full isolated lane only (CI subprocess job; any
+                                   paths must be exactly the CI subprocess inventory)
   -h, --help                       Show this help
 
 Examples:
@@ -43,7 +44,7 @@ export function coreTestPlan() {
     /\bmock\s*\.\s*module\s*\(/.test(readFileSync(resolve(coreRoot, file), 'utf8'))
   )
   const isolated = new Set([...subprocess, ...moduleMocks])
-  return { shared: files.filter((file) => !isolated.has(file)), isolated: [...isolated].sort(), files }
+  return { shared: files.filter((file) => !isolated.has(file)), isolated: [...isolated].sort(), files, subprocess }
 }
 
 export type CoreTestOptions =
@@ -77,11 +78,33 @@ export function parseCoreTestArgs(args: string[]): CoreTestOptions {
     } else if (arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`)
     else paths.push(arg)
   }
-  if (subprocessOnly && paths.length > 0)
-    throw new Error('--subprocess selects the full isolated lane and cannot be combined with paths')
+  if (subprocessOnly && testNamePattern !== undefined)
+    throw new Error('--subprocess runs the full isolated lane and cannot be combined with a test name pattern')
   if (testNamePattern !== undefined && paths.length === 0)
     throw new Error('A test name pattern requires at least one path; it would otherwise run the full suite')
   return { help: false, paths, list, reverse, subprocessOnly, testNamePattern }
+}
+
+/**
+ * `--subprocess` always runs the full isolated lane. CI passes the lane's file
+ * inventory after it (coreTestPlan reads that list from ci.yml), so accept
+ * paths only when they are exactly that inventory; anything else would be
+ * silently ignored, so it fails instead.
+ */
+export function selectSubprocessLane(
+  plan: ReturnType<typeof coreTestPlan>,
+  paths: string[],
+  cwd = process.cwd()
+): { shared: string[]; isolated: string[] } {
+  if (paths.length > 0) {
+    const given = new Set(paths.map((path) => `./${relative(coreRoot, resolve(cwd, path))}`))
+    const inventory = new Set(plan.subprocess)
+    if (given.size !== inventory.size || [...given].some((file) => !inventory.has(file)))
+      throw new Error(
+        '--subprocess runs the full isolated lane; its paths must be exactly the CI subprocess inventory. Omit --subprocess to run specific files.'
+      )
+  }
+  return { shared: [], isolated: plan.isolated }
 }
 
 /** Resolves path arguments to discovered Core test files, keeping each file's normal lane. */
@@ -132,7 +155,9 @@ if (import.meta.main) {
   const plan = coreTestPlan()
   let selection: { shared: string[]; isolated: string[] }
   try {
-    selection = selectCoreTests(plan, options.paths)
+    selection = options.subprocessOnly
+      ? selectSubprocessLane(plan, options.paths)
+      : selectCoreTests(plan, options.paths)
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(2)
@@ -140,7 +165,7 @@ if (import.meta.main) {
   const { reverse, subprocessOnly } = options
   // CI's core job skips the isolated lane, which runs in its own job. Focused
   // runs always execute what was asked for.
-  const coreOnly = options.paths.length === 0 && process.env.FICUS_TEST_SKIP_SUBPROCESS === '1' && !subprocessOnly
+  const coreOnly = !subprocessOnly && options.paths.length === 0 && process.env.FICUS_TEST_SKIP_SUBPROCESS === '1'
   const runShared = !subprocessOnly && selection.shared.length > 0
   const runIsolated = !coreOnly && selection.isolated.length > 0
   if (options.list) {

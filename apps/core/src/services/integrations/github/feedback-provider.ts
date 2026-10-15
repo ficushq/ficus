@@ -1,7 +1,7 @@
 import type { GitHubFeedbackContent, IntegrationOutputFact } from '@ficus/shared'
 import type { IntegrationOutputAuthority } from '../outputs/types'
 import type { VerifiedIngressEvent } from '../types'
-import { githubApiGet } from '../../github/api-client'
+import { githubApiGet, GitHubApiUnavailableError } from '../../github/api-client'
 import { githubContentIdentity, githubNativeId } from './feedback-envelope'
 
 type Get = (path: string, squadId: string, connectionId: string) => Promise<unknown>
@@ -41,11 +41,14 @@ export async function resolveGitHubFeedbackRepository(
  * Bounded authenticated verification of the supplied snapshot, never replacement text or editor proof.
  * Use only after capture's live exact-source authorization; githubApiGet independently checks assignment.
  * A transfer/rename mismatch or disappearance is uncertainty, not approval or inferred identity.
+ * When GitHub could not answer at all (outage, rate limit, unusable token) it throws
+ * {@link GitHubApiUnavailableError}: the caller must retry later, not treat it as a mismatch.
  */
 export async function readCurrentGitHubFeedback(
   source: { authority: IntegrationOutputAuthority; fact: IntegrationOutputFact },
   content: GitHubFeedbackContent,
-  get: Get = githubApiGet
+  get: Get = (path, squadId, connectionId) =>
+    githubApiGet(path, squadId, connectionId, { distinguishUnavailable: true })
 ): Promise<{ contentHash: string } | null> {
   if (
     source.authority.kind !== 'connection' ||
@@ -111,7 +114,8 @@ export async function readCurrentGitHubFeedback(
     )
       return null
     return { contentHash: content.contentHash }
-  } catch {
+  } catch (error) {
+    if (error instanceof GitHubApiUnavailableError) throw error
     return null
   }
 }
