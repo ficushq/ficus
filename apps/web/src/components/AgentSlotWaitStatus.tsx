@@ -24,9 +24,11 @@ export function AgentSlotWaitStatus({
   const holds = useQuery({ ...queries.agents.slotHolds(squadId, agentId), enabled })
   const [leaseTick, setLeaseTick] = useState(0)
   // A missed expiry frame must not leave a lease displayed as live. This is a
-  // local expiry deadline, not a poll or a new reconciliation mechanism.
+  // local expiry deadline, not a poll or a new reconciliation mechanism. It
+  // keeps running during background refetches, which still show the last
+  // known holds, so a lease expires on time even if no refetch arrives.
   useEffect(() => {
-    if (!enabled || holds.isError || holds.isFetching) return
+    if (!enabled || holds.isError) return
     const now = Date.now()
     const deadlines = (holds.data ?? []).map((hold) => Date.parse(hold.expiresAt)).filter((end) => end > now)
     if (!deadlines.length) return
@@ -35,13 +37,17 @@ export function AgentSlotWaitStatus({
       Math.min(Math.min(...deadlines) - now, 2_147_483_647)
     )
     return () => clearTimeout(timer)
-  }, [enabled, holds.data, holds.isError, holds.isFetching, leaseTick])
+  }, [enabled, holds.data, holds.isError, leaseTick])
 
   if (!enabled) return null
-  // Each read has its own hide-on-revalidation/error boundary. Optional older
-  // server support cannot erase an independently valid waiting indicator.
+  // Each read has its own visibility/error boundary. Optional older server
+  // support cannot erase an independently valid waiting indicator. Data is
+  // shown only once this mount has fetched it: cache left from an earlier
+  // visit stays hidden until confirmed, while later background refetches
+  // (frequent agent/slot invalidations) keep the last result visible
+  // instead of flickering the row out and back in.
   const heldNames =
-    holds.isError || holds.isFetching
+    holds.isError || !holds.isFetchedAfterMount
       ? []
       : [
           ...new Set(
@@ -49,7 +55,7 @@ export function AgentSlotWaitStatus({
           ),
         ]
   const waitNames =
-    waits.isError || waits.isFetching ? [] : [...new Set((waits.data ?? []).map((wait) => wait.poolKey))]
+    waits.isError || !waits.isFetchedAfterMount ? [] : [...new Set((waits.data ?? []).map((wait) => wait.poolKey))]
   if (!heldNames.length && !waitNames.length && !waits.isError) return null
   return (
     <div className="shrink-0 border-b border-th-border">
