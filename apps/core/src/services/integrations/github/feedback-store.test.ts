@@ -72,14 +72,11 @@ async function fixture() {
       return store.captureGitHubFeedback(id, {
         authorizeSource: async () => true,
         transportKey: options.transportKey,
-        ...(options.current !== undefined
-          ? {
-              readCurrent: async () => {
-                if (options.current instanceof Error) throw options.current
-                return options.current === null ? null : { contentHash: options.current! }
-              },
-            }
-          : {}),
+        // No real GitHub I/O in tests: without a stated answer the witness gives none (an explicit denial).
+        readCurrent: async () => {
+          if (options.current instanceof Error) throw options.current
+          return options.current == null ? null : { contentHash: options.current }
+        },
       })
     },
     async close() {
@@ -223,7 +220,7 @@ test('equal-clock conflicting content is ambiguous without a fresh exact-current
   const h = await fixture()
   try {
     const a = await h.capture(event('A'))
-    const b = await h.capture(event('B'), { current: null })
+    const b = await h.capture(event('B'))
     expect(b.revision.reason).toBe('ambiguous_observation')
     const [object] = await db
       .select()
