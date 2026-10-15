@@ -56,3 +56,34 @@ test('linked PR delivery is external, but missing PR setup remains actionable', 
   stream.state.definition.completion = { mode: 'review-approval' }
   expect(hasRunnableStreamDemand(stream)).toBe(false)
 })
+
+test('an attempt agent supervising background work is not stalled; other attempts still are', () => {
+  const stream = { ...candidate(), supervisingAgents: ['engineer'] }
+  expect(hasRunnableStreamDemand(stream)).toBe(false)
+  // Another agent's live monitor does not cover this attempt's agent.
+  stream.supervisingAgents = ['someone-else']
+  expect(hasRunnableStreamDemand(stream)).toBe(true)
+  // A sibling attempt whose agent is idle without supervised work remains demand.
+  stream.supervisingAgents = ['engineer']
+  stream.state.attempts.push({ ...stream.state.attempts[0]!, id: 2 })
+  stream.attemptAgents['2'] = 'sibling'
+  stream.participants.push('sibling')
+  expect(hasRunnableStreamDemand(stream)).toBe(true)
+  // An undispatched attempt has no agent to supervise anything.
+  delete stream.attemptAgents['2']
+  stream.participants = ['engineer']
+  expect(hasRunnableStreamDemand(stream)).toBe(true)
+})
+
+test('stream-level demand without a flow attempt owner honors any stream agent supervising work', () => {
+  const stream = { ...candidate(), supervisingAgents: ['engineer'] }
+  stream.state.status = 'completion-ready'
+  stream.state.definition.completion = { mode: 'pr-auto-merge', followChanges: true }
+  expect(hasRunnableStreamDemand(stream)).toBe(false)
+  stream.supervisingAgents = []
+  expect(hasRunnableStreamDemand(stream)).toBe(true)
+  const legacy = { ...candidate(), state: null, supervisingAgents: ['engineer'] }
+  expect(hasRunnableStreamDemand(legacy)).toBe(false)
+  legacy.supervisingAgents = []
+  expect(hasRunnableStreamDemand(legacy)).toBe(true)
+})
