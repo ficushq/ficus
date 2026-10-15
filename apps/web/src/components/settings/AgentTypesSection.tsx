@@ -31,6 +31,7 @@ import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { PlusIcon, TrashIcon } from '../icons'
 import { formatResolvedModel, modelChainWarnings } from './modelTierUi'
+import { ReplySuggestionsSetting } from './ReplySuggestionsSetting'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, LoadingSurface, SkeletonBlock, SkeletonRows } from '../loading/Skeleton'
 
@@ -1328,6 +1329,7 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
             derivedFallbacks={tier.derivedOpenRouterFallbacks}
             onSave={(next) => mutation.mutate(next)}
           />
+          {tier.slug === 'lite' && <ReplySuggestionsSetting />}
         </div>
       ))}
       <button

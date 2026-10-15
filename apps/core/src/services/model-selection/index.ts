@@ -4,10 +4,12 @@ import { splitModelPriorityList } from '../../lib/utils/model-spec'
 import { listAccounts, readAccountStore, type AccountStoreV1 } from '../agent/account-store'
 import { getDisabledProviders } from './disabled-providers'
 import {
+  evaluateAllCandidates,
   selectModelSpec,
   selectModelSpecWithSwitchBack,
   PROVIDERS_WITHOUT_AUTH,
   type ModelSelection,
+  type SelectModelDeps,
   type SwitchBackModelSelection,
 } from './select-model'
 import { providerHealth } from '../provider-health/registry'
@@ -58,6 +60,13 @@ function selectResolvedModelSpec(
   opts?: { preferContextTokens?: number }
 ): ModelSelection {
   return selectModelSpec(resolvedSpec, {
+    ...currentEnvSelectionDeps(accountStore, disabled),
+    preferContextTokens: opts?.preferContextTokens,
+  })
+}
+
+function currentEnvSelectionDeps(accountStore: AccountStoreV1, disabled: Set<string>): SelectModelDeps {
+  return {
     // Stored accounts count as configured even when all are temporarily exhausted;
     // health is evaluated separately so the candidate is reported as exhausted
     // rather than unauthenticated. hasRuntimeRoute() covers env/runtime auth and
@@ -66,9 +75,25 @@ function selectResolvedModelSpec(
     isProviderDisabled: (p) => disabled.has(p),
     isProviderHealthy: (p) =>
       providerRouteDecision(p, accountStore, providerHealth.snapshotRecords(), hasRuntimeRoute(p))?.state === 'ready',
-    preferContextTokens: opts?.preferContextTokens,
     modelCatalog: tryGetModelRuntime(),
-  })
+  }
+}
+
+/**
+ * Every candidate of a priority list that agent model selection would accept right now (enabled,
+ * authenticated, healthy), in priority order. For one-shot calls that fall back through the list
+ * themselves; unlike {@link selectModelSpecForCurrentEnv} it never throws and adds no OpenRouter
+ * shadows (a one-shot call should not reach for a universal fallback).
+ */
+export function usableModelCandidatesForCurrentEnv(spec: string): string[] {
+  try {
+    const deps = currentEnvSelectionDeps(readAccountStore(), getDisabledProviders())
+    return evaluateAllCandidates(spec, deps)
+      .filter((candidate) => candidate.usable)
+      .map((candidate) => candidate.spec)
+  } catch {
+    return []
+  }
 }
 
 /**
