@@ -191,9 +191,12 @@ describe('machine script docker contract', () => {
     // (survives the setuptool rewriting docker.service on re-provision)...
     expect(boxProvisionSh).toContain('--iptables=false')
     expect(boxProvisionSh).toContain('docker.service.d')
-    // ...and RESTART (the setuptool auto-starts the daemon with the bad flag
-    // during install; a plain `start` would no-op against it).
-    expect(boxProvisionSh).toContain('sysu restart docker.service')
+    // ...and RESTART when the config changed or a daemon still runs the bad flag
+    // (the setuptool auto-starts it during install; a plain `start` would no-op
+    // against it), otherwise only `start`: a healthy re-provision must not kill
+    // running containers. Behavior is covered by box-provision.test.sh.
+    expect(boxProvisionSh).toContain('docker_running_with_stale_flags')
+    expect(boxProvisionSh).toContain('sysu "${verb}" docker.service')
     // run_as_box must work under BOTH privilege modes: as root, empty-SUDO
     // expansion would exec `-u` as a command (live bug) — runuser covers root,
     // sudo covers the passwordless-sudoer admin.
