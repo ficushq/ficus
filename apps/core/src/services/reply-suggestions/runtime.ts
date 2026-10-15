@@ -52,7 +52,12 @@ export const replySuggestionRuntimeDeps: ReplySuggestionDeps = {
   isEnabled: replySuggestionsEnabled,
   loadAgent: async (agentId) => {
     const [agent] = await db
-      .select({ status: agents.status, questionData: agents.questionData, squadId: agents.squadId })
+      .select({
+        status: agents.status,
+        questionData: agents.questionData,
+        squadId: agents.squadId,
+        agentTypeId: agents.agentTypeId,
+      })
       .from(agents)
       .where(eq(agents.id, agentId))
     if (!agent) return null
@@ -65,6 +70,7 @@ export const replySuggestionRuntimeDeps: ReplySuggestionDeps = {
       hasQuestionData: agent.questionData != null,
       openQuestions: open?.count ?? 0,
       squadId: agent.squadId,
+      agentTypeId: agent.agentTypeId,
     }
   },
   loadLatestHuman: async (agentId) => {
@@ -72,6 +78,21 @@ export const replySuggestionRuntimeDeps: ReplySuggestionDeps = {
       .select(rowColumns)
       .from(messages)
       .where(and(eq(messages.agentId, agentId), eq(messages.role, 'human')))
+      .orderBy(desc(messages.createdAt))
+      .limit(1)
+    return row ? toRow(row) : null
+  },
+  loadLatestUserChat: async (agentId) => {
+    const [row] = await db
+      .select(rowColumns)
+      .from(messages)
+      .where(
+        and(
+          eq(messages.agentId, agentId),
+          eq(messages.role, 'human'),
+          sql`${messages.metadata}->>'source' = 'user_chat'`
+        )
+      )
       .orderBy(desc(messages.createdAt))
       .limit(1)
     return row ? toRow(row) : null
@@ -120,8 +141,9 @@ export function registerReplySuggestions(deps: ReplySuggestionDeps = replySugges
   registered = true
   const unsubscribe = eventEmitter.on('execution.completed', ({ agentId, status }) => {
     if (status !== 'completed' || !agentId) return
+    // Every outcome is logged (ids only, never message text) so a missing chip can be explained.
     void suggestRepliesAfterTurn(agentId, deps, limiter).then((outcome) => {
-      if (outcome === 'saved') log.debug(`Suggested replies for agent ${agentId}`)
+      log.debug(`Reply suggestions for agent ${agentId}: ${outcome}`)
     })
   })
   return () => {

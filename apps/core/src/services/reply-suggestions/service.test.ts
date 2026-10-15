@@ -27,11 +27,22 @@ const assistant = (overrides: Partial<SuggestionRow> = {}): SuggestionRow => ({
   ...overrides,
 })
 const idleAgent: AgentSuggestionState = { status: 'idle', hasQuestionData: false, openQuestions: 0, squadId: 'squad-1' }
+const idleConsultant: AgentSuggestionState = { ...idleAgent, agentTypeId: 'consultant' }
+/** A subagent result delivered to the agent after the person's chat message. */
+const inboxDelivery = (overrides: Partial<SuggestionRow> = {}): SuggestionRow =>
+  human({
+    id: 'h2',
+    content: 'Subagent result: the export fix is verified.',
+    metadata: { source: 'inbox', inboxMessageIds: ['m1'] },
+    createdAt: at(5),
+    ...overrides,
+  })
 
 function fakeDeps(overrides: Partial<ReplySuggestionDeps> = {}) {
   const requests: LightCompletionRequest[] = []
   const saved: Array<{ agentId: string; messageId: string; replies: string[] }> = []
   let reads = 0
+  let userChatReads = 0
   const deps: ReplySuggestionDeps = {
     isEnabled: () => true,
     loadAgent: async () => {
@@ -40,6 +51,11 @@ function fakeDeps(overrides: Partial<ReplySuggestionDeps> = {}) {
     },
     loadLatestHuman: async () => {
       reads++
+      return human()
+    },
+    loadLatestUserChat: async () => {
+      reads++
+      userChatReads++
       return human()
     },
     loadRecentAssistant: async () => {
@@ -56,7 +72,7 @@ function fakeDeps(overrides: Partial<ReplySuggestionDeps> = {}) {
     },
     ...overrides,
   }
-  return { deps, requests, saved, reads: () => reads }
+  return { deps, requests, saved, reads: () => reads, userChatReads: () => userChatReads }
 }
 
 describe('selectSuggestionTarget', () => {
@@ -83,6 +99,27 @@ describe('selectSuggestionTarget', () => {
     expect(selectSuggestionTarget(inbox, [assistant()])).toBeNull()
     expect(selectSuggestionTarget(human({ metadata: null }), [assistant()])).toBeNull()
     expect(selectSuggestionTarget(null, [assistant()])).toBeNull()
+  })
+
+  test('a non-chat turn, given the person’s latest chat message: their chat text is the human text', () => {
+    expect(selectSuggestionTarget(inboxDelivery(), [assistant()], human())).toEqual({
+      messageId: 'a1',
+      agentText,
+      humanText: 'The export button crashes when the list is empty.',
+    })
+    // A chat turn ignores the stand-in.
+    const earlier = human({ id: 'h0', content: 'Older chat.', createdAt: at(-10) })
+    expect(selectSuggestionTarget(human(), [assistant()], earlier)?.humanText).toBe(human().content)
+  })
+
+  test('a non-chat turn without a usable chat message, or not yet answered, gets none', () => {
+    expect(selectSuggestionTarget(inboxDelivery(), [assistant()], null)).toBeNull()
+    expect(selectSuggestionTarget(inboxDelivery(), [assistant()], human({ content: ' ' }))).toBeNull()
+    expect(selectSuggestionTarget(inboxDelivery(), [assistant()], human({ pending: true }))).toBeNull()
+    expect(selectSuggestionTarget(inboxDelivery(), [assistant()], inboxDelivery({ id: 'x' }))).toBeNull()
+    expect(selectSuggestionTarget(inboxDelivery({ pending: true }), [assistant()], human())).toBeNull()
+    // The delivery arrived after the agent's last text: that turn has not answered yet.
+    expect(selectSuggestionTarget(inboxDelivery({ createdAt: at(30) }), [assistant()], human())).toBeNull()
   })
 
   test('no chips when the person has already written again or a message is still pending', () => {
@@ -161,11 +198,64 @@ describe('suggestRepliesAfterTurn', () => {
   })
 
   test('no chips for an inbox-driven worker turn', async () => {
-    const { deps, requests } = fakeDeps({
+    const { deps, requests, userChatReads } = fakeDeps({
       loadLatestHuman: async () => human({ metadata: { source: 'inbox' }, content: 'Flow step: execute' }),
     })
     expect(await suggestRepliesAfterTurn('worker', deps, new ReplySuggestionLimiter())).toBe('no-target')
     expect(requests).toHaveLength(0)
+    expect(userChatReads()).toBe(0)
+  })
+
+  test('no chips for an inbox-driven manager turn, even after a chat message', async () => {
+    const { deps, requests, userChatReads } = fakeDeps({
+      loadAgent: async () => ({ ...idleAgent, agentTypeId: 'manager' }),
+      loadLatestHuman: async () => inboxDelivery(),
+    })
+    expect(await suggestRepliesAfterTurn('manager', deps, new ReplySuggestionLimiter())).toBe('no-target')
+    expect(requests).toHaveLength(0)
+    expect(userChatReads()).toBe(0)
+  })
+
+  test('a consultant turn after an inbox delivery gets chips, prompted with the person’s chat text', async () => {
+    const { deps, requests, saved } = fakeDeps({
+      loadAgent: async () => idleConsultant,
+      loadLatestHuman: async () => inboxDelivery(),
+    })
+    expect(await suggestRepliesAfterTurn('consultant', deps, new ReplySuggestionLimiter())).toBe('saved')
+    expect(requests[0].prompt).toContain('<person_message>\nThe export button crashes when the list is empty.\n')
+    expect(requests[0].prompt).not.toContain('Subagent result')
+    expect(saved.map((row) => row.messageId)).toEqual(['a1'])
+  })
+
+  test('a consultant turn after an inbox delivery: no chat yet, a pending message, or no question', async () => {
+    const noChat = fakeDeps({
+      loadAgent: async () => idleConsultant,
+      loadLatestHuman: async () => inboxDelivery(),
+      loadLatestUserChat: async () => null,
+    })
+    expect(await suggestRepliesAfterTurn('c', noChat.deps, new ReplySuggestionLimiter())).toBe('no-target')
+    expect(noChat.requests).toHaveLength(0)
+
+    const pending = fakeDeps({
+      loadAgent: async () => idleConsultant,
+      loadLatestHuman: async () => inboxDelivery({ pending: true, createdAt: at(30) }),
+    })
+    expect(await suggestRepliesAfterTurn('c', pending.deps, new ReplySuggestionLimiter())).toBe('no-target')
+    expect(pending.requests).toHaveLength(0)
+
+    const status = fakeDeps({
+      loadAgent: async () => idleConsultant,
+      loadLatestHuman: async () => inboxDelivery(),
+      loadRecentAssistant: async () => [assistant({ content: 'The subagent verified the fix. CI is green.' })],
+    })
+    expect(await suggestRepliesAfterTurn('c', status.deps, new ReplySuggestionLimiter())).toBe('no-question')
+    expect(status.requests).toHaveLength(0)
+  })
+
+  test('a consultant chat turn does not read the chat history again', async () => {
+    const { deps, userChatReads } = fakeDeps({ loadAgent: async () => idleConsultant })
+    expect(await suggestRepliesAfterTurn('c', deps, new ReplySuggestionLimiter())).toBe('saved')
+    expect(userChatReads()).toBe(0)
   })
 
   test('model failures and unusable answers fail closed', async () => {

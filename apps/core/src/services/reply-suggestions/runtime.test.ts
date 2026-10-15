@@ -28,8 +28,8 @@ afterEach(async () => {
 })
 
 /** An idle agent whose person asked something and whose latest reply asks back. */
-async function chat(agentText = QUESTION) {
-  const agent = await Agent.create({ agentTypeId: 'system-manager', context: {} })
+async function chat(agentText = QUESTION, agentTypeId = 'system-manager') {
+  const agent = await Agent.create({ agentTypeId, context: {} })
   agentIds.push(agent.id)
   const start = Date.now() - 60_000
   const [human, reply] = await db
@@ -146,6 +146,50 @@ describe('reply suggestions against the database', () => {
     const { deps, requests } = withFakeModel()
     expect(await suggestRepliesAfterTurn(agentId, deps, new ReplySuggestionLimiter())).toBe('no-target')
     expect(requests).toHaveLength(0)
+  })
+
+  test('a consultant turn started by an inbox delivery gets chips from the person’s chat text', async () => {
+    const { agentId } = await chat(QUESTION, 'consultant')
+    await db.insert(messages).values([
+      {
+        agentId,
+        role: 'human',
+        content: 'Subagent result: verified.',
+        pending: false,
+        metadata: { source: 'inbox', inboxMessageIds: ['m1'] },
+        createdAt: new Date(Date.now() - 30_000),
+      },
+    ])
+    const [reply] = await db
+      .insert(messages)
+      .values({
+        agentId,
+        role: 'assistant',
+        content: 'Verified. If you want, I can open a work stream for the follow-up.',
+        pending: false,
+        metadata: {},
+        createdAt: new Date(Date.now() - 20_000),
+      })
+      .returning()
+    const { deps, requests } = withFakeModel()
+    expect(await suggestRepliesAfterTurn(agentId, deps, new ReplySuggestionLimiter())).toBe('saved')
+    expect(requests[0].prompt).toContain('The export crashes on an empty list.')
+    expect(requests[0].prompt).not.toContain('Subagent result')
+    expect((await metadataOf(reply!.id))?.replySuggestions).toEqual(['Yes, start it', 'Not now'])
+  })
+
+  test('an inbox delivery that arrives while the model answers makes the save a no-op', async () => {
+    const { agentId, reply } = await chat(QUESTION, 'consultant')
+    await db.insert(messages).values({
+      agentId,
+      role: 'human',
+      content: 'Work stream update: done.',
+      pending: false,
+      metadata: { source: 'inbox', inboxMessageIds: ['m2'] },
+      createdAt: new Date(),
+    })
+    expect(await replySuggestionRuntimeDeps.save(agentId, reply.id, ['Yes', 'No'])).toBe(false)
+    expect((await metadataOf(reply.id))?.replySuggestions).toBeUndefined()
   })
 
   test('the Settings switch stops everything', async () => {
