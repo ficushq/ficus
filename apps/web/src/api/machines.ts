@@ -20,6 +20,10 @@ export interface MachineCapabilities {
   // MachineCapabilities (apps/core/src/db/schema.ts).
   browser?: 'available' | 'unavailable'
   browserReason?: string
+  // Whether the kernel reserves the Ficus loopback ports, and whether systemd
+  // enforces the box port guard. Mirror of the server's MachineCapabilities.
+  boxPorts?: 'reserved' | 'unreserved'
+  socketBind?: 'enforced' | 'unsupported'
 }
 
 /**

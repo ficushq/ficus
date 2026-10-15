@@ -66,6 +66,7 @@ import {
 } from './queries'
 import type { Machine, MachineBox } from './queries'
 import type { SshResult, SshRunner, SshStreamer } from './ssh'
+import { BOX_PORT_BUSY_EXIT_CODE, BoxPortBusyError } from './box-port-busy'
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -1074,6 +1075,64 @@ describe('ensureBox', () => {
     expect(cleared).toEqual(['sb-mig'])
     expect(order[0]).toBe('clear')
     expect(order).toEqual(['clear', 'provision', 'env'])
+  })
+
+  // box-provision.sh exits 75 only when the box socket could not bind because
+  // something holds its port. That alone becomes the retryable BoxPortBusyError,
+  // carrying systemd's reason and the holder. Other exits stay plain errors.
+  const BUSY_STDERR = [
+    'box-provision.sh: ficus-box-u.socket failed to start (ListenStream=127.0.0.1:51276)',
+    '--- systemctl status ficus-box-u.socket ---',
+    'Active: failed (Result: resources)',
+    '--- journal for ficus-box-u.socket (last 20 lines) ---',
+    'ficus-box-u.socket: Failed to create listening socket (127.0.0.1:51276): Address already in use',
+    "--- sockets holding port 51276 (ss -tanp 'sport = :51276') ---",
+    'TIME-WAIT 0 0 127.0.0.1:51276 127.0.0.1:50080',
+    'box-provision.sh: FICUS_BOX_PORT_BUSY port=51276',
+  ].join('\n')
+  const provisionWith = (exitCode: number, stderr: string) =>
+    installBoxOnMachine(
+      {
+        machine: makeMachine(),
+        sandboxId: 'agent_busy',
+        unixUser: boxUnixUser('agent_busy'),
+        port: 51276,
+        role: 'agent',
+        env: {},
+        authToken: 'tok',
+      },
+      {
+        runner: { run: async () => ({ exitCode, stdout: '', stderr }) },
+        clearBoxSyncedHashes: async () => {},
+      }
+    ).catch((e: unknown) => e)
+
+  it('installBoxOnMachine turns the port-busy exit into BoxPortBusyError with the real reason', async () => {
+    const error = await provisionWith(BOX_PORT_BUSY_EXIT_CODE, BUSY_STDERR)
+    expect(error).toBeInstanceOf(BoxPortBusyError)
+    const busy = error as BoxPortBusyError
+    expect(busy.step).toBe('provision')
+    expect(busy.port).toBe(51276)
+    expect(busy.message).toContain('Address already in use')
+    expect(busy.message).toContain('TIME-WAIT 0 0 127.0.0.1:51276 127.0.0.1:50080')
+    expect(busy.summary).toBe(
+      `port 51276 on ${makeMachine().name} is busy: held by TIME-WAIT 0 0 127.0.0.1:51276 127.0.0.1:50080`
+    )
+  })
+
+  it('a busy summary falls back to the systemd reason when the holder is already gone', async () => {
+    const busy = (await provisionWith(
+      BOX_PORT_BUSY_EXIT_CODE,
+      BUSY_STDERR.replace('TIME-WAIT 0 0 127.0.0.1:51276 127.0.0.1:50080', '<none>')
+    )) as BoxPortBusyError
+    expect(busy.summary).toContain('Failed to create listening socket (127.0.0.1:51276): Address already in use')
+  })
+
+  it.each([1, 2, 3])('installBoxOnMachine keeps exit %d a plain (terminal) error', async (exitCode) => {
+    const error = await provisionWith(exitCode, 'box-provision.sh: socket activation readback failed')
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(BoxPortBusyError)
+    expect((error as Error).message).toContain(`exit ${exitCode}`)
   })
 
   // ── per-box browser token DIGEST file (R-B8 / R-B2) ──────────────────────
@@ -3622,6 +3681,14 @@ for unit in "$@"; do
 done
 `
     )
+    // Socket-failure diagnostics: who holds the port, and what systemd logged.
+    writeFileSync(
+      join(dir, 'ss'),
+      '#!/bin/sh\necho "ss $*" >>"$FIXTURE/calls"\ncat "$FIXTURE/holder" 2>/dev/null\nexit 0\n'
+    )
+    writeFileSync(join(dir, 'journalctl'), '#!/bin/sh\ncat "$FIXTURE/journal" 2>/dev/null\nexit 0\n')
+    chmodSync(join(dir, 'ss'), 0o755)
+    chmodSync(join(dir, 'journalctl'), 0o755)
     chmodSync(join(dir, 'sudo'), 0o755)
     chmodSync(join(dir, 'systemctl'), 0o755)
     let failVerb = '',
@@ -3656,6 +3723,10 @@ done
       fail: (verb: string, state = '') => {
         failVerb = verb
         readback = state
+      },
+      diagnostics: (holder: string, journal: string) => {
+        writeFileSync(join(dir, 'holder'), holder)
+        writeFileSync(join(dir, 'journal'), journal)
       },
       reboot: () => {
         for (const unit of names.allUnits.split(' '))
@@ -3762,6 +3833,51 @@ done
         })
       }
     }
+    // A parked box's socket gave its port back. If something took it meanwhile,
+    // the resume reports systemd's reason and the holder, and fails as a
+    // (retryable) BoxPortBusyError. Any other enable failure stays a plain Error.
+    it(`${sandboxId}: resume onto a busy port fails as BoxPortBusyError with systemd's reason and the holder`, async () => {
+      const f = fixture(sandboxId, false)
+      f.fail('enable')
+      f.diagnostics(
+        'ESTAB 0 0 127.0.0.1:20001 127.0.0.1:50080 users:(("sshd",pid=4242,fd=9))\n',
+        `${f.names.socket}: Failed to create listening socket (127.0.0.1:20001): Address already in use\n`
+      )
+      const events: string[] = []
+      const error = await startBoxAndAwaitHealth(
+        { machine: makeMachine(), sandboxId, unixUser: boxUnixUser(sandboxId), port: 20001 },
+        {
+          runner: f.runner,
+          tunnels: makeFakeTunnels(events),
+          fetch: makeFakeFetch(events, [{ ok: true, status: 200 }]),
+        }
+      ).catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(BoxPortBusyError)
+      const busy = error as BoxPortBusyError
+      expect(busy.step).toBe('resume')
+      expect(busy.port).toBe(20001)
+      expect(busy.message).toContain('Address already in use')
+      expect(busy.message).toContain('users:(("sshd",pid=4242')
+      expect(busy.summary).toContain('held by ESTAB 0 0 127.0.0.1:20001 127.0.0.1:50080')
+      expect(f.calls()).toContain('ss -Htanp sport = :20001')
+      // The server never restarted onto a socket that does not exist.
+      expect(f.calls()).not.toContain(`restart ${f.names.unit}`)
+      expect(events).toEqual([])
+    })
+
+    it(`${sandboxId}: a resume enable failure with the port free stays a plain error`, async () => {
+      const f = fixture(sandboxId, false)
+      f.fail('enable')
+      f.diagnostics('', `${f.names.socket}: Failed with result 'resources'.\n`)
+      const error = await startBoxAndAwaitHealth(
+        { machine: makeMachine(), sandboxId, unixUser: boxUnixUser(sandboxId), port: 20001 },
+        { runner: f.runner, tunnels: makeFakeTunnels([]), fetch: makeFakeFetch([], [{ ok: true, status: 200 }]) }
+      ).catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(Error)
+      expect(error).not.toBeInstanceOf(BoxPortBusyError)
+      expect((error as Error).message).toContain("Failed with result 'resources'")
+    })
+
     it(`${sandboxId}: failed fast resume and reprovision activation never stamp ready`, async () => {
       const f = fixture(sandboxId, false)
       f.fail('enable')
@@ -4194,8 +4310,9 @@ describe('box unit commands by mode', () => {
     const legacy = `${FOREIGN_BOX_UNIT_PREFIX}-${unixUser}`
     const restart = calls.find((c) => c.command.includes('systemctl'))!.command
     expect(restart).toContain(
-      `sudo systemctl reset-failed ${unit} 2>/dev/null || true; sudo systemctl enable --now ficus-box-${unixUser}.socket && sudo systemctl restart ${unit}`
+      `sudo systemctl reset-failed ${unit} 2>/dev/null || true; if ! sudo systemctl enable --now ficus-box-${unixUser}.socket; then `
     )
+    expect(restart).toContain(`; fi && sudo systemctl restart ${unit} && `)
     // Finalized runtime control never falls back to old names.
     expect(restart).not.toContain(`sudo systemctl restart ${legacy}.service`)
 
@@ -4225,8 +4342,9 @@ describe('box unit commands by mode', () => {
     const userCtl = `sudo systemctl --machine=${unixUser}@.host --user`
     const restart = calls.find((c) => c.command.includes('systemctl'))!.command
     expect(restart).toContain(
-      `${userCtl} reset-failed ficus-sandbox-server.service 2>/dev/null || true; ${userCtl} enable --now ficus-sandbox-server.socket && ${userCtl} restart ficus-sandbox-server.service`
+      `${userCtl} reset-failed ficus-sandbox-server.service 2>/dev/null || true; if ! ${userCtl} enable --now ficus-sandbox-server.socket; then `
     )
+    expect(restart).toContain(`; fi && ${userCtl} restart ficus-sandbox-server.service && `)
     expect(restart).not.toContain(`${userCtl} restart ${FOREIGN_USER_UNIT_PREFIX}.service`)
 
     const stop = await stopCommand(sandboxId)

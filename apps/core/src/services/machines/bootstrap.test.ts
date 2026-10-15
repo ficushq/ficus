@@ -146,6 +146,16 @@ describe('parseCapabilities', () => {
   it('leaves browser undefined on a caps line from a pre-browser machine', () => {
     expect(parseCapabilities(CAPS_LINE).browser).toBeUndefined()
   })
+
+  it('parses the box port reservation and port-guard enforcement facts', () => {
+    const line =
+      'FICUS_CAPS_JSON: {"arch":"x86_64","cpus":2,"memMb":2000,"diskGb":20,"kernel":"6.8","docker":"rootless","forwarding":"yes","boxPorts":"reserved","socketBind":"unsupported","browser":"available"}'
+    const caps = parseCapabilities(line)
+    expect(caps.boxPorts).toBe('reserved')
+    expect(caps.socketBind).toBe('unsupported')
+    expect(parseCapabilities(CAPS_LINE).boxPorts).toBeUndefined()
+    expect(parseCapabilities(line.replace('"reserved"', '"maybe"')).boxPorts).toBeUndefined()
+  })
 })
 
 // The box-manager <-> box-provision.sh contract (and the bootstrap docker

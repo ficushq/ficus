@@ -63,6 +63,7 @@ import {
   upsertMachineBox,
   UNVERIFIED_STOP_REMNANT_PREFIX,
 } from './queries'
+import { BoxPortRangeExhaustedError, FIRST_BOX_PORT, LAST_BOX_PORT } from './box-ports'
 
 const prefix = `mtest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -354,6 +355,54 @@ describe('machine box queries', () => {
     const onB = await bindMachineBox({ sandboxId, machineId: machineB.id, unixUser: 'box' })
     expect(onB.machineId).toBe(machineB.id)
     expect(onB.port).toBe(50101) // freshly allocated on machineB
+  })
+
+  // Hosts reserve only FIRST_BOX_PORT-LAST_BOX_PORT from the kernel's ephemeral
+  // range, so the allocator must stay inside it. MAX(port)+1 never reused a
+  // port and walked upward forever on a machine with churn.
+  it('reuses the lowest port a removed box freed', async () => {
+    const machine = await insertMachine(readyMachineValues('reuse'))
+    for (const n of [1, 2, 3]) {
+      await bindMachineBox({ sandboxId: `${prefix}-reuse-${n}`, machineId: machine.id, unixUser: `box${n}` })
+    }
+    await deleteMachineBox(`${prefix}-reuse-2`)
+
+    expect(await peekNextBoxPort(machine.id)).toBe(FIRST_BOX_PORT + 1)
+    const next = await bindMachineBox({ sandboxId: `${prefix}-reuse-4`, machineId: machine.id, unixUser: 'box4' })
+    expect(next.port).toBe(FIRST_BOX_PORT + 1)
+    const after = await bindMachineBox({ sandboxId: `${prefix}-reuse-5`, machineId: machine.id, unixUser: 'box5' })
+    expect(after.port).toBe(FIRST_BOX_PORT + 3)
+  })
+
+  it('allocates inside the box range even when a legacy row holds a port outside it', async () => {
+    const machine = await insertMachine(readyMachineValues('legacy-port'))
+    const legacy = await upsertMachineBox({
+      sandboxId: `${prefix}-legacy-port`,
+      machineId: machine.id,
+      unixUser: 'legacy',
+      port: LAST_BOX_PORT + 500,
+    })
+
+    const fresh = await bindMachineBox({ sandboxId: `${prefix}-legacy-fresh`, machineId: machine.id, unixUser: 'b' })
+    expect(fresh.port).toBe(FIRST_BOX_PORT)
+    // The out-of-range box keeps serving on its port across a same-machine rebind.
+    const rebound = await bindMachineBox({ sandboxId: legacy.sandboxId, machineId: machine.id, unixUser: 'legacy' })
+    expect(rebound.port).toBe(LAST_BOX_PORT + 500)
+  })
+
+  it('fails loudly once every port in the box range is allocated', async () => {
+    const machine = await insertMachine(readyMachineValues('full'))
+    await db.execute(sql`
+      INSERT INTO machine_boxes (sandbox_id, machine_id, unix_user, port)
+      SELECT ${`${prefix}-full-`} || p, ${machine.id}::uuid, 'u' || p, p
+      FROM generate_series(${FIRST_BOX_PORT}::int, ${LAST_BOX_PORT}::int) AS p
+    `)
+
+    await expect(peekNextBoxPort(machine.id)).rejects.toBeInstanceOf(BoxPortRangeExhaustedError)
+    await expect(
+      bindMachineBox({ sandboxId: `${prefix}-full-overflow`, machineId: machine.id, unixUser: 'overflow' })
+    ).rejects.toBeInstanceOf(BoxPortRangeExhaustedError)
+    expect(await getMachineBox(`${prefix}-full-overflow`)).toBeNull()
   })
 
   // Cross-machine rebind must reset the per-asset drift stamps ATOMICALLY, under

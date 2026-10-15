@@ -127,6 +127,9 @@ else
     mkdir -p "${R}/.shims" "${R}/etc/systemd/system" "${R}/usr/lib/systemd" "${R}/home" \
       "${R}/opt/ficus/bin" "${R}/var/lib/systemd/linger" "${R}/fakedb"
     : >"${R}/calls.log"
+    # The kernel's reserved-ports list as /proc/sys shows it (empty by default).
+    mkdir -p "${R}/proc/sys/net/ipv4"
+    : >"${R}/proc/sys/net/ipv4/ip_local_reserved_ports"
     printf '#!/bin/sh\n' >"${R}/usr/lib/systemd/systemd-socket-proxyd"
     chmod +x "${R}/usr/lib/systemd/systemd-socket-proxyd"
     printf 'root:x:0:0:root:/root:/bin/bash\n' >"${R}/fakedb/passwd"
@@ -159,6 +162,10 @@ while IFS=: read -r group pass gid members; do
 done <"$STUB_R/fakedb/group" >"$STUB_R/fakedb/group.new"
 mv "$STUB_R/fakedb/group.new" "$STUB_R/fakedb/group"'
     shim chown 'echo "chown $*" >>"$STUB_R/calls.log"'
+    # Socket-failure diagnostics read these fixtures: who holds the port, and
+    # what systemd logged for the socket.
+    shim ss 'echo "ss $*" >>"$STUB_R/calls.log"; cat "$STUB_R/fakedb/port-holder" 2>/dev/null; exit 0'
+    shim journalctl 'echo "journalctl $*" >>"$STUB_R/calls.log"; cat "$STUB_R/fakedb/journal" 2>/dev/null; exit 0'
     shim install 'a=(); while [ $# -gt 0 ]; do case "$1" in -o|-g) shift 2 ;; *) a+=("$1"); shift ;; esac; done; exec /usr/bin/install "${a[@]}"'
     shim git 'for a in "$@"; do d=$a; done; case " $* " in *" init "*) mkdir -p "$d/objects" ;; esac; exit 0'
     shim loginctl '
@@ -421,6 +428,135 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   rm "${DU}/docker.service.d/override.conf"
   docker_provision
   expect_eq 'docker drop-in lost: rewritten and restarted' "$(docker_verbs restart)" 1
+  rm -rf "${R}"
+
+  # -- reserved box ports ---------------------------------------------------------
+  # The kernel's ephemeral range contains the box range, so an outgoing loopback
+  # connection could take a box port and stop that box's socket from binding.
+  # Every provision reserves the range, live and across reboots, and keeps any
+  # reservation that already existed.
+  PROC_PORTS=proc/sys/net/ipv4/ip_local_reserved_ports
+  SYSCTL_DROPIN=etc/sysctl.d/90-ficus-box-ports.conf
+  make_host
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'reservation: provision succeeds' "$PROV_RC" 0
+  expect_eq 'reservation: the live list now holds the callback port and the box range' \
+    "$(cat "${R}/${PROC_PORTS}")" '50080,50100-59999'
+  expect_eq 'reservation: persisted for boot' \
+    "$(grep -v '^#' "${R}/${SYSCTL_DROPIN}")" 'net.ipv4.ip_local_reserved_ports = 50080,50100-59999'
+  rm -rf "${R}"
+
+  make_host
+  printf '8080,9000-9010\n' >"${R}/${PROC_PORTS}"
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'reservation merge: existing reservations are kept, live' \
+    "$(cat "${R}/${PROC_PORTS}")" '8080,9000-9010,50080,50100-59999'
+  expect_eq 'reservation merge: and for boot' \
+    "$(grep -v '^#' "${R}/${SYSCTL_DROPIN}")" 'net.ipv4.ip_local_reserved_ports = 8080,9000-9010,50080,50100-59999'
+  rm -rf "${R}"
+
+  # The kernel prints its list merged into maximal ranges.
+  make_host
+  printf '50000-50090,50100-61000\n' >"${R}/${PROC_PORTS}"
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'reservation already covered: live list untouched' "$(cat "${R}/${PROC_PORTS}")" '50000-50090,50100-61000'
+  expect_eq 'reservation already covered: boot drop-in records the live list' \
+    "$(grep -v '^#' "${R}/${SYSCTL_DROPIN}")" 'net.ipv4.ip_local_reserved_ports = 50000-50090,50100-61000'
+  rm -rf "${R}"
+
+  make_host
+  printf '50080,50100-55000\n' >"${R}/${PROC_PORTS}"
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'reservation partly covered: completed' "$(cat "${R}/${PROC_PORTS}")" '50080,50100-55000,50080,50100-59999'
+  rm -rf "${R}"
+
+  # A host that cannot set it still provisions, loudly.
+  make_host
+  rm "${R}/${PROC_PORTS}"
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'reservation unavailable: provision still succeeds' "$PROV_RC" 0
+  expect_eq 'reservation unavailable: warns' \
+    "$(grep -c 'WARNING could not reserve the Ficus port range' "${R}/stderr.log")" 1
+  rm -rf "${R}"
+
+  # -- box port guard -------------------------------------------------------------
+  # Box processes may not bind the Ficus range. In user mode the box's own
+  # systemd --user manager (inside the guarded slice) binds the box socket, so
+  # exactly that port stays allowed.
+  guard_deny_lines=$'SocketBindDeny=ipv4:tcp:50080\nSocketBindDeny=ipv6:tcp:50080\nSocketBindDeny=ipv4:tcp:50100-59999\nSocketBindDeny=ipv6:tcp:50100-59999'
+  make_host
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'system port guard: denies the whole range in the box slice, allows nothing' \
+    "$(cat "${R}/etc/systemd/system/ficus-box-${BOX}.slice.d/60-ficus-box-ports.conf")" \
+    "$(printf '[Slice]\n%s' "${guard_deny_lines}")"
+  expect_eq 'system port guard: the socket unit stays outside the box slice (PID1 binds it there)' \
+    "$(grep -c '^Slice=' "${R}/etc/systemd/system/ficus-box-${BOX}.socket" || true)" 0
+  expect_eq 'system port guard: says when systemd cannot enforce it' \
+    "$(grep -c 'port guard (SocketBindDeny) is not enforced' "${R}/stderr.log")" 1
+  rm -rf "${R}"
+
+  make_host
+  provision --sandbox-id squad_x --unit-mode user
+  expect_eq 'user port guard: allows only its own port, then denies the range' \
+    "$(cat "${R}/etc/systemd/system/user-1001.slice.d/60-ficus-box-ports.conf")" \
+    "$(printf '[Slice]\nSocketBindAllow=ipv4:tcp:20001\n%s' "${guard_deny_lines}")"
+  expect_eq 'user port guard: the guard dry run renders the installed file' \
+    "$(PATH="${R}/.shims:${PATH}" STUB_R="${R}" FICUS_HOST_ROOT="${R}" bash "${TARGET}" --unix-user "${BOX}" --port 20001 --unit-mode user --print-port-guard)" \
+    "$(cat "${R}/etc/systemd/system/user-1001.slice.d/60-ficus-box-ports.conf")"
+  # Switching modes moves the guard with the slice.
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'mode switch: the user-slice guard is gone' \
+    "$([[ -e ${R}/etc/systemd/system/user-1001.slice.d/60-ficus-box-ports.conf ]] && echo present || echo gone)" gone
+  expect_eq 'mode switch: the system-slice guard is in place' \
+    "$([[ -f ${R}/etc/systemd/system/ficus-box-${BOX}.slice.d/60-ficus-box-ports.conf ]] && echo present || echo gone)" present
+  rm -rf "${R}"
+
+  # -- busy port --------------------------------------------------------------------
+  # systemctl only says "Job failed". Provisioning prints systemd's own reason
+  # and the port's holder, and exits 75 (transient, Core retries) only when the
+  # port is really held.
+  for mode in system user; do
+    sandbox_id=agent_busy
+    [ "$mode" = system ] || sandbox_id=squad_busy
+    make_host
+    touch "${R}/fakedb/fail-start"
+    printf 'ESTAB 0 0 127.0.0.1:20001 127.0.0.1:50080 users:(("sshd",pid=4242,fd=9))\n' >"${R}/fakedb/port-holder"
+    printf 'ficus.socket: Failed to create listening socket (127.0.0.1:20001): Address already in use\n' >"${R}/fakedb/journal"
+    provision --sandbox-id "$sandbox_id" --unit-mode "$mode"
+    expect_eq "$mode busy port: exits with the port-busy status" "$PROV_RC" 75
+    expect_eq "$mode busy port: no UID marker" "$(grep -c '^FICUS_BOX_UID=' "${R}/stdout.log" || true)" 0
+    expect_eq "$mode busy port: prints the marker line" \
+      "$(grep -c '^box-provision.sh: FICUS_BOX_PORT_BUSY port=20001$' "${R}/stderr.log")" 1
+    expect_eq "$mode busy port: prints the holder" "$(grep -c 'users:(("sshd",pid=4242' "${R}/stderr.log")" 1
+    expect_eq "$mode busy port: prints systemd's reason" "$(grep -c 'Address already in use' "${R}/stderr.log")" 1
+    expect_eq "$mode busy port: asked ss for the exact port" \
+      "$(grep -c '^ss -Htanp sport = :20001$' "${R}/calls.log")" 1
+    if [ "$mode" = system ]; then
+      expect_eq 'system busy port: journal of the system socket unit' \
+        "$(grep -c "^journalctl --no-pager -n 20 -u ficus-box-${BOX}.socket$" "${R}/calls.log")" 1
+    else
+      expect_eq 'user busy port: journal of the user socket unit under the box uid' \
+        "$(grep -c '^journalctl --no-pager -n 20 _UID=1001 USER_UNIT=ficus-sandbox-server.socket$' "${R}/calls.log")" 1
+    fi
+    rm -rf "${R}"
+  done
+
+  # systemd's reason alone is enough (the holder may already be gone).
+  make_host
+  touch "${R}/fakedb/fail-start"
+  printf 'Failed to create listening socket (127.0.0.1:20001): Address already in use\n' >"${R}/fakedb/journal"
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'busy port from the journal alone: still the port-busy status' "$PROV_RC" 75
+  rm -rf "${R}"
+
+  # Any other socket failure stays a plain (terminal) failure.
+  make_host
+  touch "${R}/fakedb/fail-start"
+  printf 'ficus.socket: Failed with result resources\n' >"${R}/fakedb/journal"
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'other socket failure: generic failure status' "$PROV_RC" 1
+  expect_eq 'other socket failure: still prints systemd reason' "$(grep -c 'Failed with result resources' "${R}/stderr.log")" 1
+  expect_eq 'other socket failure: no port-busy marker' "$(grep -c FICUS_BOX_PORT_BUSY "${R}/stderr.log" || true)" 0
   rm -rf "${R}"
 
 fi

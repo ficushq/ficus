@@ -185,6 +185,8 @@ export function parseCapabilities(stdout: string): MachineCapabilities {
     if (p.browser === 'available' || p.browser === 'unavailable') caps.browser = p.browser
     // Only meaningful alongside browser=unavailable; keep it whenever present.
     if (typeof p.browserReason === 'string') caps.browserReason = p.browserReason
+    if (p.boxPorts === 'reserved' || p.boxPorts === 'unreserved') caps.boxPorts = p.boxPorts
+    if (p.socketBind === 'enforced' || p.socketBind === 'unsupported') caps.socketBind = p.socketBind
     return caps
   }
   throw new Error(`no ${CAPS_PREFIX} line found in bootstrap output`)

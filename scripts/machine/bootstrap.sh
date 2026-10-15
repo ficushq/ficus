@@ -1876,8 +1876,104 @@ detect_docker() {
   printf 'rootless'
 }
 
+# >>> ficus-box-ports: kept byte-identical in bootstrap.sh and box-provision.sh
+#
+# Ports Ficus owns on this machine's loopback: Core's reverse-tunnel callback
+# (50080) and the box socket range (50100-59999). Core allocates box ports from
+# the same range (apps/core/src/services/machines/box-ports.ts), and
+# box-ports.test.ts keeps all three copies in agreement.
+#
+# The kernel's default ephemeral range (32768-60999) contains all of them, so an
+# outgoing loopback connection (Core's sshd forwards, box -> callback traffic)
+# could take a box port as its local port. That box's socket then fails to bind
+# with EADDRINUSE. Listing the ports in net.ipv4.ip_local_reserved_ports stops
+# the kernel from auto-assigning them. Explicit binds still work: PID1, the box
+# user managers and sshd keep binding their sockets.
+FICUS_BOX_RESERVED_PORTS="50080,50100-59999"
+FICUS_BOX_PORTS_SYSCTL_KEY="net.ipv4.ip_local_reserved_ports"
+# Late in sysctl.d order so it applies after the distro defaults. It carries the
+# MERGED value (whatever was already reserved, plus ours), so applying it at
+# boot keeps the other reservations too.
+FICUS_BOX_PORTS_SYSCTL_DROPIN="${FICUS_HOST_ROOT}/etc/sysctl.d/90-ficus-box-ports.conf"
+FICUS_BOX_PORTS_PROC="${FICUS_HOST_ROOT}/proc/sys/net/ipv4/ip_local_reserved_ports"
+
+# 0 when the reserved-ports list $1 (the kernel's `a,b-c` syntax) covers every
+# Ficus port. The kernel prints its list merged into maximal ranges, so each of
+# our ranges is covered exactly when one listed range contains it.
+box_ports_reserved_in() {
+  local list="${1//[[:space:]]/}" want lo hi item ilo ihi covered
+  for want in ${FICUS_BOX_RESERVED_PORTS//,/ }; do
+    lo="${want%-*}"
+    hi="${want#*-}"
+    covered=false
+    for item in ${list//,/ }; do
+      ilo="${item%-*}"
+      ihi="${item#*-}"
+      [[ "${ilo}" =~ ^[0-9]+$ && "${ihi}" =~ ^[0-9]+$ ]] || continue
+      if [ "${ilo}" -le "${lo}" ] && [ "${ihi}" -ge "${hi}" ]; then
+        covered=true
+        break
+      fi
+    done
+    [ "${covered}" = true ] || return 1
+  done
+}
+
+# Reserve the Ficus ports, live and across reboots, without dropping anything
+# already reserved. Idempotent: a host whose live value and drop-in both cover
+# the range is left untouched. Writing /proc/sys is exactly what `sysctl -w`
+# does; going through the file keeps the FICUS_HOST_ROOT test seam honest.
+ensure_box_port_reservation() {
+  local live merged persisted
+  live="$(cat "${FICUS_BOX_PORTS_PROC}" 2>/dev/null)" || {
+    echo "box ports: cannot read ${FICUS_BOX_PORTS_PROC}" >&2
+    return 1
+  }
+  live="${live//[[:space:]]/}"
+  if box_ports_reserved_in "${live}"; then
+    merged="${live}"
+  else
+    merged="${live:+${live},}${FICUS_BOX_RESERVED_PORTS}"
+    printf '%s\n' "${merged}" | "${SUDO[@]}" tee "${FICUS_BOX_PORTS_PROC}" >/dev/null || {
+      echo "box ports: failed to set ${FICUS_BOX_PORTS_SYSCTL_KEY}=${merged}" >&2
+      return 1
+    }
+    echo "box ports: reserved ${FICUS_BOX_RESERVED_PORTS} (${FICUS_BOX_PORTS_SYSCTL_KEY} was '${live}')" >&2
+  fi
+  persisted="$(sed -n 's/^net\.ipv4\.ip_local_reserved_ports[[:space:]]*=[[:space:]]*//p' \
+    "${FICUS_BOX_PORTS_SYSCTL_DROPIN}" 2>/dev/null | tail -n1)"
+  if ! box_ports_reserved_in "${persisted}"; then
+    "${SUDO[@]}" install -d -m 0755 "$(dirname "${FICUS_BOX_PORTS_SYSCTL_DROPIN}")"
+    printf '# Ficus box ports (callback + box sockets), merged with prior reservations.\n%s = %s\n' \
+      "${FICUS_BOX_PORTS_SYSCTL_KEY}" "${merged}" \
+      | "${SUDO[@]}" install -m 0644 /dev/stdin "${FICUS_BOX_PORTS_SYSCTL_DROPIN}"
+  fi
+}
+# <<< ficus-box-ports
+
+# Whether the kernel currently reserves the Ficus ports ("reserved") or could
+# still hand one out as an ephemeral port ("unreserved").
+detect_box_ports() {
+  if box_ports_reserved_in "$(cat "${FICUS_BOX_PORTS_PROC}" 2>/dev/null)"; then
+    printf 'reserved'
+  else
+    printf 'unreserved'
+  fi
+}
+
+# Whether systemd enforces the box port guard (SocketBindDeny= in each box's
+# slice, box-provision.sh render_port_guard). It needs systemd built with
+# BPF_FRAMEWORK. Ubuntu 24.04's build lacks it and ignores the directive.
+detect_socket_bind() {
+  if systemctl --version 2>/dev/null | grep -q -- '+BPF_FRAMEWORK'; then
+    printf 'enforced'
+  else
+    printf 'unsupported'
+  fi
+}
+
 print_capabilities() {
-  local arch cpus mem_mb disk_gb kernel docker forwarding browser_json
+  local arch cpus mem_mb disk_gb kernel docker forwarding browser_json box_ports socket_bind
   arch="$(uname -m)"
   cpus="$(nproc)"
   mem_mb="$(awk '/^MemTotal:/ {printf "%d", $2 / 1024}' /proc/meminfo)"
@@ -1885,6 +1981,8 @@ print_capabilities() {
   kernel="$(uname -r)"
   docker="$(detect_docker)"
   forwarding="$(detect_forwarding)"
+  box_ports="$(detect_box_ports)"
+  socket_bind="$(detect_socket_bind)"
   # Browser availability, set by verify_browser (a global, seen here because main
   # runs in this same shell). The control plane reads capabilities.browser to show
   # a misconfigured host; on unavailable it also carries a fixed reason token.
@@ -1894,8 +1992,8 @@ print_capabilities() {
   else
     browser_json="$(printf '"browser":"unavailable","browserReason":"%s"' "${BROWSER_REASON:-not_verified}")"
   fi
-  printf 'FICUS_CAPS_JSON: {"arch":"%s","cpus":%s,"memMb":%s,"diskGb":%s,"kernel":"%s","docker":"%s","forwarding":"%s",%s}\n' \
-    "${arch}" "${cpus}" "${mem_mb}" "${disk_gb}" "${kernel}" "${docker}" "${forwarding}" "${browser_json}"
+  printf 'FICUS_CAPS_JSON: {"arch":"%s","cpus":%s,"memMb":%s,"diskGb":%s,"kernel":"%s","docker":"%s","forwarding":"%s","boxPorts":"%s","socketBind":"%s",%s}\n' \
+    "${arch}" "${cpus}" "${mem_mb}" "${disk_gb}" "${kernel}" "${docker}" "${forwarding}" "${box_ports}" "${socket_bind}" "${browser_json}"
 }
 
 # C-FIN normal paths refuse old/pending layouts before any host effects.
@@ -1993,6 +2091,11 @@ main() {
     install_browser || true
   fi
   write_manifest
+  # Per-boot too: keep the kernel from auto-assigning Ficus's loopback ports
+  # (see ensure_box_port_reservation). Never fails bootstrap. box-provision.sh
+  # re-checks it on every provision, and the capabilities report the result.
+  ensure_box_port_reservation ||
+    echo "bootstrap.sh: WARNING could not reserve the Ficus port range (${FICUS_BOX_RESERVED_PORTS})" >&2
   # Chromium-sandbox check (spec §4.1/§5): loading the AppArmor profile into the
   # running kernel + starting the SYSTEM browser service are per-boot actions, so
   # this runs on BOTH the prebaked (baked layout) and BYO (install_browser) paths.

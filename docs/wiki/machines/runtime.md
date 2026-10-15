@@ -388,6 +388,45 @@ is set on k8s/docker, which keep the legacy no-enforcement path.
 (Ubuntu `useradd` leaves 0755), closing sibling reads of `~/memory`,
 `~/.ficus/skills`, `~/bin`; re-provisioning an existing box tightens it too.
 
+### Box ports: reservation, guard, and busy-port retry
+
+Every box socket and Core's reverse-tunnel callback share the machine's one
+loopback. Linux's default ephemeral range (32768-60999) used to contain all of
+them, so an outgoing loopback connection could take a box port as its local
+port and that box's socket could not bind. Three layers handle this
+(`services/machines/box-ports.ts` holds the numbers):
+
+- **Allocation.** `bindMachineBox` hands out the lowest free port in
+  `50100-59999` and reuses ports freed by removed boxes. It throws
+  `BoxPortRangeExhaustedError` when the range is full. A box row whose port is
+  outside the range (allocated before the bound) keeps that port. A stale
+  client pointed at a reused port gets a 401, because each box has its own
+  token.
+- **Kernel reservation.** `bootstrap.sh` and `box-provision.sh` share one
+  `ensure_box_port_reservation` block (kept byte-identical, checked by
+  `box-ports.test.ts`). It merges `50080,50100-59999` into
+  `net.ipv4.ip_local_reserved_ports`, live and in
+  `/etc/sysctl.d/90-ficus-box-ports.conf`, and keeps any reservation that was
+  already there. Bootstrap runs it on new hosts and on the boot-time drift
+  re-bootstrap. Every box provision re-checks it, so existing hosts converge
+  without a manual step. `capabilities.boxPorts` reports the result. Local
+  deployments on a VM machine reject explicit ports in this set.
+- **Port guard.** Each box slice gets `60-ficus-box-ports.conf` with
+  `SocketBindDeny=` for the set (IPv4 + IPv6 TCP), which also covers rootless
+  docker publishing. A user-mode slice also has `SocketBindAllow=` for the
+  box's own port, because its `systemd --user` manager binds the box socket
+  from inside that slice. It needs systemd built with `BPF_FRAMEWORK`. Stock
+  Ubuntu 24.04 lacks it and ignores the directive, which
+  `capabilities.socketBind = unsupported` reports.
+- **Busy port.** When the socket cannot start, `box-provision.sh` prints
+  systemd's status and journal for the socket plus the port's holders
+  (`ss -tanp 'sport = :<port>'`). If the port is held, it exits 75. The
+  resume path's `enable --now` does the same. Core raises `BoxPortBusyError`,
+  and the execution startup retry requeues the run on its own schedule (10s
+  to 160s, five retries) with a stream notice naming the holder. The final
+  failure keeps the full reason. Other provisioning failures stay terminal.
+  Failed keep-warm ensures back off per agent (2 min, doubling to 15 min).
+
 ## Tool paths: logical roots rebased to the box HOME
 
 The vm runtime drives the **same** client-based coding tools the k8s runtime

@@ -35,6 +35,7 @@ import { requirePermission, requireSquadPermission } from '../middleware'
 import { requireEntityPermission } from '../middleware/require-entity-permission'
 import {
   LocalDeploymentPortInUseError,
+  LocalDeploymentPortReservedError,
   LocalDeploymentPortUnavailableError,
 } from '../services/deploy/local-deployment-ports'
 
@@ -331,6 +332,7 @@ export const deploymentsRouter = new Hono()
       // are not a server fault. Checked before the crash bookkeeping below,
       // which assumes a deployment exists.
       if (err instanceof LocalDeploymentPortInUseError) return c.json({ error: err.message }, 409)
+      if (err instanceof LocalDeploymentPortReservedError) return c.json({ error: err.message }, 400)
       if (err instanceof LocalDeploymentPortUnavailableError) return c.json({ error: err.message }, 503)
       // Launch/refresh own guarded failure bookkeeping. Do not turn an
       // unverified transport outcome into a crash or overwrite stop intent.

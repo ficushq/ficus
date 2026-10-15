@@ -158,6 +158,7 @@ UNIT_MODE=""
 PRINT_SUBID_START=false
 PRINT_SLICE_LIMITS=false
 PRINT_UNITS=false
+PRINT_PORT_GUARD=false
 PREPARE_NIX_CACHE=false
 PUBLISH_NIX_CACHE=false
 MEMTOTAL_KB_OVERRIDE=""
@@ -267,6 +268,13 @@ while [ "$#" -gt 0 ]; do
       # header then the file body, then exit. Pair with
       # --unit-mode/--unix-user/--port/--sandbox-id. Used by tests.
       PRINT_UNITS=true
+      shift
+      ;;
+    --print-port-guard)
+      # Side-effect-free dry run: print the slice drop-in that keeps this box's
+      # processes off the Ficus port range (see render_port_guard), then exit.
+      # Pair with --unit-mode/--port. Used by tests.
+      PRINT_PORT_GUARD=true
       shift
       ;;
     --print-subid-start)
@@ -460,6 +468,9 @@ install_slice_limits() {
   "${SUDO[@]}" install -d -m 0755 "${dir}"
   printf '[Slice]\n%s\n' "${limits}" \
     | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "${dir}/50-ficus-box.conf"
+  # The port guard lives in the same slice and reaches systemd with the same
+  # daemon-reload below.
+  install_port_guard
   # A user-mode box keeps its user-<uid>.slice across the rename; drop the
   # drop-in it carried under the old name so the limits are set once.
   "${SUDO[@]}" systemctl daemon-reload
@@ -471,6 +482,136 @@ remove_slice_limits() {
   "${SUDO[@]}" rm -rf "$(user_slice_dropin_dir)" "$(system_slice_dropin_dir)"
   "${SUDO[@]}" systemctl daemon-reload >/dev/null 2>&1 || true
 }
+
+# --- Box port guard ----------------------------------------------------------
+#
+# A box user could otherwise bind any unallocated or parked box port (or the
+# callback port) and squat it: the owning box then cannot start, and Core's
+# traffic for that box would reach the squatter. systemd's SocketBindDeny=
+# attaches a cgroup bind filter to the box's slice, so every process in it is
+# refused, rootless docker/rootlesskit port publishing included.
+#
+# What it must NOT block:
+#   system mode  PID1 binds the box's socket from the socket unit's cgroup
+#                (system.slice, never this slice), so the slice denies the
+#                whole range.
+#   user mode    the box user's own systemd --user manager binds the socket,
+#                and it runs INSIDE user-<uid>.slice. An allow rule wins over a
+#                deny rule in the same unit, so the slice allows exactly this
+#                box's own port. The box can bind its own port and nothing else
+#                in the range.
+#   Core's sshd forwards, Core itself and the server's unix socket are outside
+#   these cgroups or not TCP, so they are unaffected.
+#
+# Enforcement needs systemd built with BPF_FRAMEWORK. Ubuntu 24.04's systemd 255
+# is built without it and silently ignores the directives, so on stock hosts the
+# drop-in is inert until systemd gains it. socket_bind_enforced reports which
+# case a host is in.
+render_port_guard() {
+  local -a lines=('[Slice]')
+  if [ "${UNIT_MODE}" = "user" ]; then
+    lines+=("SocketBindAllow=ipv4:tcp:${PORT}")
+  fi
+  local range family
+  for range in ${FICUS_BOX_RESERVED_PORTS//,/ }; do
+    for family in ipv4 ipv6; do
+      lines+=("SocketBindDeny=${family}:tcp:${range}")
+    done
+  done
+  printf '%s\n' "${lines[@]}"
+}
+
+port_guard_path() {
+  printf '%s/60-ficus-box-ports.conf' "$(slice_dropin_dir)"
+}
+
+# 0 when this host's systemd enforces SocketBindAllow=/SocketBindDeny=.
+socket_bind_enforced() {
+  systemctl --version 2>/dev/null | grep -q -- '+BPF_FRAMEWORK'
+}
+
+install_port_guard() {
+  "${SUDO[@]}" install -d -m 0755 "$(slice_dropin_dir)"
+  render_port_guard | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "$(port_guard_path)"
+  if ! socket_bind_enforced; then
+    echo "box-provision.sh: NOTE systemd here lacks BPF_FRAMEWORK, so the box port guard (SocketBindDeny) is not enforced" >&2
+  fi
+}
+
+# >>> ficus-box-ports: kept byte-identical in bootstrap.sh and box-provision.sh
+#
+# Ports Ficus owns on this machine's loopback: Core's reverse-tunnel callback
+# (50080) and the box socket range (50100-59999). Core allocates box ports from
+# the same range (apps/core/src/services/machines/box-ports.ts), and
+# box-ports.test.ts keeps all three copies in agreement.
+#
+# The kernel's default ephemeral range (32768-60999) contains all of them, so an
+# outgoing loopback connection (Core's sshd forwards, box -> callback traffic)
+# could take a box port as its local port. That box's socket then fails to bind
+# with EADDRINUSE. Listing the ports in net.ipv4.ip_local_reserved_ports stops
+# the kernel from auto-assigning them. Explicit binds still work: PID1, the box
+# user managers and sshd keep binding their sockets.
+FICUS_BOX_RESERVED_PORTS="50080,50100-59999"
+FICUS_BOX_PORTS_SYSCTL_KEY="net.ipv4.ip_local_reserved_ports"
+# Late in sysctl.d order so it applies after the distro defaults. It carries the
+# MERGED value (whatever was already reserved, plus ours), so applying it at
+# boot keeps the other reservations too.
+FICUS_BOX_PORTS_SYSCTL_DROPIN="${FICUS_HOST_ROOT}/etc/sysctl.d/90-ficus-box-ports.conf"
+FICUS_BOX_PORTS_PROC="${FICUS_HOST_ROOT}/proc/sys/net/ipv4/ip_local_reserved_ports"
+
+# 0 when the reserved-ports list $1 (the kernel's `a,b-c` syntax) covers every
+# Ficus port. The kernel prints its list merged into maximal ranges, so each of
+# our ranges is covered exactly when one listed range contains it.
+box_ports_reserved_in() {
+  local list="${1//[[:space:]]/}" want lo hi item ilo ihi covered
+  for want in ${FICUS_BOX_RESERVED_PORTS//,/ }; do
+    lo="${want%-*}"
+    hi="${want#*-}"
+    covered=false
+    for item in ${list//,/ }; do
+      ilo="${item%-*}"
+      ihi="${item#*-}"
+      [[ "${ilo}" =~ ^[0-9]+$ && "${ihi}" =~ ^[0-9]+$ ]] || continue
+      if [ "${ilo}" -le "${lo}" ] && [ "${ihi}" -ge "${hi}" ]; then
+        covered=true
+        break
+      fi
+    done
+    [ "${covered}" = true ] || return 1
+  done
+}
+
+# Reserve the Ficus ports, live and across reboots, without dropping anything
+# already reserved. Idempotent: a host whose live value and drop-in both cover
+# the range is left untouched. Writing /proc/sys is exactly what `sysctl -w`
+# does; going through the file keeps the FICUS_HOST_ROOT test seam honest.
+ensure_box_port_reservation() {
+  local live merged persisted
+  live="$(cat "${FICUS_BOX_PORTS_PROC}" 2>/dev/null)" || {
+    echo "box ports: cannot read ${FICUS_BOX_PORTS_PROC}" >&2
+    return 1
+  }
+  live="${live//[[:space:]]/}"
+  if box_ports_reserved_in "${live}"; then
+    merged="${live}"
+  else
+    merged="${live:+${live},}${FICUS_BOX_RESERVED_PORTS}"
+    printf '%s\n' "${merged}" | "${SUDO[@]}" tee "${FICUS_BOX_PORTS_PROC}" >/dev/null || {
+      echo "box ports: failed to set ${FICUS_BOX_PORTS_SYSCTL_KEY}=${merged}" >&2
+      return 1
+    }
+    echo "box ports: reserved ${FICUS_BOX_RESERVED_PORTS} (${FICUS_BOX_PORTS_SYSCTL_KEY} was '${live}')" >&2
+  fi
+  persisted="$(sed -n 's/^net\.ipv4\.ip_local_reserved_ports[[:space:]]*=[[:space:]]*//p' \
+    "${FICUS_BOX_PORTS_SYSCTL_DROPIN}" 2>/dev/null | tail -n1)"
+  if ! box_ports_reserved_in "${persisted}"; then
+    "${SUDO[@]}" install -d -m 0755 "$(dirname "${FICUS_BOX_PORTS_SYSCTL_DROPIN}")"
+    printf '# Ficus box ports (callback + box sockets), merged with prior reservations.\n%s = %s\n' \
+      "${FICUS_BOX_PORTS_SYSCTL_KEY}" "${merged}" \
+      | "${SUDO[@]}" install -m 0644 /dev/stdin "${FICUS_BOX_PORTS_SYSCTL_DROPIN}"
+  fi
+}
+# <<< ficus-box-ports
 
 highest_subid_end() {
   local file="$1" highest="${SUBID_BASE}" s c end
@@ -1620,6 +1761,53 @@ mkdir -p -- "$new"' box-home-prepare "$1"
 }
 
 
+# Exit status for "the box socket could not bind because something else holds
+# its port". Core treats exactly this status as transient and retries the run
+# with backoff (BOX_PORT_BUSY_EXIT_CODE in apps/core/src/services/machines/
+# box-port-busy.ts). Every other provisioning failure stays terminal. 75 is
+# sysexits' EX_TEMPFAIL.
+BOX_PORT_BUSY_EXIT=75
+
+# systemctl only says "Job failed. See journalctl -xe". Print what systemd
+# actually logged for the socket, and who holds the port, so the failure Core
+# records names the real cause. User-mode units log through the box user's
+# manager, which tags its lines USER_UNIT= under the box user's _UID.
+socket_failure_journal() {
+  if [ "${UNIT_MODE}" = "system" ]; then
+    "${SUDO[@]}" journalctl --no-pager -n 20 -u "$(socket_name)"
+  else
+    "${SUDO[@]}" journalctl --no-pager -n 20 "_UID=$(box_uid)" "USER_UNIT=$(socket_name)"
+  fi
+}
+
+# Any TCP socket on this port right after our bind failed is the holder: a
+# squatting listener, or an outgoing connection that took it as its local port
+# before the range was reserved (ESTABLISHED or TIME_WAIT). Needs root for -p.
+socket_port_holders() {
+  "${SUDO[@]}" ss -Htanp "sport = :${PORT}"
+}
+
+report_socket_start_failure() {
+  local status journal holders
+  status="$(sysbox status --no-pager --lines=0 "$(socket_name)" 2>&1)" || true
+  journal="$(socket_failure_journal 2>&1)" || true
+  holders="$(socket_port_holders 2>&1)" || true
+  {
+    echo "box-provision.sh: $(socket_name) failed to start (ListenStream=127.0.0.1:${PORT})"
+    echo "--- systemctl status $(socket_name) ---"
+    printf '%s\n' "${status:-<no status>}"
+    echo "--- journal for $(socket_name) (last 20 lines) ---"
+    printf '%s\n' "${journal:-<no journal entries>}"
+    echo "--- sockets holding port ${PORT} (ss -tanp 'sport = :${PORT}') ---"
+    printf '%s\n' "${holders:-<none>}"
+  } >&2
+  if [ -n "${holders}" ] || [[ "${journal}" == *"Address already in use"* ]]; then
+    echo "box-provision.sh: FICUS_BOX_PORT_BUSY port=${PORT}" >&2
+    return "${BOX_PORT_BUSY_EXIT}"
+  fi
+  return 1
+}
+
 provision_box() {
   require_machine_layout_ready || return $?
   assert_socket_proxyd
@@ -1649,6 +1837,11 @@ provision_box() {
   ensure_dirs "${home}"
   init_shared_nix_cache
   install_slice_limits
+  # Converge hosts bootstrapped before the reservation existed: every
+  # provision checks it and fixes it before the socket binds. Never fatal; a
+  # host where it cannot be set still provisions, with a loud warning.
+  ensure_box_port_reservation ||
+    echo "box-provision.sh: WARNING could not reserve the Ficus port range (${FICUS_BOX_RESERVED_PORTS}); box sockets can still collide with ephemeral ports on this host" >&2
   write_host_env "${home}"
   install_unit "${home}"
 
@@ -1681,7 +1874,12 @@ provision_box() {
   # (including with --now on the deployed systemd). Start it explicitly before
   # accepting the active-state readback.
   sysbox reenable "$(socket_name)" || return 1
-  sysbox start "$(socket_name)" || return 1
+  if ! sysbox start "$(socket_name)"; then
+    # Always non-zero: BOX_PORT_BUSY_EXIT when the port is held, else 1.
+    local start_rc=0
+    report_socket_start_failure || start_rc=$?
+    return "${start_rc}"
+  fi
   local server_enabled socket_enabled socket_active
   server_enabled="$(sysbox show -p UnitFileState --value "$(unit_name)")" || return $?
   socket_enabled="$(sysbox show -p UnitFileState --value "$(socket_name)")" || return $?
@@ -1733,6 +1931,12 @@ if [ "${PRINT_UNITS}" = true ]; then
   render_socket_unit
   printf '# path: %s\n' "$(proxy_path "${PRINT_HOME}")"
   render_proxy_unit
+  exit 0
+fi
+
+# Side-effect-free dry run (tests): print this box's port guard drop-in.
+if [ "${PRINT_PORT_GUARD}" = true ]; then
+  render_port_guard
   exit 0
 fi
 
