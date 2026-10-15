@@ -109,6 +109,7 @@ describe('message_agent voice tool', () => {
         content:
           'Check the launch plan\n\nReply to the workspace voice assistant through inbox: ficus inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant.',
         deliveryMode: 'steer',
+        wake: true,
         metadata: {
           sourceTool: 'message_agent',
         },

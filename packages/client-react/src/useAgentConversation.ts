@@ -1094,6 +1094,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         deliveryMode: item.deliveryMode,
         clientId: item.clientId,
         ...(item.assistantRouting ? { assistantRouting: item.assistantRouting } : {}),
+        // Typing into this agent's own chat is an explicit choice to talk to it, even if dormant.
+        wake: true,
       })
       if (result?.success) {
         const queued = result.queued ?? (result.status === 'running' || item.queued === true)

@@ -308,6 +308,14 @@ describe('agentsResource message methods', () => {
     expect(calls[0].options?.body).toMatchObject({ content: 'hi', deliveryMode: 'steer', clientId: 'c-1' })
   })
 
+  test('sendMessage asks to wake a dormant agent only when the caller says so', async () => {
+    const { t, calls } = mockTransport(() => ({ success: true, status: 'queued' }))
+    await agentsResource(t).sendMessage('agt-1', 'hi', { wake: true })
+    await agentsResource(t).sendMessage('agt-1', 'hi')
+    expect(calls[0].options?.body).toMatchObject({ content: 'hi', wake: true })
+    expect(calls[1].options?.body).not.toHaveProperty('wake')
+  })
+
   test('stopAgent posts to the stop endpoint', async () => {
     const { t, calls } = mockTransport()
     await agentsResource(t).stopAgent('agt-1')

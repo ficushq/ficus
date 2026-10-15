@@ -31,7 +31,7 @@ import {
 import { shouldPushAssistantUpdate } from '../services/assistant-activity/notification'
 import { BaseEntity } from './base'
 import type { InferSelectModel } from 'drizzle-orm'
-import { Agent, AgentTargetUnavailableError, AgentTerminatedError } from './Agent'
+import { Agent, AgentDormantError, AgentTargetUnavailableError, AgentTerminatedError } from './Agent'
 import { acquireAgentQueueLock } from '../services/execution/agent-admission'
 import { InboxAttachment } from './InboxAttachment'
 import { githubInboxCondition, readOutputInbox } from '../services/integrations/github/feedback-pass-read'
@@ -69,6 +69,12 @@ export interface SendInboxMessageInput {
   deliveryMode?: DeliveryMode
   /** Explicit opt-in for system-authored work that should wake a dormant agent. */
   wakeEligible?: boolean
+  /**
+   * Refuse a dormant agent recipient with AgentDormantError instead of persisting a message that
+   * would wake it. Set by direct sends that did not ask to wake; runtime deliveries leave it unset.
+   * Checked under the recipient's row lock, after the cross-squad rules.
+   */
+  refuseDormantRecipient?: boolean
   /**
    * Structured lifecycle report for a reply to a saved Assistant mailbox. Validated against the
    * request chain and persisted under server-controlled metadata; generic metadata cannot set it.
@@ -480,6 +486,7 @@ export class InboxMessage
           if (!recipient) throw new Error('Recipient agent not found')
           if (recipient.status === 'terminated') throw new AgentTerminatedError(toAgent.id)
           if (recipient.pendingDormancyAt) throw new AgentTargetUnavailableError(toAgent.id)
+          if (input.refuseDormantRecipient && recipient.status === 'dormant') throw new AgentDormantError(toAgent.id)
         }
       }
       const [created] = idempotencyKey

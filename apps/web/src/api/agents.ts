@@ -205,8 +205,12 @@ export function reportDeliveryCorrection(agentId: string, draft: string, chosen:
   return client.agents.deliveryCorrection(agentId, draft, chosen)
 }
 
+/**
+ * A message the signed-in user chose to send to this agent (an answer to its question, or a
+ * voice request they dictated). That choice is explicit, so it wakes the agent if it is dormant.
+ */
 export function sendAgentMessage(agentId: string, content: string, imageIds?: string[], deliveryMode?: DeliveryMode) {
-  return client.agents.sendMessage(agentId, content, { imageIds, deliveryMode })
+  return client.agents.sendMessage(agentId, content, { imageIds, deliveryMode, wake: true })
 }
 
 export async function getTaskAgents(taskId: string): Promise<Agent[]> {

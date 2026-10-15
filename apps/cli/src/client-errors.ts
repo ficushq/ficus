@@ -1,3 +1,15 @@
+/** A non-2xx API response. `code` is the server's machine-readable error code, when it sent one. */
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string
+  ) {
+    super(message)
+    this.name = 'ApiRequestError'
+  }
+}
+
 export function formatApiErrorPayload(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== 'object') return fallback
   const usage = formatUsage((payload as { usage?: unknown }).usage)

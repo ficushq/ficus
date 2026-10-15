@@ -589,6 +589,9 @@ export const sendInboxMessageSchema = z.object({
   content: z.string().min(1),
   metadata: z.record(z.unknown()).optional(),
   deliveryMode: z.enum(['steer', 'follow-up']).optional().default('steer'),
+  // A dormant agent recipient is refused (409 AGENT_DORMANT) unless the sender explicitly asks to
+  // wake it. System-authored sends (asSystem) keep their own wake policy and ignore this.
+  wake: z.boolean().optional(),
   // Federation: id of a local inbox message being replied to. When it is a remote-origin row
   // (metadata.remote present), the outbound send defaults its destination to that row's
   // fromAddress and threads the original envelope id.
