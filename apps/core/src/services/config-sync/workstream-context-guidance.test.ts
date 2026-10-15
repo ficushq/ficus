@@ -185,7 +185,7 @@ describe('role-independent delivery guidance', () => {
       expect(text).toContain('Preserve the full squad workflow source, including `set-completion` customizations')
       expect(text).toContain('explicit user or flow delivery choices override the default')
     }
-    for (const preset of ['solo-coding', 'reviewed-coding', 'engineering']) {
+    for (const preset of ['solo-coding', 'reviewed-coding', 'engineering', 'engineering-design-approval']) {
       const config = Bun.YAML.parse(await readRepoFile(`config/workflows/${preset}.yaml`)) as {
         definition: { completion: { mode: string } }
       }
