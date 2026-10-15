@@ -235,6 +235,7 @@ function ToolTranscriptEntry({
                 <ToolResultView
                   renderers={toolRenderers}
                   toolName={toolName}
+                  args={entry.toolArgs}
                   result={entry.toolResult}
                   isError={failed}
                 />

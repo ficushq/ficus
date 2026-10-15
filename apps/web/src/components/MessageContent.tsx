@@ -21,6 +21,8 @@ import { ActivityIcon, ChevronRightIcon, ClockIcon, MailIcon, WarningIcon, WorkS
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { ImagePreviewModal } from './ImagePreviewModal'
 import { useImageSrcs } from '../hooks/useImageSrcs'
+import { blocksImages, toolCallImages } from '../lib/tool-result-images'
+import { ToolImageStrip } from './ToolImageStrip'
 
 const LONG_HUMAN_MESSAGE_LIMIT = 1600
 
@@ -621,6 +623,7 @@ export function SingleToolCallSection({
   const isError = toolCall.isError || isIncomplete
   const result = toolCall.result || (isIncomplete ? 'Command aborted' : '')
   const firewall = useMemo(() => getToolFirewallFlag({ result: toolCall.result }), [toolCall.result])
+  const images = useMemo(() => toolCallImages(toolCall), [toolCall])
 
   return (
     <div className="text-xs">
@@ -655,13 +658,20 @@ export function SingleToolCallSection({
         completed={Boolean(toolCall.result) || toolCall.isError}
         onOpen={onToolInlineAction}
       />
+      {!expanded && images.length > 0 && <ToolImageStrip images={images} underRow />}
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-1">
           {toolCall.args && (
             <ToolArgsView renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
           )}
           {result && (
-            <ToolResultView renderers={toolRenderers} toolName={toolCall.toolName} result={result} isError={isError} />
+            <ToolResultView
+              renderers={toolRenderers}
+              toolName={toolCall.toolName}
+              args={toolCall.args}
+              result={result}
+              isError={isError}
+            />
           )}
         </div>
       )}
@@ -763,6 +773,8 @@ function BlockGroupSection({
   const [expanded, setExpanded] = useState(defaultExpanded)
   const summary = getGroupSummary(blocks)
   const firewall = useMemo(() => mostSevereFirewallFlag(blocks), [blocks])
+  // A collapsed group still shows the images its tool calls read.
+  const images = useMemo(() => blocksImages(blocks), [blocks])
 
   return (
     <div className="text-xs">
@@ -776,6 +788,7 @@ function BlockGroupSection({
         <span className="font-medium">{summary}</span>
         {firewall && <ToolFirewallBadge flag={firewall} />}
       </button>
+      {!expanded && images.length > 0 && <ToolImageStrip images={images} underRow />}
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-2">
           {blocks.map((block) => {

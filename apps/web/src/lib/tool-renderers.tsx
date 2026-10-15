@@ -2,12 +2,14 @@ import { SUBAGENT_STATUS_ROLE } from '@ficus/shared'
 import { extractToolResultDetails } from './tool-inline-actions'
 import { webStatus } from './statusPresentation'
 import clsx from 'clsx'
-import { type FC, type ReactNode } from 'react'
+import { type FC, type ReactNode, useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AnsiText } from '../components/AnsiText'
 import { parseMemoryProvenance, stripProvenanceBlock } from './memory-provenance'
 import { ClockIcon, QuestionIcon, StopIcon } from '../components/icons'
 import { ArgsScrollBox, FollowScrollBox, ToolArgsFollowProvider } from './follow-scroll'
+import { extractResultImages, imageSrcsFromContent, toolImageAlt, withoutImagePlaceholder } from './tool-result-images'
+import { ToolImageStrip } from '../components/ToolImageStrip'
 
 // --- Types ---
 
@@ -49,16 +51,20 @@ function processCarriageReturns(text: string): string {
     .join('\n')
 }
 
-function extractResultText(result: string): string {
+/**
+ * The text of a tool result. When the result also carries an image that the chat shows as a thumbnail,
+ * the read tool's "Read image file [image/png]" stand-in line is dropped; other text is kept.
+ */
+export function extractResultText(result: string): string {
   try {
     const parsed = JSON.parse(result)
     if (parsed?.content && Array.isArray(parsed.content)) {
-      return processCarriageReturns(
-        parsed.content
-          .filter((c: any) => c.type === 'text')
-          .map((c: any) => c.text)
-          .join('\n')
-      )
+      const text = parsed.content
+        .filter((c: any) => c.type === 'text')
+        .map((c: any) => c.text)
+        .join('\n')
+      const showsImage = imageSrcsFromContent(parsed.content).length > 0
+      return processCarriageReturns(showsImage ? withoutImagePlaceholder(text).trim() : text)
     }
     // If it's a plain string or doesn't have content array, return as-is
     return processCarriageReturns(result)
@@ -886,6 +892,7 @@ export function ToolArgsView({
 
 export function ToolResultView({
   toolName,
+  args,
   result,
   isError,
   autoScroll,
@@ -893,11 +900,34 @@ export function ToolResultView({
 }: {
   renderers: ToolRenderers
   toolName: string
+  /** The call's raw arguments: a read path becomes the alt text of any image the result carries. */
+  args?: string
   result: string
   isError?: boolean
   autoScroll?: boolean
 }) {
   const renderer = renderers[toolName]
+  const images = useMemo(
+    () => extractResultImages(result, { alt: toolImageAlt(toolName, args) }),
+    [result, toolName, args]
+  )
+
+  if (images.length > 0) {
+    // Any tool's image parts show as thumbnails; the remaining text (if any) renders as usual, but never
+    // the raw JSON with its base64 payload.
+    const text = extractResultText(result)
+    return (
+      <div className="space-y-1">
+        <ToolImageStrip images={images} />
+        {text.trim() &&
+          (renderer ? (
+            <renderer.ResultView result={result} isError={isError ?? false} autoScroll={autoScroll} />
+          ) : (
+            <CodeBlock isError={isError}>{text}</CodeBlock>
+          ))}
+      </div>
+    )
+  }
 
   if (!renderer) {
     // Fallback: raw display
