@@ -30,6 +30,7 @@ import {
   ASSISTANT_TASK_ID_KEY,
   type AssistantTaskMutation,
   assistantDelegationSchema,
+  fallbackTaskLabel,
 } from './assistant-activity/project'
 import { resolveOwnedAgent } from './assistant-agents'
 import {
@@ -305,7 +306,7 @@ async function dispatchAssistantTaskRequest(
           .from(assistantConversations)
           .where(eq(assistantConversations.id, conversation.id))
           .for('update')
-        return resolveOwnedAgent(tx, conversation, { squadId: task.squadId }, afterCommit)
+        return resolveOwnedAgent(tx, conversation, { squadId: task.squadId, taskLabel: task.label }, afterCommit)
       })
       for (const emit of afterCommit) emit()
     } else if (!agent || agent.status === 'terminated') {
@@ -355,7 +356,9 @@ async function dispatchAssistantTaskRequest(
             .from(assistantConversations)
             .where(eq(assistantConversations.id, conversation.id))
             .for('update')
-          return resolveOwnedAgent(tx, conversation, { squadId }, afterCommit)
+          // Same label the task row records, so the helper's purpose names the work it was handed.
+          const taskLabel = input.label ?? fallbackTaskLabel(input.request)
+          return resolveOwnedAgent(tx, conversation, { squadId, taskLabel }, afterCommit)
         })
     for (const emit of afterCommit) emit()
     kind = squadId ? 'squad' : 'background'

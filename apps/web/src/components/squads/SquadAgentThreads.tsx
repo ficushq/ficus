@@ -51,7 +51,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
 } from '../icons'
-import type { Agent, WorkStream } from '@ficus/shared'
+import { inferredConsultantOrigin, type Agent, type WorkStream } from '@ficus/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { ChatSkeleton, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { getAgentName, getAgentPrimaryLabel, agentMatchesQuery } from '../../lib/agentDisplay'
@@ -604,6 +604,9 @@ export function SquadAgentThreads({
     const terminateCheck = canTerminateAgent(agent)
     const mayTerminateAgent = managingChats && canTerminateAgents && terminateCheck.canTerminate
     const quietConsultant = agent.agentTypeId === 'consultant' && agent.status === 'idle'
+    // Assistant-made consultants carry a generated name and a task purpose; keep where they came from visible.
+    const viaAssistant = agent.agentTypeId === 'consultant' && inferredConsultantOrigin(agent) === 'assistant'
+    const statusLabel = !quietConsultant ? STATUS_LABELS[agent.status] : undefined
     const isConfirmingThis = confirmingTerminate === agent.id
 
     return (
@@ -612,7 +615,7 @@ export function SquadAgentThreads({
           type="button"
           aria-pressed={isSelected}
           onClick={() => handleAgentRowSelect(agent.id)}
-          title={`${stableName} · ${agent.agentTypeId} · ${agent.id}`}
+          title={`${stableName} · ${agent.agentTypeId}${viaAssistant ? ' via Assistant' : ''} · ${agent.id}`}
           className={clsx(
             'ficus-button ficus-button-ghost',
             'block w-full rounded-lg px-2 text-left',
@@ -626,7 +629,9 @@ export function SquadAgentThreads({
           </span>
           {!compact && (
             <span className="ml-4 mt-1 flex items-center justify-between gap-2 text-[11px] text-secondary">
-              <span className="truncate">{!quietConsultant && STATUS_LABELS[agent.status]}</span>
+              <span className="truncate">
+                {[statusLabel, viaAssistant ? 'via Assistant' : undefined].filter(Boolean).join(' · ')}
+              </span>
               {lastMessageTime && <span className="shrink-0">{lastMessageTime}</span>}
             </span>
           )}

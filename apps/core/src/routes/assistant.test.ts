@@ -692,7 +692,7 @@ async function squadFixture(owner: { id: string }, role: { id: string }) {
   return squad
 }
 
-test('independent tasks share a neutrally labeled consultant and steer by default', async () => {
+test('independent tasks share a named consultant whose purpose follows the latest task and steer by default', async () => {
   const { id, owner, request } = await fixture()
   const role = await createTestRole({ prefix, permissions: ['chat:send'] })
   const squad = await squadFixture(owner, role)
@@ -710,8 +710,10 @@ test('independent tasks share a neutrally labeled consultant and steer by defaul
   const consultant = await Agent.mustFind(receipt.agentId)
   expect(consultant.agentTypeId).toBe('consultant')
   expect(consultant.squadId).toBe(squad.id)
-  expect(consultant.metadata?.name).toBe('Assistant task')
-  expect(consultant.metadata?.purpose).toBe('Assistant squad tasks')
+  expect(consultant.metadata?.name).toBeString()
+  expect(consultant.metadata?.name).not.toBe('Assistant task')
+  expect(consultant.metadata?.purpose).toBe('Check enabled schedules')
+  expect(consultant.context).toMatchObject({ origin: 'assistant' })
   const second = await request(`/${id}/messages`, { ...body, clientId: randomUUID(), label: 'Pause the deploy stream' })
   const secondReceipt = await second.json()
   expect(secondReceipt.agentId).toBe(receipt.agentId)
@@ -721,17 +723,30 @@ test('independent tasks share a neutrally labeled consultant and steer by defaul
     .from(assistantTasks)
     .where(inArray(assistantTasks.id, [receipt.taskId, secondReceipt.taskId]))
   expect(taskRows.map((row) => row.label).sort()).toEqual(['Check enabled schedules', 'Pause the deploy stream'])
-  expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant squad tasks')
-  // Task labels are durable per scope; neither new work nor rejected retries relabel the shared helper.
+  // The shared helper's purpose follows the newest task; a rejected request leaves it alone.
+  expect((await Agent.mustFind(receipt.agentId)).metadata).toMatchObject({
+    name: consultant.metadata?.name,
+    purpose: 'Pause the deploy stream',
+  })
   const conflict = await request(`/${id}/messages`, {
     ...body,
     request: 'Different request',
     label: 'Reroute the deploy pipeline',
   })
   expect(conflict.status).toBe(409)
-  expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant squad tasks')
+  expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Pause the deploy stream')
+  // Continuing the same task keeps a purpose the consultant refined for itself.
+  await Agent.update(receipt.agentId, { purpose: 'Pause deploys until Monday' })
+  const continued = await request(`/${id}/tasks/${secondReceipt.taskId}/commands`, {
+    operation: 'continue',
+    clientId: randomUUID(),
+    expectedRequestId: secondReceipt.id,
+    request: 'Also pause staging',
+  })
+  expect(continued.status).toBe(200)
+  expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Pause deploys until Monday')
   const rows = await db.select().from(inbox).where(eq(inbox.recipientId, receipt.agentId))
-  expect(rows.map((row) => row.deliveryMode)).toEqual(['steer', 'steer'])
+  expect(rows.map((row) => row.deliveryMode)).toEqual(['steer', 'steer', 'steer'])
   const general = await request(`/${id}/messages`, {
     clientId: randomUUID(),
     request: 'General task',
@@ -741,7 +756,7 @@ test('independent tasks share a neutrally labeled consultant and steer by defaul
   agentIds.push(generalReceipt.agentId)
   expect(generalReceipt.kind).toBe('background')
   expect(generalReceipt.agentId).not.toBe(receipt.agentId)
-  expect((await Agent.mustFind(generalReceipt.agentId)).metadata?.purpose).toBe('Assistant background tasks')
+  expect((await Agent.mustFind(generalReceipt.agentId)).metadata?.purpose).toBe('General task')
   const owned = await db
     .select()
     .from(assistantConversationAgents)
@@ -1746,6 +1761,8 @@ for (const status of ['terminated', 'deleted'] as const) {
     agentIds.push(retry.agentId)
     expect(retry.taskId).toBe(first.taskId)
     expect(retry.agentId).not.toBe(first.agentId)
+    // The replacement is named for the task it recovers, taken from the unlabeled request's first line.
+    expect((await Agent.mustFind(retry.agentId)).metadata?.purpose).toBe('Investigate')
     expect(await changeAssistantTask(identity, f.id, first.taskId, retryInput)).toMatchObject({
       id: retry.id,
       agentId: retry.agentId,
