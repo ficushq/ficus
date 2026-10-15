@@ -368,3 +368,63 @@ test('dropping query payloads preserves matching stored-key audit metadata', () 
   expect(interpolated.storedKeys).toEqual(['PARAMETER_SECRET'])
   expect(interpolated.value).toBe('Operation failed: Database query failed')
 })
+
+describe('ContentSafety.trimStoredValueFragments', () => {
+  const value = `S3CR3T-${randomUUID()}`
+  const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+
+  test('drops every trailing prefix of a stored value, and nothing else', () => {
+    for (let length = 1; length < value.length; length++) {
+      expect(safety.trimStoredValueFragments(`out: ${value.slice(0, length)}`, { trailing: true })).toBe('out: ')
+    }
+  })
+
+  test('drops every leading suffix of a stored value, and nothing else', () => {
+    for (let length = 1; length < value.length; length++) {
+      expect(safety.trimStoredValueFragments(`${value.slice(-length)} rest`, { leading: true })).toBe(' rest')
+    }
+  })
+
+  test('only touches the requested edges', () => {
+    const text = `${value.slice(-4)} middle ${value.slice(0, 4)}`
+    expect(safety.trimStoredValueFragments(text, {})).toBe(text)
+    expect(safety.trimStoredValueFragments(text, { trailing: true })).toBe(`${value.slice(-4)} middle `)
+    expect(safety.trimStoredValueFragments(text, { leading: true })).toBe(` middle ${value.slice(0, 4)}`)
+  })
+
+  test('leaves text that does not end in a fragment unchanged', () => {
+    const text = 'ordinary output\nline two\n'
+    expect(safety.trimStoredValueFragments(text, { leading: true, trailing: true })).toBe(text)
+    expect(safety.trimStoredValueFragments('', { leading: true, trailing: true })).toBe('')
+  })
+
+  test('finds the longest fragment of self-overlapping values', () => {
+    const overlapping = ContentSafety.fromSecretEntries([
+      { key: 'A', value: 'abab-abac' },
+      { key: 'B', value: 'aaab' },
+    ])
+    expect(overlapping.trimStoredValueFragments('x abab-aba', { trailing: true })).toBe('x ')
+    expect(overlapping.trimStoredValueFragments('x aaa', { trailing: true })).toBe('x ')
+    expect(overlapping.trimStoredValueFragments('aab y', { leading: true })).toBe(' y')
+    expect(overlapping.trimStoredValueFragments('x abax', { trailing: true })).toBe('x abax')
+  })
+
+  test('uses the longest fragment across several values and handles text shorter than a value', () => {
+    const several = ContentSafety.fromSecretEntries([
+      { key: 'SHORT', value: 'zz9' },
+      { key: 'LONG', value },
+    ])
+    expect(several.trimStoredValueFragments(`k=${value.slice(0, 10)}`, { trailing: true })).toBe('k=')
+    expect(several.trimStoredValueFragments('zz', { trailing: true })).toBe('')
+    expect(several.trimStoredValueFragments(value.slice(1, 5), { leading: true, trailing: true })).toBe(
+      value.slice(1, 5)
+    )
+  })
+
+  test('follows Secret Store updates', () => {
+    const local = ContentSafety.fromSecretEntries([])
+    expect(local.trimStoredValueFragments(`x ${value.slice(0, 6)}`, { trailing: true })).toBe(`x ${value.slice(0, 6)}`)
+    local.replaceSecretEntries([{ key: 'K', value }])
+    expect(local.trimStoredValueFragments(`x ${value.slice(0, 6)}`, { trailing: true })).toBe('x ')
+  })
+})

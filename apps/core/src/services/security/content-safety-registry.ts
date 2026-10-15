@@ -1,5 +1,10 @@
 import { getSecretStore, type SecretValueConsumer } from '../secrets/store'
-import { ContentSafety, type ContentSafetyPort, type StoredKeyRedaction } from './content-safety'
+import {
+  ContentSafety,
+  type ContentSafetyPort,
+  type StoredKeyRedaction,
+  type StoredValueFragmentEdges,
+} from './content-safety'
 
 export interface ContentSafetySecretSource {
   bindContentSafetyConsumer(consumer: SecretValueConsumer): () => void
@@ -39,6 +44,10 @@ export class ContentSafetyRegistry implements ContentSafetyPort {
 
   redactWithStoredKeys<T>(input: T): StoredKeyRedaction<T> {
     return this.#safety.redactWithStoredKeys(input)
+  }
+
+  trimStoredValueFragments(text: string, edges: StoredValueFragmentEdges): string {
+    return this.#safety.trimStoredValueFragments(text, edges)
   }
 
   dispose(): void {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, mock, test } from 'bun:test'
+import { createBashToolDefinition, DEFAULT_MAX_BYTES } from '@earendil-works/pi-coding-agent'
 import { ContentSafety } from './content-safety'
 import { wrapToolWithOutputRedaction, wrapToolsWithOutputRedaction } from './tool-output-redaction'
 
@@ -202,5 +203,319 @@ describe('post-execution stored-key audit at the inbound boundary', () => {
     }
 
     expect(detections.map((event) => event.toolCallId)).toEqual(['call-0', 'call-1'])
+  })
+})
+
+type Partial = { content?: { type: string; text?: string }[]; details?: unknown }
+type Executable = {
+  execute: (id: string, params?: unknown, signal?: AbortSignal, onUpdate?: (partial: Partial) => void) => Promise<any>
+}
+
+/** Every non-empty prefix of `value` at least `min` long, i.e. every recognisable piece of it. */
+function containsFragment(text: string, value: string, min = 4): boolean {
+  for (let start = 0; start + min <= value.length; start++) {
+    if (text.includes(value.slice(start, start + min))) return true
+  }
+  return false
+}
+
+describe('details, structured content and errors', () => {
+  test('redacts a stored value in details and structuredContent, keeping their shape', async () => {
+    const value = `CANARY_SECRET_${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const detections: unknown[] = []
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async () => ({
+        content: [{ type: 'text', text: 'ok' }],
+        details: { exitCode: 0, env: { TOKEN: value }, lines: [`echo ${value}`] },
+        structuredContent: { output: `value: ${value}\n`, truncated: false, exit_code: 0 },
+      })),
+      safety,
+      (event) => {
+        detections.push(event)
+      }
+    ) as never as Executable
+
+    const result = await wrapped.execute('call-d')
+
+    expect(result).toEqual({
+      content: [{ type: 'text', text: 'ok' }],
+      details: {
+        exitCode: 0,
+        env: { TOKEN: '[REDACTED_SECRET_ENV:SYNTHETIC_KEY]' },
+        lines: ['echo [REDACTED_SECRET_ENV:SYNTHETIC_KEY]'],
+      },
+      structuredContent: { output: 'value: [REDACTED_SECRET_ENV:SYNTHETIC_KEY]\n', truncated: false, exit_code: 0 },
+    })
+    expect(detections).toEqual([{ toolCallId: 'call-d', storedKeys: ['SYNTHETIC_KEY'] }])
+  })
+
+  test('drops details the redactor cannot copy instead of failing the tool', async () => {
+    const value = `CANARY_SECRET_${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const details = Object.defineProperty({}, 'leak', { get: () => value, enumerable: true })
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async () => ({ content: [{ type: 'text', text: value }], details })),
+      safety
+    ) as never as Executable
+
+    const result = await wrapped.execute('call-g')
+
+    expect(result).toEqual({ content: [{ type: 'text', text: '[REDACTED_SECRET_ENV:SYNTHETIC_KEY]' }] })
+  })
+
+  test('redacts a thrown error message and stack, and reports the key', async () => {
+    const value = `CANARY_SECRET_${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const detections: unknown[] = []
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async () => {
+        throw new Error(`value: ${value}\n\nCommand timed out after 5 seconds`)
+      }),
+      safety,
+      (event) => {
+        detections.push(event)
+      }
+    ) as never as Executable
+
+    const error = (await wrapped.execute('call-e').catch((caught: unknown) => caught)) as Error
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error.message).toBe('value: [REDACTED_SECRET_ENV:SYNTHETIC_KEY]\n\nCommand timed out after 5 seconds')
+    expect(String(error.stack)).not.toContain(value)
+    expect(detections).toEqual([{ toolCallId: 'call-e', storedKeys: ['SYNTHETIC_KEY'] }])
+  })
+
+  test('redacts a thrown non-Error value', async () => {
+    const value = `CANARY_SECRET_${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async () => {
+        throw `failed with ${value}`
+      }),
+      safety
+    ) as never as Executable
+
+    expect(await wrapped.execute('call-s').catch((caught: unknown) => caught)).toBe(
+      'failed with [REDACTED_SECRET_ENV:SYNTHETIC_KEY]'
+    )
+  })
+
+  test('drops the end of a value cut off at the start of a truncated error message', async () => {
+    const value = `S3CR3T-${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const message = `${value.slice(9)}\nlast line\n\n[Showing lines 2-3 of 3. Full output: /tmp/pi-bash-x.log]\n\nCommand aborted`
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async () => {
+        throw new Error(message)
+      }),
+      safety
+    ) as never as Executable
+
+    const error = (await wrapped.execute('call-t').catch((caught: unknown) => caught)) as Error
+
+    expect(error.message).toBe(message.slice(value.length - 9))
+    expect(containsFragment(`${error.message}${error.stack}`, value)).toBe(false)
+  })
+
+  test('rethrows an ordinary error itself, keeping its class and fields', async () => {
+    class OutcomeUnknownError extends Error {
+      readonly retryable = false
+    }
+    const original = new OutcomeUnknownError('Command exited with code 1')
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value: `CANARY_${randomUUID()}` }])
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async () => {
+        throw original
+      }),
+      safety
+    ) as never as Executable
+
+    expect(await wrapped.execute('call-o').catch((caught: unknown) => caught)).toBe(original)
+  })
+})
+
+describe('streamed partial updates', () => {
+  test('redacts a stored value echoed whole in a partial, including its details', async () => {
+    const value = `CANARY_SECRET_${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const detections: unknown[] = []
+    const partials: Partial[] = []
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async (...args: unknown[]) => {
+        const onUpdate = args[3] as (partial: Partial) => void
+        onUpdate({ content: [{ type: 'text', text: `value: ${value}\n` }], details: { note: value } })
+        return { content: [{ type: 'text', text: 'done' }] }
+      }),
+      safety,
+      (event) => {
+        detections.push(event)
+      }
+    ) as never as Executable
+
+    await wrapped.execute('call-p', {}, undefined, (partial) => partials.push(partial))
+
+    expect(partials).toEqual([
+      {
+        content: [{ type: 'text', text: 'value: [REDACTED_SECRET_ENV:SYNTHETIC_KEY]\n' }],
+        details: { note: '[REDACTED_SECRET_ENV:SYNTHETIC_KEY]' },
+      },
+    ])
+    expect(detections).toEqual([{ toolCallId: 'call-p', storedKeys: ['SYNTHETIC_KEY'] }])
+  })
+
+  test('never shows any part of a value split across cumulative snapshots', async () => {
+    const value = `S3CR3T-${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const output = `before\nprinting ${value}\nafter\n`
+    const partials: Partial[] = []
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async (...args: unknown[]) => {
+        const onUpdate = args[3] as (partial: Partial) => void
+        // Every possible chunk boundary: one snapshot per streamed character.
+        for (let end = 1; end <= output.length; end++) {
+          onUpdate({ content: [{ type: 'text', text: output.slice(0, end) }] })
+        }
+        return { content: [{ type: 'text', text: output }] }
+      }),
+      safety
+    ) as never as Executable
+
+    const result = await wrapped.execute('call-c', {}, undefined, (partial) => partials.push(partial))
+
+    expect(partials).toHaveLength(output.length)
+    for (const partial of partials) {
+      const text = partial.content![0]!.text!
+      expect(text.includes(value.slice(0, 2))).toBe(false)
+      expect(output.replace(value, '[REDACTED_SECRET_ENV:SYNTHETIC_KEY]').startsWith(text)).toBe(true)
+    }
+    expect(partials.at(-1)!.content![0]!.text).toBe('before\nprinting [REDACTED_SECRET_ENV:SYNTHETIC_KEY]\nafter\n')
+    expect(result.content[0].text).toBe('before\nprinting [REDACTED_SECRET_ENV:SYNTHETIC_KEY]\nafter\n')
+  })
+
+  test('passes ordinary partials through unchanged', async () => {
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value: `S3CR3T-${randomUUID()}` }])
+    const sent: Partial[] = [
+      { content: [], details: undefined },
+      { content: [{ type: 'text', text: 'building...\n' }], details: { truncation: undefined } },
+      { content: [{ type: 'text', text: 'building...\ndone\n' }], details: { fullOutputPath: '/tmp/out.log' } },
+    ]
+    const partials: Partial[] = []
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async (...args: unknown[]) => {
+        for (const partial of sent) (args[3] as (partial: Partial) => void)(partial)
+        return { content: [{ type: 'text', text: 'done' }] }
+      }),
+      safety
+    ) as never as Executable
+
+    await wrapped.execute('call-n', {}, undefined, (partial) => partials.push(partial))
+
+    expect(partials).toEqual(sent)
+  })
+})
+
+/** pi's real bash tool over synthetic operations that stream `chunks` with a pause between them. */
+function streamingBash(chunks: string[], pauseMs = 0) {
+  return createBashToolDefinition('/', {
+    operations: {
+      exec: async (_command, _cwd, options) => {
+        for (const chunk of chunks) {
+          options.onData(Buffer.from(chunk))
+          if (pauseMs > 0) await new Promise((resolve) => setTimeout(resolve, pauseMs))
+        }
+        return { exitCode: 0 }
+      },
+    },
+  })
+}
+
+describe("pi's bash tool behind the redaction wrapper", () => {
+  test('a value split across streamed chunks never appears in a live update or the result', async () => {
+    const value = `S3CR3T-${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const chunks = ['starting\nvalue: ', value.slice(0, 5), value.slice(5, 20), `${value.slice(20)}\nfinished\n`]
+    // Longer than pi's 100 ms update throttle, so each chunk produces its own snapshot.
+    const bash = streamingBash(chunks, 120)
+
+    const raw: Partial[] = []
+    await (bash as never as Executable).execute('raw', { command: 'x' }, undefined, (partial) => raw.push(partial))
+    // Precondition: unwrapped, pi does stream the value in pieces.
+    expect(raw.some((partial) => partial.content?.[0]?.text?.endsWith(`value: ${value.slice(0, 5)}`))).toBe(true)
+
+    const partials: Partial[] = []
+    const wrapped = wrapToolWithOutputRedaction(bash as never, safety) as never as Executable
+    const result = await wrapped.execute('call-b', { command: 'x' }, undefined, (partial) => partials.push(partial))
+
+    expect(partials.length).toBeGreaterThanOrEqual(chunks.length)
+    for (const partial of partials) expect(containsFragment(JSON.stringify(partial), value)).toBe(false)
+    expect(result.content[0].text).toBe('starting\nvalue: [REDACTED_SECRET_ENV:SYNTHETIC_KEY]\nfinished\n')
+    expect(containsFragment(JSON.stringify(result), value)).toBe(false)
+  })
+
+  test('ordinary streamed output is unchanged', async () => {
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value: `S3CR3T-${randomUUID()}` }])
+    const chunks = ['compiling 1/2\n', 'compiling 2/2\n', 'ok\n']
+
+    const raw: Partial[] = []
+    const rawResult = await (streamingBash(chunks, 120) as never as Executable).execute(
+      'raw',
+      { command: 'x' },
+      undefined,
+      (partial) => raw.push(partial)
+    )
+    const partials: Partial[] = []
+    const result = await (
+      wrapToolWithOutputRedaction(streamingBash(chunks, 120) as never, safety) as never as Executable
+    ).execute('call-u', { command: 'x' }, undefined, (partial) => partials.push(partial))
+
+    expect(partials).toEqual(raw)
+    expect(result.content).toEqual(rawResult.content)
+    expect(result.details).toEqual(rawResult.details)
+    expect(result.structuredContent.output).toBe(rawResult.structuredContent.output)
+  })
+
+  test('a value cut by output truncation leaves no piece in the result or structured output', async () => {
+    const value = `S3CR3T-${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    // One line longer than the display limit, so pi keeps only its last bytes:
+    // the cut falls 10 characters into the value.
+    const tail = 'y'.repeat(DEFAULT_MAX_BYTES - (value.length - 10))
+    const bash = streamingBash([`${'x'.repeat(4096)}${value}${tail}`])
+
+    const raw = await (bash as never as Executable).execute('raw', { command: 'x' })
+    // Precondition: unwrapped, the truncated output starts with the end of the value.
+    expect((raw.content[0].text as string).startsWith(value.slice(10))).toBe(true)
+
+    const result = await (wrapToolWithOutputRedaction(bash as never, safety) as never as Executable).execute('call-x', {
+      command: 'x',
+    })
+
+    expect((result.content[0].text as string).startsWith('y')).toBe(true)
+    expect(containsFragment(JSON.stringify(result), value)).toBe(false)
+  })
+
+  test('a value split across chunks of head-truncated streamed output never appears', async () => {
+    const value = `S3CR3T-${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const chunks = [`${'x'.repeat(DEFAULT_MAX_BYTES + 1000)}${value.slice(0, 8)}`, `${value.slice(8)}\ndone\n`]
+    const bash = streamingBash(chunks, 120)
+
+    const raw: Partial[] = []
+    await (bash as never as Executable).execute('raw', { command: 'x' }, undefined, (partial) => raw.push(partial))
+    expect(raw.some((partial) => containsFragment(JSON.stringify(partial), value))).toBe(true)
+
+    const partials: Partial[] = []
+    const result = await (wrapToolWithOutputRedaction(bash as never, safety) as never as Executable).execute(
+      'call-h',
+      { command: 'x' },
+      undefined,
+      (partial) => partials.push(partial)
+    )
+
+    expect(partials.length).toBeGreaterThanOrEqual(chunks.length)
+    for (const partial of partials) expect(containsFragment(JSON.stringify(partial), value)).toBe(false)
+    expect(result.structuredContent.output).toContain('[REDACTED_SECRET_ENV:SYNTHETIC_KEY]\ndone\n')
+    expect(containsFragment(JSON.stringify(result), value)).toBe(false)
   })
 })

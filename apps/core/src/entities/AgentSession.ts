@@ -160,7 +160,8 @@ export class AgentSession {
     if (storage?.agentId) {
       void setAgentSelectedModel(storage.agentId, selected).catch(() => {})
     }
-    // Redact stored secrets out of tool results before the model reads them.
+    // Redact stored secrets out of everything a tool emits (results, details,
+    // streamed partials, thrown errors) before the model, clients or storage see it.
     // This is the security boundary: nothing downstream re-redacts, because
     // anything the agent authored is the operator's own data.
     // Then screen outside content (web pages, search results, browser text) for instructions aimed at
