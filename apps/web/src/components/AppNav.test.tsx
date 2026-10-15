@@ -306,7 +306,7 @@ describe('theme quick picker placement', () => {
     voiceStatus = { enabled: true }
   })
 
-  test('sits between Settings and Inbox in the desktop right cluster, desktop-only like both neighbors', () => {
+  test('sits before Inbox, with Settings last in the desktop right cluster, desktop-only like both neighbors', () => {
     const html = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)
 
     const settingsIndex = html.indexOf('title="Settings (S)"')
@@ -316,8 +316,8 @@ describe('theme quick picker placement', () => {
     expect(settingsIndex).toBeGreaterThan(-1)
     expect(themeIndex).toBeGreaterThan(-1)
     expect(inboxIndex).toBeGreaterThan(-1)
-    expect(settingsIndex).toBeLessThan(themeIndex)
     expect(themeIndex).toBeLessThan(inboxIndex)
+    expect(inboxIndex).toBeLessThan(settingsIndex)
 
     // Same desktop-only pattern as its Settings/Inbox neighbors.
     const themeButtonStart = html.lastIndexOf('<button', themeIndex)

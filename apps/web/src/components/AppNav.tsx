@@ -221,19 +221,6 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
               <SproutIcon className="w-5 h-5" />
             </a>
 
-            <NavLink
-              to="/settings"
-              className={({ isActive }) =>
-                clsx(
-                  'hidden md:flex items-center justify-center p-2 rounded-md',
-                  isActive ? 'bg-selection text-accent-light' : 'text-muted hover:text-primary hover:bg-surface-hover'
-                )
-              }
-              title="Settings (S)"
-            >
-              <SettingsIcon className="w-5 h-5" />
-            </NavLink>
-
             <ThemeQuickPicker value={theme} presets={themePresets} />
 
             <button
@@ -252,6 +239,19 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
                 </span>
               )}
             </button>
+
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                clsx(
+                  'hidden md:flex items-center justify-center p-2 rounded-md',
+                  isActive ? 'bg-selection text-accent-light' : 'text-muted hover:text-primary hover:bg-surface-hover'
+                )
+              }
+              title="Settings (S)"
+            >
+              <SettingsIcon className="w-5 h-5" />
+            </NavLink>
           </div>
         </div>
       </header>
