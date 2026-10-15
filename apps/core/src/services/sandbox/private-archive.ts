@@ -52,6 +52,7 @@ const LIFECYCLE_CONVERGENCE_INTERVAL_MS = 60 * 1000
 const ARCHIVE_BEARING_SWEEP_BUDGET = 5
 // Dormancy keeps storage and only stops compute, like the 25-per-tick completion sweep; stay below it.
 const IDLE_CONSULTANT_DORMANCY_BUDGET = 10
+const IDLE_WORKER_DORMANCY_BUDGET = 10
 
 /** Purge once using the configured retention. Injectable for tests; never throws. */
 export function runArchivePurgeOnce(
@@ -82,6 +83,7 @@ type LifecycleConvergenceDeps = {
   dormantRetention?: (options: { maxCandidates: number }) => Promise<unknown>
   finalCleanup?: (options: { maxCandidates: number; maxWorkItems: number }) => Promise<unknown>
   idleConsultants?: (options: { maxAgents: number }) => Promise<unknown>
+  idleWorkers?: (options: { maxAgents: number }) => Promise<unknown>
   warn?: (message: string, error: unknown) => void
 }
 
@@ -128,6 +130,14 @@ export async function runAgentLifecycleConvergenceOnce(deps: LifecycleConvergenc
       async () =>
         (deps.idleConsultants ?? (await import('../agents/idle-consultants')).runIdleConsultantDormancySweep)({
           maxAgents: IDLE_CONSULTANT_DORMANCY_BUDGET,
+        }),
+    ],
+    [
+      // Always on: workers with no open stream and nothing in flight, idle past the grace period.
+      'idle worker dormancy',
+      async () =>
+        (deps.idleWorkers ?? (await import('../agents/idle-workers')).runIdleWorkerDormancySweep)({
+          maxAgents: IDLE_WORKER_DORMANCY_BUDGET,
         }),
     ],
   ]

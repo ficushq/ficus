@@ -14,18 +14,18 @@ const FAILURE_BACKOFF_MS = 60 * 60 * 1000
 /** Refusal reasons from the idle-only re-check: the consultant is in use, nothing is wrong. */
 const EXPECTED_REFUSALS = new Set(['became active', 'has a message waiting', 'was active recently'])
 
-type Executor = Pick<DbTransaction, 'select'>
-const activeExecutionOf = (agentId: SQL | typeof agents.id, executor: Executor = db) =>
+export type Executor = Pick<DbTransaction, 'select'>
+export const activeExecutionOf = (agentId: SQL | typeof agents.id, executor: Executor = db) =>
   executor
     .select({ one: sql`1` })
     .from(executions)
     .where(and(eq(executions.agentId, agentId), inArray(executions.status, [...ACTIVE_EXECUTION_STATUSES])))
-const waitingMessageOf = (agentId: SQL | typeof agents.id, executor: Executor = db) =>
+export const waitingMessageOf = (agentId: SQL | typeof agents.id, executor: Executor = db) =>
   executor
     .select({ one: sql`1` })
     .from(messages)
     .where(and(eq(messages.agentId, agentId), eq(messages.role, 'human'), eq(messages.pending, true)))
-const undeliveredInboxOf = (agentId: SQL | typeof agents.id, executor: Executor = db) =>
+export const undeliveredInboxOf = (agentId: SQL | typeof agents.id, executor: Executor = db) =>
   executor
     .select({ one: sql`1` })
     .from(inbox)

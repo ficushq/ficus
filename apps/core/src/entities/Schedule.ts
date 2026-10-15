@@ -10,6 +10,7 @@ import { BaseEntity } from './base'
 import { createLogger } from '../lib/infra/logger'
 import { formatSubagentStatuses } from '../lib/prompts/subagent-status'
 import { validateScheduleReferences } from '../services/scheduling/reference-validation'
+import { scheduleNamesAgent } from '../services/scheduling/agent-targets'
 import {
   classifyScheduleFailure,
   publicScheduleError,
@@ -385,10 +386,7 @@ export class Schedule extends BaseEntity<ScheduleJson, UpdateScheduleInput> impl
           isNull(schedules.systemKey),
           sql`(${schedules.metadata}->>'kind' IS NULL OR ${schedules.metadata}->>'kind' <> 'subagent-watchdog')`,
           or(
-            and(eq(schedules.scopeType, 'agent'), eq(schedules.scopeId, agentId)),
-            sql`${schedules.action}->'target'->>'agentId' = ${agentId}`,
-            sql`${schedules.action}->>'assigneeAgentId' = ${agentId}`,
-            sql`${schedules.action}->'agentIds' @> ${JSON.stringify([agentId])}::jsonb`,
+            scheduleNamesAgent(sql`${agentId}`),
             sql`(
               ${schedules.scopeType} = 'squad'
               AND ${schedules.action}->'target'->>'type' = 'squad_manager'

@@ -4,7 +4,8 @@ import { agents } from '../../db/schema'
 import type { DbHandle } from '../work-streams/waits'
 
 /**
- * Agent types the AUTOMATIC work-stream teardown never puts to sleep.
+ * Agent types the AUTOMATIC work-stream teardown (and the idle-worker sweep
+ * in ./idle-workers.ts) never puts to sleep.
  *
  * Managers own their squad and outlive every stream in it. Consultants are
  * ephemeral managers — spawned ad hoc, usually bound to no stream at all — so
@@ -13,7 +14,13 @@ import type { DbHandle } from '../work-streams/waits'
  * This is deliberately NOT enforced in `canTerminate`: an operator unspawning
  * a consultant by hand is a legitimate act. Only the automatic path abstains.
  */
-const AUTO_DORMANCY_EXEMPT_TYPES = ['manager', 'system-manager', 'assistant', 'assistant-worker', 'consultant'] as const
+export const AUTO_DORMANCY_EXEMPT_TYPES = [
+  'manager',
+  'system-manager',
+  'assistant',
+  'assistant-worker',
+  'consultant',
+] as const
 
 /** Whether automatic work-stream teardown must leave this agent type alone. */
 export function isAutoDormancyExempt(agentTypeId: string | null | undefined): boolean {

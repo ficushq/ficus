@@ -132,10 +132,19 @@ test('isolates every convergence sweep and caps archive-bearing work to five', a
     dormantRetention: async (options) => void calls.push(`retention:${options.maxCandidates}`),
     finalCleanup: async (options) => void calls.push(`cleanup:${options.maxCandidates}:${options.maxWorkItems}`),
     idleConsultants: async (options) => void calls.push(`idle-consultants:${options.maxAgents}`),
+    idleWorkers: async (options) => void calls.push(`idle-workers:${options.maxAgents}`),
     warn: (message) => warnings.push(message),
   })
 
-  expect(calls).toEqual(['legacy:5', 'pending', 'dormancy', 'retention:5', 'cleanup:5:5', 'idle-consultants:10'])
+  expect(calls).toEqual([
+    'legacy:5',
+    'pending',
+    'dormancy',
+    'retention:5',
+    'cleanup:5:5',
+    'idle-consultants:10',
+    'idle-workers:10',
+  ])
   expect(warnings).toEqual(['Agent legacy terminated repair sweep failed', 'Agent dormancy completion sweep failed'])
 })
 
