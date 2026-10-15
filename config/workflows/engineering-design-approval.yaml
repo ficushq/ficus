@@ -70,3 +70,6 @@ definition:
   completion:
     mode: pr-merge
     followChanges: true
+    # CI results, pushes and review comments reopen implement; merges still reach the finishing reviewer.
+    changeEventsTo:
+      step: implement

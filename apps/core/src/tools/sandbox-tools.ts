@@ -14,7 +14,11 @@ import { open } from 'node:fs/promises'
 import { detectReadImageMimeType, IMAGE_SNIFF_BYTES } from './read-image-mime'
 import { createHash } from 'node:crypto'
 import { runIdempotentSandboxOperation } from '../services/sandbox/vm/retry'
-import { FOREGROUND_BASH_GUIDANCE, normalizeBashTimeoutSeconds } from '../lib/bash-contract'
+import {
+  BASH_OUTPUT_TRUNCATION_NOTE,
+  FOREGROUND_BASH_GUIDANCE,
+  normalizeBashTimeoutSeconds,
+} from '../lib/bash-contract'
 
 /**
  * Process carriage returns in terminal output for LLM consumption.
@@ -863,6 +867,7 @@ export function createK8sSandboxedBashTool(
   const makeTool = (invocationId?: string) =>
     createBashTool(cwd, {
       operations: createHttpBashOperations(manager, sandboxId, ficusToken, { ...opts, invocationId }),
+      persistFullOutput: false,
     })
   const tool = makeTool()
   if (opts?.invocationOwnerId) {
@@ -875,7 +880,7 @@ export function createK8sSandboxedBashTool(
       return makeTool(invocationId).execute(toolCallId, params, signal, onUpdate)
     }
   }
-  tool.description = `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds (default: 180s / 3 minutes, max: 3600s / 1 hour). ${FOREGROUND_BASH_GUIDANCE}`
+  tool.description = `Execute a bash command in the current working directory. Returns stdout and stderr. ${BASH_OUTPUT_TRUNCATION_NOTE} Optionally provide a timeout in seconds (default: 180s / 3 minutes, max: 3600s / 1 hour). ${FOREGROUND_BASH_GUIDANCE}`
   return tool
 }
 

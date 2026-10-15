@@ -301,10 +301,15 @@ describe('details, structured content and errors', () => {
     )
   })
 
-  test('drops the end of a value cut off at the start of a truncated error message', async () => {
+  // Core's bash tools keep no full output file, so their footer names none.
+  test.each([
+    '[Showing lines 2-3 of 3.]',
+    '[Showing last 50.0KB of line 3 (line is 80.0KB).]',
+    '[Showing lines 2-3 of 3. Full output: /tmp/pi-bash-x.log]',
+  ])('drops the end of a value cut off at the start of a truncated error message: %s', async (footer) => {
     const value = `S3CR3T-${randomUUID()}`
     const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
-    const message = `${value.slice(9)}\nlast line\n\n[Showing lines 2-3 of 3. Full output: /tmp/pi-bash-x.log]\n\nCommand aborted`
+    const message = `${value.slice(9)}\nlast line\n\n${footer}\n\nCommand aborted`
     const wrapped = wrapToolWithOutputRedaction(
       toolWith(async () => {
         throw new Error(message)
@@ -415,9 +420,13 @@ describe('streamed partial updates', () => {
   })
 })
 
-/** pi's real bash tool over synthetic operations that stream `chunks` with a pause between them. */
+/**
+ * pi's real bash tool, configured as Core's bash tools are (no full output file), over synthetic
+ * operations that stream `chunks` with a pause between them.
+ */
 function streamingBash(chunks: string[], pauseMs = 0) {
   return createBashToolDefinition('/', {
+    persistFullOutput: false,
     operations: {
       exec: async (_command, _cwd, options) => {
         for (const chunk of chunks) {

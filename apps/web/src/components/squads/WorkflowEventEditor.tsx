@@ -38,8 +38,8 @@ export function WorkflowEventEditor({
           <span>
             <span className="block font-medium">Code hosting</span>
             <span className="block text-xs text-muted mt-1">
-              Send updates from linked pull requests and issues to the selected workflow recipient, or the delivery
-              owner by default.
+              Send CI, review, and comment updates from linked pull requests and issues to the selected step, or the
+              delivery owner by default. Merges always go to the delivery owner.
             </span>
           </span>
         </label>
@@ -50,7 +50,7 @@ export function WorkflowEventEditor({
         </p>
         {definition.completion.followChanges && (
           <label className="block text-sm">
-            Send code hosting events to
+            Send change events to
             <select
               aria-label="Code hosting recipient"
               className={`${field} mt-1`}
@@ -82,8 +82,10 @@ export function WorkflowEventEditor({
                 ))}
             </select>
             <span className="block mt-1 text-xs text-muted">
-              Or drag the Code hosting handle to an agent step. Events are retained when its agent cannot receive them;
-              they do not start a future step.
+              Change events are CI results, pushes, reviews, and comments; usually the implementation step that fixes
+              them. Merged and closed pull requests always go to the delivery owner, which finishes the stream. Or drag
+              the Code hosting handle to an agent step. Events are retained when its agent cannot receive them; they do
+              not start a future step.
             </span>
           </label>
         )}

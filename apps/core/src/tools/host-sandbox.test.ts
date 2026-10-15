@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import * as fs from 'node:fs'
 import { createHash } from 'crypto'
 import {
   chmodSync,
@@ -206,6 +207,37 @@ describe('host sandboxed coding tools', () => {
     const out = await run(bash, { command: 'echo id=$FICUS_AGENT_ID; echo store=$FICUS_AUTH_STORE' })
     expect(out).toContain('id=agent-7')
     expect(out).toContain(`store=${join(home, 'host', 'cli-auth', 'agent-7.json')}`)
+  })
+
+  test('bash output beyond the display limit is not written to disk', async () => {
+    // pi would otherwise keep it, unredacted, in a never-deleted /tmp/pi-bash-*.log on this host.
+    // Throws (writing nothing) if pi opens its full output file.
+    const createWriteStream = spyOn(fs, 'createWriteStream').mockImplementation(() => {
+      throw new Error('bash output written to disk')
+    })
+    try {
+      const bash = createHostBashTool(join(home, 'private', 'agent_a1'), {})
+      // Both a line-truncated run and one past the 1 MiB structured output limit.
+      for (const [command, lastLine] of [
+        ['seq 1 3000', '3000'],
+        ['seq 1 300000', '300000'],
+      ]) {
+        const result = (await bash.execute('call-1', { command })) as unknown as {
+          content: Array<{ text: string }>
+          details: { truncation?: { truncated: boolean }; fullOutputPath?: string }
+          structuredContent: { output: string; truncated: boolean; full_output_path?: string }
+        }
+        expect(result.content[0]!.text).toMatch(/\[Showing lines \d+-\d+ of \d+\.\]$/)
+        expect(result.details.truncation?.truncated).toBe(true)
+        expect(result.details.fullOutputPath).toBeUndefined()
+        expect(result.structuredContent.full_output_path).toBeUndefined()
+        expect(result.structuredContent.output.startsWith('1\n2\n')).toBe(true)
+        expect(result.structuredContent.output.endsWith(`\n${lastLine}\n`)).toBe(true)
+      }
+      expect(createWriteStream).not.toHaveBeenCalled()
+    } finally {
+      createWriteStream.mockRestore()
+    }
   })
 
   test('bash timeout kills the command', async () => {
