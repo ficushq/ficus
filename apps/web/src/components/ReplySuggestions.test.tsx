@@ -117,3 +117,22 @@ test('a short touch is a tap, and the mouse never starts a long press', async ()
   expect(sent).toEqual(['Not now'])
   expect(edited).toEqual([])
 })
+
+test('right-aligned without clipping: a scrolling group holds a max-content row pushed right', async () => {
+  const { container } = await renderChips()
+  const group = container.querySelector<HTMLElement>('[role="group"][aria-label="Suggested replies"]')!
+  const groupClasses = group.className.split(/\s+/)
+  // The scroll container itself is not a justify-end flex row, which would put leftmost chips out of reach.
+  expect(groupClasses).toContain('overflow-x-auto')
+  expect(groupClasses).not.toContain('justify-end')
+  expect(groupClasses).not.toContain('flex')
+  const row = group.querySelector<HTMLElement>(':scope > [data-reply-suggestions-row]')!
+  expect(group.children).toHaveLength(1)
+  const rowClasses = row.className.split(/\s+/)
+  expect(rowClasses).toEqual(expect.arrayContaining(['ml-auto', 'w-max', 'flex']))
+  expect([...row.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+    'Yes, start it',
+    'Not now',
+    'Explain more',
+  ])
+})
