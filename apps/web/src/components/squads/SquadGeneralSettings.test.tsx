@@ -23,7 +23,7 @@ const usePermissionsMock = () => ({
 type Props = Parameters<typeof SquadGeneralSettings>[0]
 
 const baseProps: Props = {
-  section: 'workflows',
+  section: 'work',
   squadId: 'squad-1',
   name: 'Ficus',
   purpose: 'Build Ficus',
@@ -354,13 +354,13 @@ describe('SquadGeneralSettings', () => {
   })
 })
 
-test('General keeps identity fields while workflows owns flow and capacity controls', () => {
+test('General keeps identity fields while Work owns flow and capacity controls', () => {
   const general = renderSettings({ section: 'general' })
   expect(general).toContain('squad-name')
   expect(general).toContain('Global collaboration')
   expect(general).not.toContain('squad-max-concurrent-work-streams')
   expect(general).not.toContain('Default workflow')
-  const work = renderSettings({ section: 'workflows' })
+  const work = renderSettings({ section: 'work' })
   expect(work).toContain('squad-max-concurrent-work-streams')
   expect(work).not.toContain('id="squad-name"')
   expect(work).not.toContain('Global collaboration')

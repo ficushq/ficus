@@ -89,7 +89,7 @@ export function SquadSettingsTab({
   }
 
   const groups = [
-    { label: 'Squad', ids: ['general', 'context', 'workflows'] },
+    { label: 'Squad', ids: ['general', 'context', 'work'] },
     { label: 'Connections', ids: ['integrations', 'notifications'] },
     { label: 'Workspace', ids: ['workspace', 'memory', 'access'] },
   ].map((group) => ({
@@ -111,7 +111,7 @@ export function SquadSettingsTab({
       <div className="min-w-0 min-h-0 flex-1 overflow-y-auto">
         <SettingsSearchDestination section={activeSection} target={searchParams.get('setting') ?? undefined}>
           {(activeSection === 'general' ||
-            activeSection === 'workflows' ||
+            activeSection === 'work' ||
             (activeSection === 'workspace' && hostRuntime)) && (
             <div className="mb-8">
               <SquadGeneralSettings
@@ -158,7 +158,7 @@ export function SquadSettingsTab({
             </div>
           )}
 
-          {activeSection === 'workflows' && <DirectMergePolicySettings squadId={squadId} />}
+          {activeSection === 'work' && <DirectMergePolicySettings squadId={squadId} />}
 
           {activeSection === 'workspace' && (
             <div className="space-y-8">

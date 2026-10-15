@@ -240,11 +240,11 @@ Squad settings use eight pages grouped by purpose:
 
 - **General:** avatar, name, description, and discovery by other squads. A **Danger zone** at the bottom holds **Archive squad**; it appears only with `squads:delete`, independent of `squads:update`, and opens the typed confirmation.
 - **Instructions:** shared squad context and instructions for individual agent types.
-- **Workflows:** default and alternate flows, selection guidance, concurrency limits, auto-parking, and merge policies.
+- **Work:** default and alternate flows, selection guidance, concurrency limits, auto-parking, and merge policies.
 - **Integrations:** enabled apps, account selection, routing, and Git author overrides.
 - **Notifications:** where this squad's notifications are delivered; credentials remain in global integration cards.
 - **Workspace:** host directory or sandbox lifecycle and logs, plus environment settings. The backend's runtime determines which controls appear.
 - **Memory:** embedding configuration, workspace indexing, and memory synchronization.
 - **Remote access:** SSH keys, known hosts, SSH configuration, and remote hosts.
 
-Old Policies, Sandbox, Environment, SSH, and Remote hosts links still resolve to the corresponding new page. Search targets for capacity and host directories follow their new owners. Saving a page updates only its fields, so unrelated settings are not overwritten.
+Old Workflows, Policies, Sandbox, Environment, SSH, and Remote hosts links still resolve to the corresponding new page. Search targets for capacity and host directories follow their new owners. Saving a page updates only its fields, so unrelated settings are not overwritten.
