@@ -38,6 +38,7 @@ import { githubInboxCondition, readOutputInbox } from '../services/integrations/
 import { visibleInboxCondition, withheldGitHubInboxCondition } from '../services/integrations/github/feedback-upgrade'
 import { githubOutputPass } from '../services/integrations/github/feedback-pass'
 import { createLogger } from '../lib/infra/logger'
+import { escapeLike } from '../services/memory/fts'
 
 const log = createLogger('inbox')
 let beforeRecipientLifecycleLockHook: (() => Promise<void>) | undefined
@@ -125,6 +126,17 @@ export interface ListInboxMessagesPageOptions {
   readState?: InboxReadState
   /** Case-insensitive substring filter on subject + content. */
   search?: string
+}
+
+/**
+ * Case-insensitive literal substring match on subject + content. LIKE wildcards in the
+ * query are escaped so a search for "100%" or "snake_case" matches those characters.
+ */
+function inboxSearchCondition(search: string | undefined): SQL | undefined {
+  const term = search?.trim()
+  if (!term) return undefined
+  const pattern = `%${escapeLike(term)}%`
+  return or(ilike(inbox.subject, pattern), ilike(inbox.content, pattern))
 }
 
 // Aliases for joining agents as sender and recipient
@@ -825,11 +837,8 @@ export class InboxMessage
     if (recipientType === 'agent') countConditions.push(visibleInboxCondition())
     if (readState === 'unread') countConditions.push(isNull(inbox.readAt))
     if (readState === 'read') countConditions.push(isNotNull(inbox.readAt))
-    const search = options.search?.trim()
-    if (search) {
-      const match = or(ilike(inbox.subject, `%${search}%`), ilike(inbox.content, `%${search}%`))
-      if (match) countConditions.push(match)
-    }
+    const match = inboxSearchCondition(options.search)
+    if (match) countConditions.push(match)
 
     const conditions = [...countConditions]
     if (options.cursorId) {
@@ -963,11 +972,8 @@ export class InboxMessage
     const countConditions: SQL[] = [eq(inbox.recipientType, 'system'), eq(inbox.recipientId, SYSTEM_RECIPIENT_ID)]
     if (readState === 'unread') countConditions.push(isNull(systemInboxReads.readAt))
     if (readState === 'read') countConditions.push(isNotNull(systemInboxReads.readAt))
-    const search = options.search?.trim()
-    if (search) {
-      const match = or(ilike(inbox.subject, `%${search}%`), ilike(inbox.content, `%${search}%`))
-      if (match) countConditions.push(match)
-    }
+    const match = inboxSearchCondition(options.search)
+    if (match) countConditions.push(match)
 
     const conditions = [...countConditions]
     if (options.cursorId) {

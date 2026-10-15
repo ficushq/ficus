@@ -11,6 +11,7 @@ import {
   canonicalAgentSigBytes,
   formatAmtpAddress,
   Permissions,
+  INBOX_SEARCH_MAX_LENGTH,
   type InboxRecipientType,
   type InboxMessageSenderType,
   type AmtpAttachmentRef,
@@ -234,7 +235,10 @@ export const inboxRouter = new Hono()
 
     if (limit !== undefined) {
       const pageLimit = Math.min(Math.max(limit || 50, 1), 200)
-      const search = c.req.query('search') || undefined
+      const search = c.req.query('search')?.trim() || undefined
+      if (search && search.length > INBOX_SEARCH_MAX_LENGTH) {
+        return c.json({ error: `search must be at most ${INBOX_SEARCH_MAX_LENGTH} characters` }, 400)
+      }
       const uid = type === 'system' ? await systemReaderUserId(c.get('identity')) : null
       const page =
         type === 'system' && uid

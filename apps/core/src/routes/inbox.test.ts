@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'bun:test'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { db, agents, inbox, systemInboxReads, squads } from '../db'
 import { Agent } from '../entities/Agent'
 import { identityMiddleware } from '../middleware/identity'
 import { inboxRouter } from './inbox'
-import { SYSTEM_RECIPIENT_ID, workspaceVoiceRecipientId } from '@ficus/shared'
+import { INBOX_SEARCH_MAX_LENGTH, SYSTEM_RECIPIENT_ID, workspaceVoiceRecipientId } from '@ficus/shared'
 import {
   assignRole,
   authHeaders,
@@ -222,6 +222,158 @@ describe('inbox routes', () => {
     const second = await secondRes.json()
     expect(second.items.map((m: { content: string }) => m.content)).toEqual(['oldest unread'])
     expect(second.hasMore).toBe(false)
+  })
+
+  describe('personal inbox archive', () => {
+    afterEach(async () => {
+      await db.delete(inbox).where(and(eq(inbox.recipientType, 'user'), eq(inbox.recipientId, admin.id)))
+    })
+
+    const pageOf = async (query: string) => {
+      const res = await app.request(`/api/inbox/user/me?${query}`, { headers: authHeaders(admin.token) })
+      expect(res.status).toBe(200)
+      return (await res.json()) as {
+        items: Array<{ id: string; content: string; readAt: string | null }>
+        hasMore: boolean
+        nextCursor: string | null
+        totalCount: number
+      }
+    }
+
+    it('counts, pages and searches the whole read archive, not just the most recent 100', async () => {
+      const base = Date.parse('2026-01-01T00:00:00Z')
+      await db.insert(inbox).values([
+        {
+          recipientType: 'user',
+          recipientId: admin.id,
+          senderType: 'system',
+          subject: 'Quarterly needle report',
+          content: 'oldest archived message',
+          readAt: new Date(base),
+          createdAt: new Date(base),
+        },
+        ...Array.from({ length: 120 }, (_, i) => ({
+          recipientType: 'user' as const,
+          recipientId: admin.id,
+          senderType: 'system' as const,
+          content: `read filler ${i}`,
+          readAt: new Date(base + (i + 1) * 60_000),
+          createdAt: new Date(base + (i + 1) * 60_000),
+        })),
+        {
+          recipientType: 'user',
+          recipientId: admin.id,
+          senderType: 'system',
+          content: 'unread needle',
+          createdAt: new Date(base + 500 * 60_000),
+        },
+      ])
+
+      const first = await pageOf('limit=50&readState=read')
+      expect(first.totalCount).toBe(121)
+      expect(first.items).toHaveLength(50)
+      expect(first.hasMore).toBe(true)
+
+      // Following the cursor walks every read message exactly once, newest first.
+      const seen = [...first.items]
+      let cursor = first.nextCursor
+      while (cursor) {
+        const next = await pageOf(`limit=50&readState=read&cursor=${cursor}`)
+        seen.push(...next.items)
+        cursor = next.hasMore ? next.nextCursor : null
+      }
+      expect(seen).toHaveLength(121)
+      expect(new Set(seen.map((m) => m.id)).size).toBe(121)
+      expect(seen.every((m) => m.readAt)).toBe(true)
+      expect(seen.at(-1)!.content).toBe('oldest archived message')
+
+      // Search spans read and unread messages across the whole archive and matches subject or content.
+      const search = await pageOf('limit=50&readState=all&search=NEEDLE')
+      expect(search.items.map((m) => m.content)).toEqual(['unread needle', 'oldest archived message'])
+      expect(search.totalCount).toBe(2)
+      expect(search.hasMore).toBe(false)
+    })
+
+    it('treats LIKE wildcards in the search as literal characters', async () => {
+      await db.insert(inbox).values(
+        ['Rollout 100% done', 'Rollout 1000 done', 'snake_case key', 'snakeXcase key', 'path a\\b', 'path ab'].map(
+          (content) => ({
+            recipientType: 'user' as const,
+            recipientId: admin.id,
+            senderType: 'system' as const,
+            content,
+          })
+        )
+      )
+      const contents = async (search: string) =>
+        (await pageOf(`limit=50&readState=all&search=${encodeURIComponent(search)}`)).items.map((m) => m.content)
+
+      expect(await contents('100%')).toEqual(['Rollout 100% done'])
+      expect(await contents('snake_case')).toEqual(['snake_case key'])
+      expect(await contents('a\\b')).toEqual(['path a\\b'])
+    })
+
+    it('rejects a search term longer than the limit and ignores surrounding whitespace', async () => {
+      await db
+        .insert(inbox)
+        .values({ recipientType: 'user', recipientId: admin.id, senderType: 'system', content: 'x' })
+      const longest = 'x'.repeat(INBOX_SEARCH_MAX_LENGTH)
+      expect((await pageOf(`limit=50&readState=all&search=${longest}`)).totalCount).toBe(0)
+      expect((await pageOf(`limit=50&readState=all&search=%20%20x%20`)).totalCount).toBe(1)
+      const res = await app.request(`/api/inbox/user/me?limit=50&readState=all&search=${longest}x`, {
+        headers: authHeaders(admin.token),
+      })
+      expect(res.status).toBe(400)
+    })
+  })
+
+  it('searches the shared system inbox with per-reader read state and counts', async () => {
+    const rows = await db
+      .insert(inbox)
+      .values([
+        {
+          recipientType: 'system',
+          recipientId: SYSTEM_RECIPIENT_ID,
+          senderType: 'system',
+          content: 'Deploy finished for beacon',
+          createdAt: new Date('2026-06-03T00:00:00Z'),
+        },
+        {
+          recipientType: 'system',
+          recipientId: SYSTEM_RECIPIENT_ID,
+          senderType: 'system',
+          subject: 'Beacon outage',
+          content: 'resolved',
+          createdAt: new Date('2026-06-02T00:00:00Z'),
+        },
+        {
+          recipientType: 'system',
+          recipientId: SYSTEM_RECIPIENT_ID,
+          senderType: 'system',
+          content: 'unrelated',
+          createdAt: new Date('2026-06-01T00:00:00Z'),
+        },
+      ])
+      .returning({ id: inbox.id })
+    await db.insert(systemInboxReads).values({ messageId: rows[1].id, userId: admin.id })
+
+    const res = await app.request(`/api/inbox/system/system?limit=1&readState=all&search=beacon`, {
+      headers: authHeaders(admin.token),
+    })
+    const page = await res.json()
+    expect(page.items.map((m: { id: string }) => m.id)).toEqual([rows[0].id])
+    expect(page.totalCount).toBe(2)
+    expect(page.hasMore).toBe(true)
+
+    const next = await (
+      await app.request(`/api/inbox/system/system?limit=1&readState=all&search=beacon&cursor=${page.nextCursor}`, {
+        headers: authHeaders(admin.token),
+      })
+    ).json()
+    expect(next.items.map((m: { id: string; readAt: string | null }) => [m.id, Boolean(m.readAt)])).toEqual([
+      [rows[1].id, true],
+    ])
+    expect(next.hasMore).toBe(false)
   })
 })
 

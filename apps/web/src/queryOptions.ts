@@ -76,7 +76,7 @@ import {
 } from './api/workspace'
 import { listInboundGrants, listOutboundGrants } from './api/grants'
 import { searchMemory, type SearchMemoryParams } from './api/memory'
-import { getMyInbox, getMyInboxUnreadCount, getSystemInbox, getSystemInboxUnreadCount } from './api/inbox'
+import { getMyInboxUnreadCount, getSystemInboxUnreadCount } from './api/inbox'
 import { listSecrets, getGitAuthorDefaults } from './api/secrets'
 import { listSettings } from './api/settings'
 import { getAuthSettings, getAuthStatus, getCurrentUser, getMyPermissions, listMyCredentials } from './api/auth'
@@ -726,20 +726,10 @@ export const queries = {
         queryKey: queryKeys.inbox.messages(agentId, includeRead),
         queryFn: () => getInboxMessages(agentId, includeRead),
       }),
-    mine: (includeRead = false) =>
-      queryOptions({
-        queryKey: queryKeys.inbox.mine(includeRead),
-        queryFn: () => getMyInbox(includeRead),
-      }),
     mineCount: () =>
       queryOptions({
         queryKey: queryKeys.inbox.mineCount(),
         queryFn: () => getMyInboxUnreadCount(),
-      }),
-    system: (includeRead = false) =>
-      queryOptions({
-        queryKey: queryKeys.inbox.system(includeRead),
-        queryFn: () => getSystemInbox(includeRead),
       }),
     systemCount: () =>
       queryOptions({
