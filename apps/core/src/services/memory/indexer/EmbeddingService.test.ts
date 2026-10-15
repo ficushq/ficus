@@ -267,7 +267,11 @@ describe('EmbeddingService.instance() singleton', () => {
           tokens: { input: 10 },
           attribution: { squadId },
         }),
-        expect.objectContaining({ feature: 'embedding:search', model: 'text-embedding-3-large', tokens: { input: 10 } }),
+        expect.objectContaining({
+          feature: 'embedding:search',
+          model: 'text-embedding-3-large',
+          tokens: { input: 10 },
+        }),
       ])
     })
   })

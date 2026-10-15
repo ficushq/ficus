@@ -19,6 +19,7 @@ import { compatibleRuntimeProvider } from './openai-compatible-runtime'
 import { registerAnthropicWithClaudeCode } from './claude-code/anthropic'
 import type { Credential, CredentialInfo, CredentialStore } from '@earendil-works/pi-ai'
 import { registerBunOAuthFlows } from '@earendil-works/pi-ai/bun-oauth'
+import { applyDetectedPlan, detectedPlanFor } from '../inference-usage/subscription-plan'
 import { KeyedSerialQueue } from '../../lib/infra/inflight'
 import { createLogger } from '../../lib/infra/logger'
 import {
@@ -146,6 +147,10 @@ export class SecretStoreCredentialStore implements CredentialStore {
           )
           resolved = current
           return false
+        }
+        // A refreshed token can carry a new plan (an upgrade): keep the detected plan current.
+        for (const account of store.accounts[providerId] ?? []) {
+          if (account.credential === next) applyDetectedPlan(account, detectedPlanFor(providerId, account))
         }
         resolved = next
         return true

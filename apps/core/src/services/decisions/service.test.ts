@@ -300,7 +300,7 @@ test('an answered decision is recorded in the inference cost ledger', async () =
     await decide('github-firewall', question, { fetcher })
     // Nobody answering costs nothing and records nothing.
     await setDecisionRouting({ ...getDecisionRouting(), default: [] }, 'test')
-    await decide('github-firewall', question)
+    await decide('github-firewall', question, { skipLog: true })
     await flushInferenceUsage()
     expect(seen).toHaveLength(2)
     expect(seen[0]).toMatchObject({
@@ -321,67 +321,65 @@ test('an answered decision is recorded in the inference cost ledger', async () =
   }
 })
 
-test('decision spend includes Lite-tier rows and unanswered attempts, and ignores other features', async () => {
-  const marker = `spend-${crypto.randomUUID()}`
-  const before = await decisionSpend(1)
+test('decision spend reads Lite-tier rows and unanswered attempts, and ignores other features', async () => {
+  // Own rows only: a unique marker as the account and purpose, so other tests' writes never count.
+  const marker = crypto.randomUUID()
+  const purpose = `spend-${marker}`
   await db.insert(inferenceUsage).values([
-    { feature: 'lite:spend-test', inputTokens: 10, outputTokens: 4, costNanodollars: 5_000_000, accountId: marker },
+    { feature: `lite:${purpose}`, inputTokens: 10, outputTokens: 4, costNanodollars: 5_000_000, accountId: marker },
+    {
+      feature: `decision:${purpose}`,
+      inputTokens: 20,
+      cacheReadTokens: 5,
+      costNanodollars: 1_000_000,
+      costEstimated: true,
+      accountId: marker,
+    },
     { feature: 'agent-turn', inputTokens: 10, costNanodollars: 9_000_000_000, accountId: marker },
   ])
-  await db.insert(decisionLog).values({
-    purpose: 'spend-test',
-    outcome: 'unavailable',
-    latencyMs: 1,
-    inputSha256: 'x',
-    source: { marker },
-  })
+  await db.insert(decisionLog).values({ purpose, outcome: 'unavailable', latencyMs: 1, inputSha256: 'x' })
   try {
     const spend = await decisionSpend(1)
-    expect(spend.byPurpose.find((row) => row.purpose === 'spend-test' && row.tier === 'lite')).toEqual({
-      purpose: 'spend-test',
-      tier: 'lite',
+    expect(spend.byPurpose.filter((row) => row.purpose === purpose)).toEqual([
+      { purpose, tier: 'lite', calls: 1, answered: 1, inputTokens: 10, outputTokens: 4, costUsd: 0.005 },
+      { purpose, calls: 2, answered: 1, inputTokens: 25, outputTokens: 0, costUsd: 0.001 },
+    ])
+    expect(spend.byProvider.find((row) => row.providerId === marker)).toEqual({
+      providerId: marker,
       calls: 1,
-      answered: 1,
-      inputTokens: 10,
-      outputTokens: 4,
-      costUsd: 0.005,
+      inputTokens: 25,
+      costUsd: 0.001,
     })
-    expect(spend.byPurpose.find((row) => row.purpose === 'spend-test' && !row.tier)).toMatchObject({
-      calls: 1,
-      answered: 0,
-      costUsd: 0,
-    })
-    expect(spend.totalUsd - before.totalUsd).toBeCloseTo(0.005, 9)
+    expect(spend.approximate).toBe(true)
+    expect(spend.totalUsd).toBeCloseTo(
+      spend.byPurpose.reduce((sum, row) => sum + row.costUsd, 0),
+      9
+    )
   } finally {
     await db.delete(inferenceUsage).where(eq(inferenceUsage.accountId, marker))
-    await db.delete(decisionLog).where(eq(decisionLog.purpose, 'spend-test'))
+    await db.delete(decisionLog).where(eq(decisionLog.purpose, purpose))
   }
 })
 
-test('spend adds up by feature and provider from the inference ledger', async () => {
+test('decide() spend adds up by provider from the inference ledger', async () => {
   const hosted = await addDecisionProvider({ kind: 'jev', apiKey: 'k' })
   const fetcher: DecisionFetch = async () =>
     Response.json({ answers: { injection: { type: 'noul', noul: 0.2 } }, usage: { input_tokens: 2_000_000 } })
-  const before = await decisionSpend(1)
-  await decide('github-firewall', question, { fetcher, source: { kind: 'test', run: 'spend' } })
-  await decide('github-firewall', question, { fetcher, source: { kind: 'test', run: 'spend' } })
-  let spend = before
-  for (let attempt = 0; attempt < 50; attempt++) {
-    spend = await decisionSpend(1)
-    if (spend.byProvider.find((row) => row.providerId === hosted.id)?.calls === 2) break
-    await Bun.sleep(20)
+  try {
+    await decide('github-firewall', question, { fetcher, source: { kind: 'test', run: 'spend' } })
+    await decide('github-firewall', question, { fetcher, source: { kind: 'test', run: 'spend' } })
+    await flushInferenceUsage()
+    // The fresh provider id is the only key no other test writes: 2 calls × 2M tokens × $0.042/M = $0.168.
+    expect((await decisionSpend(1)).byProvider.find((row) => row.providerId === hosted.id)).toEqual({
+      providerId: hosted.id,
+      calls: 2,
+      inputTokens: 4_000_000,
+      costUsd: 0.168,
+    })
+  } finally {
+    await db.delete(decisionLog).where(eq(decisionLog.providerId, hosted.id))
+    await db.delete(inferenceUsage).where(eq(inferenceUsage.accountId, hosted.id))
   }
-  // 2 calls × 2M tokens × $0.042/M = $0.168
-  expect(spend.byProvider.find((row) => row.providerId === hosted.id)).toEqual({
-    providerId: hosted.id,
-    calls: 2,
-    inputTokens: 4_000_000,
-    costUsd: 0.168,
-  })
-  const firewall = (s: typeof spend) => s.byPurpose.find((row) => row.purpose === 'github-firewall')
-  expect((firewall(spend)?.costUsd ?? 0) - (firewall(before)?.costUsd ?? 0)).toBeCloseTo(0.168, 9)
-  await db.delete(decisionLog).where(eq(decisionLog.providerId, hosted.id))
-  await db.delete(inferenceUsage).where(eq(inferenceUsage.accountId, hosted.id))
 })
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='

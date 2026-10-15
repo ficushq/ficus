@@ -26,7 +26,15 @@ import {
   type CredentialInfo,
   type CredentialStore,
 } from '@earendil-works/pi-ai'
-import { providerLabel, resolveProviderHealthRecord, type ProviderHealthKind } from '@ficus/shared'
+import {
+  planLabel,
+  providerLabel,
+  resolveProviderHealthRecord,
+  subscriptionPlansFor,
+  type ProviderHealthKind,
+} from '@ficus/shared'
+import { isSubscriptionAccount } from '../services/inference-usage/billing'
+import { effectiveMonthlyPrice } from '../services/inference-usage/subscription-plan'
 import { db, modelTiers } from '../db'
 import { detectLocalServers, probeOpenAICompatible } from '../services/model-selection/openai-compatible'
 import { getModelRuntime, refreshModelRuntime, tryGetModelRuntime } from '../services/agent/auth-backend'
@@ -152,7 +160,57 @@ export function accountSummary(provider: string, account: Account) {
     baseUrl: account.baseUrl,
     model: account.model,
     capabilities: account.capabilities,
+    createdAt: account.createdAt,
+    subscription: subscriptionSummary(provider, account),
   }
+}
+
+/** A subscription account's plan and monthly price, as Settings shows them; undefined for other accounts. */
+export function subscriptionSummary(provider: string, account: Account) {
+  if (!isSubscriptionAccount(account)) return undefined
+  const subscription = account.subscription
+  const price = effectiveMonthlyPrice(provider, subscription)
+  return {
+    plan: subscription?.plan ?? null,
+    planLabel: subscription?.plan ? planLabel(provider, subscription.plan) : null,
+    planSource: subscription?.planSource ?? null,
+    detectedPlan: subscription?.detectedPlan ?? null,
+    monthlyPriceUsd: price.monthlyUsd,
+    priceSource: price.source,
+    needsChoice: price.monthlyUsd === null,
+  }
+}
+
+/** Validates an admin's subscription edit; returns an error message or the patch. */
+function subscriptionPatch(
+  provider: string,
+  value: unknown
+): { error: string } | { patch?: { plan?: string | null; monthlyPriceUsd?: number | null } } {
+  if (value === undefined) return {}
+  if (!value || typeof value !== 'object') return { error: 'subscription must be an object' }
+  const input = value as { plan?: unknown; monthlyPriceUsd?: unknown }
+  const patch: { plan?: string | null; monthlyPriceUsd?: number | null } = {}
+  if ('plan' in input) {
+    if (input.plan === null || input.plan === '') patch.plan = null
+    else if (typeof input.plan !== 'string' || input.plan.length > 64) return { error: 'Invalid plan' }
+    else {
+      const plans = subscriptionPlansFor(provider)
+      if (plans && !(input.plan in plans)) return { error: `Unknown plan "${input.plan}"` }
+      patch.plan = input.plan
+    }
+  }
+  if ('monthlyPriceUsd' in input) {
+    if (input.monthlyPriceUsd === null) patch.monthlyPriceUsd = null
+    else if (
+      typeof input.monthlyPriceUsd !== 'number' ||
+      !Number.isFinite(input.monthlyPriceUsd) ||
+      input.monthlyPriceUsd < 0 ||
+      input.monthlyPriceUsd > 100_000
+    )
+      return { error: 'Monthly price must be a number of dollars from 0 to 100000' }
+    else patch.monthlyPriceUsd = input.monthlyPriceUsd
+  }
+  return { patch }
 }
 
 function providerSummary(provider: string, accounts: Account[]) {
@@ -562,11 +620,17 @@ app.put('/:provider/accounts/order', requirePermission('provider-auth:write'), a
 app.put('/:provider/accounts/:accountId', requirePermission('provider-auth:write'), async (c) => {
   const provider = c.req.param('provider')
   const accountId = c.req.param('accountId')
-  const body = await c.req.json<{ label?: string; enabled?: boolean }>()
+  const body = await c.req.json<{ label?: string; enabled?: boolean; subscription?: unknown }>()
+  const subscription = subscriptionPatch(provider, body.subscription)
+  if ('error' in subscription) return c.json({ error: subscription.error }, 400)
   let account: Account | undefined
   await mutateAccountStore(
     (store) => {
-      account = updateAccount(store, provider, accountId, { label: body.label, enabled: body.enabled })
+      account = updateAccount(store, provider, accountId, {
+        ...('label' in body ? { label: body.label } : {}),
+        enabled: body.enabled,
+        ...(subscription.patch ? { subscription: subscription.patch } : {}),
+      })
       if (!account) return false // nothing to write
     },
     auditActor(c.get('identity') as Identity)
