@@ -1894,7 +1894,8 @@ export class DockerSandboxManager implements ISandboxManager {
     sandboxId: string,
     args: string[],
     onStdout: (chunk: Buffer) => void,
-    onStderr: (chunk: Buffer) => void = () => {}
+    onStderr: (chunk: Buffer) => void = () => {},
+    onEnd?: () => void
   ): { cancel: () => void } {
     const sandbox = this.sandboxes.get(sandboxId)
     if (!sandbox) throw new Error(`No sandbox found for ${sandboxId}`)
@@ -1922,8 +1923,10 @@ export class DockerSandboxManager implements ISandboxManager {
       }
     }
 
-    pump(proc.stdout, onStdout)
+    // `end` follows the stdout pump so every chunk is delivered before it.
+    const stdoutDone = pump(proc.stdout, onStdout)
     pump(proc.stderr, onStderr)
+    if (onEnd) void Promise.all([stdoutDone, proc.exited.catch(() => {})]).then(() => onEnd())
 
     return { cancel: () => proc.kill() }
   }

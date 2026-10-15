@@ -1534,6 +1534,13 @@
       "when": 1792087773605,
       "tag": "0218_agent_secret_exposures",
       "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1792099851794,
+      "tag": "0219_monitor_restart_supervision",
+      "breakpoints": true
     }
   ]
 }

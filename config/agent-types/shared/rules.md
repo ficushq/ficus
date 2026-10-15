@@ -12,6 +12,8 @@ Example: noisy: `while true; do echo "still running"; sleep 60; done`; quiet: `w
 
 Create monitors with `create`, inspect them with `get`/`list`, and `cancel` them when no longer needed. Monitor follow-up events help you react to changes, but they do not replace normal tests or foreground verification commands.
 
+Monitors survive Core restarts. If the sandbox restarts, a monitor fails by default (`restart: "never"`); set `restart: "on-loss"` only for idempotent, safe-to-rerun watchers (for example `tail -F | grep` or a quiet watch loop) so the command is relaunched automatically, never for one-shot or side-effecting commands.
+
 ### Messaging / Shell Safety
 
 - When running any CLI command from a shell:

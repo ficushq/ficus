@@ -25,6 +25,16 @@ const monitor: Monitor = {
   startedAt: '2026-06-10T00:00:01.000Z',
   endedAt: null,
   failureReason: null,
+  failureKind: null,
+  restartPolicy: 'never',
+  restartLimit: 5,
+  restartCount: 0,
+  rapidRestartCount: 0,
+  launchedAt: '2026-06-10T00:00:01.000Z',
+  deadlineAt: '2026-06-10T00:00:31.000Z',
+  nextRestartAt: null,
+  lastRestartAt: null,
+  lastRestartReason: null,
 }
 
 describe('MonitorsList', () => {
@@ -47,6 +57,24 @@ describe('MonitorsList', () => {
     expect(html).toContain('Cancel')
     expect(html).toContain('disabled=""')
     expect(html).toContain('You do not have permission to cancel monitors')
+  })
+
+  it('shows the restart policy, restart count and a pending relaunch', () => {
+    const never = renderToStaticMarkup(<MonitorsList rows={[monitor]} onSelect={() => {}} onCancel={() => {}} />)
+    expect(never).toContain('Restart')
+    expect(never).toContain('>never<')
+
+    const restarting: Monitor = {
+      ...monitor,
+      restartPolicy: 'on-loss',
+      restartCount: 2,
+      rapidRestartCount: 1,
+      nextRestartAt: '2026-06-10T00:05:00.000Z',
+      lastRestartReason: 'sandbox restarted',
+    }
+    const html = renderToStaticMarkup(<MonitorsList rows={[restarting]} onSelect={() => {}} onCancel={() => {}} />)
+    expect(html).toContain('on-loss · 2 restarts · relaunch pending')
+    expect(html).toContain('title="sandbox restarted"')
   })
 
   it('renders an empty state', () => {
