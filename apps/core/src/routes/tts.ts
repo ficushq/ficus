@@ -51,7 +51,29 @@ const SPEECH_REFORMAT_PROMPT = `After each user prompt, prepare it for speech sy
 - Remove any markdown formatting (headers, bold, italic, links, tables, code, etc.)
 - Your output will be read aloud, so ensure it makes sense when spoken.`
 
-async function reformatForSpeech(text: string, attribution: InferenceAttribution): Promise<string> {
+/** Who a read-aloud is attributed to: the caller, and the agent (and squad) whose message it is. */
+export function ttsAttribution(
+  identity: Identity | undefined,
+  agentId: string,
+  squadId: string | null
+): InferenceAttribution {
+  return { ...attributionFromIdentity(identity), agentId, squadId }
+}
+
+/** Records one synthesis: Google bills the characters sent, whether or not the client listens to the end. */
+export function recordSpeechSynthesis(text: string, attribution: InferenceAttribution): void {
+  recordInferenceUsage({
+    feature: 'tts',
+    provider: 'google',
+    model: VOICE_NAME,
+    accountId: 'google-cloud',
+    billing: 'api',
+    units: { characters: text.length },
+    attribution,
+  })
+}
+
+export async function reformatForSpeech(text: string, attribution: InferenceAttribution): Promise<string> {
   try {
     const { pi: session } = await AgentSession.create({
       model: 'anthropic:claude-sonnet-4-5',
@@ -126,11 +148,7 @@ export const ttsRouter = new Hono().post('/', requirePermission('ai:tts'), async
     return c.json({ error: 'Enable Google Cloud in Settings → Integrations to use text-to-speech.' }, 503)
   }
 
-  const attribution: InferenceAttribution = {
-    ...attributionFromIdentity(identity),
-    agentId: message.agentId,
-    squadId: msgSquadId,
-  }
+  const attribution = ttsAttribution(identity, message.agentId, msgSquadId)
   const text = await reformatForSpeech(rawText, attribution)
 
   let lease: Awaited<ReturnType<typeof speechClients.acquire>>
@@ -166,16 +184,7 @@ export const ttsRouter = new Hono().post('/', requirePermission('ai:tts'), async
           text,
         },
       })
-      // Google bills the characters sent, whether or not the client listens to the end.
-      recordInferenceUsage({
-        feature: 'tts',
-        provider: 'google',
-        model: VOICE_NAME,
-        accountId: 'google-cloud',
-        billing: 'api',
-        units: { characters: text.length },
-        attribution,
-      })
+      recordSpeechSynthesis(text, attribution)
 
       // End the write side
       grpcStream.end()

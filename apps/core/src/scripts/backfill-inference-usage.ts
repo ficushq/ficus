@@ -4,7 +4,9 @@ import { parseUsageBackfillArgs, type UsageBackfillCliArgs } from './backfill-ex
 const USAGE =
   'Usage: bun usage:ledger-backfill [--squad <uuid>] [--agent <uuid>]... [--apply]\n' +
   '  Imports usage recorded before the inference cost ledger existed (execution deltas, session totals,\n' +
-  '  decision costs) into the ledger. Idempotent. Without --apply this is a dry run.\n' +
+  '  decision costs) into the ledger, for usage before the cutoff saved on the first run. Idempotent:\n' +
+  '  rows already imported, and days already pruned into daily totals, are left out. Without --apply\n' +
+  '  this is a dry run.\n' +
   '  The worker runs it once on its own; use this to re-check or to import a squad or agent again.'
 
 export async function runInferenceUsageBackfillCli(
@@ -30,6 +32,8 @@ export async function runInferenceUsageBackfillCli(
       `(${summary.executionRows} execution, ${summary.sessionGapRows} session-total, ${summary.decisionRows} decision) ` +
       `from ${summary.agentsScanned} agent(s), for usage before ${summary.cutoff}.`
   )
+  if (summary.skippedPruned > 0)
+    write(`Left out ${summary.skippedPruned} row(s) for days already pruned (their daily totals already count them).`)
   if (!parsed.apply && rows > 0) write('Re-run with --apply to write.')
   return 0
 }

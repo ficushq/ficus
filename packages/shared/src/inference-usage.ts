@@ -196,8 +196,8 @@ export interface SpendSummary {
   projection: { monthUsd: number | null }
   meta: {
     retentionDays: number
-    /** Per-call rows are kept from this day (UTC); earlier days come from daily totals. */
-    detailFrom: string
+    /** Per-call rows are read from this day (UTC) on; earlier days come from daily totals. Null before any pruning. */
+    detailFrom: string | null
     /** False when filters narrow to a slice of calls (a squad, a model, ...) that fees cannot be split by. */
     feesIncluded: boolean
   }

@@ -8,6 +8,7 @@ const summary = {
   sessionGapRows: 1,
   decisionRows: 2,
   inserted: 8,
+  skippedPruned: 0,
 }
 
 describe('usage:ledger-backfill', () => {

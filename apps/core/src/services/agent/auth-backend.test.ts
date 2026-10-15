@@ -164,6 +164,58 @@ describe('SecretStoreCredentialStore', () => {
     expect(accounts[2].credential).toEqual({ type: 'oauth', refresh: 'r2', access: 'a2', expires: 3 })
   })
 
+  test('a refreshed Codex token updates the detected plan, but never an admin-chosen one', async () => {
+    const token = (plan: string) =>
+      `h.${Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_plan_type: plan } })).toString('base64url')}.s`
+    await writeAccountStore(
+      {
+        version: 1,
+        accounts: {
+          'openai-codex': [
+            {
+              id: 'oauth',
+              enabled: true,
+              credential: { type: 'oauth', refresh: 'r1', access: token('plus'), expires: 1 },
+              subscription: { plan: 'plus', planSource: 'detected', detectedPlan: 'plus' },
+            },
+          ],
+        },
+      },
+      'admin'
+    )
+    const cs = new SecretStoreCredentialStore()
+    await cs.modify('openai-codex', async () => ({
+      type: 'oauth' as const,
+      refresh: 'r2',
+      access: token('pro'),
+      expires: 2,
+    }))
+    expect(readAccountStore().accounts['openai-codex'][0].subscription).toMatchObject({
+      plan: 'pro',
+      planSource: 'detected',
+      detectedPlan: 'pro',
+    })
+
+    await mutateAccountStore((accounts) => {
+      accounts.accounts['openai-codex'][0].subscription = {
+        plan: 'business',
+        planSource: 'manual',
+        detectedPlan: 'pro',
+      }
+    }, 'admin')
+    await cs.modify('openai-codex', async () => ({
+      type: 'oauth' as const,
+      refresh: 'r3',
+      access: token('plus'),
+      expires: 3,
+    }))
+    expect(readAccountStore().accounts['openai-codex'][0].subscription).toMatchObject({
+      plan: 'business',
+      planSource: 'manual',
+      detectedPlan: 'plus',
+    })
+  })
+
   test('modify does not overwrite a migrated api_key account with an oauth credential', async () => {
     await writeAccountStore(
       {

@@ -38,7 +38,8 @@ const store = (): AccountStoreV1 => ({
   },
 })
 
-const options = () => ({ now, retentionDays, store: store() })
+// As if pruning had run up to the 180-day cutoff.
+const options = () => ({ now, retentionDays, store: store(), prunedBefore: '2026-03-24' })
 const september = { from: new Date('2026-09-01T00:00:00Z'), to: new Date('2026-10-01T00:00:00Z') }
 
 beforeEach(async () => {

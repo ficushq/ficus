@@ -19,7 +19,8 @@ describe('Lite-tier cost accounting', () => {
     const seen: InferenceUsageEvent[] = []
     setInferenceUsageSinkForTest((event) => void seen.push(event))
     const agentId = '88888888-8888-4888-8888-888888888888'
-    const call = { tier: 'lite', purpose: 'reply-suggestions', source: { agentId } }
+    const squadId = '99999999-9999-4999-8999-999999999999'
+    const call = { tier: 'lite', purpose: 'reply-suggestions', source: { agentId, squadId } }
     recordLightCompletionUsage('anthropic', 'claude-haiku-4-5', { usage: usage(50, 0, 0), stopReason: 'error' }, call)
     recordLightCompletionUsage(
       'openai-codex',
@@ -36,7 +37,7 @@ describe('Lite-tier cost accounting', () => {
         model: 'claude-haiku-4-5',
         tokens: { input: 50, output: 0, cacheRead: 0, cacheWrite: 0 },
         listCostUsd: undefined,
-        attribution: expect.objectContaining({ agentId }),
+        attribution: expect.objectContaining({ agentId, squadId }),
         source: { tier: 'lite', purpose: 'reply-suggestions', stopReason: 'error' },
       }),
       expect.objectContaining({

@@ -89,9 +89,9 @@ A subscription account's calls bill $0. Its monthly fee shows as its own line it
 - `inference_usage` has one row per call.
 - `inference_usage_daily` holds daily totals per (feature, provider, model, account, billing, squad, work stream, agent, person). It is kept indefinitely.
 - Retention: per-call rows are kept `INFERENCE_USAGE_RETENTION_DAYS` days (180 by default, 1–365; Settings → Spend, needs `settings:write`).
-- The worker's hourly job (`services/inference-usage/maintenance.ts`) rebuilds yesterday's and today's rollups, plus any day in the last week that got rows late. It then rolls up and deletes per-call rows older than the retention window, in batches.
-- Each day's rollup is rebuilt whole (delete the day, insert its totals), so rebuilding is idempotent.
-- **Reading rule**: every spend query reads per-call rows for days from the retention cutoff (UTC midnight, `retentionDays` ago) on, and rollups for days before it. One day is never read from both, so nothing is counted twice.
+- The worker's hourly job (`services/inference-usage/maintenance.ts`) brings yesterday's and today's rollups up to date, plus any day in the last week that got rows late. It then rolls up and deletes the per-call rows of every day older than the retention window, one day per transaction.
+- **Prune watermark** (`INFERENCE_USAGE_PRUNED_BEFORE` in the settings table): the UTC day before which per-call rows have been rolled up and deleted. It moves in the same transaction that seals a day, and only forwards. A day at or after it is rebuilt whole (delete its rollup, insert its totals). Rows that arrive for a day before it (a very long turn, the first backfill) are flushed instead: added to the rollup and deleted together, so they are counted once. Each day is processed under an advisory lock, so concurrent jobs cannot double it.
+- **Reading rule**: every spend query reads rollups for days before the watermark and per-call rows from it on, in one snapshot. One day is never read from both. The read boundary follows what pruning actually did, not the retention setting, so raising or lowering retention never hides or double counts history: after a raise, already pruned days stay in their rollups and later days are kept longer.
 
 ## Backfill
 
@@ -101,7 +101,7 @@ Usage recorded before the ledger existed is imported once by the worker (`backfi
 - An agent's session total beyond its executions (for example a manual compaction), for agents with no live ledger rows.
 - Every answered `decision_log` row with tokens or a cost.
 
-Backfilled rows have `source.backfilled = true` and billing `unknown`. Their provider and model are empty when not known. Only usage from before the first live ledger row is imported, so nothing is counted twice. Every row has a dedupe key (`exec:<id>`, `agent-gap:<agentId>`, `decision_log:<id>`), so running it again writes nothing.
+Backfilled rows have `source.backfilled = true` and billing `unknown`. Their provider and model are empty when not known. Only usage from before the cutoff is imported: the first live ledger row's time, worked out once and saved in the backfill state, so live calls are never imported again. Rows inside the read window have a dedupe key (`exec:<id>`, `agent-gap:<agentId>`, `decision_log:<id>`). Rows for days already pruned are left out on every run after the worker's first (their dedupe keys are gone with the per-call rows, and their days' rollups already count them). Running it again therefore writes nothing new.
 
 To check or re-run by hand: `bun run --filter core usage:ledger-backfill [--squad <uuid> | --agent <uuid>...] [--apply]`. Without `--apply` it is a dry run.
 

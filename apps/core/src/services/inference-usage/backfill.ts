@@ -8,15 +8,15 @@
  */
 import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import type { ExecutionStatus, SessionUsage } from '@ficus/shared'
-import { agents, db, decisionLog, executions, inferenceUsage } from '../../db'
+import { agents, db, decisionLog, executions, inferenceUsage, settings } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { listDecisionProviders } from '../decisions/store'
 import { isActiveExecutionStatus } from '../execution/status'
 import { planAgentUsageBackfill, type UsageBackfillRow } from '../execution/usage-backfill'
-import { getSettingsStore } from '../settings'
 import { insertInferenceUsageRows, type InferenceUsageRow } from './record'
 import { pruneInferenceUsage } from './retention'
 import { attributionFromSource, uuidOrNull } from './types'
+import { prunedBefore } from './watermark'
 
 const log = createLogger('inference-usage-backfill')
 const STATE_KEY = 'INFERENCE_USAGE_BACKFILL_STATE'
@@ -30,6 +30,8 @@ export interface InferenceUsageBackfillSummary {
   decisionRows: number
   /** Rows actually written (0 on a dry run or a repeat run). */
   inserted: number
+  /** Rows left out because their day was already pruned (it is counted in that day's rollup already). */
+  skippedPruned: number
 }
 
 interface BackfillState {
@@ -37,19 +39,38 @@ interface BackfillState {
   done?: boolean
   /** Agents are processed in id order; a restart resumes after this one. */
   lastAgentId?: string
+  /** decision_log rows were imported (they go after every agent). */
+  decisionsDone?: boolean
 }
 
-function readState(): BackfillState {
+// Read and written in the database directly, so the worker and the CLI (another process) agree.
+async function readState(): Promise<BackfillState> {
+  const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, STATE_KEY))
   try {
-    const raw = getSettingsStore().get(STATE_KEY)
-    return raw ? (JSON.parse(raw) as BackfillState) : {}
+    return row?.value ? (JSON.parse(row.value) as BackfillState) : {}
   } catch {
     return {}
   }
 }
 
 async function writeState(state: BackfillState): Promise<void> {
-  await getSettingsStore().set(STATE_KEY, JSON.stringify(state), 'system:inference-usage-backfill')
+  const value = JSON.stringify(state)
+  await db
+    .insert(settings)
+    .values({ key: STATE_KEY, value, updatedBy: 'system:inference-usage-backfill' })
+    .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: new Date() } })
+}
+
+/**
+ * The backfill's cutoff: when the ledger went live, saved the first time it is worked out. It must never
+ * move: computed again later (after old live rows are pruned) it would re-import calls recorded live.
+ */
+export async function backfillCutoff(): Promise<Date> {
+  const state = await readState()
+  if (state.cutoff) return new Date(state.cutoff)
+  const cutoff = await liveSince()
+  await writeState({ ...state, cutoff: cutoff.toISOString() })
+  return cutoff
 }
 
 /** When the ledger started recording live: its first live row, else now. */
@@ -249,19 +270,27 @@ async function insertAll(rows: InferenceUsageRow[], apply: boolean): Promise<num
 }
 
 /**
- * Import pre-ledger usage. Without `apply` it only counts what it would write. Idempotent: every row
- * has a dedupe key. `cutoff` defaults to when the ledger went live.
+ * Import pre-ledger usage. Without `apply` it only counts what it would write.
+ *
+ * Idempotent: rows inside the read window have a dedupe key, and rows for days that pruning has already
+ * rolled up are left out (their dedupe keys are gone, so they would count twice). Only the worker's first
+ * run imports into pruned days (`intoPrunedDays`): nothing of the import is in those rollups yet.
  */
 export async function backfillInferenceUsage(options: {
   apply: boolean
   squadId?: string
   agentIds?: string[]
+  /** Defaults to the saved cutoff (see backfillCutoff). */
   cutoff?: Date
   /** Resume after this agent id (agents are processed in id order). */
   afterAgentId?: string
   onAgentDone?: (agentId: string) => Promise<void>
+  /** Skip decision_log rows (already imported by an interrupted run). */
+  skipDecisions?: boolean
+  onDecisionsDone?: () => Promise<void>
+  intoPrunedDays?: boolean
 }): Promise<InferenceUsageBackfillSummary> {
-  const cutoff = options.cutoff ?? (await liveSince())
+  const cutoff = options.cutoff ?? (await backfillCutoff())
   const summary: InferenceUsageBackfillSummary = {
     cutoff: cutoff.toISOString(),
     agentsScanned: 0,
@@ -269,6 +298,17 @@ export async function backfillInferenceUsage(options: {
     sessionGapRows: 0,
     decisionRows: 0,
     inserted: 0,
+    skippedPruned: 0,
+  }
+  // Read before every batch: the hourly job may prune while a long import runs.
+  const keep = async (rows: InferenceUsageRow[]) => {
+    if (options.intoPrunedDays) return rows
+    const watermark = await prunedBefore()
+    if (!watermark) return rows
+    const boundary = Date.parse(`${watermark}T00:00:00Z`)
+    const kept = rows.filter((row) => row.occurredAt.getTime() >= boundary)
+    summary.skippedPruned += rows.length - kept.length
+    return kept
   }
   const scope = options.agentIds?.length
     ? inArray(agents.id, options.agentIds)
@@ -301,15 +341,16 @@ export async function backfillInferenceUsage(options: {
     summary.agentsScanned += 1
     summary.executionRows += rows.length
     if (gap) summary.sessionGapRows += 1
-    summary.inserted += await insertAll(gap ? [...rows, gap] : rows, options.apply)
+    summary.inserted += await insertAll(await keep(gap ? [...rows, gap] : rows), options.apply)
     if (options.apply) await options.onAgentDone?.(agent.id)
   }
 
   // decision_log rows are not scoped to agents; import them on unscoped runs only.
-  if (!scope) {
+  if (!scope && !options.skipDecisions) {
     const decisions = await decisionRows(cutoff)
     summary.decisionRows = decisions.length
-    summary.inserted += await insertAll(decisions, options.apply)
+    summary.inserted += await insertAll(await keep(decisions), options.apply)
+    if (options.apply) await options.onDecisionsDone?.()
   }
   // Rows older than the retention window are read from daily rollups: roll them up and prune.
   if (options.apply && summary.inserted > 0) await pruneInferenceUsage()
@@ -318,21 +359,34 @@ export async function backfillInferenceUsage(options: {
 
 /** The worker's one-time run: resumes after a restart and records when it is done. */
 export async function runInferenceUsageBackfillOnce(): Promise<void> {
-  const state = readState()
-  if (state.done) return
-  const cutoff = state.cutoff ? new Date(state.cutoff) : await liveSince()
-  await writeState({ ...state, cutoff: cutoff.toISOString() })
+  if ((await readState()).done) return
+  const cutoff = await backfillCutoff()
+  const state = await readState()
   let lastAgentId = state.lastAgentId
+  let decisionsDone = state.decisionsDone === true
+  const save = (done = false) =>
+    writeState({
+      cutoff: cutoff.toISOString(),
+      lastAgentId,
+      ...(decisionsDone ? { decisionsDone } : {}),
+      ...(done ? { done } : {}),
+    })
   const summary = await backfillInferenceUsage({
     apply: true,
     cutoff,
     afterAgentId: lastAgentId,
+    intoPrunedDays: true,
+    skipDecisions: decisionsDone,
+    // After every step, so a restart never imports anything twice (pruned rows have no dedupe key).
     onAgentDone: async (agentId) => {
       lastAgentId = agentId
-      // Checkpoint now and then, not after every agent.
-      if (Math.random() < 0.05) await writeState({ cutoff: cutoff.toISOString(), lastAgentId })
+      await save()
+    },
+    onDecisionsDone: async () => {
+      decisionsDone = true
+      await save()
     },
   })
-  await writeState({ cutoff: cutoff.toISOString(), lastAgentId, done: true })
+  await save(true)
   log.info('Inference usage backfill finished', summary)
 }

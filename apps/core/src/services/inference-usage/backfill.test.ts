@@ -1,7 +1,19 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { eq, inArray, like, or } from 'drizzle-orm'
-import { agents, agentTypes, db, decisionLog, executions, inferenceUsage } from '../../db'
+import {
+  agents,
+  agentTypes,
+  db,
+  decisionLog,
+  executions,
+  inferenceUsage,
+  inferenceUsageDaily,
+  settings,
+} from '../../db'
 import { backfillInferenceUsage } from './backfill'
+import { spendSummary } from './query'
+import { pruneInferenceUsage } from './retention'
+import { PRUNED_BEFORE_KEY } from './watermark'
 import { ensureInferenceUsageDedupeIndex } from './test-indexes'
 
 const typeId = `ledger-backfill-${crypto.randomUUID().slice(0, 8)}`
@@ -141,6 +153,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const ids = [legacyAgent, deltaAgent, liveAgent]
+  await db.delete(inferenceUsageDaily).where(inArray(inferenceUsageDaily.agentId, ids))
   await db
     .delete(inferenceUsage)
     .where(or(inArray(inferenceUsage.agentId, ids), like(inferenceUsage.feature, `decision:${decisionPurpose}`)))
@@ -219,5 +232,29 @@ describe('backfillInferenceUsage', () => {
       agentId: legacyAgent,
       source: { backfilled: true, from: 'decision_log' },
     })
+  })
+
+  test('re-running after its days were pruned writes nothing and leaves totals unchanged', async () => {
+    const prior = await db.select().from(settings).where(eq(settings.key, PRUNED_BEFORE_KEY))
+    await db.delete(settings).where(eq(settings.key, PRUNED_BEFORE_KEY))
+    try {
+      await backfillInferenceUsage({ apply: true, cutoff })
+      // Prune August 1–20 (a 30-day window as of September 20).
+      await pruneInferenceUsage({ now: at('2026-09-20T00:00:00Z'), retentionDays: 30 })
+      const august = { from: at('2026-08-01T00:00:00Z'), to: at('2026-09-01T00:00:00Z') }
+      const before = await spendSummary(august, { agentId: legacyAgent })
+      expect(before.totals.calls).toBe(5) // three executions, the session gap, the decision
+
+      const again = await backfillInferenceUsage({ apply: true, cutoff })
+      expect(again.inserted).toBe(0)
+      expect(again.skippedPruned).toBeGreaterThan(0)
+      await pruneInferenceUsage({ now: at('2026-09-20T00:00:00Z'), retentionDays: 30 })
+      const after = await spendSummary(august, { agentId: legacyAgent })
+      expect(after.totals).toEqual(before.totals)
+      expect(after.series).toEqual(before.series)
+    } finally {
+      await db.delete(settings).where(eq(settings.key, PRUNED_BEFORE_KEY))
+      if (prior.length) await db.insert(settings).values(prior)
+    }
   })
 })

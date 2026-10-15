@@ -21,6 +21,7 @@ import { readAccountStore, type Account, type AccountStoreV1 } from '../agent/ac
 import { getSettingsStore } from '../settings'
 import { isSubscriptionAccount } from './billing'
 import { effectiveMonthlyPrice, subscriptionFee } from './subscription-plan'
+import { PRUNED_BEFORE_SQL, prunedBefore } from './watermark'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -35,6 +36,14 @@ export interface SpendQueryOptions {
   now?: Date
   retentionDays?: number
   store?: AccountStoreV1
+  /** Tests: the read boundary (`YYYY-MM-DD`, null = none) instead of the stored prune watermark. */
+  prunedBefore?: string | null
+}
+
+/** The read boundary as a SQL date: days before it come from rollups, days from it on from per-call rows. */
+function boundarySql(options: SpendQueryOptions): SQL {
+  if (options.prunedBefore === undefined) return PRUNED_BEFORE_SQL
+  return options.prunedBefore === null ? sql`'-infinity'::date` : sql`${options.prunedBefore}::date`
 }
 
 function startOfUtcDay(time: number): number {
@@ -50,7 +59,7 @@ export function inferenceRetentionDays(): number {
   return Number.isFinite(days) && days >= 1 ? Math.min(Math.round(days), 365) : 180
 }
 
-/** The first UTC day whose per-call rows are still kept; days before it are read from the rollups. */
+/** The first UTC day whose per-call rows the retention setting keeps (pruning moves the read boundary to it). */
 export function detailCutoff(now: Date, retentionDays: number): Date {
   return new Date(startOfUtcDay(now.getTime() - retentionDays * DAY_MS))
 }
@@ -101,11 +110,13 @@ function filterSql(filters: SpendFilters): SQL {
 }
 
 /** Every call in the range, one row per call (detail) or per rolled-up group (rollups), same shape. */
-function sourceSql(range: SpendRange, filters: SpendFilters, cutoff: Date): SQL {
+function sourceSql(range: SpendRange, filters: SpendFilters, boundary: SQL): SQL {
   const where = filterSql(filters)
-  const detailFrom = new Date(Math.max(range.from.getTime(), cutoff.getTime())).toISOString()
+  const from = range.from.toISOString()
+  const to = range.to.toISOString()
   const rollupFrom = isoDay(range.from.getTime())
-  const rollupTo = isoDay(Math.min(range.to.getTime(), cutoff.getTime()))
+  // A range ending mid-day still includes that day's rollup.
+  const rollupTo = isoDay(startOfUtcDay(range.to.getTime() - 1) + DAY_MS)
   return sql`
     SELECT (occurred_at AT TIME ZONE 'UTC')::date AS day, feature, provider, model, account_id, billing,
       squad_id, work_stream_id, agent_id, user_id, 1 AS calls,
@@ -113,7 +124,8 @@ function sourceSql(range: SpendRange, filters: SpendFilters, cutoff: Date): SQL 
       coalesce(list_cost_nanodollars, 0) AS list_cost, (list_cost_nanodollars IS NULL)::int AS list_unknown,
       cost_estimated::int AS estimated
     FROM inference_usage
-    WHERE occurred_at >= ${detailFrom}::timestamptz AND occurred_at < ${range.to.toISOString()}::timestamptz
+    WHERE occurred_at >= ${from}::timestamptz AND occurred_at < ${to}::timestamptz
+      AND occurred_at >= (${boundary})::timestamp AT TIME ZONE 'UTC'
       AND ${where}
     UNION ALL
     SELECT day, feature, provider, model, account_id, billing,
@@ -121,7 +133,7 @@ function sourceSql(range: SpendRange, filters: SpendFilters, cutoff: Date): SQL 
       input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_nanodollars,
       list_cost_nanodollars, list_unknown_calls, estimated_calls
     FROM inference_usage_daily
-    WHERE day >= ${rollupFrom}::date AND day < ${rollupTo}::date AND ${where}
+    WHERE day >= ${rollupFrom}::date AND day < ${rollupTo}::date AND day < (${boundary}) AND ${where}
   `
 }
 
@@ -226,14 +238,14 @@ export async function spendSummary(
 ): Promise<SpendSummary> {
   const now = options.now ?? new Date()
   const retentionDays = options.retentionDays ?? inferenceRetentionDays()
-  const cutoff = detailCutoff(now, retentionDays)
+  const boundary = boundarySql(options)
   const store = options.store ?? readAccountStore()
-  const source = sourceSql(range, filters, cutoff)
+  const source = sourceSql(range, filters, boundary)
   const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
   const monthEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
-  const monthSource = sourceSql({ from: new Date(monthStart), to: now }, filters, cutoff)
+  const monthSource = sourceSql({ from: new Date(monthStart), to: now }, filters, boundary)
 
-  const [totalsRows, seriesRows, accountRows, monthRows, firstUse] = await Promise.all([
+  const [totalsRows, seriesRows, accountRows, monthRows, firstUse, watermark] = await Promise.all([
     db.execute<MeasureRow>(sql`SELECT ${MEASURES} FROM (${source}) src`),
     db.execute<MeasureRow & { day: string }>(
       sql`SELECT day::text AS day, ${MEASURES} FROM (${source}) src GROUP BY day ORDER BY day`
@@ -244,6 +256,7 @@ export async function spendSummary(
     ),
     db.execute<MeasureRow>(sql`SELECT ${MEASURES} FROM (${monthSource}) src`),
     firstUseByAccount(),
+    options.prunedBefore === undefined ? prunedBefore() : Promise.resolve(options.prunedBefore),
   ])
   const totals = measures([...totalsRows][0])
   const byAccount = new Map([...accountRows].map((row) => [row.key, measures(row)]))
@@ -281,7 +294,21 @@ export async function spendSummary(
 
   const month = measures([...monthRows][0])
   const elapsed = (now.getTime() - monthStart) / (monthEnd - monthStart)
-  const monthlyFees = subscriptions.reduce((sum, line) => sum + (line.monthlyPriceUsd ?? 0), 0)
+  // This month's fees, prorated for accounts added during it.
+  const monthlyFees = includeFees
+    ? subscriptionAccounts(store, filters).reduce((sum, { provider, account }) => {
+        const price = effectiveMonthlyPrice(provider, account.subscription)
+        return (
+          sum +
+          subscriptionFee({
+            monthlyUsd: price.monthlyUsd,
+            from: new Date(monthStart),
+            to: new Date(monthEnd),
+            activeFrom: activeFrom(provider, account, firstUse),
+          })
+        )
+      }, 0)
+    : 0
   const projection = elapsed > 0 ? month.billedUsd / elapsed + monthlyFees : null
 
   return {
@@ -311,7 +338,11 @@ export async function spendSummary(
     }),
     subscriptions,
     projection: { monthUsd: projection },
-    meta: { retentionDays, detailFrom: cutoff.toISOString(), feesIncluded: includeFees },
+    meta: {
+      retentionDays,
+      detailFrom: watermark ? new Date(`${watermark}T00:00:00Z`).toISOString() : null,
+      feesIncluded: includeFees,
+    },
   }
 }
 
@@ -429,10 +460,8 @@ export async function spendBreakdown(
   limit = 50,
   options: SpendQueryOptions = {}
 ): Promise<SpendBreakdown> {
-  const now = options.now ?? new Date()
-  const cutoff = detailCutoff(now, options.retentionDays ?? inferenceRetentionDays())
   const store = options.store ?? readAccountStore()
-  const source = sourceSql(range, filters, cutoff)
+  const source = sourceSql(range, filters, boundarySql(options))
   const second = by2 && by2 !== by ? by2 : undefined
   const keys = second
     ? sql`${DIMENSION_SQL[by]} AS key, ${DIMENSION_SQL[second]} AS key2`
