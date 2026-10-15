@@ -10,7 +10,9 @@ import { extractInboxBodies } from '@ficus/shared'
 import { parseMessageContent } from '../lib/message-parser'
 import {
   isWorkspaceVoiceRecipient,
+  parseQuestionAnswerCardData,
   type MessageMetadata,
+  type QuestionAnswerCardData,
   type ToolFirewallFlag,
   type MessageToolCall,
   type ContentBlock,
@@ -19,6 +21,7 @@ import {
 import { ToolSummary, ToolArgsView, ToolResultView, withoutHiddenToolCalls } from '../lib/tool-renderers'
 import { ActivityIcon, ChevronRightIcon, ClockIcon, MailIcon, WarningIcon, WorkStreamIcon } from './icons'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
+import { QuestionAnswerDeliveryCard } from './QuestionAnswerCard'
 import { ImagePreviewModal } from './ImagePreviewModal'
 import { useImageSrcs } from '../hooks/useImageSrcs'
 import { blocksImages, toolCallImages } from '../lib/tool-result-images'
@@ -431,6 +434,13 @@ function MonitorMessageRow({
   )
 }
 
+type InboxMessageSummary = NonNullable<MessageMetadata['inboxMessageSummaries']>[number]
+
+/**
+ * An inbox delivery in delivery order: each ask_human answer becomes its own answer card, and every
+ * run of other messages keeps the generic inbox card. Raw view and deliveries without structured
+ * answers (including those persisted before answer cards existed) render as before.
+ */
 function InboxDeliveryMessageCard({
   content,
   metadata,
@@ -441,7 +451,76 @@ function InboxDeliveryMessageCard({
   showRaw?: boolean
 }) {
   const summaries = metadata.inboxMessageSummaries ?? []
-  const imageIds = metadata.imageIds ?? []
+  // One body per delivered message, recovered from the delivery prompt itself
+  // (the persisted summaries only carry a 160-char preview). Index-aligned with
+  // `summaries`; a count mismatch falls back to the summary preview.
+  const bodies = extractInboxBodies(content)
+  const answers = summaries.map((summary) => (showRaw ? null : parseQuestionAnswerCardData(summary.questionAnswer)))
+  if (!answers.some(Boolean)) {
+    return (
+      <GenericInboxDeliveryCard
+        content={content}
+        metadata={metadata}
+        summaries={summaries}
+        bodies={bodies}
+        imageIds={metadata.imageIds ?? []}
+        showRaw={showRaw}
+      />
+    )
+  }
+
+  const bodyFor = (index: number) => (bodies.length === summaries.length ? bodies[index] : summaries[index].preview)
+  const segments: Array<
+    | { kind: 'answer'; key: string; data: QuestionAnswerCardData }
+    | { kind: 'inbox'; key: string; summaries: InboxMessageSummary[]; bodies: string[] }
+  > = []
+  summaries.forEach((summary, index) => {
+    const answer = answers[index]
+    const last = segments.at(-1)
+    if (answer) segments.push({ kind: 'answer', key: summary.id, data: answer })
+    else if (last?.kind === 'inbox') {
+      last.summaries.push(summary)
+      last.bodies.push(bodyFor(index))
+    } else segments.push({ kind: 'inbox', key: summary.id, summaries: [summary], bodies: [bodyFor(index)] })
+  })
+  // Images are not attributed per message; they stay with the first generic card.
+  const firstInbox = segments.findIndex((segment) => segment.kind === 'inbox')
+  return (
+    <div className="flex flex-col items-end gap-2">
+      {segments.map((segment, index) =>
+        segment.kind === 'answer' ? (
+          <QuestionAnswerDeliveryCard key={segment.key} data={segment.data} />
+        ) : (
+          <GenericInboxDeliveryCard
+            key={segment.key}
+            content={content}
+            metadata={metadata}
+            imageIds={index === firstInbox ? (metadata.imageIds ?? []) : []}
+            summaries={segment.summaries}
+            bodies={segment.bodies}
+          />
+        )
+      )}
+    </div>
+  )
+}
+
+function GenericInboxDeliveryCard({
+  content,
+  metadata,
+  summaries,
+  bodies,
+  imageIds,
+  showRaw,
+}: {
+  content: string
+  metadata: MessageMetadata
+  summaries: InboxMessageSummary[]
+  /** Index-aligned with `summaries` when the counts match; otherwise the summary previews are shown. */
+  bodies: string[]
+  imageIds: string[]
+  showRaw?: boolean
+}) {
   const count = summaries.length || metadata.inboxMessageIds?.length || 1
   const mode = metadata.inboxDeliveryMode ?? metadata.deliveryMode
   const isInterrupt = mode === 'steer'
@@ -449,10 +528,6 @@ function InboxDeliveryMessageCard({
     summaries.length === 1
       ? `Inbox message from ${formatInboxSender(summaries[0])}`
       : `Inbox delivered ${count} messages`
-  // One body per delivered message, recovered from the delivery prompt itself
-  // (the persisted summaries only carry a 160-char preview). Index-aligned with
-  // `summaries`; a count mismatch falls back to the summary preview.
-  const bodies = extractInboxBodies(content)
   const [wsOpen, setWsOpen] = useState<{ workStreamId: string; squadId: string } | null>(null)
 
   return (

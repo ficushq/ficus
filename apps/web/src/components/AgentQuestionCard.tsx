@@ -1,10 +1,11 @@
 import clsx from 'clsx'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { isHttpResponseError } from '@ficus/client-core'
-import type { AgentQuestion } from '@ficus/shared'
+import { resolveQuestionAnswers, type AgentQuestion } from '@ficus/shared'
 import { answerAgentQuestion, dismissAgentQuestion } from '../api/agentQuestions'
 import { queryKeys } from '../queryKeys'
 import { QuestionInput } from './QuestionInput'
+import { QuestionAnswerList } from './QuestionAnswerCard'
 import { actionErrorMessage } from '../lib/actionError'
 
 interface Props {
@@ -81,17 +82,25 @@ export function AgentQuestionCard({
   }
 
   if (question.status === 'answered') {
+    // Option labels rather than stored values; an answer that cannot be attributed shows verbatim.
+    const resolved = resolveQuestionAnswers(question.questionData, question.answer)
     return (
       <div className={clsx('space-y-1 text-sm', !embedded && 'rounded-xl bg-surface p-4')}>
         <div className="text-xs text-muted mb-1">
           {question.answerRelayedByAgentId ? 'Answered elsewhere · relayed by the agent' : 'Answered question'}
         </div>
-        {question.questionData.questions.map((q) => (
-          <p key={q.id} className="font-medium text-primary">
-            {q.question}
-          </p>
-        ))}
-        {question.answer && <p className="mt-1 text-secondary whitespace-pre-wrap">{question.answer}</p>}
+        {resolved ? (
+          <QuestionAnswerList questions={resolved} />
+        ) : (
+          <>
+            {question.questionData.questions.map((q) => (
+              <p key={q.id} className="font-medium text-primary">
+                {q.question}
+              </p>
+            ))}
+            {question.answer && <p className="mt-1 text-secondary whitespace-pre-wrap">{question.answer}</p>}
+          </>
+        )}
         {question.answerRelayedByAgentId && question.answerSource && (
           <p className="mt-1 text-xs text-muted break-all">
             Source:{' '}

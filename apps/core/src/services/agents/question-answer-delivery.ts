@@ -1,4 +1,11 @@
 import { FlowWaitSupersededError } from '../work-streams/wait-scope'
+import {
+  formatQuestionAnswerChoices,
+  QUESTION_ANSWER_INBOX_SOURCE,
+  resolveQuestionAnswers,
+  type QuestionAnswerCardData,
+  type QuestionData,
+} from '@ficus/shared'
 import { and, asc, eq, gt, isNotNull, lte, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestions, agents, chatSendReceipts, executions, inbox, messages } from '../../db/schema'
@@ -52,13 +59,51 @@ function retryDelay(attempt: number): number {
   return Math.min(30_000 * 2 ** Math.max(0, attempt - 1), QUESTION_ANSWER_DELIVERY_MAX_BACKOFF_MS)
 }
 
-function answerContent(row: typeof agentQuestions.$inferSelect): string {
+type AgentQuestionRow = typeof agentQuestions.$inferSelect
+
+/**
+ * The answer body delivered before option labels were resolved. Rows persisted in this format
+ * (including by a Core that predates the readable format, across a deploy) must still reconcile.
+ */
+function legacyAnswerContent(row: AgentQuestionRow): string {
   const data = row.questionData as { questions?: Array<{ question?: string }> } | null
   const questionText = data?.questions
     ?.map((question) => question.question)
     .filter(Boolean)
     .join('\n')
   return questionText ? `**Question:** ${questionText}\n\n**Answer:** ${row.answer ?? ''}` : (row.answer ?? '')
+}
+
+/**
+ * The delivered answer with option labels (and values, so the agent can still match them), one
+ * question/answer pair per question. Falls back to the legacy body when the stored answer cannot
+ * be attributed to the questions. Deterministic in the immutable question row.
+ */
+function answerContent(row: AgentQuestionRow): string {
+  const resolved = resolveQuestionAnswers(row.questionData as QuestionData | null, row.answer)
+  if (!resolved) return legacyAnswerContent(row)
+  if (resolved.length === 1) {
+    const [item] = resolved
+    return `**Question:** ${item.question}\n\n**Answer:** ${formatQuestionAnswerChoices(item.choices)}`
+  }
+  return resolved
+    .map(
+      (item, index) =>
+        `**Question ${index + 1} (${item.questionId}):** ${item.question}\n**Answer:** ${formatQuestionAnswerChoices(item.choices)}`
+    )
+    .join('\n\n')
+}
+
+/** Structured answer for clients' answer card; absent when the answer cannot be attributed. */
+function answerCardData(row: AgentQuestionRow): QuestionAnswerCardData | null {
+  const questions = resolveQuestionAnswers(row.questionData as QuestionData | null, row.answer)
+  if (!questions) return null
+  return { questionId: row.id, ...(row.answeredAt ? { answeredAt: row.answeredAt.toISOString() } : {}), questions }
+}
+
+/** Either delivered body format proves the persisted inbox row carries this saved answer. */
+function isAnswerContent(content: string, row: AgentQuestionRow): boolean {
+  return content === answerContent(row) || content === legacyAnswerContent(row)
 }
 
 async function claimDueDeliveries(now: Date, questionId?: string) {
@@ -172,6 +217,7 @@ async function deliverClaim(
 
   const inboxKey = `agent-question-answer:v1:${row.id}`
   const clientId = `${inboxKey}:inbox`
+  const cardData = answerCardData(row)
   try {
     const winner = await InboxMessage.sendOnce(
       {
@@ -182,7 +228,11 @@ async function deliverClaim(
         subject: 'Answer to your question',
         content: answerContent(row),
         deliveryMode: 'steer',
-        metadata: { source: 'agent-question-answer', questionId: row.id },
+        metadata: {
+          source: QUESTION_ANSWER_INBOX_SOURCE,
+          questionId: row.id,
+          ...(cardData ? { questionAnswer: cardData } : {}),
+        },
         deferDelivery: true,
       },
       inboxKey
@@ -324,9 +374,9 @@ export async function reconcileAcceptedQuestionAnswerFailuresOnce(
       answerInbox.senderType !== 'user' ||
       answerInbox.senderId !== question.answeredByUserId ||
       answerInbox.subject !== 'Answer to your question' ||
-      answerInbox.content !== answerContent(question) ||
+      !isAnswerContent(answerInbox.content, question) ||
       answerInbox.deliveryMode !== 'steer' ||
-      metadata?.source !== 'agent-question-answer' ||
+      metadata?.source !== QUESTION_ANSWER_INBOX_SOURCE ||
       metadata.questionId !== question.id
     )
       continue

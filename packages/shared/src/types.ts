@@ -1,4 +1,5 @@
 import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
+import type { QuestionAnswerCardData } from './question-answers'
 export * from './grants'
 // Schema field definition for task type schemas
 export interface SchemaFieldDef {
@@ -215,6 +216,8 @@ export interface MessageMetadata {
     deferredUntil?: 'next-turn'
     workStreamId?: string
     squadId?: string
+    /** Present on an ask_human answer delivered back to the asking agent (rendered as an answer card). */
+    questionAnswer?: QuestionAnswerCardData
   }>
   strandedPendingRetryCount?: number
   isSystem?: boolean // True for system messages (e.g., compaction status)
