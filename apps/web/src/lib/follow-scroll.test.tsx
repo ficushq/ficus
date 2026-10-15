@@ -4,13 +4,18 @@ import { agentToolRenderers, ToolArgsView, ToolResultView } from './tool-rendere
 
 const CLIENT_HEIGHT = 50
 
+const SCROLL_PROPS = ['clientHeight', 'scrollHeight', 'scrollTop'] as const
+
 /**
  * Happy DOM has no layout, so give every element a scroll geometry that grows
  * with its text (1px per character) and clamps scrollTop like a browser does.
+ * Happy DOM shares element classes across windows, so this returns a restore
+ * that must run when the test ends, or the patch leaks into later test files.
  */
 function installScrollGeometry(window: { HTMLElement: { prototype: object } }) {
-  const tops = new WeakMap<object, number>()
   const proto = window.HTMLElement.prototype
+  const originals = SCROLL_PROPS.map((name) => [name, Object.getOwnPropertyDescriptor(proto, name)] as const)
+  const tops = new WeakMap<object, number>()
   const scrollHeight = (el: HTMLElement) => Math.max(CLIENT_HEIGHT, el.textContent?.length ?? 0)
   Object.defineProperty(proto, 'clientHeight', { configurable: true, get: () => CLIENT_HEIGHT })
   Object.defineProperty(proto, 'scrollHeight', {
@@ -28,6 +33,12 @@ function installScrollGeometry(window: { HTMLElement: { prototype: object } }) {
       tops.set(this, Math.max(0, Math.min(value, scrollHeight(this) - CLIENT_HEIGHT)))
     },
   })
+  return () => {
+    for (const [name, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(proto, name, descriptor)
+      else Reflect.deleteProperty(proto, name)
+    }
+  }
 }
 
 function maxScrollTop(el: HTMLElement) {
@@ -35,9 +46,13 @@ function maxScrollTop(el: HTMLElement) {
 }
 
 async function setup() {
+  let restoreScrollGeometry = () => {}
   const dom = await acquireDomHarness({
     url: 'http://localhost/',
-    configureWindow: (window) => installScrollGeometry(window as never),
+    configureWindow: (window) => {
+      restoreScrollGeometry = installScrollGeometry(window as never)
+    },
+    afterUnmount: () => restoreScrollGeometry(),
   })
   const { root } = dom.createRoot()
   const box = () => document.querySelector('[data-follow-scroll]') as HTMLElement
