@@ -131,8 +131,11 @@ else
     chmod +x "${R}/usr/lib/systemd/systemd-socket-proxyd"
     printf 'root:x:0:0:root:/root:/bin/bash\n' >"${R}/fakedb/passwd"
     printf 'root:x:0:\nficus-browser:x:998:\n' >"${R}/fakedb/group"
-    shim sudo 'if [ "$1" = -u ]; then shift 2; fi; exec "$@"'
-    shim runuser 'shift 3; exec "$@"'
+    # run_as_box pins PATH for the box user; keep the shims first on it so the
+    # docker tooling below is stubbed too (never the host's real setuptool).
+    local keep_shims='a=(); for x in "$@"; do case "$x" in PATH=*) x="PATH=$STUB_R/.shims:${x#PATH=}" ;; esac; a+=("$x"); done; exec "${a[@]}"'
+    shim sudo "if [ \"\$1\" = -u ]; then shift 2; fi; ${keep_shims}"
+    shim runuser "shift 3; ${keep_shims}"
     shim getent 'grep -m1 "^$2:" "$STUB_R/fakedb/$1" || exit 2'
     shim id '
 if [ "$1" = -nG ]; then
@@ -197,7 +200,7 @@ case "$verb" in
       [ ! -f "$STUB_R/fakedb/fail-manager-stop" ] || exit 89
       rm -f "$STUB_R/fakedb/manager-groups" ;;
     esac ;;
-  start)
+  start|restart)
     [ ! -f "$STUB_R/fakedb/fail-start" ] || exit 86
     for u in $units; do
       [ -e "$dir/$u" ] || exit 1
@@ -220,6 +223,21 @@ case "$verb" in
     done ;;
 esac
 exit 0'
+  }
+
+  # Rootless docker tooling, for --with-docker runs. The setuptool (re)writes the
+  # user docker.service from fakedb/docker-exec, as a reinstall over a changed
+  # template would; pgrep reports a stale `--iptables=false` dockerd only while
+  # fakedb/stale-dockerd exists.
+  docker_shims() {
+    printf '/usr/bin/dockerd-rootless.sh --iptables=false\n' >"${R}/fakedb/docker-exec"
+    shim dockerd-rootless-setuptool.sh '
+echo "setuptool $*" >>"$STUB_R/calls.log"
+d="$HOME/.config/systemd/user"; mkdir -p "$d"
+printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$STUB_R/fakedb/docker-exec")" >"$d/docker.service"'
+    shim pgrep 'echo "pgrep $*" >>"$STUB_R/calls.log"; [ -f "$STUB_R/fakedb/stale-dockerd" ]'
+    : >"${R}/subuid"
+    : >"${R}/subgid"
   }
 
   provision() { # ARGS... → stdout of the run; rc in PROV_RC
@@ -346,6 +364,63 @@ exit 0'
     "$(grep -c '^systemctl stop user@1001.service$' "${R}/calls.log" || true)" 0
   expect_eq 'manager refresh: repeat does not add the group' \
     "$(grep -c '^usermod -aG ficus-browser ' "${R}/calls.log" || true)" 0
+  rm -rf "${R}"
+
+  # -- rootless docker ----------------------------------------------------------
+  # A re-provision of a healthy box (spec/env drift) must not bounce dockerd:
+  # that kills every running container, test databases included. It restarts
+  # only when the launch config changed or the daemon still runs stale flags.
+  docker_provision() {
+    : >"${R}/calls.log"
+    provision --sandbox-id squad_x --unit-mode user --with-docker \
+      --subuid-file "${R}/subuid" --subgid-file "${R}/subgid"
+  }
+  docker_verbs() { # VERB → how many times provisioning ran it on docker.service
+    grep -c "^systemctl --machine=${BOX}@.host --user $1 docker.service$" "${R}/calls.log" || true
+  }
+  make_host
+  docker_shims
+  docker_provision
+  DU="${R}/home/${BOX}/.config/systemd/user"
+  expect_eq 'docker first create: provision succeeds' "$PROV_RC" 0
+  expect_eq 'docker first create: the setuptool ran' "$(grep -c '^setuptool install --skip-iptables$' "${R}/calls.log")" 1
+  expect_eq 'docker first create: the drop-in strips --iptables=false' \
+    "$(cat "${DU}/docker.service.d/override.conf")" "$(printf '[Service]\nExecStart=\nExecStart=/usr/bin/dockerd-rootless.sh')"
+  expect_eq 'docker first create: docker.service is enabled' \
+    "$(is_link_to "${DU}/default.target.wants/docker.service" "${DU}/docker.service")" yes
+  expect_eq 'docker first create: the auto-started daemon is restarted onto the drop-in' "$(docker_verbs restart)" 1
+  expect_eq 'docker first create: docker is running' "$([[ -f ${R}/fakedb/active-docker.service ]] && echo yes || echo no)" yes
+  expect_eq 'docker first create: subuid range allocated' "$(grep -c "^${BOX}:" "${R}/subuid")" 1
+
+  docker_provision
+  expect_eq 'docker unchanged reprovision: succeeds' "$PROV_RC" 0
+  expect_eq 'docker unchanged reprovision: does not restart docker' "$(docker_verbs restart)" 0
+  expect_eq 'docker unchanged reprovision: only ensures it is started' "$(docker_verbs start)" 1
+  expect_eq 'docker unchanged reprovision: checked for a stale daemon' "$(grep -c '^pgrep ' "${R}/calls.log")" 1
+
+  rm "${R}/fakedb/active-docker.service"
+  docker_provision
+  expect_eq 'docker stopped + unchanged: no restart' "$(docker_verbs restart)" 0
+  expect_eq 'docker stopped + unchanged: started again' "$([[ -f ${R}/fakedb/active-docker.service ]] && echo yes || echo no)" yes
+
+  touch "${R}/fakedb/stale-dockerd"
+  docker_provision
+  expect_eq 'docker still on --iptables=false: restarted' "$(docker_verbs restart)" 1
+  rm "${R}/fakedb/stale-dockerd"
+
+  printf '/usr/bin/dockerd-rootless.sh --iptables=false --experimental\n' >"${R}/fakedb/docker-exec"
+  docker_provision
+  expect_eq 'docker unit changed: provision succeeds' "$PROV_RC" 0
+  expect_eq 'docker unit changed: restarted' "$(docker_verbs restart)" 1
+  expect_eq 'docker unit changed: drop-in follows the new unit' \
+    "$(sed -n 3p "${DU}/docker.service.d/override.conf")" 'ExecStart=/usr/bin/dockerd-rootless.sh --experimental'
+
+  docker_provision
+  expect_eq 'docker after a change: the next unchanged run does not restart' "$(docker_verbs restart)" 0
+
+  rm "${DU}/docker.service.d/override.conf"
+  docker_provision
+  expect_eq 'docker drop-in lost: rewritten and restarted' "$(docker_verbs restart)" 1
   rm -rf "${R}"
 
 fi
