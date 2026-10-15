@@ -15,6 +15,7 @@ import { CONFIG_DIR, AGENT_DIR, SKILLS_DIR } from '../lib/paths'
 import { MATERIALIZED_SKILLS_DIR, getSandboxSkillsDir } from '../services/agent/skill-materializer'
 import { join } from 'path'
 import { createHash } from 'crypto'
+import * as fs from 'node:fs'
 import { mkdirSync, rmSync, writeFileSync } from 'fs'
 import { createReadTool } from '@earendil-works/pi-coding-agent'
 import type { K8sSandboxManager } from '../services/sandbox/k8s'
@@ -120,6 +121,86 @@ describe('stable invocation identity', () => {
     expect(requests[0].invocationId).not.toBe(requests[2].invocationId)
     expect(requests[0].invocationId).not.toBe(requests[3].invocationId)
     expect(requests[0].invocationId).not.toContain('echo secret')
+  })
+})
+
+describe('sandboxed bash output beyond the display limit', () => {
+  // pi would otherwise keep it, unredacted, in a never-deleted /tmp/pi-bash-*.log on the Core host.
+  function bashEmitting(chunks: string[]) {
+    const manager = {
+      getClientForSandbox: mock(() => ({
+        bash: mock(() => {
+          const stream = createMockStream()
+          queueMicrotask(() => {
+            for (const chunk of chunks) stream.emitData({ stdout: Buffer.from(chunk).toString('base64') })
+            stream.emitData({ exitCode: 0 })
+            stream.emitEnd()
+          })
+          return stream
+        }),
+      })),
+      podManager: { namespace: 'tau-sandboxes' },
+    } as unknown as K8sSandboxManager
+    return createK8sSandboxedCodingTools('/ignored', 'agent_a1', manager, undefined, undefined, 'exec-1').find(
+      (tool) => tool.key === 'bash'
+    )!
+  }
+
+  // Throws (writing nothing) if pi opens its full output file; restored after each test.
+  async function withoutDiskWrites(body: () => Promise<void>) {
+    const createWriteStream = spyOn(fs, 'createWriteStream').mockImplementation(() => {
+      throw new Error('bash output written to disk')
+    })
+    try {
+      await body()
+      expect(createWriteStream).not.toHaveBeenCalled()
+    } finally {
+      createWriteStream.mockRestore()
+    }
+  }
+
+  test('truncated output is not written to disk and names no full output file', async () => {
+    await withoutDiskWrites(async () => {
+      const lines = Array.from({ length: 3000 }, (_, i) => `line ${i + 1}`)
+      const updates: any[] = []
+      const result: any = await bashEmitting([
+        lines.slice(0, 1500).join('\n') + '\n',
+        lines.slice(1500).join('\n'),
+      ]).execute('tool-1', { command: 'print lines' } as any, undefined, (update: any) => updates.push(update))
+
+      const text = result.content[0].text as string
+      expect(text.endsWith('\n\n[Showing lines 1001-3000 of 3000.]')).toBe(true)
+      expect(text).not.toContain('Full output')
+      expect(result.details.truncation.truncated).toBe(true)
+      expect(result.details.fullOutputPath).toBeUndefined()
+      expect(updates.some((update) => update.details?.truncation)).toBe(true)
+      expect(updates.every((update) => update.details?.fullOutputPath === undefined)).toBe(true)
+      // The structured output still carries all of it, from memory.
+      expect(result.structuredContent.output).toBe(lines.join('\n'))
+      expect(result.structuredContent.truncated).toBe(false)
+      expect(result.structuredContent).not.toHaveProperty('full_output_path')
+    })
+  })
+
+  test('output past 1 MiB keeps its first and last 512 KiB in memory', async () => {
+    await withoutDiskWrites(async () => {
+      const half = 512 * 1024
+      // Chunks straddle both cut points; the last one is larger than the whole tail window.
+      const head = 'h'.repeat(half - 10) + '0123456789'
+      const middle = 'm'.repeat(300_000)
+      const tail = 'abcdefghij' + 't'.repeat(half + 200_000 - 10)
+      const result: any = await bashEmitting([head.slice(0, 1000), head.slice(1000) + middle, tail]).execute('tool-1', {
+        command: 'print a lot',
+      } as any)
+
+      const total = head.length + middle.length + tail.length
+      expect(result.structuredContent.truncated).toBe(true)
+      expect(result.structuredContent).not.toHaveProperty('full_output_path')
+      expect(result.structuredContent.output).toBe(
+        `${head}\n\n[... ${total - 2 * half} bytes omitted ...]\n\n${tail.slice(tail.length - half)}`
+      )
+      expect(result.content[0].text).not.toContain('Full output')
+    })
   })
 })
 

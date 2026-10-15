@@ -26,6 +26,7 @@ import { enforceAbsolutePaths, resolveAgentBashCwd } from './sandbox-tools'
 import {
   BASH_DEFAULT_TIMEOUT_SECONDS,
   BASH_MAX_TIMEOUT_SECONDS,
+  BASH_OUTPUT_TRUNCATION_NOTE,
   FOREGROUND_BASH_GUIDANCE,
   normalizeBashTimeoutSeconds,
 } from '../lib/bash-contract'
@@ -117,6 +118,7 @@ export function createHostBashTool(
   const local = createLocalBashOperations()
   const tool = createBashTool(cwd, {
     exposeSessionEnvironment: false,
+    persistFullOutput: false,
     // Both the preamble and the env are built PER COMMAND. The preamble's
     // snapshot variable names carry a random suffix whose whole purpose is that
     // the squad env file cannot name them in advance — and the preamble is
@@ -136,7 +138,7 @@ export function createHostBashTool(
         }),
     },
   })
-  tool.description = `Execute a bash command in the current working directory on this machine. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds (default: ${HOST_BASH_DEFAULT_TIMEOUT_S}s, max: ${HOST_BASH_MAX_TIMEOUT_S}s). ${FOREGROUND_BASH_GUIDANCE}`
+  tool.description = `Execute a bash command in the current working directory on this machine. Returns stdout and stderr. ${BASH_OUTPUT_TRUNCATION_NOTE} Optionally provide a timeout in seconds (default: ${HOST_BASH_DEFAULT_TIMEOUT_S}s, max: ${HOST_BASH_MAX_TIMEOUT_S}s). ${FOREGROUND_BASH_GUIDANCE}`
   return tool
 }
 
