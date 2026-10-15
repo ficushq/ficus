@@ -248,9 +248,18 @@ bun run --filter core test
 # Web's full test gate is a separate package command
 bun run --filter web test:ci
 
-# Focused diagnosis only; not a replacement for the package suite
+# Focused Core files or directories, with the package runner's DB preload,
+# isolation and completion checks (no paths = full Core suite)
+cd apps/core && bun run test src/services/maintenance/store.test.ts
+
+# Quick diagnosis only; not a replacement for the package suite
 bun test apps/core/src/services/maintenance/store.test.ts
 ```
+
+`bun run test --help` in `apps/core` lists the runner's options: `-t` for a
+test name pattern, `--list` to print the selected files without running them,
+and `--reverse`. Arguments it cannot honor fail with an error rather than
+running the full suite.
 
 The full web gate includes `src/no-server-only-imports.test.ts`. It rejects
 server-only OAuth provider and broker subpaths in browser source, excluding
