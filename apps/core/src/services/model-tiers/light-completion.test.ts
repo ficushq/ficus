@@ -62,6 +62,20 @@ describe('completeLight', () => {
     expect(calls[0].call).toMatchObject({ system: 'sys', prompt: 'hello', maxTokens: LIGHT_COMPLETION_MAX_TOKENS })
   })
 
+  test('passes the tier, purpose and source to every candidate for cost accounting', async () => {
+    const { deps, calls } = fakeDeps({
+      'anthropic:claude-haiku-4-5:off': async () => {
+        throw new Error('down')
+      },
+      'openai-codex:gpt-6-luna:off': async () => 'ok',
+    })
+    await completeLight({ ...request, purpose: 'reply-suggestions', source: { agentId: 'a1' } }, deps)
+    expect(calls.map((entry) => entry.call)).toEqual([
+      expect.objectContaining({ tier: 'lite', purpose: 'reply-suggestions', source: { agentId: 'a1' } }),
+      expect.objectContaining({ tier: 'lite', purpose: 'reply-suggestions', source: { agentId: 'a1' } }),
+    ])
+  })
+
   test('falls back to the next candidate when one throws or cannot serve', async () => {
     const { deps, calls, errors } = fakeDeps({
       'anthropic:claude-haiku-4-5:off': async () => {

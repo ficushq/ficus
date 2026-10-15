@@ -114,6 +114,9 @@ describe('suggestRepliesAfterTurn', () => {
     expect(await suggestRepliesAfterTurn('agent-1', deps, new ReplySuggestionLimiter())).toBe('saved')
     expect(requests).toHaveLength(1)
     expect(requests[0].tier).toBe('lite')
+    // Its cost is recorded in the ledger as `lite:reply-suggestions`, attributed to the agent.
+    expect(requests[0].purpose).toBe('reply-suggestions')
+    expect(requests[0].source).toEqual({ agentId: expect.any(String) })
     expect(requests[0].maxTokens).toBeLessThanOrEqual(256)
     expect(requests[0].prompt).toBe(
       '<person_message>\nThe export button crashes when the list is empty.\n</person_message>\n\n' +

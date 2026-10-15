@@ -235,9 +235,12 @@ export interface DecisionSpend {
   approximate: boolean
   byPurpose: Array<{
     purpose: string
+    /** `lite`: Lite-tier completions for this purpose (reply suggestions), not decision-model questions. */
+    tier?: 'lite'
     calls: number
     answered: number
     inputTokens: number
+    outputTokens: number
     costUsd: number
   }>
   byProvider: Array<{ providerId: string; calls: number; inputTokens: number; costUsd: number }>

@@ -32,7 +32,10 @@ const store: AccountStoreV1 = {
     ],
   },
 }
-const deps = { lookupModel: (p: string, m: string) => (p === 'anthropic' && m === sonnet.id ? sonnet : undefined), store }
+const deps = {
+  lookupModel: (p: string, m: string) => (p === 'anthropic' && m === sonnet.id ? sonnet : undefined),
+  store,
+}
 const agentId = '11111111-1111-4111-8111-111111111111'
 
 afterEach(() => {

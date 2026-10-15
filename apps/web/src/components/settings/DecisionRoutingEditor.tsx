@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DECISION_TIMEOUT_MAX_MS,
+  featureLabel,
   type DecisionFeatureSwitch,
   type DecisionProviderView,
   type DecisionPurpose,
@@ -144,7 +145,7 @@ export function DecisionRoutingEditor({
                     key={item.id}
                     feature={item}
                     parent={parent}
-                    spend={spend?.byPurpose.find((entry) => entry.purpose === item.id)}
+                    spend={spend?.byPurpose.find((entry) => !entry.tier && entry.purpose === item.id)}
                     approximate={spend?.approximate ?? false}
                     hasProviders={hasProviders}
                     canWrite={canWrite}
@@ -187,6 +188,15 @@ export function DecisionRoutingEditor({
               return row(feature)
             })}
         </ul>
+        {spend?.byPurpose
+          .filter((entry) => entry.tier === 'lite' && entry.calls > 0)
+          .map((entry) => (
+            <p key={`lite:${entry.purpose}`} className="text-xs text-muted">
+              Also counted: {featureLabel(`lite:${entry.purpose}`)} ·{' '}
+              <span className="tabular-nums">{formatSpend(entry.costUsd, spend.approximate)}</span> ·{' '}
+              {entry.calls.toLocaleString('en-US')} {entry.calls === 1 ? 'call' : 'calls'}
+            </p>
+          ))}
         {featureSwitch.isError && (
           <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {errorText(featureSwitch.error)}

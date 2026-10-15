@@ -143,6 +143,8 @@ export async function suggestRepliesAfterTurn(
       maxTokens: REPLY_SUGGESTION_MAX_TOKENS,
       timeoutMs: REPLY_SUGGESTION_TIMEOUT_MS,
       totalTimeoutMs: REPLY_SUGGESTION_TOTAL_TIMEOUT_MS,
+      purpose: 'reply-suggestions',
+      source: { agentId },
     })
     if (!answer) return 'no-answer'
     const replies = parseReplySuggestions(answer.text)

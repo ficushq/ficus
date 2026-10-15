@@ -6,7 +6,11 @@ const sonnet = {
   provider: 'anthropic',
   cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
 } as unknown as PricedModel
-const unpriced = { id: 'local', provider: 'x', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } } as PricedModel
+const unpriced = {
+  id: 'local',
+  provider: 'x',
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+} as PricedModel
 const lookupModel: ModelLookup = (provider, model) =>
   provider === 'anthropic' && model === 'claude-sonnet-4-5' ? sonnet : model === 'local' ? unpriced : undefined
 const deps = { lookupModel }

@@ -1,8 +1,14 @@
+import type { Usage } from '@earendil-works/pi-ai'
 import { eq } from 'drizzle-orm'
 import { db, modelTiers } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { resolveAgentModelSpec } from '../../lib/utils/model-spec'
 import { getModelRuntime } from '../agent/auth-backend'
+import { readAccountStore } from '../agent/account-store'
+import { isAccountUsable } from '../agent/account-usable'
+import { recordInferenceUsage } from '../inference-usage'
+import { accountForProvider } from '../inference-usage/billing'
+import { attributionFromSource } from '../inference-usage/types'
 import { CLAUDE_CODE_FLAG } from '../agent/claude-code/account'
 import { usableModelCandidatesForCurrentEnv } from '../model-selection'
 import {
@@ -47,12 +53,49 @@ async function completeWithRuntime(spec: string, call: LightCompletionCall): Pro
       maxRetries: 0,
     }
   )
+  recordLightCompletionUsage(model.provider, model.id, message, call)
   if (message.stopReason === 'error' || message.stopReason === 'aborted')
     throw new Error(message.errorMessage || `Light completion ${message.stopReason}`)
   return message.content
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('')
+}
+
+/** One ledger row per candidate that reached a provider, answered or not (`lite:<purpose>`). */
+export function recordLightCompletionUsage(
+  provider: string,
+  modelId: string,
+  message: { usage?: Usage; stopReason?: string; model?: string },
+  call: Pick<LightCompletionCall, 'tier' | 'purpose' | 'source'>
+): void {
+  if (!message.usage) return
+  let accountId: string | undefined
+  try {
+    accountId = accountForProvider(provider, readAccountStore(), isAccountUsable)?.id
+  } catch {
+    accountId = undefined
+  }
+  const total = message.usage.cost?.total
+  recordInferenceUsage({
+    feature: `lite:${call.purpose ?? 'unknown'}`,
+    provider,
+    model: message.model ?? modelId,
+    accountId,
+    tokens: {
+      input: message.usage.input,
+      output: message.usage.output,
+      cacheRead: message.usage.cacheRead,
+      cacheWrite: message.usage.cacheWrite,
+    },
+    listCostUsd: typeof total === 'number' && total > 0 ? total : undefined,
+    attribution: attributionFromSource(call.source),
+    source: {
+      tier: call.tier ?? 'lite',
+      ...(call.purpose ? { purpose: call.purpose } : {}),
+      stopReason: message.stopReason,
+    },
+  })
 }
 
 export const lightCompletionRuntimeDeps: LightCompletionDeps = {
