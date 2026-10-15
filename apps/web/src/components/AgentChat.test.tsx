@@ -48,6 +48,7 @@ const TestChatView = ({
   onSend,
   hideComposer,
   afterMessages,
+  stickyAfterMessages,
   headerStatus,
   beforeComposer,
   deliveryMode,
@@ -64,6 +65,7 @@ const TestChatView = ({
   hideComposer?: boolean
   headerStatus?: React.ReactNode
   afterMessages?: React.ReactNode
+  stickyAfterMessages?: React.ReactNode
   beforeComposer?: React.ReactNode
   deliveryMode?: string
   onDeliveryModeChange?: (m: string) => void
@@ -108,6 +110,7 @@ const TestChatView = ({
         </div>
       ))}
       <div data-testid="after-messages">{afterMessages}</div>
+      <div data-testid="sticky-after-messages">{stickyAfterMessages}</div>
       <div data-testid="before-composer">{beforeComposer}</div>
     </div>
   )
@@ -780,17 +783,19 @@ describe('AgentChat', () => {
 
       await waitFor(
         () => {
-          const banner = window.document.querySelector('[data-testid="before-composer"]')
-          expect(banner?.textContent).toContain('1 pending question from Agent')
+          const banner = window.document.querySelector('[data-testid="sticky-after-messages"]')
+          expect(banner?.textContent).toContain('1 pending question')
         },
         { timeout: 3000 }
       )
 
+      // Only a one-line preview floats in the pending-questions row; the question form stays out of the transcript.
       const after = window.document.querySelector('[data-testid="after-messages"]')
       expect(after?.textContent).not.toContain('Pick a color?')
-      expect(window.document.body.textContent).not.toContain('Pick a color?')
+      expect(window.document.querySelector('[data-testid="before-composer"]')?.textContent).toBe('')
+      expect(window.document.querySelector('textarea')).toBeNull()
 
-      const bannerButton = window.document.querySelector('[data-testid="before-composer"] button')
+      const bannerButton = window.document.querySelector('[data-testid="sticky-after-messages"] button')
       await dom.act(async () => {
         bannerButton?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
       })
@@ -802,7 +807,7 @@ describe('AgentChat', () => {
         await qc.invalidateQueries({ queryKey: queryKeys.agentQuestions.all })
       })
       await waitFor(() => {
-        expect(window.document.querySelector('[data-testid="before-composer"]')?.textContent).toBe('')
+        expect(window.document.querySelector('[data-testid="sticky-after-messages"]')?.textContent).toBe('')
         expect(window.document.querySelector('[role="dialog"]')).toBeNull()
       })
     } finally {
@@ -890,11 +895,11 @@ describe('AgentChat', () => {
     await waitFor(() => expect(dialog()?.textContent).toContain('a-live?'))
     await render('a2')
     expect(dialog()).toBeNull()
-    expect(dom.window.document.querySelector('[data-testid="before-composer"]')?.textContent).toBe('')
+    expect(dom.window.document.querySelector('[data-testid="sticky-after-messages"]')?.textContent).toBe('')
     // Even a transient mis-scoped response must not establish this chat's baseline.
     await dom.act(async () => qc.setQueryData(bKey, [question('a-history', 'a1')]))
     await flush()
-    expect(dom.window.document.querySelector('[data-testid="before-composer"]')?.textContent).toBe('')
+    expect(dom.window.document.querySelector('[data-testid="sticky-after-messages"]')?.textContent).toBe('')
     await dom.act(async () => resolve([question('b-history', 'a2')]))
     await waitFor(() => expect(dom.window.document.body.textContent).toContain('1 pending question'))
     expect(dialog()).toBeNull()
@@ -956,7 +961,7 @@ describe('AgentChat', () => {
       // tick, so wait for the render rather than assuming it landed with the request.
       await waitFor(
         () =>
-          expect(window.document.querySelector('[data-testid="before-composer"]')?.textContent).toContain(
+          expect(window.document.querySelector('[data-testid="sticky-after-messages"]')?.textContent).toContain(
             '1 pending question'
           ),
         { timeout: 1000 }

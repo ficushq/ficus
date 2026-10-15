@@ -11,9 +11,7 @@ import { actionErrorMessage } from '../lib/actionError'
 export function AssistantAgentQuestions({ agentIds }: { agentIds: string[] }) {
   const results = useQueries({ queries: agentIds.map((id) => queries.agentQuestions.byAgent(id, 'open')) })
   return results.map((result, index) =>
-    result.data?.length ? (
-      <PendingQuestionsBanner key={agentIds[index]} questions={result.data} agentName="Assistant task" />
-    ) : null
+    result.data?.length ? <PendingQuestionsBanner key={agentIds[index]} questions={result.data} /> : null
   )
 }
 

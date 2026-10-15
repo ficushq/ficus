@@ -314,6 +314,49 @@ test('composer banners slide up to make room for the plant peeking from behind t
   expect(slot().classList.contains('delay-[600ms]')).toBe(true)
 })
 
+test('sticky content ends the message flow and floats above the plant while it peeks', async () => {
+  const notice = <div data-testid="notice">Compacting</div>
+  const row = <button data-testid="row">1 pending question</button>
+  const { dom, root, window } = await renderChatView(
+    <ChatView
+      items={[{ kind: 'working', id: '__working__' }]}
+      onSend={() => {}}
+      afterMessages={notice}
+      stickyAfterMessages={row}
+    />
+  )
+  const messages = window.document.querySelector('[data-testid="chat-messages"]')!
+  const slot = () => window.document.querySelector('[data-testid="chat-sticky-after-messages"]')!
+  // In the scroll container, after afterMessages, and nowhere near the composer.
+  expect(messages.lastElementChild).toBe(slot())
+  expect(slot().previousElementSibling).toBe(window.document.querySelector('[data-testid="notice"]'))
+  expect(slot().contains(window.document.querySelector('[data-testid="row"]'))).toBe(true)
+  expect(window.document.querySelector('[data-testid="chat-before-composer"]')).toBeNull()
+  // Pinned inside the container's bottom padding, the plant's room, so the peeking plant never covers it.
+  expect(slot().classList.contains('sticky')).toBe(true)
+  expect(slot().classList.contains('bottom-0')).toBe(true)
+  expect(messages.classList.contains('pb-8')).toBe(true)
+
+  await dom.act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={['/chat/agent-1?scope=all']}>
+        <PermissionsProvider usePermissions={usePermissionsMock}>
+          <ChatView
+            items={[]}
+            onSend={() => {}}
+            afterMessages={notice}
+            stickyAfterMessages={row}
+            dependencies={chatViewDependencies}
+          />
+        </PermissionsProvider>
+      </MemoryRouter>
+    )
+  )
+  // The room shrinks back only once the plant's jump out of sight is over.
+  expect(messages.classList.contains('pb-8')).toBe(false)
+  expect(messages.classList.contains('delay-[600ms]')).toBe(true)
+})
+
 describe('ChatView image upload targeting and recovery', () => {
   test('mobile expansion keeps staged images attached to the draft and sends them once', async () => {
     const upload = mock(async () => ['image-mobile'])
