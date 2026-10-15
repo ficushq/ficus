@@ -664,6 +664,8 @@ export const agentsRouter = new Hono()
         clientId?: string
         /** Assistant conversations: the composer's routing preview or the user's pick (`AssistantRoutingSend`). */
         assistantRouting?: unknown
+        /** Required to message a dormant agent; without it the send is refused with AGENT_DORMANT. */
+        wake?: boolean
       }>()
       const pagePathResult = chatPagePathSchema.optional().safeParse(body.pagePath)
       if (!pagePathResult.success) return c.json({ error: 'Invalid page path' }, 400)
@@ -701,6 +703,7 @@ export const agentsRouter = new Hono()
           imageIds: body.imageIds,
           deliveryMode: body.deliveryMode,
           attachmentActorUserId: identity ? (identityUserId(identity) ?? undefined) : undefined,
+          refuseIfDormant: body.wake !== true,
           validateNewAcceptance: () => {
             const validationError = validateAgentImageInput(agent, body.imageIds)
             if (validationError) throw new ImageInputUnsupportedError(validationError)
@@ -969,7 +972,7 @@ export const agentsRouter = new Hono()
       const agent = await Agent.find(c.req.param('id'))
       if (!agent) return c.json({ error: 'Agent not found' }, 404)
 
-      const body = await c.req.json<{ message: string; imageIds?: string[] }>()
+      const body = await c.req.json<{ message: string; imageIds?: string[]; wake?: boolean }>()
       if (!body.message) return c.json({ error: 'Message is required' }, 400)
       const imageValidationError = validateAgentImageInput(agent, body.imageIds)
       if (imageValidationError) return c.json({ error: imageValidationError }, 400)
@@ -986,11 +989,13 @@ export const agentsRouter = new Hono()
           imageIds: body.imageIds,
           deliveryMode: 'steer',
           attachmentActorUserId: identity ? (identityUserId(identity) ?? undefined) : undefined,
+          refuseIfDormant: body.wake !== true,
           ...(sender ? { metadata: { source: 'user_chat', sender } } : {}),
         })
         return c.json(result)
       } catch (error) {
         if (error instanceof InvalidAttachmentError) return c.json({ error: 'Invalid attachment' }, 400)
+        if (error instanceof AgentTargetUnavailableError) return c.json({ error: error.message, code: error.code }, 409)
         throw error
       }
     }
@@ -1005,7 +1010,7 @@ export const agentsRouter = new Hono()
       const agent = await Agent.find(c.req.param('id'))
       if (!agent) return c.json({ error: 'Agent not found' }, 404)
 
-      const body = await c.req.json<{ message: string; imageIds?: string[] }>()
+      const body = await c.req.json<{ message: string; imageIds?: string[]; wake?: boolean }>()
       if (!body.message) return c.json({ error: 'Message is required' }, 400)
       const imageValidationError = validateAgentImageInput(agent, body.imageIds)
       if (imageValidationError) return c.json({ error: imageValidationError }, 400)
@@ -1022,11 +1027,13 @@ export const agentsRouter = new Hono()
           imageIds: body.imageIds,
           deliveryMode: 'follow-up',
           attachmentActorUserId: identity ? (identityUserId(identity) ?? undefined) : undefined,
+          refuseIfDormant: body.wake !== true,
           ...(sender ? { metadata: { source: 'user_chat', sender } } : {}),
         })
         return c.json(result)
       } catch (error) {
         if (error instanceof InvalidAttachmentError) return c.json({ error: 'Invalid attachment' }, 400)
+        if (error instanceof AgentTargetUnavailableError) return c.json({ error: error.message, code: error.code }, 409)
         throw error
       }
     }

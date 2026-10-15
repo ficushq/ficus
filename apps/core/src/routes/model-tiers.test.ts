@@ -11,6 +11,8 @@ import { ModelTierSync } from '../services/config-sync/model-tier-sync'
 import { setOpenRouterTierExpansionEnabled, setProviderEnabled } from '../services/model-selection'
 import { providerHealth, resetProviderHealthForTests } from '../services/provider-health/registry'
 import * as accountStore from '../services/agent/account-store'
+import { CLAUDE_CODE_ACCOUNT_ID, claudeCodeCredential } from '../services/agent/claude-code/account'
+import { setClaudeCodeStatusForTests } from '../services/agent/claude-code/availability'
 import { getSettingsStore } from '../services/settings'
 import { authHeaders, cleanupTestRbac, createTestAdmin } from '../test-utils'
 import type { TestUser } from '../test-utils/rbac'
@@ -131,7 +133,32 @@ describe('model tier routes', () => {
         accounts: { anthropic: [{ id: 'a1', enabled: true, credential: { type: 'api_key', key: 'sk-ant' } }] },
       })
       expect(await read()).toEqual({ 'lite-test': ['anthropic:claude-haiku-4-5:off'], 'lite-off': [] })
+
+      // Claude Code as the only sign-in: one-shot calls can use it while it is signed in.
+      readAccountStoreSpy.mockReturnValue({
+        version: 1,
+        accounts: {
+          anthropic: [
+            {
+              id: CLAUDE_CODE_ACCOUNT_ID,
+              enabled: true,
+              kind: 'claude-code',
+              credential: claudeCodeCredential(),
+            },
+          ],
+        },
+      })
+      setClaudeCodeStatusForTests({ offered: true, enabled: true, loggedIn: true, executable: '/usr/local/bin/claude' })
+      expect(await read()).toEqual({ 'lite-test': ['anthropic:claude-haiku-4-5:off'], 'lite-off': [] })
+      setClaudeCodeStatusForTests({
+        offered: true,
+        enabled: true,
+        loggedIn: false,
+        reason: 'Claude Code is not signed in',
+      })
+      expect(await read()).toEqual({ 'lite-test': [], 'lite-off': [] })
     } finally {
+      setClaudeCodeStatusForTests(undefined)
       readAccountStoreSpy.mockRestore()
       for (const key of envKeys) if (savedEnv[key] !== undefined) process.env[key] = savedEnv[key]
     }

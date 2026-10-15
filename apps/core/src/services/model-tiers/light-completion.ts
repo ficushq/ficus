@@ -67,6 +67,12 @@ export interface LightCompletionDeps {
    * call (e.g. no usable credential); may throw on a provider failure.
    */
   complete: (spec: string, call: LightCompletionCall) => Promise<string | null>
+  /**
+   * A candidate's own wait, given the request's: a candidate with a slow start (Claude Code starts
+   * a process per call) may need longer. The overall deadline still bounds it. Defaults to the
+   * request's wait.
+   */
+  candidateTimeoutMs?: (spec: string, timeoutMs: number) => number | Promise<number>
   /** Start a timer; returns a cancel function. Injected so tests can fire deadlines. */
   setTimer?: (fire: () => void, ms: number) => () => void
   /** Milliseconds clock for the overall deadline. */
@@ -111,10 +117,18 @@ export async function completeLight(
 
     for (const spec of candidates) {
       if (request.signal?.aborted) return null
-      const remaining = deadline - now()
-      if (remaining <= 0) return null
-      const budget = Math.min(timeoutMs, remaining)
+      if (deadline - now() <= 0) return null
       try {
+        const candidateTimeoutMs = deps.candidateTimeoutMs
+          ? positive(
+              await withinDeadline(deps.candidateTimeoutMs(spec, timeoutMs), deadline - now(), setTimer),
+              timeoutMs
+            )
+          : timeoutMs
+        if (request.signal?.aborted) return null
+        const remaining = deadline - now()
+        if (remaining <= 0) return null
+        const budget = Math.min(candidateTimeoutMs, remaining)
         const text = await attempt(spec, request, maxTokens, budget, deps, setTimer)
         if (text) return { text, model: spec }
       } catch (error) {
@@ -174,6 +188,25 @@ async function attempt(
   } finally {
     cancelTimer()
     detachCaller()
+  }
+}
+
+/** The value, or a timeout once `ms` pass: looking a candidate up never outlasts the overall deadline. */
+async function withinDeadline<T>(
+  value: T | Promise<T>,
+  ms: number,
+  setTimer: NonNullable<LightCompletionDeps['setTimer']>
+): Promise<T> {
+  let cancelTimer = () => {}
+  const late = new Promise<never>((_, reject) => {
+    cancelTimer = setTimer(() => reject(new LightCompletionTimeout(ms)), ms)
+  })
+  const pending = Promise.resolve(value)
+  pending.catch(() => {})
+  try {
+    return await Promise.race([pending, late])
+  } finally {
+    cancelTimer()
   }
 }
 

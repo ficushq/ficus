@@ -171,7 +171,7 @@ function SquadQuestionForm({
   const send = useMutation({
     // Same call as the web's sendAgentMessage(agentId, answer) in ActionItem.
     mutationFn: (answer: string) =>
-      api.sendAgentMessage(source.agentId, answer, { imageIds: undefined, deliveryMode: undefined }),
+      api.sendAgentMessage(source.agentId, answer, { imageIds: undefined, deliveryMode: undefined, wake: true }),
     onSuccess: async () => {
       haptic('answer')
       await settleSquadQuestion(queryClient, source.agentId)

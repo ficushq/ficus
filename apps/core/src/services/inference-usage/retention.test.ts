@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { db, inferenceUsage, inferenceUsageDaily, settings } from '../../db'
 import { spendSummary } from './query'
-import { pruneInferenceUsage, rollupInferenceUsageDays, runInferenceUsageRollup } from './retention'
+import {
+  pruneInferenceUsage,
+  rollupInferenceUsageDays,
+  runInferenceUsageRollup,
+  setRetentionFlushHookForTest,
+} from './retention'
 import { PRUNED_BEFORE_KEY, prunedBefore } from './watermark'
 
 // Every row belongs to this test's squad, so the assertions never see other tests' rows. The watermark is
@@ -41,6 +46,7 @@ beforeEach(async () => {
   await db.delete(settings).where(eq(settings.key, PRUNED_BEFORE_KEY))
 })
 afterEach(async () => {
+  setRetentionFlushHookForTest(undefined)
   await db.delete(inferenceUsage).where(eq(inferenceUsage.squadId, squadId))
   await db.delete(inferenceUsageDaily).where(eq(inferenceUsageDaily.squadId, squadId))
   await db.delete(settings).where(eq(settings.key, PRUNED_BEFORE_KEY))
@@ -112,6 +118,25 @@ describe('inference usage rollups and retention', () => {
     await pruneInferenceUsage({ now, retentionDays: 1 })
     expect(await dayCalls('2026-09-18')).toBe(2)
     expect(await detailCount()).toBe(1)
+    expect((await spendSummary(september, { squadId }, { now })).totals.calls).toBe(3)
+  })
+
+  test('a row committed for the day while it is being pruned is rolled up or kept, never lost', async () => {
+    await db.insert(inferenceUsage).values([row('2026-09-18T10:00:00Z'), row('2026-09-20T09:00:00Z')])
+    // Another writer (a backfill batch) commits a row for the day inside the prune's transaction.
+    setRetentionFlushHookForTest(async (day) => {
+      if (day === '2026-09-18') await db.insert(inferenceUsage).values(row('2026-09-18T12:00:00Z'))
+    })
+    await pruneInferenceUsage({ now, retentionDays: 1 })
+    setRetentionFlushHookForTest(undefined)
+    const rolled = await dayCalls('2026-09-18')
+    const kept = (await db.select().from(inferenceUsage).where(eq(inferenceUsage.squadId, squadId))).filter(
+      (r) => r.occurredAt < at('2026-09-19T00:00:00Z')
+    ).length
+    expect(rolled + kept).toBe(2)
+    // Whatever was left behind is flushed by the next run, still counted once.
+    await pruneInferenceUsage({ now, retentionDays: 1 })
+    expect(await dayCalls('2026-09-18')).toBe(2)
     expect((await spendSummary(september, { squadId }, { now })).totals.calls).toBe(3)
   })
 

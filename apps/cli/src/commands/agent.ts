@@ -1,5 +1,6 @@
 import { Command } from 'commander'
 import { apiGet, apiPatch, apiPost, apiDelete } from '../client'
+import { explainDormantRecipient, WAKE_OPTION_DESCRIPTION } from '../dormant-agent'
 import { output, outputTable, outputError, isJsonMode } from '../output'
 import { readLine, StdinClosedError } from '../local-server/prompt'
 import { registerSandboxProcessCommands } from './sandbox-processes'
@@ -289,18 +290,20 @@ export function registerAgentCommands(program: Command) {
   // ficus agent message <id> <content> [--follow-up] [--image <imageId>...]
   agent
     .command('message <id> <content>')
-    .description('Send a message to an agent')
+    .description('Send a message to an agent (a dormant agent is refused unless you pass --wake)')
     .option('--follow-up', 'If agent is running, queue for after current turn (default: interrupt)')
     .option('--image <imageId>', 'Attach image ID (can be repeated)', collect, [])
+    .option('--wake', WAKE_OPTION_DESCRIPTION)
     .action(async (id, content, options) => {
       try {
         const body: Record<string, unknown> = { content }
         if (options.followUp) body.deliveryMode = 'follow-up'
         if (options.image.length) body.imageIds = options.image
+        if (options.wake) body.wake = true
         const result = await apiPost<any>(`/api/agents/${id}/message`, body)
         output(result, `Message sent to agent ${id}`)
       } catch (error) {
-        outputError(error as Error)
+        outputError((await explainDormantRecipient(error, id)) as Error)
       }
     })
 
@@ -366,26 +369,30 @@ export function registerAgentCommands(program: Command) {
   // ficus agent steer <id> <message>
   agent
     .command('steer <id> <message>')
-    .description('Interrupt a running agent with a message (delivered after current tool)')
-    .action(async (id, message) => {
+    .description(
+      'Interrupt a running agent with a message (delivered after current tool; a dormant agent needs --wake)'
+    )
+    .option('--wake', WAKE_OPTION_DESCRIPTION)
+    .action(async (id, message, options) => {
       try {
-        await apiPost(`/api/agents/${id}/steer`, { message })
+        await apiPost(`/api/agents/${id}/steer`, { message, ...(options.wake ? { wake: true } : {}) })
         output({ id }, `Sent steering message to agent ${id}`)
       } catch (error) {
-        outputError(error as Error)
+        outputError((await explainDormantRecipient(error, id)) as Error)
       }
     })
 
   // ficus agent follow-up <id> <message>
   agent
     .command('follow-up <id> <message>')
-    .description('Queue a message for after the agent finishes its current turn')
-    .action(async (id, message) => {
+    .description('Queue a message for after the agent finishes its current turn (a dormant agent needs --wake)')
+    .option('--wake', WAKE_OPTION_DESCRIPTION)
+    .action(async (id, message, options) => {
       try {
-        await apiPost(`/api/agents/${id}/follow-up`, { message })
+        await apiPost(`/api/agents/${id}/follow-up`, { message, ...(options.wake ? { wake: true } : {}) })
         output({ id }, `Queued follow-up message for agent ${id}`)
       } catch (error) {
-        outputError(error as Error)
+        outputError((await explainDormantRecipient(error, id)) as Error)
       }
     })
 

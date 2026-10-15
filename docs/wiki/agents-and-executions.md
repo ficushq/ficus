@@ -57,6 +57,7 @@ An agent is a persistent instance of an agent type. It owns its identity, conver
 
 - **Live → dormant:** the ordinary terminate/unspawn action stops work, monitors, and personal compute; revokes tokens; makes descendants dormant; disables automatic schedules/webhooks; and retains recoverable private storage. The transition is serialized with execution admission and may wait for active work to settle. A VM stop on a temporarily non-ready machine is recorded as `stop_unverified` and leaves dormancy completion pending. The VM convergence tick either verifies the stop when that machine returns or, after a bounded outage, detaches it into an attributable, exact machine-side retirement remnant. Only a later dormancy attempt settles; wake and re-placement happen afterward. `/private` remains on the unavailable host until it returns: remnant retirement archives it under the original agent identity, and inline sole-machine retirement restores that exact recovery archive into its fresh replacement. An ordinary fresh box never restores an unrelated historical archive. If replacement preceded host recovery, the old tree is preserved in the later archive but is not silently merged into an already-running replacement.
 - **Dormant → live:** explicit eligible correspondence or an explicit wake moves the agent to `idle`, rotates its resource generation, re-ensures compute, and mints a currently valid token. Housekeeping and scheduled timer ticks are non-waking. Terminated agents can never wake.
+- **Direct sends need an explicit wake:** `POST /api/inbox` (non-system senders) and `POST /api/agents/:id/message`, `/steer` and `/follow-up` refuse a dormant recipient with `409` and code `AGENT_DORMANT` unless the request sets `wake: true`, so a routine acknowledgement cannot restart a finished agent. The check runs under the recipient's row lock, so an agent that goes dormant mid-request is refused too and nothing is persisted. The CLI exposes this as `--wake` on `ficus inbox send`, `ficus agent message`, `steer` and `follow-up`. The web chat composer, question answers and voice tools send `wake: true` because a person chose to message that agent. System-authored sends and runtime deliveries (flow handoffs, schedules, integration notifications, observer updates, question answers, Assistant tasks, slot grants) do not go through this guard and keep their wake policy.
 - **Dormant → terminated:** only backend retention cleanup or an explicit operator finalization performs this irreversible transition. Descendants are finalized, private data is archived, and compute/storage resources become permanently reclaimable.
 
 Retention uses two independent settings. `AGENT_DORMANT_RETENTION_DAYS` (whole days, 1–3650; editable in Settings → Storage) controls how long an agent remains dormant and recoverable before final termination. Settings → Storage can also queue a dormant agent for removal now (`POST /api/system/storage/dormant-agents/remove`, `system:cleanup`, 202). The request stamps `metadata.removeNowDormantAt` with the current dormancy episode (`dormant_at` in epoch ms), and the dormant-retention sweep claims those agents on its next ticks alongside expired ones, running the same completion-then-`terminate` step. A later dormancy episode does not match the stamp, so it is never removed early. `AGENT_PRIVATE_ARCHIVE_RETENTION_DAYS` controls how long the timestamped `/private` archive remains after termination before the archive janitor purges it.
@@ -87,6 +88,31 @@ The API equivalents are `POST /api/squads/:id/cleanup-agents` and the administra
 `terminated`, and `agents`: the legacy `terminated` field counts workers made **dormant** (or eligible
 workers for a dry run), not irreversible final termination. `deferred` and `deferredAgents` separately
 report accepted requests still awaiting execution settlement; dry runs do not create deferred requests.
+
+### Idle-worker dormancy (automatic)
+
+Workers normally go dormant when their last open work stream becomes terminal. A dormant worker woken
+later (for example by a manager message) would otherwise stay live forever. To prevent that, the minute-scale lifecycle
+convergence sweep (`runIdleWorkerDormancySweep` in `services/agents/idle-workers.ts`) is always on. It makes a
+worker dormant once it has had nothing open for an hour. A worker qualifies only if all of these hold:
+
+- its type is not exempt from automatic dormancy (`manager`, `system-manager`, `assistant`,
+  `assistant-worker` and `consultant` are exempt; consultants have their own opt-in sweep)
+- it is non-persistent, top-level and plainly `idle`, with no wake or lifecycle request in progress
+- it is not crew, assignee or owner of any `queued` or `active` work stream (a reopened stream counts)
+- it has no queued or running execution, pending human message or undelivered inbox item
+- it has no live subagent, active monitor, held or queued slot claim, open question, or answer still being
+  delivered to it
+- no user schedule aimed at it can still fire: a pending time trigger, an enabled webhook or an attempt in
+  flight. Dormancy permanently disables such schedules and waking does not restore them
+- `last_message_at` is more than an hour old (or `created_at`, if it was never messaged)
+
+Workers that were never bound to a stream follow the same rules. The sweep uses `makeDormant` in idle-only
+mode. All of these checks are repeated under the agent queue lock, in the transaction that writes `dormant`,
+and anything that arrived since selection makes it refuse rather than stop or defer work. Each tick makes at
+most 10 workers dormant and attempts at most 50. A refused or failing worker is left alone for an hour and
+is not charged to that budget. Like any dormancy, this keeps history and worktrees, and a later message wakes
+the worker again.
 
 ## Agent Types
 

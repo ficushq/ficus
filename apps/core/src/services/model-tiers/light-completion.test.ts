@@ -210,6 +210,73 @@ describe('completeLight', () => {
     expect(calls).toHaveLength(1)
   })
 
+  test('a candidate can take a longer wait of its own, still within the overall deadline', async () => {
+    let clock = 0
+    const timers = manualTimers()
+    const { deps, calls } = fakeDeps(
+      {
+        'anthropic:claude-haiku-4-5:off': async () => {
+          clock += 9_000
+          return null
+        },
+        'openai-codex:gpt-6-luna:off': async () => 'ok',
+      },
+      {
+        now: () => clock,
+        setTimer: timers.setTimer,
+        candidateTimeoutMs: (spec, timeoutMs) => (spec.startsWith('anthropic:') ? 10_000 : timeoutMs),
+      }
+    )
+    await completeLight({ ...request, timeoutMs: 6_000, totalTimeoutMs: 12_000 }, deps)
+    // Only the slow-starting candidate waits longer; the next gets the request's wait, cut to what is left.
+    expect(calls.map((call) => call.call.timeoutMs)).toEqual([10_000, 3_000])
+
+    clock = 0
+    const capped = fakeDeps(
+      { 'anthropic:claude-haiku-4-5:off': async () => 'ok' },
+      {
+        now: () => clock,
+        setTimer: timers.setTimer,
+        candidateTimeoutMs: () => 60_000,
+      }
+    )
+    await completeLight({ ...request, timeoutMs: 6_000, totalTimeoutMs: 12_000 }, capped.deps)
+    expect(capped.calls[0].call.timeoutMs).toBe(12_000)
+  })
+
+  test('a candidate whose wait cannot be looked up falls back to the next, and a slow lookup is bounded', async () => {
+    const failing = fakeDeps(
+      { 'openai-codex:gpt-6-luna:off': async () => 'ok' },
+      {
+        candidateTimeoutMs: (spec, timeoutMs) =>
+          spec.startsWith('anthropic:') ? Promise.reject(new Error('auth lookup failed')) : timeoutMs,
+      }
+    )
+    expect(await completeLight(request, failing.deps)).toEqual({ text: 'ok', model: 'openai-codex:gpt-6-luna:off' })
+    expect(failing.errors).toEqual(['anthropic:claude-haiku-4-5:off'])
+
+    const timers = manualTimers()
+    let clock = 0
+    const hanging = fakeDeps(
+      {},
+      {
+        setTimer: timers.setTimer,
+        now: () => clock,
+        candidateTimeoutMs: () => {
+          // The lookup hangs until the overall deadline passes.
+          queueMicrotask(() => {
+            clock = 20_000
+            timers.fireAll()
+          })
+          return new Promise<number>(() => {})
+        },
+      }
+    )
+    expect(await completeLight(request, hanging.deps)).toBeNull()
+    expect(hanging.calls).toHaveLength(0)
+    expect(timers.pending.size).toBe(0)
+  })
+
   test('caps the requested output tokens', async () => {
     const { deps, calls } = fakeDeps({ 'anthropic:claude-haiku-4-5:off': async () => 'ok' })
     await completeLight({ ...request, maxTokens: 100_000 }, deps)

@@ -10,6 +10,7 @@ import {
 } from './health-store'
 import { scheduleHealthNotifier } from './failure-notifications'
 import { validateScheduleReferences } from './reference-validation'
+import { scheduleNamesAgent } from './agent-targets'
 import { createLogger } from '../../lib/infra/logger'
 import type { ClassifiedScheduleFailure } from './failure-classifier'
 
@@ -71,10 +72,7 @@ async function reconcileSchedulesForUnavailableAgent(
             and(
               eq(schedules.id, schedule.id),
               sql`(
-                (${schedules.scopeType} = 'agent' AND ${schedules.scopeId} = ${agent.id})
-                OR ${schedules.action}->'target'->>'agentId' = ${agent.id}
-                OR ${schedules.action}->>'assigneeAgentId' = ${agent.id}
-                OR ${schedules.action}->'agentIds' @> ${JSON.stringify([agent.id])}::jsonb
+                ${scheduleNamesAgent(sql`${agent.id}`)}
                 OR (
                   ${schedules.scopeType} = 'squad'
                   AND ${schedules.action}->'target'->>'type' = 'squad_manager'

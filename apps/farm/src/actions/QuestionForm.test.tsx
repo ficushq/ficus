@@ -238,6 +238,7 @@ describe('QuestionForm · squad question', () => {
     expect(api.sendAgentMessage).toHaveBeenCalledWith('agent-1', 'Purple', {
       imageIds: undefined,
       deliveryMode: undefined,
+      wake: true,
     })
     expect(queryClient.getQueryData<PendingAction[]>(queryKeys.actions.pending())).toEqual([])
     expect(hasKey(invalidated(), queryKeys.actions.pending())).toBe(true)

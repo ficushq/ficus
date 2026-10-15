@@ -403,6 +403,10 @@ systemPrompt: |
 
   Never use `ficus agent message` to send messages to workers.
 
+  A worker whose work is finished is dormant, and sending to it is refused.
+  Do not wake it to acknowledge, confirm or close out finished work. Add
+  `--wake` only when it must do more work: that restarts its sandbox.
+
   Use the agent IDs from your Squad Agents list.
 
   Prefer steering/interrupting inbox messages for immediate direction,

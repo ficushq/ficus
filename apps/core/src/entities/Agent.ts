@@ -95,6 +95,27 @@ export class AgentTerminatedError extends AgentTargetUnavailableError {
   }
 }
 
+/**
+ * A direct send to a dormant agent was refused because the caller did not ask to wake it.
+ * Only request paths that opt in (`refuseIfDormant` / `refuseDormantRecipient`) throw this;
+ * runtime deliveries keep their own wake policy. The message names only the id the caller
+ * supplied, so it reveals no more than the existing terminated/unavailable errors.
+ */
+export class AgentDormantError extends AgentTargetUnavailableError {
+  override readonly code = 'AGENT_DORMANT'
+  readonly agentId: string
+
+  constructor(agentId: string) {
+    super(
+      agentId,
+      `Agent ${agentId.slice(0, 8)} is dormant. Its work is finished; sending will wake it and restart its sandbox. ` +
+        'Re-send with wake: true (CLI: --wake) to send anyway.'
+    )
+    this.name = 'AgentDormantError'
+    this.agentId = agentId
+  }
+}
+
 type SendMessageLockedHook = (tx: DbTransaction, agentId: string) => Promise<void>
 let agentUpdatePrewriteHook: ((agentId: string) => Promise<void>) | undefined
 export function setAgentUpdatePrewriteHookForTest(hook: ((agentId: string) => Promise<void>) | undefined): void {
@@ -1868,6 +1889,11 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       attachmentActorUserId?: string
       /** Runs only after an accepted idempotent replay has been ruled out. */
       validateNewAcceptance?: () => void
+      /**
+       * Refuse with AgentDormantError instead of waking a dormant agent. Checked under the
+       * agent's row lock, so an agent that goes dormant before acceptance is refused too.
+       */
+      refuseIfDormant?: boolean
     } = {}
   ): Promise<{ success: boolean; status: ExecutionStatus; queued?: boolean }> {
     if (this.status === 'dormant') {
@@ -1890,6 +1916,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       metadata?: MessageMetadata
       attachmentActorUserId?: string
       validateNewAcceptance?: () => void
+      refuseIfDormant?: boolean
       lifecycleDormancyEpisodeAtAcceptance?: string | null
     } = {}
   ): Promise<{ success: boolean; status: ExecutionStatus; queued?: boolean }> {
@@ -1899,6 +1926,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       metadata,
       attachmentActorUserId,
       validateNewAcceptance,
+      refuseIfDormant,
       lifecycleDormancyEpisodeAtAcceptance,
     } = options
     const interventionPayloadMatches = (message: { content: string; metadata: unknown }) => {
@@ -1939,6 +1967,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       if (!authoritativeAgent) throw new Error(`Agent ${this.id} not found`)
       if (authoritativeAgent.status === 'terminated') throw new AgentTerminatedError(this.id)
       if (authoritativeAgent.pendingDormancyAt) throw new AgentTargetUnavailableError(this.id)
+      if (authoritativeAgent.status === 'dormant' && refuseIfDormant) throw new AgentDormantError(this.id)
       if (authoritativeAgent.status === 'dormant' && metadata?.wakeEligible === false) {
         throw new AgentTargetUnavailableError(this.id)
       }

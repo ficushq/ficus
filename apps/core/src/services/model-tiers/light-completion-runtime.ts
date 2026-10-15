@@ -10,6 +10,7 @@ import { recordInferenceUsage } from '../inference-usage'
 import { accountForProvider } from '../inference-usage/billing'
 import { attributionFromSource } from '../inference-usage/types'
 import { CLAUDE_CODE_FLAG } from '../agent/claude-code/account'
+import { completeOnceWithClaudeCode } from '../agent/claude-code/one-shot'
 import { usableModelCandidatesForCurrentEnv } from '../model-selection'
 import {
   completeLight,
@@ -21,6 +22,18 @@ import {
 
 const log = createLogger('light-completion')
 
+/**
+ * Claude Code starts a `claude` process per call, which alone can take several seconds; its
+ * candidate waits at least this long. The request's overall deadline still bounds it.
+ */
+export const CLAUDE_CODE_LIGHT_COMPLETION_TIMEOUT_MS = 10_000
+
+/** Seams for tests; production uses the shared model runtime and the real `claude`. */
+export interface LightCompletionRuntimeDeps {
+  runtime?: () => ReturnType<typeof getModelRuntime>
+  claudeCode?: typeof completeOnceWithClaudeCode
+}
+
 /** The tier's chain from the synced `model_tiers` table; a disabled or missing tier has none. */
 async function loadTierChain(slug: string): Promise<string | null> {
   const [tier] = await db
@@ -31,23 +44,60 @@ async function loadTierChain(slug: string): Promise<string | null> {
 }
 
 /**
- * Ask one candidate through the process's shared model runtime, which resolves the stored provider
- * account (API key or OAuth) exactly as agent sessions do. No new credentials are involved.
+ * The model and account auth a candidate would use, resolved through the process's shared model
+ * runtime exactly as agent sessions resolve them (API key, OAuth or the Claude Code account). No
+ * new credentials are involved.
  */
-async function completeWithRuntime(spec: string, call: LightCompletionCall): Promise<string | null> {
-  const runtime = await getModelRuntime()
+async function resolveCandidate(spec: string, deps: LightCompletionRuntimeDeps) {
+  const runtime = await (deps.runtime ?? getModelRuntime)()
   const { model, thinkingLevel } = resolveAgentModelSpec(spec, runtime)
   const auth = await runtime.getAuth(model)
+  return { runtime, model, thinkingLevel, auth, viaClaudeCode: auth?.env?.[CLAUDE_CODE_FLAG] === '1' }
+}
+
+/**
+ * Ask one candidate. A Claude Code account answers through a one-shot `claude` call that ends with
+ * the answer (never the agent session bridge); every other account through the provider's API.
+ */
+export async function completeWithRuntime(
+  spec: string,
+  call: LightCompletionCall,
+  deps: LightCompletionRuntimeDeps = {}
+): Promise<string | null> {
+  const { runtime, model, thinkingLevel, auth, viaClaudeCode } = await resolveCandidate(spec, deps)
   if (!auth) return null
-  // A Claude Code account runs the user's own `claude` process per request: not a one-shot call.
-  if (auth.env?.[CLAUDE_CODE_FLAG] === '1') return null
+  // `off` means no thinking; the providers expect the option to be absent for that.
+  const reasoning = thinkingLevel && thinkingLevel !== 'off' ? thinkingLevel : undefined
+  if (viaClaudeCode)
+    return (deps.claudeCode ?? completeOnceWithClaudeCode)({
+      model: model.id,
+      system: call.system,
+      prompt: call.prompt,
+      maxTokens: call.maxTokens,
+      signal: call.signal,
+      thinking: reasoning !== undefined,
+      // Billed to the Claude plan; recorded under the account's provider so it counts as a subscription.
+      onUsage: (tokens) =>
+        recordLightCompletionUsage(
+          model.provider,
+          model.id,
+          {
+            usage: {
+              ...tokens,
+              totalTokens: tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: 'stop',
+          },
+          call
+        ),
+    })
   const message = await runtime.completeSimple(
     model,
     { systemPrompt: call.system, messages: [{ role: 'user', content: call.prompt, timestamp: Date.now() }] },
     {
       maxTokens: call.maxTokens,
-      // `off` means no thinking; the providers expect the option to be absent for that.
-      reasoning: thinkingLevel && thinkingLevel !== 'off' ? thinkingLevel : undefined,
+      reasoning,
       signal: call.signal,
       timeoutMs: call.timeoutMs,
       maxRetries: 0,
@@ -98,10 +148,21 @@ export function recordLightCompletionUsage(
   })
 }
 
+/** A Claude Code candidate waits long enough for its process to start; any other keeps the request's wait. */
+export async function candidateTimeoutWithRuntime(
+  spec: string,
+  timeoutMs: number,
+  deps: LightCompletionRuntimeDeps = {}
+): Promise<number> {
+  const { viaClaudeCode } = await resolveCandidate(spec, deps)
+  return viaClaudeCode ? Math.max(timeoutMs, CLAUDE_CODE_LIGHT_COMPLETION_TIMEOUT_MS) : timeoutMs
+}
+
 export const lightCompletionRuntimeDeps: LightCompletionDeps = {
   tierChain: loadTierChain,
   usableCandidates: usableModelCandidatesForCurrentEnv,
-  complete: completeWithRuntime,
+  complete: (spec, call) => completeWithRuntime(spec, call),
+  candidateTimeoutMs: (spec, timeoutMs) => candidateTimeoutWithRuntime(spec, timeoutMs),
   onCandidateError: (spec, error) =>
     log.debug(`Light completion candidate ${spec} failed: ${error instanceof Error ? error.message : String(error)}`),
 }

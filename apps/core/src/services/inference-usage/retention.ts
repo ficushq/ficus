@@ -11,7 +11,7 @@
  * (a long turn, a first backfill) are flushed instead, added to the rollup and deleted in one transaction.
  * Each day is processed under an advisory lock so concurrent jobs cannot double a day.
  */
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { detailCutoff, inferenceRetentionDays } from './query'
@@ -34,20 +34,47 @@ async function setPrunedBefore(executor: Executor, day: string): Promise<void> {
 const dayRows = (day: string) => sql`occurred_at >= ${day}::date::timestamp AT TIME ZONE 'UTC'
   AND occurred_at < (${day}::date + 1)::timestamp AT TIME ZONE 'UTC'`
 
-async function insertTotals(executor: Executor, day: string): Promise<void> {
-  await executor.execute(sql`
+const DIMENSIONS = sql.raw('feature, provider, model, account_id, billing, squad_id, work_stream_id, agent_id, user_id')
+
+/** The day's totals per group, from `source` (a table or CTE with the per-call columns). */
+function totalsSelect(day: string, source: SQL): SQL {
+  return sql`
     INSERT INTO inference_usage_daily (
       day, feature, provider, model, account_id, billing, squad_id, work_stream_id, agent_id, user_id,
       calls, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
       cost_nanodollars, list_cost_nanodollars, list_unknown_calls, estimated_calls
     )
-    SELECT ${day}::date, feature, provider, model, account_id, billing, squad_id, work_stream_id, agent_id, user_id,
+    SELECT ${day}::date, ${DIMENSIONS},
       count(*), sum(input_tokens), sum(output_tokens), sum(cache_read_tokens), sum(cache_write_tokens),
       sum(cost_nanodollars), coalesce(sum(list_cost_nanodollars), 0),
       count(*) FILTER (WHERE list_cost_nanodollars IS NULL), count(*) FILTER (WHERE cost_estimated)
-    FROM inference_usage WHERE ${dayRows(day)}
-    GROUP BY feature, provider, model, account_id, billing, squad_id, work_stream_id, agent_id, user_id
+    FROM ${source}
+    GROUP BY ${DIMENSIONS}
+  `
+}
+
+/** Adds the day's per-call rows to its rollup, without removing them (an unpruned day). */
+async function insertTotals(executor: Executor, day: string): Promise<void> {
+  await executor.execute(sql`${totalsSelect(day, sql`(SELECT * FROM inference_usage WHERE ${dayRows(day)}) day_rows`)}`)
+}
+
+/**
+ * Moves the day's per-call rows into its rollup in ONE statement: the rows deleted are exactly the rows
+ * summed (one snapshot), so a row committed meanwhile is either moved with them or left for the next flush.
+ */
+async function moveIntoRollup(executor: Executor, day: string): Promise<void> {
+  await flushHookForTest?.(day)
+  await executor.execute(sql`
+    WITH gone AS (DELETE FROM inference_usage WHERE ${dayRows(day)} RETURNING *)
+    ${totalsSelect(day, sql`gone`)}
   `)
+}
+
+let flushHookForTest: ((day: string) => Promise<void>) | undefined
+
+/** Test seam: runs inside the day's transaction just before its rows are moved into the rollup. */
+export function setRetentionFlushHookForTest(hook: ((day: string) => Promise<void>) | undefined): void {
+  flushHookForTest = hook
 }
 
 /**
@@ -60,16 +87,17 @@ async function processDay(day: string, prune: boolean): Promise<void> {
     const watermark = await prunedBefore(tx)
     const sealed = watermark !== null && day < watermark
     if (sealed) {
-      // Already pruned: add the stray rows to the rollup, then remove them so they are never added twice.
-      await insertTotals(tx, day)
-      await tx.execute(sql`DELETE FROM inference_usage WHERE ${dayRows(day)}`)
+      // Already pruned: move the stray rows into the rollup, so they are counted once.
+      await moveIntoRollup(tx, day)
       return
     }
     await tx.execute(sql`DELETE FROM inference_usage_daily WHERE day = ${day}::date`)
-    await insertTotals(tx, day)
     if (prune) {
-      await tx.execute(sql`DELETE FROM inference_usage WHERE ${dayRows(day)}`)
+      await moveIntoRollup(tx, day)
       await setPrunedBefore(tx, isoDay(Date.parse(`${day}T00:00:00Z`) + DAY_MS))
+    } else {
+      // Nothing is deleted: a row committed meanwhile stays in the per-call table, read from there.
+      await insertTotals(tx, day)
     }
   })
 }

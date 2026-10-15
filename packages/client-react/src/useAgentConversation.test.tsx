@@ -2163,6 +2163,22 @@ describe('first sends and intervention queues', () => {
     }
   })
 
+  test('a chat send explicitly wakes a dormant agent', async () => {
+    const mc = makeMockClient()
+    const send = spyOn(mc.client.agents, 'sendMessage').mockResolvedValue({ success: true, status: 'queued' })
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a1' }), { wrapper: wrap(mc.client) })
+    try {
+      await act(async () => {
+        await hook.result.current.sendAccepted('are you there?').accepted
+      })
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(send.mock.calls[0]?.[2]).toMatchObject({ wake: true })
+    } finally {
+      hook.unmount()
+      send.mockRestore()
+    }
+  })
+
   for (const method of ['send', 'sendAccepted'] as const) {
     test(`failed ${method} intervention preserves the running execution`, async () => {
       const mc = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e1' } })
