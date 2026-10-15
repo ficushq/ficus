@@ -22,8 +22,8 @@ import { createMiddleware } from 'hono/factory'
 import { Agent } from '../entities/Agent'
 import { AmbiguousPrefixError } from '../db/prefix-match'
 import { requireEntityPermission } from '../middleware/require-entity-permission'
-import { resolvePermissions, type Identity } from '../services/rbac'
-import { secretAccessible } from '../services/secrets/groups'
+import type { Identity } from '../services/rbac'
+import { secretReader } from '../middleware/require-secret-permission'
 import { getSecretStore } from '../services/secrets'
 import { normalizeSecretKeys } from '../services/squad/env'
 import {
@@ -76,12 +76,6 @@ const requirePerson = createMiddleware(async (c, next) => {
 function errorResponse(c: Context, error: unknown) {
   if (error instanceof AgentSecretsError) return c.json({ error: error.message }, error.status)
   throw error
-}
-
-/** Which Secret Store keys the caller may read (system-scoped, exactly as the Secret Store routes check). */
-async function secretReader(c: Context): Promise<(key: string) => boolean> {
-  const held = await resolvePermissions(c.get('identity') as Identity)
-  return (key) => secretAccessible(held, key, 'read')
 }
 
 async function applyChange(c: Context, mode: AgentSecretsChange['mode'], keys: string[]) {
