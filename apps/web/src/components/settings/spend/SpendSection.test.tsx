@@ -1,10 +1,21 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { SpendBreakdown, SpendSummary } from '@ficus/shared'
+import { PermissionsProvider } from '../../../hooks/usePermissions'
 import { acquireDomHarness } from '../../../test/domHarness'
 import { SpendBreakdownTable } from './SpendBreakdownTable'
 import { SpendDailyChart } from './SpendDailyChart'
+import { SpendSection } from './SpendSection'
 import { SpendTotals } from './SpendTotals'
+
+/** The class list of the element whose opening tag contains `marker`, from static markup. */
+function classesOf(html: string, marker: string): string[] {
+  const at = html.indexOf(marker)
+  expect(at).toBeGreaterThanOrEqual(0)
+  const tag = html.slice(html.lastIndexOf('<', at), html.indexOf('>', at))
+  return tag.match(/class="([^"]*)"/)?.[1].split(' ') ?? []
+}
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 afterEach(async () => {
@@ -66,6 +77,39 @@ const summary: SpendSummary = {
   projection: { monthUsd: 260 },
   meta: { retentionDays: 180, detailFrom: '2026-04-18T00:00:00.000Z', feesIncluded: true },
 }
+
+// Phone layout (390 px): nothing may make the page wider than the viewport. Real layout is measured in
+// Chromium by scripts/check-spend-layout.ts; these pin the rules that make it so.
+describe('SpendSection on a phone', () => {
+  const page = () =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <PermissionsProvider
+          usePermissions={() => ({ permissions: ['*'], can: () => true, isLoading: false, isError: false })}
+        >
+          <SpendSection />
+        </PermissionsProvider>
+      </QueryClientProvider>
+    )
+
+  test('the period pills wrap inside their own row instead of widening the page', () => {
+    const html = page()
+    expect(html).toContain('>30 days<')
+    expect(html).toContain('>Custom<')
+    const pills = classesOf(html, 'aria-label="Period"')
+    expect(pills).toContain('max-w-full')
+    expect(pills).toContain('flex-wrap')
+    // Its row is a shrinkable flex parent.
+    expect(html).toContain(
+      '<div class="flex min-w-0 flex-wrap items-center gap-3"><div role="radiogroup" aria-label="Period"'
+    )
+    expect(classesOf(html, 'aria-labelledby="spend-heading"')).toContain('min-w-0')
+  })
+
+  test('the top lists stack in one shrinkable column', () => {
+    expect(classesOf(page(), 'class="grid ')).toEqual(expect.arrayContaining(['grid-cols-1', 'md:grid-cols-2']))
+  })
+})
 
 describe('SpendTotals', () => {
   test('shows billed usage and each subscription as its own line, with plan-unknown asking for a choice', () => {
@@ -200,6 +244,22 @@ describe('SpendBreakdownTable', () => {
       ['model', 'claude-sonnet-4-5'],
       ['billing', 'unknown'],
     ])
+  })
+
+  test('fits a phone: the table scrolls in its own container, calls and tokens fold under the label', () => {
+    const html = renderToStaticMarkup(
+      <SpendBreakdownTable title="Top agents" breakdown={breakdown} showList={false} onFilter={() => {}} />
+    )
+    expect(classesOf(html, 'aria-labelledby="spend-breakdown-top-agents"')).toContain('min-w-0')
+    expect(classesOf(html, 'class="max-w-full overflow-x-auto')).toContain('overflow-x-auto')
+    // Calls and tokens columns only from sm up; under it, a line under the label says the same.
+    for (const heading of ['>Calls<', '>Tokens<'])
+      expect(classesOf(html, heading)).toEqual(expect.arrayContaining(['hidden', 'sm:table-cell']))
+    expect(html).toContain('10 calls · 12.3k tokens')
+    expect(html).toContain('2 calls · 5 tokens')
+    expect(classesOf(html, '10 calls · 12.3k tokens')).toEqual(expect.arrayContaining(['block', 'sm:hidden']))
+    // "≈" never wraps away from its amount.
+    expect(classesOf(html, '≈ $1.00')).toContain('whitespace-nowrap')
   })
 
   test('an empty period says so', () => {

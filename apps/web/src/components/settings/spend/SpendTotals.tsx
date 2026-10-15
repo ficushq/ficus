@@ -25,7 +25,7 @@ export function SpendTotals({
           Total for {periodLabel}
         </h3>
         <p
-          className="text-3xl font-semibold tabular-nums text-primary"
+          className="whitespace-nowrap text-3xl font-semibold tabular-nums text-primary"
           title={totals.approximate ? SPEND_APPROXIMATE_NOTE : undefined}
         >
           {formatSpend(totals.totalUsd, totals.approximate)}
@@ -42,18 +42,20 @@ export function SpendTotals({
         aria-label="What the total is made of"
       >
         <li className="flex items-baseline justify-between gap-4 py-2">
-          <span className="text-primary">
+          <span className="min-w-0 text-primary">
             Model usage billed per call
             <span className="block text-xs text-muted">
-              {totals.calls.toLocaleString('en-US')} {totals.calls === 1 ? 'call' : 'calls'} · API keys; subscription
-              and self-hosted calls bill $0 each
+              {totals.calls.toLocaleString('en-US')} {totals.calls === 1 ? 'call' : 'calls'} · API keys; subscription,
+              self-hosted and before-tracking calls bill $0 each
             </span>
           </span>
-          <span className="tabular-nums text-primary">{formatSpend(totals.billedUsd, totals.approximate)}</span>
+          <span className="shrink-0 whitespace-nowrap tabular-nums text-primary">
+            {formatSpend(totals.billedUsd, totals.approximate)}
+          </span>
         </li>
         {subscriptions.map((line) => (
           <li key={`${line.provider}/${line.accountId}`} className="flex items-baseline justify-between gap-4 py-2">
-            <span className="text-primary">
+            <span className="min-w-0 break-words text-primary">
               {line.needsChoice
                 ? `${line.label}: subscription, plan unknown`
                 : `${line.label}: ${line.planLabel ?? line.plan ?? 'subscription'}`}
@@ -70,7 +72,9 @@ export function SpendTotals({
                 )}
               </span>
             </span>
-            <span className="tabular-nums text-primary">{line.needsChoice ? '—' : formatUsd(line.feeUsd)}</span>
+            <span className="shrink-0 whitespace-nowrap tabular-nums text-primary">
+              {line.needsChoice ? '—' : formatUsd(line.feeUsd)}
+            </span>
           </li>
         ))}
       </ul>

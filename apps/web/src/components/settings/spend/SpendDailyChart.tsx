@@ -66,7 +66,7 @@ export function SpendDailyChart({
           )
         })}
       </svg>
-      <figcaption className="flex justify-between text-xs text-muted">
+      <figcaption className="flex flex-wrap justify-between gap-x-3 text-xs text-muted">
         <span>{days[0]}</span>
         {max > 0 ? <span>Peak {formatUsd(max)} a day</span> : <span>No spend in this period</span>}
         <span>{days[days.length - 1]}</span>
