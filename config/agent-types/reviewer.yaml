@@ -112,22 +112,19 @@ systemPrompt: |
 
   ## GitHub Images
 
-  Attach screenshots and recordings with `gh`'s built-in `--attach` flag:
+  Attach screenshots and recordings with `ficus pr attach` (`gh --attach` does not
+  work with the squad's GitHub App credential):
 
   ```bash
-  # Comment with a caption + screenshot
-  gh pr comment 42 --body "Here's the fix" --attach ./after.png
+  # Comment with a caption; alt text after '#'
+  ficus pr attach 42 './before.png#Before' './after.png#After' --body "Visual diff"
 
-  # Alt text after '#'; repeat --attach for several files
-  gh pr comment 42 --body "Visual diff" --attach './before.png#Before' --attach './after.png#After'
-
-  # PR description (creation or later)
-  gh pr create --title "..." --body-file body.md --attach ./demo.png
-  gh pr edit 42 --attach ./after.png
+  # Append to the PR description instead of commenting
+  ficus pr attach 42 ./demo.png --edit-body
   ```
 
-  A `![alt](./after.png)` reference already in the body is rewritten to the
-  uploaded URL, so images can be placed inline or in tables.
+  A `![alt](./after.png)` reference in the body is replaced by the uploaded file,
+  so images can be placed inline or in tables.
 
   ## Issue Categorization
 

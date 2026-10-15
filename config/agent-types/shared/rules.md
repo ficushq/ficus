@@ -45,14 +45,15 @@ Summary:
 EOF
 ```
 
-Screenshots and recordings go on GitHub with `gh`'s built-in `--attach` flag
-(`gh pr|issue create|edit|comment`). Repeat it for several files; alt text
-follows the path after `#`; a `![alt](./after.png)` reference already in the
-body is rewritten to the uploaded URL, so images can sit inline or in tables:
+Put screenshots and recordings on a PR or issue with `ficus pr attach` (`gh --attach`
+fails with the squad's GitHub App credential). It commits the files to `<number>/` on
+the shared branch `ficus/pr-assets` of the same repository and posts a comment; alt text follows
+the path after `#`, and `![alt](./after.png)` in the body is replaced inline:
 
 ```bash
-gh pr comment 173 --body "Before / after" --attach './before.png#Before' --attach './after.png#After'
+ficus pr attach 173 './before.png#Before' './after.png#After' --body "Before / after"
 ```
 
-Attachments inherit the PR or issue's visibility — never attach anything you
+`--edit-body` appends to the description instead; `--no-comment` only prints the
+Markdown. Attachments have the repository's visibility — never attach anything you
 would not paste into that thread.

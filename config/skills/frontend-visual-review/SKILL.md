@@ -99,8 +99,8 @@ Most dev servers (Vite, Next.js, Remix, etc.) hot-reload on file change. After e
 # review handoffs, attaching the tool response is enough — do not over-engineer.
 ```
 
-To put a saved screenshot on a PR or issue, use `gh pr comment <n> --attach ./shot.png`
-(repeat `--attach` for several files; alt text follows the path after `#`).
+To put a saved screenshot on a PR or issue, use `ficus pr attach <n> ./shot.png --body "..."`
+(several files allowed; alt text follows the path after `#`).
 
 ## Cleanup
 

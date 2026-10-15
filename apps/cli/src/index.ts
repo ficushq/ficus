@@ -27,6 +27,7 @@ import { registerMemoryCommands } from './commands/memory'
 import { registerNotificationConfigCommands } from './commands/notification-config'
 import { registerMonitorCommands } from './commands/monitor'
 import { registerSharedPromptCommands } from './commands/shared-prompt'
+import { registerPrCommands } from './commands/pr'
 import { registerProviderAuthCommands } from './commands/provider-auth'
 import { registerRemoteHostsCommands } from './commands/remote-hosts'
 import { registerScheduleCommands } from './commands/schedule'
@@ -87,6 +88,7 @@ registerMachinesCommands(program)
 registerMemoryCommands(program)
 registerMonitorCommands(program)
 registerNotificationConfigCommands(program)
+registerPrCommands(program)
 registerProviderAuthCommands(program)
 registerRemoteHostsCommands(program)
 registerScheduleCommands(program)
