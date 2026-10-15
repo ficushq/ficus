@@ -8,6 +8,7 @@ import {
   type CompactionResult,
   type Extension,
   type SessionBeforeCompactEvent,
+  type ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
 
 import { createLogger } from '../../lib/infra/logger'
@@ -16,6 +17,26 @@ import { createPrecompactionExtension } from './precompaction/extension'
 import { createShortTermMemoryContextExtension, type ShortTermMemoryContext } from './short-term-memory-context'
 
 const log = createLogger('resource-loader')
+
+/** Applied to every tool a loaded extension registers, e.g. output redaction. */
+export type ExtensionToolWrapper = (tool: ToolDefinition) => ToolDefinition
+
+/**
+ * Route every tool an extension registers, now or later at runtime, through
+ * `wrapTool`. Extension tools reach pi through `extension.tools`, not the
+ * session's custom tool list, so wrapping that list alone would miss them.
+ */
+function wrapExtensionTools(extension: Extension, wrapTool: ExtensionToolWrapper): void {
+  const tools = extension.tools
+  const set = tools.set.bind(tools)
+  type Registered = Parameters<typeof set>[1]
+  const wrap = (registered: Registered): Registered => ({
+    ...registered,
+    definition: wrapTool(registered.definition as ToolDefinition) as Registered['definition'],
+  })
+  for (const [name, registered] of tools) set(name, wrap(registered))
+  tools.set = (name, registered) => set(name, wrap(registered))
+}
 
 /**
  * Pi agent session resource loader to customize system prompt and skills.
@@ -35,15 +56,17 @@ export class FicusResourceLoader implements ResourceLoader {
   constructor(
     private readonly systemPrompt: string,
     private readonly skillPaths?: string[],
-    private readonly extensionPaths?: string[]
+    private readonly extensionPaths?: string[],
+    private readonly wrapExtensionTool?: ExtensionToolWrapper
   ) {}
 
   static async create(
     systemPrompt: string,
     skillPaths?: string[],
-    extensionPaths?: string[]
+    extensionPaths?: string[],
+    wrapExtensionTool?: ExtensionToolWrapper
   ): Promise<FicusResourceLoader> {
-    const loader = new FicusResourceLoader(systemPrompt, skillPaths, extensionPaths)
+    const loader = new FicusResourceLoader(systemPrompt, skillPaths, extensionPaths, wrapExtensionTool)
     await loader.init()
     return loader
   }
@@ -83,6 +106,9 @@ export class FicusResourceLoader implements ResourceLoader {
   private async loadExtensions(): Promise<void> {
     if (this.extensionPaths?.length) {
       this.extensions = await loadExtensions(this.extensionPaths, process.cwd())
+      if (this.wrapExtensionTool) {
+        for (const extension of this.extensions.extensions) wrapExtensionTools(extension, this.wrapExtensionTool)
+      }
       if (this.extensions.errors.length > 0) {
         log.error(`Failed to load extensions:`, JSON.stringify(this.extensions.errors))
       }

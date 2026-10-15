@@ -10,9 +10,57 @@ export interface ContentSafetyPort {
   redact<T>(input: T): T
   /** Redact and report the sanitized key names whose exact stored values matched. */
   redactWithStoredKeys<T>(input: T): StoredKeyRedaction<T>
+  /**
+   * Drop a partial stored value cut off at an edge of text: a trailing fragment
+   * that starts a stored value (the rest has not streamed yet) and/or a leading
+   * fragment that ends one (the start was truncated away). Run it on raw text
+   * before redaction: replacing a stored value that sits inside another one
+   * hides the outer value's fragment from matching. Returns the text without
+   * those fragments (a cut never splits a complete stored value); never returns a fragment.
+   */
+  trimStoredValueFragments(text: string, edges: StoredValueFragmentEdges): string
+}
+
+export interface StoredValueFragmentEdges {
+  leading?: boolean
+  trailing?: boolean
 }
 
 type SecretEntry = { key: string; value: string }
+
+/** KMP failure table: for each prefix of `pattern`, the length of its longest proper border. */
+function failureTable(pattern: string): Int32Array {
+  const table = new Int32Array(pattern.length)
+  let border = 0
+  for (let index = 1; index < pattern.length; index++) {
+    while (border > 0 && pattern[index] !== pattern[border]) border = table[border - 1]!
+    if (pattern[index] === pattern[border]) border++
+    table[index] = border
+  }
+  return table
+}
+
+/**
+ * Length of the longest proper prefix of `pattern` that `text` ends with.
+ * `charAt(i)` reads the text window from its start (i = 0) to its edge.
+ */
+function edgeFragmentLength(
+  pattern: string,
+  table: Int32Array,
+  windowLength: number,
+  charAt: (index: number) => string
+): number {
+  let state = 0
+  for (let index = 0; index < windowLength; index++) {
+    const char = charAt(index)
+    while (state > 0 && pattern[state] !== char) state = table[state - 1]!
+    if (pattern[state] === char) state++
+    // A complete value cannot occur in a window shorter than the value.
+  }
+  return state
+}
+
+type FragmentMatcher = { value: string; forward: Int32Array; reversed: string; backward: Int32Array }
 
 export const MAX_GENERIC_CREDENTIAL_LENGTH = 512
 
@@ -59,6 +107,8 @@ function safeKeyName(key: string): string {
  */
 export class ContentSafety implements ContentSafetyPort {
   #entries: readonly SecretEntry[]
+  /** Built lazily: only streaming tool output needs fragment matching. */
+  #fragmentMatchers: readonly FragmentMatcher[] | undefined
 
   private constructor(entries: readonly SecretEntry[]) {
     this.#entries = []
@@ -71,6 +121,80 @@ export class ContentSafety implements ContentSafetyPort {
       .filter((entry) => entry.value.length > 0)
       .map((entry) => ({ key: safeKeyName(entry.key), value: entry.value }))
       .sort((left, right) => right.value.length - left.value.length)
+    this.#fragmentMatchers = undefined
+  }
+
+  trimStoredValueFragments(text: string, edges: StoredValueFragmentEdges): string {
+    if (!edges.leading && !edges.trailing) return text
+    this.#fragmentMatchers ??= this.#entries
+      .filter((entry) => entry.value.length > 1)
+      .map((entry) => {
+        // UTF-16 code units, matching how the text is indexed below.
+        const reversed = entry.value.split('').reverse().join('')
+        return {
+          value: entry.value,
+          forward: failureTable(entry.value),
+          reversed,
+          backward: failureTable(reversed),
+        }
+      })
+    const matchers = this.#fragmentMatchers
+    // Fragments are only possible at the ORIGINAL edges: that is where output may
+    // continue (or was truncated away). Characters inside the text are known
+    // output, so a cut point is never re-examined as a new edge.
+    let start = 0
+    let end = text.length
+    for (const matcher of matchers) {
+      // A fragment is shorter than its value, so only that many edge characters matter.
+      const window = Math.min(text.length, matcher.value.length - 1)
+      if (edges.trailing) {
+        const offset = text.length - window
+        const length = edgeFragmentLength(matcher.value, matcher.forward, window, (index) => text[offset + index]!)
+        end = Math.min(end, text.length - length)
+      }
+      if (edges.leading) {
+        const length = edgeFragmentLength(
+          matcher.reversed,
+          matcher.backward,
+          window,
+          (index) => text[window - 1 - index]!
+        )
+        start = Math.max(start, length)
+      }
+    }
+    if (start === 0 && end === text.length) return text
+    // A cut that lands inside a complete stored value (overlapping values: one
+    // value's fragment starts within another printed in full) would leave part of
+    // that value behind, unrecognisable to exact redaction. Move the cut out to
+    // the edge of the overlapping run of complete occurrences it falls in.
+    for (const [runStart, runEnd] of this.#occurrenceRuns(text)) {
+      if (runStart < end && end < runEnd) end = runStart
+      if (runStart < start && start < runEnd) start = runEnd
+    }
+    return start >= end ? '' : text.slice(start, end)
+  }
+
+  /**
+   * Complete stored-value occurrences in `text`, merged into disjoint runs of
+   * overlapping occurrences. A point strictly inside a run is strictly inside
+   * some occurrence, and moving out of that occurrence repeatedly ends at the
+   * run's edge, so one lookup per run replaces an unbounded cascade.
+   */
+  #occurrenceRuns(text: string): Array<[number, number]> {
+    const spans: Array<[number, number]> = []
+    for (const entry of this.#entries) {
+      for (let at = text.indexOf(entry.value); at >= 0; at = text.indexOf(entry.value, at + 1)) {
+        spans.push([at, at + entry.value.length])
+      }
+    }
+    spans.sort((left, right) => left[0] - right[0])
+    const runs: Array<[number, number]> = []
+    for (const [spanStart, spanEnd] of spans) {
+      const run = runs.at(-1)
+      if (run && spanStart < run[1]) run[1] = Math.max(run[1], spanEnd)
+      else runs.push([spanStart, spanEnd])
+    }
+    return runs
   }
 
   static fromSecretEntries(entries: readonly SecretEntry[]): ContentSafety {
