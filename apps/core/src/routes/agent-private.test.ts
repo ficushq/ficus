@@ -265,13 +265,15 @@ describe('agent private files', () => {
   test('hides platform custody files and keeps chat attachments read-only', async () => {
     await mkdir(join(privateDir(agentId), '.ficus'), { recursive: true })
     await writeFile(join(privateDir(agentId), '.ficus', 'identity.pem'), 'FAKE KEY')
+    // Per-agent Secret Store values (agent-secrets-file.ts) live here too.
+    await writeFile(join(privateDir(agentId), '.ficus', 'agent-secrets.env'), 'export FAKE_TOKEN=not-a-real-value')
     await writeFile(join(privateDir(agentId), 'identity.pem'), 'FAKE KEY')
     await mkdir(join(privateDir(agentId), 'chat-attachments'), { recursive: true })
     await writeFile(join(privateDir(agentId), 'notes.md'), '# notes')
 
     const tree = await (await get(`/api/agents/${agentId}/private/tree`, admin.token)).json()
     expect(tree.children.map((child: { name: string }) => child.name)).toEqual(['chat-attachments', 'notes.md'])
-    for (const path of ['.ficus/identity.pem', 'identity.pem', '/private/identity.pem']) {
+    for (const path of ['.ficus/identity.pem', '.ficus/agent-secrets.env', 'identity.pem', '/private/identity.pem']) {
       expect((await get(`/api/agents/${agentId}/private/file?path=${path}`, admin.token)).status).toBe(404)
       expect((await get(`/api/agents/${agentId}/private/download?path=${path}`, admin.token)).status).toBe(404)
     }
