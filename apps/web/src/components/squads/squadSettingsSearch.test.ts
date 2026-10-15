@@ -53,7 +53,7 @@ test('workflow, capacity, and merge terms find the Work page', () => {
     'merge',
     'direct merge',
   ])
-    expect(matchesSetting(query, 'Work', 'Squad', SQUAD_SETTINGS_KEYWORDS.workflows!)).toBe(true)
+    expect(matchesSetting(query, 'Work', 'Squad', SQUAD_SETTINGS_KEYWORDS.work!)).toBe(true)
   const entry = (id: string) => SQUAD_SETTINGS_SEARCH.find((candidate) => candidate.id === id)!
   for (const [query, id] of [
     ['workflow', 'default-workflow'],
@@ -61,7 +61,7 @@ test('workflow, capacity, and merge terms find the Work page', () => {
     ['merge', 'merge-policies'],
   ] as const) {
     const { section, label, keywords } = entry(id)
-    expect(section).toBe('workflows')
+    expect(section).toBe('work')
     expect(matchesSetting(query, label, keywords, 'Work')).toBe(true)
   }
 })
