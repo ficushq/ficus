@@ -36,21 +36,51 @@ async function installDom() {
 }
 
 describe('PendingQuestionsBanner', () => {
-  test('keeps a long agent name on one line with an ellipsis and the full label on hover', async () => {
+  test('one question: a single row with icon, count, a one-line plain-text preview, and an Answer affordance', async () => {
     const dom = await installDom()
     root = dom.createRoot().root
-    const agentName = 'worker · Fix VM box port collisions: reserve box port range, block…'
-    await dom.act(async () => root?.render(<PendingQuestionsBanner questions={[questions[0]]} agentName={agentName} />))
+    const text = 'Should I reserve ports   20000–29999 for <b>boxes</b>?\n\nThey **collide** with the dev server.'
+    const question = {
+      ...questions[0],
+      questionData: { questions: [{ id: 'item-0', type: 'text', question: text }] },
+    } as AgentQuestion
+    await dom.act(async () => root?.render(<PendingQuestionsBanner questions={[question]} />))
 
-    const label = `1 pending question from ${agentName}`
-    const button = dom.window.document.querySelector(`button[title="${label}"]`)
-    expect(button).not.toBeNull()
-    // The accessible name is the full label; only the visible text is clipped.
-    expect(button?.textContent).toBe(label)
-    expect(button?.classList.contains('min-w-0')).toBe(true)
-    const text = button?.querySelector('span')
-    expect(text?.textContent).toBe(label)
-    expect(text?.classList.contains('truncate')).toBe(true)
+    const buttons = dom.window.document.querySelectorAll('button')
+    // One full-width click target: no collapse control.
+    expect(buttons).toHaveLength(1)
+    const button = buttons[0]
+    const label =
+      '1 pending question: Should I reserve ports 20000–29999 for <b>boxes</b>? They **collide** with the dev server. Open to answer'
+    expect(button.getAttribute('aria-label')).toBe(label)
+    expect(button.getAttribute('title')).toBe(label)
+    expect(button.classList.contains('w-full')).toBe(true)
+
+    const [icon, count, preview, affordance] = [...button.children]
+    expect(icon.tagName.toLowerCase()).toBe('svg')
+    expect(icon.getAttribute('stroke')).toBe('currentColor')
+    expect(icon.classList.contains('shrink-0')).toBe(true)
+    expect(count.textContent).toBe('1 pending question')
+    expect(count.classList.contains('shrink-0')).toBe(true)
+    // Only the preview shrinks; it is the first line as plain text, never rendered markup.
+    expect(preview.textContent).toBe('· Should I reserve ports 20000–29999 for <b>boxes</b>?')
+    expect(preview.querySelector('b')).toBeNull()
+    expect(preview.classList.contains('truncate')).toBe(true)
+    expect(preview.classList.contains('min-w-0')).toBe(true)
+    expect(affordance.textContent).toBe('Answer')
+    expect(affordance.querySelector('svg')).not.toBeNull()
+    expect(affordance.classList.contains('shrink-0')).toBe(true)
+  })
+
+  test('several questions: just the count, no preview', async () => {
+    const dom = await installDom()
+    root = dom.createRoot().root
+    await dom.act(async () => root?.render(<PendingQuestionsBanner questions={questions} />))
+
+    const button = dom.window.document.querySelector('button')!
+    expect(button.getAttribute('aria-label')).toBe('2 pending questions. Open to answer')
+    expect(button.textContent).toBe('2 pending questionsAnswer')
+    expect(button.textContent).not.toContain('Question 1?')
   })
 
   test('opens live question details once per ID, including a new ID at the same count', async () => {
@@ -61,11 +91,7 @@ describe('PendingQuestionsBanner', () => {
     const render = async (items: AgentQuestion[]) => {
       await dom.act(async () =>
         root?.render(
-          <PendingQuestionsBanner
-            questions={items}
-            agentName="Pearl"
-            dependencies={{ QuestionCardComponent: QuestionCard }}
-          />
+          <PendingQuestionsBanner questions={items} dependencies={{ QuestionCardComponent: QuestionCard }} />
         )
       )
     }
@@ -81,11 +107,10 @@ describe('PendingQuestionsBanner', () => {
     expect(dialog()?.textContent).toContain('question-1')
     expect(dialog()?.getAttribute('aria-modal')).toBe('true')
     await click('[aria-label="Close"]')
-    await click('[aria-label="Collapse pending questions"]')
     await render([{ ...questions[0] }])
     expect(dialog()).toBeNull()
 
-    // New IDs, not counts, reopen the details even while the banner is collapsed.
+    // New IDs, not counts, reopen the details.
     await render([questions[1]])
     expect(dialog()?.textContent).toContain('question-2')
     await click('[aria-label="Close"]')
@@ -96,34 +121,6 @@ describe('PendingQuestionsBanner', () => {
     await render([])
     await render(questions)
     expect(dialog()).toBeNull()
-  })
-
-  test('collapses to a persistent count pill that still opens details', async () => {
-    const dom = await installDom()
-    const { window } = dom
-    const container = window.document.createElement('div')
-    window.document.body.appendChild(container)
-    root = domHarness!.createRoot().root
-
-    const InertQuestionCard = ({ question }: { question: AgentQuestion }) => <div>{question.id}</div>
-    await domHarness!.act(async () =>
-      root?.render(
-        <PendingQuestionsBanner
-          questions={questions}
-          agentName="Pearl"
-          dependencies={{ QuestionCardComponent: InertQuestionCard }}
-        />
-      )
-    )
-    const collapse = window.document.querySelector('[aria-label="Collapse pending questions"]')
-    await domHarness!.act(async () => collapse?.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
-
-    expect(window.document.body.textContent).not.toContain('2 pending questions from Pearl')
-    const pill = window.document.querySelector('[aria-label="2 pending questions from Pearl; open details"]')
-    expect(pill?.textContent).toContain('2')
-
-    await domHarness!.act(async () => pill?.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
-    expect(window.document.querySelector('[role="dialog"]')).not.toBeNull()
   })
 
   for (const fails of [false, true]) {
@@ -172,7 +169,7 @@ describe('PendingQuestionsBanner', () => {
           await domHarness!.act(async () =>
             root?.render(
               <QueryClientProvider client={queryClient}>
-                <PendingQuestionsBanner questions={items} agentName="Pearl" />
+                <PendingQuestionsBanner questions={items} />
               </QueryClientProvider>
             )
           )
@@ -248,11 +245,7 @@ describe('PendingQuestionsBanner', () => {
     root = domHarness!.createRoot().root
     await domHarness!.act(async () =>
       root?.render(
-        <PendingQuestionsBanner
-          questions={questions}
-          agentName="Pearl"
-          dependencies={{ QuestionCardComponent: TestQuestionCard }}
-        />
+        <PendingQuestionsBanner questions={questions} dependencies={{ QuestionCardComponent: TestQuestionCard }} />
       )
     )
 
@@ -261,7 +254,9 @@ describe('PendingQuestionsBanner', () => {
     const first = window.document.querySelector('[data-question-id="question-1"]')
     await domHarness!.act(async () => first?.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
     expect(submitted).toHaveBeenCalledWith('question-1', 'answer-question-1')
-    expect(window.document.body.textContent).toContain('1 pending question from Pearl')
+    expect(
+      window.document.querySelector('button[aria-label="1 pending question: Question 2? Open to answer"]')
+    ).not.toBeNull()
     expect(window.document.querySelector('[data-question-id="question-1"]')).toBeNull()
 
     const last = window.document.querySelector('[data-question-id="question-2"]')

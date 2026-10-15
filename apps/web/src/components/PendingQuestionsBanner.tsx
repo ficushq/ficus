@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import type { AgentQuestion } from '@ficus/shared'
 import { AgentQuestionCard } from './AgentQuestionCard'
 import { Modal } from './Modal'
-import { ChevronRightIcon } from './icons'
+import { ChevronRightIcon, QuestionIcon } from './icons'
+import clsx from 'clsx'
 
 interface QuestionCardProps {
   question: AgentQuestion
@@ -13,14 +14,14 @@ interface QuestionCardProps {
 interface PendingQuestionsBannerProps {
   /** Undefined until this chat has real query data; an empty array is a loaded baseline. */
   questions: AgentQuestion[] | undefined
-  agentName: string
+  /** Placement classes for the card (width, margins). */
+  className?: string
   dependencies?: { QuestionCardComponent?: ComponentType<QuestionCardProps> }
 }
 
 /** Keeps one agent's open asynchronous questions visible without putting forms in chat history. */
-export function PendingQuestionsBanner({ questions, agentName, dependencies }: PendingQuestionsBannerProps) {
+export function PendingQuestionsBanner({ questions, className, dependencies }: PendingQuestionsBannerProps) {
   const QuestionCardComponent = dependencies?.QuestionCardComponent ?? AgentQuestionCard
-  const [collapsed, setCollapsed] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
   const seenQuestionIds = useRef<Set<string> | null>(null)
   const [optimisticallyAnswered, setOptimisticallyAnswered] = useState<Set<string>>(() => new Set())
@@ -60,44 +61,44 @@ export function PendingQuestionsBanner({ questions, agentName, dependencies }: P
   if (visibleQuestions.length === 0) return null
 
   const count = visibleQuestions.length
-  const label = `${count} pending question${count === 1 ? '' : 's'} from ${agentName}`
+  const countLabel = `${count} pending question${count === 1 ? '' : 's'}`
+  // Agent-written text: shown as plain text only, never as markdown or HTML.
+  const questionText = count === 1 ? (visibleQuestions[0].questionData?.questions?.[0]?.question ?? '') : ''
+  const preview = previewLine(questionText)
+  const fullText = collapseWhitespace(questionText)
+  const label = fullText
+    ? `${countLabel}: ${fullText}${/[.?!…]$/.test(fullText) ? '' : '.'} Open to answer`
+    : `${countLabel}. Open to answer`
 
   return (
     <>
-      <div className="rounded-xl bg-surface text-secondary">
-        {collapsed ? (
-          <button
-            type="button"
-            onClick={() => setIsOpen(true)}
-            className="ficus-button ficus-button-ghost flex w-full items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-semibold"
-            aria-label={`${label}; open details`}
-          >
-            <span aria-hidden="true">?</span>
-            <span>{count}</span>
-          </button>
-        ) : (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setIsOpen(true)}
-              className="ficus-button ficus-button-ghost min-w-0 flex-1 rounded-l-lg px-3 py-2 text-left text-sm font-medium"
-              title={label}
-            >
-              {/* One line: a long agent name ends in an ellipsis, the full label stays in the title. */}
-              <span className="block truncate">{label}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCollapsed(true)}
-              className="ficus-button ficus-button-ghost m-1 rounded-md p-1.5"
-              aria-label="Collapse pending questions"
-              title="Collapse pending questions"
-            >
-              <ChevronRightIcon className="h-4 w-4 rotate-90" />
-            </button>
-          </div>
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className={clsx(
+          // An opaque floating card, so chat text scrolling behind it never looks clipped.
+          'ficus-button ficus-button-ghost flex w-full min-w-0 items-center gap-1.5 rounded-xl border border-th-border bg-surface px-3 py-2 text-left text-sm shadow-md hover:bg-surface-hover',
+          className
         )}
-      </div>
+        aria-label={label}
+        title={label}
+      >
+        <QuestionIcon className="h-4 w-4 shrink-0" />
+        <span className="shrink-0 whitespace-nowrap font-medium">{countLabel}</span>
+        {/* One line: only the preview shrinks, ending in an ellipsis; the full text stays in the title. */}
+        <span className="min-w-0 flex-1 truncate text-muted">
+          {preview && (
+            <>
+              <span aria-hidden="true">· </span>
+              {preview}
+            </>
+          )}
+        </span>
+        <span className="flex shrink-0 items-center gap-0.5 text-xs text-muted">
+          <span className="hidden sm:inline">Answer</span>
+          <ChevronRightIcon className="h-4 w-4" />
+        </span>
+      </button>
 
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Pending questions" maxWidth="readable">
         <p className="mb-3 text-sm text-muted">Answering each question wakes the agent to continue.</p>
@@ -120,4 +121,13 @@ export function PendingQuestionsBanner({ questions, agentName, dependencies }: P
       </Modal>
     </>
   )
+}
+
+function collapseWhitespace(text: string) {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+/** The first non-blank line of the question, whitespace collapsed. */
+function previewLine(text: string) {
+  return collapseWhitespace(text.split('\n').find((line) => line.trim()) ?? '')
 }

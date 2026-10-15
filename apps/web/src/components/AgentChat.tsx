@@ -14,7 +14,6 @@ import { ReplySuggestions } from './ReplySuggestions'
 import { latestReplySuggestions } from '../lib/replySuggestions'
 import { SpinnerIcon } from './icons'
 import { useChatApi } from '../api/ChatApiProvider'
-import { getAgentName } from '../lib/agentDisplay'
 import { webStatus } from '../lib/statusPresentation'
 
 const attentionStatus = webStatus('attention')
@@ -404,7 +403,7 @@ export function AgentChat({
           ? openQuestions
           : undefined
       }
-      agentName={(agent?.id === questionAgentId && getAgentName(agent)) || 'Agent'}
+      className="mx-auto max-w-[95%] md:max-w-[90%]"
     />
   ) : undefined
 
@@ -468,16 +467,8 @@ export function AgentChat({
           {afterConversation}
         </>
       }
-      beforeComposer={
-        replySuggestions ? (
-          <>
-            {pendingQuestionsBanner}
-            {replySuggestions}
-          </>
-        ) : (
-          pendingQuestionsBanner
-        )
-      }
+      stickyAfterMessages={pendingQuestionsBanner}
+      beforeComposer={replySuggestions ?? undefined}
       placeholder={placeholder}
       thinkingLabel={thinkingLabel}
       inputStorageKey={inputStorageKey}

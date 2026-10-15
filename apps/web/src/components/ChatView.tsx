@@ -150,6 +150,11 @@ interface ChatViewProps {
   squadId?: string
   renderMessageFooter?: (item: Extract<RenderItem, { kind: 'persisted' }>) => React.ReactNode
   afterMessages?: React.ReactNode
+  /**
+   * Floating content that ends the message flow (after afterMessages): right below the latest
+   * response at the bottom, and pinned over the bottom of the messages while scrolled up.
+   */
+  stickyAfterMessages?: React.ReactNode
   /** Persistent content in normal flow directly above the composer. */
   beforeComposer?: React.ReactNode
   className?: string
@@ -468,6 +473,7 @@ export function ChatView({
   squadId,
   afterMessages,
   renderMessageFooter,
+  stickyAfterMessages,
   beforeComposer,
   className,
   autoFocus = true,
@@ -1074,6 +1080,18 @@ export function ChatView({
     return () => observer.disconnect()
   }, [hideComposer, hideInput, pinTranscriptToBottom])
 
+  // Floating content appearing or resizing at the end of the transcript must not push the latest
+  // message out of view while following the bottom.
+  const stickyAfterMessagesRef = useRef<HTMLDivElement>(null)
+  const hasStickyAfterMessages = Boolean(stickyAfterMessages)
+  useEffect(() => {
+    const stickyEl = stickyAfterMessagesRef.current
+    if (!stickyEl) return
+    const observer = new ResizeObserver(() => pinTranscriptToBottom())
+    observer.observe(stickyEl)
+    return () => observer.disconnect()
+  }, [hasStickyAfterMessages, pinTranscriptToBottom])
+
   // Preserve scroll position when older messages are prepended.
   // Track item count and scroll height to detect when new messages were added at the top.
   const prevItemCountRef = useRef(0)
@@ -1645,8 +1663,11 @@ export function ChatView({
         onTouchMove={markUserScrolling}
         className={clsx(
           'flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-4 space-y-3 min-h-0',
-          // Room for the plant peeking up from behind the composer.
-          peekingWorkItem && 'pb-8 md:pb-9'
+          // Room for the plant peeking up from behind the composer, kept until its jump out of sight
+          // (PLANT_HIDE_MS) is over so it never covers the end of the transcript.
+          peekingWorkItem
+            ? 'pb-8 md:pb-9'
+            : 'transition-[padding] delay-[600ms] duration-300 ease-out motion-reduce:transition-none'
         )}
       >
         {/* Loading indicator for older messages */}
@@ -1873,6 +1894,18 @@ export function ChatView({
         )}
 
         {afterMessages}
+
+        {stickyAfterMessages && (
+          <div
+            ref={stickyAfterMessagesRef}
+            data-testid="chat-sticky-after-messages"
+            // Sticky insets count from inside the container's bottom padding, so bottom-0 pins it exactly
+            // where the transcript ends at the bottom, above the plant's room while it peeks.
+            className="sticky bottom-0 z-10 empty:hidden"
+          >
+            {stickyAfterMessages}
+          </div>
+        )}
       </div>
 
       {beforeComposer && (
