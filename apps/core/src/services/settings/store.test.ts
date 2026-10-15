@@ -88,6 +88,21 @@ test('dormant retention accepts whole days from 1 to 3650 only', async () => {
   }
 })
 
+test('inference usage retention defaults to 180 days and accepts whole days from 1 to 365 only', async () => {
+  const store = getSettingsStore()
+  await store.initialize()
+  try {
+    await store.delete('INFERENCE_USAGE_RETENTION_DAYS')
+    expect(store.getTyped('INFERENCE_USAGE_RETENTION_DAYS')).toBe(180)
+    for (const value of ['', '0', '-1', '1.5', '366'])
+      await expect(store.set('INFERENCE_USAGE_RETENTION_DAYS', value)).rejects.toThrow(SettingValidationError)
+    await store.set('INFERENCE_USAGE_RETENTION_DAYS', '365')
+    expect(store.getTyped('INFERENCE_USAGE_RETENTION_DAYS')).toBe(365)
+  } finally {
+    await store.delete('INFERENCE_USAGE_RETENTION_DAYS')
+  }
+})
+
 describe('OPENROUTER_TIER_EXPANSION_ENABLED setting registration', () => {
   test('is listed as a default-off cross-process boolean setting', async () => {
     const seen: string[] = []

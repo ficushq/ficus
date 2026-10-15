@@ -184,6 +184,22 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
     default: '7',
     description: "Days to retain a terminated agent's archived /private data before deletion",
   },
+  INFERENCE_USAGE_RETENTION_DAYS: {
+    type: 'number',
+    default: '180',
+    description: 'Days of per-call inference cost rows to keep (daily totals are kept indefinitely)',
+    crossProcess: true,
+    validate: (value) =>
+      /^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= 365
+        ? null
+        : 'Use a whole number of days from 1 to 365.',
+  },
+  INFERENCE_USAGE_BACKFILL_STATE: {
+    type: 'string',
+    default: '',
+    description: 'Progress of the one-time inference cost ledger backfill (internal, JSON)',
+    crossProcess: true,
+  },
   OPENROUTER_TIER_EXPANSION_ENABLED: {
     type: 'boolean',
     default: 'false',
