@@ -123,7 +123,9 @@ export function registerSquadEnvCommands(program: Command) {
   // ficus squad-env expose-secrets <squadId> <keys...>
   env
     .command('expose-secrets <squadId> <keys...>')
-    .description('Admin/operator: append Secret Store keys exposed to this squad sandbox (no values)')
+    .description(
+      'Append Secret Store keys exposed to this squad sandbox (no values; each added key needs read access to it)'
+    )
     .action(async (squadId, keys: string[]) => {
       try {
         const result = await apiPut<{ success: boolean; exposedSecretKeys: string[] }>(

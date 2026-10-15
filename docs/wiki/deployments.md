@@ -90,6 +90,7 @@ You can also configure this in the squad **Environment** settings UI. The UI lis
 Secret exposure storage model:
 
 - Selected key names are stored in Core's server-controlled database tables, not in the workspace.
+- Adding a key to a squad's or the global exposure requires permission to read that key in the Secret Store (`secrets:read`, or `secrets:read:<group>` for the key's group), on top of `env:write` / `settings:write`. For example an operator holding `secrets:read:integration` can add only integration keys such as `DEPLOY_*`. Removing a key never needs it, and keys that are already exposed stay exposed. The refusal (403) is the same whether or not the key exists.
 - Globally exposed keys are rendered into every existing squad env file immediately and into future squad env files when generated.
 - User-authored environment content is stored in `.ficus/env.user`.
 - Reserved keys: squad env content may not assign `FICUS_TOKEN`, `FICUS_API_URL`, `FICUS_PASSWORD`, `FICUS_AUTH_STORE`, `FICUS_AGENT_CONTEXT`, `FICUS_AGENT_ID` or the `FICUS_IDENTITY_*` aliases. The agent's identity is injected by ficus; setting one in a squad env would make every agent in the squad act as a different identity, against a possibly different instance. Such a write is rejected with a 400 naming the key, and the same names are filtered out of Secret Store exposure rendering. `PATH` is not reserved — on the host runtime ficus re-prepends its `ficus` shim directory after the squad env is sourced, so PATH additions apply but cannot displace `ficus`.

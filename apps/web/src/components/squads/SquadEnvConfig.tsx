@@ -7,6 +7,7 @@ import {
   setWorkspaceEnvSecrets,
   type SquadEnvSecretStatus,
 } from '../../api/squads'
+import { ApiError } from '../../api/client'
 import clsx from 'clsx'
 import { usePermissions } from '../../hooks/usePermissions'
 import { FormSkeleton } from '../loading/Skeleton'
@@ -173,7 +174,8 @@ export function SquadEnvConfig({ squadId }: Props) {
         </h4>
         <p className="text-xs text-muted mt-1">
           Select only the global secrets this squad sandbox may read as environment variables. Values are never shown
-          here, but selected secrets are rendered into the squad sandbox .ficus/.env file.
+          here, but selected secrets are rendered into the squad sandbox .ficus/.env file. You can only add secrets you
+          are allowed to read in the Secret Store.
         </p>
 
         {secretsLoading ? (
@@ -184,6 +186,8 @@ export function SquadEnvConfig({ squadId }: Props) {
           <div className="mt-3 space-y-2 max-h-64 overflow-auto rounded-lg border border-th-border p-3">
             {(secretsData?.secrets ?? []).map((secret) => {
               const checked = selectedSecretKeys.includes(secret.key)
+              // Adding needs read access in the Secret Store; an exposed key can always be unchecked.
+              const canAdd = secret.isSet && secret.canExpose
               return (
                 <label key={secret.key} className="flex items-center justify-between gap-3 text-sm">
                   <span className={clsx('font-mono', secret.isSet ? 'text-primary' : 'text-muted')}>
@@ -191,16 +195,23 @@ export function SquadEnvConfig({ squadId }: Props) {
                     {secret.globallyExposed && (
                       <span className="ml-2 font-sans text-xs text-accent-light">globally exposed</span>
                     )}
-                    {!secret.isSet && (
+                    {!secret.isSet ? (
                       <span className="ml-2 font-sans text-xs text-muted">
                         {checked ? 'not set; uncheck to remove exposure' : 'not set'}
                       </span>
+                    ) : (
+                      !secret.canExpose &&
+                      !secret.globallyExposed && (
+                        <span className="ml-2 font-sans text-xs text-muted">
+                          {checked ? 'no read access; uncheck to remove exposure' : 'no read access'}
+                        </span>
+                      )
                     )}
                   </span>
                   <input
                     type="checkbox"
                     checked={checked || secret.globallyExposed}
-                    disabled={!canWriteEnv || secret.globallyExposed || (!secret.isSet && !checked)}
+                    disabled={!canWriteEnv || secret.globallyExposed || (!canAdd && !checked)}
                     onChange={() => canWriteEnv && toggleSecret(secret)}
                     className="h-4 w-4 rounded border-th-border text-accent-light focus:ring-accent/50 disabled:opacity-50"
                   />
@@ -233,7 +244,9 @@ export function SquadEnvConfig({ squadId }: Props) {
 
         {secretsMutation.isError && (
           <p className="text-xs text-status-danger-500 mt-2">
-            Failed to save exposed secrets: {String(secretsMutation.error)}
+            {secretsMutation.error instanceof ApiError && secretsMutation.error.status === 403
+              ? secretsMutation.error.message
+              : `Failed to save exposed secrets: ${String(secretsMutation.error)}`}
           </p>
         )}
       </div>

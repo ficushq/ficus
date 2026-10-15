@@ -1,9 +1,23 @@
-import { Hono } from 'hono'
+/**
+ * Squad `.ficus/.env` content and Secret Store exposure (per squad and global). Names only: no
+ * request or response carries a secret value.
+ *
+ * Exposing a Secret Store key renders its value into squad shells, so every key a change ADDS
+ * (to one squad's exposure or the global one) also requires permission to READ that key in the
+ * Secret Store (`secrets:read` or its group's `secrets:read:<group>`, the same check as
+ * `GET /api/secrets/:key`). Otherwise `env:write` / `settings:write` alone would let a caller
+ * expose a key they may not read and read it from a squad shell. Removing a key, and keeping a
+ * key that is already exposed, never needs it.
+ */
+
+import { Hono, type Context } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as squadEnv from '../services/squad/env'
 import { getSecretStore } from '../services/secrets'
 import { requirePermission, requireSquadPermission } from '../middleware'
+import { resolvePermissions, type Identity } from '../services/rbac'
+import { secretAccessible } from '../services/secrets/groups'
 // The full squad id the guard already resolved AND authorized: re-deriving it from the route param
 // would repeat the lookup and could let a handler act on a different squad than the guard checked.
 import { resolvedSquadId } from '../middleware/require-permission'
@@ -19,6 +33,33 @@ const envNameSchema = z
 const setEnvSecretsSchema = z.object({
   keys: z.array(envNameSchema),
 })
+
+/** Which Secret Store keys the caller may read (system-scoped, exactly as the Secret Store routes check). */
+async function secretReader(c: Context): Promise<(key: string) => boolean> {
+  const held = await resolvePermissions(c.get('identity') as Identity)
+  return (key) => secretAccessible(held, key, 'read')
+}
+
+/**
+ * Refuse an exposure change that would add a key the caller may not read. The verdict depends on
+ * the key NAME and the caller's permissions only, never on whether the key exists in the store, so
+ * the 403 reveals nothing about which secrets exist. Returns null when the change may proceed.
+ */
+async function refuseUnreadableAdditions(c: Context, currentKeys: string[], nextKeys: string[]) {
+  const current = new Set(currentKeys)
+  // Normalize first: keys exposure never stores (platform-managed, reserved) are dropped, not checked.
+  const added = squadEnv.normalizeSecretKeys(nextKeys).filter((key) => !current.has(key))
+  if (added.length === 0) return null
+  const mayRead = await secretReader(c)
+  const unreadable = added.filter((key) => !mayRead(key))
+  if (unreadable.length === 0) return null
+  return c.json(
+    {
+      error: `You can only expose secrets you are allowed to read in the Secret Store. Not allowed: ${unreadable.join(', ')}.`,
+    },
+    403
+  )
+}
 
 export const squadEnvRouter = new Hono()
   // Get .ficus/.env content
@@ -44,10 +85,11 @@ export const squadEnvRouter = new Hono()
   .get('/:squadId/env/secrets', requireSquadPermission('env:read', 'squadId'), async (c) => {
     const squadId = resolvedSquadId(c)
 
-    const [exposedKeys, globallyExposedKeys, secrets] = await Promise.all([
+    const [exposedKeys, globallyExposedKeys, secrets, mayRead] = await Promise.all([
       squadEnv.getExposedSecretKeys(squadId),
       squadEnv.getGloballyExposedSecretKeys(),
       getSecretStore().list(),
+      secretReader(c),
     ])
     const squadExposed = new Set(exposedKeys)
     const globallyExposed = new Set(globallyExposedKeys)
@@ -61,6 +103,8 @@ export const squadEnvRouter = new Hono()
           exposed: isSquadExposed || isGloballyExposed,
           squadExposed: isSquadExposed,
           globallyExposed: isGloballyExposed,
+          // Whether this caller may add the key (read access in the Secret Store); removal never needs it.
+          canExpose: mayRead(secret.key),
           updatedAt: secret.updatedAt,
           updatedBy: secret.updatedBy,
         }
@@ -80,6 +124,8 @@ export const squadEnvRouter = new Hono()
     zValidator('json', setEnvSecretsSchema),
     async (c) => {
       const { keys } = c.req.valid('json')
+      const refused = await refuseUnreadableAdditions(c, await squadEnv.getGloballyExposedSecretKeys(), keys)
+      if (refused) return refused
       await squadEnv.setGloballyExposedSecretKeys(keys)
       return c.json({ success: true, globallyExposedSecretKeys: await squadEnv.getGloballyExposedSecretKeys() })
     }
@@ -93,6 +139,8 @@ export const squadEnvRouter = new Hono()
     async (c) => {
       const { keys } = c.req.valid('json')
       const existingKeys = await squadEnv.getGloballyExposedSecretKeys()
+      const refused = await refuseUnreadableAdditions(c, existingKeys, keys)
+      if (refused) return refused
       await squadEnv.setGloballyExposedSecretKeys(Array.from(new Set([...existingKeys, ...keys])))
       return c.json({ success: true, globallyExposedSecretKeys: await squadEnv.getGloballyExposedSecretKeys() })
     }
@@ -121,6 +169,8 @@ export const squadEnvRouter = new Hono()
       const squadId = resolvedSquadId(c)
 
       const { keys } = c.req.valid('json')
+      const refused = await refuseUnreadableAdditions(c, await squadEnv.getExposedSecretKeys(squadId), keys)
+      if (refused) return refused
       await squadEnv.setExposedSecretKeys(squadId, keys)
       return c.json({ success: true, exposedSecretKeys: await squadEnv.getExposedSecretKeys(squadId) })
     }
@@ -136,6 +186,8 @@ export const squadEnvRouter = new Hono()
 
       const { keys } = c.req.valid('json')
       const existingKeys = await squadEnv.getExposedSecretKeys(squadId)
+      const refused = await refuseUnreadableAdditions(c, existingKeys, keys)
+      if (refused) return refused
       const exposedSecretKeys = Array.from(new Set([...existingKeys, ...keys]))
       await squadEnv.setExposedSecretKeys(squadId, exposedSecretKeys)
       return c.json({ success: true, exposedSecretKeys })

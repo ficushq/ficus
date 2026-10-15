@@ -429,6 +429,8 @@ export interface SquadEnvSecretStatus {
   isSet: boolean
   exposed: boolean
   globallyExposed: boolean
+  /** Whether the caller may add this key (needs read access to it in the Secret Store). */
+  canExpose: boolean
   updatedAt: string | null
   updatedBy: string | null
 }
