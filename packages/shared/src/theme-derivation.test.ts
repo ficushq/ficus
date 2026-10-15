@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { customColorChannels } from './custom-theme'
-import { deriveThemeOverrides, suggestPaletteSeeds, validateThemePalette, type ThemePalette } from './theme-derivation'
+import {
+  BADGE_INK_MIN_RATIO,
+  deriveThemeOverrides,
+  fitBadgeColors,
+  suggestPaletteSeeds,
+  validateThemePalette,
+  type ThemePalette,
+} from './theme-derivation'
 import { STATUS_ROLES, STATUS_TOKENS } from './theme-schema'
 import { srgbToOklch } from './color-oklch'
 
@@ -263,10 +270,11 @@ describe('notification badge', () => {
   const hueOf = (value: string) => srgbToOklch(rgbOf(value)).h
   const hueDelta = (a: number, b: number) => Math.abs(((b - a + 540) % 360) - 180)
 
-  test('the fill is the palette secondary seed, matching the secondary swatch, with ink chosen by contrast', () => {
+  test('a secondary seed that is already legible ships unchanged, matching the secondary swatch', () => {
+    // Deep orange takes white ink at >7:1 on the light page; pale amber takes black ink at >7:1 on the dark page.
     for (const [appearance, baseTokens, secondary, ink] of [
-      ['light', IRIS_LIGHT, '#c2410c', '#ffffff'],
-      ['dark', IRIS_DARK, '#f59e0b', '#000000'],
+      ['light', IRIS_LIGHT, '#7c2d12', '#ffffff'],
+      ['dark', IRIS_DARK, '#fcd34d', '#000000'],
     ] as const) {
       const derived = deriveThemeOverrides({ baseTokens, palette: { primary: '#0ea5e9', secondary }, appearance })
       expect(derived['--badge']).toBe(secondary)
@@ -276,22 +284,22 @@ describe('notification badge', () => {
   })
 
   test('without a secondary seed the fill follows the same colour-theory companion as the secondary swatch', () => {
-    // #5b21b6's +30 degree companion is dark enough to clear 3:1 on the light page, so it ships unchanged.
     const derived = deriveThemeOverrides({
       baseTokens: IRIS_LIGHT,
       palette: { primary: '#5b21b6' },
       appearance: 'light',
     })
-    expect(derived['--badge']).toBe(suggestPaletteSeeds('#5b21b6')!.secondary)
-    expect(derived['--badge']).toBe(derived['--swatch-secondary'])
-    expect(['#000000', '#ffffff']).toContain(derived['--on-badge'])
+    const companion = suggestPaletteSeeds('#5b21b6')!.secondary
+    expect(derived['--swatch-secondary']).toBe(companion)
+    expect(derived['--badge']).toBe(fitBadgeColors(companion, ['250 249 252', '255 255 255'])!.fill)
+    expect(derived['--on-badge']).toBe(fitBadgeColors(companion, ['250 249 252', '255 255 255'])!.ink)
   })
 
   test.each([
     ['light', IRIS_LIGHT, '#faf9fc'],
     ['dark', IRIS_DARK, '#090a12'],
   ] as const)(
-    '%s: a secondary that matches the page keeps its hue but moves lightness until the badge clears 3:1',
+    '%s: a secondary that matches the page keeps its hue but moves lightness until the badge is visible and legible',
     (appearance, baseTokens, secondary) => {
       const derived = deriveThemeOverrides({
         baseTokens,
@@ -307,7 +315,7 @@ describe('notification badge', () => {
         const surface = tokens['--color-bg-surface'] ?? baseTokens['--color-bg-surface']!
         expect(contrastOf(tokens['--badge']!, page)).toBeGreaterThanOrEqual(3 - 1e-6)
         expect(contrastOf(tokens['--badge']!, surface)).toBeGreaterThanOrEqual(3 - 1e-6)
-        expect(contrastOf(tokens['--on-badge']!, tokens['--badge']!)).toBeGreaterThanOrEqual(4.5)
+        expect(contrastOf(tokens['--on-badge']!, tokens['--badge']!)).toBeGreaterThanOrEqual(BADGE_INK_MIN_RATIO)
       }
       expect(hueDelta(hueOf(pageMatched['--badge']!), hueOf(secondary))).toBeLessThan(10)
     }
@@ -329,6 +337,54 @@ describe('notification badge', () => {
         expect(contrastOf(derived['--on-badge']!, derived['--badge']!)).toBeGreaterThanOrEqual(7)
       }
     }
+  })
+})
+
+describe('fitBadgeColors', () => {
+  // Accepts hex as well as the compiled 'r g b' channel form.
+  const rgbOf = (value: string) =>
+    (customColorChannels(value) ?? value).split(' ').map(Number) as [number, number, number]
+  const contrastOf = (fg: string, bg: string) => {
+    const lum = (rgb: number[]) =>
+      rgb
+        .map((c) => c / 255)
+        .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+        .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i]!, 0)
+    const [a, b] = [lum(rgbOf(fg)), lum(rgbOf(bg))]
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+  }
+
+  test('regression: a mid-tone teal on a light page gets a darker fill with white ink, not black ink at ~6:1', () => {
+    // Harbor light's secondary: black ink measured 6.03:1, hard to read as 10px digits (PR review).
+    const fitted = fitBadgeColors('38 150 170', ['250 251 252', '255 255 255'])!
+    expect(fitted.ink).toBe('#ffffff')
+    expect(contrastOf(fitted.ink, fitted.fill)).toBeGreaterThanOrEqual(BADGE_INK_MIN_RATIO)
+    expect(contrastOf(fitted.fill, '250 251 252')).toBeGreaterThanOrEqual(3)
+    expect(Math.abs(srgbToOklch(rgbOf(fitted.fill)).h - srgbToOklch([38, 150, 170]).h)).toBeLessThan(10)
+  })
+
+  test('regression: a grey-green fill on a pale green page gets white ink on a darker fill', () => {
+    // Phosphorus: black ink on 113 123 115 measured ~4.8:1.
+    const fitted = fitBadgeColors('211 224 213', ['204 217 207', '211 224 213'])!
+    expect(fitted.ink).toBe('#ffffff')
+    expect(contrastOf(fitted.ink, fitted.fill)).toBeGreaterThanOrEqual(BADGE_INK_MIN_RATIO)
+    expect(contrastOf(fitted.fill, '204 217 207')).toBeGreaterThanOrEqual(3)
+  })
+
+  test('on a dark page the fill lightens and takes black ink', () => {
+    const fitted = fitBadgeColors('168 85 247', ['9 10 18', '16 17 28'])!
+    expect(fitted.ink).toBe('#000000')
+    expect(contrastOf(fitted.ink, fitted.fill)).toBeGreaterThanOrEqual(BADGE_INK_MIN_RATIO)
+  })
+
+  test('an already compliant fill is returned unchanged', () => {
+    expect(fitBadgeColors('#7c2d12', ['255 255 255'])).toEqual({ fill: '#7c2d12', ink: '#ffffff' })
+  })
+
+  test('a stricter non-text floor (contrast: high) is honored', () => {
+    const fitted = fitBadgeColors('38 150 170', ['255 255 255'], 4.5)!
+    expect(contrastOf(fitted.fill, '255 255 255')).toBeGreaterThanOrEqual(4.5)
+    expect(contrastOf(fitted.ink, fitted.fill)).toBeGreaterThanOrEqual(BADGE_INK_MIN_RATIO)
   })
 })
 

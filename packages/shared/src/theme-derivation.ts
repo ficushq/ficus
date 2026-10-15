@@ -25,10 +25,10 @@
  *   lightness/chroma preserved.
  * - swatch secondary/tertiary: the palette's own secondary/tertiary, or their
  *   colour-theory companions when unset (see `suggestPaletteSeeds`).
- * - notification badge fill (--badge): the same secondary as the swatch,
- *   lightness-nudged by the contrast pass below only where it would not stand
- *   out from the page/surface; its ink (--on-badge) is chosen against the
- *   final fill exactly as --on-accent-fg is chosen against the final primary.
+ * - notification badge (--badge fill, --on-badge ink): the same secondary as
+ *   the swatch, then fitted by `fitBadgeColors` after the contrast pass: black
+ *   or white ink at 7:1, with the fill lightness-nudged only as far as needed
+ *   to keep that and stay 3:1 (4.5:1 high) against the page and surface.
  * - categorical families (agent-type, badge-decoration, graph chart
  *   categories/links, a curated syntax-accent subset, utility-decoration):
  *   hue picked from primary/secondary/tertiary by slot index; base
@@ -40,10 +40,9 @@
  *   can never cross into a neighboring role's hue band) and blends chroma
  *   toward the seed's, keeping base lightness per step.
  * - a contrast pass afterward nudges a small set of critical derived pairs
- *   (text/surface, primary/page, badge/page and badge/surface, and status
- *   fg/surface when harmonized) toward the WCAG target (4.5, or 7 for
- *   `contrast: 'high'`; 3 or 4.5 for the non-text primary and badge pairs)
- *   by moving lightness only, never hue/chroma.
+ *   (text/surface, primary/page, and status fg/surface when harmonized)
+ *   toward the WCAG target (4.5, or 7 for `contrast: 'high'`) by moving
+ *   lightness only, never hue/chroma.
  *
  * Unmapped/unrecognized tokens (including every status/ANSI slot in 'static'
  * mode) are simply absent from the returned overrides, so they keep
@@ -207,16 +206,10 @@ const SELECTION_BORDER = '--color-selection-border'
 /** Terminal/log-terminal tokens whose slot name names an ANSI color: kept unchanged (semantic). */
 const ANSI_NAMED = /-(black|red|green|yellow|blue|magenta|cyan|white)$/
 
-/** Fill tokens whose ink is chosen (black or white) by contrast after the contrast pass, never hue-derived. */
-const INK_PAIRS: ReadonlyArray<[fill: string, ink: string]> = [
-  ['--color-primary', '--on-accent-fg'],
-  ['--badge', '--on-badge'],
-]
-
 type Bucket = 'neutral' | 'primary' | 'ink' | 'brand' | 'swatch' | 'badge' | 'categorical' | 'status' | 'unchanged'
 
 function classify(token: string): Bucket {
-  if (INK_PAIRS.some(([, ink]) => ink === token)) return 'ink'
+  if (token === '--on-accent-fg' || token === '--on-badge') return 'ink'
   if (PRIMARY_FAMILY.includes(token)) return 'primary'
   const family = themeTokenFamily(token)
   if (!family) return 'unchanged'
@@ -303,7 +296,7 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
       const seed = token === '--swatch-tertiary' ? tertiaryOklch : secondaryOklch
       overrides[token] = serialize(seed, base.alpha)
     } else if (bucket === 'badge') {
-      // Notification badges follow the theme's secondary, exactly like its secondary swatch.
+      // Notification badges start from the theme's secondary, exactly like its secondary swatch.
       overrides[token] = serialize(secondaryOklch, base.alpha)
     } else if (bucket === 'brand') {
       overrides[token] = serialize({ l: base.oklch.l, c: base.oklch.c, h: tertiaryOklch.h }, base.alpha)
@@ -331,45 +324,108 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
   // lightness. Choosing this against the pre-pass primary (the previous
   // ordering) picks ink for a color that never actually ships: the CSS pairs
   // --on-accent-fg with the post-pass --color-primary, so a stale choice can
-  // under-shoot the target against what's really on screen. --on-badge is
-  // chosen against the final --badge fill the same way.
-  for (const [fill, ink] of INK_PAIRS) chooseInk(overrides, textMinRatio, fill, ink)
+  // under-shoot the target against what's really on screen.
+  chooseInk(overrides, textMinRatio)
+
+  // The badge is fitted last, against the final page and surface.
+  if (overrides['--badge']) {
+    const backgrounds = ['--color-bg-page', '--color-bg-surface']
+      .map((token) => overrides[token] ?? baseTokens[token])
+      .filter((value): value is string => !!value)
+    const fitted = fitBadgeColors(overrides['--badge'], backgrounds, uiMinRatio)
+    if (fitted) {
+      overrides['--badge'] = fitted.fill
+      overrides['--on-badge'] = fitted.ink
+    }
+  }
   return overrides
 }
 
-/** Chooses an ink token (black or white), e.g. --on-accent-fg or --on-badge,
- * by contrast against its FINAL fill (--color-primary or --badge), and must
- * run after `contrastPass`. For any fixed background, the better of pure
- * black/white text always clears ~4.58:1 (the minimum, at the luminance where both candidates tie) — comfortably
+/** Badge counts are 10px bold digits, far below normal text size, so their ink is held to WCAG AAA (7:1). */
+export const BADGE_INK_MIN_RATIO = 7
+
+/**
+ * Fits a notification badge: picks black or white ink and the fill lightness (hue kept; chroma lowered only to stay
+ * in the sRGB gamut) so that the ink clears `BADGE_INK_MIN_RATIO` against the fill AND the fill clears `uiMinRatio`
+ * (non-text contrast, so an unread dot stays visible) against every background. Of the two inks, it picks the one
+ * needing the smaller lightness move from `fill`; an already-compliant fill is returned unchanged. On a light page
+ * this lands on a darker fill with white ink; on a dark page, a lighter fill with black ink. If no lightness satisfies
+ * every constraint (e.g. a mid-grey page), it returns the candidate with the best worst-case ratio. Shared by custom
+ * theme derivation and the hand-authored built-ins (see `apps/web/src/theme/builtins.test.ts`).
+ */
+export function fitBadgeColors(
+  fill: string,
+  backgrounds: readonly string[],
+  uiMinRatio = 3
+): { fill: string; ink: '#000000' | '#ffffff' } | null {
+  const seed = toOklch(fill)
+  const bgs = backgrounds.map((bg) => parseChannels(bg)?.rgb).filter((rgb): rgb is [number, number, number] => !!rgb)
+  if (!seed || bgs.length === 0) return null
+  const inks = [
+    { ink: '#000000' as const, rgb: [0, 0, 0] as const },
+    { ink: '#ffffff' as const, rgb: [255, 255, 255] as const },
+  ]
+  const at = (l: number) => {
+    const hex = l === seed.oklch.l ? serialize(seed.oklch, 1) : serializeInGamut({ ...seed.oklch, l }, 1)
+    return { hex, rgb: parseChannels(hex)!.rgb }
+  }
+  // Worst-case ratio over every constraint, normalized so >= 1 means all pass.
+  const score = (rgb: [number, number, number], inkRgb: readonly [number, number, number]) =>
+    Math.min(wcagContrast(inkRgb, rgb) / BADGE_INK_MIN_RATIO, ...bgs.map((bg) => wcagContrast(rgb, bg) / uiMinRatio))
+  let best: { hex: string; ink: '#000000' | '#ffffff'; move: number; score: number } | null = null
+  const STEPS = 400
+  // Up to STEPS lightness steps in each direction covers the whole 0..1 range from any seed.
+  for (let i = 0; i <= 2 * STEPS; i++) {
+    // Visit lightnesses outward from the seed, so the first passing candidate per ink is the smallest move.
+    const offset = (Math.ceil(i / 2) / STEPS) * (i % 2 === 0 ? 1 : -1)
+    const l = i === 0 ? seed.oklch.l : seed.oklch.l + offset
+    if (l < 0 || l > 1) continue
+    const { hex, rgb } = at(l)
+    for (const { ink, rgb: inkRgb } of inks) {
+      const s = score(rgb, inkRgb)
+      const move = Math.abs(l - seed.oklch.l)
+      const better =
+        !best || (s >= 1 && (best.score < 1 || move < best.move)) || (s < 1 && best.score < 1 && s > best.score)
+      if (better) best = { hex, ink, move, score: s }
+    }
+    if (best && best.score >= 1 && Math.ceil(i / 2) / STEPS > best.move) break
+  }
+  return best && { fill: best.hex, ink: best.ink }
+}
+
+/** Chooses --on-accent-fg (black or white) by contrast against the FINAL
+ * --color-primary, and must run after `contrastPass`. For any fixed
+ * background, the better of pure black/white text always clears ~4.58:1
+ * (the minimum, at the luminance where both candidates tie) — comfortably
  * above the 'standard' 4.5:1 target by construction, no nudge ever needed.
  * The 'high' (7:1) target is NOT guaranteed by construction, so when neither
- * candidate reaches it, this nudges the fill's lightness (hue/chroma
+ * candidate reaches it, this nudges --color-primary's lightness (hue/chroma
  * held fixed, same bisection shape as `contrastPass`) toward whichever
  * extreme makes one of them pass, picking whichever candidate needs the
  * smaller move from the current lightness. If even the sRGB gamut extreme
  * can't reach the target (rare, high-chroma edge case), it falls back to
- * whichever of black/white is best against the un-nudged final fill. */
-function chooseInk(overrides: Record<string, string>, textMinRatio: number, fillToken: string, inkToken: string) {
-  const fillValue = overrides[fillToken]
-  if (!fillValue) return
-  const fill = toOklch(fillValue)
-  if (!fill) return
+ * whichever of black/white is best against the un-nudged final primary. */
+function chooseInk(overrides: Record<string, string>, textMinRatio: number) {
+  const primaryValue = overrides['--color-primary']
+  if (!primaryValue) return
+  const primary = toOklch(primaryValue)
+  if (!primary) return
   const black: [number, number, number] = [0, 0, 0]
   const white: [number, number, number] = [255, 255, 255]
-  const fillRgb = parseChannels(fillValue)!.rgb
-  const contrastBlack = wcagContrast(black, fillRgb)
-  const contrastWhite = wcagContrast(white, fillRgb)
+  const primaryRgb = parseChannels(primaryValue)!.rgb
+  const contrastBlack = wcagContrast(black, primaryRgb)
+  const contrastWhite = wcagContrast(white, primaryRgb)
   if (Math.max(contrastBlack, contrastWhite) >= textMinRatio) {
-    overrides[inkToken] = contrastBlack >= contrastWhite ? '#000000' : '#ffffff'
+    overrides['--on-accent-fg'] = contrastBlack >= contrastWhite ? '#000000' : '#ffffff'
     return
   }
   const nudgedL = (ink: readonly [number, number, number]): number | null => {
     // Black ink needs a lighter bg; white ink needs a darker bg.
     const extreme = ink[0] === 0 ? 1 : 0
     const passes = (l: number) =>
-      wcagContrast(ink, oklchToSrgb({ l, c: fill.oklch.c, h: fill.oklch.h })) >= textMinRatio
+      wcagContrast(ink, oklchToSrgb({ l, c: primary.oklch.c, h: primary.oklch.h })) >= textMinRatio
     if (!passes(extreme)) return null
-    let near = fill.oklch.l
+    let near = primary.oklch.l
     let far = extreme
     for (let i = 0; i < 30; i++) {
       const mid = (near + far) / 2
@@ -385,14 +441,14 @@ function chooseInk(overrides: Record<string, string>, textMinRatio: number, fill
     ] as Array<{ l: number | null; ink: '#000000' | '#ffffff' }>
   ).filter((c): c is { l: number; ink: '#000000' | '#ffffff' } => c.l !== null)
   if (candidates.length === 0) {
-    overrides[inkToken] = contrastBlack >= contrastWhite ? '#000000' : '#ffffff'
+    overrides['--on-accent-fg'] = contrastBlack >= contrastWhite ? '#000000' : '#ffffff'
     return
   }
   const chosen = candidates.reduce((best, c) =>
-    Math.abs(c.l - fill.oklch.l) < Math.abs(best.l - fill.oklch.l) ? c : best
+    Math.abs(c.l - primary.oklch.l) < Math.abs(best.l - primary.oklch.l) ? c : best
   )
-  overrides[fillToken] = serialize({ l: chosen.l, c: fill.oklch.c, h: fill.oklch.h }, fill.alpha)
-  overrides[inkToken] = chosen.ink
+  overrides['--color-primary'] = serialize({ l: chosen.l, c: primary.oklch.c, h: primary.oklch.h }, primary.alpha)
+  overrides['--on-accent-fg'] = chosen.ink
 }
 
 function harmonizeStatus(baseTokens: Record<string, string>, seeds: readonly Oklch[]): Record<string, string> {
@@ -444,9 +500,6 @@ function harmonizeStatus(baseTokens: Record<string, string>, seeds: readonly Okl
  * for readable content ON it is `--on-accent-fg`'s job, computed separately.
  * A text-level target here would force a bright, valid seed color to darken
  * far more than a user choosing it as their brand color would expect.
- * `--badge` vs `--color-bg-page` and `--color-bg-surface` use the same
- * `uiMinRatio`: an unread dot has no text, so a secondary close to the page
- * (e.g. a palette whose secondary IS its background) would otherwise vanish.
  *
  * `statusPairs` are the harmonized-mode-only status fg/surface and
  * badge-fg/badge-surface pairs (empty in 'static' mode, whose status tokens
@@ -463,8 +516,6 @@ function contrastPass(
     ['--color-text-primary', '--color-bg-surface', textMinRatio],
     ['--color-text-secondary', '--color-bg-surface', textMinRatio],
     ['--color-primary', '--color-bg-page', uiMinRatio],
-    ['--badge', '--color-bg-page', uiMinRatio],
-    ['--badge', '--color-bg-surface', uiMinRatio],
     ...statusPairs.map(([fg, bg]): [string, string, number] => [fg, bg, textMinRatio]),
   ]
   for (const [fgToken, bgToken, minRatio] of pairs) {

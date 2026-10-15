@@ -321,7 +321,7 @@ test('compileCustomTheme derives the badge from the palette secondary, and an ex
     const result = validateCustomTheme(
       JSON.stringify({
         ...v2doc,
-        palette: { primary: '#0ea5e9', secondary: '#c2410c' },
+        palette: { primary: '#0ea5e9', secondary: '#7c2d12' },
         variants: { light, dark: {} },
       }),
       builtins
@@ -330,8 +330,8 @@ test('compileCustomTheme derives the badge from the palette secondary, and an ex
     return result.document
   }
   const derived = compileCustomTheme(doc({}), 'light', baseTokens)
-  expect(derived['--badge']).toBe('194 65 12')
-  expect(derived['--custom-rgb-badge']).toBe('194 65 12')
+  expect(derived['--badge']).toBe('124 45 18')
+  expect(derived['--custom-rgb-badge']).toBe('124 45 18')
   expect(derived['--on-badge']).toBe('255 255 255')
   const explicit = compileCustomTheme(doc({ '--badge': '#123456', '--on-badge': '#fedcba' }), 'light', baseTokens)
   expect(explicit['--badge']).toBe('18 52 86')

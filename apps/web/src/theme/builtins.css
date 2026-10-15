@@ -197,10 +197,10 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 38 150 170;
     --swatch-tertiary: 173 201 211;
-    /* Notification badges: the fill is --swatch-secondary, lightness-nudged only where needed for 3:1
-       against the page and surface; the ink is whichever of black/white contrasts more with the fill. */
-    --badge: 38 150 170;
-    --on-badge: 0 0 0;
+    /* Notification badges: --swatch-secondary fitted by fitBadgeColors (packages/shared/src/theme-derivation.ts):
+       black or white ink at 7:1, the fill's lightness moved only as far as that and 3:1 on page/surface need. */
+    --badge: 0 98 114;
+    --on-badge: 255 255 255;
     --color-bg-page: 244 249 250;
     --color-bg-surface: 255 255 255;
     --color-bg-surface-secondary: 236 245 247;
@@ -683,9 +683,9 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 38 150 170;
     --swatch-tertiary: 173 201 211;
-    /* Notification badges: the fill is --swatch-secondary, lightness-nudged only where needed for 3:1
-       against the page and surface; the ink is whichever of black/white contrasts more with the fill. */
-    --badge: 38 150 170;
+    /* Notification badges: --swatch-secondary fitted by fitBadgeColors (packages/shared/src/theme-derivation.ts):
+       black or white ink at 7:1, the fill's lightness moved only as far as that and 3:1 on page/surface need. */
+    --badge: 54 162 182;
     --on-badge: 0 0 0;
     --color-bg-page: 11 22 30;
     --color-bg-surface: 15 30 40;
@@ -1171,7 +1171,7 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 176 88 47;
     --swatch-tertiary: 138 154 91;
-    --badge: 176 88 47;
+    --badge: 148 63 18;
     --on-badge: 255 255 255;
     --color-bg-page: 241 233 219;
     --color-bg-surface: 245 240 230;
@@ -1656,8 +1656,8 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 176 88 47;
     --swatch-tertiary: 138 154 91;
-    --badge: 179 91 50;
-    --on-badge: 255 255 255;
+    --badge: 217 125 84;
+    --on-badge: 0 0 0;
     --color-bg-page: 28 26 23;
     --color-bg-surface: 47 42 36;
     --color-bg-surface-secondary: 49 50 41;
@@ -2141,10 +2141,10 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 214 125 58;
     --swatch-tertiary: 217 190 169;
-    /* Notification badges: the fill is --swatch-secondary, lightness-nudged only where needed for 3:1
-       against the page and surface; the ink is whichever of black/white contrasts more with the fill. */
-    --badge: 211 122 55;
-    --on-badge: 0 0 0;
+    /* Notification badges: --swatch-secondary fitted by fitBadgeColors (packages/shared/src/theme-derivation.ts):
+       black or white ink at 7:1, the fill's lightness moved only as far as that and 3:1 on page/surface need. */
+    --badge: 138 71 14;
+    --on-badge: 255 255 255;
     --color-bg-page: 252 248 243;
     --color-bg-surface: 255 253 249;
     --color-bg-surface-secondary: 247 239 230;
@@ -2627,9 +2627,9 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 214 125 58;
     --swatch-tertiary: 217 190 169;
-    /* Notification badges: the fill is --swatch-secondary, lightness-nudged only where needed for 3:1
-       against the page and surface; the ink is whichever of black/white contrasts more with the fill. */
-    --badge: 214 125 58;
+    /* Notification badges: --swatch-secondary fitted by fitBadgeColors (packages/shared/src/theme-derivation.ts):
+       black or white ink at 7:1, the fill's lightness moved only as far as that and 3:1 on page/surface need. */
+    --badge: 216 127 60;
     --on-badge: 0 0 0;
     --color-bg-page: 27 20 18;
     --color-bg-surface: 35 26 23;
@@ -3113,10 +3113,10 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 128 128 128;
     --swatch-tertiary: 255 255 255;
-    /* Notification badges: the fill is --swatch-secondary, lightness-nudged only where needed for 3:1
-       against the page and surface; the ink is whichever of black/white contrasts more with the fill. */
-    --badge: 128 128 128;
-    --on-badge: 0 0 0;
+    /* Notification badges: --swatch-secondary fitted by fitBadgeColors (packages/shared/src/theme-derivation.ts):
+       black or white ink at 7:1, the fill's lightness moved only as far as that and 3:1 on page/surface need. */
+    --badge: 89 89 89;
+    --on-badge: 255 255 255;
     --color-bg-page: 255 255 255;
     --color-bg-surface: 255 255 255;
     --color-bg-surface-secondary: 255 255 255;
@@ -3601,8 +3601,8 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 33 25 31;
     --swatch-tertiary: 221 233 244;
-    --badge: 115 106 113;
-    --on-badge: 255 255 255;
+    --badge: 157 146 154;
+    --on-badge: 0 0 0;
     --color-bg-page: 33 25 31;
     --color-bg-surface: 41 33 40;
     --color-bg-surface-secondary: 48 42 48;
@@ -4086,8 +4086,8 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 211 224 213;
     --swatch-tertiary: 38 60 52;
-    --badge: 113 123 115;
-    --on-badge: 0 0 0;
+    --badge: 81 91 83;
+    --on-badge: 255 255 255;
     --color-bg-page: 211 224 213;
     --color-bg-surface: 204 217 207;
     --color-bg-surface-secondary: 197 211 200;
@@ -4571,7 +4571,7 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 224 170 36;
     --swatch-tertiary: 48 38 26;
-    --badge: 131 80 0;
+    --badge: 115 84 0;
     --on-badge: 255 255 255;
     --color-bg-page: 224 170 36;
     --color-bg-surface: 217 165 36;
@@ -5056,7 +5056,7 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 40 106 60;
     --swatch-tertiary: 247 234 248;
-    --badge: 131 199 147;
+    --badge: 133 199 148;
     --on-badge: 0 0 0;
     --color-bg-page: 40 106 60;
     --color-bg-surface: 48 111 68;
@@ -6026,7 +6026,7 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 53 95 123;
     --swatch-tertiary: 255 246 236;
-    --badge: 140 186 217;
+    --badge: 141 186 217;
     --on-badge: 0 0 0;
     --color-bg-page: 53 95 123;
     --color-bg-surface: 61 101 128;
