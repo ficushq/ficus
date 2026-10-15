@@ -5,4 +5,4 @@ export {
   setInferenceUsageDepsForTest,
 } from './record'
 export type { InferenceAttribution, InferenceUsageEvent } from './types'
-export { attributionFromSource } from './types'
+export { attributionFromIdentity, attributionFromSource } from './types'

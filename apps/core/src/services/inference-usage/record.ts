@@ -45,8 +45,9 @@ export interface InferenceUsageDeps {
   store: AccountStoreV1
 }
 
-/** Whether an event has anything to account for. */
+/** Whether an event has anything to account for. An estimated event is a call whose usage is unknown. */
 export function hasUsage(event: InferenceUsageEvent): boolean {
+  if (event.tokensEstimated === true) return true
   const tokens = fullTokens(event.tokens)
   if (tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite > 0) return true
   const units = event.units

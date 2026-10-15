@@ -62,3 +62,19 @@ export function attributionFromSource(source: Record<string, unknown> | null | u
     userId: uuidOrNull(source.userId),
   }
 }
+
+/** Attribution for a call made on behalf of an API caller: the user, or the agent and its owner. */
+export function attributionFromIdentity(
+  identity: { type: string; userId?: string; agentId?: string; squadId?: string | null } | undefined
+): InferenceAttribution {
+  if (!identity) return {}
+  if (identity.type === 'user') return { userId: uuidOrNull(identity.userId) }
+  if (identity.type === 'agent') {
+    return {
+      agentId: uuidOrNull(identity.agentId),
+      squadId: uuidOrNull(identity.squadId),
+      userId: uuidOrNull(identity.userId),
+    }
+  }
+  return {}
+}

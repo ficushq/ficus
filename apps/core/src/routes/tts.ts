@@ -14,6 +14,8 @@ import { createLogger } from '../lib/infra/logger'
 import { requirePermission } from '../middleware/require-permission'
 import { hasPermission } from '../services/rbac'
 import type { Identity } from '../services/rbac'
+import { recordInferenceUsage } from '../services/inference-usage'
+import { attributionFromIdentity, type InferenceAttribution } from '../services/inference-usage/types'
 
 const log = createLogger('tts')
 
@@ -49,11 +51,12 @@ const SPEECH_REFORMAT_PROMPT = `After each user prompt, prepare it for speech sy
 - Remove any markdown formatting (headers, bold, italic, links, tables, code, etc.)
 - Your output will be read aloud, so ensure it makes sense when spoken.`
 
-async function reformatForSpeech(text: string): Promise<string> {
+async function reformatForSpeech(text: string, attribution: InferenceAttribution): Promise<string> {
   try {
     const { pi: session } = await AgentSession.create({
       model: 'anthropic:claude-sonnet-4-5',
       systemPrompt: SPEECH_REFORMAT_PROMPT,
+      usage: { feature: 'tts-reformat', attribution: () => attribution },
     })
 
     const chunks: string[] = []
@@ -123,7 +126,12 @@ export const ttsRouter = new Hono().post('/', requirePermission('ai:tts'), async
     return c.json({ error: 'Enable Google Cloud in Settings → Integrations to use text-to-speech.' }, 503)
   }
 
-  const text = await reformatForSpeech(rawText)
+  const attribution: InferenceAttribution = {
+    ...attributionFromIdentity(identity),
+    agentId: message.agentId,
+    squadId: msgSquadId,
+  }
+  const text = await reformatForSpeech(rawText, attribution)
 
   let lease: Awaited<ReturnType<typeof speechClients.acquire>>
   try {
@@ -157,6 +165,16 @@ export const ttsRouter = new Hono().post('/', requirePermission('ai:tts'), async
         input: {
           text,
         },
+      })
+      // Google bills the characters sent, whether or not the client listens to the end.
+      recordInferenceUsage({
+        feature: 'tts',
+        provider: 'google',
+        model: VOICE_NAME,
+        accountId: 'google-cloud',
+        billing: 'api',
+        units: { characters: text.length },
+        attribution,
       })
 
       // End the write side

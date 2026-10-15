@@ -674,7 +674,7 @@ export class SearchService {
       const model = await embeddingService.getSquadEmbeddingModel(squadId)
 
       // Generate embedding for the query
-      const queryEmbedding = await embeddingService.generateQueryEmbedding(query, model)
+      const queryEmbedding = await embeddingService.generateQueryEmbedding(query, model, { squadId })
 
       // Build filter conditions
       const filterConditions = buildFilterConditions(filters)
