@@ -294,8 +294,24 @@ describe('Decision models settings', () => {
       ...noSpend(30),
       totalUsd: 0.5,
       byPurpose: [
-        { purpose: 'tool-results', calls: 40, answered: 40, inputTokens: 1000, costUsd: 0.3 },
-        { purpose: 'tool-results-shell', calls: 12, answered: 12, inputTokens: 500, costUsd: 0.2 },
+        {
+          purpose: 'tool-results',
+          tier: null,
+          calls: 40,
+          answered: 40,
+          inputTokens: 1000,
+          outputTokens: 0,
+          costUsd: 0.3,
+        },
+        {
+          purpose: 'tool-results-shell',
+          tier: null,
+          calls: 12,
+          answered: 12,
+          inputTokens: 500,
+          outputTokens: 0,
+          costUsd: 0.2,
+        },
       ],
     }
     const html = renderToStaticMarkup(tree(client(settings(), { 30: month }), true))
@@ -678,9 +694,25 @@ describe('Decision models settings', () => {
       totalUsd: 1.2345,
       approximate: true,
       byPurpose: [
-        { purpose: 'tool-results', calls: 1204, answered: 1200, inputTokens: 9_000_000, costUsd: 0.42 },
-        { purpose: 'github-firewall', calls: 3, answered: 3, inputTokens: 900, costUsd: 0.00004 },
-        { purpose: 'workflow-steps', calls: 0, answered: 0, inputTokens: 0, costUsd: 0 },
+        {
+          purpose: 'tool-results',
+          tier: null,
+          calls: 1204,
+          answered: 1200,
+          inputTokens: 9_000_000,
+          outputTokens: 0,
+          costUsd: 0.42,
+        },
+        {
+          purpose: 'github-firewall',
+          tier: null,
+          calls: 3,
+          answered: 3,
+          inputTokens: 900,
+          outputTokens: 0,
+          costUsd: 0.00004,
+        },
+        { purpose: 'workflow-steps', tier: null, calls: 0, answered: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
       ],
       byProvider: [{ providerId: 'jev-1', calls: 1207, inputTokens: 9_000_900, costUsd: 0.31 }],
     }
@@ -703,6 +735,43 @@ describe('Decision models settings', () => {
     expect(featureRow(html, 'Jev')).toContain('≈ $0.31 this month')
     expect(featureRow(html, 'Clef on the Mac mini')).toContain('Free')
     expect(featureRow(html, 'Clef on the Mac mini')).not.toContain('this month')
+  })
+
+  test('Lite-tier reply suggestions are listed with their spend beside decision features', () => {
+    const month: DecisionSpend = {
+      ...noSpend(30),
+      totalUsd: 0.27,
+      byPurpose: [
+        {
+          purpose: 'tool-results',
+          tier: null,
+          calls: 40,
+          answered: 40,
+          inputTokens: 1000,
+          outputTokens: 0,
+          costUsd: 0.2,
+        },
+        {
+          purpose: 'reply-suggestions',
+          tier: 'lite',
+          calls: 120,
+          answered: 118,
+          inputTokens: 72_000,
+          outputTokens: 4_800,
+          costUsd: 0.07,
+        },
+      ],
+    }
+    const html = renderToStaticMarkup(tree(client(settings(), { 30: month }), true))
+    const row = featureRow(html, 'Reply suggestions')
+    expect(row).toContain('Lite tier')
+    expect(row).toContain('$0.07 · 120 calls')
+    expect(row).toContain('One-tap replies when an agent asks you something in chat')
+    // Its spend is part of the total shown above the features.
+    expect(html).toContain('$0.27')
+    // Listed only once it has spend in the period.
+    const quiet = renderToStaticMarkup(tree(client(settings(), { 30: noSpend(30) }), true))
+    expect(quiet).not.toContain('aria-label="Reply suggestions"')
   })
 
   test('picking a period fetches its spend', async () => {

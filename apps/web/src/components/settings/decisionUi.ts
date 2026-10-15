@@ -69,6 +69,31 @@ export function formatPrice(pricePerMillion: number | null): string {
   return `$${pricePerMillion.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} per million input tokens`
 }
 
+/**
+ * Features that make one-shot calls on an agent model tier (not on decision models), whose spend
+ * is counted with decision spend. Listed by the purpose Core records them under.
+ */
+export const MODEL_TIER_FEATURES: Record<string, { label: string; description: string }> = {
+  'reply-suggestions': {
+    label: 'Reply suggestions',
+    description:
+      'One-tap replies when an agent asks you something in chat, from your AI providers. Switch them off in Agent Types → Model tiers.',
+  },
+}
+
+/** A model tier feature's name, for a purpose this version of the app doesn't know yet. */
+export function modelTierFeatureLabel(purpose: string): string {
+  const known = MODEL_TIER_FEATURES[purpose]?.label
+  if (known) return known
+  const words = purpose.replace(/[-_]+/g, ' ').trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/** A tier slug as Settings names it: `lite` → `Lite tier`. */
+export function modelTierName(slug: string): string {
+  return `${slug.charAt(0).toUpperCase()}${slug.slice(1)} tier`
+}
+
 export const SPEND_ESTIMATE_NOTE = "Some providers don't report tokens, or a price isn't known, so this is an estimate."
 
 /** Spend for one period, marked "≈" when it is an estimate. */

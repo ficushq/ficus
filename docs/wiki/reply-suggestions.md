@@ -2,7 +2,8 @@
 
 When an agent ends a chat turn by asking you something in plain text (not through a question card),
 the chat offers two to four one-tap replies just above the composer. They are suggestions only:
-nothing is tracked, no wait is opened, and nothing blocks on them.
+no wait is opened and nothing blocks on them. Their model calls' tokens and cost are recorded (see
+[Usage and spend](#usage-and-spend)).
 
 ## The Lite model tier
 
@@ -16,6 +17,30 @@ tier's chain, skipping candidates that agent model selection would skip (disable
 unhealthy providers) and accounts that run Claude Code, and uses the stored provider accounts through
 the shared model runtime. Each candidate gets a short timeout and the whole call has an overall
 deadline and a small output cap. It never throws; a failure resolves to `null`.
+
+## Usage and spend
+
+Every `completeWithTier` call that reached a provider is recorded as one row in the decision log
+(`decision_log`), the table decision-model spend already uses, with `tier` set (e.g. `lite`), the
+caller's `purpose` (reply suggestions record `reply-suggestions`), the model that answered (or was
+asked last), latency, input and output tokens, and cost. Tokens and cost come from the provider's
+reported usage, priced at the model's list price the same way agent turns are; when several
+candidates were asked, their usage is summed. A provider that reports no usage, or a model without a
+price, leaves the cost unknown and marks the spend as an estimate. `source` holds who the call was
+for (reply suggestions: `agentId`, `squadId` and the `messageId` that got chips). Failed candidates
+are kept as their model and a fixed word (`error`, `timeout`, `aborted` or `empty`). Like decisions,
+only a hash of the input is kept: never the prompt, the answer or provider error text. Rows are
+pruned after 30 days.
+
+The decision log was chosen over the execution usage on `executions.usage` because these calls are
+not agent turns: they have no execution, and adding them there would change agents' session totals.
+The decision log is already the per-call record of small utility-model calls with a purpose, cost and
+an instance-wide spend view.
+
+The write happens in the background after the result is ready, so it never delays the caller; a
+failed write is logged and ignored. `GET /api/decisions/spend` includes these calls in `byPurpose`
+(with `tier` and `outputTokens`) and in the total, and **Settings → Decision Providers → Features**
+lists them (e.g. "Reply suggestions · Lite tier") with their spend for the chosen period.
 
 ## When suggestions run
 

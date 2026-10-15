@@ -2,8 +2,8 @@
  * Reply suggestions: when an agent's turn ends with a plain-text question to the human, a cheap
  * model writes 2–4 one-tap replies that the chat shows above the composer.
  *
- * Suggestions are a convenience only. Nothing is tracked, no wait is opened, and nothing blocks on
- * them: the work runs after the turn has already completed, and any error, timeout or doubt means
+ * Suggestions are a convenience only. No wait is opened and nothing blocks on them (each model call's
+ * tokens and cost are still recorded, as `reply-suggestions` spend): the work runs after the turn has already completed, and any error, timeout or doubt means
  * no chips. This file is pure (its I/O is injected); `runtime.ts` wires the database and models.
  */
 import type { LightCompletionRequest, LightCompletionResult } from '../model-tiers/light-completion'
@@ -13,6 +13,8 @@ import { buildReplySuggestionPrompt, REPLY_SUGGESTION_MAX_TOKENS, REPLY_SUGGESTI
 
 /** The model tier reply suggestions use. */
 export const REPLY_SUGGESTIONS_TIER = 'lite'
+/** The purpose their model calls' spend is recorded under. */
+export const REPLY_SUGGESTIONS_PURPOSE = 'reply-suggestions'
 /** Settings key for the instance-wide switch. */
 export const REPLY_SUGGESTIONS_SETTING = 'REPLY_SUGGESTIONS_ENABLED'
 /** Suggestion requests running at once, instance-wide; more are skipped, not queued. */
@@ -37,6 +39,8 @@ export interface AgentSuggestionState {
   hasQuestionData: boolean
   /** Open async questions (ask_human) for this agent. */
   openQuestions: number
+  /** The agent's squad, for spend attribution. */
+  squadId?: string | null
 }
 
 export interface SuggestionTarget {
@@ -128,7 +132,8 @@ export async function suggestRepliesAfterTurn(
   }
   if (!limiter.tryEnter(agentId)) return 'busy'
   try {
-    if (!agentAcceptsSuggestions(await deps.loadAgent(agentId))) return 'agent-not-ready'
+    const agent = await deps.loadAgent(agentId)
+    if (!agentAcceptsSuggestions(agent)) return 'agent-not-ready'
     const [latestHuman, recentAssistant] = await Promise.all([
       deps.loadLatestHuman(agentId),
       deps.loadRecentAssistant(agentId),
@@ -138,6 +143,8 @@ export async function suggestRepliesAfterTurn(
     if (!likelyAsksHuman(target.agentText)) return 'no-question'
     const answer = await deps.complete({
       tier: REPLY_SUGGESTIONS_TIER,
+      purpose: REPLY_SUGGESTIONS_PURPOSE,
+      source: { agentId, messageId: target.messageId, ...(agent?.squadId ? { squadId: agent.squadId } : {}) },
       system: REPLY_SUGGESTION_SYSTEM,
       prompt: buildReplySuggestionPrompt({ agentText: target.agentText, humanText: target.humanText }),
       maxTokens: REPLY_SUGGESTION_MAX_TOKENS,

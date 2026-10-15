@@ -4440,20 +4440,26 @@ export const storageMonitor = pgTable('storage_monitor', {
     .default([]),
 })
 
-// Decision model calls: what was asked, who answered (or that none could), and how fast. The input
-// itself is never kept, only its hash; rows older than 30 days are pruned.
+// Decision model calls, and one-shot model tier calls (e.g. Lite-tier reply suggestions, `tier` set):
+// what was asked, who answered (or that none could), how fast and at what cost. The input itself is
+// never kept, only its hash, nor a model tier call's answer; rows older than 30 days are pruned.
 export const decisionLog = pgTable(
   'decision_log',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     purpose: varchar('purpose', { length: 64 }).notNull(),
     outcome: varchar('outcome', { length: 16 }).$type<'answered' | 'unavailable' | 'unconfigured'>().notNull(),
+    /** The decision provider that answered; null for model tier calls. */
     providerId: varchar('provider_id', { length: 64 }),
     model: varchar('model', { length: 128 }),
+    /** The model tier a one-shot model tier call ran on (e.g. `lite`); null for decision models. */
+    tier: varchar('tier', { length: 32 }),
     latencyMs: integer('latency_ms').notNull(),
     /** Input tokens the answering provider billed, or an estimate when it didn't say (`costEstimated`). */
     inputTokens: integer('input_tokens'),
-    /** What the answer cost, in billionths of a dollar (decision models bill input only). */
+    /** Output tokens a model tier call's providers reported (decision models bill input only). */
+    outputTokens: integer('output_tokens'),
+    /** What the call cost, in billionths of a dollar. */
     costNanodollars: integer('cost_nanodollars'),
     costEstimated: boolean('cost_estimated').notNull().default(false),
     inputSha256: varchar('input_sha256', { length: 64 }).notNull(),

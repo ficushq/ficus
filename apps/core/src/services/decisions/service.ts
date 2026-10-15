@@ -14,6 +14,11 @@ import {
 } from '@ficus/shared'
 import { db, decisionLog } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
+import {
+  lightCompletionTotals,
+  type LightCompletionReport,
+  type LightCompletionRequest,
+} from '../model-tiers/light-completion'
 import { getOpenAIServiceKey } from '../integrations/openai-services/settings'
 import { callDecisionProvider, DecisionProviderError, type DecisionFetch } from './adapters'
 import {
@@ -249,6 +254,21 @@ export const DECISION_PROBE: DecisionRequest = {
 
 let lastPrune = 0
 
+function inputHash(value: unknown) {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+/** Write one log row in the background, pruning old rows now and then. Never rejects. */
+function writeLog(values: typeof decisionLog.$inferInsert, what: string): Promise<void> {
+  return (async () => {
+    await db.insert(decisionLog).values(values)
+    if (Date.now() - lastPrune > 60 * 60 * 1000) {
+      lastPrune = Date.now()
+      await db.delete(decisionLog).where(lt(decisionLog.createdAt, new Date(Date.now() - LOG_RETENTION_MS)))
+    }
+  })().catch((error) => log.warn(`Could not record ${what}`, error))
+}
+
 function record(
   purpose: DecisionPurpose | 'default',
   request: DecisionRequest,
@@ -258,9 +278,8 @@ function record(
   cost?: DecisionCost
 ) {
   if (options.skipLog) return
-  const inputSha256 = createHash('sha256').update(JSON.stringify(request)).digest('hex')
-  void (async () => {
-    await db.insert(decisionLog).values({
+  void writeLog(
+    {
       purpose,
       outcome: outcome.ok ? 'answered' : outcome.reason,
       providerId: outcome.ok ? outcome.result.providerId : null,
@@ -269,24 +288,64 @@ function record(
       inputTokens: cost?.inputTokens ?? null,
       costNanodollars: cost?.nanodollars ?? null,
       costEstimated: cost ? cost.estimated || cost.nanodollars === null : false,
-      inputSha256,
+      inputSha256: inputHash(request),
       answers: outcome.ok ? outcome.result.answers : null,
       errors: outcome.ok ? null : outcome.errors,
       source: options.source ?? null,
-    })
-    if (Date.now() - lastPrune > 60 * 60 * 1000) {
-      lastPrune = Date.now()
-      await db.delete(decisionLog).where(lt(decisionLog.createdAt, new Date(Date.now() - LOG_RETENTION_MS)))
-    }
-  })().catch((error) => log.warn('Could not record a decision', error))
+    },
+    'a decision'
+  )
 }
 
-/** What decision models cost over the last `days` days (the log keeps 30), by feature and by provider. */
+/**
+ * Record a one-shot model tier call (a light completion, e.g. reply suggestions on the Lite tier) in
+ * the decision log, so its spend shows beside decision models'. Like decisions, only a hash of the
+ * input is kept, never the prompt or the answer; failed candidates are kept as the model and a fixed
+ * failure word. Resolves once written; never rejects (a failure is logged).
+ */
+export function recordModelTierCall(
+  report: LightCompletionReport,
+  request: Pick<LightCompletionRequest, 'system' | 'prompt'>
+): Promise<void> {
+  try {
+    const totals = lightCompletionTotals(report.attempts)
+    const failed = report.attempts.filter((entry) => entry.failure !== null)
+    return writeLog(
+      {
+        purpose: report.purpose,
+        tier: report.tier,
+        outcome: report.model ? 'answered' : 'unavailable',
+        // Decision provider IDs only; the model spec names who answered (or was asked last).
+        providerId: null,
+        model: report.model ?? report.attempts.at(-1)?.model ?? null,
+        latencyMs: Math.round(report.latencyMs),
+        inputTokens: totals.inputTokens,
+        outputTokens: totals.outputTokens,
+        costNanodollars: totals.costNanodollars,
+        costEstimated: totals.costEstimated,
+        inputSha256: inputHash({ system: request.system, prompt: request.prompt }),
+        answers: null,
+        errors: failed.length ? failed.map((entry) => ({ providerId: entry.model, error: entry.failure! })) : null,
+        source: report.source ?? null,
+      },
+      'a model tier call'
+    )
+  } catch (error) {
+    log.warn('Could not record a model tier call', error)
+    return Promise.resolve()
+  }
+}
+
+/**
+ * What decision models and model tier calls (e.g. Lite-tier reply suggestions) cost over the last
+ * `days` days (the log keeps 30), by feature and by decision provider.
+ */
 export async function decisionSpend(days: number): Promise<DecisionSpend> {
   const since = new Date(Date.now() - Math.min(Math.max(days, 1), 30) * 24 * 60 * 60 * 1000)
   const totals = {
     calls: sql<number>`count(*)::int`,
     inputTokens: sql<string>`coalesce(sum(${decisionLog.inputTokens}), 0)::bigint`,
+    outputTokens: sql<string>`coalesce(sum(${decisionLog.outputTokens}), 0)::bigint`,
     nanodollars: sql<string>`coalesce(sum(${decisionLog.costNanodollars}), 0)::bigint`,
     approximate: sql<boolean>`coalesce(bool_or(${decisionLog.costEstimated}), false)`,
   }
@@ -294,6 +353,7 @@ export async function decisionSpend(days: number): Promise<DecisionSpend> {
     db
       .select({
         purpose: decisionLog.purpose,
+        tier: sql<string | null>`max(${decisionLog.tier})`,
         answered: sql<number>`(count(*) filter (where ${decisionLog.outcome} = 'answered'))::int`,
         ...totals,
       })
@@ -310,9 +370,11 @@ export async function decisionSpend(days: number): Promise<DecisionSpend> {
   const byPurpose = purposes
     .map((row) => ({
       purpose: row.purpose,
+      tier: row.tier ?? null,
       calls: row.calls,
       answered: row.answered,
       inputTokens: Number(row.inputTokens),
+      outputTokens: Number(row.outputTokens),
       costUsd: usd(row.nanodollars),
     }))
     .sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls)

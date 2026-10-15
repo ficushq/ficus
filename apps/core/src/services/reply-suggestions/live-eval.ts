@@ -45,6 +45,8 @@ async function main() {
     const answer = await completeLight(
       {
         tier: 'lite',
+        // Not recorded: this script passes no `record`.
+        purpose: 'reply-suggestions',
         system: REPLY_SUGGESTION_SYSTEM,
         prompt: buildReplySuggestionPrompt({ agentText: fixture.agent, humanText: fixture.human }),
         maxTokens: REPLY_SUGGESTION_MAX_TOKENS,

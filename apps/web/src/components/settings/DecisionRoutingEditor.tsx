@@ -21,7 +21,15 @@ import { Badge, type BadgeColor } from '../Badge'
 import { SegmentedControl } from '../SegmentedControl'
 import { ChevronDownIcon, CloseIcon, PlusIcon } from '../icons'
 import { DECISION_INPUT_CLASS } from './DecisionField'
-import { errorText, featureSwitchState, formatSpend, SPEND_ESTIMATE_NOTE } from './decisionUi'
+import {
+  errorText,
+  featureSwitchState,
+  formatSpend,
+  MODEL_TIER_FEATURES,
+  modelTierFeatureLabel,
+  modelTierName,
+  SPEND_ESTIMATE_NOTE,
+} from './decisionUi'
 import { DecisionSpendSummary } from './DecisionSpendSummary'
 
 const MIN_TIMEOUT_SECONDS = 0.25
@@ -113,7 +121,8 @@ export function DecisionRoutingEditor({
               Features
             </h4>
             <p className="mt-0.5 text-xs text-muted">
-              Everything decision models do in Ficus, and what each costs.
+              Everything decision models do in Ficus, and what each costs. Spend includes small model tier calls, such
+              as reply suggestions.
               {hasProviders ? ' Each feature asks the default order unless you give it its own.' : ''}
             </p>
           </div>
@@ -186,6 +195,17 @@ export function DecisionRoutingEditor({
               }
               return row(feature)
             })}
+          {spend?.byPurpose
+            .filter((entry) => entry.tier !== null && entry.calls > 0)
+            .map((entry) => (
+              <ModelTierFeatureRow
+                key={entry.purpose}
+                purpose={entry.purpose}
+                tier={entry.tier!}
+                spend={entry}
+                approximate={spend.approximate}
+              />
+            ))}
         </ul>
         {featureSwitch.isError && (
           <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
@@ -289,6 +309,39 @@ export function DecisionRoutingEditor({
 const SCOPE_STATUS: Record<'squad' | 'authored', { status: string; note?: string }> = {
   squad: { status: 'Chosen per squad', note: "Set in each squad's GitHub settings." },
   authored: { status: 'Runs where you add it' },
+}
+
+/**
+ * A feature that runs on an agent model tier rather than on decision models (e.g. reply suggestions
+ * on the Lite tier), listed for its spend only: it is switched and routed with its tier.
+ */
+function ModelTierFeatureRow({
+  purpose,
+  tier,
+  spend,
+  approximate,
+}: {
+  purpose: string
+  tier: string
+  spend: { calls: number; costUsd: number }
+  approximate: boolean
+}) {
+  const label = modelTierFeatureLabel(purpose)
+  return (
+    <li className="py-3" aria-label={label}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-sm font-medium text-primary">{label}</span>
+        <Badge color="neutral">{modelTierName(tier)}</Badge>
+        <span className="text-xs tabular-nums text-secondary" title={approximate ? SPEND_ESTIMATE_NOTE : undefined}>
+          {formatSpend(spend.costUsd, approximate)} · {spend.calls.toLocaleString('en-US')}{' '}
+          {spend.calls === 1 ? 'call' : 'calls'}
+        </span>
+      </div>
+      <p className="mt-0.5 text-xs text-muted">
+        {MODEL_TIER_FEATURES[purpose]?.description ?? `Calls to the ${modelTierName(tier)} on your AI providers.`}
+      </p>
+    </li>
+  )
 }
 
 /**

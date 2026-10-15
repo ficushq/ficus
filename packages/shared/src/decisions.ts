@@ -227,7 +227,7 @@ export interface DecisionProviderView {
   effectivePricePerMillionInput: number | null
 }
 
-/** What decision models cost over a period, by feature and by provider. */
+/** What decision models and model tier calls (e.g. Lite-tier reply suggestions) cost over a period, by feature and by decision provider. */
 export interface DecisionSpend {
   days: number
   totalUsd: number
@@ -235,9 +235,13 @@ export interface DecisionSpend {
   approximate: boolean
   byPurpose: Array<{
     purpose: string
+    /** The model tier a feature's one-shot calls run on (e.g. `lite` for reply suggestions); null for decision models. */
+    tier: string | null
     calls: number
     answered: number
     inputTokens: number
+    /** Always 0 for decision models, which write no text. */
+    outputTokens: number
     costUsd: number
   }>
   byProvider: Array<{ providerId: string; calls: number; inputTokens: number; costUsd: number }>

@@ -124,6 +124,17 @@ describe('suggestRepliesAfterTurn', () => {
     ])
   })
 
+  test('attributes the call’s spend to reply suggestions, the agent, its squad and the message', async () => {
+    const { deps, requests } = fakeDeps({ loadAgent: async () => ({ ...idleAgent, squadId: 'squad-1' }) })
+    await suggestRepliesAfterTurn('agent-1', deps, new ReplySuggestionLimiter())
+    expect(requests[0].purpose).toBe('reply-suggestions')
+    expect(requests[0].source).toEqual({ agentId: 'agent-1', messageId: 'a1', squadId: 'squad-1' })
+
+    const squadless = fakeDeps()
+    await suggestRepliesAfterTurn('agent-2', squadless.deps, new ReplySuggestionLimiter())
+    expect(squadless.requests[0].source).toEqual({ agentId: 'agent-2', messageId: 'a1' })
+  })
+
   test('switched off: no reads, no model call, nothing saved', async () => {
     const { deps, requests, saved, reads } = fakeDeps({ isEnabled: () => false })
     expect(await suggestRepliesAfterTurn('agent-1', deps, new ReplySuggestionLimiter())).toBe('disabled')

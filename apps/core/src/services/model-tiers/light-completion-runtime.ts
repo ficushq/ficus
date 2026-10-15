@@ -4,9 +4,13 @@ import { createLogger } from '../../lib/infra/logger'
 import { resolveAgentModelSpec } from '../../lib/utils/model-spec'
 import { getModelRuntime } from '../agent/auth-backend'
 import { CLAUDE_CODE_FLAG } from '../agent/claude-code/account'
+import { recordModelTierCall } from '../decisions/service'
 import { usableModelCandidatesForCurrentEnv } from '../model-selection'
 import {
   completeLight,
+  LightCompletionProviderError,
+  lightCompletionUsage,
+  type LightCandidateReply,
   type LightCompletionCall,
   type LightCompletionDeps,
   type LightCompletionRequest,
@@ -26,9 +30,10 @@ async function loadTierChain(slug: string): Promise<string | null> {
 
 /**
  * Ask one candidate through the process's shared model runtime, which resolves the stored provider
- * account (API key or OAuth) exactly as agent sessions do. No new credentials are involved.
+ * account (API key or OAuth) exactly as agent sessions do. No new credentials are involved. The
+ * reply carries the provider's token usage, priced at the model's list price like agent turns.
  */
-async function completeWithRuntime(spec: string, call: LightCompletionCall): Promise<string | null> {
+async function completeWithRuntime(spec: string, call: LightCompletionCall): Promise<LightCandidateReply | null> {
   const runtime = await getModelRuntime()
   const { model, thinkingLevel } = resolveAgentModelSpec(spec, runtime)
   const auth = await runtime.getAuth(model)
@@ -47,18 +52,22 @@ async function completeWithRuntime(spec: string, call: LightCompletionCall): Pro
       maxRetries: 0,
     }
   )
+  const usage = lightCompletionUsage(message.usage, model.cost)
   if (message.stopReason === 'error' || message.stopReason === 'aborted')
-    throw new Error(message.errorMessage || `Light completion ${message.stopReason}`)
-  return message.content
+    throw new LightCompletionProviderError(message.errorMessage || `Light completion ${message.stopReason}`, usage)
+  const text = message.content
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('')
+  return { text, usage }
 }
 
 export const lightCompletionRuntimeDeps: LightCompletionDeps = {
   tierChain: loadTierChain,
   usableCandidates: usableModelCandidatesForCurrentEnv,
   complete: completeWithRuntime,
+  // Into the decision log, beside decision-model spend; the write runs in the background.
+  record: (report, request) => void recordModelTierCall(report, request),
   onCandidateError: (spec, error) =>
     log.debug(`Light completion candidate ${spec} failed: ${error instanceof Error ? error.message : String(error)}`),
 }

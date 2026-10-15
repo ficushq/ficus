@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import type { DecisionRequest } from '@ficus/shared'
 import { db, decisionLog, secrets, settings } from '../../db'
 import { getSecretStore, resetSecretStore } from '../secrets'
@@ -12,6 +12,7 @@ import {
   decisionFeatures,
   decisionSpend,
   isDecisionFeatureEnabled,
+  recordModelTierCall,
   resetDecisionCooldownsForTests,
 } from './service'
 import {
@@ -303,6 +304,101 @@ test('spend adds up by feature and provider from the decision log', async () => 
   const firewall = (s: typeof spend) => s.byPurpose.find((row) => row.purpose === 'github-firewall')
   expect((firewall(spend)?.costUsd ?? 0) - (firewall(before)?.costUsd ?? 0)).toBeCloseTo(0.168, 9)
   await db.delete(decisionLog).where(eq(decisionLog.providerId, hosted.id))
+})
+
+test('Lite-tier calls are logged with tokens and cost by purpose, model and source, and show in spend', async () => {
+  const run = `lite-${crypto.randomUUID()}`
+  const source = { agentId: 'agent-1', squadId: 'squad-1', run }
+  const prompt = { system: 'Suggest replies.', prompt: 'Want me to open a work stream for this?' }
+  const before = await decisionSpend(1)
+  await recordModelTierCall(
+    {
+      tier: 'lite',
+      purpose: 'reply-suggestions',
+      source,
+      model: 'zai:glm-5.3-flash:off',
+      attempts: [
+        {
+          model: 'anthropic:claude-haiku-4-5:off',
+          failure: 'error',
+          usage: { inputTokens: 300, outputTokens: 0, costUsd: 0.0003 },
+        },
+        {
+          model: 'zai:glm-5.3-flash:off',
+          failure: null,
+          usage: { inputTokens: 700, outputTokens: 40, costUsd: 0.0012 },
+        },
+      ],
+      latencyMs: 812,
+    },
+    prompt
+  )
+  // A provider that reported no usage: the call is kept, without a cost.
+  await recordModelTierCall(
+    {
+      tier: 'lite',
+      purpose: 'reply-suggestions',
+      source,
+      model: 'anthropic:claude-haiku-4-5:off',
+      attempts: [{ model: 'anthropic:claude-haiku-4-5:off', failure: null, usage: null }],
+      latencyMs: 300,
+    },
+    prompt
+  )
+  const rows = await db
+    .select()
+    .from(decisionLog)
+    .where(sql`${decisionLog.source}->>'run' = ${run}`)
+    .orderBy(decisionLog.latencyMs)
+  try {
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({
+      purpose: 'reply-suggestions',
+      tier: 'lite',
+      outcome: 'answered',
+      providerId: null,
+      model: 'anthropic:claude-haiku-4-5:off',
+      inputTokens: null,
+      outputTokens: null,
+      costNanodollars: null,
+      costEstimated: true,
+      answers: null,
+      errors: null,
+    })
+    expect(rows[1]).toMatchObject({
+      purpose: 'reply-suggestions',
+      tier: 'lite',
+      outcome: 'answered',
+      model: 'zai:glm-5.3-flash:off',
+      latencyMs: 812,
+      inputTokens: 1000,
+      outputTokens: 40,
+      costNanodollars: 1_500_000,
+      costEstimated: false,
+      errors: [{ providerId: 'anthropic:claude-haiku-4-5:off', error: 'error' }],
+      source,
+    })
+    expect(rows[1].inputSha256).toMatch(/^[0-9a-f]{64}$/)
+    expect(JSON.stringify(rows)).not.toContain('work stream')
+
+    const spend = await decisionSpend(1)
+    const suggestions = (s: typeof spend) => s.byPurpose.find((row) => row.purpose === 'reply-suggestions')
+    expect(suggestions(spend)).toMatchObject({ tier: 'lite' })
+    expect((suggestions(spend)?.calls ?? 0) - (suggestions(before)?.calls ?? 0)).toBe(2)
+    expect((suggestions(spend)?.outputTokens ?? 0) - (suggestions(before)?.outputTokens ?? 0)).toBe(40)
+    expect((suggestions(spend)?.costUsd ?? 0) - (suggestions(before)?.costUsd ?? 0)).toBeCloseTo(0.0015, 9)
+    expect(spend.totalUsd - before.totalUsd).toBeCloseTo(0.0015, 9)
+    expect(spend.approximate).toBe(true)
+    // Decision providers are unaffected: model tier calls have none.
+    expect(spend.byProvider.some((row) => row.providerId.includes('claude'))).toBe(false)
+  } finally {
+    await db.delete(decisionLog).where(sql`${decisionLog.source}->>'run' = ${run}`)
+  }
+})
+
+test('a model tier call that cannot be recorded is logged and ignored', async () => {
+  const unwritable = { tier: 'lite', purpose: 'x'.repeat(200), model: null, attempts: [], latencyMs: 1 }
+  await expect(recordModelTierCall(unwritable, { system: '', prompt: '' })).resolves.toBeUndefined()
 })
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
