@@ -2073,6 +2073,56 @@ describe('ChatView inline tool actions', () => {
   })
 })
 
+describe('ChatView streaming tool images', () => {
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  const read = (result?: string) => ({
+    toolCallId: 'tc-read',
+    toolName: 'read',
+    args: JSON.stringify({ path: '/tmp/shots/after.png' }),
+    isError: false,
+    ...(result ? { result } : {}),
+  })
+  const streaming = (blocks: StreamingContentBlock[]): RenderItem[] => [
+    { kind: 'streaming', id: 'S', agentId: 'a', status: 'streaming', blocks },
+  ]
+  const imageResult = JSON.stringify({
+    content: [
+      { type: 'text', text: 'Read image file [image/png]' },
+      { type: 'image', mimeType: 'image/png', data: PNG },
+    ],
+  })
+
+  test('the image shows as soon as the tool_end result arrives, and stays on the row once it collapses', async () => {
+    const { dom, root, window } = await renderChatView(
+      <ChatView
+        items={streaming([{ type: 'tool_use', id: 'tc-read', _done: false, toolCall: read() }])}
+        onSend={() => {}}
+        hideComposer
+      />
+    )
+    const thumbnails = () => [...window.document.querySelectorAll('[data-tool-image-strip] img')]
+    expect(thumbnails()).toHaveLength(0)
+
+    const rerender = (blocks: StreamingContentBlock[]) =>
+      dom.act(async () =>
+        root.render(
+          <MemoryRouter>
+            <ChatView dependencies={chatViewDependencies} items={streaming(blocks)} onSend={() => {}} hideComposer />
+          </MemoryRouter>
+        )
+      )
+    const done: StreamingContentBlock = { type: 'tool_use', id: 'tc-read', _done: true, toolCall: read(imageResult) }
+    await rerender([done])
+    expect(thumbnails().map((img) => img.getAttribute('src'))).toEqual([`data:image/png;base64,${PNG}`])
+    expect(window.document.body.textContent).not.toContain('Read image file')
+
+    // More output pushes the call up and collapses it; the thumbnail stays visible under the row.
+    await rerender([done, { type: 'text', id: 'txt', content: 'Looks right.' }])
+    expect(window.document.querySelector('[data-tool-call-row="tc-read"]')).toBeTruthy()
+    expect(thumbnails().map((img) => img.getAttribute('alt'))).toEqual(['/tmp/shots/after.png'])
+  })
+})
+
 /**
  * Like renderChatView, but patches Element.scrollIntoView with a spy BEFORE the
  * first render/mount — the focusMessageId search can find and scroll to its

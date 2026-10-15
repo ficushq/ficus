@@ -6,6 +6,8 @@ import { Modal } from './Modal'
 export interface PreviewImage {
   id: string
   src: string
+  /** Describes the picture (a tool image's file path, say); chat attachments fall back to "Attached image". */
+  alt?: string
 }
 
 /**
@@ -18,7 +20,7 @@ const IMAGE_MAX_HEIGHT =
 const STEP_BUTTON = 'ficus-button ficus-button-ghost p-1.5 rounded-md transition-colors shrink-0'
 
 /**
- * Shows chat image attachments in place, over the page. It deliberately offers no link to the image URL:
+ * Shows chat images (attachments, and images tool calls returned) in place, over the page. It deliberately offers no link to the image URL:
  * the desktop shell has no tabs and loads a same-origin link in the app window, replacing the app.
  */
 export function ImagePreviewModal({
@@ -112,7 +114,7 @@ export function ImagePreviewModal({
           ref={imageRef}
           key={current.id}
           src={current.src}
-          alt={canStep ? `Attached image ${position}` : 'Attached image'}
+          alt={current.alt ?? (canStep ? `Attached image ${position}` : 'Attached image')}
           style={{ maxHeight: IMAGE_MAX_HEIGHT }}
           className="m-auto block h-auto w-auto max-w-full object-contain"
         />

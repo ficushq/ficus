@@ -11,6 +11,8 @@ import type { MessageMetadata, MessageToolCall, ContentBlock, DeliveryMode, Exec
 import { AssistantMessageContent, HumanMessageContent, ThinkingSection, ParsedTextContent } from './MessageContent'
 import { TypingIndicator } from './TypingIndicator'
 import { ToolSummary, ToolArgsView, ToolResultView, withoutHiddenToolCalls } from '../lib/tool-renderers'
+import { blocksImages, toolCallImages } from '../lib/tool-result-images'
+import { ToolImageStrip } from './ToolImageStrip'
 import { getImageAttachState } from '../lib/imageAttach'
 import {
   AutoScrollIcon,
@@ -2872,6 +2874,8 @@ function StreamingBlockGroupSection({
   }, [defaultExpanded, blocks.length])
 
   const summary = getStreamingGroupSummary(blocks)
+  // A collapsed group still shows the images its tool calls read, as soon as each result arrives.
+  const images = useMemo(() => blocksImages(blocks), [blocks])
   // Check if any tool in this group is still running
   const hasRunningTool = blocks.some((b) => b.type === 'tool_use' && !('_done' in b && b._done))
 
@@ -2889,6 +2893,7 @@ function StreamingBlockGroupSection({
         )}
         <span className="font-medium">{summary}</span>
       </button>
+      {!expanded && images.length > 0 && <ToolImageStrip images={images} underRow />}
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-2">
           {blocks.map((block, i) => {
@@ -2947,6 +2952,16 @@ function StreamingToolCallItem({
     () => (toolCall._done ? getToolFirewallFlag({ result: toolCall.result }) : null),
     [toolCall._done, toolCall.result]
   )
+  const images = useMemo(
+    () =>
+      toolCallImages({
+        toolCallId: toolCall.toolCallId,
+        toolName: toolCall.toolName,
+        args: toolCall.args,
+        result: toolCall.result,
+      }),
+    [toolCall.toolCallId, toolCall.toolName, toolCall.args, toolCall.result]
+  )
 
   // When defaultExpanded changes (e.g. a new tool call pushes this one up), sync
   useEffect(() => {
@@ -2996,6 +3011,7 @@ function StreamingToolCallItem({
         )}
       </div>
       <ToolInlineActions toolCall={toolCall} completed={toolCall._done === true} onOpen={onToolInlineAction} />
+      {!expanded && images.length > 0 && <ToolImageStrip images={images} underRow />}
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-1">
           {toolCall.args && (
@@ -3010,6 +3026,7 @@ function StreamingToolCallItem({
             <ToolResultView
               renderers={toolRenderers}
               toolName={toolCall.toolName}
+              args={toolCall.args}
               result={result}
               isError={isError}
               autoScroll={inProgress}
