@@ -10,6 +10,16 @@ interface Monitor {
   linesEmitted: number
   lastBatchAt: string | null
   createdAt: string
+  restartPolicy?: 'never' | 'on-loss'
+  restartCount?: number
+  nextRestartAt?: string | null
+}
+
+/** "never", or "on-loss" with the relaunch count and a pending relaunch. */
+export function formatMonitorRestart(m: Pick<Monitor, 'restartPolicy' | 'restartCount' | 'nextRestartAt'>): string {
+  if (m.restartPolicy !== 'on-loss') return 'never'
+  const restarts = m.restartCount ?? 0
+  return `on-loss (${restarts} restart${restarts === 1 ? '' : 's'}${m.nextRestartAt ? ', relaunch pending' : ''})`
 }
 
 export function registerMonitorCommands(program: Command) {
@@ -40,12 +50,13 @@ export function registerMonitorCommands(program: Command) {
             ID: m.id.slice(0, 8),
             Label: m.label.slice(0, 28),
             Status: m.status,
+            Restart: formatMonitorRestart(m),
             Agent: m.agentId.slice(0, 8),
             Lines: m.linesEmitted,
             'Last Batch': m.lastBatchAt ?? '-',
             Created: m.createdAt,
           })),
-          ['ID', 'Label', 'Status', 'Agent', 'Lines', 'Last Batch', 'Created']
+          ['ID', 'Label', 'Status', 'Restart', 'Agent', 'Lines', 'Last Batch', 'Created']
         )
       } catch (error) {
         outputError(error as Error)

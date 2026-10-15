@@ -19,7 +19,7 @@ import {
   type MonitorMessageKind,
 } from '@ficus/shared'
 import { ToolSummary, ToolArgsView, ToolResultView, withoutHiddenToolCalls } from '../lib/tool-renderers'
-import { ActivityIcon, ChevronRightIcon, ClockIcon, MailIcon, WarningIcon, WorkStreamIcon } from './icons'
+import { ActivityIcon, ChevronRightIcon, ClockIcon, MailIcon, RefreshIcon, WarningIcon, WorkStreamIcon } from './icons'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { QuestionAnswerDeliveryCard } from './QuestionAnswerCard'
 import { ImagePreviewModal } from './ImagePreviewModal'
@@ -362,6 +362,14 @@ function monitorTerminalStyle(
         bg: 'bg-status-danger-50/50 dark:bg-status-danger-900/20',
         text: 'text-status-danger-700 dark:text-status-danger-300',
         icon: <WarningIcon className="h-3.5 w-3.5" />,
+      }
+    case 'restarted':
+      // A lifecycle notice, not a terminal state: the command was relaunched after a sandbox loss.
+      return {
+        border: 'border-status-progress-200 dark:border-status-progress-800',
+        bg: 'bg-status-progress-50/50 dark:bg-status-progress-900/20',
+        text: 'text-status-progress-700 dark:text-status-progress-300',
+        icon: <RefreshIcon className="h-3.5 w-3.5" />,
       }
     case 'canceled':
     default:

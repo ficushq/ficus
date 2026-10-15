@@ -112,7 +112,26 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
           <DetailItem label="Started" value={detail.startedAt ?? '-'} />
           <DetailItem label="Ended" value={detail.endedAt ?? '-'} />
           <DetailItem label="Last batch" value={detail.lastBatchAt ?? '-'} />
+          <DetailItem label="Restart" value={detail.restartPolicy ?? 'never'} />
+          {detail.restartPolicy === 'on-loss' && (
+            <>
+              <DetailItem label="Restarts" value={detail.restartCount ?? 0} />
+              <DetailItem
+                label="Rapid restarts"
+                value={`${detail.rapidRestartCount ?? 0} / ${detail.restartLimit ?? '-'}`}
+              />
+              <DetailItem label="Last restart" value={detail.lastRestartAt ?? '-'} />
+            </>
+          )}
+          <DetailItem label="Deadline" value={detail.deadlineAt ?? '-'} />
         </div>
+
+        {detail.restartPolicy === 'on-loss' && (detail.lastRestartReason || detail.nextRestartAt) && (
+          <p className="rounded-md border border-th-border bg-surface-secondary p-2 text-sm text-secondary">
+            {detail.nextRestartAt ? `Relaunch pending at ${detail.nextRestartAt}` : 'Last restarted after sandbox loss'}
+            {detail.lastRestartReason ? `: ${detail.lastRestartReason}` : ''}
+          </p>
+        )}
 
         {detail.failureReason && (
           <p className="rounded-md border border-status-danger-200 bg-status-danger-50 p-2 text-sm text-status-danger-700 dark:border-status-danger-900/60 dark:bg-status-danger-900/30 dark:text-status-danger-300">

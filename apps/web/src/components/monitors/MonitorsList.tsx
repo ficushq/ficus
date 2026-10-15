@@ -1,5 +1,6 @@
 import type { Monitor } from '@ficus/shared'
 import { ConfirmButton } from '../ConfirmButton'
+import { monitorRestartLabel } from './monitorRestart'
 
 const ACTIVE = new Set(['starting', 'running', 'canceling'])
 
@@ -48,6 +49,7 @@ export function MonitorsList({
             <th className="px-3 py-2 font-semibold">Label</th>
             {showAgentColumn && <th className="px-3 py-2 font-semibold">Agent</th>}
             <th className="px-3 py-2 font-semibold">Status</th>
+            <th className="px-3 py-2 font-semibold">Restart</th>
             <th className="px-3 py-2 font-semibold">Lines / Bytes</th>
             <th className="px-3 py-2 font-semibold">Last batch</th>
             <th className="px-3 py-2 font-semibold">Created</th>
@@ -69,6 +71,9 @@ export function MonitorsList({
                 <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${statusClass(m.status)}`}>
                   {m.status}
                 </span>
+              </td>
+              <td className="px-3 py-2 text-secondary" title={m.lastRestartReason ?? undefined}>
+                {monitorRestartLabel(m)}
               </td>
               <td className="px-3 py-2 text-secondary">
                 {m.linesEmitted} / {m.bytesEmitted}

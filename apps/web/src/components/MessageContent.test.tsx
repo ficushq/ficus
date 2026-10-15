@@ -264,6 +264,41 @@ ficus inbox read m1
     expect(html).toContain('text-status-attention-700')
     expect(html).toContain('✗')
   })
+
+  test('renders a monitor restarted notice as a progress row, not a canceled one', () => {
+    const metadata = {
+      source: 'monitor',
+      monitor: {
+        id: 'abc12345-0000',
+        label: 'log-tail',
+        kind: 'restarted',
+        restartCount: 1,
+        rapidRestartCount: 1,
+      },
+    } satisfies MessageMetadata
+    const content =
+      'Monitor "log-tail" (abc12345) restarted after sandbox loss: sandbox restarted (rapid restart 1/5; resets after 5m stable).'
+
+    const html = renderToStaticMarkup(<HumanMessageContent content={content} metadata={metadata} />)
+
+    expect(html).toContain('restarted after sandbox loss')
+    expect(html).toContain('text-status-progress-700')
+    expect(html).not.toContain('⊘')
+  })
+
+  test('renders an unknown monitor kind from a newer server as a neutral notice', () => {
+    const metadata = {
+      source: 'monitor',
+      monitor: { id: 'abc12345-0000', label: 'log-tail', kind: 'some-future-kind' as never },
+    } satisfies MessageMetadata
+
+    const html = renderToStaticMarkup(
+      <HumanMessageContent content={'Monitor "log-tail" (abc12345) did something new.'} metadata={metadata} />
+    )
+
+    expect(html).toContain('did something new')
+    expect(html).toContain('text-secondary')
+  })
 })
 
 describe('agent file reference rendering', () => {

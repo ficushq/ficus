@@ -639,10 +639,12 @@ const subsystems: Subsystem[] = [
     () => scheduler.start(),
     () => scheduler.stop()
   ),
+  // Shutdown DETACHES (monitors keep running in their sandboxes); startup
+  // reattaches them, so a deploy or restart no longer kills every monitor.
   subsystem(
     'monitor-supervisor',
     () => monitorSupervisor.recoverOnStartup(),
-    () => monitorSupervisor.shutdownAll()
+    () => monitorSupervisor.detachAll()
   ),
   // Poll active sandbox localDeployment health so restarting/unhealthy localDeployments converge to running/crashed.
   subsystem(

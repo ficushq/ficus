@@ -1326,7 +1326,8 @@ export class VmSandboxManager implements ISandboxManager {
     sandboxId: string,
     args: string[],
     onStdout: (chunk: Buffer) => void,
-    onStderr: (chunk: Buffer) => void = () => {}
+    onStderr: (chunk: Buffer) => void = () => {},
+    onEnd?: () => void
   ): { cancel: () => void; cancelAndWait: () => Promise<void> } {
     const state = this.requireSandbox(sandboxId)
     this.touch(state)
@@ -1344,6 +1345,8 @@ export class VmSandboxManager implements ISandboxManager {
         (cleanupError) => onStderr(Buffer.from(`${err.message}; cleanup unproven: ${cleanupError.message}`))
       )
     })
+    // The client emits `end` after every stream, error or not.
+    if (onEnd) stream.on('end', () => onEnd())
     return {
       cancel: () => stream.cancel(),
       cancelAndWait: () =>

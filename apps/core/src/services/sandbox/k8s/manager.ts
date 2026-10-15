@@ -526,7 +526,8 @@ export class K8sSandboxManager implements ISandboxManager {
     sandboxId: string,
     args: string[],
     onStdout: (chunk: Buffer) => void,
-    onStderr: (chunk: Buffer) => void = () => {}
+    onStderr: (chunk: Buffer) => void = () => {},
+    onEnd?: () => void
   ): { cancel: () => void } {
     const state = this.sandboxes.get(sandboxId)
     if (!state) {
@@ -545,6 +546,8 @@ export class K8sSandboxManager implements ISandboxManager {
     stream.on('error', (err: Error) => {
       onStderr(Buffer.from(err.message))
     })
+    // The client emits `end` after every stream, error or not.
+    if (onEnd) stream.on('end', () => onEnd())
 
     return { cancel: () => stream.cancel() }
   }

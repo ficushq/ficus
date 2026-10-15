@@ -1983,6 +1983,24 @@ export const monitors = pgTable(
     endedAt: timestamp('ended_at'),
     failureReason: text('failure_reason'),
     failureKind: varchar('failure_kind', { length: 50 }),
+    // Restart supervision (see services/monitors/monitor-supervisor.ts). Persisted so a
+    // Core restart resumes the same policy, rapid-restart budget and deadline.
+    restartPolicy: varchar('restart_policy', { length: 20 }).$type<'never' | 'on-loss'>().notNull().default('never'),
+    restartLimit: integer('restart_limit').notNull().default(5),
+    /** Relaunches after a loss, over the monitor's whole life. */
+    restartCount: integer('restart_count').notNull().default(0),
+    /** Consecutive losses within the stability window of a launch (resets once stable). */
+    rapidRestartCount: integer('rapid_restart_count').notNull().default(0),
+    /** Most recent (re)launch of the command; reattaching does not move it. */
+    launchedAt: timestamp('launched_at'),
+    /** Absolute timeout deadline, preserved across relaunches and Core restarts. */
+    deadlineAt: timestamp('deadline_at'),
+    /** Set while a relaunch is pending (restart backoff). */
+    nextRestartAt: timestamp('next_restart_at'),
+    lastRestartAt: timestamp('last_restart_at'),
+    lastRestartReason: text('last_restart_reason'),
+    /** Bytes of logs/current.log already delivered; null for rows that predate tracking. */
+    logOffset: bigint('log_offset', { mode: 'number' }),
   },
   (table) => [index('idx_monitors_agent_status').on(table.agentId, table.status)]
 )
