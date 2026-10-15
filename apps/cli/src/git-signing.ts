@@ -11,9 +11,11 @@
  * account has commit signing off). It then returns an empty signature: git
  * reads the empty `.sig` and creates the commit or tag without a signature
  * header. Git adds the header only for a non-empty signature and has no
- * empty-signature check for SSH signing (tested with git 2.43, read in git's
- * source at 2.56). The reason is written to stderr, but git shows a signing
- * program's stderr only when it fails, so `git commit` itself stays quiet.
+ * empty-signature check for SSH signing (tested with git 2.43 and 2.54, read
+ * in git's source at 2.56, and checked by
+ * apps/core/docker-sandbox/check-git-unsigned-signing.sh). The reason is
+ * written to stderr, but git shows a signing program's stderr only when it
+ * fails, so `git commit` itself stays quiet.
  *
  * Every other `-Y` operation (verify, find-principals, check-novalidate) runs
  * the real ssh-keygen unchanged.
