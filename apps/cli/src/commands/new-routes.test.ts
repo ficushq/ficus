@@ -229,4 +229,25 @@ describe('CLI commands for new routes', () => {
       mutedEvents: ['x', 'y'],
     })
   })
+  it('agent secrets hits GET /api/agents/:id/secrets (names only)', async () => {
+    ;(apiGet as AnyMock).mockResolvedValue({
+      exposedSecretKeys: ['SYNTH_TOKEN'],
+      unsupportedReason: null,
+      secretsFilePath: null,
+    })
+    await makeRunner(registerAgentCommands)(['agent', 'secrets', 'agent-1'])
+    expect(apiGet).toHaveBeenCalledWith('/api/agents/agent-1/secrets')
+  })
+
+  it('agent expose-secrets appends keys with PUT /api/agents/:id/secrets', async () => {
+    ;(apiPut as AnyMock).mockResolvedValue({ success: true, exposedSecretKeys: ['A_KEY', 'B_KEY'] })
+    await makeRunner(registerAgentCommands)(['agent', 'expose-secrets', 'agent-1', 'A_KEY', 'B_KEY'])
+    expect(apiPut).toHaveBeenCalledWith('/api/agents/agent-1/secrets', { keys: ['A_KEY', 'B_KEY'] })
+  })
+
+  it('agent unexpose-secrets removes keys with DELETE /api/agents/:id/secrets', async () => {
+    ;(apiDelete as AnyMock).mockResolvedValue({ success: true, exposedSecretKeys: [] })
+    await makeRunner(registerAgentCommands)(['agent', 'unexpose-secrets', 'agent-1', 'A_KEY'])
+    expect(apiDelete).toHaveBeenCalledWith('/api/agents/agent-1/secrets', { keys: ['A_KEY'] })
+  })
 })

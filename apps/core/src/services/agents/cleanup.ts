@@ -179,6 +179,7 @@ export async function stopPersonalSandbox(
     ) => Promise<{ status: Agent['status']; getPersonalSandboxIdForCleanup: () => string | null } | null>
     getManager?: () => ReclaimManager
     warn?: (message: string, error: unknown) => void
+    clearAgentSecrets?: (sandboxId: string) => Promise<void>
   } = {}
 ): Promise<SandboxStopOutcome | false> {
   try {
@@ -186,6 +187,18 @@ export async function stopPersonalSandbox(
     if (!agent || agent.status !== 'dormant') return { kind: 'not-found' }
     const sandboxId = agent.getPersonalSandboxIdForCleanup()
     if (!sandboxId || sandboxId !== `agent_${agentId}`) return { kind: 'not-found' }
+    // A dormant agent keeps its storage but not its per-agent secrets; a wake re-renders them.
+    try {
+      const clear =
+        deps.clearAgentSecrets ??
+        (async (id: string) => (await import('../agent/secrets')).clearAgentSecretsForSandbox(id))
+      await clear(sandboxId)
+    } catch (error) {
+      ;(deps.warn ?? ((message: string, cause: unknown) => log.warn(message, cause)))(
+        `Failed to clear per-agent secrets for dormant agent ${agentId}`,
+        error
+      )
+    }
     const manager = deps.getManager ? deps.getManager() : (await import('../sandbox')).getSandboxManager()
     if (manager.stopSandbox) {
       return await manager.stopSandbox(

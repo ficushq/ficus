@@ -40,6 +40,8 @@ export const queryKeys = {
     messagesInfinite: (agentId: string) => [...queryKeys.agents.all, 'messages', agentId, 'infinite'] as const,
     context: (agentId: string) => [...queryKeys.agents.all, agentId, 'context'] as const,
     scopes: (agentId: string) => [...queryKeys.agents.detail(agentId), 'scopes'] as const,
+    /** Per-agent secret exposures (names only). Outside `detail` so agent status ticks do not refetch it. */
+    secrets: (agentId: string) => [...queryKeys.agents.all, agentId, 'secrets'] as const,
     sandboxStatus: (agentId: string) => [...queryKeys.agents.all, agentId, 'sandboxStatus'] as const,
     sandboxProcesses: (agentId: string) => [...queryKeys.agents.all, agentId, 'sandboxProcesses'] as const,
     children: (parentId: string) => [...queryKeys.agents.all, 'children', parentId] as const,
