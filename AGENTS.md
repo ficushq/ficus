@@ -161,6 +161,10 @@ bun run test:db:down && bun run --filter core test
   test counts, and timings. An interrupted, skipped, or unexecuted lane is not
   passing evidence. Format changes and run typechecks before handoff.
 
+## Model calls record their cost
+
+Every model call is recorded in the inference cost ledger. Make model calls through `AgentSession.create` (name the feature with its `usage` option), `decide()` or `completeLight` / `completeWithTier`; they record usage themselves. Any other provider call (an SDK client, `completeSimple`/`streamSimple`, a speech or embedding API) must call `recordInferenceUsage` with a feature id registered in `INFERENCE_FEATURES` (`packages/shared/src/inference-usage.ts`). `apps/core/src/services/inference-usage/provider-imports.guard.test.ts` fails on direct provider entry points outside its allow-list. See [Inference usage and spend](docs/wiki/inference-usage.md).
+
 ## Decision features need evals
 
 Any change that asks a decision model, whether a new `DECISION_PURPOSES` entry, a new `decide(purpose, …)` call, or changed questions, options or thresholds, ships with a decision eval, run live before it merges.
