@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Agent } from '@ficus/shared'
 import { isModelPriorityList, parseDisplayModelPriorityList, parseDisplayModelSpec } from '../lib/displayModelSpec'
@@ -292,5 +293,35 @@ describe('AgentInfoPanel external-export query gating', () => {
     expect(container.textContent).not.toContain('External conversation export')
     expect(requests.some((url) => url.includes('/external-export'))).toBe(false)
     expect(queryClient.getQueryState(integrationQueryKeys.export(baseAgent.id))).toBeUndefined()
+  })
+})
+
+describe('AgentInfoPanel private workspace link', () => {
+  function renderWithPermissions(agent: Agent, permissions: string[]) {
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.auth.permissions(agent.squadId ?? undefined), { permissions })
+    return renderToStaticMarkup(
+      <MemoryRouter>
+        <QueryClientProvider client={client}>
+          <AgentInfoPanel agent={agent} agentType={baseAgentType} />
+        </QueryClientProvider>
+      </MemoryRouter>
+    )
+  }
+
+  test('links people who may open the agent’s private folder to its workspace', () => {
+    const html = renderWithPermissions(baseAgent, ['agents:private-access'])
+    expect(html).toContain('Open private workspace')
+    expect(html).toContain('href="/squads/squad-1/workspace?workspaceAgent=agent-1"')
+  })
+
+  test('hides the link without the permission and for agents without a box of their own', () => {
+    expect(renderWithPermissions(baseAgent, ['agents:read', 'workspace:read'])).not.toContain('Open private workspace')
+    expect(renderWithPermissions({ ...baseAgent, parentAgentId: 'parent' }, ['agents:private-access'])).not.toContain(
+      'Open private workspace'
+    )
+    expect(renderWithPermissions({ ...baseAgent, agentTypeId: 'consultant' }, ['agents:private-access'])).not.toContain(
+      'Open private workspace'
+    )
   })
 })

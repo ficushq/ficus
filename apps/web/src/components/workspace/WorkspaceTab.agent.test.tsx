@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { waitFor } from '@testing-library/dom'
+import { fireEvent, waitFor } from '@testing-library/dom'
 import type { Agent } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
@@ -27,7 +27,7 @@ const AGENTS = [
   agent('amy'),
   agent('sub', { parentAgentId: 'amy' }),
   agent('chat', { agentTypeId: 'consultant' }),
-  agent('bob', { status: 'active' }),
+  agent('bob', { status: 'active', metadata: { name: 'bob', purpose: 'Billing integration' } }),
 ]
 
 function status(overrides: Partial<AgentPrivateStatus> = {}): AgentPrivateStatus {
@@ -51,6 +51,12 @@ function LocationProbe() {
   location = current.search
   return null
 }
+
+const trigger = () => document.querySelector<HTMLButtonElement>('button[aria-label^="Workspace to browse"]')!
+const optionLabels = () =>
+  [...document.querySelectorAll<HTMLElement>('[role="listbox"][aria-label="Workspaces"] [role="option"]')].map(
+    (option) => option.textContent ?? ''
+  )
 
 /**
  * Renders the tab with seeded queries (and optionally a stubbed fetch) and
@@ -125,7 +131,7 @@ describe('WorkspaceTab agent target', () => {
       return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     }) as typeof fetch
     const { dom, cleanup } = await renderTab(
-      '/squads/squad-1?agent=amy',
+      '/squads/squad-1?workspaceAgent=amy',
       (c) => c.setQueryData(queryKeys.agentPrivate.status('amy'), status()),
       stub
     )
@@ -138,9 +144,7 @@ describe('WorkspaceTab agent target', () => {
       // Nothing reached for the terminal or files while the box is stopped.
       expect(requests.filter((request) => request.includes('/terminal') || request.includes('/tree'))).toEqual([])
 
-      const select = document.querySelector<HTMLSelectElement>('[aria-label="Workspace to browse"]')!
-      expect([...select.options].map((option) => option.value)).toEqual(['', 'amy', 'bob', 'zed-dormant'])
-      expect(select.value).toBe('amy')
+      expect(trigger().getAttribute('aria-label')).toBe('Workspace to browse: amy')
 
       const start = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Start sandbox'))!
       await dom.act(async () => start.click())
@@ -151,18 +155,40 @@ describe('WorkspaceTab agent target', () => {
       )
       await waitFor(() => expect(document.body.textContent).toContain('Sandbox starting'))
 
+      // The picker lists the squad workspace, then agents with a box of their own, live first.
+      await dom.act(async () => trigger().click())
+      expect(optionLabels()).toEqual([
+        expect.stringContaining('Squad workspace'),
+        'amy',
+        'Billing integrationbob',
+        'zed-dormant (dormant)',
+      ])
+      // Search matches purpose as well as name.
+      const search = document.querySelector<HTMLInputElement>('input[aria-label="Search agents"]')!
       await dom.act(async () => {
-        select.value = 'bob'
-        select.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+        fireEvent.change(search, { target: { value: 'billing' } })
       })
-      expect(location).toContain('agent=bob')
+      expect(optionLabels()).toEqual(['Billing integrationbob'])
+      await dom.act(async () => {
+        fireEvent.change(search, { target: { value: 'nobody' } })
+      })
+      expect(optionLabels()).toEqual([])
+      expect(document.body.textContent).toContain('No agents match “nobody”.')
+      await dom.act(async () => {
+        fireEvent.change(search, { target: { value: 'bob' } })
+      })
+      await dom.act(async () => {
+        fireEvent.keyDown(search, { key: 'Enter' })
+      })
+      expect(location).toContain('workspaceAgent=bob')
+      expect(location).not.toMatch(/[?&]agent=/)
     } finally {
       await cleanup()
     }
   })
 
   test('a dormant agent on local storage: files browsable with copy-path, no start, no terminal', async () => {
-    const { cleanup } = await renderTab('/squads/squad-1?agent=zed-dormant&file=notes.md', (c) => {
+    const { cleanup } = await renderTab('/squads/squad-1?workspaceAgent=zed-dormant&file=notes.md', (c) => {
       c.setQueryData(
         queryKeys.agentPrivate.status('zed-dormant'),
         status({
@@ -206,8 +232,8 @@ describe('WorkspaceTab agent target', () => {
         status: 403,
         headers: { 'content-type': 'application/json' },
       })) as unknown as typeof fetch
-    const { cleanup } = await renderTab(
-      '/squads/squad-1?agent=amy',
+    const { dom, cleanup } = await renderTab(
+      '/squads/squad-1?workspaceAgent=amy',
       (c) => {
         c.setQueryData(queryKeys.auth.permissions(SQUAD), { permissions: ['workspace:read'] })
         c.removeQueries({ queryKey: queryKeys.squads.agents(SQUAD) })
@@ -216,9 +242,10 @@ describe('WorkspaceTab agent target', () => {
     )
     try {
       await waitFor(() => expect(document.body.textContent).toContain('needs the agents:private-access permission'))
-      // No agent list is offered; only the way back to the squad workspace (and the unknown linked agent).
-      const select = document.querySelector<HTMLSelectElement>('[aria-label="Workspace to browse"]')!
-      expect([...select.options].map((option) => option.value)).toEqual(['', 'amy'])
+      // No agent list is offered; only the way back to the squad workspace.
+      expect(trigger().getAttribute('aria-label')).toBe('Workspace to browse: Unknown agent')
+      await dom.act(async () => trigger().click())
+      expect(optionLabels()).toEqual([expect.stringContaining('Squad workspace')])
     } finally {
       await cleanup()
     }
@@ -228,7 +255,7 @@ describe('WorkspaceTab agent target', () => {
     const before = globalThis.fetch
     const stub = (async () => new Response('{}')) as unknown as typeof fetch
     const { cleanup } = await renderTab(
-      '/squads/squad-1?agent=amy',
+      '/squads/squad-1?workspaceAgent=amy',
       (c) => c.setQueryData(queryKeys.agentPrivate.status('amy'), status()),
       stub
     )

@@ -3,7 +3,7 @@
  *
  * Main workspace view combining file browser and terminal, for one target:
  * - the squad's shared workspace and squad box (the default), or
- * - one agent's private folder and its own sandbox (`?agent=<id>`), for people
+ * - one agent's private folder and its own sandbox (`?workspaceAgent=<id>`), for people
  *   with `agents:private-access` in the squad. The terminal there also needs
  *   `terminal:access` and starts in the private folder.
  *
@@ -29,6 +29,7 @@ import { queries } from '../../queryOptions'
 import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 import { useAgentPrivateSource, useSquadWorkspaceSource, type WorkspaceSource } from './workspaceSource'
 import { AgentPrivateStatusBar, WorkspaceTargetSelect } from './AgentPrivateControls'
+import { WORKSPACE_AGENT_PARAM } from './agentPrivateTargets'
 import type { AgentPrivateStatus } from '../../api/agentPrivate'
 
 export interface WorkspaceTabProps {
@@ -47,12 +48,9 @@ const MOBILE_PANE_OPTIONS: SegmentedControlOption<MobilePane>[] = [
   { value: 'terminal', label: 'Terminal' },
 ]
 
-/** URL param naming the selected agent; absent = the squad workspace. */
-const AGENT_PARAM = 'agent'
-
 export function WorkspaceTab({ squadId, isTaskTerminal = false }: WorkspaceTabProps) {
   const [searchParams, setSearchParams] = useSearchParams()
-  const agentId = searchParams.get(AGENT_PARAM)
+  const agentId = searchParams.get(WORKSPACE_AGENT_PARAM)
   const { can } = usePermissions(squadId)
   const canBrowseAgents = can('agents:private-access')
   const { data: agents } = useQuery({ ...queries.squads.agents(squadId), enabled: canBrowseAgents })
@@ -63,8 +61,8 @@ export function WorkspaceTab({ squadId, isTaskTerminal = false }: WorkspaceTabPr
       setSearchParams(
         (prev) => {
           const params = new URLSearchParams(prev)
-          if (next) params.set(AGENT_PARAM, next)
-          else params.delete(AGENT_PARAM)
+          if (next) params.set(WORKSPACE_AGENT_PARAM, next)
+          else params.delete(WORKSPACE_AGENT_PARAM)
           params.delete('file')
           params.delete('shell')
           return params

@@ -10,13 +10,22 @@ import { isLiveAgentStatus, type Agent } from '@ficus/shared'
 import type { AgentPrivateStatus } from '../../api/agentPrivate'
 import { startAgentPrivateSandbox } from '../../api/agentPrivate'
 import { queryKeys } from '../../queryKeys'
-import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
+import { agentMatchesQuery, getAgentPrimaryLabel, getAgentSecondaryLabel } from '../../lib/agentDisplay'
+import { Panel, PopoverHeading, PopoverRowContent, popoverRowClass, usePopover } from '../popover'
+import { handleListKey, listItems } from '../popover/listNavigation'
 import { newFilePathError, privateAreaAgents, sandboxStatusLabel } from './agentPrivateTargets'
 import { Modal } from '../Modal'
-import { KeyIcon, PlayIcon, PlusIcon, SpinnerIcon } from '../icons'
+import { ChevronDownIcon, KeyIcon, PlayIcon, PlusIcon, SpinnerIcon } from '../icons'
 import { CopyPathButton } from './CopyPathButton'
 import { agentVisiblePath, type WorkspaceSource } from './workspaceSource'
 
+const TARGET_OPTION = '[role="option"]'
+
+/**
+ * Pick the Workspace tab's target: the squad workspace or one agent's private folder. A search box
+ * filters agents by name, purpose or type (live agents first); arrows move from the box into the
+ * list, Enter in the box picks the first match.
+ */
 export function WorkspaceTargetSelect({
   agents,
   value,
@@ -29,29 +38,101 @@ export function WorkspaceTargetSelect({
   onChange: (agentId: string | null) => void
   className?: string
 }) {
+  const popover = usePopover({ kind: 'dialog' })
+  const [query, setQuery] = useState('')
   const listed = privateAreaAgents(agents)
-  const known = value === null || listed.some((agent) => agent.id === value)
+  const matches = listed.filter((agent) => agentMatchesQuery(agent, query))
+  const showSquad = !query.trim() || 'squad workspace'.includes(query.trim().toLowerCase())
+  const selected = value === null ? null : listed.find((agent) => agent.id === value)
+  const label = value === null ? 'Squad workspace' : selected ? targetLabel(selected) : 'Unknown agent'
+
+  const pick = (next: string | null) => {
+    popover.close({ returnFocus: true })
+    setQuery('')
+    if (next !== value) onChange(next)
+  }
+  const first = showSquad ? null : matches[0]?.id
+
   return (
-    <select
-      aria-label="Workspace to browse"
-      className={clsx('ficus-field rounded-md border border-th-border px-3 py-1.5 text-sm', className)}
-      value={value ?? ''}
-      onChange={(event) => onChange(event.target.value || null)}
-    >
-      <option value="">Squad workspace</option>
-      {listed.length > 0 && (
-        <optgroup label="Agent private folders">
-          {listed.map((agent) => (
-            <option key={agent.id} value={agent.id}>
-              {getAgentPrimaryLabel(agent)}
-              {isLiveAgentStatus(agent.status) ? '' : ' (dormant)'}
-            </option>
+    <div className={clsx('relative', className)}>
+      <button
+        {...popover.triggerProps}
+        type="button"
+        aria-label={`Workspace to browse: ${label}`}
+        onClick={popover.toggle}
+        className="ficus-field inline-flex min-w-56 max-w-80 items-center justify-between gap-2 rounded-md border border-th-border px-3 py-1.5 text-left text-sm"
+      >
+        <span className="truncate">{label}</span>
+        <ChevronDownIcon className={clsx('h-3.5 w-3.5 shrink-0 transition-transform', popover.open && 'rotate-180')} />
+      </button>
+      <Panel
+        {...popover.popoverProps}
+        label="Choose a workspace"
+        gap={6}
+        initialFocus={(panel) => panel.querySelector('input')}
+        maxHeight={(viewport) => Math.min(448, 0.7 * (viewport.bottom - viewport.top))}
+        className="ficus-overlay flex w-80 flex-col rounded-xl border border-th-border bg-surface p-1.5 shadow-theme-lg"
+        onKeyDown={(event) => {
+          if (event.target instanceof HTMLInputElement) {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              listItems(event.currentTarget, TARGET_OPTION)[0]?.focus()
+            } else if (event.key === 'Enter' && (showSquad || first)) {
+              event.preventDefault()
+              pick(showSquad ? null : (first ?? null))
+            }
+            return
+          }
+          handleListKey(event, TARGET_OPTION)
+        }}
+      >
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search agents by name or purpose"
+          aria-label="Search agents"
+          autoComplete="off"
+          className="ficus-field mb-1 w-full rounded-md border border-input-border bg-input-bg px-2.5 py-1.5 text-sm text-primary"
+        />
+        <div role="listbox" aria-label="Workspaces" className="min-h-0 flex-1 overflow-y-auto">
+          {showSquad && (
+            <button
+              type="button"
+              role="option"
+              tabIndex={-1}
+              aria-selected={value === null}
+              className={popoverRowClass(value === null)}
+              onClick={() => pick(null)}
+            >
+              <PopoverRowContent label="Squad workspace" description="Shared by every agent in the squad" />
+            </button>
+          )}
+          {matches.length > 0 && <PopoverHeading>Agent private folders</PopoverHeading>}
+          {matches.map((agent) => (
+            <button
+              key={agent.id}
+              type="button"
+              role="option"
+              tabIndex={-1}
+              aria-selected={agent.id === value}
+              className={popoverRowClass(agent.id === value)}
+              onClick={() => pick(agent.id)}
+            >
+              <PopoverRowContent label={targetLabel(agent)} description={getAgentSecondaryLabel(agent)} />
+            </button>
           ))}
-        </optgroup>
-      )}
-      {!known && <option value={value!}>Unknown agent</option>}
-    </select>
+          {!showSquad && matches.length === 0 && (
+            <p className="px-2.5 py-3 text-sm text-muted">No agents match “{query.trim()}”.</p>
+          )}
+        </div>
+      </Panel>
+    </div>
   )
+}
+
+function targetLabel(agent: Agent): string {
+  return `${getAgentPrimaryLabel(agent)}${isLiveAgentStatus(agent.status) ? '' : ' (dormant)'}`
 }
 
 export function AgentPrivateStatusBar({
