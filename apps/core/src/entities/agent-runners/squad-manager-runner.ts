@@ -364,6 +364,7 @@ export class SquadManagerRunner extends AgentRunner {
             version: 1,
             squadId: this.squad.id,
             environmentToolNames: effectiveEnvironmentTools.map((tool) => tool.name),
+            executionId: this.execution.id,
           },
         }),
       ]
