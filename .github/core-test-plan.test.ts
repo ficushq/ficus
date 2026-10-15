@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { coreTestPlan, parseCoreTestArgs, selectCoreTests } from '../scripts/run-core-tests'
+import { coreTestPlan, parseCoreTestArgs, selectCoreTests, selectSubprocessLane } from '../scripts/run-core-tests'
 
 const repoRoot = resolve(import.meta.dir, '..')
 const coreRoot = resolve(repoRoot, 'apps/core')
@@ -60,11 +60,34 @@ test('arguments that cannot be honored fail instead of widening to the full suit
   expect(() => parseCoreTestArgs([sharedFile, '-x'])).toThrow('Unknown option: -x')
   expect(() => parseCoreTestArgs([sharedFile, '-t'])).toThrow('requires a non-empty pattern')
   expect(() => parseCoreTestArgs(['-t', 'creates'])).toThrow('requires at least one path')
-  expect(() => parseCoreTestArgs(['--subprocess', sharedFile])).toThrow('cannot be combined with paths')
+  expect(() => parseCoreTestArgs(['--subprocess', '-t', 'x', sharedFile])).toThrow('cannot be combined with a test')
+  expect(() => selectSubprocessLane(plan, [sharedFile], coreRoot)).toThrow('exactly the CI subprocess inventory')
+  expect(() => selectSubprocessLane(plan, plan.subprocess.slice(1), coreRoot)).toThrow('exactly the CI subprocess')
   expect(() => selectCoreTests(plan, ['src/does-not-exist.test.ts'], coreRoot)).toThrow('No such file or directory')
   expect(() => selectCoreTests(plan, ['../../package.json'], coreRoot)).toThrow('outside apps/core')
   expect(() => selectCoreTests(plan, ['package.json'], coreRoot)).toThrow('No Core test files match')
   expect(() => selectCoreTests(plan, ['src/types'], coreRoot)).toThrow('No Core test files match')
+})
+
+// The CI step passes its lane inventory after --subprocess; that must keep
+// running the full isolated lane exactly as before (and never the shared lane).
+const ciSubprocessArgs = (() => {
+  const workflow = Bun.YAML.parse(readFileSync(resolve(repoRoot, '.github/workflows/ci.yml'), 'utf8')) as {
+    jobs: Record<string, { steps: Array<{ name?: string; run?: string }> }>
+  }
+  const run = workflow.jobs['subprocess-tests']!.steps.find((step) => step.name === 'Run real-subprocess tests')!.run!
+  const words = run.trim().split(/\s+/)
+  expect(words.slice(0, 2)).toEqual(['bun', '../../scripts/run-core-tests.ts'])
+  return words.slice(2)
+})()
+
+test('the real CI subprocess command still selects the full isolated lane', () => {
+  const options = parseCoreTestArgs(ciSubprocessArgs)
+  expect(options).toMatchObject({ help: false, subprocessOnly: true })
+  if (options.help) throw new Error('unreachable')
+  expect(options.paths.length).toBe(plan.subprocess.length)
+  expect(selectSubprocessLane(plan, options.paths, coreRoot)).toEqual({ shared: [], isolated: plan.isolated })
+  expect(selectSubprocessLane(plan, [], coreRoot)).toEqual({ shared: [], isolated: plan.isolated })
 })
 
 async function runner(...args: string[]) {
@@ -85,10 +108,18 @@ async function runner(...args: string[]) {
 test('the runner entrypoint lists only requested files and rejects bad arguments before running anything', async () => {
   const focused = await runner('--list', sharedFile, isolatedFile)
   expect(focused).toEqual({ exitCode: 0, stdout: `shared   ${sharedFile}\nisolated ${isolatedFile}\n`, stderr: '' })
+  const ci = await runner('--list', ...ciSubprocessArgs)
+  expect(ci.exitCode).toBe(0)
+  expect(ci.stdout).toBe(plan.isolated.map((file) => `isolated ${file}\n`).join(''))
   const full = await runner('--list')
   expect(full.exitCode).toBe(0)
   expect(full.stdout.trim().split('\n')).toHaveLength(plan.files.length)
-  for (const bad of [['--bogus'], ['src/does-not-exist.test.ts'], ['../../package.json']]) {
+  for (const bad of [
+    ['--bogus'],
+    ['src/does-not-exist.test.ts'],
+    ['../../package.json'],
+    ['--subprocess', sharedFile],
+  ]) {
     const result = await runner(...bad)
     expect(result.exitCode).toBe(2)
     expect(result.stdout).toBe('')
