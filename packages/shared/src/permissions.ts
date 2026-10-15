@@ -191,6 +191,9 @@ export const Permissions = {
   PROVIDER_AUTH_READ: 'provider-auth:read',
   PROVIDER_AUTH_WRITE: 'provider-auth:write',
 
+  // Usage and spend (the instance-wide inference cost ledger)
+  USAGE_READ: 'usage:read',
+
   // Webhooks
   WEBHOOKS_READ: 'webhooks:read',
 
