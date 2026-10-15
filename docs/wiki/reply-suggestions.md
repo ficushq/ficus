@@ -17,6 +17,11 @@ unhealthy providers) and accounts that run Claude Code, and uses the stored prov
 the shared model runtime. Each candidate gets a short timeout and the whole call has an overall
 deadline and a small output cap. It never throws; a failure resolves to `null`.
 
+Every candidate that reached a provider, answered or not, is recorded in the inference cost ledger as
+`lite:<purpose>` (reply suggestions pass `purpose: 'reply-suggestions'` and the agent as source). It
+shows in Settings → Spend, and under Decision Providers → Features as "Also counted: Reply suggestions ·
+Lite tier". See [`inference-usage.md`](inference-usage.md).
+
 ## When suggestions run
 
 Core (the API process) listens for `execution.completed` and, without delaying anything, asks for

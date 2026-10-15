@@ -62,6 +62,8 @@ All provider credentials are stored as a single JSON blob in the SecretStore und
 }
 ```
 
+Each account may also carry `createdAt` and, for subscription accounts (OAuth sign-ins and Claude Code), `subscription: { plan, planSource, detectedPlan, detectedAt, monthlyPriceUsd }`. The plan is detected from the provider where it says (the ChatGPT plan claim in a Codex access token, on sign-in and on every refresh; Claude Code's `subscriptionType`), and an admin's choice (`planSource: 'manual'`) is never overwritten. `PUT /:provider/accounts/:accountId` accepts `subscription: { plan?: string | null, monthlyPriceUsd?: number | null }`; null clears the choice back to the detected plan and the plan's default price. Account summaries include `subscription: { plan, planLabel, planSource, detectedPlan, monthlyPriceUsd, priceSource, needsChoice }`. See [`inference-usage.md`](inference-usage.md#subscriptions).
+
 Credentials are managed exclusively through the Settings UI, the CLI (`ficus provider-auth`), and the API below; there is no file-based credential store.
 
 ## SecretStoreAuthBackend

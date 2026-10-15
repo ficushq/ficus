@@ -180,6 +180,18 @@ Agent Execution settings, including the instance concurrency override, live here
 
 Restart button for the API and worker processes. Shows a warning that active agent executions will be interrupted. Displays restart progress with a spinner: "Sending restart signal…" → "Waiting for server to shut down…" → "Waiting for server to come back online…" → auto-clears.
 
+### Spend
+
+Settings → Spend (Operations; needs `usage:read`, which only admins have by default) shows what model calls cost, from the inference cost ledger ([`inference-usage.md`](inference-usage.md)):
+
+- A period picker (7, 30 or 90 days, this or last month, or a custom range of UTC days).
+- The total, made of what calls billed plus one line per subscription account (its monthly fee, counted by day for part of a month), and a projection for this month. A low-key "Preview without subscriptions" shows every call at list price with no fees instead; with it on, the chart and breakdown show list prices too.
+- A daily chart, the top work streams and agents, and a breakdown by any dimension (feature, provider, model, account, billing, squad, work stream, agent, person), optionally split by a second. Clicking a value narrows the whole view to it; filters show as removable chips.
+- Subscriptions: each account's plan ("Detected" or "Set by you"), a plan picker and a monthly price override (`provider-auth:write`). An unknown plan counts no fee until one is chosen.
+- How long per-call rows are kept (`INFERENCE_USAGE_RETENTION_DAYS`, 180 days by default, at most 365; `settings:write`). Daily totals are kept indefinitely.
+
+AI Providers shows a subscription account's plan under its status and links here.
+
 ## Cross-Cutting Features
 
 ### Template Diff Dialog

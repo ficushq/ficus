@@ -137,17 +137,17 @@ An execution is a single wake-up cycle — the transient work unit that the work
 
 ### Schema
 
-| Column          | Type      | Description                                                                     |
-| --------------- | --------- | ------------------------------------------------------------------------------- |
-| `id`            | UUID      | Primary key                                                                     |
-| `agent_id`      | UUID      | FK → `agents` (cascade delete)                                                  |
-| `status`        | enum      | See below                                                                       |
-| `message`       | text      | Triggering message (nullable)                                                   |
-| `image_ids`     | UUID[]    | Attached images (nullable)                                                      |
-| `wake_eligible` | boolean   | Whether this execution may wake a dormant owner; housekeeping work sets `false` |
-| `usage`         | JSONB     | Token/cost usage for this execution                                             |
-| `started_at`    | timestamp |                                                                                 |
-| `ended_at`      | timestamp | Nullable                                                                        |
+| Column          | Type      | Description                                                                                                                                      |
+| --------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`            | UUID      | Primary key                                                                                                                                      |
+| `agent_id`      | UUID      | FK → `agents` (cascade delete)                                                                                                                   |
+| `status`        | enum      | See below                                                                                                                                        |
+| `message`       | text      | Triggering message (nullable)                                                                                                                    |
+| `image_ids`     | UUID[]    | Attached images (nullable)                                                                                                                       |
+| `wake_eligible` | boolean   | Whether this execution may wake a dormant owner; housekeeping work sets `false`                                                                  |
+| `usage`         | JSONB     | Token/cost usage for this execution (unchanged; the per-call record of cost is the inference ledger, [`inference-usage.md`](inference-usage.md)) |
+| `started_at`    | timestamp |                                                                                                                                                  |
+| `ended_at`      | timestamp | Nullable                                                                                                                                         |
 
 ### Status States
 
