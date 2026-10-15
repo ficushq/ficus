@@ -644,6 +644,23 @@ describe('SquadAgentThreads recent consultant chats', () => {
     expect(html).toContain('m1')
   })
 
+  test('marks consultants the Assistant started with a via Assistant hint', () => {
+    const html = renderThreads([
+      agent({ id: 'm1', agentTypeId: 'manager' }),
+      agent({
+        id: 'k1',
+        agentTypeId: 'consultant',
+        status: 'active',
+        context: { origin: 'assistant' } as Agent['context'],
+        metadata: { name: 'Juniper', purpose: 'Check enabled schedules' },
+      }),
+      agent({ id: 'k2', agentTypeId: 'consultant', metadata: { name: 'Vera', purpose: 'Plan auth' } }),
+    ])
+    expect(html).toContain('Check enabled schedules')
+    expect(html).toContain('Working · via Assistant')
+    expect(html.match(/via Assistant/g)).toHaveLength(2) // the hint and the row's title, for k1 only
+  })
+
   test('remembers, in this browser, when Recent chats is kept closed', async () => {
     const dom = await installDom()
     const { window } = dom

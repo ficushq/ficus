@@ -21,7 +21,10 @@ export function consultantOrigin(context: unknown): ConsultantOrigin | null {
     : null
 }
 
-/** The name Core gives the consultant it makes for an Assistant task in a squad. */
+/**
+ * The shared name Core used to give every consultant it made for an Assistant task in a squad.
+ * New ones get a generated name and a stamped origin; this only identifies older ones.
+ */
 export const ASSISTANT_TASK_CONSULTANT_NAME = 'Assistant task'
 
 /** Context keys Core writes when a channel thread or DM starts a consultant. */
