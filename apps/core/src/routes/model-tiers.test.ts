@@ -108,6 +108,35 @@ describe('model tier routes', () => {
     }
   })
 
+  test('GET reports the candidates a one-shot tier call can use right now', async () => {
+    await getSettingsStore().initialize()
+    await db.insert(modelTiers).values([
+      { slug: 'lite-test', label: 'Lite', chain: 'anthropic:claude-haiku-4-5:off,zai:glm-5.3-flash:off' },
+      { slug: 'lite-off', label: 'Off', chain: 'anthropic:claude-haiku-4-5:off', disabled: true },
+    ])
+    const read = async () => {
+      const response = await app.request('/api/model-tiers', { headers: authHeaders(admin.token) })
+      expect(response.status).toBe(200)
+      const tiers = await response.json()
+      return Object.fromEntries(tiers.map((tier: any) => [tier.slug, tier.usableCandidates]))
+    }
+    const envKeys = ['ANTHROPIC_API_KEY', 'ANTHROPIC_OAUTH_TOKEN', 'ZAI_API_KEY'] as const
+    const savedEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]))
+    for (const key of envKeys) delete process.env[key]
+    const readAccountStoreSpy = spyOn(accountStore, 'readAccountStore').mockReturnValue({ version: 1, accounts: {} })
+    try {
+      expect(await read()).toEqual({ 'lite-test': [], 'lite-off': [] }) // nobody signed in
+      readAccountStoreSpy.mockReturnValue({
+        version: 1,
+        accounts: { anthropic: [{ id: 'a1', enabled: true, credential: { type: 'api_key', key: 'sk-ant' } }] },
+      })
+      expect(await read()).toEqual({ 'lite-test': ['anthropic:claude-haiku-4-5:off'], 'lite-off': [] })
+    } finally {
+      readAccountStoreSpy.mockRestore()
+      for (const key of envKeys) if (savedEnv[key] !== undefined) process.env[key] = savedEnv[key]
+    }
+  })
+
   test('GET keeps mixed malformed legacy tiers available and dedupes authored OpenRouter candidates', async () => {
     await getSettingsStore().initialize()
     await setOpenRouterTierExpansionEnabled(true)

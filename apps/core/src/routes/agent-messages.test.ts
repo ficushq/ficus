@@ -11,6 +11,7 @@ import { Agent } from '../entities/Agent'
 import { encodeMessageCursor } from '../services/agent/message-cursor'
 import { createTestAdmin, createTestAgentToken, authHeaders, cleanupTestRbac, type TestUser } from '../test-utils'
 import { RoleSync } from '../services/config-sync/role-sync'
+import { getSettingsStore } from '../services/settings'
 
 const app = new Hono()
 app.use('*', identityMiddleware)
@@ -101,6 +102,35 @@ describe('agent messages route', () => {
       expect(foreignHistory.status).toBe(403)
       expect(foreignMessage.status).toBe(403)
       await cleanupTestRbac(foreignPrefix)
+    })
+
+    it('leaves saved reply suggestions out of history and single-message reads while the switch is off', async () => {
+      const store = getSettingsStore()
+      await store.initialize()
+      const recorded = await testAgent.recordMessage({ role: 'assistant', content: 'Ship it now?' })
+      await db
+        .update(messages)
+        .set({ metadata: { executionId: 'exec-1', replySuggestions: ['Yes', 'Not yet'] } })
+        .where(eq(messages.id, recorded.id))
+      const read = async () => {
+        const history = await app.request(`/api/agents/${testAgentId}/messages`, { headers: authHeaders(admin.token) })
+        const single = await app.request(`/api/agents/${testAgentId}/messages/${recorded.id}`, {
+          headers: authHeaders(admin.token),
+        })
+        expect(history.status).toBe(200)
+        expect(single.status).toBe(200)
+        return [(await history.json()).messages[0].metadata, (await single.json()).metadata]
+      }
+
+      try {
+        await store.set('REPLY_SUGGESTIONS_ENABLED', 'false')
+        expect(await read()).toEqual([{ executionId: 'exec-1' }, { executionId: 'exec-1' }])
+        await store.set('REPLY_SUGGESTIONS_ENABLED', 'true')
+        const saved = { executionId: 'exec-1', replySuggestions: ['Yes', 'Not yet'] }
+        expect(await read()).toEqual([saved, saved])
+      } finally {
+        await store.delete('REPLY_SUGGESTIONS_ENABLED')
+      }
     })
 
     it('returns 404 for non-existent agent (admin passes system-scope check, handler returns 404)', async () => {
