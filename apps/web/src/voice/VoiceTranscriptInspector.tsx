@@ -201,7 +201,12 @@ function ToolTranscriptEntry({
             <span className="min-w-0 truncate font-medium text-secondary">{toolName}</span>
           )}
           {entry.toolArgs ? (
-            <ToolSummary renderers={toolRenderers} toolName={toolName} args={entry.toolArgs} />
+            <ToolSummary
+              renderers={toolRenderers}
+              toolName={toolName}
+              args={entry.toolArgs}
+              inProgress={!entry.final}
+            />
           ) : entry.text ? (
             <span className="truncate text-muted">{entry.text}</span>
           ) : null}

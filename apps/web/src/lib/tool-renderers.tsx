@@ -2,6 +2,7 @@ import { SUBAGENT_STATUS_ROLE } from '@ficus/shared'
 import { extractToolResultDetails } from './tool-inline-actions'
 import { webStatus } from './statusPresentation'
 import clsx from 'clsx'
+import { parse as parsePartialJson } from 'partial-json'
 import { type FC, type ReactNode, useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AnsiText } from '../components/AnsiText'
@@ -15,10 +16,20 @@ import { ToolImageStrip } from '../components/ToolImageStrip'
 
 export interface ToolRenderer {
   summary: (args: Record<string, any>) => string
-  ArgsView: FC<{ args: Record<string, any> }>
+  /**
+   * `partial` is set when `args` is a best-effort parse of arguments that are still streaming in
+   * (only for renderers that opt in with `streamingArgs`).
+   */
+  ArgsView: FC<{ args: Record<string, any>; partial?: boolean }>
   ResultView: FC<{ result: string; isError: boolean; autoScroll?: boolean }>
   /** Pure bookkeeping (e.g. marking a message read): chat transcripts leave the call out entirely. */
   hidden?: boolean
+  /**
+   * While the call is in progress and its JSON arguments are still incomplete, `summary` and `ArgsView`
+   * receive a partial parse instead of the raw fallback. They must then tolerate missing fields, cut-off
+   * strings and half-built array entries (e.g. `{}` or an option without its `value`).
+   */
+  streamingArgs?: boolean
 }
 
 /** Drop tool calls whose renderer marks them hidden; every other block keeps its order. */
@@ -79,6 +90,55 @@ function tryParseArgs(args: string): Record<string, any> | null {
   } catch {
     return null
   }
+}
+
+function isPlainObject(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** A string field of partially parsed args, or '' when it is missing (or not a string yet). */
+function str(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+/**
+ * Best-effort parse of JSON that may still be streaming in: unfinished strings, arrays and objects are
+ * closed, a key without its value is left out and a cut-off escape sequence is dropped.
+ * Returns undefined when nothing usable can be read yet.
+ */
+function parsePartialJsonValue(text: string): unknown {
+  if (!text.trim()) return undefined
+  try {
+    return parsePartialJson(text)
+  } catch {
+    return undefined
+  }
+}
+
+/** Partial-JSON parse of a tool call's arguments; null unless they read as an object. */
+function parsePartialArgs(args: string): Record<string, any> | null {
+  const value = parsePartialJsonValue(args)
+  return isPlainObject(value) ? value : null
+}
+
+interface DecodedArgs {
+  args: Record<string, any>
+  /** The arguments are incomplete (still streaming) and were read with the partial parser. */
+  partial: boolean
+}
+
+/** Strict JSON first; the partial parser only when the caller allows it and the JSON is not complete yet. */
+function decodeArgs(args: string | undefined, allowPartial: boolean): DecodedArgs | null {
+  if (!args) return null
+  const strict = tryParseArgs(args)
+  if (strict) return { args: strict, partial: false }
+  if (!allowPartial) return null
+  const partial = parsePartialArgs(args)
+  return partial ? { args: partial, partial: true } : null
+}
+
+function useDecodedArgs(args: string | undefined, allowPartial: boolean): DecodedArgs | null {
+  return useMemo(() => decodeArgs(args, allowPartial), [args, allowPartial])
 }
 
 function parseObject(text: string): Record<string, any> | undefined {
@@ -203,11 +263,12 @@ function BashCodeBlock({
 }
 
 const bashRenderer: ToolRenderer = {
-  summary: (args) => truncate(args.command ?? '', 60),
+  streamingArgs: true,
+  summary: (args) => truncate(str(args.command), 60),
   ArgsView: ({ args }) => (
     <ArgsScrollBox className="bg-code-bg text-code-text rounded p-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
       <span className="text-muted select-none">$ </span>
-      {args.command ?? ''}
+      {str(args.command)}
     </ArgsScrollBox>
   ),
   ResultView: ({ result, isError, autoScroll }) => {
@@ -220,33 +281,89 @@ const bashRenderer: ToolRenderer = {
   },
 }
 
-const editRenderer: ToolRenderer = {
-  summary: (args) => (args.path ? basename(args.path) : ''),
-  ArgsView: ({ args }) => (
-    <div className="space-y-1">
-      <InlineCode>{args.path ?? 'unknown'}</InlineCode>
-      {args.oldText && (
+interface EditPair {
+  oldText?: string
+  newText?: string
+}
+
+/**
+ * The edit tool's replacements, in the order the tool applies them: the `edits` array (which may also
+ * arrive as a JSON string), then the legacy top-level `oldText`/`newText` pair. Entries may be half-built
+ * while the call streams.
+ */
+function editPairs(args: Record<string, any>): EditPair[] {
+  let edits: unknown = args.edits
+  if (typeof edits === 'string') edits = parsePartialJsonValue(edits)
+  const pairs: EditPair[] = Array.isArray(edits)
+    ? edits.filter(isPlainObject).map((edit) => ({
+        oldText: typeof edit.oldText === 'string' ? edit.oldText : undefined,
+        newText: typeof edit.newText === 'string' ? edit.newText : undefined,
+      }))
+    : []
+  if (typeof args.oldText === 'string' || typeof args.newText === 'string') {
+    pairs.push({
+      oldText: typeof args.oldText === 'string' ? args.oldText : undefined,
+      newText: typeof args.newText === 'string' ? args.newText : undefined,
+    })
+  }
+  return pairs
+}
+
+function EditPairView({ pair }: { pair: EditPair }) {
+  return (
+    <>
+      {pair.oldText ? (
         <LabeledField label="Old">
           <ArgsScrollBox
             as="pre"
             className="bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-800 dark:text-status-danger-300 rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto"
           >
-            {args.oldText}
+            {pair.oldText}
           </ArgsScrollBox>
         </LabeledField>
-      )}
-      {args.newText && (
+      ) : null}
+      {pair.newText !== undefined && (
         <LabeledField label="New">
           <ArgsScrollBox
             as="pre"
             className="bg-status-success-50 dark:bg-status-success-900/30 text-status-success-800 dark:text-status-success-300 rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto"
           >
-            {args.newText}
+            {pair.newText}
           </ArgsScrollBox>
         </LabeledField>
       )}
-    </div>
-  ),
+    </>
+  )
+}
+
+const editRenderer: ToolRenderer = {
+  streamingArgs: true,
+  summary: (args) => {
+    const path = str(args.path)
+    if (!path) return ''
+    const count = editPairs(args).length
+    return count > 1 ? `${basename(path)} (${count} edits)` : basename(path)
+  },
+  ArgsView: ({ args, partial }) => {
+    const path = str(args.path)
+    const pairs = editPairs(args)
+    return (
+      <div className="space-y-1">
+        {(path || !partial) && <InlineCode>{path || 'unknown'}</InlineCode>}
+        {pairs.map((pair, index) => (
+          // Edits only ever append while streaming, so the position is a stable key.
+          <div key={index} className="space-y-1">
+            {pairs.length > 1 && (
+              <div className="text-muted text-[10px]">
+                Edit {index + 1} of {pairs.length}
+              </div>
+            )}
+            <EditPairView pair={pair} />
+          </div>
+        ))}
+      </div>
+    )
+  },
   ResultView: ({ result, isError }) => {
     const text = extractResultText(result)
     // Check if there's a diff in details
@@ -272,19 +389,27 @@ const editRenderer: ToolRenderer = {
 }
 
 const writeRenderer: ToolRenderer = {
-  summary: (args) => (args.path ? basename(args.path) : ''),
-  ArgsView: ({ args }) => (
-    <div className="space-y-1">
-      <InlineCode>{args.path ?? 'unknown'}</InlineCode>
-      {args.content && (
-        <LabeledField label="Content">
-          <pre className="bg-code-bg text-code-text rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
-            {truncate(args.content, 500)}
-          </pre>
-        </LabeledField>
-      )}
-    </div>
-  ),
+  streamingArgs: true,
+  summary: (args) => (str(args.path) ? basename(args.path) : ''),
+  ArgsView: ({ args, partial }) => {
+    const path = str(args.path)
+    const content = str(args.content)
+    return (
+      <div className="space-y-1">
+        {(path || !partial) && <InlineCode>{path || 'unknown'}</InlineCode>}
+        {content && (
+          <LabeledField label="Content">
+            <ArgsScrollBox
+              as="pre"
+              className="bg-code-bg text-code-text rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto"
+            >
+              {truncate(content, 500)}
+            </ArgsScrollBox>
+          </LabeledField>
+        )}
+      </div>
+    )
+  },
   ResultView: ({ result, isError }) => {
     const text = extractResultText(result)
     return isError ? (
@@ -367,67 +492,78 @@ const lsRenderer: ToolRenderer = {
 const humanWaitStatus = webStatus('humanWait')
 
 const askHumanRenderer: ToolRenderer = {
+  streamingArgs: true,
   summary: (args) => {
     const count = Array.isArray(args.questions) ? args.questions.length : 0
     return `${count} question${count !== 1 ? 's' : ''}`
   },
-  ArgsView: ({ args }) => {
+  ArgsView: ({ args, partial }) => {
+    // Entries can be half-built while streaming: any field may be missing yet.
     const questions: Array<{
-      id: string
+      id?: string
       type?: string
-      question: string
+      question?: string
       context?: string
-      options?: { value: string; label?: string }[]
+      options?: unknown
       optional?: boolean
-    }> = Array.isArray(args.questions) ? args.questions : []
+    }> = Array.isArray(args.questions) ? args.questions.filter(isPlainObject) : []
 
     if (questions.length === 0) {
-      return <span className="text-muted text-[11px]">No questions</span>
+      return partial ? null : <span className="text-muted text-[11px]">No questions</span>
     }
 
     return (
       <div className="space-y-2">
-        {questions.map((q, i) => (
-          <div
-            key={q.id || i}
-            className={clsx('border rounded-md p-2', humanWaitStatus.borderClass, humanWaitStatus.surfaceClass)}
-          >
-            <div className="flex items-start gap-2">
-              <span className={clsx('shrink-0', humanWaitStatus.textClass)}>?</span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <code
-                    className={clsx(
-                      'px-1 py-0.5 rounded text-[10px] font-mono',
-                      humanWaitStatus.surfaceClass,
-                      humanWaitStatus.textClass
-                    )}
-                  >
-                    {q.id}
-                  </code>
-                  <span className="text-[10px] text-muted">{q.type || 'text'}</span>
-                  {q.optional && <span className="text-[10px] text-muted italic">optional</span>}
-                </div>
-                <p className="text-sm text-primary mt-1">{q.question}</p>
-                {typeof q.context === 'string' && q.context.trim() && (
-                  <p className="text-xs text-muted mt-1 whitespace-pre-wrap">{q.context.trim()}</p>
-                )}
-                {q.options && q.options.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {q.options.map((opt) => (
-                      <span
-                        key={opt.value}
-                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-surface-secondary text-secondary"
+        {questions.map((q, i) => {
+          const options: Array<{ value?: unknown; label?: unknown }> = Array.isArray(q.options)
+            ? q.options.filter(isPlainObject)
+            : []
+          return (
+            <div
+              // Ids stream in (and may briefly match another question's), so key by position.
+              key={i}
+              className={clsx('border rounded-md p-2', humanWaitStatus.borderClass, humanWaitStatus.surfaceClass)}
+            >
+              <div className="flex items-start gap-2">
+                <span className={clsx('shrink-0', humanWaitStatus.textClass)}>?</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {str(q.id) && (
+                      <code
+                        className={clsx(
+                          'px-1 py-0.5 rounded text-[10px] font-mono',
+                          humanWaitStatus.surfaceClass,
+                          humanWaitStatus.textClass
+                        )}
                       >
-                        {opt.label ?? opt.value}
-                      </span>
-                    ))}
+                        {str(q.id)}
+                      </code>
+                    )}
+                    <span className="text-[10px] text-muted">{str(q.type) || 'text'}</span>
+                    {q.optional === true && <span className="text-[10px] text-muted italic">optional</span>}
                   </div>
-                )}
+                  <p className="text-sm text-primary mt-1">{str(q.question)}</p>
+                  {str(q.context).trim() && (
+                    <p className="text-xs text-muted mt-1 whitespace-pre-wrap">{str(q.context).trim()}</p>
+                  )}
+                  {options.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {options.map((opt, optionIndex) => (
+                        <span
+                          // Option values stream in (or are still missing), so key by position.
+                          key={optionIndex}
+                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-surface-secondary text-secondary"
+                        >
+                          {str(opt.label) || str(opt.value)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     )
   },
@@ -501,9 +637,10 @@ const requestNextBeatRenderer: ToolRenderer = {
 }
 
 const notifyContactRenderer: ToolRenderer = {
+  streamingArgs: true,
   summary: (args) => {
     const prefix = args.urgency === 'action_needed' ? 'action needed: ' : args.urgency === 'warning' ? 'warning: ' : ''
-    return `${prefix}${truncate(args.message ?? '', 50)}`
+    return `${prefix}${truncate(str(args.message), 50)}`
   },
   ArgsView: ({ args }) => {
     const urgencyColors: Record<string, string> = {
@@ -512,18 +649,17 @@ const notifyContactRenderer: ToolRenderer = {
       action_needed:
         'bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300',
     }
-    const colorClass = urgencyColors[args.urgency] ?? urgencyColors.info
+    const urgency = str(args.urgency)
+    const colorClass = urgencyColors[urgency] ?? urgencyColors.info
     return (
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-medium', colorClass)}>
-            {args.urgency ?? 'info'}
-          </span>
+          <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-medium', colorClass)}>{urgency || 'info'}</span>
         </div>
-        <div className="text-[11px] text-primary">{args.message}</div>
-        {args.question && (
+        <div className="text-[11px] text-primary">{str(args.message)}</div>
+        {str(args.question) && (
           <div className={clsx('flex items-start gap-1 text-[11px] italic', humanWaitStatus.textClass)}>
-            <QuestionIcon className="mt-px h-3.5 w-3.5 shrink-0" /> {args.question}
+            <QuestionIcon className="mt-px h-3.5 w-3.5 shrink-0" /> {str(args.question)}
           </div>
         )}
       </div>
@@ -670,30 +806,32 @@ function SubagentStatusPill({ status }: { status: SubagentPillStatus }) {
   )
 }
 
-function specLabel(spec: { label?: string }, index: number): string {
-  return spec.label?.trim() || `subagent ${index + 1}`
+function specLabel(spec: { label?: unknown }, index: number): string {
+  return str(spec.label).trim() || `subagent ${index + 1}`
 }
 
-function dispatchModelMode(spec: { model?: string; inheritModel?: boolean }): string {
+function dispatchModelMode(spec: { model?: unknown; inheritModel?: unknown }): string {
   if (spec.inheritModel === true) return 'Inherited parent chain'
-  if (spec.model?.trim()) return 'Explicit model'
+  if (str(spec.model).trim()) return 'Explicit model'
   return 'Standard tier (default)'
 }
 
 const dispatchRenderer: ToolRenderer = {
+  streamingArgs: true,
   summary: (args) => {
     const count = Array.isArray(args.subagents) ? args.subagents.length : 0
     return `${count} subagent${count === 1 ? '' : 's'}`
   },
-  ArgsView: ({ args }) => {
+  ArgsView: ({ args, partial }) => {
+    // Entries can be half-built while streaming: any field may be missing yet.
     const specs: Array<{
-      label?: string
-      model?: string
-      inheritModel?: boolean
-      agentType?: string
-      instructions?: string
-    }> = Array.isArray(args.subagents) ? args.subagents : []
-    if (specs.length === 0) return <span className="text-muted text-[11px]">No subagents</span>
+      label?: unknown
+      model?: unknown
+      inheritModel?: unknown
+      agentType?: unknown
+      instructions?: unknown
+    }> = Array.isArray(args.subagents) ? args.subagents.filter(isPlainObject) : []
+    if (specs.length === 0) return partial ? null : <span className="text-muted text-[11px]">No subagents</span>
     return (
       <div className="space-y-1.5">
         {specs.map((spec, i) => (
@@ -701,14 +839,14 @@ const dispatchRenderer: ToolRenderer = {
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[12px] font-medium text-primary">{specLabel(spec, i)}</span>
               <span className="text-[10px] text-muted">{dispatchModelMode(spec)}</span>
-              {spec.model && <code className="text-[10px] text-muted">{spec.model}</code>}
-              {spec.agentType && spec.agentType !== 'subagent' && (
-                <code className="bg-code-bg text-code-text px-1 py-0.5 rounded text-[10px]">{spec.agentType}</code>
+              {str(spec.model) && <code className="text-[10px] text-muted">{str(spec.model)}</code>}
+              {str(spec.agentType) && spec.agentType !== 'subagent' && (
+                <code className="bg-code-bg text-code-text px-1 py-0.5 rounded text-[10px]">{str(spec.agentType)}</code>
               )}
             </div>
-            {spec.instructions && (
+            {str(spec.instructions) && (
               <p className="text-[11px] text-secondary whitespace-pre-wrap break-words">
-                {truncate(spec.instructions, 240)}
+                {truncate(str(spec.instructions), 240)}
               </p>
             )}
           </div>
@@ -831,22 +969,73 @@ export const agentToolRenderers: ToolRenderers = {
   stop_subagent: stopSubagentRenderer,
 }
 
+// --- Generic view (tools without a renderer) ---
+
+/** `subagentId` / `max_results` → `subagent id` / `max results` (the label is shown upper-cased). */
+function fieldLabel(key: string): string {
+  return (
+    key
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .trim()
+      .toLowerCase() || key
+  )
+}
+
+const genericValueBoxClass =
+  'bg-code-bg text-code-text rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-32 overflow-y-auto'
+
+function GenericArgValue({ value }: { value: unknown }) {
+  if (typeof value === 'string') {
+    return (
+      <ArgsScrollBox as="pre" className={genericValueBoxClass}>
+        {value}
+      </ArgsScrollBox>
+    )
+  }
+  if (typeof value === 'object' && value !== null) {
+    return (
+      <ArgsScrollBox as="pre" className={genericValueBoxClass}>
+        {JSON.stringify(value, null, 2)}
+      </ArgsScrollBox>
+    )
+  }
+  return <InlineCode>{String(value)}</InlineCode>
+}
+
+/** Any tool's arguments as labeled fields: strings verbatim (real newlines), everything else as JSON. */
+function GenericArgsView({ args }: { args: Record<string, unknown> }) {
+  const entries = Object.entries(args)
+  if (entries.length === 0) return <span className="text-muted text-[11px]">No arguments</span>
+  return (
+    <div className="space-y-1">
+      {entries.map(([key, value]) => (
+        <LabeledField key={key} label={fieldLabel(key)}>
+          <GenericArgValue value={value} />
+        </LabeledField>
+      ))}
+    </div>
+  )
+}
+
 // --- Exported components ---
 
 export function ToolSummary({
   toolName,
   args,
   renderers,
+  inProgress,
 }: {
   toolName: string
   args?: string
   renderers: ToolRenderers
+  /** The call is still in progress: renderers with `streamingArgs` summarize partially streamed arguments. */
+  inProgress?: boolean
 }) {
   const renderer = renderers[toolName]
-  if (!renderer || !args) return null
-  const parsed = tryParseArgs(args)
-  if (!parsed) return null
-  const summary = renderer.summary(parsed)
+  const decoded = useDecodedArgs(args, Boolean(inProgress && renderer?.streamingArgs))
+  if (!renderer || !decoded) return null
+  const summary = renderer.summary(decoded.args)
   if (!summary) return null
   return (
     <span className="text-muted font-normal truncate ml-1" title={summary}>
@@ -864,29 +1053,47 @@ export function ToolArgsView({
   toolName: string
   args: string
   renderers: ToolRenderers
-  /** The call is still in progress (its arguments may still be streaming): keep the args box pinned to the bottom. */
+  /**
+   * The call is still in progress (its arguments may still be streaming): keep the args box pinned to the
+   * bottom, and let renderers with `streamingArgs` (and the generic view) show partially streamed arguments.
+   */
   follow?: boolean
 }) {
   const renderer = renderers[toolName]
-  const parsed = tryParseArgs(args)
+  const following = follow ?? false
+  // Tools without a renderer get the generic view, which handles partial arguments like an opted-in renderer.
+  const decoded = useDecodedArgs(args, following && (renderer ? renderer.streamingArgs === true : true))
 
-  if (!renderer || !parsed) {
-    // Fallback: raw JSON
+  if (renderer && decoded) {
     return (
-      <FollowScrollBox
-        as="pre"
-        follow={follow ?? false}
-        className="bg-code-bg rounded p-1 text-[11px] text-code-text whitespace-pre-wrap break-all overflow-hidden max-h-32 overflow-y-auto"
-      >
-        {args}
-      </FollowScrollBox>
+      <ToolArgsFollowProvider value={following}>
+        <renderer.ArgsView args={decoded.args} partial={decoded.partial} />
+      </ToolArgsFollowProvider>
     )
   }
 
+  // The generic view needs an object; while streaming it waits for the first field before replacing the raw text.
+  const genericArgs =
+    !renderer && decoded && isPlainObject(decoded.args) && (!decoded.partial || Object.keys(decoded.args).length > 0)
+      ? decoded.args
+      : null
+  if (genericArgs) {
+    return (
+      <ToolArgsFollowProvider value={following}>
+        <GenericArgsView args={genericArgs} />
+      </ToolArgsFollowProvider>
+    )
+  }
+
+  // Last resort: the raw arguments (not parseable at all yet, or an unflagged renderer still streaming).
   return (
-    <ToolArgsFollowProvider value={follow ?? false}>
-      <renderer.ArgsView args={parsed} />
-    </ToolArgsFollowProvider>
+    <FollowScrollBox
+      as="pre"
+      follow={following}
+      className="bg-code-bg rounded p-1 text-[11px] text-code-text whitespace-pre-wrap break-all overflow-hidden max-h-32 overflow-y-auto"
+    >
+      {args}
+    </FollowScrollBox>
   )
 }
 
@@ -949,8 +1156,9 @@ export function ToolResultView({
 }
 
 const delegateTaskRenderer: ToolRenderer = {
-  summary: (args) => `Background task: ${truncate(args.label ?? 'background task', 60)}`,
-  ArgsView: ({ args }) => <div className="whitespace-pre-wrap text-[12px]">{args.request ?? ''}</div>,
+  streamingArgs: true,
+  summary: (args) => `Background task: ${truncate(str(args.label) || 'background task', 60)}`,
+  ArgsView: ({ args }) => <div className="whitespace-pre-wrap text-[12px]">{str(args.request)}</div>,
   ResultView: ({ result, isError }) => {
     const parsed = parseObject(extractResultText(result))
     if (isError || !parsed || parsed.error) return <CodeBlock isError>{extractResultText(result)}</CodeBlock>

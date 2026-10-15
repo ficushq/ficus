@@ -73,12 +73,32 @@ test('streaming raw (still unparseable) args stay pinned to the bottom as text a
   const { dom, root, box } = await setup()
   try {
     const full = bashArgs(60)
-    // Partial JSON renders the raw fallback; grow it in uneven bursts.
+    // A renderer without streamingArgs shows partial JSON as the raw fallback; grow it in uneven bursts.
     for (const end of [20, 90, 95, 400, 410, full.length - 1]) {
+      await dom.act(async () =>
+        root.render(<ToolArgsView renderers={agentToolRenderers} toolName="read" args={full.slice(0, end)} follow />)
+      )
+      expect(box().textContent).toBe(full.slice(0, end))
+      expect(box().scrollTop).toBe(maxScrollTop(box()))
+    }
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('partially streamed bash args render the command and stay pinned to the bottom', async () => {
+  const { dom, root, box } = await setup()
+  try {
+    const full = bashArgs(60)
+    const command = JSON.parse(full).command as string
+    for (const end of [20, 90, 95, 400, 410, full.length - 2]) {
       await dom.act(async () =>
         root.render(<ToolArgsView renderers={agentToolRenderers} toolName="bash" args={full.slice(0, end)} follow />)
       )
-      expect(box().textContent).toBe(full.slice(0, end))
+      // The partial command, decoded: real newlines instead of the JSON escapes.
+      const shown = box().textContent!.replace(/^\$ /, '')
+      expect(command.startsWith(shown)).toBe(true)
+      expect(shown).not.toContain('\\n')
       expect(box().scrollTop).toBe(maxScrollTop(box()))
     }
   } finally {
