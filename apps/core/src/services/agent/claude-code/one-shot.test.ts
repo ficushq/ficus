@@ -103,6 +103,20 @@ describe('completeOnceWithClaudeCode', () => {
     expect(fake.options?.thinking).toEqual({ type: 'adaptive' })
   })
 
+  test("reports the result message's token usage, for the inference cost ledger", async () => {
+    const fake = new FakeQuery([
+      {
+        ...success('yes'),
+        usage: { input_tokens: 40, output_tokens: 6, cache_read_input_tokens: 3, cache_creation_input_tokens: 2 },
+      },
+    ])
+    const reported: unknown[] = []
+    expect(await completeOnceWithClaudeCode(request({ onUsage: (usage) => reported.push(usage) }), deps(fake))).toBe(
+      'yes'
+    )
+    expect(reported).toEqual([{ input: 40, output: 6, cacheRead: 3, cacheWrite: 2 }])
+  })
+
   test('keeps the answer within the output cap', async () => {
     const fake = new FakeQuery([success('x'.repeat(10_000))])
     const answer = await completeOnceWithClaudeCode(request({ maxTokens: 10 }), deps(fake))

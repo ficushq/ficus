@@ -184,6 +184,10 @@ export async function handleControlSignal(payload: {
           // background pre-compaction controller would spuriously start (and
           // immediately abort) a bake when the over-threshold session loads.
           precompaction: false,
+          usage: {
+            feature: 'compaction',
+            attribution: () => ({ agentId: payload.agentId, squadId: agent.squadId }),
+          },
         })
 
         // Run compaction

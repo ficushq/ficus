@@ -26,7 +26,7 @@ const assistant = (overrides: Partial<SuggestionRow> = {}): SuggestionRow => ({
   createdAt: at(10),
   ...overrides,
 })
-const idleAgent: AgentSuggestionState = { status: 'idle', hasQuestionData: false, openQuestions: 0 }
+const idleAgent: AgentSuggestionState = { status: 'idle', hasQuestionData: false, openQuestions: 0, squadId: 'squad-1' }
 
 function fakeDeps(overrides: Partial<ReplySuggestionDeps> = {}) {
   const requests: LightCompletionRequest[] = []
@@ -114,6 +114,9 @@ describe('suggestRepliesAfterTurn', () => {
     expect(await suggestRepliesAfterTurn('agent-1', deps, new ReplySuggestionLimiter())).toBe('saved')
     expect(requests).toHaveLength(1)
     expect(requests[0].tier).toBe('lite')
+    // Its cost is recorded in the ledger as `lite:reply-suggestions`, attributed to the agent.
+    expect(requests[0].purpose).toBe('reply-suggestions')
+    expect(requests[0].source).toEqual({ agentId: 'agent-1', squadId: 'squad-1' })
     expect(requests[0].maxTokens).toBeLessThanOrEqual(256)
     expect(requests[0].prompt).toBe(
       '<person_message>\nThe export button crashes when the list is empty.\n</person_message>\n\n' +

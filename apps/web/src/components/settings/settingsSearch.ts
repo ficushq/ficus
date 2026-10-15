@@ -44,6 +44,8 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   system:
     'runtime status worker maintenance pause resume restart reload max concurrent active agents concurrency limit',
   storage: 'disk space usage pressure squad project repository worktree cache files',
+  spend:
+    'cost costs spend usage tokens money bill billing price subscription claude max pro chatgpt plus codex api key model provider account budget retention',
   'system-logs': 'logs severity errors diagnostics search',
   'ops-insights': 'recommendations optimization analysis operations',
   updates: 'automatic updates branch remote interval manual rebuild latest run',

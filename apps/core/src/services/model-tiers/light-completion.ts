@@ -33,6 +33,10 @@ export interface LightCompletionRequest {
   totalTimeoutMs?: number
   /** Caller cancellation; an aborted signal stops before or between candidates. */
   signal?: AbortSignal
+  /** What the completion is for, in the inference cost ledger (`lite:<purpose>`), e.g. `reply-suggestions`. */
+  purpose?: string
+  /** Who it is for, in the ledger: `{ agentId, squadId, userId, ... }`. */
+  source?: Record<string, unknown>
 }
 
 export interface LightCompletionResult {
@@ -47,6 +51,10 @@ export interface LightCompletionCall {
   maxTokens: number
   timeoutMs: number
   signal: AbortSignal
+  /** The tier and the request's purpose and source, for cost accounting. */
+  tier?: string
+  purpose?: string
+  source?: Record<string, unknown>
 }
 
 export interface LightCompletionDeps {
@@ -170,6 +178,9 @@ async function attempt(
       maxTokens,
       timeoutMs: budget,
       signal: controller.signal,
+      tier: request.tier,
+      ...(request.purpose ? { purpose: request.purpose } : {}),
+      ...(request.source ? { source: request.source } : {}),
     })
     call.catch(() => {})
     const text = await Promise.race([call, stopped])

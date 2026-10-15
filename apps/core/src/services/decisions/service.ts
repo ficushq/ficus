@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { and, gte, isNotNull, lt, sql } from 'drizzle-orm'
+import { and, gte, isNotNull, like, lt, ne, or, sql } from 'drizzle-orm'
 import {
   decisionModelReadsImages,
   decisionPricePerMillion,
@@ -12,7 +12,9 @@ import {
   type DecisionRequest,
   type DecisionResult,
 } from '@ficus/shared'
-import { db, decisionLog } from '../../db'
+import { db, decisionLog, inferenceUsage } from '../../db'
+import { recordInferenceUsage } from '../inference-usage'
+import { attributionFromSource } from '../inference-usage/types'
 import { createLogger } from '../../lib/infra/logger'
 import { getOpenAIServiceKey } from '../integrations/openai-services/settings'
 import { callDecisionProvider, DecisionProviderError, type DecisionFetch } from './adapters'
@@ -55,6 +57,8 @@ export interface DecideOptions {
 
 export interface DecisionCost {
   inputTokens: number
+  /** Output tokens the provider reported (decision models bill input only); 0 when it didn't say. */
+  outputTokens?: number
   /** Billionths of a dollar; null when the provider's price is unknown. */
   nanodollars: number | null
   /** The provider didn't report its token count, so it was estimated from the input size. */
@@ -75,8 +79,12 @@ export function decisionCost(
       : Math.ceil(JSON.stringify(text).length / 4) + (images?.length ?? 0) * ESTIMATED_TOKENS_PER_IMAGE
   const price = decisionPricePerMillion(provider)
   // $/million tokens × tokens = micro-dollars; × 1000 = nanodollars.
+  const output = result.usage?.outputTokens
   return {
     inputTokens,
+    ...(typeof output === 'number' && Number.isFinite(output) && output > 0
+      ? { outputTokens: Math.round(output) }
+      : {}),
     nanodollars: price === null ? null : Math.round(inputTokens * price * 1000),
     estimated: reported === undefined,
   }
@@ -176,7 +184,15 @@ export async function decide(
         ok: true,
         result: { ...result, latencyMs: Date.now() - attemptStarted },
       }
-      record(purpose, request, outcome, Date.now() - started, options, decisionCost(provider, request, result))
+      record(
+        purpose,
+        request,
+        outcome,
+        Date.now() - started,
+        options,
+        decisionCost(provider, request, result),
+        provider
+      )
       return outcome
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
@@ -237,7 +253,8 @@ export function recordProviderAnswer(
     outcome,
     latencyMs,
     { source },
-    outcome.ok ? decisionCost(provider, request, outcome.result) : undefined
+    outcome.ok ? decisionCost(provider, request, outcome.result) : undefined,
+    provider
   )
 }
 
@@ -255,9 +272,11 @@ function record(
   outcome: DecisionOutcome,
   latencyMs: number,
   options: DecideOptions,
-  cost?: DecisionCost
+  cost?: DecisionCost,
+  provider?: Pick<StoredDecisionProvider, 'kind'>
 ) {
   if (options.skipLog) return
+  if (outcome.ok && cost) recordDecisionUsage(purpose, outcome.result, cost, provider, options.source)
   const inputSha256 = createHash('sha256').update(JSON.stringify(request)).digest('hex')
   void (async () => {
     await db.insert(decisionLog).values({
@@ -281,45 +300,104 @@ function record(
   })().catch((error) => log.warn('Could not record a decision', error))
 }
 
-/** What decision models cost over the last `days` days (the log keeps 30), by feature and by provider. */
+/** Writes an answered decision to the inference cost ledger (decision_log keeps the answers). */
+function recordDecisionUsage(
+  purpose: DecisionPurpose | 'default',
+  result: DecisionResult,
+  cost: DecisionCost,
+  provider: Pick<StoredDecisionProvider, 'kind'> | undefined,
+  source: Record<string, string> | undefined
+) {
+  // A self-hosted model costs nothing per call unless its owner set a price for it.
+  const selfHosted = provider?.kind === 'systemone' && !cost.nanodollars
+  recordInferenceUsage({
+    feature: `decision:${purpose}`,
+    provider: provider?.kind ?? null,
+    model: result.model,
+    accountId: result.providerId,
+    billing: selfHosted ? 'self-hosted' : 'api',
+    tokens: { input: cost.inputTokens, output: cost.outputTokens ?? 0 },
+    listCostUsd: cost.nanodollars === null ? null : cost.nanodollars / 1e9,
+    tokensEstimated: cost.estimated,
+    attribution: attributionFromSource(source),
+    source: { purpose, ...(source?.kind ? { kind: source.kind } : {}) },
+  })
+}
+
+/**
+ * What decision models and Lite-tier completions cost over the last `days` days, by feature and by
+ * decision provider. Costs come from the inference cost ledger; attempts that no provider answered
+ * come from the decision log (it keeps 30 days).
+ */
 export async function decisionSpend(days: number): Promise<DecisionSpend> {
-  const since = new Date(Date.now() - Math.min(Math.max(days, 1), 30) * 24 * 60 * 60 * 1000)
+  const span = Math.min(Math.max(days, 1), 30)
+  const since = new Date(Date.now() - span * 24 * 60 * 60 * 1000)
+  const familyRows = or(like(inferenceUsage.feature, 'decision:%'), like(inferenceUsage.feature, 'lite:%'))
   const totals = {
     calls: sql<number>`count(*)::int`,
-    inputTokens: sql<string>`coalesce(sum(${decisionLog.inputTokens}), 0)::bigint`,
-    nanodollars: sql<string>`coalesce(sum(${decisionLog.costNanodollars}), 0)::bigint`,
-    approximate: sql<boolean>`coalesce(bool_or(${decisionLog.costEstimated}), false)`,
+    inputTokens: sql<string>`coalesce(sum(${inferenceUsage.inputTokens} + ${inferenceUsage.cacheReadTokens} + ${inferenceUsage.cacheWriteTokens}), 0)::bigint`,
+    outputTokens: sql<string>`coalesce(sum(${inferenceUsage.outputTokens}), 0)::bigint`,
+    nanodollars: sql<string>`coalesce(sum(${inferenceUsage.costNanodollars}), 0)::bigint`,
+    approximate: sql<boolean>`coalesce(bool_or(${inferenceUsage.costEstimated}), false)`,
   }
-  const [purposes, providers] = await Promise.all([
+  const [features, unanswered, providers] = await Promise.all([
     db
-      .select({
-        purpose: decisionLog.purpose,
-        answered: sql<number>`(count(*) filter (where ${decisionLog.outcome} = 'answered'))::int`,
-        ...totals,
-      })
+      .select({ feature: inferenceUsage.feature, ...totals })
+      .from(inferenceUsage)
+      .where(and(gte(inferenceUsage.occurredAt, since), familyRows))
+      .groupBy(inferenceUsage.feature),
+    db
+      .select({ purpose: decisionLog.purpose, calls: sql<number>`count(*)::int` })
       .from(decisionLog)
-      .where(gte(decisionLog.createdAt, since))
+      .where(and(gte(decisionLog.createdAt, since), ne(decisionLog.outcome, 'answered')))
       .groupBy(decisionLog.purpose),
     db
-      .select({ providerId: decisionLog.providerId, ...totals })
-      .from(decisionLog)
-      .where(and(gte(decisionLog.createdAt, since), isNotNull(decisionLog.providerId)))
-      .groupBy(decisionLog.providerId),
+      .select({ providerId: inferenceUsage.accountId, ...totals })
+      .from(inferenceUsage)
+      .where(
+        and(
+          gte(inferenceUsage.occurredAt, since),
+          like(inferenceUsage.feature, 'decision:%'),
+          isNotNull(inferenceUsage.accountId)
+        )
+      )
+      .groupBy(inferenceUsage.accountId),
   ])
   const usd = (nanodollars: string) => Number(nanodollars) / 1e9
-  const byPurpose = purposes
-    .map((row) => ({
-      purpose: row.purpose,
+  const rows = new Map<string, DecisionSpend['byPurpose'][number]>()
+  for (const row of features) {
+    const lite = row.feature.startsWith('lite:')
+    const purpose = row.feature.slice(row.feature.indexOf(':') + 1)
+    const key = `${lite ? 'lite' : 'decision'}:${purpose}`
+    rows.set(key, {
+      purpose,
+      ...(lite ? { tier: 'lite' as const } : {}),
       calls: row.calls,
-      answered: row.answered,
+      answered: row.calls,
       inputTokens: Number(row.inputTokens),
+      outputTokens: Number(row.outputTokens),
       costUsd: usd(row.nanodollars),
-    }))
-    .sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls)
+    })
+  }
+  for (const row of unanswered) {
+    const key = `decision:${row.purpose}`
+    const existing = rows.get(key)
+    if (existing) existing.calls += row.calls
+    else
+      rows.set(key, {
+        purpose: row.purpose,
+        calls: row.calls,
+        answered: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+      })
+  }
+  const byPurpose = [...rows.values()].sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls)
   return {
     days,
     totalUsd: byPurpose.reduce((sum, row) => sum + row.costUsd, 0),
-    approximate: purposes.some((row) => row.approximate),
+    approximate: features.some((row) => row.approximate),
     byPurpose,
     byProvider: providers
       .map((row) => ({

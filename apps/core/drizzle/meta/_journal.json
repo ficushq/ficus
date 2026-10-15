@@ -1506,6 +1506,13 @@
       "when": 1792040244595,
       "tag": "0214_slot_pool_usage_and_disable",
       "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1792041069645,
+      "tag": "0215_inference_usage_ledger",
+      "breakpoints": true
     }
   ]
 }

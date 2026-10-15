@@ -12,6 +12,7 @@ import type { StreamBuffer } from '../../services/streaming/buffer'
 import { StreamEventCollector } from '../../services/streaming/events'
 import { turnHooks, type TurnContext } from '../../services/turn-hooks'
 import { createLogger } from '../../lib/infra/logger'
+import { uuidOrNull, type InferenceAttribution } from '../../services/inference-usage/types'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { executionLifecycleRegistry } from '../../services/execution/lifecycle-registry'
 import {
@@ -124,6 +125,8 @@ export function getSquadAgentTypeSkills(metadata: unknown, agentTypeId: string):
  */
 export abstract class AgentRunner {
   protected session!: AgentSession
+  /** The human whose message the agent is working on now, for the inference cost ledger. */
+  protected lastHumanSenderUserId: string | null = null
   /**
    * Delta-accounting state for this execution. `pending` until the session has
    * been opened and its baseline snapshot captured; captures taken while
@@ -249,7 +252,10 @@ export abstract class AgentRunner {
       getSession: () => this.session,
       deliveryOwner: this.deliveryOwner,
       isActive: () => getSession(this.agent.id)?.session === this.session,
-      prepare: async (message) => (await this.prepareMessagesForModel([message]))[0] ?? message,
+      prepare: async (message) => {
+        this.noteHumanSenders([message])
+        return (await this.prepareMessagesForModel([message]))[0] ?? message
+      },
     })
     this.storedSecretToolContainment = new StoredSecretToolContainment({
       agentId: agent.id,
@@ -623,6 +629,7 @@ export abstract class AgentRunner {
           : undefined,
       onStoredToolResult: ({ toolCallId, storedKeys }) =>
         this.storedSecretToolContainment.recordAlreadyExecuted(toolCallId, storedKeys),
+      usage: { feature: 'agent-turn', attribution: () => this.usageAttribution() },
     }
   }
 
@@ -1391,6 +1398,35 @@ export abstract class AgentRunner {
    * follow-ups alike). Runners may add server-owned context to their metadata here; it must not
    * throw or hold the turn for long. The same messages come back, in order.
    */
+  /** Remembers the newest human sender among messages handed to the model. */
+  protected noteHumanSenders(messages: Array<Pick<Message, 'metadata'>>): void {
+    for (const message of messages) {
+      const userId = uuidOrNull(message.metadata?.sender?.userId)
+      if (userId) this.lastHumanSenderUserId = userId
+    }
+  }
+
+  /**
+   * Who this execution's model calls are attributed to in the inference cost ledger. Read at every
+   * call, so a message from a new sender mid-turn moves the following calls to them.
+   */
+  protected usageAttribution(): InferenceAttribution {
+    const flow = this.execution.flowContext
+    const parentContext = (this.agent.metadata as { parentExecutionContext?: { executionId?: unknown } } | null)
+      ?.parentExecutionContext
+    return {
+      agentId: this.agent.id,
+      executionId: this.execution.id,
+      squadId: this.agent.squadId,
+      parentAgentId: this.agent.parentAgentId,
+      parentExecutionId: uuidOrNull(parentContext?.executionId),
+      workStreamId: flow?.workStreamId ?? null,
+      attemptId: flow?.attemptId ?? null,
+      stepId: flow?.stepId ?? null,
+      userId: this.lastHumanSenderUserId,
+    }
+  }
+
   protected async prepareMessagesForModel(messages: Message[]): Promise<Message[]> {
     return messages
   }
@@ -1444,6 +1480,7 @@ export abstract class AgentRunner {
     }
     if (getSession(this.agent.id)?.session !== this.session) return
     const claimed = await this.agent.claimInitialPendingMessagesForSessionDelivery(this.deliveryOwner)
+    this.noteHumanSenders(claimed)
     const prepared = claimed.length > 0 ? await this.prepareMessagesForModel(claimed) : claimed
     const text =
       prepared.length > 0 ? this.buildInitialPromptText(prepared) : this.execution.message?.trim() || 'Continue.'

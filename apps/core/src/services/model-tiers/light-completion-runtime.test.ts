@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { CLAUDE_CODE_FLAG } from '../agent/claude-code/account'
 import type { ClaudeCodeOneShotRequest } from '../agent/claude-code/one-shot'
 import { completeLight, type LightCompletionCall, type LightCompletionDeps } from './light-completion'
@@ -6,8 +6,60 @@ import {
   CLAUDE_CODE_LIGHT_COMPLETION_TIMEOUT_MS,
   candidateTimeoutWithRuntime,
   completeWithRuntime,
+  recordLightCompletionUsage,
   type LightCompletionRuntimeDeps,
 } from './light-completion-runtime'
+
+import { flushInferenceUsage, setInferenceUsageSinkForTest } from '../inference-usage'
+import type { InferenceUsageEvent } from '../inference-usage/types'
+
+const usage = (input: number, output: number, total: number) => ({
+  input,
+  output,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: input + output,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total },
+})
+
+afterEach(() => setInferenceUsageSinkForTest(undefined))
+
+describe('Lite-tier cost accounting', () => {
+  test('each candidate that reached a provider is one lite:<purpose> row, failed ones included', async () => {
+    const seen: InferenceUsageEvent[] = []
+    setInferenceUsageSinkForTest((event) => void seen.push(event))
+    const agentId = '88888888-8888-4888-8888-888888888888'
+    const squadId = '99999999-9999-4999-8999-999999999999'
+    const call = { tier: 'lite', purpose: 'reply-suggestions', source: { agentId, squadId } }
+    recordLightCompletionUsage('anthropic', 'claude-haiku-4-5', { usage: usage(50, 0, 0), stopReason: 'error' }, call)
+    recordLightCompletionUsage(
+      'openai-codex',
+      'gpt-6-luna',
+      { usage: usage(120, 30, 0.0004), stopReason: 'stop' },
+      call
+    )
+    recordLightCompletionUsage('zai', 'glm', { stopReason: 'aborted' }, call)
+    await flushInferenceUsage()
+    expect(seen).toEqual([
+      expect.objectContaining({
+        feature: 'lite:reply-suggestions',
+        provider: 'anthropic',
+        model: 'claude-haiku-4-5',
+        tokens: { input: 50, output: 0, cacheRead: 0, cacheWrite: 0 },
+        listCostUsd: undefined,
+        attribution: expect.objectContaining({ agentId, squadId }),
+        source: { tier: 'lite', purpose: 'reply-suggestions', stopReason: 'error' },
+      }),
+      expect.objectContaining({
+        feature: 'lite:reply-suggestions',
+        provider: 'openai-codex',
+        model: 'gpt-6-luna',
+        listCostUsd: 0.0004,
+        source: { tier: 'lite', purpose: 'reply-suggestions', stopReason: 'stop' },
+      }),
+    ])
+  })
+})
 
 const HAIKU = 'anthropic:claude-haiku-4-5:off'
 const LUNA = 'openai-codex:gpt-6-luna:off'
@@ -59,7 +111,30 @@ describe('light completions through the model runtime', () => {
         maxTokens: 200,
         signal: request.signal,
         thinking: false,
+        onUsage: expect.any(Function),
       },
+    ])
+  })
+
+  test('a Claude Code answer is recorded as a lite row on the Claude Code account', async () => {
+    const seen: InferenceUsageEvent[] = []
+    setInferenceUsageSinkForTest((event) => void seen.push(event))
+    const fake = fakeRuntime({ anthropic: claudeCodeAuth })
+    fake.deps.claudeCode = async (request) => {
+      request.onUsage?.({ input: 40, output: 6, cacheRead: 0, cacheWrite: 0 })
+      return 'ok'
+    }
+    await completeWithRuntime(HAIKU, { ...call(), tier: 'lite', purpose: 'reply-suggestions' }, fake.deps)
+    await flushInferenceUsage()
+    expect(seen).toEqual([
+      expect.objectContaining({
+        feature: 'lite:reply-suggestions',
+        provider: 'anthropic',
+        model: 'claude-haiku-4-5',
+        tokens: { input: 40, output: 6, cacheRead: 0, cacheWrite: 0 },
+        // Unpriced here: the ledger prices it as Anthropic's model and bills the subscription $0.
+        listCostUsd: undefined,
+      }),
     ])
   })
 

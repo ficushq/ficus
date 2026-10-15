@@ -294,8 +294,8 @@ describe('Decision models settings', () => {
       ...noSpend(30),
       totalUsd: 0.5,
       byPurpose: [
-        { purpose: 'tool-results', calls: 40, answered: 40, inputTokens: 1000, costUsd: 0.3 },
-        { purpose: 'tool-results-shell', calls: 12, answered: 12, inputTokens: 500, costUsd: 0.2 },
+        { purpose: 'tool-results', calls: 40, answered: 40, inputTokens: 1000, outputTokens: 0, costUsd: 0.3 },
+        { purpose: 'tool-results-shell', calls: 12, answered: 12, inputTokens: 500, outputTokens: 0, costUsd: 0.2 },
       ],
     }
     const html = renderToStaticMarkup(tree(client(settings(), { 30: month }), true))
@@ -678,9 +678,16 @@ describe('Decision models settings', () => {
       totalUsd: 1.2345,
       approximate: true,
       byPurpose: [
-        { purpose: 'tool-results', calls: 1204, answered: 1200, inputTokens: 9_000_000, costUsd: 0.42 },
-        { purpose: 'github-firewall', calls: 3, answered: 3, inputTokens: 900, costUsd: 0.00004 },
-        { purpose: 'workflow-steps', calls: 0, answered: 0, inputTokens: 0, costUsd: 0 },
+        {
+          purpose: 'tool-results',
+          calls: 1204,
+          answered: 1200,
+          inputTokens: 9_000_000,
+          outputTokens: 0,
+          costUsd: 0.42,
+        },
+        { purpose: 'github-firewall', calls: 3, answered: 3, inputTokens: 900, outputTokens: 0, costUsd: 0.00004 },
+        { purpose: 'workflow-steps', calls: 0, answered: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
       ],
       byProvider: [{ providerId: 'jev-1', calls: 1207, inputTokens: 9_000_900, costUsd: 0.31 }],
     }

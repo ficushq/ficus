@@ -30,6 +30,15 @@ export interface ClaudeCodeOneShotRequest {
   signal: AbortSignal
   /** Off unless set; the Lite tier runs without thinking. */
   thinking?: boolean
+  /** Told the call's token usage when Claude Code reports it (for the inference cost ledger). */
+  onUsage?: (usage: ClaudeCodeOneShotUsage) => void
+}
+
+export interface ClaudeCodeOneShotUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
 }
 
 export interface ClaudeCodeOneShotDeps {
@@ -94,6 +103,7 @@ export async function completeOnceWithClaudeCode(
   try {
     for await (const message of query) {
       if (aborted) break
+      if (message.type === 'result') reportUsage(message, request.onUsage)
       const answer = settle(message, executable)
       if (answer === undefined) continue
       return capText(answer, maxTokens)
@@ -105,6 +115,22 @@ export async function completeOnceWithClaudeCode(
   } finally {
     request.signal.removeEventListener('abort', onAbort)
     close()
+  }
+}
+
+function reportUsage(message: SDKMessage, onUsage: ClaudeCodeOneShotRequest['onUsage']): void {
+  const raw = (message as { usage?: Record<string, unknown> }).usage
+  if (!onUsage || !raw) return
+  const count = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
+  try {
+    onUsage({
+      input: count(raw.input_tokens),
+      output: count(raw.output_tokens),
+      cacheRead: count(raw.cache_read_input_tokens),
+      cacheWrite: count(raw.cache_creation_input_tokens),
+    })
+  } catch {
+    // Accounting must never fail the call.
   }
 }
 

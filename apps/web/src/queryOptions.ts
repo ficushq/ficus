@@ -44,9 +44,16 @@ import {
 } from './api/agents'
 import { listAgentTypes } from './api/agentTypes'
 import { getModelTiers, getSquadPresets } from './api/config'
-import { modelTierQueryKeys, decisionQueryKeys, composerQueryKeys, screenshotQueryKeys } from './queryKeys'
+import {
+  modelTierQueryKeys,
+  decisionQueryKeys,
+  composerQueryKeys,
+  screenshotQueryKeys,
+  spendQueryKeys,
+} from './queryKeys'
 import { screenshotsApi } from './api/screenshots'
 import { getDecisionSettings, getDecisionSpend, type DecisionSpendDays } from './api/decisions'
+import { getSpendBreakdown, getSpendSummary, type SpendQuery } from './api/spend'
 import { schedulesApi, type ListSchedulesParams } from './api/schedules'
 import { monitorsApi, type ListMonitorsParams } from './api/monitors'
 import { getRecommendation, listRecommendations, type ListRecommendationsParams } from './api/recommendations'
@@ -293,6 +300,21 @@ export const queries = {
       queryOptions({
         queryKey: decisionQueryKeys.spend(days),
         queryFn: () => getDecisionSpend(days),
+        staleTime: 60_000,
+      }),
+  },
+
+  spend: {
+    summary: (query: SpendQuery) =>
+      queryOptions({
+        queryKey: spendQueryKeys.summary(query),
+        queryFn: () => getSpendSummary(query),
+        staleTime: 60_000,
+      }),
+    breakdown: (query: Parameters<typeof getSpendBreakdown>[0]) =>
+      queryOptions({
+        queryKey: spendQueryKeys.breakdown(query),
+        queryFn: () => getSpendBreakdown(query),
         staleTime: 60_000,
       }),
   },

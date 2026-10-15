@@ -115,6 +115,9 @@ import { Hono } from 'hono'
 import { voiceRouter } from '../../../routes/voice'
 import { voiceSessionRouter } from '../../../routes/voice-session'
 import { createTranscribeRouter } from '../../../routes/transcribe'
+import { flushInferenceUsage, setInferenceUsageSinkForTest } from '../../inference-usage'
+import type { InferenceUsageEvent } from '../../inference-usage/types'
+import { cleanupTestRbac, createTestAdmin } from '../../../test-utils'
 
 test('service disable gates voice and transcription, and transcription uses rotated service credentials', async () => {
   const app = new Hono()
@@ -132,7 +135,7 @@ test('service disable gates voice and transcription, and transcription uses rota
     '/transcribe',
     createTranscribeRouter(async (key) => {
       authorizations.push(key)
-      return { text: 'fixture transcription' }
+      return { text: 'fixture transcription', duration: 12.5 }
     })
   )
   function audio() {
@@ -158,5 +161,50 @@ test('service disable gates voice and transcription, and transcription uses rota
     await configureOpenAIServices({ OPENAI_API_KEY: 'rotated-service-key' }, 'test')
     expect((await app.request('/transcribe', { method: 'POST', body: audio() })).status).toBe(200)
     expect(authorizations).toEqual(['first-service-key', 'rotated-service-key'])
+  }
+})
+
+test('each transcription is recorded in the inference cost ledger by audio length', async () => {
+  const prefix = `transcribe-usage-${crypto.randomUUID()}`
+  const admin = await createTestAdmin({ prefix })
+  const userId = admin.id
+  const app = new Hono()
+  app.use('*', async (c, next) => {
+    c.set('identity' as never, { type: 'user', userId } as never)
+    await next()
+  })
+  let duration: number | undefined = 30
+  app.route(
+    '/transcribe',
+    createTranscribeRouter(async () => ({ text: 'fixture', duration }))
+  )
+  const audio = () => {
+    const form = new FormData()
+    form.set('audio', new File(['fixture'], 'audio.wav', { type: 'audio/wav' }))
+    return form
+  }
+  const seen: InferenceUsageEvent[] = []
+  setInferenceUsageSinkForTest((event) => void seen.push(event))
+  try {
+    await configureOpenAIServices({ OPENAI_API_KEY: 'service-key' }, 'test')
+    await setOpenAIServicesEnabled(true, 'test')
+    expect((await app.request('/transcribe', { method: 'POST', body: audio() })).status).toBe(200)
+    duration = undefined
+    expect((await app.request('/transcribe', { method: 'POST', body: audio() })).status).toBe(200)
+    await flushInferenceUsage()
+    expect(seen).toHaveLength(2)
+    expect(seen[0]).toMatchObject({
+      feature: 'transcription',
+      provider: 'openai',
+      model: 'whisper-1',
+      accountId: 'openai-services',
+      billing: 'api',
+      units: { audioSeconds: 30 },
+      attribution: { userId },
+    })
+    expect(seen[1]).toMatchObject({ feature: 'transcription', listCostUsd: null, tokensEstimated: true })
+  } finally {
+    setInferenceUsageSinkForTest(undefined)
+    await cleanupTestRbac(prefix)
   }
 })

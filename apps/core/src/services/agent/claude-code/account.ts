@@ -5,6 +5,7 @@
  */
 import type { ApiKeyCredential } from '@earendil-works/pi-ai'
 import { getAccount, mutateAccountStore, readAccountStore, type Account, type AccountStoreV1 } from '../account-store'
+import { applyDetectedPlan, detectClaudeCodePlan } from '../../inference-usage/subscription-plan'
 
 export const CLAUDE_CODE_ACCOUNT_ID = 'acc_claude_code'
 export const CLAUDE_CODE_PROVIDER = 'anthropic'
@@ -42,8 +43,24 @@ export async function setClaudeCodeAccountEnabled(enabled: boolean, actor: strin
         enabled: true,
         kind: 'claude-code',
         credential: claudeCodeCredential(),
+        createdAt: Date.now(),
       },
       ...(store.accounts[CLAUDE_CODE_PROVIDER] ?? []),
     ]
   }, actor)
+}
+
+/**
+ * Keep the Claude Code account's detected plan in step with `claude auth status`'s `subscriptionType`.
+ * Writes only when it changed, so a status poll never rewrites the account store.
+ */
+export async function syncClaudeCodePlan(subscriptionType: string | undefined): Promise<void> {
+  const detected = detectClaudeCodePlan(subscriptionType)
+  const existing = claudeCodeAccount()
+  if (!detected || !existing) return
+  if (!applyDetectedPlan(structuredClone(existing), detected)) return
+  await mutateAccountStore((store) => {
+    const account = claudeCodeAccount(store)
+    if (!account || !applyDetectedPlan(account, detected)) return false
+  }, 'system:subscription-detect')
 }

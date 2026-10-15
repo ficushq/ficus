@@ -2,6 +2,8 @@ import type { Credential } from '@earendil-works/pi-ai'
 import { KeyedSerialQueue } from '../../lib/infra/inflight'
 import { getSecretStore } from '../secrets'
 import { notifyOnboardingChanged } from '../onboarding/events'
+import { subscriptionPlansFor } from '@ficus/shared'
+import { applyDetectedPlan, detectedPlanFor, type AccountSubscription } from '../inference-usage/subscription-plan'
 
 export interface Account {
   id: string
@@ -14,6 +16,10 @@ export interface Account {
   baseUrl?: string
   model?: string
   capabilities?: { tools: boolean; contextWindow?: number; probedAt: string }
+  /** When the account was added (ms); missing on accounts added before it was recorded. */
+  createdAt?: number
+  /** Subscription plan and monthly price, for Settings → Spend (subscription accounts only). */
+  subscription?: AccountSubscription
 }
 
 export interface AccountStoreV1 {
@@ -203,6 +209,7 @@ export function addAccount(store: AccountStoreV1, provider: string, credential: 
     enabled: true,
     credential,
     ...(label ? { label } : {}),
+    createdAt: Date.now(),
   }
   store.accounts[provider] ??= []
   store.accounts[provider].push(account)
@@ -213,7 +220,12 @@ export function updateAccount(
   store: AccountStoreV1,
   provider: string,
   accountId: string,
-  patch: { label?: string; enabled?: boolean }
+  patch: {
+    label?: string
+    enabled?: boolean
+    /** An admin's plan choice and price override; null clears it back to detected / default. */
+    subscription?: { plan?: string | null; monthlyPriceUsd?: number | null }
+  }
 ): Account | undefined {
   const account = getAccount(store, provider, accountId)
   if (!account) return undefined
@@ -222,7 +234,34 @@ export function updateAccount(
     else account.label = patch.label
   }
   if (typeof patch.enabled === 'boolean') account.enabled = patch.enabled
+  if (patch.subscription) {
+    const next: AccountSubscription = { ...account.subscription }
+    if ('plan' in patch.subscription) {
+      if (patch.subscription.plan) {
+        next.plan = patch.subscription.plan
+        next.planSource = 'manual'
+      } else {
+        // Back to what the provider reported, if it named a priced plan.
+        delete next.plan
+        delete next.planSource
+        const detected = next.detectedPlan
+        if (detected && detectedPlanIsPriced(provider, detected)) {
+          next.plan = detected
+          next.planSource = 'detected'
+        }
+      }
+    }
+    if ('monthlyPriceUsd' in patch.subscription) {
+      if (patch.subscription.monthlyPriceUsd == null) delete next.monthlyPriceUsd
+      else next.monthlyPriceUsd = patch.subscription.monthlyPriceUsd
+    }
+    account.subscription = next
+  }
   return account
+}
+
+function detectedPlanIsPriced(provider: string, plan: string): boolean {
+  return subscriptionPlansFor(provider)?.[plan] !== undefined
 }
 
 export function deleteAccount(store: AccountStoreV1, provider: string, accountId: string): boolean {
@@ -339,6 +378,7 @@ export function persistOAuthCredential(
     }
     target.credential = credential
     target.enabled = true
+    applyDetectedPlan(target, detectedPlanFor(provider, target))
     return { status: 'reauthorized', account: target }
   }
 
@@ -348,6 +388,7 @@ export function persistOAuthCredential(
     if (match) {
       match.credential = credential
       match.enabled = true
+      applyDetectedPlan(match, detectedPlanFor(provider, match))
       return { status: 'reauthorized', account: match }
     }
   }
@@ -357,7 +398,9 @@ export function persistOAuthCredential(
   // tell which upstream account is which. When the credential carries an
   // identity, suffix a short tail of it (the full id is long and opaque; the
   // user can still rename via Edit label).
-  return { status: 'added', account: addAccount(store, provider, credential, oauthAccountLabel(identity)) }
+  const added = addAccount(store, provider, credential, oauthAccountLabel(identity))
+  applyDetectedPlan(added, detectedPlanFor(provider, added))
+  return { status: 'added', account: added }
 }
 
 /** Display label for a newly appended OAuth account. */

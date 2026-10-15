@@ -25,6 +25,8 @@ import { EmbeddingService } from './EmbeddingService'
 import { db } from '../../../db'
 import { squads } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
+import { flushInferenceUsage, setInferenceUsageSinkForTest } from '../../inference-usage'
+import type { InferenceUsageEvent } from '../../inference-usage/types'
 
 describe('EmbeddingService', () => {
   describe('constructor and isEnabled', () => {
@@ -239,5 +241,38 @@ describe('EmbeddingService.instance() singleton', () => {
     EmbeddingService._reset()
     const service2 = EmbeddingService.instance()
     expect(service1).not.toBe(service2)
+  })
+
+  describe('inference cost ledger', () => {
+    afterEach(() => setInferenceUsageSinkForTest(undefined))
+
+    it('records indexing and search embeddings with their tokens and attribution', async () => {
+      const seen: InferenceUsageEvent[] = []
+      setInferenceUsageSinkForTest((event) => void seen.push(event))
+      const squadId = '66666666-6666-4666-8666-666666666666'
+      const service = new EmbeddingService({ apiKey: 'test-key' })
+      await service.generateEmbeddings(['a'], 'text-embedding-3-small', {
+        feature: 'embedding:index',
+        attribution: { squadId },
+      })
+      await service.generateQueryEmbedding('q', 'text-embedding-3-large', { squadId })
+      await flushInferenceUsage()
+      expect(seen).toEqual([
+        expect.objectContaining({
+          feature: 'embedding:index',
+          provider: 'openai',
+          model: 'text-embedding-3-small',
+          accountId: 'openai-services',
+          billing: 'api',
+          tokens: { input: 10 },
+          attribution: { squadId },
+        }),
+        expect.objectContaining({
+          feature: 'embedding:search',
+          model: 'text-embedding-3-large',
+          tokens: { input: 10 },
+        }),
+      ])
+    })
   })
 })

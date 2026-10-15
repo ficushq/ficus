@@ -3,6 +3,8 @@ import { AgentSession } from '../entities/AgentSession'
 import { SystemManagerRunner } from '../entities/agent-runners/system-manager-runner'
 import { createLogger } from '../lib/infra/logger'
 import { requirePermission } from '../middleware/require-permission'
+import { attributionFromIdentity } from '../services/inference-usage/types'
+import type { Identity } from '../services/rbac/permissions'
 
 const log = createLogger('routes')
 
@@ -32,9 +34,11 @@ export const aiExtractRouter = new Hono().post('/', requirePermission('ai:extrac
 
   try {
     const { systemPrompt, model } = await SystemManagerRunner.buildManagerPrompt()
+    const attribution = attributionFromIdentity(c.get('identity') as Identity | undefined)
     const { pi: session } = await AgentSession.create({
       model,
       systemPrompt,
+      usage: { feature: 'ai-extract', attribution: () => attribution },
     })
 
     const fieldsSchema = JSON.stringify(body.fields, null, 2)
