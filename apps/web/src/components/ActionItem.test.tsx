@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
+import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { acquireDomHarness } from '../test/domHarness'
@@ -8,6 +9,7 @@ import {
   WORK_STREAM_STATUS_ROLE,
   type PendingAction,
   type WorkStreamActionData,
+  type WorkStreamDeliveryActionData,
 } from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 import { ActionItem } from './ActionItem'
@@ -737,7 +739,8 @@ test('a flow-owned wait opens its decision controls instead of exposing generic 
         </MemoryRouter>
       )
     )
-    expect(dom.window.document.body.textContent).toContain('Review and decide')
+    // The gate's one action sits on the header; the body keeps the gate message and offers no generic unblock.
+    expect(dom.window.document.body.textContent).toContain('Approve the design')
     expect(dom.window.document.querySelector('input[placeholder="Your response..."]')).toBeNull()
 
     // Review and decide opens the gate's review surface directly, not the work stream detail.
@@ -773,10 +776,11 @@ test('a flow-owned wait opens its decision controls instead of exposing generic 
       permissions: ['workstreams:review'],
       identity: { type: 'user', userId: 'reviewer' },
     })
-    const open = [...dom.window.document.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Review and decide'
-    )!
-    expect(open.className).toContain('ficus-button-secondary')
+    const open = dom.window.document.querySelector(
+      'button[aria-label="Review and decide on Ship it"]'
+    ) as HTMLButtonElement
+    expect(open.textContent).toBe('Review')
+    expect(open.className).toContain('ficus-button-primary')
     await dom.act(async () => open.click())
     const dialog = dom.window.document.querySelector('[role="dialog"]')!
     expect(dialog.getAttribute('aria-label')).toBe('Review Design approval')
@@ -828,8 +832,11 @@ describe('assistant task questions', () => {
       expect(document.body.textContent).toContain('Which region should the deployment use?')
       // No inline answer form: the answer belongs in the conversation so it stays on the task.
       expect(document.querySelector('textarea, input[type="text"]')).toBeNull()
-      const open = [...document.querySelectorAll('a')].find((link) => link.textContent === 'Answer in Assistant')!
-      expect(open).toBeTruthy()
+      // One click from the collapsed header; the body repeats no button that duplicates the title.
+      expect(document.body.textContent).not.toContain('Answer in Assistant')
+      const open = document.querySelector('a[aria-label="Answer Compare options in Assistant"]')!
+      expect(open.textContent).toBe('Answer')
+      expect(open.closest('[tabindex="-1"]')?.children[0]?.contains(open)).toBe(true)
       const href = new URL(open.getAttribute('href')!, 'http://localhost')
       expect(href.pathname).toBe('/squads')
       expect(href.searchParams.get('tab')).toBe('work')
@@ -865,7 +872,146 @@ describe('ActionItem code-host delivery gate', () => {
     },
   } as PendingAction
 
-  test('lists a PR awaiting human review with a link to the pull request, not a permission notice', async () => {
+  const renderItems = async (dom: Awaited<ReturnType<typeof acquireDomHarness>>, node: ReactNode) => {
+    const rendered = dom.createRoot()
+    await dom.act(async () =>
+      rendered.root.render(
+        <MemoryRouter>
+          <QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>
+        </MemoryRouter>
+      )
+    )
+  }
+  const withPullRequests = (pullRequests: WorkStreamDeliveryActionData['pullRequests']): PendingAction => ({
+    ...deliveryAction,
+    data: { ...(deliveryAction.data as WorkStreamDeliveryActionData), pullRequests },
+  })
+
+  test('opens a lone PR in one click from the collapsed card, with nothing redundant to expand', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      await renderItems(dom, <ActionCenterContent actions={[deliveryAction, action]} isLoading={false} />)
+      expect(document.body.textContent).toContain('Work stream reviews')
+      const card = [...document.querySelectorAll('[tabindex="-1"]')].find((candidate) =>
+        candidate.textContent?.includes('Use accurate Waiting label')
+      )!
+      expect(card.textContent).toContain('Ficus · Review pull request')
+      // The title keeps its two-line clamp beside the inline button (a display utility would undo line-clamp).
+      const title = card.querySelector('h3, button') as HTMLButtonElement
+      expect(title.textContent).toBe('Use accurate Waiting label')
+      expect(title.classList.contains('line-clamp-2')).toBe(true)
+      expect(title.classList.contains('block')).toBe(false)
+      const link = card.querySelector('a[href="https://github.com/ficushq/ficus-mobile/pull/42"]')!
+      expect(link.textContent).toBe('Review #42')
+      expect(link.getAttribute('aria-label')).toBe('Review #42, pull request ficushq/ficus-mobile#42')
+      expect(link.getAttribute('title')).toBe('Review ficushq/ficus-mobile#42')
+      expect(link.getAttribute('target')).toBe('_blank')
+      // No chevron, no toggling header, no body: the title opens the work stream, so View is gone too.
+      expect(card.querySelector('button[aria-expanded]')).toBeNull()
+      expect(card.querySelector('.cursor-pointer')).toBeNull()
+      expect(card.children).toHaveLength(1)
+      expect([...card.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+        'Use accurate Waiting label',
+      ])
+      await dom.act(async () => link.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
+      expect(card.children).toHaveLength(1)
+      expect(document.body.textContent).not.toContain('needs an approving human review')
+      expect(document.body.textContent).not.toContain('do not have permission to respond')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('labels a merge gate Merge', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      const merge = {
+        ...deliveryAction,
+        data: { ...(deliveryAction.data as WorkStreamDeliveryActionData), deliveryKind: 'merge' },
+      } as PendingAction
+      await renderItems(dom, <ActionItem action={merge} />)
+      expect(document.querySelector('a[href^="https://github.com"]')?.textContent).toBe('Merge #42')
+      expect(document.body.textContent).toContain('Ficus · Merge pull request')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('keeps several PRs in an expandable list without a redundant View button', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      await renderItems(
+        dom,
+        <ActionItem
+          action={withPullRequests([
+            { repository: 'ficushq/ficus', number: 7, url: 'https://github.com/ficushq/ficus/pull/7' },
+            { repository: 'ficushq/ficus-mobile', number: 42, url: 'https://github.com/ficushq/ficus-mobile/pull/42' },
+          ])}
+        />
+      )
+      expect(document.querySelectorAll('a[href^="https://github.com"]')).toHaveLength(0)
+      const expand = document.querySelector('button[aria-label="Expand"]') as HTMLButtonElement
+      await dom.act(async () => expand.click())
+      expect([...document.querySelectorAll('a[href^="https://github.com"]')].map((link) => link.textContent)).toEqual([
+        'Review ficushq/ficus#7',
+        'Review ficushq/ficus-mobile#42',
+      ])
+      expect([...document.querySelectorAll('button')].some((button) => button.textContent === 'View')).toBe(false)
+      expect(document.body.textContent).not.toContain('needs an approving human review')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('a gate without a linked PR is a plain card whose title opens the work stream', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      await renderItems(dom, <ActionItem action={withPullRequests([{ repository: 'ficushq/ficus', number: 7 }])} />)
+      expect(document.querySelector('a')).toBeNull()
+      expect(document.querySelector('button[aria-expanded]')).toBeNull()
+      expect([...document.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+        'Use accurate Waiting label',
+      ])
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('keeps the PR link reachable when embedded in the work stream modal', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      await renderItems(dom, <ActionItem action={deliveryAction} embedded />)
+      expect(document.querySelector('h3')?.textContent).toBe('Use accurate Waiting label')
+      expect(document.querySelector('a[href="https://github.com/ficushq/ficus-mobile/pull/42"]')?.textContent).toBe(
+        'Review #42'
+      )
+      expect(document.querySelector('[tabindex="-1"]')?.children).toHaveLength(1)
+    } finally {
+      await dom.cleanup()
+    }
+  })
+})
+
+describe('ActionItem inline primary actions', () => {
+  const halted: PendingAction = {
+    id: 'agent-error:inline',
+    type: 'agent-error',
+    priority: 0,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    canRespond: true,
+    data: {
+      agentId: 'agent-1',
+      agentName: 'Engineer',
+      agentTypeId: 'engineer',
+      squadId: 'squad-1',
+      squadName: 'Ficus',
+      ownerUserId: null,
+      reason: 'Provider unavailable',
+    },
+  }
+
+  test('continues a halted agent from the collapsed card without expanding it', async () => {
+    const continueExact = mock(async () => ({ resumed: 1, resumedActionIds: [halted.id], staleActionIds: [] }))
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     const rendered = dom.createRoot()
     try {
@@ -873,22 +1019,91 @@ describe('ActionItem code-host delivery gate', () => {
         rendered.root.render(
           <MemoryRouter>
             <QueryClientProvider client={new QueryClient()}>
-              <ActionCenterContent actions={[deliveryAction, action]} isLoading={false} />
+              <ActionItem action={halted} continueHaltedActions={continueExact} />
             </QueryClientProvider>
           </MemoryRouter>
         )
       )
-      expect(document.body.textContent).toContain('Work stream reviews')
-      expect(document.body.textContent).toContain('Use accurate Waiting label')
-      expect(document.body.textContent).toContain('Ficus · Review pull request')
-      const expand = [...document.querySelectorAll('button[aria-label="Expand"]')] as HTMLButtonElement[]
-      await dom.act(async () => expand[0]!.click())
-      expect(document.body.textContent).toContain('needs an approving human review')
-      expect(document.body.textContent).not.toContain('do not have permission to respond')
-      const link = document.querySelector('a[href="https://github.com/ficushq/ficus-mobile/pull/42"]')
-      expect(link?.textContent).toBe('Review ficushq/ficus-mobile#42')
+      const button = document.querySelector('button[aria-label="Continue Engineer"]') as HTMLButtonElement
+      expect(button.textContent).toBe('Continue')
+      await dom.act(async () => button.click())
+      expect(continueExact).toHaveBeenCalledWith(['agent-error:inline'])
+      expect(document.querySelector('button[aria-label="Expand"]')?.getAttribute('aria-expanded')).toBe('false')
+      expect(document.body.textContent).not.toContain('Provider unavailable')
     } finally {
       await dom.cleanup()
+    }
+  })
+
+  test('the expanded halted card explains the halt without repeating the title link', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionItem action={halted} defaultExpanded />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      expect(document.body.textContent).toContain('Provider unavailable')
+      expect(document.querySelector('a')?.getAttribute('href')).toBe('/squads/squad-1?agent=agent-1')
+      const labels = [...document.querySelectorAll('button')].map((button) => button.textContent)
+      expect(labels).toEqual(['Continue', ''])
+      expect(document.body.textContent).not.toContain('View agent')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('shows no inline action on a card the viewer cannot respond to', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionItem action={{ ...halted, canRespond: false }} />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      expect([...document.querySelectorAll('button')].some((button) => button.textContent === 'Continue')).toBe(false)
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('cards that need input stay expandable and drop the View button that duplicates the title', async () => {
+    for (const subject of [action, manualAction('manual-wait', 'Grant the token')]) {
+      const dom = await acquireDomHarness({ url: 'http://localhost/' })
+      const rendered = dom.createRoot()
+      try {
+        await dom.act(async () =>
+          rendered.root.render(
+            <MemoryRouter>
+              <QueryClientProvider client={new QueryClient()}>
+                <ActionItem action={subject} />
+              </QueryClientProvider>
+            </MemoryRouter>
+          )
+        )
+        // Collapsed: only the title and the chevron; nothing inline to act on.
+        expect([...document.querySelectorAll('button')].map((button) => button.getAttribute('aria-label'))).toEqual([
+          null,
+          'Expand',
+        ])
+        await dom.act(async () => (document.querySelector('button[aria-label="Expand"]') as HTMLButtonElement).click())
+        const labels = [...document.querySelectorAll('button')].map((button) => button.textContent)
+        expect(labels).not.toContain('View')
+        if (subject === action) expect(labels).toContain('Send checkpoint back')
+        else expect(document.querySelector('input[placeholder="Your response..."]')).not.toBeNull()
+      } finally {
+        await dom.cleanup()
+      }
     }
   })
 })
