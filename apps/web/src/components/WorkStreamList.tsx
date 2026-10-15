@@ -13,10 +13,10 @@ import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
 import { webStatus } from '../lib/statusPresentation'
 import { queries } from '../queryOptions'
-import { WorkStreamDetailModal, WS_PRIORITY_BADGE_COLORS, getWsDisplayState } from './WorkStreamDetailModal'
+import { WorkStreamDetailModal, getWsDisplayState } from './WorkStreamDetailModal'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { workStreamStatusLabel, WS_STATUS_ICONS } from '../lib/workStreamStatusPresentation'
-import { Badge, type BadgeColor } from './Badge'
+import { Badge } from './Badge'
 import { AgentActivityDot } from './AgentActivityDot'
 import { WorkStreamFiltersPopover } from './WorkStreamFiltersPopover'
 import { ChevronDownIcon, ChevronRightIcon, PullRequestIcon } from './icons'
@@ -64,30 +64,6 @@ const WS_WAITING_DERIVED_STATES: WorkStreamPresentationState[] = [
 // and a plain block would pin its text to the top of that box, above the separators.
 const FEED_METADATA_LINK_CLASS =
   'relative z-10 inline-flex items-center rounded-sm text-muted hover:text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
-
-// --- Priority constants ---
-
-interface PriorityBadgeInfo {
-  text: string
-  color: BadgeColor
-  className?: string
-  title?: string
-}
-
-/** Guards for older cached objects where `priority` may be undefined — treat as 'normal'. */
-function getPriorityBadgeInfo(workStream: WorkStream): PriorityBadgeInfo {
-  const stored = workStream.priority ?? 'normal'
-  const effective = workStream.effectivePriority ?? stored
-  const isBoosted = effective !== stored
-  return {
-    text: isBoosted ? `↑ ${effective}` : effective,
-    color: WS_PRIORITY_BADGE_COLORS[effective],
-    className: effective === 'low' ? 'opacity-60' : undefined,
-    title: isBoosted
-      ? `${stored} (effective ${effective}${workStream.effectivePriorityVia ? ` via ${workStream.effectivePriorityVia}` : ''})`
-      : `${stored} priority`,
-  }
-}
 
 // --- Filter types ---
 
@@ -485,7 +461,6 @@ function WorkStreamRow({
   const statusColorClass = statusTreatment.textClass
   const statusDotClass = statusTreatment.markerClass
 
-  const priorityBadge = getPriorityBadgeInfo(workStream)
   const queuePositionText =
     workStream.status === 'queued' && workStream.queuePosition != null ? `#${workStream.queuePosition} in queue` : null
   // Tooltips use the same derived label as the pill (e.g. "Awaiting CI" rather than the generic external wait).
@@ -592,9 +567,6 @@ function WorkStreamRow({
           ) : null
         )}
         <div className="flex items-center gap-1.5 shrink-0">
-          <Badge color={priorityBadge.color} className={priorityBadge.className} title={priorityBadge.title}>
-            {priorityBadge.text}
-          </Badge>
           {assignee && (
             <Badge
               color="accent-1"
@@ -677,14 +649,6 @@ function WorkStreamRow({
           {assigneeTypeName && <span className="truncate">{assigneeTypeName}</span>}
           <span aria-hidden="true">·</span>
           <WorkStreamStatusBadges workStream={workStream} />
-          {priorityBadge && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className={clsx('shrink-0', priorityBadge.className)} title={priorityBadge.title}>
-                {priorityBadge.text}
-              </span>
-            </>
-          )}
           {queuePositionText && (
             <>
               <span aria-hidden="true">·</span>

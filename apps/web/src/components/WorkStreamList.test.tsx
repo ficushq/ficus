@@ -764,44 +764,34 @@ describe('WorkStreamList', () => {
     expect(html).toContain('title="Queued (2)"')
   })
 
-  test('renders a priority badge immediately left of the assignee pill', () => {
+  test('does not render a priority tag in desktop or mobile rows while keeping the other row badges', () => {
     const html = renderWorkStreamList(
-      [workStream({ id: 'high-ws', title: 'High priority work', priority: 'high', assigneeAgentId: engineer.id })],
+      [
+        workStream({ id: 'high-ws', title: 'High work', priority: 'high', assigneeAgentId: engineer.id }),
+        workStream({ id: 'normal-ws', title: 'Normal work', priority: 'normal' }),
+        workStream({ id: 'low-ws', title: 'Low work', priority: 'low', status: 'queued', queuePosition: 2 }),
+        workStream({
+          id: 'boosted-ws',
+          title: 'Boosted work',
+          priority: 'low',
+          effectivePriority: 'critical',
+          effectivePriorityVia: 'Ship it',
+        }),
+      ],
       {},
       '/',
       [engineer]
     )
 
-    expect(html).toContain('High priority work')
-    expect(html).toContain('>high</span>')
-    expect(html.indexOf('>high</span>')).toBeLessThan(html.indexOf('>Engineer</a>'))
-  })
-
-  test('renders a boosted priority badge when effective priority differs from stored priority', () => {
-    const html = renderWorkStreamList([
-      workStream({
-        id: 'boosted-ws',
-        title: 'Boosted work',
-        priority: 'low',
-        effectivePriority: 'high',
-        effectivePriorityVia: 'Ship it',
-      }),
-    ])
-
-    expect(html).toContain('Boosted work')
-    const boostedBadge = html.match(/<span[^>]*title="low \(effective high via Ship it\)"[^>]*>/)?.[0]
-    expect(boostedBadge).toContain('bg-status-external-wait-badge-surface')
-    expect(boostedBadge).not.toContain('opacity-60')
-    expect(boostedBadge).not.toContain('bg-status-neutral-badge-surface')
-    expect(html).toContain('>↑ high</span>')
-  })
-
-  test('renders a muted priority badge for a normal-priority stream', () => {
-    const html = renderWorkStreamList([workStream({ id: 'normal-ws', title: 'Normal work', priority: 'normal' })])
-
-    expect(html).toContain('Normal work')
-    expect(html).toContain('title="normal priority"')
-    expect(html).toContain('>normal</span>')
+    for (const title of ['High work', 'Normal work', 'Low work', 'Boosted work']) expect(html).toContain(title)
+    expect(html).toContain('>Engineer</a>')
+    expect(html).toContain('#2 in queue')
+    expect(html).toContain('>Queued</span>')
+    for (const priority of ['low', 'normal', 'high', 'critical', '↑ critical']) {
+      expect(html).not.toContain(`>${priority}</span>`)
+    }
+    expect(html).not.toContain(' priority"')
+    expect(html).not.toContain('(effective ')
   })
 
   test('renders the status badge from derivedState, not stored status', () => {
