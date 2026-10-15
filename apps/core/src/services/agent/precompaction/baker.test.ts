@@ -121,6 +121,37 @@ describe('createPiCompactionBaker', () => {
     expect(args[8]).toEqual({ E: '2' }) // env
   })
 
+  it('reports a successful bake to onSummarized with the summarizer model and usage', async () => {
+    prepareCompaction.mockReturnValueOnce({
+      firstKeptEntryId: 'keep',
+      messagesToSummarize: [],
+      turnPrefixMessages: [],
+      settings: { reserveTokens: 16_384 },
+    })
+    const usage = { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12, cost: {} }
+    compact.mockResolvedValueOnce({ ...result, usage } as never)
+    const onSummarized = mock(() => {})
+    const bake = createPiCompactionBaker(fakeSession(), { onSummarized })
+    await bake([], signal)
+    expect(onSummarized).toHaveBeenCalledTimes(1)
+    expect(onSummarized.mock.calls[0]).toEqual([
+      { kind: 'precompaction', model: { provider: 'anthropic', id: 'claude-sonnet-4-6' }, usage },
+    ] as never)
+  })
+
+  it('does not report a failed bake', async () => {
+    prepareCompaction.mockReturnValueOnce({
+      firstKeptEntryId: 'keep',
+      messagesToSummarize: [],
+      turnPrefixMessages: [],
+      settings: { reserveTokens: 16_384 },
+    })
+    compact.mockRejectedValueOnce(new Error('boom'))
+    const onSummarized = mock(() => {})
+    await createPiCompactionBaker(fakeSession(), { onSummarized })([], signal)
+    expect(onSummarized).not.toHaveBeenCalled()
+  })
+
   it('returns null when compact throws', async () => {
     prepareCompaction.mockReturnValueOnce({
       firstKeptEntryId: 'keep',
@@ -574,6 +605,18 @@ describe('createFitCompactionFallback', () => {
     expect(providerHealth.isProviderHealthy('zai')).toBe(false)
     const call = compact.mock.calls[callsBefore + 1] as unknown[]
     expect((call[1] as { provider: string }).provider).toBe('anthropic')
+  })
+
+  it('reports a fit-fallback summary as compaction', async () => {
+    compact.mockResolvedValueOnce(result)
+    const onSummarized = mock(() => {})
+    const fallback = createFitCompactionFallback(fakeSession(), { onSummarized })
+    expect(await fallback(fitEvent())).toEqual(result)
+    expect(onSummarized).toHaveBeenCalledTimes(1)
+    expect((onSummarized.mock.calls[0] as unknown[])[0]).toMatchObject({
+      kind: 'compaction',
+      model: { provider: 'anthropic', id: 'claude-sonnet-4-6' },
+    })
   })
 
   it('resolves undefined when everything fails (compaction stays non-fatal)', async () => {
