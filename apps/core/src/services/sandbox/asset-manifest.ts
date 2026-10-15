@@ -23,13 +23,18 @@
  *                    memory lives only where the workspace layout points)
  *   5. `squad-ssh` — squad ssh dir → `<ssh anchor>/…` (keys 0600;
  *                    `config`/`known_hosts`/`*.pub` 0644; squad-scoped)
+ *   6. `agent-secrets` — per-agent Secret Store exposures →
+ *                    `<private>/.ficus/agent-secrets.env` (0600; ONLY an
+ *                    agent's own `agent_<id>` box — never a shared box)
  *
  * ## Scope rules (who gets what)
  *
  * `source(ctx)` returns null when an asset does not APPLY to the sandbox —
  * the same role logic `syncBoxFiles` applies:
- *   - solo agent / system-manager: skills + identity
+ *   - solo agent: skills + identity + agent-secrets
+ *   - system-manager: skills + identity
  *   - squad MEMBER (agent with a squadId): skills + squad-env + identity + ssh
+ *     + agent-secrets
  *   - squad BOX (role 'squad'): skills + squad-env + memory + ssh
  *
  * Applicability is decided here; content EXISTENCE is not — sources are pure
@@ -50,6 +55,7 @@ import { getSquadWorkspacePath } from '../squad/workspace'
 import { materializeSquadRemoteHosts } from '../remote-hosts/materialize'
 import { getSquadIdFromSandbox } from './types'
 import { prepareWorkspaceDotDir, WORKSPACE_DOT_DIR, workspaceDotPath } from '../workspace/dot-dir'
+import { AGENT_SECRETS_FILE_NAME, AGENT_SECRETS_RELATIVE_PATH, agentIdFromAgentSandboxId } from './agent-secrets-file'
 
 /** Whether an asset is per-agent material or squad-shared material. */
 export type AssetScope = 'agent' | 'squad'
@@ -275,6 +281,25 @@ export const SANDBOX_ASSETS: SandboxAsset[] = [
           await materializeSquadRemoteHosts(squadId)
           return listTree(hostPath, sshFileMode)
         },
+      }
+    },
+  },
+  {
+    name: 'agent-secrets',
+    dest: { base: 'private', relPath: AGENT_SECRETS_RELATIVE_PATH },
+    mode: '0600',
+    scope: 'agent',
+    required: false,
+    source: async ({ sandboxId, role }) => {
+      // Only an agent's OWN box (`agent_<id>`, shared with its subagents).
+      // Squad boxes, system-manager and consultant runtimes are shared by
+      // several principals and never receive per-agent secrets. The file is
+      // written by services/agent/secrets.ts; an absent file prunes the box copy.
+      if (role !== 'agent' || !agentIdFromAgentSandboxId(sandboxId)) return null
+      const workRoot = join(getHomeDir(), 'private', sandboxId)
+      return {
+        hostPath: workspaceDotPath(workRoot, AGENT_SECRETS_FILE_NAME),
+        files: dotDirFile(workRoot, AGENT_SECRETS_FILE_NAME, '0600'),
       }
     },
   },

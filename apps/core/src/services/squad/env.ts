@@ -134,7 +134,8 @@ export function describeReservedSquadEnvKeys(keys: string[]): string {
   return keys.map((key) => `Cannot set ${key} in the squad environment: ${RESERVED_SQUAD_ENV_KEYS[key]}.`).join(' ')
 }
 
-function normalizeSecretKeys(keys: string[]): string[] {
+/** Valid, exposable Secret Store key names (sorted, deduped). Shared with per-agent exposures. */
+export function normalizeSecretKeys(keys: string[]): string[] {
   return Array.from(
     new Set(
       keys

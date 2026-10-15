@@ -23,17 +23,31 @@ import {
   type SandboxAsset,
 } from './asset-manifest'
 
+const AGENT_UUID = '22222222-2222-4222-8222-222222222222'
 const names = (resolved: Array<{ asset: SandboxAsset; source: AssetSource }>) => resolved.map((r) => r.asset.name)
 
 describe('SANDBOX_ASSETS', () => {
-  test('declares the 5 assets in vm push order (secrets-last convention)', () => {
-    expect(SANDBOX_ASSETS.map((a) => a.name)).toEqual(['skills', 'squad-env', 'identity', 'memory', 'squad-ssh'])
+  test('declares the 6 assets in vm push order (secrets-last convention)', () => {
+    expect(SANDBOX_ASSETS.map((a) => a.name)).toEqual([
+      'skills',
+      'squad-env',
+      'identity',
+      'memory',
+      'squad-ssh',
+      'agent-secrets',
+    ])
   })
 
   test('secret-bearing assets are mode 0600', () => {
     const byName = new Map(SANDBOX_ASSETS.map((a) => [a.name, a]))
     expect(byName.get('squad-env')?.mode).toBe('0600')
     expect(byName.get('identity')?.mode).toBe('0600')
+    expect(byName.get('agent-secrets')?.mode).toBe('0600')
+  })
+
+  test('per-agent secrets land in the agent private dir .ficus, never the workspace', () => {
+    const byName = new Map(SANDBOX_ASSETS.map((a) => [a.name, a]))
+    expect(byName.get('agent-secrets')?.dest).toEqual({ base: 'private', relPath: '.ficus/agent-secrets.env' })
   })
 
   test('the squad env lands in the workspace .ficus dir', () => {
@@ -52,9 +66,19 @@ describe('sshFileMode', () => {
 })
 
 describe('resolveSandboxAssets scope rules', () => {
-  test('solo agent yields skills + identity, in manifest order', async () => {
+  test('solo agent yields skills + identity + agent-secrets, in manifest order', async () => {
+    const ctx: AssetContext = { sandboxId: `agent_${AGENT_UUID}`, role: 'agent' }
+    expect(names(await resolveSandboxAssets(ctx))).toEqual(['skills', 'identity', 'agent-secrets'])
+  })
+
+  test('per-agent secrets need an agent_<uuid> box', async () => {
     const ctx: AssetContext = { sandboxId: 'agent_a1', role: 'agent' }
     expect(names(await resolveSandboxAssets(ctx))).toEqual(['skills', 'identity'])
+  })
+
+  test('shared agent-role runtimes (consultants) never get per-agent secrets', async () => {
+    const ctx: AssetContext = { sandboxId: 'consultants_s1', role: 'agent' }
+    expect(names(await resolveSandboxAssets(ctx))).not.toContain('agent-secrets')
   })
 
   test('system-manager (no squad) yields skills + identity', async () => {
@@ -62,9 +86,19 @@ describe('resolveSandboxAssets scope rules', () => {
     expect(names(await resolveSandboxAssets(ctx))).toEqual(['skills', 'identity'])
   })
 
-  test('squad member yields skills + squad-env + identity + ssh (no memory)', async () => {
-    const ctx: AssetContext = { sandboxId: 'agent_a1', squadId: '11111111-1111-4111-8111-111111111111', role: 'agent' }
-    expect(names(await resolveSandboxAssets(ctx))).toEqual(['skills', 'squad-env', 'identity', 'squad-ssh'])
+  test('squad member yields skills + squad-env + identity + ssh + agent-secrets (no memory)', async () => {
+    const ctx: AssetContext = {
+      sandboxId: `agent_${AGENT_UUID}`,
+      squadId: '11111111-1111-4111-8111-111111111111',
+      role: 'agent',
+    }
+    expect(names(await resolveSandboxAssets(ctx))).toEqual([
+      'skills',
+      'squad-env',
+      'identity',
+      'squad-ssh',
+      'agent-secrets',
+    ])
   })
 
   test('squad box yields skills + squad-env + memory + ssh (no identity)', async () => {

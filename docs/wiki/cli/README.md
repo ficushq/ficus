@@ -284,6 +284,22 @@ ficus squad-env expose-global KEY            # Expose Secret Store keys to all s
 ficus squad-env unexpose-global KEY          # Remove global exposure
 ```
 
+#### Per-agent secrets
+
+To give a credential to ONE agent rather than a whole squad, expose a Secret Store
+key to that agent. Only its own sandbox receives the value, as environment variables
+in its `bash` commands (subagents it dispatches share its sandbox and inherit them).
+`squad_bash`, other agents and the shared workspace never see it. Listing returns
+names only. Changing an exposure needs `env:write` on the agent's squad and is
+refused for agent tokens: a person decides. See
+[Per-agent secrets](../secret-store.md#per-agent-secrets).
+
+```bash
+ficus agent secrets <agentId>                       # List keys exposed to this agent (names only)
+ficus agent expose-secrets <agentId> KEY [KEY...]   # Expose Secret Store keys to this agent only
+ficus agent unexpose-secrets <agentId> KEY [KEY...] # Remove them from the agent's sandbox
+```
+
 ### Channel Instance Commands
 
 ```bash
