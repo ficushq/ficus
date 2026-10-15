@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { fireEvent, waitFor } from '@testing-library/dom'
+import { fireEvent } from '@testing-library/dom'
 import type { Agent } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
@@ -69,7 +69,20 @@ async function renderTab(url: string, seed: (cache: QueryClient) => void, stubFe
   const dom = await acquireDomHarness({ url: 'http://localhost/squads/squad-1' })
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   const harnessFetch = globalThis.fetch
+  /**
+   * Let every pending query, mutation and React update finish inside act, so nothing this file
+   * started is still running (or still updating React) when the next test file takes the DOM.
+   */
+  const settle = () =>
+    dom.act(async () => {
+      for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setTimeout(resolve, 0))
+    })
   const cleanup = async () => {
+    try {
+      await settle()
+    } catch {
+      // Teardown continues; the harness cleanup below reports real failures.
+    }
     globalThis.fetch = harnessFetch
     try {
       await dom.cleanup()
@@ -94,11 +107,12 @@ async function renderTab(url: string, seed: (cache: QueryClient) => void, stubFe
         </QueryClientProvider>
       )
     )
+    await settle()
   } catch (error) {
     await cleanup()
     throw error
   }
-  return { dom, cleanup }
+  return { dom, cleanup, settle }
 }
 
 describe('agent target helpers', () => {
@@ -127,10 +141,10 @@ describe('WorkspaceTab agent target', () => {
     const requests: string[] = []
     const stub = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(`${init?.method ?? 'GET'} ${String(input)}`)
-      const body = String(input).endsWith('/private/status') ? status({ sandbox: { status: 'pending' } }) : { ok: true }
+      const body = String(input).endsWith('/private/status') ? status({ sandbox: { status: 'running' } }) : { ok: true }
       return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     }) as typeof fetch
-    const { dom, cleanup } = await renderTab(
+    const { dom, cleanup, settle } = await renderTab(
       '/squads/squad-1?workspaceAgent=amy',
       (c) => c.setQueryData(queryKeys.agentPrivate.status('amy'), status()),
       stub
@@ -148,12 +162,12 @@ describe('WorkspaceTab agent target', () => {
 
       const start = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Start sandbox'))!
       await dom.act(async () => start.click())
-      await waitFor(() =>
-        expect(
-          requests.some((request) => request.startsWith('POST') && request.includes('/agents/amy/private/start'))
-        ).toBe(true)
-      )
-      await waitFor(() => expect(document.body.textContent).toContain('Sandbox starting'))
+      await settle()
+      expect(
+        requests.some((request) => request.startsWith('POST') && request.includes('/agents/amy/private/start'))
+      ).toBe(true)
+      // After starting, the status is refetched and shows the running box.
+      expect(document.body.textContent).toContain('Sandbox running')
 
       // The picker lists the squad workspace, then agents with a box of their own, live first.
       await dom.act(async () => trigger().click())
@@ -180,6 +194,8 @@ describe('WorkspaceTab agent target', () => {
       await dom.act(async () => {
         fireEvent.keyDown(search, { key: 'Enter' })
       })
+      await settle()
+      expect(trigger().getAttribute('aria-expanded')).toBe('false')
       expect(location).toContain('workspaceAgent=bob')
       expect(location).not.toMatch(/[?&]agent=/)
     } finally {
@@ -232,7 +248,7 @@ describe('WorkspaceTab agent target', () => {
         status: 403,
         headers: { 'content-type': 'application/json' },
       })) as unknown as typeof fetch
-    const { dom, cleanup } = await renderTab(
+    const { dom, cleanup, settle } = await renderTab(
       '/squads/squad-1?workspaceAgent=amy',
       (c) => {
         c.setQueryData(queryKeys.auth.permissions(SQUAD), { permissions: ['workspace:read'] })
@@ -241,11 +257,18 @@ describe('WorkspaceTab agent target', () => {
       forbidden
     )
     try {
-      await waitFor(() => expect(document.body.textContent).toContain('needs the agents:private-access permission'))
+      await settle()
+      expect(document.body.textContent).toContain('needs the agents:private-access permission')
       // No agent list is offered; only the way back to the squad workspace.
       expect(trigger().getAttribute('aria-label')).toBe('Workspace to browse: Unknown agent')
       await dom.act(async () => trigger().click())
       expect(optionLabels()).toEqual([expect.stringContaining('Squad workspace')])
+      // Close it again (Escape) so no popover, and no position watcher, is open at teardown.
+      await dom.act(async () => {
+        fireEvent.keyDown(document.querySelector('input[aria-label="Search agents"]')!, { key: 'Escape' })
+      })
+      await settle()
+      expect(trigger().getAttribute('aria-expanded')).toBe('false')
     } finally {
       await cleanup()
     }
