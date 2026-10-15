@@ -85,7 +85,7 @@ export interface GitHubSigningAccount {
  * other failure records its own error code, so none of those sign. This is the
  * same window git identity is kept through (`resolveGitHubAuthorAssignment`).
  */
-const signingAuthStatePredicate = sql`(${integrationConnections.authState} = 'authenticated' or (${integrationConnections.authState} = 'invalid' and ${integrationConnections.healthState} = 'degraded' and ${integrationConnections.lastErrorCode} = 'refresh_validation_pending'))`
+const signingAuthStatePredicate = sql`(${integrationConnections.authState} = 'authenticated' or (${integrationConnections.authState} = 'invalid' and ${integrationConnections.healthState} = 'degraded' and ${integrationConnections.lastErrorCode} is not distinct from 'refresh_validation_pending'))`
 
 const signingAccountColumns = {
   id: integrationConnections.id,
