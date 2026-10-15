@@ -1,7 +1,8 @@
 import { and, asc, eq, inArray, isNotNull, isNull, lt, notExists, or, sql, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { LIVE_AGENT_STATUSES } from '@ficus/shared'
-import { agentQuestions, agents, db, monitors, slotClaims, slotWaiters, workStreams } from '../../db'
+import { agentQuestions, agents, db, monitors, schedules, slotClaims, slotWaiters, workStreams } from '../../db'
+import { scheduleNamesAgent } from '../scheduling/agent-targets'
 import type { DbTransaction } from '../machines/queries'
 import { Agent } from '../../entities/Agent'
 import { Monitor } from '../../entities/Monitor'
@@ -96,14 +97,38 @@ const openQuestionOf = (agentId: AgentRef, executor: Executor = db) =>
         )
       )
     )
-const inFlightChecks = [liveSubagentOf, activeMonitorOf, heldSlotOf, queuedSlotOf, openQuestionOf]
+/**
+ * A user schedule aimed at the agent that can still fire: a pending time
+ * trigger, an enabled webhook, or an attempt in flight. Dormancy permanently
+ * disables such schedules (reconcileSchedulesForDormantAgent), and waking does
+ * not restore them, so they must keep the worker live. System and
+ * subagent-watchdog schedules are skipped by that reconciliation, so they are
+ * skipped here too; a spent one-shot (no next trigger) has nothing left to lose.
+ */
+const liveScheduleOf = (agentId: AgentRef, executor: Executor = db) =>
+  executor
+    .select({ one: sql`1` })
+    .from(schedules)
+    .where(
+      and(
+        scheduleNamesAgent(sql`(${agentId})::text`),
+        isNull(schedules.systemKey),
+        sql`(${schedules.metadata}->>'kind' IS NULL OR ${schedules.metadata}->>'kind' <> 'subagent-watchdog')`,
+        or(
+          and(eq(schedules.enabled, true), isNotNull(schedules.nextTriggerAt)),
+          eq(schedules.webhookEnabled, true),
+          isNotNull(schedules.activeAttemptId)
+        )
+      )
+    )
+const inFlightChecks = [liveSubagentOf, activeMonitorOf, heldSlotOf, queuedSlotOf, openQuestionOf, liveScheduleOf]
 
 /**
  * Top-level, non-persistent workers (any type not exempt from automatic
  * dormancy) that are plainly idle with nothing open: no open work stream, no
  * active or queued execution, no pending message or undelivered inbox item,
- * no live subagent, active monitor, held or queued slot claim or open
- * question, no wake or lifecycle request in progress, and no message for at
+ * no live subagent, active monitor, held or queued slot claim, open
+ * question or schedule aimed at it that can still fire, no wake or lifecycle request in progress, and no message for at
  * least the grace period (or never messaged and created before it). Includes
  * workers that were never bound to any stream. Oldest activity first.
  */

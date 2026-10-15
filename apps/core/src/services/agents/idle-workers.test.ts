@@ -9,6 +9,7 @@ import {
   inbox,
   messages,
   monitors,
+  schedules,
   slotClaims,
   slotPools,
   slotWaiters,
@@ -51,6 +52,7 @@ describe('idle worker dormancy', () => {
       await db.delete(slotClaims).where(inArray(slotClaims.ownerAgentId, agentIds))
       await db.delete(slotWaiters).where(inArray(slotWaiters.ownerAgentId, agentIds))
     }
+    if (squadIds.length) await db.delete(schedules).where(inArray(schedules.scopeId, [...squadIds, ...agentIds]))
     if (squadIds.length) await db.delete(workStreams).where(inArray(workStreams.squadId, squadIds))
     if (agentIds.length) await db.delete(agents).where(inArray(agents.id, agentIds))
     if (squadIds.length) await db.delete(squads).where(inArray(squads.id, squadIds))
@@ -138,6 +140,16 @@ describe('idle worker dormancy', () => {
         squadId,
         questionData: { questions: [{ id: 'q', type: 'text', question: 'Ship it?' }] },
       }),
+    'reminder it scheduled for itself': (_squadId, agentId) =>
+      schedule(agentId, agentId, {
+        scopeType: 'agent',
+        schedule: { runAt: new Date(now.getTime() + HOUR).toISOString() },
+      }),
+    'recurring schedule assigned to it': (squadId, agentId) => schedule(squadId, agentId),
+    'schedule listing it among its agents': (squadId, agentId) =>
+      schedule(squadId, agentId, { action: { type: 'inbox_message', agentIds: [agentId], content: 'x' } }),
+    'webhook-only schedule': (squadId, agentId) =>
+      schedule(squadId, agentId, { schedule: {}, nextTriggerAt: null, webhookEnabled: true }),
     'answer still being delivered': (squadId, agentId) =>
       db.insert(agentQuestions).values({
         agentId,
@@ -147,6 +159,19 @@ describe('idle worker dormancy', () => {
         answerDeliveryStatus: 'pending',
         questionData: { questions: [{ id: 'q', type: 'text', question: 'Ship it?' }] },
       }),
+  }
+
+  /** A schedule aimed at the worker; `fields` override the defaults (an enabled hourly reminder). */
+  function schedule(squadId: string, agentId: string, fields: Partial<typeof schedules.$inferInsert> = {}) {
+    return db.insert(schedules).values({
+      scopeType: 'squad',
+      scopeId: squadId,
+      name: 'reminder',
+      schedule: { interval: '1h' },
+      action: { type: 'inbox_message', target: { type: 'agent', agentId }, content: 'check CI' },
+      nextTriggerAt: new Date(now.getTime() + HOUR),
+      ...fields,
+    })
   }
 
   it('selects idle workers past the grace, including ones never bound to a stream, and makes them dormant', async () => {
@@ -267,6 +292,26 @@ describe('idle worker dormancy', () => {
       expect(await status(busy.id)).toBe('idle')
     })
   }
+
+  it('ignores schedules that can no longer fire, system schedules and subagent watchdogs', async () => {
+    const own = await squad()
+    const worker = await agent(own.id, old())
+    await schedule(own.id, worker.id, { enabled: false })
+    // A one-shot that already fired keeps enabled=true but has no next trigger.
+    await schedule(own.id, worker.id, {
+      schedule: { runAt: ago(2 * HOUR).toISOString() },
+      nextTriggerAt: null,
+      lastTriggeredAt: ago(2 * HOUR),
+    })
+    await schedule(own.id, worker.id, { systemKey: `idle-worker-test:${randomUUID()}` })
+    await schedule(worker.id, worker.id, { scopeType: 'agent', metadata: { kind: 'subagent-watchdog' } })
+    // Aimed at someone else.
+    await schedule(own.id, randomUUID())
+
+    expect(await idleIds(own.id)).toEqual([worker.id])
+    expect(await runIdleWorkerDormancySweep({ now, squadIds: [own.id] })).toBe(1)
+    expect(await status(worker.id)).toBe('dormant')
+  })
 
   it('re-checks under the agent lock and refuses, without stopping anything, once work has arrived', async () => {
     const own = await squad()
