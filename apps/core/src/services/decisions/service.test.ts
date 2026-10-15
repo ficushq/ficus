@@ -284,25 +284,31 @@ test('spend adds up by feature and provider from the decision log', async () => 
   const hosted = await addDecisionProvider({ kind: 'jev', apiKey: 'k' })
   const fetcher: DecisionFetch = async () =>
     Response.json({ answers: { injection: { type: 'noul', noul: 0.2 } }, usage: { input_tokens: 2_000_000 } })
-  const before = await decisionSpend(1)
-  await decide('github-firewall', question, { fetcher, source: { kind: 'test', run: 'spend' } })
-  await decide('github-firewall', question, { fetcher, source: { kind: 'test', run: 'spend' } })
-  let spend = before
-  for (let attempt = 0; attempt < 50; attempt++) {
-    spend = await decisionSpend(1)
-    if (spend.byProvider.find((row) => row.providerId === hosted.id)?.calls === 2) break
-    await Bun.sleep(20)
+  // Decisions are logged fire-and-forget, and decisionSpend reads its two groupings with separate
+  // queries, so wait on this test's own rows (the fresh provider id) before taking the totals.
+  // Polling decisionSpend's byProvider instead could pass while its byPurpose query missed the rows.
+  const ownRows = () => db.select({ id: decisionLog.id }).from(decisionLog).where(eq(decisionLog.providerId, hosted.id))
+  try {
+    const before = await decisionSpend(1)
+    await decide('github-firewall', question, { fetcher, source: { kind: 'test', run: 'spend' } })
+    await decide('github-firewall', question, { fetcher, source: { kind: 'test', run: 'spend' } })
+    for (let attempt = 0; attempt < 50 && (await ownRows()).length < 2; attempt++) await Bun.sleep(20)
+    expect(await ownRows()).toHaveLength(2)
+    const spend = await decisionSpend(1)
+    // 2 calls × 2M tokens × $0.042/M = $0.168
+    expect(spend.byProvider.find((row) => row.providerId === hosted.id)).toEqual({
+      providerId: hosted.id,
+      calls: 2,
+      inputTokens: 4_000_000,
+      costUsd: 0.168,
+    })
+    // Other files log github-firewall decisions too, but with no provider configured they cost
+    // nothing; only this file's tests price a decision, and each waits for and removes its rows.
+    const firewall = (s: typeof spend) => s.byPurpose.find((row) => row.purpose === 'github-firewall')
+    expect((firewall(spend)?.costUsd ?? 0) - (firewall(before)?.costUsd ?? 0)).toBeCloseTo(0.168, 9)
+  } finally {
+    await db.delete(decisionLog).where(eq(decisionLog.providerId, hosted.id))
   }
-  // 2 calls × 2M tokens × $0.042/M = $0.168
-  expect(spend.byProvider.find((row) => row.providerId === hosted.id)).toEqual({
-    providerId: hosted.id,
-    calls: 2,
-    inputTokens: 4_000_000,
-    costUsd: 0.168,
-  })
-  const firewall = (s: typeof spend) => s.byPurpose.find((row) => row.purpose === 'github-firewall')
-  expect((firewall(spend)?.costUsd ?? 0) - (firewall(before)?.costUsd ?? 0)).toBeCloseTo(0.168, 9)
-  await db.delete(decisionLog).where(eq(decisionLog.providerId, hosted.id))
 })
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
