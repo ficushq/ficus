@@ -84,6 +84,7 @@ import systemRouter from './routes/system'
 import updatesRouter from './routes/updates'
 import providerAuthRouter from './routes/provider-auth'
 import decisionsRouter from './routes/decisions'
+import spendRouter from './routes/spend'
 import machinesRouter from './routes/machines'
 import adminRouter from './routes/admin'
 import demoRouter from './routes/demo'
@@ -354,6 +355,7 @@ app.route('/api/remote-hosts', remoteHostsRouter)
 app.route('/api/onboarding', onboardingRouter)
 app.route('/api/provider-auth', providerAuthRouter)
 app.route('/api/decisions', decisionsRouter)
+app.route('/api/spend', spendRouter)
 app.route('/api/schedules', schedulesRouter)
 app.route('/api/monitors', monitorsRouter)
 app.route('/api/recommendations', operationsRecommendationsRouter)

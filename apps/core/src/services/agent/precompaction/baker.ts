@@ -72,8 +72,31 @@ export interface PiCompactionModelFailoverOptions {
   onModelSwitched?: (nextProvider: string, nextSpec: string) => void | Promise<void>
 }
 
+/** A summarize call that produced a compaction summary, for cost accounting. */
+export interface CompactionSummarizedInfo {
+  /** `precompaction`: a background bake; `compaction`: a fit-fallback summary made while pi compacts. */
+  kind: 'precompaction' | 'compaction'
+  model: { provider: string; id: string }
+  usage: CompactionResult['usage']
+}
+
 export interface PiCompactionBakerOptions {
   modelFailover?: PiCompactionModelFailoverOptions
+  /** Called after every successful summarize call (bakes, failover retries, fit fallbacks). Never throws. */
+  onSummarized?: (info: CompactionSummarizedInfo) => void
+}
+
+function notifySummarized(
+  options: PiCompactionBakerOptions,
+  kind: CompactionSummarizedInfo['kind'],
+  model: { provider: string; id: string },
+  compaction: CompactionResult
+): void {
+  try {
+    options.onSummarized?.({ kind, model: { provider: model.provider, id: model.id }, usage: compaction.usage })
+  } catch {
+    // Accounting must never disturb compaction.
+  }
 }
 
 /**
@@ -129,7 +152,7 @@ export function createPiCompactionBaker(
     if (signal.aborted) return null
 
     try {
-      return await compact(
+      const compaction = await compact(
         fitPreparation,
         model,
         auth.apiKey,
@@ -140,6 +163,8 @@ export function createPiCompactionBaker(
         session.agent.streamFunction,
         auth.env
       )
+      notifySummarized(options, 'precompaction', model, compaction)
+      return compaction
     } catch (err) {
       // Compaction failure must stay non-fatal, but if the failure is provider
       // exhaustion (e.g. a codex usage_limit_reached hard plan limit), mark the
@@ -159,7 +184,8 @@ export function createPiCompactionBaker(
             options.modelFailover,
             model.provider,
             preparation,
-            signal
+            signal,
+            options
           )
           if (failoverResult) return failoverResult
         }
@@ -188,7 +214,8 @@ async function attemptCompactionModelFailover(
   options: PiCompactionModelFailoverOptions | undefined,
   exhaustedProvider: string,
   preparation: Parameters<typeof compact>[0],
-  signal: AbortSignal
+  signal: AbortSignal,
+  bakerOptions: PiCompactionBakerOptions = {}
 ): Promise<PrecompactionBakeOutput | null> {
   if (!options) return null
 
@@ -203,7 +230,8 @@ async function attemptCompactionModelFailover(
       nextSpec,
       exhaustedProvider,
       preparation,
-      signal
+      signal,
+      bakerOptions
     )
     if (attempt.kind === 'success') return attempt.result
     if (attempt.kind === 'stop') return null
@@ -222,7 +250,8 @@ async function attemptCompactionFailoverCandidate(
   nextSpec: string,
   exhaustedProvider: string,
   preparation: Parameters<typeof compact>[0],
-  signal: AbortSignal
+  signal: AbortSignal,
+  bakerOptions: PiCompactionBakerOptions
 ): Promise<CandidateAttempt> {
   let prepared: PiCompactionProviderSwitch | undefined
   try {
@@ -278,6 +307,7 @@ async function attemptCompactionFailoverCandidate(
         session.agent.streamFunction,
         auth.env
       )
+      notifySummarized(bakerOptions, 'precompaction', nextModel, compaction)
       try {
         await prepared?.commit?.()
         await options.onModelSwitched?.(nextProvider, nextSpec)
@@ -411,6 +441,7 @@ export function createFitCompactionFallback(
         session.agent.streamFunction,
         auth.env
       )
+      notifySummarized(options, 'compaction', model, compaction)
       log.info(`Fit compaction summarized with clamped input on ${model.provider}:${model.id}.`)
       return compaction
     } catch (err) {
@@ -453,6 +484,7 @@ async function attemptFitSummarizerCandidate(
       session.agent.streamFunction,
       auth.env
     )
+    notifySummarized(options, 'compaction', candidate, compaction)
     log.info(`Fit compaction summarized with ${candidate.provider}:${candidate.id}.`)
     return compaction
   } catch (err) {

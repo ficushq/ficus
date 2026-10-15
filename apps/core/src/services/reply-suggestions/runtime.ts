@@ -52,7 +52,7 @@ export const replySuggestionRuntimeDeps: ReplySuggestionDeps = {
   isEnabled: replySuggestionsEnabled,
   loadAgent: async (agentId) => {
     const [agent] = await db
-      .select({ status: agents.status, questionData: agents.questionData })
+      .select({ status: agents.status, questionData: agents.questionData, squadId: agents.squadId })
       .from(agents)
       .where(eq(agents.id, agentId))
     if (!agent) return null
@@ -60,7 +60,12 @@ export const replySuggestionRuntimeDeps: ReplySuggestionDeps = {
       .select({ count: sql<number>`count(*)::int` })
       .from(agentQuestions)
       .where(and(eq(agentQuestions.agentId, agentId), eq(agentQuestions.status, 'open')))
-    return { status: agent.status, hasQuestionData: agent.questionData != null, openQuestions: open?.count ?? 0 }
+    return {
+      status: agent.status,
+      hasQuestionData: agent.questionData != null,
+      openQuestions: open?.count ?? 0,
+      squadId: agent.squadId,
+    }
   },
   loadLatestHuman: async (agentId) => {
     const [row] = await db

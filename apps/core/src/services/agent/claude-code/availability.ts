@@ -12,7 +12,7 @@
 import { realpathSync } from 'node:fs'
 import { userInfo } from 'node:os'
 import { createLogger } from '../../../lib/infra/logger'
-import { claudeCodeAccount } from './account'
+import { claudeCodeAccount, syncClaudeCodePlan } from './account'
 
 const log = createLogger('claude-code')
 
@@ -197,8 +197,19 @@ export async function getClaudeCodeStatus(options: StatusOptions = {}): Promise<
     options.run ?? runClaude,
     options.enabled ?? accountEnabled()
   )
-  if (!injected) cached = { at: Date.now(), status }
+  if (!injected) {
+    cached = { at: Date.now(), status }
+    syncPlan(status)
+  }
   return status
+}
+
+/** Record the signed-in plan on the Claude Code account, in the background. */
+function syncPlan(status: ClaudeCodeStatus): void {
+  if (!status.loggedIn || !status.subscriptionType) return
+  void syncClaudeCodePlan(status.subscriptionType).catch((error) =>
+    log.debug('Could not record the Claude Code plan', error)
+  )
 }
 
 function accountEnabled(): boolean {
@@ -239,6 +250,7 @@ export async function primeClaudeCodeStatus(
   if (cached && Date.now() - cached.at < STATUS_TTL_MS) return
   try {
     cached = { at: Date.now(), status: await readStatus(env, options.run ?? runClaude, true) }
+    if (!options.run) syncPlan(cached.status)
   } catch {
     // An unreadable status leaves the account unusable; selection fails over.
   }

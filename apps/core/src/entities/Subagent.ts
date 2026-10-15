@@ -39,6 +39,8 @@ export type SubagentParentExecutionContext = {
   version: 1
   squadId: string | null
   environmentToolNames: string[]
+  /** The parent's execution that dispatched it, so the child's model spend rolls up to it. */
+  executionId?: string
 }
 
 let cascadeDormantChildBeforeRequestHook: ((parentAgentId: string, childId: string) => Promise<void>) | undefined
@@ -101,6 +103,9 @@ export class Subagent {
               version: 1 as const,
               squadId: parentExecutionContext.squadId,
               environmentToolNames: [...new Set(parentExecutionContext.environmentToolNames)].sort(),
+              ...(typeof parentExecutionContext.executionId === 'string'
+                ? { executionId: parentExecutionContext.executionId }
+                : {}),
             }
           : undefined
         const [{ count }] = await tx

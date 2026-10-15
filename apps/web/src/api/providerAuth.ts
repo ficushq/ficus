@@ -19,6 +19,19 @@ export interface ProviderAccountEntry {
   baseUrl?: string
   model?: string
   capabilities?: CompatibleCapabilities
+  createdAt?: number
+  /** Subscription accounts only: their plan and monthly price (Settings → Spend). */
+  subscription?: ProviderAccountSubscription
+}
+
+export interface ProviderAccountSubscription {
+  plan: string | null
+  planLabel: string | null
+  planSource: 'detected' | 'manual' | null
+  detectedPlan: string | null
+  monthlyPriceUsd: number | null
+  priceSource: 'default' | 'custom' | null
+  needsChoice: boolean
 }
 
 export interface ProviderAuthEntry {
@@ -125,7 +138,12 @@ export async function addProviderAccount(provider: string, key: string, label?: 
 export async function updateProviderAccount(
   provider: string,
   accountId: string,
-  patch: { label?: string; enabled?: boolean }
+  patch: {
+    label?: string
+    enabled?: boolean
+    /** A null plan or price clears the admin's choice back to the detected plan and default price. */
+    subscription?: { plan?: string | null; monthlyPriceUsd?: number | null }
+  }
 ): Promise<ProviderAccountEntry> {
   return apiFetch<ProviderAccountEntry>(`/provider-auth/${provider}/accounts/${accountId}`, {
     method: 'PUT',

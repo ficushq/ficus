@@ -3608,3 +3608,51 @@ describe('buildBaseSessionOptions tool policy', () => {
     expect(options.tools.deny).toBeUndefined()
   })
 })
+
+describe('inference usage attribution', () => {
+  const parentExecutionId = '22222222-2222-4222-8222-222222222222'
+  const senderId = '33333333-3333-4333-8333-333333333333'
+
+  function makeRunner() {
+    const agent = makeAgent()
+    ;(agent as any).squadId = 'squad-1'
+    ;(agent as any).parentAgentId = 'parent-1'
+    ;(agent as any).metadata = { parentExecutionContext: { version: 1, executionId: parentExecutionId } }
+    const agentRef: { current: any } = { current: agent }
+    const execution = makeExecution(
+      { agentId: agent.id, flowContext: { workStreamId: 'ws-1', attemptId: 2, stepId: 'implement' } } as any,
+      agentRef
+    )
+    const runner = new TestRunner(execution, agent, makeAgentType(), new MockAgentSession())
+    spyOn(agent, 'getEffectiveModelSpec').mockResolvedValue('anthropic:claude-sonnet-4-5')
+    return { runner, agent, execution }
+  }
+
+  it('sessions record agent turns attributed to the execution, flow step, parent and latest sender', async () => {
+    const { runner, agent, execution } = makeRunner()
+    const options = await (runner as any).buildBaseSessionOptions({
+      systemPrompt: 'sp',
+      skillPaths: undefined,
+      extensionPaths: undefined,
+      tools: { core: [], available: [] },
+    })
+    expect(options.usage.feature).toBe('agent-turn')
+    expect(options.usage.attribution()).toEqual({
+      agentId: agent.id,
+      executionId: execution.id,
+      squadId: 'squad-1',
+      parentAgentId: 'parent-1',
+      parentExecutionId,
+      workStreamId: 'ws-1',
+      attemptId: 2,
+      stepId: 'implement',
+      userId: null,
+    })
+    ;(runner as any).noteHumanSenders([
+      { metadata: { sender: { userId: senderId, name: 'Noah' } } },
+      { metadata: { sender: { userId: 'not-a-uuid', name: 'x' } } },
+      { metadata: null },
+    ])
+    expect(options.usage.attribution().userId).toBe(senderId)
+  })
+})

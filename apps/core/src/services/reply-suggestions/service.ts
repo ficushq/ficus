@@ -37,6 +37,8 @@ export interface AgentSuggestionState {
   hasQuestionData: boolean
   /** Open async questions (ask_human) for this agent. */
   openQuestions: number
+  /** For cost attribution in the inference ledger. */
+  squadId?: string | null
 }
 
 export interface SuggestionTarget {
@@ -128,7 +130,8 @@ export async function suggestRepliesAfterTurn(
   }
   if (!limiter.tryEnter(agentId)) return 'busy'
   try {
-    if (!agentAcceptsSuggestions(await deps.loadAgent(agentId))) return 'agent-not-ready'
+    const agent = await deps.loadAgent(agentId)
+    if (!agentAcceptsSuggestions(agent)) return 'agent-not-ready'
     const [latestHuman, recentAssistant] = await Promise.all([
       deps.loadLatestHuman(agentId),
       deps.loadRecentAssistant(agentId),
@@ -143,6 +146,8 @@ export async function suggestRepliesAfterTurn(
       maxTokens: REPLY_SUGGESTION_MAX_TOKENS,
       timeoutMs: REPLY_SUGGESTION_TIMEOUT_MS,
       totalTimeoutMs: REPLY_SUGGESTION_TOTAL_TIMEOUT_MS,
+      purpose: 'reply-suggestions',
+      source: { agentId, ...(agent?.squadId ? { squadId: agent.squadId } : {}) },
     })
     if (!answer) return 'no-answer'
     const replies = parseReplySuggestions(answer.text)

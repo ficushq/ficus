@@ -22,6 +22,7 @@
     "typecheck": "NODE_OPTIONS=\"${CORE_TYPECHECK_NODE_OPTIONS:-${NODE_OPTIONS:-}}\" tsc --noEmit",
     "activity:repair": "bun run src/scripts/repair-squad-activity.ts",
     "usage:backfill": "bun run src/scripts/backfill-execution-usage.ts",
+    "usage:ledger-backfill": "bun run src/scripts/backfill-inference-usage.ts",
     "build:docs": "bun run --cwd ../docs build:embedded"
   },
   "dependencies": {

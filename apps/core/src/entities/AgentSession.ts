@@ -41,6 +41,8 @@ import { bindPrecompactionController } from '../services/agent/precompaction/reg
 import { ShortTermMemoryContext } from '../services/agent/short-term-memory-context'
 import { getShortTermMemory } from '../tools/short-term-memory'
 import { createLogger } from '../lib/infra/logger'
+import { attachInferenceUsageRecorder, recordCompactionSummary } from '../services/inference-usage/session-hook'
+import type { InferenceAttribution } from '../services/inference-usage/types'
 
 export interface CreateAgentSessionOptions {
   /** Model. Format: provider:model-name[:thinking-level] (e.g. 'anthropic:claude-sonnet-4-5:high') */
@@ -97,6 +99,17 @@ export interface CreateAgentSessionOptions {
    * callers omit it and keep redaction-only behavior.
    */
   onStoredToolResult?: OnStoredToolResult
+  /**
+   * How the session's model calls are recorded in the inference cost ledger. Every assistant message and
+   * compaction summary is recorded; omitted, they count as `agent-turn` for `storage.agentId`.
+   */
+  usage?: {
+    /** Feature id from INFERENCE_FEATURES (`agent-turn`, `ai-extract`, ...). */
+    feature: string
+    /** Read at each call, so it can follow the current execution and sender. */
+    attribution?: () => InferenceAttribution
+    source?: Record<string, unknown>
+  }
 }
 
 export class AgentSession {
@@ -134,6 +147,7 @@ export class AgentSession {
     sandbox,
     currentSelectedModel,
     onStoredToolResult,
+    usage,
   }: CreateAgentSessionOptions): Promise<AgentSession> {
     // Selection below reads Claude Code's sign-in status synchronously; make it current first.
     await primeClaudeCodeStatus()
@@ -211,6 +225,14 @@ export class AgentSession {
     })
 
     const wrapper = new AgentSession(session, selected, switchedBack, authBackend, accountId)
+    const usageContext = {
+      feature: usage?.feature ?? 'agent-turn',
+      attribution: usage?.attribution ?? (() => ({ agentId: storage?.agentId })),
+      source: usage?.source,
+      getAccountId: (accountProvider: string) => authBackend.getSelectedAccountId(accountProvider),
+      getModel: () => (session.model ? { provider: session.model.provider, id: session.model.id } : undefined),
+    }
+    attachInferenceUsageRecorder(session, usageContext)
 
     if (storage) {
       const memoryContext = new ShortTermMemoryContext(
@@ -223,8 +245,10 @@ export class AgentSession {
     }
 
     let precompaction: PrecompactionController | undefined
+    const onSummarized: PiCompactionBakerOptions['onSummarized'] = (info) => recordCompactionSummary(usageContext, info)
     const bakerOptions: PiCompactionBakerOptions = storage
       ? {
+          onSummarized,
           modelFailover: {
             priorityList: modelId,
             getActiveAccountId: () => wrapper.accountId,
@@ -275,7 +299,7 @@ export class AgentSession {
             },
           },
         }
-      : {}
+      : { onSummarized }
     // Fit fallback is wired unconditionally: ephemeral sessions and
     // `precompaction: false` one-shot sessions still hit the
     // session_before_compact hook and can overflow a small summarizer (#625).

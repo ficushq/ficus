@@ -18,6 +18,7 @@ import {
   check,
   bigint,
   pgSequence,
+  date,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import type {
@@ -4482,6 +4483,109 @@ export const decisionLog = pgTable(
   (table) => [
     index('idx_decision_log_created_at').on(table.createdAt),
     index('idx_decision_log_purpose_created_at').on(table.purpose, table.createdAt),
+  ]
+)
+
+/**
+ * The inference cost ledger: one row per provider call (agent turns, compaction, decisions, Lite tier,
+ * transcription, TTS, embeddings, ...), written through `recordInferenceUsage`. No foreign keys: spend
+ * must survive deleting the agent, execution, squad or work stream it is attributed to. Rows older than
+ * the retention setting are rolled up into `inference_usage_daily` and then pruned.
+ * See docs/wiki/inference-usage.md.
+ */
+export const inferenceUsage = pgTable(
+  'inference_usage',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Feature id from INFERENCE_FEATURES, e.g. `agent-turn`, `decision:tool-results`, `lite:reply-suggestions`. */
+    feature: varchar('feature', { length: 64 }).notNull(),
+    /** pi provider id, service provider (`openai`, `google`) or decision provider kind; null when unknown. */
+    provider: varchar('provider', { length: 64 }),
+    model: varchar('model', { length: 128 }),
+    /** Provider account id, decision provider id, or `openai-services` / `google-cloud` for integration keys. */
+    accountId: varchar('account_id', { length: 64 }),
+    billing: varchar('billing', { length: 16 })
+      .$type<import('@ficus/shared').InferenceBilling>()
+      .notNull()
+      .default('unknown'),
+    inputTokens: bigint('input_tokens', { mode: 'number' }).notNull().default(0),
+    outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0),
+    cacheReadTokens: bigint('cache_read_tokens', { mode: 'number' }).notNull().default(0),
+    cacheWriteTokens: bigint('cache_write_tokens', { mode: 'number' }).notNull().default(0),
+    /** Non-token quantities: `{ audioSeconds, characters, images }`. */
+    units: jsonb('units').$type<import('@ficus/shared').InferenceUnits>(),
+    /** What was actually billed, in billionths of a dollar. 0 for subscription and self-hosted calls. */
+    costNanodollars: bigint('cost_nanodollars', { mode: 'number' }).notNull().default(0),
+    /** The same call at list price; null when no price is known. */
+    listCostNanodollars: bigint('list_cost_nanodollars', { mode: 'number' }),
+    costEstimated: boolean('cost_estimated').notNull().default(false),
+    squadId: uuid('squad_id'),
+    workStreamId: uuid('work_stream_id'),
+    attemptId: integer('attempt_id'),
+    stepId: varchar('step_id', { length: 100 }),
+    agentId: uuid('agent_id'),
+    executionId: uuid('execution_id'),
+    parentAgentId: uuid('parent_agent_id'),
+    parentExecutionId: uuid('parent_execution_id'),
+    /** The human whose action caused the call, when known. */
+    userId: uuid('user_id'),
+    /** Context such as `{ backfilled, from, purpose, tier, stopReason, responseId }`. Never prompt text. */
+    source: jsonb('source').$type<Record<string, unknown>>(),
+    /** Natural key for at-most-once writes (backfill): `exec:<id>`, `decision_log:<id>`, `agent-gap:<id>`. */
+    dedupeKey: varchar('dedupe_key', { length: 160 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_inference_usage_occurred_at').on(table.occurredAt),
+    index('idx_inference_usage_squad_occurred').on(table.squadId, table.occurredAt),
+    index('idx_inference_usage_work_stream_occurred').on(table.workStreamId, table.occurredAt),
+    index('idx_inference_usage_agent_occurred').on(table.agentId, table.occurredAt),
+    index('idx_inference_usage_execution').on(table.executionId),
+    uniqueIndex('idx_inference_usage_dedupe_key')
+      .on(table.dedupeKey)
+      .where(sql`${table.dedupeKey} IS NOT NULL`),
+    check('inference_usage_billing_valid', sql`${table.billing} IN ('api', 'subscription', 'self-hosted', 'unknown')`),
+  ]
+)
+
+/**
+ * Daily totals of `inference_usage`, kept indefinitely so long-range charts survive pruning. Rebuilt per
+ * whole UTC day (delete the day, insert its GROUP BY), so there is no unique index. Spend queries read
+ * detail rows inside the retention window and these rows before it, never both for one day.
+ */
+export const inferenceUsageDaily = pgTable(
+  'inference_usage_daily',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    day: date('day', { mode: 'string' }).notNull(),
+    feature: varchar('feature', { length: 64 }).notNull(),
+    provider: varchar('provider', { length: 64 }),
+    model: varchar('model', { length: 128 }),
+    accountId: varchar('account_id', { length: 64 }),
+    billing: varchar('billing', { length: 16 }).$type<import('@ficus/shared').InferenceBilling>().notNull(),
+    squadId: uuid('squad_id'),
+    workStreamId: uuid('work_stream_id'),
+    agentId: uuid('agent_id'),
+    userId: uuid('user_id'),
+    calls: integer('calls').notNull().default(0),
+    inputTokens: bigint('input_tokens', { mode: 'number' }).notNull().default(0),
+    outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0),
+    cacheReadTokens: bigint('cache_read_tokens', { mode: 'number' }).notNull().default(0),
+    cacheWriteTokens: bigint('cache_write_tokens', { mode: 'number' }).notNull().default(0),
+    costNanodollars: bigint('cost_nanodollars', { mode: 'number' }).notNull().default(0),
+    /** Sum of the known list costs. */
+    listCostNanodollars: bigint('list_cost_nanodollars', { mode: 'number' }).notNull().default(0),
+    /** Calls without a known list price. */
+    listUnknownCalls: integer('list_unknown_calls').notNull().default(0),
+    estimatedCalls: integer('estimated_calls').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_inference_usage_daily_day').on(table.day),
+    index('idx_inference_usage_daily_squad_day').on(table.squadId, table.day),
+    index('idx_inference_usage_daily_work_stream_day').on(table.workStreamId, table.day),
+    index('idx_inference_usage_daily_agent_day').on(table.agentId, table.day),
   ]
 )
 

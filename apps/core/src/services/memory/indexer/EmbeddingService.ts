@@ -10,6 +10,8 @@ import { eq } from 'drizzle-orm'
 import { db } from '../../../db'
 import { squads } from '../../../db/schema'
 import { getOpenAIServiceKey } from '../../integrations/openai-services/settings'
+import { recordInferenceUsage } from '../../inference-usage'
+import type { InferenceAttribution } from '../../inference-usage/types'
 
 // --- Types ---
 
@@ -22,6 +24,12 @@ export interface EmbeddingResult {
 export interface EmbeddingConfig {
   model: string
   dimensions: number
+}
+
+/** What an embedding call is for, in the inference cost ledger. */
+export interface EmbeddingUsageContext {
+  feature: 'embedding:index' | 'embedding:search'
+  attribution?: InferenceAttribution
 }
 
 export interface EmbeddingServiceDeps {
@@ -98,10 +106,26 @@ export class EmbeddingService {
     return this.openai
   }
 
+  private recordUsage(model: string, tokens: number | undefined, usage: EmbeddingUsageContext | undefined): void {
+    recordInferenceUsage({
+      feature: usage?.feature ?? 'embedding:index',
+      provider: 'openai',
+      model,
+      accountId: 'openai-services',
+      billing: 'api',
+      tokens: { input: tokens ?? 0 },
+      attribution: usage?.attribution,
+    })
+  }
+
   /**
    * Generate embedding for a single text.
    */
-  async generateEmbedding(text: string, model: string = DEFAULT_MODEL): Promise<EmbeddingResult> {
+  async generateEmbedding(
+    text: string,
+    model: string = DEFAULT_MODEL,
+    usage?: EmbeddingUsageContext
+  ): Promise<EmbeddingResult> {
     const openai = this.getOpenAI()
     const config = MODEL_CONFIGS[model] || MODEL_CONFIGS[DEFAULT_MODEL]
 
@@ -109,6 +133,7 @@ export class EmbeddingService {
       model: config.model,
       input: text,
     })
+    this.recordUsage(config.model, response.usage?.total_tokens, usage)
 
     return {
       embedding: response.data[0].embedding,
@@ -121,7 +146,11 @@ export class EmbeddingService {
    * Generate embeddings for multiple texts (batch).
    * More efficient than calling generateEmbedding multiple times.
    */
-  async generateEmbeddings(texts: string[], model: string = DEFAULT_MODEL): Promise<EmbeddingResult[]> {
+  async generateEmbeddings(
+    texts: string[],
+    model: string = DEFAULT_MODEL,
+    usage?: EmbeddingUsageContext
+  ): Promise<EmbeddingResult[]> {
     if (texts.length === 0) {
       return []
     }
@@ -133,6 +162,7 @@ export class EmbeddingService {
       model: config.model,
       input: texts,
     })
+    this.recordUsage(config.model, response.usage?.total_tokens, usage)
 
     const tokensPerText = Math.ceil((response.usage?.total_tokens || 0) / texts.length)
 
@@ -147,8 +177,12 @@ export class EmbeddingService {
    * Generate embedding for a query (for search).
    * Same as generateEmbedding but returns just the vector.
    */
-  async generateQueryEmbedding(query: string, model: string = DEFAULT_MODEL): Promise<number[]> {
-    const result = await this.generateEmbedding(query, model)
+  async generateQueryEmbedding(
+    query: string,
+    model: string = DEFAULT_MODEL,
+    attribution?: InferenceAttribution
+  ): Promise<number[]> {
+    const result = await this.generateEmbedding(query, model, { feature: 'embedding:search', attribution })
     return result.embedding
   }
 

@@ -169,6 +169,12 @@ describe('manual compaction usage refresh', () => {
     // The throwaway compaction session must opt out of precompaction so it does
     // not spuriously start (and immediately abort) a background bake.
     expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ precompaction: false }))
+    // Its summary is recorded in the inference cost ledger as the agent's compaction.
+    const options = (
+      createSpy.mock.calls[0] as unknown as [{ usage: { feature: string; attribution: () => unknown } }]
+    )[0]
+    expect(options.usage.feature).toBe('compaction')
+    expect(options.usage.attribution()).toMatchObject({ agentId: agent.id })
   })
 
   it('does not overwrite usage when there is no session to compact', async () => {

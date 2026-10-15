@@ -145,7 +145,10 @@ export class EmbeddingWorker extends PeriodicRunner {
         const texts = batch.map((c) => c.content)
 
         try {
-          const embeddings = await embeddingService.generateEmbeddings(texts, model)
+          const embeddings = await embeddingService.generateEmbeddings(texts, model, {
+            feature: 'embedding:index',
+            attribution: { squadId },
+          })
 
           // Update chunks with embeddings
           for (let j = 0; j < batch.length; j++) {

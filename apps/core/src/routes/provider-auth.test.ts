@@ -26,6 +26,7 @@ import {
   addAccount,
   listAccounts,
   mutateAccountStore,
+  persistOAuthCredential,
   withAccountStoreWriteLock,
   readAccountStore,
 } from '../services/agent/account-store'
@@ -296,6 +297,80 @@ describe('provider-auth routes', () => {
     expect(del.status).toBe(200)
     list = await (await app.request('/anthropic/accounts', jsonReq())).json()
     expect(list).toHaveLength(0)
+  })
+
+  test('subscription accounts report a detected plan, and an admin can pick a plan and price', async () => {
+    const access = `h.${Buffer.from(
+      JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_plan_type: 'plus' } })
+    ).toString('base64url')}.s`
+    let accountId = ''
+    await mutateAccountStore((store) => {
+      const result = persistOAuthCredential(store, 'openai-codex', {
+        type: 'oauth',
+        access,
+        refresh: 'r',
+        expires: Date.now() + 3_600_000,
+      } as never)
+      if (result.status === 'added') accountId = result.account.id
+    }, 'test')
+    try {
+      const list = await (await app.request('/openai-codex/accounts', jsonReq())).json()
+      expect(list[0]).toMatchObject({
+        id: accountId,
+        createdAt: expect.any(Number),
+        subscription: {
+          plan: 'plus',
+          planLabel: 'ChatGPT Plus',
+          planSource: 'detected',
+          detectedPlan: 'plus',
+          monthlyPriceUsd: 20,
+          priceSource: 'default',
+          needsChoice: false,
+        },
+      })
+
+      const pick = await app.request(
+        `/openai-codex/accounts/${accountId}`,
+        jsonReq('PUT', { subscription: { plan: 'pro', monthlyPriceUsd: 180 } })
+      )
+      expect(pick.status).toBe(200)
+      expect((await pick.json()).subscription).toMatchObject({
+        plan: 'pro',
+        planSource: 'manual',
+        monthlyPriceUsd: 180,
+        priceSource: 'custom',
+      })
+      // Editing the plan leaves the label alone.
+      expect(readAccountStore().accounts['openai-codex']?.[0]?.label).toBeTruthy()
+
+      const reset = await app.request(
+        `/openai-codex/accounts/${accountId}`,
+        jsonReq('PUT', { subscription: { plan: null, monthlyPriceUsd: null } })
+      )
+      expect((await reset.json()).subscription).toMatchObject({
+        plan: 'plus',
+        planSource: 'detected',
+        monthlyPriceUsd: 20,
+      })
+
+      const unknownPlan = await app.request(
+        `/openai-codex/accounts/${accountId}`,
+        jsonReq('PUT', { subscription: { plan: 'max-20x' } })
+      )
+      expect(unknownPlan.status).toBe(400)
+      const badPrice = await app.request(
+        `/openai-codex/accounts/${accountId}`,
+        jsonReq('PUT', { subscription: { monthlyPriceUsd: -1 } })
+      )
+      expect(badPrice.status).toBe(400)
+
+      // API-key accounts have no subscription.
+      const key = await (await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-sub-test' }))).json()
+      expect(key.subscription).toBeUndefined()
+      await app.request(`/anthropic/accounts/${key.id}`, jsonReq('DELETE'))
+    } finally {
+      await app.request(`/openai-codex/accounts/${accountId}`, jsonReq('DELETE'))
+    }
   })
 
   test('PUT /:provider/accounts/order reorders accounts and returns the updated summaries', async () => {

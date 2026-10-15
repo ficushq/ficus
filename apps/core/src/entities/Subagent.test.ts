@@ -206,6 +206,21 @@ describe('Subagent.dispatch', () => {
     expect(JSON.stringify(child.metadata)).not.toMatch(/token|sandbox|\/home\//i)
   })
 
+  it("keeps the dispatching execution's id so the child's spend rolls up to it", async () => {
+    const parent = await Agent.create({ agentTypeId: parentTypeId, squadId: null })
+    createdIds.push(parent.id)
+    const executionId = '44444444-4444-4444-8444-444444444444'
+
+    const result = await Subagent.dispatch({
+      parentAgentId: parent.id,
+      parentExecutionContext: { version: 1, squadId: null, environmentToolNames: [], executionId },
+      subagents: [{ instructions: 'inspect repository' }],
+    })
+
+    const child = await Agent.mustFind(result.subagents[0].subagentId)
+    expect(child.metadata).toMatchObject({ parentExecutionContext: { executionId } })
+  })
+
   it('rejects a parent execution context whose squad does not match the locked parent', async () => {
     const parent = await Agent.create({ agentTypeId: parentTypeId, squadId: null })
     createdIds.push(parent.id)
