@@ -30,13 +30,24 @@ export interface PlacementOptions {
   gap?: number
   /** Inset from the aligned anchor edge, toward the anchor's centre. Default 0. */
   alignOffset?: number
-  /** The tallest the popup may be before it scrolls. Default 360; `Infinity` leaves only the viewport limit. */
+  /**
+   * The tallest the popup may be before it scrolls. Default 360; `Infinity` leaves only the viewport limit.
+   * Content at most `POPUP_NEAR_FIT_SLACK` taller grows to fit instead (the viewport still limits it).
+   */
   maxHeight?: number
 }
 
 /** The minimum distance a popup keeps from every visual-viewport edge. */
 export const POPUP_VIEWPORT_MARGIN = 8
 const MARGIN = POPUP_VIEWPORT_MARGIN
+
+/**
+ * How far content may overshoot `maxHeight` and still be shown whole. A cap is there to stop a long list
+ * from taking over the screen; one that falls a few pixels short of the content (five described picker rows
+ * are 374px against the 360px cap) only clips the last row and its focus ring behind a sliver of scroll.
+ * About one row: anything longer scrolls at the cap, which leaves a partly cut row to show it scrolls.
+ */
+export const POPUP_NEAR_FIT_SLACK = 48
 
 /**
  * Prefers opening on `side` (below by default) with the popup's `align` edge on the anchor's.
@@ -48,8 +59,9 @@ export function placePopup(
   anchor: Box,
   content: { width: number; height: number },
   viewport: Box,
-  { side: preferred = 'below', align = 'end', gap = 6, alignOffset = 0, maxHeight: limit = 360 }: PlacementOptions = {}
+  { side: preferred = 'below', align = 'end', gap = 6, alignOffset = 0, maxHeight: cap = 360 }: PlacementOptions = {}
 ): PopupPlacement {
+  const limit = content.height <= cap + POPUP_NEAR_FIT_SLACK ? Math.max(cap, content.height) : cap
   const width = Math.max(0, Math.min(content.width, viewport.right - viewport.left - 2 * MARGIN))
   const room = {
     below: viewport.bottom - anchor.bottom - gap - MARGIN,

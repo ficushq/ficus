@@ -55,7 +55,7 @@ export function Picker<T extends string>({
       trigger={trigger}
       onDismiss={onDismiss}
       tabOut="close"
-      className={clsx('ficus-overlay p-1.5', className)}
+      className={clsx('ficus-overlay scroll-py-1.5 p-1.5', className)}
       initialFocus={(surface) => {
         const items = listItems(surface, OPTION)
         return items.find((item) => item.getAttribute('aria-selected') === 'true') ?? items[0]

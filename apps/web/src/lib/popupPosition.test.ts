@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { intersectBoxes, placePopup, type Box } from './popupPosition'
+import { intersectBoxes, placePopup, POPUP_NEAR_FIT_SLACK, type Box } from './popupPosition'
 
 const viewport: Box = { left: 0, top: 0, right: 320, bottom: 260 }
 const anchorAt = (left: number, top: number, size = 36): Box => ({
@@ -78,6 +78,37 @@ describe('placePopup', () => {
     const place = placePopup(anchorAt(100, 20), { width: 192, height: 2000 }, viewport, { maxHeight: Infinity })
     expect(place.maxHeight).toBe(260 - 20 - 36 - 6 - 8)
     expectInside(place, 2000)
+  })
+
+  describe('content just over the max height', () => {
+    const roomy: Box = { left: 0, top: 0, right: 1280, bottom: 900 }
+    // Five two-line picker rows (5 x 72px) plus the surface's padding and border.
+    const nearFit = { width: 320, height: 374 }
+
+    test('grows to fit instead of scrolling a sliver', () => {
+      const place = placePopup(anchorAt(600, 700), nearFit, roomy, { maxHeight: 360 })
+      expect(place.maxHeight).toBe(374)
+      expect(place.side).toBe('above')
+      expect(place.top + 374).toBe(700 - 6)
+    })
+
+    test('stops growing at the near-fit allowance', () => {
+      const edge = placePopup(anchorAt(600, 700), { width: 320, height: 360 + POPUP_NEAR_FIT_SLACK }, roomy, {
+        maxHeight: 360,
+      })
+      expect(edge.maxHeight).toBe(360 + POPUP_NEAR_FIT_SLACK)
+      const long = placePopup(anchorAt(600, 700), { width: 320, height: 361 + POPUP_NEAR_FIT_SLACK }, roomy, {
+        maxHeight: 360,
+      })
+      expect(long.maxHeight).toBe(360) // clearly longer lists keep the cap and scroll
+    })
+
+    test('still scrolls when the viewport is what limits it', () => {
+      const short: Box = { left: 0, top: 0, right: 900, bottom: 340 }
+      const place = placePopup(anchorAt(400, 290), nearFit, short, { maxHeight: 360 })
+      expect(place.maxHeight).toBe(290 - 6 - 8)
+      expectInside(place, 374, short)
+    })
   })
 
   test('a boundary intersected with the viewport keeps the popup inside both', () => {
