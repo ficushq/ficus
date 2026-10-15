@@ -88,6 +88,89 @@ afterAll(async () => {
   await cleanupTestRbac(prefix)
 })
 
+describe('relayed answer resolution by the asking agent', () => {
+  const SOURCE = 'https://github.com/ficushq/ficus/pull/1#issuecomment-1'
+
+  function resolveAs(token: string, id: string, body: unknown) {
+    return app.request(`/api/agent-questions/${id}/resolve`, {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
+  test('the asking agent resolves its own open question and it lands in the answered history', async () => {
+    const token = (await createTestAgentToken({ agentId: agent.id, squadId: squad.id })).token
+
+    const response = await resolveAs(token, questionId, { answer: ' Go ahead. ', source: SOURCE })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      id: questionId,
+      status: 'answered',
+      answer: 'Go ahead.',
+      answerSource: SOURCE,
+      answerRelayedByAgentId: agent.id,
+      answeredByUserId: null,
+    })
+
+    const history = await app.request(`/api/agent-questions/by-agent/${agent.id}?status=answered`, {
+      headers: authHeaders(agentReader.token),
+    })
+    expect(await history.json()).toEqual([expect.objectContaining({ id: questionId, answerSource: SOURCE })])
+
+    const again = await resolveAs(token, questionId, { answer: 'Go ahead.', source: SOURCE })
+    expect(again.status).toBe(409)
+  })
+
+  test('rejects other agents and human users, even with agents:run on the squad', async () => {
+    const owner = await createTestUser({ prefix: `${prefix}-resolve-runner-${crypto.randomUUID()}` })
+    const runRole = await createTestRole({
+      prefix: `${prefix}-resolve-run-${crypto.randomUUID()}`,
+      permissions: ['agents:run'],
+    })
+    await assignRole({ userId: owner.id, roleId: runRole.id, scope: 'squad', squadId: squad.id })
+    const otherAgent = await Agent.create({ agentTypeId: `${prefix}-type`, squadId: squad.id, ownerUserId: owner.id })
+    const otherToken = (await createTestAgentToken({ agentId: otherAgent.id, squadId: squad.id, userId: owner.id }))
+      .token
+    try {
+      const byAgent = await resolveAs(otherToken, questionId, { answer: 'yes', source: SOURCE })
+      expect(byAgent.status).toBe(403)
+      const byHuman = await resolveAs(owner.token, questionId, { answer: 'yes', source: SOURCE })
+      expect(byHuman.status).toBe(403)
+      const byDirectRecipient = await resolveAs(direct.token, questionId, { answer: 'yes', source: SOURCE })
+      expect(byDirectRecipient.status).toBe(403)
+
+      const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, questionId))
+      expect(row.status).toBe('open')
+      expect(row.answer).toBeNull()
+    } finally {
+      await db.delete(agents).where(eq(agents.id, otherAgent.id))
+    }
+  })
+
+  test('requires a non-blank answer and source and rejects closed or unknown questions', async () => {
+    const token = (await createTestAgentToken({ agentId: agent.id, squadId: squad.id })).token
+
+    for (const body of [
+      { source: SOURCE },
+      { answer: '  ', source: SOURCE },
+      { answer: 'yes' },
+      { answer: 'yes', source: ' ' },
+    ]) {
+      expect((await resolveAs(token, questionId, body)).status).toBe(400)
+    }
+    expect((await resolveAs(token, questionId, { answer: 'yes', source: 'x'.repeat(2001) })).status).toBe(400)
+    expect((await resolveAs(token, crypto.randomUUID(), { answer: 'yes', source: SOURCE })).status).toBe(404)
+    expect((await resolveAs(token, questionId.slice(0, 8), { answer: 'yes', source: SOURCE })).status).toBe(404)
+
+    await db
+      .update(agentQuestions)
+      .set({ status: 'dismissed', dismissedAt: new Date() })
+      .where(eq(agentQuestions.id, questionId))
+    expect((await resolveAs(token, questionId, { answer: 'yes', source: SOURCE })).status).toBe(409)
+  })
+})
+
 describe('agent question chat visibility, attention, and response authority', () => {
   test('by-agent history uses agents:read, not attention routing, and filters only lifecycle status', async () => {
     const readerOpen = await app.request(`/api/agent-questions/by-agent/${agent.id}?status=open`, {

@@ -2346,6 +2346,11 @@ export const agentQuestions = pgTable(
     status: varchar('status', { length: 20 }).notNull().default('open'),
     answer: text('answer'),
     answeredByUserId: uuid('answered_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    // Set only when the asking agent closed its own question by relaying a human's answer given in
+    // another channel (PR comment, chat, inbox). answer_source records where that answer lives.
+    // A relayed answer has no answered_by_user_id and is never delivered back to the agent.
+    answerRelayedByAgentId: uuid('answer_relayed_by_agent_id').references(() => agents.id, { onDelete: 'set null' }),
+    answerSource: text('answer_source'),
     audienceResolution: varchar('audience_resolution', { length: 32 }).$type<
       'pending' | 'resolved' | 'unroutable' | 'legacy-unresolved'
     >(),

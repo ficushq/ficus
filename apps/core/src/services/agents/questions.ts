@@ -145,6 +145,7 @@ function toJson(row: Row): AgentQuestion {
   const safe = {
     questionData: row.questionData,
     answer: row.answer,
+    answerSource: row.answerSource,
     dismissalReason: row.dismissalReason,
     answerDeliveryLastError: row.answerDeliveryLastError,
   }
@@ -159,6 +160,8 @@ function toJson(row: Row): AgentQuestion {
     status: row.status as AgentQuestion['status'],
     answer: safe.answer,
     answeredByUserId: row.answeredByUserId,
+    answerRelayedByAgentId: row.answerRelayedByAgentId ?? null,
+    answerSource: safe.answerSource ?? null,
     createdAt: row.createdAt.toISOString(),
     answeredAt: row.answeredAt ? row.answeredAt.toISOString() : null,
     dismissedAt: row.dismissedAt?.toISOString() ?? null,
@@ -968,6 +971,104 @@ export async function answerAgentQuestion(
 
   drainQuestionAnswerDeliverySoon(row.id)
   return toJson(row)
+}
+
+/** Upper bound for a relayed answer's source reference (a URL or short channel reference). */
+export const RELAYED_ANSWER_SOURCE_MAX_LENGTH = 2000
+
+/**
+ * Close an agent's OWN open question with a human answer that was given in another channel (a PR
+ * comment reply, chat, or inbox message). The question lands in the answered history with the
+ * answer, its source, and the relaying agent recorded; `answeredByUserId` stays null so the record
+ * never reads as a direct Ficus answer. Only the question's own `question` waits close (resolution
+ * `answered`, with a note naming the relay and source); nothing is delivered to the agent, which
+ * already has the answer. Returns null when the question is missing, not open, belongs to another
+ * agent, or the expected agent scope changed.
+ */
+export async function resolveAgentQuestionWithRelayedAnswer(
+  id: string,
+  opts: {
+    relayedByAgentId: string
+    answer: string
+    source: string
+    expectedAgentScope?: ExpectedAgentScope
+    testHooks?: { duringWaitClose?: () => Promise<void> }
+  }
+): Promise<AgentQuestion | null> {
+  const answer = opts.answer.trim()
+  const source = opts.source.trim()
+  if (!answer) throw new Error('A relayed answer is required')
+  if (!source) throw new Error('A relayed answer source is required')
+  if (source.length > RELAYED_ANSWER_SOURCE_MAX_LENGTH) throw new Error('The relayed answer source is too long')
+
+  const result = await db.transaction(async (tx) => {
+    const [candidate] = await tx
+      .select({ agentId: agentQuestions.agentId })
+      .from(agentQuestions)
+      .where(and(eq(agentQuestions.id, id), eq(agentQuestions.status, 'open')))
+    if (!candidate || candidate.agentId !== opts.relayedByAgentId) return null
+    if (!(await lockExpectedAgent(tx, candidate.agentId, opts.expectedAgentScope, 'any'))) return null
+    const [question] = await tx
+      .select()
+      .from(agentQuestions)
+      .where(
+        and(
+          eq(agentQuestions.id, id),
+          eq(agentQuestions.status, 'open'),
+          eq(agentQuestions.agentId, opts.relayedByAgentId)
+        )
+      )
+      .for('update')
+    if (!question) return null
+
+    const openWaitRows = await tx
+      .select({ workStreamId: workStreamWaits.workStreamId })
+      .from(workStreamWaits)
+      .where(
+        and(eq(workStreamWaits.referenceId, id), eq(workStreamWaits.type, 'question'), isNull(workStreamWaits.closedAt))
+      )
+    const locked = await lockWorkStreams(
+      tx,
+      openWaitRows.map(({ workStreamId }) => workStreamId)
+    )
+    // No answer delivery fields: the relaying agent already has the answer, and a pending delivery
+    // would wake it with its own words.
+    const [updated] = await tx
+      .update(agentQuestions)
+      .set({
+        status: 'answered',
+        answer,
+        answeredByUserId: null,
+        answerRelayedByAgentId: opts.relayedByAgentId,
+        answerSource: source,
+        answeredAt: new Date(),
+      })
+      .where(and(eq(agentQuestions.id, id), eq(agentQuestions.status, 'open')))
+      .returning()
+    if (!updated) return null
+
+    await opts.testHooks?.duringWaitClose?.()
+    // Scoped to this question's own `question` waits: never a review, approval, manual, or
+    // another question's wait.
+    const closedWaits = await closeOpenWaits(tx, { type: 'question', referenceId: id }, 'answered', {
+      note: `Answered outside Ficus; relayed by the asking agent from ${source}`,
+    })
+    const closedIds = new Set(closedWaits.map((wait) => wait.workStreamId))
+    const changedWorkStreams = locked.filter((stream) => closedIds.has(stream.id))
+    await resetChangedContinuations(tx, changedWorkStreams)
+    return { updated, closedWaits, changedWorkStreams }
+  })
+  if (!result) return null
+
+  const { updated, closedWaits, changedWorkStreams } = result
+  emitChangedWorkStreams(changedWorkStreams)
+  if (closedWaits.length > 0) await promoteChangedWorkStreams(changedWorkStreams, 'Post-relayed-answer')
+  eventEmitter.emit('agent-question.answered', {
+    questionId: updated.id,
+    agentId: updated.agentId,
+    squadId: updated.squadId,
+  })
+  return toJson(updated)
 }
 
 export type QuestionDismissedBy = { type: 'user'; userId: string } | { type: 'agent'; agentId: string }

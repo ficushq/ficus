@@ -65,6 +65,15 @@ an action that is not a question; messaging a user directly is never the path
 is finished is cheaper than a blocked step discovered later. Use `ask_human`
 without `blocking` for questions whose answer can wait.
 
+If a human answers your open `ask_human` question in another channel (a PR
+comment reply, chat, or inbox), close it with `ficus agent-question resolve <id>
+--answer "<their answer, quoted>" --source <url-or-reference>` instead of leaving
+it open (find the id with `ficus agent-question list <your-agent-id> --status
+open`). It is recorded as relayed by you and clears only that question's wait.
+Use it only when a human actually gave that answer: never with your own or
+another agent's inferred answer, never to unblock yourself, and never in place of
+a human approval or decision gate.
+
 Pick the wait by who must act:
 
 - A decision or answer from a human: `ask_human` (not a manual wait).

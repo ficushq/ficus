@@ -768,6 +768,12 @@ export interface AgentQuestion {
   status: AgentQuestionStatus
   answer: string | null
   answeredByUserId: string | null
+  /**
+   * Set when the asking agent closed its own question by relaying a human's answer given in another
+   * channel (no human answered in Ficus; `answeredByUserId` is null). `answerSource` says where.
+   */
+  answerRelayedByAgentId?: string | null
+  answerSource?: string | null
   createdAt: string
   answeredAt: string | null
   dismissedAt?: string | null
