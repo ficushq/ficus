@@ -1,10 +1,14 @@
 import { attachFlow } from '../services/workflows/execution'
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
-import { eq, like } from 'drizzle-orm'
-import { type WorkflowDefinition } from '@ficus/shared'
-import { db, agentTypes, squads, workflows, workStreamFlowRuns, workStreams } from '../db'
+import { eq, inArray, like } from 'drizzle-orm'
+import { type WorkflowDefinition, type WorkflowScope } from '@ficus/shared'
+import { db, agentExtraScopes, agents, agentTypes, squads, workflows, workStreamFlowRuns, workStreams } from '../db'
+import { Agent } from '../entities/Agent'
+import { resolveToken } from '../services/auth/resolve-token'
+import { hasPermission, type Identity } from '../services/rbac'
+import { canAccessWorkflow } from '../services/workflows/access'
 import { identityMiddleware } from '../middleware/identity'
 import {
   assignRole,
@@ -451,4 +455,108 @@ test('saving a preset with decision steps says when no decision model will answe
   // Flows without decision steps never warn.
   const plain = await request('', admin, 'POST', { id: `${prefix}-plain`, definition })
   expect(((await plain.json()) as { warnings?: string[] }).warnings).toBeUndefined()
+})
+
+describe('catalog list', () => {
+  const listPrefix = `${prefix}-list`
+  let otherSquadId: string
+  let agentToken: string
+  let squadOwner: TestUser
+  async function seedPresets(count: number, round: string) {
+    const scopes: WorkflowScope[] = [
+      { kind: 'instance' },
+      { kind: 'squad', squadId },
+      { kind: 'squad', squadId: otherSquadId },
+      // A squad that no longer exists hides its presets from everyone, as before.
+      { kind: 'squad', squadId: randomUUID() },
+      { kind: 'user', userId: admin.id },
+      { kind: 'user', userId: reader.id },
+    ]
+    await db.insert(workflows).values(
+      Array.from({ length: count }, (_, index) => ({
+        id: `${listPrefix}-${round}-${index}`,
+        scope: scopes[index % scopes.length]!,
+        definition,
+      }))
+    )
+  }
+  async function listIds(headers: Record<string, string>) {
+    const response = await app.request('/api/workflows', { headers })
+    return response.status === 200
+      ? ((await response.json()) as Array<{ id: string }>)
+          .map((row) => row.id)
+          .filter((id) => id.startsWith(listPrefix))
+      : response.status
+  }
+  beforeAll(async () => {
+    const [other] = await db
+      .insert(squads)
+      .values({ name: `${prefix}-other`, purpose: 'API tests' })
+      .returning()
+    otherSquadId = other!.id
+    squadOwner = await createTestUser({ prefix })
+    const squadReader = await createTestRole({ prefix, permissions: ['workflows:read'] })
+    await assignRole({ userId: squadOwner.id, roleId: squadReader.id, scope: 'squad', squadId })
+    // A userless squad agent holding catalog read through a per-agent grant: the uncached
+    // permission path that made every listed row cost a full agent-permission resolution.
+    const agent = await Agent.create({ agentTypeId: profile, squadId })
+    await db.insert(agentExtraScopes).values({ agentId: agent.id, permission: 'workflows:read' })
+    agentToken = (await agent.getOrCreateToken())!
+    await seedPresets(18, 'a')
+  })
+  afterAll(async () => {
+    await db.delete(workflows).where(like(workflows.id, `${listPrefix}%`))
+    await db.delete(agents).where(inArray(agents.squadId, [squadId, otherSquadId]))
+    await db.delete(squads).where(eq(squads.id, otherSquadId))
+  })
+
+  test('shows each caller exactly the presets a per-row access check allows', async () => {
+    const rows = await db
+      .select()
+      .from(workflows)
+      .where(like(workflows.id, `${listPrefix}%`))
+    const callers: Array<[Identity, Record<string, string>]> = [
+      ...[admin, reader, creator, outsider, squadOwner].map(
+        (user) => [{ type: 'user', userId: user.id }, authHeaders(user.token)] as [Identity, Record<string, string>]
+      ),
+      [(await resolveToken(agentToken))!, authHeaders(agentToken)],
+    ]
+    for (const [identity, headers] of callers) {
+      const expected: string[] = []
+      for (const row of rows) if (await canAccessWorkflow(identity, 'workflows:read', row.scope)) expected.push(row.id)
+      const listed = await listIds(headers)
+      if (!expected.length && !(await hasPermission(identity, 'workflows:read'))) expect(listed).toBe(403)
+      else expect(listed).toEqual(expected.sort())
+    }
+    // The fixture exercises every branch: own squad, foreign squad, and private rows.
+    expect(await listIds(authHeaders(agentToken))).toEqual(
+      rows
+        .filter((row) => row.scope.kind === 'instance' || (row.scope.kind === 'squad' && row.scope.squadId === squadId))
+        .map((row) => row.id)
+        .sort()
+    )
+    expect(await listIds(authHeaders(squadOwner.token))).toEqual(
+      rows
+        .filter((row) => row.scope.kind === 'squad' && row.scope.squadId === squadId)
+        .map((row) => row.id)
+        .sort()
+    )
+    expect(await listIds(authHeaders(outsider.token))).toBe(403)
+  })
+
+  test('issues the same number of queries however many presets share a scope', async () => {
+    const selectSpy = spyOn(db, 'select')
+    try {
+      const measure = async () => {
+        selectSpy.mockClear()
+        expect((await app.request('/api/workflows', { headers: authHeaders(agentToken) })).status).toBe(200)
+        return selectSpy.mock.calls.length
+      }
+      const before = await measure()
+      await seedPresets(36, 'b')
+      expect(await measure()).toBe(before)
+    } finally {
+      selectSpy.mockRestore()
+    }
+  })
 })

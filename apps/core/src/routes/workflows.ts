@@ -21,7 +21,12 @@ import {
 import { downloadDisposition, readBoundedMultipart } from '../services/attachments/http'
 import { WorkStream } from '../entities/WorkStream'
 import { db, squads, workflows } from '../db'
-import { authorizeWorkflow, authorizeWorkflowSource, canAccessWorkflow } from '../services/workflows/access'
+import {
+  authorizeWorkflow,
+  authorizeWorkflowSource,
+  canAccessWorkflow,
+  filterAccessibleWorkflows,
+} from '../services/workflows/access'
 import { hasPermission, type Identity } from '../services/rbac'
 import { workflowSync } from '../services/config-sync'
 import {
@@ -62,9 +67,7 @@ export const workflowsRouter = new Hono()
   })
   .get('/', async (c) => {
     const rows = await db.select().from(workflows).orderBy(workflows.id)
-    const visible = []
-    for (const row of rows)
-      if (await canAccessWorkflow(c.get('identity')!, 'workflows:read', row.scope)) visible.push(row)
+    const visible = await filterAccessibleWorkflows(c.get('identity')!, 'workflows:read', rows)
     if (!visible.length && !(await hasPermission(c.get('identity')!, 'workflows:read')))
       return c.json({ error: 'Forbidden' }, 403)
     return c.json(visible.map(serializeWorkflow))
