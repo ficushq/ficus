@@ -84,6 +84,10 @@ before it `EntityReferencePreview`'s), with no positioning dependency:
 - It flips to the other side when the content does not fit and there is more room there.
 - Both axes shift to keep an **8px margin** inside the **visual viewport** (the mobile keyboard and
   pinch-zoom shrink it), intersected with `boundary` when given. Width and scroll height shrink to fit.
+- `maxHeight` is a cap for long content, not a clip: content at most `POPUP_NEAR_FIT_SLACK` (48px) over
+  it is shown whole, so a list that nearly fits never scrolls a sliver. Only the viewport limits it then.
+- Row lists (`Picker`, `ActionPopup`) pair their `p-1.5` with `scroll-py-1.5`, so a row scrolled into
+  view on open or by the arrows keeps the surface padding and its focus ring visible.
 - `usePopoverPosition` re-places it on open, on any ancestor scroll, window or visual-viewport resize
   or pan, anchor or content size change (`ResizeObserver`), and **once per frame** while open whenever
   the anchor's rect changed without an event (layout shifts). Unchanged placements do not re-render.

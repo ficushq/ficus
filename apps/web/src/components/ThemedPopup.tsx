@@ -107,7 +107,7 @@ export function ActionPopup({
         initialFocus="selected"
         width={width}
         maxHeight={360}
-        className="ficus-overlay p-1.5"
+        className="ficus-overlay scroll-py-1.5 p-1.5"
       >
         {heading && <PopoverHeading>{heading}</PopoverHeading>}
         {items.map((item, index) => (
