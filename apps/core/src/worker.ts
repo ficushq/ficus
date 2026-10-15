@@ -485,6 +485,17 @@ const subsystems: Subsystem[] = [
     }
   ),
   subsystem(
+    'inference-usage-maintenance',
+    async () => {
+      const { startInferenceUsageMaintenance } = await import('./services/inference-usage/maintenance')
+      startInferenceUsageMaintenance()
+    },
+    async () => {
+      const { stopInferenceUsageMaintenance } = await import('./services/inference-usage/maintenance')
+      await stopInferenceUsageMaintenance()
+    }
+  ),
+  subsystem(
     'slot-terminal-retention',
     async () => {
       const { startSlotTerminalRetention } = await import('./services/slots')

@@ -194,7 +194,13 @@ export interface SpendSummary {
   subscriptions: SpendSubscriptionLine[]
   /** Projected total for the current UTC month at this month's rate, with full subscription fees. */
   projection: { monthUsd: number | null }
-  meta: { retentionDays: number; detailFrom: string }
+  meta: {
+    retentionDays: number
+    /** Per-call rows are kept from this day (UTC); earlier days come from daily totals. */
+    detailFrom: string
+    /** False when filters narrow to a slice of calls (a squad, a model, ...) that fees cannot be split by. */
+    feesIncluded: boolean
+  }
 }
 
 export interface SpendBreakdownRow {
