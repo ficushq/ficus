@@ -245,7 +245,7 @@ describe('idle worker dormancy', () => {
   })
 
   for (const [kind, start] of Object.entries(inFlight)) {
-    it(`keeps a worker with a ${kind} live`, async () => {
+    it(`keeps a worker live while it has: ${kind}`, async () => {
       const own = await squad()
       const busy = await agent(own.id, old())
       await start(own.id, busy.id)
@@ -255,7 +255,7 @@ describe('idle worker dormancy', () => {
       expect(await status(busy.id)).toBe('idle')
     })
 
-    it(`re-checks a ${kind} under the agent lock after selection`, async () => {
+    it(`re-checks under the agent lock after selection: ${kind}`, async () => {
       const own = await squad()
       const busy = await agent(own.id, old())
       await start(own.id, busy.id)
