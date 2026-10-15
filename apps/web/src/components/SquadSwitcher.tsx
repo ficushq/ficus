@@ -27,7 +27,10 @@ function currentSquadParam(pathname: string): string | undefined {
   return root === 'squads' && squad ? decodeURIComponent(squad) : undefined
 }
 
-/** A chevron beside the top nav's Squads: jump to another squad, keeping the tab you're on. */
+/**
+ * A chevron beside the top nav's Squads: jump to another squad, keeping the tab you're on. A mouse
+ * hovering it opens the list (leaving closes it unless a click pinned it); touch and keyboard open it as usual.
+ */
 export function SquadSwitcher({ active }: { active: boolean }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -41,6 +44,7 @@ export function SquadSwitcher({ active }: { active: boolean }) {
       label="Switch squad"
       heading="Squads"
       width={240}
+      openOnHover
       className={
         active
           ? 'ficus-button ficus-button-ghost flex items-center rounded-none px-2 text-accent-light hover:text-accent-light hover:bg-accent/10'

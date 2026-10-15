@@ -70,6 +70,13 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   opens at once; leaving both the anchor and the card closes after `closeDelay`, so the pointer can cross
   the gap. It never takes focus on open; Tab on the anchor enters it; Escape closes it and returns focus
   to the anchor only when focus was inside; it closes when the anchor scrolls out of view.
+- **`useHoverOpen(popover, { enabled, closeDelay: 150, initialFocus })`**: hover-to-open for a click
+  popover (`ActionPopup`'s `openOnHover`; the top nav's squad switcher). Spread its `triggerProps` on the
+  trigger (its `onClick` replaces `popover.toggle`) and its `popoverProps` on the popover. A mouse
+  hovering the trigger opens it without taking focus; leaving both the trigger and the popover closes it
+  after `closeDelay`, and re-entering either cancels that. A click on a hover-opened trigger pins it
+  open, focusing `initialFocus` as a click-open would. Opened by click, keyboard or touch, it behaves as
+  before; touch and pen pointers never open it on hover.
 - **`ComboboxList`**: anchored to a text field (`input`), above it by default. The field keeps focus the
   whole time (option presses `preventDefault` their mousedown) and gets `aria-expanded`,
   `aria-controls` and `aria-activedescendant` while it is open. The caller's key handler owns the arrows,
