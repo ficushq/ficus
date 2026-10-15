@@ -12,9 +12,23 @@
  * split install layout exists. In a single-hoisted-React or partial worktree
  * install there is nothing to reconcile, so this preload deliberately no-ops.
  */
-import { afterEach, mock } from 'bun:test'
+import { afterEach, beforeEach, mock } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { domOwnership } from './test/domOwnership'
+
+// The DOM ownership lease is process-wide. A lease still held when its test
+// (or, for beforeAll owners, its file) has finished is a leak: report it on the
+// test that leaked it and release it, so one leak cannot block every later DOM
+// test until the CI job times out. These preload hooks wrap each file's own.
+beforeEach(async () => {
+  const leak = await domOwnership.beginTest()
+  if (leak) throw new Error(`${leak.message}\nThis test failed only to surface a leak from an earlier file.`)
+})
+afterEach(async () => {
+  const leak = await domOwnership.endTest()
+  if (leak) throw new Error(leak.message)
+})
 
 const WEB = join(import.meta.dir, '..', 'node_modules')
 const ROOT = join(import.meta.dir, '..', '..', '..', 'node_modules')

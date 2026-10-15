@@ -306,9 +306,13 @@ export function installDomHarness({
   }
 }
 
-/** Serializes process-global DOM ownership across test files. Cleanup releases the next waiter. */
+/**
+ * Serializes process-global DOM ownership across test files. Cleanup releases the next waiter.
+ * If the owner leaks (its test ends without cleanup), the test preload runs this cleanup and releases it.
+ */
 export async function acquireDomHarness(options: DomHarnessOptions) {
-  const release = await acquireDomOwnershipLease()
+  const lease = await acquireDomOwnershipLease()
+  const release = () => lease.release()
   let harness: ReturnType<typeof installDomHarness> | undefined
   try {
     harness = installDomHarness(options)
@@ -325,17 +329,16 @@ export async function acquireDomHarness(options: DomHarnessOptions) {
   }
   const cleanup = harness.cleanup
   let cleanupPromise: Promise<void> | undefined
-  return {
-    ...harness,
-    cleanup() {
-      cleanupPromise ??= (async () => {
-        try {
-          await cleanup()
-        } finally {
-          release()
-        }
-      })()
-      return cleanupPromise
-    },
+  const ownedCleanup = () => {
+    cleanupPromise ??= (async () => {
+      try {
+        await cleanup()
+      } finally {
+        release()
+      }
+    })()
+    return cleanupPromise
   }
+  lease.setReclaim(ownedCleanup)
+  return { ...harness, cleanup: ownedCleanup }
 }
