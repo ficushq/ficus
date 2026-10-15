@@ -22,6 +22,11 @@ export const REPLY_SUGGESTION_TIMEOUT_MS = 6_000
 export const REPLY_SUGGESTION_TOTAL_TIMEOUT_MS = 12_000
 /** The message source of a person's own chat message. */
 const USER_CHAT_SOURCE = 'user_chat'
+/**
+ * The agent type whose turns started by an inbox or system delivery (a subagent result, a work
+ * stream update) can still get chips. Other agents' such turns are mostly machine-facing.
+ */
+const CONSULTANT_AGENT_TYPE = 'consultant'
 
 export interface SuggestionRow {
   id: string
@@ -39,6 +44,7 @@ export interface AgentSuggestionState {
   openQuestions: number
   /** For cost attribution in the inference ledger. */
   squadId?: string | null
+  agentTypeId?: string | null
 }
 
 export interface SuggestionTarget {
@@ -47,24 +53,42 @@ export interface SuggestionTarget {
   humanText: string
 }
 
+/** Whether the row is a person's own chat message. */
+function isUserChat(row: SuggestionRow | null): boolean {
+  return row?.metadata?.source === USER_CHAT_SOURCE
+}
+
 /**
- * The agent message that gets chips, if any: the latest agent text, written after the person's
- * latest chat message. A turn started by an inbox, system or other non-chat message gets none, as
- * does a turn that ended without text or already has suggestions.
+ * Whether the agent's turns started by an inbox or system delivery can get chips (consultants only),
+ * provided a person has chatted with it.
+ */
+function acceptsNonChatTurns(agent: AgentSuggestionState | null): boolean {
+  return agent?.agentTypeId === CONSULTANT_AGENT_TYPE
+}
+
+/**
+ * The agent message that gets chips, if any: the latest agent text, written after the agent's
+ * latest human-role row. That row must be the person's chat message, unless `latestUserChat` is
+ * given (consultants only): then a turn started by an inbox or system delivery qualifies too, and
+ * the person's latest chat message stands in as the human text. A turn that ended without text or
+ * already has suggestions gets none.
  *
  * @param latestHuman the agent's most recent human-role row (chat, inbox delivery or system)
  * @param recentAssistant the agent's latest assistant rows, newest first
+ * @param latestUserChat the person's latest chat message, when non-chat turns are accepted
  */
 export function selectSuggestionTarget(
   latestHuman: SuggestionRow | null,
-  recentAssistant: readonly SuggestionRow[]
+  recentAssistant: readonly SuggestionRow[],
+  latestUserChat: SuggestionRow | null = null
 ): SuggestionTarget | null {
   if (!latestHuman || latestHuman.pending) return null
-  if (latestHuman.metadata?.source !== USER_CHAT_SOURCE || !latestHuman.content.trim()) return null
+  const chat = isUserChat(latestHuman) ? latestHuman : latestUserChat
+  if (!chat || chat.pending || !isUserChat(chat) || !chat.content.trim()) return null
   const latest = recentAssistant.find((row) => row.metadata?.isSystem !== true)
   if (!latest || latest.createdAt.getTime() <= latestHuman.createdAt.getTime()) return null
   if (!latest.content.trim() || latest.metadata?.replySuggestions !== undefined) return null
-  return { messageId: latest.id, agentText: latest.content, humanText: latestHuman.content }
+  return { messageId: latest.id, agentText: latest.content, humanText: chat.content }
 }
 
 /** No chips while the agent shows a question card, has open questions, or is not settled. */
@@ -77,11 +101,13 @@ export interface ReplySuggestionDeps {
   isEnabled: () => boolean
   loadAgent: (agentId: string) => Promise<AgentSuggestionState | null>
   loadLatestHuman: (agentId: string) => Promise<SuggestionRow | null>
+  /** The person's latest chat message; only read for a consultant turn not started by one. */
+  loadLatestUserChat: (agentId: string) => Promise<SuggestionRow | null>
   loadRecentAssistant: (agentId: string) => Promise<SuggestionRow[]>
   complete: (request: LightCompletionRequest) => Promise<LightCompletionResult | null>
   /**
-   * Save the replies on the message and notify clients. Must not save when a newer human message
-   * has arrived since; resolves whether it saved.
+   * Save the replies on the message and notify clients. Must not save when a newer human-role row
+   * (chat, inbox delivery or system) has arrived since; resolves whether it saved.
    */
   save: (agentId: string, messageId: string, replies: string[]) => Promise<boolean>
   onError?: (error: unknown) => void
@@ -136,7 +162,11 @@ export async function suggestRepliesAfterTurn(
       deps.loadLatestHuman(agentId),
       deps.loadRecentAssistant(agentId),
     ])
-    const target = selectSuggestionTarget(latestHuman, recentAssistant)
+    const latestUserChat =
+      latestHuman && !isUserChat(latestHuman) && acceptsNonChatTurns(agent)
+        ? await deps.loadLatestUserChat(agentId)
+        : null
+    const target = selectSuggestionTarget(latestHuman, recentAssistant, latestUserChat)
     if (!target) return 'no-target'
     if (!likelyAsksHuman(target.agentText)) return 'no-question'
     const answer = await deps.complete({
