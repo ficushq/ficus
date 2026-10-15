@@ -36,6 +36,7 @@ import {
   CLAUDE_TOOL_PREFIX,
   TOOL_SERVER,
   TurnTranslator,
+  claudeSystemPrompt,
   claudeUserMessage,
   mcpToolResult,
   renderHistoryPrompt,
@@ -386,8 +387,12 @@ export function createClaudeCodeStream(deps: ClaudeCodeBridgeDeps = {}) {
       }
       const key = options?.sessionId ?? `unsessioned-${randomUUID()}`
       const conversation = context.messages.filter((message) => message.role !== 'system') as Message[]
-      const systemPrompt = getCurrentSystemPrompt(context.messages)
       const tools = getCurrentTools(context.messages)
+      // Hashed with the tool-name note: the prompt Claude Code actually runs with.
+      const systemPrompt = claudeSystemPrompt(
+        getCurrentSystemPrompt(context.messages),
+        tools.map((tool) => tool.name)
+      )
       const effort = options?.reasoning ? EFFORT[options.reasoning] : undefined
       const signature = hash({ model: model.id, effort, systemPrompt, tools: tools.map(toolSignature) })
 

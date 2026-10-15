@@ -20,7 +20,7 @@ import {
   CLAUDE_CODE_SIDE_REQUEST,
   createClaudeCodeStream,
 } from './bridge'
-import { emptyUsage, renderHistoryPrompt } from './convert'
+import { claudeSystemPrompt, emptyUsage, renderHistoryPrompt } from './convert'
 import { isRetryableAssistantError } from '@earendil-works/pi-ai'
 import { classifyCaughtProviderError } from '../../../lib/error'
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic'
@@ -33,6 +33,10 @@ const bash = {
   description: 'Run a command',
   parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
 } as any
+
+const TOOL_NAME_NOTE =
+  'Tool names: this prompt refers to your tools by short names such as bash. ' +
+  'In this session they are named mcp__ficus__<name> (for example mcp__ficus__bash); always call them by that full name.'
 
 /** A scripted stand-in for one Claude Code process (one `query()`). */
 class FakeClaude {
@@ -208,7 +212,7 @@ test('runs Claude Code with no built-in tools, only the agent tools pre-approved
     expect(claude!.options).toMatchObject({
       model: 'claude-opus-5-5',
       pathToClaudeCodeExecutable: '/usr/local/bin/claude',
-      systemPrompt: 'You are a Ficus worker.',
+      systemPrompt: `You are a Ficus worker.\n\n${TOOL_NAME_NOTE}`,
       tools: [],
       allowedTools: ['mcp__ficus__bash'],
       permissionMode: 'dontAsk',
@@ -231,6 +235,28 @@ test('runs Claude Code with no built-in tools, only the agent tools pre-approved
     if (previous.db === undefined) delete process.env.DATABASE_URL
     else process.env.DATABASE_URL = previous.db
   }
+})
+
+test('the prompt tells the model its tools’ Claude Code names, and keeps the session across turns', async () => {
+  const { stream, processes } = harness()
+  const first = stream(model, context([user('hi')]), { sessionId: 's-names' })
+  const claude = processes[0]!
+  expect(claude.options.systemPrompt).toBe(`You are a Ficus worker.\n\n${TOOL_NAME_NOTE}`)
+  await claude.nextPrompt(1)
+  claude.emit(...textResponse('msg_1', 'hello'))
+  const reply = (await first.result()) as AssistantMessage
+
+  // The same base prompt yields the same signature: the next turn reuses the live process.
+  const second = stream(model, context([user('hi'), reply, user('again')]), { sessionId: 's-names' })
+  expect((await claude.nextPrompt(2)).message.content).toEqual([{ type: 'text', text: 'again' }])
+  claude.emit(...textResponse('msg_2', 'hello again'))
+  expect((await second.result()).stopReason).toBe('stop')
+  expect(processes).toHaveLength(1)
+})
+
+test('the tool-name note is left out when the agent has no tools', () => {
+  expect(claudeSystemPrompt('Base prompt.', [])).toBe('Base prompt.')
+  expect(claudeSystemPrompt(undefined, ['bash'])).toBe(TOOL_NAME_NOTE)
 })
 
 test('a tool call ends the turn; Core’s result goes back to the waiting MCP call in the same process', async () => {

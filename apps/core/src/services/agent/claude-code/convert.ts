@@ -37,6 +37,21 @@ export const toolNameForClaude = (name: string) =>
     ? name.slice(UNKNOWN_CLAUDE_TOOL_PREFIX.length)
     : `${CLAUDE_TOOL_PREFIX}${name}`
 
+/**
+ * The system prompt Claude Code runs with. Ficus's prompt names tools by their short names
+ * (`squad_bash`), which Claude Code rejects; a closing note gives the model the names it must call.
+ * Deterministic for the same prompt and tools, so it never changes the session signature by itself.
+ */
+export function claudeSystemPrompt(systemPrompt: string | undefined, toolNames: readonly string[]) {
+  const example = toolNames[0]
+  if (!example) return systemPrompt
+  const note =
+    `Tool names: this prompt refers to your tools by short names such as ${example}. ` +
+    `In this session they are named ${CLAUDE_TOOL_PREFIX}<name> (for example ${CLAUDE_TOOL_PREFIX}${example}); ` +
+    'always call them by that full name.'
+  return systemPrompt ? `${systemPrompt}\n\n${note}` : note
+}
+
 export function emptyUsage(): Usage {
   return {
     input: 0,
