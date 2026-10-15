@@ -28,7 +28,11 @@ import { openOrCreateSession } from '../lib/infra/session-files'
 import { routeDecision, SessionUsage } from '@ficus/shared'
 import { filterToolsByPolicy } from '../lib'
 import { getContentSafetyRegistry } from '../services/security/content-safety-registry'
-import { wrapToolsWithOutputRedaction, type OnStoredToolResult } from '../services/security/tool-output-redaction'
+import {
+  wrapToolsWithOutputRedaction,
+  wrapToolWithOutputRedaction,
+  type OnStoredToolResult,
+} from '../services/security/tool-output-redaction'
 import { wrapToolsWithFirewall } from '../services/decisions/tool-firewall'
 import { PrecompactionController, type PrecompactionDeps } from '../services/agent/precompaction/controller'
 import {
@@ -176,7 +180,10 @@ export class AgentSession {
       { agentId: storage?.agentId }
     )
 
-    const resourceLoader = await FicusResourceLoader.create(systemPrompt, skillPaths, extensionPaths)
+    // Tools that pi extensions register (e.g. code-ast) bypass customTools; redact them the same way.
+    const resourceLoader = await FicusResourceLoader.create(systemPrompt, skillPaths, extensionPaths, (tool) =>
+      wrapToolWithOutputRedaction(tool, getContentSafetyRegistry(), onStoredToolResult)
+    )
     const sessionManager = storage
       ? // If storage is provided, use the session manager for the agent ID and sandbox workspace path. If no sandbox, it will just use the session directory, which is fine—it shouldn't be used for anything.
         openOrCreateSession(storage.agentId, sandbox?.workspacePath)

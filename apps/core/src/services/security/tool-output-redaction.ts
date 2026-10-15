@@ -23,8 +23,14 @@
  * or result whose start was truncated away can likewise begin with the end of a
  * value, so truncated text also drops such a leading fragment.
  *
- * It is total: agents run with `noTools: 'builtin'`, so wrapping the registered
- * tool list covers every tool the agent can call, including ones added later.
+ * Fragments are found on the raw text, before redaction: replacing a stored
+ * value nested in another (a username inside a stored URL) would otherwise hide
+ * the outer value's fragment. The redacted text is trimmed once more as a
+ * backstop.
+ *
+ * Agents run with `noTools: 'builtin'`, so wrapping the registered tool list
+ * (and, through the resource loader, tools pi extensions register) covers every
+ * tool the agent can call.
  *
  * Content the agent itself authored (tool arguments, assistant text) is not
  * redacted. It is the operator's own data on the way back to the operator.
@@ -59,16 +65,20 @@ function isHeadTruncated(text: string, details: unknown): boolean {
   )
 }
 
-/** Remove stored-value fragments cut at the edges of redacted output. */
-function trimFragments(value: unknown, phase: Phase, safety: ContentSafetyPort): unknown {
+/**
+ * Remove stored-value fragments cut at the edges of tool output. Returns the
+ * input itself when nothing was cut, so callers can tell whether it changed.
+ */
+function trimFragments<V>(value: V, phase: Phase, safety: ContentSafetyPort): V {
   if (typeof value === 'string') {
     return safety.trimStoredValueFragments(value, {
       leading: isHeadTruncated(value, undefined),
       trailing: phase === 'partial',
-    })
+    }) as V
   }
   if (!isRecord(value)) return value
   const { details } = value
+  let changed = false
   const output: Record<string, unknown> = { ...value }
   if (Array.isArray(value.content)) {
     output.content = value.content.map((block: unknown) => {
@@ -77,20 +87,20 @@ function trimFragments(value: unknown, phase: Phase, safety: ContentSafetyPort):
         leading: isHeadTruncated(block.text, details),
         trailing: phase === 'partial',
       })
-      return text === block.text ? block : { ...block, text }
+      if (text === block.text) return block
+      changed = true
+      return { ...block, text }
     })
   }
   // pi's shell details repeat the shown (truncated) text as `truncation.content`.
   if (isRecord(details) && isRecord(details.truncation) && typeof details.truncation.content === 'string') {
-    output.details = {
-      ...details,
-      truncation: {
-        ...details.truncation,
-        content: safety.trimStoredValueFragments(details.truncation.content, {
-          leading: details.truncation.truncated === true,
-          trailing: phase === 'partial',
-        }),
-      },
+    const content = safety.trimStoredValueFragments(details.truncation.content, {
+      leading: details.truncation.truncated === true,
+      trailing: phase === 'partial',
+    })
+    if (content !== details.truncation.content) {
+      changed = true
+      output.details = { ...details, truncation: { ...details.truncation, content } }
     }
   }
   const structured = value.structuredContent
@@ -100,16 +110,17 @@ function trimFragments(value: unknown, phase: Phase, safety: ContentSafetyPort):
     if (marker) {
       const head = structured.output.slice(0, marker.index)
       const tail = structured.output.slice(marker.index + marker[0].length)
-      output.structuredContent = {
-        ...structured,
-        output:
-          safety.trimStoredValueFragments(head, { trailing: true }) +
-          marker[0] +
-          safety.trimStoredValueFragments(tail, { leading: true }),
+      const trimmed =
+        safety.trimStoredValueFragments(head, { trailing: true }) +
+        marker[0] +
+        safety.trimStoredValueFragments(tail, { leading: true })
+      if (trimmed !== structured.output) {
+        changed = true
+        output.structuredContent = { ...structured, output: trimmed }
       }
     }
   }
-  return output
+  return changed ? (output as V) : value
 }
 
 /**
@@ -134,8 +145,11 @@ export function wrapToolWithOutputRedaction<T extends ToolDefinition>(
         if (storedKeys.length > 0 && onStoredToolResult) await onStoredToolResult({ toolCallId, storedKeys })
       }
       const redact = <V>(value: V, phase: Phase): { value: V; report: Promise<void> } => {
-        const inspected = redactOutput(value, safety)
-        return { value: trimFragments(inspected.value, phase, safety) as V, report: report(inspected.storedKeys) }
+        const raw = trimFragments(value, phase, safety)
+        const inspected = redactOutput(raw, safety)
+        // A cut can remove a whole value nested at the edge; audit what the tool produced.
+        const storedKeys = raw === value ? inspected.storedKeys : redactOutput(value, safety).storedKeys
+        return { value: trimFragments(inspected.value, phase, safety), report: report(storedKeys) }
       }
 
       const onUpdate = args[3]
@@ -175,39 +189,49 @@ function redactOutput<V>(value: V, safety: ContentSafetyPort): { value: V; store
   }
 }
 
+/** A copy of `error` carrying `message`; its stack starts with the old message, so swap that too. */
+function withMessage(error: Error, message: string): Error {
+  const copy = Object.assign(new Error(message), error)
+  copy.message = message
+  copy.name = error.name
+  if (error.cause !== undefined) copy.cause = error.cause
+  copy.stack = error.stack?.includes(error.message)
+    ? error.stack.replace(error.message, message)
+    : `${error.name}: ${message}`
+  return copy
+}
+
 /** Redact a thrown value; pi shows `error.message` (or `String(error)`) to the model. */
 async function redactThrown(
   error: unknown,
   safety: ContentSafetyPort,
   report: (storedKeys: readonly string[]) => Promise<void>
 ): Promise<unknown> {
-  const inspected = safety.redactWithStoredKeys(error)
-  await report(inspected.storedKeys)
+  // Cut fragments on the raw message first, as for results.
+  let raw = error
+  if (typeof error === 'string') raw = trimFragments(error, 'final', safety)
+  else if (error instanceof Error && isHeadTruncated(error.message, undefined)) {
+    const message = safety.trimStoredValueFragments(error.message, { leading: true })
+    if (message !== error.message) raw = withMessage(error, message)
+  }
+  const inspected = safety.redactWithStoredKeys(raw)
+  await report(raw === error ? inspected.storedKeys : safety.redactWithStoredKeys(error).storedKeys)
   const safe = inspected.value
   if (typeof safe === 'string') return trimFragments(safe, 'final', safety)
   if (!(safe instanceof Error)) return safe
-  const truncated = isHeadTruncated(safe.message, undefined)
   // Nothing to hide: keep the original so its class and fields survive for callers.
   if (
+    raw === error &&
     error instanceof Error &&
-    !truncated &&
     inspected.storedKeys.length === 0 &&
     safe.message === error.message &&
     safe.stack === error.stack
   ) {
     return error
   }
-  if (!truncated) return safe
+  if (!isHeadTruncated(safe.message, undefined)) return safe
   const message = safety.trimStoredValueFragments(safe.message, { leading: true })
-  if (message === safe.message) return safe
-  // The stack starts with the message, fragment included.
-  if (safe.stack) {
-    safe.stack = safe.stack.includes(safe.message)
-      ? safe.stack.replace(safe.message, message)
-      : `${safe.name}: ${message}`
-  }
-  safe.message = message
-  return safe
+  return message === safe.message ? safe : withMessage(safe, message)
 }
 
 /** Wrap every registered tool. Applied once at session construction. */

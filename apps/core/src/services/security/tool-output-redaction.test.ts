@@ -519,3 +519,172 @@ describe("pi's bash tool behind the redaction wrapper", () => {
     expect(containsFragment(JSON.stringify(result), value)).toBe(false)
   })
 })
+
+describe('nested and overlapping stored values', () => {
+  /** Synthetic stored URL that contains a separately stored username. */
+  function nestedValues() {
+    const user = `synthuser${randomUUID().slice(0, 8)}`
+    const password = `Zq9Pw${randomUUID().replaceAll('-', '')}`
+    const url = `https://${user}:${password}@db-qx7.zz/x`
+    const safety = ContentSafety.fromSecretEntries([
+      { key: 'SYNTH_DB_USER', value: user },
+      { key: 'SYNTH_DB_URL', value: url },
+    ])
+    return { user, password, url, safety }
+  }
+
+  /** True when any 4-character window of the outer value outside the inner value shows. */
+  function leaksOuter(text: string, url: string, user: string): boolean {
+    return url
+      .split(user)
+      .filter((piece) => piece.length >= 4)
+      .some((piece) => containsFragment(text, piece))
+  }
+
+  test('a partial cut after a nested stored value does not leak the outer value', async () => {
+    const { user, password, url, safety } = nestedValues()
+    const output = `conn: ${url}\nok\n`
+    const partials: Partial[] = []
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async (...args: unknown[]) => {
+        for (let end = 1; end <= output.length; end++) {
+          ;(args[3] as (partial: Partial) => void)({ content: [{ type: 'text', text: output.slice(0, end) }] })
+        }
+        return { content: [{ type: 'text', text: output }] }
+      }),
+      safety
+    ) as never as Executable
+
+    const result = await wrapped.execute('call-n1', {}, undefined, (partial) => partials.push(partial))
+
+    for (const partial of partials) {
+      const text = JSON.stringify(partial)
+      expect(containsFragment(text, password)).toBe(false)
+      expect(leaksOuter(text, url, user)).toBe(false)
+    }
+    expect(result.content[0].text).toBe('conn: [REDACTED_SECRET_ENV:SYNTH_DB_URL]\nok\n')
+  })
+
+  test('the reviewer reproduction: real bash chunks split right after the nested value', async () => {
+    const { user, password, url, safety } = nestedValues()
+    const cut = url.indexOf(user) + user.length + 4
+    const bash = streamingBash([`conn: ${url.slice(0, cut)}`, `${url.slice(cut)}\ndone\n`], 120)
+
+    const partials: Partial[] = []
+    const result = await (wrapToolWithOutputRedaction(bash as never, safety) as never as Executable).execute(
+      'call-n2',
+      { command: 'x' },
+      undefined,
+      (partial) => partials.push(partial)
+    )
+
+    for (const partial of partials) {
+      expect(containsFragment(JSON.stringify(partial), password)).toBe(false)
+      expect(leaksOuter(JSON.stringify(partial), url, user)).toBe(false)
+    }
+    expect(result.content[0].text).toBe('conn: [REDACTED_SECRET_ENV:SYNTH_DB_URL]\ndone\n')
+  })
+
+  test('a head-truncated start inside the outer value, past the nested value, does not leak', async () => {
+    const { user, password, url, safety } = nestedValues()
+    // Truncation kept only the part of the URL from just before the username onwards.
+    const start = url.indexOf(user) - 2
+    const text = `${url.slice(start)}\nlast line\n\n[Showing lines 2-3 of 3. Full output: /tmp/pi-bash-x.log]`
+    const details = { truncation: { truncated: true, content: `${url.slice(start)}\nlast line` } }
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async () => ({ content: [{ type: 'text', text }], details })),
+      safety
+    ) as never as Executable
+    const throwing = wrapToolWithOutputRedaction(
+      toolWith(async () => {
+        throw new Error(`${text}\n\nCommand aborted`)
+      }),
+      safety
+    ) as never as Executable
+
+    const result = await wrapped.execute('call-n3')
+    const error = (await throwing.execute('call-n4').catch((caught: unknown) => caught)) as Error
+
+    for (const shown of [JSON.stringify(result), error.message, String(error.stack)]) {
+      expect(containsFragment(shown, password)).toBe(false)
+      expect(leaksOuter(shown, url, user)).toBe(false)
+    }
+    expect(result.content[0].text.startsWith('\nlast line')).toBe(true)
+    expect(result.details.truncation.content).toBe('\nlast line')
+  })
+
+  test('two values where one ends with the start of the other leave no piece of either', async () => {
+    const shared = `OVL${randomUUID().slice(0, 8)}`
+    const first = `AAAA${randomUUID().replaceAll('-', '')}${shared}`
+    const second = `${shared}${randomUUID().replaceAll('-', '')}BBBB`
+    const safety = ContentSafety.fromSecretEntries([
+      { key: 'SYNTH_FIRST', value: first },
+      { key: 'SYNTH_SECOND', value: second },
+    ])
+    // The first value printed whole, running straight into the second.
+    const output = `x ${first}${second.slice(shared.length)}\n`
+    const partials: Partial[] = []
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async (...args: unknown[]) => {
+        for (let end = 1; end <= output.length; end++) {
+          ;(args[3] as (partial: Partial) => void)({ content: [{ type: 'text', text: output.slice(0, end) }] })
+        }
+        return { content: [{ type: 'text', text: output }] }
+      }),
+      safety
+    ) as never as Executable
+
+    const result = await wrapped.execute('call-n5', {}, undefined, (partial) => partials.push(partial))
+
+    for (const shown of [...partials.map((partial) => JSON.stringify(partial)), JSON.stringify(result)]) {
+      expect(containsFragment(shown, first)).toBe(false)
+      expect(containsFragment(shown, second)).toBe(false)
+    }
+  })
+
+  test('the leading edge of truncated output that overlaps two values leaves no piece of either', async () => {
+    const shared = `OVL${randomUUID().slice(0, 8)}`
+    const first = `AAAA${randomUUID().replaceAll('-', '')}${shared}`
+    const second = `${shared}${randomUUID().replaceAll('-', '')}BBBB`
+    const safety = ContentSafety.fromSecretEntries([
+      { key: 'SYNTH_FIRST', value: first },
+      { key: 'SYNTH_SECOND', value: second },
+    ])
+    // Truncation started inside the first value, which runs into the second.
+    const shown = `${first.slice(6)}${second.slice(shared.length)}\ntail`
+    const text = `${shown}\n\n[Showing lines 2-3 of 3. Full output: /tmp/pi-bash-x.log]`
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async () => ({ content: [{ type: 'text', text }] })),
+      safety
+    ) as never as Executable
+
+    const result = await wrapped.execute('call-n6')
+
+    expect(containsFragment(JSON.stringify(result), first)).toBe(false)
+    expect(containsFragment(JSON.stringify(result), second)).toBe(false)
+    expect(result.content[0].text.startsWith('\ntail')).toBe(true)
+  })
+
+  test('audits a stored value that a cut removed from what is shown', async () => {
+    const { user, url, safety } = nestedValues()
+    const detections: Array<{ storedKeys: readonly string[] }> = []
+    const wrapped = wrapToolWithOutputRedaction(
+      toolWith(async (...args: unknown[]) => {
+        // The username is printed whole, but it is also the start of the stored URL's
+        // remainder here, so the partial holds it back.
+        ;(args[3] as (partial: Partial) => void)({
+          content: [{ type: 'text', text: `x ${url.slice(0, url.indexOf(user) + user.length)}` }],
+        })
+        return { content: [{ type: 'text', text: 'done' }] }
+      }),
+      safety,
+      (event) => {
+        detections.push(event)
+      }
+    ) as never as Executable
+
+    await wrapped.execute('call-n7', {}, undefined, () => {})
+
+    expect(detections.flatMap((event) => event.storedKeys)).toContain('SYNTH_DB_USER')
+  })
+})

@@ -11,10 +11,12 @@ export interface ContentSafetyPort {
   /** Redact and report the sanitized key names whose exact stored values matched. */
   redactWithStoredKeys<T>(input: T): StoredKeyRedaction<T>
   /**
-   * Drop a partial stored value cut off at an edge of already-redacted text: a
-   * trailing fragment that starts a stored value (the rest has not streamed
-   * yet) and/or a leading fragment that ends one (the start was truncated
-   * away). Returns the text without those fragments; never returns a fragment.
+   * Drop a partial stored value cut off at an edge of text: a trailing fragment
+   * that starts a stored value (the rest has not streamed yet) and/or a leading
+   * fragment that ends one (the start was truncated away). Run it on raw text
+   * before redaction: replacing a stored value that sits inside another one
+   * hides the outer value's fragment from matching. Returns the text without
+   * those fragments, repeated until no edge fragment remains; never returns a fragment.
    */
   trimStoredValueFragments(text: string, edges: StoredValueFragmentEdges): string
 }
@@ -136,9 +138,21 @@ export class ContentSafety implements ContentSafetyPort {
           backward: failureTable(reversed),
         }
       })
+    // Cutting one fragment can expose another: with overlapping values, the text
+    // left before a cut can itself end in the start of a different value. Repeat
+    // until the edges are clean; each round shortens the text, so this ends.
+    let current = text
+    for (;;) {
+      const next = this.#trimEdgesOnce(current, edges, this.#fragmentMatchers)
+      if (next === current) return current
+      current = next
+    }
+  }
+
+  #trimEdgesOnce(text: string, edges: StoredValueFragmentEdges, matchers: readonly FragmentMatcher[]): string {
     let start = 0
     let end = text.length
-    for (const matcher of this.#fragmentMatchers) {
+    for (const matcher of matchers) {
       // A fragment is shorter than its value, so only that many edge characters matter.
       const window = Math.min(text.length, matcher.value.length - 1)
       if (edges.trailing) {
@@ -156,6 +170,7 @@ export class ContentSafety implements ContentSafetyPort {
         start = Math.max(start, length)
       }
     }
+    if (start === 0 && end === text.length) return text
     return start >= end ? '' : text.slice(start, end)
   }
 
