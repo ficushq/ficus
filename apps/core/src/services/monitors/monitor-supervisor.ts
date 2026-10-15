@@ -7,7 +7,15 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { getSandboxManager, type ISandboxManager } from '../sandbox'
 import { recordLaunchPathCommand } from '../sandbox/launch-path'
-import { LAUNCHER_SCRIPT, monitorDir, monitorWorkRoot, sessionNameForMonitor, shellQuote } from './launcher'
+import {
+  LAUNCHER_SCRIPT,
+  MONITOR_TIMED_OUT_FILE,
+  monitorDir,
+  monitorLaunchTimeoutSeconds,
+  monitorWorkRoot,
+  sessionNameForMonitor,
+  shellQuote,
+} from './launcher'
 
 const log = createLogger('monitor-supervisor')
 const MIN_BATCH_INTERVAL_MS = 2000
@@ -48,6 +56,8 @@ const CATCH_UP_MAX_BYTES = 256 * 1024
 
 const DIR_GONE = '__MONITOR_DIR_GONE__'
 const PROCESS_GONE = '__MONITOR_PROCESS_GONE__'
+/** The in-sandbox watchdog stopped the command at its deadline (see LAUNCHER_SCRIPT). */
+const TIMED_OUT = '__MONITOR_TIMED_OUT__'
 const LOG_SIZE_MARKER = '__FICUS_MONITOR_LOG_SIZE__='
 
 /**
@@ -178,7 +188,10 @@ async function defaultEnsureSandboxReachable(sandboxId: string): Promise<boolean
  *   follows the monitor's restart policy: `never` fails with a clear reason,
  *   `on-loss` relaunches with backoff and a rapid-restart limit. Exits,
  *   cancel, timeout and overload never restart.
- * - The deadline is absolute and survives relaunches and Core restarts.
+ * - The deadline is absolute and survives relaunches and Core restarts. It is
+ *   enforced twice: by this process's timer, and by a watchdog in the
+ *   launcher that holds while Core is down (each relaunch gets only the time
+ *   left). Whichever fires first ends the monitor `timed-out`, once.
  */
 export class MonitorSupervisor {
   private states = new Map<string, State>()
@@ -260,6 +273,9 @@ export class MonitorSupervisor {
       FICUS_MONITOR_CWD: cwd,
       FICUS_MONITOR_DIR: dir,
       FICUS_MONITOR_COMMAND: monitor.command,
+      // The in-sandbox watchdog's budget: only what is left of the original
+      // deadline, so a relaunch can never extend the monitor's life.
+      FICUS_MONITOR_TIMEOUT_SECONDS: String(monitorLaunchTimeoutSeconds(monitor, this.now())),
     }
     const launchCommand = [
       ...Object.entries(monitorEnv).map(([key, value]) => `${key}=${shellQuote(value)}`),
@@ -272,8 +288,8 @@ export class MonitorSupervisor {
       `chmod +x ${shellQuote(script)}`,
       // The tmux session gets the tmux server's PATH, not ours (see launch-path.ts).
       recordLaunchPathCommand(dir),
-      // A stale exitCode from a lost run must not read as this run's exit.
-      `rm -f ${shellQuote(`${dir}/exitCode`)} ${shellQuote(`${dir}/exitedAt`)}`,
+      // A stale exitCode (or timeout marker) from a lost run must not read as this run's.
+      `rm -f ${shellQuote(`${dir}/exitCode`)} ${shellQuote(`${dir}/exitedAt`)} ${shellQuote(`${dir}/${MONITOR_TIMED_OUT_FILE}`)}`,
       `touch ${shellQuote(logFile)}`,
       // Measured BEFORE the new run can append to it.
       `log_size=$(wc -c < ${shellQuote(logFile)} | tr -d ' ')`,
@@ -713,13 +729,18 @@ export class MonitorSupervisor {
    * One liveness probe. Order matters: tmux liveness is sampled BEFORE the
    * exitCode file, and the launcher writes exitCode before its session ends,
    * so "no session and no exitCode" can only mean the process was lost.
+   *
+   * The watchdog's timeout marker wins over both: it is written before the
+   * watchdog signals anything, so a run it stopped is reported timed out even
+   * if the launcher died before recording an exit code (never a loss).
    */
   private probeCommand(state: State): string {
     const { dir } = this.workPaths(state.monitor, state.squadId)
     return (
       `if [ ! -d ${shellQuote(dir)} ]; then echo ${DIR_GONE}; ` +
       `else alive=0; tmux has-session -t ${shellQuote(state.monitor.processId)} 2>/dev/null && alive=1; ` +
-      `if [ -f ${shellQuote(`${dir}/exitCode`)} ]; then cat ${shellQuote(`${dir}/exitCode`)}; ` +
+      `if [ -f ${shellQuote(`${dir}/${MONITOR_TIMED_OUT_FILE}`)} ]; then echo ${TIMED_OUT}; ` +
+      `elif [ -f ${shellQuote(`${dir}/exitCode`)} ]; then cat ${shellQuote(`${dir}/exitCode`)}; ` +
       `elif [ "$alive" = 0 ]; then echo ${PROCESS_GONE}; fi; fi`
     )
   }
@@ -753,6 +774,17 @@ export class MonitorSupervisor {
     const canceling = current.status === 'canceling'
     const result = text.split('\n').at(-1)?.trim() ?? ''
 
+    if (result === TIMED_OUT) {
+      if (canceling) {
+        await this.finish(state, 'canceled', null)
+        return
+      }
+      // The sandbox enforced the deadline (e.g. while Core was down): the same
+      // outcome as this process's own timer, never a loss and never relaunched.
+      log.info(`monitor ${monitorId}: stopped in the sandbox at its deadline`)
+      await this.timeout(monitorId, { catchUp: true })
+      return
+    }
     if (result === DIR_GONE || result === PROCESS_GONE) {
       if (canceling) {
         await this.finish(state, 'canceled', null)
@@ -987,7 +1019,14 @@ export class MonitorSupervisor {
     )
   }
 
-  private async timeout(monitorId: string): Promise<void> {
+  /**
+   * End a monitor at its deadline. Reached from this process's timer, from a
+   * loss or relaunch found past the deadline, and from the probe when the
+   * in-sandbox watchdog already stopped the command (`catchUp`: its last
+   * output may not have streamed yet). The `finishing` guard makes whichever
+   * path arrives first the only one that notifies.
+   */
+  private async timeout(monitorId: string, options: { catchUp?: boolean } = {}): Promise<void> {
     const state = this.states.get(monitorId)
     if (!state || state.finishing) return
     state.stopping = true
@@ -998,7 +1037,7 @@ export class MonitorSupervisor {
       this.release(state)
       return
     }
-    await this.finish(state, 'timed-out', null)
+    await this.finish(state, 'timed-out', null, { catchUp: options.catchUp })
   }
 
   private async overload(monitorId: string): Promise<void> {

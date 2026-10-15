@@ -113,6 +113,15 @@ class FakeSandbox implements ISandboxManager {
 
 const DIR_GONE = '__MONITOR_DIR_GONE__'
 const PROCESS_GONE = '__MONITOR_PROCESS_GONE__'
+const TIMED_OUT = '__MONITOR_TIMED_OUT__'
+
+/** The in-sandbox watchdog budget (FICUS_MONITOR_TIMEOUT_SECONDS) each launch was given, in order. */
+function launchTimeouts(sandbox: FakeSandbox): number[] {
+  return sandbox.execs
+    .map((args) => args.join(' '))
+    .filter((cmd) => cmd.includes('tmux new-session'))
+    .map((cmd) => Number(/FICUS_MONITOR_TIMEOUT_SECONDS=\W*(\d+)/.exec(cmd)?.[1]))
+}
 
 async function waitFor(condition: () => boolean | Promise<boolean>, timeoutMs = 3000): Promise<void> {
   const deadline = Date.now() + timeoutMs
@@ -1000,5 +1009,192 @@ describe('MonitorSupervisor', () => {
     } finally {
       spy.mockRestore()
     }
+  })
+
+  describe('in-sandbox deadline (watchdog)', () => {
+    const timedOutMessages = () => sent.filter((c) => c.includes('timed out.'))
+
+    it('gives the first launch the full timeout and probes the timeout marker before the exit code', async () => {
+      const monitor = await createMonitor({ timeoutMs: 60 * 60_000 })
+      const supervisor = makeSupervisor(sandbox, async () => {})
+      await supervisor.start(monitor)
+      expect(launchTimeouts(sandbox)).toEqual([3600])
+      // A relaunch must never read a previous run's marker as its own.
+      const cleanup = sandbox.execs[0][2].split('\n').find((line) => line.startsWith('rm -f'))!
+      expect(cleanup).toContain("/exitCode'")
+      expect(cleanup).toContain("/timedOut'")
+
+      await supervisor.pollExit(monitor.id)
+      const probe = sandbox.execs.map((a) => a.join(' ')).find((cmd) => cmd.includes('tmux has-session'))!
+      expect(probe.indexOf('/timedOut')).toBeGreaterThan(-1)
+      expect(probe.indexOf('/timedOut')).toBeLessThan(probe.indexOf('/exitCode'))
+    })
+
+    it('a sandbox-side timeout ends the monitor timed-out with its last output, once, and never relaunches', async () => {
+      const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 60 * 60_000 })
+      const calls: Array<{ content: string; options: { metadata: Record<string, unknown> } }> = []
+      const supervisor = makeSupervisor(sandbox, async (_agentId, content, options) => {
+        sent.push(content)
+        calls.push({ content, options })
+      })
+      await supervisor.start(monitor)
+      sandbox.catchUp = 'last words\n'
+      sandbox.probe = TIMED_OUT
+
+      await supervisor.pollExit(monitor.id)
+      await Bun.sleep(30)
+
+      await monitor.reload()
+      expect(monitor.status).toBe('timed-out')
+      expect(monitor.exitCode).toBeNull()
+      expect(monitor.failureReason).toBeNull()
+      expect(monitor.restartCount).toBe(0)
+      expect(monitor.nextRestartAt).toBeNull()
+      expect(sandbox.launches()).toBe(1)
+      expect(sent.some((c) => c.includes('restarted'))).toBe(false)
+      // Same terminal message and metadata as a Core-enforced timeout.
+      expect(timedOutMessages()).toEqual([`Monitor "watch" (${monitor.id.slice(0, 8)}) timed out.`])
+      expect(calls.at(-1)!.options.metadata).toMatchObject({
+        source: 'monitor',
+        monitor: { id: monitor.id, kind: 'timed-out', exitCode: null },
+      })
+      expect(sent.join('\n')).toContain('> last words')
+      expect(sent.findIndex((c) => c.includes('> last words'))).toBeLessThan(
+        sent.findIndex((c) => c.includes('timed out.'))
+      )
+    })
+
+    it('Core timer and sandbox watchdog firing together notify exactly once', async () => {
+      const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 40 })
+      const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+      await supervisor.start(monitor)
+      sandbox.probe = TIMED_OUT
+      await Promise.all([supervisor.pollExit(monitor.id), Bun.sleep(40).then(() => supervisor.pollExit(monitor.id))])
+      await waitFor(async () => (await monitor.reload()).status === 'timed-out')
+      await Bun.sleep(100)
+      expect(timedOutMessages()).toHaveLength(1)
+      expect(sandbox.launches()).toBe(1)
+    })
+
+    it('Core reattach after a sandbox-side timeout records timed-out without restarting, once', async () => {
+      // Core was down when the box's watchdog fired. By Core's clock the
+      // deadline is still a moment away (the two clocks are independent).
+      const monitor = await createMonitor({
+        status: 'running',
+        restartPolicy: 'on-loss',
+        logOffset: 0,
+        startedAt: new Date(clock - 10 * 60_000),
+        launchedAt: new Date(clock - 10 * 60_000),
+        deadlineAt: new Date(clock + 300),
+      })
+      sandbox.probe = TIMED_OUT
+      const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+      await supervisor.recoverOnStartup()
+      await waitFor(async () => (await monitor.reload()).status === 'timed-out')
+      // Let Core's own deadline timer come due too: it must not notify again.
+      await Bun.sleep(400)
+      expect(timedOutMessages()).toHaveLength(1)
+      expect(sent).toHaveLength(1)
+      expect(sandbox.launches()).toBe(0)
+      expect(monitor.restartCount).toBe(0)
+      expect(monitor.failureReason).toBeNull()
+    })
+
+    it('Core reattach past the deadline after a sandbox-side timeout: timed-out, no relaunch, one message', async () => {
+      const monitor = await createMonitor({
+        status: 'running',
+        restartPolicy: 'on-loss',
+        logOffset: 0,
+        startedAt: new Date(clock - 120_000),
+        deadlineAt: new Date(clock - 60_000),
+      })
+      sandbox.probe = TIMED_OUT
+      const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+      await supervisor.recoverOnStartup()
+      await waitFor(async () => (await monitor.reload()).status === 'timed-out')
+      await Bun.sleep(50)
+      expect(timedOutMessages()).toHaveLength(1)
+      expect(sandbox.launches()).toBe(0)
+      expect(monitor.restartCount).toBe(0)
+    })
+
+    it('restart: on-loss — a relaunch gets only the time left to the original deadline', async () => {
+      const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 60 * 60_000 })
+      const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+      await supervisor.start(monitor)
+      await monitor.reload()
+      const deadline = monitor.deadlineAt!.getTime()
+
+      clock += 25 * 60_000 + 500
+      sandbox.probe = PROCESS_GONE
+      await supervisor.pollExit(monitor.id)
+      sandbox.probe = ''
+      await waitFor(async () => (await monitor.reload()).restartCount === 1)
+
+      // 34m59.5s left, rounded up: the box never fires ahead of the deadline.
+      expect(deadline - clock).toBe(35 * 60_000 - 500)
+      expect(launchTimeouts(sandbox)).toEqual([3600, 2100])
+      expect(monitor.deadlineAt!.getTime()).toBe(deadline)
+    })
+
+    it('restart: on-loss — a relaunch after a Core restart also gets only the time left', async () => {
+      const monitor = await createMonitor({
+        status: 'running',
+        restartPolicy: 'on-loss',
+        logOffset: 0,
+        startedAt: new Date(clock - 50 * 60_000),
+        launchedAt: new Date(clock - 50 * 60_000),
+        deadlineAt: new Date(clock + 10 * 60_000),
+      })
+      sandbox.probe = PROCESS_GONE
+      const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+      await supervisor.recoverOnStartup() // the first probe runs on a 0ms timer
+      await waitFor(() => sandbox.launches() === 1)
+      sandbox.probe = ''
+      await waitFor(async () => (await monitor.reload()).restartCount === 1)
+      expect(launchTimeouts(sandbox)).toEqual([600])
+    })
+
+    it('restart: on-loss — a loss found past the deadline times out instead of relaunching', async () => {
+      const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 60 * 60_000 })
+      const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+      await supervisor.start(monitor)
+      clock += 60 * 60_000
+      sandbox.probe = PROCESS_GONE
+      await supervisor.pollExit(monitor.id)
+      await Bun.sleep(30)
+      expect((await monitor.reload()).status).toBe('timed-out')
+      expect(sandbox.launches()).toBe(1)
+      expect(timedOutMessages()).toHaveLength(1)
+    })
+
+    it('restart: on-loss — a deadline that passes during the relaunch backoff times out, no relaunch', async () => {
+      const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 60 * 60_000 })
+      const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content), undefined, {
+        restartBackoffMs: () => 100,
+      })
+      await supervisor.start(monitor)
+      clock += 60 * 60_000 - 1_000
+      sandbox.probe = PROCESS_GONE
+      await supervisor.pollExit(monitor.id)
+      expect((await monitor.reload()).nextRestartAt).toBeInstanceOf(Date)
+      clock += 2_000 // the deadline passes before the relaunch is due
+      await waitFor(async () => (await monitor.reload()).status === 'timed-out')
+      await Bun.sleep(150)
+      expect(sandbox.launches()).toBe(1)
+      expect(monitor.restartCount).toBe(0)
+      expect(timedOutMessages()).toHaveLength(1)
+    })
+
+    it('a cancel in progress wins over a sandbox-side timeout', async () => {
+      const monitor = await createMonitor()
+      const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+      await supervisor.start(monitor)
+      await monitor.update({ status: 'canceling' })
+      sandbox.probe = TIMED_OUT
+      await supervisor.pollExit(monitor.id)
+      expect((await monitor.reload()).status).toBe('canceled')
+      expect(timedOutMessages()).toHaveLength(0)
+    })
   })
 })
