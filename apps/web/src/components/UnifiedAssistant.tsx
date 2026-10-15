@@ -387,7 +387,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
                         {row && row.unreadUpdates > 0 && (
                           <span
                             aria-label={`${row.unreadUpdates} unread update${row.unreadUpdates === 1 ? '' : 's'}`}
-                            className="inline-block h-2 w-2 shrink-0 rounded-full bg-accent"
+                            className="inline-block h-2 w-2 shrink-0 rounded-full bg-badge"
                           />
                         )}
                         <span className="text-sm text-primary block min-w-0 flex-1 truncate">{chat.title}</span>

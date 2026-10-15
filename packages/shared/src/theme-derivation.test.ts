@@ -10,6 +10,8 @@ import { srgbToOklch } from './color-oklch'
 const IRIS_LIGHT: Record<string, string> = {
   '--swatch-secondary': '168 85 247',
   '--swatch-tertiary': '196 181 253',
+  '--badge': '168 85 247',
+  '--on-badge': '0 0 0',
   '--color-bg-page': '250 249 252',
   '--color-bg-surface': '255 255 255',
   '--color-text-primary': '37 35 50',
@@ -60,6 +62,10 @@ for (const [role, solid, fg, surface] of [
 // The dark-appearance counterpart of IRIS_LIGHT (same real base theme, Iris
 // dark, taken from apps/web/src/index.css's [data-appearance='dark'] block).
 const IRIS_DARK: Record<string, string> = {
+  '--swatch-secondary': '168 85 247',
+  '--swatch-tertiary': '196 181 253',
+  '--badge': '168 85 247',
+  '--on-badge': '0 0 0',
   '--color-bg-page': '9 10 18',
   '--color-bg-surface': '16 17 28',
   '--color-text-primary': '226 232 240',
@@ -240,6 +246,89 @@ describe('swatch colors', () => {
     const companions = suggestPaletteSeeds('#0ea5e9')!
     expect(derived['--swatch-secondary']).toBe(companions.secondary)
     expect(derived['--swatch-tertiary']).toBe(companions.tertiary)
+  })
+})
+
+describe('notification badge', () => {
+  const rgbOf = (value: string) => customColorChannels(value)!.split(' ').map(Number) as [number, number, number]
+  const contrastOf = (fg: string, bg: string) => {
+    const lum = (rgb: number[]) =>
+      rgb
+        .map((c) => c / 255)
+        .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+        .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i]!, 0)
+    const [a, b] = [lum(rgbOf(fg)), lum(rgbOf(bg))]
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+  }
+  const hueOf = (value: string) => srgbToOklch(rgbOf(value)).h
+  const hueDelta = (a: number, b: number) => Math.abs(((b - a + 540) % 360) - 180)
+
+  test('the fill is the palette secondary seed, matching the secondary swatch, with ink chosen by contrast', () => {
+    for (const [appearance, baseTokens, secondary, ink] of [
+      ['light', IRIS_LIGHT, '#c2410c', '#ffffff'],
+      ['dark', IRIS_DARK, '#f59e0b', '#000000'],
+    ] as const) {
+      const derived = deriveThemeOverrides({ baseTokens, palette: { primary: '#0ea5e9', secondary }, appearance })
+      expect(derived['--badge']).toBe(secondary)
+      expect(derived['--badge']).toBe(derived['--swatch-secondary'])
+      expect(derived['--on-badge']).toBe(ink)
+    }
+  })
+
+  test('without a secondary seed the fill follows the same colour-theory companion as the secondary swatch', () => {
+    // #5b21b6's +30 degree companion is dark enough to clear 3:1 on the light page, so it ships unchanged.
+    const derived = deriveThemeOverrides({
+      baseTokens: IRIS_LIGHT,
+      palette: { primary: '#5b21b6' },
+      appearance: 'light',
+    })
+    expect(derived['--badge']).toBe(suggestPaletteSeeds('#5b21b6')!.secondary)
+    expect(derived['--badge']).toBe(derived['--swatch-secondary'])
+    expect(['#000000', '#ffffff']).toContain(derived['--on-badge'])
+  })
+
+  test.each([
+    ['light', IRIS_LIGHT, '#faf9fc'],
+    ['dark', IRIS_DARK, '#090a12'],
+  ] as const)(
+    '%s: a secondary that matches the page keeps its hue but moves lightness until the badge clears 3:1',
+    (appearance, baseTokens, secondary) => {
+      const derived = deriveThemeOverrides({
+        baseTokens,
+        palette: { primary: '#0ea5e9', secondary: '#c2410c' },
+        appearance,
+      })
+      const pageMatched = deriveThemeOverrides({ baseTokens, palette: { primary: '#0ea5e9', secondary }, appearance })
+      // The swatch is the identity colour and is never nudged; only the badge is.
+      expect(pageMatched['--swatch-secondary']).toBe(secondary)
+      expect(pageMatched['--badge']).not.toBe(secondary)
+      for (const tokens of [derived, pageMatched]) {
+        const page = tokens['--color-bg-page'] ?? baseTokens['--color-bg-page']!
+        const surface = tokens['--color-bg-surface'] ?? baseTokens['--color-bg-surface']!
+        expect(contrastOf(tokens['--badge']!, page)).toBeGreaterThanOrEqual(3 - 1e-6)
+        expect(contrastOf(tokens['--badge']!, surface)).toBeGreaterThanOrEqual(3 - 1e-6)
+        expect(contrastOf(tokens['--on-badge']!, tokens['--badge']!)).toBeGreaterThanOrEqual(4.5)
+      }
+      expect(hueDelta(hueOf(pageMatched['--badge']!), hueOf(secondary))).toBeLessThan(10)
+    }
+  )
+
+  test('contrast: high holds the ink to 7:1 and the fill to 4.5:1 against the page and surface', () => {
+    for (const secondary of ['#c2410c', '#f59e0b', '#22c55e', '#0ea5e9', '#a855f7', '#808080']) {
+      for (const [appearance, baseTokens] of [
+        ['light', IRIS_LIGHT],
+        ['dark', IRIS_DARK],
+      ] as const) {
+        const derived = deriveThemeOverrides({
+          baseTokens,
+          palette: { primary: '#0ea5e9', secondary, contrast: 'high' },
+          appearance,
+        })
+        const page = derived['--color-bg-page'] ?? baseTokens['--color-bg-page']!
+        expect(contrastOf(derived['--badge']!, page)).toBeGreaterThanOrEqual(4.5 - 1e-6)
+        expect(contrastOf(derived['--on-badge']!, derived['--badge']!)).toBeGreaterThanOrEqual(7)
+      }
+    }
   })
 })
 

@@ -53,9 +53,17 @@ describe('built-in theme token completeness (iris dual variant)', () => {
 
   test('removing any newly active semantic token fails completeness in either variant', () => {
     const semanticTokens = THEME_TOKEN_FAMILIES.filter((family) =>
-      ['status', 'agent-type', 'misc-chrome', 'badge-decoration', 'syntax', 'terminal', 'ansi', 'graph'].includes(
-        family.family
-      )
+      [
+        'status',
+        'agent-type',
+        'misc-chrome',
+        'badge-decoration',
+        'notification-badge',
+        'syntax',
+        'terminal',
+        'ansi',
+        'graph',
+      ].includes(family.family)
     ).flatMap((family) => family.tokens)
     for (const block of [rootBlock, darkBlock]) {
       for (const omitted of semanticTokens) {

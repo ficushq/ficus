@@ -10,6 +10,9 @@ test('badge counts conversations and exposes the full accessible count', async (
       root.render(<AssistantActivityBadge count={123} />)
     })
     expect(container.textContent).toBe('99+')
+    // Same theme badge color as the Feed and Inbox counts.
+    expect(container.querySelector('span')!.classList.contains('bg-badge')).toBe(true)
+    expect(container.querySelector('span')!.classList.contains('text-on-badge')).toBe(true)
     expect(container.querySelector('[aria-label="123 Assistant conversations with unread updates"]')).not.toBeNull()
     await dom.act(async () => {
       root.render(<AssistantActivityBadge count={1} />)

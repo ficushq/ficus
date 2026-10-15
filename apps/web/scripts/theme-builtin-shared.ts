@@ -39,12 +39,17 @@ export function cssBlockDeclarations(css: string, selector: string): Record<stri
  * built-in theme (docs/wiki/theme/builtins.md's Generation section):
  * verified against the actual CSS, only the `chrome` token family plus
  * `--swatch-secondary`/`-tertiary`/`--on-accent-fg` actually vary between
- * built-ins — every other family is copied verbatim from Iris. */
+ * built-ins — every other family is copied verbatim from Iris. The
+ * notification badge pair is derived too: its fill follows the theme's own
+ * secondary (the same value as `--swatch-secondary`), with ink chosen by
+ * contrast against it. */
 export const DERIVABLE_TOKENS = new Set<string>([
   ...THEME_TOKEN_FAMILIES.find((family) => family.family === 'chrome')!.tokens,
   '--swatch-secondary',
   '--swatch-tertiary',
   '--on-accent-fg',
+  '--badge',
+  '--on-badge',
 ])
 
 /**

@@ -30,7 +30,7 @@ export function AssistantUpdateCard({
     <>
       <div className="flex items-center gap-2 text-xs text-muted">
         {!update.seenAt && (
-          <span aria-label="Unread" className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          <span aria-label="Unread" className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-badge" />
         )}
         {taskLabel && <span className="truncate font-medium text-primary">{taskLabel}</span>}
         {status && <span className="shrink-0">{status}</span>}

@@ -25,6 +25,10 @@
  *   lightness/chroma preserved.
  * - swatch secondary/tertiary: the palette's own secondary/tertiary, or their
  *   colour-theory companions when unset (see `suggestPaletteSeeds`).
+ * - notification badge fill (--badge): the same secondary as the swatch,
+ *   lightness-nudged by the contrast pass below only where it would not stand
+ *   out from the page/surface; its ink (--on-badge) is chosen against the
+ *   final fill exactly as --on-accent-fg is chosen against the final primary.
  * - categorical families (agent-type, badge-decoration, graph chart
  *   categories/links, a curated syntax-accent subset, utility-decoration):
  *   hue picked from primary/secondary/tertiary by slot index; base
@@ -36,9 +40,10 @@
  *   can never cross into a neighboring role's hue band) and blends chroma
  *   toward the seed's, keeping base lightness per step.
  * - a contrast pass afterward nudges a small set of critical derived pairs
- *   (text/surface, primary/page, and status fg/surface when harmonized)
- *   toward the WCAG target (4.5, or 7 for `contrast: 'high'`) by moving
- *   lightness only, never hue/chroma.
+ *   (text/surface, primary/page, badge/page and badge/surface, and status
+ *   fg/surface when harmonized) toward the WCAG target (4.5, or 7 for
+ *   `contrast: 'high'`; 3 or 4.5 for the non-text primary and badge pairs)
+ *   by moving lightness only, never hue/chroma.
  *
  * Unmapped/unrecognized tokens (including every status/ANSI slot in 'static'
  * mode) are simply absent from the returned overrides, so they keep
@@ -202,15 +207,22 @@ const SELECTION_BORDER = '--color-selection-border'
 /** Terminal/log-terminal tokens whose slot name names an ANSI color: kept unchanged (semantic). */
 const ANSI_NAMED = /-(black|red|green|yellow|blue|magenta|cyan|white)$/
 
-type Bucket = 'neutral' | 'primary' | 'ink' | 'brand' | 'swatch' | 'categorical' | 'status' | 'unchanged'
+/** Fill tokens whose ink is chosen (black or white) by contrast after the contrast pass, never hue-derived. */
+const INK_PAIRS: ReadonlyArray<[fill: string, ink: string]> = [
+  ['--color-primary', '--on-accent-fg'],
+  ['--badge', '--on-badge'],
+]
+
+type Bucket = 'neutral' | 'primary' | 'ink' | 'brand' | 'swatch' | 'badge' | 'categorical' | 'status' | 'unchanged'
 
 function classify(token: string): Bucket {
-  if (token === '--on-accent-fg') return 'ink'
+  if (INK_PAIRS.some(([, ink]) => ink === token)) return 'ink'
   if (PRIMARY_FAMILY.includes(token)) return 'primary'
   const family = themeTokenFamily(token)
   if (!family) return 'unchanged'
   if (family.family === 'status') return 'status'
   if (family.family === 'swatch') return 'swatch'
+  if (family.family === 'notification-badge') return 'badge'
   if (family.family === 'ansi') return 'unchanged'
   if (family.family === 'terminal' || family.family === 'log-terminal')
     return ANSI_NAMED.test(token) ? 'unchanged' : 'neutral'
@@ -290,6 +302,9 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
       // The swatch shows the palette's own secondary/tertiary (or their colour-theory companions).
       const seed = token === '--swatch-tertiary' ? tertiaryOklch : secondaryOklch
       overrides[token] = serialize(seed, base.alpha)
+    } else if (bucket === 'badge') {
+      // Notification badges follow the theme's secondary, exactly like its secondary swatch.
+      overrides[token] = serialize(secondaryOklch, base.alpha)
     } else if (bucket === 'brand') {
       overrides[token] = serialize({ l: base.oklch.l, c: base.oklch.c, h: tertiaryOklch.h }, base.alpha)
     } else if (bucket === 'categorical') {
@@ -316,44 +331,45 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
   // lightness. Choosing this against the pre-pass primary (the previous
   // ordering) picks ink for a color that never actually ships: the CSS pairs
   // --on-accent-fg with the post-pass --color-primary, so a stale choice can
-  // under-shoot the target against what's really on screen.
-  chooseInk(overrides, textMinRatio)
+  // under-shoot the target against what's really on screen. --on-badge is
+  // chosen against the final --badge fill the same way.
+  for (const [fill, ink] of INK_PAIRS) chooseInk(overrides, textMinRatio, fill, ink)
   return overrides
 }
 
-/** Chooses --on-accent-fg (black or white) by contrast against the FINAL
- * --color-primary, and must run after `contrastPass`. For any fixed
- * background, the better of pure black/white text always clears ~4.58:1
- * (the minimum, at the luminance where both candidates tie) — comfortably
+/** Chooses an ink token (black or white), e.g. --on-accent-fg or --on-badge,
+ * by contrast against its FINAL fill (--color-primary or --badge), and must
+ * run after `contrastPass`. For any fixed background, the better of pure
+ * black/white text always clears ~4.58:1 (the minimum, at the luminance where both candidates tie) — comfortably
  * above the 'standard' 4.5:1 target by construction, no nudge ever needed.
  * The 'high' (7:1) target is NOT guaranteed by construction, so when neither
- * candidate reaches it, this nudges --color-primary's lightness (hue/chroma
+ * candidate reaches it, this nudges the fill's lightness (hue/chroma
  * held fixed, same bisection shape as `contrastPass`) toward whichever
  * extreme makes one of them pass, picking whichever candidate needs the
  * smaller move from the current lightness. If even the sRGB gamut extreme
  * can't reach the target (rare, high-chroma edge case), it falls back to
- * whichever of black/white is best against the un-nudged final primary. */
-function chooseInk(overrides: Record<string, string>, textMinRatio: number) {
-  const primaryValue = overrides['--color-primary']
-  if (!primaryValue) return
-  const primary = toOklch(primaryValue)
-  if (!primary) return
+ * whichever of black/white is best against the un-nudged final fill. */
+function chooseInk(overrides: Record<string, string>, textMinRatio: number, fillToken: string, inkToken: string) {
+  const fillValue = overrides[fillToken]
+  if (!fillValue) return
+  const fill = toOklch(fillValue)
+  if (!fill) return
   const black: [number, number, number] = [0, 0, 0]
   const white: [number, number, number] = [255, 255, 255]
-  const primaryRgb = parseChannels(primaryValue)!.rgb
-  const contrastBlack = wcagContrast(black, primaryRgb)
-  const contrastWhite = wcagContrast(white, primaryRgb)
+  const fillRgb = parseChannels(fillValue)!.rgb
+  const contrastBlack = wcagContrast(black, fillRgb)
+  const contrastWhite = wcagContrast(white, fillRgb)
   if (Math.max(contrastBlack, contrastWhite) >= textMinRatio) {
-    overrides['--on-accent-fg'] = contrastBlack >= contrastWhite ? '#000000' : '#ffffff'
+    overrides[inkToken] = contrastBlack >= contrastWhite ? '#000000' : '#ffffff'
     return
   }
   const nudgedL = (ink: readonly [number, number, number]): number | null => {
     // Black ink needs a lighter bg; white ink needs a darker bg.
     const extreme = ink[0] === 0 ? 1 : 0
     const passes = (l: number) =>
-      wcagContrast(ink, oklchToSrgb({ l, c: primary.oklch.c, h: primary.oklch.h })) >= textMinRatio
+      wcagContrast(ink, oklchToSrgb({ l, c: fill.oklch.c, h: fill.oklch.h })) >= textMinRatio
     if (!passes(extreme)) return null
-    let near = primary.oklch.l
+    let near = fill.oklch.l
     let far = extreme
     for (let i = 0; i < 30; i++) {
       const mid = (near + far) / 2
@@ -369,14 +385,14 @@ function chooseInk(overrides: Record<string, string>, textMinRatio: number) {
     ] as Array<{ l: number | null; ink: '#000000' | '#ffffff' }>
   ).filter((c): c is { l: number; ink: '#000000' | '#ffffff' } => c.l !== null)
   if (candidates.length === 0) {
-    overrides['--on-accent-fg'] = contrastBlack >= contrastWhite ? '#000000' : '#ffffff'
+    overrides[inkToken] = contrastBlack >= contrastWhite ? '#000000' : '#ffffff'
     return
   }
   const chosen = candidates.reduce((best, c) =>
-    Math.abs(c.l - primary.oklch.l) < Math.abs(best.l - primary.oklch.l) ? c : best
+    Math.abs(c.l - fill.oklch.l) < Math.abs(best.l - fill.oklch.l) ? c : best
   )
-  overrides['--color-primary'] = serialize({ l: chosen.l, c: primary.oklch.c, h: primary.oklch.h }, primary.alpha)
-  overrides['--on-accent-fg'] = chosen.ink
+  overrides[fillToken] = serialize({ l: chosen.l, c: fill.oklch.c, h: fill.oklch.h }, fill.alpha)
+  overrides[inkToken] = chosen.ink
 }
 
 function harmonizeStatus(baseTokens: Record<string, string>, seeds: readonly Oklch[]): Record<string, string> {
@@ -428,6 +444,9 @@ function harmonizeStatus(baseTokens: Record<string, string>, seeds: readonly Okl
  * for readable content ON it is `--on-accent-fg`'s job, computed separately.
  * A text-level target here would force a bright, valid seed color to darken
  * far more than a user choosing it as their brand color would expect.
+ * `--badge` vs `--color-bg-page` and `--color-bg-surface` use the same
+ * `uiMinRatio`: an unread dot has no text, so a secondary close to the page
+ * (e.g. a palette whose secondary IS its background) would otherwise vanish.
  *
  * `statusPairs` are the harmonized-mode-only status fg/surface and
  * badge-fg/badge-surface pairs (empty in 'static' mode, whose status tokens
@@ -444,6 +463,8 @@ function contrastPass(
     ['--color-text-primary', '--color-bg-surface', textMinRatio],
     ['--color-text-secondary', '--color-bg-surface', textMinRatio],
     ['--color-primary', '--color-bg-page', uiMinRatio],
+    ['--badge', '--color-bg-page', uiMinRatio],
+    ['--badge', '--color-bg-surface', uiMinRatio],
     ...statusPairs.map(([fg, bg]): [string, string, number] => [fg, bg, textMinRatio]),
   ]
   for (const [fgToken, bgToken, minRatio] of pairs) {

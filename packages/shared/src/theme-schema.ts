@@ -416,6 +416,13 @@ export const THEME_TOKEN_FAMILIES: readonly TokenFamilyDefinition[] = [
     status: 'active',
     tokens: ['--swatch-secondary', '--swatch-tertiary'],
   },
+  {
+    family: 'notification-badge',
+    description:
+      "Fill and ink of every notification count and unread dot. The fill follows the theme's secondary color by default.",
+    status: 'active',
+    tokens: ['--badge', '--on-badge'],
+  },
 ]
 
 /** Every token a theme must define today (all `active` families). */

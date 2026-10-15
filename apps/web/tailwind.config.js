@@ -282,6 +282,9 @@ export default {
         'agent-type-5': themeColor('--agent-type-5-fg'),
         'agent-type-6': themeColor('--agent-type-6-fg'),
         'on-accent': themeColor('--on-accent-fg'),
+        // Notification counts and unread dots: bg-badge with text-on-badge.
+        badge: themeColor('--badge'),
+        'on-badge': themeColor('--on-badge'),
         // Semantic theme colors. Token values in src/index.css are RGB channel
         // triplets and every entry uses the <alpha-value> channel form, so
         // opacity modifiers (bg-surface/50) compile to real rules instead of

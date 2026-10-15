@@ -241,6 +241,10 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 168 85 247;
     --swatch-tertiary: 196 181 253;
+    /* Notification badges: the fill is --swatch-secondary, lightness-nudged only where needed for 3:1
+       against the page and surface; the ink is whichever of black/white contrasts more with the fill. */
+    --badge: 168 85 247;
+    --on-badge: 0 0 0;
     --color-bg-page: 250 249 252;
     --color-bg-surface: 255 255 255;
     --color-bg-surface-secondary: 247 246 250;
@@ -756,6 +760,10 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 168 85 247;
     --swatch-tertiary: 196 181 253;
+    /* Notification badges: the fill is --swatch-secondary, lightness-nudged only where needed for 3:1
+       against the page and surface; the ink is whichever of black/white contrasts more with the fill. */
+    --badge: 168 85 247;
+    --on-badge: 0 0 0;
     --color-bg-page: 9 10 18;
     --color-bg-surface: 16 17 28;
     --color-bg-surface-secondary: 22 23 35;

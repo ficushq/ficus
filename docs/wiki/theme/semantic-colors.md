@@ -34,6 +34,23 @@ The seven decorative accents are purple, blue, green, violet, orange, amber, and
 
 Other components whose names contain “Badge” but do not use the shared `Badge` API are not part of this table; sandbox status components already delegate to the shared web status adapter.
 
+## Notification badges
+
+Every notification count and unread dot uses one token pair from the `notification-badge` family: `--badge` (fill) and `--on-badge` (ink), exposed as the `bg-badge` and `text-on-badge` utilities. Both are opaque RGB channels and have no `--opacity-*` metadata. Count pills use both. Unread dots use only `bg-badge`.
+
+- **Fill.** By default it is the theme's secondary color, the same value as `--swatch-secondary`. Lightness changes only when the secondary would not stand out: the fill must reach 3:1 (WCAG 1.4.11 non-text contrast) against `--color-bg-page` and `--color-bg-surface`, because an unread dot has no text to carry it. Hue and chroma are kept. In the BigBrain-ported built-ins the secondary is the page background, so their badges are a lighter or darker tone of that hue. Ember light is darkened slightly. Every other built-in uses its swatch exactly. Custom themes follow the same rule; see [custom themes](custom-themes.md).
+- **Ink.** Black or white, whichever contrasts more with the final fill. This always clears 4.5:1.
+- **Gate.** `theme/contrast.ts` checks `--badge` against the page and surface (3:1) and `--on-badge` against `--badge` (4.5:1) for every built-in. `theme/builtins.test.ts` also checks that each built-in's badge is its secondary swatch, or a lightness-nudged swatch of the same hue where the swatch fails the 3:1 check.
+
+| Surface (`apps/web/src/components/`)                                                                                                                                                                 | Uses                                                                                                                                                         |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AppNav.tsx`: Feed (pending Action Center) count, desktop header and mobile dock                                                                                                                     | `bg-badge text-on-badge`. The Feed error state (`!`, "Action Center unavailable") is a failure, not a count, and keeps `bg-status-danger-500 text-on-strong` |
+| `AppNav.tsx`: Inbox unread count, desktop header and mobile dock                                                                                                                                     | `bg-badge text-on-badge`                                                                                                                                     |
+| `AssistantActivityBadge.tsx`: unread Assistant conversations                                                                                                                                         | `bg-badge text-on-badge`                                                                                                                                     |
+| Unread dots: `InboxMessageRow.tsx`, `squads/AgentInboxPanel.tsx`, `AssistantUpdateCard.tsx`, `AssistantUpdateChip.tsx`, `AssistantCommandCenter.tsx`, `UnifiedAssistant.tsx`, `FeedVisitSummary.tsx` | `bg-badge`. The unread row tint (`bg-accent/5`) stays on the accent                                                                                          |
+
+These do not use the badge token, because they show state rather than a count of unread items: the shared `Badge` component's status and decorative variants, `AgentViewTabs.tsx`'s active-subagent count (an in-progress indicator on `status-progress`), and `AgentActivityDot`.
+
 ## Miscellaneous chrome
 
 - `::selection` uses `--color-selection-bg` with `--color-text-primary`: a soft accent-tinted background (leaf-green in Ficus, lavender in Iris) and readable primary text in both appearances, replacing the unstyled browser default. `--color-selection-border` remains for bordered selection controls; CSS selection highlights do not support borders.

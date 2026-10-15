@@ -308,6 +308,36 @@ test('compileCustomTheme resolves the requested variant and computes custom-rgb/
   expect(compileCustomTheme(result.document, 'system' as never)).toEqual(compileCustomTheme(result.document, 'light'))
 })
 
+test('compileCustomTheme derives the badge from the palette secondary, and an explicit badge override wins', () => {
+  const baseTokens = {
+    '--color-bg-page': '250 249 252',
+    '--color-bg-surface': '255 255 255',
+    '--color-primary': '91 33 182',
+    '--swatch-secondary': '168 85 247',
+    '--badge': '168 85 247',
+    '--on-badge': '0 0 0',
+  }
+  const doc = (light: Record<string, string>) => {
+    const result = validateCustomTheme(
+      JSON.stringify({
+        ...v2doc,
+        palette: { primary: '#0ea5e9', secondary: '#c2410c' },
+        variants: { light, dark: {} },
+      }),
+      builtins
+    )
+    if (!result.ok) throw new Error(result.error)
+    return result.document
+  }
+  const derived = compileCustomTheme(doc({}), 'light', baseTokens)
+  expect(derived['--badge']).toBe('194 65 12')
+  expect(derived['--custom-rgb-badge']).toBe('194 65 12')
+  expect(derived['--on-badge']).toBe('255 255 255')
+  const explicit = compileCustomTheme(doc({ '--badge': '#123456', '--on-badge': '#fedcba' }), 'light', baseTokens)
+  expect(explicit['--badge']).toBe('18 52 86')
+  expect(explicit['--on-badge']).toBe('254 220 186')
+})
+
 test('compileCustomTheme on a unified document always resolves the constant variant', () => {
   const result = validate({
     ...v1doc,

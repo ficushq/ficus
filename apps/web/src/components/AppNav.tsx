@@ -30,6 +30,11 @@ import {
 } from './navModel'
 import { TOGGLE_ASSISTANT_EVENT } from '@ficus/shared/browser-keys'
 
+/** Every notification count (Feed, Inbox, Assistant) shares the theme's badge color. */
+const NAV_BADGE_CLASS = 'bg-badge text-on-badge'
+/** The Feed badge's "!" means the Action Center failed to load: a danger state, not a count. */
+const NAV_BADGE_ERROR_CLASS = 'bg-status-danger-500 text-on-strong'
+
 type NavDependencies = {
   usePendingActions?: () => { data?: unknown[]; isError?: boolean; isLoading?: boolean; isFetching?: boolean }
   VoiceCompanionButton?: typeof VoiceCompanionButton
@@ -174,7 +179,10 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
                     {showActionBadge && (
                       <span
                         aria-label={actionsError ? 'Action Center unavailable' : undefined}
-                        className="absolute -top-1 -right-1 bg-status-attention-500 text-status-attention-950 text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1"
+                        className={clsx(
+                          'absolute -top-1 -right-1 text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1',
+                          actionsError ? NAV_BADGE_ERROR_CLASS : NAV_BADGE_CLASS
+                        )}
                       >
                         {actionsError ? '!' : (actionCount ?? 0) > 99 ? '99+' : actionCount}
                       </span>
@@ -234,7 +242,12 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             >
               <InboxIcon className="w-5 h-5" />
               {unreadInboxCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-status-danger-500 text-on-strong text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                <span
+                  className={clsx(
+                    'absolute -top-0.5 -right-0.5 text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1',
+                    NAV_BADGE_CLASS
+                  )}
+                >
                   {unreadInboxCount > 99 ? '99+' : unreadInboxCount}
                 </span>
               )}
@@ -330,9 +343,7 @@ export function MobileBottomNav({
                   aria-label={showActionBadge && actionsError ? 'Action Center unavailable' : undefined}
                   className={clsx(
                     'absolute top-1.5 left-1/2 translate-x-1/2 text-[10px] font-bold rounded-full min-w-[1rem] h-4 flex items-center justify-center px-1',
-                    showActionBadge
-                      ? 'bg-status-attention-500 text-status-attention-950'
-                      : 'bg-status-danger-500 text-on-strong'
+                    showActionBadge && actionsError ? NAV_BADGE_ERROR_CLASS : NAV_BADGE_CLASS
                   )}
                 >
                   {typeof badgeCount === 'number' && badgeCount > 99 ? '99+' : badgeCount}

@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import postcss from 'postcss'
 import { ACTIVE_THEME_TOKENS, validateThemeTokenSet } from '@ficus/shared'
-import { palettes, resolveToken, contrastPairs, pairRatio, contrast, composite } from './test/builtins'
+import { srgbToOklch } from '@ficus/shared/color-oklch'
+import { palettes, resolveToken, contrastPairs, pairRatio, contrast, composite, tokenRgba } from './test/builtins'
 
 test('contrast math uses sRGB luminance, fractional channels, and alpha compositing', () => {
   expect(contrast([0, 0, 0], [255, 255, 255])).toBe(21)
@@ -31,6 +32,28 @@ for (const palette of palettes) {
       .map((pair) => ({ ...pair, ratio: pairRatio(palette.tokens, pair) }))
       .filter((pair) => pair.ratio < pair.minimum)
     expect(failures).toEqual([])
+  })
+  test(`${palette.id}/${palette.appearance}: the notification badge follows the secondary swatch`, () => {
+    const swatch = resolveToken(palette.tokens, '--swatch-secondary')
+    const badge = resolveToken(palette.tokens, '--badge')
+    const visible = ['--color-bg-page', '--color-bg-surface'].every(
+      (bg) => pairRatio({ ...palette.tokens, '--badge': swatch }, { fg: '--badge', bg, minimum: 3 }) >= 3
+    )
+    if (visible) {
+      // The secondary already stands out from the page and header surface: the badge is exactly the swatch.
+      expect(badge).toBe(swatch)
+    } else {
+      // Otherwise it is the same hue family, only lightness-nudged until it does (the contrast gate above checks
+      // 3:1). Darkening a bright yellow clips at the sRGB gamut edge, which drifts the hue a little toward amber.
+      const hue = (token: string, tokens: Record<string, string>) => {
+        const [r, g, b] = tokenRgba(tokens, token)
+        return srgbToOklch([r!, g!, b!])
+      }
+      const from = hue('--swatch-secondary', palette.tokens)
+      const to = hue('--badge', palette.tokens)
+      if (from.c > 0.02) expect(Math.abs(((to.h - from.h + 540) % 360) - 180)).toBeLessThan(20)
+      expect(badge).not.toBe(swatch)
+    }
   })
 }
 

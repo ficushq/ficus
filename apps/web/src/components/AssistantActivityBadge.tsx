@@ -7,7 +7,7 @@ export function AssistantActivityBadge({ count }: { count: number }) {
   return (
     <span
       aria-label={`${count} Assistant conversation${count === 1 ? '' : 's'} with unread updates`}
-      className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-on-accent"
+      className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-badge px-1 text-[10px] font-bold text-on-badge"
     >
       {count > 99 ? '99+' : count}
     </span>

@@ -52,7 +52,7 @@ export function AssistantUpdateChip({
           <span aria-hidden="true" className="shrink-0">
             ↳
           </span>
-          {unread && <span aria-label="Unread" className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
+          {unread && <span aria-label="Unread" className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-badge" />}
           <span className="min-w-0 truncate font-medium text-secondary">{label}</span>
           {status && <span className="shrink-0">· {status}</span>}
           <span className="shrink-0">· {formatAssistantUpdateTime(latest.createdAt)}</span>

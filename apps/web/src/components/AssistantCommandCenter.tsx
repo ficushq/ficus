@@ -409,10 +409,7 @@ export function AssistantCommandCenter({
                     <AgentActivityDot status={result.status} className="shrink-0" />
                   )}
                   {result.unread && (
-                    <span
-                      aria-label="Unread updates"
-                      className="inline-block h-2 w-2 shrink-0 rounded-full bg-accent"
-                    />
+                    <span aria-label="Unread updates" className="inline-block h-2 w-2 shrink-0 rounded-full bg-badge" />
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{result.label}</span>

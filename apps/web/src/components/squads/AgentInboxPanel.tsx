@@ -111,7 +111,7 @@ function MessageItem({ message }: { message: InboxMessage }) {
         >
           {formatBadgeLabel(message)}
         </span>
-        {isUnread && <span className="w-2 h-2 bg-accent rounded-full flex-shrink-0" />}
+        {isUnread && <span className="w-2 h-2 bg-badge rounded-full flex-shrink-0" />}
       </div>
       <p className="text-xs text-muted mt-1">{new Date(message.createdAt).toLocaleString()}</p>
       {message.subject && <p className="font-medium text-sm text-primary mt-1">{message.subject}</p>}

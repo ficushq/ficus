@@ -94,6 +94,10 @@ add('--term-fg', '--term-bg')
 add('--term-muted', '--term-bg')
 add('--term-cursor', '--term-bg', 3)
 for (const bg of ['--color-primary', '--color-primary-hover', '--color-primary-active']) add('--on-accent-fg', bg)
+// Notification badges: an unread dot is a graphical indicator on the page or header surface (3:1), and a count is
+// text on the badge fill. The fill pairs come first so the built-in repair pass settles the fill before its ink.
+for (const bg of ['--color-bg-page', '--color-bg-surface']) add('--badge', bg, 3)
+add('--on-badge', '--badge')
 // The checked checkbox's tick is drawn on the accent fill (index.css), a graphical object: 3:1.
 add('--checkbox-check', '--color-primary', 3)
 add('--graph-label', '--graph-bg')
