@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import type { WorkflowScope, WorkflowSource, WorkflowEventTrigger } from '@ficus/shared'
 import { db, workflows, squads, users, type DbTx } from '../../db'
 import { hasPermission, type Identity } from '../rbac'
@@ -10,10 +10,50 @@ export async function canAccessWorkflow(
   permission: CatalogPermission,
   scope: WorkflowScope = { kind: 'instance' }
 ) {
-  if (scope.kind === 'squad') {
-    const [squad] = await db.select({ id: squads.id }).from(squads).where(eq(squads.id, scope.squadId))
-    return !!squad && (await hasPermission(identity, permission, scope.squadId))
-  }
+  return decideScopeAccess(identity, permission, scope, async (squadId) => {
+    const [squad] = await db.select({ id: squads.id }).from(squads).where(eq(squads.id, squadId))
+    return !!squad
+  })
+}
+/**
+ * The rows the caller may access under `permission`, in their original order, with the same
+ * answer {@link canAccessWorkflow} gives row by row. Each distinct scope is decided once and the
+ * referenced squads are looked up in one query, so the cost scales with the number of scopes,
+ * not the number of rows: agent permissions are uncached and cost several queries per check.
+ */
+export async function filterAccessibleWorkflows<Row extends { scope: WorkflowScope }>(
+  identity: Identity,
+  permission: CatalogPermission,
+  rows: Row[]
+): Promise<Row[]> {
+  const squadIds = [...new Set(rows.flatMap((row) => (row.scope.kind === 'squad' ? [row.scope.squadId] : [])))]
+  const existingSquads = new Set(
+    squadIds.length
+      ? (await db.select({ id: squads.id }).from(squads).where(inArray(squads.id, squadIds))).map((row) => row.id)
+      : []
+  )
+  const decisions = new Map<string, Promise<boolean>>()
+  for (const { scope } of rows)
+    if (!decisions.has(scopeKey(scope)))
+      decisions.set(
+        scopeKey(scope),
+        decideScopeAccess(identity, permission, scope, async (squadId) => existingSquads.has(squadId))
+      )
+  const keys = [...decisions.keys()]
+  const allowed = new Set((await Promise.all(decisions.values())).flatMap((ok, index) => (ok ? [keys[index]!] : [])))
+  return rows.filter((row) => allowed.has(scopeKey(row.scope)))
+}
+function scopeKey(scope: WorkflowScope) {
+  return scope.kind === 'squad' ? `squad:${scope.squadId}` : scope.kind === 'user' ? `user:${scope.userId}` : 'instance'
+}
+async function decideScopeAccess(
+  identity: Identity,
+  permission: CatalogPermission,
+  scope: WorkflowScope,
+  squadExists: (squadId: string) => Promise<boolean>
+) {
+  if (scope.kind === 'squad')
+    return (await squadExists(scope.squadId)) && (await hasPermission(identity, permission, scope.squadId))
   if (scope.kind === 'user') {
     if (identity.type !== 'user' || identity.userId !== scope.userId) return false
     const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, scope.userId))
