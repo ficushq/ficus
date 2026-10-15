@@ -2,7 +2,7 @@ import { isLiveAgentStatus, type SessionUsage, type MessageMetadata } from '@fic
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { AgentSession } from '../AgentSession'
-import { prompt } from '../../lib/prompts'
+import { buildSlotPoolsPrompt, prompt } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { buildWorkspacePrompt } from '../../lib/prompts/workspace-prompt'
 import { createWebTools } from '../../tools/web-search'
@@ -217,6 +217,9 @@ export class SubagentRunner extends AgentRunner {
         toolNames: inheritedToolNames,
       })
     )
+    // Subagents get no squad context, but the shared rules tell them to claim
+    // the squad's pools before protected work, so list them.
+    if (squad) p.text(await buildSlotPoolsPrompt(squad.id))
     if (assignmentSystemPrompt?.trim()) {
       p.section(
         'Your assignment context',

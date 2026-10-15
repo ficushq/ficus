@@ -1499,6 +1499,13 @@
       "when": 1792036609561,
       "tag": "0213_consultant_idle_dormancy_default_on",
       "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1792040244595,
+      "tag": "0214_slot_pool_usage_and_disable",
+      "breakpoints": true
     }
   ]
 }
