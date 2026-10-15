@@ -241,6 +241,10 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 168 85 247;
     --swatch-tertiary: 196 181 253;
+    /* Notification badges: --swatch-secondary fitted by fitBadgeColors (packages/shared/src/theme-derivation.ts):
+       black or white ink at 7:1, the fill's lightness moved only as far as that and 3:1 on page/surface need. */
+    --badge: 128 34 201;
+    --on-badge: 255 255 255;
     --color-bg-page: 250 249 252;
     --color-bg-surface: 255 255 255;
     --color-bg-surface-secondary: 247 246 250;
@@ -756,6 +760,10 @@
     --brand-ink: 255 255 255;
     --swatch-secondary: 168 85 247;
     --swatch-tertiary: 196 181 253;
+    /* Notification badges: --swatch-secondary fitted by fitBadgeColors (packages/shared/src/theme-derivation.ts):
+       black or white ink at 7:1, the fill's lightness moved only as far as that and 3:1 on page/surface need. */
+    --badge: 186 116 255;
+    --on-badge: 0 0 0;
     --color-bg-page: 9 10 18;
     --color-bg-surface: 16 17 28;
     --color-bg-surface-secondary: 22 23 35;

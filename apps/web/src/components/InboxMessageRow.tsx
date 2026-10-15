@@ -41,7 +41,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
           className={clsx(
             // Its own gutter, left of the text (which every section of the row lines up with, at pl-6).
             'absolute left-2.5 top-[1.3rem] w-1.5 h-1.5 rounded-full',
-            isUnread ? 'bg-accent' : 'bg-transparent'
+            isUnread ? 'bg-badge' : 'bg-transparent'
           )}
         />
 

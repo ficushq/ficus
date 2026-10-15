@@ -25,6 +25,10 @@
  *   lightness/chroma preserved.
  * - swatch secondary/tertiary: the palette's own secondary/tertiary, or their
  *   colour-theory companions when unset (see `suggestPaletteSeeds`).
+ * - notification badge (--badge fill, --on-badge ink): the same secondary as
+ *   the swatch, then fitted by `fitBadgeColors` after the contrast pass: black
+ *   or white ink at 7:1, with the fill lightness-nudged only as far as needed
+ *   to keep that and stay 3:1 (4.5:1 high) against the page and surface.
  * - categorical families (agent-type, badge-decoration, graph chart
  *   categories/links, a curated syntax-accent subset, utility-decoration):
  *   hue picked from primary/secondary/tertiary by slot index; base
@@ -202,15 +206,16 @@ const SELECTION_BORDER = '--color-selection-border'
 /** Terminal/log-terminal tokens whose slot name names an ANSI color: kept unchanged (semantic). */
 const ANSI_NAMED = /-(black|red|green|yellow|blue|magenta|cyan|white)$/
 
-type Bucket = 'neutral' | 'primary' | 'ink' | 'brand' | 'swatch' | 'categorical' | 'status' | 'unchanged'
+type Bucket = 'neutral' | 'primary' | 'ink' | 'brand' | 'swatch' | 'badge' | 'categorical' | 'status' | 'unchanged'
 
 function classify(token: string): Bucket {
-  if (token === '--on-accent-fg') return 'ink'
+  if (token === '--on-accent-fg' || token === '--on-badge') return 'ink'
   if (PRIMARY_FAMILY.includes(token)) return 'primary'
   const family = themeTokenFamily(token)
   if (!family) return 'unchanged'
   if (family.family === 'status') return 'status'
   if (family.family === 'swatch') return 'swatch'
+  if (family.family === 'notification-badge') return 'badge'
   if (family.family === 'ansi') return 'unchanged'
   if (family.family === 'terminal' || family.family === 'log-terminal')
     return ANSI_NAMED.test(token) ? 'unchanged' : 'neutral'
@@ -290,6 +295,9 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
       // The swatch shows the palette's own secondary/tertiary (or their colour-theory companions).
       const seed = token === '--swatch-tertiary' ? tertiaryOklch : secondaryOklch
       overrides[token] = serialize(seed, base.alpha)
+    } else if (bucket === 'badge') {
+      // Notification badges start from the theme's secondary, exactly like its secondary swatch.
+      overrides[token] = serialize(secondaryOklch, base.alpha)
     } else if (bucket === 'brand') {
       overrides[token] = serialize({ l: base.oklch.l, c: base.oklch.c, h: tertiaryOklch.h }, base.alpha)
     } else if (bucket === 'categorical') {
@@ -318,7 +326,71 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
   // --on-accent-fg with the post-pass --color-primary, so a stale choice can
   // under-shoot the target against what's really on screen.
   chooseInk(overrides, textMinRatio)
+
+  // The badge is fitted last, against the final page and surface.
+  if (overrides['--badge']) {
+    const backgrounds = ['--color-bg-page', '--color-bg-surface']
+      .map((token) => overrides[token] ?? baseTokens[token])
+      .filter((value): value is string => !!value)
+    const fitted = fitBadgeColors(overrides['--badge'], backgrounds, uiMinRatio)
+    if (fitted) {
+      overrides['--badge'] = fitted.fill
+      overrides['--on-badge'] = fitted.ink
+    }
+  }
   return overrides
+}
+
+/** Badge counts are 10px bold digits, far below normal text size, so their ink is held to WCAG AAA (7:1). */
+export const BADGE_INK_MIN_RATIO = 7
+
+/**
+ * Fits a notification badge: picks black or white ink and the fill lightness (hue kept; chroma lowered only to stay
+ * in the sRGB gamut) so that the ink clears `BADGE_INK_MIN_RATIO` against the fill AND the fill clears `uiMinRatio`
+ * (non-text contrast, so an unread dot stays visible) against every background. Of the two inks, it picks the one
+ * needing the smaller lightness move from `fill`; an already-compliant fill is returned unchanged. On a light page
+ * this lands on a darker fill with white ink; on a dark page, a lighter fill with black ink. If no lightness satisfies
+ * every constraint (e.g. a mid-grey page), it returns the candidate with the best worst-case ratio. Shared by custom
+ * theme derivation and the hand-authored built-ins (see `apps/web/src/theme/builtins.test.ts`).
+ */
+export function fitBadgeColors(
+  fill: string,
+  backgrounds: readonly string[],
+  uiMinRatio = 3
+): { fill: string; ink: '#000000' | '#ffffff' } | null {
+  const seed = toOklch(fill)
+  const bgs = backgrounds.map((bg) => parseChannels(bg)?.rgb).filter((rgb): rgb is [number, number, number] => !!rgb)
+  if (!seed || bgs.length === 0) return null
+  const inks = [
+    { ink: '#000000' as const, rgb: [0, 0, 0] as const },
+    { ink: '#ffffff' as const, rgb: [255, 255, 255] as const },
+  ]
+  const at = (l: number) => {
+    const hex = l === seed.oklch.l ? serialize(seed.oklch, 1) : serializeInGamut({ ...seed.oklch, l }, 1)
+    return { hex, rgb: parseChannels(hex)!.rgb }
+  }
+  // Worst-case ratio over every constraint, normalized so >= 1 means all pass.
+  const score = (rgb: [number, number, number], inkRgb: readonly [number, number, number]) =>
+    Math.min(wcagContrast(inkRgb, rgb) / BADGE_INK_MIN_RATIO, ...bgs.map((bg) => wcagContrast(rgb, bg) / uiMinRatio))
+  let best: { hex: string; ink: '#000000' | '#ffffff'; move: number; score: number } | null = null
+  const STEPS = 400
+  // Up to STEPS lightness steps in each direction covers the whole 0..1 range from any seed.
+  for (let i = 0; i <= 2 * STEPS; i++) {
+    // Visit lightnesses outward from the seed, so the first passing candidate per ink is the smallest move.
+    const offset = (Math.ceil(i / 2) / STEPS) * (i % 2 === 0 ? 1 : -1)
+    const l = i === 0 ? seed.oklch.l : seed.oklch.l + offset
+    if (l < 0 || l > 1) continue
+    const { hex, rgb } = at(l)
+    for (const { ink, rgb: inkRgb } of inks) {
+      const s = score(rgb, inkRgb)
+      const move = Math.abs(l - seed.oklch.l)
+      const better =
+        !best || (s >= 1 && (best.score < 1 || move < best.move)) || (s < 1 && best.score < 1 && s > best.score)
+      if (better) best = { hex, ink, move, score: s }
+    }
+    if (best && best.score >= 1 && Math.ceil(i / 2) / STEPS > best.move) break
+  }
+  return best && { fill: best.hex, ink: best.ink }
 }
 
 /** Chooses --on-accent-fg (black or white) by contrast against the FINAL

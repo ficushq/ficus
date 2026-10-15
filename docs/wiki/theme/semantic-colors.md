@@ -34,6 +34,27 @@ The seven decorative accents are purple, blue, green, violet, orange, amber, and
 
 Other components whose names contain “Badge” but do not use the shared `Badge` API are not part of this table; sandbox status components already delegate to the shared web status adapter.
 
+## Notification badges
+
+Every notification count and unread dot uses one token pair from the `notification-badge` family: `--badge` (fill) and `--on-badge` (ink), exposed as the `bg-badge` and `text-on-badge` utilities. Both are opaque RGB channels and have no `--opacity-*` metadata. Count pills use both. Unread dots use only `bg-badge`.
+
+- **Starting point.** The theme's secondary color, the same value as `--swatch-secondary`.
+- **Fitting.** `fitBadgeColors` (`packages/shared/src/theme-derivation.ts`) picks black or white ink and the fill's lightness together, keeping the hue. Two constraints must hold:
+  - The ink reaches 7:1 (WCAG AAA) against the fill. Counts are 10px bold digits, far below normal text size. At AA (4.5:1), black on a mid-tone teal or grey-green was hard to read.
+  - The fill reaches 3:1 (WCAG 1.4.11 non-text contrast) against `--color-bg-page` and `--color-bg-surface`. An unread dot has no text to carry it.
+- **Smallest move.** Of the two inks, the one needing the smaller lightness move wins, and a secondary that already meets both constraints ships unchanged. On a light page this usually lands on a deeper shade of the secondary with white ink. On a dark page it lands on a lighter shade with black ink. In the BigBrain-ported built-ins the secondary is the page background, so their badges are a clearly lighter or darker tone of that hue.
+- **Custom themes** use the same function; see [custom themes](custom-themes.md).
+- **Gate.** `theme/contrast.ts` checks `--badge` against the page and surface (3:1) and `--on-badge` against `--badge` (7:1) for every built-in. `theme/builtins.test.ts` also checks that each built-in's pair is its secondary swatch run through `fitBadgeColors`, so hand-authored values cannot drift from the rule.
+
+| Surface (`apps/web/src/components/`)                                                                                                                                                                 | Uses                                                                                                                                                         |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AppNav.tsx`: Feed (pending Action Center) count, desktop header and mobile dock                                                                                                                     | `bg-badge text-on-badge`. The Feed error state (`!`, "Action Center unavailable") is a failure, not a count, and keeps `bg-status-danger-500 text-on-strong` |
+| `AppNav.tsx`: Inbox unread count, desktop header and mobile dock                                                                                                                                     | `bg-badge text-on-badge`                                                                                                                                     |
+| `AssistantActivityBadge.tsx`: unread Assistant conversations                                                                                                                                         | `bg-badge text-on-badge`                                                                                                                                     |
+| Unread dots: `InboxMessageRow.tsx`, `squads/AgentInboxPanel.tsx`, `AssistantUpdateCard.tsx`, `AssistantUpdateChip.tsx`, `AssistantCommandCenter.tsx`, `UnifiedAssistant.tsx`, `FeedVisitSummary.tsx` | `bg-badge`. The unread row tint (`bg-accent/5`) stays on the accent                                                                                          |
+
+These do not use the badge token, because they show state rather than a count of unread items: the shared `Badge` component's status and decorative variants, `AgentViewTabs.tsx`'s active-subagent count (an in-progress indicator on `status-progress`), and `AgentActivityDot`.
+
 ## Miscellaneous chrome
 
 - `::selection` uses `--color-selection-bg` with `--color-text-primary`: a soft accent-tinted background (leaf-green in Ficus, lavender in Iris) and readable primary text in both appearances, replacing the unstyled browser default. `--color-selection-border` remains for bordered selection controls; CSS selection highlights do not support borders.

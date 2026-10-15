@@ -27,6 +27,7 @@ const FixtureVoiceButton = () => <button>Fixture voice trigger</button>
 
 const ownerUserId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
 let unreadAssistantConversations = 0
+let unreadInboxMessages = 0
 
 function renderWithProviders(children: ReactNode, path = '/squads') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -52,6 +53,9 @@ function renderWithProviders(children: ReactNode, path = '/squads') {
   }
   if (voiceStatus) {
     queryClient.setQueryData(queryKeys.voice.status(), voiceStatus)
+  }
+  if (unreadInboxMessages > 0) {
+    queryClient.setQueryData(queryKeys.inbox.mineCount(), { count: unreadInboxMessages })
   }
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
@@ -196,6 +200,61 @@ describe('MobileBottomNav rendering', () => {
       )
     } finally {
       unreadAssistantConversations = 0
+    }
+  })
+})
+
+describe('notification badge colors', () => {
+  beforeEach(() => {
+    resetTabHistory()
+    permissions = new Set<string>(['chat:send'])
+    permissionsLoading = false
+    voiceStatus = { enabled: true }
+  })
+  afterEach(() => {
+    unreadAssistantConversations = 0
+    unreadInboxMessages = 0
+  })
+
+  /** The class attribute of the badge span whose text is `text`. */
+  const badgeClass = (html: string, text: string) => {
+    const match = new RegExp(`<span[^>]*class="([^"]*)"[^>]*>${text.replace('+', '\\+')}</span>`).exec(html)
+    expect(match).not.toBeNull()
+    return match![1]!
+  }
+  const useFiveActions = () => ({ data: Array.from({ length: 5 }, (_, id) => ({ id })) })
+
+  test('Feed, Inbox and Assistant counts all use the theme badge token on desktop', () => {
+    unreadInboxMessages = 3
+    unreadAssistantConversations = 4
+    const html = renderWithProviders(<AppHeader usePendingActions={useFiveActions} />)
+    for (const count of ['5', '3', '4']) {
+      const className = badgeClass(html, count)
+      expect(className).toContain('bg-badge')
+      expect(className).toContain('text-on-badge')
+      expect(className).not.toMatch(/bg-status-|bg-accent/)
+    }
+  })
+
+  test('Feed and Inbox counts use the theme badge token in the mobile dock', () => {
+    unreadInboxMessages = 3
+    const html = renderWithProviders(<MobileBottomNav usePendingActions={useFiveActions} />)
+    for (const count of ['5', '3']) {
+      const className = badgeClass(html, count)
+      expect(className).toContain('bg-badge text-on-badge')
+      expect(className).not.toContain('bg-status-')
+    }
+  })
+
+  test('the Feed error badge stays a distinct danger color on desktop and mobile', () => {
+    const useFailedActions = () => ({ data: [], isError: true })
+    for (const html of [
+      renderWithProviders(<AppHeader usePendingActions={useFailedActions} />),
+      renderWithProviders(<MobileBottomNav usePendingActions={useFailedActions} />),
+    ]) {
+      const className = badgeClass(html, '!')
+      expect(className).toContain('bg-status-danger-500')
+      expect(className).not.toContain('bg-badge')
     }
   })
 })

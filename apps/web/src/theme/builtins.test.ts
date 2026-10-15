@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import postcss from 'postcss'
-import { ACTIVE_THEME_TOKENS, validateThemeTokenSet } from '@ficus/shared'
-import { palettes, resolveToken, contrastPairs, pairRatio, contrast, composite } from './test/builtins'
+import { ACTIVE_THEME_TOKENS, customColorChannels, validateThemeTokenSet } from '@ficus/shared'
+import { srgbToOklch } from '@ficus/shared/color-oklch'
+import { fitBadgeColors } from '@ficus/shared/theme-derivation'
+import { palettes, resolveToken, contrastPairs, pairRatio, contrast, composite, tokenRgba } from './test/builtins'
 
 test('contrast math uses sRGB luminance, fractional channels, and alpha compositing', () => {
   expect(contrast([0, 0, 0], [255, 255, 255])).toBe(21)
@@ -31,6 +33,22 @@ for (const palette of palettes) {
       .map((pair) => ({ ...pair, ratio: pairRatio(palette.tokens, pair) }))
       .filter((pair) => pair.ratio < pair.minimum)
     expect(failures).toEqual([])
+  })
+  test(`${palette.id}/${palette.appearance}: the notification badge is the secondary swatch, fitted for legibility`, () => {
+    // Hand-authored and generated built-ins alike: the swatch run through the shared fitting rule (7:1 ink, 3:1 on the
+    // page and surface, smallest lightness move). Generated blocks derive from the unrounded seed, so allow ±2 per channel.
+    const fitted = fitBadgeColors(
+      resolveToken(palette.tokens, '--swatch-secondary'),
+      ['--color-bg-page', '--color-bg-surface'].map((token) => resolveToken(palette.tokens, token))
+    )!
+    const channels = (value: string) => customColorChannels(value)!.split(' ').map(Number)
+    const badge = resolveToken(palette.tokens, '--badge').split(' ').map(Number)
+    channels(fitted.fill).forEach((channel, i) => expect(Math.abs(channel - badge[i]!)).toBeLessThanOrEqual(2))
+    expect(resolveToken(palette.tokens, '--on-badge')).toBe(customColorChannels(fitted.ink)!)
+    const hue = (rgb: number[]) => srgbToOklch([rgb[0]!, rgb[1]!, rgb[2]!])
+    const swatch = hue(tokenRgba(palette.tokens, '--swatch-secondary'))
+    // Same hue family (low-chroma swatches have no meaningful hue).
+    if (swatch.c > 0.02) expect(Math.abs(((hue(badge).h - swatch.h + 540) % 360) - 180)).toBeLessThan(20)
   })
 }
 

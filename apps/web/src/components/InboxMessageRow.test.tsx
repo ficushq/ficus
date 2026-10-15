@@ -58,6 +58,8 @@ describe('MessageRow', () => {
     expect(html).toContain('data-testid="inbox-row-meta-mobile"')
     expect(html).toContain('md:hidden')
     expect(html).toContain('1m ago')
+    // The unread gutter dot uses the theme's notification badge color.
+    expect(html).toContain('rounded-full bg-badge')
     expect(html).toContain('Mark read')
     expect(html).toContain('hidden md:flex')
   })

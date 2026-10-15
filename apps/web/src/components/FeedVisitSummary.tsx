@@ -152,7 +152,7 @@ export function AccountFeedVisit({
                     to={{ pathname: location.pathname, search: params.toString() }}
                     className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-3 hover:bg-surface-hover"
                   >
-                    <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
+                    <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-badge" />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium text-primary break-words">{conversation.title}</span>
                       {latest && <span className="mt-0.5 block truncate text-xs text-muted">{latest.preview}</span>}

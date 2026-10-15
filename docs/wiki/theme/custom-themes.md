@@ -163,6 +163,7 @@ into one of these buckets, keyed off `THEME_TOKEN_FAMILIES`:
 | Ink                                | `--on-accent-fg`                                                                                               | Chosen as pure black or white by contrast against the _final_ primary (after the contrast pass below, not before — see there), not hue-derived.                                                                                                                                                                                                                                                                       |
 | Brand/voice                        | Brand gradient/tile/ink, voice-material glows                                                                  | The tertiary hue; base lightness/chroma preserved.                                                                                                                                                                                                                                                                                                                                                                    |
 | Swatch                             | `--swatch-secondary`, `--swatch-tertiary` (the colours theme swatches blend with the primary)                  | The palette's own secondary and tertiary; when unset, their colour-theory companions from the primary (`suggestPaletteSeeds`: +30° / +150°). Built-ins define their own.                                                                                                                                                                                                                                              |
+| Notification badge                 | `--badge` (fill of every notification count and unread dot), `--on-badge` (ink)                                | Starts from the same secondary as `--swatch-secondary`: the palette's `secondary` seed, or its colour-theory companion when unset. Then fitted after the contrast pass (see below), which may move only the fill's lightness.                                                                                                                                                                                         |
 | Categorical                        | agent-type, badge-decoration, graph chart categories/links, a curated syntax-accent subset, utility-decoration | Hue picked from primary/secondary/tertiary by slot index; base lightness/chroma preserved.                                                                                                                                                                                                                                                                                                                            |
 | Status (`static`, default)         | The 162-token status grid                                                                                      | **Untouched** — absent from the derived overrides, so it keeps inheriting the base theme's own values. Semantic meaning (danger=red, success=green, ...) is never reassigned by a palette.                                                                                                                                                                                                                            |
 | Status (`harmonized`)              | Same grid                                                                                                      | Each role's hue is bounded-shifted (≤22°, and clamped to never cross halfway into a neighboring role's own hue — roles cannot swap identities) toward whichever seed color is angularly nearest, chroma blended 30% toward that seed; **lightness stays per-step** so the ramp's contrast structure holds. Editor: a "Status colors: Static / Harmonized" toggle in the palette section, with live whole-app preview. |
@@ -207,6 +208,28 @@ of them pass, preferring whichever candidate needs the smaller move. A
 property-style test sweeps dozens of seed colors, in both appearances, and
 asserts every built-in critical pair — including this real ember/dark
 regression case — still clears its target.
+
+The notification badge is fitted last, by `fitBadgeColors`. It chooses black
+or white `--on-badge` and the `--badge` lightness together, keeping the hue,
+so that two constraints hold:
+
+- The ink reaches 7:1 against the fill. This is WCAG AAA, because counts are
+  10px digits; black ink on a mid-tone fill at about 6:1 read poorly.
+- The fill reaches the **non-text** target (3:1, or 4.5:1 for
+  `contrast: 'high'`) against the final `--color-bg-page` and
+  `--color-bg-surface`, so an unread dot stays visible even when the seed is
+  close to the page.
+
+The ink needing the smaller lightness move wins. A seed that already meets
+both constraints ships unchanged. Only the badge moves: `--swatch-secondary`
+keeps the exact seed.
+
+An explicit `--badge` or `--on-badge` override in the advanced per-token
+section (both are in its token list, like every active token) wins over the
+derived value, as every explicit override does. Without a palette, a custom
+theme inherits its base theme's badge pair. Override both tokens together
+when choosing a custom fill, so the ink still contrasts with it (the editor's
+contrast warnings flag a pair under 7:1).
 
 Derivation needs the base theme's own resolved token values (to preserve
 lightness/chroma/alpha), which only exist in the CSS cascade — matching the
