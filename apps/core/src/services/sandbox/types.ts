@@ -177,11 +177,17 @@ export interface ISandboxManager {
    */
   exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer>
   execStatus(sandboxId: string, args: string[]): Promise<number>
+  /**
+   * Run a long-lived command and stream its output. `onEnd` fires at most
+   * once when the stream stops for ANY reason (command exit, transport error,
+   * sandbox loss or cancel) so long-lived observers can re-establish it.
+   */
   streamExec?(
     sandboxId: string,
     args: string[],
     onStdout: (chunk: Buffer) => void,
-    onStderr?: (chunk: Buffer) => void
+    onStderr?: (chunk: Buffer) => void,
+    onEnd?: () => void
   ): { cancel: () => void; cancelAndWait?: () => Promise<void> }
 
   /** Stream container logs. Returns a cancel handle. K8s + Docker only. */

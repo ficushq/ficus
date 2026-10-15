@@ -151,7 +151,11 @@ export type DeliverySuggestion =
   | { suggestion: null; related?: number; now?: number }
   | { suggestion: DeliveryMode; related?: number; now?: number }
 
-export type MonitorMessageKind = 'lines' | 'exited' | 'canceled' | 'timed-out' | 'overload' | 'failed'
+/**
+ * `restarted` is a lifecycle notice (the command was relaunched after a loss),
+ * not a terminal state. Clients must render unknown kinds as a neutral notice.
+ */
+export type MonitorMessageKind = 'lines' | 'exited' | 'canceled' | 'timed-out' | 'overload' | 'failed' | 'restarted'
 
 export interface MessageMetadata {
   /** Server-owned SDK claim fence. Never accepted from chat clients. */
@@ -201,6 +205,9 @@ export interface MessageMetadata {
     lineCount?: number
     exitCode?: number | null
     failureKind?: string | null
+    /** `restarted` only: lifetime relaunch count and the consecutive rapid-restart count. */
+    restartCount?: number
+    rapidRestartCount?: number
   }
   /** Stable key used to deduplicate a persisted system row against its live system_message event. */
   systemMessageKey?: string

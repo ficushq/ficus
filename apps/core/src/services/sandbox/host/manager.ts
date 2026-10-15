@@ -308,13 +308,26 @@ export class HostSandboxManager implements ISandboxManager {
     sandboxId: string,
     args: string[],
     onStdout: (chunk: Buffer) => void,
-    onStderr: (chunk: Buffer) => void = () => {}
+    onStderr: (chunk: Buffer) => void = () => {},
+    onEnd?: () => void
   ): { cancel: () => void; cancelAndWait: () => Promise<void> } {
     const state = this.requireSandbox(sandboxId)
     const child = this.spawnArgv(state, args)
     child.stdout?.on('data', onStdout)
     child.stderr?.on('data', onStderr)
     child.once('error', (err) => onStderr(Buffer.from(err.message)))
+    if (onEnd) {
+      // 'close' can be withheld by a grandchild holding the pipes (see
+      // cancelAndWait), so the first of 'exit'/'close' ends the stream.
+      let ended = false
+      const end = () => {
+        if (ended) return
+        ended = true
+        onEnd()
+      }
+      child.once('exit', end)
+      child.once('close', end)
+    }
     return {
       cancel: () => killTree(child),
       cancelAndWait: async () => {

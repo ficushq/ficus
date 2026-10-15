@@ -6,6 +6,7 @@ import { BaseEntity } from './base'
 export type MonitorRow = typeof monitors.$inferSelect
 export type NewMonitor = typeof monitors.$inferInsert
 export type MonitorStatus = MonitorRow['status']
+export type MonitorRestartPolicy = MonitorRow['restartPolicy']
 export type UpdateMonitorInput = Partial<Omit<MonitorRow, 'id' | 'createdAt'>>
 
 const ACTIVE_STATUSES: MonitorStatus[] = ['starting', 'running', 'canceling']
@@ -33,6 +34,16 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
   declare endedAt: Date | null
   declare failureReason: string | null
   declare failureKind: string | null
+  declare restartPolicy: MonitorRestartPolicy
+  declare restartLimit: number
+  declare restartCount: number
+  declare rapidRestartCount: number
+  declare launchedAt: Date | null
+  declare deadlineAt: Date | null
+  declare nextRestartAt: Date | null
+  declare lastRestartAt: Date | null
+  declare lastRestartReason: string | null
+  declare logOffset: number | null
 
   constructor(row: MonitorRow) {
     super()
@@ -136,8 +147,40 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
     return this
   }
 
-  async markRunning(): Promise<void> {
-    await this.update({ status: 'running', startedAt: new Date() })
+  /**
+   * Record a (re)launch of the command. `startedAt` keeps the FIRST start;
+   * `launchedAt` moves on every relaunch (it anchors the rapid-restart
+   * stability window). The deadline is fixed on the first launch and never
+   * moves, so a relaunch cannot extend the monitor's life.
+   *
+   * Guarded: only a `starting`/`running` row transitions, so a relaunch can
+   * never resurrect a monitor another process is canceling or has ended.
+   * Returns false (and leaves this instance untouched) when the guard misses.
+   */
+  async markRunning(now = new Date()): Promise<boolean> {
+    const [row] = await db
+      .update(monitors)
+      .set({
+        status: 'running',
+        startedAt: this.startedAt ?? now,
+        launchedAt: now,
+        deadlineAt: this.deadlineAt ?? new Date(now.getTime() + this.timeoutMs),
+        nextRestartAt: null,
+      })
+      .where(and(eq(monitors.id, this.id), inArray(monitors.status, ['starting', 'running'])))
+      .returning()
+    if (!row) return false
+    Object.assign(this, row)
+    return true
+  }
+
+  /**
+   * The absolute timeout deadline. Rows that predate the `deadline_at` column
+   * derive it from their first start, never from "now".
+   */
+  effectiveDeadline(): Date {
+    if (this.deadlineAt) return this.deadlineAt
+    return new Date((this.startedAt ?? this.createdAt).getTime() + this.timeoutMs)
   }
 
   async markEnded(
@@ -152,6 +195,7 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
       endedAt: new Date(),
       failureReason: reason ?? null,
       failureKind: failureKind ?? null,
+      nextRestartAt: null,
     })
   }
 
@@ -179,6 +223,15 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
       startedAt: this.startedAt?.toISOString() ?? null,
       endedAt: this.endedAt?.toISOString() ?? null,
       lastBatchAt: this.lastBatchAt?.toISOString() ?? null,
+      restartPolicy: this.restartPolicy,
+      restartLimit: this.restartLimit,
+      restartCount: this.restartCount,
+      rapidRestartCount: this.rapidRestartCount,
+      launchedAt: this.launchedAt?.toISOString() ?? null,
+      deadlineAt: this.deadlineAt?.toISOString() ?? null,
+      nextRestartAt: this.nextRestartAt?.toISOString() ?? null,
+      lastRestartAt: this.lastRestartAt?.toISOString() ?? null,
+      lastRestartReason: this.lastRestartReason,
     }
   }
 }

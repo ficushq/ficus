@@ -5,20 +5,42 @@ import { agents, agentTypes, monitors } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { Monitor } from '../../entities/Monitor'
-import { MonitorSupervisor, monitorExitPollIntervalMs } from './monitor-supervisor'
+import {
+  MONITOR_SANDBOX_GRACE_MS,
+  MONITOR_STABILITY_WINDOW_MS,
+  MonitorSupervisor,
+  monitorExitPollIntervalMs,
+  monitorRestartBackoffMs,
+  type MonitorSupervisorOptions,
+} from './monitor-supervisor'
 import type { ISandboxManager, SpawnHook } from '../sandbox'
 import { boxUnixUser } from '../machines/box-paths'
 
+type FakeStream = {
+  cmd: string
+  onStdout: (chunk: Buffer) => void
+  onStderr?: (chunk: Buffer) => void
+  onEnd?: () => void
+  canceled: boolean
+  cancel: () => void
+}
+
+const LOG_SIZE_MARKER = '__FICUS_MONITOR_LOG_SIZE__='
+
 class FakeSandbox implements ISandboxManager {
   execs: string[][] = []
-  streams: Array<{
-    onStdout: (chunk: Buffer) => void
-    onStderr?: (chunk: Buffer) => void
-    cancel: () => void
-  }> = []
+  streams: FakeStream[] = []
   statuses = new Map<string, number>()
   outputs = new Map<string, Buffer>()
   execError: Error | null = null
+  /** Liveness probe answer: '' = still running, an exit code, or a GONE marker. */
+  probe = ''
+  /** Log size the launch command reports (null = no marker, e.g. an old box). */
+  logSize: number | null = null
+  /** What the end-of-run catch-up read returns. */
+  catchUp = ''
+  /** Awaited inside the launch exec (simulates a slow relaunch). */
+  beforeLaunch: (() => Promise<void>) | null = null
   async ensureSandbox(): Promise<string> {
     return 'sandbox'
   }
@@ -33,20 +55,36 @@ class FakeSandbox implements ISandboxManager {
   async exec(_sandboxId: string, args: string[]): Promise<Buffer> {
     this.execs.push(args)
     if (this.execError) throw this.execError
-    // Default '' = the combined poll probe's still-running answer (dir exists,
-    // no exitCode yet). Tests map explicit outputs for exit/gone cases.
-    return this.outputs.get(args.join(' ')) ?? Buffer.from('')
+    const cmd = args.join(' ')
+    const mapped = this.outputs.get(cmd)
+    if (mapped) return mapped
+    if (cmd.includes('tmux new-session') && this.beforeLaunch) await this.beforeLaunch()
+    if (cmd.includes('tmux new-session'))
+      return Buffer.from(this.logSize === null ? '' : `${LOG_SIZE_MARKER}${this.logSize}\n`)
+    if (cmd.includes('tmux has-session')) return Buffer.from(this.probe)
+    if (cmd.includes('head -c')) return Buffer.from(this.catchUp)
+    return Buffer.from('')
   }
   async execStatus(_sandboxId: string, args: string[]): Promise<number> {
     return this.statuses.get(args.join(' ')) ?? 1
   }
   streamExec(
     _sandboxId: string,
-    _args: string[],
+    args: string[],
     onStdout: (chunk: Buffer) => void,
-    onStderr?: (chunk: Buffer) => void
+    onStderr?: (chunk: Buffer) => void,
+    onEnd?: () => void
   ): { cancel: () => void } {
-    const s = { onStdout, onStderr, cancel: () => {} }
+    const s: FakeStream = {
+      cmd: args.join(' '),
+      onStdout,
+      onStderr,
+      onEnd,
+      canceled: false,
+      cancel: () => {
+        s.canceled = true
+      },
+    }
     this.streams.push(s)
     return s
   }
@@ -65,13 +103,23 @@ class FakeSandbox implements ISandboxManager {
   getSandboxRuntime() {
     return 'docker-sysbox' as const
   }
+  launches(): number {
+    return this.execs.filter((args) => args.join(' ').includes('tmux new-session')).length
+  }
+  probes(): number {
+    return this.execs.filter((args) => args.join(' ').includes('tmux has-session')).length
+  }
 }
 
-function pollProbeCommand(dir: string): string {
-  return (
-    `bash -lc if [ ! -d '${dir}' ]; then echo __MONITOR_DIR_GONE__; ` +
-    `elif [ -f '${dir}/exitCode' ]; then cat '${dir}/exitCode'; fi`
-  )
+const DIR_GONE = '__MONITOR_DIR_GONE__'
+const PROCESS_GONE = '__MONITOR_PROCESS_GONE__'
+
+async function waitFor(condition: () => boolean | Promise<boolean>, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!(await condition())) {
+    if (Date.now() > deadline) throw new Error('waitFor: condition not met in time')
+    await Bun.sleep(10)
+  }
 }
 
 describe('MonitorSupervisor', () => {
@@ -80,6 +128,9 @@ describe('MonitorSupervisor', () => {
   let sandbox: FakeSandbox
   let sent: string[]
   let prevRuntime: string | undefined
+  /** Fake clock for the stability window, deadlines and grace periods (timers stay real). */
+  let clock: number
+  let ensured: string[]
 
   // `start()` arms a 2s poll interval and a timeout timer per monitor. Nothing
   // in these tests stops them, so before this teardown existed they outlived
@@ -87,8 +138,22 @@ describe('MonitorSupervisor', () => {
   // deleted, markEnded threw, and the unhandled rejection was charged to
   // whatever unrelated test bun happened to be running at that moment.
   const supervisors: MonitorSupervisor[] = []
-  function makeSupervisor(...args: ConstructorParameters<typeof MonitorSupervisor>): MonitorSupervisor {
-    const supervisor = new MonitorSupervisor(...args)
+  function makeSupervisor(
+    manager: ISandboxManager,
+    sendMessage: ConstructorParameters<typeof MonitorSupervisor>[1],
+    maxDroppedLines?: number,
+    options: MonitorSupervisorOptions = {}
+  ): MonitorSupervisor {
+    const supervisor = new MonitorSupervisor(manager, sendMessage, maxDroppedLines, {
+      now: () => clock,
+      ensureSandboxReachable: async (sandboxId) => {
+        ensured.push(sandboxId)
+        return true
+      },
+      restartBackoffMs: () => 5,
+      restartRetryMs: 5,
+      ...options,
+    })
     supervisors.push(supervisor)
     return supervisor
   }
@@ -109,6 +174,8 @@ describe('MonitorSupervisor', () => {
     agentId = (await Agent.create({ agentTypeId })).id
     sandbox = new FakeSandbox()
     sent = []
+    clock = Date.now()
+    ensured = []
   })
 
   afterEach(async () => {
@@ -263,20 +330,18 @@ describe('MonitorSupervisor', () => {
     const monitor = await createMonitor()
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
-    const probe = pollProbeCommand(`/workspace/.ficus/monitors/${monitor.id}`)
 
     // Two 2s rounds: proves the self-rescheduling timer keeps polling rather
     // than firing once and stopping.
     await Bun.sleep(4_600)
-    expect(sandbox.execs.filter((args) => args.join(' ') === probe).length).toBeGreaterThanOrEqual(2)
+    expect(sandbox.probes()).toBeGreaterThanOrEqual(2)
   }, 10_000)
 
   it('does not finish twice when exit is detected concurrently', async () => {
     const monitor = await createMonitor()
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
-    const dir = `/workspace/.ficus/monitors/${monitor.id}`
-    sandbox.outputs.set(pollProbeCommand(dir), Buffer.from('0'))
+    sandbox.probe = '0'
 
     await Promise.all([supervisor.pollExit(monitor.id), supervisor.pollExit(monitor.id)])
 
@@ -367,116 +432,496 @@ describe('MonitorSupervisor', () => {
     await supervisor.cancel(monitor.id)
   })
 
-  it('fails the monitor with a process-lost reason when the work dir vanished (sandbox restarted)', async () => {
+  it('restart: never — a wiped work dir fails the monitor clearly and never reruns it', async () => {
     const monitor = await createMonitor()
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
-    const dir = `/workspace/.ficus/monitors/${monitor.id}`
-    sandbox.outputs.set(pollProbeCommand(dir), Buffer.from('__MONITOR_DIR_GONE__'))
+    sandbox.probe = DIR_GONE
 
     await supervisor.pollExit(monitor.id)
 
     await monitor.reload()
     expect(monitor.status).toBe('failed')
-    expect(monitor.failureReason).toBe('sandbox restarted during run; monitor process lost')
+    expect(monitor.failureReason).toBe('sandbox restarted; command was not restarted (restart: never)')
     expect(monitor.failureKind).toBe('infrastructure')
+    expect(sent.at(-1)).toContain('failed: sandbox restarted; command was not restarted (restart: never).')
+    expect(sandbox.launches()).toBe(1)
   })
 
-  it('transitions to failed only after sustained consecutive poll failures', async () => {
+  it('detects a process that vanished without an exit code instead of reporting it as still running', async () => {
+    const monitor = await createMonitor()
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await supervisor.start(monitor)
+    sandbox.probe = PROCESS_GONE
+
+    await supervisor.pollExit(monitor.id)
+
+    await monitor.reload()
+    expect(monitor.status).toBe('failed')
+    expect(monitor.failureReason).toBe(
+      'process ended without recording an exit code (sandbox restart or killed); command was not restarted (restart: never)'
+    )
+    expect(sandbox.launches()).toBe(1)
+  })
+
+  it('probes tmux liveness before the exitCode file, so a clean exit is never mistaken for a loss', async () => {
+    const monitor = await createMonitor()
+    const supervisor = makeSupervisor(sandbox, async () => {})
+    await supervisor.start(monitor)
+    await supervisor.pollExit(monitor.id)
+    const probe = sandbox.execs.map((a) => a.join(' ')).find((cmd) => cmd.includes('tmux has-session'))!
+    expect(probe.indexOf('tmux has-session')).toBeLessThan(probe.indexOf('/exitCode'))
+    expect(probe).toContain(PROCESS_GONE)
+  })
+
+  it('waits for an unreachable sandbox (re-ensuring it) and keeps a run that survived', async () => {
     const monitor = await createMonitor()
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
     sandbox.execError = new Error('Sandbox not found')
 
-    for (let i = 0; i < MonitorSupervisor.POLL_FAILURE_TOLERANCE; i++) {
-      await supervisor.pollExit(monitor.id)
-    }
-
+    for (let i = 0; i < MonitorSupervisor.POLL_FAILURE_TOLERANCE + 2; i++) await supervisor.pollExit(monitor.id)
     await monitor.reload()
-    expect(monitor.status).toBe('failed')
-    expect(monitor.failureReason).toBe('sandbox became unavailable during run')
-    expect(monitor.endedAt).toBeInstanceOf(Date)
-    expect(monitor.failureKind).toBe('infrastructure')
-    expect(sent.at(-1)).toContain('failed: sandbox became unavailable during run')
+    expect(monitor.status).toBe('running')
+    expect(ensured).toContain(monitor.sandboxId)
+
+    // The box is back and the process is still alive: nothing is lost or rerun.
+    sandbox.execError = null
+    await supervisor.pollExit(monitor.id)
+    await monitor.reload()
+    expect(monitor.status).toBe('running')
+    expect(sandbox.launches()).toBe(1)
+    expect(sent.some((c) => c.includes('failed'))).toBe(false)
   })
 
-  it('includes failureKind in the metadata of a failed terminal message', async () => {
-    const monitor = await createMonitor()
-    const calls: Array<{ content: string; options: { deliveryMode: string; metadata: Record<string, unknown> } }> = []
+  it('fails only after the sandbox stays unreachable for the whole grace period', async () => {
+    const monitor = await createMonitor({ timeoutMs: 24 * 60 * 60_000 })
+    const calls: Array<{ content: string; options: { metadata: Record<string, unknown> } }> = []
     const supervisor = makeSupervisor(sandbox, async (_agentId, content, options) => {
       calls.push({ content, options })
     })
     await supervisor.start(monitor)
     sandbox.execError = new Error('Sandbox not found')
+    for (let i = 0; i < MonitorSupervisor.POLL_FAILURE_TOLERANCE; i++) await supervisor.pollExit(monitor.id)
+    clock += MONITOR_SANDBOX_GRACE_MS - 1000
+    await supervisor.pollExit(monitor.id)
+    await monitor.reload()
+    expect(monitor.status).toBe('running')
 
-    for (let i = 0; i < MonitorSupervisor.POLL_FAILURE_TOLERANCE; i++) {
-      await supervisor.pollExit(monitor.id)
-    }
-
-    const last = calls.at(-1)!
-    expect(last.content).toContain('failed: sandbox became unavailable during run')
-    expect(last.options.metadata).toMatchObject({
+    clock += 2000
+    await supervisor.pollExit(monitor.id)
+    await monitor.reload()
+    expect(monitor.status).toBe('failed')
+    expect(monitor.failureReason).toBe('sandbox unavailable for 15m; gave up waiting for it to come back')
+    expect(monitor.failureKind).toBe('infrastructure')
+    expect(calls.at(-1)!.options.metadata).toMatchObject({
       source: 'monitor',
       monitor: { kind: 'failed', failureKind: 'infrastructure' },
     })
   })
 
-  it('relaunches a monitor whose tmux session is gone but whose sandbox is alive', async () => {
-    const monitor = await createMonitor({ status: 'running' })
+  it('re-establishes an ended log stream from the received offset without dropping or repeating output', async () => {
+    const monitor = await createMonitor()
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
-    await supervisor.recoverOnStartup()
-    await monitor.reload()
-    expect(monitor.status).toBe('running')
-    expect(sandbox.execs.some((a) => a.join(' ').includes('tmux new-session'))).toBe(true)
-    expect(sandbox.streams).toHaveLength(1)
+    await supervisor.start(monitor)
+    expect(sandbox.streams[0].cmd).toContain('tail -c +1 -F')
+    const first = sandbox.streams[0]
+
+    // 'one\n' + 'two\n' = 8 bytes received; 'par' is an incomplete line.
+    first.onStdout(Buffer.from('one\ntwo\npar'))
+    first.onEnd?.()
+    await supervisor.pollExit(monitor.id)
+
+    expect(sandbox.streams).toHaveLength(2)
+    expect(sandbox.streams[1].cmd).toContain('tail -c +9 -F')
+    // A late chunk from the dead stream is ignored; the new stream re-reads it.
+    first.onStdout(Buffer.from('tial\nlate\n'))
+    sandbox.streams[1].onStdout(Buffer.from('partial\nthree\n'))
+
+    await waitFor(() => sent.join('\n').includes('> three'))
+    const delivered = sent
+      .join('\n')
+      .split('\n')
+      .filter((l) => l.startsWith('> '))
+    expect(delivered).toEqual(['> one', '> two', '> partial', '> three'])
+    await waitFor(async () => (await monitor.reload()).logOffset === 8 + 'partial\nthree\n'.length)
   })
 
-  it('relaunches with the exact recorded pre-rename session identity', async () => {
-    const processId = 'tau-monitor-persisted' // Existing recorded identity, not a new writer.
-    const monitor = await createMonitor({ status: 'running', processId })
-    const supervisor = makeSupervisor(sandbox, async () => {})
-    await supervisor.recoverOnStartup()
+  it('shutdown detaches; recovery reattaches from the delivered offset without rerunning or counting', async () => {
+    const monitor = await createMonitor({ restartPolicy: 'on-loss' })
+    const first = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await first.start(monitor)
+    sandbox.streams[0].onStdout(Buffer.from('a\nbb\n'))
+    await waitFor(async () => (await monitor.reload()).logOffset === 5)
+    const deadline = monitor.deadlineAt!.getTime()
+
+    first.detachAll()
+    expect(sandbox.streams[0].canceled).toBe(true)
     await monitor.reload()
+    expect(monitor.status).toBe('running')
+    expect(
+      sandbox.execs.some((a) => a.join(' ').includes('kill-session -t') && !a.join(' ').includes('new-session'))
+    ).toBe(false)
+
+    const second = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await second.recoverOnStartup()
+    await waitFor(() => sandbox.probes() >= 1)
+    await Bun.sleep(20)
+    await monitor.reload()
+    expect(monitor.status).toBe('running')
+    expect(sandbox.launches()).toBe(1)
+    expect(sandbox.streams.at(-1)!.cmd).toContain('tail -c +6 -F')
+    expect(monitor.restartCount).toBe(0)
+    expect(monitor.rapidRestartCount).toBe(0)
+    expect(monitor.deadlineAt!.getTime()).toBe(deadline)
+    expect(sent.some((c) => c.includes('restarted'))).toBe(false)
+  })
+
+  it('re-reads output that was received but not yet delivered when Core shut down', async () => {
+    const monitor = await createMonitor({ batchDebounceMs: 10_000 })
+    const first = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await first.start(monitor)
+    sandbox.streams[0].onStdout(Buffer.from('pending\n'))
+    first.detachAll()
+    expect(sent).toHaveLength(0)
+
+    const second = makeSupervisor(sandbox, async () => {})
+    await second.recoverOnStartup()
+    expect(sandbox.streams.at(-1)!.cmd).toContain('tail -c +1 -F')
+  })
+
+  it('restart: never — recovery fails a monitor whose session is gone instead of rerunning it', async () => {
+    const monitor = await createMonitor({ status: 'running' })
+    sandbox.probe = PROCESS_GONE
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await supervisor.recoverOnStartup()
+    await waitFor(async () => (await monitor.reload()).status === 'failed')
+    expect(monitor.failureReason).toContain('command was not restarted (restart: never)')
+    expect(sandbox.launches()).toBe(0)
+  })
+
+  it('restart: on-loss — recovery relaunches a lost session with its recorded identity', async () => {
+    const processId = 'tau-monitor-persisted' // Existing recorded identity, not a new writer.
+    const monitor = await createMonitor({ status: 'running', processId, restartPolicy: 'on-loss' })
+    sandbox.probe = PROCESS_GONE
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await supervisor.recoverOnStartup()
+    await waitFor(() => sandbox.launches() === 1)
+    sandbox.probe = ''
+    await waitFor(async () => (await monitor.reload()).restartCount === 1)
     expect(monitor.processId).toBe(processId)
     expect(sandbox.execs.some((args) => args.join(' ').includes(`tmux new-session -d -s '${processId}'`))).toBe(true)
   })
 
-  it('re-attaches a monitor whose tmux session is still alive on recovery', async () => {
-    const monitor = await createMonitor({ status: 'running' })
+  it('reattaches a monitor whose tmux session is still alive on recovery', async () => {
+    const monitor = await createMonitor({ status: 'running', logOffset: 0 })
     const supervisor = makeSupervisor(sandbox, async () => {})
-    sandbox.statuses.set(`bash -lc tmux has-session -t 'ficus-monitor-test'`, 0)
     await supervisor.recoverOnStartup()
+    await waitFor(() => sandbox.probes() >= 1)
     await monitor.reload()
     expect(monitor.status).toBe('running')
     expect(sandbox.streams).toHaveLength(1)
-    expect(sandbox.execs.some((a) => a.join(' ').includes('tmux new-session'))).toBe(false)
+    expect(sandbox.launches()).toBe(0)
   })
 
-  it('marks a monitor failed without throwing when relaunch fails during recovery', async () => {
-    const monitor = await createMonitor({ status: 'running' })
-    sandbox.execError = new Error('tmux broken')
-    const supervisor = makeSupervisor(sandbox, async () => {})
+  it('recovery keeps a monitor whose sandbox is not reachable yet and waits for it', async () => {
+    const monitor = await createMonitor({ status: 'running', logOffset: 0 })
+    sandbox.execError = new Error(`Sandbox not found: ${monitor.sandboxId}`)
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await supervisor.recoverOnStartup() // must resolve, not throw
+    await waitFor(() => ensured.length > 0)
+    await monitor.reload()
+    expect(monitor.status).toBe('running')
+    expect(sent).toHaveLength(0)
+  })
+
+  it('recovery stops a monitor whose deadline passed while Core was down', async () => {
+    const monitor = await createMonitor({
+      status: 'running',
+      logOffset: 0,
+      startedAt: new Date(clock - 120_000),
+      deadlineAt: new Date(clock - 60_000),
+    })
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await supervisor.recoverOnStartup()
+    await waitFor(async () => (await monitor.reload()).status === 'timed-out')
+    expect(sandbox.execs.some((a) => a.join(' ').includes(`tmux kill-session -t 'ficus-monitor-test'`))).toBe(true)
+    expect(sandbox.launches()).toBe(0)
+    expect(sandbox.streams).toHaveLength(0)
+  })
+
+  it('recovery does not rerun a monitor interrupted while starting', async () => {
+    const monitor = await createMonitor({ status: 'starting' })
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.recoverOnStartup()
     await monitor.reload()
     expect(monitor.status).toBe('failed')
-    expect(monitor.failureReason).toContain('relaunch failed: tmux broken')
-    expect(monitor.failureKind).toBe('infrastructure')
+    expect(monitor.failureReason).toContain('command was not restarted')
+    expect(sandbox.launches()).toBe(0)
   })
 
-  it('does not crash recovery when a monitor sandbox is gone (marks it failed)', async () => {
-    const monitor = await createMonitor({ status: 'running' })
-    // A torn-down squad sandbox makes execStatus throw "Sandbox not found".
-    // Recovery must not let that abort startup for the whole worker.
-    sandbox.execStatus = async () => {
-      throw new Error(`Sandbox not found: ${monitor.sandboxId}`)
-    }
+  it('restart: on-loss — relaunches the same monitor, keeps its deadline and tells the agent', async () => {
+    const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 60 * 60_000 })
+    const calls: Array<{ content: string; options: { metadata: Record<string, unknown> } }> = []
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content, options) => {
+      calls.push({ content, options })
+    })
+    await supervisor.start(monitor)
+    await monitor.reload()
+    const deadline = monitor.deadlineAt!.getTime()
+    const firstLaunch = monitor.launchedAt!.getTime()
+    sandbox.streams[0].onStdout(Buffer.from('before\n'))
+
+    clock += 60_000
+    sandbox.probe = DIR_GONE
+    sandbox.logSize = 0 // the box was recreated: the log is empty again
+    await supervisor.pollExit(monitor.id)
+    sandbox.probe = ''
+    await waitFor(async () => (await monitor.reload()).restartCount === 1)
+
+    expect(monitor.status).toBe('running')
+    expect(sandbox.launches()).toBe(2)
+    expect(monitor.deadlineAt!.getTime()).toBe(deadline)
+    expect(monitor.launchedAt!.getTime()).toBe(firstLaunch + 60_000)
+    expect(monitor.rapidRestartCount).toBe(1)
+    expect(monitor.lastRestartReason).toBe('sandbox restarted')
+    expect(monitor.nextRestartAt).toBeNull()
+    // The wiped log is read from its start; nothing from before is repeated.
+    expect(sandbox.streams.at(-1)!.cmd).toContain('tail -c +1 -F')
+    await waitFor(() => calls.some((c) => c.content.includes('restarted after sandbox loss')))
+    const restarted = calls.find((c) => c.content.includes('restarted after sandbox loss'))!
+    expect(restarted.content).toBe(
+      `Monitor "watch" (${monitor.id.slice(0, 8)}) restarted after sandbox loss: sandbox restarted (rapid restart 1/5; resets after 5m stable).`
+    )
+    expect(restarted.options.metadata).toMatchObject({
+      source: 'monitor',
+      monitor: { id: monitor.id, kind: 'restarted', restartCount: 1, rapidRestartCount: 1 },
+    })
+    const timeoutLeftMs = deadline - clock
+    expect(timeoutLeftMs).toBeLessThan(60 * 60_000)
+  })
+
+  it('restart: on-loss — a wiped log is re-read from byte 0 even when nothing was delivered yet', async () => {
+    const monitor = await createMonitor({ restartPolicy: 'on-loss', batchDebounceMs: 10_000, timeoutMs: 60 * 60_000 })
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
-    await supervisor.recoverOnStartup() // must resolve, not throw
+    await supervisor.start(monitor)
+    sandbox.streams[0].onStdout(Buffer.from('before\n')) // received, still pending
+
+    clock += 10_000
+    sandbox.probe = DIR_GONE
+    sandbox.logSize = 0
+    await supervisor.pollExit(monitor.id)
+    sandbox.probe = ''
+    await waitFor(async () => (await monitor.reload()).restartCount === 1)
+    expect(sandbox.streams.at(-1)!.cmd).toContain('tail -c +1 -F')
+    expect(monitor.logOffset).toBe(0)
+  })
+
+  it('restart: on-loss — a cancel during an in-flight relaunch kills the new session', async () => {
+    const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 60 * 60_000 })
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await supervisor.start(monitor)
+    let canceled: Promise<void> | undefined
+    sandbox.beforeLaunch = async () => {
+      sandbox.beforeLaunch = null
+      canceled = supervisor.cancel(monitor.id)
+      await Bun.sleep(30)
+    }
+    clock += 10_000
+    sandbox.probe = PROCESS_GONE
+    await supervisor.pollExit(monitor.id)
+    await waitFor(() => canceled !== undefined)
+    await canceled
+    await waitFor(() => {
+      const cmds = sandbox.execs.map((a) => a.join(' '))
+      const relaunch = cmds.findLastIndex((c) => c.includes('tmux new-session'))
+      return cmds.slice(relaunch + 1).some((c) => c.includes('tmux kill-session') && !c.includes('new-session'))
+    })
+    await monitor.reload()
+    expect(monitor.status).toBe('canceled')
+    expect(sent.some((c) => c.includes('restarted after sandbox loss'))).toBe(false)
+  })
+
+  it('restart: on-loss — rapid losses back off, then fail at the restart limit', async () => {
+    const backoffs: number[] = []
+    const monitor = await createMonitor({ restartPolicy: 'on-loss', restartLimit: 2, timeoutMs: 60 * 60_000 })
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content), undefined, {
+      restartBackoffMs: (count) => {
+        backoffs.push(count)
+        return 5
+      },
+    })
+    await supervisor.start(monitor)
+
+    for (let restart = 1; restart <= 2; restart++) {
+      clock += 10_000
+      sandbox.probe = PROCESS_GONE
+      await supervisor.pollExit(monitor.id)
+      sandbox.probe = ''
+      await waitFor(async () => (await monitor.reload()).restartCount === restart)
+      expect(monitor.rapidRestartCount).toBe(restart)
+    }
+    expect(backoffs).toEqual([1, 2])
+
+    clock += 10_000
+    sandbox.probe = PROCESS_GONE
+    await supervisor.pollExit(monitor.id)
     await monitor.reload()
     expect(monitor.status).toBe('failed')
-    expect(monitor.failureReason).toBe('sandbox unavailable on recovery')
-    expect(monitor.failureKind).toBe('infrastructure')
-    expect(sent.at(-1)).toContain('failed: sandbox unavailable on recovery')
+    expect(monitor.failureReason).toBe(
+      'restart limit reached: lost 3 times within 5m of launch (limit 2 rapid restarts); last loss: process ended without recording an exit code (sandbox restart or killed)'
+    )
+    expect(sandbox.launches()).toBe(3)
+  })
+
+  it('backs off exponentially between rapid restarts, capped', () => {
+    expect(monitorRestartBackoffMs(0)).toBe(5_000)
+    expect(monitorRestartBackoffMs(1)).toBe(5_000)
+    expect(monitorRestartBackoffMs(2)).toBe(30_000)
+    expect(monitorRestartBackoffMs(3)).toBe(120_000)
+    expect(monitorRestartBackoffMs(4)).toBe(300_000)
+    expect(monitorRestartBackoffMs(50)).toBe(300_000)
+  })
+
+  it('restart: on-loss — a stable launch resets the count and a later loss does not count', async () => {
+    const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 24 * 60 * 60_000 })
+    const backoffs: number[] = []
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content), undefined, {
+      restartBackoffMs: (count) => {
+        backoffs.push(count)
+        return 5
+      },
+    })
+    await supervisor.start(monitor)
+    clock += 10_000
+    sandbox.probe = PROCESS_GONE
+    await supervisor.pollExit(monitor.id)
+    sandbox.probe = ''
+    await waitFor(async () => (await monitor.reload()).restartCount === 1)
+    expect(monitor.rapidRestartCount).toBe(1)
+
+    // The relaunch stays up for the whole stability window.
+    clock += MONITOR_STABILITY_WINDOW_MS + 1000
+    await supervisor.pollExit(monitor.id)
+    await monitor.reload()
+    expect(monitor.rapidRestartCount).toBe(0)
+
+    // Hours later the box restarts again: restarted, but not counted.
+    clock += 3 * 60 * 60_000
+    sandbox.probe = DIR_GONE
+    await supervisor.pollExit(monitor.id)
+    sandbox.probe = ''
+    await waitFor(async () => (await monitor.reload()).restartCount === 2)
+    expect(monitor.rapidRestartCount).toBe(0)
+    expect(backoffs).toEqual([1, 0])
+    await waitFor(() => sent.some((c) => c.includes('not counted toward the rapid-restart limit')))
+  })
+
+  it('restart: on-loss — a pending relaunch survives a Core restart without being counted twice', async () => {
+    const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 60 * 60_000 })
+    const first = makeSupervisor(sandbox, async () => {}, undefined, { restartBackoffMs: () => 60_000 })
+    await first.start(monitor)
+    clock += 10_000
+    sandbox.probe = PROCESS_GONE
+    await first.pollExit(monitor.id)
+    await monitor.reload()
+    expect(monitor.nextRestartAt).toBeInstanceOf(Date)
+    expect(monitor.rapidRestartCount).toBe(1)
+    first.detachAll()
+
+    clock += 60_000
+    sandbox.probe = ''
+    const second = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await second.recoverOnStartup()
+    await waitFor(async () => (await monitor.reload()).restartCount === 1)
+    expect(monitor.rapidRestartCount).toBe(1)
+    expect(sandbox.launches()).toBe(2)
+    expect(monitor.nextRestartAt).toBeNull()
+  })
+
+  it('restart: on-loss — exits, cancel, timeout and overload never restart', async () => {
+    const exited = await createMonitor({ restartPolicy: 'on-loss', processId: 'ficus-monitor-exit' })
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content), 5)
+    await supervisor.start(exited)
+    sandbox.probe = '1'
+    await supervisor.pollExit(exited.id)
+    expect((await exited.reload()).status).toBe('exited')
+    sandbox.probe = ''
+
+    const canceled = await createMonitor({ restartPolicy: 'on-loss', processId: 'ficus-monitor-cancel' })
+    await supervisor.start(canceled)
+    await supervisor.cancel(canceled.id)
+    sandbox.probe = PROCESS_GONE
+    await supervisor.pollExit(canceled.id)
+    sandbox.probe = ''
+    expect((await canceled.reload()).status).toBe('canceled')
+
+    const timedOut = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 10, processId: 'ficus-monitor-time' })
+    await supervisor.start(timedOut)
+    await waitFor(async () => (await timedOut.reload()).status === 'timed-out')
+
+    const overloaded = await createMonitor({ restartPolicy: 'on-loss', processId: 'ficus-monitor-load' })
+    await supervisor.start(overloaded)
+    const lines = Array.from({ length: 70 }, (_, i) => `${i}-${'x'.repeat(1020)}`)
+    supervisor.onStdoutChunk(overloaded.id, `${lines.join('\n')}\n`)
+    await waitFor(async () => (await overloaded.reload()).status === 'overload')
+
+    await Bun.sleep(50)
+    expect(sandbox.launches()).toBe(4) // one start each, no relaunches
+    for (const m of [exited, canceled, timedOut, overloaded]) expect((await m.reload()).restartCount).toBe(0)
+    expect(sent.some((c) => c.includes('restarted'))).toBe(false)
+  })
+
+  it('a cancel that lands during the restart backoff wins over the relaunch', async () => {
+    const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 60 * 60_000 })
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content), undefined, {
+      restartBackoffMs: () => 200,
+    })
+    await supervisor.start(monitor)
+    clock += 10_000
+    sandbox.probe = PROCESS_GONE
+    await supervisor.pollExit(monitor.id)
+    // Another Core process (the API) cancels it while the relaunch is pending.
+    const elsewhere = makeSupervisor(sandbox, async () => {})
+    await elsewhere.cancel(monitor.id)
+    await Bun.sleep(300)
+    await monitor.reload()
+    expect(monitor.status).toBe('canceled')
+    expect(sandbox.launches()).toBe(1)
+  })
+
+  it('stops (without overwriting) a monitor that was ended by another process', async () => {
+    const monitor = await createMonitor()
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await supervisor.start(monitor)
+    await db.update(monitors).set({ status: 'canceled', endedAt: new Date() }).where(eq(monitors.id, monitor.id))
+
+    await supervisor.pollExit(monitor.id)
+
+    await monitor.reload()
+    expect(monitor.status).toBe('canceled')
+    expect(sandbox.execs.at(-1)!.join(' ')).toContain(`tmux kill-session -t 'ficus-monitor-test'`)
+    expect(sent).toHaveLength(0)
+  })
+
+  it('delivers output the stream had not caught up on when the command exits', async () => {
+    const monitor = await createMonitor()
+    const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await supervisor.start(monitor)
+    sandbox.streams[0].onStdout(Buffer.from('seen\n'))
+    sandbox.catchUp = 'tail line\nno newline'
+    sandbox.probe = '0'
+
+    await supervisor.pollExit(monitor.id)
+
+    const catchUp = sandbox.execs.map((a) => a.join(' ')).find((cmd) => cmd.includes('head -c'))!
+    expect(catchUp).toContain('tail -c +6 ')
+    const text = sent.join('\n')
+    expect(text).toContain('> seen')
+    expect(text).toContain('> tail line')
+    expect(text).toContain('> no newline')
+    expect(sent.at(-1)).toContain('exited (exit_code=0).')
+    expect(text.match(/> seen/g)).toHaveLength(1)
   })
 
   it('stopAllForAgent finalizes all active monitors for that agent only', async () => {

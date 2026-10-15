@@ -208,6 +208,24 @@ describe('HostSandboxManager', () => {
     expect(alive).toBe(0)
   })
 
+  test('streamExec reports the end of the stream exactly once when the command exits', async () => {
+    await manager.ensureSandbox('agent_a1', { workspacePath: '', squadId: SQUAD })
+    const chunks: string[] = []
+    let ends = 0
+    manager.streamExec!(
+      'agent_a1',
+      ['bash', '-c', 'echo a; echo b'],
+      (c) => chunks.push(c.toString()),
+      () => {},
+      () => ends++
+    )
+    const deadline = Date.now() + 5000
+    while ((ends === 0 || chunks.join('') !== 'a\nb\n') && Date.now() < deadline) await Bun.sleep(20)
+    await Bun.sleep(100)
+    expect(chunks.join('')).toBe('a\nb\n')
+    expect(ends).toBe(1)
+  })
+
   test('cancelAndWait returns when a grandchild outlives the leader and holds the pipes', async () => {
     await manager.ensureSandbox('agent_a1', { workspacePath: '', squadId: SQUAD })
     // The leader backgrounds a sleeper and exits immediately. That is killTree's

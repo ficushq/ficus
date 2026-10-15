@@ -113,6 +113,92 @@ describe('createMonitorTool', () => {
     expect(supervisor.started).toHaveLength(1)
   })
 
+  it('create defaults to restart "never" and tracks the log from byte 0', async () => {
+    const supervisor = new FakeSupervisor()
+    const tool = createMonitorTool({
+      agentId,
+      sandboxId: 'sandbox-1',
+      workspacePath: '/tmp',
+      supervisor: supervisor as unknown as MonitorSupervisor,
+    })
+    const res = await tool.execute(
+      'call',
+      { action: 'create', label: 'watch', command: 'echo hi' },
+      undefined as never,
+      undefined as never,
+      undefined as never
+    )
+    const [row] = await db
+      .select()
+      .from(monitors)
+      .where(eq(monitors.id, (res.details as any).monitorId))
+    expect(row.restartPolicy).toBe('never')
+    expect(row.restartLimit).toBe(5)
+    expect(row.logOffset).toBe(0)
+    expect((res.content[0] as any).text).toContain('restart: never')
+  })
+
+  it('create persists restart "on-loss" with a custom rapid-restart limit', async () => {
+    const tool = createMonitorTool({
+      agentId,
+      sandboxId: 'sandbox-1',
+      workspacePath: '/tmp',
+      supervisor: new FakeSupervisor() as unknown as MonitorSupervisor,
+    })
+    const res = await tool.execute(
+      'call',
+      { action: 'create', label: 'tail', command: 'tail -F x | grep ERR', restart: 'on-loss', restartLimit: 2 },
+      undefined as never,
+      undefined as never,
+      undefined as never
+    )
+    const [row] = await db
+      .select()
+      .from(monitors)
+      .where(eq(monitors.id, (res.details as any).monitorId))
+    expect(row.restartPolicy).toBe('on-loss')
+    expect(row.restartLimit).toBe(2)
+    expect((res.content[0] as any).text).toContain('restart: on-loss (limit 2 rapid restarts)')
+
+    const list = await tool.execute(
+      'call',
+      { action: 'list' },
+      undefined as never,
+      undefined as never,
+      undefined as never
+    )
+    expect((list.content[0] as any).text).toContain('[restart: on-loss (limit 2 rapid restarts)]')
+    expect((list.details as any).monitors[0]).toMatchObject({ restartPolicy: 'on-loss', restartCount: 0 })
+  })
+
+  it('rejects restartLimit without restart "on-loss"', async () => {
+    const supervisor = new FakeSupervisor()
+    const tool = createMonitorTool({
+      agentId,
+      sandboxId: 'sandbox-1',
+      workspacePath: '/tmp',
+      supervisor: supervisor as unknown as MonitorSupervisor,
+    })
+    await expect(
+      tool.execute(
+        'call',
+        { action: 'create', label: 'watch', command: 'echo hi', restartLimit: 3 },
+        undefined as never,
+        undefined as never,
+        undefined as never
+      )
+    ).rejects.toThrow('restartLimit requires restart="on-loss"')
+    expect(supervisor.started).toHaveLength(0)
+  })
+
+  it('documents the restart option in the tool schema and description', () => {
+    const tool = createMonitorTool({ agentId: 'agent-1', sandboxId: 'sandbox-1', workspacePath: '/tmp' })
+    const properties = (tool.parameters as any).properties
+    expect(properties.restart.description).toContain('ONLY for idempotent, safe-to-rerun watchers')
+    expect(properties.restartLimit.description).toContain('Default 5')
+    expect(tool.description).toContain('restart="on-loss"')
+  })
+
   it('create returns a structured error when the supervisor fails to start', async () => {
     class FailingSupervisor extends FakeSupervisor {
       async start() {
