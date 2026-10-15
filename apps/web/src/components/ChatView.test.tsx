@@ -284,6 +284,29 @@ test('a mounted composer banner that renders nothing leaves no padding gap', asy
   expect(slot.classList.contains('empty:hidden')).toBe(true)
 })
 
+test('the peeking plant sits above composer banners instead of drawing over them', async () => {
+  const { window } = await renderChatView(
+    <ChatView
+      items={[{ kind: 'working', id: '__working__' }]}
+      onSend={() => {}}
+      beforeComposer={<div data-testid="banner">1 pending question</div>}
+    />
+  )
+  const plantAnchor = window.document.querySelector('.ficus-plant-peek')!.parentElement!
+  const group = plantAnchor.parentElement!
+  const slot = window.document.querySelector('[data-testid="banner"]')!.parentElement!
+  // The plant hangs off the top of the group holding both the banners and the composer...
+  expect(plantAnchor.classList.contains('bottom-full')).toBe(true)
+  expect(group.classList.contains('relative')).toBe(true)
+  expect(group.firstElementChild).toBe(plantAnchor)
+  expect(slot.parentElement).toBe(group)
+  expect(group.contains(window.document.querySelector('textarea'))).toBe(true)
+  // ...and its half-hidden pot tucks behind the opaque banner slot rather than over it.
+  expect(plantAnchor.classList.contains('z-0')).toBe(true)
+  expect(slot.classList.contains('z-10')).toBe(true)
+  expect(slot.classList.contains('bg-surface')).toBe(true)
+})
+
 describe('ChatView image upload targeting and recovery', () => {
   test('mobile expansion keeps staged images attached to the draft and sends them once', async () => {
     const upload = mock(async () => ['image-mobile'])

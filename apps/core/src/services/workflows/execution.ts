@@ -53,6 +53,7 @@ import {
   WorkStreamStackedDeliveryHoldError,
 } from '../work-streams/dependency-edges'
 import { resolveBranchChangeRequest } from '@ficus/shared'
+import { flowWorkerName } from './worker-name'
 
 const log = createLogger('workflows')
 
@@ -301,7 +302,7 @@ async function dispatchFlowAttempt(
         persist: false,
         modelOverride: agentSnapshot.tier ? null : agentSnapshot.model,
         metadata: {
-          name: `${step.participant} · ${stream.title.slice(0, 60)}`,
+          name: flowWorkerName(step.participant, stream.title),
           resourceGeneration: crypto.randomUUID(),
         },
       })

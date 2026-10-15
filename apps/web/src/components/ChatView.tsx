@@ -1865,15 +1865,22 @@ export function ChatView({
         {afterMessages}
       </div>
 
-      {beforeComposer && <div className="shrink-0 px-3 pb-2 md:px-4 empty:hidden">{beforeComposer}</div>}
-
-      {/* Input */}
-      {!shouldHideComposer && (
-        <div className="relative shrink-0">
+      {/* Banners and the composer: the plant peeks up above the whole group, so it never covers a banner. */}
+      <div className="relative shrink-0">
+        {!shouldHideComposer && (
           <PeekingPlant
             working={Boolean(peekingWorkItem)}
             label={peekingWorkItem?.waitingFor === 'sandbox' ? 'Waiting for the sandbox to start…' : thinkingLabel}
           />
+        )}
+
+        {beforeComposer && (
+          // Opaque and above the plant so its half-hidden pot tucks behind the banners.
+          <div className="relative z-10 bg-surface px-3 pb-2 md:px-4 empty:hidden">{beforeComposer}</div>
+        )}
+
+        {/* Input */}
+        {!shouldHideComposer && (
           <div
             ref={inputContainerRef}
             className="px-3 py-2 md:px-4 md:py-2.5 border-t border-th-border shrink-0 relative z-10 bg-surface"
@@ -2587,8 +2594,8 @@ export function ChatView({
               </form>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 
