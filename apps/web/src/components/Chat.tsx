@@ -48,6 +48,16 @@ const SCOPE_LABELS: Record<string, string> = {
   consultant: 'Consultant',
 }
 
+/**
+ * Where the composer draft persists. Existing agent keys must stay stable, or saved drafts are orphaned.
+ * A new consultant chat has no agent until its first send, so its draft lives under the squad instead.
+ */
+function draftStorageKey(agentId: string | undefined, scope: ChatScope | undefined) {
+  if (agentId) return `manager:${agentId}`
+  if (scope?.type === 'consultant' && scope.id) return `consultant-new:${scope.id}`
+  return undefined
+}
+
 export function Chat({
   agentId,
   initialMessage,
@@ -249,7 +259,7 @@ export function Chat({
       inputDisabled={!canSendChat}
       placeholder={!canSendChat ? 'You do not have permission to send chat messages' : undefined}
       squadId={agent?.squadId ?? (scope?.type === 'consultant' ? scope.id : undefined)}
-      inputStorageKey={agentId ? `manager:${agentId}` : undefined}
+      inputStorageKey={draftStorageKey(agentId, scope)}
     />
   )
 }

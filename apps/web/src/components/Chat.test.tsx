@@ -276,3 +276,20 @@ test('hands AgentChat navigation to the owning real router', async () => {
     await dom.cleanup()
   }
 })
+
+describe('Chat composer draft key', () => {
+  test('an existing agent chat keeps its manager draft key', () => {
+    renderChat(<Chat agentId="agent-1" scope={{ type: 'consultant', id: 'squad-1' }} />)
+    expect(capturedAgentChatProps.inputStorageKey).toBe('manager:agent-1')
+  })
+
+  test('a new consultant composer persists its draft per squad', () => {
+    renderChat(<Chat scope={{ type: 'consultant', id: 'squad-1' }} />)
+    expect(capturedAgentChatProps.inputStorageKey).toBe('consultant-new:squad-1')
+  })
+
+  test('other new chats without an agent stay unpersisted', () => {
+    renderChat(<Chat scope={{ type: 'system-manager' }} />)
+    expect(capturedAgentChatProps.inputStorageKey).toBeUndefined()
+  })
+})

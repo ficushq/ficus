@@ -600,8 +600,42 @@ export function ChatView({
     [resizeTextarea, onDraftChangeRef]
   )
 
+  // Debounced localStorage save — driven from onChange, not useEffect. The pending write remembers
+  // its key, so leaving a conversation (key change or unmount) still keeps what was just typed there.
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingDraftRef = useRef<{ key: string; value: string } | null>(null)
+  const flushDraft = useCallback(() => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
+    draftTimerRef.current = null
+    const pending = pendingDraftRef.current
+    pendingDraftRef.current = null
+    if (!pending) return
+    try {
+      if (pending.value) {
+        localStorage.setItem(`chat-draft:${pending.key}`, pending.value)
+      } else {
+        localStorage.removeItem(`chat-draft:${pending.key}`)
+      }
+    } catch {
+      // localStorage may be full or unavailable
+    }
+  }, [])
+  const saveDraft = useCallback(
+    (value: string) => {
+      if (!inputStorageKey) return
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
+      pendingDraftRef.current = { key: inputStorageKey, value }
+      draftTimerRef.current = setTimeout(flushDraft, 1000)
+    },
+    [inputStorageKey, flushDraft]
+  )
+
+  // Write any pending draft on unmount instead of dropping it
+  useEffect(() => flushDraft, [flushDraft])
+
   // Reload draft when the storage key changes (e.g. navigating between agents)
   useEffect(() => {
+    flushDraft()
     if (!inputStorageKey) return
     try {
       const draft = localStorage.getItem(`chat-draft:${inputStorageKey}`) ?? ''
@@ -609,36 +643,7 @@ export function ChatView({
     } catch {
       setInputValue('')
     }
-  }, [inputStorageKey, setInputValue])
-
-  // Debounced localStorage save — driven from onChange, not useEffect
-  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const saveDraft = useCallback(
-    (value: string) => {
-      if (!inputStorageKey) return
-      if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
-      draftTimerRef.current = setTimeout(() => {
-        try {
-          if (value) {
-            localStorage.setItem(`chat-draft:${inputStorageKey}`, value)
-          } else {
-            localStorage.removeItem(`chat-draft:${inputStorageKey}`)
-          }
-        } catch {
-          // localStorage may be full or unavailable
-        }
-      }, 1000)
-    },
-    [inputStorageKey]
-  )
-
-  // Clear timer on unmount
-  useEffect(
-    () => () => {
-      if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
-    },
-    []
-  )
+  }, [inputStorageKey, setInputValue, flushDraft])
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const agentFileInputRef = useRef<HTMLInputElement>(null)
@@ -1416,7 +1421,10 @@ export function ChatView({
       // Only clean up on success
       imagesToCleanup.forEach((img) => URL.revokeObjectURL(img.preview))
       setInputValue('')
+      // Remove the sent draft now: a composer that hands off to a newly created chat unmounts right
+      // after sending, and the next composer under this key must start empty.
       saveDraft('')
+      flushDraft()
       setPendingImages([])
       agentFiles.clearFiles()
     } catch (error) {

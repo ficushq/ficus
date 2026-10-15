@@ -2660,6 +2660,83 @@ for (const embedded of [false, true]) {
   })
 }
 
+describe('ChatView persisted draft', () => {
+  const storageKey = 'chat-draft:consultant-new:squad-1'
+
+  /** Mounts a keyed composer in a fresh root, so a test can leave and come back in one DOM. */
+  async function mountComposer(dom: Awaited<ReturnType<typeof installDom>>, onSend: () => unknown = () => undefined) {
+    const { root, container } = dom.createRoot()
+    await dom.act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/chat']}>
+          <PermissionsProvider usePermissions={usePermissionsMock}>
+            <ChatView
+              items={[]}
+              onSend={onSend}
+              enableFullscreen={false}
+              inputStorageKey="consultant-new:squad-1"
+              dependencies={chatViewDependencies}
+            />
+          </PermissionsProvider>
+        </MemoryRouter>
+      )
+    })
+    await flushReact()
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+    return { textarea, unmount: () => dom.act(async () => root.unmount()) }
+  }
+
+  test('restores the saved draft when the composer mounts again', async () => {
+    const dom = await installDom()
+    dom.window.localStorage.setItem(storageKey, 'half-written question')
+    const composer = await mountComposer(dom)
+    expect(composer.textarea.value).toBe('half-written question')
+    await composer.unmount()
+  })
+
+  test('leaving within the save debounce still keeps the typed draft', async () => {
+    const dom = await installDom()
+    dom.window.localStorage.removeItem(storageKey)
+    const composer = await mountComposer(dom)
+    await dom.act(async () => fireEvent.input(composer.textarea, { target: { value: 'keep me' } }))
+    await composer.unmount()
+    expect(dom.window.localStorage.getItem(storageKey)).toBe('keep me')
+    const back = await mountComposer(dom)
+    expect(back.textarea.value).toBe('keep me')
+    await back.unmount()
+  })
+
+  test('a successful send removes the draft at once, even when the composer unmounts right after', async () => {
+    const dom = await installDom()
+    dom.window.localStorage.setItem(storageKey, 'first message')
+    const onSend = mock(async () => {})
+    const composer = await mountComposer(dom, onSend)
+    expect(composer.textarea.value).toBe('first message')
+    await dom.act(async () => fireEvent.submit(composer.textarea.closest('form')!))
+    await flushReact()
+    expect(onSend).toHaveBeenCalledTimes(1)
+    // The new-consultant composer hands off to the created agent's chat and unmounts here.
+    await composer.unmount()
+    expect(dom.window.localStorage.getItem(storageKey)).toBeNull()
+    const next = await mountComposer(dom)
+    expect(next.textarea.value).toBe('')
+    await next.unmount()
+  })
+
+  test('a failed send keeps the draft', async () => {
+    const dom = await installDom()
+    dom.window.localStorage.removeItem(storageKey)
+    const composer = await mountComposer(dom, async () => {
+      throw new Error('nope')
+    })
+    await dom.act(async () => fireEvent.input(composer.textarea, { target: { value: 'retry me' } }))
+    await dom.act(async () => fireEvent.submit(composer.textarea.closest('form')!))
+    await flushReact()
+    await composer.unmount()
+    expect(dom.window.localStorage.getItem(storageKey)).toBe('retry me')
+  })
+})
+
 describe('ChatView composer draft', () => {
   test('a composer draft goes after any typed text, focused, and a new id adds it again', async () => {
     const view = (composerDraft?: { id: number; text: string }) => (
