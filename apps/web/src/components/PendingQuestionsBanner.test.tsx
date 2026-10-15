@@ -36,6 +36,23 @@ async function installDom() {
 }
 
 describe('PendingQuestionsBanner', () => {
+  test('keeps a long agent name on one line with an ellipsis and the full label on hover', async () => {
+    const dom = await installDom()
+    root = dom.createRoot().root
+    const agentName = 'worker · Fix VM box port collisions: reserve box port range, block…'
+    await dom.act(async () => root?.render(<PendingQuestionsBanner questions={[questions[0]]} agentName={agentName} />))
+
+    const label = `1 pending question from ${agentName}`
+    const button = dom.window.document.querySelector(`button[title="${label}"]`)
+    expect(button).not.toBeNull()
+    // The accessible name is the full label; only the visible text is clipped.
+    expect(button?.textContent).toBe(label)
+    expect(button?.classList.contains('min-w-0')).toBe(true)
+    const text = button?.querySelector('span')
+    expect(text?.textContent).toBe(label)
+    expect(text?.classList.contains('truncate')).toBe(true)
+  })
+
   test('opens live question details once per ID, including a new ID at the same count', async () => {
     const dom = await installDom()
     const { window } = dom

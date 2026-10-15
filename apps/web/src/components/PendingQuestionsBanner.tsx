@@ -81,8 +81,10 @@ export function PendingQuestionsBanner({ questions, agentName, dependencies }: P
               type="button"
               onClick={() => setIsOpen(true)}
               className="ficus-button ficus-button-ghost min-w-0 flex-1 rounded-l-lg px-3 py-2 text-left text-sm font-medium"
+              title={label}
             >
-              {label}
+              {/* One line: a long agent name ends in an ellipsis, the full label stays in the title. */}
+              <span className="block truncate">{label}</span>
             </button>
             <button
               type="button"

@@ -1865,7 +1865,19 @@ export function ChatView({
         {afterMessages}
       </div>
 
-      {beforeComposer && <div className="shrink-0 px-3 pb-2 md:px-4 empty:hidden">{beforeComposer}</div>}
+      {beforeComposer && (
+        <div
+          data-testid="chat-before-composer"
+          className={clsx(
+            'shrink-0 px-3 md:px-4 empty:hidden transition-[padding] duration-300 ease-out motion-reduce:transition-none',
+            // While the plant peeks up from behind the composer, the banners slide up to make room for it;
+            // they settle back only once its jump out of sight (PLANT_HIDE_MS) is over.
+            peekingWorkItem ? 'pb-9' : 'pb-2 delay-[600ms]'
+          )}
+        >
+          {beforeComposer}
+        </div>
+      )}
 
       {/* Input */}
       {!shouldHideComposer && (
