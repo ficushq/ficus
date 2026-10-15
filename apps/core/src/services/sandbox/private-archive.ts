@@ -1,9 +1,11 @@
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } from 'fs'
 import { join } from 'path'
 import { getHomeDir } from '../../lib/utils/home'
 import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
 import { getSettingsStore } from '../settings'
+import { workspaceDotPath } from '../workspace/dot-dir'
+import { AGENT_SECRETS_FILE_NAME } from './agent-secrets-file'
 
 /** Ensure and return the archive root: HOME_DIR/private-archive. */
 export function getPrivateArchiveRoot(): string {
@@ -21,9 +23,22 @@ export function getPrivateArchiveRoot(): string {
 export function archiveAgentPrivateDir(sandboxId: string, when: Date): string | null {
   const src = join(getHomeDir(), 'private', sandboxId)
   if (!existsSync(src)) return null
+  // Per-agent secrets are never retained: the archive keeps scratch, not credentials.
+  removeAgentSecretsFileIfPresent(src)
   const dest = join(getPrivateArchiveRoot(), `${sandboxId}-${when.getTime()}`)
   renameSync(src, dest)
   return dest
+}
+
+function removeAgentSecretsFileIfPresent(privateRoot: string): void {
+  const dotDir = workspaceDotPath(privateRoot)
+  try {
+    // Only a real settings dir: never remove through a symlink planted in the private dir.
+    if (!lstatSync(dotDir).isDirectory()) return
+  } catch {
+    return
+  }
+  rmSync(join(dotDir, AGENT_SECRETS_FILE_NAME), { force: true })
 }
 
 /**

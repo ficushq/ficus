@@ -158,6 +158,10 @@ export const CLI_COMMAND_PERMISSIONS: Readonly<Record<string, readonly string[]>
   'agent delete': ['agents:delete'],
   'agent prune': ['agents:delete'],
   'agent scope': ['agents:scopes:read', 'agents:scopes:manage'],
+  'agent secrets': ['env:read'], // routes/agent-secrets.ts GET /:id/secrets
+  // routes/agent-secrets.ts also refuses every agent identity: only a person changes these.
+  'agent expose-secrets': ['env:write'],
+  'agent unexpose-secrets': ['env:write'],
 
   // ficus inbox — routes/inbox.ts
   'inbox send-system': ['inbox:system'],

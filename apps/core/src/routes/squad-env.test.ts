@@ -609,17 +609,43 @@ describe('squad-env routes', () => {
       expect(await squadExposure()).toEqual([])
     })
 
-    it('marks which listed keys the caller may add', async () => {
+    it('lists only keys the caller may read, plus keys already exposed to the squad, marking which it may add', async () => {
       const operator = await userWith(['env:read', 'env:write', 'secrets:read:integration'])
-      const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        headers: authHeaders(operator.token),
-      })
-      expect(res.status).toBe(200)
-      const listed: any[] = (await res.json()).secrets
+      const list = async (user: TestUser): Promise<any[]> => {
+        const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
+          headers: authHeaders(user.token),
+        })
+        expect(res.status).toBe(200)
+        return (await res.json()).secrets
+      }
+
+      const all = await list(admin)
+      const provider = all.find((secret) => secret.key.startsWith('OPENAI_'))
+      const otherProvider = all.find((secret) => secret.key === 'APNS_KEY_ID')
+      expect(provider).toBeDefined()
+      expect(otherProvider).toBeDefined()
+
+      let listed = await list(operator)
       const integration = listed.find((secret) => secret.key.startsWith('DEPLOY_'))
-      const provider = listed.find((secret) => secret.key.startsWith('OPENAI_'))
       expect(integration.canExpose).toBe(true)
-      expect(provider.canExpose).toBe(false)
+      // No unreadable (non-integration) key name is listed while none is exposed.
+      expect(listed.every((secret) => secret.canExpose)).toBe(true)
+      expect(listed.some((secret) => secret.key === provider.key)).toBe(false)
+
+      // Exposed unreadable keys stay listed (squad: so they can be removed; global: already in the env).
+      expect((await send(admin, 'PUT', `/${squadId}/env/secrets`, [provider.key])).status).toBe(200)
+      expect((await send(admin, 'PUT', '/env/global-secrets', [otherProvider.key])).status).toBe(200)
+      listed = await list(operator)
+      const squadExposed = listed.find((secret) => secret.key === provider.key)
+      expect(squadExposed).toMatchObject({ squadExposed: true, canExpose: false })
+      const globallyExposed = listed.find((secret) => secret.key === otherProvider.key)
+      expect(globallyExposed).toMatchObject({ globallyExposed: true, canExpose: false })
+      expect(
+        listed
+          .filter((secret) => !secret.canExpose)
+          .map((secret) => secret.key)
+          .sort()
+      ).toEqual([provider.key, otherProvider.key].sort())
     })
 
     it('applies the same rule to global exposure', async () => {

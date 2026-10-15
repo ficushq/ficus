@@ -1052,6 +1052,31 @@ export const globalSecretExposures = pgTable(
   })
 )
 
+/**
+ * Secret Store keys exposed to ONE agent's own sandbox (names only; values stay
+ * in the Secret Store). Keyed by agent id, so an exposure never follows a reused
+ * name or a respawned agent, and deleted with the agent. `squadId` records the
+ * squad the agent belonged to when the key was exposed: a row whose squad no
+ * longer matches the agent's is inert (see services/agent/secrets.ts).
+ */
+export const agentSecretExposures = pgTable(
+  'agent_secret_exposures',
+  {
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    squadId: uuid('squad_id').references(() => squads.id, { onDelete: 'cascade' }),
+    secretKey: varchar('secret_key', { length: 255 }).notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: unique().on(table.agentId, table.secretKey),
+    agentIdx: index('agent_secret_exposures_agent_idx').on(table.agentId),
+    secretKeyIdx: index('agent_secret_exposures_secret_key_idx').on(table.secretKey),
+  })
+)
+
 export const localDeployments = pgTable(
   'local_deployments',
   {

@@ -16,8 +16,7 @@ import { z } from 'zod'
 import * as squadEnv from '../services/squad/env'
 import { getSecretStore } from '../services/secrets'
 import { requirePermission, requireSquadPermission } from '../middleware'
-import { resolvePermissions, type Identity } from '../services/rbac'
-import { secretAccessible } from '../services/secrets/groups'
+import { secretReader } from '../middleware/require-secret-permission'
 // The full squad id the guard already resolved AND authorized: re-deriving it from the route param
 // would repeat the lookup and could let a handler act on a different squad than the guard checked.
 import { resolvedSquadId } from '../middleware/require-permission'
@@ -33,12 +32,6 @@ const envNameSchema = z
 const setEnvSecretsSchema = z.object({
   keys: z.array(envNameSchema),
 })
-
-/** Which Secret Store keys the caller may read (system-scoped, exactly as the Secret Store routes check). */
-async function secretReader(c: Context): Promise<(key: string) => boolean> {
-  const held = await resolvePermissions(c.get('identity') as Identity)
-  return (key) => secretAccessible(held, key, 'read')
-}
 
 /**
  * Refuse an exposure change that would add a key the caller may not read. The verdict depends on
@@ -81,7 +74,7 @@ export const squadEnvRouter = new Hono()
     return c.json({ success: true })
   })
 
-  // List Secret Store keys and which are explicitly exposed to this squad (no values)
+  // List the Secret Store keys the caller may read, plus those already exposed to this squad (no values)
   .get('/:squadId/env/secrets', requireSquadPermission('env:read', 'squadId'), async (c) => {
     const squadId = resolvedSquadId(c)
 
@@ -94,21 +87,26 @@ export const squadEnvRouter = new Hono()
     const squadExposed = new Set(exposedKeys)
     const globallyExposed = new Set(globallyExposedKeys)
     return c.json({
-      secrets: secrets.map((secret) => {
-        const isSquadExposed = squadExposed.has(secret.key)
-        const isGloballyExposed = globallyExposed.has(secret.key)
-        return {
-          key: secret.key,
-          isSet: secret.isSet,
-          exposed: isSquadExposed || isGloballyExposed,
-          squadExposed: isSquadExposed,
-          globallyExposed: isGloballyExposed,
-          // Whether this caller may add the key (read access in the Secret Store); removal never needs it.
-          canExpose: mayRead(secret.key),
-          updatedAt: secret.updatedAt,
-          updatedBy: secret.updatedBy,
-        }
-      }),
+      // Hide the names of keys the caller may not read, so the listing does not reveal which secrets
+      // exist. Keys already exposed to this squad (directly or globally) stay listed: they are already
+      // in the squad's env, and a directly exposed one must stay visible so it can be removed.
+      secrets: secrets
+        .filter((secret) => mayRead(secret.key) || squadExposed.has(secret.key) || globallyExposed.has(secret.key))
+        .map((secret) => {
+          const isSquadExposed = squadExposed.has(secret.key)
+          const isGloballyExposed = globallyExposed.has(secret.key)
+          return {
+            key: secret.key,
+            isSet: secret.isSet,
+            exposed: isSquadExposed || isGloballyExposed,
+            squadExposed: isSquadExposed,
+            globallyExposed: isGloballyExposed,
+            // Whether this caller may add the key (read access in the Secret Store); removal never needs it.
+            canExpose: mayRead(secret.key),
+            updatedAt: secret.updatedAt,
+            updatedBy: secret.updatedBy,
+          }
+        }),
     })
   })
 

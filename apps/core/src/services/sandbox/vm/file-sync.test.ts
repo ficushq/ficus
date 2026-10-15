@@ -12,6 +12,7 @@ import {
   resolveBoxApiTransport,
   isValidHttpUrl,
   pushSquadSshToBox,
+  pushAgentSecretsToBox,
   type SyncBoxFilesDeps,
   type PushSquadSshToBoxDeps,
 } from './file-sync'
@@ -1548,5 +1549,86 @@ describe('canonical box workspace settings (executed remote shell)', () => {
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
+  })
+})
+
+describe('pushAgentSecretsToBox', () => {
+  const sandboxId = 'agent_44444444-4444-4444-8444-444444444444'
+
+  async function withHome<T>(run: (home: string) => Promise<T>): Promise<T> {
+    const previous = process.env.HOME_DIR
+    const dir = mkdtempSync(join(tmpdir(), 'agent-secrets-push-'))
+    process.env.HOME_DIR = dir
+    try {
+      return await run(dir)
+    } finally {
+      if (previous === undefined) delete process.env.HOME_DIR
+      else process.env.HOME_DIR = previous
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  function box(syncedHashes: Record<string, unknown> | null = null): MachineBox {
+    return { sandboxId, machineId: 'm1', unixUser: 'box_x', port: 1, status: 'ready', syncedHashes } as MachineBox
+  }
+
+  test('pushes the file 0600 into the box user’s own private dir, then deletes it on revocation', async () => {
+    await withHome(async (dir) => {
+      const hostFile = join(dir, 'private', sandboxId, WORKSPACE_DOT_DIR, 'agent-secrets.env')
+      mkdirSync(join(dir, 'private', sandboxId, WORKSPACE_DOT_DIR), { recursive: true })
+      writeFileSync(hostFile, "export SYNTH_KEY='synthetic'\n", { mode: 0o600 })
+      const boxPath = `${HOME(sandboxId)}/.private/${WORKSPACE_DOT_DIR}/agent-secrets.env`
+      const stamps: Array<{ name: string; files?: string[] }> = []
+      const client = new FakeClient()
+      const deps = {
+        getMachineBox: async () => box(),
+        getClient: async () => client as any,
+        stampBoxSyncedHash: async (_m: string, _s: string, name: string, _h: string, files?: string[]) =>
+          void stamps.push({ name, files }),
+      }
+
+      expect(await pushAgentSecretsToBox(sandboxId, deps)).toEqual({ pushed: true })
+      expect(client.writePaths()).toEqual([boxPath])
+      expect(client.modeAt(boxPath)).toBe('0600')
+      expect(stamps.at(-1)).toEqual({ name: 'agent-secrets', files: ['.ficus/agent-secrets.env'] })
+
+      // Revoked: the core-host file is gone, so the box copy is removed.
+      rmSync(hostFile)
+      const revokeClient = new FakeClient()
+      const revoked = await pushAgentSecretsToBox(sandboxId, {
+        ...deps,
+        getMachineBox: async () => box({ 'agent-secrets': { hash: 'old', files: ['.ficus/agent-secrets.env'] } }),
+        getClient: async () => revokeClient as any,
+      })
+      expect(revoked).toEqual({ pushed: true })
+      expect(revokeClient.writePaths()).toEqual([])
+      expect(revokeClient.bashes().map((c) => c.command)).toContain(`rm -f -- '${boxPath}'`)
+      expect(stamps.at(-1)).toEqual({ name: 'agent-secrets', files: [] })
+    })
+  })
+
+  test('removes the fixed path even when the box was never stamped', async () => {
+    await withHome(async () => {
+      const client = new FakeClient()
+      await pushAgentSecretsToBox(sandboxId, {
+        getMachineBox: async () => box(),
+        getClient: async () => client as any,
+        stampBoxSyncedHash: async () => {},
+      })
+      expect(client.bashes().map((c) => c.command)).toContain(
+        `rm -f -- '${HOME(sandboxId)}/.private/${WORKSPACE_DOT_DIR}/agent-secrets.env'`
+      )
+    })
+  })
+
+  test('shared boxes and live mounts are not pushed', async () => {
+    expect(await pushAgentSecretsToBox('squad_11111111-1111-4111-8111-111111111111')).toEqual({
+      pushed: false,
+      reason: 'not-an-agent-box',
+    })
+    expect(await pushAgentSecretsToBox(sandboxId, { getMachineBox: async () => null })).toEqual({
+      pushed: false,
+      reason: 'live-mount',
+    })
   })
 })

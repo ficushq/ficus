@@ -15,7 +15,7 @@ import { resolveWorkspaceLayout } from '../services/sandbox/workspace-layout'
 import type { SandboxedToolWithKey } from '../services/sandbox/types'
 import { getSandboxManager } from '../services/sandbox'
 import type { DockerSandboxManager } from '../services/sandbox/docker/manager'
-import { createK8sSandboxedBashTool, enforceAbsolutePaths } from './sandbox-tools'
+import { agentOwnBashSecretsPath, createK8sSandboxedBashTool, enforceAbsolutePaths } from './sandbox-tools'
 import { writeDockerFile } from './docker-tool-boundary'
 import { detectReadImageMimeType, IMAGE_SNIFF_BYTES } from './read-image-mime'
 
@@ -139,7 +139,7 @@ export function createDockerSandboxedCodingTools(
     sandboxId,
     manager,
     ficusToken,
-    { invocationOwnerId, agentId }
+    { invocationOwnerId, agentId, agentSecretsPath: agentOwnBashSecretsPath(sandboxId) }
   )
   return [
     { ...read, key: 'read' },

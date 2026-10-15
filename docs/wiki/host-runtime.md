@@ -157,7 +157,9 @@ stops them taking effect.
   `squad_bash` run as the same unix user on one filesystem, so an agent's
   private dir (`<HOME_DIR>/private/<sandboxId>`) is readable by every other
   agent on the instance. Squad agents are mutually trusted by design; use
-  docker/k8s/vm when that is not acceptable.
+  docker/k8s/vm when that is not acceptable. For the same reason,
+  [per-agent secrets](secret-store.md#per-agent-secrets) are refused on host:
+  a value cannot be kept private to one agent there.
 
 ## Per-squad workspace override
 
