@@ -165,8 +165,11 @@ test('waits for successful visible loading, freezes the visit baseline, and ackn
     'button[aria-label="Dismiss updates since your last visit"]'
   )!
   expect(dismiss).not.toBeNull()
-  // A link button has no inline padding of its own; its hit area extends into the header padding instead.
-  expect(dismiss.className).toContain('after:absolute')
+  // A compact ghost control in the ghost header row, not an underlined link; the row drops its own
+  // hover while Dismiss is hovered so the two highlights never stack.
+  expect(dismiss.classList.contains('ficus-button-ghost')).toBe(true)
+  expect(dismiss.classList.contains('ficus-button-link')).toBe(false)
+  expect(header.classList.contains('has-[button:hover]:bg-transparent')).toBe(true)
   await dom.act(async () => dismiss.click())
   expect(dom.window.document.querySelector('[data-testid="feed-visit-summary"]')).toBeNull()
   await render()
