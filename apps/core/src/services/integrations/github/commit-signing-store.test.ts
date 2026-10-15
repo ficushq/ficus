@@ -201,10 +201,11 @@ describe('commit signing store', () => {
 
   it('does not sign mid-refresh when the connection is otherwise unusable', async () => {
     const otherAuthority = resolveOAuthAuthority() === 'local' ? 'platform_broker' : 'local'
-    for (const options of [
+    const cases: Parameters<typeof connection>[0][] = [
       { ...refreshPending, enabled: false },
       { ...refreshPending, clientAuthority: otherAuthority },
-    ]) {
+    ]
+    for (const options of cases) {
       const squadId = await squad()
       const id = await connection(options)
       await assign(squadId, id, true)
