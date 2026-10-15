@@ -13,14 +13,12 @@ import {
   createGitHubRequest,
   parseAttachmentArg,
   parseRepo,
-  pruneAssets,
   registerPrCommands,
   uploadAssets,
 } from './pr'
 
 type AnyMock = ReturnType<typeof mock>
 const REPO = 'acme/app'
-const NOW = new Date('2026-10-15T00:00:00Z')
 
 interface FakeIssue {
   state: 'open' | 'closed'
@@ -51,10 +49,6 @@ function fakeGitHub(issues: Record<number, FakeIssue> = { 7: { state: 'open', cl
       if (!sha) throw notFound()
       return { object: { sha } } as T
     }
-    if (method === 'GET' && (m = /^\/git\/matching-refs\/heads\/(.+)$/.exec(rest)))
-      return [...refs]
-        .filter(([name]) => name.startsWith(m![1]!))
-        .map(([name, sha]) => ({ ref: `refs/heads/${name}`, object: { sha } })) as T
     if (method === 'GET' && (m = /^\/git\/commits\/(.+)$/.exec(rest))) {
       const commit = commits.get(m[1]!)
       if (!commit) throw notFound()
@@ -80,10 +74,9 @@ function fakeGitHub(issues: Record<number, FakeIssue> = { 7: { state: 'open', cl
       refs.set(body.ref.replace('refs/heads/', ''), body.sha)
       return {} as T
     }
-    if ((method === 'PATCH' || method === 'DELETE') && (m = /^\/git\/refs\/heads\/(.+)$/.exec(rest))) {
+    if (method === 'PATCH' && (m = /^\/git\/refs\/heads\/(.+)$/.exec(rest))) {
       if (!refs.has(m[1]!)) throw notFound()
-      if (method === 'DELETE') refs.delete(m[1]!)
-      else refs.set(m[1]!, body.sha)
+      refs.set(m[1]!, body.sha)
       return undefined as T
     }
     if ((m = /^\/issues\/(\d+)$/.exec(rest))) {
@@ -104,7 +97,7 @@ function fakeGitHub(issues: Record<number, FakeIssue> = { 7: { state: 'open', cl
     commits.set(sha, { message: 'PR screenshots (not for merge)', tree: next('tree'), parents: [] })
     refs.set(branch, sha)
   }
-  return { github, refs, commits, trees, blobs, comments, calls, issues, pushForeign }
+  return { github: github as GitHubRequest, refs, commits, trees, blobs, comments, calls, issues, pushForeign }
 }
 
 let dir: string
@@ -117,7 +110,6 @@ async function run(...args: string[]) {
     github: async () => gh.github,
     originRepo: originRepo as unknown as () => Promise<string>,
     readBodyFile: async () => 'from file ![shot](./after.png)',
-    now: () => NOW,
   })
   await program.parseAsync(args, { from: 'user' })
 }
@@ -148,16 +140,16 @@ afterAll(async () => {
 })
 
 describe('ficus pr attach', () => {
-  test('commits files to an orphan pr-assets branch and comments with commit-pinned images', async () => {
+  test('commits files to an orphan ficus/pr-assets branch and comments with commit-pinned images', async () => {
     await run('pr', 'attach', '7', './before.png#Before', 'after.png#After', '--body', 'Before / after')
     expect(lastError()).toBeUndefined()
     const result = lastOutput()
-    const head = gh.refs.get('pr-assets/7')!
+    const head = gh.refs.get('ficus/pr-assets')!
     expect(result.commit).toBe(head)
     const commit = gh.commits.get(head)!
     expect(commit.parents).toEqual([])
     expect(commit.message.startsWith(ASSET_COMMIT_MARKER)).toBe(true)
-    expect(Object.keys(gh.trees.get(commit.tree)!)).toEqual(['before.png', 'after.png'])
+    expect(Object.keys(gh.trees.get(commit.tree)!)).toEqual(['7/before.png', '7/after.png'])
     expect([...gh.blobs.values()]).toEqual([
       Buffer.from('OLDPNG').toString('base64'),
       Buffer.from('PNGDATA').toString('base64'),
@@ -168,40 +160,40 @@ describe('ficus pr attach', () => {
         body: [
           'Before / after',
           '',
-          `![Before](https://github.com/${REPO}/blob/${head}/before.png?raw=true)`,
-          `![After](https://github.com/${REPO}/blob/${head}/after.png?raw=true)`,
+          `![Before](https://github.com/${REPO}/blob/${head}/7/before.png?raw=true)`,
+          `![After](https://github.com/${REPO}/blob/${head}/7/after.png?raw=true)`,
         ].join('\n'),
       },
     ])
     expect(result.posted).toContain('#issuecomment-1')
-    // Only the repository's own branch is written; nothing outside pr-assets/7.
-    expect([...gh.refs.keys()]).toEqual(['pr-assets/7'])
+    // Only the shared assets branch of the PR's own repository is written.
+    expect([...gh.refs.keys()]).toEqual(['ficus/pr-assets'])
   })
 
   test('a second upload builds on the branch and keeps earlier links valid', async () => {
     await run('pr', 'attach', '7', 'before.png', '--no-comment')
-    const first = gh.refs.get('pr-assets/7')!
+    const first = gh.refs.get('ficus/pr-assets')!
     await run('pr', 'attach', '7', 'after.png', '--no-comment')
-    const second = gh.refs.get('pr-assets/7')!
+    const second = gh.refs.get('ficus/pr-assets')!
     expect(second).not.toBe(first)
     expect(gh.commits.get(second)!.parents).toEqual([first])
-    expect(Object.keys(gh.trees.get(gh.commits.get(second)!.tree)!).sort()).toEqual(['after.png', 'before.png'])
-    expect(gh.calls).toContain(`PATCH /repos/${REPO}/git/refs/heads/pr-assets/7`)
+    expect(Object.keys(gh.trees.get(gh.commits.get(second)!.tree)!).sort()).toEqual(['7/after.png', '7/before.png'])
+    expect(gh.calls).toContain(`PATCH /repos/${REPO}/git/refs/heads/ficus/pr-assets`)
     expect(gh.comments).toEqual([])
-    expect(lastOutput().markdown).toBe(`![after.png](https://github.com/${REPO}/blob/${second}/after.png?raw=true)`)
+    expect(lastOutput().markdown).toBe(`![after.png](https://github.com/${REPO}/blob/${second}/7/after.png?raw=true)`)
   })
 
   test('replaces body references, links non-images and can append to the description', async () => {
     await run('pr', 'attach', '7', 'after.png', 'demo.mp4', '--body-file', 'body.md', '--edit-body')
-    const head = gh.refs.get('pr-assets/7')!
+    const head = gh.refs.get('ficus/pr-assets')!
     expect(gh.comments).toEqual([])
     expect(gh.issues[7]!.body).toBe(
       [
         'Desc',
         '',
-        `from file ![shot](https://github.com/${REPO}/blob/${head}/after.png?raw=true)`,
+        `from file ![shot](https://github.com/${REPO}/blob/${head}/7/after.png?raw=true)`,
         '',
-        `[demo.mp4](https://github.com/${REPO}/blob/${head}/demo.mp4?raw=true)`,
+        `[demo.mp4](https://github.com/${REPO}/blob/${head}/7/demo.mp4?raw=true)`,
       ].join('\n')
     )
   })
@@ -213,12 +205,12 @@ describe('ficus pr attach', () => {
     expect(originRepo).toHaveBeenCalledTimes(1)
   })
 
-  test('refuses a pr-assets branch it did not create', async () => {
-    gh.pushForeign('pr-assets/7')
-    const before = gh.refs.get('pr-assets/7')
+  test('refuses an assets branch it did not create', async () => {
+    gh.pushForeign('ficus/pr-assets')
+    const before = gh.refs.get('ficus/pr-assets')
     await run('pr', 'attach', '7', 'after.png')
     expect(lastError()).toContain('was not created by ficus pr attach')
-    expect(gh.refs.get('pr-assets/7')).toBe(before)
+    expect(gh.refs.get('ficus/pr-assets')).toBe(before)
     expect(gh.blobs.size).toBe(0)
   })
 
@@ -241,55 +233,46 @@ describe('ficus pr attach', () => {
   })
 })
 
-describe('pruning', () => {
-  async function seed() {
-    gh.issues[1] = { state: 'closed', closed_at: '2026-10-01T00:00:00Z', body: null }
-    gh.issues[2] = { state: 'closed', closed_at: '2026-10-14T00:00:00Z', body: null }
-    gh.issues[3] = { state: 'closed', closed_at: '2026-10-01T00:00:00Z', body: null }
+describe('assets stay on the remote', () => {
+  test('never deletes anything, and every PR shares the one branch', async () => {
+    gh.issues[1] = { state: 'closed', closed_at: '2026-01-01T00:00:00Z', body: null }
     const file = { source: 'a.png', name: 'a.png', alt: 'a', content: new Uint8Array([1]) }
-    for (const n of [1, 2, 7]) await uploadAssets(gh.github, REPO, n, [file])
-    gh.pushForeign('pr-assets/3')
-    gh.pushForeign('pr-assets/feature')
-    gh.pushForeign('main')
-  }
-
-  test('deletes only marker branches of PRs closed past the grace period', async () => {
-    await seed()
-    const result = await pruneAssets(gh.github, REPO, { graceDays: 7, now: NOW })
-    expect(result.deleted).toEqual(['pr-assets/1'])
-    expect(result.skipped).toEqual([
-      { branch: 'pr-assets/2', reason: 'closed less than 7 days ago' },
-      { branch: 'pr-assets/7', reason: 'still open' },
-      { branch: 'pr-assets/3', reason: 'not created by ficus pr attach' },
-      { branch: 'pr-assets/feature', reason: 'not a pr-assets/<number> branch' },
-    ])
-    expect([...gh.refs.keys()].sort()).toEqual([
-      'main',
-      'pr-assets/2',
-      'pr-assets/3',
-      'pr-assets/7',
-      'pr-assets/feature',
-    ])
-    expect(gh.calls.filter((call) => call.startsWith('DELETE'))).toEqual([
-      `DELETE /repos/${REPO}/git/refs/heads/pr-assets/1`,
-    ])
+    await uploadAssets(gh.github, REPO, 1, [file])
+    await run('pr', 'attach', '7', 'after.png', '--edit-body')
+    await run('pr', 'attach', '1', 'after.png')
+    expect(gh.calls.some((call) => call.startsWith('DELETE'))).toBe(false)
+    expect([...gh.refs.keys()]).toEqual(['ficus/pr-assets'])
+    const head = gh.commits.get(gh.refs.get('ficus/pr-assets')!)!
+    expect(Object.keys(gh.trees.get(head.tree)!).sort()).toEqual(['1/a.png', '1/after.png', '7/after.png'])
   })
 
-  test('prune-assets command honours --number and --grace-days', async () => {
-    await seed()
-    await run('pr', 'prune-assets', '--number', '2', '--grace-days', '0')
-    expect(lastOutput().deleted).toEqual(['pr-assets/2'])
-    expect(gh.refs.has('pr-assets/1')).toBe(true)
-  })
-
-  test('attach prunes other stale asset branches, never the one it just wrote', async () => {
-    gh.issues[1] = { state: 'closed', closed_at: '2026-10-01T00:00:00Z', body: null }
-    await run('pr', 'attach', '1', 'after.png', '--no-comment')
-    expect(lastOutput().pruned).toEqual([])
-    expect(gh.refs.has('pr-assets/1')).toBe(true)
+  test('rebuilds on the new head when another upload moved the branch', async () => {
+    await run('pr', 'attach', '7', 'before.png', '--no-comment')
+    const original = gh.github
+    let raced = false
+    gh.github = async (method, path, body) => {
+      if (!raced && method === 'PATCH') {
+        raced = true
+        // Simulate another agent's attach landing first.
+        const other = await uploadAssets(original, REPO, 9, [
+          { source: 'x.png', name: 'x.png', alt: 'x', content: new Uint8Array([2]) },
+        ])
+        expect(other.commit).toBe(gh.refs.get('ficus/pr-assets'))
+        throw new GitHubError(422, 'Update is not a fast forward')
+      }
+      return original(method, path, body)
+    }
     await run('pr', 'attach', '7', 'after.png', '--no-comment')
-    expect(lastOutput().pruned).toEqual(['pr-assets/1'])
-    expect([...gh.refs.keys()]).toEqual(['pr-assets/7'])
+    expect(lastError()).toBeUndefined()
+    const head = gh.commits.get(gh.refs.get('ficus/pr-assets')!)!
+    expect(Object.keys(gh.trees.get(head.tree)!).sort()).toEqual(['7/after.png', '7/before.png', '9/x.png'])
+  })
+
+  test('there is no prune command', () => {
+    const program = new Command().exitOverride()
+    registerPrCommands(program)
+    const pr = program.commands.find((command) => command.name() === 'pr')!
+    expect(pr.commands.map((command) => command.name())).toEqual(['attach'])
   })
 })
 

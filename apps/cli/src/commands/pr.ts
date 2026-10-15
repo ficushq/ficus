@@ -1,18 +1,18 @@
 /**
- * `ficus pr attach` / `ficus pr prune-assets`: put screenshots on a pull request
- * or issue with the squad's GitHub integration credential.
+ * `ficus pr attach`: put screenshots on a pull request or issue with the squad's
+ * GitHub integration credential.
  *
  * `gh --attach` uploads through GitHub's user-attachments endpoint, which accepts
  * only user sessions; GitHub App installation tokens (what squads use) are
  * refused with "unsupported authentication type". Instead the files are
- * committed through the Git Data API to an orphan branch `pr-assets/<number>`
- * in the PR's own repository, so they share its visibility, and linked by the
+ * committed through the Git Data API to `<number>/` on the single orphan branch
+ * `ficus/pr-assets` of the PR's own repository, so they share its visibility, and linked by the
  * commit SHA, so a later upload never changes an image already posted.
  *
- * Every commit made here carries ASSET_COMMIT_MARKER. Pruning deletes only
- * `pr-assets/<number>` branches whose head commit has the marker and whose
- * PR or issue has been closed for the grace period; anything else is skipped.
- * The credential is sent only in the Authorization header and never printed.
+ * Assets are kept for reference: nothing here ever deletes a branch or file.
+ * Every commit made here carries ASSET_COMMIT_MARKER, and an existing branch
+ * whose head lacks it is never changed. The credential is sent only in the
+ * Authorization header and never printed.
  */
 import { readFile, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
@@ -20,11 +20,11 @@ import { Command } from 'commander'
 import { apiPost } from '../client'
 import { output, outputError } from '../output'
 
-export const ASSET_BRANCH_PREFIX = 'pr-assets/'
+/** One shared, never-merged branch per repository; each PR or issue gets a `<number>/` folder. */
+export const ASSET_BRANCH = 'ficus/pr-assets'
 export const ASSET_COMMIT_MARKER = 'ficus pr-assets'
 export const MAX_ASSET_BYTES = 10 * 1024 * 1024
 export const MAX_ASSET_FILES = 20
-export const DEFAULT_PRUNE_GRACE_DAYS = 7
 const GITHUB_API = 'https://api.github.com'
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'])
 
@@ -64,8 +64,6 @@ interface GitCommit {
 }
 interface Issue {
   number: number
-  state: string
-  closed_at: string | null
   html_url: string
   body: string | null
 }
@@ -106,8 +104,12 @@ function isImage(name: string): boolean {
   return IMAGE_EXTENSIONS.has(name.split('.').pop()?.toLowerCase() ?? '')
 }
 
-export function assetUrl(repo: string, commit: string, name: string): string {
-  return `https://github.com/${repo}/blob/${commit}/${encodeURIComponent(name)}?raw=true`
+export function assetPath(number: number, name: string): string {
+  return `${number}/${name}`
+}
+
+export function assetUrl(repo: string, commit: string, path: string): string {
+  return `https://github.com/${repo}/blob/${commit}/${path.split('/').map(encodeURIComponent).join('/')}?raw=true`
 }
 
 export function assetMarkdown(file: Pick<AssetFile, 'name' | 'alt'>, url: string): string {
@@ -171,101 +173,64 @@ async function getRef(github: GitHubRequest, repo: string, branch: string): Prom
   }
 }
 
-/** Commit `files` to `pr-assets/<number>` and return commit-pinned links. */
+const MAX_REF_UPDATE_ATTEMPTS = 5
+
+/**
+ * Commit `files` under `<number>/` on the shared ASSET_BRANCH and return
+ * commit-pinned links. Other agents may advance the branch concurrently, so a
+ * rejected fast-forward rebuilds the commit on the new head and tries again.
+ */
 export async function uploadAssets(
   github: GitHubRequest,
   repo: string,
   number: number,
   files: AssetFile[]
 ): Promise<{ branch: string; commit: string; assets: AttachedAsset[] }> {
-  const branch = `${ASSET_BRANCH_PREFIX}${number}`
-  const existing = await getRef(github, repo, branch)
-  let parent: GitCommit | undefined
-  if (existing) {
-    parent = await github<GitCommit>('GET', `/repos/${repo}/git/commits/${existing.object.sha}`)
-    if (!isAssetCommit(parent))
-      throw new Error(`${repo} branch ${branch} was not created by ficus pr attach; refusing to change it`)
-  }
-  const tree = []
-  for (const file of files) {
-    const blob = await github<{ sha: string }>('POST', `/repos/${repo}/git/blobs`, {
-      content: Buffer.from(file.content).toString('base64'),
-      encoding: 'base64',
-    })
-    tree.push({ path: file.name, mode: '100644', type: 'blob', sha: blob.sha })
-  }
-  const newTree = await github<{ sha: string }>('POST', `/repos/${repo}/git/trees`, {
-    ...(parent ? { base_tree: parent.tree.sha } : {}),
-    tree,
-  })
-  const commit = await github<{ sha: string }>('POST', `/repos/${repo}/git/commits`, {
-    message: `${ASSET_COMMIT_MARKER}: attachments for #${number}\n\nNot for merge. Deleted after #${number} is closed.`,
-    tree: newTree.sha,
-    parents: parent ? [parent.sha] : [],
-  })
-  if (existing) await github('PATCH', `/repos/${repo}/git/refs/heads/${branch}`, { sha: commit.sha, force: false })
-  else await github('POST', `/repos/${repo}/git/refs`, { ref: `refs/heads/${branch}`, sha: commit.sha })
-  return {
-    branch,
-    commit: commit.sha,
-    assets: files.map((file) => {
-      const url = assetUrl(repo, commit.sha, file.name)
-      return { name: file.name, url, markdown: assetMarkdown(file, url) }
-    }),
-  }
-}
-
-export interface PruneResult {
-  deleted: string[]
-  skipped: { branch: string; reason: string }[]
-}
-
-/**
- * Delete `pr-assets/<number>` branches this tool created once their PR or
- * issue has been closed for `graceDays`. Never touches any other branch.
- */
-export async function pruneAssets(
-  github: GitHubRequest,
-  repo: string,
-  options: { graceDays: number; now?: Date; only?: number; except?: number }
-): Promise<PruneResult> {
-  const now = options.now ?? new Date()
-  const refs = await github<{ ref: string; object: { sha: string } }[]>(
-    'GET',
-    `/repos/${repo}/git/matching-refs/heads/${ASSET_BRANCH_PREFIX}`
-  )
-  const result: PruneResult = { deleted: [], skipped: [] }
-  for (const ref of refs) {
-    const branch = ref.ref.replace(/^refs\/heads\//, '')
-    const match = /^pr-assets\/([1-9][0-9]*)$/.exec(branch)
-    if (!match) {
-      result.skipped.push({ branch, reason: 'not a pr-assets/<number> branch' })
-      continue
+  const branch = ASSET_BRANCH
+  const tree: { path: string; mode: string; type: string; sha: string }[] = []
+  for (let attempt = 1; ; attempt++) {
+    const existing = await getRef(github, repo, branch)
+    let parent: GitCommit | undefined
+    if (existing) {
+      parent = await github<GitCommit>('GET', `/repos/${repo}/git/commits/${existing.object.sha}`)
+      if (!isAssetCommit(parent))
+        throw new Error(`${repo} branch ${branch} was not created by ficus pr attach; refusing to change it`)
     }
-    const number = Number(match[1])
-    if ((options.only !== undefined && number !== options.only) || number === options.except) continue
-    const issue = await github<Issue>('GET', `/repos/${repo}/issues/${number}`).catch((error) => {
-      if (error instanceof GitHubError && error.status === 404) return undefined
+    // Upload the blobs once, after the branch passed the check above.
+    if (tree.length === 0)
+      for (const file of files) {
+        const blob = await github<{ sha: string }>('POST', `/repos/${repo}/git/blobs`, {
+          content: Buffer.from(file.content).toString('base64'),
+          encoding: 'base64',
+        })
+        tree.push({ path: assetPath(number, file.name), mode: '100644', type: 'blob', sha: blob.sha })
+      }
+    const newTree = await github<{ sha: string }>('POST', `/repos/${repo}/git/trees`, {
+      ...(parent ? { base_tree: parent.tree.sha } : {}),
+      tree,
+    })
+    const commit = await github<{ sha: string }>('POST', `/repos/${repo}/git/commits`, {
+      message: `${ASSET_COMMIT_MARKER}: attachments for #${number}\n\nNot for merge. Kept for reference.`,
+      tree: newTree.sha,
+      parents: parent ? [parent.sha] : [],
+    })
+    try {
+      if (existing) await github('PATCH', `/repos/${repo}/git/refs/heads/${branch}`, { sha: commit.sha, force: false })
+      else await github('POST', `/repos/${repo}/git/refs`, { ref: `refs/heads/${branch}`, sha: commit.sha })
+    } catch (error) {
+      // 422: the branch moved (not a fast-forward) or was created meanwhile.
+      if (error instanceof GitHubError && error.status === 422 && attempt < MAX_REF_UPDATE_ATTEMPTS) continue
       throw error
-    })
-    if (!issue || issue.state !== 'closed' || !issue.closed_at) {
-      result.skipped.push({ branch, reason: issue ? 'still open' : 'no such pull request or issue' })
-      continue
     }
-    const closedDays = (now.getTime() - Date.parse(issue.closed_at)) / 86_400_000
-    if (closedDays < options.graceDays) {
-      result.skipped.push({ branch, reason: `closed less than ${options.graceDays} days ago` })
-      continue
+    return {
+      branch,
+      commit: commit.sha,
+      assets: files.map((file) => {
+        const url = assetUrl(repo, commit.sha, assetPath(number, file.name))
+        return { name: file.name, url, markdown: assetMarkdown(file, url) }
+      }),
     }
-    const head = await github<GitCommit>('GET', `/repos/${repo}/git/commits/${ref.object.sha}`)
-    if (!isAssetCommit(head)) {
-      result.skipped.push({ branch, reason: 'not created by ficus pr attach' })
-      continue
-    }
-    await github('DELETE', `/repos/${repo}/git/refs/heads/${branch}`)
-    result.deleted.push(branch)
   }
-  return result
 }
 
 export function createGitHubRequest(token: string, fetcher: typeof fetch = fetch): GitHubRequest {
@@ -301,7 +266,6 @@ export interface PrCommandDependencies {
   /** `owner/repo` of the current directory's origin remote. */
   originRepo: () => Promise<string>
   readBodyFile: (path: string) => Promise<string>
-  now: () => Date
 }
 
 async function integrationGitHub(options: { squad?: string; connection?: string }): Promise<GitHubRequest> {
@@ -327,7 +291,6 @@ const defaultDependencies: PrCommandDependencies = {
   github: integrationGitHub,
   originRepo: gitOriginRepo,
   readBodyFile: (path) => (path === '-' ? new Response(Bun.stdin.stream()).text() : readFile(path, 'utf8')),
-  now: () => new Date(),
 }
 
 export function registerPrCommands(program: Command, dependencies: PrCommandDependencies = defaultDependencies): void {
@@ -337,7 +300,7 @@ export function registerPrCommands(program: Command, dependencies: PrCommandDepe
 
   pr.command('attach <number> <files...>')
     .description(
-      'Attach screenshots or recordings to a pull request or issue: commits them to the orphan branch pr-assets/<number> in the same repository, then posts a comment showing them (links are pinned to the commit). Use PATH#ALT for alt text; a ![alt](./PATH) reference in the body is replaced by the uploaded file, other files are appended. Replaces gh --attach, which GitHub App credentials cannot use.'
+      'Attach screenshots or recordings to a pull request or issue: commits them to <number>/ on the orphan branch ficus/pr-assets of the same repository (kept permanently), then posts a comment showing them (links are pinned to the commit). Use PATH#ALT for alt text; a ![alt](./PATH) reference in the body is replaced by the uploaded file, other files are appended. Replaces gh --attach, which GitHub App credentials cannot use.'
     )
     .option('-R, --repo <owner/repo>', 'Repository (default: the origin remote of the current directory)')
     .option('-b, --body <text>', 'Comment text')
@@ -376,48 +339,9 @@ export function registerPrCommands(program: Command, dependencies: PrCommandDepe
             await github<{ html_url: string }>('POST', `/repos/${repo}/issues/${number}/comments`, { body: markdown })
           ).html_url
         }
-        // Housekeeping for other PRs; never let it fail an upload that already succeeded.
-        const pruned = await pruneAssets(github, repo, {
-          graceDays: DEFAULT_PRUNE_GRACE_DAYS,
-          now: dependencies.now(),
-          except: number,
-        }).catch(() => undefined)
         output(
-          { repo, number, ...upload, markdown, ...(posted ? { posted } : {}), pruned: pruned?.deleted ?? [] },
-          [
-            posted ? `Posted ${posted}` : markdown,
-            ...(pruned?.deleted.length ? [`Pruned ${pruned.deleted.join(', ')}`] : []),
-          ].join('\n')
-        )
-      })
-    )
-
-  pr.command('prune-assets')
-    .description(
-      `Delete pr-assets/<number> branches that ficus pr attach created, once their pull request or issue has been closed for the grace period. Other branches are never touched.`
-    )
-    .option('-R, --repo <owner/repo>', 'Repository (default: the origin remote of the current directory)')
-    .option('--number <number>', 'Only this pull request or issue')
-    .option('--grace-days <days>', 'Days a pull request must have been closed', String(DEFAULT_PRUNE_GRACE_DAYS))
-    .option('--squad <uuid>', 'Squad whose GitHub integration to use (default: $FICUS_SQUAD_ID)')
-    .option('--connection <uuid>', 'Use a specific attached GitHub account')
-    .action(
-      run(async (options) => {
-        const graceDays = Number(options.graceDays)
-        if (!Number.isFinite(graceDays) || graceDays < 0) throw new Error('--grace-days must be a non-negative number')
-        const repo = options.repo ? parseRepo(options.repo) : await dependencies.originRepo()
-        const github = await dependencies.github(options)
-        const result = await pruneAssets(github, repo, {
-          graceDays,
-          now: dependencies.now(),
-          ...(options.number !== undefined ? { only: parseNumber(options.number) } : {}),
-        })
-        output(
-          { repo, ...result },
-          [
-            result.deleted.length ? `Deleted ${result.deleted.join(', ')}` : 'Nothing to delete',
-            ...result.skipped.map((skip) => `Skipped ${skip.branch}: ${skip.reason}`),
-          ].join('\n')
+          { repo, number, ...upload, markdown, ...(posted ? { posted } : {}) },
+          posted ? `Posted ${posted}` : markdown
         )
       })
     )

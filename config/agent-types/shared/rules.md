@@ -46,8 +46,8 @@ EOF
 ```
 
 Put screenshots and recordings on a PR or issue with `ficus pr attach` (`gh --attach`
-fails with the squad's GitHub App credential). It commits the files to the branch
-`pr-assets/<number>` of the same repository and posts a comment; alt text follows
+fails with the squad's GitHub App credential). It commits the files to `<number>/` on
+the shared branch `ficus/pr-assets` of the same repository and posts a comment; alt text follows
 the path after `#`, and `![alt](./after.png)` in the body is replaced inline:
 
 ```bash
