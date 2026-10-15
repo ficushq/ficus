@@ -241,9 +241,9 @@ export function ActionItem({
           )}
         </div>
 
-        {/* Expanded content */}
+        {/* Expanded content: pt-2 on top of the header's py-3 keeps the body off the header row */}
         {expanded && (
-          <div className={clsx('pb-4 space-y-4', !embedded && 'px-4 sm:pl-11')}>
+          <div className={clsx('pt-2 pb-4 space-y-4', !embedded && 'px-4 sm:pl-11')}>
             {/* Action controls */}
             {deliveryGate ? (
               <DeliveryGateActionContent data={deliveryGate} hideWorkStreamLink={embedded} />
@@ -685,7 +685,7 @@ function WorkStreamReviewActionContent({
         <div className="min-w-0 text-sm text-secondary">
           <MarkdownContent
             compactPullRequestLinks
-            className="text-sm leading-relaxed text-secondary prose-p:my-2 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline hover:prose-a:underline"
+            className="text-sm leading-relaxed text-secondary prose-p:my-2 [&>:first-child]:mt-0 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline hover:prose-a:underline"
           >
             {data.wait.message ?? data.prompt.message}
           </MarkdownContent>
@@ -783,7 +783,7 @@ function WorkStreamBlockedActionContent({
       <div className="min-w-0 text-sm text-secondary">
         <MarkdownContent
           compactPullRequestLinks
-          className="text-sm leading-relaxed text-secondary prose-p:my-2 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline hover:prose-a:underline"
+          className="text-sm leading-relaxed text-secondary prose-p:my-2 [&>:first-child]:mt-0 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline hover:prose-a:underline"
         >
           {data.wait.message ?? data.prompt.message}
         </MarkdownContent>

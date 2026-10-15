@@ -1014,3 +1014,30 @@ describe('ActionItem status icon', () => {
     }
   })
 })
+
+describe('ActionItem expanded body spacing', () => {
+  test('separates the expanded body from the header in Feed and embedded cards', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionItem action={action} defaultExpanded />
+              <ActionItem action={action} embedded />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      const bodies = [...dom.window.document.querySelectorAll('[tabindex="-1"]')].map((card) => card.children[1])
+      expect(bodies).toHaveLength(2)
+      for (const body of bodies) expect(body?.classList.contains('pt-2')).toBe(true)
+      // The body padding owns the gap, so a leading Markdown paragraph adds no extra margin on top.
+      for (const markdown of dom.window.document.querySelectorAll('.prose'))
+        expect(markdown.classList.contains('[&>:first-child]:mt-0')).toBe(true)
+    } finally {
+      await dom.cleanup()
+    }
+  })
+})
