@@ -476,7 +476,7 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
               {conversation && mode === 'text' && (
                 <button
                   onClick={backToAssistant}
-                  className="ficus-button ficus-button-link ml-auto text-xs text-muted hover:text-primary py-1.5"
+                  className="ficus-button ficus-button-ghost -mr-2 ml-auto rounded px-2 py-1.5 text-xs text-muted"
                 >
                   ← Back to search
                 </button>

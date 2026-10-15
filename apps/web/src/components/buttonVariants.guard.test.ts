@@ -29,6 +29,13 @@ const ALLOWLIST: Array<{ path: string; contains: string; why: string }> = []
 /** Horizontal padding classes; an inline link must have none, or it reads as an indented button. */
 const HORIZONTAL_PADDING = /(?<![\w-])-?p[xlrse]?-(?:\d|\[)/
 
+/**
+ * A neutral hover color on a link: a muted link that hovers to primary text (and the variant's underline)
+ * jumps to bright, underlined text unlike any other control. Use the plain link, or ghost/secondary for a
+ * quiet control. Tinted links (`hover:text-status-*`) keep their own hover shade.
+ */
+const NEUTRAL_HOVER_TEXT = /(?<![\w:-])hover:text-(?:primary|secondary|muted)(?![\w-])/
+
 function sources(): Array<{ path: string; text: string }> {
   const files: Array<{ path: string; text: string }> = []
   for (const entry of new Bun.Glob('**/*.{ts,tsx}').scanSync({ cwd: SRC })) {
@@ -52,6 +59,11 @@ function problems(findings: ButtonVariantFinding[]): string[] {
       HORIZONTAL_PADDING.test(finding.expression)
     )
       out.push(`${describe(finding)} (ficus-button-link must not carry horizontal padding)`)
+    else if (
+      finding.combinations.some((combo) => combo.includes('ficus-button-link')) &&
+      NEUTRAL_HOVER_TEXT.test(finding.expression)
+    )
+      out.push(`${describe(finding)} (ficus-button-link must not override its hover with a neutral text color)`)
   }
   return out
 }
@@ -98,6 +110,13 @@ test('the guard catches the base-only ghost pattern and its look-alikes', () => 
   expect(scanSnippet(`const button = 'ficus-button px-3 py-2'\nconst x = <b className={button} />`)).toHaveLength(1)
   // An inline link with horizontal padding reads as an indented button again.
   expect(scanSnippet(`<b className="ficus-button ficus-button-link px-2 text-xs">Dismiss</b>`)).toHaveLength(1)
+  // A muted link that hovers to bright, underlined text instead of the variant's own hover.
+  expect(
+    scanSnippet(`<b className="ficus-button ficus-button-link text-xs text-muted hover:text-primary">Dismiss</b>`)
+  ).toHaveLength(1)
+  expect(
+    scanSnippet(`<b className="ficus-button ficus-button-link text-xs hover:text-secondary">Hide</b>`)
+  ).toHaveLength(1)
 })
 
 test('the guard accepts a variant chosen dynamically among variants', () => {
@@ -110,6 +129,9 @@ test('the guard accepts a variant chosen dynamically among variants', () => {
     // A branch that is not a button at all carries no button class.
     `<a className={needsAccess ? 'ficus-button ficus-button-primary px-3' : 'text-accent-light hover:underline'} />`,
     `<b className="ficus-button ficus-button-link text-xs">Dismiss</b>`,
+    // A tinted link keeps its own hover shade, and a ghost may recolor its hover.
+    `<b className="ficus-button ficus-button-link text-xs text-status-attention-600 hover:text-status-attention-800">Retry</b>`,
+    `<b className="ficus-button ficus-button-ghost p-2 text-muted hover:text-status-danger-600">x</b>`,
   ]
   for (const source of ok) expect(scanSnippet(source), source).toEqual([])
 })

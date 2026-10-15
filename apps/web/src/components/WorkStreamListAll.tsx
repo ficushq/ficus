@@ -46,7 +46,7 @@ export function WorkStreamListAll({ filterContainer }: { filterContainer?: HTMLE
       doneFooter={
         recentOnly && (
           <button
-            className="ficus-button ficus-button-link ml-[3.25rem] py-2 text-xs text-muted hover:text-primary"
+            className="ficus-button ficus-button-secondary ml-[2.75rem] mt-1 rounded px-2 py-1.5 text-xs font-medium"
             onClick={() => setStatusFilters(['done'])}
           >
             See all →

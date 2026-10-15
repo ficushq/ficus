@@ -298,10 +298,13 @@ variant by role:
 | `ficus-button-link`      | Inline text actions in running text or a section header ("Dismiss", "Retry", "Edit"). No horizontal padding (the guard checks), so nothing looks indented.                                                                    |
 | `ficus-button-danger`    | Destructive actions (Delete, Remove, Revoke, Disconnect, Stop): secondary-shaped with danger text. A destructive icon-only button stays ghost with a `hover:text-status-danger-*` tint.                                       |
 
-Variants own the color, fill and hover; utilities add size and layout. A `hover:` utility still wins
-over a variant's hover, so a tinted or active state can keep its look. Choose the variant dynamically
-with a ternary among variants (`active ? 'ficus-button-primary' : 'ficus-button-secondary'`), never by
-adding or dropping one, and write shared class constants with the base and the variant together.
+Variants own the color, fill and hover; utilities add size and layout. A `hover:` utility still wins over
+a variant's hover, so a tinted or active state can keep its look. Never quiet a link with `text-muted`
+and a neutral `hover:text-primary`/`hover:text-secondary`: it hovers to bright underlined text unlike any
+other control (the guard checks). A quiet control is ghost inside a header or toolbar and secondary in
+content. Choose the variant dynamically with a ternary among variants
+(`active ? 'ficus-button-primary' : 'ficus-button-secondary'`), never by adding or dropping one, and write
+shared class constants with the base and the variant together.
 
 ### Stable Refs
 
