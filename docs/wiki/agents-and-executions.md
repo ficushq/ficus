@@ -270,6 +270,18 @@ notification, or a phone rather than the agent's conversation, so `context` (Mar
 characters) carries the background shown beneath the question. On `text` questions, `options` are
 suggested answers: the answer form shows them as chips that fill the editable answer.
 
+The stored answer is unchanged: the chosen option value for one question (multi-select values joined by
+`, `, free "Other" text verbatim), a JSON object of question id to that string for several questions,
+and `(empty)` when every optional question was skipped. The answer delivered back to the agent is
+readable instead: each question with `**Answer:** Label (value)` per chosen option, free text verbatim,
+or `(skipped)`; several questions are numbered with their id. Answers that cannot be attributed to the
+questions (for example a non-JSON answer to several questions) keep the earlier
+`**Question:** ...\n\n**Answer:** <stored answer>` body, and delivery reconciliation accepts both
+bodies, so rows delivered before this format still reconcile. The answer inbox row also carries a
+structured `questionAnswer` (question text and chosen labels) that the web chat renders as an
+"Answered by" card in place of the generic inbox card. Relayed answers (`answerSource`) are never
+delivered back to the agent, so they never produce this card.
+
 ## How Each Use Case Works
 
 ### Chat queue display

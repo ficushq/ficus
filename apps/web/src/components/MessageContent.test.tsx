@@ -3,7 +3,7 @@ import { siteAssistantToolRenderers } from '../lib/tool-renderers'
 import { SingleToolCallSection } from './MessageContent'
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { MessageMetadata } from '@ficus/shared'
+import type { MessageMetadata, QuestionAnswerCardData } from '@ficus/shared'
 
 const { AssistantMessageContent, HumanMessageContent } = await import('./MessageContent')
 
@@ -78,6 +78,139 @@ ficus inbox read m1
     expect(html).toContain('Show more')
     expect(html).not.toContain('THE_TAIL_SHOULD_BE_HIDDEN')
     expect(html).not.toContain('View work stream')
+  })
+
+  describe('question answer deliveries', () => {
+    const answerSummary = (questionAnswer?: QuestionAnswerCardData) => ({
+      id: 'm1',
+      senderType: 'user' as const,
+      senderId: '51846fad-0000-0000-0000-000000000000',
+      subject: 'Answer to your question',
+      preview: '**Question:** Proceed?',
+      senderDisplay: 'Noah [51846fad]',
+      ...(questionAnswer ? { questionAnswer } : {}),
+    })
+    const answerMetadata = (summaries: NonNullable<MessageMetadata['inboxMessageSummaries']>) =>
+      ({
+        source: 'inbox',
+        inboxDeliveryMode: 'steer',
+        inboxMessageIds: summaries.map((summary) => summary.id),
+        inboxMessageSummaries: summaries,
+      }) satisfies MessageMetadata
+    const content = framedInbox(
+      'Answer to your question',
+      '**Question:** Proceed?\n\n**Answer:** Accept the risk (accept)'
+    )
+
+    test('renders a single-select answer as a dedicated card showing the option label', () => {
+      const metadata = answerMetadata([
+        answerSummary({
+          questionId: 'question-1',
+          answeredBy: 'Noah',
+          answeredAt: '2026-10-15T17:20:00.000Z',
+          questions: [
+            { questionId: 'risk', question: 'Proceed?', choices: [{ label: 'Accept the risk', value: 'accept' }] },
+          ],
+        }),
+      ])
+      const html = renderToStaticMarkup(<HumanMessageContent content={content} metadata={metadata} />)
+
+      expect(html).toContain('aria-label="Question answer"')
+      expect(html).toContain('Answered by Noah')
+      expect(html).toContain('Proceed?')
+      expect(html).toContain('>Accept the risk<')
+      expect(html).toContain('dateTime="2026-10-15T17:20:00.000Z"')
+      expect(html).not.toContain('Inbox message from')
+      expect(html).not.toContain('51846fad')
+      expect(html).not.toContain('Interrupt')
+      expect(html).not.toContain('(accept)')
+    })
+
+    test('renders multi-question, multi-select, free-text and skipped answers readably, as plain text', () => {
+      const metadata = answerMetadata([
+        answerSummary({
+          questionId: 'question-1',
+          questions: [
+            {
+              questionId: 'envs',
+              question: 'Which **environments**?',
+              choices: [
+                { label: 'Staging', value: 'staging' },
+                { label: 'Production', value: 'prod' },
+              ],
+            },
+            { questionId: 'why', question: 'Why?', choices: [{ label: '<b>Because</b> it is ready' }] },
+            { questionId: 'notes', question: 'Notes?', choices: [] },
+          ],
+        }),
+      ])
+      const html = renderToStaticMarkup(<HumanMessageContent content={content} metadata={metadata} />)
+
+      expect(html).toContain('Question answered')
+      expect(html).toContain('aria-label="Chosen options"')
+      expect(html).toContain('>Staging<')
+      expect(html).toContain('>Production<')
+      expect(html).toContain('Which **environments**?')
+      expect(html).not.toContain('<strong>')
+      expect(html).toContain('&lt;b&gt;Because&lt;/b&gt; it is ready')
+      expect(html).toContain('Skipped')
+      expect(html).not.toContain('{')
+    })
+
+    test('renders an answer batched with other mail as its own card beside the normal inbox card', () => {
+      const metadata = answerMetadata([
+        answerSummary({
+          questionId: 'question-1',
+          answeredBy: 'Noah',
+          questions: [
+            { questionId: 'risk', question: 'Proceed?', choices: [{ label: 'Accept the risk', value: 'accept' }] },
+          ],
+        }),
+        {
+          id: 'm2',
+          senderType: 'agent',
+          senderId: 'agent-1',
+          subject: 'Launch',
+          preview: 'Check this',
+          senderDisplay: 'Nova [5f0eec16]',
+        },
+      ])
+      const batched = `${content.split('\n\n**Mark one or more')[0]}\n\n---\n\n### Message m2\n\n**From:** Nova [5f0eec16]\n\n**Sent at:** now\n\n**Subject:** Launch\n\nCheck this **bold** item`
+      const html = renderToStaticMarkup(<HumanMessageContent content={batched} metadata={metadata} />)
+
+      expect(html).toContain('Answered by Noah')
+      expect(html).toContain('Inbox message from Nova [5f0eec16]')
+      expect(html).toContain('<strong>bold</strong>')
+      expect(html).not.toContain('Answer to your question')
+      expect(html.indexOf('Answered by Noah')).toBeLessThan(html.indexOf('Inbox message from Nova'))
+    })
+
+    test('keeps legacy answer deliveries and the raw view on the generic inbox card', () => {
+      const legacy = framedInbox('Answer to your question', '**Question:** Proceed?\n\n**Answer:** accept')
+      const legacyHtml = renderToStaticMarkup(
+        <HumanMessageContent content={legacy} metadata={answerMetadata([answerSummary()])} />
+      )
+      expect(legacyHtml).toContain('Inbox message from Noah [51846fad]')
+      expect(legacyHtml).toContain('Answer to your question')
+      expect(legacyHtml).toContain('<strong>Answer:</strong> accept')
+
+      const malformed = answerMetadata([{ ...answerSummary(), questionAnswer: { questionId: 'q' } as never }])
+      expect(renderToStaticMarkup(<HumanMessageContent content={legacy} metadata={malformed} />)).toContain(
+        'Inbox message from Noah [51846fad]'
+      )
+
+      const raw = renderToStaticMarkup(
+        <HumanMessageContent
+          content={content}
+          showRaw
+          metadata={answerMetadata([
+            answerSummary({ questionId: 'q', questions: [{ questionId: 'risk', question: 'Proceed?', choices: [] }] }),
+          ])}
+        />
+      )
+      expect(raw).toContain('You have 1 unread message(s)')
+      expect(raw).not.toContain('aria-label="Question answer"')
+    })
   })
 
   test('renders a monitor line batch as a compact row with expandable lines', () => {

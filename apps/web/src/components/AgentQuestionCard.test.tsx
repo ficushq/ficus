@@ -210,6 +210,43 @@ test('AgentQuestionCard labels an answer the agent relayed from another channel,
   }
 })
 
+test('AgentQuestionCard shows the chosen option labels of an answered question, not the stored values', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const rendered = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      rendered.root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <AgentQuestionCard
+            question={{
+              ...question,
+              status: 'answered',
+              questionData: {
+                questions: [
+                  {
+                    id: 'risk',
+                    type: 'select',
+                    question: 'Proceed with the migration?',
+                    options: [{ value: 'accept', label: 'Accept the risk' }],
+                  },
+                ],
+              },
+              answer: 'accept',
+              answeredByUserId: 'u',
+            }}
+          />
+        </QueryClientProvider>
+      )
+    )
+    const text = dom.window.document.body.textContent ?? ''
+    expect(text).toContain('Proceed with the migration?')
+    expect(text).toContain('Accept the risk')
+    expect(text).not.toMatch(/\baccept\b/)
+  } finally {
+    await dom.cleanup()
+  }
+})
+
 test('AgentQuestionCard keeps a failed answer visible without invalidating successful caches', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const rendered = dom.createRoot()

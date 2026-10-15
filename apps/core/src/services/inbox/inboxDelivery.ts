@@ -1,7 +1,12 @@
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db, chatSendReceipts } from '../../db'
-import type { DeliveryMode } from '@ficus/shared'
+import {
+  parseQuestionAnswerCardData,
+  QUESTION_ANSWER_INBOX_SOURCE,
+  type DeliveryMode,
+  type QuestionAnswerCardData,
+} from '@ficus/shared'
 import { githubOutputPass, withGitHubOutputPass, withGitHubCandidate } from '../integrations/github/feedback-pass'
 import { readOutputCandidate, readOutputInbox } from '../integrations/github/feedback-pass-read'
 import { selectGitHubInboxPage } from '../integrations/github/feedback-inbox'
@@ -204,9 +209,28 @@ export function prepareInboxDelivery(
           ...(effectiveMode === 'follow-up' ? { deferredUntil: 'next-turn' as const } : {}),
           ...(meta.workStreamId ? { workStreamId: meta.workStreamId } : {}),
           ...(meta.squadId ? { squadId: meta.squadId } : {}),
+          ...questionAnswerSummary(message),
         }
       }),
     },
+  }
+}
+
+/**
+ * The structured answer card for an ask_human answer delivered back to the asking agent. Only the
+ * server-written answer row (its idempotency key is never client-supplied) qualifies, so a client
+ * cannot forge an answer card through inbox metadata. The answerer's display name comes from the
+ * server-derived sender. Not part of the prompt or its request hash.
+ */
+function questionAnswerSummary(message: InboxMessage): { questionAnswer?: QuestionAnswerCardData } {
+  const meta = message.metadata ?? {}
+  if (meta.source !== QUESTION_ANSWER_INBOX_SOURCE || message.senderType !== 'user') return {}
+  const data = parseQuestionAnswerCardData(meta.questionAnswer)
+  if (!data || data.questionId !== meta.questionId) return {}
+  if (message.idempotencyKey !== `agent-question-answer:v1:${data.questionId}`) return {}
+  const senderName = (meta.sender as { name?: unknown } | undefined)?.name
+  return {
+    questionAnswer: { ...data, ...(typeof senderName === 'string' && senderName ? { answeredBy: senderName } : {}) },
   }
 }
 

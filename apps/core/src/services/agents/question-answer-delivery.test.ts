@@ -25,8 +25,26 @@ import {
 } from './question-answer-delivery'
 import { retryAgentQuestionAnswerDelivery } from './questions'
 import { reconcileQuestionDeliveryFailureAlertsOnce } from './question-delivery-failure-alert'
+import { prepareInboxDelivery } from '../inbox/inboxDelivery'
+import type { MessageMetadata, QuestionData } from '@ficus/shared'
 
 const QUESTION = { questions: [{ id: 'q1', type: 'text' as const, question: 'Ship it?' }] }
+const SELECT_QUESTION: QuestionData = {
+  questions: [
+    {
+      id: 'risk',
+      type: 'select',
+      question: 'Proceed with the migration?',
+      options: [
+        { value: 'accept', label: 'Accept the risk' },
+        { value: 'reject', label: 'Reject' },
+      ],
+    },
+  ],
+}
+// The body delivered before option labels were resolved (and by an older Core across a deploy).
+const LEGACY_SELECT_CONTENT = '**Question:** Proceed with the migration?\n\n**Answer:** accept'
+const READABLE_SELECT_CONTENT = '**Question:** Proceed with the migration?\n\n**Answer:** Accept the risk (accept)'
 
 describe('question answer delivery outbox', () => {
   let prefix: string
@@ -51,7 +69,7 @@ describe('question answer delivery outbox', () => {
     await db.delete(users).where(eq(users.id, user.id))
   })
 
-  async function createPendingDelivery(id?: string) {
+  async function createPendingDelivery(id?: string, answered: { questionData?: QuestionData; answer?: string } = {}) {
     const now = new Date('2026-08-29T00:00:00.000Z')
     const [question] = await db
       .insert(agentQuestions)
@@ -59,9 +77,9 @@ describe('question answer delivery outbox', () => {
         ...(id ? { id } : {}),
         agentId: agent.id,
         squadId: squad.id,
-        questionData: QUESTION,
+        questionData: answered.questionData ?? QUESTION,
         status: 'answered',
-        answer: 'Yes, ship it',
+        answer: answered.answer ?? 'Yes, ship it',
         answeredByUserId: user.id,
         answeredAt: now,
         answerDeliveryStatus: 'pending',
@@ -593,5 +611,208 @@ describe('question answer delivery outbox', () => {
         .from(inbox)
         .where(and(eq(inbox.recipientId, agent.id), eq(inbox.recipientType, 'agent')))
     ).toHaveLength(0)
+  })
+  /** Persist and send the answer exactly as a Core predating readable answers did, without settling. */
+  async function deliverAsOlderCore(questionId: string, content = LEGACY_SELECT_CONTENT, send = true) {
+    const inboxKey = `agent-question-answer:v1:${questionId}`
+    const { message } = await InboxMessage.sendOnce(
+      {
+        recipientType: 'agent',
+        recipientId: agent.id,
+        senderType: 'user',
+        senderId: user.id,
+        subject: 'Answer to your question',
+        content,
+        deliveryMode: 'steer',
+        metadata: { source: 'agent-question-answer', questionId },
+        deferDelivery: true,
+      },
+      inboxKey
+    )
+    if (!send) return
+    const delivery = prepareInboxDelivery([message], 'steer', 'steer')
+    const sent = await agent.sendMessage(delivery.prompt, {
+      deliveryMode: 'steer',
+      metadata: { ...delivery.metadata, clientId: `${inboxKey}:inbox` },
+    })
+    expect(sent.success).toBe(true)
+  }
+
+  async function markFailed(questionId: string) {
+    await db
+      .update(agentQuestions)
+      .set({ answerDeliveryStatus: 'failed', answerDeliveryNextAttemptAt: null })
+      .where(eq(agentQuestions.id, questionId))
+  }
+
+  it('delivers option labels with their values and a structured answer card, leaving the stored answer unchanged', async () => {
+    const { question, now } = await createPendingDelivery(undefined, {
+      questionData: SELECT_QUESTION,
+      answer: 'accept',
+    })
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now })).toMatchObject({ processed: 1, delivered: 1 })
+
+    const [answerInbox] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${question.id}`))
+    expect(answerInbox.content).toBe(READABLE_SELECT_CONTENT)
+    const card = {
+      questionId: question.id,
+      answeredAt: now.toISOString(),
+      questions: [
+        {
+          questionId: 'risk',
+          question: 'Proceed with the migration?',
+          choices: [{ label: 'Accept the risk', value: 'accept' }],
+        },
+      ],
+    }
+    expect((answerInbox.metadata as Record<string, unknown>).questionAnswer).toEqual(card)
+    const [chat] = await db.select().from(messages).where(eq(messages.agentId, agent.id))
+    expect(chat.content).toContain(READABLE_SELECT_CONTENT)
+    expect((chat.metadata as MessageMetadata).inboxMessageSummaries?.[0].questionAnswer).toEqual({
+      ...card,
+      answeredBy: 'Answerer',
+    })
+    const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(row.answer).toBe('accept')
+  })
+
+  it('delivers each question of a multi-question answer instead of the raw JSON', async () => {
+    const questionData: QuestionData = {
+      questions: [
+        ...SELECT_QUESTION.questions,
+        { id: 'notes', type: 'text', question: 'Anything else?', optional: true },
+      ],
+    }
+    const { question, now } = await createPendingDelivery(undefined, {
+      questionData,
+      answer: JSON.stringify({ risk: 'reject' }, null, 2),
+    })
+    await reconcileQuestionAnswerDeliveriesOnce({ now })
+    const [answerInbox] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${question.id}`))
+    expect(answerInbox.content).toBe(
+      '**Question 1 (risk):** Proceed with the migration?\n**Answer:** Reject (reject)\n\n' +
+        '**Question 2 (notes):** Anything else?\n**Answer:** (skipped)'
+    )
+  })
+
+  it('reconciles an accepted readable-format delivery whose settlement was lost', async () => {
+    const { question, now } = await createPendingDelivery(undefined, {
+      questionData: SELECT_QUESTION,
+      answer: 'accept',
+    })
+    await reconcileQuestionAnswerDeliveriesOnce({
+      now,
+      testHooks: { afterAgentSend: async () => Promise.reject(new Error('lost settlement')) },
+    })
+    await markFailed(question.id)
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: question.id })).toEqual({
+      processed: 0,
+      delivered: 1,
+      failed: 0,
+    })
+    expect(await db.select().from(messages).where(eq(messages.agentId, agent.id))).toHaveLength(1)
+  })
+
+  it('reconciles a legacy-format delivery accepted by an older Core without sending again', async () => {
+    const { question, now } = await createPendingDelivery(undefined, {
+      questionData: SELECT_QUESTION,
+      answer: 'accept',
+    })
+    await deliverAsOlderCore(question.id)
+    await markFailed(question.id)
+
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: question.id })).toEqual({
+      processed: 0,
+      delivered: 1,
+      failed: 0,
+    })
+    const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(row).toMatchObject({ answer: 'accept', answerDeliveryStatus: 'delivered' })
+    const chat = await db.select().from(messages).where(eq(messages.agentId, agent.id))
+    expect(chat).toHaveLength(1)
+    expect(chat[0].content).toContain(LEGACY_SELECT_CONTENT)
+    expect(
+      await db
+        .select()
+        .from(chatSendReceipts)
+        .where(eq(chatSendReceipts.clientId, `agent-question-answer:v1:${question.id}:inbox`))
+    ).toHaveLength(1)
+  })
+
+  it('delivers a legacy-format inbox row persisted by an older Core once, as persisted', async () => {
+    const { question, now } = await createPendingDelivery(undefined, {
+      questionData: SELECT_QUESTION,
+      answer: 'accept',
+    })
+    await deliverAsOlderCore(question.id, LEGACY_SELECT_CONTENT, false)
+
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now })).toEqual({ processed: 1, delivered: 1, failed: 0 })
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now })).toEqual({ processed: 0, delivered: 0, failed: 0 })
+    expect(
+      await db
+        .select()
+        .from(inbox)
+        .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${question.id}`))
+    ).toHaveLength(1)
+    const chat = await db.select().from(messages).where(eq(messages.agentId, agent.id))
+    expect(chat).toHaveLength(1)
+    expect(chat[0].content).toContain(LEGACY_SELECT_CONTENT)
+    expect((chat[0].metadata as MessageMetadata).inboxMessageSummaries?.[0].questionAnswer).toBeUndefined()
+  })
+
+  it('does not reconcile an accepted delivery whose inbox body matches neither answer format', async () => {
+    const { question, now } = await createPendingDelivery(undefined, {
+      questionData: SELECT_QUESTION,
+      answer: 'accept',
+    })
+    await deliverAsOlderCore(question.id, '**Question:** Proceed with the migration?\n\n**Answer:** reject')
+    await markFailed(question.id)
+
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: question.id })).toEqual({
+      processed: 0,
+      delivered: 0,
+      failed: 0,
+    })
+    const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(row.answerDeliveryStatus).toBe('failed')
+  })
+  it('only builds an answer card for the server-written answer row, not forged inbox metadata', async () => {
+    const card = {
+      questionId: crypto.randomUUID(),
+      questions: [{ questionId: 'risk', question: 'Proceed?', choices: [{ label: 'Yes' }] }],
+    }
+    const metadata = { source: 'agent-question-answer', questionId: card.questionId, questionAnswer: card }
+    const forged = await InboxMessage.send({
+      recipientType: 'agent',
+      recipientId: agent.id,
+      senderType: 'user',
+      senderId: user.id,
+      subject: 'Answer to your question',
+      content: 'Answer: Yes',
+      metadata,
+      deferDelivery: true,
+    })
+    const { message: genuine } = await InboxMessage.sendOnce(
+      {
+        recipientType: 'agent',
+        recipientId: agent.id,
+        senderType: 'user',
+        senderId: user.id,
+        subject: 'Answer to your question',
+        content: 'Answer: Yes',
+        metadata,
+        deferDelivery: true,
+      },
+      `agent-question-answer:v1:${card.questionId}`
+    )
+    const summaries = prepareInboxDelivery([forged, genuine], 'steer', 'steer').metadata.inboxMessageSummaries
+    expect(summaries[0].questionAnswer).toBeUndefined()
+    expect(summaries[1].questionAnswer).toEqual({ ...card, answeredBy: 'Answerer' })
   })
 })
