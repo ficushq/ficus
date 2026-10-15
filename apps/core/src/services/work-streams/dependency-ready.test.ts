@@ -789,10 +789,19 @@ describe('ready dependencies', () => {
     })
 
     it('the outage retry window runs from the first attempt after admission, not from the unlock', async () => {
+      await squad.update({ maxConcurrentWorkStreams: 2 })
+      await createStream('holder')
       const { active, head, dependency, dependent } = await stackedPairForRegression()
-      // Unlocked long ago, but held behind the cap: admitted only now, during an outage.
-      const unlockedAt = new Date(Date.now() - 30 * 60_000).toISOString()
-      await setEdges(dependent, { [dependency.id]: { condition: 'ready', readyUnlockedAt: unlockedAt } })
+      // The edge unlocks, but the stream waits behind the cap (here: for half an hour).
+      await promoteEligibleQueuedStreams(squad.id)
+      expect(await statusOf(dependent)).toBe('queued')
+      const unlocked = (await reload(dependent)).dependencyEdges[dependency.id]!
+      expect(unlocked.readyUnlockedAt).toBeDefined()
+      await setEdges(dependent, {
+        [dependency.id]: { ...unlocked, readyUnlockedAt: new Date(Date.now() - 30 * 60_000).toISOString() },
+      })
+      // Admitted only now, during an outage.
+      await squad.update({ maxConcurrentWorkStreams: null })
       await promoteEligibleQueuedStreams(squad.id)
       const pending = await reload(dependent)
       expect(pending.status).toBe('active')
