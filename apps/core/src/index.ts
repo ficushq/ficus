@@ -36,6 +36,7 @@ import { systemTokensRouter } from './routes/system-tokens'
 import { imagesRouter } from './routes/images'
 import { agentsRouter } from './routes/agents'
 import { agentFilesRouter } from './routes/agent-files'
+import { agentSecretsRouter } from './routes/agent-secrets'
 import { agentDeliverySuggestionRouter } from './routes/agent-delivery-suggestion'
 import { artifactsRouter } from './routes/artifacts'
 import { inboxRouter } from './routes/inbox'
@@ -102,6 +103,7 @@ import { consumeWsTicket } from './services/auth/ws-ticket'
 import type { Identity } from './services/rbac'
 import { hasPermission } from './services/rbac'
 import { regenerateEnvFilesForSecretKey } from './services/squad/env'
+import { regenerateAgentSecretFilesForSecretKey } from './services/agent/secrets'
 import { getSettingsStore, SETTINGS_STORE_REFRESH_INTERVAL_MS } from './services/settings'
 import { registerOnboardingEventSources } from './services/onboarding/events'
 import {
@@ -303,6 +305,7 @@ app.route('/api/ai/extract', aiExtractRouter)
 
 app.route('/api/images', imagesRouter)
 app.route('/api/agents', agentFilesRouter)
+app.route('/api/agents', agentSecretsRouter)
 app.route('/api/agents', agentDeliverySuggestionRouter)
 app.route('/api/agents', agentsRouter)
 app.route(
@@ -998,6 +1001,7 @@ if (import.meta.main) {
       getSecretStore().onChange(async (key) => {
         if (isLegacyChannelCredentialKey(key)) await channelConnections.refresh()
         await regenerateEnvFilesForSecretKey(key)
+        await regenerateAgentSecretFilesForSecretKey(key)
 
         if (key === 'OPENAI_API_KEY') {
           const enabled = settingsStore.getTyped('EMBEDDINGS_ENABLED') as boolean

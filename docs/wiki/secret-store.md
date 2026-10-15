@@ -96,6 +96,58 @@ The list endpoint returns `{ key, isSet, updatedAt, updatedBy }` for every known
 
 GitHub tokens, including the former deployment token, are no longer configured here. Connect an account in Settings → Integrations → GitHub and assign it to a squad. See [GitHub connections](github-integrations.md). Retired token keys are hidden and new writes are rejected; existing stored token values can be explicitly deleted. GitHub webhook secrets are imported into integration-owned storage on startup and are no longer accessible through this API. See the direct delivery setup in the GitHub connections guide.
 
+## Per-agent secrets
+
+A Secret Store key can be exposed to a single agent instead of a squad, for example
+to give one operations agent its own API token. Like squad exposures, only key
+**names** are stored (`agent_secret_exposures`); values stay here and no API returns
+them.
+
+- **Where the value lands.** Only the agent's own sandbox (`agent_<id>`), as the file
+  `<private dir>/.ficus/agent-secrets.env` (mode 0600): `/private/.ficus/agent-secrets.env`
+  on docker and k8s, `~/.private/.ficus/agent-secrets.env` of the agent's box user on vm.
+  The agent's own `bash` tool sources it for each command, so the values are environment
+  variables of that command only. Nothing is written to the shared squad workspace, the
+  squad box (`squad_bash`), memory or another agent's sandbox. The file name and location
+  are fixed; surfaces that browse an agent's private dir hide this file.
+- **Subagents** run in their root agent's sandbox and private dir, so they inherit the
+  root's per-agent secrets (same trust boundary as the parent). Exposing directly to a
+  subagent is refused.
+- **Unsupported targets** are refused with an explanation: system managers and
+  consultants (their sandboxes are shared) and every agent on the
+  [host runtime](host-runtime.md), where all agents are the same OS user.
+- **Changes** apply right away: the file is rewritten (or deleted when the last key is
+  removed or unset) on every exposure change and when an exposed value changes in the
+  Secret Store, and pushed to a running vm box; docker and k8s mount it directly. Every
+  sandbox start re-renders it too. Going dormant removes it; termination removes it
+  before the private dir is archived, and deleting the agent deletes its exposures.
+- **Scope.** Exposures belong to the agent id, so they never follow a reused name or a
+  respawned agent, and an exposure recorded for one squad does nothing if the agent is in
+  another.
+- **Redaction.** Values are Secret Store values, so the existing exact-value redaction
+  replaces them in tool output and logs (values shorter than 12 characters are not
+  matched). The agent's prompt lists the env var names it holds, never the values.
+- **Who can change them.** People with `env:write` on the agent's squad (system scope for
+  a squad-less agent). Adding a key also needs permission to **read that key** in the Secret
+  Store (`secrets:read`, or `secrets:read:<group>` for a key in that group), the same check
+  as `GET /api/secrets/:key`. Otherwise someone could expose a secret they cannot read to an
+  agent they can talk to, and read it through the agent. Keys the caller cannot read are not
+  offered; removing a key never needs it. Agent tokens are refused even when they hold
+  `env:write`. Listing needs `env:read`. No route returns a value, so exposing a key never
+  lets a person read it here.
+
+| Method   | Endpoint                  | Body              | Description                                    |
+| -------- | ------------------------- | ----------------- | ---------------------------------------------- |
+| `GET`    | `/api/agents/:id/secrets` |                   | Exposed names, selectable keys, support status |
+| `POST`   | `/api/agents/:id/secrets` | `{ keys: [...] }` | Replace the agent's exposed keys               |
+| `PUT`    | `/api/agents/:id/secrets` | `{ keys: [...] }` | Add keys                                       |
+| `DELETE` | `/api/agents/:id/secrets` | `{ keys: [...] }` | Remove keys (always allowed)                   |
+
+The agent's **Info** tab has a _Per-agent secrets_ section to pick keys, and (with
+`secrets:write`) to save a new value to the Secret Store and expose it in one step. The
+CLI equivalents are `ficus agent secrets`, `ficus agent expose-secrets` and
+`ficus agent unexpose-secrets`.
+
 ## Implementation
 
 | File                                       | Purpose                                                        |
@@ -103,6 +155,7 @@ GitHub tokens, including the former deployment token, are no longer configured h
 | `apps/core/src/services/secrets/store.ts`  | `SecretStore` class — cache, sync, migration, change listeners |
 | `apps/core/src/services/secrets/crypto.ts` | AES-256-GCM encrypt/decrypt helpers                            |
 | `apps/core/src/routes/secrets.ts`          | API routes                                                     |
+| `apps/core/src/services/agent/secrets.ts`  | Per-agent exposures and the agent secrets file                 |
 
 Each process owns a process-local singleton accessed via `getSecretStore()` and initializes it before dependent services. The database remains authoritative across both caches.
 
