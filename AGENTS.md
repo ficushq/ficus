@@ -72,6 +72,20 @@ For the full Core suite (including its isolated subprocess files), run:
 bun run --filter core test
 ```
 
+For a focused Core run with the same database preload, isolation and
+completion checks, pass files or directories (relative to `apps/core`) to the
+runner from `apps/core`. With no paths it runs the full suite, so never omit
+them on a shared box. Unknown options, missing paths, paths outside
+`apps/core` and paths without test files fail instead of widening the run:
+
+```bash
+cd apps/core
+bun run test src/services/maintenance/store.test.ts
+bun run test src/services/maintenance/store.test.ts -t "lease owner"   # test name pattern
+bun run test --list src/services/machines      # print the selection only
+bun run test --help
+```
+
 Multiple worktrees can run tests in parallel — each gets its own isolated
 container. No manual setup needed.
 
@@ -88,8 +102,10 @@ bun run test:db:down && bun run --filter core test
   cannot race container startup.
 - Run package suites with `bun run --filter <package> test` from the root (for
   example, `core`, `cli`, or `@ficus/sandbox-server`). These
-  entrypoints own isolation and completion checks. Use `bun test <file>` for
-  focused diagnosis, not as a replacement for the package/CI contract. A zero
+  entrypoints own isolation and completion checks. For a focused Core run,
+  use `bun run test <file...>` from `apps/core` (see above); bare
+  `bun test <file>` is for quick diagnosis only and skips those checks. Neither
+  replaces the package/CI contract. A zero
   exit alone is not proof: require the final summary, zero failures, and every
   discovered file. Never remove completion guards or accept a signal/null exit.
 - Prefer injected clients, clocks, and schedulers over global replacement.

@@ -64,6 +64,13 @@ RUN apk add --no-cache \
     su-exec \
     openssl
 
+# git is whatever the docker:dind Alpine release ships (git 2.54.0 on Alpine
+# 3.24.2). Commit signing leaves an object unsigned by having the signing
+# program return an empty signature, which relies on undocumented git behavior
+# (docs/wiki/github-integrations.md), so the build fails if this git differs.
+COPY apps/core/docker-sandbox/check-git-unsigned-signing.sh /opt/ficus/check-git-unsigned-signing.sh
+RUN sh /opt/ficus/check-git-unsigned-signing.sh
+
 # Install Node.js (LTS)
 RUN apk add --no-cache 'nodejs>=22.19.0' npm
 

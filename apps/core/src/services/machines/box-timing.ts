@@ -50,8 +50,8 @@
  *
  * `provision` — NOTE: for docker-capable roles (squad, system-manager) this
  * bucket's single SSH call (`box-provision.sh`) ALSO runs the box's rootless
- * dockerd install/enable/restart (`dockerd-rootless-setuptool.sh` +
- * `systemctl --user restart docker.service` — see box-provision.sh's
+ * dockerd install/enable/start (`dockerd-rootless-setuptool.sh` +
+ * `systemctl --user start|restart docker.service` — see box-provision.sh's
  * `provision_docker`), because that's how the script already runs — ONE
  * blocking SSH round trip. It cannot be isolated into its own step without
  * EITHER a second SSH round trip (a NEW probe, which this initiative's

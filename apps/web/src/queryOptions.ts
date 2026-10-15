@@ -1183,13 +1183,14 @@ export const feedQueries = {
       refetchOnMount: 'always',
       refetchOnWindowFocus: false,
     }),
-  completed: (after: string, before: string) =>
+  completed: (after: string, before: string, squadIds: readonly string[] = []) =>
     infiniteQueryOptions({
-      queryKey: feedQueryKeys.completed(after, before),
+      queryKey: feedQueryKeys.completed(after, before, squadIds),
       queryFn: ({ pageParam }) =>
         listDoneWorkStreams({
           completedAfter: after,
           completedBefore: before,
+          squadIds,
           statuses: ['done'],
           limit: 20,
           cursor: pageParam,

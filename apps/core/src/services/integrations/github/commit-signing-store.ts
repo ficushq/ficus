@@ -61,23 +61,36 @@ export interface GitHubSigningAccount {
   isDefault: boolean
   /**
    * The connection may be used to sign: enabled (account and provider), issued
-   * under this instance's client authority, and authenticated. Disabled,
-   * other-authority and reauthorization-required connections never sign.
+   * under this instance's client authority, and authenticated or mid-refresh.
+   * Disabled, other-authority and reauthorization-required connections never
+   * sign, and neither does one whose token GitHub rejected.
    *
    * Validation freshness and health are deliberately not required, unlike
-   * token use: a signature does not call GitHub, env files are rendered at
-   * arbitrary moments, and commits must not start failing because a 15-minute
-   * validation window lapsed. A token that is being refreshed is different: the
-   * connection is `invalid` for those seconds, so it does not sign until the
-   * refresh is validated (as before this rule existed).
+   * token use: a signature uses the stored signing key and does not call
+   * GitHub, env files are rendered at arbitrary moments, and commits must not
+   * start failing because a 15-minute validation window lapsed. For the same
+   * reason a token that is being refreshed keeps signing: for those seconds the
+   * connection is `invalid` with `refresh_validation_pending` (see
+   * {@link signingAuthStatePredicate}), and only that exact state is accepted.
    */
   canSign: boolean
 }
 
+/**
+ * Authentication states that may sign: `authenticated`, or the transient state
+ * the refresh service records while a rotated token is validated (`invalid`,
+ * health `degraded`, last error `refresh_validation_pending`). The refresh
+ * outcome overwrites that state: success returns to `authenticated`; a
+ * rejected token becomes `unreachable` or `reauthorization_required`, and any
+ * other failure records its own error code, so none of those sign. This is the
+ * same window git identity is kept through (`resolveGitHubAuthorAssignment`).
+ */
+const signingAuthStatePredicate = sql`(${integrationConnections.authState} = 'authenticated' or (${integrationConnections.authState} = 'invalid' and ${integrationConnections.healthState} = 'degraded' and ${integrationConnections.lastErrorCode} is not distinct from 'refresh_validation_pending'))`
+
 const signingAccountColumns = {
   id: integrationConnections.id,
   configuration: integrationConnections.configuration,
-  canSign: sql<boolean>`${integrationConnections.enabled} and ${integrationEnabledPredicate()} and ${integrationConnections.authState} = 'authenticated' and ${integrationConnections.adapterVersion} = 1`,
+  canSign: sql<boolean>`${integrationConnections.enabled} and ${integrationEnabledPredicate()} and ${signingAuthStatePredicate} and ${integrationConnections.adapterVersion} = 1`,
   clientAuthority: integrationConnections.clientAuthority,
 }
 

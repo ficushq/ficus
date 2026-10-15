@@ -825,12 +825,38 @@ ensure_subid_range() {
   fi
 }
 
+# Fingerprint of the box's rootless docker launch config: the setuptool-written
+# unit plus our drop-in. Compared before/after provision_docker rewrites them to
+# tell whether the running daemon (if any) was launched from a different config.
+# A missing file contributes nothing, so a never-installed box hashes as "empty".
+docker_unit_fingerprint() {
+  local unit_dir
+  unit_dir="$(user_home)/.config/systemd/user"
+  {
+    run_as_box cat "${unit_dir}/docker.service" 2>/dev/null || true
+    printf '\n--drop-in--\n'
+    run_as_box cat "${unit_dir}/docker.service.d/override.conf" 2>/dev/null || true
+  } | sha256sum | cut -d' ' -f1
+}
+
+# True when a dockerd of this box user is still running with `--iptables=false`
+# (container egress broken) — e.g. the setuptool's own auto-start on first
+# install, or a box whose drop-in landed but whose daemon was never bounced.
+# rootlesskit and dockerd both carry the daemon flags on their argv.
+docker_running_with_stale_flags() {
+  "${SUDO[@]}" pgrep -u "${UNIX_USER}" -f -- 'dockerd.*--iptables=false' >/dev/null 2>&1
+}
+
 # Provision the box user's OWN rootless dockerd (a systemd --user service). NEVER
 # starts a shared rootful daemon (bootstrap.sh masks the system one) — closing
 # the multi-box root hole (spec §5). Idempotent: setuptool tolerates an existing
-# install; enable/start are best-effort.
+# install; enable/start are best-effort. A re-provision with an unchanged config
+# leaves a running daemon (and its containers) alone.
 provision_docker() {
   ensure_subid_range
+
+  local config_before
+  config_before="$(docker_unit_fingerprint)"
 
   # dockerd-rootless-setuptool.sh sets up the box user's ~/.config/systemd/user
   # docker.service. It is idempotent (tolerates "already installed"); its stdout
@@ -869,15 +895,22 @@ provision_docker() {
     sysu daemon-reload >/dev/null 2>&1 || true
   fi
 
-  # Enable + RESTART (not start) the user docker daemon so
-  # unix:///run/user/<uid>/docker.sock exists with the corrected flags: the
-  # setuptool auto-STARTS docker.service during install — with `--iptables=false`
-  # still baked in — so a plain `start` would no-op against that running daemon
-  # and leave container egress broken. The bounce is safe: provisioning only runs
-  # on first-create or an unhealthy re-provision (box-manager skips healthy boxes).
+  # Enable the user docker daemon and make sure unix:///run/user/<uid>/docker.sock
+  # exists with the corrected flags. RESTART only when the running daemon may be
+  # on an old config: the unit or drop-in changed in this run (first create — the
+  # setuptool auto-STARTS docker.service during install with `--iptables=false`
+  # still baked in, so a plain `start` would no-op against it), or a dockerd still
+  # carries `--iptables=false`. Otherwise just `start` (a no-op when running):
+  # re-provisions also happen on healthy boxes (spec/env drift), and a bounce
+  # there would kill every running container, test databases included. Either
+  # verb starts a stopped daemon, so this never leaves docker down.
+  local verb=start
+  if [ "$(docker_unit_fingerprint)" != "${config_before}" ] || docker_running_with_stale_flags; then
+    verb=restart
+  fi
   sysu enable docker.service >/dev/null 2>&1 || true
-  sysu restart docker.service >/dev/null 2>&1 \
-    || echo "box-provision.sh: rootless docker.service start deferred" >&2
+  sysu "${verb}" docker.service >/dev/null 2>&1 \
+    || echo "box-provision.sh: rootless docker.service ${verb} deferred" >&2
 }
 
 remove_box() {

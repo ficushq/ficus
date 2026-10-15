@@ -478,6 +478,8 @@ export interface ModelTierConfig {
   sortOrder: number
   usedByCount: number
   derivedOpenRouterFallbacks?: string[]
+  /** Candidates a one-shot call on this tier can use right now (signed in, enabled, healthy). */
+  usableCandidates?: string[]
 }
 export async function getModelTiers(): Promise<ModelTierConfig[]> {
   return apiFetch('/model-tiers')

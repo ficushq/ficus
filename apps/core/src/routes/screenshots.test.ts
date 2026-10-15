@@ -9,13 +9,24 @@ import {
   type GuessScreenshotResponse,
   type ScreenshotWorkStreamsResponse,
 } from '@ficus/shared'
-import { agents, agentTypes, assistantConversations, db, images, messages, squads, workStreams } from '../db'
+import {
+  agents,
+  agentTypes,
+  assistantConversations,
+  db,
+  images,
+  messages,
+  modelTiers,
+  squads,
+  workStreams,
+} from '../db'
 import { AgentType } from '../entities/AgentType'
 import { Image } from '../entities/Image'
 import { Squad } from '../entities/Squad'
 import { identityMiddleware } from '../middleware/identity'
 import type { CorrectionCapture } from '../services/decisions/evals/capture'
 import type { decide as realDecide, DecisionOutcome } from '../services/decisions/service'
+import { PROVIDERS_WITHOUT_AUTH } from '../services/model-selection/select-model'
 import { buildScreenshotDecision, squadOptionKey } from '../services/screenshot-filing'
 import { GIF_64x32, png } from '../test-utils/images'
 import { assignRole, authHeaders, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../test-utils'
@@ -405,18 +416,42 @@ test('a confirmed squad must be visible and not archived, and nothing is created
   expect(sent[0]!.content).toContain("- Squad: none. Don't file it with a squad.")
 })
 
-/** Run `body` with the Assistant type on `model`, then put the type back as it was (the test database may have none). */
-async function withAssistantModel(model: string, body: () => Promise<void>) {
+/**
+ * Run `body` with the Assistant type on `model` (and `tier`, when given), then put the type back as
+ * it was (the test database may have none).
+ */
+async function withAssistantModel(model: string, body: () => Promise<void>, tier: string | null = null) {
   const [existing] = await db.select().from(agentTypes).where(eq(agentTypes.id, 'assistant'))
-  if (existing) await db.update(agentTypes).set({ model }).where(eq(agentTypes.id, 'assistant'))
-  else await AgentType.create({ id: 'assistant', name: 'Assistant', model, systemPrompt: 'test' })
+  if (existing) await db.update(agentTypes).set({ model, tier }).where(eq(agentTypes.id, 'assistant'))
+  else await AgentType.create({ id: 'assistant', name: 'Assistant', model, tier, systemPrompt: 'test' })
   AgentType.invalidateCache()
   try {
     await body()
   } finally {
-    if (existing) await db.update(agentTypes).set({ model: existing.model }).where(eq(agentTypes.id, 'assistant'))
+    if (existing)
+      await db
+        .update(agentTypes)
+        .set({ model: existing.model, tier: existing.tier })
+        .where(eq(agentTypes.id, 'assistant'))
     else await db.delete(agentTypes).where(eq(agentTypes.id, 'assistant'))
     AgentType.invalidateCache()
+  }
+}
+
+/**
+ * Run `body` with the Assistant type as shipped: no model of its own, only a tier, here on `chain`.
+ * zai needs no sign-in for the run; no other provider is signed in, so the tier's other candidates
+ * are skipped as a session start skips them.
+ */
+async function withAssistantTier(chain: string, body: () => Promise<void>, zaiSignedIn = true) {
+  const slug = `${prefix}-tier`
+  await db.insert(modelTiers).values({ slug, label: 'Screenshot test tier', chain })
+  if (zaiSignedIn) PROVIDERS_WITHOUT_AUTH.add('zai')
+  try {
+    await withAssistantModel('', body, slug)
+  } finally {
+    PROVIDERS_WITHOUT_AUTH.delete('zai')
+    await db.delete(modelTiers).where(eq(modelTiers.slug, slug))
   }
 }
 
@@ -481,6 +516,65 @@ test("a screenshot whose conversation already exists is judged by that conversat
   // The conversation has a message: it is never removed.
   expect(await conversationCount()).toBe(before)
   expect((await filedConversation(conversationId)).sent).toHaveLength(1)
+})
+
+test('a tier-based Assistant is judged by the model its tier would run on: a text-only one refuses before creating anything', async () => {
+  const { decide } = bugInChlea()
+  const server = app({ decide, isEnabled: () => true })
+  const imageId = await upload(server)
+  const before = await conversationCount()
+  const agentsBefore = (await db.select().from(agents).where(eq(agents.ownerUserId, user.id))).length
+
+  // The tier's first model reads images, but nobody is signed in to it: a session would run on the
+  // text-only one after it.
+  await withAssistantTier('anthropic:claude-sonnet-5, zai:glm-5.2', async () => {
+    const refused = await file(server, { imageId, kind: 'bug', squadId: chlea.id })
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toEqual({
+      error: "The Assistant's model cannot read images. Choose a vision-capable model.",
+    })
+  })
+  expect(await conversationCount()).toBe(before)
+  expect((await db.select().from(agents).where(eq(agents.ownerUserId, user.id))).length).toBe(agentsBefore)
+  const [image] = await db.select().from(images).where(eq(images.id, imageId))
+  expect(image).toMatchObject({ status: 'pending', agentId: null, squadId: null })
+})
+
+test('a tier-based Assistant whose tier runs on a model that reads images files it, once', async () => {
+  const { decide } = bugInChlea()
+  const server = app({ decide, isEnabled: () => true })
+  const imageId = await upload(server)
+  const before = await conversationCount()
+
+  await withAssistantTier('zai:glm-5.3-flash', async () => {
+    const filed = await file(server, { imageId, kind: 'bug', squadId: chlea.id })
+    expect(filed.status).toBe(200)
+    const { conversationId } = (await filed.json()) as FileScreenshotResponse
+    expect(await conversationCount()).toBe(before + 1)
+    expect((await filedConversation(conversationId)).sent).toHaveLength(1)
+    // A retry lands on the same conversation and sends nothing twice.
+    const again = await file(server, { imageId, kind: 'bug', squadId: chlea.id })
+    expect(((await again.json()) as FileScreenshotResponse).conversationId).toBe(conversationId)
+    expect((await filedConversation(conversationId)).sent).toHaveLength(1)
+  })
+})
+
+test('when the model a tier would run on cannot be resolved, filing goes ahead as before', async () => {
+  const { decide } = bugInChlea()
+  const server = app({ decide, isEnabled: () => true })
+  const imageId = await upload(server)
+  const before = await conversationCount()
+
+  // Nobody is signed in to any of the tier's models, so which one a session would run on is unknown.
+  await withAssistantTier(
+    'zai:glm-5.2',
+    async () => {
+      const filed = await file(server, { imageId })
+      expect(filed.status).toBe(200)
+      expect(await conversationCount()).toBe(before + 1)
+    },
+    false
+  )
 })
 
 test('the routes need chat:send', async () => {

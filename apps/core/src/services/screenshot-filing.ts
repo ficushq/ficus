@@ -34,6 +34,9 @@ import { findVisibleSquad, listVisibleSquads } from './entity-search'
 import { hasPermission, resolveActingUser, type Identity, type UserIdentity } from './rbac'
 import { createLogger } from '../lib/infra/logger'
 import { splitModelPriorityList, supportsImageInput } from '../lib/utils/model-spec'
+import { primeClaudeCodeStatus } from './agent/claude-code/availability'
+import { selectModelSpecForCurrentEnv } from './model-selection'
+import { resolveAgentTypeChain } from './model-selection/model-tier-resolution'
 
 const log = createLogger('screenshot-filing')
 
@@ -592,17 +595,54 @@ function imagesUnreadableError() {
 }
 
 /**
+ * Whether the model a session would start on reads images: `chain` (resolved through the Assistant
+ * type's tier, as a session resolves it) narrowed the way a session start narrows it, to the first
+ * candidate whose provider is enabled, signed in and healthy. Undefined when no model resolves: no
+ * chain is configured, or no candidate is usable right now (so the session could not start either).
+ */
+async function sessionModelReadsImages(chain: () => Promise<string>): Promise<boolean | undefined> {
+  try {
+    // Selection reads Claude Code's sign-in status synchronously; make it current first, as a session start does.
+    await primeClaudeCodeStatus()
+    return supportsImageInput(selectModelSpecForCurrentEnv(await chain()).selected)
+  } catch (error) {
+    log.info("Could not resolve the Assistant's model; judging image support by its configured model only", {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return undefined
+  }
+}
+
+/**
+ * Whether an Assistant reads images. One that has started keeps the model it selected; one that has
+ * not is judged by the model its first session would select, and only when that cannot be resolved
+ * by its configured model (undefined when it has none, as for a tier-based Assistant).
+ */
+async function agentReadsImages(agent: Agent): Promise<boolean | undefined> {
+  if (agent.selectedModel) return agent.supportsSelectedModelImages()
+  return (await sessionModelReadsImages(() => agent.getEffectiveModelSpec())) ?? agent.supportsSelectedModelImages()
+}
+
+/**
  * Whether the Assistant a filing goes to can read images, asked before the filing creates anything;
  * undefined when its model is not known. A conversation left by an earlier attempt keeps its own
- * Assistant and that Assistant's model. A new one gets a new Assistant, on the Assistant type's model.
+ * Assistant and that Assistant's model. A new one gets a new Assistant with no override, so it
+ * runs on the Assistant type's chain (its explicit model, else its tier).
  */
 async function assistantReadsImages(userId: string, conversationId: string): Promise<boolean | undefined> {
   const [conversation] = await db
     .select({ agentId: assistantConversations.agentId })
     .from(assistantConversations)
     .where(and(eq(assistantConversations.id, conversationId), eq(assistantConversations.ownerUserId, userId)))
-  if (conversation?.agentId) return (await Agent.find(conversation.agentId))?.supportsSelectedModelImages()
-  const model = (await AgentType.find('assistant'))?.model?.trim()
+  if (conversation?.agentId) {
+    const agent = await Agent.find(conversation.agentId)
+    return agent ? agentReadsImages(agent) : undefined
+  }
+  const type = await AgentType.find('assistant')
+  if (!type) return undefined
+  const resolved = await sessionModelReadsImages(() => resolveAgentTypeChain(type))
+  if (resolved !== undefined) return resolved
+  const model = type.model?.trim()
   return model ? supportsImageInput(splitModelPriorityList(model)[0]!) : undefined
 }
 
@@ -646,7 +686,7 @@ export async function fileScreenshot(
   const { agentId } = await ensureAssistantConversationAgent(identity, conversationId)
   const assistant = await Agent.mustFind(agentId)
   // Only reached when the model changed since the check above.
-  if (assistant.supportsSelectedModelImages() === false) throw imagesUnreadableError()
+  if ((await agentReadsImages(assistant)) === false) throw imagesUnreadableError()
 
   await db
     .update(assistantConversations)

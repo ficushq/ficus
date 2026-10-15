@@ -44,7 +44,16 @@ at most 40 characters without links are kept, at most four, and at least two or 
 message makes the save a no-op.
 
 The replies are saved as `metadata.replySuggestions` on the agent message and pushed to clients with
-`message.updated`, so reopening the chat costs nothing.
+`message.updated`, so reopening the chat costs nothing. While the switch is off, the message endpoints
+(`GET /api/agents/:id/messages` and `.../messages/:messageId`) leave saved replies out, so web and
+mobile stop showing them without checking the setting themselves; turning it back on shows them again.
+
+## In Settings
+
+`GET /api/model-tiers` reports each tier's `usableCandidates`: the models a one-shot call could use
+right now (enabled, signed in, healthy; OpenRouter fallbacks excluded). When the Lite tier has none
+and the switch is on, Settings says "No Lite model is signed in" beside it. The saved preference is not
+changed.
 
 ## In the chat
 

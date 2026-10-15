@@ -345,6 +345,60 @@ test('tracked pre-flow and subscription audiences cannot bypass the production h
   }
 })
 
+test('an outage during the current-version witness defers a second version; after recovery it is captured normally', async () => {
+  const { reconcileFlows } = await import('../../workflows/execution')
+  const h = await fixture()
+  try {
+    await h.trust()
+    const fixtureRead = h.read.getMockImplementation()!
+    const delivered = () => db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))
+    const revisions = () =>
+      db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    expect(await delivered()).toHaveLength(1)
+    // The resource proof reads the comment first; the current-version witness reads it again.
+    const witnessFails = (answer: () => unknown) => {
+      let commentReads = 0
+      h.read.mockImplementation(
+        async <T>(path: string, squadId: string, connectionId?: string): Promise<T | null> =>
+          path === '/repos/acme/project/issues/comments/30' && ++commentReads > 1
+            ? (answer() as T | null)
+            : fixtureRead<T>(path, squadId, connectionId)
+      )
+    }
+    // A second version of the known comment at the same provider clock needs that witness.
+    h.native.body = 'EDITED_SENTINEL'
+    witnessFails(() => {
+      throw new api.GitHubApiUnavailableError('http_503')
+    })
+    const eventId = await publishIntegrationOutput('github', h.fact(), h.authority)
+    const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+    expect(event!.matchedAt).toBeNull()
+    expect(await revisions()).toHaveLength(1)
+    expect(await delivered()).toHaveLength(1)
+    h.read.mockImplementation(fixtureRead)
+    // The unmatched cursor walks events left by earlier tests; keep passing until it reaches ours.
+    for (let pass = 0; pass < 50 && (await delivered()).length < 2; pass++) {
+      await reconcileUnmatchedOutputs()
+      await reconcileFlows()
+    }
+    const messages = await delivered()
+    expect(messages).toHaveLength(2)
+    expect(messages.some((message) => message.content.includes('EDITED_SENTINEL'))).toBe(true)
+    expect((await revisions()).map((row) => row.reason)).not.toContain('ambiguous_observation')
+    // An explicit denial (404/403) from the witness is unchanged: held for human review.
+    h.native.body = 'DENIED_SENTINEL'
+    witnessFails(() => null)
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const held = (await revisions()).filter((row) => row.reason === 'ambiguous_observation')
+    expect(held).toHaveLength(1)
+    expect(held[0]!.decision).toBe('pending')
+    expect(await delivered()).toHaveLength(2)
+  } finally {
+    await h.close()
+  }
+}, 120_000)
+
 test('irrelevant feedback is recorded but never captured or queried from GitHub', async () => {
   const h = await fixture()
   try {
