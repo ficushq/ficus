@@ -140,7 +140,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       {
         id: 'spend',
         label: 'Spend',
-        description: 'What model usage costs, by squad, work stream, agent, feature, model and account.',
+        description: 'What model calls cost, by squad, work stream, agent, feature, model and account.',
       },
       { id: 'system-logs', label: 'Logs', description: 'System logs.' },
       {
