@@ -107,6 +107,7 @@ Used by `manager` and `consultant` agents when they belong to a squad. Each reta
 Used by squad agents routed here after the special runner cases (`architect`, `engineer`, `reviewer`, `general`, custom types). Each has a light/private sandbox and access to the same shared squad workspace as the manager through `squad_bash`; consultants route to `squad-manager`.
 
 - **Prompt context:** teammate roster (excluding self), active schedules, agent purpose instructions.
+- **Slot pools:** squad workers, managers, consultants and squad subagents get a generated **Slot Pools** section listing each enabled pool's key, capacity, claim timeout and usage guidance (`lib/prompts/slot-pools-prompt.ts`). It renders at prompt assembly through `{{squad.slotPools}}`, right after `{{squad.context}}` in `shared/squad-rules.md`, and is appended directly to agent types without that token. It is never written into the stored squad context, and it is omitted when the squad has no enabled pools.
 - **Worker expertise:** comes from the agent type’s `systemPrompt`, squad-owned agent context, and active workflow instructions. Squad presets do not define worker instructions.
 - **Memory:** same conditional memory injection as the squad manager.
 - **Extra tools:** `set_agent_purpose`, `notify_contact`, `ask_human`, web, browser, short-term memory, coding tools, `squad_bash`, squad-todo.
