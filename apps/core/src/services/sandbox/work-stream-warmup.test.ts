@@ -1,5 +1,10 @@
 import { expect, mock, test } from 'bun:test'
-import { warmupWorkStreamAgentSandboxes } from './work-stream-warmup'
+import {
+  WARMUP_RETRY_BASE_MS,
+  WARMUP_RETRY_MAX_MS,
+  WarmupBackoff,
+  warmupWorkStreamAgentSandboxes,
+} from './work-stream-warmup'
 
 const minsAgo = (m: number) => new Date(Date.now() - m * 60 * 1000)
 const log = { info: () => {}, warn: () => {} }
@@ -92,7 +97,8 @@ test('a failing ensure does not abort the rest', async () => {
     return 'ensured' as const
   })
 
-  await warmupWorkStreamAgentSandboxes(log, { listStreams, loadAgent, ensureAgent })
+  // Own backoff state, so the failure does not hold 'a' back in later tests.
+  await warmupWorkStreamAgentSandboxes(log, { listStreams, loadAgent, ensureAgent, backoff: new WarmupBackoff() })
 
   expect(ensureAgent.mock.calls.length).toBe(2)
 })
@@ -109,4 +115,52 @@ test('forwards the caller liveness resolver to each ensure', async () => {
   await warmupWorkStreamAgentSandboxes(log, { listStreams, loadAgent, ensureAgent, resolveBoxLiveness })
 
   expect((ensureAgent.mock.calls[0] as any[])[1]).toEqual({ resolveBoxLiveness })
+})
+
+// A sandbox that cannot come up (a busy box port, a broken machine) used to be
+// re-ensured on every 60s tick. Failed warmups now back off per agent.
+test('backs off an agent whose warmup keeps failing, doubling to a cap, and resets on success', async () => {
+  const listStreams = async () => [{ assigneeAgentId: null, agentIds: ['broken', 'fine'] }] as any
+  const loadAgent = async (id: string) => agent(id, minsAgo(1))
+  let brokenFails = true
+  const ensureAgent = mock(async (a: { id: string }) => {
+    if (a.id === 'broken' && brokenFails) throw new Error('port busy')
+    return 'ensured' as const
+  })
+  const backoff = new WarmupBackoff()
+  let clock = 0
+  const tick = async () => {
+    ensureAgent.mockClear()
+    await warmupWorkStreamAgentSandboxes(log, { listStreams, loadAgent, ensureAgent, backoff, now: () => clock })
+    return ensureAgent.mock.calls.map((c) => (c as any[])[0].id).sort()
+  }
+
+  expect(await tick()).toEqual(['broken', 'fine'])
+  // Waits WARMUP_RETRY_BASE_MS, then twice that, and so on.
+  const attemptsAt: number[] = []
+  for (clock = 60_000; clock <= 40 * 60_000; clock += 60_000) {
+    if ((await tick()).includes('broken')) attemptsAt.push(clock / 60_000)
+  }
+  expect(attemptsAt).toEqual([2, 6, 14, 29])
+  expect(WARMUP_RETRY_MAX_MS).toBe(15 * 60_000)
+  // The healthy member was never held back.
+  expect(await tick()).toContain('fine')
+
+  // One success clears the backoff.
+  brokenFails = false
+  clock += WARMUP_RETRY_MAX_MS
+  expect(await tick()).toContain('broken')
+  clock += 60_000
+  expect(await tick()).toContain('broken')
+})
+
+test('WarmupBackoff waits from the base delay and caps it', () => {
+  const backoff = new WarmupBackoff()
+  expect(backoff.recordFailure('a', 0)).toBe(WARMUP_RETRY_BASE_MS)
+  expect(backoff.isWaiting('a', WARMUP_RETRY_BASE_MS - 1)).toBe(true)
+  expect(backoff.isWaiting('a', WARMUP_RETRY_BASE_MS)).toBe(false)
+  for (let i = 0; i < 10; i++) backoff.recordFailure('a', 0)
+  expect(backoff.recordFailure('a', 0)).toBe(WARMUP_RETRY_MAX_MS)
+  backoff.recordSuccess('a')
+  expect(backoff.isWaiting('a', 0)).toBe(false)
 })

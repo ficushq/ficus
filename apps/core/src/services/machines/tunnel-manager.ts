@@ -6,6 +6,7 @@ import { tmpdir } from 'os'
 import { basename, join } from 'path'
 import { machineControlDirectory } from '../../lib/infra/control-directory'
 import { getHomeDir } from '../../lib/utils/home'
+import { MACHINE_CALLBACK_PORT } from './box-ports'
 import { materializePrivateKey } from './keys'
 import type { Machine } from './queries'
 import { sshConnectionArgs, sshTarget } from './ssh'
@@ -103,9 +104,11 @@ function allocateLocalPort(): Promise<number> {
  * survives ControlMaster death: after a core restart (`ControlPersist=no`) the
  * fresh master re-binds the SAME port, so the `FICUS_API_URL` each box baked into
  * its `server.env` stays valid without a full re-provision. Chosen just below the
- * box-port floor (50100) and well above the privileged/ephemeral ranges.
+ * box-port floor (50100). It sits inside Linux's default ephemeral range, so the
+ * machine scripts reserve it from the kernel together with the box range (see
+ * box-ports.ts). A `FICUS_MACHINE_REVERSE_PORT` override is not reserved.
  */
-export const MACHINE_REVERSE_PORT = 50080
+export const MACHINE_REVERSE_PORT = MACHINE_CALLBACK_PORT
 
 /**
  * The effective pinned reverse port: {@link MACHINE_REVERSE_PORT} unless

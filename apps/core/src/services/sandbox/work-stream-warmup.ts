@@ -14,6 +14,42 @@ import type { BoxLivenessHintResolver } from './types'
 
 const WARMUP_CONCURRENCY = 3
 
+/** First wait after a failed warmup: skip at least one 60s lifecycle tick. */
+export const WARMUP_RETRY_BASE_MS = 2 * 60_000
+/** Longest wait between warmup attempts for an agent that keeps failing. */
+export const WARMUP_RETRY_MAX_MS = 15 * 60_000
+
+/**
+ * Per-agent backoff for failed warmups. Without it a sandbox that cannot come up
+ * (a busy box port, a broken machine) was re-ensured on every 60s tick, and
+ * each attempt re-ran box provisioning. The wait doubles from
+ * {@link WARMUP_RETRY_BASE_MS} up to {@link WARMUP_RETRY_MAX_MS} and resets on
+ * the first success. Process-local: a restart simply retries at once.
+ */
+export class WarmupBackoff {
+  private readonly failures = new Map<string, { count: number; retryAt: number }>()
+
+  /** True while `agentId` is still waiting out its last failure. */
+  isWaiting(agentId: string, now: number): boolean {
+    const failure = this.failures.get(agentId)
+    return failure !== undefined && now < failure.retryAt
+  }
+
+  /** Record a failure and return how long the next attempt waits. */
+  recordFailure(agentId: string, now: number): number {
+    const count = (this.failures.get(agentId)?.count ?? 0) + 1
+    const delayMs = Math.min(WARMUP_RETRY_BASE_MS * 2 ** (count - 1), WARMUP_RETRY_MAX_MS)
+    this.failures.set(agentId, { count, retryAt: now + delayMs })
+    return delayMs
+  }
+
+  recordSuccess(agentId: string): void {
+    this.failures.delete(agentId)
+  }
+}
+
+const defaultWarmupBackoff = new WarmupBackoff()
+
 interface Logger {
   info: (...args: unknown[]) => void
   warn: (...args: unknown[]) => void
@@ -37,6 +73,9 @@ interface WarmupOptions {
    * HTTP-probes — and so never wakes — a socket-activated box that has stood down.
    */
   resolveBoxLiveness?: BoxLivenessHintResolver
+  /** Failure backoff state (defaults to the process-wide one). */
+  backoff?: WarmupBackoff
+  now?: () => number
 }
 
 /**
@@ -96,9 +135,13 @@ export async function warmupWorkStreamAgentSandboxes(log: Logger, options: Warmu
   }
   if (toWarm.size === 0) return
 
-  log.info(`Warming ${toWarm.size} work-stream agent sandbox(es)`)
+  // Agents still waiting out a failed warmup sit this tick out.
+  const backoff = options.backoff ?? defaultWarmupBackoff
+  const now = options.now ?? Date.now
+  const ids = [...toWarm].filter((id) => !backoff.isWaiting(id, now()))
+  if (ids.length === 0) return
 
-  const ids = [...toWarm]
+  log.info(`Warming ${ids.length} work-stream agent sandbox(es)`)
   let nextIndex = 0
   async function warmNext(): Promise<void> {
     while (nextIndex < ids.length) {
@@ -107,8 +150,13 @@ export async function warmupWorkStreamAgentSandboxes(log: Logger, options: Warmu
         const agent = await loadAgent(id)
         if (!agent || !isLiveAgentStatus(agent.status) || agent.parentAgentId != null) continue
         await ensureAgent(agent as Agent, { resolveBoxLiveness: options.resolveBoxLiveness })
+        backoff.recordSuccess(id)
       } catch (err) {
-        log.warn(`Work-stream agent sandbox warmup failed for ${id}:`, err)
+        const delayMs = backoff.recordFailure(id, now())
+        log.warn(
+          `Work-stream agent sandbox warmup failed for ${id}; next attempt in ${Math.round(delayMs / 1000)}s:`,
+          err
+        )
       }
     }
   }

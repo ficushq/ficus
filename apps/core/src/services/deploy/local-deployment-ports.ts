@@ -1,6 +1,7 @@
 import { and, eq, isNull, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { localDeployments } from '../../db/schema'
+import { FIRST_BOX_PORT, LAST_BOX_PORT, MACHINE_CALLBACK_PORT, isFicusReservedMachinePort } from '../machines/box-ports'
 
 /**
  * Port assignment for local app deployments.
@@ -52,6 +53,31 @@ export class LocalDeploymentPortInUseError extends Error {
   }
 }
 
+/**
+ * An explicit port Ficus itself owns on a shared VM machine: a box socket port
+ * or the callback port (services/machines/box-ports.ts). A deployment holding
+ * one could stop a box from starting, or receive traffic meant for another box.
+ */
+export class LocalDeploymentPortReservedError extends Error {
+  constructor(readonly port: number) {
+    super(
+      `Port ${port} is reserved for Ficus sandbox infrastructure on this machine ` +
+        `(${MACHINE_CALLBACK_PORT} and ${FIRST_BOX_PORT}-${LAST_BOX_PORT}). Omit "port" to let Ficus assign a free one ` +
+        `and read it from $PORT, or choose a port outside that range.`
+    )
+    this.name = 'LocalDeploymentPortReservedError'
+  }
+}
+
+/**
+ * True for a scope whose deployments share a VM machine's loopback with its
+ * boxes (see local-deployment-port-scope.ts). Docker/k8s sandbox scopes have
+ * their own network namespace, where the box range means nothing.
+ */
+function isSharedMachineScope(portScope: string): boolean {
+  return portScope.startsWith('machine:')
+}
+
 export class LocalDeploymentPortUnavailableError extends Error {
   constructor() {
     super('No free local deployment port is available. Stop an unused deployment and retry.')
@@ -95,7 +121,9 @@ export async function isLocalDeploymentPortTaken(
 /**
  * The port a new deployment should use.
  *
- * `requested` present  → validated and checked for conflict (throws).
+ * `requested` present  → validated and checked for conflict (throws). On a
+ *                        shared VM machine, a port Ficus reserves for boxes is
+ *                        refused outright.
  * `requested` absent   → a free port from the assigned range.
  *
  * The check is advisory: the durable guarantee is the partial unique index on
@@ -104,6 +132,9 @@ export async function isLocalDeploymentPortTaken(
  */
 export async function resolveLocalDeploymentPort(portScope: string, requested?: number): Promise<number> {
   if (requested !== undefined) {
+    if (isSharedMachineScope(portScope) && isFicusReservedMachinePort(requested)) {
+      throw new LocalDeploymentPortReservedError(requested)
+    }
     if (await isLocalDeploymentPortTaken(requested, portScope)) throw new LocalDeploymentPortInUseError(requested)
     return requested
   }

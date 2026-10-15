@@ -6,7 +6,15 @@ import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { Execution } from '../../entities/Execution'
 import * as runners from '../../entities/agent-runners'
-import { MACHINE_STARTUP_RETRY_DELAYS_MS, STARTUP_RETRY_DELAYS_MS, startupRetryCode } from './startup-retry'
+import {
+  BOX_PORT_BUSY_RETRY_DELAYS_MS,
+  MACHINE_STARTUP_RETRY_DELAYS_MS,
+  STARTUP_RETRY_DELAYS_MS,
+  startupRetryCode,
+  startupRetryNotice,
+} from './startup-retry'
+import { BoxPortBusyError } from '../machines/box-port-busy'
+import { streamManager } from '../streaming/buffer'
 import { MachineUnavailableError, resolvePlacement } from '../machines/placement'
 import { MachineNotReadyError } from '../machines/queries'
 import { removeSession } from './session-state'
@@ -70,6 +78,39 @@ describe('machine readiness startup retry classification', () => {
   it('does not infer a machine status from prose or a missing status', () => {
     expect(startupRetryCode(new Error('machine host-noah is not ready (status bootstrapping)'))).toBeNull()
     expect(startupRetryCode(new MachineUnavailableError('no ready shared machine registered'))).toBeNull()
+  })
+})
+
+const BUSY_DIAGNOSTICS = [
+  '--- journal for ficus-box-u.socket (last 20 lines) ---',
+  'Failed to create listening socket (127.0.0.1:51276): Address already in use',
+  "--- sockets holding port 51276 (ss -tanp 'sport = :51276') ---",
+  'ESTAB 0 0 127.0.0.1:51276 127.0.0.1:50080 users:(("sshd",pid=4242,fd=9))',
+  'box-provision.sh: FICUS_BOX_PORT_BUSY port=51276',
+].join('\n')
+const portBusy = () => new BoxPortBusyError('agent_x', 'mh-noah', 51276, BUSY_DIAGNOSTICS, 'provision')
+
+describe('busy box port startup retry classification', () => {
+  it('retries a busy box port, through wrappers', () => {
+    expect(startupRetryCode(portBusy())).toBe('box_port_busy')
+    expect(startupRetryCode(new Error('ensure failed', { cause: portBusy() }))).toBe('box_port_busy')
+  })
+
+  it('never retries other box provisioning failures, whatever they say', () => {
+    expect(startupRetryCode(new Error('box-provision failed for agent_x (exit 1): Address already in use'))).toBeNull()
+    expect(startupRetryCode(new Error('sandbox-server restart failed for agent_x (exit 1): port busy'))).toBeNull()
+  })
+
+  it('names the port and its holder in the stream notice', () => {
+    expect(startupRetryNotice(new Error('wrapped', { cause: portBusy() }))).toBe(
+      'The sandbox could not start because its port on the machine is busy ' +
+        '(port 51276 on mh-noah is busy: held by ESTAB 0 0 127.0.0.1:51276 127.0.0.1:50080 users:(("sshd",pid=4242,fd=9))); ' +
+        'this will retry automatically.'
+    )
+  })
+
+  it('keeps a short bounded backoff schedule', () => {
+    expect([...BOX_PORT_BUSY_RETRY_DELAYS_MS]).toEqual([10_000, 20_000, 40_000, 80_000, 160_000])
   })
 })
 
@@ -186,6 +227,48 @@ describe('durable startup retry', () => {
       }
     }
   )
+
+  // A box whose socket port is held (TIME_WAIT, a squatter) used to fail the
+  // run outright. It now waits and retries on its own bounded schedule, and the
+  // final failure keeps systemd's reason and the holder.
+  it('waits out a busy box port with backoff, tells the stream why, then fails with the real reason', async () => {
+    const runner = spyOn(runners, 'createRunner').mockRejectedValue(portBusy())
+    try {
+      let execution = await agent.queueExecution({ message: 'Keep this request' })
+      const id = execution.id
+      for (const [index, delay] of BOX_PORT_BUSY_RETRY_DELAYS_MS.entries()) {
+        expect(await execution.start()).toBe(true)
+        const notices: string[] = []
+        streamManager.create(id).subscribe((event) => {
+          if (event.type === 'system_message') notices.push(event.text)
+        })
+        const [before] = await db.execute<{ now: Date }>(sql`select clock_timestamp() as now`)
+        await execution.run()
+        expect(notices).toEqual([expect.stringContaining('its port on the machine is busy (port 51276 on mh-noah')])
+        execution = await Execution.mustFind(id)
+        expect(execution.status).toBe('queued')
+        expect(execution.startupRetryCount).toBe(index + 1)
+        expect(execution.message).toBe('Keep this request')
+        expect(execution.failureClass).toBeNull()
+        expect(execution.startupRetryAt!.getTime()).toBeGreaterThanOrEqual(new Date(before.now).getTime() + delay)
+        expect((await Agent.mustFind(agent.id)).status).toBe('idle')
+        await db
+          .update(executions)
+          .set({ startupRetryAt: new Date(0) })
+          .where(eq(executions.id, id))
+      }
+      expect(await execution.start()).toBe(true)
+      await execution.run()
+      const failed = await Execution.mustFind(id)
+      expect(failed.status).toBe('failed')
+      expect(failed.startupRetryCount).toBe(BOX_PORT_BUSY_RETRY_DELAYS_MS.length)
+      expect(failed.error).toContain('Address already in use')
+      expect(failed.error).toContain('users:(("sshd",pid=4242')
+      expect(runner).toHaveBeenCalledTimes(BOX_PORT_BUSY_RETRY_DELAYS_MS.length + 1)
+    } finally {
+      runner.mockRestore()
+    }
+  })
 
   it.each(['provider overloaded', 'provider exhausted', 'unexpected setup bug'])(
     'does not retry other startup failures: %s',

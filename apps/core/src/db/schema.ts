@@ -3196,6 +3196,16 @@ export interface MachineCapabilities {
   // install, setup, verify, or service — NEVER fails machine bootstrap; it only
   // sets browser=unavailable with one of these tokens.)
   browserReason?: string
+  // Whether the kernel reserves Ficus's loopback ports (callback 50080 + box
+  // range, services/machines/box-ports.ts) from its ephemeral range. `unreserved`
+  // means an outgoing connection could still take a box port and stop that box's
+  // socket from binding. box-provision.sh re-checks and fixes it on every
+  // provision. Absent on a machine bootstrapped before this field existed.
+  boxPorts?: 'reserved' | 'unreserved'
+  // Whether systemd enforces the box port guard (SocketBindDeny= in each box's
+  // slice). `unsupported` when systemd is built without BPF_FRAMEWORK, as stock
+  // Ubuntu 24.04 is: box users can then still bind ports in the box range.
+  socketBind?: 'enforced' | 'unsupported'
 }
 
 export const machines = pgTable('machines', {

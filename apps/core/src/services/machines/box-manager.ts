@@ -23,6 +23,7 @@ import {
   upsertMachineBox as upsertMachineBoxReal,
 } from './queries'
 import type { Machine, MachineBox } from './queries'
+import { BOX_PORT_BUSY_EXIT_CODE, BoxPortBusyError } from './box-port-busy'
 import { buildPushFileCommand, defaultSshRunner, defaultSshStreamer } from './ssh'
 import type { SshRunner, SshStreamer } from './ssh'
 import { machineTunnels } from './tunnel-manager'
@@ -1120,8 +1121,20 @@ export async function installBoxOnMachine(opts: InstallBoxOpts, deps: BoxManager
   // runs dockerd-rootless-setuptool install — the latter pulls/sets up rootless
   // docker and can take a minute+, past the SSH runner's 30s default.
   const provRes = await runner.run(machine, provisionCmd, { timeoutMs: BOX_PROVISION_RUN_TIMEOUT_MS })
+  // The script exits BOX_PORT_BUSY_EXIT_CODE only when the box socket could not
+  // bind because something else holds its port. It may free up, so the
+  // execution retries (startup-retry.ts). Any other failure stays terminal.
+  if (provRes.exitCode === BOX_PORT_BUSY_EXIT_CODE) {
+    throw new BoxPortBusyError(sandboxId, machine.name, port, provRes.stderr, 'provision')
+  }
   if (provRes.exitCode !== 0) {
     throw new Error(`box-provision failed for ${sandboxId} (exit ${provRes.exitCode}): ${provRes.stderr.trim()}`)
+  }
+  if (provRes.stderr.includes('WARNING could not reserve the Ficus port range')) {
+    log.warn(
+      `machine ${machine.name} does not reserve the Ficus port range from its ephemeral ports; ` +
+        `box sockets there can collide with outgoing connections (provisioning ${sandboxId} continued)`
+    )
   }
 
   // box-provision reports the box user's useradd-assigned uid on stdout so we can
@@ -1179,6 +1192,36 @@ export async function installBoxOnMachine(opts: InstallBoxOpts, deps: BoxManager
 }
 
 /**
+ * The remote shell run when a box's socket fails to start: print systemd's
+ * status and journal for the socket and every TCP socket holding its port, in
+ * box-provision.sh's `report_socket_start_failure` layout (BoxPortBusyError
+ * reads it), then exit {@link BOX_PORT_BUSY_EXIT_CODE} when the port is held
+ * and 1 otherwise. Runs inside the caller's `( … )` subshell.
+ */
+export function socketStartFailureReport(
+  ctl: ReturnType<typeof boxUnitControlFor>,
+  socket: string,
+  unixUser: string,
+  port: number
+): string {
+  // User-mode units log through the box user's manager (USER_UNIT=, its _UID).
+  const journal =
+    ctl.mode === 'system'
+      ? `sudo journalctl --no-pager -n 20 -u ${socket}`
+      : `sudo journalctl --no-pager -n 20 _UID=$(id -u ${shellQuote(unixUser)}) USER_UNIT=${socket}`
+  const filter = `'sport = :${port}'`
+  return (
+    `holders=$(sudo ss -Htanp ${filter} 2>&1); journal=$(${journal} 2>&1); { ` +
+    `echo "--- systemctl status ${socket} ---"; ${ctl.systemctl} status --no-pager --lines=0 ${socket} 2>&1; ` +
+    `echo "--- journal for ${socket} (last 20 lines) ---"; printf '%s\\n' "$journal"; ` +
+    `echo "--- sockets holding port ${port} (ss -tanp ${filter}) ---"; printf '%s\\n' "\${holders:-<none>}"; ` +
+    `} >&2; ` +
+    `if [ -n "$holders" ] || printf '%s' "$journal" | grep -q 'Address already in use'; then ` +
+    `echo "box port ${port}: FICUS_BOX_PORT_BUSY" >&2; exit ${BOX_PORT_BUSY_EXIT_CODE}; fi; exit 1`
+  )
+}
+
+/**
  * (Re)start an installed box's unit, forward its port over the machine tunnel,
  * and poll /healthz until it answers — the activation half of the provision
  * seam. Returns the local endpoint (`http://127.0.0.1:<localPort>`).
@@ -1201,14 +1244,22 @@ export async function startBoxAndAwaitHealth(
   // Never let a healthy server hide a disabled/failed activation socket.
   // A pre-socket legacy box cannot take this fast path; ensureBox falls back
   // to provisioning the complete chain instead.
+  //
+  // A parked box's socket gives its port back, so the `enable --now` can find
+  // the port held by something else. Report it the way box-provision.sh does
+  // (systemd's own reason plus the holder) and exit BOX_PORT_BUSY_EXIT_CODE.
   const restartCmd = ctl.onHost(
     (u) =>
       `( ${ctl.systemctl} reset-failed ${u.unit} 2>/dev/null || true; ` +
-      `${ctl.systemctl} enable --now ${u.socket} && ${ctl.systemctl} restart ${u.unit} && ` +
+      `if ! ${ctl.systemctl} enable --now ${u.socket}; then ${socketStartFailureReport(ctl, u.socket, unixUser, port)}; fi && ` +
+      `${ctl.systemctl} restart ${u.unit} && ` +
       `enabled=$(${ctl.systemctl} show -p UnitFileState --value ${u.socket}) && [ "$enabled" = enabled ] && ` +
       `active=$(${ctl.systemctl} show -p ActiveState --value ${u.socket}) && [ "$active" = active ] )`
   )
   const restartRes = await runner.run(machine, restartCmd)
+  if (restartRes.exitCode === BOX_PORT_BUSY_EXIT_CODE) {
+    throw new BoxPortBusyError(sandboxId, machine.name, port, restartRes.stderr, 'resume')
+  }
   if (restartRes.exitCode !== 0) {
     throw new Error(
       `sandbox-server restart failed for ${sandboxId} (exit ${restartRes.exitCode}): ${restartRes.stderr.trim()}`

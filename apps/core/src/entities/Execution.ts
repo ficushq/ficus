@@ -29,8 +29,11 @@ import {
 } from '../services/execution/failure-classification'
 import { isActiveExecutionStatus } from '../services/execution/status'
 import {
+  BOX_PORT_BUSY_RETRY_CODE,
   STARTUP_RETRY_DELAYS_MS,
+  findInCauseChain,
   startupRetryCode,
+  startupRetryNotice,
   startupRetryDelays,
   isExecutionStartupFailure,
 } from '../services/execution/startup-retry'
@@ -1025,13 +1028,17 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     )
     if (!requeued) return false
     log.warn(
-      code.startsWith('machine_')
-        ? "Retrying execution startup: the box's machine is not ready yet"
-        : 'Retrying execution startup after a transient database failure',
+      code === BOX_PORT_BUSY_RETRY_CODE
+        ? "Retrying execution startup: the box's socket port is busy"
+        : code.startsWith('machine_')
+          ? "Retrying execution startup: the box's machine is not ready yet"
+          : 'Retrying execution startup after a transient database failure',
       {
         executionId: this.id,
         agentId: this.agentId,
         code,
+        // The busy-port error carries systemd's own reason and the port holder.
+        ...(code === BOX_PORT_BUSY_RETRY_CODE ? { reason: findInCauseChain(error, 'BoxPortBusyError')?.message } : {}),
         attempt: this.startupRetryCount,
         maxRetries: delays.length,
         retryAt: this.startupRetryAt?.toISOString(),
@@ -1343,12 +1350,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
         if (startupFailure && (await this.retryStartupFailure(err, admissionLease))) {
           const { streamManager } = await import('../services/streaming/buffer')
           const buffer = streamManager.get(this.id)
-          buffer?.push({
-            type: 'system_message',
-            text: startupRetryCode(err)?.startsWith('machine_')
-              ? 'The sandbox machine is still starting up; this will start automatically once it is ready.'
-              : 'Execution startup hit a temporary database connection failure and has been queued for retry.',
-          })
+          buffer?.push({ type: 'system_message', text: startupRetryNotice(err) })
           buffer?.close()
           return
         }

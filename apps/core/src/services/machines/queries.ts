@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'crypto'
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { db, instanceMaintenanceState, machineBoxes, machines } from '../../db'
 import type { MachineCapabilities } from '../../db/schema'
+import { BoxPortRangeExhaustedError, FIRST_BOX_PORT, LAST_BOX_PORT } from './box-ports'
 import { cancelInterruptedForceMigrationAudits } from './force-migration-audit'
 
 /**
@@ -14,9 +15,31 @@ export type { MachineCapabilities }
 export type Machine = typeof machines.$inferSelect
 export type MachineBox = typeof machineBoxes.$inferSelect
 
-// Lowest port a box may bind on a machine. MAX(port)+1 allocation starts here
-// on an empty machine (COALESCE(MAX(port), FIRST_BOX_PORT - 1) + 1).
-const FIRST_BOX_PORT = 50100
+/**
+ * The lowest port in the box range ({@link FIRST_BOX_PORT}-{@link LAST_BOX_PORT},
+ * see box-ports.ts) that no box row on `machineId` holds, or null when the
+ * range is full. Ports freed by removed boxes are reused, so a machine never
+ * walks out of the range the hosts reserve from the kernel. Rows holding a port
+ * outside the range (allocated before the range was bounded) are left alone.
+ * They neither block nor consume a candidate.
+ *
+ * `executor` is the bind transaction (under the machine row lock) or the plain
+ * db for the migrate peek.
+ */
+async function lowestFreeBoxPort(executor: typeof db | DbTransaction, machineId: string): Promise<number | null> {
+  const rows = (await executor.execute(sql`
+    SELECT candidate.port AS port
+    FROM generate_series(${FIRST_BOX_PORT}::int, ${LAST_BOX_PORT}::int) AS candidate(port)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM machine_boxes held
+      WHERE held.machine_id = ${machineId} AND held.port = candidate.port
+    )
+    ORDER BY candidate.port
+    LIMIT 1
+  `)) as unknown as Array<{ port: number | string }>
+  const port = rows[0]?.port
+  return port === undefined ? null : Number(port)
+}
 
 /**
  * A bind targeted a machine whose status is not `'ready'` — most importantly
@@ -209,15 +232,16 @@ export async function clearBoxSyncedHashes(sandboxId: string): Promise<void> {
  * Bind a sandbox to a box on a machine, allocating its port atomically.
  *
  * Semantics:
- *  - New sandbox → assigned `MAX(port)+1` on that machine, floor
- *    {@link FIRST_BOX_PORT} (50100) on an empty machine.
+ *  - New sandbox → assigned the lowest free port in the box range
+ *    ({@link FIRST_BOX_PORT}-{@link LAST_BOX_PORT}) on that machine; throws
+ *    {@link BoxPortRangeExhaustedError} when every port in it is taken.
  *  - Rebinding an existing sandbox to the *same* machine → keeps its existing
  *    port, only refreshing `unix_user`/`updated_at`.
  *  - Rebinding an existing sandbox to a *different* machine → assigned the newly
  *    computed port on the new machine.
  *
  * Concurrency: the whole operation runs in ONE transaction that first locks the
- * parent `machines` row `FOR UPDATE`, then reads `MAX(port)` and inserts within
+ * parent `machines` row `FOR UPDATE`, then picks the lowest free port and inserts within
  * that same lock. Because the lock, the MAX read, and the insert share a single
  * transaction, concurrent binds on one machine genuinely serialize end-to-end —
  * each sees the prior bind's port. The `(machine_id, port)` unique constraint is
@@ -259,7 +283,7 @@ export async function bindMachineBox(values: {
   machineId: string
   unixUser: string
   /**
-   * Explicit port to bind instead of the MAX(port)+1 allocation — the migrate
+   * Explicit port to bind instead of the lowest-free allocation — the migrate
    * repoint path, whose box was already provisioned on the target machine at a
    * pre-peeked port ({@link peekNextBoxPort}): the row must record the port the
    * running unit actually serves. The `(machine_id, port)` unique constraint
@@ -344,11 +368,9 @@ export async function bindMachineBox(values: {
     if (values.port !== undefined) {
       nextPort = values.port
     } else {
-      const [row] = await tx
-        .select({ nextPort: sql<number>`COALESCE(MAX(${machineBoxes.port}), ${FIRST_BOX_PORT - 1}) + 1` })
-        .from(machineBoxes)
-        .where(eq(machineBoxes.machineId, machineId))
-      nextPort = Number(row?.nextPort ?? FIRST_BOX_PORT)
+      const free = await lowestFreeBoxPort(tx, machineId)
+      if (free === null) throw new BoxPortRangeExhaustedError(machineId)
+      nextPort = free
     }
 
     // Candidate token for a first bind; the COALESCE below keeps an existing one.
@@ -467,8 +489,8 @@ export async function listAllMachineBoxes(): Promise<MachineBox[]> {
 }
 
 /**
- * The port {@link bindMachineBox} WOULD allocate on `machineId` right now
- * (`COALESCE(MAX(port), 50099) + 1`), without reserving it. The migrate
+ * The port {@link bindMachineBox} WOULD allocate on `machineId` right now (the
+ * lowest free port in the box range), without reserving it. The migrate
  * primitive provisions a box on a target machine BEFORE the row repoints there
  * (the row is the only reservation mechanism), so it peeks the port here, bakes
  * it into the new unit, and passes it back to the final bind as an explicit
@@ -477,11 +499,9 @@ export async function listAllMachineBoxes(): Promise<MachineBox[]> {
  * (old box intact) instead of double-binding the port.
  */
 export async function peekNextBoxPort(machineId: string): Promise<number> {
-  const [row] = await db
-    .select({ nextPort: sql<number>`COALESCE(MAX(${machineBoxes.port}), ${FIRST_BOX_PORT - 1}) + 1` })
-    .from(machineBoxes)
-    .where(eq(machineBoxes.machineId, machineId))
-  return Number(row?.nextPort ?? FIRST_BOX_PORT)
+  const free = await lowestFreeBoxPort(db, machineId)
+  if (free === null) throw new BoxPortRangeExhaustedError(machineId)
+  return free
 }
 
 export async function getMachineBox(sandboxId: string): Promise<MachineBox | null> {

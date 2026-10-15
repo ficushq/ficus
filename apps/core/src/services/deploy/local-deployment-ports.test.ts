@@ -7,9 +7,11 @@ import {
   ASSIGNED_PORT_MAX,
   ASSIGNED_PORT_MIN,
   LocalDeploymentPortInUseError,
+  LocalDeploymentPortReservedError,
   isLocalDeploymentPortTaken,
   resolveLocalDeploymentPort,
 } from './local-deployment-ports'
+import { FIRST_BOX_PORT, LAST_BOX_PORT, MACHINE_CALLBACK_PORT } from '../machines/box-ports'
 
 /**
  * The invariant these pin: on the VM runtime every box on a machine shares one
@@ -89,5 +91,32 @@ describe('local deployment port assignment', () => {
     // The service checks first; the index is what makes two CONCURRENT creates
     // race to one answer rather than both succeeding.
     await expect(seed(4100, 'machine:m1')).rejects.toThrow()
+  })
+
+  // A VM box's socket and Core's callback tunnel listen on these ports on the
+  // machine's shared loopback. A deployment holding one could stop a box from
+  // starting, or receive traffic meant for another box.
+  it.each([MACHINE_CALLBACK_PORT, FIRST_BOX_PORT, 51276, LAST_BOX_PORT])(
+    'refuses Ficus-reserved port %d on a shared machine',
+    async (port) => {
+      await expect(resolveLocalDeploymentPort('machine:m1', port)).rejects.toBeInstanceOf(
+        LocalDeploymentPortReservedError
+      )
+    }
+  )
+
+  it.each([FIRST_BOX_PORT - 1, LAST_BOX_PORT + 1, MACHINE_CALLBACK_PORT + 1])(
+    'accepts neighbouring port %d on a shared machine',
+    async (port) => {
+      await expect(resolveLocalDeploymentPort('machine:m1', port)).resolves.toBe(port)
+    }
+  )
+
+  it('keeps the box range legal in a sandbox scope with its own network namespace', async () => {
+    await expect(resolveLocalDeploymentPort('sandbox:a', FIRST_BOX_PORT)).resolves.toBe(FIRST_BOX_PORT)
+  })
+
+  it('never assigns a reserved port by itself', () => {
+    expect(ASSIGNED_PORT_MAX).toBeLessThan(MACHINE_CALLBACK_PORT)
   })
 })
