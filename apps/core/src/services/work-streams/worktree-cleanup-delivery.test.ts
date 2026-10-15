@@ -40,6 +40,7 @@ function fixture(
       return overrides.remoteHead === undefined ? head : overrides.remoteHead
     },
     subscriptions: () => [],
+    deliveryOutputs: [],
   }
   const calls: string[][] = []
   const targets: RecoveryTarget[] = []

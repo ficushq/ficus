@@ -21,6 +21,8 @@ const PULL_REQUEST_EVENTS = [
   'review_comment',
   'ci_completed',
 ]
+/** Terminal pull request events: they route to the delivery owner, never to `changeEventsTo`. */
+const PULL_REQUEST_DELIVERY_EVENTS = ['merged', 'closed']
 
 const validateRepository = (repository: string) => /^[\w.-]+\/[\w.-]+$/.test(repository)
 
@@ -205,6 +207,7 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
       ? sha
       : null
   },
+  deliveryOutputs: PULL_REQUEST_DELIVERY_EVENTS.map((event) => `pull_request.${event}`),
   subscriptions(reference) {
     return PULL_REQUEST_EVENTS.map((event) => ({
       id: `code-host-${event.replaceAll('_', '-')}`,

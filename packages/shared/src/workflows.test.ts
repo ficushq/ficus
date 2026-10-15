@@ -346,11 +346,22 @@ test('engineering recommendations resolve to ready-to-use styles and never provi
     for (const participant of Object.values(definition.participants))
       expect(await Bun.file(`${root}/config/agent-types/${participant.agentTypeId}.yaml`).exists()).toBe(true)
   }
-  for (const id of ['solo-coding', 'reviewed-coding', 'engineering']) {
+  expect((await preset('solo-coding')).definition.completion).toEqual({ mode: 'pr-merge', followChanges: true })
+  // Reviewed presets send change events (CI, pushes, review comments) straight to the engineer;
+  // delivery events (merged, closed) still reach the reviewer that finishes the stream.
+  for (const id of ['reviewed-coding', 'engineering', 'engineering-design-approval']) {
     const { definition } = await preset(id)
-    expect(definition.completion).toEqual({ mode: 'pr-merge', followChanges: true })
-    expect(definition.subscriptions).toBeUndefined()
+    expect(definition.completion).toEqual({
+      mode: 'pr-merge',
+      followChanges: true,
+      changeEventsTo: { step: 'implement' },
+    })
+    expect(definition.steps.find((step) => step.id === 'implement')?.outcomes).toMatchObject({
+      completed: { next: 'review' },
+    })
   }
+  for (const id of ['solo-coding', 'reviewed-coding', 'engineering'])
+    expect((await preset(id)).definition.subscriptions).toBeUndefined()
   for (const id of ['research-brief', 'security-review', 'code-review'])
     expect((await preset(id)).definition.completion.mode).toBe('deliverable')
 })
@@ -553,7 +564,11 @@ test('Engineering with design approval gates implementation on a human design ap
   expect(review!.outcomes).toEqual({ approved: { next: 'finish' }, 'changes-requested': { returnTo: 'implement' } })
   expect(definition.routing.delegation).toBe('disabled')
   expect(definition.limits.maxStepAttempts).toBeUndefined()
-  expect(definition.completion).toEqual({ mode: 'pr-merge', followChanges: true })
+  expect(definition.completion).toEqual({
+    mode: 'pr-merge',
+    followChanges: true,
+    changeEventsTo: { step: 'implement' },
+  })
   expect(definition.subscriptions).toBeUndefined()
 })
 

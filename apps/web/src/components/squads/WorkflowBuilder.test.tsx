@@ -201,7 +201,7 @@ test('graph edits share undo/redo and selecting a node opens only its inspector'
       expect(document.querySelector<HTMLSelectElement>('[aria-label="Code hosting recipient"]')!.value).toBe(
         `step:${target}`
       )
-      expect(document.querySelector('[data-flow-edge="code-host:delivery:code hosting events"]')).not.toBeNull()
+      expect(document.querySelector('[data-flow-edge="code-host:delivery:code hosting change events"]')).not.toBeNull()
       await click('Undo')
       expect(value.definition.completion.changeEventsTo).toBeUndefined()
     }

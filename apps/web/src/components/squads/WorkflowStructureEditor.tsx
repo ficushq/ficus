@@ -581,8 +581,8 @@ export function WorkflowStructureEditor({
                 <span>
                   Code hosting
                   <span className="block text-xs text-muted">
-                    Send updates from linked pull requests and issues to the selected workflow recipient, or the
-                    delivery owner by default.
+                    Send CI, review, and comment updates from linked pull requests and issues to the selected step, or
+                    the delivery owner by default. Merges always go to the delivery owner.
                   </span>
                 </span>
               </label>

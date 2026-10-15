@@ -40,6 +40,12 @@ export interface CodeHostingAdapter {
    */
   recoveryHead(reference: CodeHostReference, squadId: string, target: RecoveryTarget): Promise<string | null>
   subscriptions(reference: CodeHostReference): IntegrationSubscription[]
+  /**
+   * Output names that are delivery events: the change request reached a terminal state (merged or
+   * closed). They always go to the delivery owner, the agent that finishes the stream. Every other
+   * output from this provider is a change event and follows `completion.changeEventsTo`.
+   */
+  deliveryOutputs: readonly string[]
 }
 
 /**
@@ -119,6 +125,10 @@ export class CodeHostingRegistry {
       `Additional pull requests that are part of the deliverable are designated with ficus workstream track ${streamId} --pr <owner/repo#n> --delivery instead.`,
     ].join(' ')
   }
+  /** Whether `subscription` carries a delivery event (merged/closed) rather than a change event. */
+  isDeliveryEvent(subscription: IntegrationSubscription): boolean {
+    return !!this.adapters.get(subscription.source.integration)?.deliveryOutputs.includes(subscription.source.output)
+  }
   subscriptions(definition: WorkflowDefinition, metadata: unknown): IntegrationSubscription[] {
     const explicit = definition.subscriptions ?? []
     if (!definition.completion.followChanges) return explicit
@@ -132,11 +142,18 @@ export class CodeHostingRegistry {
     // their own provider's adapter: a stream may track a Linear issue with no code host at all.
     inferred.push(...trackedResourceRegistry.subscriptions(metadata))
     // IDs are reserved by schema so explicit subscriptions cannot shadow delivery bindings.
+    // Change events (CI, pushes, reviews, comments, issue updates) go where the flow sends fixes;
+    // delivery events (merged, closed) always reach the delivery owner, which finishes the stream.
     return [
       ...explicit,
       ...inferred.map((subscription) => ({
         ...subscription,
-        deliver: { ...subscription.deliver, to: definition.completion.changeEventsTo ?? 'delivery-owner' },
+        deliver: {
+          ...subscription.deliver,
+          to: this.isDeliveryEvent(subscription)
+            ? ('delivery-owner' as const)
+            : (definition.completion.changeEventsTo ?? 'delivery-owner'),
+        },
       })),
     ]
   }

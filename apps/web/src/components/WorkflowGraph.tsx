@@ -993,7 +993,7 @@ export function WorkflowGraph({
                             }
                             title={
                               node.kind === 'code-host'
-                                ? 'Send all code hosting events to an agent step'
+                                ? 'Send code hosting change events to an agent step'
                                 : isStart
                                   ? 'Choose the first step; connecting replaces the current starting step'
                                   : port.join

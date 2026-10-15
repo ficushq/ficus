@@ -25,7 +25,14 @@ test('a new code hosting adapter supplies delivery evidence and events without c
         match: { project: { value: reference.repository }, number: { value: reference.changeRequest!.number } },
         deliver: { to: 'delivery-owner', whenInactive: 'retain' },
       },
+      {
+        id: 'code-host-pipeline',
+        source: { integration: 'test-code-host', output: 'merge_request.pipeline', version: 1 },
+        match: { project: { value: reference.repository }, number: { value: reference.changeRequest!.number } },
+        deliver: { to: 'delivery-owner', whenInactive: 'retain' },
+      },
     ],
+    deliveryOutputs: ['merge_request.merged'],
   }
   const registry = new CodeHostingRegistry([adapter, githubCodeHostingAdapter])
   const flow = createBlankWorkflow()
@@ -44,7 +51,7 @@ test('a new code hosting adapter supplies delivery evidence and events without c
   expect(await resolved.containsCommit(reference, 'squad', 'main', 'a'.repeat(40))).toBe(true)
   expect(
     registry.subscriptions(flow, metadata).map((item) => integrationSubscriptionSchema.parse(item).source.integration)
-  ).toEqual(['test-code-host'])
+  ).toEqual(['test-code-host', 'test-code-host'])
   expect(
     registry.subscriptions(flow, {
       codeHost: { ...metadata.codeHost, integration: 'github', repository: 'owner/repo' },
@@ -57,14 +64,56 @@ test('a new code hosting adapter supplies delivery evidence and events without c
     { ...metadata.codeHost, integration: 'github', repository: 'owner/repo' },
   ]) {
     const events = registry.subscriptions(flow, { codeHost })
-    expect(events.length).toBeGreaterThan(0)
-    expect(
-      events.every(
-        (event) =>
-          typeof event.deliver.to === 'object' && 'step' in event.deliver.to && event.deliver.to.step === flow.entry
-      )
-    ).toBe(true)
+    const delivery = events.filter((event) => registry.isDeliveryEvent(event))
+    const changes = events.filter((event) => !registry.isDeliveryEvent(event))
+    expect(delivery.length).toBeGreaterThan(0)
+    expect(changes.length).toBeGreaterThan(0)
+    // Change events follow changeEventsTo; the provider's delivery events always reach the delivery owner.
+    expect(changes.every((event) => JSON.stringify(event.deliver.to) === JSON.stringify({ step: flow.entry }))).toBe(
+      true
+    )
+    expect(delivery.every((event) => event.deliver.to === 'delivery-owner')).toBe(true)
     expect(events.every((event) => event.deliver.whenInactive === 'retain')).toBe(true)
+  }
+})
+
+test('GitHub merged and closed always reach the delivery owner; other PR and issue events follow changeEventsTo', () => {
+  const registry = new CodeHostingRegistry([githubCodeHostingAdapter])
+  const flow = createBlankWorkflow()
+  flow.completion = { mode: 'pr-merge', followChanges: true, changeEventsTo: { step: flow.entry } }
+  const metadata = {
+    codeHost: { integration: 'github', repository: 'owner/repo', changeRequest: { number: 7 } },
+    tracked: [
+      { integration: 'github', repository: 'owner/repo', kind: 'pull_request', number: 8 },
+      { integration: 'github', repository: 'owner/repo', kind: 'issue', number: 9 },
+      { integration: 'linear', repository: 'eng', kind: 'issue', number: 12, externalId: 'issue-uuid' },
+    ],
+  }
+  const routes = (definition: typeof flow) =>
+    Object.fromEntries(
+      registry
+        .subscriptions(definition, metadata)
+        .map((sub) => [
+          `${sub.source.integration}:${sub.id.startsWith('code-host-') ? 'delivery' : 'tracked'}:${sub.source.output}:${sub.match['pullRequest.number'] && 'value' in sub.match['pullRequest.number'] ? sub.match['pullRequest.number'].value : ''}`,
+          sub.deliver.to,
+        ])
+    )
+  const step = { step: flow.entry }
+  const explicit = routes(flow)
+  for (const pr of [7, 8]) {
+    const prefix = pr === 7 ? 'github:delivery' : 'github:tracked'
+    expect(explicit[`${prefix}:pull_request.merged:${pr}`]).toBe('delivery-owner')
+    expect(explicit[`${prefix}:pull_request.closed:${pr}`]).toBe('delivery-owner')
+    for (const event of ['updated', 'review_requested', 'reviewed', 'comment', 'review_comment', 'ci_completed'])
+      expect(explicit[`${prefix}:pull_request.${event}:${pr}`]).toEqual(step)
+  }
+  // Issue-tracker events keep following the flow's change-event target.
+  for (const [key, to] of Object.entries(explicit)) if (key.includes(':issue.')) expect(to).toEqual(step)
+  expect(Object.keys(explicit).filter((key) => key.startsWith('linear:'))).toHaveLength(4)
+  // Explicit delivery-owner and the omitted default both send every event to the delivery owner.
+  for (const changeEventsTo of ['delivery-owner' as const, undefined]) {
+    const definition = { ...flow, completion: { mode: 'pr-merge' as const, followChanges: true, changeEventsTo } }
+    expect(Object.values(routes(definition)).every((to) => to === 'delivery-owner')).toBe(true)
   }
 })
 
