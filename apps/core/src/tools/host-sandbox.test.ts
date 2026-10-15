@@ -208,6 +208,39 @@ describe('host sandboxed coding tools', () => {
     expect(out).toContain(`store=${join(home, 'host', 'cli-auth', 'agent-7.json')}`)
   })
 
+  test('bash output beyond the display limit is not written to disk', async () => {
+    // pi would otherwise keep it, unredacted, in a never-deleted /tmp/pi-bash-*.log on this host.
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-host-bash-full-output-'))
+    const previous = process.env.TMPDIR
+    process.env.TMPDIR = dir
+    try {
+      // pi resolves its temp file directory through os.tmpdir() at write time.
+      expect(tmpdir()).toBe(dir)
+      const bash = createHostBashTool(join(home, 'private', 'agent_a1'), {})
+      // Both a line-truncated run and one past the 1 MiB structured output limit.
+      for (const [command, lastLine] of [
+        ['seq 1 3000', '3000'],
+        ['seq 1 300000', '300000'],
+      ]) {
+        const result = (await bash.execute('call-1', { command })) as {
+          content: Array<{ text: string }>
+          details: { fullOutputPath?: string }
+          structuredContent: { output: string; truncated: boolean; full_output_path?: string }
+        }
+        expect(result.content[0].text).toMatch(/\[Showing lines \d+-\d+ of \d+\.\]$/)
+        expect(result.details.fullOutputPath).toBeUndefined()
+        expect(result.structuredContent.full_output_path).toBeUndefined()
+        expect(result.structuredContent.output.startsWith('1\n2\n')).toBe(true)
+        expect(result.structuredContent.output.endsWith(`\n${lastLine}\n`)).toBe(true)
+      }
+      expect(readdirSync(dir)).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env.TMPDIR
+      else process.env.TMPDIR = previous
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   test('bash timeout kills the command', async () => {
     const bash = createHostBashTool(join(home, 'private', 'agent_a1'), {})
     const started = Date.now()

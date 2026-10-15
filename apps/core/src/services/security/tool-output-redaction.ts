@@ -47,8 +47,12 @@ export interface StoredToolResultMatch {
 
 export type OnStoredToolResult = (match: StoredToolResultMatch) => Promise<void> | void
 
-/** pi's footer on output whose start was truncated away (results and thrown errors). */
-const HEAD_TRUNCATION_FOOTER = /\n\n\[Showing [^\n]*Full output: [^\n]*\]/
+/**
+ * pi's footer on output whose start was truncated away (results and thrown errors). It names a
+ * full output file only when pi keeps one, which Core's bash tools turn off. Matching a
+ * look-alike line in the output itself only trims more.
+ */
+const HEAD_TRUNCATION_FOOTER = /\n\n\[Showing [^\n]*\]/
 /** pi's marker between the head and tail of truncated `structuredContent.output`. */
 const OMISSION_MARKER = /\n\n\[\.\.\. \d+ bytes omitted \.\.\.\]\n\n/
 
