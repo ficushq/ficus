@@ -9,7 +9,7 @@ export const SQUAD_SETTINGS_KEYWORDS: Record<string, string> = {
   memory:
     'semantic vector model Embedding Model code semantic file search Workspace Indexing glob indexed files Include Patterns glob ignore files Exclude Patterns git sync remote repo providers Memory Sync',
   workflows:
-    'flow preset workflow default custom parallel concurrency Max concurrent work streams blocked wait timeout idle auto park grace pull request direct merge approval Merge Policies',
+    'workflows flow preset workflow default custom parallel Work capacity concurrency Max concurrent work streams blocked wait timeout idle auto park grace pull request direct merge approval Merge Policies',
   integrations:
     'github issues repo project GitHub Routing GitHub integration accounts github owner repo Repository issue labels Labels linear issue tracker Linear Routing linear team Team ID',
   notifications: 'alerts delivery overrides instance Notification Channels',
@@ -49,7 +49,7 @@ export const SQUAD_SETTINGS_SEARCH: readonly SettingsSearchEntry[] = [
     section: 'workflows',
     id: 'max-concurrent-work-streams',
     label: 'Max concurrent work streams',
-    keywords: 'concurrency parallel limit',
+    keywords: 'work capacity concurrency parallel limit',
   },
   {
     section: 'workflows',

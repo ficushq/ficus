@@ -240,7 +240,7 @@ Squad settings use eight pages grouped by purpose:
 
 - **General:** avatar, name, description, and discovery by other squads. A **Danger zone** at the bottom holds **Archive squad**; it appears only with `squads:delete`, independent of `squads:update`, and opens the typed confirmation.
 - **Instructions:** shared squad context and instructions for individual agent types.
-- **Workflows:** default and alternate flows, selection guidance, concurrency limits, auto-parking, and merge policies.
+- **Work** (`section=workflows`): default and alternate flows, selection guidance, concurrency limits, auto-parking, and merge policies.
 - **Integrations:** enabled apps, account selection, routing, and Git author overrides.
 - **Notifications:** where this squad's notifications are delivered; credentials remain in global integration cards.
 - **Workspace:** host directory or sandbox lifecycle and logs, plus environment settings. The backend's runtime determines which controls appear.

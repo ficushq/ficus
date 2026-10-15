@@ -25,3 +25,10 @@ test('Git identity search and old integration links open Workspace', () => {
     expect(SQUAD_SETTINGS_SEARCH.find((entry) => entry.id === target)?.section).toBe('workspace')
   }
 })
+
+test('the Work settings page keeps its workflows id so existing links resolve', () => {
+  expect(SQUAD_SETTINGS_SECTIONS.find((section) => section.id === 'workflows')?.label).toBe('Work')
+  expect(resolveSquadSettingsSection('workflows')).toBe('workflows')
+  expect(resolveSquadSettingsSection('workflows', 'merge-policies')).toBe('workflows')
+  expect(resolveSquadSettingsSection(null, 'default-workflow')).toBe('workflows')
+})

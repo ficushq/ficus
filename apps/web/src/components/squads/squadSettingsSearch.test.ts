@@ -41,3 +41,27 @@ test('runtime-specific entries keep following the sandbox runtime', () => {
     expect(ids({ ...available, sandboxSectionReady: false })).not.toContain(id)
   expect(ids({ hostRuntime: false, sandboxSectionReady: false, canDeleteSquad: false })).toContain('name')
 })
+
+test('workflow, capacity, and merge terms find the Work page', () => {
+  for (const query of [
+    'work',
+    'workflow',
+    'workflows',
+    'default workflow',
+    'capacity',
+    'concurrent',
+    'merge',
+    'direct merge',
+  ])
+    expect(matchesSetting(query, 'Work', 'Squad', SQUAD_SETTINGS_KEYWORDS.workflows!)).toBe(true)
+  const entry = (id: string) => SQUAD_SETTINGS_SEARCH.find((candidate) => candidate.id === id)!
+  for (const [query, id] of [
+    ['workflow', 'default-workflow'],
+    ['capacity', 'max-concurrent-work-streams'],
+    ['merge', 'merge-policies'],
+  ] as const) {
+    const { section, label, keywords } = entry(id)
+    expect(section).toBe('workflows')
+    expect(matchesSetting(query, label, keywords, 'Work')).toBe(true)
+  }
+})

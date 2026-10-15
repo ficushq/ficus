@@ -17,7 +17,8 @@ export const SQUAD_TABS = [
 export const SQUAD_SETTINGS_SECTIONS = [
   { id: 'general', label: 'General' },
   { id: 'context', label: 'Instructions' },
-  { id: 'workflows', label: 'Workflows' },
+  // Default workflow, work capacity and merge policies. The id stays 'workflows' so existing links keep working.
+  { id: 'workflows', label: 'Work' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'workspace', label: 'Workspace' },
