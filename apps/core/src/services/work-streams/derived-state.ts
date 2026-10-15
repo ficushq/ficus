@@ -17,6 +17,7 @@ import { collectWorkStreamAgentIds } from './agent-ids'
 import { listOpenWaitsForStreams, toWaitJson } from './waits'
 import { loadDeliveryPresentations } from '../workflows/delivery-state'
 import { loadSlotWaitingStreams } from './slot-waits'
+import { loadAgentsWithActiveMonitors } from './active-monitors'
 import { flowWaitReference } from '../workflows/wait-policy'
 
 /**
@@ -31,13 +32,20 @@ import { flowWaitReference } from '../workflows/wait-policy'
  *    that needs attention -> execution_failed (platform admission refusal,
  *    unclassified/legacy failure, or a provider failure; transport is
  *    excluded because the continuation watchdog auto-continues it)
- * 5. active, nothing else -> idle (neutral; resource waits are additional presentation facts)
+ * 5. active, nothing else -> idle (neutral; resource waits and live monitors
+ *    are additional presentation facts)
  * 6. queued -> queued (clients render position / parked wait from
  *    queuePosition + openWaits)
  */
 
 export interface DerivedStreamInfo {
   hasActiveSlotWait: boolean
+  /**
+   * An agent bound to the stream (or a direct subagent of one) has a live
+   * monitor. Evaluated only for active, unpaused streams without open waits —
+   * the only streams it can present for — and false otherwise.
+   */
+  hasActiveMonitor: boolean
   delivery?: WorkStreamDeliveryPresentation
   derivedState: WorkStreamDerivedState
   /** Open waits, display precedence first (then newest first within a type). */
@@ -71,6 +79,8 @@ interface StreamShape {
 
 export interface DerivedStateDeps {
   loadSlotWaitingStreams?: (ids: string[]) => Promise<Set<string>>
+  /** Bound agent ids with a live monitor of their own or of a direct subagent. */
+  loadMonitoringAgentIds?: (agentIds: string[]) => Promise<Set<string>>
   loadDelivery?: (ids: string[]) => Promise<Map<string, WorkStreamDeliveryPresentation>>
   /** Agent ids that currently have a live (active-status) execution. */
   loadBusyAgentIds?: (agentIds: string[]) => Promise<Set<string>>
@@ -157,7 +167,9 @@ export async function computeDerivedStates(
   )
   const probeAgentIds = [...new Set(executionCandidates.flatMap(collectWorkStreamAgentIds))]
   const loadBusy = deps.loadBusyAgentIds ?? defaultLoadBusyAgentIds
-  const busyAgents = await loadBusy(probeAgentIds)
+  const loadMonitoring = deps.loadMonitoringAgentIds ?? loadAgentsWithActiveMonitors
+  const [busyAgents, monitoringAgents] = await Promise.all([loadBusy(probeAgentIds), loadMonitoring(probeAgentIds)])
+  const candidateIds = new Set(executionCandidates.map((s) => s.id))
 
   const idleProbeAgentIds = probeAgentIds.filter((id) => !busyAgents.has(id))
   const loadSurfaced = deps.loadSurfacedFailures ?? defaultLoadSurfacedFailures
@@ -229,6 +241,8 @@ export async function computeDerivedStates(
         : (presentation as WorkStreamDerivedState)
     result.set(stream.id, {
       hasActiveSlotWait: slotWaitingStreams.has(stream.id),
+      hasActiveMonitor:
+        candidateIds.has(stream.id) && collectWorkStreamAgentIds(stream).some((id) => monitoringAgents.has(id)),
       derivedState,
       openWaits,
       ...(delivery ? { delivery } : {}),

@@ -405,6 +405,17 @@ export function registerLiveActivityFanout(
     })
   })
   if (unsubscribeSlots) unsubscribes.push(unsubscribeSlots)
+  // A monitor starting or ending flips an otherwise idle stream to or from Monitoring without
+  // any stored work-stream change. Intermediate updates stay live, so they cannot change it.
+  for (const event of ['monitor.created', 'monitor.ended'] as const) {
+    const unsubscribeMonitor = emitter.on(event, ({ squadId }) => {
+      if (!squadId) return
+      void fanout.onWorkStreamEvent({ squadId, includeDirectStreamSubscribers: true }).catch((error) => {
+        log.warn('Could not refresh Live Activity after monitor change', error)
+      })
+    })
+    if (unsubscribeMonitor) unsubscribes.push(unsubscribeMonitor)
+  }
   const unsubscribeInterest = emitter.on('liveActivity.interestChanged', ({ userId }) => fanout.refreshUser(userId))
   if (unsubscribeInterest) unsubscribes.push(unsubscribeInterest)
 

@@ -410,9 +410,12 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
       }),
 
       // ── Monitor events ─────────────────────────────────────────
-      subscribe('monitors', ({ data }) => {
+      subscribe('monitors', ({ event, data }) => {
         invalidate(queryKeys.monitors.all)
         if (data?.agentId) invalidate(queryKeys.agents.detail(data.agentId))
+        // A monitor starting or ending flips idle stream rows to or from Monitoring without a
+        // stored work-stream mutation. Coalesced, like slot changes.
+        if (event === 'monitor.created' || event === 'monitor.ended') slotCoalescer.queue(queryKeys.squads.all)
       }),
 
       // ── Onboarding events (admin-global "recompute now" signal) ────

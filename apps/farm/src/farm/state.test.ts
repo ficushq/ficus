@@ -36,6 +36,12 @@ const CASES: {
     presentation: 'waiting_for_slot',
     plant: 'waiting',
   },
+  {
+    name: 'live monitor',
+    stream: facts({ ...active, hasActiveMonitor: true }),
+    presentation: 'monitoring',
+    plant: 'waiting',
+  },
   { name: 'done', stream: facts({ status: 'done' }), presentation: 'done', plant: null },
   { name: 'canceled', stream: facts({ status: 'canceled' }), presentation: 'canceled', plant: null },
   { name: 'queued', stream: facts({ status: 'queued', openWaits: [] }), presentation: 'queued', plant: 'queued' },

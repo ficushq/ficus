@@ -135,6 +135,7 @@ export type WorkStreamPresentationState =
   | WorkStreamStatus
   | WorkStreamDerivedState
   | 'waiting_for_slot'
+  | 'monitoring'
   | ManualWaitPresentationState
   | `delivery_${DeliveryPresentationKind}`
 export type SubagentPresentationState = 'queued' | 'running' | 'idle' | 'stopped' | 'done' | 'failed'
@@ -169,6 +170,7 @@ export const WORK_STREAM_STATUS_ROLE = {
   blocked: 'attention',
   idle: 'neutral',
   waiting_for_slot: 'queue',
+  monitoring: 'externalWait',
   execution_failed: 'danger',
   done: 'success',
   canceled: 'neutral',
@@ -255,6 +257,8 @@ export function workStreamWaitDisplayType(wait: WorkStreamWaitDisplayFacts): Wor
 export interface WorkStreamPresentationFacts {
   /** Read-only server projection; absent/false never implies a live resource wait. */
   hasActiveSlotWait?: boolean
+  /** Read-only server projection; absent/false never implies a live agent monitor. */
+  hasActiveMonitor?: boolean
   delivery?: WorkStreamDeliveryPresentation
   pause?: unknown
   status: WorkStreamStatus
@@ -309,12 +313,22 @@ export function selectWorkStreamPresentationState(
     // list cannot speak against a live execution or a failed execution, but a
     // STALE wait-derived state (in_review/…) must still collapse to idle.
     if (workStream.derivedState === 'in_progress') return 'in_progress'
-    return workStream.hasActiveSlotWait === true ? 'waiting_for_slot' : 'idle'
+    return idlePresentationState(workStream)
   }
 
   if (workStream.derivedState === 'execution_failed') return 'execution_failed'
   const state = deliveryState ?? workStream.derivedState ?? workStream.status
-  return state === 'idle' && workStream.hasActiveSlotWait === true ? 'waiting_for_slot' : state
+  return state === 'idle' ? idlePresentationState(workStream) : state
+}
+
+/**
+ * Refine an otherwise idle stream from additive server context. A proven slot
+ * wait outranks a live monitor; neither fact ever replaces any other state.
+ */
+function idlePresentationState(workStream: WorkStreamPresentationFacts): WorkStreamPresentationState {
+  if (workStream.hasActiveSlotWait === true) return 'waiting_for_slot'
+  if (workStream.hasActiveMonitor === true) return 'monitoring'
+  return 'idle'
 }
 
 /** Whether a stream contributes to a user-attention aggregate. */

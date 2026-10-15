@@ -245,6 +245,15 @@ test('widget summary carries only the optional authoritative slot fact, includin
   }
 })
 
+test('widget summary carries the optional monitor fact, including explicit clearing, in the externalWait bucket', () => {
+  for (const hasActiveMonitor of [true, false, undefined]) {
+    const input = stream({ derivedState: 'idle', openWaits: [], hasActiveMonitor })
+    const summary = JSON.parse(JSON.stringify(buildWorkInterestSnapshot([input]).top[0]))
+    expect(summary.hasActiveMonitor).toBe(hasActiveMonitor)
+    expect(summary.bucket).toBe(hasActiveMonitor ? 'externalWait' : 'blocked')
+  }
+})
+
 test('delivery label reasons survive widget JSON while aggregate vocabulary and ranking stay unchanged', async () => {
   const { CODE_HOST_DELIVERY_PRESENTATION_CASES } = await import('./test-fixtures/work-stream-presentation')
   for (const row of CODE_HOST_DELIVERY_PRESENTATION_CASES) {

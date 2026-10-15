@@ -134,6 +134,7 @@ describe('work-stream derived state', () => {
       const derived = (
         await computeDerivedStates([input], {
           loadSlotWaitingStreams: async () => new Set(row.facts.hasActiveSlotWait ? [ws.id] : []),
+          loadMonitoringAgentIds: async () => new Set(row.facts.hasActiveMonitor ? ['matrix-agent'] : []),
           loadDelivery: async () => new Map(row.facts.delivery ? [[ws.id, row.facts.delivery]] : []),
           loadBusyAgentIds: async () => new Set(row.facts.derivedState === 'in_progress' ? ['matrix-agent'] : []),
           loadSurfacedFailures: async () =>
@@ -155,6 +156,7 @@ describe('work-stream derived state', () => {
         })
       ).get(ws.id)!
       expect(derived.derivedState).not.toBe('waiting_for_slot') // presentation-only, even with annotated input
+      expect(derived.derivedState).not.toBe('monitoring')
       const json = JSON.parse(JSON.stringify({ ...input, ...derived }))
       expect(json.delivery).toEqual(row.facts.delivery)
       expect(selectWorkStreamPresentationState(json)).toBe(row.state)
@@ -283,6 +285,138 @@ describe('work-stream derived state', () => {
       await db.delete(slotWaiters).where(eq(slotWaiters.poolId, pool!.id))
       await db.delete(slotPools).where(eq(slotPools.id, pool!.id))
     }
+  })
+
+  describe('live monitor context', () => {
+    const createdMonitorAgentIds: string[] = []
+
+    afterEach(async () => {
+      const { monitors } = await import('../../db/schema')
+      if (createdMonitorAgentIds.length)
+        await db.delete(monitors).where(inArray(monitors.agentId, createdMonitorAgentIds.splice(0)))
+    })
+
+    async function startMonitor(agentId: string, status: 'starting' | 'running' | 'canceling' = 'running') {
+      const { monitors } = await import('../../db/schema')
+      createdMonitorAgentIds.push(agentId)
+      const [row] = await db
+        .insert(monitors)
+        .values({
+          agentId,
+          sandboxId: 'sandbox',
+          label: 'watch',
+          command: 'tail -F log',
+          processId: 'process',
+          status,
+          timeoutMs: 60_000,
+          maxBatchLines: 20,
+          maxBatchBytes: 4096,
+          batchDebounceMs: 750,
+        })
+        .returning()
+      return row!
+    }
+
+    async function setMonitorStatus(id: string, status: 'exited' | 'canceled' | 'timed-out' | 'failed' | 'overload') {
+      const { monitors } = await import('../../db/schema')
+      await db.update(monitors).set({ status, endedAt: new Date() }).where(eq(monitors.id, id))
+    }
+
+    it('marks an otherwise idle stream while a bound agent has a live monitor, keeping derivedState idle', async () => {
+      const agent = await createAgent()
+      const ws = await createStream('monitored', { assigneeAgentId: agent.id, agentIds: [agent.id] })
+      expect(await derived(ws)).toMatchObject({ derivedState: 'idle', hasActiveMonitor: false })
+      const monitor = await startMonitor(agent.id, 'starting')
+      expect(await derived(ws)).toMatchObject({ derivedState: 'idle', hasActiveMonitor: true })
+      for (const status of ['running', 'canceling'] as const) {
+        const { monitors } = await import('../../db/schema')
+        await db.update(monitors).set({ status }).where(eq(monitors.id, monitor.id))
+        expect((await derived(ws)).hasActiveMonitor).toBe(true)
+      }
+      for (const status of ['exited', 'canceled', 'timed-out', 'failed', 'overload'] as const) {
+        await setMonitorStatus(monitor.id, status)
+        expect(await derived(ws)).toMatchObject({ derivedState: 'idle', hasActiveMonitor: false })
+      }
+    })
+
+    it('counts any bound agent and their direct subagents, never unrelated agents', async () => {
+      const assignee = await createAgent()
+      const participant = await createAgent()
+      const unrelated = await createAgent()
+      const subagent = await Agent.create({
+        agentTypeId: testAgentTypeId,
+        squadId: squad.id,
+        parentAgentId: participant.id,
+      })
+      createdAgentIds.unshift(subagent.id) // delete the child before its parent
+      const ws = await createStream('participants', { assigneeAgentId: assignee.id, agentIds: [participant.id] })
+
+      const unrelatedMonitor = await startMonitor(unrelated.id)
+      expect((await derived(ws)).hasActiveMonitor).toBe(false)
+      await setMonitorStatus(unrelatedMonitor.id, 'exited')
+
+      const childMonitor = await startMonitor(subagent.id)
+      expect((await derived(ws)).hasActiveMonitor).toBe(true)
+      await setMonitorStatus(childMonitor.id, 'exited')
+      expect((await derived(ws)).hasActiveMonitor).toBe(false)
+
+      await startMonitor(participant.id)
+      expect((await derived(ws)).hasActiveMonitor).toBe(true)
+    })
+
+    it('is not evaluated for streams that cannot present it: paused, waiting, queued or terminal', async () => {
+      const agent = await createAgent()
+      await startMonitor(agent.id)
+      const binding = { assigneeAgentId: agent.id, agentIds: [agent.id] }
+      const waiting = await createStream('waiting', binding)
+      await db.insert(workStreamWaits).values({ workStreamId: waiting.id, type: 'question', createdBy: 'system' })
+      const idle = await createStream('idle control', binding)
+      const shape = (id: string, overrides: Record<string, unknown> = {}) => ({
+        id,
+        status: 'active' as const,
+        ...binding,
+        ...overrides,
+      })
+      const inputs = [
+        shape(waiting.id),
+        shape(crypto.randomUUID(), { status: 'queued' }),
+        shape(crypto.randomUUID(), { status: 'done' }),
+        shape(crypto.randomUUID(), { status: 'canceled' }),
+        shape(crypto.randomUUID(), { pause: { id: 'p' } }),
+      ]
+      const states = await computeDerivedStates([...inputs, shape(idle.id)])
+      for (const input of inputs) expect(states.get(input.id)?.hasActiveMonitor).toBe(false)
+      expect(states.get(idle.id)?.hasActiveMonitor).toBe(true)
+    })
+
+    it('loads monitor context for a whole batch with one call, alongside a running execution', async () => {
+      const { loadAgentsWithActiveMonitors } = await import('./active-monitors')
+      const quiet = await createAgent()
+      const watching = await createAgent()
+      const working = await createAgent()
+      await startMonitor(watching.id)
+      await startMonitor(working.id)
+      await db.insert(executions).values({ agentId: working.id, status: 'running', startedAt: new Date() })
+      const streams = await Promise.all(
+        [quiet, watching, working].map((agent, index) =>
+          createStream(`batch ${index}`, { assigneeAgentId: agent.id, agentIds: [agent.id] })
+        )
+      )
+      const calls: string[][] = []
+      const states = await computeDerivedStates(await Promise.all(streams.map((ws) => WorkStream.mustFind(ws.id))), {
+        loadMonitoringAgentIds: async (ids) => {
+          calls.push(ids)
+          return loadAgentsWithActiveMonitors(ids)
+        },
+      })
+      expect(calls).toHaveLength(1)
+      expect(calls[0]!.sort()).toEqual([quiet.id, watching.id, working.id].sort())
+      expect(states.get(streams[0]!.id)).toMatchObject({ derivedState: 'idle', hasActiveMonitor: false })
+      expect(states.get(streams[1]!.id)).toMatchObject({ derivedState: 'idle', hasActiveMonitor: true })
+      // Running work keeps its own state; the selector lets in_progress win.
+      expect(states.get(streams[2]!.id)).toMatchObject({ derivedState: 'in_progress', hasActiveMonitor: true })
+      expect(await loadAgentsWithActiveMonitors([])).toEqual(new Set())
+    })
   })
 
   it('in_progress requires a RUNNING execution for an assigned agent — assignee presence alone is NOT enough', async () => {

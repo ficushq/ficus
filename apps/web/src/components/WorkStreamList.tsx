@@ -74,6 +74,7 @@ export type WsStatusFilterValue =
   | 'paused'
   | 'waiting'
   | 'idle'
+  | 'monitoring'
   | 'queued'
   | 'done'
   | 'canceled'
@@ -90,6 +91,7 @@ const WS_STATUS_FILTER_OPTIONS: WsStatusFilterOption[] = [
   { label: 'Paused', value: 'paused' },
   { label: 'Waiting', value: 'waiting' },
   { label: 'Idle', value: 'idle' },
+  { label: 'Monitoring', value: 'monitoring' },
   { label: 'Queued', value: 'queued' },
   { label: 'Done', value: 'done' },
   { label: 'Canceled', value: 'canceled' },

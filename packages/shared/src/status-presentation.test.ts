@@ -79,6 +79,7 @@ describe('status role mappings', () => {
       ['delivery_external', 'externalWait'],
       ['waiting_on_owner', 'externalWait'],
       ['waiting_for_slot', 'queue'],
+      ['monitoring', 'externalWait'],
       ['delivery_setup', 'attention'],
       ['delivery_failure', 'danger'],
       ['paused', 'neutral'],
@@ -346,10 +347,69 @@ describe('slot wait presentation', () => {
   })
 })
 
+describe('monitor presentation', () => {
+  const idle = { status: 'active' as const, derivedState: 'idle' as const, openWaits: [] }
+
+  test('an otherwise idle stream with a live monitor presents as monitoring, without needing attention', () => {
+    expect(selectWorkStreamPresentationState({ ...idle, hasActiveMonitor: true })).toBe('monitoring')
+    expect(workStreamNeedsHumanAttention({ ...idle, hasActiveMonitor: true })).toBe(false)
+    // Payloads that omit waits follow the same rule.
+    expect(selectWorkStreamPresentationState({ status: 'active', derivedState: 'idle', hasActiveMonitor: true })).toBe(
+      'monitoring'
+    )
+  })
+
+  test('absent or false never implies monitoring', () => {
+    for (const value of [undefined, false])
+      expect(selectWorkStreamPresentationState({ ...idle, hasActiveMonitor: value })).toBe('idle')
+  })
+
+  test('a proven slot wait outranks a live monitor', () => {
+    expect(selectWorkStreamPresentationState({ ...idle, hasActiveSlotWait: true, hasActiveMonitor: true })).toBe(
+      'waiting_for_slot'
+    )
+    expect(
+      selectWorkStreamPresentationState({
+        status: 'active',
+        derivedState: 'idle',
+        hasActiveSlotWait: true,
+        hasActiveMonitor: true,
+      })
+    ).toBe('waiting_for_slot')
+  })
+
+  test('every other state keeps precedence', () => {
+    for (const derivedState of ['in_progress', 'execution_failed'] as const)
+      expect(selectWorkStreamPresentationState({ ...idle, derivedState, hasActiveMonitor: true })).toBe(derivedState)
+    for (const status of ['queued', 'done', 'canceled'] as const)
+      expect(selectWorkStreamPresentationState({ ...idle, status, hasActiveMonitor: true })).toBe(status)
+    expect(selectWorkStreamPresentationState({ ...idle, pause: {}, hasActiveMonitor: true })).toBe('paused')
+    for (const kind of ['approval', 'review', 'merge', 'external', 'setup', 'failure'] as const)
+      expect(selectWorkStreamPresentationState({ ...idle, delivery: { kind }, hasActiveMonitor: true })).toBe(
+        `delivery_${kind}`
+      )
+    for (const [type, state] of [
+      ['review', 'in_review'],
+      ['question', 'waiting_on_answer'],
+      ['dependency', 'waiting_on_dependency'],
+      ['manual', 'blocked'],
+    ] as const)
+      expect(selectWorkStreamPresentationState({ ...idle, openWaits: [{ type }], hasActiveMonitor: true })).toBe(state)
+  })
+})
+
 test('slot context cannot mask any existing non-idle state in the shared matrix', () => {
   for (const row of WORK_STREAM_PRESENTATION_CASES) {
     expect(selectWorkStreamPresentationState({ ...row.facts, hasActiveSlotWait: true })).toBe(
-      row.state === 'idle' ? 'waiting_for_slot' : row.state
+      row.state === 'idle' || row.state === 'monitoring' ? 'waiting_for_slot' : row.state
+    )
+  }
+})
+
+test('monitor context cannot mask any existing non-idle state in the shared matrix', () => {
+  for (const row of WORK_STREAM_PRESENTATION_CASES) {
+    expect(selectWorkStreamPresentationState({ ...row.facts, hasActiveMonitor: true })).toBe(
+      row.state === 'idle' ? 'monitoring' : row.state
     )
   }
 })
