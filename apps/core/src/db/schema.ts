@@ -59,7 +59,7 @@ export const slotWaiterEnqueueSequence = pgSequence('slot_waiter_enqueue_seq', {
 })
 export const slotClaimStatusEnum = pgEnum('slot_claim_status', ['active', 'released', 'expired'])
 export const slotWaiterStatusEnum = pgEnum('slot_waiter_status', ['queued', 'granted', 'canceled'])
-export const slotNotificationKindEnum = pgEnum('slot_notification_kind', ['granted', 'expired'])
+export const slotNotificationKindEnum = pgEnum('slot_notification_kind', ['granted', 'expired', 'pool_disabled'])
 export const slotNotificationStatusEnum = pgEnum('slot_notification_status', ['pending', 'delivering', 'delivered'])
 
 export const imageStatusEnum = pgEnum('image_status', [
@@ -4173,9 +4173,15 @@ export const slotPools = pgTable(
     key: varchar('key', { length: 64 }).notNull(),
     capacity: integer('capacity').notNull().default(1),
     claimTimeoutMs: integer('claim_timeout_ms').notNull().default(3_600_000),
+    // Optional "how to use" guidance published to every agent prompt in the
+    // squad's generated Slot Pools section.
+    usage: text('usage'),
     createdBy: varchar('created_by', { length: 255 }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // Disabled pools keep their configuration and history but are not
+    // enforced: no admission, no waiters, omitted from agent prompts.
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
     unregisteredAt: timestamp('unregistered_at', { withTimezone: true }),
   },
   (table) => [
@@ -4188,6 +4194,7 @@ export const slotPools = pgTable(
       'slot_pools_claim_timeout_bounds',
       sql`${table.claimTimeoutMs} >= 60000 AND ${table.claimTimeoutMs} <= 86400000`
     ),
+    check('slot_pools_usage_length', sql`char_length(${table.usage}) <= 1000`),
   ]
 )
 
@@ -4245,9 +4252,10 @@ export const slotNotifications = pgTable(
     poolId: uuid('pool_id')
       .notNull()
       .references(() => slotPools.id, { onDelete: 'restrict' }),
-    claimId: uuid('claim_id')
-      .notNull()
-      .references(() => slotClaims.id, { onDelete: 'restrict' }),
+    // granted/expired notices concern a claim; pool_disabled notices concern
+    // the queued waiter that disabling the pool canceled.
+    claimId: uuid('claim_id').references(() => slotClaims.id, { onDelete: 'restrict' }),
+    waiterId: uuid('waiter_id').references(() => slotWaiters.id, { onDelete: 'restrict' }),
     recipientAgentId: uuid('recipient_agent_id').notNull(),
     kind: slotNotificationKindEnum('kind').notNull(),
     idempotencyKey: varchar('idempotency_key', { length: 200 }).notNull().unique(),
@@ -4265,6 +4273,12 @@ export const slotNotifications = pgTable(
   (table) => [
     index('idx_slot_notifications_due').on(table.status, table.nextAttemptAt, table.claimedAt),
     check('slot_notifications_delivery_claim_pair', sql`(${table.claimedAt} IS NULL) = (${table.claimToken} IS NULL)`),
+    // Compared as text so the constraint never depends on the new enum value
+    // being committed in the migration that adds it.
+    check(
+      'slot_notifications_subject',
+      sql`(${table.kind}::text = 'pool_disabled' AND ${table.waiterId} IS NOT NULL AND ${table.claimId} IS NULL) OR (${table.kind}::text <> 'pool_disabled' AND ${table.claimId} IS NOT NULL AND ${table.waiterId} IS NULL)`
+    ),
   ]
 )
 

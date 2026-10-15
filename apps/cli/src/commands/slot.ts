@@ -12,6 +12,7 @@ const DEFAULT_HISTORY_LIMIT = 50
 const MAX_HISTORY_LIMIT = 100
 const MIN_TIMEOUT_MS = 60_000
 const MAX_TIMEOUT_MS = 86_400_000
+const MAX_USAGE_LENGTH = 1_000
 const DURATION = /^(\d+)(ms|s|m|h|d)$/
 
 type SlotOptions = { squad?: string }
@@ -36,6 +37,10 @@ type SlotPoolProjection = {
   activeCount: number
   availableCount: number
   queuedCount: number
+  /** Usage guidance; absent on servers that predate it. */
+  usage?: string | null
+  /** False while disabled; absent on servers that predate enable/disable. */
+  enabled?: boolean
   oldestWaiterAgeMs?: number | null
   callerClaim?: { id?: string; expiresAt: string }
   callerWaiter?: { id?: string; queuedAt?: string }
@@ -59,7 +64,7 @@ export type SlotHistoryPage = {
   nextCursor: string | null
 }
 type SlotAcquireResponse = {
-  outcome: 'granted' | 'queued' | 'unavailable'
+  outcome: 'granted' | 'queued' | 'unavailable' | 'disabled'
   message: string
   pool: { key: string }
   claim?: { id: string; expiresAt: string }
@@ -121,6 +126,18 @@ export function parseSlotCapacity(value: string): number {
   return capacity
 }
 
+/**
+ * Usage guidance as sent to the server: trimmed, with blank meaning "clear".
+ * Rejects text over the server's prompt budget before any API call.
+ */
+export function parseSlotUsage(value: string): string {
+  const usage = value.trim()
+  if (usage.length > MAX_USAGE_LENGTH) {
+    throw new Error(`Usage guidance must be at most ${MAX_USAGE_LENGTH} characters.`)
+  }
+  return usage
+}
+
 function path(squadId: string, suffix = ''): string {
   return `/api/squads/${encodeURIComponent(squadId)}/slots${suffix}`
 }
@@ -142,19 +159,26 @@ export function renderSlotPools(result: SlotPoolProjection | SlotPoolProjection[
   const pools = Array.isArray(result) ? result : [result]
   if (pools.length === 0) return 'No slot pools registered.'
   const summary = (pool: SlotPoolProjection) =>
-    `${pool.key}: ${pool.activeCount}/${pool.capacity} active, ${pool.availableCount} available, ${pool.queuedCount} queued`
+    `${pool.key}: ${pool.activeCount}/${pool.capacity} active, ${pool.availableCount} available, ${pool.queuedCount} queued${
+      pool.enabled === false ? ' (disabled: not enforced)' : ''
+    }`
   if (Array.isArray(result)) {
     // Each pool carries its own caller recovery state so a held claim or
     // queued wait is actionable straight from the list output.
     return pools
-      .map((pool) => [summary(pool), ...callerStateLines(pool).map((line) => `  ${line}`)])
+      .map((pool) => [summary(pool), ...[...usageLines(pool), ...callerStateLines(pool)].map((line) => `  ${line}`)])
       .flat()
       .join('\n')
   }
-  const lines = [summary(result)]
+  const lines = [summary(result), ...usageLines(result)]
   if (result.oldestWaiterAgeMs != null) lines.push(`Oldest wait: ${result.oldestWaiterAgeMs}ms`)
   lines.push(...callerStateLines(result))
   return lines.join('\n')
+}
+
+function usageLines(pool: SlotPoolProjection): string[] {
+  const usage = pool.usage?.trim()
+  return usage ? [`Usage: ${usage.replace(/\s*\n\s*/g, ' ')}`] : []
 }
 
 function callerStateLines(pool: SlotPoolProjection): string[] {
@@ -192,6 +216,9 @@ export function renderSlotHistory(page: SlotHistoryPage, key: string, squadId: s
 }
 
 export function renderSlotAcquire(result: SlotAcquireResponse, squadId: string): string {
+  if (result.outcome === 'disabled') {
+    return `${result.message}\nYOU DO NOT OWN CAPACITY AND ARE NOT QUEUED. The pool is not enforced while disabled.`
+  }
   if (result.outcome === 'unavailable') {
     return `${result.message}\nSubscribe: ficus slot subscribe ${result.pool.key} --squad ${squadId}`
   }
@@ -299,36 +326,72 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
   withSquad(slot.command('register <key>').description('Register a slot pool'))
     .option('--capacity <n>', 'Pool capacity')
     .option('--timeout <duration>', 'Claim timeout')
-    .action((key: string, options: SlotOptions & { capacity?: string; timeout?: string }) =>
+    .option('--usage <text>', 'Usage guidance published to every agent prompt (what it protects, when to claim)')
+    .action((key: string, options: SlotOptions & { capacity?: string; timeout?: string; usage?: string }) =>
       run(async () => {
         const squadId = resolveSlotSquadId(options.squad)
+        const usage = options.usage === undefined ? undefined : parseSlotUsage(options.usage)
         const result = requireSlotMutationResponse(
           await apiPost<SlotPoolMutationResponse>(path(squadId), {
             key,
             ...(options.capacity ? { capacity: parseSlotCapacity(options.capacity) } : {}),
             ...(options.timeout ? { claimTimeoutMs: parseSlotDuration(options.timeout) } : {}),
+            ...(usage ? { usage } : {}),
           })
         )
         output(result, result.message)
       })
     )
 
-  withSquad(slot.command('update <key>').description('Update a slot pool'))
+  withSquad(slot.command('update <key>').description('Update a slot pool; omitted settings are unchanged'))
     .option('--capacity <n>', 'Pool capacity')
     .option('--timeout <duration>', 'Claim timeout')
-    .action((key: string, options: SlotOptions & { capacity?: string; timeout?: string }) =>
+    .option('--usage <text>', 'Replace the usage guidance ("" clears it)')
+    .option('--clear-usage', 'Remove the usage guidance')
+    .action(
+      (
+        key: string,
+        options: SlotOptions & { capacity?: string; timeout?: string; usage?: string; clearUsage?: boolean }
+      ) =>
+        run(async () => {
+          if (options.clearUsage && options.usage !== undefined) {
+            throw new Error('Pass either --usage or --clear-usage, not both.')
+          }
+          if (!options.capacity && !options.timeout && options.usage === undefined && !options.clearUsage) {
+            throw new Error('Pass --capacity, --timeout, --usage, or --clear-usage.')
+          }
+          const squadId = resolveSlotSquadId(options.squad)
+          const usage = options.clearUsage
+            ? null
+            : options.usage === undefined
+              ? undefined
+              : parseSlotUsage(options.usage)
+          const result = requireSlotMutationResponse(
+            await apiPatch<SlotPoolMutationResponse>(path(squadId, `/${segment(key)}`), {
+              ...(options.capacity ? { capacity: parseSlotCapacity(options.capacity) } : {}),
+              ...(options.timeout ? { claimTimeoutMs: parseSlotDuration(options.timeout) } : {}),
+              // Blank guidance clears it, the same as --clear-usage.
+              ...(usage === undefined ? {} : { usage: usage || null }),
+            })
+          )
+          output(result, result.message)
+        })
+    )
+
+  for (const [name, enabled, description] of [
+    ['disable', false, 'Stop enforcing a pool: cancel and notify its waiters, keep its configuration'],
+    ['enable', true, 'Resume enforcing a disabled pool with its saved configuration'],
+  ] as const) {
+    withSquad(slot.command(`${name} <key>`).description(description)).action((key: string, options: SlotOptions) =>
       run(async () => {
-        if (!options.capacity && !options.timeout) throw new Error('Pass --capacity or --timeout.')
         const squadId = resolveSlotSquadId(options.squad)
         const result = requireSlotMutationResponse(
-          await apiPatch<SlotPoolMutationResponse>(path(squadId, `/${segment(key)}`), {
-            ...(options.capacity ? { capacity: parseSlotCapacity(options.capacity) } : {}),
-            ...(options.timeout ? { claimTimeoutMs: parseSlotDuration(options.timeout) } : {}),
-          })
+          await apiPatch<SlotPoolMutationResponse>(path(squadId, `/${segment(key)}`), { enabled })
         )
         output(result, result.message)
       })
     )
+  }
 
   withSquad(slot.command('unregister <key>').description('Unregister an empty slot pool')).action(
     (key: string, options: SlotOptions) =>

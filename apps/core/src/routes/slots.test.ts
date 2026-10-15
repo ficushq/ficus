@@ -645,3 +645,113 @@ describe('archived squad inertness', () => {
     expect(await response.json()).toEqual({ error: 'Forbidden' })
   })
 })
+
+describe('slot pool usage guidance and enabled state', () => {
+  test('register accepts guidance and list/get return it with the enabled state', async () => {
+    const squadId = await squad('usage-register')
+    const created = await request('POST', `/api/squads/${squadId}/slots`, writeUser.token, {
+      key: 'tests',
+      usage: '  Claim before DB-backed tests.  ',
+    })
+    expect(created.status).toBe(201)
+    const body = await created.json()
+    expect(body.pool).toMatchObject({ usage: 'Claim before DB-backed tests.', disabledAt: null })
+    expect(body.message).toContain('usage guidance')
+
+    const [listed] = await (await request('GET', `/api/squads/${squadId}/slots`, useUser.token)).json()
+    expect(listed).toMatchObject({ key: 'tests', usage: 'Claim before DB-backed tests.', enabled: true })
+    expect(await (await request('GET', `/api/squads/${squadId}/slots/tests`, useUser.token)).json()).toMatchObject({
+      usage: 'Claim before DB-backed tests.',
+      enabled: true,
+    })
+  })
+
+  test('rejects oversized guidance and an empty update', async () => {
+    const squadId = await squad('usage-validation')
+    const tooLong = 'x'.repeat(1001)
+    expect(
+      (await request('POST', `/api/squads/${squadId}/slots`, writeUser.token, { key: 'tests', usage: tooLong })).status
+    ).toBe(400)
+    await register(squadId)
+    expect(
+      (await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { usage: tooLong })).status
+    ).toBe(400)
+    expect((await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, {})).status).toBe(400)
+    expect(
+      (await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { enabled: 'no' })).status
+    ).toBe(400)
+  })
+
+  test('partial PATCH changes or clears guidance without resending capacity or timeout', async () => {
+    const squadId = await squad('usage-patch')
+    await registerPool({ squadId, key: 'tests', capacity: 2, claimTimeoutMs: 120_000, createdBy: 'test' })
+
+    const set = await (
+      await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { usage: 'Claim before builds.' })
+    ).json()
+    expect(set).toMatchObject({
+      outcome: 'updated',
+      pool: { capacity: 2, claimTimeoutMs: 120_000, usage: 'Claim before builds.' },
+    })
+    expect(set.message).toContain('updated usage guidance')
+
+    const cleared = await (
+      await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { usage: null })
+    ).json()
+    expect(cleared.pool).toMatchObject({ capacity: 2, claimTimeoutMs: 120_000, usage: null })
+    expect(cleared.message).toContain('no usage guidance')
+
+    // Existing callers that send capacity/timeout keep working and keep guidance.
+    await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { usage: 'Kept.' })
+    const resized = await (
+      await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, {
+        capacity: 4,
+        claimTimeoutMs: 180_000,
+      })
+    ).json()
+    expect(resized.pool).toMatchObject({ capacity: 4, claimTimeoutMs: 180_000, usage: 'Kept.' })
+  })
+
+  test('PATCH enabled toggles enforcement; claims on a disabled pool answer disabled', async () => {
+    const squadId = await squad('enabled-patch')
+    await register(squadId)
+    const holder = await agent(squadId)
+    const waiter = await agent(squadId)
+    expect(
+      (await (await request('POST', `/api/squads/${squadId}/slots/tests/claims`, holder.token)).json()).outcome
+    ).toBe('granted')
+    expect(
+      (await (await request('POST', `/api/squads/${squadId}/slots/tests/claims`, waiter.token)).json()).outcome
+    ).toBe('queued')
+
+    // Using the pool is not enough to change its enforcement.
+    expect(
+      (await request('PATCH', `/api/squads/${squadId}/slots/tests`, useUser.token, { enabled: false })).status
+    ).toBe(403)
+    const disabled = await (
+      await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { enabled: false })
+    ).json()
+    expect(disabled.outcome).toBe('updated')
+    expect(disabled.pool.disabledAt).not.toBeNull()
+    expect(disabled.message).toContain('is disabled')
+    expect(disabled.message).toContain('1 queued waiter was canceled and notified')
+
+    const [listed] = await (await request('GET', `/api/squads/${squadId}/slots`, useUser.token)).json()
+    expect(listed).toMatchObject({ enabled: false, activeCount: 1, queuedCount: 0 })
+
+    for (const path of [`/api/squads/${squadId}/slots/tests/claims`, `/api/squads/${squadId}/slots/tests/waiters`]) {
+      const response = await request('POST', path, waiter.token)
+      expect(response.status).toBe(200)
+      expect((await response.json()).outcome).toBe('disabled')
+    }
+
+    const enabled = await (
+      await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { enabled: true })
+    ).json()
+    expect(enabled.pool.disabledAt).toBeNull()
+    expect(enabled.message).toContain('is enabled')
+    expect(
+      (await (await request('POST', `/api/squads/${squadId}/slots/tests/claims`, waiter.token)).json()).outcome
+    ).toBe('queued')
+  })
+})

@@ -301,9 +301,9 @@ systemPrompt: |
   mutation checks — any time, as often as they like, without asking.
   Do not create manual tokens, nonces, lane-claim ledgers, per-command approvals,
   "one execution authorized", pinned expected counts, or "no retry" rules.
-  Platform-managed, approval-free `ficus slot` capacity admission is allowed when
-  squad context declares a protected resource; it must not gain a duplicate
-  manual ledger or approval gate. You coordinate and unblock; you do not
+  Platform-managed, approval-free `ficus slot` capacity admission is allowed for a
+  protected resource declared via a registered slot pool's usage guidance; it
+  must not gain a duplicate manual ledger or approval gate. You coordinate and unblock; you do not
   authorize routine steps. If you find yourself approving individual commands,
   the process is broken — remove the rule that requires it.
 
@@ -367,7 +367,8 @@ systemPrompt: |
   fix is `docs/systems/SEQUENCING.md` (ledger) plus a `--context` line
   pointing at it. After a shared-test-DB contamination, the durable fix is
   per-worktree DB projects in the platform (file it), or a registered slot pool
-  for genuinely bounded platform capacity, not a manual lane-claim ledger — and
+  with usage guidance for genuinely bounded platform capacity (not a squad-context
+  rule), not a manual lane-claim ledger — and
   the interim "one DB per worktree" rule is TEMPORARY until that ships. A disk-pressure incident's "check df before heavy work" is a
   one-line engineer `--type-context`, not a procedure.
 

@@ -8,6 +8,7 @@ import {
   DEFAULT_SLOT_CLAIM_TIMEOUT_MS,
   MAX_SLOT_CAPACITY,
   MAX_SLOT_CLAIM_TIMEOUT_MS,
+  MAX_SLOT_USAGE_LENGTH,
   MIN_SLOT_CLAIM_TIMEOUT_MS,
   SLOT_KEY_PATTERN,
   SlotServiceError,
@@ -82,12 +83,25 @@ export interface RegisterPoolInput {
   key: string
   capacity?: number
   claimTimeoutMs?: number
+  /** Optional usage guidance; blank or null stores none. */
+  usage?: string | null
   createdBy: string
 }
 
+/** Partial update: omitted fields keep their stored value. */
 export interface UpdatePoolInput {
   capacity?: number
   claimTimeoutMs?: number
+  /** New usage guidance; blank or null clears it. */
+  usage?: string | null
+  /** false disables the pool (canceling and notifying its waiters); true re-enables it. */
+  enabled?: boolean
+}
+
+export interface UpdatePoolResult {
+  pool: SlotPoolRow
+  /** Queued waiters canceled (and notified) because this update disabled the pool. */
+  releasedWaiters: number
 }
 
 function normalizeKey(key: string): string {
@@ -122,6 +136,21 @@ function validateTimeout(timeoutMs: number): void {
   }
 }
 
+/** Trimmed guidance, or null when blank. Rejects guidance over the prompt budget. */
+function normalizeUsage(usage: string | null | undefined): string | null {
+  if (usage === undefined || usage === null) return null
+  if (typeof usage !== 'string') throw new SlotServiceError('invalid_usage', 'Slot pool usage must be text.', 400)
+  const trimmed = usage.trim()
+  if (trimmed.length > MAX_SLOT_USAGE_LENGTH) {
+    throw new SlotServiceError(
+      'invalid_usage',
+      `Slot pool usage guidance must be at most ${MAX_SLOT_USAGE_LENGTH} characters.`,
+      400
+    )
+  }
+  return trimmed || null
+}
+
 function isUniqueViolation(error: unknown): boolean {
   let current: unknown = error
   for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth += 1) {
@@ -145,6 +174,7 @@ export async function registerPool(input: RegisterPoolInput): Promise<SlotPoolRo
   const claimTimeoutMs = input.claimTimeoutMs ?? DEFAULT_SLOT_CLAIM_TIMEOUT_MS
   validateCapacity(capacity)
   validateTimeout(claimTimeoutMs)
+  const usage = normalizeUsage(input.usage)
 
   try {
     return await db.transaction(async (tx) => {
@@ -168,7 +198,7 @@ export async function registerPool(input: RegisterPoolInput): Promise<SlotPoolRo
       if (existing) throw new SlotServiceError('pool_exists', `Slot pool "${key}" is already registered.`, 409)
       const [pool] = await tx
         .insert(slotPools)
-        .values({ squadId: input.squadId, key, capacity, claimTimeoutMs, createdBy: input.createdBy })
+        .values({ squadId: input.squadId, key, capacity, claimTimeoutMs, usage, createdBy: input.createdBy })
         .returning()
       return pool!
     })
@@ -221,6 +251,7 @@ function acquirePoolSnapshot(pool: SlotPoolRow, promotion: PromotionResult): Slo
 
 interface UpdatePoolTransactionResult {
   updated: SlotPoolRow
+  releasedWaiters: number
   promotion: PromotionResult
 }
 
@@ -242,11 +273,21 @@ type SlotQueuedTransaction = {
   waiter: SlotWaiterRow
   promotion: PromotionResult
 }
+type SlotDisabledTransaction = { outcome: 'disabled'; pool: SlotPoolRow; promotion: PromotionResult }
 type SlotAcquireTransaction =
   | SlotGrantedTransaction
   | SlotQueuedTransaction
+  | SlotDisabledTransaction
   | { outcome: 'unavailable'; pool: SlotPoolRow; promotion: PromotionResult }
-type SlotSubscribeTransaction = SlotGrantedTransaction | SlotQueuedTransaction
+type SlotSubscribeTransaction = SlotGrantedTransaction | SlotQueuedTransaction | SlotDisabledTransaction
+
+function disabledAcquireResult(pool: SlotPoolRow, promotion: PromotionResult): SlotAcquireResult {
+  return {
+    outcome: 'disabled',
+    message: `Slot pool "${pool.key}" is disabled, so it is not enforced right now. Nothing was claimed or queued; protected work is not slot-gated while the pool is disabled.`,
+    pool: acquirePoolSnapshot(pool, promotion),
+  }
+}
 
 export async function settleInactiveGrantNotifications(tx: DbTx, claimIds: string[], now: Date): Promise<void> {
   if (claimIds.length === 0) return
@@ -305,7 +346,9 @@ export async function expireAndPromoteLocked(tx: DbTx, pool: SlotPoolRow, now: D
   let canceled = 0
   let maxGrantLatencyMs = 0
 
-  while (activeCount < pool.capacity) {
+  // A disabled pool never grants: disabling cancels its waiters, and this
+  // guard keeps any straggler from being promoted while it stays disabled.
+  while (!pool.disabledAt && activeCount < pool.capacity) {
     const [waiter] = await tx
       .select()
       .from(slotWaiters)
@@ -420,31 +463,86 @@ function mergePromotion(left: PromotionResult, right: PromotionResult): Promotio
 }
 
 export async function updatePool(squadId: string, key: string, input: UpdatePoolInput): Promise<SlotPoolRow> {
-  if (input.capacity === undefined && input.claimTimeoutMs === undefined) {
-    throw new SlotServiceError('invalid_capacity', 'Capacity or claim timeout is required.', 400)
+  return (await updatePoolDetailed(squadId, key, input)).pool
+}
+
+/**
+ * Cancel every queued waiter of a pool that is being disabled, queueing one
+ * durable `pool_disabled` notice per waiter so no agent waits forever for a
+ * grant that can no longer come. Caller holds the pool lock.
+ */
+async function releaseWaitersForDisabledPool(tx: DbTx, pool: SlotPoolRow, now: Date): Promise<number> {
+  const canceled = await tx
+    .update(slotWaiters)
+    .set({ status: 'canceled', endedAt: now, terminalReason: 'pool_disabled' })
+    .where(and(eq(slotWaiters.poolId, pool.id), eq(slotWaiters.status, 'queued')))
+    .returning({ id: slotWaiters.id, ownerAgentId: slotWaiters.ownerAgentId })
+  if (canceled.length > 0) {
+    await tx
+      .insert(slotNotifications)
+      .values(
+        canceled.map((waiter) => ({
+          poolId: pool.id,
+          waiterId: waiter.id,
+          recipientAgentId: waiter.ownerAgentId,
+          kind: 'pool_disabled' as const,
+          idempotencyKey: `slot-disabled:v1:${waiter.id}`,
+          nextAttemptAt: now,
+        }))
+      )
+      .onConflictDoNothing({ target: slotNotifications.idempotencyKey })
+  }
+  return canceled.length
+}
+
+export async function updatePoolDetailed(
+  squadId: string,
+  key: string,
+  input: UpdatePoolInput
+): Promise<UpdatePoolResult> {
+  if (
+    input.capacity === undefined &&
+    input.claimTimeoutMs === undefined &&
+    input.usage === undefined &&
+    input.enabled === undefined
+  ) {
+    throw new SlotServiceError('invalid_capacity', 'Capacity, claim timeout, usage, or enabled is required.', 400)
   }
   if (input.capacity !== undefined) validateCapacity(input.capacity)
   if (input.claimTimeoutMs !== undefined) validateTimeout(input.claimTimeoutMs)
+  const usage = input.usage === undefined ? undefined : normalizeUsage(input.usage)
 
   const result = await db.transaction(async (tx): Promise<UpdatePoolTransactionResult> => {
     const pool = await lockActivePool(tx, squadId, key)
     await afterPoolLockHook?.('update')
     const now = await databaseNow(tx, pool.id)
+    const disabling = input.enabled === false && pool.disabledAt === null
+    const enabling = input.enabled === true && pool.disabledAt !== null
+    // Waiters are released before any capacity change is applied, so a
+    // combined disable + capacity increase can never grant them first.
+    const releasedWaiters = disabling ? await releaseWaitersForDisabledPool(tx, pool, now) : 0
     const [updated] = await tx
       .update(slotPools)
       .set({
         ...(input.capacity === undefined ? {} : { capacity: input.capacity }),
         ...(input.claimTimeoutMs === undefined ? {} : { claimTimeoutMs: input.claimTimeoutMs }),
+        ...(usage === undefined ? {} : { usage }),
+        ...(disabling ? { disabledAt: now } : enabling ? { disabledAt: null } : {}),
         updatedAt: now,
       })
       .where(eq(slotPools.id, pool.id))
       .returning()
     const promotion = await expireAndPromoteLocked(tx, updated!, now)
-    return { updated: updated!, promotion }
+    return {
+      updated: updated!,
+      releasedWaiters,
+      promotion: { ...promotion, canceled: promotion.canceled + releasedWaiters },
+    }
   })
-  drainSlotOutboxIfGranted(result.promotion)
+  if (result.releasedWaiters > 0) drainSlotNotificationsSoon()
+  else drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'update', result.promotion)
-  return result.updated
+  return { pool: result.updated, releasedWaiters: result.releasedWaiters }
 }
 
 export async function unregisterPool(squadId: string, key: string): Promise<SlotPoolRow> {
@@ -532,6 +630,9 @@ async function projectPool(poolId: string, viewer: SlotViewer): Promise<SlotPool
         key: pool.key,
         capacity: pool.capacity,
         claimTimeoutMs: pool.claimTimeoutMs,
+        usage: pool.usage,
+        enabled: pool.disabledAt === null,
+        disabledAt: pool.disabledAt,
         activeCount: claims.length,
         availableCount: Math.max(0, pool.capacity - claims.length),
         queuedCount: waiters.length,
@@ -626,6 +727,9 @@ export async function claimSlot(
     const now = await databaseNow(tx, pool.id)
 
     const promotion = await expireAndPromoteLocked(tx, pool, now)
+    // A disabled pool admits and queues nobody; existing holders keep their
+    // claims until they release or expire.
+    if (pool.disabledAt) return { outcome: 'disabled' as const, pool, promotion }
 
     const [existingClaim] = await tx
       .select()
@@ -681,6 +785,7 @@ export async function claimSlot(
 
   drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'claim', result.promotion)
+  if (result.outcome === 'disabled') return disabledAcquireResult(result.pool, result.promotion)
   const pool = acquirePoolSnapshot(result.pool, result.promotion)
   if (result.outcome === 'granted') {
     return {
@@ -709,6 +814,7 @@ export async function subscribeSlot(squadId: string, key: string, agentId: strin
     await afterPoolLockHook?.('subscribe')
     const now = await databaseNow(tx, pool.id)
     const promotion = await expireAndPromoteLocked(tx, pool, now)
+    if (pool.disabledAt) return { outcome: 'disabled' as const, pool, promotion }
 
     const [existingClaim] = await tx
       .select()
@@ -762,6 +868,7 @@ export async function subscribeSlot(squadId: string, key: string, agentId: strin
 
   drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'subscribe', result.promotion)
+  if (result.outcome === 'disabled') return disabledAcquireResult(result.pool, result.promotion)
   const pool = acquirePoolSnapshot(result.pool, result.promotion)
   if (result.outcome === 'granted') {
     return {

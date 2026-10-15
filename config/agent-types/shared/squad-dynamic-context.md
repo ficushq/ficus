@@ -9,7 +9,9 @@ The squad has two **top-level** context fields:
 
 Use `context` for project-wide information every agent should know: shared goals,
 domain context, coding conventions, team norms, deployment procedures, or
-architectural decisions. Use `typeContext` for role-specific instructions that
+architectural decisions. Slot pool rules do not belong here: set them as each
+pool's usage guidance (`ficus slot update <key> --usage "<guidance>"`), which
+every agent receives in a generated Slot Pools section. Use `typeContext` for role-specific instructions that
 only apply to one agent type, such as engineer testing standards, reviewer
 checklists, or manager escalation rules.
 

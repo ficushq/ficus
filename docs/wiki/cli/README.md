@@ -121,8 +121,10 @@ against that squad.
 ```bash
 ficus slot list [key] [--squad <id>]
 ficus slot history <key> [--limit <1..100>] [--cursor <opaque>] [--squad <id>]
-ficus slot register <key> [--capacity <n>] [--timeout <duration>] [--squad <id>]
-ficus slot update <key> [--capacity <n>] [--timeout <duration>] [--squad <id>]
+ficus slot register <key> [--capacity <n>] [--timeout <duration>] [--usage <text>] [--squad <id>]
+ficus slot update <key> [--capacity <n>] [--timeout <duration>] [--usage <text> | --clear-usage] [--squad <id>]
+ficus slot disable <key> [--squad <id>]
+ficus slot enable <key> [--squad <id>]
 ficus slot unregister <key> [--squad <id>]
 ficus slot claim <key> [--no-subscribe] [--squad <id>]
 ficus slot subscribe <key> [--squad <id>]
@@ -130,6 +132,26 @@ ficus slot renew <claim-id>
 ficus slot release <claim-id>
 ficus slot unsubscribe <waiter-id>
 ```
+
+Each pool can carry up to 1000 characters of **usage guidance**: what it
+protects and when to claim it. `update` changes only the settings you pass, so
+guidance can be set (`--usage`), replaced, or cleared (`--clear-usage` or
+`--usage ""`) without resending capacity or timeout. Every agent prompt in the
+squad receives a generated **Slot Pools** section, built at prompt assembly,
+listing each enabled pool's key, capacity, claim timeout and guidance. Put
+per-pool rules in guidance rather than squad context. Live usage is not in the
+prompt; use `ficus slot list`.
+
+`ficus slot disable` stops enforcing a pool without unregistering it: its key,
+capacity, timeout, guidance and history are kept, it disappears from agent
+prompts, and every queued waiter is canceled and sent a steering notice. Claim
+and subscribe on a disabled pool return `disabled` (exit code 0) without
+claiming or queueing; protected work is not slot-gated while it stays disabled.
+Existing holders keep their claims until they release or expire, and renew and
+release keep working. `ficus slot enable` restores normal admission with the
+same configuration; canceled waiters do not return. A disabled pool can still be
+edited, and unregistered once empty. Disable, enable and guidance changes need
+`slots:write`.
 
 `ficus slot claim` joins the FIFO queue when no capacity is free, returning
 `queued` with a waiter id, so a contended claim no longer needs a second
@@ -149,9 +171,9 @@ waits appear together; this is additional context, not the only possible reason
 for inactivity. Status refreshes on lifecycle events and reconnect without
 polling, and does not imply queue position or an estimated grant time.
 
-Pool capacity is bounded from 1 through 1000 units. Claims expire automatically but expiry does not stop external work. When a claim times out without being released or renewed, Ficus sends its owning agent one steering inbox reminder to stop the heavy processes, containers and test databases it started under the claim and to claim again before resuming heavy work. Release claims immediately when protected work finishes. Slot commands use exit code 0 for every successfully retrieved authoritative outcome, including `unavailable`, `queued`, `expired`, and `already_released`; automation must branch on the JSON `outcome` rather than treating admission state as a transport error. Invalid input, authorization failures, and API failures exit nonzero.
+Pool capacity is bounded from 1 through 1000 units. Claims expire automatically but expiry does not stop external work. When a claim times out without being released or renewed, Ficus sends its owning agent one steering inbox reminder to stop the heavy processes, containers and test databases it started under the claim and to claim again before resuming heavy work. Release claims immediately when protected work finishes. Slot commands use exit code 0 for every successfully retrieved authoritative outcome, including `unavailable`, `queued`, `disabled`, `expired`, and `already_released`; automation must branch on the JSON `outcome` rather than treating admission state as a transport error. Invalid input, authorization failures, and API failures exit nonzero.
 
-`ficus slot list` prints each pool with the caller's own recovery state — a held claim with its expiry and release/renew commands, or a queued waiter with its queue time and unsubscribe command — so the identifiers needed for release, renew, and unsubscribe are directly copyable. Foreign holders stay redacted to short IDs; pass `--json` for the untouched server projection. Slot pools of an archived squad answer `410 Squad is archived`.
+`ficus slot list` prints each pool's live counts, usage guidance and disabled state with the caller's own recovery state — a held claim with its expiry and release/renew commands, or a queued waiter with its queue time and unsubscribe command — so the identifiers needed for release, renew, and unsubscribe are directly copyable. Foreign holders stay redacted to short IDs; pass `--json` for the untouched server projection. Slot pools of an archived squad answer `410 Squad is archived`.
 
 Ordinary slot list/detail responses omit terminal history, and acquisition JSON contains only the outcome, message, relevant claim or waiter identity, and a bounded five-field pool snapshot (`key`, `capacity`, `activeCount`, `availableCount`, and `queuedCount`). Use `ficus slot history` to read terminal claims and waiters explicitly. History is paginated by the server (50 records by default, 100 maximum); use the returned opaque cursor to continue. Ordinary agents see only their own terminal records, while callers with `slots:write` see pool-wide diagnostics.
 

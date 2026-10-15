@@ -7,6 +7,8 @@
 
 {{squad.context}}
 
+{{squad.slotPools}}
+
 {{workspace}}
 
 {{teammates}}

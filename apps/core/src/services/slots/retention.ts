@@ -19,7 +19,9 @@ const log = createLogger('slot-retention')
  * callers because no claim can outlive its 24-hour maximum timeout.
  *
  * Delete order respects the foreign keys: notifications and waiters reference
- * claims and pools, claims reference pools. A terminal claim is only deleted
+ * claims and pools, pool_disabled notifications reference waiters, claims
+ * reference pools. A terminal waiter is only deleted once no notification
+ * still points at it. A terminal claim is only deleted
  * once no waiter or notification still points at it, and a pool only once no
  * child row remains, so the prune never violates a RESTRICT constraint
  * mid-pass. Active, queued, pending, and delivering state is never touched.
@@ -100,6 +102,7 @@ export async function pruneTerminalSlotState(
   const waiters = await pruneBatches(
     sql`SELECT id FROM slot_waiters
       WHERE status <> 'queued' AND ended_at < ${floor}::timestamptz
+        AND NOT EXISTS (SELECT 1 FROM slot_notifications notice WHERE notice.waiter_id = slot_waiters.id)
       ORDER BY id LIMIT ${batchSize}`,
     'slot_waiters',
     batchSize,

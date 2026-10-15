@@ -259,6 +259,67 @@ describe('SquadWorkerRunner artifact tool registration', () => {
     }
   })
 
+  it('places the generated slot pools section right after the squad context, once', async () => {
+    const section = '## Slot Pools\n\n- `tests`: capacity 1, claim timeout 1h\n  Claim before tests.'
+    const slotPoolsSpy = spyOn(prompts, 'buildSlotPoolsPrompt').mockResolvedValue(section)
+    squadFindSpy.mockResolvedValue({ ...(await squadFindSpy()), context: 'SQUAD-CONTEXT-MARKER' })
+    try {
+      const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
+      const agentType = makeAgentType({
+        id: 'worker',
+        systemPrompt: 'You are a worker.\n\n{{squad.context}}\n\n{{squad.slotPools}}\n\nAFTER',
+      }) as AgentType
+      const runner = new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType)
+
+      await runner.exposeCreateSession()
+
+      const systemPrompt: string = agentSessionCreateSpy.mock.calls[0][0].systemPrompt
+      expect(slotPoolsSpy).toHaveBeenCalledWith(TEST_SQUAD_ID)
+      expect(systemPrompt).toContain(`SQUAD-CONTEXT-MARKER\n\n${section}\n\nAFTER`)
+      expect(systemPrompt.split('## Slot Pools')).toHaveLength(2)
+      expect(systemPrompt).not.toContain('{{squad.slotPools}}')
+    } finally {
+      slotPoolsSpy.mockRestore()
+    }
+  })
+
+  it('still gives custom agent types without the token the slot pools section', async () => {
+    const section = '## Slot Pools\n\n- `tests`: capacity 1, claim timeout 1h'
+    const slotPoolsSpy = spyOn(prompts, 'buildSlotPoolsPrompt').mockResolvedValue(section)
+    try {
+      const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
+      const agentType = makeAgentType({ id: 'worker', systemPrompt: 'Custom worker. {{squad.context}}' }) as AgentType
+      const runner = new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType)
+
+      await runner.exposeCreateSession()
+
+      const systemPrompt: string = agentSessionCreateSpy.mock.calls[0][0].systemPrompt
+      expect(systemPrompt.split('## Slot Pools')).toHaveLength(2)
+    } finally {
+      slotPoolsSpy.mockRestore()
+    }
+  })
+
+  it('renders no slot pools section or leftover token when the squad has no active pools', async () => {
+    const slotPoolsSpy = spyOn(prompts, 'buildSlotPoolsPrompt').mockResolvedValue('')
+    try {
+      const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
+      const agentType = makeAgentType({
+        id: 'worker',
+        systemPrompt: 'You are a worker.\n\n{{squad.context}}\n\n{{squad.slotPools}}',
+      }) as AgentType
+      const runner = new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType)
+
+      await runner.exposeCreateSession()
+
+      const systemPrompt: string = agentSessionCreateSpy.mock.calls[0][0].systemPrompt
+      expect(systemPrompt).not.toContain('Slot Pools')
+      expect(systemPrompt).not.toContain('{{squad.slotPools}}')
+    } finally {
+      slotPoolsSpy.mockRestore()
+    }
+  })
+
   it('registers artifact tools for artifact builders and passes squad id through', async () => {
     const agent = makeTestAgent({ agentTypeId: ARTIFACT_BUILDER_AGENT_TYPE_ID, squadId: TEST_SQUAD_ID })
     const agentType = makeAgentType({ id: ARTIFACT_BUILDER_AGENT_TYPE_ID }) as AgentType
