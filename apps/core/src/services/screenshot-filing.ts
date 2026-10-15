@@ -278,41 +278,35 @@ export interface ConfirmedScreenshot {
 }
 
 /**
- * The first message of a screenshot's conversation: the user's note first, then the choices they
- * confirmed on the review card, stated as theirs (not as a guess to double-check).
+ * The first message of a screenshot's conversation, shown in the user's own chat bubble: their note
+ * leads, then one compact line of the choices they confirmed on the review card (labelled as
+ * confirmed, so the Assistant follows them rather than double-checking a guess), what they left
+ * open, and the image ID to forward.
  */
 export function screenshotFilingMessage(input: { imageId: string; note?: string; confirmed: ConfirmedScreenshot }) {
   const { confirmed } = input
   const choices: string[] = []
   const open: string[] = []
-  if (confirmed.kind) choices.push(`- Kind: ${SCREENSHOT_KINDS[confirmed.kind].label}`)
+  if (confirmed.kind) choices.push(SCREENSHOT_KINDS[confirmed.kind].label)
   else open.push('what it shows')
-  if (confirmed.squad) choices.push(`- Squad: ${confirmed.squad.name} (squad ID ${confirmed.squad.id})`)
-  else if (confirmed.squad === null) choices.push("- Squad: none. Don't file it with a squad.")
-  else open.push('which squad it belongs to')
-  if (confirmed.action) choices.push(`- Action: ${SCREENSHOT_ACTIONS[confirmed.action].label}`)
+  if (confirmed.squad) choices.push(`squad ${confirmed.squad.name} (ID ${confirmed.squad.id})`)
+  else if (confirmed.squad === null) choices.push('no squad')
+  else open.push('which squad')
+  if (confirmed.action) choices.push(SCREENSHOT_ACTIONS[confirmed.action].label)
   else open.push('what to do with it')
   if (confirmed.workStream)
-    choices.push(
-      `- Work stream: ${JSON.stringify(confirmed.workStream.title)} (work stream ID ${confirmed.workStream.id})`
-    )
-  else if (confirmed.action === 'existing_work_stream') open.push('which work stream it is about')
+    choices.push(`work stream ${JSON.stringify(confirmed.workStream.title)} (ID ${confirmed.workStream.id})`)
+  else if (confirmed.action === 'existing_work_stream') open.push('which work stream')
 
   const lines: string[] = []
   if (input.note) lines.push(input.note, '')
   if (choices.length) {
-    lines.push(
-      'Please file the attached screenshot. I reviewed and confirmed these choices myself, so follow them:',
-      ...choices
-    )
-    if (open.length) lines.push(`I left the rest for you to decide: ${open.join(', ')}.`)
+    lines.push(`Confirmed filing: ${choices.join(' · ')}`)
+    if (open.length) lines.push(`Left to you: ${open.join(', ')}`)
   } else {
-    lines.push('Please look at the attached screenshot and file it in the right place.')
+    lines.push('File this screenshot where it belongs.')
   }
-  lines.push(
-    '',
-    `The screenshot is attached (image ID ${input.imageId}). When you hand it to a squad, pass it as imageIds so they can see it.`
-  )
+  lines.push(`Image ID ${input.imageId} (pass it as imageIds when handing it to a squad)`)
   return lines.join('\n')
 }
 
