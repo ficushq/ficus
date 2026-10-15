@@ -34,6 +34,7 @@ import {
   agentVisiblePrivateRoot,
   isAgentPrivateAreaLocal,
   listAgentPrivateDir,
+  normalizePrivatePath,
   readAgentPrivateFile,
   writeAgentPrivateFile,
 } from '../services/agent-private/files'
@@ -210,17 +211,25 @@ export const agentPrivateRouter = new Hono()
     }
     const files: { file: File; relativePath: string }[] = []
     for (const [key, value] of form.entries()) {
-      if (value instanceof File) {
+      // Duck-typed like the squad upload route: Core's FormData typings reject `instanceof File`.
+      if (value && typeof value === 'object' && 'arrayBuffer' in value) {
+        const file = value as File
         const relativePath = form.get(`path_${key}`)
         files.push({
-          file: value,
-          relativePath: typeof relativePath === 'string' && relativePath ? relativePath : value.name,
+          file,
+          relativePath: typeof relativePath === 'string' && relativePath ? relativePath : file.name,
         })
       }
     }
     if (files.length === 0) return c.json({ error: 'No files provided' }, 400)
 
-    const dir = (c.req.query('dir') ?? '').replace(/^\/+/, '')
+    // The target directory may be relative or absolute under the agent-visible root, like `path`.
+    let dir: string
+    try {
+      dir = normalizePrivatePath(target, c.req.query('dir') ?? '').join('/')
+    } catch (error) {
+      return failure(c, error)
+    }
     const overwrite = c.req.query('overwrite') === 'true'
     const results: {
       path: string

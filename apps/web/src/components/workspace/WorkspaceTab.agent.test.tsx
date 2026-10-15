@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { waitFor } from '@testing-library/dom'
@@ -52,38 +52,47 @@ function LocationProbe() {
   return null
 }
 
-let restoreFetch: (() => void) | undefined
-afterEach(() => {
-  restoreFetch?.()
-  restoreFetch = undefined
-})
-
+/**
+ * Renders the tab with seeded queries (and optionally a stubbed fetch) and
+ * returns a `cleanup` that undoes everything in reverse order: the fetch stub
+ * first (so the harness restores the real global afterwards), then the DOM
+ * harness (unmounting every query observer and timer), then the cache. If the
+ * render itself throws, the same cleanup runs before rethrowing.
+ */
 async function renderTab(url: string, seed: (cache: QueryClient) => void, stubFetch?: typeof fetch) {
   const dom = await acquireDomHarness({ url: 'http://localhost/squads/squad-1' })
-  if (stubFetch) {
-    // After the harness installs its window: it provides its own fetch.
-    const previous = globalThis.fetch
-    globalThis.fetch = stubFetch
-    restoreFetch = () => {
-      globalThis.fetch = previous
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const harnessFetch = globalThis.fetch
+  const cleanup = async () => {
+    globalThis.fetch = harnessFetch
+    try {
+      await dom.cleanup()
+    } finally {
+      cache.clear()
     }
   }
-  const { root } = dom.createRoot()
-  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  cache.setQueryData(queryKeys.auth.permissions(SQUAD), { permissions: ['agents:private-access', 'terminal:access'] })
-  cache.setQueryData(queryKeys.squads.agents(SQUAD), AGENTS)
-  seed(cache)
-  await dom.act(async () =>
-    root.render(
-      <QueryClientProvider client={cache}>
-        <MemoryRouter initialEntries={[url]}>
-          <LocationProbe />
-          <WorkspaceTab squadId={SQUAD} />
-        </MemoryRouter>
-      </QueryClientProvider>
+  try {
+    // After the harness installs its window: it provides its own fetch.
+    if (stubFetch) globalThis.fetch = stubFetch
+    const { root } = dom.createRoot()
+    cache.setQueryData(queryKeys.auth.permissions(SQUAD), { permissions: ['agents:private-access', 'terminal:access'] })
+    cache.setQueryData(queryKeys.squads.agents(SQUAD), AGENTS)
+    seed(cache)
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter initialEntries={[url]}>
+            <LocationProbe />
+            <WorkspaceTab squadId={SQUAD} />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
     )
-  )
-  return { dom, cache }
+  } catch (error) {
+    await cleanup()
+    throw error
+  }
+  return { dom, cleanup }
 }
 
 describe('agent target helpers', () => {
@@ -115,7 +124,7 @@ describe('WorkspaceTab agent target', () => {
       const body = String(input).endsWith('/private/status') ? status({ sandbox: { status: 'pending' } }) : { ok: true }
       return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     }) as typeof fetch
-    const { dom, cache } = await renderTab(
+    const { dom, cleanup } = await renderTab(
       '/squads/squad-1?agent=amy',
       (c) => c.setQueryData(queryKeys.agentPrivate.status('amy'), status()),
       stub
@@ -148,13 +157,12 @@ describe('WorkspaceTab agent target', () => {
       })
       expect(location).toContain('agent=bob')
     } finally {
-      await dom.cleanup()
-      cache.clear()
+      await cleanup()
     }
   })
 
   test('a dormant agent on local storage: files browsable with copy-path, no start, no terminal', async () => {
-    const { dom, cache } = await renderTab('/squads/squad-1?agent=zed-dormant&file=notes.md', (c) => {
+    const { cleanup } = await renderTab('/squads/squad-1?agent=zed-dormant&file=notes.md', (c) => {
       c.setQueryData(
         queryKeys.agentPrivate.status('zed-dormant'),
         status({
@@ -188,8 +196,7 @@ describe('WorkspaceTab agent target', () => {
       expect(text).toContain('notes.md')
       expect(document.querySelector('[title="Copy path the agent can open: /private/notes.md"]')).not.toBeNull()
     } finally {
-      await dom.cleanup()
-      cache.clear()
+      await cleanup()
     }
   })
 
@@ -199,7 +206,7 @@ describe('WorkspaceTab agent target', () => {
         status: 403,
         headers: { 'content-type': 'application/json' },
       })) as unknown as typeof fetch
-    const { dom, cache } = await renderTab(
+    const { cleanup } = await renderTab(
       '/squads/squad-1?agent=amy',
       (c) => {
         c.setQueryData(queryKeys.auth.permissions(SQUAD), { permissions: ['workspace:read'] })
@@ -213,8 +220,20 @@ describe('WorkspaceTab agent target', () => {
       const select = document.querySelector<HTMLSelectElement>('[aria-label="Workspace to browse"]')!
       expect([...select.options].map((option) => option.value)).toEqual(['', 'amy'])
     } finally {
-      await dom.cleanup()
-      cache.clear()
+      await cleanup()
     }
+  })
+
+  test('cleanup leaves the global fetch exactly as it found it', async () => {
+    const before = globalThis.fetch
+    const stub = (async () => new Response('{}')) as unknown as typeof fetch
+    const { cleanup } = await renderTab(
+      '/squads/squad-1?agent=amy',
+      (c) => c.setQueryData(queryKeys.agentPrivate.status('amy'), status()),
+      stub
+    )
+    expect(globalThis.fetch).toBe(stub)
+    await cleanup()
+    expect(globalThis.fetch).toBe(before)
   })
 })

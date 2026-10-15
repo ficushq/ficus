@@ -9,6 +9,7 @@ describe('agent private path policy', () => {
     [['.ssh', 'id_ed25519'], true],
     [['notes', '.env'], true],
     [['identity.pem'], true],
+    [['Identity.PEM'], true],
     [['.ficus-upload-0123'], true],
     [['notes', 'identity.pem'], false],
     [['creds', 'token.txt'], false],
@@ -21,6 +22,7 @@ describe('agent private path policy', () => {
   test('chat attachments and hidden paths are not writable; ordinary paths are', () => {
     expect(isWritablePrivatePath(['creds', 'token.txt'])).toBe(true)
     expect(isWritablePrivatePath(['chat-attachments', 'x.txt'])).toBe(false)
+    expect(isWritablePrivatePath(['Chat-Attachments', 'x.txt'])).toBe(false)
     expect(isWritablePrivatePath(['.ficus', 'x'])).toBe(false)
     expect(isWritablePrivatePath(['identity.pem'])).toBe(false)
     expect(isWritablePrivatePath([])).toBe(false)

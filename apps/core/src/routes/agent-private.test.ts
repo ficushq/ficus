@@ -179,6 +179,14 @@ describe('agent private files', () => {
     expect(otherTree.children).toEqual([])
   })
 
+  test('the upload dir may be the agent-visible absolute path', async () => {
+    const response = await (await upload(agentId, { 'token.txt': 'abc' }, admin.token, '?dir=/private/creds')).json()
+    expect(response.results).toEqual([
+      { path: 'creds/token.txt', status: 'created', agentPath: '/private/creds/token.txt' },
+    ])
+    expect(await readFile(join(privateDir(agentId), 'creds', 'token.txt'), 'utf8')).toBe('abc')
+  })
+
   test('existing files are skipped unless overwrite is requested', async () => {
     await upload(agentId, { 'a.txt': 'one' }, admin.token)
     const skipped = await (await upload(agentId, { 'a.txt': 'two' }, admin.token)).json()
@@ -218,8 +226,8 @@ describe('agent private files', () => {
       )
     ).json()
     expect(escapes.results.map((result: { status: string }) => result.status)).toEqual(['error', 'error'])
-    const viaDir = await (await upload(agentId, { 'evil.txt': 'x' }, admin.token, '?dir=../..')).json()
-    expect(viaDir.results[0].status).toBe('error')
+    expect((await upload(agentId, { 'evil.txt': 'x' }, admin.token, '?dir=../..')).status).toBe(400)
+    expect((await upload(agentId, { 'evil.txt': 'x' }, admin.token, '?dir=/workspace')).status).toBe(400)
     expect(existsSync(join(home, 'workspaces', 'squads', squadId, 'evil.txt'))).toBe(false)
     expect(existsSync(join(home, 'evil.txt'))).toBe(false)
   })

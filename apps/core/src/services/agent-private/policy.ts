@@ -28,11 +28,12 @@ const READ_ONLY_ROOT_DIRS = new Set(['chat-attachments'])
 /** Whether a path (as components below the private root) is hidden from the browser. */
 export function isHiddenPrivatePath(parts: readonly string[]): boolean {
   if (parts.some((part) => part.startsWith('.'))) return true
-  return parts.length > 0 && HIDDEN_ROOT_NAMES.has(parts[0]!)
+  // Case-insensitive: a host-runtime private dir may sit on a case-insensitive filesystem (macOS).
+  return parts.length > 0 && HIDDEN_ROOT_NAMES.has(parts[0]!.toLowerCase())
 }
 
 /** Whether the browser may create or replace a file at this path. */
 export function isWritablePrivatePath(parts: readonly string[]): boolean {
   if (parts.length === 0 || isHiddenPrivatePath(parts)) return false
-  return !READ_ONLY_ROOT_DIRS.has(parts[0]!)
+  return !READ_ONLY_ROOT_DIRS.has(parts[0]!.toLowerCase())
 }
