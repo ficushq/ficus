@@ -194,11 +194,22 @@ describe('renderManagedBlock', () => {
     expect(block).toContain('  StrictHostKeyChecking yes')
   })
 
-  it('keeps the ~/.ssh rendering and adds no UserKnownHostsFile without an absolute ssh dir', () => {
+  it('keeps the ~/.ssh rendering and names ~/.ssh/known_hosts explicitly without an absolute ssh dir', () => {
     const hosts = [{ id: '1', name: 'staging', sshHost: 'h', sshPort: 22, sshUser: 'u' } as RemoteHost]
     const block = renderManagedBlock(pinned(hosts))
     expect(block).toContain('  IdentityFile ~/.ssh/ficus_remote_staging')
-    expect(block).not.toContain('UserKnownHostsFile')
+    // Named explicitly so a squad UserKnownHostsFile can never replace the pinned file.
+    expect(block).toContain('  UserKnownHostsFile ~/.ssh/known_hosts')
+  })
+
+  it('a pinned stanza names every source of trusted keys itself and the block ends with Host *', () => {
+    const hosts = [{ id: '1', name: 'staging', sshHost: 'h', sshPort: 22, sshUser: 'u' } as RemoteHost]
+    const block = renderManagedBlock(pinned(hosts))
+    expect(block).toContain('  GlobalKnownHostsFile /dev/null')
+    expect(block).toContain('  VerifyHostKeyDNS no')
+    expect(block).toContain('  IgnoreUnknown KnownHostsCommand\n  KnownHostsCommand none')
+    // The trailing Host * returns the squad's own content (which follows) to every host.
+    expect(block.endsWith(`Host *\n${MANAGED_BLOCK_END}`)).toBe(true)
   })
 
   it('returns an empty string for no hosts', () => {
@@ -290,12 +301,18 @@ describe('stripManagedBlock', () => {
 })
 
 describe('composeManagedConfig', () => {
-  it('appends the block after user content with a single-newline boundary, preserving user content exactly', () => {
-    expect(composeManagedConfig('Host github.com\n  User git', 'BLOCK')).toBe('Host github.com\n  User git\nBLOCK\n')
+  it('places the block BEFORE user content (first value wins in ssh), preserving user content exactly', () => {
+    expect(composeManagedConfig('Host github.com\n  User git', 'BLOCK')).toBe('BLOCK\nHost github.com\n  User git')
+    expect(composeManagedConfig('Host github.com\n  User git\n', 'BLOCK')).toBe('BLOCK\nHost github.com\n  User git\n')
   })
 
-  it('reuses an existing trailing newline as the boundary instead of adding another', () => {
-    expect(composeManagedConfig('Host github.com\n  User git\n', 'BLOCK')).toBe('Host github.com\n  User git\nBLOCK\n')
+  it('round-trips user content byte-exact through strip', () => {
+    const block = renderManagedBlock(
+      pinned([{ id: '1', name: 'p', sshHost: 'h', sshPort: 22, sshUser: 'u' } as RemoteHost])
+    )
+    for (const user of ['', 'Host *\n  StrictHostKeyChecking no\n', 'IdentityFile ~/.ssh/x', '\n\nHost a\n\n']) {
+      expect(stripManagedBlock(composeManagedConfig(user, block))).toBe(user)
+    }
   })
 
   it('omits the separator when user content is empty', () => {

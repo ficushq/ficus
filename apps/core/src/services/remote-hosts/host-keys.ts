@@ -45,11 +45,20 @@ export type RemoteHostKeyStatus = 'pending' | 'trusted' | 'rejected' | 'replaced
  */
 export type HostKeyState = 'adopting' | 'trusted' | 'changed' | 'pending' | 'unverified'
 
-export function trustedHostKeys(keys: RemoteHostKey[]): RemoteHostKey[] {
+/**
+ * The fields every host-key record shares: remote-host keys here and the keys
+ * Core pins for its own connections (`services/ssh-trust`).
+ */
+export type HostKeyRecord = Omit<RemoteHostKey, 'hostId'>
+
+export function trustedHostKeys<K extends Pick<HostKeyRecord, 'status'>>(keys: K[]): K[] {
   return keys.filter((k) => k.status === 'trusted')
 }
 
-export function hostKeyState(host: Pick<RemoteHost, 'hostKeyAdoptionPending'>, keys: RemoteHostKey[]): HostKeyState {
+export function hostKeyState(
+  host: Pick<RemoteHost, 'hostKeyAdoptionPending'>,
+  keys: Array<Pick<HostKeyRecord, 'status' | 'keyType'>>
+): HostKeyState {
   const trusted = trustedHostKeys(keys)
   const pending = keys.filter((k) => k.status === 'pending')
   if (trusted.length) {
@@ -81,7 +90,7 @@ export interface PublicHostKey {
   replacesFingerprints: string[]
 }
 
-export function toPublicHostKeys(keys: RemoteHostKey[]): PublicHostKey[] {
+export function toPublicHostKeys(keys: HostKeyRecord[]): PublicHostKey[] {
   const trusted = trustedHostKeys(keys)
   return keys.map((k) => ({
     id: k.id,

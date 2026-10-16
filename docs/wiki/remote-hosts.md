@@ -303,6 +303,11 @@ Materialization writes into each granted squad's SSH directory
     IdentityFile ~/.ssh/ficus_remote_staging
     IdentitiesOnly yes
     HostKeyAlias ficus-remote.staging
+    UserKnownHostsFile ~/.ssh/known_hosts
+    GlobalKnownHostsFile /dev/null
+    VerifyHostKeyDNS no
+    IgnoreUnknown KnownHostsCommand
+    KnownHostsCommand none
     StrictHostKeyChecking yes
     UpdateHostKeys no
   Host blocked-host
@@ -311,13 +316,23 @@ Materialization writes into each granted squad's SSH directory
     User deploy
     StrictHostKeyChecking yes
     ProxyCommand sh -c 'echo "ficus: remote host blocked-host is blocked until a person confirms its SSH host key (...)" >&2; exit 1'
+  Host *
   # <<< ficus remote hosts <<<
   ```
 
   A host without a trusted key gets the refusing stanza and no key file; a
   host still adopting existing trust gets the first form without
-  `HostKeyAlias`. On the host runtime each usable stanza also pins
-  `UserKnownHostsFile <squad ssh dir>/known_hosts`.
+  `HostKeyAlias` and the extra key-source settings. On the host runtime the
+  paths are the squad ssh dir's absolute paths instead of `~/.ssh`.
+
+  The block is written **first** in `config`, before the squad's own content.
+  OpenSSH keeps the first value it obtains for each option, so a squad's
+  `Host *` stanza (for example `StrictHostKeyChecking no` or
+  `UserKnownHostsFile /dev/null`) cannot relax checking for a managed host,
+  over ssh or git. Each pinned stanza names every source of trusted keys
+  itself, so no later setting can add one. The closing `Host *` ends the last
+  managed stanza, so the squad's content after it keeps applying to every
+  other host exactly as before; Ficus never rewrites that content.
 
 - The trusted keys, in the squad's `known_hosts` managed block:
   `ficus-remote.staging ssh-ed25519 AAAA…`.
@@ -333,8 +348,8 @@ adoption. `setKnownHosts`/`addKnownHost` keep the pinned keys the same way
 `setSshConfig` — the pre-existing path a squad manager uses to hand-edit
 their squad's SSH config — is taught to preserve the managed block in both
 directions: it strips any managed block from the incoming content (so a
-caller can't forge one), writes the user's content, then re-appends the
-_current_ managed block computed from the DB. User edits can never clobber
+caller can't forge one), writes the _current_ managed block computed from the DB, then the user's
+content after it. User edits can never clobber
 ficus-managed entries, and ficus's writes can never clobber user content outside
 the markers.
 

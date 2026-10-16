@@ -7,6 +7,9 @@ import type { Machine } from './queries'
 import { buildPushFileCommand, createSshRunner, createSshStreamer, SshTimeoutError } from './ssh'
 
 const SECRET_KEY = 'machine-ssh:ssh-runner-test'
+const MACHINE_PIN = { knownHostsPath: '/pins/machine.known_hosts', alias: 'ficus-trust.machine' }
+/** Resolves every machine to a synthetic pin (production resolves person-confirmed keys, services/ssh-trust). */
+const testPin = async () => MACHINE_PIN
 
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
@@ -85,7 +88,7 @@ describe('ssh runner', () => {
 
   it('builds the argv with all required options, identity, target, and command', async () => {
     const { spawn, calls } = makeFakeSpawn({ stdout: 'ok\n' })
-    const runner = createSshRunner({ spawn })
+    const runner = createSshRunner({ spawn, resolveHostKeyPin: testPin })
 
     const result = await runner.run(makeMachine(), 'echo hi')
 
@@ -98,8 +101,12 @@ describe('ssh runner', () => {
     expect(args[args.length - 1]).toBe('echo hi')
 
     const joined = args.join(' ')
-    expect(joined).toContain('-o StrictHostKeyChecking=accept-new')
-    expect(joined).toContain(`-o UserKnownHostsFile=${process.env.HOME_DIR}/machines/known_hosts`)
+    expect(joined).toContain('-o StrictHostKeyChecking=yes')
+    expect(joined).toContain('-o UserKnownHostsFile=/pins/machine.known_hosts')
+    expect(joined).toContain('-o GlobalKnownHostsFile=/dev/null')
+    expect(joined).toContain('-o HostKeyAlias=ficus-trust.machine')
+    expect(joined).toContain('-o UpdateHostKeys=no')
+    expect(joined).not.toContain('accept-new')
     expect(joined).toContain('-o BatchMode=yes')
     expect(joined).toContain('-o ServerAliveInterval=15')
     expect(joined).toContain('-o ServerAliveCountMax=4')
@@ -109,9 +116,22 @@ describe('ssh runner', () => {
     expect(joined).toContain('-p 2222')
   })
 
-  it('a host-key pin replaces trust-on-first-use with strict checking against the pinned file and alias', async () => {
+  it('refuses before materializing a key or spawning when the machine has no trusted host key', async () => {
     const { spawn, calls } = makeFakeSpawn({ stdout: 'ok\n' })
-    const runner = createSshRunner({ spawn })
+    const runner = createSshRunner({
+      spawn,
+      resolveHostKeyPin: async () => {
+        throw new Error('host key not confirmed')
+      },
+    })
+
+    await expect(runner.run(makeMachine(), 'echo hi')).rejects.toThrow('host key not confirmed')
+    expect(calls.length).toBe(0)
+  })
+
+  it('an explicit host-key pin (remote-host probe) overrides the machine pin', async () => {
+    const { spawn, calls } = makeFakeSpawn({ stdout: 'ok\n' })
+    const runner = createSshRunner({ spawn, resolveHostKeyPin: testPin })
 
     await runner.run(makeMachine(), 'echo hi', {
       hostKeyPin: { knownHostsPath: '/tmp/pinned_known_hosts', alias: 'ficus-remote.prod' },
@@ -129,7 +149,7 @@ describe('ssh runner', () => {
 
   it('materializes a 0600 identity present during spawn and cleaned up after', async () => {
     const { spawn, calls } = makeFakeSpawn({})
-    const runner = createSshRunner({ spawn })
+    const runner = createSshRunner({ spawn, resolveHostKeyPin: testPin })
 
     await runner.run(makeMachine(), 'true')
 
@@ -142,7 +162,7 @@ describe('ssh runner', () => {
 
   it('pipes stdin into the child', async () => {
     const { spawn, calls } = makeFakeSpawn({})
-    const runner = createSshRunner({ spawn })
+    const runner = createSshRunner({ spawn, resolveHostKeyPin: testPin })
 
     await runner.run(makeMachine(), 'cat', { stdin: 'payload' })
 
@@ -153,7 +173,7 @@ describe('ssh runner', () => {
 
   it('propagates a non-zero exit code with stdout/stderr', async () => {
     const { spawn } = makeFakeSpawn({ exitCode: 42, stdout: 'partial', stderr: 'boom' })
-    const runner = createSshRunner({ spawn })
+    const runner = createSshRunner({ spawn, resolveHostKeyPin: testPin })
 
     const result = await runner.run(makeMachine(), 'false')
 
@@ -164,7 +184,7 @@ describe('ssh runner', () => {
     const { spawn, kills } = makeFakeSpawn({ neverExits: true })
     // Tiny injected default timeout — exercises the caller-independent bound
     // that keeps a black-holed host from hanging status() forever.
-    const runner = createSshRunner({ spawn, defaultTimeoutMs: 30 })
+    const runner = createSshRunner({ spawn, defaultTimeoutMs: 30, resolveHostKeyPin: testPin })
 
     await expect(runner.run(makeMachine(), 'sleep 999')).rejects.toBeInstanceOf(SshTimeoutError)
     expect(kills.length).toBe(1)
@@ -218,7 +238,10 @@ describe('ssh runner', () => {
 
     it('pipes source stdout into destination stdin and reports the streamed byte count', async () => {
       const { spawn, commands, argvs } = localSpawn()
-      const streamer = createSshStreamer({ spawn })
+      const streamer = createSshStreamer({
+        spawn,
+        resolveHostKeyPin: async (m) => ({ knownHostsPath: `/pins/${m.id}`, alias: `ficus-trust.${m.id}` }),
+      })
       const out = `${process.env.HOME_DIR}/streamed.bin`
 
       const result = await streamer.stream(
@@ -237,6 +260,10 @@ describe('ssh runner', () => {
       expect(argvs[1][argvs[1].length - 2]).toBe('ficus@10.0.0.2')
       expect(argvs[0].join(' ')).toContain('-o BatchMode=yes')
       expect(argvs[1].join(' ')).toContain('-o IdentitiesOnly=yes')
+      // Each end is checked strictly against its own machine's pin.
+      expect(argvs[0].join(' ')).toContain('-o StrictHostKeyChecking=yes -o UserKnownHostsFile=/pins/src')
+      expect(argvs[1].join(' ')).toContain('-o StrictHostKeyChecking=yes -o UserKnownHostsFile=/pins/dst')
+      expect(argvs.flat().join(' ')).not.toContain('accept-new')
     })
 
     it('surfaces a SOURCE failure mid-stream with its exit code and stderr (never masked by a happy destination)', async () => {
@@ -244,7 +271,7 @@ describe('ssh runner', () => {
       // the destination consumes the truncated prefix and exits 0. Only the
       // source's own exit status distinguishes it from a complete transfer.
       const { spawn } = localSpawn()
-      const streamer = createSshStreamer({ spawn })
+      const streamer = createSshStreamer({ spawn, resolveHostKeyPin: testPin })
 
       const result = await streamer.stream(
         { machine: SOURCE(), command: 'head -c 4096 /dev/zero; echo "tar: read error" >&2; exit 3' },
@@ -259,7 +286,7 @@ describe('ssh runner', () => {
 
     it('surfaces a DESTINATION failure with its exit code and stderr', async () => {
       const { spawn } = localSpawn()
-      const streamer = createSshStreamer({ spawn })
+      const streamer = createSshStreamer({ spawn, resolveHostKeyPin: testPin })
 
       const result = await streamer.stream(
         { machine: SOURCE(), command: 'head -c 64 /dev/zero' },
@@ -289,7 +316,7 @@ describe('ssh runner', () => {
       // 64 KiB pipe buffer only completes if backpressure is preserved end to
       // end rather than accumulated.
       const { spawn } = localSpawn()
-      const streamer = createSshStreamer({ spawn })
+      const streamer = createSshStreamer({ spawn, resolveHostKeyPin: testPin })
       const handshakeDir = mkdtempSync(join(tmpdir(), 'ficus-stream-handshake-'))
       const sentinel = join(handshakeDir, 'consuming')
       const HANDSHAKE_BYTES = 1024 * 1024
@@ -352,7 +379,7 @@ describe('ssh runner', () => {
       }) as unknown as typeof Bun.spawn
 
       await expect(
-        createSshStreamer({ spawn }).stream(
+        createSshStreamer({ spawn, resolveHostKeyPin: testPin }).stream(
           { machine: SOURCE(), command: 'sleep 30' },
           { machine: DEST(), command: 'cat > /dev/null' }
         )
@@ -366,7 +393,7 @@ describe('ssh runner', () => {
 
     it('kills BOTH children and rejects when the overall timeout expires', async () => {
       const { spawn } = localSpawn()
-      const streamer = createSshStreamer({ spawn })
+      const streamer = createSshStreamer({ spawn, resolveHostKeyPin: testPin })
 
       await expect(
         streamer.stream(
@@ -387,7 +414,7 @@ describe('ssh runner', () => {
         return Bun.spawn(['bash', '-c', args[args.length - 1]], options as never)
       }) as unknown as typeof Bun.spawn
 
-      await createSshStreamer({ spawn }).stream(
+      await createSshStreamer({ spawn, resolveHostKeyPin: testPin }).stream(
         { machine: SOURCE(), command: 'true' },
         { machine: DEST(), command: 'cat > /dev/null' }
       )

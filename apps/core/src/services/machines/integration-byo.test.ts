@@ -14,6 +14,9 @@ import { getMachine, getMachineBox, type Machine } from './queries'
 import { getSecretStore, resetSecretStore } from '../secrets'
 import { createSshRunner, type SshRunner } from './ssh'
 import { MachineTunnelManager } from './tunnel-manager'
+import { machineTrustSpec } from '../ssh-trust'
+import type { HostKeyPin } from '../ssh-trust/args'
+import { keyscanPinForTest, trustFetchedHostKeysForTest } from './test-host-key-pin'
 
 /**
  * ============================================================================
@@ -96,6 +99,8 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
   let runner: SshRunner
   let mgr: MachineTunnelManager
   let router: Hono
+  /** The operator's own disposable VM's current keys, pinned for the operator-side ssh below. */
+  let operatorPin: HostKeyPin
 
   /** Populated once registration succeeds, for best-effort teardown. */
   let machine: Machine | undefined
@@ -121,7 +126,11 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
         '-o',
         'IdentitiesOnly=yes',
         '-o',
-        'StrictHostKeyChecking=accept-new',
+        'StrictHostKeyChecking=yes',
+        '-o',
+        `UserKnownHostsFile=${operatorPin.knownHostsPath}`,
+        '-o',
+        `HostKeyAlias=${operatorPin.alias}`,
         '-o',
         'ConnectTimeout=15',
         `${user}@${host}`,
@@ -148,6 +157,7 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
 
     runner = createSshRunner({ defaultTimeoutMs: SLOW_MS })
     mgr = new MachineTunnelManager({ controlDir: mkdtempSync(join('/tmp', 'ficus-byoint-ctl-')) })
+    operatorPin = await keyscanPinForTest(host, port)
   })
 
   afterAll(async () => {
@@ -200,6 +210,8 @@ describe.skipIf(!process.env.FICUS_TEST_BYO_SSH_HOST)('BYO-SSH provider (integra
       const fetched = await getMachine(created.id)
       if (!fetched) throw new Error('registered machine row vanished immediately after insert')
       machine = fetched
+      // Stand in for the person who confirms the new machine's host key in Settings.
+      await trustFetchedHostKeysForTest(machineTrustSpec(machine), admin.id)
       // The row references the MINTED per-machine secret (BYO), not a shared key
       // (`machine-ssh:<machineId>` — keys.ts's naming convention).
       expect(machine.sshKeyId).toBe(`machine-ssh:${machine.id}`)

@@ -124,19 +124,27 @@ export function blockedHostMessage(name: string): string {
  *
  * Every stanza sets `StrictHostKeyChecking yes` and `UpdateHostKeys no`: an
  * unknown or changed host key is refused and nothing is ever learned or
- * updated automatically (see {@link HostStanzaMode}).
+ * updated automatically (see {@link HostStanzaMode}). Usable stanzas also name
+ * every source of trusted keys themselves (`UserKnownHostsFile`, and for pinned
+ * hosts `GlobalKnownHostsFile /dev/null`, `VerifyHostKeyDNS no`,
+ * `KnownHostsCommand none`), so no other setting can add a key.
+ *
+ * The block is placed FIRST in `config` (see {@link composeManagedConfig}) and
+ * ends with a bare `Host *`: OpenSSH keeps the first value it obtains for each
+ * option, so a squad's own `Host *` (for example `StrictHostKeyChecking no` or
+ * `UserKnownHostsFile /dev/null`) can no longer override a managed host, while
+ * the squad's settings still apply to every other host.
  *
  * `absoluteSshDir` selects how each stanza names the squad's ssh dir:
  *
  * - Omitted (k8s/docker/vm): `~/.ssh/...`, because those runtimes MOUNT (or
- *   push) the squad ssh dir at the sandbox user's `~/.ssh`, and `known_hosts`
- *   there is picked up by ssh's own default.
+ *   push) the squad ssh dir at the sandbox user's `~/.ssh` (its `known_hosts`
+ *   holds the managed block).
  * - Set (host runtime): the given ABSOLUTE directory. On host there is no
  *   mount — commands run as the operator, and `ssh -F <squadSshDir>/config`
  *   expands `~` to the OPERATOR's home, where the squad's `ficus_remote_<name>`
  *   key does not exist (and with `IdentitiesOnly yes` the alias hard-fails).
- *   `UserKnownHostsFile` is pinned for the same reason: otherwise the squad's
- *   `known_hosts` (holding the pinned keys) is ignored.
+ *   `UserKnownHostsFile` names the squad's `known_hosts` for the same reason.
  *
  * The runtime is deliberately NOT read here — this function stays pure; the
  * callers below (which know the squadId) decide.
@@ -153,7 +161,9 @@ export function renderManagedBlock(hosts: RenderableHost[], opts: { absoluteSshD
 
   const { absoluteSshDir } = opts
   const keyDir = absoluteSshDir ?? '~/.ssh'
-  const knownHostsLine = absoluteSshDir ? [`  UserKnownHostsFile ${absoluteSshDir}/known_hosts`] : []
+  // Named explicitly in every runtime so a user `UserKnownHostsFile` can never
+  // replace the file holding the pinned keys.
+  const knownHostsLine = [`  UserKnownHostsFile ${keyDir}/known_hosts`]
 
   const entries = validHosts.map(({ host, mode }) => {
     const target = [
@@ -175,12 +185,23 @@ export function renderManagedBlock(hosts: RenderableHost[], opts: { absoluteSshD
       `  IdentitiesOnly yes`,
       ...(mode === 'pinned' ? [`  HostKeyAlias ${hostKeyAlias(host.name)}`] : []),
       ...knownHostsLine,
+      ...(mode === 'pinned'
+        ? [
+            `  GlobalKnownHostsFile /dev/null`,
+            `  VerifyHostKeyDNS no`,
+            // Older clients without KnownHostsCommand skip it instead of rejecting the config.
+            `  IgnoreUnknown KnownHostsCommand`,
+            `  KnownHostsCommand none`,
+          ]
+        : []),
       `  StrictHostKeyChecking yes`,
       `  UpdateHostKeys no`,
     ].join('\n')
   })
 
-  return [MANAGED_BLOCK_BEGIN, ...entries, MANAGED_BLOCK_END].join('\n')
+  // The closing `Host *` returns the squad's own content (which follows the
+  // block) to applying to every host, as it did before the block moved first.
+  return [MANAGED_BLOCK_BEGIN, ...entries, 'Host *', MANAGED_BLOCK_END].join('\n')
 }
 
 /**
@@ -320,25 +341,21 @@ export function stripManagedBlock(config: string): string {
 
 /**
  * Combine a squad's user-authored ssh_config content with the current
- * managed block, appending the block after the user content (never inside
- * or above it). Shared by `materializeSquadRemoteHosts` (rewriting the block
- * in place) and `squad/ssh.ts`'s `setSshConfig` (re-appending the block
- * after a user overwrite), so both paths produce identically-formatted
- * output.
+ * managed block, placing the block BEFORE the user content (never inside it).
+ * OpenSSH uses the first value obtained for each option, so the managed
+ * host-key settings win over anything the squad's content sets for a managed
+ * host (see {@link renderManagedBlock}); the block's closing `Host *` keeps the
+ * squad's content applying to every other host. Shared by
+ * `materializeSquadRemoteHosts` and `squad/ssh.ts`'s `setSshConfig`, so both
+ * paths produce identical output.
  *
- * When `block` is empty (no eligible hosts), `userContent` is returned
- * byte-exact — no trimming, no appended newline — so a squad with no
- * remote-host grants gets an exact write/read round-trip of its user
- * config. When `block` is non-empty, `userContent` is still preserved
- * exactly as given; the block is appended after a single newline boundary
- * (reusing `userContent`'s own trailing newline if it already ends with
- * one), so the block's presence is the only difference from the
- * empty-block output.
+ * `userContent` is always preserved byte-exact: with an empty `block` it is
+ * returned as is, otherwise it follows the block's own line, so
+ * `stripManagedBlock(composeManagedConfig(u, b)) === u`.
  */
 export function composeManagedConfig(userContent: string, block: string): string {
   if (!block) return userContent
-  if (!userContent) return `${block}\n`
-  return userContent.endsWith('\n') ? `${userContent}${block}\n` : `${userContent}\n${block}\n`
+  return `${block}\n${userContent}`
 }
 
 interface MaterializableHost extends RenderableHost {

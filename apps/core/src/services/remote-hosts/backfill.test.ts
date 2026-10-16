@@ -133,8 +133,10 @@ describe('backfillSquadSshConfigs', () => {
     expect(config).not.toContain('~/.ssh/')
     expect(config).not.toContain('accept-new')
     expect(config).toContain('StrictHostKeyChecking yes')
-    // The user's own stanza survives byte-for-byte outside the markers.
-    expect(config.startsWith('Host mine\n  HostName my.example.com\n  User me\n')).toBe(true)
+    // The user's own stanza survives byte-for-byte outside the markers, now
+    // after the managed block so managed host-key settings win.
+    expect(config.startsWith(MANAGED_BLOCK_BEGIN)).toBe(true)
+    expect(config.endsWith(`${MANAGED_BLOCK_END}\nHost mine\n  HostName my.example.com\n  User me\n`)).toBe(true)
     // The key file the absolute path names was (re)written too.
     expect(existsSync(join(sshDir, `ficus_remote_${host.name}`))).toBe(true)
   })

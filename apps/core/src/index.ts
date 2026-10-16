@@ -91,6 +91,7 @@ import machinesRouter from './routes/machines'
 import adminRouter from './routes/admin'
 import demoRouter from './routes/demo'
 import remoteHostsRouter from './routes/remote-hosts'
+import sshHostKeysRouter from './routes/ssh-host-keys'
 import onboardingRouter from './routes/onboarding'
 import { startAuthCleanupScheduler, stopAuthCleanupScheduler } from './services/auth/cleanup-scheduler'
 import {
@@ -361,6 +362,7 @@ app.route('/api/machines', machinesRouter)
 app.route('/api/admin', adminRouter)
 app.route('/api/demo', demoRouter)
 app.route('/api/remote-hosts', remoteHostsRouter)
+app.route('/api/ssh-host-keys', sshHostKeysRouter)
 app.route('/api/onboarding', onboardingRouter)
 app.route('/api/provider-auth', providerAuthRouter)
 app.route('/api/decisions', decisionsRouter)

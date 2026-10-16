@@ -467,7 +467,11 @@ describe('machines routes', () => {
     // owner socket name (`owner-<pid>-<12hex>.sock`) is longer than the master
     // name this comment originally accounted for, so use /tmp on darwin.
     const controlDir = mkdtempSync(join(process.platform === 'darwin' ? '/tmp' : tmpdir(), 'ficus-mrt-'))
-    const tunnels = new MachineTunnelManager({ spawn: fakeSpawn, controlDir })
+    const tunnels = new MachineTunnelManager({
+      spawn: fakeSpawn,
+      controlDir,
+      resolveHostKeyPin: async () => ({ knownHostsPath: '/pins/machine.known_hosts', alias: 'ficus-trust.machine' }),
+    })
 
     const router = authedRouter({ getProvider: () => fakeProvider(), tunnels })
     const created = await createMachine(router, { name: `${prefix}-del-tunnel` })
