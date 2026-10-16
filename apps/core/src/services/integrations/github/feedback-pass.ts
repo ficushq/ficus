@@ -2,8 +2,10 @@ import type { integrationOutputEvents, githubFeedbackRevisions, inbox } from '..
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { githubContentHash } from './feedback-envelope'
 import { readCurrentGitHubFeedback } from './feedback-provider'
-import type { GitHubFeedbackContent } from '@ficus/shared'
+import type { GitHubEditorVerification, GitHubFeedbackContent } from '@ficus/shared'
 import { verifyGitHubOutputResource } from './feedback-resource'
+import { readGitHubEditorVerification, type GitHubEditHistoryTarget } from './feedback-edit-history'
+import { GitHubApiUnavailableError } from '../../github/api-client'
 
 /** One budget is inherited by every await/queue/release nested in a root reconcile pass. */
 export interface GitHubOutputPass {
@@ -18,6 +20,7 @@ export interface GitHubOutputPass {
   ordinary?: Map<string, string[]>
   revisions: Map<string, typeof githubFeedbackRevisions.$inferSelect>
   current: Map<string, Promise<{ contentHash: string } | null>>
+  editHistory?: Map<string, Promise<GitHubEditorVerification | null>>
   resources: number
   deliveries?: Map<string, Array<{ eventId: string; deliveryId: string }>>
   native: Map<
@@ -90,6 +93,27 @@ export async function readGitHubCurrent(
   pass.resources++ // two fixed assigned endpoints, conservatively reserve the three-call unit
   const read = readCurrentGitHubFeedback(source, content)
   pass.current.set(key, read)
+  return read
+}
+
+/**
+ * Edit-history reads share the same per-pass provider budget (one GraphQL query each). An exhausted
+ * budget defers the capture to a later pass; it never decides the content without its history.
+ */
+export async function readGitHubEditHistory(
+  source: { authority: Parameters<typeof readGitHubEditorVerification>[0] },
+  target: GitHubEditHistoryTarget
+): Promise<GitHubEditorVerification | null> {
+  const pass = githubOutputPass()
+  if (!pass) throw new Error('github_pass_required')
+  const cache = (pass.editHistory ??= new Map())
+  const key = githubContentHash([source.authority, target])
+  const known = cache.get(key)
+  if (known) return known
+  if (pass.resources >= GITHUB_PASS_RESOURCE_LIMIT) throw new GitHubApiUnavailableError('pass_budget')
+  pass.resources++
+  const read = readGitHubEditorVerification(source.authority, target)
+  cache.set(key, read)
   return read
 }
 

@@ -3889,6 +3889,24 @@ export const integrationConnections = pgTable(
   ]
 )
 
+/**
+ * The latest delivery the hosted integration relay accepted for a connection and repository, after
+ * its revision and authorization checks: live webhook evidence for poll suppression and the poll
+ * replay baseline, exactly like a verified direct `webhook_events` row (see GitHubPrWatchPolicy).
+ */
+export const githubRelayDeliveries = pgTable(
+  'github_relay_deliveries',
+  {
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    /** Lowercase `owner/name`. */
+    repository: varchar('repository', { length: 200 }).notNull(),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.connectionId, table.repository] })]
+)
+
 export const integrationOauthStates = pgTable(
   'integration_oauth_states',
   {

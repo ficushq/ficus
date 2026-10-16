@@ -280,9 +280,9 @@ test('stronger attribution for an already-held material version never becomes a 
     const poll = { ...input, githubObservation: { kind: 'poll' as const } }
     const held = await h.capture(poll)
     const webhook = await h.capture(input)
-    expect(webhook.revision.id).not.toBe(held.revision.id)
-    expect(webhook.revision.attribution).toBe('creation')
-    expect(webhook.revision.reason).toBe('previously_held')
+    // The same immutable text is a replay of the held version: no new revision, no upgrade.
+    expect(webhook.disposition).toBe('replay')
+    expect(webhook.revision.id).toBe(held.revision.id)
     expect(webhook.revision.decision).toBe('pending')
   } finally {
     await h.close()

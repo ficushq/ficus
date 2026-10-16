@@ -70,8 +70,14 @@ export interface GitHubParentTextVariant {
   nativeId: string
   title: string
   body: string
-  /** The payload's `created_at` equals its `updated_at`: nothing about the parent changed since creation. */
+  /**
+   * The text is provably the author's: the payload's `created_at` equals its `updated_at`, or (set at
+   * capture) GitHub's edit history shows the current title and description were only ever edited by
+   * the author.
+   */
   unchanged: boolean
+  /** GitHub's GraphQL node ID of the parent, to read its edit history. Not part of any hash. */
+  nodeId?: string
   contentHash: string
   byteCount: number
   delivery: import('./integration-outputs').IntegrationOutputFact
@@ -98,6 +104,28 @@ export interface GitHubFeedbackContent {
   delivery: import('./integration-outputs').IntegrationOutputFact | null
   /** Actions only. See {@link GitHubParentTextVariant}; absent when the payload cannot offer it. */
   parentText?: GitHubParentTextVariant
+  /**
+   * GitHub's GraphQL node ID of the content object, used only to read its edit history at capture.
+   * Not part of the reviewed hash; the history read must match the native ID, repository and text.
+   */
+  nodeId?: string
+  /**
+   * The signed webhook sender of an `edited` event. A hint only: it never attributes content by
+   * itself; capture adds it to the editors read from GitHub's edit history. Not hashed.
+   */
+  editedBy?: GitHubAccountIdentity
+}
+
+/**
+ * Who edited a content version, read from GitHub's edit history at capture and bound into its
+ * reviewed hash (`delivery.data.editors`). Every editor must be trusted for automatic delivery.
+ */
+export interface GitHubEditorVerification {
+  attribution: 'creation' | 'verified_edit'
+  /** The most recent editor; null for `creation`. */
+  editor: GitHubAccountIdentity | null
+  /** Every distinct editor in the history (and the webhook sender), by numeric ID; empty for `creation`. */
+  editors: GitHubAccountIdentity[]
 }
 export interface GitHubFeedbackEnvelope {
   /** Checked against the source association table, never trusted as an approval hint. */

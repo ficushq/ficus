@@ -78,6 +78,11 @@ export interface GitHubPrWatchPolicyOptions {
   listSquads?: () => Promise<readonly { id: string; metadata: unknown }[]>
   lastRealDeliveries: (provider: string, repos: readonly string[]) => Promise<Map<string, Date>>
   /**
+   * Latest hosted-relay delivery per `connectionId:owner/repo` (lowercase). A relay delivery is live
+   * webhook evidence for the connection that received it, exactly like a direct webhook row.
+   */
+  lastRelayDeliveries?: (pairs: readonly { connectionId: string; repository: string }[]) => Promise<Map<string, Date>>
+  /**
    * Resolves wildcard repository selectors (`owner/*`) to the exact repositories
    * the connection can see — see GitHubRepositoryExpander. Without it, wildcard
    * selectors establish no watches (they still match events that arrive).
@@ -268,11 +273,21 @@ export class GitHubPrWatchPolicy {
     ]
     if (repositories.length === 0) return [...repositoryWatches.values()]
     const deliveries = await this.#options.lastRealDeliveries('github', repositories)
+    const relayed =
+      (await this.#options.lastRelayDeliveries?.(
+        [...drafts.values()].map((watch) => {
+          const config = watch.connection.configuration as GitHubPrPollingConfig
+          return { connectionId: watch.connection.id, repository: `${config.owner}/${config.repo}` }
+        })
+      )) ?? new Map<string, Date>()
     return [
       ...repositoryWatches.values(),
       ...[...drafts.values()].filter((watch) => {
         const config = watch.connection.configuration as GitHubPrPollingConfig
-        const deliveredAt = deliveries.get(`${config.owner}/${config.repo}`)
+        const direct = deliveries.get(`${config.owner}/${config.repo}`)
+        const relay = relayed.get(`${watch.connection.id}:${config.owner}/${config.repo}`)
+        // Either transport proves events arrive live; the newer one is the replay baseline.
+        const deliveredAt = direct && relay ? (direct > relay ? direct : relay) : (direct ?? relay)
         if (deliveredAt) config.lastVerifiedWebhookDeliveryAt = deliveredAt.toISOString()
         return config.deliveryPresentation === true || !deliveredAt || deliveredAt < cutoff
       }),

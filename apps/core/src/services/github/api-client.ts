@@ -56,6 +56,51 @@ function isRateLimited(res: Response) {
 }
 
 /**
+ * One read-only GraphQL query through the squad's assigned GitHub connection.
+ *
+ * Returns `data`, or null for an explicit denial (404, a 403 that is not a rate limit) or a response
+ * carrying GraphQL errors (for example a node the token cannot see). Every other failure (no usable
+ * token, network, 401, 429, a rate-limited 403, 5xx, an unreadable body) throws
+ * {@link GitHubApiUnavailableError} so the caller can retry later instead of deciding.
+ */
+export async function githubApiGraphql<T>(
+  query: string,
+  variables: Record<string, unknown>,
+  squadId: string,
+  connectionId?: string
+): Promise<T | null> {
+  const token = (await resolveGitHubConnection(squadId, connectionId))?.credential.accessToken
+  if (!token) throw new GitHubApiUnavailableError('no_token')
+  let res: Response
+  try {
+    res = await fetch(`${GITHUB_API_BASE}/graphql`, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(15_000),
+      headers: {
+        accept: 'application/vnd.github+json',
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ query, variables }),
+    })
+  } catch {
+    throw new GitHubApiUnavailableError('network')
+  }
+  if (res.status === 404 || (res.status === 403 && !isRateLimited(res))) return null
+  if (!res.ok) throw new GitHubApiUnavailableError(`http_${res.status}`)
+  let body: { data?: T | null; errors?: Array<{ type?: string }> }
+  try {
+    body = (await res.json()) as typeof body
+  } catch {
+    throw new GitHubApiUnavailableError('invalid_body')
+  }
+  if (body.errors?.some((error) => error?.type === 'RATE_LIMITED')) throw new GitHubApiUnavailableError('rate_limited')
+  if (body.errors?.length || !body.data) return null
+  return body.data
+}
+
+/**
  * GET an assigned GitHub API path. Returns null when the read fails.
  *
  * With `distinguishUnavailable`, null means only an explicit denial from GitHub under a usable

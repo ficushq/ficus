@@ -43,14 +43,17 @@ test('sender cannot launder actual comment author or embedded parent text and so
   expect(status).toBeNull()
 })
 
-test('native edit binds sender as editor, polling never invents editor from synthetic sender', () => {
+test('a native edit names its sender only as an editor to verify; polling never invents an editor', () => {
   const event = feedbackEvent('EDIT', 'edited')
   const edit = projection({ ...event, githubObservation: { kind: 'webhook', deliveryId: 'edit-1' } }).content!
   expect(edit.author!.accountId).toBe('2')
-  expect(edit.editor!.accountId).toBe('1')
-  expect(edit.attribution).toBe('verified_edit')
+  // The last editor alone never attributes an edit: capture verifies the whole edit history.
+  expect(edit.attribution).toBe('unknown')
+  expect(edit.editor).toBeNull()
+  expect(edit.editedBy).toEqual({ accountId: '1', login: 'trusted', accountType: 'User' })
   const poll = projection({ ...event, githubObservation: { kind: 'poll' } }).content!
   expect(poll.editor).toBeNull()
+  expect(poll.editedBy).toBeUndefined()
   expect(poll.attribution).toBe('unknown')
   expect(
     projection({ ...event, metadata: { transport: 'webhook', providerDeliveryId: 'spoof' } }).content!.attribution
@@ -232,6 +235,61 @@ test('review requests and labels are actions; title/body edits remain held conte
   expect(edit).toMatchObject({ objectKind: 'pull_request', attribution: 'unknown' })
   // An edit is content, never an action that could carry the edited text as the parent's.
   expect(edit.parentText).toBeUndefined()
+})
+
+test('auto-merge and other status-only PR actions are actions of the signed sender, without title or body', () => {
+  const event = feedbackEvent()
+  event.type = 'pull_request'
+  event.payload.pull_request = {
+    ...event.payload.issue,
+    user: owner,
+    state: 'open',
+    created_at: '2026-10-01T10:00:00Z',
+    auto_merge: { merge_method: 'squash', commit_title: 'COMMIT_TITLE_SENTINEL' },
+  }
+  event.githubObservation = { kind: 'webhook', deliveryId: 'auto-merge-1' }
+  for (const action of ['auto_merge_enabled', 'auto_merge_disabled', 'locked', 'milestoned', 'enqueued']) {
+    event.payload.action = action
+    const content = projection(event).content!
+    expect(content).toMatchObject({ objectKind: 'action', attribution: 'creation', editor: null })
+    expect(content.author).toEqual({ accountId: '1', login: 'trusted', accountType: 'User' })
+    expect(content.delivery!.data).toMatchObject({ action, actor: 'trusted', projection: 'action' })
+    expect(JSON.stringify(content.delivery)).not.toContain('SENTINEL')
+  }
+  event.payload.action = 'auto_merge_enabled'
+  expect(projection(event).content!.delivery!.data.mergeMethod).toBe('squash')
+  expect(projection(event).content!.delivery!.body).toContain('Merge method: squash')
+  // Lifecycle actions stay content-free status facts.
+  for (const action of ['synchronize', 'ready_for_review', 'converted_to_draft', 'closed', 'reopened']) {
+    event.payload.action = action
+    event.payload.pull_request.state = action === 'closed' ? 'closed' : 'open'
+    const { status } = projection(event)
+    expect(status!.data).toMatchObject({ action, projection: 'status' })
+    expect(JSON.stringify(status)).not.toContain('SENTINEL')
+  }
+})
+
+test('a verified edit history binds the attribution and every editor into the reviewed hash', async () => {
+  const { withGitHubEditorVerification, githubDeliveryEditors } = await import('./feedback-envelope')
+  const event = feedbackEvent('EDIT', 'edited')
+  event.payload.comment.node_id = 'IC_kwDOnode'
+  const content = projection({ ...event, githubObservation: { kind: 'poll' } }).content!
+  expect(content.nodeId).toBe('IC_kwDOnode')
+  const creation = withGitHubEditorVerification(content, { attribution: 'creation', editor: null, editors: [] })!
+  expect(creation).toMatchObject({ attribution: 'creation', editor: null })
+  expect(creation.delivery!.data.editors).toBeUndefined()
+  expect(creation.contentHash).not.toBe(content.contentHash)
+  const a = { accountId: '1', login: 'trusted', accountType: 'User' as const }
+  const b = { accountId: '7', login: 'other', accountType: 'User' as const }
+  const one = withGitHubEditorVerification(content, { attribution: 'verified_edit', editor: a, editors: [a] })!
+  const two = withGitHubEditorVerification(content, { attribution: 'verified_edit', editor: a, editors: [a, b] })!
+  expect(one).toMatchObject({ attribution: 'verified_edit', editor: a })
+  expect(githubDeliveryEditors(two.delivery)).toEqual(['1', '7'])
+  // The same text with a different set of editors is a different reviewed version.
+  expect(one.contentHash).not.toBe(two.contentHash)
+  expect(one.delivery!.body).toBe(content.delivery!.body)
+  // Never re-attributes content that is already attributed, or an action.
+  expect(withGitHubEditorVerification(creation, { attribution: 'creation', editor: null, editors: [] })).toBeNull()
 })
 
 function assignment(issue: Record<string, unknown> = {}) {

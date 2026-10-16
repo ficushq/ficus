@@ -21,6 +21,7 @@ import { buildGitHubStatus } from './feedback-status'
 import {
   readGitHubResource,
   readGitHubCurrent,
+  readGitHubEditHistory,
   reserveGitHubEvent,
   withGitHubOutputPass,
   inGitHubCandidate,
@@ -269,6 +270,7 @@ async function prepareGitHubOutputInPass(
         ...(!native
           ? { holdReason: 'source_unverified' as const }
           : {
+              verifyEditors: readGitHubEditHistory,
               queueScreening: (tx: DbTx, revision: Parameters<typeof enqueueGitHubFeedbackScreening>[0]) =>
                 enqueueGitHubFeedbackScreening(revision, tx),
             }),

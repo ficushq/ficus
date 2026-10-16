@@ -8,7 +8,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { db, type DbTx } from '../../../db'
 import { githubPersonalIdentities, githubTrustedAuthors, integrationAuditEvents, users } from '../../../db/schema'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
-import { githubParentTextAuthorId, hasGitHubParentText } from './feedback-envelope'
+import { githubDeliveryEditors, githubParentTextAuthorId, hasGitHubParentText } from './feedback-envelope'
 import { isGitHubAuthorFilterEnabled } from './author-filter'
 import { hasUserPermissionWithExecutor, type Identity } from '../../rbac/permissions'
 
@@ -130,6 +130,8 @@ export async function resolveGitHubAuthorTrust(
 
 /**
  * Author AND actual editor must be currently trusted; transport origin is not an authority grant.
+ * Content attributed from GitHub's edit history (`data.editors`) needs EVERY editor in it trusted:
+ * trusting the author never vouches for anyone else who edited the text.
  * An action that carries its parent's title and description (`envelope`/`delivery`) also needs that
  * text's author to be currently trusted, by numeric ID; a malformed identity fails closed.
  * A squad with its author filter OFF ignores the trusted list: already-captured content is not
@@ -155,10 +157,16 @@ export async function isTrustedGitHubFeedbackContent(
     !(await resolveGitHubAuthorTrust(executor, squadId, githubParentTextAuthorId(delivered))).length
   )
     return false
-  return (
-    content.attribution === 'creation' ||
-    (!!content.editor && (await resolveGitHubAuthorTrust(executor, squadId, content.editor.accountId)).length > 0)
-  )
+  if (content.attribution === 'creation') return true
+  if (!content.editor || !(await resolveGitHubAuthorTrust(executor, squadId, content.editor.accountId)).length)
+    return false
+  if (delivered?.data.editors === undefined) return true
+  // Present but malformed or empty fails closed.
+  const editors = githubDeliveryEditors(delivered)
+  if (!editors) return false
+  for (const accountId of editors)
+    if (!(await resolveGitHubAuthorTrust(executor, squadId, accountId)).length) return false
+  return true
 }
 
 /** Shared lock order: authority mutex, then users, then proof/identity/squad trust rows. */
