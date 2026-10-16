@@ -15,6 +15,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
 import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
+import { MemorySyncSshHostKeys } from '../settings/SshHostKeysList'
 
 const PROVIDER_TYPE_OPTIONS: SegmentedControlOption<'git' | 's3'>[] = [
   { value: 'git', label: 'Git' },
@@ -245,6 +246,8 @@ export function MemorySyncSettings({ squadId }: Props) {
           </button>
         )}
       </div>
+
+      <MemorySyncSshHostKeys squadId={squadId} canAct={canWriteMemory} />
 
       {/* Sync Status */}
       {statusLoading ? (

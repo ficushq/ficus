@@ -1,8 +1,11 @@
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
 import { getHomeDir } from '../../lib/utils/home'
+import { strictHostKeyArgs, type HostKeyPin } from '../ssh-trust/args'
 import { materializePrivateKey } from './keys'
 import type { Machine } from './queries'
+
+export type { HostKeyPin }
 
 /**
  * One-shot SSH command execution for machines.
@@ -10,9 +13,10 @@ import type { Machine } from './queries'
  * Every invocation authenticates with the machine's private key materialized
  * to a 0600 scratch file (via {@link materializePrivateKey}) and cleaned up
  * immediately after — never ssh-agent (`IdentitiesOnly=yes` guarantees only the
- * supplied `-i` key is offered). Host key trust is TOFU
- * (`StrictHostKeyChecking=accept-new`) recorded in a machines-scoped
- * `known_hosts`, and connections are bounded (`ConnectTimeout`, keepalives)
+ * supplied `-i` key is offered). Every connection checks the host key
+ * strictly against the machine's pinned, person-confirmed keys
+ * (`services/ssh-trust`; never trust-on-first-use), and connections are
+ * bounded (`ConnectTimeout`, keepalives)
  * plus an overall wall-clock `timeoutMs` that kills the child on expiry so a
  * black-holed host can never hang a caller (notably the BYO-SSH provider's
  * liveness probe) indefinitely.
@@ -30,15 +34,15 @@ export interface SshResult {
 }
 
 /**
- * Strict host-key pinning for one connection: the host key must match an entry
- * for `alias` in `knownHostsPath` (`StrictHostKeyChecking=yes`, nothing
- * learned or updated). Remote-host probes always pass this; machines keep their
- * own known_hosts.
+ * Resolves the strict host-key pin for a machine connection, throwing when the
+ * machine has no trusted host key (`ssh-trust`'s `HostKeyNotTrustedError`).
+ * Callers never connect without one.
  */
-export interface HostKeyPin {
-  knownHostsPath: string
-  alias: string
-}
+export type HostKeyPinResolver = (machine: Machine) => Promise<HostKeyPin>
+
+/** The production resolver (lazy: keeps this module free of a DB import for callers that pass a pin). */
+export const defaultHostKeyPinResolver: HostKeyPinResolver = async (machine) =>
+  (await import('../ssh-trust')).machineHostKeyPin(machine)
 
 export interface SshRunner {
   run(
@@ -48,13 +52,9 @@ export interface SshRunner {
   ): Promise<SshResult>
 }
 
-/** `<HOME_DIR>/machines` — parent for scratch keys, known_hosts, control sockets. */
+/** `<HOME_DIR>/machines` — parent for scratch keys and control sockets. */
 function machinesDir(): string {
   return join(getHomeDir(), 'machines')
-}
-
-function knownHostsPath(): string {
-  return join(machinesDir(), 'known_hosts')
 }
 
 export function sshTarget(machine: Machine): string {
@@ -67,23 +67,9 @@ export function sshTarget(machine: Machine): string {
  * the materialized identity file. `-O` control commands (check/forward/exit)
  * connect over the local control socket and do not need these.
  */
-export function sshConnectionArgs(machine: Machine, identityPath: string, hostKeyPin?: HostKeyPin): string[] {
-  const hostKeyArgs = hostKeyPin
-    ? [
-        '-o',
-        'StrictHostKeyChecking=yes',
-        '-o',
-        `UserKnownHostsFile=${hostKeyPin.knownHostsPath}`,
-        '-o',
-        'GlobalKnownHostsFile=/dev/null',
-        '-o',
-        `HostKeyAlias=${hostKeyPin.alias}`,
-        '-o',
-        'UpdateHostKeys=no',
-      ]
-    : ['-o', 'StrictHostKeyChecking=accept-new', '-o', `UserKnownHostsFile=${knownHostsPath()}`]
+export function sshConnectionArgs(machine: Machine, identityPath: string, hostKeyPin: HostKeyPin): string[] {
   return [
-    ...hostKeyArgs,
+    ...strictHostKeyArgs(hostKeyPin),
     '-o',
     'BatchMode=yes',
     '-o',
@@ -163,23 +149,24 @@ async function runWithTimeout(
   }
 }
 
-export function createSshRunner(deps?: { spawn?: typeof Bun.spawn; defaultTimeoutMs?: number }): SshRunner {
+export function createSshRunner(deps?: {
+  spawn?: typeof Bun.spawn
+  defaultTimeoutMs?: number
+  resolveHostKeyPin?: HostKeyPinResolver
+}): SshRunner {
   const spawn = deps?.spawn ?? Bun.spawn
   const defaultTimeoutMs = deps?.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS
+  const resolveHostKeyPin = deps?.resolveHostKeyPin ?? defaultHostKeyPinResolver
 
   return {
     async run(machine, command, opts): Promise<SshResult> {
+      // Resolved before the key is materialized: an untrusted host never sees a connection attempt.
+      const hostKeyPin = opts?.hostKeyPin ?? (await resolveHostKeyPin(machine))
       const identity = await materializePrivateKey(machine)
       try {
-        // Ensure the parent dir exists so ssh can create/append known_hosts.
         await mkdir(machinesDir(), { recursive: true })
 
-        const args = [
-          'ssh',
-          ...sshConnectionArgs(machine, identity.path, opts?.hostKeyPin),
-          sshTarget(machine),
-          command,
-        ]
+        const args = ['ssh', ...sshConnectionArgs(machine, identity.path, hostKeyPin), sshTarget(machine), command]
 
         let stdin: unknown = 'ignore'
         if (opts?.stdin !== undefined) {
@@ -256,12 +243,21 @@ interface StreamChild {
   kill: (signal?: number | NodeJS.Signals) => void
 }
 
-export function createSshStreamer(deps?: { spawn?: typeof Bun.spawn; defaultTimeoutMs?: number }): SshStreamer {
+export function createSshStreamer(deps?: {
+  spawn?: typeof Bun.spawn
+  defaultTimeoutMs?: number
+  resolveHostKeyPin?: HostKeyPinResolver
+}): SshStreamer {
   const spawn = deps?.spawn ?? Bun.spawn
   const defaultTimeoutMs = deps?.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS
+  const resolveHostKeyPin = deps?.resolveHostKeyPin ?? defaultHostKeyPinResolver
 
   return {
     async stream(source, dest, opts): Promise<SshStreamResult> {
+      const [sourcePin, destPin] = await Promise.all([
+        resolveHostKeyPin(source.machine),
+        resolveHostKeyPin(dest.machine),
+      ])
       const [sourceIdentity, destIdentity] = await Promise.all([
         materializePrivateKey(source.machine),
         materializePrivateKey(dest.machine),
@@ -273,7 +269,12 @@ export function createSshStreamer(deps?: { spawn?: typeof Bun.spawn; defaultTime
         await mkdir(machinesDir(), { recursive: true })
 
         sourceProc = spawn(
-          ['ssh', ...sshConnectionArgs(source.machine, sourceIdentity.path), sshTarget(source.machine), source.command],
+          [
+            'ssh',
+            ...sshConnectionArgs(source.machine, sourceIdentity.path, sourcePin),
+            sshTarget(source.machine),
+            source.command,
+          ],
           { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' }
         ) as unknown as StreamChild
 
@@ -290,7 +291,12 @@ export function createSshStreamer(deps?: { spawn?: typeof Bun.spawn; defaultTime
         const payload = (sourceProc.stdout as ReadableStream<Uint8Array>).pipeThrough(counter)
 
         destProc = spawn(
-          ['ssh', ...sshConnectionArgs(dest.machine, destIdentity.path), sshTarget(dest.machine), dest.command],
+          [
+            'ssh',
+            ...sshConnectionArgs(dest.machine, destIdentity.path, destPin),
+            sshTarget(dest.machine),
+            dest.command,
+          ],
           { stdin: payload as never, stdout: 'pipe', stderr: 'pipe' }
         ) as unknown as StreamChild
 

@@ -1,5 +1,6 @@
 import { createLogger } from '../../../lib/infra/logger'
 import { MachineProviderError } from '../provider'
+import { strictHostKeyArgs, type HostKeyPin } from '../../ssh-trust/args'
 
 const log = createLogger('exe-api')
 
@@ -334,6 +335,17 @@ export interface DefaultExeExecOptions {
   signal?: AbortSignal
   /** Override used by hermetic real-process tests. */
   sshBin?: string
+  /**
+   * Strict host-key pin for exe.dev (default: its person-confirmed keys,
+   * `services/ssh-trust`). Resolution throws when no key is trusted, and no
+   * connection is attempted.
+   */
+  resolveHostKeyPin?: () => Promise<HostKeyPin>
+}
+
+async function defaultExeApiHostKeyPin(): Promise<HostKeyPin> {
+  const { hostKeyPinFor, EXE_API_TRUST_SPEC } = await import('../../ssh-trust')
+  return hostKeyPinFor(EXE_API_TRUST_SPEC)
 }
 
 type ExeProcess = {
@@ -485,6 +497,7 @@ export function defaultExeExec(token: string, options: DefaultExeExecOptions = {
     try {
       if (options.signal?.aborted) throw exeLifecycleError('AbortError', 'exe.dev ssh invocation aborted')
 
+      const hostKeyPin = await (options.resolveHostKeyPin ?? defaultExeApiHostKeyPin)()
       const { mkdtemp, open, lstat, unlink, rmdir } = await import('fs/promises')
       const { tmpdir } = await import('os')
       const { join } = await import('path')
@@ -515,8 +528,7 @@ export function defaultExeExec(token: string, options: DefaultExeExecOptions = {
             options.sshBin ?? 'ssh',
             '-o',
             'BatchMode=yes',
-            '-o',
-            'StrictHostKeyChecking=accept-new',
+            ...strictHostKeyArgs(hostKeyPin),
             '-o',
             'IdentitiesOnly=yes',
             '-o',

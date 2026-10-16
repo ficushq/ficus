@@ -3510,6 +3510,55 @@ export const remoteHostKeys = pgTable(
   (t) => [unique().on(t.hostId, t.keyType, t.publicKey), index('remote_host_keys_host_idx').on(t.hostId)]
 )
 
+// SSH endpoints Core itself connects to outside remote hosts, each with its own
+// pinned host keys (services/ssh-trust): a BYO machine (`machine:<id>`), the
+// exe.dev VM proxy every exe machine is reached through
+// (`machine-provider:exe`), the exe.dev API endpoint (`exe-api`), and a squad's
+// memory git remote (`memory-git:<squadId>:<host>`). `adoption_pending` is set
+// by the migration on endpoints that existed while ssh used `accept-new`: their
+// already-trusted keys are adopted without a prompt.
+export const sshTrustTargets = pgTable(
+  'ssh_trust_targets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    scope: text('scope').notNull().unique(),
+    kind: text('kind').notNull(), // 'machine' | 'machine-provider' | 'exe-api' | 'memory-git'
+    squadId: text('squad_id'), // set for memory-git targets
+    label: text('label').notNull(),
+    sshHost: text('ssh_host').notNull(), // the host scanned for keys
+    sshPort: integer('ssh_port').notNull().default(22),
+    adoptionPending: boolean('adoption_pending').notNull().default(false),
+    checkedAt: timestamp('checked_at'),
+    checkError: text('check_error'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('ssh_trust_targets_squad_idx').on(t.squadId)]
+)
+
+// Host keys seen for an ssh_trust_targets endpoint and the person's decision on
+// each; same lifecycle as remote_host_keys (only `trusted` keys are pinned).
+export const sshTrustKeys = pgTable(
+  'ssh_trust_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    targetId: uuid('target_id')
+      .notNull()
+      .references(() => sshTrustTargets.id, { onDelete: 'cascade' }),
+    keyType: text('key_type').notNull(),
+    publicKey: text('public_key').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    status: text('status').notNull(), // 'pending' | 'trusted' | 'rejected' | 'replaced'
+    origin: text('origin').notNull(), // 'scan' | 'adopted' | 'adoption-conflict'
+    decisionNote: text('decision_note'),
+    decidedByUserId: text('decided_by_user_id'),
+    decidedAt: timestamp('decided_at'),
+    firstSeenAt: timestamp('first_seen_at').notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at').notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.targetId, t.keyType, t.publicKey), index('ssh_trust_keys_target_idx').on(t.targetId)]
+)
+
 // A box's own known_hosts pins a different key than a Core-managed entry for
 // the same host and key type, so the managed entry was left out of the box
 // (packages/shared/src/known-hosts.ts). One row per box and exact key pair.

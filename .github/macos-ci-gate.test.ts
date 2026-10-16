@@ -212,8 +212,8 @@ export function validateMacosWorkflow(workflow: Workflow): string[] {
   )
     errors.push('classifier command must run once unconditionally')
 
-  if (Object.values(jobs).filter((job) => job['runs-on'] === 'macos-14').length !== 1)
-    errors.push('workflow must contain exactly one macos-14 job')
+  if (Object.values(jobs).filter((job) => job['runs-on'] === 'macos-15').length !== 1)
+    errors.push('workflow must contain exactly one macos-15 job')
   const suite = jobs['macos-portability-suite']
   if (suite?.needs !== 'macos-paths') errors.push('macOS suite must need classifier')
   if (suite?.if !== "${{ needs.macos-paths.result == 'success' && needs.macos-paths.outputs.run_macos == 'true' }}")
@@ -304,7 +304,7 @@ describe('workflow mutation contract', () => {
     ['give contents write permission', (w) => (w.permissions!.contents = 'write')],
     ['remove classifier full-history checkout', (w) => delete w.jobs!['macos-paths'].steps![0].with],
     ['make schedule depend on a false diff output', (w) => (w.jobs!['macos-portability-suite'].if = '${{ false }}')],
-    ['add a second macos-14 job', (w) => (w.jobs!.duplicate = { 'runs-on': 'macos-14' })],
+    ['add a second macos-15 job', (w) => (w.jobs!.duplicate = { 'runs-on': 'macos-15' })],
     [
       'remove exe suite step',
       (w) =>

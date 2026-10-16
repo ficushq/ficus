@@ -18,6 +18,8 @@ import { getMachine, type Machine } from './queries'
 import { getSecretStore, resetSecretStore } from '../secrets'
 import { createSshRunner, type SshRunner } from './ssh'
 import { MachineTunnelManager } from './tunnel-manager'
+import { EXE_API_TRUST_SPEC, machineTrustSpec } from '../ssh-trust'
+import { trustFetchedHostKeysForTest } from './test-host-key-pin'
 
 /**
  * ============================================================================
@@ -132,6 +134,8 @@ describe.skipIf(!process.env.FICUS_TEST_EXE_SSH_KEY)('exe.dev provider (integrat
     await registerBuiltinMachineProviders()
 
     admin = await createTestAdmin({ prefix })
+    // Stand in for the person who confirms exe.dev's host key before provisioning.
+    await trustFetchedHostKeysForTest(EXE_API_TRUST_SPEC, admin.id)
     const app = new Hono()
     app.use('*', identityMiddleware)
     app.route('/', createMachinesRouter())
@@ -198,6 +202,9 @@ describe.skipIf(!process.env.FICUS_TEST_EXE_SSH_KEY)('exe.dev provider (integrat
       if (!fetched) throw new Error('provisioned machine row vanished immediately after insert')
       machine = fetched
       expect(machine.sshHost).toBeTruthy()
+      // Stand in for the person who confirms the VM's host key in Settings
+      // (a no-op when it is already trusted as the exe.dev proxy key).
+      await trustFetchedHostKeysForTest(machineTrustSpec(machine), admin.id)
       expect(machine.sshPort).toBeGreaterThan(0)
       expect(machine.sshUser).toBe('exedev')
       // The row references the SHARED account-key secret, not a per-machine one.

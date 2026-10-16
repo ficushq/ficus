@@ -1741,6 +1741,21 @@ forwarding_selftest() {
     return 2
   fi
 
+  # Pin the local sshd's own host keys (read from /etc/ssh, never learned over
+  # the wire): the loopback is checked strictly like every Ficus connection. No
+  # readable host key -> the self-test cannot run (indeterminate), never TOFU.
+  local hk
+  for hk in /etc/ssh/ssh_host_*_key.pub; do
+    [ -r "${hk}" ] || continue
+    awk 'NF >= 2 { print "127.0.0.1", $1, $2 }' "${hk}" >>"${tmp}/known_hosts"
+  done
+  if [ ! -s "${tmp}/known_hosts" ]; then
+    grep -vF "${tag}" "${akf}" >"${tmp}/ak" 2>/dev/null || true
+    cat "${tmp}/ak" >"${akf}" 2>/dev/null || true
+    rm -rf "${tmp}"
+    return 2
+  fi
+
   # ssh binds the -L port only AFTER authentication + forward setup succeed, so
   # "the local port answers" == "session established". ExitOnForwardFailure
   # makes a refused local bind fatal instead of a silent no-op session.
@@ -1748,7 +1763,8 @@ forwarding_selftest() {
   lport=$((20000 + RANDOM % 40000))
   ssh -i "${tmp}/key" \
     -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none \
-    -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="${tmp}/known_hosts" \
+    -o StrictHostKeyChecking=yes -o UserKnownHostsFile="${tmp}/known_hosts" \
+    -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no \
     -o ConnectTimeout=10 -o ExitOnForwardFailure=yes \
     -N -L "${lport}:127.0.0.1:22" "$(id -un)@127.0.0.1" 2>/dev/null &
   pid=$!

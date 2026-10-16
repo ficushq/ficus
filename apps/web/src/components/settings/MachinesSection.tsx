@@ -19,6 +19,7 @@ import { RebalancePanel } from './RebalancePanel'
 import { MigrateControl } from './MigrateControl'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, LoadingSurface, SkeletonBlock, SkeletonLine } from '../loading/Skeleton'
+import { MachineSshHostKeys } from './SshHostKeysList'
 
 /**
  * Admin fleet view for the VM sandbox runtime: register BYO-SSH endpoints or
@@ -68,6 +69,7 @@ export function MachinesSection() {
         )}
       </div>
 
+      <MachineSshHostKeys canAct={canWrite} />
       {canWrite && machines.length > 0 && <RebalancePanel machines={machines} />}
       {canWrite && <RegisterMachineForm />}
       {can('secrets:read') && <SecretsSection scope="machines" />}

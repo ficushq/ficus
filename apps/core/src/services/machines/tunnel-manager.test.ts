@@ -23,6 +23,10 @@ import { join } from 'path'
 import { getSecretStore, resetSecretStore } from '../secrets'
 import type { Machine } from './queries'
 import { MACHINE_REVERSE_PORT, MachineTunnelManager, resolveMachineReversePort } from './tunnel-manager'
+import { keyscanPinForTest } from './test-host-key-pin'
+
+/** Synthetic pin for the fake ssh (production resolves person-confirmed keys, services/ssh-trust). */
+const testPin = async () => ({ knownHostsPath: '/pins/machine.known_hosts', alias: 'ficus-trust.machine' })
 
 const SECRET_KEY = 'machine-ssh:tunnel-test'
 const MACHINE_ID = '22222222-2222-2222-2222-222222222222'
@@ -263,7 +267,7 @@ describe('MachineTunnelManager', () => {
   })
 
   function manager(fake: FakeSsh, overrides: { controlTimeoutMs?: number } = {}): MachineTunnelManager {
-    return new MachineTunnelManager({ spawn: fake.spawn, controlDir, ...overrides })
+    return new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn: fake.spawn, controlDir, ...overrides })
   }
 
   it('creates a fresh nonexistent control directory before acquiring its master lock', async () => {
@@ -653,7 +657,7 @@ describe('MachineTunnelManager', () => {
       }
       return res
     }) as unknown as typeof Bun.spawn
-    const mgr = new MachineTunnelManager({ spawn: gatedSpawn, controlDir })
+    const mgr = new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn: gatedSpawn, controlDir })
 
     const pending = mgr.addForward(makeMachine(), 50100)
     const release = mgr.cancelMachineForwards(MACHINE_ID)
@@ -680,7 +684,12 @@ describe('MachineTunnelManager', () => {
         return { ...result, exited: gate.then(() => result.exited) }
       return result
     }) as unknown as typeof Bun.spawn
-    const mgr = new MachineTunnelManager({ spawn: gatedSpawn, controlDir, controlTimeoutMs: 50 })
+    const mgr = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
+      spawn: gatedSpawn,
+      controlDir,
+      controlTimeoutMs: 50,
+    })
     await mgr.addForward(makeMachine(), 50100)
     const repair = mgr.refreshForward(makeMachine(), 50100)
     const cleanup = mgr.cancelMachineForwards(MACHINE_ID)
@@ -692,7 +701,12 @@ describe('MachineTunnelManager', () => {
 
   it('retains an exact listener when routine cancellation times out until cleanup is proven', async () => {
     const fake = new FakeSsh()
-    const mgr = new MachineTunnelManager({ spawn: fake.spawn, controlDir, controlTimeoutMs: 10 })
+    const mgr = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
+      spawn: fake.spawn,
+      controlDir,
+      controlTimeoutMs: 10,
+    })
     const localPort = await mgr.addForward(makeMachine(), 50100)
     fake.hangCancel = true
     await mgr.cancelMachineForwards(MACHINE_ID)
@@ -704,12 +718,18 @@ describe('MachineTunnelManager', () => {
 
   it('a successor manager adopts and settles durable exact-forward cleanup debt', async () => {
     const fake = new FakeSsh()
-    const first = new MachineTunnelManager({ spawn: fake.spawn, controlDir, controlTimeoutMs: 10 })
+    const first = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
+      spawn: fake.spawn,
+      controlDir,
+      controlTimeoutMs: 10,
+    })
     await first.addForward(makeMachine(), 50100)
     fake.hangCancel = true
     await first.cancelMachineForwards(MACHINE_ID)
     fake.hangCancel = false
     const successor = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       controlTimeoutMs: 50,
@@ -724,6 +744,7 @@ describe('MachineTunnelManager', () => {
   it('persists independent debt tuples from two managers and a successor cancels both', async () => {
     const fake = new FakeSsh()
     const first = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       controlTimeoutMs: 10,
@@ -732,6 +753,7 @@ describe('MachineTunnelManager', () => {
       allocateLocalPort: async () => 62101,
     })
     const second = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       controlTimeoutMs: 10,
@@ -746,6 +768,7 @@ describe('MachineTunnelManager', () => {
     await Promise.all([first.cancelMachineForwards(MACHINE_ID), second.cancelMachineForwards(MACHINE_ID)])
     fake.hangCancel = false
     const successor = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       controlTimeoutMs: 50,
@@ -760,9 +783,15 @@ describe('MachineTunnelManager', () => {
   it('persists an ambiguous forward candidate so a successor exact-cancels it before rebinding', async () => {
     const fake = new FakeSsh()
     fake.hangLocalForwardOnce = true
-    const first = new MachineTunnelManager({ spawn: fake.spawn, controlDir, controlTimeoutMs: 10 })
+    const first = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
+      spawn: fake.spawn,
+      controlDir,
+      controlTimeoutMs: 10,
+    })
     await expect(first.addForward(makeMachine(), 50100)).rejects.toThrow('timed out')
     const successor = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       controlTimeoutMs: 50,
@@ -776,13 +805,19 @@ describe('MachineTunnelManager', () => {
 
   it('retires durable forward debt after proving the old master dead', async () => {
     const fake = new FakeSsh()
-    const first = new MachineTunnelManager({ spawn: fake.spawn, controlDir, controlTimeoutMs: 10 })
+    const first = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
+      spawn: fake.spawn,
+      controlDir,
+      controlTimeoutMs: 10,
+    })
     await first.addForward(makeMachine(), 50100)
     fake.hangCancel = true
     await first.cancelMachineForwards(MACHINE_ID)
     fake.hangCancel = false
     fake.killSocket(join(controlDir, SOCKET_NAME))
     const successor = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       controlTimeoutMs: 50,
@@ -796,11 +831,24 @@ describe('MachineTunnelManager', () => {
 
   it('preserves a live sibling owner while replacing one crashed owner listener', async () => {
     const fake = new FakeSsh()
-    const dead = new MachineTunnelManager({ spawn: fake.spawn, controlDir, ownerId: 'dead', ownerPid: 101 })
-    const live = new MachineTunnelManager({ spawn: fake.spawn, controlDir, ownerId: 'live', ownerPid: 202 })
+    const dead = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
+      spawn: fake.spawn,
+      controlDir,
+      ownerId: 'dead',
+      ownerPid: 101,
+    })
+    const live = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
+      spawn: fake.spawn,
+      controlDir,
+      ownerId: 'live',
+      ownerPid: 202,
+    })
     await dead.addForward(makeMachine(), 50100)
     await live.addForward(makeMachine(), 50100)
     const successor = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       ownerId: 'successor',
@@ -843,7 +891,14 @@ describe('MachineTunnelManager', () => {
       }
       return result
     }) as unknown as typeof Bun.spawn
-    const mgr = new MachineTunnelManager({ spawn, controlDir, ownerId: 'owner', ownerPid: 404, controlTimeoutMs: 500 })
+    const mgr = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
+      spawn,
+      controlDir,
+      ownerId: 'owner',
+      ownerPid: 404,
+      controlTimeoutMs: 500,
+    })
     const adding = mgr.addForward(makeMachine(), 50100)
     await forwardEntered
     const marker = readdirSync(controlDir).find((name) => name.includes('.L50100.') && name.endsWith('.uncertain'))!
@@ -863,6 +918,7 @@ describe('MachineTunnelManager', () => {
   it('settles a crash-after-cancel marker when the exact local listener is proven absent', async () => {
     const fake = new FakeSsh()
     const owner = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       ownerId: 'dead',
@@ -875,6 +931,7 @@ describe('MachineTunnelManager', () => {
     fake.hangCancel = false
     fake.cancelExitCode = 1 // old cancel may already have succeeded before the crash
     const successor = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       ownerId: 'successor',
@@ -889,10 +946,17 @@ describe('MachineTunnelManager', () => {
 
   it('same successor retries its own ambiguous adopted cancellation before forwarding', async () => {
     const fake = new FakeSsh()
-    const dead = new MachineTunnelManager({ spawn: fake.spawn, controlDir, ownerId: 'dead', ownerPid: 101 })
+    const dead = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
+      spawn: fake.spawn,
+      controlDir,
+      ownerId: 'dead',
+      ownerPid: 101,
+    })
     await dead.addForward(makeMachine(), 50100)
     fake.hangCancel = true
     const successor = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       ownerId: 'successor',
@@ -911,6 +975,7 @@ describe('MachineTunnelManager', () => {
   it('reclaims a reused PID with another owner generation while preserving the exact live generation', async () => {
     const fake = new FakeSsh()
     const stale = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       ownerId: 'old-generation',
@@ -918,6 +983,7 @@ describe('MachineTunnelManager', () => {
       allocateLocalPort: async () => 62001,
     })
     const live = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       ownerId: 'current-generation',
@@ -928,6 +994,7 @@ describe('MachineTunnelManager', () => {
     await live.addForward(makeMachine(), 50100)
     const checkedOwners: string[] = []
     const successor = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       ownerId: 'successor',
@@ -958,6 +1025,7 @@ describe('MachineTunnelManager', () => {
   it('preserves replacement-master sibling journals when retiring the cached old generation', async () => {
     const fake = new FakeSsh()
     const first = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       ownerId: 'first',
@@ -968,6 +1036,7 @@ describe('MachineTunnelManager', () => {
     await first.addForward(makeMachine(), 50100)
     fake.masterPid++
     const second = new MachineTunnelManager({
+      resolveHostKeyPin: testPin,
       spawn: fake.spawn,
       controlDir,
       ownerId: 'second',
@@ -990,7 +1059,7 @@ describe('MachineTunnelManager', () => {
 
   it('proves owner generation by a held socket rather than a reused live PID and stale file', async () => {
     const fake = new FakeSsh()
-    const mgr = new MachineTunnelManager({ spawn: fake.spawn, controlDir })
+    const mgr = new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn: fake.spawn, controlDir })
     await (mgr as any).ownerLivenessReady
     const ownerId = (mgr as any).ownerId as string
     const ownerPid = (mgr as any).ownerPid as number
@@ -1019,9 +1088,9 @@ describe('MachineTunnelManager', () => {
       }
       return result
     }) as unknown as typeof Bun.spawn
-    const first = new MachineTunnelManager({ spawn, controlDir, masterTimeoutMs: 500 })
-    const second = new MachineTunnelManager({ spawn, controlDir, masterTimeoutMs: 500 })
-    const third = new MachineTunnelManager({ spawn, controlDir, masterTimeoutMs: 500 })
+    const first = new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn, controlDir, masterTimeoutMs: 500 })
+    const second = new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn, controlDir, masterTimeoutMs: 500 })
+    const third = new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn, controlDir, masterTimeoutMs: 500 })
     const establishing = first.ensureMaster(makeMachine())
     await checkEntered
     const forwarding = second.addForward(makeMachine(), 50100)
@@ -1148,7 +1217,7 @@ describe('MachineTunnelManager', () => {
       }
     }) as unknown as typeof Bun.spawn
 
-    const mgr = new MachineTunnelManager({ spawn, controlDir })
+    const mgr = new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn, controlDir })
     const start = Date.now()
     await mgr.ensureMaster(makeMachine())
     expect(Date.now() - start).toBeLessThan(1000)
@@ -1171,7 +1240,7 @@ describe('MachineTunnelManager', () => {
       return { stdout: '', stderr: '', exited: Promise.resolve(255), kill() {} }
     }) as unknown as typeof Bun.spawn
 
-    const mgr = new MachineTunnelManager({ spawn, controlDir, masterTimeoutMs: 50 })
+    const mgr = new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn, controlDir, masterTimeoutMs: 50 })
     await expect(mgr.ensureMaster(makeMachine())).rejects.toThrow(/timed out/)
     expect(killed).toBe(true)
   })
@@ -1321,7 +1390,7 @@ describe('MachineTunnelManager', () => {
     }) as unknown as typeof Bun.spawn
 
     // The first thing ensureMaster does is an `-O check`; make it hang.
-    const mgr = new MachineTunnelManager({ spawn, controlDir, controlTimeoutMs: 50 })
+    const mgr = new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn, controlDir, controlTimeoutMs: 50 })
     await expect(mgr.ensureMaster(makeMachine())).rejects.toThrow(/timed out/)
     expect(killed).toBe(true)
   })
@@ -1331,7 +1400,7 @@ describe('MachineTunnelManager', () => {
     // 90-byte guard — the manager must reject loudly, not silently truncate.
     const longDir = join(controlDir, 'x'.repeat(90))
     const fake = new FakeSsh()
-    const mgr = new MachineTunnelManager({ spawn: fake.spawn, controlDir: longDir })
+    const mgr = new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn: fake.spawn, controlDir: longDir })
     await expect(mgr.ensureMaster(makeMachine())).rejects.toThrow(/control socket path too long/)
   })
 
@@ -1350,7 +1419,7 @@ describe('MachineTunnelManager', () => {
       return { stdout: '', stderr: '', exited: Promise.resolve(255), kill() {} }
     }) as unknown as typeof Bun.spawn
 
-    const mgr = new MachineTunnelManager({ spawn, controlDir })
+    const mgr = new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn, controlDir })
     await expect(mgr.ensureMaster(makeMachine())).rejects.toThrow(/Permission denied \(publickey\)/)
     expect(logPath).toBeDefined()
     expect(existsSync(logPath!)).toBe(false)
@@ -1398,7 +1467,11 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('MachineTunnelManager (integra
       sshUser: process.env.FICUS_TEST_SSH_USER!,
       sshKeyId: REAL_SECRET_KEY,
     })
-    mgr = new MachineTunnelManager({ controlDir: join(process.env.HOME_DIR!, 'machines', 'ctl') })
+    const hostKeyPin = await keyscanPinForTest(realMachine.sshHost, realMachine.sshPort)
+    mgr = new MachineTunnelManager({
+      controlDir: join(process.env.HOME_DIR!, 'machines', 'ctl'),
+      resolveHostKeyPin: async () => hostKeyPin,
+    })
   })
 
   afterAll(async () => {

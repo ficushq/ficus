@@ -14,8 +14,9 @@ import { promisify } from 'util'
 import { existsSync, mkdirSync, readdirSync, rmSync, renameSync } from 'fs'
 import { join } from 'path'
 import { ensureSquadMemoryPath } from '../paths'
-import { getSquadSshPath } from '../../squad/ssh'
 import * as squadSsh from '../../squad/ssh'
+import { strictHostKeyArgs, type HostKeyPin } from '../../ssh-trust/args'
+import type { TrustTargetSpec } from '../../ssh-trust'
 import type { GitSyncConfig, SyncAdapter, SyncPullResult, SyncPushResult } from './types'
 
 const execAsync = promisify(exec)
@@ -29,15 +30,36 @@ interface GitStatus extends Record<string, unknown> {
   lastCommit: string | null
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+/**
+ * `GIT_SSH_COMMAND` for an SSH memory remote: the squad's key, and strict
+ * checking against the remote's pinned, person-confirmed host keys
+ * (`services/ssh-trust`). Command-line options beat every ssh_config, so no
+ * config can relax them. Every word is single-quoted (git runs it through sh).
+ */
+export function buildGitSshCommand(keyPath: string, pin: HostKeyPin): string {
+  return ['ssh', '-i', keyPath, ...strictHostKeyArgs(pin)].map(shellQuote).join(' ')
+}
+
+/** Resolves the pin for a memory remote; throws when no host key is trusted (never connect then). */
+export type MemoryGitPinResolver = (spec: TrustTargetSpec) => Promise<HostKeyPin>
+
+const defaultPinResolver: MemoryGitPinResolver = async (spec) => (await import('../../ssh-trust')).hostKeyPinFor(spec)
+
 export class GitAdapter implements SyncAdapter {
   private squadId: string
   private config: GitSyncConfig
   private memoryPath: string
+  private resolvePin: MemoryGitPinResolver
 
-  constructor(squadId: string, config: GitSyncConfig) {
+  constructor(squadId: string, config: GitSyncConfig, deps: { resolveHostKeyPin?: MemoryGitPinResolver } = {}) {
     this.squadId = squadId
     this.config = config
     this.memoryPath = ensureSquadMemoryPath(squadId)
+    this.resolvePin = deps.resolveHostKeyPin ?? defaultPinResolver
   }
 
   /**
@@ -68,28 +90,31 @@ export class GitAdapter implements SyncAdapter {
   }
 
   /**
-   * Build git command with SSH config.
+   * Git environment for this remote. An SSH remote gets {@link buildGitSshCommand}
+   * (refused before any connection when its host key is not trusted); any other
+   * remote gets an ssh command that always fails, so nothing can reach ssh unpinned.
    */
-  private buildGitEnv(): Record<string, string> {
-    const sshPath = getSquadSshPath(this.squadId)
-    const keyPath = squadSsh.ensurePrivateSshKeyPermissions(this.squadId, this.config.sshKeyName)
-    const knownHostsPath = join(sshPath, 'known_hosts')
-
-    // Build SSH command with our key and known hosts
-    const sshCommand = `ssh -i "${keyPath}" -o UserKnownHostsFile="${knownHostsPath}" -o StrictHostKeyChecking=accept-new`
-
+  private async buildGitEnv(): Promise<Record<string, string>> {
+    const { memoryGitTrustSpec } = await import('../../ssh-trust')
+    const spec = memoryGitTrustSpec(this.squadId, this.config.repoUrl)
+    let sshCommand = 'false'
+    if (spec) {
+      const pin = await this.resolvePin(spec)
+      const keyPath = squadSsh.ensurePrivateSshKeyPermissions(this.squadId, this.config.sshKeyName)
+      sshCommand = buildGitSshCommand(keyPath, pin)
+    }
     return {
       ...process.env,
       GIT_SSH_COMMAND: sshCommand,
       GIT_TERMINAL_PROMPT: '0', // Disable prompts
-    }
+    } as Record<string, string>
   }
 
   /**
    * Execute a git command in the memory directory.
    */
   private async git(command: string): Promise<{ stdout: string; stderr: string }> {
-    const env = this.buildGitEnv()
+    const env = await this.buildGitEnv()
     return execAsync(`git ${command}`, {
       cwd: this.memoryPath,
       env,
@@ -124,7 +149,7 @@ export class GitAdapter implements SyncAdapter {
       // into the memory path. This handles the case where the memory folder
       // already exists (created on boot) and may contain pre-existing files
       // (e.g. from switching sync providers or adding sync after use).
-      const env = this.buildGitEnv()
+      const env = await this.buildGitEnv()
       const tmpClonePath = `${this.memoryPath}.clone-tmp`
       try {
         // Clean up any leftover tmp dir from a previous failed attempt

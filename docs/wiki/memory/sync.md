@@ -27,6 +27,8 @@ Syncs the memory directory to a Git repository via SSH or HTTPS.
 
 **Webhooks**: Git providers can send push events to trigger immediate pulls instead of waiting for the poll interval.
 
+**Host key**: an SSH remote is used only after a person trusts its host key in Memory settings (existing remotes adopt the key already trusted). Git connects with strict checking against that key only; see [SSH host keys](../ssh-host-keys.md).
+
 ### S3
 
 Syncs to an S3 bucket (or S3-compatible storage like MinIO).
