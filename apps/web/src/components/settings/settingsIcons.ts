@@ -25,6 +25,7 @@ import {
   PaletteIcon,
   ParticipantsIcon,
   PuzzleIcon,
+  QuestionIcon,
   SettingsIcon,
   ShieldIcon,
   SquadIcon,
@@ -71,4 +72,5 @@ export const SETTINGS_SECTION_ICONS = {
   'system-logs': LogsIcon,
   'ops-insights': LightningIcon,
   updates: DownloadIcon,
+  help: QuestionIcon,
 } as const

@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import {
   farmHref,
   isNavItemAllowed,
+  moreMenuItems,
   navFooterHints,
   navItems,
   resolveNavShortcut,
@@ -462,6 +463,29 @@ describe('DesktopFooter key hints', () => {
     expect(html).toContain('Assistant')
     expect(html).not.toContain('>Chat<')
     expect(html).not.toContain('Schedules')
+  })
+})
+
+describe('Send feedback entry points', () => {
+  beforeEach(() => {
+    permissions = new Set<string>()
+    permissionsLoading = false
+    voiceStatus = { enabled: true }
+  })
+
+  test('the desktop footer has a Send feedback link beside the key hints', () => {
+    const html = renderToStaticMarkup(<DesktopFooter />)
+
+    expect(html).toMatch(/<button type="button"[^>]*>Send feedback<\/button><\/footer>/)
+  })
+
+  test('the header and the mobile nav have no feedback entry', () => {
+    const header = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)
+    const mobile = renderWithProviders(<MobileBottomNav usePendingActions={useFixturePendingActions} />)
+
+    expect(header).not.toMatch(/feedback/i)
+    expect(mobile).not.toMatch(/feedback/i)
+    expect(moreMenuItems.map((item) => item.label)).not.toContain('Send feedback')
   })
 })
 

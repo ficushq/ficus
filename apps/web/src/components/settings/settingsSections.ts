@@ -151,6 +151,10 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       { id: 'updates', label: 'Updates', description: 'Update source, schedule, and deployment progress.' },
     ],
   },
+  {
+    label: 'Help',
+    items: [{ id: 'help', label: 'Help & feedback', description: 'Send feedback to the Ficus team.' }],
+  },
 ] as const
 
 export const ALL_SECTIONS = SECTION_GROUPS.flatMap((g) => g.items)

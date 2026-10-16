@@ -1,4 +1,5 @@
 import { DesktopHistoryControls } from './DesktopHistoryControls'
+import { SendFeedbackButton } from './ProductFeedbackModal'
 import { SparklesIcon } from './icons'
 import { Menu, MenuItem, usePopover } from './popover'
 import clsx from 'clsx'
@@ -414,6 +415,7 @@ export function DesktopFooter() {
           {hint.label}
         </span>
       ))}
+      <SendFeedbackButton className="text-muted hover:text-primary hover:underline">Send feedback</SendFeedbackButton>
     </footer>
   )
 }
