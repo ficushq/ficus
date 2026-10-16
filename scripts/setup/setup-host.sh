@@ -750,7 +750,8 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   printf '\nPhase 1 — source (%s)\n' "${SRC_MODE}"
   case "${SRC_MODE}" in
     git-ssh)
-      plan "GIT_SSH_COMMAND='ssh -i ${SRC_DEPLOY_KEY:-<deploy key — would prompt>} -o IdentitiesOnly=yes -o IdentityAgent=none'"
+      plan "GIT_SSH_COMMAND='ssh -i ${SRC_DEPLOY_KEY:-<deploy key — would prompt>} -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<toolkit>/github_known_hosts'"
+      plan "host key: github.com checked strictly against GitHub's published keys (github_known_hosts); any other SSH host is refused"
       plan "clone ${SRC_REPO} @ ${SRC_REF} → ${SRC_DEST} (idempotent: fetch + checkout if it already exists)"
       ;;
     git-https)
@@ -1005,6 +1006,8 @@ phase_preflight() {
     SRC_DEPLOY_KEY=$(expand_tilde "${SRC_DEPLOY_KEY}")
     [[ -f ${SRC_DEPLOY_KEY} ]] || die "deploy key not found: ${SRC_DEPLOY_KEY}"
     chmod 600 "${SRC_DEPLOY_KEY}" 2>/dev/null || true
+    # Refuse an SSH host with no pinned key before anything is installed.
+    git_ssh_command "${SRC_REPO}" "${SRC_DEPLOY_KEY}" >/dev/null || exit 1
   fi
 
   if [[ ${RT_SANDBOX} == vm ]]; then

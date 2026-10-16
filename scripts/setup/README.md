@@ -19,6 +19,7 @@ scripts/setup/
                                  also usable standalone against a running instance)
   ficus-backup.sh.tmpl           rendered → the nightly backup script (optional, backup.enabled)
   lib.sh                         shared helpers (logging, retry, config, http, git source, caddy, wizard)
+  github_known_hosts             GitHub's published SSH host keys, pinned for the git-ssh clone
   systemd/ficus-api.service.tmpl    rendered → the api unit under /etc/systemd/system
   systemd/ficus-worker.service.tmpl
   systemd/ficus-backup.service.tmpl rendered → the backup .service and .timer
@@ -82,6 +83,44 @@ picks the VM provider:
   as hetzner. Needs `$DIGITALOCEAN_TOKEN` (and `$CLOUDFLARE_API_TOKEN` if
   DNS is on) on the control machine only — never forwarded to the target.
   See `ficus-setup.example.yaml` for the full contract.
+
+#### SSH host keys
+
+Every SSH connection the toolkit makes checks the host key strictly
+(`StrictHostKeyChecking=yes` against a pinned known_hosts file, global
+known_hosts ignored). Nothing is ever trusted on first use. Where each pin
+comes from:
+
+- **exe** — exe.dev's key must match the fingerprint exe.dev publishes at
+  <https://exe.dev/docs/faq/host-key> (`EXE_DEV_HOST_KEY_FINGERPRINT` in
+  `lib.sh`). That key is pinned for `exe.dev` and for `<name>.exe.xyz`, which
+  exe.dev's SSH proxy serves with the same key. If exe.dev publishes a new
+  fingerprint, pass it with `--host-key-fingerprint`.
+- **hetzner / digitalocean** — `provision.sh` generates an ed25519 host key on
+  the control machine and hands it to the new server in its cloud-init
+  `user_data`, so the key is known before the first connection. The private
+  key goes only into that API request (never a command line or a log) and is
+  deleted locally once the server exists; the public key is saved as
+  `${FICUS_SETUP_STATE_DIR:-~/.local/state/ficus-setup}/host-keys/<provider>-<server id>.pub`
+  (`$XDG_STATE_HOME` is honoured) so a re-run that reuses the server still
+  checks strictly. The image must run cloud-init (the default Ubuntu images
+  do); otherwise the server presents a different key and the run stops with
+  a host-key error.
+- **A reused hetzner/digitalocean server with no saved key** (created
+  elsewhere, or its pin file was lost) has no out-of-band source, so it fails
+  closed: `provision.sh` shows the scanned fingerprint and an interactive run
+  asks you to type `yes` after checking it in the provider's web console
+  (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server). A
+  non-interactive run refuses, printing the fingerprint to check; re-run with
+  `--host-key-fingerprint SHA256:…` (or
+  `FICUS_SETUP_HOST_KEY_FINGERPRINT=SHA256:…`) once verified. A confirmed key
+  is saved like a generated one. Unattended callers that may retry against an
+  existing server should keep `FICUS_SETUP_STATE_DIR` on persistent storage.
+- **git-ssh source clone** — `github.com` is checked against
+  `scripts/setup/github_known_hosts`, GitHub's published keys. Any other SSH
+  host is refused (use `source.mode: git-https`). If GitHub rotates a key,
+  refresh that file as its header describes; `lib.test.sh` checks its
+  fingerprints against the ones recorded in the header.
 
 ### Path B — any Ubuntu 24.04 host, on the host itself
 

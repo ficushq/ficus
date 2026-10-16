@@ -84,10 +84,14 @@ remote-host block is written first in that config, so a squad `Host *` stanza
 cannot relax checking for a managed host; see
 [Remote hosts § The Managed-Block Contract](remote-hosts.md#the-managed-block-contract).
 
-## Not covered
+## Installer (`scripts/setup/`)
 
-`scripts/setup/` (the operator-run installer) still uses `accept-new` when it
-connects to a VM it just created and when it clones the source repository over
-SSH. It runs on the operator's machine before Core exists and is outside these
-paths; the guard test (`services/ssh-trust/no-trust-on-first-use.test.ts`)
-allows exactly those occurrences and fails on any new one.
+The operator-run installer runs before Core exists, so it pins keys itself:
+exe.dev by its published fingerprint, a new Hetzner or DigitalOcean server by a
+host key the installer generates and installs through cloud-init, and the
+git-ssh clone by GitHub's published keys (`scripts/setup/github_known_hosts`).
+A server with no out-of-band key needs an operator to confirm its fingerprint
+(or `--host-key-fingerprint` for a non-interactive run). See
+[the setup README](../../scripts/setup/README.md#ssh-host-keys). The guard test
+(`services/ssh-trust/no-trust-on-first-use.test.ts`) scans `scripts/` too, with
+no exceptions.

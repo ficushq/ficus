@@ -200,6 +200,22 @@ jobs:
           }
           if (( status != 0 )); then exit $(( status )); fi
 
+      # The installer's SSH host-key pinning against a real sshd on 127.0.0.1
+      # (started by the suite as the runner user; never a remote host).
+      - name: Run setup SSH host-key suite
+        run: |
+          command -v sshd >/dev/null || [[ -x /usr/sbin/sshd ]] || sudo apt-get install -y openssh-server
+          sudo mkdir -p /run/sshd
+          set -o pipefail
+          status=0
+          out=$(bash scripts/setup/ssh-host-keys.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::ssh-host-keys.test.sh ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
       # The published CLI installer (scripts/install.sh), run for real against
       # a local ficus-* fixture release: what it installs, which inputs it
       # reads, and that it never touches a file under the pre-rename name.

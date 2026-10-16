@@ -3,21 +3,17 @@ import { readdirSync, readFileSync, statSync } from 'fs'
 import { join, relative, resolve } from 'path'
 
 /**
- * Guard: no SSH invocation Core makes, and no box/sandbox tooling it ships,
+ * Guard: no SSH invocation Core makes, no box/sandbox tooling it ships, and no
+ * repository script (including the operator-run installer, scripts/setup)
  * trusts a host key on first use or skips checking. Every Core SSH path pins
- * person-confirmed keys (services/ssh-trust, remote-hosts/host-keys.ts).
+ * person-confirmed keys (services/ssh-trust, remote-hosts/host-keys.ts); the
+ * installer pins published or out-of-band keys (scripts/setup/README.md).
  */
 
 const repoRoot = resolve(import.meta.dir, '../../../../..')
 
-/** Core and everything it ships onto machines and boxes. */
-const SCANNED_ROOTS = [
-  'apps/core/src',
-  'packages/sandbox-server',
-  'packages/shared/src',
-  'scripts/machine',
-  'apps/cli/src',
-]
+/** Core, everything it ships onto machines and boxes, and every repo script. */
+const SCANNED_ROOTS = ['apps/core/src', 'packages/sandbox-server', 'packages/shared/src', 'scripts', 'apps/cli/src']
 
 const WEAK_HOST_KEY_SETTINGS = [
   /accept-new/i,
@@ -25,15 +21,6 @@ const WEAK_HOST_KEY_SETTINGS = [
   /UserKnownHostsFile\s*[= ]\s*["']?\/dev\/null/i,
   /NoHostAuthenticationForLocalhost\s*[= ]\s*["']?yes/i,
 ]
-
-/**
- * Operator-run installer scripts outside Core (they run on the operator's
- * machine before Core exists, against a VM just created or GitHub). Listed so
- * a new occurrence anywhere else fails; tracked as a follow-up.
- */
-const KNOWN_OUT_OF_SCOPE: Record<string, number> = {
-  'scripts/setup/lib.sh': 2,
-}
 
 const SOURCE = /\.(ts|tsx|js|mjs|sh|bash|py|conf|service|tmpl|ya?ml)$|(^|\/)(Dockerfile[^/]*|entrypoint[^/]*)$/
 
@@ -74,17 +61,16 @@ function offenders(root: string): string[] {
 }
 
 describe('SSH host-key trust guard', () => {
-  it('no Core or shipped box tooling uses accept-new, StrictHostKeyChecking no, or an empty known_hosts', () => {
+  it('no Core, shipped box tooling or repo script uses accept-new, StrictHostKeyChecking no, or an empty known_hosts', () => {
     expect(SCANNED_ROOTS.flatMap(offenders)).toEqual([])
   })
 
-  it('the out-of-scope installer exceptions do not grow', () => {
-    for (const [file, max] of Object.entries(KNOWN_OUT_OF_SCOPE)) {
-      const count = readFileSync(join(repoRoot, file), 'utf8')
-        .split('\n')
-        .filter((line) => WEAK_HOST_KEY_SETTINGS.some((re) => re.test(line))).length
-      expect(count).toBeLessThanOrEqual(max)
-    }
+  it('scans the installer, with no exceptions', () => {
+    const files: string[] = []
+    walk(join(repoRoot, 'scripts'), files)
+    const scanned = files.map((f) => relative(repoRoot, f))
+    expect(scanned).toContain('scripts/setup/lib.sh')
+    expect(scanned).toContain('scripts/setup/provision.sh')
   })
 
   it('the patterns catch the forms ssh accepts', () => {
