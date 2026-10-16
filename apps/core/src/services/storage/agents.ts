@@ -1,6 +1,6 @@
-import { inArray, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import { formatAgentLabel, type StorageAgent, type StorageFolder, type StorageSnapshot } from '@ficus/shared'
-import { agents, db } from '../../db'
+import { agents } from '../../db'
 import {
   REMOVE_NOW_DORMANT_AT_KEY,
   REMOVE_NOW_FAILED_DORMANT_AT_KEY,
