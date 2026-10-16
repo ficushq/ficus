@@ -30,7 +30,14 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
 
   return (
     // Both inbox surfaces use the same card geometry, independent of preview density.
-    <div className={clsx('rounded-lg hover:bg-surface-hover/50 transition-colors', isUnread && 'bg-accent/5')}>
+    // While the pointer is on Mark read (only on unread rows), the row keeps its resting tint instead of
+    // its hover fill, so only the control that will receive the click is highlighted.
+    <div
+      className={clsx(
+        'rounded-lg hover:bg-surface-hover/50 transition-colors',
+        isUnread && 'bg-accent/5 has-[[data-mark-read]:hover]:bg-accent/5'
+      )}
+    >
       {/* Header row - always visible */}
       <div
         className="relative flex items-start gap-3 cursor-pointer min-w-0 py-3.5 pl-6 pr-3"
@@ -107,7 +114,8 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
                       e.stopPropagation()
                       onMarkAsRead()
                     }}
-                    className="ficus-button ficus-button-link -my-1 min-h-[32px] py-1"
+                    data-mark-read
+                    className="ficus-button ficus-button-ghost -mx-2 -my-1 min-h-[32px] rounded px-2 py-1"
                   >
                     Mark read
                   </button>
@@ -128,7 +136,8 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
                 e.stopPropagation()
                 onMarkAsRead()
               }}
-              className="ficus-button ficus-button-link text-xs shrink-0"
+              data-mark-read
+              className="ficus-button ficus-button-ghost -mx-2 -my-1 shrink-0 rounded px-2 py-1 text-xs"
             >
               {compact ? 'Read' : 'Mark read'}
             </button>

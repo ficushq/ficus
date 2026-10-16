@@ -128,11 +128,14 @@ export function InboxPopup() {
             {unread.totalCount > 0 && <span className="text-xs text-muted">{unread.totalCount} unread</span>}
           </div>
           <div className="flex items-center gap-2">
+            {/* A compact ghost control in the header, shaped like the close button beside it. The
+                negative end margin keeps the label within 4px of where the old link sat while leaving
+                a gap between its hover fill and the close button's. */}
             {unread.totalCount > 0 && (
               <button
                 onClick={() => markAllAsReadMutation.mutate()}
                 disabled={markAllAsReadMutation.isPending}
-                className="ficus-button ficus-button-link text-xs disabled:opacity-50"
+                className="ficus-button ficus-button-ghost -mr-1 rounded-lg px-2 py-1 text-xs text-muted disabled:opacity-50"
               >
                 Mark all read
               </button>

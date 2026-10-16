@@ -32,6 +32,31 @@ const WEBHOOK_TOKEN_LOCK_KEY = 'system-tokens:webhook-automation-replace'
 /** The system token the control plane (Platform) holds for resize and its maintenance lease. */
 export const PLATFORM_ORCHESTRATOR_TOKEN_NAME = 'platform-orchestrator'
 export const PLATFORM_ORCHESTRATOR_SCOPES = ['machines:write', 'machines:read', 'system:pause']
+/**
+ * Whether a request was authenticated by the Ficus platform's own credential for this instance:
+ * a live system token named `platform-orchestrator`. The platform mints it at provisioning (POST
+ * /api/system-tokens with the bootstrap bearer) and re-issues it through the root-only
+ * `system-token-control`. Agents and system tokens cannot mint a token with that name
+ * ({@link mayCreateSystemTokenNamed}), so the name identifies the platform. Used to gate actions
+ * only the platform may take, such as supplying a machine host's trusted host key.
+ */
+export function isPlatformOrchestratorIdentity(
+  identity: Identity | undefined
+): identity is Extract<Identity, { type: 'system' }> {
+  return identity?.type === 'system' && identity.name === PLATFORM_ORCHESTRATOR_TOKEN_NAME
+}
+
+/**
+ * Whether `identity` may create a system token called `name` over the API. The
+ * `platform-orchestrator` name is reserved: only the bootstrap bearer (how the platform mints it at
+ * provisioning) or a signed-in person may create it, never an agent or another system token, so
+ * holding `system-tokens:manage` cannot turn an agent into the platform.
+ */
+export function mayCreateSystemTokenNamed(identity: Identity | undefined, name: string): boolean {
+  if (name.trim().toLowerCase() !== PLATFORM_ORCHESTRATOR_TOKEN_NAME) return true
+  return identity?.type === 'legacy' || identity?.type === 'user'
+}
+
 // Serializes platform-orchestrator re-issues across processes, so concurrent runs cannot each
 // keep their own row alive (hashed with hashtextextended(key, 0), like the webhook lock).
 const PLATFORM_ORCHESTRATOR_REISSUE_LOCK_KEY = 'system-tokens:platform-orchestrator-reissue'

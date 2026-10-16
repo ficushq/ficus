@@ -33,7 +33,53 @@ Code: `apps/core/src/services/ssh-trust/` (tables `ssh_trust_targets`,
 - **exe.dev**: every exe.dev VM is reached through exe.dev's SSH proxy. A new
   VM whose fetched key is identical to a key already trusted for another exe.dev
   endpoint is trusted as that key (origin `provider-key`); any other key waits
-  for a person. BYO machines never get this shortcut.
+  for a person. BYO machines never get this shortcut, except the platform case
+  below.
+- **Ficus platform machine hosts**: the platform generates a machine host's
+  key before creating the server, so it can send it with the registration (see
+  below). It is trusted at once (origin `platform`, no deciding person).
+
+## Platform-supplied host keys
+
+`POST /api/machines` accepts an optional `hostKeys` field for a BYO-SSH
+machine:
+
+```json
+{
+  "name": "host-acme",
+  "sshHost": "203.0.113.10",
+  "sshUser": "root",
+  "hostKeys": [{ "keyType": "ssh-ed25519", "publicKey": "AAAAC3NzaC1lZDI1NTE5AAAA..." }]
+}
+```
+
+- `hostKeys`: 1 to 8 objects `{ keyType, publicKey }` (the type and base64
+  fields of a known_hosts line, no other fields), at most one per `keyType`.
+  The key blob must carry the declared type. Not accepted with
+  `provider: "exe"`. Invalid shape: `400`.
+- **Only the Ficus platform's credential** may send it: a live system token
+  named `platform-orchestrator` (the token the platform mints at provisioning
+  and re-issues through `system-token-control`). Anyone else, including a
+  signed-in person, an agent, another system token or the bootstrap bearer,
+  gets `403` with `code: "host_keys_platform_only"` and nothing is created;
+  they register without `hostKeys` and a person trusts the fetched key. The
+  `platform-orchestrator` name is reserved: `POST /api/system-tokens` refuses it
+  (`403`) for agents and system tokens, so `system-tokens:manage` cannot be used
+  to impersonate the platform.
+- A key that any endpoint has **rejected** is never trusted this way: `409`
+  with `code: "host_key_rejected"` and nothing is created.
+- **Only for a new machine.** The keys are recorded in the same request that
+  creates the machine row; if its endpoint already has any key on record the
+  request fails with `409`, `code: "host_keys_exist"`, and the row is removed.
+  There is no way for the platform to add, replace or re-trust a key of an
+  existing machine, including one it supplied itself. Re-posting an existing
+  name is the ordinary `409` and changes no key. A resize that recreates the
+  host registers a new machine (new name and id); an in-place resize keeps the
+  disk and so the key. Any later key change is refused at connect time and
+  waits for a person, like every other endpoint.
+- **Audit**: each key row has `origin = 'platform'`, `decidedAt`, no deciding
+  user and the note `supplied by the Ficus platform (system-token:<id>)`, shown
+  in Settings > Machines. Core also logs the fingerprints.
 
 ## Connecting
 

@@ -41,7 +41,7 @@ export interface PublicHostKey {
   keyType: string
   fingerprint: string
   status: 'pending' | 'trusted' | 'rejected' | 'replaced'
-  origin: 'scan' | 'adopted' | 'adoption-conflict' | 'provider-key'
+  origin: 'scan' | 'adopted' | 'adoption-conflict' | 'provider-key' | 'platform'
   decisionNote: string | null
   decidedByUserId: string | null
   decidedAt: string | null

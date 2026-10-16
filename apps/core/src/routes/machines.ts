@@ -40,7 +40,15 @@ import {
 } from '../services/machines/queries'
 import { machineTunnels, type MachineTunnelManager } from '../services/machines/tunnel-manager'
 import { getSecretStore } from '../services/secrets'
-import { hasPermission, type Identity } from '../services/rbac'
+import { auditActor, hasPermission, type Identity } from '../services/rbac'
+import { isPlatformOrchestratorIdentity } from '../services/auth/system-tokens'
+import { isWellFormedHostKey } from '../services/remote-hosts/host-keys'
+import {
+  machineTrustSpec,
+  PlatformHostKeyRefusedError,
+  rejectedSuppliedKeys,
+  trustPlatformSuppliedKeys,
+} from '../services/ssh-trust'
 import { FORCE_MIGRATION_REASON_MAX_LENGTH, type ForceMigrationActor } from '../services/machines/force-migration-audit'
 import {
   authorizeEvacuationSourceDeletion,
@@ -58,6 +66,17 @@ const log = createLogger('routes:machines')
  * BYO-SSH (and, in future slices, provider-provisioned) VM-based sandbox hosts.
  */
 
+// One SSH host public key: the type and base64 fields of a known_hosts line.
+const hostKeySchema = z
+  .object({
+    keyType: z.string().min(1).max(64),
+    publicKey: z.string().min(1).max(16384),
+  })
+  .strict()
+  .refine((k) => isWellFormedHostKey(k.keyType, k.publicKey), {
+    message: 'publicKey must be a base64 SSH public key whose blob carries keyType',
+  })
+
 const createMachineSchema = z
   .object({
     name: z.string().min(1).max(200),
@@ -71,10 +90,22 @@ const createMachineSchema = z
     // Opt into the machine-level egress lockdown (applied at bootstrap). Default
     // false; the column default backs it when omitted.
     egressPolicy: z.boolean().optional(),
+    // The machine host's own SSH host keys, trusted at once with no person's
+    // Trust step. ONLY the Ficus platform's credential may send this (checked
+    // in the handler, 403 otherwise), and only for a BYO-SSH machine.
+    hostKeys: z.array(hostKeySchema).min(1).max(8).optional(),
   })
   .refine((v) => v.provider === 'exe' || (v.sshHost !== undefined && v.sshUser !== undefined), {
     message: 'sshHost and sshUser are required for BYO-SSH machines',
     path: ['sshHost'],
+  })
+  .refine((v) => v.hostKeys === undefined || v.provider !== 'exe', {
+    message: 'hostKeys are only accepted for BYO-SSH machines',
+    path: ['hostKeys'],
+  })
+  .refine((v) => v.hostKeys === undefined || new Set(v.hostKeys.map((k) => k.keyType)).size === v.hostKeys.length, {
+    message: 'hostKeys must hold at most one key per keyType',
+    path: ['hostKeys'],
   })
 
 const migrateBoxSchema = z.object({
@@ -255,6 +286,35 @@ export function createMachinesRouter(
   app.post('/', requirePermission('machines:write'), zValidator('json', createMachineSchema), async (c) => {
     const body = c.req.valid('json')
     const provider = body.provider ?? 'ssh'
+    const identity = c.get('identity') as Identity | undefined
+
+    // Platform-supplied host keys skip a person's Trust step, so only the Ficus
+    // platform's own credential may send them. Everyone else (people, agents,
+    // other system tokens, the bootstrap bearer) is refused before anything is
+    // created; they register without hostKeys and a person trusts the fetched key.
+    if (body.hostKeys) {
+      if (!isPlatformOrchestratorIdentity(identity)) {
+        return c.json(
+          {
+            error:
+              'hostKeys may only be supplied by the Ficus platform. Register the machine without hostKeys and ' +
+              'have a signed-in person trust its host key in Settings > Machines.',
+            code: 'host_keys_platform_only',
+          },
+          403
+        )
+      }
+      const rejected = await rejectedSuppliedKeys(body.hostKeys)
+      if (rejected.length) {
+        return c.json(
+          {
+            error: `host key ${rejected.join(', ')} was rejected and cannot be trusted by the Ficus platform`,
+            code: 'host_key_rejected',
+          },
+          409
+        )
+      }
+    }
 
     // exe VMs are Ficus-provisioned, so the tenant's exe.dev account SSH key must be set.
     if (provider === 'exe' && !(await getSshKey())) {
@@ -277,6 +337,9 @@ export function createMachinesRouter(
     // path — exe machines share the account key (EXE_PROVIDER_SSH_KEY) and mint no
     // per-machine secret, so cleanup must never touch a secret for the exe path.
     let mintedSecretKeyId: string | undefined
+    // Set once the row exists, so a failure recording platform-supplied host keys
+    // removes the row instead of leaving a machine without its keys.
+    let insertedMachineId: string | undefined
     try {
       if (provider === 'exe') {
         // Re-run built-in registration on demand so an account key configured after
@@ -326,8 +389,17 @@ export function createMachinesRouter(
           ...(body.scope !== undefined ? { scope: body.scope } : {}),
           ...(body.egressPolicy !== undefined ? { egressPolicy: body.egressPolicy } : {}),
         })
+        insertedMachineId = machine.id
+        if (body.hostKeys && isPlatformOrchestratorIdentity(identity)) {
+          await trustPlatformSuppliedKeys(machineTrustSpec(machine), body.hostKeys, auditActor(identity))
+        }
       }
     } catch (err) {
+      if (insertedMachineId) {
+        await deleteMachine(insertedMachineId).catch((delErr) => {
+          log.warn(`failed to remove machine '${body.name}' after its host keys were refused: ${String(delErr)}`)
+        })
+      }
       // Best-effort rollback before rethrowing (mirrors placement.ts's failed-
       // provision cleanup). Order: terminate the billed VM first (the costliest
       // orphan), then drop any per-machine keypair secret.
@@ -350,6 +422,9 @@ export function createMachinesRouter(
         await getSecretStore()
           .delete(mintedSecretKeyId)
           .catch(() => {})
+      }
+      if (err instanceof PlatformHostKeyRefusedError) {
+        return c.json({ error: err.message, code: err.code }, 409)
       }
       throw err
     }

@@ -112,6 +112,10 @@ test('shows the server totals and pages the read archive past 100 messages', asy
   const { container, settle, subjects, button } = await renderPopup()
 
   expect(container.textContent).toContain('2 unread')
+  // A compact ghost header control, like the close button beside it, not a link.
+  const markAll = button('Mark all read')!
+  expect(markAll.classList.contains('ficus-button-ghost')).toBe(true)
+  expect(markAll.classList.contains('ficus-button-link')).toBe(false)
   expect(subjects()).toEqual(['personal-unread', 'system-unread'])
   // The real total across both inboxes, not the size of the loaded page.
   expect(button('Read messages')!.textContent).toBe('Read messages (131)')
