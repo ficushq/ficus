@@ -21,6 +21,7 @@ let permissionsLoading = false
 let voiceStatus: { enabled: boolean } | undefined
 
 import { AppHeader, DesktopFooter, MobileBottomNav } from './AppNav'
+import { InboxPopupProvider } from './InboxPopupProvider'
 
 const useFixturePendingActions = () => ({ data: [] })
 const FixtureVoiceButton = () => <button>Fixture voice trigger</button>
@@ -60,7 +61,9 @@ function renderWithProviders(children: ReactNode, path = '/squads') {
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
+        <MemoryRouter initialEntries={[path]}>
+          <InboxPopupProvider>{children}</InboxPopupProvider>
+        </MemoryRouter>
       </ThemeProvider>
     </QueryClientProvider>
   )

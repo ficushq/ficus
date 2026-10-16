@@ -6,6 +6,7 @@ import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
 import { InboxPage } from './InboxPage'
 import { InboxPopup } from './InboxPopup'
+import { InboxPopupProvider } from './InboxPopupProvider'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 let client: QueryClient | undefined
@@ -62,7 +63,9 @@ test('page and popup share rounded, spaced cards for personal/system and unread/
             <InboxPage />
           </div>
           <div data-surface="popup">
-            <InboxPopup />
+            <InboxPopupProvider>
+              <InboxPopup />
+            </InboxPopupProvider>
           </div>
         </MemoryRouter>
       </QueryClientProvider>

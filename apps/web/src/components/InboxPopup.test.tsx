@@ -7,6 +7,7 @@ import { INBOX_SEARCH_DEBOUNCE_MS } from '../hooks/useInboxFeed'
 import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
 import { InboxPopup } from './InboxPopup'
+import { InboxPopupProvider } from './InboxPopupProvider'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 let client: QueryClient | undefined
@@ -88,7 +89,9 @@ async function renderPopup() {
     root.render(
       <QueryClientProvider client={client!}>
         <MemoryRouter>
-          <InboxPopup />
+          <InboxPopupProvider>
+            <InboxPopup />
+          </InboxPopupProvider>
         </MemoryRouter>
       </QueryClientProvider>
     )
@@ -200,7 +203,9 @@ test('does not mount a popup or skeleton until requested, and hides it immediate
     root.render(
       <MemoryRouter>
         <QueryClientProvider client={client!}>
-          <InboxPopup />
+          <InboxPopupProvider>
+            <InboxPopup />
+          </InboxPopupProvider>
         </QueryClientProvider>
       </MemoryRouter>
     )

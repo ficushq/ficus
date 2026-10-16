@@ -10,6 +10,7 @@ import { acquireDomHarness } from '../test/domHarness'
 import { integrationQueries, queries } from '../queryOptions'
 import { UnifiedAssistant } from './UnifiedAssistant'
 import { AppHeader } from './AppNav'
+import { InboxPopupProvider } from './InboxPopupProvider'
 import { assistantQueries } from '../queryOptions'
 import { assistantQueryKeys } from '../queryKeys'
 
@@ -41,7 +42,9 @@ test('the assistant nav button toggles the panel like its keyboard shortcut whil
               <PermissionsProvider
                 usePermissions={() => ({ can: () => false, permissions: [], isLoading: false, isError: false })}
               >
-                <AppHeader usePendingActions={() => ({ data: [] })} />
+                <InboxPopupProvider>
+                  <AppHeader usePendingActions={() => ({ data: [] })} />
+                </InboxPopupProvider>
                 <UnifiedAssistant dependencies={{ ConversationComponent: () => <div data-conversation /> }} />
                 <Probe />
               </PermissionsProvider>

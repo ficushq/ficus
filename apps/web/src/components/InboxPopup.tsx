@@ -12,9 +12,11 @@ import { InboxSearchInput } from './InboxSearchInput'
 import { Presence } from './Presence'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
+import { INBOX_POPUP_ID, useInboxPopup } from './InboxPopupProvider'
 
+/** The inbox sheet under the top nav's Inbox button; its open state lives in `InboxPopupProvider`. */
 export function InboxPopup() {
-  const [isOpen, setIsOpen] = useState(false)
+  const { open: isOpen, setOpen: setIsOpen, hover } = useInboxPopup()
   const [showRead, setShowRead] = useState(false)
   const queryClient = useQueryClient()
   const { can } = usePermissions()
@@ -45,17 +47,12 @@ export function InboxPopup() {
     onSuccess: invalidateInboxes,
   })
 
-  // Broadcast open state changes so the icon can react
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('inbox-popup-state', { detail: { isOpen } }))
-  }, [isOpen])
-
   // Listen for external open trigger
   useEffect(() => {
     const handler = () => setIsOpen(true)
     window.addEventListener('open-inbox-popup', handler)
     return () => window.removeEventListener('open-inbox-popup', handler)
-  }, [])
+  }, [setIsOpen])
 
   // Keyboard shortcut: 'I' to toggle, Escape to close
   useEffect(() => {
@@ -80,7 +77,7 @@ export function InboxPopup() {
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen])
+  }, [isOpen, setIsOpen])
 
   const unreadMessages = unread.messages
   const loadingRowCount = useLoadingShapeCount(
@@ -109,12 +106,20 @@ export function InboxPopup() {
 
   return (
     <>
-      {/* Backdrop */}
-      {isOpen && <div className="fixed inset-0 bg-chrome-scrim/20 z-40" onClick={() => setIsOpen(false)} />}
+      {/* Backdrop. None while hover-opened: it would cover the nav trigger, which must keep receiving the
+          pointer (leaving it closes the popup, a click pins it). Once pinned it returns. */}
+      {isOpen && !hover.hoverOpened && (
+        <div className="fixed inset-0 bg-chrome-scrim/20 z-40" onClick={() => setIsOpen(false)} />
+      )}
 
       {/* Popover dropdown */}
       <Presence
+        id={INBOX_POPUP_ID}
         open={isOpen}
+        onPointerEnter={hover.popoverProps.onPointerEnter}
+        onPointerLeave={hover.popoverProps.onPointerLeave}
+        // Working in a hover-opened inbox (the search field, a row) keeps it open when the pointer leaves.
+        onPointerDown={hover.pin}
         className="ficus-overlay fixed top-14 right-3 w-96 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-5rem)] z-50 flex flex-col origin-top-right"
       >
         <div className="flex items-center justify-between px-4 py-3 ">

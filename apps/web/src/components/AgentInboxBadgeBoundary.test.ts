@@ -47,8 +47,10 @@ describe('agent inbox badge boundary', () => {
     expect(appNavSource).toContain('queries.inbox.mineCount()')
     expect(appNavSource).toContain('queries.inbox.systemCount()')
     expect(appNavSource).toContain('showInboxBadge')
-    expect(appNavSource).toContain("window.dispatchEvent(new Event('open-inbox-popup'))")
+    // The nav's Inbox button drives the popup through the shared provider (hover opens, a click toggles or pins).
+    expect(appNavSource).toContain('{...inboxPopup.hover.triggerProps}')
     expect(appSource).toContain("import { InboxPopup } from './components/InboxPopup'")
+    expect(appSource).toContain('<InboxPopupProvider>')
     expect(appSource).toContain('<InboxPopup />')
   })
 })

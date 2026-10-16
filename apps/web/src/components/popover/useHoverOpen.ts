@@ -9,13 +9,30 @@ export interface HoverOpenOptions {
   enabled: boolean
   /** Leaving the trigger and the popover waits this long before closing, so the pointer can cross the gap. Default 150ms. */
   closeDelay?: number
-  /** What gets focus when the popover opens by click/keyboard, or a hover-opened one is pinned. Default `first`. */
-  initialFocus?: 'first' | 'selected'
+  /**
+   * What gets focus when the popover opens by click/keyboard, or a hover-opened one is pinned. Default `first`;
+   * `none` leaves focus alone (a surface that never moves focus on open, like the inbox popup).
+   */
+  initialFocus?: 'first' | 'selected' | 'none'
 }
+
+/**
+ * The open state the hook drives: a `usePopover` result, or any surface with the same shape (the inbox
+ * popup keeps its own). `id` is the popover element's id, `triggerRef` its trigger.
+ */
+export type HoverOpenTarget<T extends HTMLElement> = Pick<
+  PopoverState<T>,
+  'open' | 'setOpen' | 'toggle' | 'triggerRef' | 'id'
+>
 
 export interface HoverOpenState {
   /** Whether it is open because of the mouse, so leaving closes it. A click pins it (false again). */
   hoverOpened: boolean
+  /**
+   * Pins a hover-opened popover open without moving focus, as a click on the trigger does: for a press
+   * inside a surface the user then works in (a search field, say). Does nothing otherwise.
+   */
+  pin: () => void
   /** Spread on the trigger. `onClick` toggles, or pins a hover-opened popover instead of closing it. */
   triggerProps: {
     onClick: () => void
@@ -40,7 +57,7 @@ export interface HoverOpenState {
  * `initialFocus` item, as a click-open would) rather than closing it.
  */
 export function useHoverOpen<T extends HTMLElement>(
-  popover: PopoverState<T>,
+  popover: HoverOpenTarget<T>,
   { enabled, closeDelay = 150, initialFocus = 'first' }: HoverOpenOptions
 ): HoverOpenState {
   const [byHover, setByHover] = useState(false)
@@ -50,6 +67,10 @@ export function useHoverOpen<T extends HTMLElement>(
   const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const focusBefore = useRef<Element | null>(null)
   const cancelClose = () => clearTimeout(closeTimer.current)
+  const pin = () => {
+    cancelClose()
+    setByHover(false)
+  }
   useEffect(() => () => clearTimeout(closeTimer.current), [])
 
   const isMouse = (event: ReactPointerEvent) => enabled && event.pointerType === 'mouse'
@@ -76,11 +97,13 @@ export function useHoverOpen<T extends HTMLElement>(
 
   return {
     hoverOpened,
+    pin,
     triggerProps: {
       onClick: () => {
         cancelClose()
         if (!hoverOpened) return popover.toggle()
-        setByHover(false)
+        pin()
+        if (initialFocus === 'none') return
         const surface = popover.triggerRef.current?.ownerDocument.getElementById(popover.id)
         // Menu items are out of the Tab order, so the first one is not a tabbable: fall back to it explicitly.
         if (surface) focusInPopover(initialTarget(surface, initialFocus) ?? listItems(surface, MENU_ITEM_SELECTOR)[0])
