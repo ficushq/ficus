@@ -38,11 +38,13 @@ function key(seed: string, keyType = 'ssh-ed25519'): ScannedHostKey {
 }
 
 function scannerReturning(keys: ScannedHostKey[]): HostKeyScanner & { calls: number } {
-  const scanner = (async () => {
-    scanner.calls++
-    return keys
-  }) as HostKeyScanner & { calls: number }
-  scanner.calls = 0
+  const scanner: HostKeyScanner & { calls: number } = Object.assign(
+    async () => {
+      scanner.calls++
+      return keys
+    },
+    { calls: 0 }
+  )
   return scanner
 }
 

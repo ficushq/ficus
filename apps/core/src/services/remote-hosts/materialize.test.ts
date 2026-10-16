@@ -207,7 +207,7 @@ describe('renderManagedBlock', () => {
     const block = renderManagedBlock(pinned(hosts))
     expect(block).toContain('  GlobalKnownHostsFile /dev/null')
     expect(block).toContain('  VerifyHostKeyDNS no')
-    expect(block).toContain('  IgnoreUnknown KnownHostsCommand\n  KnownHostsCommand none')
+    expect(block).toContain('  IgnoreUnknown *\n  KnownHostsCommand none')
     // The trailing Host * returns the squad's own content (which follows) to every host.
     expect(block.endsWith(`Host *\n${MANAGED_BLOCK_END}`)).toBe(true)
   })

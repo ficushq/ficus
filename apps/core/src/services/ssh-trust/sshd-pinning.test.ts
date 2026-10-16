@@ -181,16 +181,17 @@ describe.skipIf(!available)('host-key pinning against a local sshd', () => {
     const remote = () =>
       ({ id: 'r1', name: 'prod', sshHost: '127.0.0.1', sshPort: port, sshUser: user }) as unknown as RemoteHost
 
-    function writeSquadSsh(pinnedKey: { keyType: string; publicKey: string }, order: 'managed-first' | 'user-first') {
-      sshDir = join(dir, `squad-${order}-${pinnedKey === served ? 'right' : 'wrong'}`)
+    function writeSquadSsh(
+      pinnedKey: { keyType: string; publicKey: string },
+      order: 'managed-first' | 'user-first',
+      userConfig = HOSTILE_USER_CONFIG
+    ) {
+      sshDir = join(dir, `squad-${order}-${pinnedKey === served ? 'right' : 'wrong'}-${userConfig.length}`)
       mkdirSync(sshDir, { recursive: true })
       writeFileSync(join(sshDir, 'ficus_remote_prod'), readFileSync(join(dir, 'client')), { mode: 0o600 })
       writeFileSync(join(sshDir, 'known_hosts'), `ficus-remote.prod ${pinnedKey.keyType} ${pinnedKey.publicKey}\n`)
       const block = renderManagedBlock([{ host: remote(), mode: 'pinned' }], { absoluteSshDir: sshDir })
-      const config =
-        order === 'managed-first'
-          ? composeManagedConfig(HOSTILE_USER_CONFIG, block)
-          : `${HOSTILE_USER_CONFIG}${block}\n` // the layout before managed settings moved first
+      const config = order === 'managed-first' ? composeManagedConfig(userConfig, block) : `${userConfig}${block}\n` // the layout before managed settings moved first
       writeFileSync(join(sshDir, 'config'), config)
       return join(sshDir, 'config')
     }
@@ -220,6 +221,16 @@ describe.skipIf(!available)('host-key pinning against a local sshd', () => {
       expect(wrong.code).not.toBe(0)
       expect(wrong.err).toContain('Host key verification failed')
       expect(gitProd(writeSquadSsh(served, 'managed-first')).code).toBe(0)
+    }, 60_000)
+
+    it("a squad's own IgnoreUnknown (macOS UseKeychain snippet) keeps working for managed hosts", () => {
+      const keychain = `IgnoreUnknown UseKeychain\nUseKeychain yes\n${HOSTILE_USER_CONFIG}`
+      expect(sshProd(writeSquadSsh(served, 'managed-first', keychain))).toMatchObject({ code: 0, out: 'ok\n' })
+      const wrong = sshProd(writeSquadSsh(impostor, 'managed-first', keychain))
+      expect(wrong.code).toBe(255)
+      expect(wrong.err).toContain('Host key verification failed')
+      // Hosts Ficus does not manage still parse with the squad's own IgnoreUnknown.
+      expect(sh(['ssh', '-G', '-F', join(sshDir, 'config'), 'unmanaged.example']).code).toBe(0)
     }, 60_000)
 
     it('the hostile settings still apply to hosts Ficus does not manage', () => {

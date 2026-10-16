@@ -12,7 +12,11 @@ export interface HostKeyPin {
 /**
  * The ssh options that check the host key strictly against `pin` and nothing
  * else. Command-line options beat every ssh_config, so no user or system
- * config can relax them.
+ * config can relax them. `KnownHostsCommand` is not overridden here: the option
+ * needs OpenSSH 8.5+, and the only configs these Core-run connections read are
+ * the operator's own (the Core user's `~/.ssh/config` and the system config),
+ * trusted like the rest of the Core host. Squad configs, which squads write,
+ * set `KnownHostsCommand none` for managed hosts (`remote-hosts/materialize.ts`).
  */
 export function strictHostKeyArgs(pin: HostKeyPin): string[] {
   return [

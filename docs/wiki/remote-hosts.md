@@ -306,7 +306,7 @@ Materialization writes into each granted squad's SSH directory
     UserKnownHostsFile ~/.ssh/known_hosts
     GlobalKnownHostsFile /dev/null
     VerifyHostKeyDNS no
-    IgnoreUnknown KnownHostsCommand
+    IgnoreUnknown *
     KnownHostsCommand none
     StrictHostKeyChecking yes
     UpdateHostKeys no

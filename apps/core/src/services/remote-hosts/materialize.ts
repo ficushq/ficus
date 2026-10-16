@@ -189,8 +189,13 @@ export function renderManagedBlock(hosts: RenderableHost[], opts: { absoluteSshD
         ? [
             `  GlobalKnownHostsFile /dev/null`,
             `  VerifyHostKeyDNS no`,
-            // Older clients without KnownHostsCommand skip it instead of rejecting the config.
-            `  IgnoreUnknown KnownHostsCommand`,
+            // IgnoreUnknown keeps its first value and this block comes first, so
+            // a narrower list here would replace the squad's own (for example
+            // `IgnoreUnknown UseKeychain`) for managed hosts and break them.
+            // `*` keeps those working and lets clients older than
+            // KnownHostsCommand skip it. An option ssh does not know does
+            // nothing, so ignoring unknown ones cannot relax checking.
+            `  IgnoreUnknown *`,
             `  KnownHostsCommand none`,
           ]
         : []),

@@ -174,11 +174,6 @@ export async function getTrustTarget(id: string): Promise<TrustTarget | null> {
   return row ?? null
 }
 
-export async function deleteTrustTarget(scope: string): Promise<void> {
-  await db.delete(sshTrustTargets).where(eq(sshTrustTargets.scope, scope))
-  fs.rmSync(pinFilePath(scope), { force: true })
-}
-
 export async function listTrustKeys(targetId: string): Promise<TrustKey[]> {
   return db
     .select()
