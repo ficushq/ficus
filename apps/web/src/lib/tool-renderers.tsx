@@ -1155,9 +1155,27 @@ export function ToolResultView({
   return <renderer.ResultView result={result} isError={isError ?? false} autoScroll={autoScroll} />
 }
 
+/**
+ * What a delegated task is called: its label, else the request's first non-blank line (the rule Core
+ * uses to label the task row), else '' while neither has streamed in.
+ */
+function delegateTaskName(args: Record<string, any>): string {
+  const label = str(args.label).trim()
+  if (label) return label
+  return (
+    str(args.request)
+      .split('\n')
+      .find((line) => line.trim())
+      ?.trim() ?? ''
+  )
+}
+
 const delegateTaskRenderer: ToolRenderer = {
   streamingArgs: true,
-  summary: (args) => `Background task: ${truncate(str(args.label) || 'background task', 60)}`,
+  summary: (args) => {
+    const name = delegateTaskName(args)
+    return name ? truncate(name, 60) : 'Background task'
+  },
   ArgsView: ({ args }) => <div className="whitespace-pre-wrap text-[12px]">{str(args.request)}</div>,
   ResultView: ({ result, isError }) => {
     const parsed = parseObject(extractResultText(result))

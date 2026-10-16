@@ -264,8 +264,14 @@ describe('other opted-in renderers', () => {
   it('delegate_task shows the request as it streams', () => {
     const args = '{"label":"Check schedules","request":"Which schedules\\nare ena'
     expect(argsHtml('delegate_task', args, true, siteAssistantToolRenderers)).toContain('Which schedules\nare ena')
-    expect(summaryHtml('delegate_task', args, true, siteAssistantToolRenderers)).toContain(
-      'Background task: Check schedules'
+    expect(summaryHtml('delegate_task', args, true, siteAssistantToolRenderers)).toContain('Check schedules')
+  })
+
+  it('delegate_task without a label names the task by its request while it streams', () => {
+    const args = '{"request":"Which schedules\\nare ena'
+    expect(summaryHtml('delegate_task', args, true, siteAssistantToolRenderers)).toContain('Which schedules')
+    expect(summaryHtml('delegate_task', '{"request":"Which sch', true, siteAssistantToolRenderers)).toContain(
+      'Which sch'
     )
   })
 })
