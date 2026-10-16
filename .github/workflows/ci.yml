@@ -59,7 +59,7 @@ jobs:
     name: macOS portability suite
     needs: macos-paths
     if: ${{ needs.macos-paths.result == 'success' && needs.macos-paths.outputs.run_macos == 'true' }}
-    runs-on: macos-14
+    runs-on: macos-15
     # Native lifecycle, attachment and terminal prompt checks run on a real Darwin host.
     timeout-minutes: 25
     steps:

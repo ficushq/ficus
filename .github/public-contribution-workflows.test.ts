@@ -39,7 +39,7 @@ describe('external contribution boundaries', () => {
     }
     test(`${file}: public repositories use GitHub-hosted runners`, () => {
       for (const job of Object.values(workflow.jobs)) {
-        expect([linuxRunner, 'ubuntu-24.04', 'ubuntu-latest', 'macos-14']).toContain(job['runs-on'])
+        expect([linuxRunner, 'ubuntu-24.04', 'ubuntu-latest', 'macos-15']).toContain(job['runs-on'])
       }
     })
   }
