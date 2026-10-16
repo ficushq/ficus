@@ -49,7 +49,8 @@ function decisionText(key: PublicHostKey): string | null {
 }
 
 interface Props {
-  host: RemoteHost
+  /** A remote host, or any SSH endpoint Ficus pins host keys for (machines, memory git). */
+  host: Pick<RemoteHost, 'hostKeyState' | 'hostKeys' | 'hostKeyCheckError'>
   /** Whether the viewer may fetch keys and decide on them (the server still requires a signed-in person). */
   canAct: boolean
   scan: () => Promise<unknown>
@@ -71,7 +72,7 @@ export function HostKeysPanel({ host, canAct, scan, decide, onChanged }: Props) 
     onSuccess: onChanged,
   })
   const error = scanMutation.error ?? decideMutation.error
-  const fetchError = (scanMutation.data as RemoteHost | undefined)?.fetchError ?? host.hostKeyCheckError
+  const fetchError = (scanMutation.data as { fetchError?: string } | undefined)?.fetchError ?? host.hostKeyCheckError
   const busy = scanMutation.isPending || decideMutation.isPending
   const visible = keys.filter((k) => k.status !== 'replaced' || state === 'changed')
 

@@ -9,7 +9,7 @@ import { getHomeDir } from '../../lib/utils/home'
 import { MACHINE_CALLBACK_PORT } from './box-ports'
 import { materializePrivateKey } from './keys'
 import type { Machine } from './queries'
-import { sshConnectionArgs, sshTarget } from './ssh'
+import { defaultHostKeyPinResolver, sshConnectionArgs, sshTarget, type HostKeyPinResolver } from './ssh'
 
 /**
  * ControlMaster tunnel manager for machines.
@@ -156,6 +156,7 @@ export interface ForwardRefreshResult {
 
 export class MachineTunnelManager {
   private readonly spawn: typeof Bun.spawn
+  private readonly resolveHostKeyPin: HostKeyPinResolver
   private readonly controlDir: string
   private readonly masterTimeoutMs: number
   private readonly controlTimeoutMs: number
@@ -194,8 +195,11 @@ export class MachineTunnelManager {
     isOwnerAlive?: (ownerId: string, ownerPid: number) => Promise<boolean>
     isLocalPortFree?: (port: number) => Promise<boolean>
     allocateLocalPort?: () => Promise<number>
+    /** Strict host-key pin per machine (default: its person-confirmed keys, `services/ssh-trust`). */
+    resolveHostKeyPin?: HostKeyPinResolver
   }) {
     this.spawn = deps?.spawn ?? Bun.spawn
+    this.resolveHostKeyPin = deps?.resolveHostKeyPin ?? defaultHostKeyPinResolver
     this.controlDir = deps?.controlDir ?? machineControlDirectory()
     this.masterTimeoutMs = deps?.masterTimeoutMs ?? DEFAULT_MASTER_TIMEOUT_MS
     this.controlTimeoutMs = deps?.controlTimeoutMs ?? DEFAULT_CONTROL_TIMEOUT_MS
@@ -622,6 +626,8 @@ export class MachineTunnelManager {
     // proven dead and safe to unlink here.
     await this.safeUnlink(record.socketPath)
 
+    // Refuses (throws) before any connection when the machine has no trusted host key.
+    const hostKeyPin = await this.resolveHostKeyPin(machine)
     const identity = await materializePrivateKey(machine)
     const logPath = this.masterLogPathFor(machine.id)
     try {
@@ -643,7 +649,7 @@ export class MachineTunnelManager {
         'ControlMaster=yes',
         '-o',
         'ControlPersist=no',
-        ...sshConnectionArgs(machine, identity.path),
+        ...sshConnectionArgs(machine, identity.path, hostKeyPin),
         sshTarget(machine),
       ]
       // The `-f` foreground exits after auth, but the backgrounded master

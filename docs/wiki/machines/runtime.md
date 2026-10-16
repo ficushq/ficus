@@ -145,6 +145,11 @@ A machine must be:
   per-box provisioning install system packages, write `/opt/ficus`, and manage
   other users' systemd `--user` managers via
   `systemctl --machine=<user>@.host --user`, all of which need root.
+- **A host key a person has trusted.** Core checks every machine connection
+  strictly against person-confirmed keys. A new machine's key is fetched on the
+  first connection (bootstrap) and that connection is refused until someone
+  trusts the fingerprint in Settings > Machines > SSH host keys. See
+  [SSH host keys](../ssh-host-keys.md).
 - **sshd with `AllowTcpForwarding yes`** (or `all`/`local`/`remote`). Forwarding
   is the entire transport: a machine with `AllowTcpForwarding no` **cannot** host
   a tunnel-reached box and is rejected loudly at ensure (see Troubleshooting).

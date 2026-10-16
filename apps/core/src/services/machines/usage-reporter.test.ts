@@ -394,6 +394,9 @@ describe('reportUsageSampleOnce', () => {
       countUsers: async () => 7,
       now: () => new Date('2026-03-01T12:00:00.000Z'),
       getToken: () => 'test-usage-token',
+      // The seeded machine is synthetic: never ssh to it (the default disk
+      // sampler would resolve its host key with a real ssh-keyscan).
+      sampleDisk: async () => null,
     })
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)

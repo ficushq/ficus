@@ -182,7 +182,12 @@ describe('production VM recovery wiring', () => {
         kill: () => {},
       }
     }) as unknown as typeof Bun.spawn
-    const tunnels = new MachineTunnelManager({ spawn, controlDir, controlTimeoutMs: 50 })
+    const tunnels = new MachineTunnelManager({
+      spawn,
+      controlDir,
+      controlTimeoutMs: 50,
+      resolveHostKeyPin: async () => ({ knownHostsPath: '/pins/machine.known_hosts', alias: 'ficus-trust.machine' }),
+    })
     const machine = {
       id: machineId,
       name: `integration-${machineId}`,

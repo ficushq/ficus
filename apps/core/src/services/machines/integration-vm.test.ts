@@ -23,6 +23,10 @@ import {
 import { ensureServerBundle, SERVER_LIB_REMOTE_PATH } from './server-bundle'
 import { createSshRunner, type SshRunner } from './ssh'
 import { MachineTunnelManager } from './tunnel-manager'
+import { keyscanPinResolverForTest } from './test-host-key-pin'
+
+/** The disposable test host's current keys, pinned for these gated tests. */
+const testHostKeyPin = keyscanPinResolverForTest()
 
 /**
  * ============================================================================
@@ -196,10 +200,13 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real
     } as Machine
 
     // A long default timeout: bootstrap's apt + bun install run for many minutes.
-    runner = createSshRunner({ defaultTimeoutMs: SLOW_MS })
+    runner = createSshRunner({ defaultTimeoutMs: SLOW_MS, resolveHostKeyPin: testHostKeyPin })
     // Keep the control-socket path well under the 90-byte guard regardless of the
     // (long, /var/folders-style) HOME_DIR.
-    mgr = new MachineTunnelManager({ controlDir: mkdtempSync(join('/tmp', 'ficus-vmint-ctl-')) })
+    mgr = new MachineTunnelManager({
+      controlDir: mkdtempSync(join('/tmp', 'ficus-vmint-ctl-')),
+      resolveHostKeyPin: testHostKeyPin,
+    })
 
     coreListener = Bun.serve({
       port: 0,
@@ -627,7 +634,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_EGRE
         createdAt: new Date(),
       } as Machine
 
-      runner = createSshRunner({ defaultTimeoutMs: 5 * 60 * 1000 })
+      runner = createSshRunner({ defaultTimeoutMs: 5 * 60 * 1000, resolveHostKeyPin: testHostKeyPin })
     })
 
     afterAll(async () => {
@@ -776,7 +783,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_SYST
       await getSecretStore().set(REAL_SECRET_KEY, await Bun.file(keyPath).text(), 'system')
 
       machine = buildIntegrationMachine('vm-docker', false)
-      runner = createSshRunner({ defaultTimeoutMs: 5 * 60 * 1000 })
+      runner = createSshRunner({ defaultTimeoutMs: 5 * 60 * 1000, resolveHostKeyPin: testHostKeyPin })
     })
 
     afterAll(async () => {
@@ -890,7 +897,7 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST || !process.env.FICUS_TEST_EGRE
       await getSecretStore().set(REAL_SECRET_KEY, await Bun.file(keyPath).text(), 'system')
 
       machine = buildIntegrationMachine('vm-egress-docker', true)
-      runner = createSshRunner({ defaultTimeoutMs: 5 * 60 * 1000 })
+      runner = createSshRunner({ defaultTimeoutMs: 5 * 60 * 1000, resolveHostKeyPin: testHostKeyPin })
     })
 
     afterAll(async () => {

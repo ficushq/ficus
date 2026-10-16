@@ -12,6 +12,8 @@ import {
 } from './exe-api'
 
 const TEST_BUDGET_MS = 30_000
+/** A synthetic pin: these fake ssh binaries never check it. */
+const testPin = async () => ({ knownHostsPath: '/nonexistent/known_hosts', alias: 'ficus-trust.test' })
 const cleanupDirs: string[] = []
 
 async function writeFakeSsh(body: string | ((dir: string) => string)) {
@@ -54,9 +56,46 @@ describe('defaultExeExec subprocess lifecycle', () => {
     async () => {
       const { scriptPath } = await writeFakeSsh("printf 'result-json'; printf 'warning' >&2; exit 7")
 
-      const result = await defaultExeExec('private-key', { sshBin: scriptPath })(['ls', '--json'])
+      const result = await defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: testPin })([
+        'ls',
+        '--json',
+      ])
 
       expect(result).toEqual({ exitCode: 7, stdout: 'result-json', stderr: 'warning' })
+    },
+    TEST_BUDGET_MS
+  )
+
+  test(
+    'connects to exe.dev with strict checking against the pinned key only (never accept-new)',
+    async () => {
+      const { scriptPath } = await writeFakeSsh('printf "%s\\n" "$@"')
+      const pin = async () => ({ knownHostsPath: '/pins/exe.known_hosts', alias: 'ficus-trust.exe' })
+
+      const result = await defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: pin })(['ls'])
+
+      const argv = result.stdout.split('\n')
+      expect(argv).toContain('StrictHostKeyChecking=yes')
+      expect(argv).toContain('UserKnownHostsFile=/pins/exe.known_hosts')
+      expect(argv).toContain('HostKeyAlias=ficus-trust.exe')
+      expect(argv).toContain('GlobalKnownHostsFile=/dev/null')
+      expect(result.stdout).not.toContain('accept-new')
+    },
+    TEST_BUDGET_MS
+  )
+
+  test(
+    'never starts ssh when exe.dev has no trusted host key',
+    async () => {
+      const { dir, scriptPath } = await writeFakeSsh((d) => `touch ${d}/spawned`)
+      const refuse = async () => {
+        throw new Error('exe.dev host key not confirmed')
+      }
+
+      await expect(
+        defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: refuse })(['ls'])
+      ).rejects.toThrow('exe.dev host key not confirmed')
+      expect(await readdir(dir)).not.toContain('spawned')
     },
     TEST_BUDGET_MS
   )
@@ -68,7 +107,7 @@ describe('defaultExeExec subprocess lifecycle', () => {
         'head -c 2097152 /dev/zero | tr "\\0" o; head -c 2097152 /dev/zero | tr "\\0" e >&2; exit 9'
       )
 
-      const result = await defaultExeExec('private-key', { sshBin: scriptPath })([])
+      const result = await defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: testPin })([])
 
       expect(result.exitCode).toBe(9)
       expect(result.stdout).toEndWith('[stdout truncated]')
@@ -86,6 +125,7 @@ describe('defaultExeExec subprocess lifecycle', () => {
       const observations: ExeExecObservation[] = []
       const exec = defaultExeExec('private-key', {
         sshBin: scriptPath,
+        resolveHostKeyPin: testPin,
         timeoutMs: 12_000,
         operationTimeoutMs: { create: 10_000, list: 11_000 },
         onObservation: (observation) => observations.push(observation),
@@ -125,6 +165,7 @@ describe('defaultExeExec subprocess lifecycle', () => {
       const observations: ExeExecObservation[] = []
       const exec = defaultExeExec('private-key', {
         sshBin: scriptPath,
+        resolveHostKeyPin: testPin,
         env: {
           [EXE_EXEC_TIMEOUT_ENV_VARS.create]: '90001',
           [EXE_EXEC_TIMEOUT_ENV_VARS.destroy]: '90002',
@@ -204,6 +245,7 @@ describe('defaultExeExec subprocess lifecycle', () => {
       const observations: ExeExecObservation[] = []
       const exec = defaultExeExec('private-key', {
         sshBin: scriptPath,
+        resolveHostKeyPin: testPin,
         env: {
           [EXE_EXEC_TIMEOUT_ENV_VARS.create]: '90001',
           [EXE_EXEC_TIMEOUT_ENV_VARS.destroy]: '90002',
@@ -230,7 +272,11 @@ describe('defaultExeExec subprocess lifecycle', () => {
       const { scriptPath } = await writeFakeSsh('sleep 30')
       const started = performance.now()
 
-      const execution = defaultExeExec('private-key', { sshBin: scriptPath, timeoutMs: 50 })([])
+      const execution = defaultExeExec('private-key', {
+        sshBin: scriptPath,
+        resolveHostKeyPin: testPin,
+        timeoutMs: 50,
+      })([])
 
       await expect(execution).rejects.toMatchObject({ name: 'TimeoutError' })
       expect(performance.now() - started).toBeLessThan(1_500)
@@ -260,7 +306,7 @@ describe('defaultExeExec subprocess lifecycle', () => {
 
       try {
         const outcome = await Promise.race([
-          defaultExeExec('private-key', { sshBin: scriptPath, timeoutMs: 50 })([]).then(
+          defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: testPin, timeoutMs: 50 })([]).then(
             () => 'resolved',
             (error: Error) => error.name
           ),
@@ -300,9 +346,9 @@ describe('defaultExeExec subprocess lifecycle', () => {
       const before = (await readdir(tmpdir())).filter((name) => name.startsWith('exe-lobby-')).sort()
 
       try {
-        await expect(defaultExeExec('private-key', { sshBin: scriptPath })([])).rejects.toThrow(
-          'injected reader setup failure'
-        )
+        await expect(
+          defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: testPin })([])
+        ).rejects.toThrow('injected reader setup failure')
       } finally {
         spawnSpy.mockRestore()
       }
@@ -321,7 +367,11 @@ describe('defaultExeExec subprocess lifecycle', () => {
       const { dir, scriptPath } = await writeFakeSsh(
         (fixtureDir) => `sleep 30 &\necho $! > "${join(fixtureDir, 'child.pid')}"\nwait $!`
       )
-      const execution = defaultExeExec('private-key', { sshBin: scriptPath, timeoutMs: 1_000 })([])
+      const execution = defaultExeExec('private-key', {
+        sshBin: scriptPath,
+        resolveHostKeyPin: testPin,
+        timeoutMs: 1_000,
+      })([])
       const pidPath = join(dir, 'child.pid')
       for (let attempt = 0; attempt < 40 && !(await Bun.file(pidPath).exists()); attempt++) await Bun.sleep(25)
       const childPid = Number((await readFile(pidPath, 'utf8')).trim())
@@ -341,6 +391,7 @@ describe('defaultExeExec subprocess lifecycle', () => {
       )
       const execution = defaultExeExec('private-key', {
         sshBin: scriptPath,
+        resolveHostKeyPin: testPin,
         timeoutMs: 10_000,
         signal: controller.signal,
       })([])
@@ -365,6 +416,7 @@ describe('defaultExeExec subprocess lifecycle', () => {
       try {
         const execution = defaultExeExec('private-key', {
           sshBin: scriptPath,
+          resolveHostKeyPin: testPin,
           timeoutMs: 2_000,
           signal: controller.signal,
         })([])
@@ -387,7 +439,11 @@ describe('defaultExeExec subprocess lifecycle', () => {
     async () => {
       const { scriptPath } = await writeFakeSsh('sleep 0.04; printf done')
 
-      const result = await defaultExeExec('private-key', { sshBin: scriptPath, timeoutMs: 500 })([])
+      const result = await defaultExeExec('private-key', {
+        sshBin: scriptPath,
+        resolveHostKeyPin: testPin,
+        timeoutMs: 500,
+      })([])
 
       expect(result).toEqual({ exitCode: 0, stdout: 'done', stderr: '' })
     },
@@ -401,7 +457,7 @@ describe('defaultExeExec subprocess lifecycle', () => {
         (fixtureDir) => `sleep 30 &\necho $! > "${join(fixtureDir, 'child.pid')}"`
       )
 
-      const result = await defaultExeExec('private-key', { sshBin: scriptPath })([])
+      const result = await defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: testPin })([])
       const childPid = Number((await readFile(join(dir, 'child.pid'), 'utf8')).trim())
 
       expect(result.exitCode).toBe(0)
@@ -419,7 +475,7 @@ describe('defaultExeExec subprocess lifecycle', () => {
       await writeFile(sentinel, 'preserve me')
       const { scriptPath } = await writeFakeSsh('exit 0')
 
-      await defaultExeExec('private-key', { sshBin: scriptPath })([])
+      await defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: testPin })([])
 
       await expect(readFile(sentinel, 'utf8')).resolves.toBe('preserve me')
     },
@@ -443,7 +499,7 @@ mkdir "$owned"
 printf preserve > "$owned/unrelated"
 printf 'foreign identity' > "$owned/id"`)
 
-      await defaultExeExec('private-key', { sshBin: scriptPath })([])
+      await defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: testPin })([])
 
       const moved = await readFile(movedPathFile, 'utf8')
       cleanupDirs.push(moved, moved.slice(0, -'-moved'.length))
@@ -468,7 +524,7 @@ done
 rm -f "$identity"
 ln -s "${sentinel}" "$identity"`)
 
-      await defaultExeExec('private-key', { sshBin: scriptPath })([])
+      await defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: testPin })([])
 
       await expect(readFile(sentinel, 'utf8')).resolves.toBe('preserve me')
     },
@@ -480,12 +536,12 @@ ln -s "${sentinel}" "$identity"`)
     async () => {
       const before = (await readdir(tmpdir())).filter((name) => name.startsWith('exe-lobby-')).sort()
       const success = await writeFakeSsh('exit 0')
-      await defaultExeExec('private-key', { sshBin: success.scriptPath })([])
+      await defaultExeExec('private-key', { sshBin: success.scriptPath, resolveHostKeyPin: testPin })([])
       const failure = await writeFakeSsh('exit 8')
-      await defaultExeExec('private-key', { sshBin: failure.scriptPath })([])
+      await defaultExeExec('private-key', { sshBin: failure.scriptPath, resolveHostKeyPin: testPin })([])
       const timeout = await writeFakeSsh('sleep 30')
       await expect(
-        defaultExeExec('private-key', { sshBin: timeout.scriptPath, timeoutMs: 50 })([])
+        defaultExeExec('private-key', { sshBin: timeout.scriptPath, resolveHostKeyPin: testPin, timeoutMs: 50 })([])
       ).rejects.toMatchObject({ name: 'TimeoutError' })
 
       const after = (await readdir(tmpdir())).filter((name) => name.startsWith('exe-lobby-')).sort()
@@ -498,7 +554,7 @@ ln -s "${sentinel}" "$identity"`)
     'remains stable under repeated concurrent execution',
     async () => {
       const { scriptPath } = await writeFakeSsh('printf ok')
-      const exec = defaultExeExec('private-key', { sshBin: scriptPath })
+      const exec = defaultExeExec('private-key', { sshBin: scriptPath, resolveHostKeyPin: testPin })
 
       const results = await Promise.all(Array.from({ length: 24 }, (_, index) => exec([String(index)])))
 
