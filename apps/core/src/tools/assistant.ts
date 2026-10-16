@@ -182,12 +182,16 @@ export function createAssistantTools(
   return [
     tool(
       'delegate_task',
-      'Start an independent task. Omit squadId for your general worker, your main delegate: it uses your current permissions and handles instance-wide work (users, roles, permissions and access, settings, work across squads) even when a squad is named. Pass squadId only when the work needs that squad’s expertise, code, or workspace; squad delegates are squad-scoped and cannot read accounts or roles, and squad consultants require consultant creation access. Steer is default; independent scopes may run concurrently.',
+      'Start an independent task. Omit squadId for your general worker, your main delegate: it uses your current permissions and handles instance-wide work (users, roles, permissions and access, settings, work across squads) even when a squad is named. Pass squadId only when the work needs that squad’s expertise, code, or workspace; squad delegates are squad-scoped and cannot read accounts or roles, and squad consultants require consultant creation access. Give every task a short label. Steer is default; independent scopes may run concurrently.',
       Type.Object({
         request,
         squadId: Type.Optional(uuid),
         agentId: Type.Optional(uuid),
-        label: Type.Optional(Type.String({ maxLength: 80 })),
+        label: Type.String({
+          minLength: 1,
+          maxLength: 80,
+          description: '3–6 words naming the task, e.g. "Check enabled schedules". No status words or secrets.',
+        }),
         mode: Type.Optional(Type.Union([Type.Literal('steer'), Type.Literal('follow-up')])),
         imageIds,
       }),

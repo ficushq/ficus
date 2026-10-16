@@ -303,6 +303,34 @@ describe('site assistant task renderers', () => {
     expect(html).not.toContain('delegate_task')
   })
 
+  it('delegate_task without a label names the task by the first line of its request', () => {
+    const summary = (args: object) =>
+      renderToStaticMarkup(
+        <ToolSummary renderers={siteAssistantToolRenderers} toolName="delegate_task" args={JSON.stringify(args)} />
+      )
+    expect(summary({ request: '\n  Check which schedules are enabled  \nThen pause the nightly one.' })).toContain(
+      'Background task: Check which schedules are enabled<'
+    )
+    expect(summary({ label: '   ', request: 'Rotate the deploy key' })).toContain(
+      'Background task: Rotate the deploy key'
+    )
+    const long = 'Investigate why the nightly deploy keeps failing on the staging cluster since Tuesday'
+    expect(summary({ request: `${long}\nmore detail` })).toContain(`Background task: ${long.slice(0, 60)}...`)
+  })
+
+  it('delegate_task with neither label nor request reads as a generic background task', () => {
+    const summary = (args: object) =>
+      renderToStaticMarkup(
+        <ToolSummary renderers={siteAssistantToolRenderers} toolName="delegate_task" args={JSON.stringify(args)} />
+      )
+    for (const args of [{}, { request: '  \n ' }]) {
+      const html = summary(args)
+      expect(html).toContain('Background task')
+      expect(html).not.toContain('Background task:')
+      expect(html).not.toContain('background task')
+    }
+  })
+
   it('delegate_task with a squad names the squad from the receipt', () => {
     const args = JSON.stringify({ label: 'Pause deploy stream', request: 'Pause it', squadId: 'ficus' })
     const result = JSON.stringify({

@@ -268,6 +268,16 @@ describe('other opted-in renderers', () => {
       'Background task: Check schedules'
     )
   })
+
+  it('delegate_task without a label names the task by its request while it streams', () => {
+    const args = '{"request":"Which schedules\\nare ena'
+    expect(summaryHtml('delegate_task', args, true, siteAssistantToolRenderers)).toContain(
+      'Background task: Which schedules'
+    )
+    expect(summaryHtml('delegate_task', '{"request":"Which sch', true, siteAssistantToolRenderers)).toContain(
+      'Background task: Which sch'
+    )
+  })
 })
 
 describe('streaming every prefix of the args', () => {

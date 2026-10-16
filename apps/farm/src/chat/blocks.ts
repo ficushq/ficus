@@ -70,6 +70,18 @@ const count = (v: unknown, noun: string) => {
   return `${n} ${noun}${n !== 1 ? 's' : ''}`
 }
 
+/** A delegated task's label, else its request's first non-blank line (as Core labels the task row). */
+function delegateTaskName(a: Args): string {
+  const label = str(a.label).trim()
+  if (label) return label
+  return (
+    str(a.request)
+      .split('\n')
+      .find((line) => line.trim())
+      ?.trim() ?? ''
+  )
+}
+
 /** The web's per-tool `summary(args)` for agent and site-assistant tools. */
 const SUMMARIES: Record<string, (args: Args) => string> = {
   read: (a) => {
@@ -105,7 +117,10 @@ const SUMMARIES: Record<string, (args: Args) => string> = {
   },
   check_subagents: () => 'check status',
   stop_subagent: (a) => str(a.subagentId),
-  delegate_task: (a) => `Background task: ${truncate(str(a.label) || 'background task', 60)}`,
+  delegate_task: (a) => {
+    const name = delegateTaskName(a)
+    return name ? `Background task: ${truncate(name, 60)}` : 'Background task'
+  },
   assistant_inbox: () => 'Task update',
   search_ficus: (a) => `Searched Ficus for “${truncate(str(a.query) || str(a.q), 40)}”`,
 }
