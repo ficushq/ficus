@@ -150,6 +150,12 @@ presents is a `remote_host_keys` row: type, SHA256 fingerprint, status
   a person trusts the new key (the old one becomes `replaced`) or rejects
   it. A key of a new type is recorded as pending without blocking the host.
 - **Rejected keys stay rejected** across later fetches.
+- **Propagation.** A decision re-materializes every granted squad's SSH
+  directory at once, which docker, k8s and host-runtime sandboxes see
+  directly. A long-lived vm box picks it up on its next ensure, or right
+  away with `ficus remote-hosts sync` from the box; until then it keeps the
+  previous (strict) state, so a delay can only refuse a connection, never
+  allow one.
 - **Agents can fetch, never decide.** `fetch-key` (scan) only records
   pending keys, so it needs ordinary `remote-hosts:write`. A host granted
   to more than one squad can only be decided from the squad surface by
