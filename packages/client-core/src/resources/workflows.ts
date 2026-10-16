@@ -68,7 +68,11 @@ export function workflowsResource(t: Transport) {
       t.request<Array<{ id: string; name: string }>>(`/workflows/reviewers?squadId=${encodeURIComponent(squadId)}`),
     outputs: () => t.request<IntegrationOutputDescriptor[]>('/integrations/outputs'),
     list: () => t.request<WorkflowCatalogEntry[]>('/workflows'),
-    run: (id: string) => t.request<WorkflowRunDetail | null>(runPath(id)),
+    /** `integrationDeliveries: false` skips the delivery history (the field is then omitted). */
+    run: (id: string, options: { integrationDeliveries?: boolean } = {}) =>
+      t.request<WorkflowRunDetail | null>(
+        options.integrationDeliveries === false ? `${runPath(id)}?integrationDeliveries=0` : runPath(id)
+      ),
     /** The bytes of a file an attempt handed off (see `WorkflowRunDetail.attachments`). */
     downloadAttachment: async (id: string, attachmentId: string, signal?: AbortSignal) =>
       readAll(

@@ -78,38 +78,45 @@ export const workflowsRouter = new Hono()
       return c.json({ error: 'Forbidden' }, 403)
     return c.json(await listWorkflowReviewers(squadId))
   })
-  .get('/runs/:streamId', async (c) => {
-    c.set('authzChecked', true)
-    const identity = c.get('identity')
-    if (!identity) return c.json({ error: 'Unauthorized' }, 401)
-    const stream = await WorkStream.find(c.req.param('streamId'))
-    if (!stream) return c.json({ error: 'Work stream not found' }, 404)
-    if (!(await hasPermission(identity, 'workstreams:read', stream.squadId))) return c.json({ error: 'Forbidden' }, 403)
-    const run = await getFlow(stream.id)
-    return c.json(
-      run?.activated
-        ? {
-            workStreamId: run.workStreamId,
-            source: run.source.source,
-            state: run.state,
-            version: run.version,
-            workStreamStatus: stream.status,
-            attemptAgents: run.attemptAgents,
-            activeOutcomes: activeOutcomeBindings(run),
-            deliveryInstructions: deliveryInstructionsForRun(
-              stream,
-              run.state,
-              run.version,
-              await stackNotice(db, stream)
-            ),
-            openWaits: (await listOpenWaits(db, stream.id)).map(toWaitJson),
-            integrationDeliveries: await outputDeliveryHistory(stream.id),
-            usage: await getFlowUsage(stream.id, run.state),
-            attachments: await listWorkflowAttachments(stream.id),
-          }
-        : null
-    )
-  })
+  // `?integrationDeliveries=0` omits the delivery history for callers that never show it.
+  .get(
+    '/runs/:streamId',
+    zValidator('query', z.object({ integrationDeliveries: z.enum(['0', '1']).optional() })),
+    async (c) => {
+      c.set('authzChecked', true)
+      const identity = c.get('identity')
+      if (!identity) return c.json({ error: 'Unauthorized' }, 401)
+      const stream = await WorkStream.find(c.req.param('streamId'))
+      if (!stream) return c.json({ error: 'Work stream not found' }, 404)
+      if (!(await hasPermission(identity, 'workstreams:read', stream.squadId)))
+        return c.json({ error: 'Forbidden' }, 403)
+      const run = await getFlow(stream.id)
+      if (!run?.activated) return c.json(null)
+      const withDeliveries = c.req.valid('query').integrationDeliveries !== '0'
+      // Independent reads; none of them calls a provider (the history uses stored proof only).
+      const [notice, openWaits, integrationDeliveries, usage, attachments] = await Promise.all([
+        stackNotice(db, stream),
+        listOpenWaits(db, stream.id),
+        withDeliveries ? outputDeliveryHistory(stream.id) : undefined,
+        getFlowUsage(stream.id, run.state),
+        listWorkflowAttachments(stream.id),
+      ])
+      return c.json({
+        workStreamId: run.workStreamId,
+        source: run.source.source,
+        state: run.state,
+        version: run.version,
+        workStreamStatus: stream.status,
+        attemptAgents: run.attemptAgents,
+        activeOutcomes: activeOutcomeBindings(run),
+        deliveryInstructions: deliveryInstructionsForRun(stream, run.state, run.version, notice),
+        openWaits: openWaits.map(toWaitJson),
+        ...(integrationDeliveries ? { integrationDeliveries } : {}),
+        usage,
+        attachments,
+      })
+    }
+  )
   // Anyone who can open the run (and so its review) can read the files its attempts handed off.
   .get('/runs/:streamId/attachments/:attachmentId', async (c) => {
     const stream = await WorkStream.find(c.req.param('streamId'))

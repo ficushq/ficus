@@ -1,11 +1,13 @@
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { db } from '../../../db'
+import { db, type DbTx, type integrationOutputEvents } from '../../../db'
 import { readOutputEvent, readOutputCandidate, readFeedbackRevision } from './feedback-pass-read'
 import { authorized } from '../outputs/authority'
 import { withGitHubOutputPass, reserveGitHubEvent, githubOutputPass, inGitHubCandidate } from './feedback-pass'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
 import { isGitHubOutputAdmitted, prepareGitHubOutput } from './feedback-routing'
+
+type Event = typeof integrationOutputEvents.$inferSelect
 
 export const GITHUB_RENEWAL_READ_LIMIT = 25
 export const GITHUB_RENEWAL_RESOURCE_LIMIT = 8
@@ -21,6 +23,18 @@ export const GITHUB_RENEWAL_PROVIDER_CALL_LIMIT = 24
  */
 export async function renewKnownGitHubOutputs(eventIds: string[]) {
   return withGitHubOutputPass(() => renewKnownInPass(eventIds))
+}
+
+/** Local-only (no provider I/O): the event lost its connection authority or, for feedback, its
+ * content admission. Renewal withholds such events; stored-proof readers must hide them too,
+ * since the filter-OFF admission path alone does not recheck feedback admission.
+ */
+export async function isGitHubOutputRevoked(store: typeof db | DbTx, event: Event) {
+  return (
+    event.authority.kind !== 'connection' ||
+    !(await authorized(store, 'github', event.authority, event.authority.squadId)) ||
+    (!!event.fact.github?.revisionId && !(await isGitHubFeedbackAdmitted(store, event)))
+  )
 }
 
 async function renewKnownInPass(eventIds: string[]) {
@@ -41,11 +55,7 @@ async function renewKnownInPass(eventIds: string[]) {
         result.deferred.push(id)
         return true
       }
-      if (
-        event.authority.kind !== 'connection' ||
-        !(await authorized(db, 'github', event.authority, event.authority.squadId)) ||
-        (event.fact.github?.revisionId && !(await isGitHubFeedbackAdmitted(db, event)))
-      ) {
+      if (await isGitHubOutputRevoked(db, event)) {
         await withholdRevokedAutomaticGitHubOutput(event.id)
         result.withheld.push(event.id)
         return true

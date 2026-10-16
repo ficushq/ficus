@@ -66,7 +66,7 @@ import {
 } from '../github/feedback-pass'
 import { reconcileGitHubFeedbackRelease } from '../github/feedback-release-runtime'
 import { readOutputEvent, readOutputCandidate, readOutputInbox } from '../github/feedback-pass-read'
-import { renewKnownGitHubOutputs } from '../github/feedback-renewal'
+import { isGitHubOutputRevoked, renewKnownGitHubOutputs } from '../github/feedback-renewal'
 
 import { outputRecipients } from './routing-audience'
 export { outputRecipients } from './routing-audience'
@@ -1172,8 +1172,15 @@ function historyCursor(streamId: string, row: HistoryRow) {
  * unvisited or body/provider/work-deferred rows. An empty visible page is not end-of-history.
  * Cursor values select position only, never permission; every image and authority is rechecked.
  * Millisecond ordering matches the Date precision used in the cursor; ID breaks equal-clock ties.
+ *
+ * `renew: false` makes no provider call: a row is shown only on already-stored, still-current
+ * admission proof, and a row whose proof is stale is withheld (renewal stays with reconcilers).
  */
-export async function outputDeliveryHistoryPage(workStreamId: string, options: { cursor?: string } = {}) {
+export async function outputDeliveryHistoryPage(
+  workStreamId: string,
+  options: { cursor?: string; renew?: boolean } = {}
+) {
+  const renew = options.renew ?? true
   const position = decodeHistoryCursor(workStreamId, options.cursor)
   return withGitHubOutputPass(async () => {
     const limit = reserveGitHubLookahead(25)
@@ -1206,10 +1213,12 @@ export async function outputDeliveryHistoryPage(workStreamId: string, options: {
         if (!reserveGitHubEvent(row.eventId)) return false
         const event = await readOutputCandidate(db, row.eventId)
         if (!event) return false
-        const renewal = await renewKnownGitHubOutputs([row.eventId])
-        if (renewal.deferred.length) return false
+        if (renew) {
+          const renewal = await renewKnownGitHubOutputs([row.eventId])
+          if (renewal.deferred.length) return false
+          if (renewal.withheld.length) return true
+        } else if (await isGitHubOutputRevoked(db, event)) return true
         if (
-          !renewal.withheld.length &&
           (await authorized(db, event.integration, event.authority, row.squadId)) &&
           (await isGitHubOutputAdmitted(db, event))
         ) {
@@ -1233,10 +1242,12 @@ export async function outputDeliveryHistoryPage(workStreamId: string, options: {
 
 /** Compatibility view: the first bounded GitHub page plus unchanged non-GitHub history.
  * Callers that browse beyond this preview must use outputDeliveryHistoryPage and its cursor.
+ * It is embedded in every run read, so it never renews GitHub proof (no provider calls): GitHub
+ * rows appear only while their stored admission proof is current, otherwise they are withheld.
  */
 export async function outputDeliveryHistory(workStreamId: string) {
   return withGitHubOutputPass(async () => {
-    const github = await outputDeliveryHistoryPage(workStreamId)
+    const github = await outputDeliveryHistoryPage(workStreamId, { renew: false })
     const other = await historyQuery()
       .where(
         and(
