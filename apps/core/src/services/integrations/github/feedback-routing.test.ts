@@ -3582,3 +3582,88 @@ describe('trusted actor actions with the author filter ON (default squad rules)'
     }
   })
 })
+
+describe('run read uses stored GitHub proof only', () => {
+  async function runApi() {
+    const { Hono } = await import('hono')
+    const { identityMiddleware } = await import('../../../middleware/identity')
+    const { workflowsRouter } = await import('../../../routes/workflows')
+    const { createTestAdmin, authHeaders, cleanupTestRbac } = await import('../../../test-utils/rbac')
+    const prefix = `run-read-${crypto.randomUUID()}`
+    const admin = await createTestAdmin({ prefix, canonicalAdmin: true })
+    const app = new Hono().use('*', identityMiddleware).route('/api/workflows', workflowsRouter)
+    return {
+      get: async (path: string) => {
+        const response = await app.request(`/api/workflows${path}`, { headers: authHeaders(admin.token) })
+        expect(response.status).toBe(200)
+        return response.json()
+      },
+      close: () => cleanupTestRbac(prefix),
+    }
+  }
+
+  test('a stale proof is withheld from the run response without renewal or provider calls', async () => {
+    const h = await fixture()
+    const api = await runApi()
+    const renew = spyOn(renewal, 'renewKnownGitHubOutputs')
+    try {
+      await h.trust()
+      const streamId = await h.stream(true)
+      const eventId = await publishIntegrationOutput('github', h.fact(), h.authority)
+      const fresh = await api.get(`/runs/${streamId}`)
+      expect(fresh.integrationDeliveries).toHaveLength(1)
+      expect(fresh.integrationDeliveries[0].fact.body).toContain('HELD_SENTINEL')
+      await db
+        .update(githubOutputProofs)
+        .set({ expiresAt: new Date(0) })
+        .where(eq(githubOutputProofs.eventId, eventId!))
+      h.read.mockClear()
+      renew.mockClear()
+      const stale = await api.get(`/runs/${streamId}`)
+      expect(stale.integrationDeliveries).toEqual([])
+      expect(JSON.stringify(stale)).not.toContain('HELD_SENTINEL')
+      expect(renew).not.toHaveBeenCalled()
+      expect(h.read).not.toHaveBeenCalled()
+      // Opting out skips the history entirely; the rest of the run is unchanged.
+      const lean = await api.get(`/runs/${streamId}?integrationDeliveries=0`)
+      expect(lean).not.toHaveProperty('integrationDeliveries')
+      const { integrationDeliveries: _omitted, ...rest } = stale
+      expect(lean).toEqual(rest)
+      expect(renew).not.toHaveBeenCalled()
+      expect(h.read).not.toHaveBeenCalled()
+      // Explicit paging still renews known records, which then show again in the run read.
+      const page = await api.get(`/runs/${streamId}/integration-deliveries`)
+      expect(page.items).toHaveLength(1)
+      expect(renew).toHaveBeenCalled()
+      expect(h.read).toHaveBeenCalled()
+      expect((await api.get(`/runs/${streamId}`)).integrationDeliveries).toHaveLength(1)
+    } finally {
+      renew.mockRestore()
+      await api.close()
+      await h.close()
+    }
+  })
+
+  test('with the author filter OFF, feedback that no longer matches its reviewed envelope stays hidden', async () => {
+    const h = await fixture()
+    try {
+      await h.trust()
+      const streamId = await h.stream(true)
+      const eventId = await publishIntegrationOutput('github', h.fact(), h.authority)
+      await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+      expect(await outputDeliveryHistory(streamId)).toHaveLength(1)
+      const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId!))
+      // Filter-OFF admission does not compare the envelope; the stored-proof read still must.
+      await db
+        .update(integrationOutputEvents)
+        .set({ fact: { ...event!.fact, body: 'TAMPERED_BODY' } })
+        .where(eq(integrationOutputEvents.id, eventId!))
+      h.read.mockClear()
+      expect(JSON.stringify(await outputDeliveryHistory(streamId))).not.toContain('TAMPERED_BODY')
+      expect(await outputDeliveryHistory(streamId)).toEqual([])
+      expect(h.read).not.toHaveBeenCalled()
+    } finally {
+      await h.close()
+    }
+  })
+})
