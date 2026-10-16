@@ -57,7 +57,9 @@ describe('syncKnownHostsFile', () => {
     writeFileSync(dest, `${pinned}\n`)
     writeFileSync(source, `${MANAGED}\n`)
     const result = await syncKnownHostsFile(source, dest)
-    expect(result.conflicts).toEqual([{ host: 'managed.example', keyType: 'ssh-ed25519', line: 1 }])
+    expect(result.conflicts).toMatchObject([
+      { host: 'managed.example', keyType: 'ssh-ed25519', line: 1, wildcard: false },
+    ])
     expect(readFileSync(dest, 'utf8')).toBe(`${pinned}\n`)
   })
 

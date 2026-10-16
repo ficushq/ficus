@@ -3,17 +3,31 @@ import { eq, inArray, like } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { createRemoteHostsRouter } from './remote-hosts'
 import { identityMiddleware } from '../middleware/identity'
-import { db, agents, remoteHostGrants, remoteHosts, roles, squads } from '../db'
+import { readFileSync } from 'fs'
+import { db, agents, knownHostsConflicts, remoteHostGrants, remoteHosts, roles, squads } from '../db'
+import { recordBoxKnownHostsConflicts } from '../services/remote-hosts/known-hosts-conflicts'
 import { getSecretStore, resetSecretStore } from '../services/secrets'
 import * as onboardingEvents from '../services/onboarding/events'
 import {
+  assignRole,
   authHeaders,
   cleanupTestRbac,
+  createTestRole,
   createTestAdmin,
   createTestAgentToken,
   createTestUser,
   type TestUser,
 } from '../test-utils'
+
+// Synthetic host keys (well-formed blobs: 4-byte length + key type + payload). Never real hosts.
+function syntheticKey(keyType: string, seed: string): string {
+  const type = Buffer.from(keyType)
+  const len = Buffer.alloc(4)
+  len.writeUInt32BE(type.length)
+  return Buffer.concat([len, type, Buffer.from(`synthetic-${seed}`)]).toString('base64')
+}
+const FIXTURE_HOST_KEY = { keyType: 'ssh-ed25519', publicKey: syntheticKey('ssh-ed25519', 'fixture') }
+const CHANGED_HOST_KEY = { keyType: 'ssh-ed25519', publicKey: syntheticKey('ssh-ed25519', 'changed') }
 
 const prefix = `rhroute-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -52,10 +66,16 @@ describe('remote-hosts routes', () => {
   // No-op materialize by default: route tests assert DB/API state, not the
   // filesystem side effects covered by materialize.test.ts. Individual tests
   // override this to assert invocation.
+  //
+  // The host-key scanner is ALWAYS a synthetic fake here: tests never connect
+  // anywhere. It returns one fixture key unless a test overrides it.
   function authedRouter(deps: Parameters<typeof createRemoteHostsRouter>[0] = {}) {
     const app = new Hono()
     app.use('*', identityMiddleware)
-    app.route('/', createRemoteHostsRouter({ materialize: async () => {}, ...deps }))
+    app.route(
+      '/',
+      createRemoteHostsRouter({ materialize: async () => {}, hostKeyScanner: async () => [FIXTURE_HOST_KEY], ...deps })
+    )
     return app
   }
 
@@ -79,6 +99,20 @@ describe('remote-hosts routes', () => {
     )
     expect(res.status).toBe(201)
     return res.json()
+  }
+
+  /** A person (the admin) trusts every pending key of `host`. */
+  async function trustPendingKeys(router: Hono, host: { id: string; hostKeys: Array<{ id: string; status: string }> }) {
+    for (const key of host.hostKeys.filter((k) => k.status === 'pending')) {
+      const res = await router.request(`/${host.id}/host-keys/${key.id}/trust`, req('POST'))
+      expect(res.status).toBe(200)
+    }
+  }
+
+  async function createTrustedHost(router: Hono, overrides: Record<string, unknown> = {}) {
+    const host = await createHost(router, overrides)
+    await trustPendingKeys(router, host)
+    return host
   }
 
   async function createSquad(name: string) {
@@ -484,7 +518,7 @@ describe('remote-hosts routes', () => {
   describe('POST /:id/check', () => {
     it('reports reachable when the injected runner exits 0', async () => {
       const router = authedRouter({ sshRunner: { run: async () => ({ exitCode: 0, stdout: '', stderr: '' }) } })
-      const created = await createHost(router, { name: `${prefix}-check-ok` })
+      const created = await createTrustedHost(router, { name: `${prefix}-check-ok` })
 
       const res = await router.request(`/${created.id}/check`, req('POST'))
       expect(res.status).toBe(200)
@@ -495,7 +529,7 @@ describe('remote-hosts routes', () => {
       const router = authedRouter({
         sshRunner: { run: async () => ({ exitCode: 255, stdout: '', stderr: 'Connection refused' }) },
       })
-      const created = await createHost(router, { name: `${prefix}-check-fail` })
+      const created = await createTrustedHost(router, { name: `${prefix}-check-fail` })
 
       const res = await router.request(`/${created.id}/check`, req('POST'))
       expect(res.status).toBe(200)
@@ -512,7 +546,7 @@ describe('remote-hosts routes', () => {
           },
         },
       })
-      const created = await createHost(router, { name: `${prefix}-check-throw` })
+      const created = await createTrustedHost(router, { name: `${prefix}-check-throw` })
 
       const res = await router.request(`/${created.id}/check`, req('POST'))
       expect(res.status).toBe(200)
@@ -533,7 +567,7 @@ describe('remote-hosts routes', () => {
           },
         },
       })
-      const created = await createHost(router, { name: `${prefix}-check-nokey` })
+      const created = await createTrustedHost(router, { name: `${prefix}-check-nokey` })
 
       const res = await router.request(`/${created.id}/check`, req('POST'))
       expect(res.status).toBe(200)
@@ -766,7 +800,7 @@ describe('remote-hosts routes', () => {
           const router = authedRouter({
             sshRunner: { run: async () => ({ exitCode: 0, stdout: '', stderr: '' }) },
           })
-          const created = await createHost(router, { name: `${prefix}-squad-check`, squadIds: [squad.id] })
+          const created = await createTrustedHost(router, { name: `${prefix}-squad-check`, squadIds: [squad.id] })
 
           const res = await router.request(`/squad/${squad.id}/check/${created.id}`, req('POST', undefined, tok.token))
           expect(res.status).toBe(200)
@@ -885,5 +919,285 @@ describe('remote-hosts routes', () => {
 
   it('cleans up any stray squads created under this prefix', async () => {
     await db.delete(squads).where(like(squads.name, `${prefix}%`))
+  })
+  describe('host keys', () => {
+    async function systemManagerAgentToken() {
+      // An agent running with the admin's own permissions: it passes every
+      // remote-hosts permission gate, so only the person check can stop it.
+      const [agent] = await db
+        .insert(agents)
+        .values({ agentTypeId: 'system-manager', ownerUserId: admin.id })
+        .returning()
+      const tok = await createTestAgentToken({ agentId: agent.id, squadId: null, userId: admin.id })
+      return { agent, tok }
+    }
+
+    it('a new host has its key fetched and pending, and is not usable', async () => {
+      const calls: string[] = []
+      const router = authedRouter({
+        materialize: async (squadId: string) => void calls.push(squadId),
+        sshRunner: {
+          run: async () => {
+            throw new Error('must not connect to an unconfirmed host')
+          },
+        },
+      })
+      const squad = await createSquad('hk-new')
+      try {
+        const created = await createHost(router, { name: `${prefix}-hk-new`, squadIds: [squad.id] })
+        expect(created.hostKeyState).toBe('pending')
+        expect(created.hostKeys).toHaveLength(1)
+        expect(created.hostKeys[0]).toMatchObject({
+          keyType: 'ssh-ed25519',
+          status: 'pending',
+          origin: 'scan',
+          decidedByUserId: null,
+        })
+        expect(created.hostKeys[0].fingerprint).toMatch(/^SHA256:[A-Za-z0-9+/]+$/)
+        expect(JSON.stringify(created)).not.toContain(FIXTURE_HOST_KEY.publicKey)
+        expect(calls).toContain(squad.id)
+
+        const check = await (await router.request(`/${created.id}/check`, req('POST'))).json()
+        expect(check.reachable).toBe(false)
+        expect(check.error).toContain('not been confirmed')
+      } finally {
+        await db.delete(squads).where(eq(squads.id, squad.id))
+      }
+    })
+
+    it('records a failed fetch as unverified with the reason', async () => {
+      const router = authedRouter({
+        hostKeyScanner: async () => {
+          throw new Error('timed out after 15s fetching the host key')
+        },
+      })
+      const created = await createHost(router, { name: `${prefix}-hk-unreachable` })
+      expect(created.hostKeyState).toBe('unverified')
+      expect(created.fetchError).toContain('timed out')
+      expect(created.hostKeyCheckError).toContain('timed out')
+    })
+
+    it('a person trusting the key pins it (audited) and the probe then connects with strict pinning', async () => {
+      const pins: Array<{ alias: string; knownHosts: string }> = []
+      const router = authedRouter({
+        sshRunner: {
+          run: async (_m, _cmd, opts) => {
+            const pin = opts!.hostKeyPin!
+            pins.push({ alias: pin.alias, knownHosts: readFileSync(pin.knownHostsPath, 'utf8') })
+            return { exitCode: 0, stdout: '', stderr: '' }
+          },
+        },
+      })
+      const created = await createHost(router, { name: `${prefix}-hk-trust` })
+      const keyId = created.hostKeys[0].id
+
+      const res = await router.request(`/${created.id}/host-keys/${keyId}/trust`, req('POST'))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.hostKeyState).toBe('trusted')
+      expect(body.hostKeys[0]).toMatchObject({ status: 'trusted', decidedByUserId: admin.id })
+      expect(body.hostKeys[0].decidedAt).toBeString()
+
+      const check = await (await router.request(`/${created.id}/check`, req('POST'))).json()
+      expect(check).toEqual({ reachable: true })
+      expect(pins).toEqual([
+        {
+          alias: `ficus-remote.${created.name}`,
+          knownHosts: `ficus-remote.${created.name} ssh-ed25519 ${FIXTURE_HOST_KEY.publicKey}\n`,
+        },
+      ])
+    })
+
+    it('agents can never trust or reject a key, even with every remote-hosts permission', async () => {
+      const router = authedRouter()
+      const created = await createHost(router, { name: `${prefix}-hk-agent` })
+      const keyId = created.hostKeys[0].id
+      const { agent, tok } = await systemManagerAgentToken()
+      try {
+        // The agent does hold remote-hosts:write: it may fetch keys...
+        const scan = await router.request(`/${created.id}/host-keys/scan`, req('POST', undefined, tok.token))
+        expect(scan.status).toBe(200)
+        // ...but never decide on them.
+        for (const action of ['trust', 'reject']) {
+          const res = await router.request(
+            `/${created.id}/host-keys/${keyId}/${action}`,
+            req('POST', undefined, tok.token)
+          )
+          expect(res.status).toBe(403)
+          expect((await res.json()).code).toBe('user_session_required')
+        }
+        const after = await (await router.request(`/${created.id}`, req('GET'))).json()
+        expect(after.hostKeys[0].status).toBe('pending')
+      } finally {
+        await db.delete(agents).where(eq(agents.id, agent.id))
+      }
+    })
+
+    it('a rejected key leaves the host unusable', async () => {
+      const router = authedRouter()
+      const created = await createHost(router, { name: `${prefix}-hk-reject` })
+      const res = await router.request(`/${created.id}/host-keys/${created.hostKeys[0].id}/reject`, req('POST'))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.hostKeyState).toBe('unverified')
+      expect(body.hostKeys[0]).toMatchObject({ status: 'rejected', decidedByUserId: admin.id })
+      // A rescan does not resurrect a rejected key.
+      const rescan = await (await router.request(`/${created.id}/host-keys/scan`, req('POST'))).json()
+      expect(rescan.hostKeyState).toBe('unverified')
+    })
+
+    it('a changed key is held as a key change showing both fingerprints; nothing auto-updates', async () => {
+      let presented = FIXTURE_HOST_KEY
+      const router = authedRouter({ hostKeyScanner: async () => [presented] })
+      const created = await createTrustedHost(router, { name: `${prefix}-hk-change` })
+      const oldFingerprint = created.hostKeys[0].fingerprint
+
+      presented = CHANGED_HOST_KEY
+      const changed = await (await router.request(`/${created.id}/host-keys/scan`, req('POST'))).json()
+      expect(changed.hostKeyState).toBe('changed')
+      const trusted = changed.hostKeys.find((k: { status: string }) => k.status === 'trusted')
+      const pending = changed.hostKeys.find((k: { status: string }) => k.status === 'pending')
+      expect(trusted.fingerprint).toBe(oldFingerprint)
+      expect(pending.fingerprint).not.toBe(oldFingerprint)
+      expect(pending.replacesFingerprints).toEqual([oldFingerprint])
+
+      // A person accepts the change: the old key is replaced, not deleted.
+      const res = await router.request(`/${created.id}/host-keys/${pending.id}/trust`, req('POST'))
+      const after = await res.json()
+      expect(after.hostKeyState).toBe('trusted')
+      expect(after.hostKeys.find((k: { id: string }) => k.id === trusted.id)).toMatchObject({
+        status: 'replaced',
+        decidedByUserId: admin.id,
+      })
+    })
+
+    it('a squad-scoped person cannot confirm the key of a host shared with another squad', async () => {
+      const router = authedRouter()
+      const squadA = await createSquad('hk-shared-a')
+      const squadB = await createSquad('hk-shared-b')
+      const member = await createTestUser({ prefix })
+      const role = await createTestRole({ prefix, permissions: ['remote-hosts:read', 'remote-hosts:write'] })
+      await assignRole({ userId: member.id, roleId: role.id, scope: 'squad', squadId: squadA.id })
+      try {
+        const shared = await createHost(router, { name: `${prefix}-hk-shared`, squadIds: [squadA.id, squadB.id] })
+        const res = await router.request(
+          `/squad/${squadA.id}/host-keys/${shared.id}/${shared.hostKeys[0].id}/trust`,
+          req('POST', undefined, member.token)
+        )
+        expect(res.status).toBe(403)
+
+        const own = await createHost(router, { name: `${prefix}-hk-own`, squadIds: [squadA.id] })
+        const ok = await router.request(
+          `/squad/${squadA.id}/host-keys/${own.id}/${own.hostKeys[0].id}/trust`,
+          req('POST', undefined, member.token)
+        )
+        expect(ok.status).toBe(200)
+        const body = await ok.json()
+        expect(body.hostKeyState).toBe('trusted')
+        expect(body.squadIds).toBeUndefined()
+      } finally {
+        await db.delete(squads).where(inArray(squads.id, [squadA.id, squadB.id]))
+      }
+    })
+  })
+
+  describe('known_hosts conflicts', () => {
+    async function seedConflict(squadId: string, sandboxId: string) {
+      await recordBoxKnownHostsConflicts(sandboxId, squadId, [
+        {
+          host: 'git.example',
+          keyType: 'ssh-ed25519',
+          line: 3,
+          key: FIXTURE_HOST_KEY.publicKey,
+          boxKey: CHANGED_HOST_KEY.publicKey,
+          wildcard: false,
+        },
+      ])
+      const [row] = await db.select().from(knownHostsConflicts).where(eq(knownHostsConflicts.sandboxId, sandboxId))
+      return row
+    }
+
+    afterEach(async () => {
+      await db.delete(knownHostsConflicts).where(like(knownHostsConflicts.sandboxId, `${prefix}%`))
+    })
+
+    it('agents can read conflicts but never resolve them; a person can', async () => {
+      await db
+        .insert(roles)
+        .values({
+          name: 'Default Worker',
+          slug: 'default-worker',
+          isSystem: true,
+          permissions: ['remote-hosts:read', 'remote-hosts:write', 'ssh:read', 'ssh:write'],
+        })
+        .onConflictDoUpdate({
+          target: roles.slug,
+          set: { permissions: ['remote-hosts:read', 'remote-hosts:write', 'ssh:read', 'ssh:write'] },
+        })
+      const squad = await createSquad('conflicts')
+      const [agent] = await db.insert(agents).values({ agentTypeId: 'engineer', squadId: squad.id }).returning()
+      const tok = await createTestAgentToken({ agentId: agent.id, squadId: squad.id })
+      let useCoreCalls = 0
+      const router = authedRouter({
+        useCoreKey: async () => {
+          useCoreCalls++
+          throw new Error('not reached in this test')
+        },
+      })
+      try {
+        const conflict = await seedConflict(squad.id, `${prefix}-box-1`)
+
+        const list = await router.request(`/squad/${squad.id}/known-hosts-conflicts`, req('GET', undefined, tok.token))
+        expect(list.status).toBe(200)
+        const [shown] = await list.json()
+        expect(shown).toMatchObject({
+          id: conflict.id,
+          host: 'git.example',
+          keyType: 'ssh-ed25519',
+          status: 'open',
+          boxLine: 3,
+          wildcard: false,
+        })
+        expect(shown.boxFingerprint).toMatch(/^SHA256:/)
+        expect(shown.coreFingerprint).toMatch(/^SHA256:/)
+        expect(shown.boxFingerprint).not.toBe(shown.coreFingerprint)
+
+        for (const action of ['keep-box', 'use-core']) {
+          const res = await router.request(
+            `/squad/${squad.id}/known-hosts-conflicts/${conflict.id}/${action}`,
+            req('POST', undefined, tok.token)
+          )
+          expect(res.status).toBe(403)
+        }
+        expect(useCoreCalls).toBe(0)
+
+        const kept = await router.request(
+          `/squad/${squad.id}/known-hosts-conflicts/${conflict.id}/keep-box`,
+          req('POST')
+        )
+        expect(kept.status).toBe(200)
+        expect(await kept.json()).toMatchObject({ status: 'kept-box', resolvedByUserId: admin.id })
+      } finally {
+        await db.delete(agents).where(eq(agents.id, agent.id))
+        await db.delete(squads).where(eq(squads.id, squad.id))
+        await db.delete(roles).where(eq(roles.slug, 'default-worker'))
+      }
+    })
+
+    it('a conflict from another squad is not found', async () => {
+      const router = authedRouter()
+      const squadA = await createSquad('conflicts-a')
+      const squadB = await createSquad('conflicts-b')
+      try {
+        const conflict = await seedConflict(squadB.id, `${prefix}-box-2`)
+        const res = await router.request(
+          `/squad/${squadA.id}/known-hosts-conflicts/${conflict.id}/keep-box`,
+          req('POST')
+        )
+        expect(res.status).toBe(404)
+      } finally {
+        await db.delete(squads).where(inArray(squads.id, [squadA.id, squadB.id]))
+      }
+    })
   })
 })

@@ -130,6 +130,7 @@ function fullDeps(over: Partial<SyncBoxFilesDeps> = {}): SyncBoxFilesDeps {
       { relPath: 'context.md', content: Buffer.from('# ctx') },
     ],
     materializeSquadRemoteHosts: async () => {},
+    recordKnownHostsConflicts: async () => {},
     listSquadSshFiles: async () => [
       { relPath: 'ficus_remote_prod', content: Buffer.from('PRIVATE') },
       { relPath: 'ficus_remote_prod.pub', content: Buffer.from('PUBLIC') },
@@ -1687,11 +1688,14 @@ describe('box known_hosts merge (synthetic hosts and keys only)', () => {
       ],
       ...over,
     })
+  let recorded: Array<[string, string | null, unknown[]]> = []
   const onDemand = (client: FakeClient, knownHosts: string | null, syncedHashes: Record<string, unknown> = {}) =>
     pushSquadSshToBox(SQUAD, SANDBOX, {
       getMachineBox: async () => ({ sandboxId: SANDBOX, machineId: 'm1', syncedHashes }) as unknown as MachineBox,
       getClient: async () => client as any,
       materializeSquadRemoteHosts: async () => {},
+      recordKnownHostsConflicts: async (sandboxId, squadId, conflicts) =>
+        void recorded.push([sandboxId, squadId, conflicts]),
       listSquadSshFiles: async () =>
         knownHosts === null ? [] : [{ relPath: 'known_hosts', content: Buffer.from(knownHosts) }],
       stampBoxSyncedHash: async () => {},
@@ -1738,12 +1742,22 @@ describe('box known_hosts merge (synthetic hosts and keys only)', () => {
     const client = new FakeClient()
     const pinned = 'managed.example ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIUSERPINNED'
     client.files.set(KH, Buffer.from(`${pinned}\n`))
+    recorded = []
     const result = await onDemand(client, `${MANAGED}\n${OTHER}\n`)
     expect(text(client)).toBe(`${pinned}\n${block(OTHER)}`)
-    expect(result).toEqual({
-      pushed: true,
-      knownHostsConflicts: [{ host: 'managed.example', keyType: 'ssh-ed25519', line: 1 }],
-    })
+    const conflict = {
+      host: 'managed.example',
+      keyType: 'ssh-ed25519',
+      line: 1,
+      boxKey: 'AAAAC3NzaC1lZDI1NTE5AAAAIUSERPINNED',
+      wildcard: false,
+    }
+    expect(result).toMatchObject({ pushed: true, knownHostsConflicts: [conflict] })
+    // The conflict is persisted for the box so a person can see and resolve it.
+    expect(recorded).toHaveLength(1)
+    expect(recorded[0][0]).toBe(SANDBOX)
+    expect(recorded[0][1]).toBe(SQUAD)
+    expect(recorded[0][2]).toMatchObject([conflict])
   })
 
   test('removing a managed entry removes only that entry', async () => {

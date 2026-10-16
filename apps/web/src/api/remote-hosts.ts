@@ -16,6 +16,58 @@ export interface RemoteHost {
   sshPublicKey: string
   createdAt: string
   updatedAt: string
+  /** Whether agents can connect, by SSH host-key confirmation state (see {@link HostKeyState}). */
+  hostKeyState: HostKeyState
+  hostKeys: PublicHostKey[]
+  hostKeyCheckedAt?: string | null
+  /** Why the last host-key fetch failed, if it did. */
+  hostKeyCheckError?: string | null
+  /** Set on a create/scan response whose host-key fetch just failed. */
+  fetchError?: string
+}
+
+/**
+ * - `trusted`: a pinned key; connections are checked strictly against it.
+ * - `adopting`: registered before keys were pinned; existing trust is being adopted.
+ * - `changed`: the host presented a different key; connections are refused until a person decides.
+ * - `pending`: fetched keys wait for a person; the host is blocked.
+ * - `unverified`: no key to confirm (fetch failed or all rejected); the host is blocked.
+ */
+export type HostKeyState = 'adopting' | 'trusted' | 'changed' | 'pending' | 'unverified'
+
+/** One SSH host key seen for a host (fingerprint only) and the decision on it. */
+export interface PublicHostKey {
+  id: string
+  keyType: string
+  fingerprint: string
+  status: 'pending' | 'trusted' | 'rejected' | 'replaced'
+  origin: 'scan' | 'adopted' | 'adoption-conflict'
+  decisionNote: string | null
+  decidedByUserId: string | null
+  decidedAt: string | null
+  firstSeenAt: string
+  lastSeenAt: string
+  /** For a pending key: the trusted keys of the same type it would replace (a key change). */
+  replacesFingerprints: string[]
+}
+
+/** A squad box whose own known_hosts pins a different key than a Ficus-managed entry. */
+export interface KnownHostsConflict {
+  id: string
+  squadId: string
+  sandboxId: string
+  host: string
+  keyType: string
+  boxFingerprint: string
+  coreFingerprint: string
+  boxLine: number
+  /** The box line names the host through a wildcard; Ficus will not edit it. */
+  wildcard: boolean
+  status: 'open' | 'kept-box' | 'resolved-core'
+  detectedAt: string
+  lastSeenAt: string
+  resolvedAt: string | null
+  resolvedByUserId: string | null
 }
 
 /** A remote host plus the squad IDs currently granted access to it (admin/global surface only). */
@@ -100,6 +152,20 @@ export async function checkRemoteHost(id: string): Promise<RemoteHostCheckResult
   return apiFetch<RemoteHostCheckResult>(`/remote-hosts/${id}/check`, { method: 'POST' })
 }
 
+/** Fetch the host's SSH host keys now (no login). New keys wait for a person. */
+export async function scanRemoteHostKeys(id: string): Promise<RemoteHostWithGrants> {
+  return apiFetch<RemoteHostWithGrants>(`/remote-hosts/${id}/host-keys/scan`, { method: 'POST' })
+}
+
+/** A person's decision on a fetched host key. */
+export async function decideRemoteHostKey(
+  id: string,
+  keyId: string,
+  decision: 'trust' | 'reject'
+): Promise<RemoteHostWithGrants> {
+  return apiFetch<RemoteHostWithGrants>(`/remote-hosts/${id}/host-keys/${keyId}/${decision}`, { method: 'POST' })
+}
+
 // ── Squad surface ────────────────────────────────────────────────────────────
 
 export async function listSquadRemoteHosts(squadId: string): Promise<RemoteHost[]> {
@@ -127,4 +193,35 @@ export async function checkSquadRemoteHost(squadId: string, hostId: string): Pro
 /** Re-push ~/.ssh artifacts to the calling agent's box (agent identities only). */
 export async function syncSquadRemoteHosts(squadId: string): Promise<RemoteHostSyncResult> {
   return apiFetch<RemoteHostSyncResult>(`/remote-hosts/squad/${squadId}/sync`, { method: 'POST' })
+}
+
+/** Squad-scoped host-key fetch for a host granted to `squadId`. */
+export async function scanSquadRemoteHostKeys(squadId: string, hostId: string): Promise<RemoteHost> {
+  return apiFetch<RemoteHost>(`/remote-hosts/squad/${squadId}/host-keys/${hostId}/scan`, { method: 'POST' })
+}
+
+/** Squad-scoped host-key decision (a host shared with other squads needs an administrator). */
+export async function decideSquadRemoteHostKey(
+  squadId: string,
+  hostId: string,
+  keyId: string,
+  decision: 'trust' | 'reject'
+): Promise<RemoteHost> {
+  return apiFetch<RemoteHost>(`/remote-hosts/squad/${squadId}/host-keys/${hostId}/${keyId}/${decision}`, {
+    method: 'POST',
+  })
+}
+
+export async function listSquadKnownHostsConflicts(squadId: string): Promise<KnownHostsConflict[]> {
+  return apiFetch<KnownHostsConflict[]>(`/remote-hosts/squad/${squadId}/known-hosts-conflicts`)
+}
+
+export async function resolveSquadKnownHostsConflict(
+  squadId: string,
+  conflictId: string,
+  choice: 'keep-box' | 'use-core'
+): Promise<KnownHostsConflict> {
+  return apiFetch<KnownHostsConflict>(`/remote-hosts/squad/${squadId}/known-hosts-conflicts/${conflictId}/${choice}`, {
+    method: 'POST',
+  })
 }

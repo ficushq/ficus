@@ -1075,6 +1075,13 @@ async function startup(): Promise<void> {
         const { backfillSquadSshConfigs } = await import('./services/remote-hosts/backfill')
         log.info(`Host runtime: re-materialized SSH configs for ${await backfillSquadSshConfigs()} granted squad(s)`)
       }
+      // Remote hosts registered before host keys were pinned adopt the keys
+      // their boxes already trust (no prompt), or wait for a person when the
+      // evidence conflicts. Runs after the runtime is up so vm boxes are readable;
+      // hosts whose boxes cannot be read yet stay adopting until the next boot.
+      const { adoptPendingHostKeys } = await import('./services/remote-hosts/host-key-adoption')
+      const adoption = await adoptPendingHostKeys()
+      if (Object.values(adoption).some((n) => n > 0)) log.info('Remote host key adoption:', adoption)
     } catch (err) {
       log.warn('Sandbox runtime startup reconciliation failed:', err)
     }

@@ -25,6 +25,9 @@ function hostValues(name: string): typeof remoteHosts.$inferInsert {
     sshUser: 'ficus',
     sshKeyId: `${prefix}-secret-${name}`,
     sshPublicKey: 'ssh-ed25519 AAAA test',
+    // Hosts registered before host keys were pinned (what the migration marks):
+    // they keep working with strict checking while their keys are adopted.
+    hostKeyAdoptionPending: true,
   }
 }
 
@@ -128,6 +131,8 @@ describe('backfillSquadSshConfigs', () => {
     expect(config).toContain(`IdentityFile ${join(sshDir, `ficus_remote_${host.name}`)}`)
     expect(config).toContain(`UserKnownHostsFile ${join(sshDir, 'known_hosts')}`)
     expect(config).not.toContain('~/.ssh/')
+    expect(config).not.toContain('accept-new')
+    expect(config).toContain('StrictHostKeyChecking yes')
     // The user's own stanza survives byte-for-byte outside the markers.
     expect(config.startsWith('Host mine\n  HostName my.example.com\n  User me\n')).toBe(true)
     // The key file the absolute path names was (re)written too.

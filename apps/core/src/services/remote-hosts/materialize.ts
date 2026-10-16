@@ -1,10 +1,26 @@
 import { randomUUID } from 'crypto'
 import * as fs from 'fs'
 import { join } from 'path'
+import {
+  KNOWN_HOSTS_BLOCK_BEGIN,
+  KNOWN_HOSTS_BLOCK_END,
+  knownHostsLineNamesHost,
+  mergeManagedKnownHosts,
+} from '@ficus/shared/known-hosts'
 import { createLogger } from '../../lib/infra/logger'
 import { getSecretStore } from '../secrets'
 import { isHostRuntime } from '../sandbox/runtime'
 import { ensureSquadSshDir, getSquadSshPath, REMOTE_HOST_KEY_PREFIX } from '../squad/ssh'
+import {
+  HOST_KEY_ALIAS_PREFIX,
+  hostKeyAlias,
+  hostKeyState,
+  hostKeyUsable,
+  listHostKeysForHosts,
+  trustedHostKeys,
+  type HostKeyState,
+  type RemoteHostKey,
+} from './host-keys'
 import { listHostsGrantedToSquad, type RemoteHost } from './queries'
 
 /**
@@ -71,48 +87,143 @@ function filterValidHosts(hosts: RemoteHost[], context: string): RemoteHost[] {
 }
 
 /**
+ * How a granted host is rendered, decided by its host-key state
+ * (`host-keys.ts`):
+ * - `pinned`: a person trusted (or rollout adopted) its host key. The stanza
+ *   checks the key strictly against the Core-managed known_hosts entries
+ *   recorded under `HostKeyAlias ficus-remote.<name>`.
+ * - `legacy`: registered before keys were pinned and still being adopted. Strict
+ *   checking against whatever the box already trusts for the real hostname;
+ *   never trust-on-first-use.
+ * - `blocked`: no trusted key. The stanza refuses every connection with a
+ *   message saying a person must confirm the host key; no key file is written.
+ */
+export type HostStanzaMode = 'pinned' | 'legacy' | 'blocked'
+
+export interface RenderableHost {
+  host: RemoteHost
+  mode: HostStanzaMode
+}
+
+export function stanzaModeForState(state: HostKeyState): HostStanzaMode {
+  if (state === 'adopting') return 'legacy'
+  return hostKeyUsable(state) ? 'pinned' : 'blocked'
+}
+
+/** The refusal printed by a blocked host's stanza. Only charset-validated names reach it. */
+export function blockedHostMessage(name: string): string {
+  return `ficus: remote host ${name} is blocked until a person confirms its SSH host key (Settings > Remote hosts, or: ficus remote-hosts host-keys ${name})`
+}
+
+/**
  * Render the managed ssh_config block for a set of hosts. Pure and
  * side-effect free (no filesystem/secret-store access) so it can be tested
  * directly. Hosts that fail re-validation are skipped (with a warning) and
  * never reach the rendered output. Returns `''` when there are no valid
  * hosts to render (callers should omit the block entirely in that case).
  *
+ * Every stanza sets `StrictHostKeyChecking yes` and `UpdateHostKeys no`: an
+ * unknown or changed host key is refused and nothing is ever learned or
+ * updated automatically (see {@link HostStanzaMode}).
+ *
  * `absoluteSshDir` selects how each stanza names the squad's ssh dir:
  *
- * - Omitted (k8s/docker/vm): `~/.ssh/...`, because those runtimes MOUNT the
- *   squad ssh dir at the sandbox user's `~/.ssh`, and `known_hosts` there is
- *   picked up by ssh's own default.
+ * - Omitted (k8s/docker/vm): `~/.ssh/...`, because those runtimes MOUNT (or
+ *   push) the squad ssh dir at the sandbox user's `~/.ssh`, and `known_hosts`
+ *   there is picked up by ssh's own default.
  * - Set (host runtime): the given ABSOLUTE directory. On host there is no
  *   mount — commands run as the operator, and `ssh -F <squadSshDir>/config`
  *   expands `~` to the OPERATOR's home, where the squad's `ficus_remote_<name>`
  *   key does not exist (and with `IdentitiesOnly yes` the alias hard-fails).
  *   `UserKnownHostsFile` is pinned for the same reason: otherwise the squad's
- *   `known_hosts` is ignored and host keys land in the operator's own file.
+ *   `known_hosts` (holding the pinned keys) is ignored.
  *
  * The runtime is deliberately NOT read here — this function stays pure; the
  * callers below (which know the squadId) decide.
  */
-export function renderManagedBlock(hosts: RemoteHost[], opts: { absoluteSshDir?: string } = {}): string {
-  const validHosts = filterValidHosts(hosts, 'renderManagedBlock')
+export function renderManagedBlock(hosts: RenderableHost[], opts: { absoluteSshDir?: string } = {}): string {
+  const valid = new Set(
+    filterValidHosts(
+      hosts.map((h) => h.host),
+      'renderManagedBlock'
+    )
+  )
+  const validHosts = hosts.filter((h) => valid.has(h.host))
   if (validHosts.length === 0) return ''
 
   const { absoluteSshDir } = opts
   const keyDir = absoluteSshDir ?? '~/.ssh'
+  const knownHostsLine = absoluteSshDir ? [`  UserKnownHostsFile ${absoluteSshDir}/known_hosts`] : []
 
-  const entries = validHosts.map((host) =>
-    [
+  const entries = validHosts.map(({ host, mode }) => {
+    const target = [
       `Host ${host.name}`,
       `  HostName ${host.sshHost}`,
       `  Port ${host.sshPort}`,
       `  User ${host.sshUser}`,
+    ]
+    if (mode === 'blocked') {
+      return [
+        ...target,
+        `  StrictHostKeyChecking yes`,
+        `  ProxyCommand sh -c 'echo "${blockedHostMessage(host.name)}" >&2; exit 1'`,
+      ].join('\n')
+    }
+    return [
+      ...target,
       `  IdentityFile ${keyDir}/${KEY_FILE_PREFIX}${host.name}`,
       `  IdentitiesOnly yes`,
-      ...(absoluteSshDir ? [`  UserKnownHostsFile ${absoluteSshDir}/known_hosts`] : []),
-      `  StrictHostKeyChecking accept-new`,
+      ...(mode === 'pinned' ? [`  HostKeyAlias ${hostKeyAlias(host.name)}`] : []),
+      ...knownHostsLine,
+      `  StrictHostKeyChecking yes`,
+      `  UpdateHostKeys no`,
     ].join('\n')
-  )
+  })
 
   return [MANAGED_BLOCK_BEGIN, ...entries, MANAGED_BLOCK_END].join('\n')
+}
+
+/**
+ * Render the known_hosts lines pinning each `pinned` host's trusted keys under
+ * its HostKeyAlias. Pure.
+ */
+export function renderPinnedKnownHosts(hosts: Array<RenderableHost & { keys: RemoteHostKey[] }>): string[] {
+  return hosts
+    .filter((h) => h.mode === 'pinned' && NAME_RE.test(h.host.name))
+    .flatMap((h) => trustedHostKeys(h.keys).map((k) => `${hostKeyAlias(h.host.name)} ${k.keyType} ${k.publicKey}`))
+}
+
+/**
+ * The squad's Core known_hosts with the pinned remote-host keys merged into
+ * the managed block (`@ficus/shared/known-hosts`). Remote-host aliases
+ * (`ficus-remote.*`) are Core's namespace: any line outside the block that
+ * names one — plainly, hashed, or through a wildcard such as `*` — would let a
+ * second key satisfy the strict check, so it is dropped (with a warning) rather
+ * than allowed to override or add to a pinned key. Every other line is kept.
+ */
+export function composeSquadKnownHosts(existing: string, pinLines: string[], aliases: string[]): string {
+  const dropped: string[] = []
+  let inBlock = false
+  const kept = existing.split('\n').filter((line) => {
+    // Lines inside the managed block are Core's own; the merge below re-renders them.
+    const trimmed = line.trim()
+    if (trimmed === KNOWN_HOSTS_BLOCK_BEGIN) inBlock = true
+    if (trimmed === KNOWN_HOSTS_BLOCK_END) inBlock = false
+    if (inBlock || trimmed === KNOWN_HOSTS_BLOCK_END) return true
+    const fields = trimmed.split(/\s+/)
+    const reservedName = (fields[0]?.startsWith('@') ? fields[1] : fields[0])
+      ?.split(',')
+      .some((p) => p.replace(/^!/, '').toLowerCase().startsWith(HOST_KEY_ALIAS_PREFIX))
+    const namesAlias = aliases.some((alias) => knownHostsLineNamesHost(line, alias))
+    if (reservedName || namesAlias) dropped.push(trimmed.slice(0, 80))
+    return !(reservedName || namesAlias)
+  })
+  if (dropped.length) {
+    log.warn(
+      `dropped ${dropped.length} squad known_hosts line(s) naming a Ficus remote-host alias: ${dropped.join(' | ')}`
+    )
+  }
+  return mergeManagedKnownHosts(kept.join('\n'), pinLines.join('\n')).content
 }
 
 /**
@@ -230,15 +341,17 @@ export function composeManagedConfig(userContent: string, block: string): string
   return userContent.endsWith('\n') ? `${userContent}${block}\n` : `${userContent}\n${block}\n`
 }
 
-interface MaterializableHost {
-  host: RemoteHost
-  privateKey: string
+interface MaterializableHost extends RenderableHost {
+  keys: RemoteHostKey[]
+  /** Present for `pinned`/`legacy` hosts; blocked hosts get no key file. */
+  privateKey: string | null
 }
 
 /**
  * A squad's granted hosts, filtered down to those eligible to be
- * materialized: valid (per `filterValidHosts`'s charset/directive-injection
- * checks) AND with a private key currently present in the secret store.
+ * materialized — valid (per `filterValidHosts`'s charset/directive-injection
+ * checks) AND with a private key currently present in the secret store — each
+ * with its stanza mode and host keys.
  *
  * Both managed-block producers — `materializeSquadRemoteHosts` (writes key
  * files + rewrites `config`) and `getManagedBlockForSquad` (recomputes the
@@ -253,6 +366,7 @@ interface MaterializableHost {
 async function listMaterializableHosts(squadId: string): Promise<MaterializableHost[]> {
   const grantedHosts = await listHostsGrantedToSquad(squadId)
   const validHosts = filterValidHosts(grantedHosts, `materializeSquadRemoteHosts squad=${squadId}`)
+  const keysByHost = await listHostKeysForHosts(validHosts.map((h) => h.id))
 
   const materializable: MaterializableHost[] = []
   for (const host of validHosts) {
@@ -263,27 +377,61 @@ async function listMaterializableHosts(squadId: string): Promise<MaterializableH
       log.warn(`skipping remote host ${host.id} (${host.name}) for squad ${squadId}: no private key in secret store`)
       continue
     }
-    materializable.push({ host, privateKey })
+    const keys = keysByHost.get(host.id) ?? []
+    const mode = stanzaModeForState(hostKeyState(host, keys))
+    materializable.push({ host, mode, keys, privateKey: mode === 'blocked' ? null : privateKey })
   }
   return materializable
 }
 
 /** The current managed block for a squad, recomputed live from the DB. */
 export async function getManagedBlockForSquad(squadId: string): Promise<string> {
+  return renderManagedBlock(await listMaterializableHosts(squadId), managedBlockOptions(squadId))
+}
+
+/** Write `content` atomically (same-directory temp file + rename) with `mode`. */
+function writeFileAtomic(dir: string, name: string, content: string, mode: number): void {
+  const tmpPath = join(dir, `.${name}.tmp-${randomUUID()}`)
+  fs.writeFileSync(tmpPath, content, { mode })
+  fs.chmodSync(tmpPath, mode)
+  fs.renameSync(tmpPath, join(dir, name))
+}
+
+/**
+ * Rewrite the squad's Core `known_hosts` with `userContent` plus the current
+ * pinned remote-host keys (see {@link composeSquadKnownHosts}). Shared by
+ * materialization and `squad/ssh.ts`'s known_hosts writers, so a user write can
+ * neither drop nor forge a pinned key.
+ */
+export async function writeSquadKnownHosts(squadId: string, userContent?: string): Promise<void> {
   const materializable = await listMaterializableHosts(squadId)
-  return renderManagedBlock(
-    materializable.map((m) => m.host),
-    managedBlockOptions(squadId)
-  )
+  writeKnownHostsFile(squadId, ensureSquadSshDir(squadId), materializable, userContent)
+}
+
+function writeKnownHostsFile(
+  squadId: string,
+  sshPath: string,
+  materializable: MaterializableHost[],
+  userContent?: string
+): void {
+  const knownHostsPath = join(sshPath, 'known_hosts')
+  const existing = userContent ?? (fs.existsSync(knownHostsPath) ? fs.readFileSync(knownHostsPath, 'utf-8') : '')
+  const aliases = materializable.map((m) => hostKeyAlias(m.host.name))
+  const next = composeSquadKnownHosts(existing, renderPinnedKnownHosts(materializable), aliases)
+  if (userContent === undefined && next === existing) return
+  if (userContent === undefined && !fs.existsSync(knownHostsPath) && next === '') return
+  log.debug(`writing squad ${squadId} known_hosts (${aliases.length} remote-host alias(es))`)
+  writeFileAtomic(sshPath, 'known_hosts', next, 0o644)
 }
 
 /**
  * Materialize a squad's granted remote hosts into its SSH dir: idempotent
  * and complete — writes a `ficus_remote_<name>` private key file (0600) per
- * granted host, removes any `ficus_remote_*` key file no longer granted, and
- * rewrites the managed block in `config` while preserving all user content
- * outside the markers. Call on every mutation that can affect a squad's
- * grants (create+grant, grant, revoke, host delete).
+ * usable granted host, removes any `ficus_remote_*` key file no longer
+ * usable, rewrites the managed block in `config` while preserving all user
+ * content outside the markers, and pins trusted host keys in `known_hosts`.
+ * Call on every mutation that can affect a squad's grants or host keys
+ * (create+grant, grant, revoke, host delete, trust/reject, adoption).
  */
 export async function materializeSquadRemoteHosts(squadId: string): Promise<void> {
   const materializable = await listMaterializableHosts(squadId)
@@ -292,29 +440,26 @@ export async function materializeSquadRemoteHosts(squadId: string): Promise<void
 
   const materializedNames = new Set<string>()
   for (const { host, privateKey } of materializable) {
+    if (privateKey === null) continue
     const keyPath = join(sshPath, `${KEY_FILE_PREFIX}${host.name}`)
     fs.writeFileSync(keyPath, privateKey, { mode: 0o600 })
     fs.chmodSync(keyPath, 0o600)
     materializedNames.add(host.name)
   }
 
-  const block = renderManagedBlock(
-    materializable.map((m) => m.host),
-    managedBlockOptions(squadId)
-  )
+  // Pin keys BEFORE the config names them: a stanza with HostKeyAlias and no
+  // pinned entry would refuse (safe), but never the other way round.
+  writeKnownHostsFile(squadId, sshPath, materializable)
+
+  const block = renderManagedBlock(materializable, managedBlockOptions(squadId))
 
   const configPath = join(sshPath, 'config')
   const existingConfig = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf-8') : ''
   const userContent = stripManagedBlock(existingConfig)
-  // Atomic write: write to a scratch file in the same directory (so the rename
-  // is same-filesystem, hence atomic) then rename over `config`, so a crash or
-  // concurrent read mid-write never observes a half-written config — unlike the
-  // per-host key files above, `config` is a single composed document shared by
-  // every host's stanza plus the squad's own user content, so a torn write here
+  // Atomic write: `config` is a single composed document shared by every
+  // host's stanza plus the squad's own user content, so a torn write here
   // corrupts everyone's SSH access, not just one host's.
-  const tmpConfigPath = join(sshPath, `.config.tmp-${randomUUID()}`)
-  fs.writeFileSync(tmpConfigPath, composeManagedConfig(userContent, block), { mode: 0o644 })
-  fs.renameSync(tmpConfigPath, configPath)
+  writeFileAtomic(sshPath, 'config', composeManagedConfig(userContent, block), 0o644)
 
   // Only now sweep: the config names just the key files written above, so no
   // removal (or failed removal) below can leave it pointing at a missing key.

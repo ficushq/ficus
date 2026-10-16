@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { Command } from 'commander'
 import { apiDelete, apiGet, apiPost } from '../client'
 import { output, outputError, outputTable } from '../output'
-import { registerRemoteHostsCommands, renderInstallInstructions } from './remote-hosts'
+import {
+  registerRemoteHostsCommands,
+  renderConflicts,
+  renderHostKeys,
+  renderInstallInstructions,
+  type PublicRemoteHost,
+} from './remote-hosts'
 
 const HOST = {
   id: 'host-1',
@@ -38,6 +44,75 @@ describe('renderInstallInstructions', () => {
   })
 })
 
+const PENDING_KEY = {
+  id: 'key-new',
+  keyType: 'ssh-ed25519',
+  fingerprint: 'SHA256:newfingerprint',
+  status: 'pending',
+  origin: 'scan',
+  decisionNote: null,
+  decidedByUserId: null,
+  decidedAt: null,
+  replacesFingerprints: ['SHA256:oldfingerprint'],
+}
+const TRUSTED_KEY = {
+  ...PENDING_KEY,
+  id: 'key-old',
+  fingerprint: 'SHA256:oldfingerprint',
+  status: 'trusted',
+  decisionNote: 'trusted by a person',
+  decidedByUserId: 'user-1',
+  decidedAt: '2026-10-16T00:00:00.000Z',
+  replacesFingerprints: [],
+}
+const CHANGED_HOST: PublicRemoteHost = { ...HOST, hostKeyState: 'changed', hostKeys: [TRUSTED_KEY, PENDING_KEY] }
+
+describe('renderHostKeys', () => {
+  it('shows a key change with both fingerprints and how a person acts on it', () => {
+    const text = renderHostKeys(CHANGED_HOST)
+    expect(text).toContain('HOST KEY CHANGED')
+    expect(text).toContain('[trusted] ssh-ed25519 SHA256:oldfingerprint')
+    expect(text).toContain('[pending] ssh-ed25519 SHA256:newfingerprint')
+    expect(text).toContain('key change: replaces trusted SHA256:oldfingerprint')
+    expect(text).toContain('ficus remote-hosts trust-key build-box <fingerprint>')
+    expect(text).toContain('agents are refused')
+  })
+
+  it('a blocked host with a failed fetch says so and how to fetch again', () => {
+    const text = renderHostKeys({ ...HOST, hostKeyState: 'unverified', hostKeys: [], hostKeyCheckError: 'timed out' })
+    expect(text).toContain('BLOCKED')
+    expect(text).toContain('Last key fetch failed: timed out')
+    expect(text).toContain('ficus remote-hosts fetch-key build-box')
+  })
+})
+
+describe('renderConflicts', () => {
+  it('lists both fingerprints, flags wildcard lines and explains resolution', () => {
+    const text = renderConflicts([
+      {
+        id: 'c1',
+        sandboxId: 'agent_1',
+        host: 'git.example',
+        keyType: 'ssh-ed25519',
+        boxFingerprint: 'SHA256:box',
+        coreFingerprint: 'SHA256:core',
+        boxLine: 4,
+        wildcard: true,
+        status: 'open',
+        resolvedByUserId: null,
+      },
+    ])
+    expect(text).toContain('c1 [open] git.example ssh-ed25519 on agent_1 line 4 (wildcard line)')
+    expect(text).toContain('box:  SHA256:box')
+    expect(text).toContain('Ficus: SHA256:core')
+    expect(text).toContain('--keep-box | --use-core')
+  })
+
+  it('says when there are none', () => {
+    expect(renderConflicts([])).toBe('No known_hosts conflicts on your squad boxes.')
+  })
+})
+
 describe('ficus remote-hosts commands', () => {
   const originalSquadId = process.env.FICUS_SQUAD_ID
 
@@ -70,7 +145,10 @@ describe('ficus remote-hosts commands', () => {
     process.env.FICUS_SQUAD_ID = 'squad-1'
     await run(['remote-hosts', 'list'])
     expect(apiGet).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1')
-    expect(outputTable).toHaveBeenCalledWith([HOST], ['name', 'sshUser', 'sshHost', 'sshPort', 'description'])
+    expect(outputTable).toHaveBeenCalledWith(
+      [HOST],
+      ['name', 'sshUser', 'sshHost', 'sshPort', 'hostKeyState', 'description']
+    )
   })
 
   it('list errors with guidance when FICUS_SQUAD_ID is unset and no --squad given', async () => {
@@ -332,5 +410,48 @@ describe('ficus remote-hosts commands', () => {
       { pushed: false, reason: 'box-unreachable' },
       expect.stringContaining('try `ficus remote-hosts sync` again')
     )
+  })
+  it('trust-key resolves the fingerprint to the key id and posts to the squad surface', async () => {
+    process.env.FICUS_SQUAD_ID = 'squad-1'
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([CHANGED_HOST])
+    ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ ...CHANGED_HOST, hostKeyState: 'trusted' })
+    await run(['remote-hosts', 'trust-key', 'build-box', 'SHA256:newfingerprint'])
+    expect(apiPost).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1/host-keys/host-1/key-new/trust')
+  })
+
+  it('reject-key --all uses the global registry', async () => {
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([CHANGED_HOST])
+    ;(apiPost as ReturnType<typeof mock>).mockResolvedValue(CHANGED_HOST)
+    await run(['remote-hosts', 'reject-key', 'build-box', 'SHA256:newfingerprint', '--all'])
+    expect(apiPost).toHaveBeenCalledWith('/api/remote-hosts/host-1/host-keys/key-new/reject')
+  })
+
+  it('trust-key with an unknown fingerprint errors without posting', async () => {
+    process.env.FICUS_SQUAD_ID = 'squad-1'
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([CHANGED_HOST])
+    await run(['remote-hosts', 'trust-key', 'build-box', 'SHA256:nope'])
+    expect(apiPost).not.toHaveBeenCalled()
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('No host key') })
+    )
+  })
+
+  it('fetch-key posts the scan', async () => {
+    process.env.FICUS_SQUAD_ID = 'squad-1'
+    ;(apiPost as ReturnType<typeof mock>).mockResolvedValue(CHANGED_HOST)
+    await run(['remote-hosts', 'fetch-key', 'build-box'])
+    expect(apiPost).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1/host-keys/host-1/scan')
+  })
+
+  it('conflicts lists the squad conflicts; resolve-conflict needs exactly one choice', async () => {
+    process.env.FICUS_SQUAD_ID = 'squad-1'
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([])
+    await run(['remote-hosts', 'conflicts'])
+    expect(apiGet).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1/known-hosts-conflicts')
+
+    await run(['remote-hosts', 'resolve-conflict', 'c1'])
+    expect(apiPost).not.toHaveBeenCalled()
+    await run(['remote-hosts', 'resolve-conflict', 'c1', '--use-core'])
+    expect(apiPost).toHaveBeenCalledWith('/api/remote-hosts/squad/squad-1/known-hosts-conflicts/c1/use-core')
   })
 })

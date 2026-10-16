@@ -29,8 +29,23 @@ export interface SshResult {
   stderr: string
 }
 
+/**
+ * Strict host-key pinning for one connection: the host key must match an entry
+ * for `alias` in `knownHostsPath` (`StrictHostKeyChecking=yes`, nothing
+ * learned or updated). Remote-host probes always pass this; machines keep their
+ * own known_hosts.
+ */
+export interface HostKeyPin {
+  knownHostsPath: string
+  alias: string
+}
+
 export interface SshRunner {
-  run(machine: Machine, command: string, opts?: { stdin?: string | Uint8Array; timeoutMs?: number }): Promise<SshResult>
+  run(
+    machine: Machine,
+    command: string,
+    opts?: { stdin?: string | Uint8Array; timeoutMs?: number; hostKeyPin?: HostKeyPin }
+  ): Promise<SshResult>
 }
 
 /** `<HOME_DIR>/machines` — parent for scratch keys, known_hosts, control sockets. */
@@ -52,12 +67,23 @@ export function sshTarget(machine: Machine): string {
  * the materialized identity file. `-O` control commands (check/forward/exit)
  * connect over the local control socket and do not need these.
  */
-export function sshConnectionArgs(machine: Machine, identityPath: string): string[] {
+export function sshConnectionArgs(machine: Machine, identityPath: string, hostKeyPin?: HostKeyPin): string[] {
+  const hostKeyArgs = hostKeyPin
+    ? [
+        '-o',
+        'StrictHostKeyChecking=yes',
+        '-o',
+        `UserKnownHostsFile=${hostKeyPin.knownHostsPath}`,
+        '-o',
+        'GlobalKnownHostsFile=/dev/null',
+        '-o',
+        `HostKeyAlias=${hostKeyPin.alias}`,
+        '-o',
+        'UpdateHostKeys=no',
+      ]
+    : ['-o', 'StrictHostKeyChecking=accept-new', '-o', `UserKnownHostsFile=${knownHostsPath()}`]
   return [
-    '-o',
-    'StrictHostKeyChecking=accept-new',
-    '-o',
-    `UserKnownHostsFile=${knownHostsPath()}`,
+    ...hostKeyArgs,
     '-o',
     'BatchMode=yes',
     '-o',
@@ -148,7 +174,12 @@ export function createSshRunner(deps?: { spawn?: typeof Bun.spawn; defaultTimeou
         // Ensure the parent dir exists so ssh can create/append known_hosts.
         await mkdir(machinesDir(), { recursive: true })
 
-        const args = ['ssh', ...sshConnectionArgs(machine, identity.path), sshTarget(machine), command]
+        const args = [
+          'ssh',
+          ...sshConnectionArgs(machine, identity.path, opts?.hostKeyPin),
+          sshTarget(machine),
+          command,
+        ]
 
         let stdin: unknown = 'ignore'
         if (opts?.stdin !== undefined) {

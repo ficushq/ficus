@@ -19,7 +19,7 @@
  * - Injection adds exactly `-F <squad config>` plus, when the file exists,
  *   `-o UserKnownHostsFile=<squad known_hosts>` — the same strings
  *   `GIT_SSH_COMMAND` already uses. Strictness stays governed by the
- *   managed stanza (`StrictHostKeyChecking accept-new`); nothing is ever
+ *   managed stanza (`StrictHostKeyChecking yes`, pinned host keys); nothing is ever
  *   weakened at the top level.
  * - `GIT_SSH_COMMAND` starts with `ssh` and already carries `-F`, so it hits
  *   the shim's "user `-F` wins → pass through" rule and stays byte-identical

@@ -109,6 +109,24 @@ describe('ssh runner', () => {
     expect(joined).toContain('-p 2222')
   })
 
+  it('a host-key pin replaces trust-on-first-use with strict checking against the pinned file and alias', async () => {
+    const { spawn, calls } = makeFakeSpawn({ stdout: 'ok\n' })
+    const runner = createSshRunner({ spawn })
+
+    await runner.run(makeMachine(), 'echo hi', {
+      hostKeyPin: { knownHostsPath: '/tmp/pinned_known_hosts', alias: 'ficus-remote.prod' },
+    })
+
+    const joined = calls[0].args.join(' ')
+    expect(joined).toContain('-o StrictHostKeyChecking=yes')
+    expect(joined).toContain('-o UserKnownHostsFile=/tmp/pinned_known_hosts')
+    expect(joined).toContain('-o GlobalKnownHostsFile=/dev/null')
+    expect(joined).toContain('-o HostKeyAlias=ficus-remote.prod')
+    expect(joined).toContain('-o UpdateHostKeys=no')
+    expect(joined).not.toContain('accept-new')
+    expect(joined).not.toContain('machines/known_hosts')
+  })
+
   it('materializes a 0600 identity present during spawn and cleaned up after', async () => {
     const { spawn, calls } = makeFakeSpawn({})
     const runner = createSshRunner({ spawn })

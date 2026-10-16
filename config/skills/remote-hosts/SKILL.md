@@ -43,7 +43,20 @@ wait for them to confirm they've appended it to
 usable until they confirm — the key genuinely is not installed until a human
 installs it.
 
-Once they confirm, verify:
+The host is also **blocked until a person confirms its SSH host key**. On
+`add`, Ficus fetches the host's own public key (no login) and shows its
+SHA256 fingerprint as pending. You cannot confirm it — trusting or rejecting
+a host key is refused for every agent, whatever its permissions. Ask a human
+to check the fingerprint against the host (for example
+`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the box) and trust it in
+Settings → Remote Hosts or with `ficus remote-hosts trust-key staging <fingerprint>`.
+
+```bash
+ficus remote-hosts host-keys staging   # state + fingerprints (read-only for agents)
+ficus remote-hosts fetch-key staging   # fetch again if the host was unreachable
+```
+
+Once both are done, verify:
 
 ```bash
 ficus remote-hosts check staging
@@ -87,9 +100,12 @@ scp file.tar.gz staging:/srv/releases/
 rsync -av ./dist/ staging:/srv/app/
 ```
 
-The first connection to a given host auto-accepts its host key
-(`StrictHostKeyChecking accept-new` in the managed config) — no manual
-`known_hosts` prompt to answer.
+Every connection checks the host key strictly against the key a person
+confirmed (`StrictHostKeyChecking yes`); nothing is accepted on first use.
+A host whose key is not confirmed refuses with
+`ficus: remote host <name> is blocked until a person confirms its SSH host key`.
+Never work around this (no `-o StrictHostKeyChecking=no`, no editing
+`known_hosts` by hand for a Ficus host) — ask a human instead.
 
 ## Adapt to the Target
 
@@ -123,6 +139,19 @@ A remote host is the **team's** box, not ficus's. Before doing anything on it:
 
 ## Troubleshooting
 
+- **`... is blocked until a person confirms its SSH host key`**: the host key
+  is pending or was rejected. Run `ficus remote-hosts host-keys <name>` and
+  ask a human to trust the right fingerprint.
+- **`Host key verification failed` / `REMOTE HOST IDENTIFICATION HAS CHANGED`**:
+  the host now presents a different key. Stop. Run
+  `ficus remote-hosts fetch-key <name>` so the new key is recorded, then ask a
+  human: `host-keys` shows the old and new fingerprints. It may be a
+  legitimate reinstall or an attack; only a person decides.
+- **Host key verification fails for a non-Ficus host (github.com, ...)**: run
+  `ficus remote-hosts conflicts` — your box may pin a different key than the
+  squad's managed known_hosts. A human resolves it (keep the box key, or use
+  the Ficus key).
+
 - **`check` fails / "NOT reachable"**: usually one of —
   - the public key hasn't been installed on the target yet (the most common
     cause right after `add` — confirm with the box owner);
@@ -147,6 +176,7 @@ A remote host is the **team's** box, not ficus's. Before doing anything on it:
 - Materialized into the squad's SSH directory as one `ficus_remote_<name>`
   private key file (mode `0600`) plus a managed block in `config` delimited
   by `# >>> ficus remote hosts >>>` / `# <<< ficus remote hosts <<<`
-  (`apps/core/src/services/remote-hosts/materialize.ts`). User-added config
-  outside the managed block is always preserved.
+  (`apps/core/src/services/remote-hosts/materialize.ts`), and the confirmed
+  host keys pinned in `known_hosts` under `ficus-remote.<name>`. User-added
+  config outside the managed blocks is always preserved.
 - Full walkthrough + security model: `docs/wiki/remote-hosts.md`.

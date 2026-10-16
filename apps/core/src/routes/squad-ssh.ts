@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as squadSsh from '../services/squad/ssh'
+import { ReservedKnownHostsNameError } from '../services/squad/ssh'
 import { Squad } from '../entities/Squad'
 import { requireSquadPermission } from '../middleware'
 
@@ -142,7 +143,12 @@ export const squadSshRouter = new Hono()
       if (!squadId) return c.json({ error: 'Squad not found' }, 404)
 
       const { host } = c.req.valid('json')
-      await squadSsh.addKnownHost(squadId, host)
+      try {
+        await squadSsh.addKnownHost(squadId, host)
+      } catch (err) {
+        if (err instanceof ReservedKnownHostsNameError) return c.json({ error: err.message }, 400)
+        throw err
+      }
       return c.json({ success: true })
     }
   )
@@ -157,7 +163,12 @@ export const squadSshRouter = new Hono()
       if (!squadId) return c.json({ error: 'Squad not found' }, 404)
 
       const { knownHosts } = c.req.valid('json')
-      await squadSsh.setKnownHosts(squadId, knownHosts)
+      try {
+        await squadSsh.setKnownHosts(squadId, knownHosts)
+      } catch (err) {
+        if (err instanceof ReservedKnownHostsNameError) return c.json({ error: err.message }, 400)
+        throw err
+      }
       return c.json({ success: true })
     }
   )

@@ -177,6 +177,8 @@ export interface SyncBoxFilesDeps {
   /** The squad's `~/.ssh` material (keys, `config`, `known_hosts`), paths
    *  relative to the ssh dir root; empty when the squad has no ssh dir yet. */
   listSquadSshFiles?: (squadId: string) => Promise<ArtifactFile[]>
+  /** Persist the box's current known_hosts conflicts (see {@link RecordKnownHostsConflicts}). */
+  recordKnownHostsConflicts?: RecordKnownHostsConflicts
   /** Wraps one selected asset-mutation branch in setup progress. */
   trackSetupWork?: <T>(operation: () => Promise<T>) => Promise<T>
 }
@@ -194,7 +196,7 @@ function resolveRole(sandboxId: string, _opts?: SandboxOptions): BoxRole {
   return 'agent'
 }
 
-function defaultBoxHome(sandboxId: string): string {
+export function defaultBoxHome(sandboxId: string): string {
   return `/home/${boxUnixUser(sandboxId)}`
 }
 
@@ -479,7 +481,7 @@ function fileIdentity(bytes: Uint8Array): FileIdentity {
   return { bytes: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') }
 }
 
-async function readBoxFile(client: SandboxClient, path: string): Promise<Buffer | null> {
+export async function readBoxFile(client: SandboxClient, path: string): Promise<Buffer | null> {
   try {
     const response = await client.read({ path, limit: KNOWN_HOSTS_MAX_BYTES + 1 })
     if (response.totalSize > KNOWN_HOSTS_MAX_BYTES) {
@@ -511,13 +513,15 @@ async function mergeKnownHostsOnBox(
   client: SandboxClient,
   sshDir: string,
   managed: Uint8Array | null,
-  fence?: SetupBashFence
+  fence?: SetupBashFence,
+  preEdit?: (existing: string) => string
 ): Promise<KnownHostsConflict[]> {
   const path = `${sshDir}/${KNOWN_HOSTS}`
   const managedText = managed ? Buffer.from(managed).toString('utf8') : ''
   for (let attempt = 1; attempt <= KNOWN_HOSTS_MERGE_ATTEMPTS; attempt++) {
     const existing = await readBoxFile(client, path)
-    const merged = mergeManagedKnownHosts(existing ? existing.toString('utf8') : '', managedText)
+    const existingText = existing ? existing.toString('utf8') : ''
+    const merged = mergeManagedKnownHosts(preEdit ? preEdit(existingText) : existingText, managedText)
     if (merged.conflicts.length) {
       log.warn(
         `known_hosts conflict at ${path}: a user entry pins a different key; managed entry not written: ${merged.conflicts
@@ -547,6 +551,46 @@ async function mergeKnownHostsOnBox(
     return merged.conflicts
   }
   throw new Error(`${path} kept changing during the managed known_hosts merge; left untouched`)
+}
+
+/**
+ * Persist a box's current known_hosts conflicts (`remote-hosts/known-hosts-conflicts.ts`):
+ * called after every merge with the full current list, so conflicts that are
+ * gone are cleared. `squadId` is null when the box no longer gets squad ssh material.
+ */
+export type RecordKnownHostsConflicts = (
+  sandboxId: string,
+  squadId: string | null,
+  conflicts: KnownHostsConflict[]
+) => Promise<void>
+
+async function defaultRecordKnownHostsConflicts(
+  sandboxId: string,
+  squadId: string | null,
+  conflicts: KnownHostsConflict[]
+): Promise<void> {
+  // Best-effort: persisting the report must never fail a box sync.
+  try {
+    const { recordBoxKnownHostsConflicts } = await import('../../remote-hosts/known-hosts-conflicts')
+    await recordBoxKnownHostsConflicts(sandboxId, squadId, conflicts)
+  } catch (err) {
+    log.warn(`could not record known_hosts conflicts for ${sandboxId}:`, err)
+  }
+}
+
+/**
+ * Apply a person's "use Core key" decision on a vm box: `edit` removes the
+ * conflicting box line(s) (it may throw to refuse), then the managed entries
+ * are merged in, through the same compare-and-swap, 0600 write as every sync
+ * ({@link mergeKnownHostsOnBox}). Returns the conflicts that remain.
+ */
+export async function editAndMergeKnownHostsOnBox(
+  client: SandboxClient,
+  home: string,
+  managedKnownHosts: string,
+  edit: (existing: string) => string
+): Promise<KnownHostsConflict[]> {
+  return mergeKnownHostsOnBox(client, `${home}/.ssh`, Buffer.from(managedKnownHosts, 'utf8'), undefined, edit)
 }
 
 /** Write a squad's `~/.ssh` material to a box: create the dir 0700, push each
@@ -729,6 +773,7 @@ export async function syncBoxFiles(
   const squadId = opts.squadId ?? getSquadIdFromSandbox(sandboxId) ?? undefined
   const box = deps.box ?? null
   const stamp = deps.stampBoxSyncedHash ?? stampBoxSyncedHashReal
+  const recordConflicts = deps.recordKnownHostsConflicts ?? defaultRecordKnownHostsConflicts
 
   const clearLegacyTree = async (name: string, root: string): Promise<void> => {
     if (name === 'squad-ssh') {
@@ -820,7 +865,10 @@ export async function syncBoxFiles(
         asset.name,
         root,
         material.files,
-        async () => void (await writeSshFiles(client, home, material, deps.bashFence)),
+        async () => {
+          const conflicts = await writeSshFiles(client, home, material, deps.bashFence)
+          await recordConflicts(sandboxId, squadId!, conflicts)
+        },
         [],
         () => clearLegacyTree(asset.name, root),
         { hashFiles: material.hashFiles, pushWhenEmpty: true }
@@ -860,7 +908,12 @@ export async function syncBoxFiles(
         [],
         // A box that no longer gets the squad ssh asset drops the managed
         // known_hosts block too; user entries stay.
-        isSsh ? async () => void (await mergeKnownHostsOnBox(client, root, null, deps.bashFence)) : async () => {},
+        isSsh
+          ? async () => {
+              await mergeKnownHostsOnBox(client, root, null, deps.bashFence)
+              await recordConflicts(sandboxId, null, [])
+            }
+          : async () => {},
         asset.dest.relPath ? [asset.dest.relPath] : [],
         () => clearLegacyTree(asset.name, root),
         { pushWhenEmpty: isSsh }
@@ -889,6 +942,8 @@ export interface PushSquadSshToBoxDeps {
   bashFence?: SetupBashFence
   materializeSquadRemoteHosts?: (squadId: string) => Promise<void>
   listSquadSshFiles?: (squadId: string) => Promise<ArtifactFile[]>
+  /** Persist the box's current known_hosts conflicts. */
+  recordKnownHostsConflicts?: RecordKnownHostsConflicts
   /** Re-stamp the squad-ssh content hash after a forced push. Defaults to
    *  queries.ts's `stampBoxSyncedHash`. */
   stampBoxSyncedHash?: (
@@ -911,7 +966,7 @@ export interface PushSquadSshToBoxDeps {
  * import back to `factory.ts` here would loop. Reached only in production —
  * tests inject `getClient` directly.
  */
-async function defaultGetClient(sandboxId: string): Promise<SandboxClient | null> {
+export async function defaultGetClient(sandboxId: string): Promise<SandboxClient | null> {
   const { getSandboxManager } = await import('../factory')
   const manager = getSandboxManager() as unknown as {
     getOrAttachClient?: (id: string) => Promise<SandboxClient | null>
@@ -960,6 +1015,8 @@ export async function pushSquadSshToBox(
   }
   const syncs = material.hashFiles.length > 0 || previous !== null
   const knownHostsConflicts = syncs ? await writeSshFiles(client, home, material, deps.bashFence) : []
+  if (syncs)
+    await (deps.recordKnownHostsConflicts ?? defaultRecordKnownHostsConflicts)(sandboxId, squadId, knownHostsConflicts)
   const current = new Set(currentFiles)
   await removeManagedFiles(
     client,

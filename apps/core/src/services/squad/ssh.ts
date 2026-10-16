@@ -393,9 +393,32 @@ export function getSshConfig(squadId: string): string | null {
 }
 
 /**
- * Add a host to known_hosts.
+ * Remote-host pinned keys live in the squad's known_hosts under
+ * `ficus-remote.<name>` aliases that only Core may write
+ * (`remote-hosts/materialize.ts`). Reject user content naming one, so a
+ * caller can never add a key a person did not confirm.
+ */
+export class ReservedKnownHostsNameError extends Error {}
+
+function rejectReservedKnownHostsNames(content: string): void {
+  for (const line of content.split('\n')) {
+    const fields = line.trim().split(/\s+/)
+    const hostField = fields[0]?.startsWith('@') ? fields[1] : fields[0]
+    if (!hostField || hostField.startsWith('#')) continue
+    if (hostField.split(',').some((p) => p.replace(/^!/, '').toLowerCase().startsWith('ficus-remote.'))) {
+      throw new ReservedKnownHostsNameError(
+        'known_hosts entries for ficus-remote.* names are managed by Ficus and cannot be set directly'
+      )
+    }
+  }
+}
+
+/**
+ * Add a host to known_hosts. The squad's pinned remote-host keys are kept
+ * (the file is recomposed through `writeSquadKnownHosts`).
  */
 export async function addKnownHost(squadId: string, hostEntry: string): Promise<void> {
+  rejectReservedKnownHostsNames(hostEntry)
   const sshPath = ensureSquadSshDir(squadId)
   const knownHostsPath = join(sshPath, 'known_hosts')
 
@@ -405,17 +428,22 @@ export async function addKnownHost(squadId: string, hostEntry: string): Promise<
   const trimmedEntry = hostEntry.trim()
   if (!existing.includes(trimmedEntry)) {
     const newContent = existing + (existing.endsWith('\n') || existing === '' ? '' : '\n') + trimmedEntry + '\n'
-    fs.writeFileSync(knownHostsPath, newContent, { mode: 0o644 })
+    const { writeSquadKnownHosts } = await import('../remote-hosts/materialize')
+    await writeSquadKnownHosts(squadId, newContent)
   }
 }
 
 /**
- * Set known_hosts content (full replacement).
+ * Set known_hosts content (full replacement of the user content). The squad's
+ * pinned remote-host keys are re-appended, never replaced; see
+ * `remote-hosts/materialize.ts` `writeSquadKnownHosts` (reached lazily for the
+ * same import-cycle reason as `setSshConfig`).
  */
 export async function setKnownHosts(squadId: string, knownHosts: string): Promise<void> {
-  const sshPath = ensureSquadSshDir(squadId)
-  const knownHostsPath = join(sshPath, 'known_hosts')
-  fs.writeFileSync(knownHostsPath, knownHosts, { mode: 0o644 })
+  rejectReservedKnownHostsNames(knownHosts)
+  ensureSquadSshDir(squadId)
+  const { writeSquadKnownHosts } = await import('../remote-hosts/materialize')
+  await writeSquadKnownHosts(squadId, knownHosts)
 }
 
 /**
