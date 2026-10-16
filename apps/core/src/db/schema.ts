@@ -3473,9 +3473,74 @@ export const remoteHosts = pgTable('remote_hosts', {
   sshUser: text('ssh_user').notNull(),
   sshKeyId: text('ssh_key_id').notNull(), // secret handle `remote-host-ssh:<id>`
   sshPublicKey: text('ssh_public_key').notNull(),
+  // True for hosts registered before host keys were pinned (the migration sets
+  // it on every existing row): their keys are adopted from existing trust
+  // (remote-hosts/host-key-adoption.ts) instead of a human confirming a scan.
+  hostKeyAdoptionPending: boolean('host_key_adoption_pending').notNull().default(false),
+  // Last ssh-keyscan of this host and its failure, if any (remote-hosts/host-keys.ts).
+  hostKeyCheckedAt: timestamp('host_key_checked_at'),
+  hostKeyCheckError: text('host_key_check_error'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
+
+// SSH host keys seen for a remote host, and the human decision on each. Only
+// `trusted` keys are pinned (written to known_hosts under the host's
+// HostKeyAlias); `pending` keys wait for a person to trust or reject them.
+// `decided_by_user_id` is null only for keys adopted from existing trust at
+// rollout (`origin = 'adopted'`, see `decision_note`).
+export const remoteHostKeys = pgTable(
+  'remote_host_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    hostId: uuid('host_id')
+      .notNull()
+      .references(() => remoteHosts.id, { onDelete: 'cascade' }),
+    keyType: text('key_type').notNull(), // ssh-ed25519, ecdsa-sha2-nistp256, ssh-rsa, ...
+    publicKey: text('public_key').notNull(), // base64 key blob
+    fingerprint: text('fingerprint').notNull(), // SHA256:<base64>
+    status: text('status').notNull(), // 'pending' | 'trusted' | 'rejected' | 'replaced'
+    origin: text('origin').notNull(), // 'scan' | 'adopted' | 'adoption-conflict'
+    decisionNote: text('decision_note'),
+    decidedByUserId: text('decided_by_user_id'),
+    decidedAt: timestamp('decided_at'),
+    firstSeenAt: timestamp('first_seen_at').notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at').notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.hostId, t.keyType, t.publicKey), index('remote_host_keys_host_idx').on(t.hostId)]
+)
+
+// A box's own known_hosts pins a different key than a Core-managed entry for
+// the same host and key type, so the managed entry was left out of the box
+// (packages/shared/src/known-hosts.ts). One row per box and exact key pair.
+// `open` rows are cleared when the conflict is no longer seen; `kept-box` rows
+// are a person's decision to keep the box key, which silences that exact pair;
+// `resolved-core` rows record a person replacing the box key with Core's.
+export const knownHostsConflicts = pgTable(
+  'known_hosts_conflicts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    squadId: text('squad_id').notNull(),
+    sandboxId: text('sandbox_id').notNull(),
+    host: text('host').notNull(), // known_hosts name: host or [host]:port
+    keyType: text('key_type').notNull(),
+    boxKey: text('box_key').notNull(),
+    boxFingerprint: text('box_fingerprint').notNull(),
+    coreKey: text('core_key').notNull(),
+    coreFingerprint: text('core_fingerprint').notNull(),
+    boxLine: integer('box_line').notNull(),
+    wildcard: boolean('wildcard').notNull().default(false),
+    status: text('status').notNull().default('open'), // 'open' | 'kept-box' | 'resolved-core'
+    detectedAt: timestamp('detected_at').notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at').notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at'),
+    resolvedByUserId: text('resolved_by_user_id'),
+  },
+  (t) => [
+    unique().on(t.sandboxId, t.host, t.keyType, t.boxKey, t.coreKey),
+    index('known_hosts_conflicts_squad_idx').on(t.squadId),
+  ]
+)
 
 // Grants a whole squad SSH access to a remote host. A grant gives every agent
 // in that squad access; per-agent grants are out of scope (see design doc).

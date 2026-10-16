@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { remoteHosts } from '../../db'
+import { db, remoteHostKeys, remoteHosts } from '../../db'
 import { getSecretStore, resetSecretStore } from '../secrets'
 import {
   deleteGrant,
@@ -16,7 +16,9 @@ import {
 import {
   MANAGED_BLOCK_BEGIN,
   MANAGED_BLOCK_END,
+  blockedHostMessage,
   composeManagedConfig,
+  composeSquadKnownHosts,
   getManagedBlockForSquad,
   materializeSquadRemoteHosts,
   renderManagedBlock,
@@ -46,10 +48,36 @@ function hostValues(name: string): typeof remoteHosts.$inferInsert {
   }
 }
 
-async function createGrantedHost(name: string, squadId: string, privateKey = 'fake-private-key-material') {
+// Synthetic host key blob (4-byte length + type + payload). Never a real host's key.
+function syntheticKey(seed: string, keyType = 'ssh-ed25519'): string {
+  const type = Buffer.from(keyType)
+  const len = Buffer.alloc(4)
+  len.writeUInt32BE(type.length)
+  return Buffer.concat([len, type, Buffer.from(`synthetic-${seed}`)]).toString('base64')
+}
+
+async function addHostKey(hostId: string, status: 'trusted' | 'pending', seed: string) {
+  await db.insert(remoteHostKeys).values({
+    hostId,
+    keyType: 'ssh-ed25519',
+    publicKey: syntheticKey(seed),
+    fingerprint: `SHA256:${seed}`,
+    status,
+    origin: 'scan',
+  })
+}
+
+/** A granted host whose host key a person has trusted (usable), unless `trusted` is false. */
+async function createGrantedHost(
+  name: string,
+  squadId: string,
+  privateKey = 'fake-private-key-material',
+  trusted = true
+) {
   const host = await insertRemoteHost(hostValues(name))
   await getSecretStore().set(host.sshKeyId, privateKey, 'system')
   await insertGrant({ hostId: host.id, squadId })
+  if (trusted) await addHostKey(host.id, 'trusted', name)
   return host
 }
 
@@ -91,7 +119,38 @@ afterEach(async () => {
   await cleanupHosts()
 })
 
+const pinned = (hosts: RemoteHost[]) => hosts.map((host) => ({ host, mode: 'pinned' as const }))
+
 describe('renderManagedBlock', () => {
+  const host = { id: '1', name: 'prod', sshHost: 'prod.example.com', sshPort: 22, sshUser: 'deploy' } as RemoteHost
+
+  it('a blocked host gets a stanza that refuses with a clear message and names no key', () => {
+    const block = renderManagedBlock([{ host, mode: 'blocked' }])
+    expect(block).toContain('Host prod')
+    expect(block).toContain('  StrictHostKeyChecking yes')
+    expect(block).toContain(`  ProxyCommand sh -c 'echo "${blockedHostMessage('prod')}" >&2; exit 1'`)
+    expect(block).not.toContain('IdentityFile')
+    expect(blockedHostMessage('prod')).toContain('a person confirms its SSH host key')
+  })
+
+  it('a host still adopting existing trust is strict against what the box already trusts (no alias)', () => {
+    const block = renderManagedBlock([{ host, mode: 'legacy' }])
+    expect(block).toContain('  IdentityFile ~/.ssh/ficus_remote_prod')
+    expect(block).toContain('  StrictHostKeyChecking yes')
+    expect(block).toContain('  UpdateHostKeys no')
+    expect(block).not.toContain('HostKeyAlias')
+  })
+
+  it('never renders accept-new or a weaker setting in any mode', () => {
+    for (const mode of ['pinned', 'legacy', 'blocked'] as const) {
+      for (const absoluteSshDir of [undefined, '/abs/ssh']) {
+        const block = renderManagedBlock([{ host, mode }], { absoluteSshDir })
+        expect(block).not.toMatch(/accept-new|StrictHostKeyChecking (no|off)|UpdateHostKeys yes/)
+        expect(block).toContain('StrictHostKeyChecking yes')
+      }
+    }
+  })
+
   it('renders one Host entry per host between the markers', () => {
     const hosts = [
       {
@@ -103,7 +162,7 @@ describe('renderManagedBlock', () => {
       } as RemoteHost,
     ]
 
-    const block = renderManagedBlock(hosts)
+    const block = renderManagedBlock(pinned(hosts))
     expect(block.startsWith(MANAGED_BLOCK_BEGIN)).toBe(true)
     expect(block.endsWith(MANAGED_BLOCK_END)).toBe(true)
     expect(block).toContain('Host staging')
@@ -112,7 +171,10 @@ describe('renderManagedBlock', () => {
     expect(block).toContain('  User deploy')
     expect(block).toContain('  IdentityFile ~/.ssh/ficus_remote_staging')
     expect(block).toContain('  IdentitiesOnly yes')
-    expect(block).toContain('  StrictHostKeyChecking accept-new')
+    expect(block).toContain('  HostKeyAlias ficus-remote.staging')
+    expect(block).toContain('  StrictHostKeyChecking yes')
+    expect(block).toContain('  UpdateHostKeys no')
+    expect(block).not.toContain('accept-new')
   })
 
   it('renders ABSOLUTE IdentityFile + UserKnownHostsFile when given an absolute ssh dir', () => {
@@ -123,18 +185,18 @@ describe('renderManagedBlock', () => {
       { id: '1', name: 'staging', sshHost: 'staging.example.com', sshPort: 2222, sshUser: 'deploy' } as RemoteHost,
     ]
 
-    const block = renderManagedBlock(hosts, { absoluteSshDir: '/ficus/ssh/squad-1' })
+    const block = renderManagedBlock(pinned(hosts), { absoluteSshDir: '/ficus/ssh/squad-1' })
     expect(block).toContain('  IdentityFile /ficus/ssh/squad-1/ficus_remote_staging')
     expect(block).toContain('  UserKnownHostsFile /ficus/ssh/squad-1/known_hosts')
     expect(block).not.toContain('~/.ssh/')
     // Everything else is unchanged.
     expect(block).toContain('  IdentitiesOnly yes')
-    expect(block).toContain('  StrictHostKeyChecking accept-new')
+    expect(block).toContain('  StrictHostKeyChecking yes')
   })
 
   it('keeps the ~/.ssh rendering and adds no UserKnownHostsFile without an absolute ssh dir', () => {
     const hosts = [{ id: '1', name: 'staging', sshHost: 'h', sshPort: 22, sshUser: 'u' } as RemoteHost]
-    const block = renderManagedBlock(hosts)
+    const block = renderManagedBlock(pinned(hosts))
     expect(block).toContain('  IdentityFile ~/.ssh/ficus_remote_staging')
     expect(block).not.toContain('UserKnownHostsFile')
   })
@@ -149,7 +211,7 @@ describe('renderManagedBlock', () => {
       { id: '2', name: 'good-host', sshHost: 'good.example.com', sshPort: 22, sshUser: 'u' } as RemoteHost,
     ]
 
-    const block = renderManagedBlock(hosts)
+    const block = renderManagedBlock(pinned(hosts))
     expect(block).not.toContain('evil')
     expect(block).not.toContain('ProxyCommand')
     expect(block).toContain('Host good-host')
@@ -161,7 +223,7 @@ describe('renderManagedBlock', () => {
       { id: '2', name: 'b', sshHost: 'ok.example.com', sshPort: 22, sshUser: 'bad user' } as RemoteHost,
     ]
 
-    const block = renderManagedBlock(hosts)
+    const block = renderManagedBlock(pinned(hosts))
     expect(block).toBe('')
   })
 })
@@ -247,7 +309,92 @@ describe('composeManagedConfig', () => {
   })
 })
 
+describe('composeSquadKnownHosts', () => {
+  const PIN = `ficus-remote.prod ssh-ed25519 ${syntheticKey('pin')}`
+
+  it('keeps user entries and pins the trusted keys in the managed block', () => {
+    const user = `github.example ssh-ed25519 ${syntheticKey('gh')}\n`
+    const out = composeSquadKnownHosts(user, [PIN], ['ficus-remote.prod'])
+    expect(out.startsWith(user)).toBe(true)
+    expect(out).toContain(PIN)
+    // Idempotent.
+    expect(composeSquadKnownHosts(out, [PIN], ['ficus-remote.prod'])).toBe(out)
+    // Unpinning removes only the managed entry.
+    expect(composeSquadKnownHosts(out, [], ['ficus-remote.prod'])).toBe(user)
+  })
+
+  it('drops any user line that would add a key for a remote-host alias (plain, reserved prefix or wildcard)', () => {
+    const forged = [
+      `ficus-remote.prod ssh-ed25519 ${syntheticKey('evil')}`,
+      `ficus-remote.other ssh-ed25519 ${syntheticKey('evil2')}`,
+      `* ssh-ed25519 ${syntheticKey('evil3')}`,
+      `github.example ssh-ed25519 ${syntheticKey('gh')}`,
+    ].join('\n')
+    const out = composeSquadKnownHosts(forged, [PIN], ['ficus-remote.prod'])
+    expect(out).not.toContain(syntheticKey('evil'))
+    expect(out).not.toContain(syntheticKey('evil2'))
+    expect(out).not.toContain(syntheticKey('evil3'))
+    expect(out).toContain(`github.example ssh-ed25519 ${syntheticKey('gh')}`)
+    expect(out).toContain(PIN)
+  })
+})
+
 describe('materializeSquadRemoteHosts', () => {
+  it('a host without a trusted key: blocked stanza, no key file, no pin', async () => {
+    const squadId = `${prefix}-squad-blocked`
+    const host = await createGrantedHost('blocked', squadId, 'PRIVATE-KEY-CONTENT', false)
+    await addHostKey(host.id, 'pending', 'blocked-pending')
+
+    await materializeSquadRemoteHosts(squadId)
+
+    const sshPath = getSquadSshPath(squadId)
+    expect(existsSync(join(sshPath, `ficus_remote_${host.name}`))).toBe(false)
+    const config = readFileSync(join(sshPath, 'config'), 'utf-8')
+    expect(config).toContain(`Host ${host.name}`)
+    expect(config).toContain('ProxyCommand')
+    expect(config).not.toContain('accept-new')
+    const knownHosts = existsSync(join(sshPath, 'known_hosts')) ? readFileSync(join(sshPath, 'known_hosts'), 'utf-8') : ''
+    expect(knownHosts).not.toContain(syntheticKey('blocked-pending'))
+  })
+
+  it('a trusted host: key file, strict pinned stanza, and its key pinned under the alias in known_hosts', async () => {
+    const squadId = `${prefix}-squad-pinned`
+    const sshPath = ensureSquadSshDir(squadId)
+    writeFileSync(join(sshPath, 'known_hosts'), `github.example ssh-ed25519 ${syntheticKey('gh')}\n`)
+    const host = await createGrantedHost('pinned', squadId)
+
+    await materializeSquadRemoteHosts(squadId)
+
+    expect(existsSync(join(sshPath, `ficus_remote_${host.name}`))).toBe(true)
+    const config = readFileSync(join(sshPath, 'config'), 'utf-8')
+    expect(config).toContain(`HostKeyAlias ficus-remote.${host.name}`)
+    expect(config).toContain('StrictHostKeyChecking yes')
+    const knownHosts = readFileSync(join(sshPath, 'known_hosts'), 'utf-8')
+    expect(knownHosts).toContain(`github.example ssh-ed25519 ${syntheticKey('gh')}`)
+    expect(knownHosts).toContain(`ficus-remote.${host.name} ssh-ed25519 ${syntheticKey('pinned')}`)
+
+    // Revoking the grant unpins it and keeps the user's entry.
+    await deleteGrant(host.id, squadId)
+    await materializeSquadRemoteHosts(squadId)
+    expect(readFileSync(join(sshPath, 'known_hosts'), 'utf-8')).toBe(`github.example ssh-ed25519 ${syntheticKey('gh')}\n`)
+  })
+
+  it('setKnownHosts keeps pinned keys and refuses reserved names', async () => {
+    const squadId = `${prefix}-squad-setkh`
+    const host = await createGrantedHost('setkh', squadId)
+    await materializeSquadRemoteHosts(squadId)
+    const { setKnownHosts, getKnownHosts } = await import('../squad/ssh')
+
+    await setKnownHosts(squadId, `other.example ssh-ed25519 ${syntheticKey('other')}\n`)
+    const knownHosts = getKnownHosts(squadId)!
+    expect(knownHosts).toContain('other.example')
+    expect(knownHosts).toContain(`ficus-remote.${host.name} ssh-ed25519 ${syntheticKey('setkh')}`)
+
+    await expect(
+      setKnownHosts(squadId, `ficus-remote.${host.name} ssh-ed25519 ${syntheticKey('evil')}\n`)
+    ).rejects.toThrow('managed by Ficus')
+  })
+
   it('writes a key file and config block for each granted host on a fresh squad dir', async () => {
     const squadId = `${prefix}-squad-fresh`
     const host = await createGrantedHost('fresh', squadId, 'PRIVATE-KEY-CONTENT')

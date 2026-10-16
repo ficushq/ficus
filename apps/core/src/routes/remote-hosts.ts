@@ -1,5 +1,9 @@
 import { publicErrorMessage } from '../db/errors'
 import { randomUUID } from 'crypto'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import type { Context } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -26,9 +30,33 @@ import {
   updateRemoteHostPublicKey,
   type RemoteHost,
 } from '../services/remote-hosts/queries'
-import type { Identity } from '../services/rbac'
+import { hasPermission, type Identity } from '../services/rbac'
 import { getSecretStore } from '../services/secrets'
 import { notifyOnboardingChanged } from '../services/onboarding/events'
+import { userSessionRequired } from '../services/auth/user-session-required'
+import {
+  defaultHostKeyScanner,
+  hostKeyAlias,
+  hostKeyState,
+  HostKeyDecisionError,
+  listHostKeys,
+  listHostKeysForHosts,
+  refreshHostKeys,
+  rejectHostKey,
+  toPublicHostKeys,
+  trustedHostKeys,
+  trustHostKey,
+  type HostKeyScanner,
+  type RemoteHostKey,
+} from '../services/remote-hosts/host-keys'
+import { adoptHostKeys } from '../services/remote-hosts/host-key-adoption'
+import {
+  ConflictResolutionError,
+  keepBoxKey,
+  listSquadKnownHostsConflicts,
+  toPublicKnownHostsConflict,
+  useCoreKey as useCoreKeyDefault,
+} from '../services/remote-hosts/known-hosts-conflicts'
 
 /**
  * Remote hosts API: a global registry of team-owned SSH targets (§ API in
@@ -70,10 +98,29 @@ const addGrantSchema = z.object({
  * key material is never returnable by design (keys.ts only yields a
  * secret-store id) — but we also omit that id itself, an internal plumbing
  * detail rather than something a caller needs (mirrors `toPublicMachine`).
+ * The host's SSH host-key state and key fingerprints are included so every
+ * reader (agents included) can see why a host is blocked.
  */
-function toPublicRemoteHost(host: RemoteHost): Omit<RemoteHost, 'sshKeyId'> {
+function toPublicRemoteHost(host: RemoteHost, keys: RemoteHostKey[]) {
   const { sshKeyId: _sshKeyId, ...rest } = host
-  return rest
+  return { ...rest, hostKeyState: hostKeyState(host, keys), hostKeys: toPublicHostKeys(keys) }
+}
+
+async function toPublicRemoteHosts(hosts: RemoteHost[]) {
+  const keys = await listHostKeysForHosts(hosts.map((h) => h.id))
+  return hosts.map((host) => toPublicRemoteHost(host, keys.get(host.id) ?? []))
+}
+
+/**
+ * Trusting or rejecting a host key, and resolving a known_hosts conflict, are
+ * decisions only a signed-in PERSON may make — never an agent, a system token
+ * or the ownerless bootstrap session, whatever permissions they hold. Returns
+ * the person's user id, or the 403 response to send.
+ */
+async function requirePerson(c: Context, action: string): Promise<{ userId: string } | { response: Response }> {
+  const identity = c.get('identity') as Identity | undefined
+  if (identity?.type === 'user') return { userId: identity.userId }
+  return { response: await userSessionRequired(c, identity, action) }
 }
 
 /**
@@ -118,8 +165,22 @@ async function getValidSquadId(squadIdParam: string): Promise<string | null> {
  * result, matching the machines `/check` idiom.
  */
 async function probeHost(sshRunner: SshRunner, host: RemoteHost): Promise<{ reachable: boolean; error?: string }> {
+  // The probe connects with the host's pinned keys only (strict, nothing
+  // learned): an unconfirmed host is never probed with trust-on-first-use.
+  const trusted = trustedHostKeys(await listHostKeys(host.id))
+  if (!trusted.length) {
+    return { reachable: false, error: 'The host key has not been confirmed yet; a person must trust it first.' }
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'ficus-remote-check-'))
   try {
-    const result = await sshRunner.run(hostAsSshTarget(host), 'echo ficus-remote-check')
+    const alias = hostKeyAlias(host.name)
+    const knownHostsPath = join(dir, 'known_hosts')
+    writeFileSync(knownHostsPath, trusted.map((k) => `${alias} ${k.keyType} ${k.publicKey}\n`).join(''), {
+      mode: 0o600,
+    })
+    const result = await sshRunner.run(hostAsSshTarget(host), 'echo ficus-remote-check', {
+      hostKeyPin: { knownHostsPath, alias },
+    })
     if (result.exitCode === 0) {
       return { reachable: true }
     }
@@ -134,6 +195,8 @@ async function probeHost(sshRunner: SshRunner, host: RemoteHost): Promise<{ reac
       return { reachable: false, error: 'no key available for this host' }
     }
     return { reachable: false, error: message }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 }
 
@@ -144,6 +207,8 @@ export function createRemoteHostsRouter(
     sshRunner?: SshRunner
     pushSquadSshToBox?: typeof pushSquadSshToBoxDefault
     insert?: typeof insertRemoteHost
+    hostKeyScanner?: HostKeyScanner
+    useCoreKey?: typeof useCoreKeyDefault
   } = {}
 ) {
   const app = new Hono()
@@ -152,6 +217,59 @@ export function createRemoteHostsRouter(
   const sshRunner = deps.sshRunner ?? defaultSshRunner
   const pushSquadSsh = deps.pushSquadSshToBox ?? pushSquadSshToBoxDefault
   const insert = deps.insert ?? insertRemoteHost
+  const hostKeyScanner = deps.hostKeyScanner ?? defaultHostKeyScanner
+  const useCoreKey = deps.useCoreKey ?? useCoreKeyDefault
+
+  /** Re-materialize every squad granted `hostId` (its stanza and pinned keys may have changed). */
+  async function materializeGrantedSquads(hostId: string): Promise<void> {
+    for (const squadId of await listSquadIdsGrantedHost(hostId)) {
+      try {
+        await materialize(squadId)
+      } catch (err) {
+        log.error(`re-materialize failed for squad ${squadId} after a host-key change on ${hostId}`, err)
+      }
+    }
+  }
+
+  /** The host as returned after a host-key action, plus its grants. */
+  async function hostView(hostId: string) {
+    const host = await getRemoteHost(hostId)
+    if (!host) return null
+    return {
+      ...toPublicRemoteHost(host, await listHostKeys(host.id)),
+      squadIds: await listSquadIdsGrantedHost(host.id),
+    }
+  }
+
+  /**
+   * Fetch a host's keys now. A host still adopting existing trust tries that
+   * first (it may find the keys already trusted); otherwise the keys the host
+   * presents are recorded as pending. Never trusts a key. Callers re-materialize.
+   */
+  async function fetchHostKeys(host: RemoteHost): Promise<{ fetchError?: string }> {
+    if (host.hostKeyAdoptionPending) {
+      const outcome = await adoptHostKeys(host, { scanner: hostKeyScanner })
+      if (outcome !== 'deferred') return {}
+    }
+    const result = await refreshHostKeys(host, hostKeyScanner)
+    return result.ok ? {} : { fetchError: result.error }
+  }
+
+  /** Apply a person's trust/reject decision and re-materialize the host's squads. */
+  async function decideHostKey(c: Context, hostId: string, keyId: string, decision: 'trust' | 'reject') {
+    const person = await requirePerson(c, 'confirm SSH host keys')
+    if ('response' in person) return person.response
+    try {
+      if (decision === 'trust') await trustHostKey(hostId, keyId, person.userId)
+      else await rejectHostKey(hostId, keyId, person.userId)
+    } catch (err) {
+      if (err instanceof HostKeyDecisionError) return c.json({ error: err.message }, err.status)
+      throw err
+    }
+    log.info(`host key ${keyId} on remote host ${hostId}: ${decision} by user ${person.userId}`)
+    await materializeGrantedSquads(hostId)
+    return c.json(await hostView(hostId))
+  }
 
   /**
    * Revoke `squadId`'s grant on `host`, then ROTATE the host's minted keypair
@@ -242,9 +360,10 @@ export function createRemoteHostsRouter(
   // GET /api/remote-hosts — list all hosts + their grants.
   app.get('/', requirePermission('remote-hosts:read'), async (c) => {
     const hosts = await listRemoteHosts()
+    const publicHosts = await toPublicRemoteHosts(hosts)
     const withGrants = await Promise.all(
-      hosts.map(async (host) => ({
-        ...toPublicRemoteHost(host),
+      publicHosts.map(async (host) => ({
+        ...host,
         squadIds: await listSquadIdsGrantedHost(host.id),
       }))
     )
@@ -297,12 +416,15 @@ export function createRemoteHostsRouter(
     for (const squadId of squadIds) {
       await insertGrant({ hostId: host.id, squadId })
     }
+    // Fetch the host key now so a person can confirm it right away. Until they
+    // do, every granted squad gets a stanza that refuses connections.
+    const { fetchError } = await fetchHostKeys(host)
     for (const squadId of squadIds) {
       await materialize(squadId)
     }
 
     notifyOnboardingChanged()
-    return c.json({ ...toPublicRemoteHost(host), squadIds }, 201)
+    return c.json({ ...(await hostView(host.id)), ...(fetchError ? { fetchError } : {}) }, 201)
   })
 
   // GET /api/remote-hosts/:id — host detail + its grants.
@@ -311,8 +433,28 @@ export function createRemoteHostsRouter(
     if (!host) return c.json({ error: 'Not found' }, 404)
 
     const grants = await listGrantsForHost(host.id)
-    return c.json({ ...toPublicRemoteHost(host), squadIds: grants.map((g) => g.squadId) })
+    return c.json({ ...toPublicRemoteHost(host, await listHostKeys(host.id)), squadIds: grants.map((g) => g.squadId) })
   })
+
+  // POST /api/remote-hosts/:id/host-keys/scan — fetch the host's SSH host keys
+  // (ssh-keyscan, no login) and record new ones as pending. Never trusts a key.
+  app.post('/:id/host-keys/scan', requirePermission('remote-hosts:write'), async (c) => {
+    const host = await getRemoteHost(c.req.param('id'))
+    if (!host) return c.json({ error: 'Not found' }, 404)
+    const { fetchError } = await fetchHostKeys(host)
+    await materializeGrantedSquads(host.id)
+    return c.json({ ...(await hostView(host.id)), ...(fetchError ? { fetchError } : {}) })
+  })
+
+  // POST /api/remote-hosts/:id/host-keys/:keyId/trust|reject — a PERSON's
+  // decision on a fetched key (agents and tokens are refused, whatever their
+  // permissions). Trusting pins the key for every granted squad.
+  app.post('/:id/host-keys/:keyId/trust', requirePermission('remote-hosts:write'), (c) =>
+    decideHostKey(c, c.req.param('id'), c.req.param('keyId'), 'trust')
+  )
+  app.post('/:id/host-keys/:keyId/reject', requirePermission('remote-hosts:write'), (c) =>
+    decideHostKey(c, c.req.param('id'), c.req.param('keyId'), 'reject')
+  )
 
   // DELETE /api/remote-hosts/:id — delete the host + its secret; re-materialize
   // every squad that had it granted (their key file + config stanza must go away).
@@ -353,7 +495,7 @@ export function createRemoteHostsRouter(
     await insertGrant({ hostId: host.id, squadId })
     await materialize(squadId)
 
-    return c.json({ ...toPublicRemoteHost(host), squadIds: [...existing, squadId] }, 201)
+    return c.json({ ...toPublicRemoteHost(host, await listHostKeys(host.id)), squadIds: [...existing, squadId] }, 201)
   })
 
   // DELETE /api/remote-hosts/:id/grants/:squadId — revoke a squad's grant and
@@ -386,7 +528,7 @@ export function createRemoteHostsRouter(
     if (!squadId) return c.json({ error: 'Squad not found' }, 404)
 
     const hosts = await listHostsGrantedToSquad(squadId)
-    return c.json(hosts.map(toPublicRemoteHost))
+    return c.json(await toPublicRemoteHosts(hosts))
   })
 
   // POST /api/remote-hosts/squad/:squadId — add-and-grant: create a host and
@@ -428,9 +570,10 @@ export function createRemoteHostsRouter(
       }
 
       await insertGrant({ hostId: host.id, squadId })
+      const { fetchError } = await fetchHostKeys(host)
       await materialize(squadId)
 
-      return c.json({ ...toPublicRemoteHost(host), squadIds: [squadId] }, 201)
+      return c.json({ ...(await hostView(host.id)), ...(fetchError ? { fetchError } : {}) }, 201)
     }
   )
 
@@ -501,7 +644,113 @@ export function createRemoteHostsRouter(
     return c.json(result)
   })
 
+  // ── Squad surface: host keys ─────────────────────────────────────────────
+
+  /** The host, when it exists AND is granted to `squadId` (indistinguishable 404 otherwise). */
+  async function grantedHost(squadId: string, hostId: string): Promise<RemoteHost | null> {
+    const host = await getRemoteHost(hostId)
+    if (!host) return null
+    return (await listSquadIdsGrantedHost(hostId)).includes(squadId) ? host : null
+  }
+
+  // POST /api/remote-hosts/squad/:squadId/host-keys/:hostId/scan — fetch the
+  // keys of a host granted to this squad. Records pending keys only.
+  app.post(
+    '/squad/:squadId/host-keys/:hostId/scan',
+    requireSquadPermission('remote-hosts:write', 'squadId'),
+    async (c) => {
+      const squadId = await getValidSquadId(c.req.param('squadId'))
+      if (!squadId) return c.json({ error: 'Squad not found' }, 404)
+      const host = await grantedHost(squadId, c.req.param('hostId'))
+      if (!host) return c.json({ error: 'Not found' }, 404)
+      const { fetchError } = await fetchHostKeys(host)
+      await materializeGrantedSquads(host.id)
+      const view = await hostView(host.id)
+      return c.json({ ...view, squadIds: undefined, ...(fetchError ? { fetchError } : {}) })
+    }
+  )
+
+  // POST /api/remote-hosts/squad/:squadId/host-keys/:hostId/:keyId/trust|reject
+  // — a PERSON's decision, from the squad's settings. A host key is the same
+  // for every squad, so for a host shared with other squads this needs global
+  // remote-hosts:write: one squad must not pin a key for another squad's host.
+  const squadDecision = (decision: 'trust' | 'reject') => async (c: Context) => {
+    const squadId = await getValidSquadId(c.req.param('squadId')!)
+    if (!squadId) return c.json({ error: 'Squad not found' }, 404)
+    const hostId = c.req.param('hostId')!
+    const host = await grantedHost(squadId, hostId)
+    if (!host) return c.json({ error: 'Not found' }, 404)
+    const granted = await listSquadIdsGrantedHost(hostId)
+    const identity = c.get('identity') as Identity
+    if (granted.length > 1 && !(await hasPermission(identity, 'remote-hosts:write'))) {
+      return c.json(
+        { error: 'This host is shared with other squads; an administrator must confirm its host key in Settings.' },
+        403
+      )
+    }
+    const response = await decideHostKey(c, hostId, c.req.param('keyId')!, decision)
+    if (response.status !== 200) return response
+    const view = await hostView(hostId)
+    return c.json({ ...view, squadIds: undefined })
+  }
+  app.post(
+    '/squad/:squadId/host-keys/:hostId/:keyId/trust',
+    requireSquadPermission('remote-hosts:write', 'squadId'),
+    squadDecision('trust')
+  )
+  app.post(
+    '/squad/:squadId/host-keys/:hostId/:keyId/reject',
+    requireSquadPermission('remote-hosts:write', 'squadId'),
+    squadDecision('reject')
+  )
+
+  // ── Squad surface: box known_hosts conflicts ─────────────────────────────
+
+  // GET /api/remote-hosts/squad/:squadId/known-hosts-conflicts — where a box
+  // pins a different key than a Core-managed entry (read-only for agents, so
+  // one hitting "Host key verification failed" can see a person must decide).
+  app.get(
+    '/squad/:squadId/known-hosts-conflicts',
+    requireSquadPermission('remote-hosts:read', 'squadId'),
+    async (c) => {
+      const squadId = await getValidSquadId(c.req.param('squadId'))
+      if (!squadId) return c.json({ error: 'Squad not found' }, 404)
+      return c.json((await listSquadKnownHostsConflicts(squadId)).map(toPublicKnownHostsConflict))
+    }
+  )
+
+  // POST /api/remote-hosts/squad/:squadId/known-hosts-conflicts/:id/keep-box|use-core
+  // — a PERSON's resolution (agents and tokens are refused). Editing a box's
+  // known_hosts needs the squad's ssh:write.
+  const resolveConflict = (choice: 'keep-box' | 'use-core') => async (c: Context) => {
+    const squadId = await getValidSquadId(c.req.param('squadId')!)
+    if (!squadId) return c.json({ error: 'Squad not found' }, 404)
+    const person = await requirePerson(c, 'resolve known_hosts conflicts')
+    if ('response' in person) return person.response
+    try {
+      const row =
+        choice === 'keep-box'
+          ? await keepBoxKey(squadId, c.req.param('conflictId')!, person.userId)
+          : await useCoreKey(squadId, c.req.param('conflictId')!, person.userId)
+      return c.json(toPublicKnownHostsConflict(row))
+    } catch (err) {
+      if (err instanceof ConflictResolutionError) return c.json({ error: err.message }, err.status)
+      throw err
+    }
+  }
+  app.post(
+    '/squad/:squadId/known-hosts-conflicts/:conflictId/keep-box',
+    requireSquadPermission('ssh:write', 'squadId'),
+    resolveConflict('keep-box')
+  )
+  app.post(
+    '/squad/:squadId/known-hosts-conflicts/:conflictId/use-core',
+    requireSquadPermission('ssh:write', 'squadId'),
+    resolveConflict('use-core')
+  )
+
   return app
 }
+
 
 export default createRemoteHostsRouter()
