@@ -1,4 +1,5 @@
 import { DesktopHistoryControls } from './DesktopHistoryControls'
+import { SendFeedbackButton } from './ProductFeedbackModal'
 import { SparklesIcon } from './icons'
 import { Menu, MenuItem, usePopover } from './popover'
 import clsx from 'clsx'
@@ -407,13 +408,14 @@ export function MobileBottomNav({
 
 export function DesktopFooter() {
   return (
-    <footer className="hidden md:flex shrink-0 mt-auto mx-auto px-4 pt-6 pb-4 justify-center gap-4 text-xs text-muted">
+    <footer className="hidden md:flex shrink-0 mt-auto mx-auto px-4 pt-6 pb-4 items-baseline justify-center gap-4 text-xs text-muted">
       {navFooterHints().map((hint) => (
         <span key={hint.key}>
           <kbd className="px-1.5 py-0.5 bg-surface-secondary text-muted rounded text-[10px] font-mono">{hint.key}</kbd>{' '}
           {hint.label}
         </span>
       ))}
+      <SendFeedbackButton className="text-muted hover:text-primary hover:underline">Send feedback</SendFeedbackButton>
     </footer>
   )
 }

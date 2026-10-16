@@ -67,6 +67,7 @@ import { SettingsNavigation } from './settings/SettingsNavigation'
 import { accountEmailLabel, isPlaceholderEmail } from '@ficus/shared'
 import { AccountEmailForm } from './settings/AccountEmailForm'
 import { ViewportDebugSection } from './settings/ViewportDebugSection'
+import { HelpFeedbackSection } from './settings/HelpFeedbackSection'
 
 interface SettingsPageDependencies {
   useAuth: typeof useAuth
@@ -216,6 +217,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
           {activeSection === 'system-logs' && <SystemLogsSection />}
           {activeSection === 'ops-insights' && <RecommendationsPage />}
           {activeSection === 'updates' && <SystemUpdateSection />}
+          {activeSection === 'help' && <HelpFeedbackSection />}
         </SettingsSearchDestination>
       </div>
     </div>

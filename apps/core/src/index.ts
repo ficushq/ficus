@@ -74,6 +74,7 @@ import { Agent } from './entities/Agent'
 import { routingRouter } from './routes/routing'
 import { amtpRouter } from './routes/amtp'
 import { userPreferencesRouter } from './routes/user-preferences'
+import { productFeedbackRouter } from './routes/product-feedback'
 import { farmPreferencesRouter } from './routes/farm-preferences'
 import { farmChatRouter } from './routes/farm-chat'
 import { farmRouter } from './routes/farm'
@@ -350,6 +351,7 @@ app.route('/api', grantsRouter)
 app.route('/api/routing', routingRouter)
 app.route('/api/notification-config', notificationConfigRouter)
 app.route('/api/user-preferences', userPreferencesRouter)
+app.route('/api/product-feedback', productFeedbackRouter)
 app.route('/api/farm-preferences', farmPreferencesRouter)
 app.route('/api/farm-chat', farmChatRouter)
 app.route('/api/farm', farmRouter)

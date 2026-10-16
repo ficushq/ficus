@@ -4,7 +4,7 @@ The Settings page (`/settings`) is the central place to configure user preferenc
 
 ## Layout
 
-Settings has searchable, permission-aware navigation split between Personal and Administration. Administration is grouped into Work, Access, Configuration, Infrastructure, and Operations. Account is the default personal page, followed by Appearance, App, Notifications, Paired Devices, and Sessions. AI Providers and Integrations use searchable card directories. Workflows, Agent Types, Skills, and Integrations are under Work; AI Providers is under Infrastructure. Enabled integrations appear before disabled ones.
+Settings has searchable, permission-aware navigation split between Personal and Administration. Administration is grouped into Work, Access, Configuration, Infrastructure, and Operations. Account is the default personal page, followed by Appearance, App, Notifications, Paired Devices, Sessions, and Help & feedback. AI Providers and Integrations use searchable card directories. Workflows, Agent Types, Skills, and Integrations are under Work; AI Providers is under Infrastructure. Enabled integrations appear before disabled ones.
 
 Assistant & Memory is under Infrastructure. Agent Execution is inside Operations → System. The former Features page is retired: its links resolve to Assistant & Memory, or System when targeting the concurrency limit. Old Agent Execution links also resolve to System. The Channels link resolves to Integrations, where Discord, Slack, and Telegram now have their own cards.
 
@@ -39,6 +39,10 @@ In passkey mode, Account shows the user profile and controls to add, rename, or 
 ### Paired Devices and Sessions
 
 **Paired Devices** lists mobile and CLI devices and supports individual revocation. **Sessions** lists active browser sessions and can revoke one or all sessions.
+
+### Help & feedback
+
+**Help & feedback** (and the **Send feedback** link in the desktop footer) opens the "Send feedback to Ficus" form for any signed-in person. Core forwards the report to the Ficus platform (`POST /api/product-feedback`, which calls the platform's `/api/instance-feedback`) with the instance credential it already holds: the tenant credential on Ficus Cloud, or the **Connect Ficus account** credential on a self-hosted server. That credential never reaches the browser. The report is always linked to the instance owner's Ficus account. **Include my name and email** (on by default) adds the person's Core display name and email; when it is off, no submitter details are sent. Besides the category and message, only the Core version and the current page path are sent. A self-hosted server that is not connected shows the form disabled with a link to Mobile & Pro. This is unrelated to GitHub feedback moderation.
 
 ### Access
 

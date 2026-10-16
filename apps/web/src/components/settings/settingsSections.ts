@@ -32,6 +32,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       { id: 'mobile', label: 'Mobile', description: 'Pair a device and see what Pro adds.' },
       { id: 'devices', label: 'Paired Devices', description: 'Pair and manage linked devices.' },
       { id: 'sessions', label: 'Sessions', description: 'Active sign-in sessions and revocation.' },
+      { id: 'help', label: 'Help & feedback', description: 'Send feedback to the Ficus team.' },
     ],
   },
   {

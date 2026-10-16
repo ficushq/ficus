@@ -145,3 +145,8 @@ export const serverConnectionQueryKeys = {
   status: () => ['push-server-connection'] as const,
   availability: () => ['push-relay-availability'] as const,
 }
+
+/** Whether "Send feedback to Ficus" can reach Ficus (never a credential). */
+export const productFeedbackQueryKeys = {
+  status: () => ['product-feedback-status'] as const,
+}

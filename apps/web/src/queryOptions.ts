@@ -1,6 +1,7 @@
 import { getAgentPrivateStatus } from './api/agentPrivate'
-import { serverConnectionQueryKeys } from './queryKeys'
+import { productFeedbackQueryKeys, serverConnectionQueryKeys } from './queryKeys'
 import { getRelayAvailability, getServerConnection } from './api/serverConnection'
+import { getProductFeedbackStatus } from './api/productFeedback'
 import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
 import { desktopQueryKeys } from './queryKeys'
 import { desktopBridge, type DesktopNotificationBatch } from './lib/desktop'
@@ -1285,4 +1286,9 @@ export const serverConnectionQueries = {
       staleTime: 60_000,
       retry: false,
     }),
+}
+
+export const productFeedbackQueries = {
+  status: () =>
+    queryOptions({ queryKey: productFeedbackQueryKeys.status(), queryFn: getProductFeedbackStatus, staleTime: 15_000 }),
 }

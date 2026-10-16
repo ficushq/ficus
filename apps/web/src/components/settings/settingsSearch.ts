@@ -50,9 +50,16 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   'ops-insights': 'recommendations optimization analysis operations',
   updates: 'automatic updates branch remote interval manual rebuild latest run',
   memory: 'assistant realtime voice automatic embeddings memory semantic search openai api setup',
+  help: 'help feedback send feedback report a problem bug idea suggestion contact ficus team support',
 }
 
 export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
+  {
+    section: 'help',
+    id: 'send-feedback',
+    label: 'Send feedback to Ficus',
+    keywords: 'feedback report problem bug idea suggestion ai response contact ficus team support help',
+  },
   {
     section: 'mobile-pro',
     id: 'mobile-public-url',
