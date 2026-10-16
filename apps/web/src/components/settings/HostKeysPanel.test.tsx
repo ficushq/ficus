@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { PublicHostKey, RemoteHost } from '../../api/remote-hosts'
-import { HostKeysPanel, hostKeyNeedsAttention } from './HostKeysPanel'
+import { HostKeysPanel } from './HostKeysPanel'
+import { hostKeyNeedsAttention } from './hostKeyAttention'
 
 const now = new Date('2026-10-16T12:00:00Z').toISOString()
 
