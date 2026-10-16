@@ -127,6 +127,11 @@ function embeddedKeyType(publicKey: string): string | null {
   return blob.subarray(4, 4 + len).toString('latin1')
 }
 
+/** Whether `keyType`/`publicKey` form a well-formed SSH public key whose blob carries the declared type. */
+export function isWellFormedHostKey(keyType: string, publicKey: string): boolean {
+  return KEY_TYPE.test(keyType) && BASE64_KEY.test(publicKey) && embeddedKeyType(publicKey) === keyType
+}
+
 /**
  * Parse `ssh-keyscan` output (`<name> <type> <base64>` lines; `#` comments).
  * Keys whose blob does not carry the declared type are dropped, and
@@ -139,8 +144,7 @@ export function parseKeyscanOutput(stdout: string): ScannedHostKey[] {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
     const [, keyType, publicKey] = trimmed.split(/\s+/)
-    if (!keyType || !publicKey || !KEY_TYPE.test(keyType) || !BASE64_KEY.test(publicKey)) continue
-    if (embeddedKeyType(publicKey) !== keyType) continue
+    if (!keyType || !publicKey || !isWellFormedHostKey(keyType, publicKey)) continue
     const id = `${keyType} ${publicKey}`
     if (seen.has(id)) continue
     seen.add(id)
