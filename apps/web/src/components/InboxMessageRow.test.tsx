@@ -102,6 +102,22 @@ describe('MessageRow', () => {
     expect(container.textContent).toContain('View work stream')
   })
 
+  test('Mark read is a ghost row control, and the row keeps its resting tint while it is hovered', async () => {
+    await renderInteractiveRow()
+
+    const markRead = findButtons(container).filter((button) => button.textContent === 'Mark read')
+    // One in the mobile meta line, one in the desktop controls column.
+    expect(markRead).toHaveLength(2)
+    for (const button of markRead) {
+      expect(button.classList.contains('ficus-button-ghost')).toBe(true)
+      expect(button.classList.contains('ficus-button-link')).toBe(false)
+      expect(button.hasAttribute('data-mark-read')).toBe(true)
+    }
+    const row = container.firstElementChild!
+    expect(row.classList.contains('bg-accent/5')).toBe(true)
+    expect(row.classList.contains('has-[[data-mark-read]:hover]:bg-accent/5')).toBe(true)
+  })
+
   test('omits work stream link from collapsed row preview when metadata is present', async () => {
     await renderInteractiveRow({
       metadata: { workStreamId: 'ws-9', squadId: 'sq-2', event: 'review' },
