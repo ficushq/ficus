@@ -34,7 +34,9 @@
  *   4. memory replica → `~/memory/<tree>`   (content only — read-only convention;
  *      SQUAD box only — the layout's canonical memory root on vm)
  *   5. squad ssh dir tree → `~/.ssh/<tree>` (key files mode 0600; `config`/
- *      `known_hosts`/`*.pub` mode 0644; `~/.ssh` dir 0700; squad-scoped only)
+ *      `*.pub` mode 0644; `~/.ssh` dir 0700; squad-scoped only). `known_hosts`
+ *      is merged into the box's own file as a managed block, never pushed
+ *      over it (see {@link mergeKnownHostsOnBox})
  * A failure once a secret push has started best-effort removes the partial
  * secret files of the FAILING asset (per-asset cleanup, see
  * {@link pushAssetFiles}) so a half-provisioned box never lingers with key
@@ -78,7 +80,14 @@ import { createHash } from 'crypto'
 import { readFileSync } from 'fs'
 import { readdir } from 'fs/promises'
 import { join, relative } from 'path'
-import { BashOutcomeUnknownError, type BashResponse, type SandboxClient } from '../client/http-client'
+import { mergeManagedKnownHosts, type KnownHostsConflict } from '@ficus/shared/known-hosts'
+import {
+  BashOutcomeUnknownError,
+  SandboxHttpError,
+  type BashResponse,
+  type FileIdentity,
+  type SandboxClient,
+} from '../client/http-client'
 import { getSquadIdFromSandbox, type SandboxOptions } from '../types'
 import { boxUnixUser } from '../../machines/box-manager'
 import { boxDotDir } from '../../machines/box-paths'
@@ -342,10 +351,10 @@ function sortByRelPath<T extends { relPath: string }>(files: T[]): T[] {
   return [...files].sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0))
 }
 
-/** Mode for one squad-ssh artifact: `config`/`known_hosts`/`*.pub` are
+/** Mode for one squad-ssh artifact (`known_hosts` is merged, not pushed): `config`/`*.pub` are
  *  non-secret ssh metadata (0644); everything else is a private key (0600). */
 function sshArtifactMode(relPath: string): string {
-  if (relPath === 'config' || relPath === 'known_hosts' || relPath.endsWith('.pub')) return '0644'
+  if (relPath === 'config' || relPath.endsWith('.pub')) return '0644'
   return '0600'
 }
 
@@ -427,30 +436,148 @@ async function pushAssetFiles(
 async function materializeAndListSshFiles(
   squadId: string,
   deps: Pick<SyncBoxFilesDeps, 'materializeSquadRemoteHosts' | 'listSquadSshFiles'>
-): Promise<PushableFile[]> {
+): Promise<SquadSshMaterial> {
   await (deps.materializeSquadRemoteHosts ?? materializeSquadRemoteHostsReal)(squadId)
-  const files = await (deps.listSquadSshFiles ?? defaultListSquadSshFiles)(squadId)
-  return sortByRelPath(files).map((f) => ({ relPath: f.relPath, bytes: f.content, mode: sshArtifactMode(f.relPath) }))
+  const listed = sortByRelPath(await (deps.listSquadSshFiles ?? defaultListSquadSshFiles)(squadId))
+  const managedKnownHosts = listed.find((f) => f.relPath === KNOWN_HOSTS)?.content ?? null
+  const files = listed
+    .filter((f) => f.relPath !== KNOWN_HOSTS)
+    .map((f) => ({ relPath: f.relPath, bytes: f.content, mode: sshArtifactMode(f.relPath) }))
+  // The managed known_hosts source still feeds the content hash (a changed
+  // managed entry must re-sync), tagged with a merge marker instead of a mode.
+  const hashFiles = managedKnownHosts
+    ? sortByRelPath([...files, { relPath: KNOWN_HOSTS, bytes: managedKnownHosts, mode: KNOWN_HOSTS_HASH_TAG }])
+    : files
+  return { files, managedKnownHosts, hashFiles }
 }
 
-/** Write a squad's `~/.ssh` material to a box: create the dir 0700, then push
- *  each (already sorted, mode-tagged) file with self-contained key cleanup.
+/**
+ * The squad ssh asset as delivered to a vm box. `known_hosts` is never pushed
+ * verbatim: the box's own `~/.ssh/known_hosts` also holds entries agents and
+ * operators trusted there, so Core's entries are MERGED into a delimited managed
+ * block ({@link mergeKnownHostsOnBox}).
+ */
+interface SquadSshMaterial {
+  /** Files pushed verbatim (keys, `*.pub`, `config`), sorted and mode-tagged. */
+  files: PushableFile[]
+  /** Core's managed known_hosts entries; null when the squad has none. */
+  managedKnownHosts: Uint8Array | null
+  /** What the asset's content hash covers: `files` plus the managed known_hosts source. */
+  hashFiles: PushableFile[]
+}
+
+const KNOWN_HOSTS = 'known_hosts'
+/** Hash tag for the merged (not pushed) known_hosts source. Differs from the
+ *  pre-merge `0644` so every box re-syncs once and gets the merged layout. */
+const KNOWN_HOSTS_HASH_TAG = 'merge'
+/** Largest box known_hosts Core will merge. A larger file is left untouched
+ *  (the sync fails loudly) rather than rewritten from a truncated read. */
+const KNOWN_HOSTS_MAX_BYTES = 4 * 1024 * 1024
+const KNOWN_HOSTS_MERGE_ATTEMPTS = 3
+
+function fileIdentity(bytes: Uint8Array): FileIdentity {
+  return { bytes: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') }
+}
+
+async function readBoxFile(client: SandboxClient, path: string): Promise<Buffer | null> {
+  try {
+    const response = await client.read({ path, limit: KNOWN_HOSTS_MAX_BYTES + 1 })
+    if (response.totalSize > KNOWN_HOSTS_MAX_BYTES) {
+      throw new Error(`refusing to merge ${path}: ${response.totalSize} bytes exceeds ${KNOWN_HOSTS_MAX_BYTES}`)
+    }
+    const bytes = Buffer.from(response.content, 'base64')
+    if (bytes.byteLength !== response.totalSize) throw new Error(`short read of ${path}; not merging`)
+    return bytes
+  } catch (err) {
+    if (err instanceof SandboxHttpError && err.status === 404) return null
+    throw err
+  }
+}
+
+/**
+ * Merge Core's managed known_hosts entries into the box's `~/.ssh/known_hosts`
+ * (see `@ficus/shared/known-hosts`): entries outside the managed block are kept
+ * byte-for-byte, a managed entry that conflicts with a user entry is reported
+ * and skipped, and an unchanged result is not rewritten.
+ *
+ * The write is atomic (the sandbox server stages and renames) and is a
+ * compare-and-swap against the bytes read: if something appends to the file
+ * between the read and the rename (an agent's `ssh-keyscan >>`, OpenSSH itself)
+ * the write is refused and the merge retried, so a concurrent addition is never
+ * lost. A new file is created 0600; a rewritten one is set to 0600. Ownership is
+ * the box user's (the server writes as that user).
+ */
+async function mergeKnownHostsOnBox(
+  client: SandboxClient,
+  sshDir: string,
+  managed: Uint8Array | null,
+  fence?: SetupBashFence
+): Promise<KnownHostsConflict[]> {
+  const path = `${sshDir}/${KNOWN_HOSTS}`
+  const managedText = managed ? Buffer.from(managed).toString('utf8') : ''
+  for (let attempt = 1; attempt <= KNOWN_HOSTS_MERGE_ATTEMPTS; attempt++) {
+    const existing = await readBoxFile(client, path)
+    const merged = mergeManagedKnownHosts(existing ? existing.toString('utf8') : '', managedText)
+    if (merged.conflicts.length) {
+      log.warn(
+        `known_hosts conflict at ${path}: a user entry pins a different key; managed entry not written: ${merged.conflicts
+          .map((c) => `${c.host} ${c.keyType} (line ${c.line})`)
+          .join(', ')}`
+      )
+    }
+    if (!merged.changed) return merged.conflicts
+
+    const bytes = Buffer.from(merged.content, 'utf8')
+    if (existing === null) {
+      await pushFile(client, path, bytes, '0600')
+      return merged.conflicts
+    }
+    try {
+      await client.writeVerified({
+        path,
+        content: toBase64(bytes),
+        expectedOriginal: fileIdentity(existing),
+        expectedResult: fileIdentity(bytes),
+      })
+    } catch (err) {
+      if (err instanceof SandboxHttpError && err.code === 'edit-conflict') continue
+      throw err
+    }
+    await runBash(client, `chmod 600 ${shellQuote(path)}`, 'file_sync', undefined, fence)
+    return merged.conflicts
+  }
+  throw new Error(`${path} kept changing during the managed known_hosts merge; left untouched`)
+}
+
+/** Write a squad's `~/.ssh` material to a box: create the dir 0700, push each
+ *  (already sorted, mode-tagged) file with self-contained key cleanup, then
+ *  merge the managed known_hosts entries. Returns any known_hosts conflicts.
  *  Shared by {@link syncBoxFiles}'s squad-ssh step and {@link pushSquadSshToBox}. */
 async function writeSshFiles(
   client: SandboxClient,
   home: string,
-  files: PushableFile[],
+  material: SquadSshMaterial,
   fence?: SetupBashFence
-): Promise<void> {
+): Promise<KnownHostsConflict[]> {
   const sshDir = `${home}/.ssh`
-  await runBash(
-    client,
-    `mkdir -p ${shellQuote(sshDir)} && chmod 700 ${shellQuote(sshDir)}`,
-    'file_sync',
-    undefined,
-    fence
-  )
-  await pushAssetFiles(client, sshDir, files, fence)
+  // Nothing to write (every host revoked): only a stale managed block may need dropping.
+  if (material.files.length || material.managedKnownHosts) {
+    await runBash(
+      client,
+      `mkdir -p ${shellQuote(sshDir)} && chmod 700 ${shellQuote(sshDir)}`,
+      'file_sync',
+      undefined,
+      fence
+    )
+  }
+  await pushAssetFiles(client, sshDir, material.files, fence)
+  return mergeKnownHostsOnBox(client, sshDir, material.managedKnownHosts, fence)
+}
+
+/** Stamped manifest paths that may be deleted from a box. `known_hosts` never
+ *  is: older stamps listed it, but the box file also holds user entries. */
+function removableSshPaths(paths: string[]): string[] {
+  return paths.filter((path) => path !== KNOWN_HOSTS)
 }
 
 /**
@@ -622,9 +749,13 @@ export async function syncBoxFiles(
     files: PushableFile[],
     push: () => Promise<void>,
     legacyFilesWhenEmpty: string[] = [],
-    clearLegacy?: () => Promise<void>
+    clearLegacy?: () => Promise<void>,
+    // `hashFiles`: what the content hash covers when it differs from the pushed
+    // files (squad-ssh's merged known_hosts). `pushWhenEmpty`: run `push` even
+    // with no files (squad-ssh must still drop its managed known_hosts block).
+    { hashFiles = files, pushWhenEmpty = false }: { hashFiles?: PushableFile[]; pushWhenEmpty?: boolean } = {}
   ) => {
-    const hash = computeAssetHash(destRoot, files)
+    const hash = computeAssetHash(destRoot, hashFiles)
     const previous = parseSyncedAssetState(box?.syncedHashes?.[name])
     const currentFiles = files.map((file) => file.relPath).sort()
     if (previous?.hash === hash) {
@@ -633,20 +764,21 @@ export async function syncBoxFiles(
       if (box && !previous.files) await stamp(box.machineId, sandboxId, name, hash, currentFiles)
       return
     }
-    if (files.length === 0 && !previous) return
+    if (hashFiles.length === 0 && !previous) return
     // Validate source paths before any write/delete so a malformed materializer
     // cannot escape the declared managed destination.
     currentFiles.forEach((relPath) => validatedManagedPath(destRoot, relPath))
     const mutate = async () => {
       if (previous && !previous.files && clearLegacy) await clearLegacy()
-      if (files.length) await push()
+      if (files.length || pushWhenEmpty) await push()
       const current = new Set(currentFiles)
+      const stale = (previous?.files ?? (previous ? legacyFilesWhenEmpty : []))
+        .map((path) => canonicalManagedPath(name, path))
+        .filter((path) => !current.has(path))
       await removeManagedFiles(
         client,
         destRoot,
-        (previous?.files ?? (previous ? legacyFilesWhenEmpty : []))
-          .map((path) => canonicalManagedPath(name, path))
-          .filter((path) => !current.has(path)),
+        name === 'squad-ssh' ? removableSshPaths(stale) : stale,
         deps.bashFence
       )
       if (box) await stamp(box.machineId, sandboxId, name, hash, currentFiles)
@@ -682,15 +814,16 @@ export async function syncBoxFiles(
     // it there rather than through the generic file loop (also avoiding a
     // double re-materialize via the manifest source's own files()).
     if (asset.name === 'squad-ssh') {
-      const sshFiles = await materializeAndListSshFiles(squadId!, deps)
+      const material = await materializeAndListSshFiles(squadId!, deps)
       const root = `${home}/.ssh`
       await syncAsset(
         asset.name,
         root,
-        sshFiles,
-        () => writeSshFiles(client, home, sshFiles, deps.bashFence),
+        material.files,
+        async () => void (await writeSshFiles(client, home, material, deps.bashFence)),
         [],
-        () => clearLegacyTree(asset.name, root)
+        () => clearLegacyTree(asset.name, root),
+        { hashFiles: material.hashFiles, pushWhenEmpty: true }
       )
       continue
     }
@@ -719,14 +852,18 @@ export async function syncBoxFiles(
   if (box) {
     for (const asset of SANDBOX_ASSETS) {
       if (resolvedNames.has(asset.name) || box.syncedHashes?.[asset.name] === undefined) continue
-      const root = asset.name === 'squad-ssh' ? `${home}/.ssh` : resolveBoxDest(home, asset.dest.base)
+      const isSsh = asset.name === 'squad-ssh'
+      const root = isSsh ? `${home}/.ssh` : resolveBoxDest(home, asset.dest.base)
       await syncAsset(
         asset.name,
         root,
         [],
-        async () => {},
+        // A box that no longer gets the squad ssh asset drops the managed
+        // known_hosts block too; user entries stay.
+        isSsh ? async () => void (await mergeKnownHostsOnBox(client, root, null, deps.bashFence)) : async () => {},
         asset.dest.relPath ? [asset.dest.relPath] : [],
-        () => clearLegacyTree(asset.name, root)
+        () => clearLegacyTree(asset.name, root),
+        { pushWhenEmpty: isSsh }
       )
     }
   }
@@ -804,7 +941,7 @@ export async function pushSquadSshToBox(
   squadId: string,
   sandboxId: string,
   deps: PushSquadSshToBoxDeps = {}
-): Promise<{ pushed: boolean; reason?: string }> {
+): Promise<{ pushed: boolean; reason?: string; knownHostsConflicts?: KnownHostsConflict[] }> {
   const box = await (deps.getMachineBox ?? getMachineBoxReal)(sandboxId)
   if (!box) return { pushed: false, reason: 'live-mount' }
 
@@ -812,27 +949,28 @@ export async function pushSquadSshToBox(
   if (!client) return { pushed: false, reason: 'box-unreachable' }
 
   const home = (deps.boxHome ?? defaultBoxHome)(sandboxId)
-  const files = await materializeAndListSshFiles(squadId, deps)
+  const material = await materializeAndListSshFiles(squadId, deps)
   const root = `${home}/.ssh`
   const previous = parseSyncedAssetState(box.syncedHashes?.['squad-ssh'])
-  const currentFiles = files.map((file) => file.relPath).sort()
+  const currentFiles = material.files.map((file) => file.relPath).sort()
   // Reject malformed materializer paths before mkdir or any /write effect.
   currentFiles.forEach((relPath) => validatedManagedPath(root, relPath))
   if (previous && !previous.files) {
     await runBash(client, legacySquadSshCleanupCommand(root), 'asset_prune', undefined, deps.bashFence)
   }
-  if (files.length) await writeSshFiles(client, home, files, deps.bashFence)
+  const syncs = material.hashFiles.length > 0 || previous !== null
+  const knownHostsConflicts = syncs ? await writeSshFiles(client, home, material, deps.bashFence) : []
   const current = new Set(currentFiles)
   await removeManagedFiles(
     client,
     root,
-    (previous?.files ?? []).filter((path) => !current.has(path))
+    removableSshPaths((previous?.files ?? []).filter((path) => !current.has(path)))
   )
-  if (files.length || previous) {
+  if (syncs) {
     const stamp = deps.stampBoxSyncedHash ?? stampBoxSyncedHashReal
-    await stamp(box.machineId, sandboxId, 'squad-ssh', computeAssetHash(root, files), currentFiles)
+    await stamp(box.machineId, sandboxId, 'squad-ssh', computeAssetHash(root, material.hashFiles), currentFiles)
   }
-  return { pushed: true }
+  return knownHostsConflicts.length ? { pushed: true, knownHostsConflicts } : { pushed: true }
 }
 
 // ---------------------------------------------------------------------------

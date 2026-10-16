@@ -89,22 +89,32 @@ SSH_DEST=/root/.ssh
 
 mkdir -p "$SSH_DEST"
 
+# known_hosts is NOT mirrored: the sandbox's own file also holds host keys
+# trusted inside it (ssh-keyscan, OpenSSH updates), so Core's entries are merged
+# into a delimited managed block instead (known-hosts-sync.ts); every other line
+# is kept. Its own OpenSSH backup (known_hosts.old) is left alone too.
 sync_ssh_keys() {
   if [ -d "$SSH_SOURCE" ]; then
     if command -v rsync >/dev/null 2>&1; then
-      rsync -a --delete "$SSH_SOURCE/" "$SSH_DEST/" 2>/dev/null || true
+      rsync -a --delete --exclude=/known_hosts --exclude=/known_hosts.old "$SSH_SOURCE/" "$SSH_DEST/" 2>/dev/null || true
     else
       # Fallback: emulate rsync --delete with cp + targeted removal.
       ( cd "$SSH_DEST" && for f in $(ls -A 2>/dev/null); do
+          case "$f" in known_hosts|known_hosts.old) continue ;; esac
           [ -e "$SSH_SOURCE/$f" ] || rm -rf -- "$f"
         done )
-      cp -a "$SSH_SOURCE/." "$SSH_DEST/" 2>/dev/null || true
+      ( cd "$SSH_SOURCE" && for f in $(ls -A 2>/dev/null); do
+          case "$f" in known_hosts|known_hosts.old) continue ;; esac
+          cp -a -- "$f" "$SSH_DEST/" 2>/dev/null || true
+        done )
     fi
+    bun /opt/sandbox/src/known-hosts-sync.ts "$SSH_SOURCE/known_hosts" "$SSH_DEST/known_hosts" || true
   fi
   chown -R root:root "$SSH_DEST" 2>/dev/null || true
   chmod 700 "$SSH_DEST" 2>/dev/null || true
   find "$SSH_DEST" -type f ! -name "*.pub" ! -name "known_hosts" ! -name "config" -exec chmod 600 {} \; 2>/dev/null || true
-  find "$SSH_DEST" -type f \( -name "*.pub" -o -name "known_hosts" \) -exec chmod 644 {} \; 2>/dev/null || true
+  find "$SSH_DEST" -type f -name "*.pub" -exec chmod 644 {} \; 2>/dev/null || true
+  [ -f "$SSH_DEST/known_hosts" ] && chmod 600 "$SSH_DEST/known_hosts" 2>/dev/null || true
   [ -f "$SSH_DEST/config" ] && chmod 600 "$SSH_DEST/config" 2>/dev/null || true
 }
 sync_ssh_keys

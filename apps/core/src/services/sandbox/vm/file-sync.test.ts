@@ -1,4 +1,5 @@
 import { describe, test, expect, spyOn } from 'bun:test'
+import { createHash } from 'crypto'
 import { EventEmitter } from 'events'
 import { mkdtempSync, rmSync, symlinkSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -19,7 +20,8 @@ import {
 import { boxUnixUser } from '../../machines/box-manager'
 import type { Machine, MachineBox } from '../../machines/queries'
 import type { SandboxOptions } from '../types'
-import { BashOutcomeUnknownError } from '../client/http-client'
+import { BashOutcomeUnknownError, SandboxHttpError } from '../client/http-client'
+import { KNOWN_HOSTS_BLOCK_BEGIN, KNOWN_HOSTS_BLOCK_END } from '@ficus/shared/known-hosts'
 
 // ---------------------------------------------------------------------------
 // Fake SandboxClient — records /write and /bash calls in order.
@@ -45,11 +47,37 @@ class FakeClient {
   /** When set, `write` throws for any path the predicate matches (models a
    *  mid-sync push failure to exercise the secret-cleanup path). */
   throwOnWrite: ((path: string) => boolean) | null = null
+  /** The box's files as `/read` and `/write-verified` see them. */
+  files = new Map<string, Buffer>()
+  /** Runs once just before a verified write's compare step (models a concurrent appender). */
+  beforeVerifiedWrite: ((path: string) => void) | null = null
+
+  async read(req: { path: string; limit?: number }) {
+    const bytes = this.files.get(req.path)
+    if (!bytes) throw new SandboxHttpError(`ENOENT: ${req.path}`, 404)
+    return { content: bytes.subarray(0, req.limit).toString('base64'), totalSize: bytes.length, isBinary: false }
+  }
 
   async write(req: { path: string; content: string; createDirs?: boolean; mode?: string }) {
     if (this.throwOnWrite?.(req.path)) throw new Error(`write failed for ${req.path}`)
     this.calls.push({ kind: 'write', path: req.path, content: req.content, createDirs: req.createDirs, mode: req.mode })
+    this.files.set(req.path, Buffer.from(req.content, 'base64'))
     return { bytesWritten: Buffer.from(req.content, 'base64').length }
+  }
+
+  async writeVerified(req: { path: string; content: string; expectedOriginal: { bytes: number; sha256: string } }) {
+    const hook = this.beforeVerifiedWrite
+    this.beforeVerifiedWrite = null
+    hook?.(req.path)
+    const current = this.files.get(req.path)
+    const sha = current ? createHash('sha256').update(current).digest('hex') : ''
+    if (!current || sha !== req.expectedOriginal.sha256 || current.length !== req.expectedOriginal.bytes) {
+      throw new SandboxHttpError('Edit conflict', 409, 'edit-conflict', 'pre-publication')
+    }
+    this.calls.push({ kind: 'write', path: req.path, content: req.content, createDirs: undefined, mode: 'verified' })
+    const bytes = Buffer.from(req.content, 'base64')
+    this.files.set(req.path, bytes)
+    return { bytesWritten: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
   }
 
   bash(req: { command: string }) {
@@ -186,7 +214,7 @@ describe('syncBoxFiles', () => {
     expect(client.bashes().some((b) => b.command.includes(`${home}/memory/`))).toBe(false)
   })
 
-  test('squad ssh dir: key files 0600, config/known_hosts/*.pub 0644, ~/.ssh created 0700', async () => {
+  test('squad ssh dir: key files 0600, config/*.pub 0644, new known_hosts 0600, ~/.ssh created 0700', async () => {
     const client = new FakeClient()
     const home = HOME('squad_11111111-1111-4111-8111-111111111111')
     await syncBoxFiles(client as any, 'squad_11111111-1111-4111-8111-111111111111', squadOpts, fullDeps())
@@ -194,7 +222,7 @@ describe('syncBoxFiles', () => {
     expect(client.modeAt(`${home}/.ssh/ficus_remote_prod`)).toBe('0600')
     expect(client.modeAt(`${home}/.ssh/ficus_remote_prod.pub`)).toBe('0644')
     expect(client.modeAt(`${home}/.ssh/config`)).toBe('0644')
-    expect(client.modeAt(`${home}/.ssh/known_hosts`)).toBe('0644')
+    expect(client.modeAt(`${home}/.ssh/known_hosts`)).toBe('0600')
     expect(client.bashes().map((b) => b.command)).toContain(`mkdir -p '${home}/.ssh' && chmod 700 '${home}/.ssh'`)
   })
 
@@ -855,6 +883,8 @@ describe('syncBoxFiles golden master', () => {
     mode,
   })
   const B = (command: string) => ({ kind: 'bash' as const, command })
+  /** The fixture's managed known_hosts entry, merged into a new box file as its managed block. */
+  const MANAGED_KNOWN_HOSTS = `${KNOWN_HOSTS_BLOCK_BEGIN}\nprod ssh-ed25519 AAA\n${KNOWN_HOSTS_BLOCK_END}\n`
 
   const PEM = '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n'
 
@@ -879,7 +909,7 @@ describe('syncBoxFiles golden master', () => {
       W(`${home}/.ssh/config`, 'Host prod\n', '0644'),
       W(`${home}/.ssh/ficus_remote_prod`, 'PRIVATE', '0600'),
       W(`${home}/.ssh/ficus_remote_prod.pub`, 'PUBLIC', '0644'),
-      W(`${home}/.ssh/known_hosts`, 'prod ssh-ed25519 AAA', '0644'),
+      W(`${home}/.ssh/known_hosts`, MANAGED_KNOWN_HOSTS, '0600'),
     ])
   })
 
@@ -915,7 +945,7 @@ describe('syncBoxFiles golden master', () => {
       W(`${home}/.ssh/config`, 'Host prod\n', '0644'),
       W(`${home}/.ssh/ficus_remote_prod`, 'PRIVATE', '0600'),
       W(`${home}/.ssh/ficus_remote_prod.pub`, 'PUBLIC', '0644'),
-      W(`${home}/.ssh/known_hosts`, 'prod ssh-ed25519 AAA', '0644'),
+      W(`${home}/.ssh/known_hosts`, MANAGED_KNOWN_HOSTS, '0600'),
     ])
   })
 
@@ -1630,5 +1660,143 @@ describe('pushAgentSecretsToBox', () => {
       pushed: false,
       reason: 'live-mount',
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Box known_hosts: Core-managed entries are merged, never replace the file
+// ---------------------------------------------------------------------------
+
+describe('box known_hosts merge (synthetic hosts and keys only)', () => {
+  const SQUAD = '11111111-1111-4111-8111-111111111111'
+  const SANDBOX = `squad_${SQUAD}`
+  const KH = `${HOME(SANDBOX)}/.ssh/known_hosts`
+  const USER = 'user.example ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIUSERKEY'
+  const MANAGED = 'managed.example ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMANAGEDKEY1'
+  const ROTATED = 'managed.example ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMANAGEDKEY2'
+  const OTHER = 'other.example ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOTHERKEY'
+  const block = (...lines: string[]) => `${KNOWN_HOSTS_BLOCK_BEGIN}\n${lines.join('\n')}\n${KNOWN_HOSTS_BLOCK_END}\n`
+  const sshOnly = (knownHosts: string | null, over: Partial<SyncBoxFilesDeps> = {}): SyncBoxFilesDeps =>
+    fullDeps({
+      listSkillFiles: async () => [],
+      readSquadEnv: () => null,
+      listMemoryFiles: async () => [],
+      listSquadSshFiles: async () => [
+        { relPath: 'config', content: Buffer.from('Host prod\n') },
+        ...(knownHosts === null ? [] : [{ relPath: 'known_hosts', content: Buffer.from(knownHosts) }]),
+      ],
+      ...over,
+    })
+  const onDemand = (client: FakeClient, knownHosts: string | null, syncedHashes: Record<string, unknown> = {}) =>
+    pushSquadSshToBox(SQUAD, SANDBOX, {
+      getMachineBox: async () => ({ sandboxId: SANDBOX, machineId: 'm1', syncedHashes }) as unknown as MachineBox,
+      getClient: async () => client as any,
+      materializeSquadRemoteHosts: async () => {},
+      listSquadSshFiles: async () =>
+        knownHosts === null ? [] : [{ relPath: 'known_hosts', content: Buffer.from(knownHosts) }],
+      stampBoxSyncedHash: async () => {},
+    })
+  const text = (client: FakeClient) => client.files.get(KH)?.toString('utf8')
+
+  test('root cause: a re-sync after Core restart no longer replaces entries the box trusted itself', async () => {
+    // Before the fix the squad-ssh push wrote Core's copy over ~/.ssh/known_hosts
+    // whenever the asset hash changed (Core upgrade, new box row, forced sync).
+    const client = new FakeClient()
+    client.files.set(KH, Buffer.from(`${USER}\n`))
+    await syncBoxFiles(
+      client as any,
+      SANDBOX,
+      squadOpts,
+      sshOnly(`${MANAGED}\n`, { box: syncBox({ 'squad-ssh': 'pre-upgrade' }), stampBoxSyncedHash: async () => {} })
+    )
+    expect(text(client)).toBe(`${USER}\n${block(MANAGED)}`)
+    // Rewritten by compare-and-swap against the bytes read, then tightened to 0600.
+    expect(client.modeAt(KH)).toBe('verified')
+    expect(client.bashes().map((b) => b.command)).toContain(`chmod 600 '${KH}'`)
+  })
+
+  test('repeated materialization is idempotent and does not rewrite an unchanged file', async () => {
+    const client = new FakeClient()
+    client.files.set(KH, Buffer.from(`${USER}\n`))
+    await onDemand(client, `${MANAGED}\n${OTHER}\n`)
+    const once = text(client)
+    const writesAfterFirst = client.writes().length
+    await onDemand(client, `${MANAGED}\n${OTHER}\n`)
+    expect(text(client)).toBe(once)
+    expect(client.writes().length).toBe(writesAfterFirst)
+    expect(once).toBe(`${USER}\n${block(MANAGED, OTHER)}`)
+  })
+
+  test('managed key rotation updates only the managed entry', async () => {
+    const client = new FakeClient()
+    client.files.set(KH, Buffer.from(`${USER}\n${block(MANAGED, OTHER)}`))
+    await onDemand(client, `${ROTATED}\n${OTHER}\n`)
+    expect(text(client)).toBe(`${USER}\n${block(ROTATED, OTHER)}`)
+  })
+
+  test('a conflicting user entry for a managed host is reported and never overwritten', async () => {
+    const client = new FakeClient()
+    const pinned = 'managed.example ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIUSERPINNED'
+    client.files.set(KH, Buffer.from(`${pinned}\n`))
+    const result = await onDemand(client, `${MANAGED}\n${OTHER}\n`)
+    expect(text(client)).toBe(`${pinned}\n${block(OTHER)}`)
+    expect(result).toEqual({
+      pushed: true,
+      knownHostsConflicts: [{ host: 'managed.example', keyType: 'ssh-ed25519', line: 1 }],
+    })
+  })
+
+  test('removing a managed entry removes only that entry', async () => {
+    const client = new FakeClient()
+    client.files.set(KH, Buffer.from(`${USER}\n${block(MANAGED, OTHER)}`))
+    await onDemand(client, `${OTHER}\n`)
+    expect(text(client)).toBe(`${USER}\n${block(OTHER)}`)
+  })
+
+  test('removing every managed entry (even under a legacy manifest listing known_hosts) keeps user entries', async () => {
+    const client = new FakeClient()
+    client.files.set(KH, Buffer.from(`${USER}\n${block(MANAGED)}`))
+    await onDemand(client, null, { 'squad-ssh': { hash: 'old', files: ['config', 'known_hosts'] } })
+    expect(text(client)).toBe(`${USER}\n`)
+    expect(client.bashes().some((b) => b.command.startsWith('rm -f') && b.command.includes('known_hosts'))).toBe(false)
+  })
+
+  test('full sync never deletes known_hosts when a legacy stamp listed it', async () => {
+    const client = new FakeClient()
+    client.files.set(KH, Buffer.from(`${USER}\n`))
+    await syncBoxFiles(
+      client as any,
+      SANDBOX,
+      squadOpts,
+      sshOnly(null, {
+        box: syncBox({ 'squad-ssh': { hash: 'old', files: ['config', 'known_hosts'] } }),
+        stampBoxSyncedHash: async () => {},
+      })
+    )
+    expect(text(client)).toBe(`${USER}\n`)
+    expect(client.bashes().some((b) => b.command.startsWith('rm -f') && b.command.includes('known_hosts'))).toBe(false)
+  })
+
+  test('an entry appended between the read and the write is kept (compare-and-swap retry)', async () => {
+    const client = new FakeClient()
+    client.files.set(KH, Buffer.from(`${USER}\n`))
+    const appended = 'late.example ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILATEKEY'
+    client.beforeVerifiedWrite = (path) => client.files.set(path, Buffer.from(`${USER}\n${appended}\n`))
+    await onDemand(client, `${MANAGED}\n`)
+    expect(text(client)).toBe(`${USER}\n${appended}\n${block(MANAGED)}`)
+  })
+
+  test('a known_hosts larger than the merge limit is left untouched and the sync fails', async () => {
+    const client = new FakeClient()
+    const huge = Buffer.alloc(4 * 1024 * 1024 + 10, 0x23)
+    client.files.set(KH, huge)
+    await expect(onDemand(client, `${MANAGED}\n`)).rejects.toThrow('refusing to merge')
+    expect(client.files.get(KH)).toBe(huge)
+  })
+
+  test('no managed entries and no box file: nothing is created', async () => {
+    const client = new FakeClient()
+    await onDemand(client, null)
+    expect(client.files.has(KH)).toBe(false)
   })
 })
