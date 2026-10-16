@@ -21,6 +21,7 @@ const PERSONAL_SECTIONS = new Set([
   'sessions',
   'devices',
   'mobile',
+  'help',
 ])
 
 export function SettingsNavigation({
