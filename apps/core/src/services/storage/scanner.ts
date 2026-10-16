@@ -67,6 +67,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 export type ScanPass = typeof storageScanPasses.$inferSelect
 type Item = typeof storageScanItems.$inferSelect
 const UNRESOLVED = ['pending', 'solo', 'split_pending'] as const
+const STOPPED_EXIT_CODES = new Set([124, 125, 137])
 
 export interface ScanContext {
   runner: SshRunner
@@ -152,8 +153,11 @@ export async function runChunk(machine: Machine, work: Work, runner: SshRunner):
     const result = await runner.run(machine, command, { stdin: chunkInput(paths), timeoutMs: CHUNK_SSH_TIMEOUT_MS })
     const output = parseChunkOutput(result.stdout, paths.length)
     const finished = output.paths.every((path) => path.complete)
-    // 124: `timeout` stopped the chunk. 255: ssh itself failed.
-    const timedOut = !finished && result.exitCode === 124
+    // 124: `timeout` stopped the chunk; 137: it had to SIGKILL a hung command; 125: xargs saw the
+    // command killed by a signal (e.g. out of memory). All are caused by the path being measured, so
+    // they advance it like a timeout. 255: ssh itself failed; anything else (e.g. sudo refused) is
+    // not path-specific and is retried after a backoff.
+    const timedOut = !finished && STOPPED_EXIT_CODES.has(result.exitCode)
     const failure = finished || timedOut ? null : result.exitCode === 255 ? 'ssh_failed' : 'scan_failed'
     return { ...output, timedOut, failure }
   } catch (error) {

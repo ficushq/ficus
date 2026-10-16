@@ -127,6 +127,34 @@ describe('incremental storage scanner', () => {
     expect(saved.get('/home/box_000000000001')).toMatchObject({ status: 'available' })
   })
 
+  test('a hung or killed command advances its path instead of retrying it forever', async () => {
+    const dirs = fixtureTree(2, 2)
+    const stuck = '/home/box_000000000001/d0'
+    const remote = fakeRemote(dirs, { budget: 100, cost: new Map([[stuck, 1000]]) })
+    let killed = 0
+    const runner: SshRunner = {
+      run: async (target, command, opts) => {
+        if (String(opts?.stdin ?? '').startsWith(`${stuck}\0`)) {
+          remote.calls.push({ kind: command.includes('find') ? 'list' : 'measure', paths: [stuck], command })
+          killed++
+          return { exitCode: killed === 1 ? 137 : 125, stdout: 'Used 1B-blocks\n1000 2000\n\0', stderr: '' }
+        }
+        // Let the home itself time out so the stuck subdirectory is measured on its own.
+        if (String(opts?.stdin ?? '') === '/home/box_000000000001\0' && command.includes('du '))
+          return { exitCode: 124, stdout: 'Used 1B-blocks\n1000 2000\n\0', stderr: '' }
+        return remote.runner.run(target, command, opts)
+      },
+    }
+    await scanMachine({ machine, homes: homesOf(dirs) }, context(runner))
+    expect(killed).toBeGreaterThanOrEqual(1)
+    expect(killed).toBeLessThanOrEqual(3)
+    expect((await passes())[0]!.status).toBe('completed')
+    expect((await results()).get('/home/box_000000000001')).toMatchObject({
+      status: 'partial',
+      errors: ['scan_timeout'],
+    })
+  })
+
   test('a restart mid-pass resumes from the saved queue without re-measuring finished homes', async () => {
     const dirs = fixtureTree(12, 2)
     const homes = homesOf(dirs)
