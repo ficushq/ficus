@@ -3549,7 +3549,7 @@ export const sshTrustKeys = pgTable(
     publicKey: text('public_key').notNull(),
     fingerprint: text('fingerprint').notNull(),
     status: text('status').notNull(), // 'pending' | 'trusted' | 'rejected' | 'replaced'
-    origin: text('origin').notNull(), // 'scan' | 'adopted' | 'adoption-conflict'
+    origin: text('origin').notNull(), // 'scan' | 'adopted' | 'adoption-conflict' | 'provider-key' | 'platform'
     decisionNote: text('decision_note'),
     decidedByUserId: text('decided_by_user_id'),
     decidedAt: timestamp('decided_at'),

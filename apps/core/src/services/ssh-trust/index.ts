@@ -43,6 +43,12 @@ import {
  * provisioned VM whose fetched key is byte-identical to a key already trusted
  * for another exe.dev endpoint is trusted as that same key (`provider-key`);
  * any other key waits for a person.
+ *
+ * Ficus platform: when the platform registers a machine host it created (and
+ * generated the host key for), it may supply that key with the registration;
+ * it is trusted without a person ({@link trustPlatformSuppliedKeys}). Only the
+ * platform's own credential may do this, only for a new machine, and never for
+ * a rejected key.
  */
 
 export { strictHostKeyArgs, type HostKeyPin } from './args'
@@ -573,6 +579,139 @@ export async function trustTrustKey(targetId: string, keyId: string, userId: str
       .set({ adoptionPending: false, updatedAt: now })
       .where(eq(sshTrustTargets.id, targetId))
   })
+}
+
+// ── Platform-supplied keys ──────────────────────────────────────────────────
+
+/** `ssh_trust_keys.origin` of a key the Ficus platform supplied when it registered a machine host. */
+export const PLATFORM_KEY_ORIGIN = 'platform'
+
+/** A host key a caller supplies instead of having Core fetch it. Validated by the route. */
+export interface SuppliedHostKey {
+  keyType: string
+  publicKey: string
+}
+
+/** Refusal to trust a platform-supplied key set; nothing was recorded. */
+export class PlatformHostKeyRefusedError extends Error {
+  constructor(
+    message: string,
+    readonly code: 'host_key_rejected' | 'host_keys_exist' | 'host_keys_missing'
+  ) {
+    super(message)
+    this.name = 'PlatformHostKeyRefusedError'
+  }
+}
+
+type Reader = Pick<typeof db, 'select'>
+
+/**
+ * Fingerprints of `keys` a decision has rejected for ANY endpoint. A key once
+ * rejected is never trusted again by the platform, whichever machine it is
+ * supplied for (a person may still trust it in Settings > Machines).
+ */
+export async function rejectedSuppliedKeys(keys: SuppliedHostKey[], reader: Reader = db): Promise<string[]> {
+  if (!keys.length) return []
+  const rows = await reader
+    .select({ keyType: sshTrustKeys.keyType, publicKey: sshTrustKeys.publicKey, fingerprint: sshTrustKeys.fingerprint })
+    .from(sshTrustKeys)
+    .where(
+      and(
+        eq(sshTrustKeys.status, 'rejected'),
+        inArray(
+          sshTrustKeys.publicKey,
+          keys.map((k) => k.publicKey)
+        )
+      )
+    )
+  const wanted = new Set(keys.map((k) => `${k.keyType} ${k.publicKey}`))
+  return [...new Set(rows.filter((r) => wanted.has(`${r.keyType} ${r.publicKey}`)).map((r) => r.fingerprint))]
+}
+
+/**
+ * Trust the host keys the Ficus platform supplied while registering a NEW
+ * machine, with no person involved. Callers MUST have established that the
+ * request was authenticated by the platform's own credential
+ * (`isPlatformOrchestratorIdentity`) and must call this only for a machine row
+ * they just created.
+ *
+ * The rule that keeps this from widening trust:
+ * - Only a brand-new endpoint: if the machine's endpoint already has ANY key
+ *   on record (trusted, pending, rejected or replaced) nothing is recorded and
+ *   this refuses. The platform therefore never adds, replaces or re-trusts a
+ *   key of an existing machine; a later key change on any machine is refused
+ *   at connect time and waits for a person, as before. A resize that recreates
+ *   the host registers a NEW machine (new name and id), which is a new
+ *   endpoint; an in-place resize keeps the disk and so the same key.
+ * - Never a rejected key: a key any endpoint has rejected refuses the whole
+ *   set (checked again inside the transaction).
+ *
+ * Audit: each key row records `origin = 'platform'`, `decidedAt`, and a
+ * decision note naming the Ficus platform and the credential (`actor`, e.g.
+ * `system-token:<id>`). `decidedByUserId` stays null: no person decided.
+ */
+export async function trustPlatformSuppliedKeys(
+  spec: TrustTargetSpec,
+  keys: SuppliedHostKey[],
+  actor: string
+): Promise<TrustKey[]> {
+  if (!keys.length) throw new PlatformHostKeyRefusedError('no host keys supplied', 'host_keys_missing')
+  const target = await ensureTrustTarget(spec)
+  const inserted = await db.transaction(async (tx) => {
+    // Serialize with any other writer of this endpoint's decisions.
+    await tx
+      .select({ id: sshTrustTargets.id })
+      .from(sshTrustTargets)
+      .where(eq(sshTrustTargets.id, target.id))
+      .for('update')
+    const existing = await tx
+      .select({ id: sshTrustKeys.id })
+      .from(sshTrustKeys)
+      .where(eq(sshTrustKeys.targetId, target.id))
+      .limit(1)
+    if (existing.length) {
+      throw new PlatformHostKeyRefusedError(
+        `${spec.label} already has host keys on record; the Ficus platform can only supply keys for a new machine`,
+        'host_keys_exist'
+      )
+    }
+    const rejected = await rejectedSuppliedKeys(keys, tx)
+    if (rejected.length) {
+      throw new PlatformHostKeyRefusedError(
+        `host key ${rejected.join(', ')} was rejected and cannot be trusted by the Ficus platform`,
+        'host_key_rejected'
+      )
+    }
+    const now = new Date()
+    const rows = await tx
+      .insert(sshTrustKeys)
+      .values(
+        keys.map((k) => ({
+          targetId: target.id,
+          keyType: k.keyType,
+          publicKey: k.publicKey,
+          fingerprint: hostKeyFingerprint(k.publicKey),
+          status: 'trusted',
+          origin: PLATFORM_KEY_ORIGIN,
+          decisionNote: `supplied by the Ficus platform (${actor})`,
+          decidedByUserId: null,
+          decidedAt: now,
+          firstSeenAt: now,
+          lastSeenAt: now,
+        }))
+      )
+      .returning()
+    await tx
+      .update(sshTrustTargets)
+      .set({ adoptionPending: false, updatedAt: now })
+      .where(eq(sshTrustTargets.id, target.id))
+    return rows
+  })
+  log.info(
+    `${spec.scope}: trusted ${inserted.length} host key(s) supplied by the Ficus platform (${actor}): ` +
+      inserted.map((k) => `${k.keyType} ${k.fingerprint}`).join(', ')
+  )
+  return inserted
 }
 
 /** A person rejects a pending key; it is never pinned. */

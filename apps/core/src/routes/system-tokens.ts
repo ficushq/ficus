@@ -5,6 +5,7 @@ import { requirePermission } from '../middleware'
 import {
   listSystemTokens,
   createSystemToken,
+  mayCreateSystemTokenNamed,
   revokeSystemToken,
   upgradePlatformMaintenanceToken,
 } from '../services/auth/system-tokens'
@@ -49,6 +50,9 @@ export const systemTokensRouter = new Hono()
   // POST /api/system-tokens — create a manual token; the raw value is returned once.
   .post('/', requirePermission('system-tokens:manage'), zValidator('json', createSystemTokenSchema), async (c) => {
     const { name, scopes } = c.req.valid('json')
+    if (!mayCreateSystemTokenNamed(c.get('identity') as Identity | undefined, name)) {
+      return c.json({ error: `The system token name '${name}' is reserved for the Ficus platform` }, 403)
+    }
     const { token, record } = await createSystemToken({ name, scopes, kind: 'manual' })
     return c.json({ ...record, token }, 201)
   })
