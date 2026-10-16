@@ -147,7 +147,9 @@ export async function keepBoxKey(squadId: string, conflictId: string, userId: st
     .where(and(eq(knownHostsConflicts.id, conflictId), eq(knownHostsConflicts.status, 'open')))
     .returning()
   if (!row) throw new ConflictResolutionError('Conflict is already resolved', 409)
-  log.info(`known_hosts conflict ${conflictId} (${row.host} ${row.keyType} on ${row.sandboxId}): box key kept by ${userId}`)
+  log.info(
+    `known_hosts conflict ${conflictId} (${row.host} ${row.keyType} on ${row.sandboxId}): box key kept by ${userId}`
+  )
   return row
 }
 
@@ -177,8 +179,7 @@ export async function useCoreKey(
   if (!client) {
     throw new ConflictResolutionError('The box is not reachable right now; try again once it is running.', 409)
   }
-  const managed =
-    deps.managedKnownHosts?.(squadId) ?? (await import('../squad/ssh')).getKnownHosts(squadId) ?? ''
+  const managed = deps.managedKnownHosts?.(squadId) ?? (await import('../squad/ssh')).getKnownHosts(squadId) ?? ''
 
   const remaining = await fileSync.editAndMergeKnownHostsOnBox(
     client,

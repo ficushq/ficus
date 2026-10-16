@@ -96,7 +96,7 @@ function SshConfigEditor({ squadId }: { squadId: string }) {
         disabled={!canWriteSsh}
         onChange={(e) => canWriteSsh && setValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="# Example:&#10;Host github.com&#10;  IdentityFile ~/.ssh/my-deploy-key&#10;  StrictHostKeyChecking accept-new"
+        placeholder="# Example:&#10;Host github.com&#10;  IdentityFile ~/.ssh/my-deploy-key&#10;  StrictHostKeyChecking yes"
         className={clsx(
           'ficus-field',
           'w-full h-40 p-3 rounded-lg border bg-surface text-primary text-sm',

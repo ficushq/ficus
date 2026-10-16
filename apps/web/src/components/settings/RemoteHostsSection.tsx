@@ -12,6 +12,8 @@ import {
   grantRemoteHost,
   revokeRemoteHostGrant,
   checkRemoteHost,
+  decideRemoteHostKey,
+  scanRemoteHostKeys,
   type RemoteHostWithGrants,
   type RevokeRotationResult,
 } from '../../api/remote-hosts'
@@ -19,6 +21,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { PublicKeyBlock } from './PublicKeyBlock'
 import { RotationCallout } from './RotationCallout'
 import { ConfirmButton } from '../ConfirmButton'
+import { HostKeyStateBadge, HostKeysPanel, hostKeyNeedsAttention } from './HostKeysPanel'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, LoadingSurface, SkeletonBlock, SkeletonLine } from '../loading/Skeleton'
 
@@ -167,6 +170,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
             <span className="text-xs px-1.5 py-0.5 rounded bg-surface-secondary border border-th-border text-secondary">
               {squadIds.length} {squadIds.length === 1 ? 'squad' : 'squads'}
             </span>
+            <HostKeyStateBadge state={host.hostKeyState} />
             {checkResult && (
               <span
                 className={clsx(
@@ -213,6 +217,21 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
       )}
       {checkResult && !checkResult.reachable && checkResult.error && (
         <p className="text-xs text-status-danger-600 dark:text-status-danger-400 mt-2">{checkResult.error}</p>
+      )}
+
+      {(expanded || hostKeyNeedsAttention(host)) && (
+        <div className="mt-3 p-3 ficus-inset">
+          <HostKeysPanel
+            host={host}
+            canAct={canWrite}
+            scan={() => scanRemoteHostKeys(host.id)}
+            decide={(keyId, decision) => decideRemoteHostKey(host.id, keyId, decision)}
+            onChanged={() => {
+              invalidate()
+              for (const squadId of squadIds) invalidateSquad(squadId)
+            }}
+          />
+        </div>
       )}
 
       {expanded && (
@@ -404,7 +423,7 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
             <p className="text-xs text-primary font-medium">
               Add this public key to <span className="font-mono">{registered.sshUser}</span>'s{' '}
               <span className="font-mono">~/.ssh/authorized_keys</span> on the host, then grant it to squads that need
-              it.
+              it. Confirm the host's own key in the list above before agents can connect.
             </p>
             <PublicKeyBlock value={registered.sshPublicKey} />
           </div>

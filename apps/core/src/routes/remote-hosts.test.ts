@@ -1147,10 +1147,7 @@ describe('remote-hosts routes', () => {
       try {
         const conflict = await seedConflict(squad.id, `${prefix}-box-1`)
 
-        const list = await router.request(
-          `/squad/${squad.id}/known-hosts-conflicts`,
-          req('GET', undefined, tok.token)
-        )
+        const list = await router.request(`/squad/${squad.id}/known-hosts-conflicts`, req('GET', undefined, tok.token))
         expect(list.status).toBe(200)
         const [shown] = await list.json()
         expect(shown).toMatchObject({
@@ -1174,7 +1171,10 @@ describe('remote-hosts routes', () => {
         }
         expect(useCoreCalls).toBe(0)
 
-        const kept = await router.request(`/squad/${squad.id}/known-hosts-conflicts/${conflict.id}/keep-box`, req('POST'))
+        const kept = await router.request(
+          `/squad/${squad.id}/known-hosts-conflicts/${conflict.id}/keep-box`,
+          req('POST')
+        )
         expect(kept.status).toBe(200)
         expect(await kept.json()).toMatchObject({ status: 'kept-box', resolvedByUserId: admin.id })
       } finally {

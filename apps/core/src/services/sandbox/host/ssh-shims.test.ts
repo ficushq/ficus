@@ -73,7 +73,7 @@ describe('ssh-family shims (functional matrix)', () => {
     '    IdentityFile /abs/ficus_remote_staging',
     '    IdentitiesOnly yes',
     '    UserKnownHostsFile /abs/known_hosts',
-    '    StrictHostKeyChecking accept-new',
+    '    StrictHostKeyChecking yes',
     '# <<< ficus remote hosts <<<',
     '',
   ].join('\n')

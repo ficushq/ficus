@@ -156,7 +156,12 @@ export function renderManagedBlock(hosts: RenderableHost[], opts: { absoluteSshD
   const knownHostsLine = absoluteSshDir ? [`  UserKnownHostsFile ${absoluteSshDir}/known_hosts`] : []
 
   const entries = validHosts.map(({ host, mode }) => {
-    const target = [`Host ${host.name}`, `  HostName ${host.sshHost}`, `  Port ${host.sshPort}`, `  User ${host.sshUser}`]
+    const target = [
+      `Host ${host.name}`,
+      `  HostName ${host.sshHost}`,
+      `  Port ${host.sshPort}`,
+      `  User ${host.sshUser}`,
+    ]
     if (mode === 'blocked') {
       return [
         ...target,
@@ -214,7 +219,9 @@ export function composeSquadKnownHosts(existing: string, pinLines: string[], ali
     return !(reservedName || namesAlias)
   })
   if (dropped.length) {
-    log.warn(`dropped ${dropped.length} squad known_hosts line(s) naming a Ficus remote-host alias: ${dropped.join(' | ')}`)
+    log.warn(
+      `dropped ${dropped.length} squad known_hosts line(s) naming a Ficus remote-host alias: ${dropped.join(' | ')}`
+    )
   }
   return mergeManagedKnownHosts(kept.join('\n'), pinLines.join('\n')).content
 }

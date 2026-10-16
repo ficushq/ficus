@@ -22,6 +22,102 @@ export interface PublicRemoteHost {
   createdAt: string
   updatedAt: string
   squadIds?: string[]
+  hostKeyState?: HostKeyState
+  hostKeys?: PublicHostKey[]
+  hostKeyCheckError?: string | null
+  fetchError?: string
+}
+
+/** See Core's `remote-hosts/host-keys.ts` for what each state means. */
+export type HostKeyState = 'adopting' | 'trusted' | 'changed' | 'pending' | 'unverified'
+
+/** A host's SSH host key as the API returns it: fingerprint only. */
+export interface PublicHostKey {
+  id: string
+  keyType: string
+  fingerprint: string
+  status: string
+  origin: string
+  decisionNote: string | null
+  decidedByUserId: string | null
+  decidedAt: string | null
+  replacesFingerprints: string[]
+}
+
+/** A box whose own known_hosts pins a different key than a Core-managed entry. */
+export interface KnownHostsConflict {
+  id: string
+  sandboxId: string
+  host: string
+  keyType: string
+  boxFingerprint: string
+  coreFingerprint: string
+  boxLine: number
+  wildcard: boolean
+  status: string
+  resolvedByUserId: string | null
+}
+
+const STATE_SUMMARY: Record<HostKeyState, string> = {
+  trusted: 'host key trusted; connections are checked strictly against it',
+  adopting: 'adopting the key boxes already trust; connections use strict checking meanwhile',
+  changed: 'HOST KEY CHANGED: connections are refused until a person trusts or rejects the new key',
+  pending: 'BLOCKED: a person must confirm the host key before agents can connect',
+  unverified: 'BLOCKED: no host key to confirm yet; fetch it, then a person must trust it',
+}
+
+/**
+ * The host-key screen for one host: state, every key with its fingerprint and
+ * decision, and how to act. Pure and exported for tests.
+ */
+export function renderHostKeys(host: PublicRemoteHost): string {
+  const state = host.hostKeyState ?? 'unverified'
+  const lines = [`${host.name}: ${STATE_SUMMARY[state]}`]
+  const fetchError = host.fetchError ?? host.hostKeyCheckError
+  if (fetchError) lines.push(`Last key fetch failed: ${fetchError}`)
+  const keys = host.hostKeys ?? []
+  if (!keys.length) lines.push('No host keys recorded.')
+  for (const key of keys) {
+    const decided = key.decidedAt
+      ? ` — ${key.decisionNote ?? key.status}${key.decidedByUserId ? ` (user ${key.decidedByUserId})` : ''}, ${key.decidedAt}`
+      : ''
+    lines.push(`  [${key.status}] ${key.keyType} ${key.fingerprint}${decided}`)
+    if (key.status === 'pending' && key.replacesFingerprints.length) {
+      lines.push(`      key change: replaces trusted ${key.replacesFingerprints.join(', ')}`)
+    }
+  }
+  if (keys.some((k) => k.status === 'pending')) {
+    lines.push(
+      '',
+      'Only a person can trust or reject a key (agents are refused). Compare the fingerprint with one obtained',
+      'out of band (for example `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the host), then:',
+      `  ficus remote-hosts trust-key ${host.name} <fingerprint>    or    ficus remote-hosts reject-key ${host.name} <fingerprint>`
+    )
+  } else if (state === 'unverified') {
+    lines.push('', `Fetch the key with: ficus remote-hosts fetch-key ${host.name}`)
+  }
+  return lines.join('\n')
+}
+
+/** Box known_hosts conflicts for a squad. Pure and exported for tests. */
+export function renderConflicts(conflicts: KnownHostsConflict[]): string {
+  if (!conflicts.length) return 'No known_hosts conflicts on your squad boxes.'
+  const lines = ['Known_hosts conflicts (a box pins a different key than Ficus manages for the host):']
+  for (const c of conflicts) {
+    lines.push(
+      `  ${c.id} [${c.status}] ${c.host} ${c.keyType} on ${c.sandboxId} line ${c.boxLine}${c.wildcard ? ' (wildcard line)' : ''}`,
+      `      box:  ${c.boxFingerprint}`,
+      `      Ficus: ${c.coreFingerprint}`
+    )
+  }
+  if (conflicts.some((c) => c.status === 'open')) {
+    lines.push(
+      '',
+      'Only a person can resolve a conflict: ficus remote-hosts resolve-conflict <id> --keep-box | --use-core',
+      '(--use-core is refused for a wildcard line; edit that line by hand or keep the box key.)'
+    )
+  }
+  return lines.join('\n')
 }
 
 interface SyncResult {
@@ -34,7 +130,7 @@ interface CheckResult {
   error?: string
 }
 
-const LIST_COLUMNS = ['name', 'sshUser', 'sshHost', 'sshPort', 'description']
+const LIST_COLUMNS = ['name', 'sshUser', 'sshHost', 'sshPort', 'hostKeyState', 'description']
 
 /**
  * The "finish setup" block printed after `add` and re-printed by `show`: the
@@ -127,6 +223,28 @@ function describeHost(host: PublicRemoteHost): string {
   return `${host.name}: ${host.sshUser}@${host.sshHost}:${host.sshPort}`
 }
 
+/** Resolve a host for a host-key command: the global registry with --all, else the squad surface. */
+async function resolveHostForKeys(
+  name: string,
+  opts: { all?: boolean; squad?: string }
+): Promise<{ host: PublicRemoteHost; base: string }> {
+  if (opts.all) {
+    const host = findByName(await fetchGlobalHosts(), name)
+    return { host, base: `/api/remote-hosts/${host.id}/host-keys` }
+  }
+  const squadId = resolveSquadId(opts.squad)
+  const host = findByName(await fetchSquadHosts(squadId), name)
+  return { host, base: `/api/remote-hosts/squad/${encodeURIComponent(squadId)}/host-keys/${host.id}` }
+}
+
+function findKey(host: PublicRemoteHost, fingerprintOrId: string): PublicHostKey {
+  const key = (host.hostKeys ?? []).find((k) => k.fingerprint === fingerprintOrId || k.id === fingerprintOrId)
+  if (!key) {
+    throw new Error(`No host key ${fingerprintOrId} on "${host.name}". See: ficus remote-hosts host-keys ${host.name}`)
+  }
+  return key
+}
+
 export function registerRemoteHostsCommands(program: Command) {
   const remoteHosts = program.command('remote-hosts').description('Manage team-owned SSH remote hosts')
 
@@ -166,6 +284,7 @@ export function registerRemoteHostsCommands(program: Command) {
           ...(host.description ? [host.description] : []),
           '',
           renderInstallInstructions(host),
+          ...(host.hostKeyState ? ['', renderHostKeys(host)] : []),
         ]
         output(host, lines.join('\n'))
       } catch (error) {
@@ -213,6 +332,7 @@ export function registerRemoteHostsCommands(program: Command) {
             `Registered "${host.name}" (${host.sshUser}@${host.sshHost}:${host.sshPort}).`,
             '',
             renderInstallInstructions(host),
+            ...(host.hostKeyState ? ['', renderHostKeys(host)] : []),
           ]
           output(host, lines.join('\n'))
         } catch (error) {
@@ -314,6 +434,98 @@ export function registerRemoteHostsCommands(program: Command) {
         } else {
           output(result, `"${name}" is NOT reachable: ${result.error ?? 'unknown error'}`)
         }
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // ficus remote-hosts host-keys <name> [--all] [--squad <id>]
+  remoteHosts
+    .command('host-keys <name>')
+    .description("Show a remote host's SSH host keys and whether agents can connect")
+    .option('--all', 'resolve from the whole registry instead of your squad')
+    .option('--squad <id>', 'resolve from a specific squad instead of your own')
+    .action(async (name: string, opts: { all?: boolean; squad?: string }) => {
+      try {
+        const { host } = await resolveHostForKeys(name, opts)
+        output(host, renderHostKeys(host))
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // ficus remote-hosts fetch-key <name> [--all] [--squad <id>]
+  remoteHosts
+    .command('fetch-key <name>')
+    .description("Fetch a remote host's SSH host keys (no login); new keys wait for a person to confirm")
+    .option('--all', 'use the global registry (needs global remote-hosts:write)')
+    .option('--squad <id>', 'a host granted to a specific squad instead of your own')
+    .action(async (name: string, opts: { all?: boolean; squad?: string }) => {
+      try {
+        const { base } = await resolveHostForKeys(name, opts)
+        const host = await apiPost<PublicRemoteHost>(`${base}/scan`)
+        output(host, renderHostKeys(host))
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // ficus remote-hosts trust-key|reject-key <name> <fingerprint> [--all] [--squad <id>]
+  for (const [command, action, verb] of [
+    ['trust-key', 'trust', 'Trust'],
+    ['reject-key', 'reject', 'Reject'],
+  ] as const) {
+    remoteHosts
+      .command(`${command} <name> <fingerprint>`)
+      .description(`${verb} a fetched SSH host key (people only; agents are refused)`)
+      .option('--all', 'use the global registry (needs global remote-hosts:write)')
+      .option('--squad <id>', 'a host granted to a specific squad instead of your own')
+      .action(async (name: string, fingerprint: string, opts: { all?: boolean; squad?: string }) => {
+        try {
+          const { host, base } = await resolveHostForKeys(name, opts)
+          const key = findKey(host, fingerprint)
+          const updated = await apiPost<PublicRemoteHost>(`${base}/${key.id}/${action}`)
+          output(updated, renderHostKeys(updated))
+        } catch (error) {
+          outputError(error as Error)
+        }
+      })
+  }
+
+  // ficus remote-hosts conflicts [--squad <id>]
+  remoteHosts
+    .command('conflicts')
+    .description("Show known_hosts conflicts on your squad's boxes (a box pins a different key than Ficus)")
+    .option('--squad <id>', 'a specific squad instead of your own')
+    .action(async (opts: { squad?: string }) => {
+      try {
+        const squadId = resolveSquadId(opts.squad)
+        const conflicts = await apiGet<KnownHostsConflict[]>(
+          `/api/remote-hosts/squad/${encodeURIComponent(squadId)}/known-hosts-conflicts`
+        )
+        output(conflicts, renderConflicts(conflicts))
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // ficus remote-hosts resolve-conflict <id> --keep-box|--use-core [--squad <id>]
+  remoteHosts
+    .command('resolve-conflict <id>')
+    .description('Resolve a known_hosts conflict (people only; agents are refused)')
+    .option('--keep-box', "keep the box's key and stop reporting this exact pair")
+    .option('--use-core', "replace the box's conflicting line(s) with the key Ficus manages")
+    .option('--squad <id>', 'a specific squad instead of your own')
+    .action(async (id: string, opts: { keepBox?: boolean; useCore?: boolean; squad?: string }) => {
+      try {
+        if (Boolean(opts.keepBox) === Boolean(opts.useCore))
+          throw new Error('Pass exactly one of --keep-box or --use-core.')
+        const squadId = resolveSquadId(opts.squad)
+        const choice = opts.keepBox ? 'keep-box' : 'use-core'
+        const result = await apiPost<KnownHostsConflict>(
+          `/api/remote-hosts/squad/${encodeURIComponent(squadId)}/known-hosts-conflicts/${encodeURIComponent(id)}/${choice}`
+        )
+        output(result, `Conflict ${id} resolved (${choice === 'keep-box' ? 'box key kept' : 'Ficus key applied'}).`)
       } catch (error) {
         outputError(error as Error)
       }

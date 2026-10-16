@@ -406,7 +406,9 @@ function rejectReservedKnownHostsNames(content: string): void {
     const hostField = fields[0]?.startsWith('@') ? fields[1] : fields[0]
     if (!hostField || hostField.startsWith('#')) continue
     if (hostField.split(',').some((p) => p.replace(/^!/, '').toLowerCase().startsWith('ficus-remote.'))) {
-      throw new ReservedKnownHostsNameError('known_hosts entries for ficus-remote.* names are managed by Ficus and cannot be set directly')
+      throw new ReservedKnownHostsNameError(
+        'known_hosts entries for ficus-remote.* names are managed by Ficus and cannot be set directly'
+      )
     }
   }
 }

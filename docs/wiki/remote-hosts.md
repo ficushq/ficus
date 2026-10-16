@@ -21,10 +21,10 @@ in-agent usage guide this document backs.
 
    This mints a fresh ficus-owned ed25519 keypair, inserts a `remote_hosts`
    row, grants the calling squad (`FICUS_SQUAD_ID`, or `--squad <id>`) access,
-   materializes the squad's SSH directory, and prints the **public** key
-   plus install instructions. Use `--global` to register without granting
-   any squad yet (needs global `remote-hosts:write`); grant squads later
-   with `grant`.
+   fetches the host's own SSH host keys (see step 3), materializes the
+   squad's SSH directory, and prints the **public** key plus install
+   instructions. Use `--global` to register without granting any squad yet
+   (needs global `remote-hosts:write`); grant squads later with `grant`.
 
 2. **Install the public key on the target** (human step, always). The
    printed block looks like:
@@ -40,25 +40,49 @@ in-agent usage guide this document backs.
    to skip this step; the host is unusable until a human with access to it
    appends the key.
 
-3. **Verify connectivity**:
+3. **Confirm the host key** (a person, always). When a host is added, Core
+   fetches its public host keys without logging in (`ssh-keyscan`, 5s
+   connect timeout, 15s overall) and stores them as **pending**. Until a
+   person trusts one, the host is unusable: its stanza refuses every
+   connection with
+   `ficus: remote host <name> is blocked until a person confirms its SSH host key ...`.
+
+   ```bash
+   ficus remote-hosts host-keys staging          # state, each key's type + SHA256 fingerprint
+   ficus remote-hosts trust-key staging SHA256:… # or reject-key
+   ficus remote-hosts fetch-key staging          # fetch again (e.g. the host was unreachable)
+   ```
+
+   The same screen is in the web UI (squad settings and admin settings →
+   Remote Hosts) with Trust / Reject per key. Compare the fingerprint with
+   one obtained from the host itself (for example
+   `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`). Trusting and
+   rejecting are **person-only**: the API refuses agents, system tokens and
+   the ownerless bootstrap session on every path, whatever their
+   permissions, and records who decided and when. See § Host Key
+   Verification.
+
+4. **Verify connectivity**:
 
    ```bash
    ficus remote-hosts check staging
    ```
 
    Runs a server-side `ssh` probe using the minted key and reports
-   `{ reachable, error? }`. Squad managers can check any host granted to
+   `{ reachable, error? }`. The probe checks the host key strictly against
+   the trusted keys only; a host without one is reported unreachable with
+   "The host key has not been confirmed yet". Squad managers can check any host granted to
    their own squad without needing global write
    (`POST /api/remote-hosts/squad/:squadId/check/:hostId`); global write can
    check via the registry surface directly (`--all`).
 
-4. **Grant additional squads** (global write only):
+5. **Grant additional squads** (global write only):
 
    ```bash
    ficus remote-hosts grant staging --squad <other-squad-id>
    ```
 
-5. **Agent usage.** Every agent in a granted squad gets an SSH config entry
+6. **Agent usage.** Every agent in a granted squad gets an SSH config entry
    and private key automatically — Docker/k8s sandboxes see it the moment
    it's materialized (their `~/.ssh` is a live mount of the squad's SSH
    dir); a long-lived VM box that predates the grant needs one manual
@@ -90,8 +114,105 @@ in-agent usage guide this document backs.
    rsync -av ./dist/ staging:/srv/app/
    ```
 
-   The first connection auto-accepts the host key
-   (`StrictHostKeyChecking accept-new`).
+   Every connection checks the host key strictly against the confirmed
+   key (`StrictHostKeyChecking yes`, `UpdateHostKeys no`); nothing is ever
+   accepted on first use or updated automatically.
+
+## Host Key Verification
+
+`apps/core/src/services/remote-hosts/host-keys.ts`. Each key a host
+presents is a `remote_host_keys` row: type, SHA256 fingerprint, status
+(`pending` / `trusted` / `rejected` / `replaced`), origin (`scan` /
+`adopted` / `adoption-conflict`), and the audit fields
+`decided_by_user_id` / `decided_at` / `decision_note`. A host's state:
+
+| State        | Meaning                                                                                     | Agents                                                   |
+| ------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `trusted`    | A key is pinned.                                                                            | Connect, strictly checked.                               |
+| `changed`    | The host presented a different key of a pinned type.                                        | Refused (strict check) until a person trusts or rejects. |
+| `pending`    | Fetched keys wait for a person (new host, or conflicting adoption evidence).                | Blocked: the stanza refuses with a message.              |
+| `unverified` | No key to confirm: the fetch failed (`hostKeyCheckError`) or every key was rejected.        | Blocked.                                                 |
+| `adopting`   | Registered before keys were pinned; existing trust is being adopted (see § Existing hosts). | Connect, strictly checked against what the box trusts.   |
+
+- **Pinning.** Trusted keys are written into the squad's Core-managed
+  `known_hosts` (inside the `# >>> ficus managed known hosts >>>` block,
+  which then reaches boxes as described under § Security Model) under a
+  per-host alias, `ficus-remote.<name>`, and the stanza names it with
+  `HostKeyAlias`. Only Core-managed entries therefore count: a key a box
+  learned for the real hostname (for example through the old `accept-new`)
+  never satisfies the check. `ficus-remote.*` is Core's namespace: the
+  squad known_hosts API refuses entries naming it, and materialization drops
+  any line outside the block that would match a pinned alias (plain, hashed
+  or wildcard), so no second key can be added for an alias.
+- **Key change.** A later fetch that sees a different key of a pinned type
+  records it as pending; the host shows `changed` with the old and new
+  fingerprints. Nothing auto-updates: connections keep being refused until
+  a person trusts the new key (the old one becomes `replaced`) or rejects
+  it. A key of a new type is recorded as pending without blocking the host.
+- **Rejected keys stay rejected** across later fetches.
+- **Agents can fetch, never decide.** `fetch-key` (scan) only records
+  pending keys, so it needs ordinary `remote-hosts:write`. A host granted
+  to more than one squad can only be decided from the squad surface by
+  someone who also holds global `remote-hosts:write`, so one squad cannot
+  pin a key for another squad's host.
+
+### Existing hosts
+
+The migration marks every host registered before this change as
+`adopting`. At worker boot Core adopts the keys already trusted for each
+one, recorded as trusted with origin `adopted`, no `decided_by_user_id`,
+and the note `adopted from existing trust (<where>)` — no prompt, no user
+action. Evidence is read at runtime through Core's own access: Core's
+connectivity-check `known_hosts`, each granted squad's Core SSH directory
+`known_hosts` (docker mounts it as the box's `~/.ssh`; the host runtime
+points ssh at it), and `~/.ssh/known_hosts` of each ready vm box of a
+granted squad. Only plain or hashed entries for the exact
+`host`/`[host]:port` name count.
+
+- One key per type across all evidence: adopted.
+- Different keys of the same type anywhere: nothing is picked. Every
+  candidate becomes pending (origin `adoption-conflict`, note listing where
+  each was seen) and the host waits for a person.
+- No key anywhere and every source was read: fetched and held for
+  confirmation, like a new host.
+- No key found but a box could not be read: stays `adopting` and is retried
+  at the next boot (or when someone runs `fetch-key`). Meanwhile its stanza
+  uses strict checking against the keys each box already trusts — never
+  trust-on-first-use.
+
+(k8s pods mirrored `known_hosts` with `rsync --delete` before the managed block existed, so
+they hold no learned keys to adopt.)
+
+## Box known_hosts conflicts
+
+When a vm box's own `~/.ssh/known_hosts` pins a different key than a
+Core-managed entry for the same host and key type, the managed entry is
+left out of that box (§ Security Model). Core records each box's current
+conflicts after every merge (`known_hosts_conflicts`:
+squad, box, host, key type, both fingerprints, box line, wildcard flag,
+detected / last-seen times) and clears the ones that are gone. A box line
+that names the host through a wildcard (`*`, `?`; negations honoured) is a
+conflict too. Different key types are not conflicts.
+
+They are listed on the squad's Remote Hosts settings and by
+`ficus remote-hosts conflicts` (agents can read them, so one hitting
+"Host key verification failed" can see a person must decide). A person
+(never an agent; needs the squad's `ssh:write`) resolves each:
+
+- **Keep box key**: the box key stays and that exact pair of fingerprints
+  is no longer reported. A different box or Core key is a new conflict.
+- **Use Ficus key** (`--use-core`): removes the host's trust from the
+  conflicting box line(s) of that key type — plain and hashed; a
+  comma-separated line keeps its other hosts — and writes the managed
+  entry, through the same compare-and-swap `0600` write as every sync.
+  Every other line is kept byte-for-byte. **A wildcard line is never
+  edited** (it may cover hosts Ficus knows nothing about, and adding a
+  negation would silently narrow it): the action is refused and the line
+  must be edited by hand on the box, or the box key kept.
+
+Conflicts refresh whenever the box's squad SSH material is pushed (box
+ensure, or `ficus remote-hosts sync` from the box). Merges the k8s
+entrypoint runs inside a pod are logged there and not yet recorded.
 
 ## Security Model
 
@@ -150,6 +271,8 @@ in-agent usage guide this document backs.
   public key. So **every** revoke, even a repeated one, requires installing the
   freshly returned public key in `authorized_keys` before the granted squads can
   reconnect.
+- **Host keys are confirmed by a person** and pinned; see § Host Key
+  Verification.
 - **Input validation** guards against ssh_config directive injection:
   `name` is restricted to `^[a-z0-9][a-z0-9-]{0,62}$` (it doubles as the SSH
   alias agents type), and `sshHost`/`sshUser` must be non-empty with no
@@ -173,15 +296,33 @@ Materialization writes into each granted squad's SSH directory
     User deploy
     IdentityFile ~/.ssh/ficus_remote_staging
     IdentitiesOnly yes
-    StrictHostKeyChecking accept-new
+    HostKeyAlias ficus-remote.staging
+    StrictHostKeyChecking yes
+    UpdateHostKeys no
+  Host blocked-host
+    HostName 10.1.2.4
+    Port 22
+    User deploy
+    StrictHostKeyChecking yes
+    ProxyCommand sh -c 'echo "ficus: remote host blocked-host is blocked until a person confirms its SSH host key (...)" >&2; exit 1'
   # <<< ficus remote hosts <<<
   ```
+
+  A host without a trusted key gets the refusing stanza and no key file; a
+  host still adopting existing trust gets the first form without
+  `HostKeyAlias`. On the host runtime each usable stanza also pins
+  `UserKnownHostsFile <squad ssh dir>/known_hosts`.
+
+- The trusted keys, in the squad's `known_hosts` managed block:
+  `ficus-remote.staging ssh-ed25519 AAAA…`.
 
 `materializeSquadRemoteHosts(squadId)` is **idempotent and complete**: every
 call rewrites the managed block from current DB state and deletes any
 `ficus_remote_*` key file for a host no longer granted. It runs on every
-mutation that can affect a squad's grants — host create+grant, grant,
-revoke, host delete.
+mutation that can affect a squad's grants or host keys — host
+create+grant, grant, revoke, host delete, host-key fetch, trust, reject and
+adoption. `setKnownHosts`/`addKnownHost` keep the pinned keys the same way
+`setSshConfig` keeps the managed config block.
 
 `setSshConfig` — the pre-existing path a squad manager uses to hand-edit
 their squad's SSH config — is taught to preserve the managed block in both
@@ -202,6 +343,11 @@ the markers.
 | `ficus remote-hosts revoke <name> [--squad <id>]`                                                                    | squad (default, own squad) / global (`--squad`)     | `remote-hosts:write` | Never deletes the host.                                                                                                        |
 | `ficus remote-hosts remove <name>`                                                                                   | global                                              | `remote-hosts:write` | Deletes the host + its secret entirely.                                                                                        |
 | `ficus remote-hosts check <name> [--all] [--squad <id>]`                                                             | squad (default) / global (`--all`)                  | `remote-hosts:write` | Server-side `ssh` reachability probe.                                                                                          |
+| `ficus remote-hosts host-keys <name> [--all] [--squad <id>]`                                                         | squad / global                                      | `remote-hosts:read`  | Host-key state and each key's fingerprint and decision.                                                                        |
+| `ficus remote-hosts fetch-key <name> [--all] [--squad <id>]`                                                         | squad / global                                      | `remote-hosts:write` | `ssh-keyscan` (no login); new keys are pending.                                                                                |
+| `ficus remote-hosts trust-key\|reject-key <name> <fingerprint> [--all] [--squad <id>]`                               | squad / global                                      | `remote-hosts:write` | **People only**; agents are refused. Shared hosts need global write.                                                           |
+| `ficus remote-hosts conflicts [--squad <id>]`                                                                        | squad                                               | `remote-hosts:read`  | Box known_hosts conflicts.                                                                                                     |
+| `ficus remote-hosts resolve-conflict <id> --keep-box\|--use-core [--squad <id>]`                                     | squad                                               | `ssh:write`          | **People only**; `--use-core` is refused for a wildcard line.                                                                  |
 | `ficus remote-hosts sync`                                                                                            | squad (own squad only)                              | `remote-hosts:read`  | Re-pushes SSH artifacts to the calling agent's VM box; no-op hint (`live-mount`) on docker/k8s, and on host (nothing to push). |
 
 Underlying routes: `apps/core/src/routes/remote-hosts.ts`, mounted at
@@ -215,12 +361,19 @@ Underlying routes: `apps/core/src/routes/remote-hosts.ts`, mounted at
   a card-row list of hosts granted to the squad (name, `user@host:port`,
   granted-at), an inline add-form (add-and-grant, shows the pubkey +
   install instructions immediately), per-row copy-pubkey, and a confirm-gated
-  revoke. Gated on `can('remote-hosts:write')` for the squad.
+  revoke. Gated on `can('remote-hosts:write')` for the squad. Each row shows
+  its host-key state; a blocked or changed host opens the host-key panel
+  (`apps/web/src/components/settings/HostKeysPanel.tsx`: type + SHA256
+  fingerprint per key, confirm-gated Trust / Reject, Fetch host key), and
+  open box known_hosts conflicts are listed below the hosts with Keep box
+  key / Use Ficus key (needs `ssh:write`; Use Ficus key is not offered for
+  a wildcard line).
 - **Admin settings** — `apps/web/src/components/settings/RemoteHostsSection.tsx`,
   next to the Machines admin section: the full registry, an add form,
   expandable row detail with the public key block, per-host grants
   management (squad chips, add/remove), and check/delete row actions. Gated
-  on `can('remote-hosts:read'/'write')` globally.
+  on `can('remote-hosts:read'/'write')` globally. The same host-key panel
+  shows under any host that needs a decision, and in the expanded detail.
 
 ## Related
 

@@ -96,7 +96,9 @@ describe('mergeManagedKnownHosts', () => {
     const hashedUser = `${hashedHost('managed.example')} ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIUSERPINNED`
     const result = mergeManagedKnownHosts(`# trusted by hand\n${hashedUser}\n`, `${MANAGED}\n`)
     expect(result.content).toBe(`# trusted by hand\n${hashedUser}\n`)
-    expect(result.conflicts).toMatchObject([{ host: 'managed.example', keyType: 'ssh-ed25519', line: 2, wildcard: false }])
+    expect(result.conflicts).toMatchObject([
+      { host: 'managed.example', keyType: 'ssh-ed25519', line: 2, wildcard: false },
+    ])
     expect(result.changed).toBe(false)
   })
 

@@ -7,6 +7,11 @@ import {
   addSquadRemoteHost,
   revokeSquadRemoteHost,
   checkSquadRemoteHost,
+  decideSquadRemoteHostKey,
+  listSquadKnownHostsConflicts,
+  resolveSquadKnownHostsConflict,
+  scanSquadRemoteHostKeys,
+  type KnownHostsConflict,
   type RemoteHost,
   type RemoteHostWithGrants,
   type RevokeRotationResult,
@@ -14,6 +19,7 @@ import {
 import { ConfirmButton } from '../ConfirmButton'
 import { PublicKeyBlock } from '../settings/PublicKeyBlock'
 import { RotationCallout } from '../settings/RotationCallout'
+import { HostKeyStateBadge, HostKeysPanel, hostKeyNeedsAttention } from '../settings/HostKeysPanel'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
@@ -52,6 +58,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
   const [rotation, setRotation] = useState<RevokeRotationResult | null>(null)
   const { can, isLoading: permissionsLoading } = usePermissions(squadId)
   const canWrite = !permissionsLoading && can('remote-hosts:write')
+  const canResolveConflicts = !permissionsLoading && can('ssh:write')
 
   const queryKey = queryKeys.squads.remoteHosts(squadId)
 
@@ -174,10 +181,16 @@ export function RemoteHostsSettings({ squadId }: Props) {
               canWrite={canWrite}
               onRevoke={() => revokeMutation.mutate(host.id)}
               revoking={revokeMutation.isPending && revokeMutation.variables === host.id}
+              onHostKeysChanged={() => {
+                queryClient.invalidateQueries({ queryKey })
+                queryClient.invalidateQueries({ queryKey: queryKeys.remoteHosts.all })
+              }}
             />
           ))}
         </div>
       )}
+
+      <KnownHostsConflictsPanel squadId={squadId} canResolve={canResolveConflicts} />
 
       {canWrite && showAddForm && (
         <form onSubmit={handleSubmit} className="ficus-inset p-4">
@@ -300,6 +313,17 @@ export function RemoteHostsSettings({ squadId }: Props) {
                 <span className="font-mono">{added.sshHost}</span>, then verify the connection.
               </p>
               <PublicKeyBlock value={added.sshPublicKey} />
+              <HostKeysPanel
+                host={added}
+                canAct={canWrite}
+                scan={() => scanSquadRemoteHostKeys(squadId, added.id)}
+                decide={async (keyId, decision) => {
+                  const updated = await decideSquadRemoteHostKey(squadId, added.id, keyId, decision)
+                  setAdded({ ...added, ...updated })
+                  return updated
+                }}
+                onChanged={() => queryClient.invalidateQueries({ queryKey })}
+              />
               {canWrite && <CheckControl squadId={squadId} hostId={added.id} />}
             </div>
           )}
@@ -315,14 +339,17 @@ function RemoteHostRow({
   canWrite,
   onRevoke,
   revoking,
+  onHostKeysChanged,
 }: {
   squadId: string
   host: RemoteHost
   canWrite: boolean
   onRevoke: () => void
   revoking: boolean
+  onHostKeysChanged: () => void
 }) {
   const [copied, setCopied] = useState(false)
+  const [showKeys, setShowKeys] = useState(false)
 
   const handleCopy = useCallback(async () => {
     try {
@@ -335,38 +362,128 @@ function RemoteHostRow({
   }, [host.sshPublicKey])
 
   return (
-    <div className="border-b border-panel-border last:border-b-0 flex items-center justify-between p-3">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-8 h-8 rounded bg-surface-secondary flex items-center justify-center shrink-0">
-          <svg className="w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M5 12a2 2 0 012-2h10a2 2 0 012 2v0a2 2 0 01-2 2H7a2 2 0 01-2-2v0zM5 12V6a2 2 0 012-2h10a2 2 0 012 2v6m-14 6a2 2 0 002 2h10a2 2 0 002-2v0"
-            />
-          </svg>
-        </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-primary">{host.name}</span>
-            <span className="text-xs text-muted font-mono truncate">
-              {host.sshUser}@{host.sshHost}:{host.sshPort}
-            </span>
+    <div className="border-b border-panel-border last:border-b-0 p-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-8 h-8 rounded bg-surface-secondary flex items-center justify-center shrink-0">
+            <svg className="w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5 12a2 2 0 012-2h10a2 2 0 012 2v0a2 2 0 01-2 2H7a2 2 0 01-2-2v0zM5 12V6a2 2 0 012-2h10a2 2 0 012 2v6m-14 6a2 2 0 002 2h10a2 2 0 002-2v0"
+              />
+            </svg>
           </div>
-          {host.description && <p className="text-xs text-muted mt-0.5">{host.description}</p>}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-primary">{host.name}</span>
+              <span className="text-xs text-muted font-mono truncate">
+                {host.sshUser}@{host.sshHost}:{host.sshPort}
+              </span>
+              <button
+                onClick={() => setShowKeys((v) => !v)}
+                className="ficus-button ficus-button-ghost"
+                aria-expanded={showKeys || hostKeyNeedsAttention(host)}
+                title="Host keys"
+              >
+                <HostKeyStateBadge state={host.hostKeyState} />
+              </button>
+            </div>
+            {host.description && <p className="text-xs text-muted mt-0.5">{host.description}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {canWrite && <CheckControl squadId={squadId} hostId={host.id} />}
+          <button
+            onClick={handleCopy}
+            className="ficus-button ficus-button-secondary px-2 py-1 text-xs rounded transition-colors"
+          >
+            {copied ? '✓ Copied' : 'Copy Public Key'}
+          </button>
+          {canWrite && (
+            <ConfirmButton onConfirm={onRevoke} label="Revoke" confirmLabel="Confirm?" disabled={revoking} />
+          )}
         </div>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {canWrite && <CheckControl squadId={squadId} hostId={host.id} />}
-        <button
-          onClick={handleCopy}
-          className="ficus-button ficus-button-secondary px-2 py-1 text-xs rounded transition-colors"
-        >
-          {copied ? '✓ Copied' : 'Copy Public Key'}
-        </button>
-        {canWrite && <ConfirmButton onConfirm={onRevoke} label="Revoke" confirmLabel="Confirm?" disabled={revoking} />}
-      </div>
+      {(showKeys || hostKeyNeedsAttention(host)) && (
+        <div className="mt-3 p-3 ficus-inset">
+          <HostKeysPanel
+            host={host}
+            canAct={canWrite}
+            scan={() => scanSquadRemoteHostKeys(squadId, host.id)}
+            decide={(keyId, decision) => decideSquadRemoteHostKey(squadId, host.id, keyId, decision)}
+            onChanged={onHostKeysChanged}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Box known_hosts conflicts for this squad: a box pins a different key than
+ * Ficus manages for the same host. Read-only unless the viewer may edit the
+ * squad's SSH settings; the server additionally requires a signed-in person.
+ */
+function KnownHostsConflictsPanel({ squadId, canResolve }: { squadId: string; canResolve: boolean }) {
+  const queryClient = useQueryClient()
+  const queryKey = queryKeys.squads.knownHostsConflicts(squadId)
+  const { data: conflicts = [] } = useQuery({ queryKey, queryFn: () => listSquadKnownHostsConflicts(squadId) })
+  const resolveMutation = useMutation({
+    mutationFn: ({ id, choice }: { id: string; choice: 'keep-box' | 'use-core' }) =>
+      resolveSquadKnownHostsConflict(squadId, id, choice),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  })
+  const open = conflicts.filter((c) => c.status === 'open')
+  if (!open.length) return null
+
+  return (
+    <div className="mt-4 p-3 ficus-inset space-y-2 text-xs" data-testid="known-hosts-conflicts">
+      <h4 className="text-sm font-medium text-primary">Known hosts conflicts</h4>
+      <p className="text-muted">
+        A squad box already trusts a different key for a host whose key Ficus manages, so the Ficus entry was not
+        written there. Keep the box key, or replace it with the Ficus key. A wildcard line is never edited
+        automatically: edit it on the box, or keep the box key.
+      </p>
+      <ul className="space-y-2">
+        {open.map((c: KnownHostsConflict) => (
+          <li key={c.id} className="space-y-1">
+            <div className="text-secondary">
+              <span className="font-mono">{c.host}</span> {c.keyType} on{' '}
+              <span className="font-mono">{c.sandboxId}</span> (line {c.boxLine}
+              {c.wildcard ? ', wildcard' : ''})
+            </div>
+            <div className="font-mono text-muted break-all">box: {c.boxFingerprint}</div>
+            <div className="font-mono text-muted break-all">Ficus: {c.coreFingerprint}</div>
+            {canResolve && (
+              <div className="flex items-center gap-2">
+                <ConfirmButton
+                  variant="secondary"
+                  className="px-2 py-0.5 text-xs rounded"
+                  label="Keep box key"
+                  confirmLabel="Confirm keep?"
+                  disabled={resolveMutation.isPending}
+                  onConfirm={() => resolveMutation.mutate({ id: c.id, choice: 'keep-box' })}
+                />
+                {!c.wildcard && (
+                  <ConfirmButton
+                    variant="secondary"
+                    className="px-2 py-0.5 text-xs rounded"
+                    label="Use Ficus key"
+                    confirmLabel="Confirm replace?"
+                    disabled={resolveMutation.isPending}
+                    onConfirm={() => resolveMutation.mutate({ id: c.id, choice: 'use-core' })}
+                  />
+                )}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {resolveMutation.isError && (
+        <p className="text-status-danger-600 dark:text-status-danger-400">{(resolveMutation.error as Error).message}</p>
+      )}
     </div>
   )
 }

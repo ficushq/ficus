@@ -353,7 +353,9 @@ describe('materializeSquadRemoteHosts', () => {
     expect(config).toContain(`Host ${host.name}`)
     expect(config).toContain('ProxyCommand')
     expect(config).not.toContain('accept-new')
-    const knownHosts = existsSync(join(sshPath, 'known_hosts')) ? readFileSync(join(sshPath, 'known_hosts'), 'utf-8') : ''
+    const knownHosts = existsSync(join(sshPath, 'known_hosts'))
+      ? readFileSync(join(sshPath, 'known_hosts'), 'utf-8')
+      : ''
     expect(knownHosts).not.toContain(syntheticKey('blocked-pending'))
   })
 
@@ -376,7 +378,9 @@ describe('materializeSquadRemoteHosts', () => {
     // Revoking the grant unpins it and keeps the user's entry.
     await deleteGrant(host.id, squadId)
     await materializeSquadRemoteHosts(squadId)
-    expect(readFileSync(join(sshPath, 'known_hosts'), 'utf-8')).toBe(`github.example ssh-ed25519 ${syntheticKey('gh')}\n`)
+    expect(readFileSync(join(sshPath, 'known_hosts'), 'utf-8')).toBe(
+      `github.example ssh-ed25519 ${syntheticKey('gh')}\n`
+    )
   })
 
   it('setKnownHosts keeps pinned keys and refuses reserved names', async () => {

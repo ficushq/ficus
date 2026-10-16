@@ -1015,7 +1015,8 @@ export async function pushSquadSshToBox(
   }
   const syncs = material.hashFiles.length > 0 || previous !== null
   const knownHostsConflicts = syncs ? await writeSshFiles(client, home, material, deps.bashFence) : []
-  if (syncs) await (deps.recordKnownHostsConflicts ?? defaultRecordKnownHostsConflicts)(sandboxId, squadId, knownHostsConflicts)
+  if (syncs)
+    await (deps.recordKnownHostsConflicts ?? defaultRecordKnownHostsConflicts)(sandboxId, squadId, knownHostsConflicts)
   const current = new Set(currentFiles)
   await removeManagedFiles(
     client,
