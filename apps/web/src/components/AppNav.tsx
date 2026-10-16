@@ -2,7 +2,7 @@ import { DesktopHistoryControls } from './DesktopHistoryControls'
 import { SparklesIcon } from './icons'
 import { Menu, MenuItem, usePopover } from './popover'
 import clsx from 'clsx'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { SettingsIcon, PencilIcon, InboxIcon, MoreIcon, SproutIcon } from './icons'
@@ -16,6 +16,7 @@ import { usePermissions } from '../hooks/usePermissions'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { AssistantActivityBadge } from './AssistantActivityBadge'
 import { SquadSwitcher } from './SquadSwitcher'
+import { INBOX_POPUP_ID, useInboxPopup } from './InboxPopupProvider'
 import { ThemeQuickPicker } from './ThemeQuickPicker'
 import { useTheme } from '../providers/ThemeProvider'
 import { selfServiceQueryEnabled, useOptionalAuth } from '../providers/AuthProvider'
@@ -44,7 +45,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
   const navigate = useNavigate()
   const location = useLocation()
   const isChat = location.pathname.startsWith('/chat')
-  const [inboxPopupOpen, setInboxPopupOpen] = useState(false)
+  const inboxPopup = useInboxPopup()
   const { can, isLoading: permissionsLoading } = usePermissions()
   const theme = useTheme()
   // Optional: AppHeader renders in some standalone/test contexts without
@@ -81,15 +82,6 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
   useEffect(() => {
     recordTabPath(location.pathname + location.search)
   }, [location.pathname, location.search])
-
-  // Track inbox popup open state
-  useEffect(() => {
-    const handler = (e: Event) => {
-      setInboxPopupOpen((e as CustomEvent).detail.isOpen)
-    }
-    window.addEventListener('inbox-popup-state', handler)
-    return () => window.removeEventListener('inbox-popup-state', handler)
-  }, [])
 
   // Handle keyboard shortcuts for navigation
   useEffect(() => {
@@ -231,12 +223,16 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
 
             <ThemeQuickPicker value={theme} presets={themePresets} />
 
+            {/* Hovering opens the inbox popup and leaving closes it, unless a click pinned it (as the squad switcher). */}
             <button
-              onClick={() => window.dispatchEvent(new Event('open-inbox-popup'))}
+              ref={inboxPopup.triggerRef}
+              {...inboxPopup.hover.triggerProps}
+              aria-expanded={inboxPopup.open}
+              aria-controls={INBOX_POPUP_ID}
               className={clsx(
                 'ficus-button ficus-button-ghost',
                 'relative hidden md:flex items-center justify-center p-2 rounded-md',
-                inboxPopupOpen && 'text-accent-light hover:text-accent-light'
+                inboxPopup.open && 'text-accent-light hover:text-accent-light'
               )}
               title="Inbox (I)"
             >

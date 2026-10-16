@@ -75,8 +75,12 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   trigger (its `onClick` replaces `popover.toggle`) and its `popoverProps` on the popover. A mouse
   hovering the trigger opens it without taking focus; leaving both the trigger and the popover closes it
   after `closeDelay`, and re-entering either cancels that. A click on a hover-opened trigger pins it
-  open, focusing `initialFocus` as a click-open would. Opened by click, keyboard or touch, it behaves as
-  before; touch and pen pointers never open it on hover.
+  open, focusing `initialFocus` as a click-open would (`none`: focus stays put); `pin()` does the same
+  without moving focus, for a press inside a surface the user then works in. Opened by click, keyboard or
+  touch, it behaves as before; touch and pen pointers never open it on hover. It takes any open state
+  shaped like `usePopover`'s (`open`, `setOpen`, `toggle`, `triggerRef`, `id`): the inbox popup's
+  `InboxPopupProvider` drives the top nav's Inbox button and its hand-rolled sheet with it, dropping the
+  sheet's scrim while hover-opened so the trigger keeps the pointer.
 - **`ComboboxList`**: anchored to a text field (`input`), above it by default. The field keeps focus the
   whole time (option presses `preventDefault` their mousedown) and gets `aria-expanded`,
   `aria-controls` and `aria-activedescendant` while it is open. The caller's key handler owns the arrows,
