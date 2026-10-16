@@ -12,6 +12,10 @@
 
 # shellcheck shell=bash
 
+# Directory holding this lib.sh (and the toolkit's data files next to it, e.g.
+# github_known_hosts), wherever the toolkit was copied.
+FICUS_SETUP_LIB_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
+
 # ------------------------------------------------------------------ logging
 
 if [[ -t 2 ]]; then
@@ -2585,10 +2589,14 @@ http_bearer_expect() { # BASE TOKEN METHOD PATH JSON_BODY EXPECTED_STATUS_REGEX 
 
 # ------------------------------------------------------------------ hetzner (hcloud)
 
-# Request body for POST /servers.
-hcloud_server_create_body() { # NAME SERVER_TYPE LOCATION IMAGE SSH_KEY_NAME
+# Request body for POST /servers. USER_DATA_FILE (optional) is cloud-init
+# user_data read with --rawfile: it carries the server's generated private
+# host key (vm_host_key_user_data), which must never be on jq's argv.
+hcloud_server_create_body() { # NAME SERVER_TYPE LOCATION IMAGE SSH_KEY_NAME [USER_DATA_FILE]
   jq -n --arg name "$1" --arg st "$2" --arg loc "$3" --arg img "$4" --arg key "$5" \
-    '{name: $name, server_type: $st, location: $loc, image: $img, ssh_keys: [$key]}'
+    --rawfile ud "${6:-/dev/null}" \
+    '{name: $name, server_type: $st, location: $loc, image: $img, ssh_keys: [$key]}
+     + (if $ud == "" then {} else {user_data: $ud} end)'
 }
 
 # "STATUS ID IP" from a raw hcloud Server resource object (the shape shared by
@@ -2627,11 +2635,15 @@ hcloud_server_status_id_ip() { # SERVER_RESPONSE_JSON
 # (e.g. a managed database's private host): "the default VPC" is a console
 # setting that can be changed later, silently, for every droplet created
 # after that point.
-do_droplet_create_body() { # NAME REGION SIZE IMAGE SSH_KEY_ID TAG [VPC_UUID]
+#
+# USER_DATA_FILE (optional): cloud-init user_data, read with --rawfile for the
+# same reason as hcloud_server_create_body's.
+do_droplet_create_body() { # NAME REGION SIZE IMAGE SSH_KEY_ID TAG [VPC_UUID] [USER_DATA_FILE]
   jq -n --arg name "$1" --arg region "$2" --arg size "$3" --arg img "$4" --arg key "$5" --arg tag "$6" \
-    --arg vpc "${7:-}" \
+    --arg vpc "${7:-}" --rawfile ud "${8:-/dev/null}" \
     '{name: $name, region: $region, size: $size, image: $img, ssh_keys: [$key], tags: [$tag]}
-     + (if $vpc == "" then {} else {vpc_uuid: $vpc} end)'
+     + (if $vpc == "" then {} else {vpc_uuid: $vpc} end)
+     + (if $ud == "" then {} else {user_data: $ud} end)'
 }
 
 # Body for POST /projects/<project_id>/resources. Droplet-create has NO
@@ -2739,12 +2751,250 @@ cf_dns_record_body() { # NAME CONTENT
 
 # SSH options for key-pinned, agent-free connections (deploy keys, exe account
 # keys). IdentityAgent=none + IdentitiesOnly=yes make the -i key authoritative.
+#
+# Host keys are checked strictly against KNOWN_HOSTS_FILE and nothing else: no
+# trust on first use, the global known_hosts is ignored, and ssh never adds
+# keys to the file. Options given with -o win over any ssh_config, so an
+# operator's `StrictHostKeyChecking no` cannot relax this. The caller fills
+# KNOWN_HOSTS_FILE only with keys verified out of band (see the host-key
+# helpers below).
+#
 # Sets the global SSH_KEY_OPTS array (no namerefs — macOS ships bash 3.2).
 # shellcheck disable=SC2034 # consumed by the sourcing scripts, not this file
 SSH_KEY_OPTS=()
-ssh_key_opts() { # KEY_PATH
+ssh_key_opts() { # KEY_PATH KNOWN_HOSTS_FILE
+  require_known_hosts_path "${2:-}"
   # shellcheck disable=SC2034 # consumed by the sourcing scripts, not this file
-  SSH_KEY_OPTS=(-i "$1" -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=accept-new)
+  SSH_KEY_OPTS=(-i "$1" -o IdentitiesOnly=yes -o IdentityAgent=none
+    -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$2"
+    -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no)
+}
+
+# ssh splits UserKnownHostsFile on whitespace (it takes a list), so a path
+# with a space would silently name two other files.
+require_known_hosts_path() { # PATH
+  [[ -n $1 ]] || die "a pinned known_hosts file is required"
+  [[ $1 != *[[:space:]]* ]] || die "known_hosts path must not contain whitespace: '$1'"
+}
+
+# ------------------------------------------------------------------ ssh host keys
+#
+# Every SSH connection the toolkit makes checks the host key against a pin.
+# Where a pin comes from:
+#
+#   github.com        github_known_hosts next to this file: GitHub's published
+#                     keys (see that file's header for the source and how to
+#                     refresh it).
+#   exe.dev + VMs     exe.dev's published fingerprint (EXE_DEV_HOST_KEY_FINGERPRINT).
+#                     Every *.exe.xyz VM is reached through exe.dev's SSH
+#                     proxy and presents that same key.
+#   hetzner / DO VM   a host key provision.sh generates and hands to the new
+#                     server in its cloud-init user_data, so the key is known
+#                     before the first connection. Saved under the state dir
+#                     (host_key_pin_path) for later runs that reuse the VM.
+#   anything else     no trustworthy source: the scanned key is shown and an
+#                     operator must confirm it (confirm_scanned_host_key). A
+#                     non-interactive run refuses unless the expected
+#                     fingerprint is supplied (--host-key-fingerprint /
+#                     $FICUS_SETUP_HOST_KEY_FINGERPRINT).
+
+# exe.dev's published SSH host key fingerprint:
+#   https://exe.dev/docs/faq/host-key
+# If exe.dev rotates its key, take the new value from that page.
+# shellcheck disable=SC2034 # read by provision.sh
+EXE_DEV_HOST_KEY_FINGERPRINT='SHA256:JJOP/lwiBGOMilfONPWZCXUrfK154cnJFXcqlsi6lPo'
+
+github_known_hosts_file() {
+  local f="${FICUS_SETUP_LIB_DIR}/github_known_hosts"
+  [[ -s ${f} ]] || die "missing ${f} (GitHub's pinned SSH host keys) — copy the complete scripts/setup toolkit, not just lib.sh"
+  printf '%s' "${f}"
+}
+
+# Host part of an SSH git URL: git@host:org/repo(.git), ssh://[user@]host[:port]/path.
+# Prints '' for anything else.
+git_ssh_url_host() { # URL
+  local url=$1 rest
+  case "${url}" in
+    ssh://*)
+      rest=${url#ssh://}
+      rest=${rest%%/*}
+      rest=${rest##*@}
+      printf '%s' "${rest%%:*}"
+      ;;
+    *://*) ;;
+    *@*:*)
+      rest=${url#*@}
+      printf '%s' "${rest%%:*}"
+      ;;
+  esac
+}
+
+# Port of an SSH git URL ('' = default 22).
+git_ssh_url_port() { # URL
+  local url=$1 rest
+  case "${url}" in
+    ssh://*)
+      rest=${url#ssh://}
+      rest=${rest%%/*}
+      rest=${rest##*@}
+      [[ ${rest} == *:* ]] && printf '%s' "${rest##*:}"
+      ;;
+  esac
+  return 0
+}
+
+# "SHA256:<b64>" for a fingerprint given with or without its prefix; dies on
+# anything else (an MD5 fingerprint cannot be compared, so it is refused).
+normalize_host_key_fingerprint() { # FINGERPRINT
+  local fp
+  fp=$(trim_ws "$1")
+  fp=${fp#SHA256:}
+  [[ ${fp} =~ ^[A-Za-z0-9+/]{43}=?$ ]] ||
+    die "host key fingerprint must be an OpenSSH SHA256 fingerprint like SHA256:AbC…(43 characters) (got '$1')"
+  printf 'SHA256:%s' "${fp%=}"
+}
+
+# SHA256 fingerprint of one "<type> <base64>" public key.
+host_key_fingerprint() { # "TYPE KEY"
+  local out
+  out=$(printf 'h %s\n' "$1" | ssh-keygen -E sha256 -lf - 2>/dev/null) || return 1
+  out=${out#* }
+  printf '%s' "${out%% *}"
+}
+
+# ssh-keyscan HOST → one "<type> <base64>" per line (comments and the host
+# field stripped). Reading a server's offered keys does not log in or trust
+# anything; it is only ever followed by a fingerprint check.
+# ${FICUS_SETUP_KEYSCAN_CMD:-ssh-keyscan} is the test seam.
+scan_host_keys() { # HOST [PORT]
+  local cmd=${FICUS_SETUP_KEYSCAN_CMD:-ssh-keyscan} args=(-T 10)
+  [[ -n ${2:-} ]] && args+=(-p "$2")
+  "${cmd}" "${args[@]}" "$1" 2>/dev/null | awk '!/^#/ && NF >= 3 { print $2 " " $3 }' || true
+}
+
+# The scanned key ("<type> <base64>" lines) whose fingerprint is FINGERPRINT,
+# or '' (and status 1) if none matches.
+select_host_key_by_fingerprint() { # SCANNED_KEYS FINGERPRINT
+  local want key
+  want=$(normalize_host_key_fingerprint "$2")
+  while IFS= read -r key; do
+    [[ -n ${key} ]] || continue
+    if [[ $(host_key_fingerprint "${key}") == "${want}" ]]; then
+      printf '%s' "${key}"
+      return 0
+    fi
+  done <<<"$1"
+  return 1
+}
+
+# The key an operator is asked about: ed25519, else ecdsa, else the first.
+preferred_host_key() { # SCANNED_KEYS
+  local type
+  for type in ssh-ed25519 ecdsa-sha2-nistp256 ecdsa-sha2-nistp384 ecdsa-sha2-nistp521; do
+    if grep -q "^${type} " <<<"$1"; then
+      grep -m1 "^${type} " <<<"$1"
+      return 0
+    fi
+  done
+  grep -m1 . <<<"$1"
+}
+
+# Resolve a host's key when no out-of-band source exists. FAILS CLOSED:
+#   - $FICUS_SETUP_HOST_KEY_FINGERPRINT set: the scanned key with exactly that
+#     fingerprint, or die.
+#   - a TTY: show the fingerprint and require the operator to type "yes".
+#   - otherwise: refuse, printing the fingerprint to verify and the flag to
+#     pass once it has been verified.
+# Prints the chosen "<type> <base64>". SCANNED_KEYS is scan_host_keys output.
+confirm_scanned_host_key() { # HOST SCANNED_KEYS WHERE_TO_VERIFY
+  local host=$1 scanned=$2 where=$3 key fp answer=''
+  [[ -n ${scanned} ]] || die "could not read any SSH host key from ${host}"
+  if [[ -n ${FICUS_SETUP_HOST_KEY_FINGERPRINT:-} ]]; then
+    key=$(select_host_key_by_fingerprint "${scanned}" "${FICUS_SETUP_HOST_KEY_FINGERPRINT}") ||
+      die "${host} offers no host key with fingerprint ${FICUS_SETUP_HOST_KEY_FINGERPRINT} — refusing to connect (it offers: $(host_key_fingerprint_list "${scanned}"))"
+    log_info "${host}: host key $(host_key_fingerprint "${key}") matches the supplied fingerprint"
+    printf '%s' "${key}"
+    return 0
+  fi
+  key=$(preferred_host_key "${scanned}")
+  fp=$(host_key_fingerprint "${key}")
+  if ! is_tty; then
+    die "no verified host key for ${host}, and this run is non-interactive — refusing to trust it unverified. It offers ${key%% *} ${fp}. Check that fingerprint ${where}, then re-run with --host-key-fingerprint ${fp} (or FICUS_SETUP_HOST_KEY_FINGERPRINT=${fp})"
+  fi
+  {
+    printf '\n  No verified SSH host key is known for %s.\n' "${host}"
+    printf '  It offers this %s key:\n\n      %s\n\n' "${key%% *}" "${fp}"
+    printf '  Check that fingerprint %s.\n' "${where}"
+    printf '  Anyone between you and the host could present a different key, so do not\n'
+    printf '  accept it unless it matches.\n\n'
+  } >&2
+  read -r -p "  Type yes if the fingerprint matches: " answer
+  [[ ${answer} == yes ]] || die "host key for ${host} not confirmed — refusing to connect"
+  printf '%s' "${key}"
+}
+
+host_key_fingerprint_list() { # SCANNED_KEYS
+  local key out=''
+  while IFS= read -r key; do
+    [[ -n ${key} ]] && out+="${out:+, }${key%% *} $(host_key_fingerprint "${key}")"
+  done <<<"$1"
+  printf '%s' "${out}"
+}
+
+# Append "HOST <type> <base64>" to a pinned known_hosts file.
+pin_host_key() { # KNOWN_HOSTS_FILE HOST "TYPE KEY"
+  [[ -n $3 ]] || die "pin_host_key: no key for $2"
+  printf '%s %s\n' "$2" "$3" >>"$1"
+}
+
+# Where provision.sh keeps the host key it gave (or an operator confirmed for)
+# a VM, so a later run that reuses the VM still checks strictly. Keyed by
+# provider and server id, never by IP (cloud IPs are recycled).
+host_key_pin_path() { # PROVIDER SERVER_ID
+  local dir=${FICUS_SETUP_STATE_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/ficus-setup}
+  printf '%s/host-keys/%s-%s.pub' "${dir}" "$1" "$2"
+}
+
+save_host_key_pin() { # PIN_PATH "TYPE KEY"
+  local dir
+  dir=$(dirname -- "$1")
+  if ! mkdir -p "${dir}" || ! chmod 700 "${dir}"; then die "cannot create host key pin directory ${dir}"; fi
+  (umask 077 && printf '%s\n' "$2" >"$1") || die "cannot write host key pin ${1}"
+}
+
+# The pinned "<type> <base64>" from a pin file, or '' when there is none.
+load_host_key_pin() { # PIN_PATH
+  [[ -f $1 ]] || return 0
+  awk 'NF >= 2 && !/^#/ { print $1 " " $2; exit }' "$1"
+}
+
+# Generate a fresh ed25519 host key for a VM about to be created, into DIR
+# (ssh_host_ed25519_key + .pub).
+generate_vm_host_key() { # DIR
+  ssh-keygen -q -t ed25519 -N '' -C ficus-setup-host-key -f "$1/ssh_host_ed25519_key" </dev/null >/dev/null ||
+    die "ssh-keygen could not generate a host key"
+}
+
+# cloud-init user_data that installs DIR's generated key as the server's only
+# SSH host key (cc_ssh: drop the image's keys, generate none, install ours).
+# Written to DIR/user_data (0600 — it holds the private key) and the path
+# printed. The private key never appears on a command line: the create-body
+# builders read this file with jq --rawfile.
+vm_host_key_user_data() { # DIR
+  local dir=$1 out="$1/user_data"
+  (
+    umask 077
+    {
+      printf '#cloud-config\n'
+      printf 'ssh_deletekeys: true\n'
+      printf 'ssh_genkeytypes: []\n'
+      printf 'ssh_keys:\n'
+      printf '  ed25519_private: |\n'
+      sed 's/^/    /' "${dir}/ssh_host_ed25519_key"
+      printf '  ed25519_public: %s\n' "$(awk '{ print $1 " " $2 }' "${dir}/ssh_host_ed25519_key.pub")"
+    } >"${out}"
+  ) || die "cannot write cloud-init user_data"
+  printf '%s' "${out}"
 }
 
 # ------------------------------------------------------------------ git source
@@ -2765,13 +3015,29 @@ cleanup_git_askpass() {
   if [[ -n ${GIT_ASKPASS_HELPER} ]]; then rm -f "${GIT_ASKPASS_HELPER}"; fi
 }
 
+# GIT_SSH_COMMAND for a git-ssh clone: the deploy key, and GitHub's pinned
+# host keys checked strictly (github_known_hosts). Only github.com is pinned,
+# so any other SSH host is refused rather than trusted on first use.
+git_ssh_command() { # REPO_URL DEPLOY_KEY
+  local host port kh
+  host=$(git_ssh_url_host "$1")
+  port=$(git_ssh_url_port "$1")
+  [[ ${host} == github.com && ( -z ${port} || ${port} == 22 ) ]] ||
+    die "source.mode=git-ssh: only github.com has pinned SSH host keys (scripts/setup/github_known_hosts); '$1' is not a github.com SSH URL — use source.mode=git-https for other hosts"
+  kh=$(github_known_hosts_file) || exit 1
+  require_known_hosts_path "${kh}"
+  printf 'ssh -i %s -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%s -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no' \
+    "$(sh_single_quote "$2")" "${kh}"
+}
+
 # shellcheck disable=SC2153 # SRC_* are the caller's config globals, by design
 git_env_setup() {
   GIT_AUTH_URL=''
   GIT_CLEAN_URL=${SRC_REPO}
   case "${SRC_MODE}" in
     git-ssh)
-      export GIT_SSH_COMMAND="ssh -i ${SRC_DEPLOY_KEY} -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=accept-new"
+      export GIT_SSH_COMMAND
+      GIT_SSH_COMMAND=$(git_ssh_command "${SRC_REPO}" "${SRC_DEPLOY_KEY}") || exit 1
       ;;
     git-https)
       local token=${GH_TOKEN:-}

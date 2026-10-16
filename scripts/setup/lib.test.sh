@@ -1595,6 +1595,163 @@ expect_eq 'do_droplet_create_body omits vpc_uuid entirely when it is empty (DO t
   "$(do_droplet_create_body 'acme' 'nyc3' 's-1vcpu-2gb' 'ubuntu-24-04-x64' 'abc123' 'ficus-tenant' '' | jq -c .)" \
   '{"name":"acme","region":"nyc3","size":"s-1vcpu-2gb","image":"ubuntu-24-04-x64","ssh_keys":["abc123"],"tags":["ficus-tenant"]}'
 
+# --- SSH host-key pinning (no trust on first use) -----------------------------
+# Fingerprints contain regex metacharacters (+ /), so they are checked as
+# plain substrings.
+expect_has() { # DESCRIPTION ACTUAL SUBSTRING
+  expect_eq "$1" "$([[ $2 == *"$3"* ]] && echo contains || echo "lacks '$3' in: $2")" contains
+}
+HK_TMP=$(mktemp -d)
+ssh-keygen -q -t ed25519 -N '' -f "${HK_TMP}/a" </dev/null
+ssh-keygen -q -t ecdsa -N '' -f "${HK_TMP}/b" </dev/null
+HK_A=$(awk '{ print $1 " " $2 }' "${HK_TMP}/a.pub")
+HK_B=$(awk '{ print $1 " " $2 }' "${HK_TMP}/b.pub")
+HK_A_FP=$(ssh-keygen -E sha256 -lf "${HK_TMP}/a.pub" | awk '{ print $2 }')
+HK_B_FP=$(ssh-keygen -E sha256 -lf "${HK_TMP}/b.pub" | awk '{ print $2 }')
+HK_SCANNED=$(printf '%s\n%s\n' "${HK_B}" "${HK_A}")
+
+ssh_key_opts /k/id "${HK_TMP}/kh"
+expect_eq 'ssh_key_opts: strict checking against only the pinned file, no global file, no key updates' \
+  "${SSH_KEY_OPTS[*]}" \
+  "-i /k/id -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${HK_TMP}/kh -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no"
+hk_rc=0
+(ssh_key_opts /k/id '') >/dev/null 2>&1 || hk_rc=$?
+expect_eq 'ssh_key_opts: refuses to build options without a pinned known_hosts file' "${hk_rc}" '1'
+hk_rc=0
+(ssh_key_opts /k/id '/a b/kh') >/dev/null 2>&1 || hk_rc=$?
+expect_eq 'ssh_key_opts: refuses a known_hosts path with whitespace (ssh would split it)' "${hk_rc}" '1'
+
+expect_eq 'host_key_fingerprint: SHA256 of a "<type> <key>"' "$(host_key_fingerprint "${HK_A}")" "${HK_A_FP}"
+expect_eq 'normalize_host_key_fingerprint: keeps a prefixed value' \
+  "$(normalize_host_key_fingerprint "${HK_A_FP}")" "${HK_A_FP}"
+expect_eq 'normalize_host_key_fingerprint: adds a missing SHA256: prefix and trims' \
+  "$(normalize_host_key_fingerprint "  ${HK_A_FP#SHA256:}  ")" "${HK_A_FP}"
+hk_rc=0
+(normalize_host_key_fingerprint 'MD5:16:27:ac:a5:76:28:2d:36:63:1b:56:4d:eb:df:a6:48') >/dev/null 2>&1 || hk_rc=$?
+expect_eq 'normalize_host_key_fingerprint: refuses an MD5 fingerprint' "${hk_rc}" '1'
+
+expect_eq 'select_host_key_by_fingerprint: picks the key with that fingerprint' \
+  "$(select_host_key_by_fingerprint "${HK_SCANNED}" "${HK_B_FP}")" "${HK_B}"
+hk_rc=0
+select_host_key_by_fingerprint "${HK_A}" "${HK_B_FP}" >/dev/null || hk_rc=$?
+expect_eq 'select_host_key_by_fingerprint: no match is a failure' "${hk_rc}" '1'
+expect_eq 'preferred_host_key: ed25519 first' "$(preferred_host_key "${HK_SCANNED}")" "${HK_A}"
+expect_eq 'preferred_host_key: else ecdsa' "$(preferred_host_key "${HK_B}")" "${HK_B}"
+
+# scan_host_keys strips the host field and comments (fake ssh-keyscan; no network).
+hk_fake_keyscan() { printf '# %s:22 SSH-2.0-OpenSSH\n%s %s\n%s %s\n' "${*: -1}" "${*: -1}" "${HK_B}" "${*: -1}" "${HK_A}"; }
+FICUS_SETUP_KEYSCAN_CMD=hk_fake_keyscan
+expect_eq 'scan_host_keys: one "<type> <key>" per offered key' "$(scan_host_keys 203.0.113.5)" "${HK_SCANNED}"
+unset FICUS_SETUP_KEYSCAN_CMD
+
+# confirm_scanned_host_key: the fail-closed fallback.
+is_tty() { return 1; }
+unset FICUS_SETUP_HOST_KEY_FINGERPRINT
+hk_rc=0
+hk_out=$(confirm_scanned_host_key 203.0.113.5 "${HK_SCANNED}" 'in the console' 2>&1) || hk_rc=$?
+expect_eq 'confirm_scanned_host_key: non-interactive with no fingerprint refuses' "${hk_rc}" '1'
+expect_has 'confirm_scanned_host_key: the refusal shows the fingerprint to verify' "${hk_out}" "${HK_A_FP}"
+expect_match 'confirm_scanned_host_key: the refusal names the flag to pass' "${hk_out}" '--host-key-fingerprint'
+expect_eq 'confirm_scanned_host_key: a matching supplied fingerprint selects that key' \
+  "$(FICUS_SETUP_HOST_KEY_FINGERPRINT=${HK_B_FP} confirm_scanned_host_key 203.0.113.5 "${HK_SCANNED}" x 2>/dev/null)" "${HK_B}"
+hk_rc=0
+hk_out=$(FICUS_SETUP_HOST_KEY_FINGERPRINT=${HK_B_FP} confirm_scanned_host_key 203.0.113.5 "${HK_A}" x 2>&1) || hk_rc=$?
+expect_eq 'confirm_scanned_host_key: a supplied fingerprint the host does not offer refuses' "${hk_rc}" '1'
+expect_has 'confirm_scanned_host_key: that refusal lists what the host offers' "${hk_out}" "${HK_A_FP}"
+hk_rc=0
+(confirm_scanned_host_key 203.0.113.5 '' x) >/dev/null 2>&1 || hk_rc=$?
+expect_eq 'confirm_scanned_host_key: no scanned key refuses' "${hk_rc}" '1'
+is_tty() { return 0; }
+expect_eq 'confirm_scanned_host_key: interactive "yes" accepts the shown (ed25519) key' \
+  "$(confirm_scanned_host_key 203.0.113.5 "${HK_SCANNED}" x 2>/dev/null <<<'yes')" "${HK_A}"
+hk_out=$(confirm_scanned_host_key 203.0.113.5 "${HK_SCANNED}" 'in the console' 2>&1 >/dev/null <<<'yes')
+expect_has 'confirm_scanned_host_key: interactive prompt shows the fingerprint' "${hk_out}" "${HK_A_FP}"
+for hk_answer in no y '' YES; do
+  hk_rc=0
+  (confirm_scanned_host_key 203.0.113.5 "${HK_SCANNED}" x <<<"${hk_answer}") >/dev/null 2>&1 || hk_rc=$?
+  expect_eq "confirm_scanned_host_key: interactive answer '${hk_answer}' refuses" "${hk_rc}" '1'
+done
+source "${SCRIPT_DIR}/lib.sh"
+
+# Pins on disk.
+pin_host_key "${HK_TMP}/kh" 203.0.113.5 "${HK_A}"
+expect_eq 'pin_host_key: writes a known_hosts line' "$(cat "${HK_TMP}/kh")" "203.0.113.5 ${HK_A}"
+expect_eq 'host_key_pin_path: keyed by provider and server id under FICUS_SETUP_STATE_DIR' \
+  "$(FICUS_SETUP_STATE_DIR=/st host_key_pin_path hetzner 42)" '/st/host-keys/hetzner-42.pub'
+expect_eq 'host_key_pin_path: defaults under XDG_STATE_HOME' \
+  "$(unset FICUS_SETUP_STATE_DIR; XDG_STATE_HOME=/xdg host_key_pin_path digitalocean 7)" '/xdg/ficus-setup/host-keys/digitalocean-7.pub'
+save_host_key_pin "${HK_TMP}/state/host-keys/hetzner-1.pub" "${HK_A}"
+expect_eq 'save/load_host_key_pin round-trip' "$(load_host_key_pin "${HK_TMP}/state/host-keys/hetzner-1.pub")" "${HK_A}"
+expect_eq 'save_host_key_pin: pin file is 0600' "$(stat -c %a "${HK_TMP}/state/host-keys/hetzner-1.pub" 2>/dev/null || stat -f %Lp "${HK_TMP}/state/host-keys/hetzner-1.pub")" '600'
+expect_eq 'load_host_key_pin: no file is no pin' "$(load_host_key_pin "${HK_TMP}/none.pub")" ''
+
+# Generated VM host key + cloud-init user_data.
+mkdir -p "${HK_TMP}/gen"
+generate_vm_host_key "${HK_TMP}/gen"
+hk_ud=$(vm_host_key_user_data "${HK_TMP}/gen")
+expect_eq 'vm_host_key_user_data: written next to the key' "${hk_ud}" "${HK_TMP}/gen/user_data"
+expect_eq 'vm_host_key_user_data: 0600 (it holds the private key)' "$(stat -c %a "${hk_ud}" 2>/dev/null || stat -f %Lp "${hk_ud}")" '600'
+expect_eq 'vm_host_key_user_data: is #cloud-config' "$(head -n1 "${hk_ud}")" '#cloud-config'
+if yq_is_mikefarah; then
+  expect_eq 'vm_host_key_user_data: drops the image keys' "$(yq '.ssh_deletekeys' "${hk_ud}")" 'true'
+  expect_eq 'vm_host_key_user_data: generates no other key types' "$(yq -o=json -I=0 '.ssh_genkeytypes' "${hk_ud}")" '[]'
+  expect_eq 'vm_host_key_user_data: public key is the generated one' \
+    "$(yq '.ssh_keys.ed25519_public' "${hk_ud}")" "$(awk '{ print $1 " " $2 }' "${HK_TMP}/gen/ssh_host_ed25519_key.pub")"
+  (umask 077 && yq '.ssh_keys.ed25519_private' "${hk_ud}" >"${HK_TMP}/roundtrip")
+  expect_eq 'vm_host_key_user_data: private key parses back to the same key pair' \
+    "$(ssh-keygen -y -f "${HK_TMP}/roundtrip" | awk '{ print $1 " " $2 }')" "$(yq '.ssh_keys.ed25519_public' "${hk_ud}")"
+else
+  log_warn "mikefarah yq not on PATH — skipping the user_data YAML cases"
+fi
+expect_eq 'hcloud_server_create_body: carries user_data from the file' \
+  "$(hcloud_server_create_body acme cx32 fsn1 ubuntu-24.04 k "${hk_ud}" | jq -r .user_data)" "$(cat "${hk_ud}")"
+expect_eq 'do_droplet_create_body: carries user_data from the file' \
+  "$(do_droplet_create_body acme nyc3 s ubuntu k t '' "${hk_ud}" | jq -r .user_data)" "$(cat "${hk_ud}")"
+expect_eq 'do_droplet_create_body: user_data alongside vpc_uuid' \
+  "$(do_droplet_create_body acme nyc3 s ubuntu k t vpc-1 "${hk_ud}" | jq -r '.vpc_uuid + " " + (.user_data | length > 0 | tostring)')" 'vpc-1 true'
+expect_eq 'hcloud_server_create_body: no user_data without a file' \
+  "$(hcloud_server_create_body acme cx32 fsn1 ubuntu-24.04 k | jq 'has("user_data")')" 'false'
+
+# git-ssh source: only github.com, against GitHub's published keys.
+expect_eq 'git_ssh_url_host: scp-style' "$(git_ssh_url_host git@github.com:ficushq/ficus.git)" 'github.com'
+expect_eq 'git_ssh_url_host: ssh:// URL' "$(git_ssh_url_host ssh://git@github.com/ficushq/ficus.git)" 'github.com'
+expect_eq 'git_ssh_url_host: ssh:// URL with port' "$(git_ssh_url_host ssh://git@ssh.github.com:443/ficushq/ficus.git)" 'ssh.github.com'
+expect_eq 'git_ssh_url_port: ssh:// URL with port' "$(git_ssh_url_port ssh://git@github.com:2222/ficushq/ficus.git)" '2222'
+expect_eq 'git_ssh_url_port: none' "$(git_ssh_url_port git@github.com:ficushq/ficus.git)" ''
+expect_eq 'git_ssh_url_host: https is not an SSH URL' "$(git_ssh_url_host https://github.com/ficushq/ficus.git)" ''
+hk_cmd=$(git_ssh_command git@github.com:ficushq/ficus.git '/keys/deploy key')
+expect_eq 'git_ssh_command: deploy key, strict checking against github_known_hosts only' "${hk_cmd}" \
+  "ssh -i '/keys/deploy key' -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${SCRIPT_DIR}/github_known_hosts -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no"
+for hk_url in git@gitlab.com:org/repo.git ssh://git@ssh.github.com:443/org/repo.git ssh://git@github.com:2222/org/repo.git https://github.com/org/repo.git; do
+  hk_rc=0
+  hk_out=$(git_ssh_command "${hk_url}" /k 2>&1) || hk_rc=$?
+  expect_eq "git_ssh_command: refuses ${hk_url} (no pinned keys)" "${hk_rc}" '1'
+  expect_match "git_ssh_command: refusal for ${hk_url} points at git-https" "${hk_out}" 'git-https'
+done
+expect_eq 'git_env_setup (git-ssh): exports the pinned GIT_SSH_COMMAND' \
+  "$(SRC_MODE=git-ssh SRC_REPO=git@github.com:o/r.git SRC_DEPLOY_KEY=/k git_env_setup && printf '%s' "${GIT_SSH_COMMAND}")" \
+  "$(git_ssh_command git@github.com:o/r.git /k)"
+hk_rc=0
+(SRC_MODE=git-ssh SRC_REPO=git@gitlab.com:o/r.git SRC_DEPLOY_KEY=/k git_env_setup) >/dev/null 2>&1 || hk_rc=$?
+expect_eq 'git_env_setup (git-ssh): a non-GitHub SSH host stops the run' "${hk_rc}" '1'
+hk_rc=0
+(FICUS_SETUP_LIB_DIR=${HK_TMP}/nowhere git_ssh_command git@github.com:o/r.git /k) >/dev/null 2>&1 || hk_rc=$?
+expect_eq 'git_ssh_command: a toolkit copy without github_known_hosts stops the run' "${hk_rc}" '1'
+
+# github_known_hosts: every key is github.com's, and the fingerprints are
+# exactly the published ones recorded in the file's header.
+hk_gh_fps=$(ssh-keygen -E sha256 -lf "${SCRIPT_DIR}/github_known_hosts" | awk '{ print $2 }' | sort)
+hk_gh_header=$(awk '/^#   (Ed25519|ECDSA|RSA) +SHA256:/ { print $3 }' "${SCRIPT_DIR}/github_known_hosts" | sort)
+expect_eq 'github_known_hosts: fingerprints match the published ones in its header' "${hk_gh_fps}" "${hk_gh_header}"
+expect_eq 'github_known_hosts: three keys (ed25519, ecdsa, rsa)' "$(grep -c '^github\.com ' "${SCRIPT_DIR}/github_known_hosts")" '3'
+expect_eq 'github_known_hosts: only github.com entries' "$(grep -v '^#' "${SCRIPT_DIR}/github_known_hosts" | grep -cv '^github\.com ' || true)" '0'
+expect_match 'github_known_hosts: GitHub Ed25519 fingerprint' "${hk_gh_fps}" 'SHA256:\+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU'
+expect_eq 'EXE_DEV_HOST_KEY_FINGERPRINT: the value exe.dev publishes' \
+  "${EXE_DEV_HOST_KEY_FINGERPRINT}" 'SHA256:JJOP/lwiBGOMilfONPWZCXUrfK154cnJFXcqlsi6lPo'
+
+rm -rf "${HK_TMP}"
+unset -f hk_fake_keyscan
+
 # Droplet-create has NO project_id field — assignment is a separate call to
 # POST /projects/<id>/resources with the droplet's URN.
 expect_eq 'do_project_assign_body builds the droplet URN' \
@@ -1689,7 +1846,18 @@ if yq_is_mikefarah; then
   # how the mid-run-failure cases below simulate a provision that dies after
   # the VM exists (e.g. inside the remote setup-host.sh run) without
   # redefining/restoring the fake around each test.
+  #
+  # PROV_SSH_CAPTURE (exported into a single run) records each invocation's
+  # argv, and the contents of the UserKnownHostsFile it was given, into
+  # $PROV_SSH_CAPTURE/{argv,known_hosts}.
   ssh() {
+    if [[ -n ${PROV_SSH_CAPTURE:-} ]]; then
+      printf '%s\n' "$*" >>"${PROV_SSH_CAPTURE}/argv"
+      local _ssh_o
+      for _ssh_o in "$@"; do
+        if [[ ${_ssh_o} == UserKnownHostsFile=* ]]; then cat "${_ssh_o#UserKnownHostsFile=}" >>"${PROV_SSH_CAPTURE}/known_hosts"; fi
+      done
+    fi
     if [[ -n ${PROV_SSH_FAIL_MATCH:-} ]]; then
       local _ssh_arg
       for _ssh_arg in "$@"; do
@@ -1718,6 +1886,21 @@ if yq_is_mikefarah; then
     return 0
   }
   export -f ssh scp
+
+  # Host keys, with no network: a fake ssh-keyscan serving one generated test
+  # key, and every host-key pin kept under PROV_TMP. The exe runs need the
+  # test key's fingerprint supplied (it is not exe.dev's published one); the
+  # cases further down that exercise the fail-closed paths unset it.
+  ssh-keygen -q -t ed25519 -N '' -f "${PROV_TMP}/test_host_key" </dev/null
+  PROV_TEST_HOST_KEY=$(awk '{ print $1 " " $2 }' "${PROV_TMP}/test_host_key.pub")
+  PROV_TEST_HOST_FP=$(host_key_fingerprint "${PROV_TEST_HOST_KEY}")
+  fake_keyscan() {
+    [[ -n ${PROV_KEYSCAN_LOG:-} ]] && printf '%s\n' "$*" >>"${PROV_KEYSCAN_LOG}"
+    printf '%s %s\n' "${*: -1}" "${PROV_TEST_HOST_KEY}"
+  }
+  export -f fake_keyscan
+  export PROV_TEST_HOST_KEY FICUS_SETUP_KEYSCAN_CMD=fake_keyscan FICUS_SETUP_STATE_DIR="${PROV_TMP}/state"
+  export FICUS_SETUP_HOST_KEY_FINGERPRINT=${PROV_TEST_HOST_FP}
 
   # Common request-arg parsing for the hcloud fakes below: pulls the request
   # URL and the `-o <file>` response-body destination out of curl-style argv,
@@ -1852,7 +2035,7 @@ EOF
   # backslash-newline pairs inside such a heredoc, collapsing the `exe.dev \`
   # continuation line into one line with extra spaces — a real bug this test
   # tripped over, not a hypothetical one.
-  GH_TOKEN='' bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/exe.yaml" --dry-run 2>/dev/null |
+  GH_TOKEN='' FICUS_SETUP_HOST_KEY_FINGERPRINT='' bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/exe.yaml" --dry-run 2>/dev/null |
     sed "s#${PROV_TMP}#TMPDIR#g" >"${PROV_TMP}/exe-dryrun-actual.txt"
   cat >"${PROV_TMP}/exe-dryrun-expected.txt" <<'EOF'
 
@@ -1860,12 +2043,13 @@ Step 1 — provision VM (provider seam: exe)
   ssh -i TMPDIR/key -o IdentitiesOnly=yes -o IdentityAgent=none exe.dev \
       new --name acme --image ghcr.io/ficushq/ficus-machine:latest --json
   (skipped if exedev@acme.exe.xyz already answers SSH — idempotent re-run)
+  host key: exe.dev's key must have fingerprint SHA256:JJOP/lwiBGOMilfONPWZCXUrfK154cnJFXcqlsi6lPo; it is pinned for exe.dev and acme.exe.xyz (exe.dev's SSH proxy)
 
 Step 2 — wait for SSH
   retry ssh exedev@acme.exe.xyz true (account key, IdentityAgent=none) until reachable (timeout 300s)
 
 Step 3 — push toolkit + config + credentials (COPYFILE_DISABLE=1)
-  → /home/exedev/ficus-setup/: lib.sh setup-host.sh seed.sh systemd/*.tmpl
+  → /home/exedev/ficus-setup/: lib.sh setup-host.sh seed.sh github_known_hosts systemd/*.tmpl
   → /home/exedev/ficus-setup/ficus-setup.yaml (key paths rewritten to /home/exedev/ficus-setup/keys/*)
 
 Step 4 — run setup on the VM
@@ -2646,6 +2830,224 @@ EOF
     expect_eq "source.mode=git-https: secrets.env does NOT forward ${artifact_env_name}" \
       "$(grep -c "^${artifact_env_name}=" <<<"${githttps_secrets}" || true)" '0'
   done
+
+  # -- SSH host keys: every provider path pins a key obtained out of band, or
+  # fails closed. Fakes only: no provider API, no keyscan of a real host.
+  ssh-keygen -q -t ed25519 -N '' -f "${PROV_TMP}/other_host_key" </dev/null
+  PROV_OTHER_FP=$(ssh-keygen -E sha256 -lf "${PROV_TMP}/other_host_key.pub" | awk '{ print $2 }')
+
+  # hcloud fake that records the create body. PROV_HZ_LIST is the list
+  # response (default: no server, so it creates); polls return id 901 running
+  # at 203.0.113.77.
+  fake_hcloud_http_hostkey() {
+    local _url='' _outfile='' _prev='' arg body code in
+    for arg in "$@"; do
+      if [[ ${_prev} == -o ]]; then _outfile=${arg}; fi
+      if [[ ${arg} == http* ]]; then _url=${arg}; fi
+      _prev=${arg}
+    done
+    in=$(cat)
+    case "${_url}" in
+      *'?name='*) body=${PROV_HZ_LIST:-'{"servers":[]}'} code=200 ;;
+      *'/servers/'*) body='{"server":{"id":901,"status":"running","public_net":{"ipv4":{"ip":"203.0.113.77"}}}}' code=200 ;;
+      *)
+        printf '%s' "${in}" >"${PROV_HZ_POST}"
+        body='{"server":{"id":901,"status":"initializing","public_net":{"ipv4":null}}}' code=201
+        ;;
+    esac
+    printf '%s' "${body}" >"${_outfile}"
+    printf '%s' "${code}"
+  }
+  export -f fake_hcloud_http_hostkey
+  prov_hz_reuse_list() { # ID
+    printf '{"servers":[{"id":%s,"status":"running","public_net":{"ipv4":{"ip":"203.0.113.77"}}}]}' "$1"
+  }
+
+  # Fresh hetzner server: the key is generated here and handed over in
+  # cloud-init user_data — no scan, no prompt, no fingerprint needed.
+  HKP=${PROV_TMP}/hk-create
+  mkdir -p "${HKP}/ssh" "${HKP}/scp"
+  hkp_rc=0
+  hkp_out=$(PROV_SSH_CAPTURE="${HKP}/ssh" PROV_SCP_CAPTURE="${HKP}/scp" PROV_HZ_POST="${HKP}/post.json" \
+    PROV_KEYSCAN_LOG="${HKP}/keyscan.log" FICUS_SETUP_HOST_KEY_FINGERPRINT='' \
+    HCLOUD_TOKEN=dummy-hcloud-token FICUS_SETUP_HTTP_CMD=fake_hcloud_http_hostkey \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/hetzner.yaml" </dev/null 2>&1) || hkp_rc=$?
+  expect_eq 'host keys, hetzner create: succeeds non-interactively with no fingerprint supplied' "${hkp_rc}" '0'
+  hkp_ud=$(jq -r '.user_data // empty' "${HKP}/post.json")
+  expect_eq 'host keys, hetzner create: user_data is cloud-config' "$(head -n1 <<<"${hkp_ud}")" '#cloud-config'
+  hkp_pub=$(yq '.ssh_keys.ed25519_public' <<<"${hkp_ud}")
+  expect_match 'host keys, hetzner create: user_data installs an ed25519 host key' "${hkp_pub}" '^ssh-ed25519 [A-Za-z0-9+/=]+$'
+  (umask 077 && yq '.ssh_keys.ed25519_private' <<<"${hkp_ud}" >"${HKP}/priv")
+  expect_eq 'host keys, hetzner create: user_data private key matches its public key' \
+    "$(ssh-keygen -y -f "${HKP}/priv" | awk '{ print $1 " " $2 }')" "${hkp_pub}"
+  expect_eq 'host keys, hetzner create: the key is saved by provider and server id' \
+    "$(cat "${PROV_TMP}/state/host-keys/hetzner-901.pub")" "${hkp_pub}"
+  expect_eq 'host keys, hetzner create: the saved pin holds no private key' \
+    "$(grep -c PRIVATE "${PROV_TMP}/state/host-keys/hetzner-901.pub" || true)" '0'
+  expect_eq 'host keys, hetzner create: the private key is never logged' \
+    "$(grep -c 'PRIVATE KEY' <<<"${hkp_out}" || true)" '0'
+  expect_eq 'host keys, hetzner create: ssh knows exactly that key for the server IP' \
+    "$(sort -u "${HKP}/ssh/known_hosts")" "203.0.113.77 ${hkp_pub}"
+  expect_eq 'host keys, hetzner create: ssh-keyscan is never used' "$([[ -e ${HKP}/keyscan.log ]] && echo scanned || echo not-scanned)" 'not-scanned'
+  expect_eq 'host keys, hetzner create: every ssh call checks strictly against only the pin' \
+    "$(grep -vc 'StrictHostKeyChecking=yes .*GlobalKnownHostsFile=/dev/null' "${HKP}/ssh/argv" || true)" '0'
+  expect_eq 'host keys, hetzner create: github_known_hosts is pushed with the toolkit' \
+    "$(grep -c "${SCRIPT_DIR}/github_known_hosts .*:/root/ficus-setup/$" "${HKP}/scp/log" || true)" '1'
+
+  # Re-run reusing that server: the saved pin, still no scan.
+  HKP=${PROV_TMP}/hk-reuse
+  mkdir -p "${HKP}/ssh"
+  hkp_rc=0
+  PROV_SSH_CAPTURE="${HKP}/ssh" PROV_HZ_POST="${HKP}/post.json" PROV_HZ_LIST=$(prov_hz_reuse_list 901) \
+    PROV_KEYSCAN_LOG="${HKP}/keyscan.log" FICUS_SETUP_HOST_KEY_FINGERPRINT='' \
+    HCLOUD_TOKEN=dummy-hcloud-token FICUS_SETUP_HTTP_CMD=fake_hcloud_http_hostkey \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/hetzner.yaml" </dev/null >/dev/null 2>&1 || hkp_rc=$?
+  expect_eq 'host keys, hetzner reuse with a saved pin: succeeds' "${hkp_rc}" '0'
+  expect_eq 'host keys, hetzner reuse with a saved pin: pins the saved key' \
+    "$(sort -u "${HKP}/ssh/known_hosts")" "203.0.113.77 ${hkp_pub}"
+  expect_eq 'host keys, hetzner reuse with a saved pin: no scan, no create' \
+    "$([[ -e ${HKP}/keyscan.log || -e ${HKP}/post.json ]] && echo touched || echo untouched)" 'untouched'
+
+  # A reused server this machine holds no key for: fails closed.
+  HKP=${PROV_TMP}/hk-unpinned
+  mkdir -p "${HKP}/ssh"
+  hkp_rc=0
+  hkp_out=$(PROV_SSH_CAPTURE="${HKP}/ssh" PROV_HZ_POST="${HKP}/post.json" PROV_HZ_LIST=$(prov_hz_reuse_list 902) \
+    FICUS_SETUP_HOST_KEY_FINGERPRINT='' \
+    HCLOUD_TOKEN=dummy-hcloud-token FICUS_SETUP_HTTP_CMD=fake_hcloud_http_hostkey \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/hetzner.yaml" </dev/null 2>&1) || hkp_rc=$?
+  expect_eq 'host keys, unpinned reuse, non-interactive, no fingerprint: refuses' "${hkp_rc}" '1'
+  expect_has 'host keys, unpinned reuse: the refusal shows the scanned fingerprint' "${hkp_out}" "${PROV_TEST_HOST_FP}"
+  expect_match 'host keys, unpinned reuse: the refusal names --host-key-fingerprint' "${hkp_out}" '--host-key-fingerprint'
+  expect_eq 'host keys, unpinned reuse: no ssh connection is attempted' \
+    "$([[ -e ${HKP}/ssh/argv ]] && echo connected || echo not-connected)" 'not-connected'
+  expect_eq 'host keys, unpinned reuse: nothing is saved' \
+    "$([[ -e ${PROV_TMP}/state/host-keys/hetzner-902.pub ]] && echo saved || echo not-saved)" 'not-saved'
+
+  hkp_rc=0
+  hkp_out=$(PROV_SSH_CAPTURE="${HKP}/ssh" PROV_HZ_POST="${HKP}/post.json" PROV_HZ_LIST=$(prov_hz_reuse_list 902) \
+    FICUS_SETUP_HOST_KEY_FINGERPRINT='' \
+    HCLOUD_TOKEN=dummy-hcloud-token FICUS_SETUP_HTTP_CMD=fake_hcloud_http_hostkey \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/hetzner.yaml" --host-key-fingerprint "${PROV_OTHER_FP}" </dev/null 2>&1) || hkp_rc=$?
+  expect_eq 'host keys, unpinned reuse, wrong --host-key-fingerprint: refuses' "${hkp_rc}" '1'
+  expect_match 'host keys, unpinned reuse, wrong fingerprint: says the host does not offer it' "${hkp_out}" 'offers no host key with fingerprint'
+  expect_eq 'host keys, unpinned reuse, wrong fingerprint: no ssh connection is attempted' \
+    "$([[ -e ${HKP}/ssh/argv ]] && echo connected || echo not-connected)" 'not-connected'
+
+  hkp_rc=0
+  PROV_SSH_CAPTURE="${HKP}/ssh" PROV_HZ_POST="${HKP}/post.json" PROV_HZ_LIST=$(prov_hz_reuse_list 902) \
+    FICUS_SETUP_HOST_KEY_FINGERPRINT='' \
+    HCLOUD_TOKEN=dummy-hcloud-token FICUS_SETUP_HTTP_CMD=fake_hcloud_http_hostkey \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/hetzner.yaml" --host-key-fingerprint "${PROV_TEST_HOST_FP#SHA256:}" \
+    </dev/null >/dev/null 2>&1 || hkp_rc=$?
+  expect_eq 'host keys, unpinned reuse, verified --host-key-fingerprint: succeeds' "${hkp_rc}" '0'
+  expect_eq 'host keys, unpinned reuse, verified fingerprint: pins the matching scanned key' \
+    "$(sort -u "${HKP}/ssh/known_hosts")" "203.0.113.77 ${PROV_TEST_HOST_KEY}"
+  expect_eq 'host keys, unpinned reuse, verified fingerprint: saved for the next run' \
+    "$(cat "${PROV_TMP}/state/host-keys/hetzner-902.pub")" "${PROV_TEST_HOST_KEY}"
+
+  # An unwritable pin directory stops the run before any server is created.
+  HKP=${PROV_TMP}/hk-nostate
+  mkdir -p "${HKP}"
+  : >"${HKP}/not-a-dir"
+  hkp_rc=0
+  hkp_out=$(PROV_HZ_POST="${HKP}/post.json" FICUS_SETUP_STATE_DIR="${HKP}/not-a-dir/state" \
+    HCLOUD_TOKEN=dummy-hcloud-token FICUS_SETUP_HTTP_CMD=fake_hcloud_http_hostkey \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/hetzner.yaml" </dev/null 2>&1) || hkp_rc=$?
+  expect_eq 'host keys, unwritable pin directory: refused' "${hkp_rc}" '1'
+  expect_has 'host keys, unwritable pin directory: names FICUS_SETUP_STATE_DIR' "${hkp_out}" 'FICUS_SETUP_STATE_DIR'
+  expect_eq 'host keys, unwritable pin directory: refused before any server is created' \
+    "$([[ -e ${HKP}/post.json ]] && echo created || echo not-created)" 'not-created'
+
+  # DigitalOcean create: same cloud-init hand-over.
+  fake_do_http_hostkey() {
+    local _url='' _outfile='' _prev='' arg body code in
+    for arg in "$@"; do
+      if [[ ${_prev} == -o ]]; then _outfile=${arg}; fi
+      if [[ ${arg} == http* ]]; then _url=${arg}; fi
+      _prev=${arg}
+    done
+    in=$(cat)
+    case "${_url}" in
+      *'?tag_name='*) body='{"droplets":[]}' code=200 ;;
+      *'/droplets/'*) body='{"droplet":{"id":778,"status":"active","networks":{"v4":[{"ip_address":"198.51.100.10","type":"public"}]}}}' code=200 ;;
+      *)
+        printf '%s' "${in}" >"${PROV_DO_POST}"
+        body='{"droplet":{"id":778,"status":"new","networks":{"v4":[]}}}' code=202
+        ;;
+    esac
+    printf '%s' "${body}" >"${_outfile}"
+    printf '%s' "${code}"
+  }
+  export -f fake_do_http_hostkey
+  HKP=${PROV_TMP}/hk-do
+  mkdir -p "${HKP}/ssh"
+  hkp_rc=0
+  PROV_SSH_CAPTURE="${HKP}/ssh" PROV_DO_POST="${HKP}/post.json" PROV_KEYSCAN_LOG="${HKP}/keyscan.log" \
+    FICUS_SETUP_HOST_KEY_FINGERPRINT='' DIGITALOCEAN_TOKEN=dummy-do-token FICUS_SETUP_HTTP_CMD=fake_do_http_hostkey \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/digitalocean.yaml" </dev/null >/dev/null 2>&1 || hkp_rc=$?
+  expect_eq 'host keys, digitalocean create: succeeds non-interactively with no fingerprint supplied' "${hkp_rc}" '0'
+  hkp_pub=$(jq -r '.user_data' "${HKP}/post.json" | yq '.ssh_keys.ed25519_public')
+  expect_match 'host keys, digitalocean create: user_data installs an ed25519 host key' "${hkp_pub}" '^ssh-ed25519 '
+  expect_eq 'host keys, digitalocean create: ssh knows exactly that key for the droplet IP' \
+    "$(sort -u "${HKP}/ssh/known_hosts")" "198.51.100.10 ${hkp_pub}"
+  expect_eq 'host keys, digitalocean create: the key is saved by provider and droplet id' \
+    "$(cat "${PROV_TMP}/state/host-keys/digitalocean-778.pub")" "${hkp_pub}"
+  expect_eq 'host keys, digitalocean create: ssh-keyscan is never used' "$([[ -e ${HKP}/keyscan.log ]] && echo scanned || echo not-scanned)" 'not-scanned'
+
+  # exe: exe.dev's key must match its PUBLISHED fingerprint. The fake key is
+  # not exe.dev's, so without a supplied fingerprint the run refuses before
+  # any ssh connection.
+  HKP=${PROV_TMP}/hk-exe
+  mkdir -p "${HKP}/ssh"
+  hkp_rc=0
+  hkp_out=$(PROV_SSH_CAPTURE="${HKP}/ssh" FICUS_SETUP_HOST_KEY_FINGERPRINT='' \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/exe.yaml" </dev/null 2>&1) || hkp_rc=$?
+  expect_eq 'host keys, exe: a key that is not exe.dev'"'"'s published one is refused' "${hkp_rc}" '1'
+  expect_match 'host keys, exe: the refusal points at the published fingerprint' "${hkp_out}" 'exe\.dev/docs/faq/host-key'
+  expect_eq 'host keys, exe: no ssh connection is attempted' \
+    "$([[ -e ${HKP}/ssh/argv ]] && echo connected || echo not-connected)" 'not-connected'
+  hkp_rc=0
+  PROV_SSH_CAPTURE="${HKP}/ssh" FICUS_SETUP_HOST_KEY_FINGERPRINT='' \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/exe.yaml" --host-key-fingerprint "${PROV_TEST_HOST_FP}" \
+    </dev/null >/dev/null 2>&1 || hkp_rc=$?
+  expect_eq 'host keys, exe with a supplied fingerprint: succeeds' "${hkp_rc}" '0'
+  expect_eq 'host keys, exe: the verified proxy key is pinned for exe.dev and the VM' \
+    "$(sort -u "${HKP}/ssh/known_hosts")" "$(printf 'acme.exe.xyz %s\nexe.dev %s' "${PROV_TEST_HOST_KEY}" "${PROV_TEST_HOST_KEY}")"
+  expect_eq 'host keys, exe: every ssh call checks strictly against only the pin' \
+    "$(grep -vc 'StrictHostKeyChecking=yes .*GlobalKnownHostsFile=/dev/null' "${HKP}/ssh/argv" || true)" '0'
+
+  # git-ssh from a host with no pinned keys is refused before any VM exists.
+  cat >"${PROV_TMP}/hetzner-gitlab.yaml" <<EOF
+provision:
+  provider: hetzner
+  name: acme
+  account_key_path: ${PROV_TMP}/key
+  hetzner:
+    ssh_key_name: platform-deploy
+core:
+  origin: https://acme.ficus.sh
+source:
+  mode: git-ssh
+  repo: git@gitlab.com:org/ficus.git
+  deploy_key_path: ${PROV_TMP}/key
+runtime:
+  sandbox: docker-socket
+ai:
+  provider: openai-codex
+EOF
+  HKP=${PROV_TMP}/hk-gitlab
+  mkdir -p "${HKP}"
+  hkp_rc=0
+  hkp_out=$(PROV_HZ_POST="${HKP}/post.json" HCLOUD_TOKEN=dummy-hcloud-token FICUS_SETUP_HTTP_CMD=fake_hcloud_http_hostkey \
+    bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/hetzner-gitlab.yaml" </dev/null 2>&1) || hkp_rc=$?
+  expect_eq 'host keys, git-ssh from a non-GitHub host: refused' "${hkp_rc}" '1'
+  expect_match 'host keys, git-ssh from a non-GitHub host: says why' "${hkp_out}" 'only github\.com has pinned SSH host keys'
+  expect_eq 'host keys, git-ssh from a non-GitHub host: refused before any server is created' \
+    "$([[ -e ${HKP}/post.json ]] && echo created || echo not-created)" 'not-created'
+
+  unset -f fake_hcloud_http_hostkey fake_do_http_hostkey prov_hz_reuse_list fake_keyscan
+  unset FICUS_SETUP_KEYSCAN_CMD FICUS_SETUP_STATE_DIR FICUS_SETUP_HOST_KEY_FINGERPRINT PROV_TEST_HOST_KEY
 
   unset -f fake_do_http_terminal ssh scp _prov_parse_http_argv
   rm -rf "${PROV_TMP}"

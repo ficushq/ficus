@@ -6,7 +6,8 @@
 #   1. provisions a fresh VM (PROVIDER SEAM: provision_vm() dispatches on
 #      provision.provider — exe.dev's prebaked ficus-machine image, Hetzner
 #      Cloud, or DigitalOcean + optional Cloudflare DNS)
-#   2. waits for SSH
+#   2. waits for SSH (host key checked strictly against a pin obtained out of
+#      band — see "SSH host keys" below; never trust on first use)
 #   3. pushes the setup toolkit + config + credential files (COPYFILE_DISABLE=1
 #      so macOS never ships AppleDouble '._*' files; the SOURCE tree itself is
 #      never copied — setup-host.sh git-clones it on the target)
@@ -38,9 +39,18 @@ Options:
   --wizard        interactively generate a config file, then exit
   --dry-run       print the plan (VM command, files pushed with secrets
                   redacted, remote command) without provisioning anything
+  --host-key-fingerprint SHA256:...
+                  the VM's SSH host key fingerprint, verified out of band.
+                  Needed only when this machine holds no host key for the VM
+                  (a reused VM it did not create); without it an interactive
+                  run asks you to confirm the scanned fingerprint and a
+                  non-interactive run refuses. For provider=exe it replaces
+                  exe.dev's published fingerprint. Same as
+                  $FICUS_SETUP_HOST_KEY_FINGERPRINT.
   -h, --help      show this help
 
-Requires on this machine: ssh, scp, jq, mikefarah yq v4 (brew install yq).
+Requires on this machine: ssh, scp, ssh-keygen, ssh-keyscan, jq, mikefarah yq
+v4 (brew install yq).
 Secrets travel as env vars / key files pushed over scp (0600), never in yaml.
 EOF
 }
@@ -59,6 +69,11 @@ while [[ $# -gt 0 ]]; do
     --dry-run)
       DRY_RUN=1
       shift
+      ;;
+    --host-key-fingerprint)
+      FICUS_SETUP_HOST_KEY_FINGERPRINT=${2:?--host-key-fingerprint needs a value}
+      export FICUS_SETUP_HOST_KEY_FINGERPRINT
+      shift 2
       ;;
     -h | --help)
       usage
@@ -82,8 +97,13 @@ fi
 
 require_cmd ssh
 require_cmd scp
+require_cmd ssh-keygen
 require_cmd jq
 cfg_load "${CONFIG}"
+if [[ -n ${FICUS_SETUP_HOST_KEY_FINGERPRINT:-} ]]; then
+  FICUS_SETUP_HOST_KEY_FINGERPRINT=$(normalize_host_key_fingerprint "${FICUS_SETUP_HOST_KEY_FINGERPRINT}") || exit 1
+  export FICUS_SETUP_HOST_KEY_FINGERPRINT
+fi
 
 # ============================================================== configuration
 
@@ -100,6 +120,7 @@ MACHINE_IMAGE=$(cfg_get '.runtime.exe.machine_image' 'ghcr.io/ficushq/ficus-mach
 CORE_ORIGIN=$(cfg_require '.core.origin' 'browser-facing origin')
 CORE_PORT=$(cfg_get '.core.port' '3000')
 SRC_MODE=$(cfg_get '.source.mode' 'git-ssh')
+SRC_REPO=$(cfg_get '.source.repo')
 DEPLOY_KEY=$(expand_tilde "$(cfg_get '.source.deploy_key_path')")
 # Origin TLS (ingress.caddy) — the Cloudflare Origin CA cert+key pair, on THIS
 # control machine. Delivered to the VM exactly like the deploy key above: scp
@@ -301,6 +322,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
       plan "else POST ${HCLOUD_API_BASE}/servers {name:${VM_NAME}, server_type:${HZ_SERVER_TYPE}, location:${HZ_LOCATION}, image:${HZ_IMAGE}, ssh_keys:[${HZ_SSH_KEY_NAME:-<provision.hetzner.ssh_key_name — required>}]}"
       plan "poll GET ${HCLOUD_API_BASE}/servers/<id> until status=running and a public IPv4 is assigned (timeout 300s)"
       plan "SSH target = that IPv4 (not DNS — a freshly-upserted record may not have propagated yet)"
+      plan "host key: a fresh ed25519 host key generated here, installed by cloud-init user_data, pinned in $(host_key_pin_path hetzner '<id>'); a reused server uses that saved pin, else its scanned fingerprint must be confirmed (or --host-key-fingerprint)"
       ;;
     digitalocean)
       plan "GET ${DO_API_BASE}/droplets?tag_name=${DO_TAG} (Bearer \$DIGITALOCEAN_TOKEN), filtered to name=${VM_NAME} — reuse the first found"
@@ -315,11 +337,13 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
         plan "POST ${DO_API_BASE}/projects/${DO_PROJECT_ID}/resources {resources:[do:droplet:<id>]} — best-effort, a failure warns and continues"
       plan "poll GET ${DO_API_BASE}/droplets/<id> until status=active and a public IPv4 (networks.v4[].type==public) is assigned (timeout 300s)"
       plan "SSH target = that public IPv4 (not DNS — a freshly-upserted record may not have propagated yet)"
+      plan "host key: a fresh ed25519 host key generated here, installed by cloud-init user_data, pinned in $(host_key_pin_path digitalocean '<id>'); a reused droplet uses that saved pin, else its scanned fingerprint must be confirmed (or --host-key-fingerprint)"
       ;;
     *)
       plan "ssh -i ${ACCOUNT_KEY:-<account key — required>} -o IdentitiesOnly=yes -o IdentityAgent=none exe.dev \\"
       plan "    new --name ${VM_NAME} --image ${MACHINE_IMAGE} --json"
       plan "(skipped if ${SSH_USER}@${VM_HOST} already answers SSH — idempotent re-run)"
+      plan "host key: exe.dev's key must have fingerprint ${FICUS_SETUP_HOST_KEY_FINGERPRINT:-${EXE_DEV_HOST_KEY_FINGERPRINT}}; it is pinned for exe.dev and ${VM_HOST} (exe.dev's SSH proxy)"
       ;;
   esac
   if [[ -n ${DNS_PROVIDER} ]]; then
@@ -336,7 +360,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   printf '\nStep 2 — wait for SSH\n'
   plan "retry ssh ${SSH_USER}@${VM_HOST:-<resolved after VM creation>} true (account key, IdentityAgent=none) until reachable (timeout 300s)"
   printf '\nStep 3 — push toolkit + config + credentials (COPYFILE_DISABLE=1)\n'
-  plan "→ ${REMOTE_DIR}/: lib.sh setup-host.sh seed.sh systemd/*.tmpl"
+  plan "→ ${REMOTE_DIR}/: lib.sh setup-host.sh seed.sh github_known_hosts systemd/*.tmpl"
   plan "→ ${REMOTE_DIR}/${HL_NEW_SETUP_YAML} (key paths rewritten to ${REMOTE_DIR}/keys/*)"
   [[ ${SRC_MODE} == git-ssh && -n ${DEPLOY_KEY} ]] && plan "→ ${REMOTE_DIR}/keys/deploy_key (0600) from ${DEPLOY_KEY}"
   [[ ${RT_SANDBOX} == vm && -n ${EXE_KEY} ]] && plan "→ ${REMOTE_DIR}/keys/exe_key (0600) from ${EXE_KEY}"
@@ -370,6 +394,16 @@ if [[ ${PROVIDER} == digitalocean ]]; then
   [[ -n ${DIGITALOCEAN_TOKEN:-} ]] || die "provision.provider=digitalocean needs \$DIGITALOCEAN_TOKEN"
   [[ -n ${DO_SSH_KEY_ID} ]] || die "config: provision.digitalocean.ssh_key_id is required for provider=digitalocean"
 fi
+if [[ ${PROVIDER} == hetzner || ${PROVIDER} == digitalocean ]]; then
+  # The new server's host key is saved here right after it is created; an
+  # unwritable directory must stop the run BEFORE a server exists, not leave
+  # one whose key a later run can no longer check.
+  _pin_dir=$(dirname -- "$(host_key_pin_path "${PROVIDER}" probe)")
+  if ! mkdir -p "${_pin_dir}" 2>/dev/null || ! chmod 700 "${_pin_dir}" 2>/dev/null || [[ ! -w ${_pin_dir} ]]; then
+    die "cannot write host key pins to ${_pin_dir} — set FICUS_SETUP_STATE_DIR to a writable, persistent directory"
+  fi
+  unset _pin_dir
+fi
 if [[ ${DNS_PROVIDER} == cloudflare ]]; then
   [[ -n ${CLOUDFLARE_API_TOKEN:-} ]] || die "dns.provider=cloudflare needs \$CLOUDFLARE_API_TOKEN"
   [[ -n ${DNS_ZONE} ]] || die "config: dns.zone is required for dns.provider=cloudflare"
@@ -377,6 +411,9 @@ fi
 if [[ ${SRC_MODE} == git-ssh ]]; then
   [[ -n ${DEPLOY_KEY} ]] || die "source.mode=git-ssh needs source.deploy_key_path in the config"
   [[ -f ${DEPLOY_KEY} ]] || die "deploy key not found: ${DEPLOY_KEY}"
+  # Before a VM is created: setup-host.sh can only clone over SSH from a host
+  # with pinned keys (github.com).
+  git_ssh_command "${SRC_REPO}" "${DEPLOY_KEY}" >/dev/null || exit 1
 fi
 # Checked HERE, before a VM is created and billed — setup-host.sh would
 # otherwise only discover a missing certificate after the droplet exists.
@@ -424,11 +461,117 @@ if [[ ${AI_PROVIDER} != openai-codex && -n ${AI_KEY_ENV} && -z ${!AI_KEY_ENV:-} 
   fi
 fi
 
-ssh_key_opts "${ACCOUNT_KEY}"
+# ============================================================== SSH host keys
+#
+# Every connection below checks the host key strictly against VM_KNOWN_HOSTS,
+# which only ever holds keys verified out of band (lib.sh "ssh host keys"):
+#
+#   exe           exe.dev's published fingerprint, matched against its scanned
+#                 key; that key is pinned for exe.dev and the VM's *.exe.xyz
+#                 name, which exe.dev's SSH proxy serves with the same key.
+#   hetzner / DO  a host key generated HERE and installed on the new server by
+#                 cloud-init user_data, so it is known before the first
+#                 connection; saved (host_key_pin_path) for runs that reuse it.
+#                 A reused server with no saved key falls back to
+#                 confirm_scanned_host_key: an operator confirms the scanned
+#                 fingerprint, or a non-interactive run needs
+#                 --host-key-fingerprint, and otherwise refuses.
+VM_KNOWN_HOSTS=$(mktemp)
+VM_HOST_KEY=''        # "<type> <base64>" the VM must present
+VM_HOST_KEY_DIR=''    # temp dir holding a generated private host key until the VM is created
+VM_HOST_KEY_PIN=''    # where that key is saved on this machine (hetzner/DO)
+cleanup_host_key_material() {
+  rm -f "${VM_KNOWN_HOSTS}"
+  if [[ -n ${VM_HOST_KEY_DIR} ]]; then rm -rf "${VM_HOST_KEY_DIR}"; fi
+}
+trap cleanup_host_key_material EXIT
+
+ssh_key_opts "${ACCOUNT_KEY}" "${VM_KNOWN_HOSTS}"
 SSH_BASE=(ssh "${SSH_KEY_OPTS[@]}" -o BatchMode=yes)
 SCP_BASE=(scp "${SSH_KEY_OPTS[@]}" -o BatchMode=yes -q)
 
 vm_ssh_ok() { "${SSH_BASE[@]}" -o ConnectTimeout=5 "${SSH_USER}@${VM_HOST}" true; }
+
+# exe: pin exe.dev's proxy key for exe.dev and the VM, by published fingerprint.
+pin_exe_host_keys() {
+  local want=${FICUS_SETUP_HOST_KEY_FINGERPRINT:-${EXE_DEV_HOST_KEY_FINGERPRINT}} scanned key
+  require_cmd ssh-keyscan
+  scanned=$(scan_host_keys exe.dev)
+  [[ -n ${scanned} ]] || die "could not read exe.dev's SSH host key (ssh-keyscan exe.dev returned nothing)"
+  if ! key=$(select_host_key_by_fingerprint "${scanned}" "${want}"); then
+    die "exe.dev offers no host key with fingerprint ${want} — refusing to connect. It offers: $(host_key_fingerprint_list "${scanned}"). Compare with the fingerprint published at https://exe.dev/docs/faq/host-key; if exe.dev has published a new one there, re-run with --host-key-fingerprint <that fingerprint>"
+  fi
+  VM_HOST_KEY=${key}
+  pin_host_key "${VM_KNOWN_HOSTS}" exe.dev "${key}"
+  pin_host_key "${VM_KNOWN_HOSTS}" "${VM_HOST}" "${key}"
+  local source="exe.dev's published fingerprint"
+  [[ -n ${FICUS_SETUP_HOST_KEY_FINGERPRINT:-} ]] && source='the supplied fingerprint'
+  log_info "exe.dev host key ${key%% *} $(host_key_fingerprint "${key}") verified against ${source}; pinned for exe.dev and ${VM_HOST}"
+}
+
+# hetzner/DO, before create: generate the server's host key and the cloud-init
+# user_data that installs it (path in VM_USER_DATA). Not called in a
+# subshell: it sets the globals above.
+VM_USER_DATA=''
+prepare_vm_host_key() {
+  VM_HOST_KEY_DIR=$(mktemp -d)
+  chmod 700 "${VM_HOST_KEY_DIR}"
+  generate_vm_host_key "${VM_HOST_KEY_DIR}"
+  VM_HOST_KEY=$(awk '{ print $1 " " $2 }' "${VM_HOST_KEY_DIR}/ssh_host_ed25519_key.pub")
+  VM_USER_DATA=$(vm_host_key_user_data "${VM_HOST_KEY_DIR}") || exit 1
+}
+
+# hetzner/DO, right after the create call returned the server id: save the
+# generated key and drop the private half (it now lives only on the server).
+save_created_vm_host_key() { # SERVER_ID
+  VM_HOST_KEY_PIN=$(host_key_pin_path "${PROVIDER}" "$1")
+  save_host_key_pin "${VM_HOST_KEY_PIN}" "${VM_HOST_KEY}"
+  rm -rf "${VM_HOST_KEY_DIR}"
+  VM_HOST_KEY_DIR=''
+}
+
+# hetzner/DO, reusing an existing server: its saved key, if this machine has one.
+load_reused_vm_host_key() { # SERVER_ID
+  VM_HOST_KEY_PIN=$(host_key_pin_path "${PROVIDER}" "$1")
+  VM_HOST_KEY=$(load_host_key_pin "${VM_HOST_KEY_PIN}")
+}
+
+_VM_SCANNED=''
+_scan_vm_host_keys() {
+  _VM_SCANNED=$(scan_host_keys "${VM_HOST}")
+  [[ -n ${_VM_SCANNED} ]]
+}
+
+# hetzner/DO, once VM_HOST (the IP) is known: pin the VM's key for it. With no
+# saved key, fall back to an operator-confirmed scan (fails closed).
+pin_vm_host_key() {
+  if [[ -z ${VM_HOST_KEY} ]]; then
+    log_warn "this machine has no saved host key for ${PROVIDER} server '${VM_NAME}' (${VM_HOST_KEY_PIN}) — it was created elsewhere or its pin was lost"
+    require_cmd ssh-keyscan
+    retry_until 300 5 "an SSH host key from ${VM_HOST}" _scan_vm_host_keys ||
+      die "could not read an SSH host key from ${VM_HOST}"
+    VM_HOST_KEY=$(confirm_scanned_host_key "${VM_HOST}" "${_VM_SCANNED}"       "in the ${PROVIDER} web console (log in to the server there and run: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub)") || exit 1
+    save_host_key_pin "${VM_HOST_KEY_PIN}" "${VM_HOST_KEY}"
+  fi
+  pin_host_key "${VM_KNOWN_HOSTS}" "${VM_HOST}" "${VM_HOST_KEY}"
+  log_info "${VM_HOST}: pinned host key ${VM_HOST_KEY%% *} $(host_key_fingerprint "${VM_HOST_KEY}") (${VM_HOST_KEY_PIN})"
+}
+
+# After SSH never came up: say so plainly when the cause is a host key that
+# does not match the pin, instead of a bare "unreachable".
+die_unreachable_vm() {
+  local err
+  err=$("${SSH_BASE[@]}" -o ConnectTimeout=5 "${SSH_USER}@${VM_HOST}" true 2>&1 >/dev/null || true)
+  case "${err}" in
+    *'Host key verification failed'* | *'REMOTE HOST IDENTIFICATION HAS CHANGED'* | *'host key for'*'has changed'* | *'No '*'host key is known'*)
+      if [[ ${PROVIDER} == exe ]]; then
+        die "${VM_HOST} did not present exe.dev's verified host key — refusing to connect"
+      fi
+      die "${VM_HOST} did not present its pinned host key ($(host_key_fingerprint "${VM_HOST_KEY}"), ${VM_HOST_KEY_PIN}) — refusing to connect. If the image does not apply cloud-init user_data, check the server's key in the ${PROVIDER} web console, delete ${VM_HOST_KEY_PIN}, and re-run with --host-key-fingerprint <its fingerprint>"
+      ;;
+  esac
+  die "VM never became reachable over SSH"
+}
 
 # ---------------------------------------------------------------- step 1: VM
 
@@ -464,6 +607,7 @@ provision_vm() {
 }
 
 provision_vm_exe() {
+  pin_exe_host_keys
   if vm_ssh_ok >/dev/null 2>&1; then
     log_info "${VM_HOST} already answers SSH — reusing existing VM (idempotent re-run)"
     return 0
@@ -535,20 +679,25 @@ provision_vm_hetzner() {
 
   if [[ -n ${id} ]]; then
     log_info "hcloud server '${VM_NAME}' already exists (id=${id}, status=${status}) — reusing (idempotent re-run)"
+    load_reused_vm_host_key "${id}"
   else
     log_info "creating hcloud server '${VM_NAME}' (${HZ_SERVER_TYPE}/${HZ_LOCATION}/${HZ_IMAGE}, ssh_keys=[${HZ_SSH_KEY_NAME}])"
     local create_body
-    create_body=$(hcloud_server_create_body "${VM_NAME}" "${HZ_SERVER_TYPE}" "${HZ_LOCATION}" "${HZ_IMAGE}" "${HZ_SSH_KEY_NAME}")
+    prepare_vm_host_key
+    create_body=$(hcloud_server_create_body "${VM_NAME}" "${HZ_SERVER_TYPE}" "${HZ_LOCATION}" "${HZ_IMAGE}" "${HZ_SSH_KEY_NAME}" "${VM_USER_DATA}")
     http_bearer_expect "${HCLOUD_API_BASE}" "${HCLOUD_TOKEN}" POST '/servers' \
       "${create_body}" '201' "hcloud: create server '${VM_NAME}'"
+    create_body=''
     read -r status id ip <<<"$(hcloud_server_status_id_ip "${HTTP_BODY}")"
     [[ -n ${id} ]] || die "hcloud: create response for '${VM_NAME}' is missing a server id: ${HTTP_BODY}"
+    save_created_vm_host_key "${id}"
   fi
 
   _hcloud_wait_running "${id}"
   VM_HOST=${_HCLOUD_POLL_IP}
   log_info "hcloud server '${VM_NAME}' is running at ${VM_HOST}"
   emit_server_ip "${VM_HOST}"
+  pin_vm_host_key
 
   if [[ -n ${DNS_PROVIDER} ]]; then
     log_step "DNS: upsert A record (${DNS_PROVIDER})"
@@ -636,7 +785,9 @@ provision_vm_digitalocean() {
 
   if [[ -n ${id} ]]; then
     log_info "digitalocean droplet '${VM_NAME}' already exists (id=${id}, status=${status}) — reusing (idempotent re-run)"
+    load_reused_vm_host_key "${id}"
   else
+    prepare_vm_host_key
     # Ordered fallback: primary (size/region) first, then
     # provision.digitalocean.fallbacks[] in config order. A capacity/
     # availability error (do_is_capacity_error) advances to the next entry;
@@ -653,12 +804,13 @@ provision_vm_digitalocean() {
       read -r attempt_size attempt_region <<<"${entry}"
       log_info "creating digitalocean droplet '${VM_NAME}' (${attempt_size}/${attempt_region}/${DO_IMAGE}, ssh_keys=[${DO_SSH_KEY_ID}]) [attempt ${i}/${total}]"
       local create_body
-      create_body=$(do_droplet_create_body "${VM_NAME}" "${attempt_region}" "${attempt_size}" "${DO_IMAGE}" "${DO_SSH_KEY_ID}" "${DO_TAG}" "${DO_VPC_UUID}")
+      create_body=$(do_droplet_create_body "${VM_NAME}" "${attempt_region}" "${attempt_size}" "${DO_IMAGE}" "${DO_SSH_KEY_ID}" "${DO_TAG}" "${DO_VPC_UUID}" "${VM_USER_DATA}")
       http_bearer_request "${DO_API_BASE}" "${DIGITALOCEAN_TOKEN}" POST '/droplets' "${create_body}" ||
         die "digitalocean: create droplet '${VM_NAME}' request failed (network)"
       if [[ ${HTTP_STATUS} == 201 || ${HTTP_STATUS} == 202 ]]; then
         read -r status id ip <<<"$(do_droplet_status_id_ip "${HTTP_BODY}")"
         [[ -n ${id} ]] || die "digitalocean: create response for '${VM_NAME}' is missing a droplet id: ${HTTP_BODY}"
+        save_created_vm_host_key "${id}"
         log_info "digitalocean: '${VM_NAME}' created using ${attempt_size}/${attempt_region} (attempt ${i}/${total})"
         succeeded=1
         break
@@ -685,6 +837,7 @@ provision_vm_digitalocean() {
   VM_HOST=${_DO_POLL_IP}
   log_info "digitalocean droplet '${VM_NAME}' is running at ${VM_HOST}"
   emit_server_ip "${VM_HOST}"
+  pin_vm_host_key
 
   if [[ -n ${DNS_PROVIDER} ]]; then
     log_step "DNS: upsert A record (${DNS_PROVIDER})"
@@ -734,7 +887,7 @@ provision_vm
 
 log_step "step 2/5: wait for SSH at ${SSH_USER}@${VM_HOST}"
 retry_until 300 5 "SSH to ${SSH_USER}@${VM_HOST}" vm_ssh_ok ||
-  die "VM never became reachable over SSH"
+  die_unreachable_vm
 log_info "SSH is up"
 
 # ------------------------------------------------------- step 3: push files
@@ -745,7 +898,7 @@ cleanup_remote_secrets() {
     "${SSH_BASE[@]}" "${SSH_USER}@${VM_HOST}" "rm -f ${REMOTE_DIR}/secrets.env" 2>/dev/null || true
   fi
 }
-trap cleanup_remote_secrets EXIT
+trap 'cleanup_remote_secrets; cleanup_host_key_material' EXIT
 
 log_step "step 3/5: push toolkit + config + credentials"
 "${SSH_BASE[@]}" "${SSH_USER}@${VM_HOST}" "mkdir -p ${REMOTE_DIR}/systemd ${REMOTE_DIR}/keys && chmod 700 ${REMOTE_DIR} ${REMOTE_DIR}/keys"
@@ -759,6 +912,7 @@ log_step "step 3/5: push toolkit + config + credentials"
 # turns a 10-minute failed provision into an immediate, named error.
 for _f in \
   "${SCRIPT_DIR}/lib.sh" \
+  "${SCRIPT_DIR}/github_known_hosts" \
   "${SCRIPT_DIR}/setup-host.sh" \
   "${SCRIPT_DIR}/seed.sh" \
   "${SCRIPT_DIR}/ficus-backup.sh.tmpl" \
@@ -778,7 +932,7 @@ export COPYFILE_DISABLE=1
 #   sed: can't read <remote dir>/<backup script template>: No such file or directory
 # after the instance was otherwise fully built — services up, caddy serving.
 "${SCP_BASE[@]}" "${SCRIPT_DIR}/lib.sh" "${SCRIPT_DIR}/setup-host.sh" "${SCRIPT_DIR}/seed.sh" \
-  "${SCRIPT_DIR}/ficus-backup.sh.tmpl" \
+  "${SCRIPT_DIR}/ficus-backup.sh.tmpl" "${SCRIPT_DIR}/github_known_hosts" \
   "${SSH_USER}@${VM_HOST}:${REMOTE_DIR}/"
 # Every template setup-host.sh renders on the VM. The backup .service/.timer
 # were omitted, so the backup phase died on a missing file AFTER the instance

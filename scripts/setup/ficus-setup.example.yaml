@@ -22,6 +22,9 @@
 # -----------------------------------------------------------------------------
 source:
   # git-ssh    clone over SSH with a read-only deploy key (recommended).
+  #            github.com only: its host key is checked strictly against
+  #            GitHub's published keys (scripts/setup/github_known_hosts);
+  #            any other SSH host is refused — use git-https for those.
   # git-https  clone over HTTPS with a token (GH_TOKEN env var, or prompted).
   # artifact   fetch, verify and stage a signed prebuilt release bundle — a
   #            tenant-only seam driven by a cloud control plane. The four
@@ -280,6 +283,13 @@ provision:
   # hosted platform actually uses (see render-config.ts). hetzner is kept
   # for BYO-Hetzner operators; the provider seam has no preference either way.
   provider: exe
+  # SSH host keys are never trusted on first use (scripts/setup/README.md,
+  # "SSH host keys"): exe.dev by its published fingerprint; a new hetzner/
+  # digitalocean server by a host key provision.sh generates and installs via
+  # cloud-init user_data (the image must run cloud-init), saved under
+  # $FICUS_SETUP_STATE_DIR (default ~/.local/state/ficus-setup). A reused
+  # server with no saved key needs its fingerprint confirmed interactively or
+  # passed with --host-key-fingerprint.
   # VM name. For exe, the instance becomes reachable at https://<name>.exe.xyz
   # and core.origin should be https://<name>.exe.xyz:<core.port>. For hetzner/
   # digitalocean, this is the server/droplet name (idempotent lookup key — a
