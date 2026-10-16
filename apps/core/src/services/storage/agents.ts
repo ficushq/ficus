@@ -67,26 +67,6 @@ function agentFolders(snapshot: StorageSnapshot): StorageFolder[] {
   )
 }
 
-/**
- * Saved snapshots describe agents as they were at scan time. Refresh the agent
- * fields from the database so a status change (made dormant, removed) shows
- * immediately; sizes still update only on the next scan.
- */
-export async function withCurrentAgentInfo(snapshot: StorageSnapshot): Promise<StorageSnapshot> {
-  const folders = agentFolders(snapshot)
-  if (!folders.length) return snapshot
-  const ids = [...new Set(folders.map((folder) => folder.agent!.id))]
-  const rows = await db.select(storageAgentColumns).from(agents).where(inArray(agents.id, ids))
-  const current = new Map(rows.map((row) => [row.id, storageAgentInfo(row)]))
-  for (const folder of folders) {
-    const info = current.get(folder.agent!.id)
-    if (!info) continue
-    folder.agent = info
-    folder.name = info.label
-  }
-  return snapshot
-}
-
 /** Latest measured bytes of each agent's box home(s), summed across machines. */
 export function agentStorageBytes(snapshot: StorageSnapshot): Map<string, number> {
   const sizes = new Map<string, number>()

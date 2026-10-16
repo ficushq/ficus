@@ -4647,6 +4647,94 @@ export const storageMonitor = pgTable('storage_monitor', {
     .default([]),
 })
 
+/**
+ * Incremental storage scanning (services/storage/scanner.ts). One pass per machine
+ * measures every box home in short chunks; its queue lives in storage_scan_items and
+ * is deleted when the pass completes. Older passes are pruned to a fixed count.
+ */
+export const storageScanPasses = pgTable(
+  'storage_scan_passes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    machineId: uuid('machine_id').notNull(),
+    generation: integer('generation').notNull(),
+    status: varchar('status', { length: 16 }).$type<'running' | 'completed'>().notNull().default('running'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    /** Box homes queued when the pass started. */
+    homes: integer('homes').notNull().default(0),
+    /** Latest host df reading taken during this pass. */
+    usedBytes: bigint('used_bytes', { mode: 'number' }),
+    totalBytes: bigint('total_bytes', { mode: 'number' }),
+    diskMeasuredAt: timestamp('disk_measured_at', { withTimezone: true }),
+    /** Fixed classification of the last failed chunk; cleared by the next successful one. */
+    lastError: varchar('last_error', { length: 32 }).$type<'ssh_failed' | 'ssh_timeout' | 'scan_failed'>(),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+  },
+  (table) => [
+    unique('storage_scan_passes_generation').on(table.machineId, table.generation),
+    uniqueIndex('idx_storage_scan_passes_running')
+      .on(table.machineId)
+      .where(sql`${table.status} = 'running'`),
+  ]
+)
+
+/** The resumable queue of directories for a running pass, with their measurements. */
+export const storageScanItems = pgTable(
+  'storage_scan_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    passId: uuid('pass_id')
+      .notNull()
+      .references(() => storageScanPasses.id, { onDelete: 'cascade' }),
+    home: text('home').notNull(),
+    path: text('path').notNull(),
+    state: varchar('state', { length: 16 })
+      .$type<'pending' | 'solo' | 'split_pending' | 'done' | 'split' | 'failed'>()
+      .notNull()
+      .default('pending'),
+    /** done: inclusive total; split: the directory itself plus its non-directory entries. */
+    bytes: bigint('bytes', { mode: 'number' }),
+    /** Descendant totals (path -> bytes) within the displayed depth. */
+    details: jsonb('details').$type<Record<string, number>>(),
+    error: varchar('error', { length: 32 }).$type<'scan_timeout' | 'permission_denied' | 'missing'>(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('storage_scan_items_path').on(table.passId, table.path),
+    index('idx_storage_scan_items_state').on(table.passId, table.state),
+  ]
+)
+
+/** Latest completed measurement of each box home, kept across passes. */
+export const storageHomeResults = pgTable(
+  'storage_home_results',
+  {
+    machineId: uuid('machine_id').notNull(),
+    home: text('home').notNull(),
+    generation: integer('generation').notNull(),
+    bytes: bigint('bytes', { mode: 'number' }),
+    status: varchar('status', { length: 16 }).$type<'available' | 'partial' | 'unavailable'>().notNull(),
+    errors: jsonb('errors').$type<Array<'scan_timeout' | 'permission_denied'>>().notNull().default([]),
+    folder: jsonb('folder').$type<import('@ficus/shared').StorageFolder>().notNull(),
+    measuredAt: timestamp('measured_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.machineId, table.home] })]
+)
+
+/** Bounded history (pruned after 8 days) for growth: subject is a box home path or 'host' (df used). */
+export const storageUsageSamples = pgTable(
+  'storage_usage_samples',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    machineId: uuid('machine_id').notNull(),
+    subject: text('subject').notNull(),
+    bytes: bigint('bytes', { mode: 'number' }).notNull(),
+    measuredAt: timestamp('measured_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_storage_usage_samples_subject').on(table.machineId, table.subject, table.measuredAt)]
+)
+
 // Decision model calls: what was asked, who answered (or that none could), and how fast. The input
 // itself is never kept, only its hash; rows older than 30 days are pruned.
 export const decisionLog = pgTable(

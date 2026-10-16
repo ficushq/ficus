@@ -2,12 +2,27 @@ import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { eq, like, sql } from 'drizzle-orm'
 import type { StorageSnapshot } from '@ficus/shared'
 import { db } from '../../db'
-import { storageMonitor, inbox } from '../../db/schema'
+import { inbox, storageHomeResults, storageMonitor, storageScanPasses, storageUsageSamples } from '../../db/schema'
 import { InboxMessage } from '../../entities/InboxMessage'
+import type { Machine } from '../machines/queries'
 import { getSettingsStore } from '../settings'
-import { evaluateStorageWarnings, runStorageMonitor, storageMonitorService } from './monitor'
+import { evaluateStorageWarnings, runStorageMonitor, storageMonitorService, type StorageMonitorDeps } from './monitor'
+import { fakeRemote } from './scan.test-helper'
 
 const keys = ['STORAGE_SCAN_INTERVAL_HOURS', 'STORAGE_ALERT_THRESHOLDS', 'STORAGE_ALERTS_ENABLED']
+const machine = { id: crypto.randomUUID(), name: 'Test host', status: 'ready' } as Machine
+const HOME = '/home/box_aaaaaaaaaaaa'
+const dirs = new Map([
+  [HOME, 4096],
+  [`${HOME}/workspace`, 8192],
+])
+const owners = () => [{ home: HOME, squadId: 'squad', squadName: 'Product', label: 'Squad workspace' }]
+const targets = async () => [{ machine, owners: owners() }]
+const deps = (remote: ReturnType<typeof fakeRemote>): StorageMonitorDeps => ({
+  runner: remote.runner,
+  loadTargets: targets,
+  sleep: async () => {},
+})
 let oldRuntime: string | undefined
 const snapshot = (percent: number | null = 85): StorageSnapshot => ({
   supported: true,
@@ -26,18 +41,23 @@ const snapshot = (percent: number | null = 85): StorageSnapshot => ({
     },
   ],
 })
+async function reset() {
+  await db.delete(storageMonitor).where(eq(storageMonitor.id, 'default'))
+  await db.delete(storageScanPasses).where(eq(storageScanPasses.machineId, machine.id))
+  await db.delete(storageHomeResults).where(eq(storageHomeResults.machineId, machine.id))
+  await db.delete(storageUsageSamples).where(eq(storageUsageSamples.machineId, machine.id))
+  await db.delete(inbox).where(like(inbox.idempotencyKey, `storage-capacity:%:${machine.id}`))
+  for (const key of keys) await getSettingsStore().delete(key)
+}
 beforeEach(async () => {
   oldRuntime = process.env.FICUS_SANDBOX_RUNTIME
   process.env.FICUS_SANDBOX_RUNTIME = 'vm'
-  await db.delete(storageMonitor).where(eq(storageMonitor.id, 'default'))
-  for (const key of keys) await getSettingsStore().delete(key)
+  await reset()
 })
 afterEach(async () => {
   if (oldRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
   else process.env.FICUS_SANDBOX_RUNTIME = oldRuntime
-  await db.delete(storageMonitor).where(eq(storageMonitor.id, 'default'))
-  await db.delete(inbox).where(like(inbox.idempotencyKey, 'storage-capacity:%:storage-test-machine'))
-  for (const key of keys) await getSettingsStore().delete(key)
+  await reset()
 })
 
 test('threshold crossings escalate once, rearm with hysteresis, and retain unknown readings', () => {
@@ -61,86 +81,109 @@ test('threshold crossings escalate once, rearm with hysteresis, and retain unkno
   ).toBe(0)
 })
 
-test('persists a scheduled scan without a viewer, reads do not rescan, and the 12-hour deadline survives workers', async () => {
-  let scans = 0
-  const scan = async () => {
-    scans++
-    return snapshot(30)
-  }
-  expect((await storageMonitorService.read()).scannedAt).toBeNull()
-  await runStorageMonitor(scan)
-  await runStorageMonitor(scan)
-  expect(scans).toBe(1)
-  expect((await storageMonitorService.read()).machines[0]?.usedBytes).toBe(30)
+test('persists a pass without a viewer, reads never scan, and the pass interval survives workers', async () => {
+  const remote = fakeRemote(dirs, { budget: 100, used: 30, size: 100 })
+  expect((await storageMonitorService.read(targets)).scannedAt).toBeNull()
+  expect(remote.calls).toHaveLength(0)
+  await runStorageMonitor(deps(remote))
+  const calls = remote.calls.length
+  expect(calls).toBeGreaterThan(0)
+  await runStorageMonitor(deps(remote))
+  expect(remote.calls).toHaveLength(calls)
+  const read = await storageMonitorService.read(targets)
+  expect(remote.calls).toHaveLength(calls)
+  expect(read.machines[0]).toMatchObject({ usedBytes: 30, totalBytes: 100, status: 'available' })
+  expect(read.machines[0]!.squads[0]!.bytes).toBe(remote.total(HOME))
   const status = await storageMonitorService.status()
-  expect(status.monitoring.intervalHours).toBe(12)
+  expect(status.monitoring.intervalHours).toBe(1)
+  expect(status.scanning).toBe(false)
   expect(status).not.toHaveProperty('machines')
-  await db.update(storageMonitor).set({ completedAt: sql`now() - interval '13 hours'` })
-  await runStorageMonitor(scan)
-  expect(scans).toBe(2)
+  await db
+    .update(storageScanPasses)
+    .set({ startedAt: sql`now() - interval '2 hours'` })
+    .where(eq(storageScanPasses.machineId, machine.id))
+  await runStorageMonitor(deps(remote))
+  expect(remote.calls.length).toBeGreaterThan(calls)
+  expect((await storageMonitorService.read(targets)).machines[0]!.scan?.generation).toBe(2)
 })
 
-test('manual scans are durable and throttled even when scheduled scans are disabled', async () => {
+test('manual refresh requests a pass even when scheduled passes are disabled, at most once a minute', async () => {
   await getSettingsStore().set('STORAGE_SCAN_INTERVAL_HOURS', '0')
-  let scans = 0
-  const scan = async () => {
-    scans++
-    return snapshot(20)
-  }
-  await runStorageMonitor(scan)
-  expect(scans).toBe(0)
-  expect((await storageMonitorService.refresh()).scanning).toBe(true)
-  await runStorageMonitor(scan)
-  await storageMonitorService.refresh()
-  await runStorageMonitor(scan)
-  expect(scans).toBe(1)
+  const remote = fakeRemote(dirs, { budget: 100 })
+  await runStorageMonitor(deps(remote))
+  expect(remote.calls).toHaveLength(0)
+  expect((await storageMonitorService.refresh(targets)).scanning).toBe(true)
+  await runStorageMonitor(deps(remote))
+  expect(remote.calls.length).toBeGreaterThan(0)
+  const calls = remote.calls.length
+  expect((await storageMonitorService.refresh(targets)).scanning).toBe(false)
+  await runStorageMonitor(deps(remote))
+  expect(remote.calls).toHaveLength(calls)
+})
+
+test('an offline machine keeps its pass and is reported as not ready', async () => {
+  const remote = fakeRemote(dirs, { budget: 100 })
+  remote.fail(() => ({ exitCode: 255, stdout: '', stderr: '' }))
+  await runStorageMonitor(deps(remote))
+  const calls = remote.calls.length
+  expect(calls).toBe(1)
+  const offline = async () => [{ machine: { ...machine, status: 'parked' } as Machine, owners: owners() }]
+  await runStorageMonitor({ ...deps(remote), loadTargets: offline })
+  expect(remote.calls).toHaveLength(calls)
+  const read = await storageMonitorService.read(offline)
+  expect(read.machines[0]!.diagnostics?.reasons).toContain('machine_not_ready')
+  expect(read.machines[0]!.scan?.state).toBe('running')
 })
 
 test('coalesces workers and fences a stale scanner after ownership changes', async () => {
+  const remote = fakeRemote(dirs, { budget: 100 })
   let entered!: () => void
   const ready = new Promise<void>((resolve) => {
     entered = resolve
   })
-  let finish!: (value: StorageSnapshot) => void
-  const pending = new Promise<StorageSnapshot>((resolve) => {
-    finish = resolve
+  let release!: () => void
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve
   })
-  const first = runStorageMonitor(async () => {
-    entered()
-    return pending
+  const first = runStorageMonitor({
+    ...deps(remote),
+    runner: {
+      run: async (...args) => {
+        entered()
+        await blocked
+        return remote.runner.run(...args)
+      },
+    },
   })
   try {
     await ready
-    let otherScans = 0
-    await runStorageMonitor(async () => {
-      otherScans++
-      return snapshot(10)
-    })
-    expect(otherScans).toBe(0)
+    const other = fakeRemote(dirs, { budget: 100 })
+    await runStorageMonitor(deps(other))
+    expect(other.calls).toHaveLength(0)
     await db.update(storageMonitor).set({ leaseId: crypto.randomUUID() })
   } finally {
-    finish(snapshot(85))
+    release()
     await first
   }
-  expect((await storageMonitorService.read()).scannedAt).toBeNull()
+  expect((await storageMonitorService.read(targets)).machines[0]!.squads[0]!.bytes).toBeNull()
 })
 
-test('reclaims a crashed manual scan with scheduling disabled and preserves good data on failure', async () => {
-  await getSettingsStore().set('STORAGE_SCAN_INTERVAL_HOURS', '0')
-  await db.insert(storageMonitor).values({
-    id: 'default',
-    snapshot: snapshot(88),
-    leaseId: crypto.randomUUID(),
-    leaseUntil: new Date(0),
-    startedAt: new Date(0),
+test('a failed tick keeps saved measurements and does not expose its details', async () => {
+  await runStorageMonitor(deps(fakeRemote(dirs, { budget: 100, used: 88, size: 100 })))
+  await db.update(storageMonitor).set({ leaseUntil: new Date(0), leaseId: crypto.randomUUID() })
+  await runStorageMonitor({
+    ...deps(fakeRemote(dirs, { budget: 100 })),
+    loadTargets: async () => {
+      throw new Error('private details')
+    },
   })
-  await runStorageMonitor(async () => {
-    throw new Error('private details')
-  })
-  const result = await storageMonitorService.read()
-  expect(result.machines[0]?.usedBytes).toBe(88)
-  expect(result.error).toContain('last storage scan failed')
+  const result = await storageMonitorService.read(targets)
+  expect(result.machines[0]!.usedBytes).toBe(88)
+  expect(result.machines[0]!.squads[0]!.bytes).not.toBeNull()
+  expect(result.error).toContain('storage scan step failed')
   expect(result.error).not.toContain('private details')
+  await runStorageMonitor(deps(fakeRemote(dirs, { budget: 100 })))
+  expect((await storageMonitorService.read(targets)).error).toBeNull()
 })
 
 test('inbox outbox retries a post-send crash without duplicating the system message', async () => {
@@ -150,15 +193,18 @@ test('inbox outbox retries a post-send crash without duplicating the system mess
     throw new Error('crash after durable send')
   })
   try {
-    await runStorageMonitor(async () => snapshot(96))
+    await runStorageMonitor(deps(fakeRemote(dirs, { budget: 100, used: 96, size: 100 })))
   } finally {
     send.mockRestore()
   }
   expect((await db.select().from(storageMonitor))[0]?.pendingAlerts).toHaveLength(1)
-  await runStorageMonitor(async () => snapshot(96))
+  await runStorageMonitor(deps(fakeRemote(dirs, { budget: 100, used: 96, size: 100 })))
   expect((await db.select().from(storageMonitor))[0]?.pendingAlerts).toHaveLength(0)
   expect(
-    await db.select().from(inbox).where(like(inbox.idempotencyKey, 'storage-capacity:%:storage-test-machine'))
+    await db
+      .select()
+      .from(inbox)
+      .where(like(inbox.idempotencyKey, `storage-capacity:%:${machine.id}`))
   ).toHaveLength(1)
 })
 
@@ -169,70 +215,25 @@ test('validates scan frequency and ordered capacity thresholds at the settings b
     await expect(getSettingsStore().set(keys[1]!, value)).rejects.toThrow()
 })
 
-test('reads refresh saved agent details from the database and report dormant retention', async () => {
-  const { Squad } = await import('../../entities/Squad')
-  const { Agent } = await import('../../entities/Agent')
-  const { agents, squads } = await import('../../db/schema')
-  const squad = await Squad.create({ name: `storage-agents-${crypto.randomUUID()}`, purpose: 'storage fixture' })
-  const agent = await Agent.create({ agentTypeId: 'consultant', squadId: squad.id, persist: false })
+test('reads describe agents from current owners and report dormant retention', async () => {
+  await getSettingsStore().set('AGENT_DORMANT_RETENTION_DAYS', '3')
   try {
-    await db
-      .update(agents)
-      .set({ metadata: sql`coalesce(${agents.metadata}, '{}'::jsonb) || '{"purpose":"Plan launch"}'::jsonb` })
-      .where(eq(agents.id, agent.id))
-    const saved = snapshot(50)
-    saved.machines[0].squads = [
-      {
-        id: squad.id,
-        name: squad.name,
-        bytes: 10,
-        status: 'available',
-        folders: [
-          {
-            name: 'Old label',
-            path: '/home/box_a',
-            bytes: 10,
-            status: 'available',
-            children: [],
-            kind: 'agent',
-            agent: {
-              id: agent.id,
-              label: 'Old label',
-              agentTypeId: 'consultant',
-              status: 'idle',
-              lastMessageAt: null,
-              dormantAt: null,
-              createdAt: null,
-            },
-          },
-          // Saved before agent attribution: passes through unchanged.
-          { name: 'Agent files', path: '/home/box_b', bytes: 5, status: 'available', children: [] },
-        ],
-      },
-    ]
-    await runStorageMonitor(async () => saved)
-    const dormantAt = new Date('2026-03-01T00:00:00Z')
-    await db.update(agents).set({ status: 'dormant', dormantAt }).where(eq(agents.id, agent.id))
-    await getSettingsStore().set('AGENT_DORMANT_RETENTION_DAYS', '3')
-    const read = await storageMonitorService.read()
-    const folders = read.machines[0].squads[0].folders
-    expect(folders[0].name).toContain('Plan launch')
-    expect(folders[0].agent).toMatchObject({ id: agent.id, status: 'dormant', dormantAt: dormantAt.toISOString() })
-    expect(folders[1]).toEqual({
-      name: 'Agent files',
-      path: '/home/box_b',
-      bytes: 5,
-      status: 'available',
-      children: [],
-    })
+    await runStorageMonitor(deps(fakeRemote(dirs, { budget: 100 })))
+    const agent = {
+      id: crypto.randomUUID(),
+      label: 'Plan launch',
+      agentTypeId: 'consultant',
+      status: 'dormant' as const,
+      lastMessageAt: null,
+      dormantAt: '2026-03-01T00:00:00.000Z',
+      createdAt: null,
+    }
+    const read = await storageMonitorService.read(async () => [
+      { machine, owners: [{ ...owners()[0]!, label: agent.label, kind: 'agent' as const, agent }] },
+    ])
+    expect(read.machines[0]!.squads[0]!.folders[0]).toMatchObject({ name: 'Plan launch', kind: 'agent', agent })
     expect(read.dormantRetentionDays).toBe(3)
-    expect(folders[0].agent?.removalPending).toBeUndefined()
-    const { requestDormantRemoval } = await import('../agents/cleanup')
-    expect((await requestDormantRemoval([agent.id])).accepted).toEqual([agent.id])
-    expect((await storageMonitorService.read()).machines[0].squads[0].folders[0].agent?.removalPending).toBe(true)
   } finally {
     await getSettingsStore().delete('AGENT_DORMANT_RETENTION_DAYS')
-    await db.delete(agents).where(eq(agents.id, agent.id))
-    await db.delete(squads).where(eq(squads.id, squad.id))
   }
 })

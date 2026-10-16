@@ -28,6 +28,34 @@ export interface StorageFolder {
   kind?: 'squad-workspace' | 'agent'
   /** Present on agent box homes whose agent still exists. */
   agent?: StorageAgent
+  /** Top-level box homes: when this value was measured (ISO). Absent before incremental scanning. */
+  measuredAt?: string
+  /** Top-level box homes: measured in the current pass, or carried over from a previous pass. */
+  freshness?: 'current' | 'previous'
+  /** Top-level box homes: change against an earlier retained measurement. */
+  growth?: StorageGrowth
+}
+
+/** Change in measured bytes since an earlier measurement (negative when it shrank). */
+export interface StorageGrowth {
+  bytes: number
+  /** When the earlier measurement was taken (ISO). */
+  since: string
+}
+
+/** Progress of a machine's continuous, incremental storage scan. */
+export interface StorageScanProgress {
+  /** running: a pass is measuring; idle: waiting for the next pass. */
+  state: 'running' | 'idle'
+  /** Pass number, increasing per machine. */
+  generation: number
+  passStartedAt: string
+  /** When the most recent complete pass finished, if any. */
+  lastCompletedAt: string | null
+  /** Box homes fully measured in this pass. */
+  measuredHomes: number
+  /** Box homes queued in this pass. */
+  totalHomes: number
 }
 
 export interface StorageSquad {
@@ -36,6 +64,8 @@ export interface StorageSquad {
   bytes: number | null
   status: 'available' | 'partial' | 'unavailable'
   folders: StorageFolder[]
+  /** Sum of the box homes' growth, since the earliest of their baselines. */
+  growth?: StorageGrowth
 }
 
 export interface StorageMachine {
@@ -46,6 +76,11 @@ export interface StorageMachine {
   totalBytes: number | null
   squads: StorageSquad[]
   unattributedBytes: number | null
+  /** When usedBytes/totalBytes were read (ISO). */
+  diskMeasuredAt?: string | null
+  /** Change in used disk bytes since an earlier reading. */
+  diskGrowth?: StorageGrowth
+  scan?: StorageScanProgress
   diagnostics?: {
     exitCode: number | null
     reasons: Array<
