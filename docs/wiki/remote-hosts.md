@@ -113,10 +113,18 @@ in-agent usage guide this document backs.
     is visible immediately.
   - **VM boxes**: pushed over the box server's `/write` channel by
     `syncBoxFiles` (`apps/core/src/services/sandbox/vm/file-sync.ts`) —
-    keys `0600`, `config`/`known_hosts` `0644`, the `.ssh` dir `0700` —
-    the same push path as every other box-provisioned file. This also
-    closed a pre-existing parity gap: squad SSH keys previously never
-    reached VM boxes at all.
+    keys `0600`, `config` `0644`, the `.ssh` dir `0700` — the same push
+    path as every other box-provisioned file. This also closed a
+    pre-existing parity gap: squad SSH keys previously never reached VM
+    boxes at all. `known_hosts` is the exception: the box's own file also
+    holds host keys trusted on the box, so the squad's entries are merged
+    into a delimited `# >>> ficus managed known hosts >>>` block
+    (`packages/shared/src/known-hosts.ts`) by an atomic compare-and-swap
+    write (`0600`), never pushed over the file. Lines outside the block are
+    kept; a managed entry whose host already has a different key of the
+    same type on the box is reported as a conflict and not written. The
+    k8s entrypoint mirrors the squad SSH directory into `/root/.ssh` the
+    same way (`packages/sandbox-server/src/known-hosts-sync.ts`).
   - **host runtime**: no transit and no mount — agent commands run on the
     core's own machine, and the squad's SSH directory is referenced in place
     through `GIT_SSH_COMMAND` and the PATH-level `ssh`/`scp`/`rsync` shims
