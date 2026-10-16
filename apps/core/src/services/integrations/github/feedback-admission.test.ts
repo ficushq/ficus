@@ -16,6 +16,7 @@ function input(body = 'SENTINEL', edited = false): VerifiedIngressEvent {
       issue: { id: 20, number: 3, title: 'UNREVIEWED PARENT' },
       comment: {
         id: 30,
+        node_id: 'IC_admission',
         user: { id: 2, login: 'author', type: 'User' },
         body,
         created_at: '2026-10-02T10:00:00Z',
@@ -108,17 +109,47 @@ test('fresh automatic capture requires actual author and editor trust; adding tr
         })
       ).revision.decision
     ).toBe('pending')
-    const freshEdit = input('NEW TRUSTED EDIT', true)
-    ;(freshEdit.payload as any).comment.updated_at = '2026-10-02T12:00:00Z'
-    const fresh = await h.source(freshEdit)
+    const freshEdit = (body: string, updatedAt: string) => {
+      const event = input(body, true)
+      ;(event.payload as any).comment.updated_at = updatedAt
+      return h.source(event)
+    }
+    const author = { accountId: '2', login: 'author', accountType: 'User' as const }
+    const editor = { accountId: '4', login: 'editor', accountType: 'User' as const }
+    // A trusted signed sender alone never attributes an edit: without a verified edit history
+    // (no reader, or a history that proves nothing) a fresh edit stays held.
+    const unread = await freshEdit('FRESH EDIT WITHOUT HISTORY', '2026-10-02T12:00:00Z')
     expect(
       (
-        await admission.captureRelevantGitHubFeedback(fresh, {
+        await admission.captureRelevantGitHubFeedback(unread, {
           authorizeSource: async () => true,
           routingProvenance: [],
         })
       ).revision.decision
-    ).toBe('automatic')
+    ).toBe('pending')
+    const unverified = await freshEdit('FRESH EDIT WITH UNVERIFIABLE HISTORY', '2026-10-02T12:30:00Z')
+    const reads: string[] = []
+    expect(
+      (
+        await admission.captureRelevantGitHubFeedback(unverified, {
+          authorizeSource: async () => true,
+          routingProvenance: [],
+          verifyEditors: async (_event, target) => {
+            reads.push(target.body)
+            return null
+          },
+        })
+      ).revision.decision
+    ).toBe('pending')
+    expect(reads).toEqual(['FRESH EDIT WITH UNVERIFIABLE HISTORY'])
+    // A fresh edit whose author and every verified editor are trusted is delivered automatically.
+    const fresh = await freshEdit('NEW TRUSTED EDIT', '2026-10-02T13:00:00Z')
+    const verified = await admission.captureRelevantGitHubFeedback(fresh, {
+      authorizeSource: async () => true,
+      routingProvenance: [],
+      verifyEditors: async () => ({ attribution: 'verified_edit', editor, editors: [author, editor] }),
+    })
+    expect(verified.revision).toMatchObject({ decision: 'automatic', attribution: 'verified_edit', editor })
   } finally {
     await h.close()
   }

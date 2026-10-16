@@ -7,13 +7,18 @@ import {
   integrationOutputEvents,
   type DbTx,
 } from '../../../db'
-import type { GitHubFeedbackContent } from '@ficus/shared'
+import type { GitHubEditorVerification, GitHubFeedbackContent, IntegrationOutputFact } from '@ficus/shared'
 import { readOutputEvent, readFeedbackRevision } from './feedback-pass-read'
-import { githubContentHash, githubParentTextContent } from './feedback-envelope'
+import { githubContentHash, githubParentTextContent, withGitHubEditorVerification } from './feedback-envelope'
 import { readCurrentGitHubFeedback } from './feedback-provider'
 import { GitHubApiUnavailableError } from '../../github/api-client'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
-import { isTrustedGitHubFeedbackContent } from './feedback-trust'
+import { isTrustedGitHubFeedbackContent, resolveGitHubAuthorTrust } from './feedback-trust'
+import {
+  githubEditHistoryTarget,
+  githubParentEditHistoryTarget,
+  type GitHubEditHistoryTarget,
+} from './feedback-edit-history'
 import { isGitHubAuthorFilterEnabled } from './author-filter'
 import { squads } from '../../../db/schema'
 
@@ -40,6 +45,43 @@ export interface FeedbackCaptureDependencies {
    * new capture under the authority lock. False (or absent) captures the factual message.
    */
   decideParent?(tx: DbTx, squadId: string, content: GitHubFeedbackContent): Promise<boolean>
+  /**
+   * Authenticated edit-history read for content whose editors the observation does not prove (see
+   * `feedback-edit-history.ts`). Provider I/O before any lock. Null leaves the content unattributed
+   * (held); a {@link GitHubApiUnavailableError} defers the capture.
+   */
+  verifyEditors?(event: Event, target: GitHubEditHistoryTarget): Promise<GitHubEditorVerification | null>
+}
+
+/**
+ * The same immutable content as an already captured revision: same author, text and review state.
+ * A later observation of it (a poll racing a webhook, a webhook redelivery, a no-op edit) is a
+ * replay of that revision, never a new held version of content already decided.
+ */
+function sameCapturedText(
+  captured: { author: { accountId: string } | null; envelope: IntegrationOutputFact | null } | undefined,
+  content: GitHubFeedbackContent
+): boolean {
+  return (
+    !!captured?.envelope &&
+    !!content.delivery &&
+    content.objectKind !== 'action' &&
+    !!content.author &&
+    captured.author?.accountId === content.author.accountId &&
+    githubContentHash([captured.envelope.data.content, captured.envelope.data.state]) ===
+      githubContentHash([content.delivery.data.content, content.delivery.data.state])
+  )
+}
+
+/** GitHub could not answer: nothing is written; the caller retries this capture later. */
+async function readProvider<T>(read: () => Promise<T>): Promise<T | null> {
+  try {
+    return await read()
+  } catch (error) {
+    if (error instanceof GitHubApiUnavailableError) throw new Error('feedback_provider_unavailable')
+    // Any other failure is uncertainty: fail closed (held for review).
+    return null
+  }
 }
 
 /**
@@ -51,16 +93,17 @@ export interface FeedbackCaptureDependencies {
  */
 export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptureDependencies) {
   const event = await readOutputEvent(db, eventId)
-  const content = event?.fact.github?.content
+  const observed = event?.fact.github?.content
   if (
     !event ||
     event.integration !== 'github' ||
     event.authority.kind !== 'connection' ||
-    !content ||
+    !observed ||
     !(await deps.authorizeSource(event))
   )
     throw new Error('feedback_source_unavailable')
   const squadId = event.authority.squadId
+  let content = observed
   const transportKey =
     deps.transportKey ??
     (event.fact.github?.observation?.kind === 'webhook' ? event.fact.github.observation.deliveryId : undefined)
@@ -71,8 +114,6 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
     objectKind: content.objectKind,
     nativeId: content.nativeId ?? `unknown:${event.id}`,
   }
-  const withParent = githubParentTextContent(content)
-  const hashes = new Set([content.contentHash, ...(withParent ? [withParent.contentHash] : [])])
   const condition = and(
     eq(githubFeedbackObjects.squadId, squadId),
     eq(githubFeedbackObjects.repositoryId, identity.repositoryId),
@@ -82,23 +123,43 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   const [beforeRead] = await db.select().from(githubFeedbackObjects).where(condition)
   const [knownHead] = beforeRead?.currentRevisionId
     ? await db
-        .select({ contentHash: githubFeedbackRevisions.contentHash })
+        .select({
+          contentHash: githubFeedbackRevisions.contentHash,
+          author: githubFeedbackRevisions.author,
+          envelope: githubFeedbackRevisions.envelope,
+        })
         .from(githubFeedbackRevisions)
         .where(eq(githubFeedbackRevisions.id, beforeRead.currentRevisionId))
     : []
+  // Already captured text needs no provider work: the transaction replays that revision.
+  const known = sameCapturedText(knownHead, content)
+  // Edit history is read only when it could matter: for content (or quoted parent text) whose
+  // author is trusted right now. Trust is decided again under the authority lock.
+  const trusted = async (accountId: string) => (await resolveGitHubAuthorTrust(db, squadId, accountId)).length > 0
+  const target = known || !deps.verifyEditors ? null : githubEditHistoryTarget(content)
+  if (target && (await trusted(target.author.accountId))) {
+    const verification = await readProvider(() => deps.verifyEditors!(event, target))
+    content = (verification && withGitHubEditorVerification(content, verification)) ?? content
+  }
+  const parentTarget = deps.verifyEditors ? githubParentEditHistoryTarget(content) : null
+  if (parentTarget && content.parentText && (await trusted(parentTarget.author.accountId))) {
+    const verification = await readProvider(() => deps.verifyEditors!(event, parentTarget))
+    // Parent text is quoted as WRITTEN BY its author: only their own edits keep that true.
+    if (verification?.editors.every((editor) => editor.accountId === parentTarget.author.accountId))
+      content = { ...content, parentText: { ...content.parentText, unchanged: true } }
+  }
+  const withParent = githubParentTextContent(content)
+  const hashes = new Set([content.contentHash, ...(withParent ? [withParent.contentHash] : [])])
   let currentHash: string | null = null
   if (
     beforeRead &&
+    !known &&
     !hashes.has(knownHead?.contentHash ?? '') &&
     (!content.providerVersion || content.providerVersion === beforeRead.providerVersion)
   ) {
-    try {
-      currentHash = (await (deps.readCurrent ?? readCurrentGitHubFeedback)(event, content))?.contentHash ?? null
-    } catch (error) {
-      // GitHub could not answer: nothing is written; the caller retries this capture later.
-      if (error instanceof GitHubApiUnavailableError) throw new Error('feedback_provider_unavailable')
-      /* any other failure is uncertainty: fail closed (held for review) */
-    }
+    const verified = content
+    currentHash =
+      (await readProvider(() => (deps.readCurrent ?? readCurrentGitHubFeedback)(event, verified)))?.contentHash ?? null
   }
   // The callback's authorization is fresh immediately before entering the transaction.
   if (!(await deps.authorizeSource(event))) throw new Error('feedback_source_unavailable')
@@ -115,7 +176,11 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
     const head = object.currentRevisionId ? await readFeedbackRevision(tx, object.currentRevisionId) : undefined
     if (object.currentRevisionId && !head) throw new Error('feedback_capacity_deferred')
     let revision =
-      head && hashes.has(head.contentHash) && head.providerVersion === content.providerVersion ? head : undefined
+      head &&
+      ((hashes.has(head.contentHash) && head.providerVersion === content.providerVersion) ||
+        sameCapturedText(head, content))
+        ? head
+        : undefined
     let disposition: 'created' | 'replay' | 'held' = revision ? 'replay' : 'created'
     if (transportKey) {
       const receipts = await tx
@@ -129,7 +194,9 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
       if (receipts.length) {
         const prior = await readFeedbackRevision(tx, receipts[0]!.revisionId)
         // A transport identity cannot be reused with different content, even if someone approves it.
-        if (!prior || !hashes.has(prior.contentHash)) throw new Error('feedback_transport_conflict')
+        // The same text attributed again (edit history read anew) is still the same delivery.
+        if (!prior || (!hashes.has(prior.contentHash) && !sameCapturedText(prior, content)))
+          throw new Error('feedback_transport_conflict')
         revision = prior
         disposition = 'replay'
       }
@@ -197,6 +264,15 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
         // Only the first capture may be automatic. Pending replay or stronger evidence never upgrades history.
         const automatic =
           reason === 'untrusted_author' && !!chosen.delivery && !!(await deps.decideFresh?.(tx, squadId, chosen))
+        // Held although its author is trusted: someone in its verified edit history is not.
+        const heldReason =
+          !automatic &&
+          reason === 'untrusted_author' &&
+          deps.decideFresh &&
+          chosen.attribution === 'verified_edit' &&
+          (await resolveGitHubAuthorTrust(tx, squadId, chosen.author?.accountId)).length
+            ? 'untrusted_editor'
+            : reason
         const [created] = await tx
           .insert(githubFeedbackRevisions)
           .values({
@@ -212,7 +288,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
             attribution: chosen.attribution,
             providerVersion: chosen.providerVersion,
             routingProvenance: deps.routingProvenance ?? [],
-            reason: automatic ? 'trusted_author' : reason,
+            reason: automatic ? 'trusted_author' : heldReason,
             decision: automatic ? 'automatic' : 'pending',
             releaseState: automatic ? 'ready' : 'held',
           })

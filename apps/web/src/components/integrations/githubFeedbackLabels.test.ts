@@ -9,6 +9,8 @@ test('holds that are not about author trust never claim the author is untrusted'
     expect(label).not.toMatch(/not trusted/i)
   }
   expect(reasonLabel('untrusted_author')).toMatch(/not trusted/)
+  // A trusted author's content edited by someone untrusted names the editor, not the author.
+  expect(reasonLabel('untrusted_editor')).toMatch(/^Edited by someone who is not trusted/)
   expect(kindLabel({ objectKind: 'action' })).toBe('Issue or pull request action')
 })
 

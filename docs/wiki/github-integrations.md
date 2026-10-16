@@ -67,6 +67,8 @@ Core consumes Platform's durable queue every five seconds (up to four connection
 
 Subscriptions renew every five minutes and expire after 24 hours offline. Encrypted payloads and delivery receipts expire after 72 hours; acknowledged payloads are cleared earlier. A lost acknowledgment retries after a two-minute lease, and output fact keys deduplicate flow consumption. Each connection supports up to 100 exact repositories, with 100 connections per tenant and a tenant budget of 3,600 relay GitHub API requests per hour. Empty queue polls make no GitHub API calls.
 
+Relay deliveries count as live webhook evidence. After Core accepts a pull request, review, review comment, issue comment or issue delivery (live connection at the delivered revision), it records the delivery time for that connection and repository (`github_relay_deliveries`). PR polling then stops for that repository and connection, as it does for a repository with recent verified direct webhooks. Polling resumes automatically from the last relayed delivery once relay deliveries are older than the same seven-day lookback. Issue-event repository watches, completion-ready delivery presentation and Dependabot policy are unchanged.
+
 GitHub does not automatically retry a failed webhook request to Platform. Operators can redeliver from the App's delivery log; provider polling remains the fallback for missed events and Platform downtime. Payloads over 1 MiB are rejected. Self-hosted instances do not consume the managed queue: they use polling or their own signed webhook endpoint.
 
 ## Instance updates and GitHub Pages
@@ -326,9 +328,34 @@ a derived allowlist. An author is trusted when either:
 
 Usernames, `author_association` labels and the webhook sender are never
 authority. The content author is attributed per item (`feedback-envelope.ts`).
-An edit is attributed to its editor only when the provider proves who edited;
-otherwise the edit is held. Unknown or unresolvable authors are held, not
-allowed.
+Unknown or unresolvable authors are held, not allowed.
+
+**Editors** (`feedback-edit-history.ts`). A webhook or poll names a comment's,
+review's, issue's or PR's author but not everyone who edited it since. When the
+observation does not prove the author wrote the current text (a polled review,
+a polled comment changed since creation, any `edited` event) and the author is
+trusted, capture reads GitHub's edit history (GraphQL `userContentEdits`,
+`editor`, and title renames) with one bounded query through the squad's
+authorized connection, before any lock. The answer must match the captured
+object, repository, author and exact text:
+
+| Edit history                                                                                         | Result                                                       |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Never edited                                                                                         | `creation` by the author; delivered if the author is trusted |
+| Edited; the author and every editor (plus the signed sender of an `edited` webhook) trusted          | `verified_edit`; delivered automatically                     |
+| Any editor not trusted                                                                               | held (`untrusted_editor`)                                    |
+| Deleted or unidentifiable editor, history over 50 entries, different text or object, a refused query | held (`unknown_editor`)                                      |
+| GitHub unavailable or the pass's provider budget spent                                               | capture retried later, nothing written                       |
+
+The editors are bound into the reviewed hash (`data.editors`), so a decision
+applies to exactly that text and that set of editors; a later edit is a new
+revision verified again. Final acceptance rechecks every editor's trust.
+Trusting an author never vouches for anyone else who edited their text.
+Content from untrusted authors is held without any history read.
+
+A later observation of text already captured (same object, author, text and
+review state), such as a poll racing a webhook, replays that revision. It never
+creates a new held copy of feedback already delivered or held.
 
 An agent that posts to GitHub with a squad connection posts as the person who
 connected that account. If that person is trusted (linked, or added manually),
@@ -338,9 +365,12 @@ accountability, the same as agent-to-agent mail inside Ficus; the filter does
 not try to tell a person's comment from their agent's.
 
 **Actions** (`objectKind: 'action'`): issue `assigned`, `unassigned`, `labeled`,
-`unlabeled`, `closed`, `reopened` and pull request `assigned`, `unassigned`,
-`labeled`, `unlabeled`, `review_requested`, `review_request_removed`
-(`GITHUB_ACTION_EVENTS`). The authority is the signed webhook sender, attributed
+`unlabeled`, `closed`, `reopened`, `locked`, `unlocked`, `milestoned`,
+`demilestoned`, `pinned`, `unpinned` and pull request `assigned`, `unassigned`,
+`labeled`, `unlabeled`, `review_requested`, `review_request_removed`,
+`auto_merge_enabled`, `auto_merge_disabled`, `locked`, `unlocked`,
+`milestoned`, `demilestoned`, `enqueued`, `dequeued`
+(`GITHUB_ACTION_EVENTS`). Auto-merge actions add only the merge method enum. The authority is the signed webhook sender, attributed
 as the creator, so a trusted actor's assignment or review request is delivered
 automatically and an untrusted actor's is held. The delivered fact is a fixed
 projection: repository, number, action, actor, assignee, requested reviewer or
@@ -366,8 +396,11 @@ both hold:
   parent (`issue`/`pull_request` object, same squad and repository) with exactly
   this title and body decides: an automatic or human-allowed revision attributed
   to its creation by the same account proves it, a pending or denied one refuses
-  it. Without such a revision only an unchanged payload (`created_at` equals
-  `updated_at`) proves it. Otherwise the factual message is captured.
+  it. A revision attributed by a verified edit history in which only that
+  author edited also proves it. Without such a revision, an unchanged payload
+  (`created_at` equals `updated_at`) proves it, or an edit history read at
+  capture showing only the author's own edits. Otherwise the factual message is
+  captured.
 
 The variant is a different reviewed object: its hash covers the parent text and
 author, so a moderator's approval and the canonical event's admission bind to
@@ -387,9 +420,9 @@ Rule matching and
 work-stream bindings still read the source fact, so predicates such as
 `requestedReviewer`, `assignee` and `issue.title` keep working. Polled actions
 have no signed actor and are held (`unknown_editor`). Issue and PR `edited`
-events stay content and are held without a verified editor, because the payload
-does not prove who changed which field. PR `closed`, `reopened`, `synchronize`
-and draft changes are status facts.
+events stay content and follow the edit-history rule above. PR `closed`,
+`reopened`, `synchronize` and draft changes are content-free status facts from
+webhooks and polls alike.
 
 Personal linking (`routes/github-identity.ts`, `personal-identity.ts`) reuses the
 GitHub OAuth/device transport with a separate `github_identity` purpose. It

@@ -15,6 +15,7 @@ import { extractGitHubPrDispatchFact } from '../../squad-activity/github-pr-fact
 import { materializeGitHubDispatch } from '../../squad-activity/materialize'
 import { createLogger } from '../../../lib/infra/logger'
 import { discoverGitHubRelayInterests } from './github-interests'
+import { githubRelayLivenessRepository, recordGitHubRelayDelivery } from '../github/relay-deliveries'
 import { HostedIntegrationRelayRunner, type HostedRelayProvider } from './runner'
 import type { RelayDelivery } from '@ficus/shared/integration-relay'
 import type { RepositoryInterest } from './github-interests'
@@ -63,6 +64,9 @@ export async function dispatchHostedGitHubDelivery(delivery: RelayDelivery, inte
     metadata: { providerDeliveryId: delivery.deliveryId },
     githubObservation: { kind: 'webhook' as const, deliveryId: delivery.deliveryId },
   }
+  // Live webhook evidence for poll suppression: recorded once, only for a delivery a live
+  // connection at the delivered revision accepted.
+  let liveness = githubRelayLivenessRepository(delivery)
   // Connection-scoped output facts own agent routing. Instance-wide legacy shell rules
   // are deliberately not an authority path for a shared App's tenant-scoped events.
   for (const squadId of new Set(interests.map((interest) => interest.squadId))) {
@@ -85,6 +89,10 @@ export async function dispatchHostedGitHubDelivery(delivery: RelayDelivery, inte
       connectionRevision: delivery.connectionRevision,
       squadId,
     })
+    if (liveness) {
+      await recordGitHubRelayDelivery(delivery.connectionId, liveness)
+      liveness = null
+    }
     const fact = extractGitHubPrDispatchFact('github', event)
     if (!fact || fact.repository !== delivery.resourceKey) continue
     const key = `relay:${delivery.connectionId}:${squadId}:${fact.logicalRowId}`

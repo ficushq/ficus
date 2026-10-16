@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type {
   GitHubAccountIdentity,
+  GitHubEditorVerification,
   GitHubFeedbackContent,
   GitHubFeedbackEnvelope,
   GitHubParentTextVariant,
@@ -18,6 +19,9 @@ const timestamp = (value: unknown) =>
   typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null
 const sha = (value: unknown) =>
   typeof value === 'string' && /^[0-9a-f]{40,64}$/i.test(value) ? value.toLowerCase() : undefined
+/** GitHub's opaque GraphQL node ID, bounded; it only selects what to read, never what to trust. */
+const nodeId = (value: unknown) =>
+  typeof value === 'string' && /^[A-Za-z0-9_=-]{1,100}$/.test(value) ? value : undefined
 /**
  * A review comment's file path, bounded for delivery. The path is the PR author's text, not the
  * commenter's: it is kept on one line, stripped of control characters and capped, so it can
@@ -182,12 +186,47 @@ export function githubParentTextContent(content: GitHubFeedbackContent): GitHubF
  * editable title and body are not part of the projection, so a trusted actor cannot launder
  * untrusted prose. A signed webhook also offers a `parentText` variant naming the parent's author by
  * numeric ID; capture selects it only when that author is trusted and provably wrote the current
- * text (`feedback-parent.ts`). Title/body edits are not here: those remain content and are held.
+ * text (`feedback-parent.ts`). Title/body edits are not here: those remain content whose editors
+ * are verified from GitHub's edit history at capture.
+ *
+ * Pull request lifecycle actions (closed, reopened, synchronize, ready_for_review,
+ * converted_to_draft) are not here either: they already become content-free status facts, from
+ * webhooks and polls alike, and never carry the title or description.
  */
 export const GITHUB_ACTION_EVENTS: Record<string, readonly string[]> = {
-  issues: ['assigned', 'unassigned', 'labeled', 'unlabeled', 'closed', 'reopened'],
-  pull_request: ['assigned', 'unassigned', 'labeled', 'unlabeled', 'review_requested', 'review_request_removed'],
+  issues: [
+    'assigned',
+    'unassigned',
+    'labeled',
+    'unlabeled',
+    'closed',
+    'reopened',
+    'locked',
+    'unlocked',
+    'milestoned',
+    'demilestoned',
+    'pinned',
+    'unpinned',
+  ],
+  pull_request: [
+    'assigned',
+    'unassigned',
+    'labeled',
+    'unlabeled',
+    'review_requested',
+    'review_request_removed',
+    'auto_merge_enabled',
+    'auto_merge_disabled',
+    'locked',
+    'unlocked',
+    'milestoned',
+    'demilestoned',
+    'enqueued',
+    'dequeued',
+  ],
 }
+
+const MERGE_METHODS = ['merge', 'squash', 'rebase']
 
 function githubActionContent(
   event: VerifiedIngressEvent,
@@ -215,12 +254,18 @@ function githubActionContent(
     ? text(record(payload.requested_team).slug)
     : ''
   const label = ['labeled', 'unlabeled'].includes(action) ? text(record(payload.label).name).slice(0, 100) : ''
+  // A fixed enum, never free text: the only detail an auto-merge action carries.
+  const mergeMethod =
+    action === 'auto_merge_enabled' && MERGE_METHODS.includes(text(record(parent.auto_merge).merge_method))
+      ? text(record(parent.auto_merge).merge_method)
+      : ''
   const summary = [
     `@${actor?.login ?? 'unknown'} ${action.replaceAll('_', ' ')} on ${repo} ${isPR ? 'pull request' : 'issue'} ${number}.`,
     assignee ? `Assignee: @${assignee}` : '',
     requestedReviewer ? `Requested reviewer: @${requestedReviewer}` : '',
     requestedTeam ? `Requested team: ${requestedTeam}` : '',
     label ? `Label: ${label}` : '',
+    mergeMethod ? `Merge method: ${mergeMethod}` : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -235,6 +280,7 @@ function githubActionContent(
     assignee,
     requestedReviewer,
     requestedTeam,
+    ...(mergeMethod ? { mergeMethod } : {}),
     ...(fact.data.requestedReviewerType ? { requestedReviewerType: fact.data.requestedReviewerType } : {}),
     // Logins and label names only; the predicate catalog allows rules to filter on them.
     labels: Array.isArray(fact.data.labels) ? fact.data.labels : [],
@@ -278,6 +324,7 @@ function githubActionContent(
         body,
         unchanged:
           timestamp(parent.created_at) !== null && timestamp(parent.created_at) === timestamp(parent.updated_at),
+        ...(nodeId(parent.node_id) ? { nodeId: nodeId(parent.node_id) } : {}),
         ...reviewed,
         delivery: withParent,
       }
@@ -417,16 +464,15 @@ export function normalizeGitHubFeedback(
     objectKind !== 'review' &&
     timestamp(item.created_at) !== null &&
     timestamp(item.created_at) === timestamp(item.updated_at ?? item.created_at)
-  const attribution =
-    creation && (verifiedWebhook || unchangedCreation)
-      ? 'creation'
-      : payload.action === 'edited' &&
-          !['issue', 'pull_request'].includes(objectKind) &&
-          verifiedWebhook &&
-          githubContentIdentity(payload.sender)
-        ? 'verified_edit'
-        : 'unknown'
-  const editor = attribution === 'verified_edit' ? githubContentIdentity(payload.sender) : null
+  // Anything else (every edit, a polled review, a polled comment changed since creation) is
+  // `unknown` here. Capture may then verify it from GitHub's edit history: the author and every
+  // editor, never the last editor alone (`feedback-edit-history.ts`).
+  const attribution: GitHubFeedbackContent['attribution'] =
+    creation && (verifiedWebhook || unchangedCreation) ? 'creation' : 'unknown'
+  const editor = null
+  // The signed sender of an edit is one more editor to verify, never proof by itself.
+  const editedBy =
+    payload.action === 'edited' && verifiedWebhook ? (githubContentIdentity(payload.sender) ?? undefined) : undefined
   const providerVersion =
     objectKind === 'review' || (event.githubObservation?.kind === 'poll' && objectKind === 'issue')
       ? null
@@ -486,20 +532,11 @@ export function normalizeGitHubFeedback(
     body: notificationBody.slice(0, 24000),
     url,
   }
-  // Hash the COMPLETE reviewed object, independently of transport/timestamp/event key.
-  const reviewed = {
-    normalizationVersion: 1,
-    repositoryId,
-    nativeId,
-    objectKind,
-    author,
-    editor,
-    attribution,
-    url,
-    data,
-  }
-  const bytes = Buffer.byteLength(JSON.stringify(canonical(reviewed)))
-  const contentHash = githubContentHash(reviewed)
+  const { contentHash, byteCount: bytes } = githubContentReviewed(
+    { repositoryId, nativeId, objectKind, author, editor, attribution },
+    delivery
+  )
+  const native = nodeId(item.node_id)
   return {
     content: {
       normalizationVersion: 1,
@@ -512,9 +549,70 @@ export function normalizeGitHubFeedback(
       providerVersion,
       contentHash,
       byteCount: bytes,
-      reason: bytes > 256 * 1024 ? 'content_unavailable' : null,
-      delivery: bytes > 256 * 1024 ? null : delivery,
+      reason: bytes > REVIEWED_LIMIT ? 'content_unavailable' : null,
+      delivery: bytes > REVIEWED_LIMIT ? null : delivery,
+      ...(native ? { nodeId: native } : {}),
+      ...(editedBy ? { editedBy } : {}),
     },
     status,
   }
+}
+
+/** Hash and size of a content object's COMPLETE reviewed object, independently of transport/timestamp/event key. */
+function githubContentReviewed(
+  identity: Pick<
+    GitHubFeedbackContent,
+    'repositoryId' | 'nativeId' | 'objectKind' | 'author' | 'editor' | 'attribution'
+  >,
+  delivery: IntegrationOutputFact
+): { contentHash: string; byteCount: number } {
+  const reviewed = {
+    normalizationVersion: 1,
+    repositoryId: identity.repositoryId,
+    nativeId: identity.nativeId,
+    objectKind: identity.objectKind,
+    author: identity.author,
+    editor: identity.editor,
+    attribution: identity.attribution,
+    url: delivery.url,
+    data: delivery.data,
+  }
+  return {
+    contentHash: githubContentHash(reviewed),
+    byteCount: Buffer.byteLength(JSON.stringify(canonical(reviewed))),
+  }
+}
+
+/**
+ * The same content version, attributed by its verified edit history. The editors become part of the
+ * delivery (`data.editors`) and therefore of the reviewed hash: an approval or automatic decision
+ * binds this exact text AND this exact set of editors. Null when the content cannot carry it
+ * (an action, already attributed, unavailable, or too large once the editors are added).
+ */
+export function withGitHubEditorVerification(
+  content: GitHubFeedbackContent,
+  verification: GitHubEditorVerification
+): GitHubFeedbackContent | null {
+  if (content.objectKind === 'action' || content.attribution !== 'unknown' || !content.delivery || !content.author)
+    return null
+  const delivery: IntegrationOutputFact = {
+    ...content.delivery,
+    data: {
+      ...content.delivery.data,
+      ...(verification.attribution === 'verified_edit' ? { editors: verification.editors } : {}),
+    },
+  }
+  const editor = verification.attribution === 'verified_edit' ? verification.editor : null
+  const reviewed = githubContentReviewed({ ...content, editor, attribution: verification.attribution }, delivery)
+  if (reviewed.byteCount > REVIEWED_LIMIT) return null
+  const { editedBy: _hint, ...rest } = content
+  return { ...rest, editor, attribution: verification.attribution, ...reviewed, delivery }
+}
+
+/** The verified editors a delivery carries, by numeric ID; null when absent or malformed. */
+export function githubDeliveryEditors(delivery: IntegrationOutputFact | null | undefined): string[] | null {
+  const editors = delivery?.data.editors
+  if (!Array.isArray(editors) || editors.length === 0) return null
+  const ids = editors.map((editor) => record(editor).accountId)
+  return ids.every((id) => typeof id === 'string' && /^[1-9][0-9]{0,15}$/.test(id)) ? (ids as string[]) : null
 }

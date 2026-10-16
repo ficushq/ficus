@@ -36,9 +36,11 @@ const storedTextHash = (field: 'body' | 'title') =>
  *   (`user`) but not who last edited the title or description, and anyone with write access may have
  *   rewritten them. So, as for the parent in managed memory reads, the LATEST captured revision of
  *   the parent with exactly this title and body decides: an automatic or human-allowed revision
- *   attributed to its creation by this same author proves it; a pending or denied one refuses it.
- *   Without such a revision, only a payload whose clock shows no change since creation
- *   (`created_at` equals `updated_at`) proves it. Anything else stays facts-only.
+ *   attributed to this same author, by its creation or by a verified edit history in which only
+ *   that author edited it, proves it; a pending or denied one refuses it. Without such a revision,
+ *   only `parentText.unchanged` proves it: the payload's clock shows no change since creation, or
+ *   capture read GitHub's edit history and found only the author's own edits. Anything else stays
+ *   facts-only.
  */
 export async function isGitHubParentTextAdmissible(
   executor: Pick<typeof db, 'select'>,
@@ -53,6 +55,7 @@ export async function isGitHubParentTextAdmissible(
       decision: githubFeedbackRevisions.decision,
       attribution: githubFeedbackRevisions.attribution,
       author: githubFeedbackRevisions.author,
+      editors: sql<unknown>`${githubFeedbackRevisions.envelope} #> '{data,editors}'`,
     })
     .from(githubFeedbackRevisions)
     .innerJoin(githubFeedbackObjects, eq(githubFeedbackObjects.id, githubFeedbackRevisions.objectId))
@@ -72,8 +75,14 @@ export async function isGitHubParentTextAdmissible(
   if (match && match.decision !== 'historical')
     return (
       ['automatic', 'allow_once', 'allow_trust'].includes(match.decision) &&
-      match.attribution === 'creation' &&
-      match.author?.accountId === parent.author.accountId
+      match.author?.accountId === parent.author.accountId &&
+      (match.attribution === 'creation' ||
+        (match.attribution === 'verified_edit' &&
+          Array.isArray(match.editors) &&
+          match.editors.length > 0 &&
+          match.editors.every(
+            (editor) => (editor as { accountId?: unknown } | null)?.accountId === parent.author.accountId
+          )))
     )
   return parent.unchanged
 }

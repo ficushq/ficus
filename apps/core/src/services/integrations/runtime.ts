@@ -93,6 +93,7 @@ import { resolveExportDelivery, resolveExportDeliveryDecision } from './export/d
 import { encrypt, decrypt, getEncryptionKey } from '../secrets/crypto'
 import { dispatchVerifiedWebhookEvent } from '../webhooks/dispatch'
 import { getLastRealWebhookDeliveriesForRepos } from '../webhooks/store'
+import { getLastGitHubRelayDeliveries } from './github/relay-deliveries'
 import { EventPollingRunner } from './event-polling-runner'
 import { DbEventPollingCursorStore } from './db-event-polling-cursor-store'
 import { DbEventPollingDispatchStore } from './db-event-polling-dispatch-store'
@@ -502,6 +503,7 @@ const githubPrWatchPolicy = new GitHubPrWatchPolicy({
   listWorkStreams: listGitHubPrWorkStreamCandidates,
   listSquads: listGitHubTriggerSquads,
   lastRealDeliveries: getLastRealWebhookDeliveriesForRepos,
+  lastRelayDeliveries: getLastGitHubRelayDeliveries,
   expandRepositories: expandGitHubRepositories,
 })
 const observedPollingSquads = new WeakMap<object, string[]>()

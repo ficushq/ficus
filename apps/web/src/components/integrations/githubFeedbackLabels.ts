@@ -21,6 +21,7 @@ const REASON_LABELS: Record<string, string> = {
   untrusted_author: 'Author is not trusted in this squad',
   unknown_identity: 'Author or event could not be identified',
   unknown_editor: 'Who made or edited this could not be verified',
+  untrusted_editor: 'Edited by someone who is not trusted in this squad',
   source_unverified: 'GitHub could not confirm this event belongs to the connected repository',
   previously_held: 'An earlier version of this event was held',
   stale_observation: 'Observed out of order; a newer version may exist',

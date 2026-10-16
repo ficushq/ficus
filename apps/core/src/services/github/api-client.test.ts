@@ -1,6 +1,6 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import * as resolveConnection from '../integrations/github/resolve-connection'
-import { githubApiGet, GitHubApiUnavailableError } from './api-client'
+import { githubApiGet, githubApiGraphql, GitHubApiUnavailableError } from './api-client'
 
 const spies: Array<{ mockRestore(): void }> = []
 afterEach(() => {
@@ -113,4 +113,22 @@ test('a network failure or missing token is unavailable', async () => {
       (e: GitHubApiUnavailableError) => e.reason
     )
   ).toBe('network')
+})
+
+test('GraphQL reads return data, treat denials and query errors as null, and an outage as unavailable', async () => {
+  const url = 'https://api.github.com/graphql'
+  const query = (response: Response) => {
+    for (const spy of spies.splice(0)) spy.mockRestore()
+    const calls = stubGitHub({ [url]: response })
+    return { calls, read: githubApiGraphql('query { viewer { login } }', {}, 'squad', 'connection') }
+  }
+  const ok = query(Response.json({ data: { viewer: { login: 'x' } } }))
+  expect(await ok.read).toEqual({ viewer: { login: 'x' } })
+  expect(ok.calls).toEqual([{ url, authorization: 'Bearer token' }])
+  expect(await query(Response.json({ data: { node: null }, errors: [{ type: 'NOT_FOUND' }] })).read).toBeNull()
+  expect(await query(new Response('denied', { status: 403 })).read).toBeNull()
+  await expect(query(Response.json({ errors: [{ type: 'RATE_LIMITED' }] })).read).rejects.toBeInstanceOf(
+    GitHubApiUnavailableError
+  )
+  await expect(query(new Response('down', { status: 502 })).read).rejects.toBeInstanceOf(GitHubApiUnavailableError)
 })

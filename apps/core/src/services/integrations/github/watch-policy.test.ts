@@ -78,6 +78,45 @@ describe('GitHubPrWatchPolicy', () => {
     delivery = new Date('2026-08-25T23:00:00Z')
     expect(await policy.listWatches()).toEqual([])
   })
+
+  test('a live hosted-relay delivery suppresses polling for that connection and repository; a stale one resumes it', async () => {
+    let relay: Date | null = null
+    const requested: unknown[] = []
+    const policy = new GitHubPrWatchPolicy({
+      resolveConnection: async (squadId, connectionId) => (connectionId ? undefined : { id: `account-${squadId}` }),
+      listWorkStreams: async () => [
+        { squadId: 's1', status: 'active', metadata: { github: { repo: 'Acme/Widgets', pr: { number: 42 } } } },
+        { squadId: 's1', status: 'active', metadata: { github: { repo: 'acme/other', pr: { number: 7 } } } },
+        { squadId: 's2', status: 'active', metadata: { github: { repo: 'acme/widgets', pr: { number: 42 } } } },
+      ],
+      // No direct webhook rows on a cloud instance: deliveries arrive through the relay only.
+      lastRealDeliveries: async () => new Map(),
+      lastRelayDeliveries: async (pairs) => {
+        requested.push(pairs)
+        return new Map(relay ? [['account-s1:acme/widgets', relay]] : [])
+      },
+      now: () => new Date('2026-08-26T00:00:00Z'),
+      realDeliveryLookbackDays: 7,
+    })
+    const keys = async () => (await policy.listWatches()).map((watch) => watch.resourceKey).sort()
+    const all = ['s1:account-s1:acme/other#7', 's1:account-s1:acme/widgets#42', 's2:account-s2:acme/widgets#42']
+
+    expect(await keys()).toEqual(all)
+    expect(requested[0]).toEqual([
+      { connectionId: 'account-s1', repository: 'acme/widgets' },
+      { connectionId: 'account-s1', repository: 'acme/other' },
+      { connectionId: 'account-s2', repository: 'acme/widgets' },
+    ])
+    // The relay is live for this connection's repository: only that repository stops polling.
+    relay = new Date('2026-08-25T23:59:30Z')
+    expect(await keys()).toEqual(['s1:account-s1:acme/other#7', 's2:account-s2:acme/widgets#42'])
+    // The relay went stale: polling resumes as the fallback, from the last relayed delivery.
+    relay = new Date('2026-08-01T00:00:00Z')
+    const resumed = (await policy.listWatches()).find((watch) => watch.resourceKey === 's1:account-s1:acme/widgets#42')
+    expect(resumed!.connection.configuration).toMatchObject({
+      lastVerifiedWebhookDeliveryAt: '2026-08-01T00:00:00.000Z',
+    })
+  })
 })
 
 test('flow subscriptions discover PRs through custom metadata and drop watches when their binding disappears', async () => {
