@@ -119,7 +119,7 @@ const SUMMARIES: Record<string, (args: Args) => string> = {
   stop_subagent: (a) => str(a.subagentId),
   delegate_task: (a) => {
     const name = delegateTaskName(a)
-    return name ? `Background task: ${truncate(name, 60)}` : 'Background task'
+    return name ? truncate(name, 60) : 'Background task'
   },
   assistant_inbox: () => 'Task update',
   search_ficus: (a) => `Searched Ficus for “${truncate(str(a.query) || str(a.q), 40)}”`,

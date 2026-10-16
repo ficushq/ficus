@@ -71,7 +71,7 @@ test('rendered tool entries keep a label: the summary or text when present, the 
         />
       )
     )
-    expect(document.body.textContent).toContain('Background task: Check enabled schedules')
+    expect(document.body.textContent).toContain('Check enabled schedules')
     expect(document.body.textContent).not.toContain('delegate_task')
 
     // (b) an un-rendered tool still shows its raw name.

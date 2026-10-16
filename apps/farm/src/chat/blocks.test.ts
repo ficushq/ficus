@@ -33,13 +33,11 @@ describe('toolSummary', () => {
 
   it('names a delegated task by its label, else the first line of its request', () => {
     const summary = (args: object) => toolSummary('delegate_task', JSON.stringify(args))
-    expect(summary({ label: 'Check schedules', request: 'Which are enabled?' })).toBe(
-      'Background task: Check schedules'
-    )
+    expect(summary({ label: 'Check schedules', request: 'Which are enabled?' })).toBe('Check schedules')
     expect(summary({ request: '\n Which schedules are enabled? \nPause the nightly one.' })).toBe(
-      'Background task: Which schedules are enabled?'
+      'Which schedules are enabled?'
     )
-    expect(summary({ label: ' ', request: 'Rotate the deploy key' })).toBe('Background task: Rotate the deploy key')
+    expect(summary({ label: ' ', request: 'Rotate the deploy key' })).toBe('Rotate the deploy key')
     expect(summary({})).toBe('Background task')
     expect(summary({ request: '  \n' })).toBe('Background task')
   })

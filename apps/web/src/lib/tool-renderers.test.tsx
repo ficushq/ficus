@@ -291,11 +291,12 @@ describe('tool inline actions', () => {
 })
 
 describe('site assistant task renderers', () => {
-  it('delegate_task summarizes by label and shows the request, not the tool name', () => {
+  it('delegate_task summarizes by label alone and shows the request, not the tool name', () => {
     const args = JSON.stringify({ label: 'Check enabled schedules', request: 'Which schedules are enabled?' })
+    // The row already names the tool, so the summary is just the task name with no "Background task:" prefix.
     expect(
       renderToStaticMarkup(<ToolSummary renderers={siteAssistantToolRenderers} toolName="delegate_task" args={args} />)
-    ).toContain('Background task: Check enabled schedules')
+    ).toContain('>Check enabled schedules<')
     const html = renderToStaticMarkup(
       <ToolArgsView renderers={siteAssistantToolRenderers} toolName="delegate_task" args={args} />
     )
@@ -309,13 +310,11 @@ describe('site assistant task renderers', () => {
         <ToolSummary renderers={siteAssistantToolRenderers} toolName="delegate_task" args={JSON.stringify(args)} />
       )
     expect(summary({ request: '\n  Check which schedules are enabled  \nThen pause the nightly one.' })).toContain(
-      'Background task: Check which schedules are enabled<'
+      '>Check which schedules are enabled<'
     )
-    expect(summary({ label: '   ', request: 'Rotate the deploy key' })).toContain(
-      'Background task: Rotate the deploy key'
-    )
+    expect(summary({ label: '   ', request: 'Rotate the deploy key' })).toContain('Rotate the deploy key')
     const long = 'Investigate why the nightly deploy keeps failing on the staging cluster since Tuesday'
-    expect(summary({ request: `${long}\nmore detail` })).toContain(`Background task: ${long.slice(0, 60)}...`)
+    expect(summary({ request: `${long}\nmore detail` })).toContain(`${long.slice(0, 60)}...`)
   })
 
   it('delegate_task with neither label nor request reads as a generic background task', () => {
@@ -325,8 +324,7 @@ describe('site assistant task renderers', () => {
       )
     for (const args of [{}, { request: '  \n ' }]) {
       const html = summary(args)
-      expect(html).toContain('Background task')
-      expect(html).not.toContain('Background task:')
+      expect(html).toContain('>Background task<')
       expect(html).not.toContain('background task')
     }
   })
@@ -353,7 +351,7 @@ describe('site assistant task renderers', () => {
     ).toContain('Running in the background')
     expect(
       renderToStaticMarkup(<ToolSummary renderers={siteAssistantToolRenderers} toolName="delegate_task" args={args} />)
-    ).toContain('Background task: Pause deploy stream')
+    ).toContain('Pause deploy stream')
   })
 
   it('assistant_inbox renders as a task update with the content only', () => {

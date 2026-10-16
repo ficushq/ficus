@@ -1174,7 +1174,7 @@ const delegateTaskRenderer: ToolRenderer = {
   streamingArgs: true,
   summary: (args) => {
     const name = delegateTaskName(args)
-    return name ? `Background task: ${truncate(name, 60)}` : 'Background task'
+    return name ? truncate(name, 60) : 'Background task'
   },
   ArgsView: ({ args }) => <div className="whitespace-pre-wrap text-[12px]">{str(args.request)}</div>,
   ResultView: ({ result, isError }) => {
