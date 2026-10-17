@@ -86,6 +86,9 @@ export const NON_HOME_PATH_COLUMNS: readonly string[] = [
   'memory_access_audit.resource_path',
   // A skill's support files: names relative to the skill's own directory, never absolute.
   'skills.support_files',
+  // Directories queued by the storage scanner: paths on VM sandbox machines (`/home/box_…`), never the
+  // core host's HOME_DIR.
+  'storage_scan_items.path',
 ]
 
 /** The name rebase-home prints and returns a column's count under. */
