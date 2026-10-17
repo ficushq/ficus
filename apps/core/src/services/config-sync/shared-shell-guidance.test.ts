@@ -36,8 +36,12 @@ describe('local app deployment guidance', () => {
     for (const setting of ['base', 'basePath', 'PUBLIC_URL']) expect(skill).toContain(setting)
     expect(skill).toContain("basePath: process.env.FICUS_APP_BASE_PATH?.replace(/\\/$/, '')")
 
-    expect(skill).toContain('WebSocket upgrades are not supported')
-    expect(skill).toMatch(/SSE|polling/)
+    // The app proxy relays WebSocket upgrades (local-deployment-websocket.ts);
+    // agents must not steer apps away from them or open them outside the app path.
+    expect(skill).toContain('WebSockets work through the app proxy')
+    expect(skill).not.toContain('WebSocket upgrades are not supported')
+    expect(skill).toContain('never a bare `/ws`')
+    expect(skill).toMatch(/Sockets drop; reconnect/)
   })
 
   test('visual review uses a Ficus-managed app with an assigned port', async () => {
