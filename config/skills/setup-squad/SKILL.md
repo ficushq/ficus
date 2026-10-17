@@ -156,6 +156,8 @@ ficus --json squad get <squad-id>
 ficus memory search "<distinctive heading from an included doc>" --squad <squad-id> --source-type workspace_file --mode keyword
 ```
 
+The top-level `filesIndexed` counts vault files, so zero is expected for a
+workspace-only rescan. Use `workspaceFilesScanned` for the workspace scan.
 Check `workspaceFilesScanError`, the scan count, and
 `metadata.memory.workspaceScanStatus` (freshness and skipped-file reasons), then
 confirm a representative result from the intended path. A successful HTTP response

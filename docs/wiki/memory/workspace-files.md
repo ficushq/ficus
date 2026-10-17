@@ -112,7 +112,10 @@ sandbox ensure, use `ficus --json memory reindex --squad <squad-id> --source wor
 Check `workspaceFilesScanError` as well as scan counts, inspect
 `metadata.memory.workspaceScanStatus`, and verify a representative document using
 `memory search --source-type workspace_file --mode keyword`. An overall
-`success: true` may still contain a workspace scan error.
+`success: true` may still contain a workspace scan error. The top-level
+`filesIndexed` counts vault files; for a workspace-only rescan, use
+`workspaceFilesScanned` instead. Zero vault files does not mean workspace indexing
+failed.
 
 ### Status
 
