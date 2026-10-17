@@ -1,8 +1,9 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import { WorkspaceWatcher, createWatchPathFilter, isSafeWatchPattern, normalizeWatchConfig } from './watcher'
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync, rmSync, symlinkSync, unlinkSync } from 'fs'
 import { join, relative } from 'path'
 import { tmpdir } from 'os'
+import * as fsPromises from 'fs/promises'
 
 let TEST_DIR: string
 beforeEach(() => {
@@ -29,6 +30,32 @@ test('v5 filter preserves glob ancestors and deletions without traversing unrela
   expect(ignored(join(TEST_DIR, 'ficus/docs/live.ts'), file)).toBe(true)
   expect(ignored(join(TEST_DIR, 'config/nested'), dir)).toBe(true)
   expect(ignored(join(TEST_DIR, '../outside'), dir)).toBe(true)
+})
+
+test('initial scans prune unrelated and excluded trees before enumerating their contents', async () => {
+  for (const dir of [
+    'repo/docs/deep',
+    'repo/docs/private',
+    'repo/docs/node_modules/pkg',
+    'repo/src',
+    'worktrees/old',
+  ]) {
+    mkdirSync(join(TEST_DIR, dir), { recursive: true })
+    writeFileSync(join(TEST_DIR, dir, 'note.md'), '# Reference')
+  }
+  writeFileSync(join(TEST_DIR, 'README.md'), '# Root')
+  const reads = spyOn(fsPromises, 'readdir')
+  try {
+    const result = await WorkspaceWatcher.scanFiles(TEST_DIR, {
+      include: ['README.md', 'repo/{docs,notes}/**/*.md'],
+      exclude: ['**/private/**'],
+    })
+    expect(result.files.map((file) => file.path).sort()).toEqual(['README.md', 'repo/docs/deep/note.md'])
+    const visited = reads.mock.calls.map(([path]) => relative(TEST_DIR, String(path)))
+    expect(visited.sort()).toEqual(['', 'repo', 'repo/docs', 'repo/docs/deep'])
+  } finally {
+    reads.mockRestore()
+  }
 })
 
 describe('normalizeWatchConfig', () => {

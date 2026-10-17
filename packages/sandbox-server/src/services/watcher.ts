@@ -185,7 +185,11 @@ function isBinary(buffer: Buffer): boolean {
   return false
 }
 
-async function walkDir(dir: string, rootDir: string): Promise<string[]> {
+async function walkDir(
+  dir: string,
+  rootDir: string,
+  ignored: ReturnType<typeof createWatchPathFilter>
+): Promise<string[]> {
   const results: string[] = []
   const pending = [dir]
 
@@ -211,7 +215,7 @@ async function walkDir(dir: string, rootDir: string): Promise<string[]> {
       // to parent directories (for example tool caches or user-created links),
       // and following them can recurse indefinitely until the process throws
       // "Maximum call stack size exceeded".
-      if (fileStat.isSymbolicLink()) continue
+      if (fileStat.isSymbolicLink() || ignored(fullPath, fileStat)) continue
 
       if (fileStat.isDirectory()) {
         // Skip dot-prefixed directories
@@ -520,7 +524,9 @@ export class WorkspaceWatcher {
   }
 
   static async scanFiles(rootDir: string, opts: { include: string[]; exclude: string[] }): Promise<ScanResult> {
-    const allPaths = await walkDir(rootDir, rootDir)
+    // Apply the same traversal bounds as the live watcher before visiting children.
+    // Filtering only after walking can spend minutes in excluded dependency trees.
+    const allPaths = await walkDir(rootDir, rootDir, createWatchPathFilter(rootDir, opts.include, opts.exclude))
     const allExcludes = [...DEFAULT_EXCLUDES, ...opts.exclude]
 
     // Match per include pattern to enforce per-pattern file limits
