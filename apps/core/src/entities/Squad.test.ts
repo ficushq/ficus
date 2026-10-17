@@ -42,6 +42,53 @@ describe('Squad entity', () => {
       expect(squad.toJson().globalCollaborationEnabled).toBe(false)
     })
 
+    it('enables shared memory without selecting workspace paths or sync providers', async () => {
+      const squad = await Squad.create({ name: `${testPrefix} Memory Default`, purpose: 'Testing' })
+      const persisted = await Squad.mustFind(squad.id)
+      expect(persisted.isMemoryEnabled).toBe(true)
+      expect(persisted.memoryConfig).toEqual({ enabled: true })
+    })
+
+    it('preserves an explicit memory opt-out and its other settings', async () => {
+      const memory = { enabled: false, workspacePaths: { include: ['repo/docs/**/*.md'] } }
+      const squad = await Squad.create({
+        name: `${testPrefix} Memory Opt Out`,
+        purpose: 'Testing',
+        metadata: { memory, repo: 'repo' },
+      })
+      expect((await Squad.mustFind(squad.id)).isMemoryEnabled).toBe(false)
+      expect(squad.metadata).toEqual({ memory, repo: 'repo' })
+      await squad.update({ purpose: 'Unrelated update' })
+      expect((await Squad.mustFind(squad.id)).isMemoryEnabled).toBe(false)
+    })
+
+    it('defaults enablement while preserving supplied memory settings', async () => {
+      const memory = { embeddingModel: 'custom-model', workspacePaths: { include: ['repo/README.md'] } }
+      const squad = await Squad.create({
+        name: `${testPrefix} Memory Settings`,
+        purpose: 'Testing',
+        metadata: { memory },
+      })
+      expect(squad.memoryConfig).toEqual({ ...memory, enabled: true })
+    })
+
+    it('does not enable a legacy squad when reading or updating unrelated metadata', async () => {
+      const [row] = await db
+        .insert(squads)
+        .values({
+          name: `${testPrefix} Legacy Memory`,
+          purpose: 'Testing',
+          metadata: { repo: 'legacy' },
+        })
+        .returning()
+      const squad = await Squad.mustFind(row.id)
+      expect(squad.isMemoryEnabled).toBe(false)
+      await squad.update({ metadata: { another: 'value' } })
+      const persisted = await Squad.mustFind(row.id)
+      expect(persisted.isMemoryEnabled).toBe(false)
+      expect(persisted.metadata).toEqual({ repo: 'legacy', another: 'value' })
+    })
+
     it('does not create a workspace before storage is needed', async () => {
       const squad = await Squad.create({
         name: `${testPrefix} Lazy Workspace`,
@@ -67,7 +114,7 @@ describe('Squad entity', () => {
       expect(squad.squadPresetId).toBe('engineering-squad')
       expect(squad.defaultAgents).toEqual(['architect', 'engineer'])
       expect(squad.context).toBe('Use TypeScript and follow our API conventions.')
-      expect(squad.metadata).toEqual({ repo: 'backend-api' })
+      expect(squad.metadata).toEqual({ repo: 'backend-api', memory: { enabled: true } })
     })
 
     it('provisions a manager-targeted schedule template without failing (manager exists first)', async () => {
@@ -221,6 +268,7 @@ describe('Squad entity', () => {
       })
 
       expect(updated.metadata).toEqual({
+        memory: { enabled: true },
         notifications: {
           discord: { instanceId: 'inst-1', channelId: '123' },
           slack: { instanceId: 'inst-2', channelId: 'C456' },
@@ -272,6 +320,7 @@ describe('Squad entity', () => {
       })
 
       expect(updated.metadata).toEqual({
+        memory: { enabled: true },
         notifications: {
           discord: { instanceId: 'inst-1', channelId: '123' },
         },
@@ -293,6 +342,7 @@ describe('Squad entity', () => {
       })
 
       expect(updated.metadata).toEqual({
+        memory: { enabled: true },
         tags: ['newTag'],
       })
     })

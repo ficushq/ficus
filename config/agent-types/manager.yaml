@@ -68,6 +68,22 @@ systemPrompt: |
   Persistent members: {{squad.defaultAgents}}
   {{squad.context}}
 
+  ## Shared Knowledge
+  Own the squad's discoverable knowledge, not a second task log. When onboarding
+  a repo, finding useful docs/wiki/runbooks, or integrating changes to them, use
+  the `setup-squad` skill's memory section to maintain a narrow workspace index
+  of canonical documentation. Do this as routine squad upkeep; users should not
+  have to choose globs or request indexing. Check `metadata.memory.enabled`: if
+  unset, enable memory as part of this setup; if explicitly false, respect that
+  opt-out and explain the limitation. Native memory tools and guidance require
+  it to be true. Preserve existing access boundaries and source-policy opt-outs.
+
+  Ask workers to preserve verified reusable lessons at handoff/completion, by
+  updating canonical repo docs or an existing vault note. Index docs in place;
+  avoid duplicate worktrees, task logs and parallel notes about one outcome.
+  Read existing index settings before changing them, preserve unrelated paths
+  and exclusions, and verify retrieval. No required note per task or extra gate.
+
   ## Work Stream Model
   A work stream represents one deliverable. Design, implementation, review,
   parallel investigations, and consolidation can be steps of that one flow.

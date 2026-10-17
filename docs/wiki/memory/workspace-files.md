@@ -27,14 +27,33 @@ Sandbox Pod                              Core
 
 ## Configuration
 
-In squad settings → Workspace Indexing:
+New squads have shared memory enabled by default. Managers maintain a narrow
+index of canonical workspace documentation during repo setup and docs upkeep.
+Squad settings still allow opting out or editing Workspace Indexing manually.
+Without `metadata.memory.enabled: true`, squad agents do not receive the memory
+prompt or native memory tools, and workspace watching is not configured.
+
+The include/exclude lists are stored in `metadata.memory.workspacePaths`:
 
 ```typescript
 workspacePaths: {
-  include: ['src/**/*.ts', 'docs/**/*.md'],  // glob patterns relative to /workspace
-  exclude: ['**/*.test.ts']                   // additional excludes
+  include: ['my-repo/README.md', 'my-repo/docs/wiki/**/*.md'], // relative to the squad workspace
+  exclude: ['**/worktrees/**', '**/docs/drafts/**']           // additional excludes
 }
 ```
+
+Managers can inspect configuration with `ficus --json squad get <squad-id>` and
+update it with `ficus squad set-meta <squad-id> memory.workspacePaths '<json>'`.
+Merge existing lists first: arrays are replaced. The `squad source set`
+`workspace_file` ingestion policy is separate and does not select watcher paths.
+See the bundled `setup-squad` skill for the configuration and verification workflow.
+
+Choose maintained documentation in one canonical checkout. Keep accepted decisions,
+architecture and runbooks searchable without copying them into the memory vault.
+Avoid duplicate worktrees, temporary plans, generated files, secrets and raw logs.
+Local file changes are watched; merged GitHub docs are only visible after the local
+checkout is updated. Indexing preserves memory access rules and sensitivity; do not
+broaden access merely to improve search.
 
 ### Default Excludes
 
@@ -67,7 +86,7 @@ Files exceeding limits are skipped and reported in the UI with reasons:
 
 ### Startup
 
-When a sandbox pod starts (or is recreated), core calls `GET /watch` to check status. If the watcher isn't active or the config differs, core sends `POST /watch` to start it. This handles pod restarts — the sandbox always gets its watcher configured.
+When the squad sandbox is ensured, core reconciles the watcher configuration. For container/VM runtimes it calls `GET /watch` to check status. If the watcher isn't active or the config differs, core sends `POST /watch` to start it. This handles pod restarts — the sandbox always gets its watcher configured.
 
 ### Initial Scan
 
@@ -87,6 +106,13 @@ After the initial scan, chokidar watches for changes:
 ### Rescan
 
 `POST /watch/rescan` triggers a full re-scan without restarting the watcher. Used by the reindex endpoint when `source=workspace_file` or `source=all`.
+
+Saving configuration does not itself prove the watcher is running. After a normal
+sandbox ensure, use `ficus --json memory reindex --squad <squad-id> --source workspace_file`.
+Check `workspaceFilesScanError` as well as scan counts, inspect
+`metadata.memory.workspaceScanStatus`, and verify a representative document using
+`memory search --source-type workspace_file --mode keyword`. An overall
+`success: true` may still contain a workspace scan error.
 
 ### Status
 

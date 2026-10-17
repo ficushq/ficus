@@ -308,7 +308,9 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
         defaultAgents: input.defaultAgents ?? [],
         context: input.context ?? null,
         typeContext,
-        metadata: input.metadata ?? {},
+        // New squads start with shared memory. Apply only at creation: legacy
+        // squads and explicit opt-outs must retain their existing behavior.
+        metadata: deepMergeMetadata({ memory: { enabled: true } }, input.metadata ?? {}),
         globalCollaborationEnabled: input.globalCollaborationEnabled ?? false,
         hostWorkspacePath: input.hostWorkspacePath ?? null,
       })
