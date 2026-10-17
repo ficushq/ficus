@@ -112,6 +112,8 @@ export type {
   StorageWarning,
   StorageMonitoring,
   StorageStatus,
+  StorageGrowth,
+  StorageScanProgress,
 } from './storage'
 
 export * from './assistant-agent-types'

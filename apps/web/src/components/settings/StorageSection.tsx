@@ -10,18 +10,19 @@ import { DormantRetentionSettings } from './storage/DormantRetentionSettings'
 import { HostCleanupSection } from './storage/HostCleanupSection'
 import { StorageSquadView } from './storage/StorageSquadView'
 import { StoredFilesSection } from './storage/StoredFilesSection'
-import { storageSize } from './storage/format'
+import { GrowthText } from './storage/FolderRow'
+import { scanProgressLabel, storageSize } from './storage/format'
 
 const scanReasons: Record<NonNullable<StorageMachine['diagnostics']>['reasons'][number], string> = {
-  scan_timeout: 'The scan reached its 45-second time limit.',
+  scan_timeout: 'Some directories could not be measured in time, even in smaller parts; they are marked Partial.',
   permission_denied: 'Some directories could not be read with the scanner’s permissions.',
-  scan_failed: 'The scan command did not complete successfully.',
+  scan_failed: 'The last scan step did not complete; scanning retries automatically.',
   incomplete_output: 'The directory traversal did not return all totals.',
-  missing_home_totals: 'Some sandbox home totals are missing; their measured folders are still shown.',
+  missing_home_totals: 'Some sandbox homes have not been measured yet.',
   disk_usage_unavailable: 'Filesystem capacity could not be measured.',
-  ssh_timeout: 'The connection timed out before results were received.',
-  ssh_failed: 'The machine could not be reached for storage measurement.',
-  machine_not_ready: 'The machine is offline, parked, or not ready to scan.',
+  ssh_timeout: 'The connection timed out during the last scan step; scanning retries automatically.',
+  ssh_failed: 'The machine could not be reached; scanning resumes where it stopped once it is reachable.',
+  machine_not_ready: 'The machine is offline, parked, or not ready; scanning resumes where it stopped.',
 }
 
 export function StorageSection() {
@@ -74,9 +75,11 @@ export function StorageSection() {
       <p className="text-xs text-secondary" role="status">
         {data?.scanning ? 'Measuring storage in the background… ' : ''}
         {data?.monitoring?.nextScanAt
-          ? `Next scheduled scan ${new Date(data.monitoring.nextScanAt).toLocaleString()}. `
+          ? `Next pass starts ${new Date(data.monitoring.nextScanAt).toLocaleString()}. `
           : ''}
-        {data?.scannedAt ? `Last scanned ${new Date(data.scannedAt).toLocaleString()}.` : 'Waiting for the first scan.'}
+        {data?.scannedAt
+          ? `Last measured ${new Date(data.scannedAt).toLocaleString()}.`
+          : 'Waiting for the first scan.'}
       </p>
       {notice && (
         <p role="status" className="text-sm text-primary">
@@ -105,8 +108,19 @@ export function StorageSection() {
             <h3 className="font-medium text-primary">{machine.name}</h3>
             <span className="text-sm text-secondary">
               {storageSize(machine.usedBytes)} used / {storageSize(machine.totalBytes)}
+              {machine.diskGrowth && (
+                <>
+                  {' · '}
+                  <GrowthText growth={machine.diskGrowth} />
+                </>
+              )}
             </span>
           </div>
+          {machine.scan && (
+            <p className="text-xs text-secondary" role="status">
+              {scanProgressLabel(machine.scan)}
+            </p>
+          )}
           {machine.usedBytes !== null && machine.totalBytes !== null && (
             <div
               className="h-2 w-full overflow-hidden rounded-full bg-inset"
@@ -125,7 +139,7 @@ export function StorageSection() {
           {machine.status !== 'available' && (
             <p className="text-sm text-secondary">
               {machine.status === 'partial'
-                ? 'Partial scan. Some directories could not be measured; shown sizes may be incomplete.'
+                ? 'Some homes are not measured yet or could not be fully measured. Each row shows its latest measured size.'
                 : 'Storage is unavailable. The machine may be offline or parked.'}
             </p>
           )}
@@ -135,7 +149,8 @@ export function StorageSection() {
                 <p key={reason}>{scanReasons[reason]}</p>
               ))}
               <p>
-                {machine.diagnostics.measuredHomes} of {machine.diagnostics.expectedHomes} sandbox home totals returned.
+                {machine.diagnostics.measuredHomes} of {machine.diagnostics.expectedHomes} sandbox homes have a
+                measurement.
               </p>
             </div>
           )}
@@ -167,14 +182,16 @@ export function StorageSection() {
           </p>
           <p>
             Other disk usage includes shared tools, system files, and storage not attributed to a squad. Sizes are
-            estimates of allocated space; shared files and changes during a scan can affect attribution. Hardlinked
-            files are counted once and may be attributed to the first folder visited; a folder's size is not a
-            prediction of space freed by deleting it.
+            estimates of allocated space measured at different moments, so totals are approximate. Hardlinked files are
+            counted once within each measured home (or part of a home measured separately); a file hardlinked into
+            several homes counts in each. A folder&apos;s size is not a prediction of space freed by deleting it.
           </p>
           <p>
-            Measurements are saved and scanned by the worker on the configured schedule, even with this page closed.
-            These are the latest measured values, not continuous live readings. Manual requests are limited to once a
-            minute and start on the next worker check. Scanning does not start agents or remove files.
+            Storage is measured continuously in the background, a few homes at a time at low priority, even with this
+            page closed. Each row shows its latest measured size and when it was measured; rows from the previous pass
+            are marked as such until the current pass reaches them. Growth compares against a measurement about a day
+            earlier. Refresh starts a new pass if none is running (at most once a minute). Scanning does not start
+            agents or remove files.
           </p>
         </div>
       )}

@@ -10,7 +10,7 @@ import { removeDormantAgents } from '../../../api/system'
 import { terminateSquadAgent } from '../../../api/squads'
 import { ChevronRightIcon } from '../../icons'
 import { ConfirmStorageAction } from './ConfirmStorageAction'
-import { FolderRow } from './FolderRow'
+import { FolderRow, GrowthText, HomeMeta } from './FolderRow'
 import { IdleConsultantsDialog } from './IdleConsultantsDialog'
 import { agentDetails, automaticRemovalDate, measuredSize, removalSummary, storageSize, sumBytes } from './format'
 
@@ -43,6 +43,7 @@ function AgentRow({ folder, action }: { folder: StorageFolder; action?: ReactNod
         <span className="block text-xs text-secondary">
           {agent ? agentDetails(agent) : 'Details appear after the next scan'}
         </span>
+        <HomeMeta folder={folder} />
         {agent?.removalError && (
           <span className="block text-xs text-status-danger-400">Removal failed: {agent.removalError}</span>
         )}
@@ -144,7 +145,14 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
         <ChevronRightIcon className="h-4 w-4 shrink-0 text-secondary" />
         <span className="inline-flex w-full min-w-0 justify-between gap-4 text-sm">
           <span className="min-w-0 break-words font-medium">{squad.name}</span>
-          <span className="shrink-0 tabular-nums">{measuredSize(squad)}</span>
+          <span className="flex shrink-0 items-baseline gap-3 tabular-nums">
+            {squad.growth && (
+              <span className="text-xs">
+                <GrowthText growth={squad.growth} />
+              </span>
+            )}
+            <span>{measuredSize(squad)}</span>
+          </span>
         </span>
       </summary>
       <div className="space-y-2 pb-3 pl-5">

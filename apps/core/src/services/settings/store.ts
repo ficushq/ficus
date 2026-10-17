@@ -80,9 +80,10 @@ export class SettingValidationError extends Error {
 const KNOWN_SETTINGS: Record<string, SettingDef> = {
   STORAGE_SCAN_INTERVAL_HOURS: {
     type: 'number',
-    default: '12',
+    default: '1',
     crossProcess: true,
-    description: 'Hours between background storage scans; 0 disables scheduled scans.',
+    description:
+      'Hours between the starts of full background storage passes (a pass that takes longer is followed immediately by the next); 0 disables scheduled passes.',
     validate: (value) =>
       value.trim() &&
       Number.isFinite(Number(value)) &&

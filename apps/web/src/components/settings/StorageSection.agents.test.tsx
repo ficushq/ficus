@@ -188,7 +188,7 @@ describe('StorageSection agents', () => {
   test('puts usage first and the settings last, under a Settings heading', () => {
     const html = render(['system:logs', 'system:cleanup', 'settings:write'])
     const order = [
-      'Last scanned',
+      'Last measured',
       '>Product<',
       'Expand a squad to inspect',
       'Files stored by Ficus',

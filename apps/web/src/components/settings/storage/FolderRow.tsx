@@ -1,12 +1,39 @@
-import type { StorageFolder } from '@ficus/shared'
+import type { StorageFolder, StorageGrowth } from '@ficus/shared'
 import { ChevronRightIcon } from '../../icons'
-import { measuredSize } from './format'
+import { fastGrowth, growthLabel, homeFreshness, measuredSize } from './format'
+
+/** Growth since an earlier measurement; 1 GiB or more is highlighted. */
+export function GrowthText({ growth }: { growth?: StorageGrowth }) {
+  if (!growth) return null
+  return (
+    <span
+      data-storage-growth
+      className={fastGrowth(growth) ? 'font-medium text-status-attention-500' : 'text-secondary'}
+    >
+      {growthLabel(growth)}
+    </span>
+  )
+}
+
+/** When a box home was measured, whether it is from an earlier pass, and how it changed. */
+export function HomeMeta({ folder }: { folder: StorageFolder }) {
+  const freshness = homeFreshness(folder)
+  if (!freshness && !folder.growth) return null
+  return (
+    <span className="block text-xs text-secondary">
+      {freshness}
+      {freshness && folder.growth ? ' · ' : ''}
+      <GrowthText growth={folder.growth} />
+    </span>
+  )
+}
 
 export function FolderRow({ folder }: { folder: StorageFolder }) {
   const label = (
     <span className="inline-flex w-full min-w-0 items-baseline justify-between gap-4">
-      <span className="min-w-0 break-all" title={folder.path}>
-        {folder.name}
+      <span className="min-w-0 break-all">
+        <span title={folder.path}>{folder.name}</span>
+        <HomeMeta folder={folder} />
       </span>
       <span className="shrink-0 tabular-nums text-secondary">{measuredSize(folder)}</span>
     </span>

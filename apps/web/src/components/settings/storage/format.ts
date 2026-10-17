@@ -1,4 +1,11 @@
-import type { IdleConsultantsDormancyResult, RemoveDormantAgentsResult, StorageAgent } from '@ficus/shared'
+import type {
+  IdleConsultantsDormancyResult,
+  RemoveDormantAgentsResult,
+  StorageAgent,
+  StorageFolder,
+  StorageGrowth,
+  StorageMachine,
+} from '@ficus/shared'
 
 export function storageSize(bytes: number | null): string {
   if (bytes === null) return 'Unavailable'
@@ -14,6 +21,33 @@ export function measuredSize(item: { bytes: number | null; status?: string }): s
 }
 
 const DAY_MS = 86_400_000
+
+/** "45s", "12m", "3h", "2d". */
+export function durationLabel(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+  if (seconds < 172_800) return `${Math.round(seconds / 3600)}h`
+  return `${Math.round(seconds / 86_400)}d`
+}
+
+/** "+12.0 GiB in 24h", "−300.0 MiB in 3h", "no change in 1h". */
+export function growthLabel(growth: StorageGrowth, now = Date.now()): string {
+  const window = durationLabel(now - Date.parse(growth.since))
+  if (growth.bytes === 0) return `no change in ${window}`
+  return `${growth.bytes > 0 ? '+' : '−'}${storageSize(Math.abs(growth.bytes))} in ${window}`
+}
+
+/** Growth worth calling out: at least 1 GiB. */
+export const fastGrowth = (growth: StorageGrowth | undefined) => Boolean(growth && growth.bytes >= 1024 ** 3)
+
+/** "measured 12m ago · previous pass · +1.2 GiB in 24h" for a box home; empty before incremental scanning. */
+export function homeFreshness(folder: Pick<StorageFolder, 'measuredAt' | 'freshness'>, now = Date.now()): string {
+  if (!folder.measuredAt) return ''
+  const parts = [`measured ${durationLabel(now - Date.parse(folder.measuredAt))} ago`]
+  if (folder.freshness === 'previous') parts.push('previous pass')
+  return parts.join(' · ')
+}
 
 /** "today", "1 day ago", "12 days ago". */
 export function daysAgoLabel(iso: string, now = Date.now()): string {
@@ -63,4 +97,14 @@ export function idleDormancySummary(result: IdleConsultantsDormancyResult & { er
   }
   if (result.error) parts.push(`Stopped after an error: ${result.error}`)
   return parts.join(' ')
+}
+
+/** "Pass 14: 180 of 234 homes measured, started 12m ago." */
+export function scanProgressLabel(scan: NonNullable<StorageMachine['scan']>, now = Date.now()): string {
+  const started = `${durationLabel(now - Date.parse(scan.passStartedAt))} ago`
+  if (scan.state === 'running')
+    return `Pass ${scan.generation}: ${scan.measuredHomes} of ${scan.totalHomes} homes measured, started ${started}.`
+  return scan.lastCompletedAt
+    ? `Last full pass finished ${durationLabel(now - Date.parse(scan.lastCompletedAt))} ago.`
+    : `Pass ${scan.generation} started ${started}.`
 }

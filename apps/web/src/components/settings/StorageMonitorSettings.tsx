@@ -33,7 +33,7 @@ export function StorageMonitorSettings({ config }: { config: StorageMonitoring }
       <h3 className="font-medium">Background monitoring</h3>
       <div className="flex flex-wrap gap-4">
         <label className="text-sm space-y-1">
-          Scan interval (hours; 0 disables)
+          Hours between full passes (0 disables)
           <input
             className="ficus-field block w-48 px-3 py-2"
             type="number"
