@@ -103,6 +103,7 @@ describe('serialized metadata updates', () => {
     )
 
     expect(await harness.read()).toEqual({
+      ...(kind === 'squad' ? { memory: { enabled: true } } : {}),
       ledger: { left: 1, right: 2, neighbor: 'keep' },
       outside: 'keep',
     })
@@ -121,7 +122,11 @@ describe('serialized metadata updates', () => {
       () => harness.update({ ledger: { current: 7 } })
     )
 
-    expect(await harness.read()).toEqual({ ledger: { neighbor: 'keep', current: 7 }, outside: 'keep' })
+    expect(await harness.read()).toEqual({
+      ...(kind === 'squad' ? { memory: { enabled: true } } : {}),
+      ledger: { neighbor: 'keep', current: 7 },
+      outside: 'keep',
+    })
   })
 
   test.each(['squad', 'work stream'] as const)(
@@ -135,7 +140,11 @@ describe('serialized metadata updates', () => {
         () => harness.update({ labels: ['second'] })
       )
 
-      expect(await harness.read()).toEqual({ labels: ['second'], neighbor: 'keep' })
+      expect(await harness.read()).toEqual({
+        ...(kind === 'squad' ? { memory: { enabled: true } } : {}),
+        labels: ['second'],
+        neighbor: 'keep',
+      })
     }
   )
 

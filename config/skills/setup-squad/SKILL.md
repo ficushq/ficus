@@ -75,6 +75,132 @@ Branch strategy: feature branches off main, PRs required"
 
 Keep it concise — this goes into every agent's system prompt.
 
+## Shared memory and workspace documentation
+
+Use this section when a repo is first cloned, useful wiki/docs/runbooks are
+found, or documentation is merged, moved or retired. The manager maintains
+which canonical documents are searchable; workers keep their content current.
+Do this autonomously during ordinary squad/repository upkeep, including an
+existing squad's first relevant maintenance pass. Do not ask users to discover
+paths, choose globs or run reindexing. An ambiguous data boundary or an explicit
+opt-out is a reason to ask; routine indexing of appropriate squad docs is not.
+
+### Check the actual configuration
+
+```bash
+ficus --json squad get <squad-id>
+ficus squad source list <squad-id>
+```
+
+New squads enable shared memory by default; managers still select useful docs
+once the squad has a canonical checkout.
+
+Inspect `metadata.memory.enabled` and `metadata.memory.workspacePaths` in the
+squad response. **Absent or false `enabled` means the memory prompt and native
+memory tools are not supplied to squad agents.** The CLI can still list starter
+files; their presence does not mean memory is enabled. `sync status` describes
+remote vault synchronization, not whether local memory is enabled.
+
+If `enabled` is unset, enable memory as part of this routine setup. If it is
+explicitly `false`, preserve the opt-out and explain why those docs will not be
+indexed; do not repeatedly ask. Do not change global embedding-provider settings,
+external sync destinations, or memory grants as part of this upkeep.
+For an unset setting (or a user-requested enablement):
+
+```bash
+ficus squad set-meta <squad-id> memory.enabled true
+```
+
+### Index canonical docs in place
+
+Inspect the shared workspace and choose the actual canonical checkout, not a
+guessed repo name or every agent worktree. Review the content of each selected
+document before indexing; sampling a folder is not enough.
+If a long-lived integration worktree is the only maintained source, allowlist
+only its useful docs explicitly and move those paths when the source moves;
+do not include sibling worktrees or treat draft branch docs as accepted guidance. Prefer
+small allowlists for maintained README/AGENTS files, docs/wiki, architecture,
+accepted decisions and runbooks. Repo docs stay authoritative; do not duplicate
+them in vault notes. Indexing makes content discoverable to the squad and any
+existing memory grantees, so respect its audience and sensitivity. Do not widen
+grants or index secrets, credentials, sensitive personal/customer data or private dumps.
+
+**Never index a document containing sensitive information, even if the rest is
+useful.** Operational guides and runbooks may contain credential-bearing commands
+or URLs, sensitive personal/customer data, or genuinely confidential business or
+security information. Ordinary hostnames, paths, non-secret account/resource IDs,
+notification routing, deployment commands and operational/recovery procedures are
+not sensitive by themselves; keep them searchable unless their context makes them
+confidential or access-enabling. Do not exclude a guide just because it is operational. A docs/wiki location, existing access grant or clean
+secret-pattern scan does not establish safety. Exclude the whole document if
+sensitive or uncertain; do not expose its contents in reports, logs or vault notes.
+Prefer explicit reviewed file paths. Broad globs automatically admit future files,
+and the watcher ingests edits automatically: re-check sensitivity before updating
+indexed docs or expanding an allowlist, and exclude a file before adding sensitive
+content. A separately reviewed non-sensitive guide may be indexed; do not silently
+edit or delete the original to make it indexable.
+
+If unsafe content is already indexed, exclude it and use supported workspace
+reconciliation to remove the indexed document and chunks. Verify removal by path
+and harmless identifiers without repeating sensitive values. Saving exclusions
+alone is not proof of removal; report failures and keep the path excluded.
+
+Watcher globs live in **`memory.workspacePaths`**, relative to the shared workspace
+root (not the repository root). `ficus squad source set ... workspace_file` sets
+an ingestion policy; it does **not** configure which files the watcher scans.
+No source-policy rows means defaults, not that memory is necessarily disabled.
+
+Read and merge the current include/exclude lists before setting them. The arrays
+below are an example for a checkout named `my-repo`; setting them replaces the
+existing arrays. Preserve existing intentional paths and exclusions. Use the
+nested key so other memory settings (sync, embedding model) are preserved:
+
+```bash
+ficus squad set-meta <squad-id> memory.workspacePaths '{"include":["my-repo/README.md","my-repo/AGENTS.md","my-repo/docs/wiki/**/*.md","my-repo/docs/architecture/**/*.md"],"exclude":["**/worktrees/**","**/docs/plans/**","**/docs/drafts/**","**/docs/archive/**","**/docs/retired/**","**/.env*","**/*.secrets.*","**/*kubeconfig*","**/*.pem","**/*.key"]}'
+```
+
+The example globs assume every matched document has passed content review; use
+explicit reviewed files where that cannot be assured. Choose paths that exist; do not index entire repositories or all `**/*.md` in the
+workspace. Exclude generated/vendor trees, logs, evidence dumps, temporary plans,
+and duplicate checkouts even when they are Markdown. Do not assume the built-in
+excludes cover every secret or generated file. Explicitly disabled source policies
+remain disabled; do not override them as a troubleshooting shortcut.
+
+### Verify and maintain
+
+The watcher configuration is reconciled when the squad sandbox is ensured.
+Saving metadata alone is not proof it is active. After the next normal sandbox
+ensure, request a workspace rescan and inspect its result:
+
+```bash
+ficus --json memory reindex --squad <squad-id> --source workspace_file
+ficus --json squad get <squad-id>
+ficus memory search "<distinctive heading from an included doc>" --squad <squad-id> --source-type workspace_file --mode keyword
+```
+
+The top-level `filesIndexed` counts vault files, so zero is expected for a
+workspace-only rescan. Use `workspaceFilesScanned` for the workspace scan.
+Check `workspaceFilesScanError`, the scan count, and
+`metadata.memory.workspaceScanStatus` (freshness and skipped-file reasons), then
+confirm a representative result from the intended path. A successful HTTP response
+or `success: true` alone does not prove files were scanned. If the watcher is not
+configured yet, report that state; do not restart busy agents or repeatedly reindex.
+Search can lag ingestion. Default limits are 100KB per file and 1,000 files per
+include pattern; narrow patterns or split oversized docs when needed.
+
+Changes to watched local files are picked up automatically. A GitHub merge does
+not update a local checkout: refresh the canonical checkout through the normal
+safe repo workflow (never overwrite local changes), then verify search after a
+significant docs update. Update globs when paths move or repos are retired;
+preserve unrelated configuration. Treat historical docs as historical evidence,
+not current instructions. Do not rewrite customized vault maps just to match the
+starter template; reconcile only misleading guidance when authorized.
+
+Before handoff/completion, workers should check whether they learned a reusable
+fact. Update existing canonical docs or a focused vault note with the source,
+verification date and scope. Avoid duplicates, private status notes and completion
+logs. No new knowledge means no write; this is not a quota or approval gate.
+
 ## Step 3: Configure GitHub Integration (Optional)
 
 Set routing metadata so the squad receives GitHub issue assignments:

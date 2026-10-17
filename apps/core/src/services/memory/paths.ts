@@ -62,8 +62,7 @@ Agents should follow these conventions when creating memories.
 
 ## Folders
 
-- \`work-log/\` — Completed work streams, merged PRs, releases
-- \`decisions/\` — Architecture and product decisions with rationale
+- \`decisions/\` — Accepted architecture and product decisions with reusable rationale
 - \`patterns/\` — Code conventions and proven approaches for this repo
 - \`debugging/\` — Playbooks for common errors and fixes
 - \`runbooks/\` — Operational checklists and procedures
@@ -75,6 +74,9 @@ Agents should follow these conventions when creating memories.
 - Use \`[[wikilinks]]\` to connect related memories
 - Add YAML frontmatter with at least \`kind:\` and \`title:\`
 - Prefer atomic, focused documents over sprawling mega-files
+- Update an existing note before creating another account of the same topic
+- Keep canonical repository docs in the repo and index them rather than copying them here
+- Keep task plans, work logs, PR summaries and progress in their work streams or repositories
 
 ## Custom Sections
 

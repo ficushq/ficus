@@ -704,7 +704,7 @@ describe('squads routes', () => {
 
       expect(res.status).toBe(200)
       const updated = await res.json()
-      expect(updated.metadata).toEqual(metadata)
+      expect(updated.metadata).toEqual({ ...metadata, memory: { enabled: true } })
     })
 
     it('rejects plaintext github token metadata and invalid identity values', async () => {

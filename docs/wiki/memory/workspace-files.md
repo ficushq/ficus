@@ -27,14 +27,43 @@ Sandbox Pod                              Core
 
 ## Configuration
 
-In squad settings → Workspace Indexing:
+New squads have shared memory enabled by default. Managers maintain a narrow
+index of canonical workspace documentation during repo setup and docs upkeep.
+Squad settings still allow opting out or editing Workspace Indexing manually.
+Without `metadata.memory.enabled: true`, squad agents do not receive the memory
+prompt or native memory tools, and workspace watching is not configured.
+
+The include/exclude lists are stored in `metadata.memory.workspacePaths`:
 
 ```typescript
 workspacePaths: {
-  include: ['src/**/*.ts', 'docs/**/*.md'],  // glob patterns relative to /workspace
-  exclude: ['**/*.test.ts']                   // additional excludes
+  include: ['my-repo/README.md', 'my-repo/docs/wiki/**/*.md'], // relative to the squad workspace
+  exclude: ['**/worktrees/**', '**/docs/drafts/**']           // additional excludes
 }
 ```
+
+Managers can inspect configuration with `ficus --json squad get <squad-id>` and
+update it with `ficus squad set-meta <squad-id> memory.workspacePaths '<json>'`.
+Merge existing lists first: arrays are replaced. The `squad source set`
+`workspace_file` ingestion policy is separate and does not select watcher paths.
+See the bundled `setup-squad` skill for the configuration and verification workflow.
+
+Choose maintained documentation in one canonical checkout. Keep accepted decisions,
+architecture and non-sensitive runbooks searchable without copying them into the memory vault.
+Review contents before indexing: exclude entire documents containing sensitive
+information, including operational guides with credentials, sensitive personal/customer
+data or genuinely confidential business/security information. Ordinary hostnames,
+paths, non-secret IDs, notification routing and operating procedures are not grounds
+for exclusion by themselves; assess whether their context makes them sensitive or
+access-enabling. Filename filters and secret-pattern checks
+alone are insufficient. Prefer reviewed file allowlists; watched edits and broad
+globs can automatically ingest new content, so re-check before changes. If unsafe
+content was already indexed, exclude it, reconcile and verify removal from memory
+without reproducing sensitive values.
+Avoid duplicate worktrees, temporary plans, generated files, secrets and raw logs.
+Local file changes are watched; merged GitHub docs are only visible after the local
+checkout is updated. Indexing preserves memory access rules and sensitivity; do not
+broaden access merely to improve search.
 
 ### Default Excludes
 
@@ -67,7 +96,7 @@ Files exceeding limits are skipped and reported in the UI with reasons:
 
 ### Startup
 
-When a sandbox pod starts (or is recreated), core calls `GET /watch` to check status. If the watcher isn't active or the config differs, core sends `POST /watch` to start it. This handles pod restarts — the sandbox always gets its watcher configured.
+When the squad sandbox is ensured, core reconciles the watcher configuration. For container/VM runtimes it calls `GET /watch` to check status. If the watcher isn't active or the config differs, core sends `POST /watch` to start it. This handles pod restarts — the sandbox always gets its watcher configured.
 
 ### Initial Scan
 
@@ -87,6 +116,16 @@ After the initial scan, chokidar watches for changes:
 ### Rescan
 
 `POST /watch/rescan` triggers a full re-scan without restarting the watcher. Used by the reindex endpoint when `source=workspace_file` or `source=all`.
+
+Saving configuration does not itself prove the watcher is running. After a normal
+sandbox ensure, use `ficus --json memory reindex --squad <squad-id> --source workspace_file`.
+Check `workspaceFilesScanError` as well as scan counts, inspect
+`metadata.memory.workspaceScanStatus`, and verify a representative document using
+`memory search --source-type workspace_file --mode keyword`. An overall
+`success: true` may still contain a workspace scan error. The top-level
+`filesIndexed` counts vault files; for a workspace-only rescan, use
+`workspaceFilesScanned` instead. Zero vault files does not mean workspace indexing
+failed.
 
 ### Status
 

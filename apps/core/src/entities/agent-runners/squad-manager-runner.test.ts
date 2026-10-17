@@ -118,6 +118,53 @@ describe('SquadManagerRunner typeContext injection', () => {
     squadFindSpy?.mockRestore()
   })
 
+  it.each([
+    ['enabled manager', true, 'manager', true],
+    ['opted-out manager', false, 'manager', false],
+    ['unset legacy manager', undefined, 'manager', false],
+    ['enabled consultant', true, 'consultant', false],
+  ] as const)('gates shared memory stewardship for %s', async (_label, enabled, role, expectsStewardship) => {
+    squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
+      id: TEST_SQUAD_ID,
+      name: 'S',
+      purpose: 'p',
+      defaultAgents: [],
+      context: '',
+      sandboxId: 'sbx',
+      managerAgentId: 'm1',
+      isMemoryEnabled: enabled,
+      getActiveAgents: async () => [],
+      getTypeContext: () => null,
+      withRelationships: async () => null,
+    } as any)
+    const agent = {
+      id: 'm1',
+      agentTypeId: role,
+      squadId: TEST_SQUAD_ID,
+      metadata: null,
+      modelOverride: null,
+      selectedModel: null,
+      getOrCreateToken: async () => undefined,
+      getSandboxId: async () => 'agent_manager_m1',
+      getEffectiveModelSpec: async (m: string) => m,
+    } as any
+    // Use the bundled template, so unconditional guidance in YAML also fails this regression.
+    const template = Bun.YAML.parse(readFileSync(join(MONOREPO_ROOT, `config/agent-types/${role}.yaml`), 'utf-8')) as {
+      systemPrompt: string
+    }
+    const runner = new TestableSquadManagerRunner(
+      { id: 'e1', agentId: 'm1', message: 'go', imageIds: null } as any,
+      agent,
+      makeAgentType({ id: role, systemPrompt: template.systemPrompt })
+    )
+    await runner.exposeCreateSession()
+    const systemPrompt: string = sessionSpy.mock.calls[0][0].systemPrompt
+    expect(systemPrompt.includes('## Shared Knowledge')).toBe(expectsStewardship)
+    expect(systemPrompt.includes('Ask workers to preserve verified reusable lessons')).toBe(expectsStewardship)
+    expect(systemPrompt.includes('### Keeping Knowledge Useful')).toBe(enabled === true)
+    expect(capturedToolNames(sessionSpy).includes('memory_write')).toBe(enabled === true)
+  })
+
   it('includes global + manager type-specific context in the system prompt', async () => {
     squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
       id: TEST_SQUAD_ID,
