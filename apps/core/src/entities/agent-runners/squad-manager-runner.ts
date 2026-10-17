@@ -36,7 +36,7 @@ import {
   AGENT_PURPOSE_DISPLAY_SECTION_TITLE,
   SET_AGENT_PURPOSE_INSTRUCTIONS,
 } from '../../lib/prompts/agent-purpose-prompt'
-import { buildMemorySystemPrompt } from '../../lib/prompts'
+import { buildMemorySystemPrompt, MANAGER_MEMORY_GUIDANCE } from '../../lib/prompts/memory-prompt'
 import { buildWorkspacePrompt, workspaceToolNamesForPolicy } from '../../lib/prompts/workspace-prompt'
 import { agentSecretsPromptForSandbox } from '../../lib/prompts/agent-secrets-prompt'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
@@ -206,6 +206,7 @@ export class SquadManagerRunner extends AgentRunner {
     if (this.squad.isMemoryEnabled) {
       const mapContent = readSquadMemoryFile(this.squad.id, 'map.md')
       p.text(buildMemorySystemPrompt(this.squad.id, mapContent))
+      if (this.agent.agentTypeId === 'manager') p.text(MANAGER_MEMORY_GUIDANCE)
     }
 
     // Consultants set a dynamic display purpose like squad workers do — reuse the same shared

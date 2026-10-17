@@ -114,7 +114,8 @@ ficus squad set-meta <squad-id> memory.enabled true
 ### Index canonical docs in place
 
 Inspect the shared workspace and choose the actual canonical checkout, not a
-guessed repo name or every agent worktree. Read a sample before selecting it.
+guessed repo name or every agent worktree. Review the content of each selected
+document before indexing; sampling a folder is not enough.
 If a long-lived integration worktree is the only maintained source, allowlist
 only its useful docs explicitly and move those paths when the source moves;
 do not include sibling worktrees or treat draft branch docs as accepted guidance. Prefer
@@ -122,7 +123,27 @@ small allowlists for maintained README/AGENTS files, docs/wiki, architecture,
 accepted decisions and runbooks. Repo docs stay authoritative; do not duplicate
 them in vault notes. Indexing makes content discoverable to the squad and any
 existing memory grantees, so respect its audience and sensitivity. Do not widen
-grants or index secrets, credentials, user data or private dumps.
+grants or index secrets, credentials, sensitive personal/customer data or private dumps.
+
+**Never index a document containing sensitive information, even if the rest is
+useful.** Operational guides and runbooks may contain credential-bearing commands
+or URLs, sensitive personal/customer data, or genuinely confidential business or
+security information. Ordinary hostnames, paths, non-secret account/resource IDs,
+notification routing, deployment commands and operational/recovery procedures are
+not sensitive by themselves; keep them searchable unless their context makes them
+confidential or access-enabling. Do not exclude a guide just because it is operational. A docs/wiki location, existing access grant or clean
+secret-pattern scan does not establish safety. Exclude the whole document if
+sensitive or uncertain; do not expose its contents in reports, logs or vault notes.
+Prefer explicit reviewed file paths. Broad globs automatically admit future files,
+and the watcher ingests edits automatically: re-check sensitivity before updating
+indexed docs or expanding an allowlist, and exclude a file before adding sensitive
+content. A separately reviewed non-sensitive guide may be indexed; do not silently
+edit or delete the original to make it indexable.
+
+If unsafe content is already indexed, exclude it and use supported workspace
+reconciliation to remove the indexed document and chunks. Verify removal by path
+and harmless identifiers without repeating sensitive values. Saving exclusions
+alone is not proof of removal; report failures and keep the path excluded.
 
 Watcher globs live in **`memory.workspacePaths`**, relative to the shared workspace
 root (not the repository root). `ficus squad source set ... workspace_file` sets
@@ -138,7 +159,8 @@ nested key so other memory settings (sync, embedding model) are preserved:
 ficus squad set-meta <squad-id> memory.workspacePaths '{"include":["my-repo/README.md","my-repo/AGENTS.md","my-repo/docs/wiki/**/*.md","my-repo/docs/architecture/**/*.md"],"exclude":["**/worktrees/**","**/docs/plans/**","**/docs/drafts/**","**/docs/archive/**","**/docs/retired/**","**/.env*","**/*.secrets.*","**/*kubeconfig*","**/*.pem","**/*.key"]}'
 ```
 
-Choose paths that exist; do not index entire repositories or all `**/*.md` in the
+The example globs assume every matched document has passed content review; use
+explicit reviewed files where that cannot be assured. Choose paths that exist; do not index entire repositories or all `**/*.md` in the
 workspace. Exclude generated/vendor trees, logs, evidence dumps, temporary plans,
 and duplicate checkouts even when they are Markdown. Do not assume the built-in
 excludes cover every secret or generated file. Explicitly disabled source policies
