@@ -244,7 +244,6 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
                   -- Event-only monitors can be silent for hours while healthy.
                   -- Require recent process confirmation, not stdout or a stale status row.
                   AND monitor.last_confirmed_alive_at >= ${monitorCutoff}::timestamptz
-                  AND monitor.last_confirmed_alive_at <= ${now}::timestamptz
                   AND COALESCE(monitor.deadline_at,
                     COALESCE(monitor.started_at, monitor.created_at) + monitor.timeout_ms * interval '1 millisecond')
                     > ${now}::timestamptz)

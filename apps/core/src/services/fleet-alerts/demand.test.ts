@@ -332,9 +332,10 @@ describe('actionable squad demand', () => {
     expect(await count()).toBe(1)
     await db
       .update(monitors)
-      .set({ lastConfirmedAliveAt: at(-1) })
+      .set({ lastConfirmedAliveAt: new Date(NOW.getTime() + 1) })
       .where(eq(monitors.id, monitorId))
-    expect(await count()).toBe(1)
+    // A concurrent probe can finish just after the reconciler sampled its clock.
+    expect(await count()).toBe(0)
     await db
       .update(monitors)
       .set({ lastConfirmedAliveAt: at(0) })
