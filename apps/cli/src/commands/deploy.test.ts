@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { Command } from 'commander'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../client'
-import { setOutputOptions } from '../output'
+import { outputError, setOutputOptions } from '../output'
 import { registerDeployCommands } from './deploy'
 
 describe('deploy CLI commands', () => {
@@ -10,6 +10,7 @@ describe('deploy CLI commands', () => {
     ;(apiPost as ReturnType<typeof mock>).mockClear()
     ;(apiPatch as ReturnType<typeof mock>).mockClear()
     ;(apiDelete as ReturnType<typeof mock>).mockClear()
+    ;(outputError as ReturnType<typeof mock>).mockClear()
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({ id: 'deployment-1', status: 'planned', lines: [] })
     ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ id: 'deployment-1', status: 'ready', name: 'web' })
     ;(apiPatch as ReturnType<typeof mock>).mockResolvedValue({ id: 'deployment-1', status: 'failed' })
@@ -147,5 +148,30 @@ describe('deploy CLI commands', () => {
     expect(apiPost).toHaveBeenCalledWith('/api/local-deployments/local-1/stop')
     expect(apiDelete).toHaveBeenCalledWith('/api/local-deployments/local-1')
     expect(apiGet).toHaveBeenCalledWith('/api/local-deployments/local-1/logs?tail=50')
+  })
+
+  it('local restart reports the new run it launched', async () => {
+    ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ id: 'local-1', name: 'web', status: 'restarting' })
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      await run(['deploy', 'local', 'restart', 'local-1'])
+      expect(log).toHaveBeenCalledWith('Restarted local app web: restarting')
+      expect(outputError).not.toHaveBeenCalled()
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it('local restart fails instead of printing a stale status when no new run started', async () => {
+    ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ id: 'local-1', name: 'web', status: 'stopped' })
+    await run(['deploy', 'local', 'restart', 'local-1'])
+    expect(outputError).toHaveBeenCalledWith(new Error('Local app web did not restart: it is stopped'))
+  })
+
+  it('local restart surfaces the server reason when the app cannot be relaunched', async () => {
+    const reason = new Error('Managed app launch failed; check startup logs.')
+    ;(apiPost as ReturnType<typeof mock>).mockRejectedValue(reason)
+    await run(['deploy', 'local', 'restart', 'local-1'])
+    expect(outputError).toHaveBeenCalledWith(reason)
   })
 })

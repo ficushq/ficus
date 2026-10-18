@@ -6,6 +6,7 @@ const OTHER_APP_TOKEN = 'OtherAppBrowserToken_0123456789a'
 const SECRETS: Record<string, string> = {
   FICUS_PASSWORD: 'bootstrap-password',
   SANDBOX_CALLBACK_SECRET: 'sandbox-callback-secret',
+  DEMO_REVIEWER_SECRET: 'demo-reviewer-secret',
 }
 
 const deps = {
@@ -34,7 +35,7 @@ describe('appOriginAuthorization', () => {
     expect(await forwarded('   ')).toBeNull()
   })
 
-  it('strips every Core-minted token kind, whatever the scheme or position', async () => {
+  it('strips every Core-minted token kind (schedule webhook tokens included), whatever the scheme or position', async () => {
     for (const token of [
       'ficus_sess_abc',
       'ficus_agent_abc',
@@ -42,6 +43,7 @@ describe('appOriginAuthorization', () => {
       'ficus_sys_abc',
       'ficus_wst_abc',
       'ficus_wh_abc',
+      `whsec_${'a1'.repeat(32)}`,
     ]) {
       expect(await forwarded(`Bearer ${token}`)).toBeNull()
       expect(await forwarded(token)).toBeNull()
@@ -64,6 +66,7 @@ describe('appOriginAuthorization', () => {
   it('strips the instance secrets that authenticate to Core', async () => {
     expect(await forwarded('Bearer bootstrap-password')).toBeNull()
     expect(await forwarded('Bearer sandbox-callback-secret')).toBeNull()
+    expect(await forwarded('Bearer demo-reviewer-secret')).toBeNull()
     expect(await forwarded(basic('admin:bootstrap-password'))).toBeNull()
   })
 

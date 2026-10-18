@@ -158,14 +158,17 @@ HMR) and the app's own sockets need no extra setup. What to know:
 The proxy strips `Authorization`, `X-Auth-Token` and `Cookie` from every
 request, then puts back by mount:
 
-- **Hosted app origin** (`<tenant>--<id>.<apps domain>`): the app's own cookies
-  (minus Ficus's) and its own `Authorization` header, so
-  `Authorization: Bearer <app token>` from the app's client reaches the app. A
-  Ficus credential in it (a `ficus_…` token, the app's access token) is still
-  dropped. `X-Auth-Token` never reaches the app.
+- **App origin** (`<tenant>--<id>.<apps domain>`): the app's own cookies
+  (minus Ficus's). Core also forwards the app's own `Authorization` header,
+  minus any Ficus credential (a `ficus_…` or `whsec_…` token, the app's access
+  token). On hosted instances (`*.ficus.garden`) the Platform bridge in front
+  of Core still strips `Authorization`, pending a Platform change, so there an
+  app's `Authorization: Bearer …` does not reach it yet: send the app's
+  credential in a header of its own (for example `X-App-Auth`) or an
+  app-scoped cookie. `X-Auth-Token` never reaches the app.
 - **Path mount** (`/api/app/<id>/`): nothing. No cookie and no `Authorization`
   reach the app; send its credential in a header of its own (for example
-  `X-App-Auth`) or use the hosted origin.
+  `X-App-Auth`).
 
 Two consequences worth knowing:
 

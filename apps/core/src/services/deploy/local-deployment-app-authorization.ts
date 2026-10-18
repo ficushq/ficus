@@ -9,10 +9,11 @@
  *
  * Even on the app's own origin a value that is, or contains, a Ficus credential
  * is dropped, so no path can hand one to an app: any Core-minted token prefix
- * (session, agent, device, system, WebSocket ticket, web handoff), the
- * credential that authorized this request, any deployment's browser access
- * token, the bootstrap password, or the sandbox callback secret. A Basic value
- * is decoded and checked the same way. The value is never logged.
+ * (session, agent, device, system, WebSocket ticket, web handoff, schedule
+ * webhook), the credential that authorized this request, any deployment's
+ * browser access token, the bootstrap password, the sandbox callback secret,
+ * or the demo reviewer secret. A Basic value is decoded and checked the same
+ * way. The value is never logged.
  */
 import { createHash, timingSafeEqual } from 'crypto'
 import { DEVICE_TOKEN_PREFIX } from '../auth/device-tokens'
@@ -23,6 +24,8 @@ import {
   WEB_HANDOFF_PREFIX,
   WS_TICKET_PREFIX,
 } from '../auth/token-prefixes'
+import { WEBHOOK_TOKEN_PREFIX } from '../../lib/utils/webhook-token'
+import { DEMO_REVIEWER_SECRET_KEY } from '../demo/access'
 import { getSecretStore } from '../secrets'
 import { isAnyLocalDeploymentBrowserToken } from './local-deployment-service'
 
@@ -33,10 +36,11 @@ const FICUS_TOKEN_PREFIXES = [
   SYSTEM_TOKEN_PREFIX,
   WS_TICKET_PREFIX,
   WEB_HANDOFF_PREFIX,
+  WEBHOOK_TOKEN_PREFIX,
 ]
 
 /** Instance secrets that authenticate to Core when presented as a bearer value. */
-const FICUS_SECRET_NAMES = ['FICUS_PASSWORD', 'SANDBOX_CALLBACK_SECRET'] as const
+const FICUS_SECRET_NAMES = ['FICUS_PASSWORD', 'SANDBOX_CALLBACK_SECRET', DEMO_REVIEWER_SECRET_KEY] as const
 
 /** A deployment browser token: 24 random bytes, base64url (local-deployment-service.ts). */
 const BROWSER_TOKEN_SHAPE = /^[A-Za-z0-9_-]{32}$/

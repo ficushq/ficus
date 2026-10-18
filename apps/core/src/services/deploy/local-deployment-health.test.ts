@@ -242,20 +242,134 @@ describe('localDeployment health', () => {
     expect(supervisor.stops).toHaveLength(1)
   })
 
-  it('only resurrects a stopped app for an explicit operator restart', async () => {
-    const squad = await createTestSquad('explicit-restart')
-    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
-    await updateLocalDeploymentRecord(deployment.id, { status: 'stopped' })
-    expect((await restartManagedLocalDeployment(deployment.id, { allowStopped: true })).status).toBe('restarting')
+  // An operator restart relaunches whatever the status and restart policy;
+  // restartPolicy only governs automatic recovery (regression: policy never
+  // returned the old crashed/stopped record without launching anything).
+  for (const restartPolicy of ['always', 'never'] as const) {
+    for (const status of ['running', 'unhealthy', 'crashed', 'stopped'] as const) {
+      it(`explicit restart of a ${status} app with restartPolicy ${restartPolicy} relaunches it`, async () => {
+        const squad = await createTestSquad(`explicit-${restartPolicy}-${status}`)
+        const deployment = await createLocalDeployment(squad, {
+          name: 'web',
+          port: 5173,
+          command: './run.sh up',
+          restartPolicy,
+        })
+        const processId = `ficus-local-deployment-${deployment.id.slice(0, 8)}`
+        await updateLocalDeploymentRecord(deployment.id, { status, processId })
+
+        const restarted = await restartManagedLocalDeployment(deployment.id, { explicit: true })
+
+        expect(supervisor.starts).toEqual([
+          expect.objectContaining({ localDeploymentId: deployment.id, command: './run.sh up', processId }),
+        ])
+        expect(restarted).toMatchObject({ status: 'restarting', restartCount: 1, keepSandboxAlive: true, processId })
+        expect((await getLocalDeployment(deployment.id))?.status).toBe('restarting')
+      })
+    }
+  }
+
+  it('automatic recovery still leaves a restartPolicy never app alone', async () => {
+    const squad = await createTestSquad('auto-never')
+    const deployment = await createLocalDeployment(squad, {
+      name: 'web',
+      port: 5173,
+      command: 'bun run dev',
+      restartPolicy: 'never',
+    })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'crashed' })
+    expect((await restartManagedLocalDeployment(deployment.id)).status).toBe('crashed')
+    expect((await restartManagedLocalDeployment(deployment.id, { onlyIfNeeded: true })).status).toBe('crashed')
+    expect(supervisor.starts).toHaveLength(0)
+  })
+
+  it('explicit restart after a stop relaunches and the new run reflects the readiness result', async () => {
+    connectResult = true
+    const squad = await createTestSquad('stop-then-restart')
+    const deployment = await createLocalDeployment(squad, {
+      name: 'web',
+      port: 5173,
+      command: './run.sh up',
+      restartPolicy: 'never',
+    })
+    const processId = `ficus-local-deployment-${deployment.id.slice(0, 8)}`
+    await updateLocalDeploymentRecord(deployment.id, { status: 'running', processId })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'stopped', keepSandboxAlive: false })
+
+    const restarted = await restartManagedLocalDeployment(deployment.id, { explicit: true })
+    expect(restarted.status).toBe('restarting')
+    expect(supervisor.starts).toHaveLength(1)
+
+    supervisor.sessions.set(processId, true)
+    expect((await refreshLocalDeploymentHealth(deployment.id)).status).toBe('running')
+  })
+
+  it('an explicit restart queues behind automatic recovery instead of adopting its no-op result', async () => {
+    const squad = await createTestSquad('explicit-after-auto')
+    const deployment = await createLocalDeployment(squad, {
+      name: 'web',
+      port: 5173,
+      command: 'bun run dev',
+      restartPolicy: 'never',
+    })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'crashed' })
+
+    const [automatic, explicit, secondExplicit, laterAutomatic] = await Promise.all([
+      restartManagedLocalDeployment(deployment.id),
+      restartManagedLocalDeployment(deployment.id, { explicit: true }),
+      restartManagedLocalDeployment(deployment.id, { explicit: true }),
+      restartManagedLocalDeployment(deployment.id),
+    ])
+
+    expect(automatic.status).toBe('crashed')
+    expect(explicit.status).toBe('restarting')
+    // Later callers join the queued operator restart rather than launching again.
+    expect(secondExplicit).toBe(explicit)
+    expect(laterAutomatic).toBe(explicit)
     expect(supervisor.starts).toHaveLength(1)
   })
 
-  it('never resurrects archived apps, even for an explicit restart', async () => {
-    const squad = await createTestSquad('archived')
+  it('concurrent explicit restarts share one relaunch', async () => {
+    const squad = await createTestSquad('explicit-twice')
     const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
-    await archiveLocalDeploymentRecord(deployment.id)
-    expect((await restartManagedLocalDeployment(deployment.id, { allowStopped: true })).status).toBe('stopped')
-    expect(supervisor.starts).toHaveLength(0)
+    const [first, second] = await Promise.all([
+      restartManagedLocalDeployment(deployment.id, { explicit: true }),
+      restartManagedLocalDeployment(deployment.id, { explicit: true }),
+    ])
+    expect(second).toBe(first)
+    expect(supervisor.starts).toHaveLength(1)
+  })
+
+  it('an explicit restart reports why it could not relaunch instead of returning the old record', async () => {
+    const squad = await createTestSquad('explicit-rejected')
+    const archived = await createLocalDeployment(squad, { name: 'archived', port: 5173, command: 'bun run dev' })
+    await archiveLocalDeploymentRecord(archived.id)
+    await expect(restartManagedLocalDeployment(archived.id, { explicit: true })).rejects.toThrow(
+      'Archived local apps cannot be restarted'
+    )
+
+    const attached = await createLocalDeployment(squad, { name: 'attached', port: 5174, mode: 'attached' })
+    await expect(restartManagedLocalDeployment(attached.id, { explicit: true })).rejects.toThrow(
+      'Only managed local apps can be restarted'
+    )
+
+    const locked = await createLocalDeployment(squad, { name: 'locked', port: 5175, command: 'bun run dev' })
+    await withDedicatedDbTransaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`local-deployment-restart:${locked.id}`}, 0))`
+      )
+      await expect(restartManagedLocalDeployment(locked.id, { explicit: true })).rejects.toThrow(
+        'Another launch of this app is in progress'
+      )
+    })
+
+    const failing = await createLocalDeployment(squad, { name: 'failing', port: 5176, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(failing.id, { status: 'stopped' })
+    supervisor.failStartsFor.add(failing.id)
+    await expect(restartManagedLocalDeployment(failing.id, { explicit: true })).rejects.toThrow(
+      'Managed app launch failed'
+    )
+    expect(supervisor.starts.map((start) => start.localDeploymentId)).toEqual([failing.id])
   })
 
   it('records a failed launch rather than leaving a stale running row', async () => {
@@ -734,6 +848,18 @@ describe('restartManagedLocalDeployment — migration fence guard (DB)', () => {
     // the poller's self-heal is a no-op while the fence is up.
     expect(supervisor.starts).toHaveLength(0)
     expect(result.status).toBe('crashed')
+  })
+
+  it('an explicit restart during a migration reports the migration instead of a stale status', async () => {
+    const { squad, sandboxId } = await createFencedSquad('explicit-fenced')
+    const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(localDeployment.id, { status: 'crashed' })
+    await fence(sandboxId)
+
+    await expect(restartManagedLocalDeployment(localDeployment.id, { explicit: true })).rejects.toThrow(
+      'being migrated'
+    )
+    expect(supervisor.starts).toHaveLength(0)
   })
 
   it('restarts again once the fence drops (the benign self-heal, once the migration finishes or aborts)', async () => {
