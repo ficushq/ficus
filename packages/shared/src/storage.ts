@@ -32,6 +32,12 @@ export interface StorageFolder {
   measuredAt?: string
   /** Top-level box homes: measured in the current pass, or carried over from a previous pass. */
   freshness?: 'current' | 'previous'
+  /**
+   * Top-level box homes: true when bytes came from one measurement of the whole home (a file
+   * hard-linked into several folders counted once); false when it is the sum of separately measured
+   * folders, where such a file may be counted more than once. Absent before exact totals.
+   */
+  totalExact?: boolean
   /** Top-level box homes: change against an earlier retained measurement. */
   growth?: StorageGrowth
 }
@@ -64,6 +70,8 @@ export interface StorageSquad {
   bytes: number | null
   status: 'available' | 'partial' | 'unavailable'
   folders: StorageFolder[]
+  /** False when any of its box homes' totals is approximate (see StorageFolder.totalExact). */
+  totalExact?: boolean
   /** Sum of the box homes' growth, since the earliest of their baselines. */
   growth?: StorageGrowth
 }

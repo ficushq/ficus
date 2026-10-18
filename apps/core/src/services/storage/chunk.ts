@@ -22,10 +22,15 @@ import { parseDfOutput } from '../machines/machine-health'
 export const CHUNK_TIMEOUT_SECONDS = 20
 /** Local SSH limit: the remote limit plus the kill grace and connection slack. */
 export const CHUNK_SSH_TIMEOUT_MS = (CHUNK_TIMEOUT_SECONDS + 5 + 15) * 1000
+/** Remote time limit for one home's total-only du ({@link TOTAL_COMMAND}). */
+export const TOTAL_TIMEOUT_SECONDS = 180
+/** Local SSH limit for a total-only du, sized like {@link CHUNK_SSH_TIMEOUT_MS}. */
+export const TOTAL_SSH_TIMEOUT_MS = (TOTAL_TIMEOUT_SECONDS + 5 + 15) * 1000
 /** Deepest folder shown in the breakdown: /home/box_x/a/b/c (as with du --max-depth=4 /home). */
 export const DETAIL_SEGMENTS = 5
 
-const PREFIX = `sudo -n timeout -k 5s ${CHUNK_TIMEOUT_SECONDS}s nice -n 19 ionice -c 3 xargs -0 -r -n 1 sh -c`
+const prefix = (seconds: number) => `sudo -n timeout -k 5s ${seconds}s nice -n 19 ionice -c 3 xargs -0 -r -n 1 sh -c`
+const PREFIX = prefix(CHUNK_TIMEOUT_SECONDS)
 const DF = "export LC_ALL=C; df -B1 --output=used,size /home; printf '\\0';"
 
 /** Path segments: /home/box_x is 2. */
@@ -48,6 +53,12 @@ export function measureCommand(maxDepth: number): string {
   if (!Number.isInteger(maxDepth) || maxDepth < 0 || maxDepth > DETAIL_SEGMENTS) throw new Error('invalid depth')
   return `${DF} ${PREFIX} 'du -x -B1 --null --max-depth=${maxDepth} -- "$1" 2>/dev/null; printf "#%s\\0" "$?"' sh`
 }
+
+/**
+ * Measure only each stdin path's total, with one du for the whole path: a file hard-linked into
+ * several of its subdirectories is counted once (separate du runs over the parts count it in each).
+ */
+export const TOTAL_COMMAND = `${DF} ${prefix(TOTAL_TIMEOUT_SECONDS)} 'du -x -s -B1 --null -- "$1" 2>/dev/null; printf "#%s\\0" "$?"' sh`
 
 /** List each stdin path's immediate entries: device, type, inode, link count, 512-byte blocks, name. */
 export const LIST_COMMAND = `${DF} ${PREFIX} 'find "$1" -maxdepth 1 -printf "%D\\t%y\\t%i\\t%n\\t%b\\t%P\\0" 2>/dev/null; printf "#%s\\0" "$?"' sh`

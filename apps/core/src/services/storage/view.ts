@@ -107,8 +107,10 @@ export async function buildStorageSnapshot(targets: StorageViewTarget[]): Promis
         folder: result.folder,
         measuredAt: result.measuredAt.toISOString(),
         freshness: current && result.generation === current.generation ? 'current' : 'previous',
+        totalExact: result.totalExact,
+        // Baselines are exact samples only, so an approximate total is never compared with one.
         growth:
-          result.status === 'available'
+          result.status === 'available' && result.totalExact
             ? growth(baselines.get(key(machine.id, result.home)), result.bytes, result.measuredAt)
             : undefined,
       })

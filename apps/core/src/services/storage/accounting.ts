@@ -59,6 +59,7 @@ export interface HomeView {
   folder: StorageFolder
   measuredAt?: string
   freshness?: 'current' | 'previous'
+  totalExact?: boolean
   growth?: StorageGrowth
 }
 
@@ -80,6 +81,7 @@ export function attributeStorage(homes: Map<string, HomeView>, owners: StorageOw
     if (owner.agent) root.agent = owner.agent
     if (view?.measuredAt) root.measuredAt = view.measuredAt
     if (view?.freshness) root.freshness = view.freshness
+    if (view?.totalExact !== undefined) root.totalExact = view.totalExact
     if (view?.growth) root.growth = view.growth
     const squad = squads.get(owner.squadId) ?? {
       id: owner.squadId,
@@ -103,6 +105,7 @@ export function attributeStorage(homes: Map<string, HomeView>, owners: StorageOw
           : squad.folders.every((item) => item.status === 'available')
             ? 'available'
             : 'partial',
+        totalExact: !squad.folders.some((item) => item.totalExact === false),
         folders: squad.folders.sort(bySize),
         ...(grown.length
           ? {

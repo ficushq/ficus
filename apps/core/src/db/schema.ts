@@ -4712,6 +4712,8 @@ export const storageScanItems = pgTable(
       .references(() => storageScanPasses.id, { onDelete: 'cascade' }),
     home: text('home').notNull(),
     path: text('path').notNull(),
+    /** tree: a directory of the breakdown; total: a split home's total-only measurement (pending, done or failed). */
+    kind: varchar('kind', { length: 8 }).$type<'tree' | 'total'>().notNull().default('tree'),
     state: varchar('state', { length: 16 })
       .$type<'pending' | 'solo' | 'split_pending' | 'done' | 'split' | 'failed'>()
       .notNull()
@@ -4724,7 +4726,7 @@ export const storageScanItems = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    unique('storage_scan_items_path').on(table.passId, table.path),
+    unique('storage_scan_items_path').on(table.passId, table.kind, table.path),
     index('idx_storage_scan_items_state').on(table.passId, table.state),
   ]
 )
@@ -4737,6 +4739,11 @@ export const storageHomeResults = pgTable(
     home: text('home').notNull(),
     generation: integer('generation').notNull(),
     bytes: bigint('bytes', { mode: 'number' }),
+    /**
+     * bytes came from one du of the whole home (hard-linked files counted once). False: the sum of
+     * separately measured parts, where a file hard-linked into several counts in each.
+     */
+    totalExact: boolean('total_exact').notNull().default(false),
     status: varchar('status', { length: 16 }).$type<'available' | 'partial' | 'unavailable'>().notNull(),
     errors: jsonb('errors').$type<Array<'scan_timeout' | 'permission_denied'>>().notNull().default([]),
     folder: jsonb('folder').$type<import('@ficus/shared').StorageFolder>().notNull(),
@@ -4745,7 +4752,10 @@ export const storageHomeResults = pgTable(
   (table) => [primaryKey({ columns: [table.machineId, table.home] })]
 )
 
-/** Bounded history (pruned after 8 days) for growth: subject is a box home path or 'host' (df used). */
+/**
+ * Bounded history (pruned after 8 days) for growth: subject is a box home path or 'host' (df used).
+ * Home samples are written only for exact, complete totals, so growth always compares like with like.
+ */
 export const storageUsageSamples = pgTable(
   'storage_usage_samples',
   {

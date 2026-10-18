@@ -1,6 +1,16 @@
 import type { StorageFolder, StorageGrowth } from '@ficus/shared'
 import { ChevronRightIcon } from '../../icons'
-import { fastGrowth, growthLabel, homeFreshness, measuredSize } from './format'
+import { APPROXIMATE_TOTAL_HINT, fastGrowth, growthLabel, homeFreshness, measuredSize } from './format'
+
+/** Shown next to a box home's size when its total is the sum of separately measured folders. */
+export function ApproximateMark({ folder }: { folder: StorageFolder }) {
+  if (folder.totalExact !== false) return null
+  return (
+    <span data-storage-approximate title={APPROXIMATE_TOTAL_HINT} className="text-xs text-secondary">
+      approximate
+    </span>
+  )
+}
 
 /** Growth since an earlier measurement; 1 GiB or more is highlighted. */
 export function GrowthText({ growth }: { growth?: StorageGrowth }) {
@@ -35,7 +45,10 @@ export function FolderRow({ folder }: { folder: StorageFolder }) {
         <span title={folder.path}>{folder.name}</span>
         <HomeMeta folder={folder} />
       </span>
-      <span className="shrink-0 tabular-nums text-secondary">{measuredSize(folder)}</span>
+      <span className="flex shrink-0 items-baseline gap-2 tabular-nums text-secondary">
+        <ApproximateMark folder={folder} />
+        <span>{measuredSize(folder)}</span>
+      </span>
     </span>
   )
   if (!folder.children.length) return <div className="py-2 pl-5 text-sm">{label}</div>

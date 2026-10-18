@@ -143,3 +143,94 @@ test('shows pass progress, per-home freshness, and growth for homes, squads and 
     client.clear()
   }
 })
+
+test('approximate home totals are marked, squads containing one show ≈, and the hard-link note is shown', () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const GiB = 1024 ** 3
+  const data: StorageSnapshot = {
+    supported: true,
+    scanning: false,
+    scannedAt: '2026-09-20T00:00:00Z',
+    error: null,
+    machines: [
+      {
+        id: 'machine',
+        name: 'Worker',
+        status: 'available',
+        usedBytes: 100 * GiB,
+        totalBytes: 200 * GiB,
+        unattributedBytes: 0,
+        squads: [
+          {
+            id: 'squad',
+            name: 'Product',
+            bytes: 30 * GiB,
+            status: 'available',
+            totalExact: false,
+            folders: [
+              {
+                name: 'Squad workspace',
+                path: '/home/box_a',
+                bytes: 27 * GiB,
+                status: 'available',
+                kind: 'squad-workspace',
+                totalExact: false,
+                children: [],
+              },
+              {
+                name: 'Agent files',
+                path: '/home/box_b',
+                bytes: 3 * GiB,
+                status: 'available',
+                kind: 'agent',
+                totalExact: false,
+                children: [],
+              },
+            ],
+          },
+          {
+            id: 'other',
+            name: 'Research',
+            bytes: 20 * GiB,
+            status: 'available',
+            totalExact: true,
+            folders: [
+              {
+                name: 'Research workspace',
+                path: '/home/box_c',
+                bytes: 20 * GiB,
+                status: 'available',
+                kind: 'squad-workspace',
+                totalExact: true,
+                children: [],
+              },
+            ],
+          },
+        ],
+        diagnostics: { exitCode: null, reasons: [], expectedHomes: 3, measuredHomes: 3, missingHomes: [] },
+      },
+    ],
+  }
+  client.setQueryData(queryKeys.system.storage(), data)
+  try {
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <StorageSection />
+      </QueryClientProvider>
+    )
+    // The workspace row and the agent row are each marked, with the explanation as a tooltip.
+    expect(html.match(/data-storage-approximate/g)).toHaveLength(2)
+    expect(html).toContain('title="Hard-linked files may be counted more than once')
+    expect(html).toContain('>approximate<')
+    expect(html).toContain(
+      'title="Includes an approximate home total: hard-linked files may be counted more than once."'
+    )
+    expect(html).toContain('≈ 30.0 GiB')
+    expect(html).not.toContain('≈ 20.0 GiB')
+    expect(html).toContain(
+      'Folder sizes can add up to more than the total: files hard-linked into several folders are counted in each.'
+    )
+  } finally {
+    client.clear()
+  }
+})

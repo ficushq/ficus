@@ -20,6 +20,19 @@ export function measuredSize(item: { bytes: number | null; status?: string }): s
   return `${storageSize(item.bytes)}${item.status === 'partial' ? ' measured · Partial' : ''}`
 }
 
+/** Tooltip for a box home whose total is the sum of separately measured folders. */
+export const APPROXIMATE_TOTAL_HINT =
+  'Hard-linked files may be counted more than once: this home could not be measured in one go, so its total adds up folders measured separately.'
+
+/** Tooltip for a squad total that includes an approximate home total. */
+export const APPROXIMATE_SQUAD_HINT =
+  'Includes an approximate home total: hard-linked files may be counted more than once.'
+
+/** A squad's size, with ≈ when any of its homes' totals is approximate. */
+export function squadSize(squad: { bytes: number | null; status?: string; totalExact?: boolean }): string {
+  return `${squad.totalExact === false && squad.bytes !== null ? '≈ ' : ''}${measuredSize(squad)}`
+}
+
 const DAY_MS = 86_400_000
 
 /** "45s", "12m", "3h", "2d". */

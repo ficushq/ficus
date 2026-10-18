@@ -11,6 +11,9 @@ import {
   parseChunkOutput,
   parseDuRecords,
   parseListRecords,
+  TOTAL_COMMAND,
+  TOTAL_SSH_TIMEOUT_MS,
+  TOTAL_TIMEOUT_SECONDS,
 } from './chunk'
 import { localRunner } from './scan.test-helper'
 
@@ -37,6 +40,23 @@ describe('chunk protocol', () => {
     for (const path of ['/etc', '/home', '/home/box_a', `${HOME}/../x`, `${HOME}/./x`, `${HOME}//x`, `${HOME}/`])
       expect(() => chunkInput([path])).toThrow()
     expect(isScanPath(`${HOME}/${HOSTILE[2]}`)).toBe(true)
+  })
+
+  test('the total-only command is a fixed template with its own, longer time limit', () => {
+    expect(TOTAL_TIMEOUT_SECONDS).toBe(180)
+    expect(TOTAL_SSH_TIMEOUT_MS).toBe((180 + 5 + 15) * 1000)
+    expect(TOTAL_COMMAND).toBe(
+      "export LC_ALL=C; df -B1 --output=used,size /home; printf '\\0'; " +
+        'sudo -n timeout -k 5s 180s nice -n 19 ionice -c 3 xargs -0 -r -n 1 sh -c ' +
+        '\'du -x -s -B1 --null -- "$1" 2>/dev/null; printf "#%s\\0" "$?"\' sh'
+    )
+  })
+
+  test('total-only output parses to one exact total per path, and a timeout leaves the path incomplete', () => {
+    const output = parseChunkOutput(`Used 1B-blocks\n10 20\n\0${20 * 1024 ** 3}\t${HOME}\0#0\0`, 1)
+    expect(output.paths[0]).toMatchObject({ complete: true, exitCode: 0 })
+    expect([...parseDuRecords(output.paths[0]!.records, HOME)]).toEqual([[HOME, 20 * 1024 ** 3]])
+    expect(parseChunkOutput('Used 1B-blocks\n10 20\n\0', 1).paths[0]).toMatchObject({ complete: false })
   })
 
   test('markers attribute output to paths in order and drop a truncated tail', () => {
@@ -137,5 +157,40 @@ describe('real command templates on a local tree', () => {
     for (const command of runner.commands) for (const name of HOSTILE) expect(command).not.toContain(name)
     for (const file of ['pwned', 'pwned2', 'pwned3'])
       expect(existsSync(join(root, file)) || existsSync(join(process.cwd(), file))).toBe(false)
+  })
+
+  test('one total-only du counts a file hard-linked into several folders once', async () => {
+    const tree = mkdtempSync(join(tmpdir(), 'storage-total-'))
+    try {
+      const home = '/home/box_bbbbbbbbbbbb'
+      for (const name of ['one', 'two', 'three']) mkdirSync(join(tree, home, name), { recursive: true })
+      writeFileSync(join(tree, home, 'one/cache'), Buffer.alloc(256 * 1024, 1))
+      linkSync(join(tree, home, 'one/cache'), join(tree, home, 'two/cache'))
+      linkSync(join(tree, home, 'one/cache'), join(tree, home, 'three/cache'))
+      const runner = localRunner(tree)
+      const children = ['one', 'two', 'three'].map((name) => `${home}/${name}`)
+      const separate = parseChunkOutput(
+        (await runner.run({} as Machine, measureCommand(0), { stdin: chunkInput(children) })).stdout,
+        children.length
+      )
+      const summed = children.reduce(
+        (sum, child, index) => sum + parseDuRecords(separate.paths[index]!.records, child).get(child)!,
+        0
+      )
+      const result = await runner.run({} as Machine, TOTAL_COMMAND, { stdin: chunkInput([home, `${home}/gone`]) })
+      const output = parseChunkOutput(result.stdout, 2)
+      expect(output.paths[0]).toMatchObject({ complete: true, exitCode: 0 })
+      expect(output.paths[1]).toMatchObject({ complete: true, exitCode: 1 })
+      const entries = parseDuRecords(output.paths[0]!.records, home)
+      // Only the home's total: no breakdown.
+      expect([...entries.keys()]).toEqual([home])
+      const total = entries.get(home)!
+      expect(total).toBeGreaterThanOrEqual(256 * 1024)
+      expect(total).toBeLessThan(2 * 256 * 1024)
+      expect(summed).toBeGreaterThanOrEqual(3 * 256 * 1024)
+      expect(runner.commands.every((command) => !command.includes(home))).toBe(true)
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
   })
 })
