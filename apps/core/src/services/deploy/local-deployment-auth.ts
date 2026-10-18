@@ -19,7 +19,14 @@
  *     forwards no cookies at all, and a per-app origin drops this one (and
  *     every other Ficus cookie) by exact name.
  */
-import { getLocalDeployment, isValidLocalDeploymentBrowserToken } from './local-deployment-service'
+import type { LocalDeployment } from '@ficus/shared'
+import { isTrustedProxyPeer } from '../../lib/client-address'
+import {
+  getLocalDeployment,
+  getLocalDeploymentAliasHost,
+  getLocalDeploymentByAlias,
+  isValidLocalDeploymentBrowserToken,
+} from './local-deployment-service'
 
 const TOKEN_QUERY_PARAM = '_ficus_token'
 const LOCAL_DEPLOYMENT_UUID_PREFIX =
@@ -71,13 +78,43 @@ export function presentedLocalDeploymentToken(
   }
 }
 
-/** Resolve a route prefix before validating the token against the exact deployment id. */
+/**
+ * Marks an alias in the route parameter: `/api/app/~<alias>/`. `~` is never in
+ * a uuid prefix or a DNS label, so an alias can never be read as an id prefix
+ * (an all-hex alias such as `cafe` would otherwise be one).
+ */
+export const LOCAL_DEPLOYMENT_ALIAS_ROUTE_MARKER = '~'
+
+/**
+ * The deployment a `/api/app/<parameter>/` route names: a uuid prefix, or
+ * `~<alias>`. An alias resolves ONLY for the request the hosted Platform bridge
+ * forwards from that alias's own host: a trusted proxy peer naming exactly
+ * `<tenant>--<alias>.<apps domain>` in X-Forwarded-Host (see
+ * local-deployment-proxy.ts perAppOrigin for why that header is believable
+ * from that peer). Anywhere else, on the Ficus host or without an apps domain,
+ * an alias is not a route at all.
+ */
+export async function resolveLocalDeploymentRouteParameter(
+  request: Request,
+  routeParameter: string
+): Promise<LocalDeployment | null> {
+  if (routeParameter.startsWith(LOCAL_DEPLOYMENT_ALIAS_ROUTE_MARKER)) {
+    const alias = routeParameter.slice(LOCAL_DEPLOYMENT_ALIAS_ROUTE_MARKER.length)
+    const aliasHost = getLocalDeploymentAliasHost(alias)
+    if (!aliasHost || !isTrustedProxyPeer(request)) return null
+    if (request.headers.get('x-forwarded-host')?.trim().toLowerCase() !== aliasHost) return null
+    return getLocalDeploymentByAlias(alias)
+  }
+  if (!isValidLocalDeploymentRouteParameter(routeParameter)) return null
+  return getLocalDeployment(routeParameter)
+}
+
+/** Resolve a route prefix or alias before validating the token against the exact deployment id. */
 export async function authenticateLocalDeploymentBrowserRequest(
   request: Request,
   routeParameter: string
 ): Promise<string | null> {
-  if (!isValidLocalDeploymentRouteParameter(routeParameter)) return null
-  const localDeployment = await getLocalDeployment(routeParameter)
+  const localDeployment = await resolveLocalDeploymentRouteParameter(request, routeParameter)
   if (!localDeployment) return null
   const { token } = presentedLocalDeploymentToken(request, localDeployment.id)
   return (await isValidLocalDeploymentBrowserToken(localDeployment.id, token)) ? localDeployment.id : null

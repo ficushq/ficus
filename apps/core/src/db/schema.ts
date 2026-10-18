@@ -1086,6 +1086,14 @@ export const localDeployments = pgTable(
       .references(() => squads.id, { onDelete: 'cascade' }),
     sandboxId: varchar('sandbox_id', { length: 255 }).notNull(),
     name: varchar('name', { length: 100 }).notNull(),
+    /**
+     * Optional hostname alias: on a hosted instance the app is then served at
+     * `<tenant>--<alias>.<apps domain>` (local-deployment-alias.ts). Unique per
+     * instance, and the tenant label is unique across Ficus Cloud, so the host
+     * is globally unique. Cleared on archive; a freed alias is held in
+     * local_deployment_alias_releases for a cooldown before anyone else claims it.
+     */
+    alias: varchar('alias', { length: 63 }),
     port: integer('port').notNull(),
     /**
      * The scope within which this deployment's port must be unique:
@@ -1133,8 +1141,23 @@ export const localDeployments = pgTable(
     uniqueIndex('local_deployments_live_port_scope_uniq')
       .on(table.portScope, table.port)
       .where(sql`archived_at is null`),
+    // One app per alias per instance: the host-to-app mapping must be unambiguous.
+    uniqueIndex('local_deployments_alias_uniq').on(table.alias),
   ]
 )
+
+/**
+ * When an alias was last freed (renamed, cleared or archived) and by which app.
+ * Another app may claim it only after the cooldown
+ * (LOCAL_DEPLOYMENT_ALIAS_COOLDOWN_MS): the browser may still hold cookies the
+ * old app set on that host, which must not reach a different app. No foreign
+ * key, so the record outlives the app that freed the alias.
+ */
+export const localDeploymentAliasReleases = pgTable('local_deployment_alias_releases', {
+  alias: varchar('alias', { length: 63 }).primaryKey(),
+  localDeploymentId: uuid('local_deployment_id').notNull(),
+  releasedAt: timestamp('released_at').notNull().defaultNow(),
+})
 
 export const appDeployments = pgTable(
   'app_deployments',

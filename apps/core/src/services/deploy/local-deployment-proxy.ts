@@ -2,8 +2,10 @@ import { Squad } from '../../entities/Squad'
 import { getClientAddress, isTrustedProxyPeer } from '../../lib/client-address'
 import { SESSION_COOKIE_NAME } from '../auth/session-cookie'
 import { ensureSquadSandbox } from '../sandbox/ensure'
+import type { LocalDeployment } from '@ficus/shared'
 import {
   getLocalDeployment,
+  getLocalDeploymentAliasHost,
   getLocalDeploymentPublicHost,
   isValidLocalDeploymentBrowserToken,
 } from './local-deployment-service'
@@ -93,21 +95,87 @@ function hostOnlyAppSetCookies(setCookies: string[], localDeploymentId: string):
   return kept
 }
 
+/** The per-app host a request arrived on, and every host this app is served on. */
+interface PerAppOrigin {
+  host: string
+  /** The id host while the app has an alias: browsers are sent on to `aliasHost`. */
+  redirectTo: string | null
+  /** The app's own hosts (id host, plus alias host): the only origins its WebSockets accept. */
+  appHosts: string[]
+}
+
 /**
- * The app's own public host when this request arrived through its per-app
- * origin (`<tenant>--<id>.<apps domain>`), else null (the path mount).
+ * The app's own public host when this request arrived through one of its
+ * per-app origins (`<tenant>--<id>.<apps domain>`, or `<tenant>--<alias>.<apps
+ * domain>` while it has that alias), else null (the path mount).
  *
  * The Platform bridge re-sends a per-app-origin request to the tenant host and
  * names the app host in X-Forwarded-Host; the tenant Caddy keeps that header
  * only from the bridge (scripts/setup/lib.sh render_caddyfile) and pins it to
  * the tenant host for everyone else. Core believes it only from a trusted peer
- * (the caller checks) and only when it is exactly this deployment's host, so a
- * forged value can at most name the host the app already has.
+ * (the caller checks) and only when it is exactly one of this deployment's
+ * hosts, so a forged value can at most name a host the app already has.
  */
-function perAppOriginHost(request: Request, localDeploymentId: string): string | null {
-  const expected = getLocalDeploymentPublicHost(localDeploymentId)
+function perAppOrigin(request: Request, localDeployment: LocalDeployment): PerAppOrigin | null {
+  const idHost = getLocalDeploymentPublicHost(localDeployment.id)
+  if (!idHost) return null
+  const aliasHost = getLocalDeploymentAliasHost(localDeployment.alias)
+  const appHosts = aliasHost ? [idHost, aliasHost] : [idHost]
   const forwarded = request.headers.get('x-forwarded-host')?.trim().toLowerCase()
-  return expected && forwarded === expected ? expected : null
+  if (forwarded === aliasHost) return { host: aliasHost, redirectTo: null, appHosts }
+  if (forwarded === idHost) return { host: idHost, redirectTo: aliasHost, appHosts }
+  return null
+}
+
+/** The app-proxy credential under its current and pre-Ficus names: never passed on in a query. */
+const CREDENTIAL_QUERY_PARAMS = new Set(['_ficus_token', LEGACY_TOKEN_QUERY_PARAM])
+
+/** A raw `name=value` query pair's name as URLSearchParams would read it. */
+function decodedQueryName(pair: string): string {
+  const name = pair.split('=', 1)[0]!.replaceAll('+', ' ')
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    return name
+  }
+}
+
+/**
+ * Send a browser from the app's id host on to its alias host: same path and
+ * query, 307 so the method and body survive. Temporary and never cached, so
+ * clearing the alias ends the redirect at once (a cached 308 would keep
+ * sending browsers to a host that may later belong to another app).
+ *
+ * The credential: the Platform bridge holds it in a cookie for each host and
+ * hands it to Core as `_ficus_token` on every request. A GET or HEAD carries it
+ * on to the alias host in the URL, where the bridge sets that host's cookie and
+ * redirects to the clean URL, so the visitor lands there signed in. Any other
+ * method drops it: the bridge's credential redirect would turn the request into
+ * a GET and lose the body, so that request must already hold the alias host's
+ * cookie (pages loaded from the alias host do). The Location only ever names
+ * the alias host, it carries no Ficus credential other than this app's own, and
+ * Referrer-Policy keeps the URL out of any Referer.
+ */
+function aliasHostRedirect(aliasHost: string, path: string, sourceUrl: URL, method: string, token: string): Response {
+  const location = new URL(`https://${aliasHost}/`)
+  location.pathname = `/${path.replace(/^\/+/, '')}`
+  // The query as sent, byte for byte, minus the credential: re-serializing it
+  // through URLSearchParams would change its encoding (`%20` becomes `+`).
+  const kept = sourceUrl.search
+    .slice(1)
+    .split('&')
+    .filter((pair) => pair && !CREDENTIAL_QUERY_PARAMS.has(decodedQueryName(pair)))
+  if (method === 'GET' || method === 'HEAD') kept.push(`_ficus_token=${encodeURIComponent(token)}`)
+  location.search = kept.join('&')
+  return new Response(null, {
+    status: 307,
+    headers: {
+      location: location.href,
+      'cache-control': 'no-store',
+      'cdn-cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+    },
+  })
 }
 
 /**
@@ -255,7 +323,14 @@ export async function proxyLocalDeploymentRequest(
   //     that Host.
   // Both apply to a WebSocket upgrade too: it is relayed with these headers.
   const trustedPeer = isTrustedProxyPeer(request)
-  const publicHost = trustedPeer ? perAppOriginHost(request, localDeployment.id) : null
+  const origin = trustedPeer ? perAppOrigin(request, localDeployment) : null
+  const publicHost = origin?.host ?? null
+  // The id host of an aliased app sends browsers to the alias host, after every
+  // access check above. A WebSocket handshake cannot follow a redirect, so it
+  // is served on the id host as before.
+  if (origin?.redirectTo && !upgrade) {
+    return aliasHostRedirect(origin.redirectTo, path, new URL(request.url), request.method, presented.token!)
+  }
   if (publicHost) {
     const cookie = appCookieHeader(request.headers.get('cookie'), localDeployment.id)
     if (cookie) headers.set('cookie', cookie)
@@ -269,7 +344,7 @@ export async function proxyLocalDeploymentRequest(
   }
 
   if (upgrade) {
-    if (!isAllowedLocalAppWebSocketOrigin(request.headers.get('origin'), publicHost)) {
+    if (!isAllowedLocalAppWebSocketOrigin(request.headers.get('origin'), origin?.appHosts ?? null)) {
       return refuse('Forbidden', 403, 'forbidden-origin')
     }
     if (!server) return refuse('WebSocket upgrades are not available on this route', 501, 'no-upgrade-server')

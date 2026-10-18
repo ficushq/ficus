@@ -134,6 +134,54 @@ describe('deploy CLI commands', () => {
     })
   })
 
+  it('maps local start --alias to the create body', async () => {
+    await run([
+      'deploy',
+      'local',
+      'start',
+      'squad-1',
+      '--name',
+      'web',
+      '--command',
+      'bun run dev',
+      '--alias',
+      'dashboard',
+    ])
+    expect(apiPost).toHaveBeenCalledWith(
+      '/api/squads/squad-1/local-deployments',
+      expect.objectContaining({ name: 'web', alias: 'dashboard' })
+    )
+  })
+
+  it('maps local alias to PATCH /api/local-deployments/:id, and --clear to a null alias', async () => {
+    ;(apiPatch as ReturnType<typeof mock>).mockResolvedValue({
+      id: 'local-1',
+      name: 'web',
+      status: 'running',
+      alias: 'dashboard',
+      urlPathOrHost: 'https://noah--dashboard.ficus.garden/?_ficus_token=t',
+    })
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      await run(['deploy', 'local', 'alias', 'local-1', 'dashboard'])
+      expect(apiPatch).toHaveBeenCalledWith('/api/local-deployments/local-1', { alias: 'dashboard' })
+      expect(log).toHaveBeenCalledWith('Local app web is now dashboard')
+      expect(log).toHaveBeenCalledWith('  URL: https://noah--dashboard.ficus.garden/?_ficus_token=t')
+
+      await run(['deploy', 'local', 'alias', 'local-1', '--clear'])
+      expect(apiPatch).toHaveBeenCalledWith('/api/local-deployments/local-1', { alias: null })
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it('local alias needs exactly one of a name or --clear', async () => {
+    await run(['deploy', 'local', 'alias', 'local-1'])
+    await run(['deploy', 'local', 'alias', 'local-1', 'dashboard', '--clear'])
+    expect(apiPatch).not.toHaveBeenCalled()
+    expect(outputError).toHaveBeenCalledTimes(2)
+  })
+
   it('maps local lifecycle commands to local-deployments endpoints', async () => {
     await run(['deploy', 'local', 'list', 'squad-1'])
     await run(['deploy', 'local', 'get', 'local-1'])

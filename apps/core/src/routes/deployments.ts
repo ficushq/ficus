@@ -18,8 +18,11 @@ import {
   createLocalDeployment,
   getLocalDeployment,
   listLocalDeployments,
+  normalizeRequestedLocalDeploymentAlias,
+  setLocalDeploymentAlias,
   stopLocalDeploymentRecord,
 } from '../services/deploy/local-deployment-service'
+import { LocalDeploymentAliasError } from '../services/deploy/local-deployment-alias'
 import { LocalDeploymentProcessSupervisor } from '../services/deploy/local-deployment-process-supervisor'
 import { LocalDeploymentLogPathOutsideWorkspaceError } from '../services/deploy/local-deployment-log-path'
 import {
@@ -41,6 +44,14 @@ import {
 } from '../services/deploy/local-deployment-ports'
 
 const AMBIGUOUS_LOCAL_DEPLOYMENT_LINK_ERROR = 'This app link is no longer unique — get a fresh URL.'
+
+/** PATCH /local-deployments/:id: only the alias is editable; `null` clears it. */
+const updateLocalDeploymentSchema = z.object({ alias: z.string().max(253).nullable() }).strict()
+
+/** A refused alias: taken or cooling down is a conflict; anything else is the request's fault. */
+function localDeploymentAliasErrorStatus(error: LocalDeploymentAliasError): 400 | 409 {
+  return error.kind === 'conflict' ? 409 : 400
+}
 
 const deploymentEnvironmentSchema = z.enum(['preview', 'staging', 'production'])
 const deploymentStatusSchema = z.enum(['planned', 'deploying', 'ready', 'failed', 'rolled_back', 'destroyed'])
@@ -309,6 +320,8 @@ export const deploymentsRouter = new Hono()
     const deps = getDependencies()
     try {
       normalizeLocalDeploymentInput(input, { squadId: squad.id })
+      // Refuse a bad alias before ensuring the sandbox; taken/cooldown is checked on insert.
+      if (input.alias !== undefined && input.alias !== null) normalizeRequestedLocalDeploymentAlias(input.alias)
     } catch (err) {
       return c.json({ error: publicErrorMessage(err as Error) }, 400)
     }
@@ -335,6 +348,9 @@ export const deploymentsRouter = new Hono()
       if (err instanceof LocalDeploymentPortInUseError) return c.json({ error: err.message }, 409)
       if (err instanceof LocalDeploymentPortReservedError) return c.json({ error: err.message }, 400)
       if (err instanceof LocalDeploymentPortUnavailableError) return c.json({ error: err.message }, 503)
+      if (err instanceof LocalDeploymentAliasError) {
+        return c.json({ error: err.message }, localDeploymentAliasErrorStatus(err))
+      }
       // Launch/refresh own guarded failure bookkeeping. Do not turn an
       // unverified transport outcome into a crash or overwrite stop intent.
       const provisioning = getSandboxProvisionErrorResponse(err)
@@ -352,6 +368,26 @@ export const deploymentsRouter = new Hono()
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
       return c.json(localDeployment)
+    }
+  )
+  .patch(
+    '/local-deployments/:localDeploymentId',
+    requireEntityPermission('deployments:write', (c) => localDeploymentSquadId(c.req.param('localDeploymentId'))),
+    zValidator('json', updateLocalDeploymentSchema),
+    async (c) => {
+      const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
+      if (!localDeployment || localDeployment.archivedAt) return c.json({ error: 'Local deployment not found' }, 404)
+      try {
+        return c.json(await setLocalDeploymentAlias(localDeployment.id, c.req.valid('json').alias))
+      } catch (err) {
+        if (err instanceof LocalDeploymentAliasError) {
+          return c.json({ error: err.message }, localDeploymentAliasErrorStatus(err))
+        }
+        if ((err as Error).message === 'Sandbox localDeployment not found') {
+          return c.json({ error: 'Local deployment not found' }, 404)
+        }
+        throw err
+      }
     }
   )
   .get(

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock 
 import { Hono } from 'hono'
 import { eq, like } from 'drizzle-orm'
 import { existsSync } from 'fs'
-import { db, appDeployments, squads, localDeployments } from '../db'
+import { db, appDeployments, squads, localDeployments, localDeploymentAliasReleases } from '../db'
 import { Squad } from '../entities/Squad'
 import { getLocalDeployment, updateLocalDeploymentRecord } from '../services/deploy/local-deployment-service'
 import { configureDeploymentsRouteDependencies, deploymentsRouter } from './deployments'
@@ -450,6 +450,129 @@ describe('deployments routes', () => {
       if (previousAppUrl === undefined) delete process.env.APP_URL
       else process.env.APP_URL = previousAppUrl
     }
+  })
+
+  describe('local app aliases', () => {
+    let previousEnv: { appsDomain?: string; appUrl?: string }
+    const aliasPart = `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
+    beforeEach(() => {
+      previousEnv = { appsDomain: process.env.FICUS_APPS_DOMAIN, appUrl: process.env.APP_URL }
+      process.env.FICUS_APPS_DOMAIN = 'ficus.garden'
+      process.env.APP_URL = 'https://noah.ficus.sh'
+    })
+
+    afterEach(async () => {
+      if (previousEnv.appsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
+      else process.env.FICUS_APPS_DOMAIN = previousEnv.appsDomain
+      if (previousEnv.appUrl === undefined) delete process.env.APP_URL
+      else process.env.APP_URL = previousEnv.appUrl
+      await db.delete(localDeploymentAliasReleases).where(like(localDeploymentAliasReleases.alias, `${aliasPart}-%`))
+    })
+
+    async function create(squad: Squad, body: Record<string, unknown> = {}) {
+      return app.request(`/api/squads/${squad.id}/local-deployments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(adminUser.token) },
+        body: JSON.stringify({ name: 'web', mode: 'attached', port: 5173, ...body }),
+      })
+    }
+
+    function patch(id: string, body: unknown, token = adminUser.token) {
+      return app.request(`/api/local-deployments/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+        body: JSON.stringify(body),
+      })
+    }
+
+    it('POST takes an alias and returns the alias URL', async () => {
+      const res = await create(await createTestSquad(), { alias: `${aliasPart}-dashboard` })
+
+      expect(res.status).toBe(201)
+      const created = await res.json()
+      expect(created.alias).toBe(`${aliasPart}-dashboard`)
+      expect(created.urlPathOrHost).toMatch(
+        new RegExp(`^https://noah--${aliasPart}-dashboard\\.ficus\\.garden/\\?_ficus_token=.+$`)
+      )
+    })
+
+    it('POST refuses an invalid alias before ensuring the sandbox, and a taken one with 409', async () => {
+      const squad = await createTestSquad()
+      const invalid = await create(squad, { alias: 'api' })
+      expect(invalid.status).toBe(400)
+      expect((await invalid.json()).error).toContain('reserved')
+      expect(ensureSquadSandbox).not.toHaveBeenCalled()
+
+      expect((await create(squad, { alias: `${aliasPart}-taken`, port: 5174 })).status).toBe(201)
+      const taken = await create(squad, { alias: `${aliasPart}-taken`, port: 5175 })
+      expect(taken.status).toBe(409)
+      expect((await taken.json()).error).toContain('already used')
+    })
+
+    it('PATCH sets, renames and clears the alias', async () => {
+      const created = await (await create(await createTestSquad())).json()
+
+      const set = await patch(created.id, { alias: `${aliasPart}-one` })
+      expect(set.status).toBe(200)
+      expect((await set.json()).urlPathOrHost).toStartWith(`https://noah--${aliasPart}-one.ficus.garden/`)
+
+      const renamed = await (await patch(created.id, { alias: `${aliasPart}-two` })).json()
+      expect(renamed.alias).toBe(`${aliasPart}-two`)
+
+      const cleared = await patch(created.id, { alias: null })
+      expect(cleared.status).toBe(200)
+      const body = await cleared.json()
+      expect(body.alias).toBeNull()
+      expect(body.urlPathOrHost).toStartWith(
+        `https://noah--${created.id.replaceAll('-', '').slice(0, 12)}.ficus.garden/`
+      )
+    })
+
+    it('PATCH answers 400 for an invalid alias or body, 409 for a taken or cooling-down one, 404 when archived', async () => {
+      const squad = await createTestSquad()
+      const first = await (await create(squad, { alias: `${aliasPart}-held`, port: 5174 })).json()
+      const second = await (await create(squad, { port: 5175 })).json()
+
+      expect((await patch(second.id, { alias: 'my--app' })).status).toBe(400)
+      expect((await patch(second.id, { alias: 'x', name: 'other' })).status).toBe(400)
+      expect((await patch(second.id, {})).status).toBe(400)
+      expect((await patch(second.id, { alias: `${aliasPart}-held` })).status).toBe(409)
+
+      await patch(first.id, { alias: null })
+      const cooling = await patch(second.id, { alias: `${aliasPart}-held` })
+      expect(cooling.status).toBe(409)
+      expect((await cooling.json()).error).toContain('released')
+
+      await app.request(`/api/local-deployments/${first.id}`, {
+        method: 'DELETE',
+        headers: authHeaders(adminUser.token),
+      })
+      expect((await patch(first.id, { alias: `${aliasPart}-again` })).status).toBe(404)
+    })
+
+    it('PATCH explains that aliases need per-app hosts when FICUS_APPS_DOMAIN is unset', async () => {
+      const created = await (await create(await createTestSquad())).json()
+      delete process.env.FICUS_APPS_DOMAIN
+
+      const res = await patch(created.id, { alias: `${aliasPart}-nohost` })
+
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toContain('FICUS_APPS_DOMAIN')
+    })
+
+    it('PATCH needs deployments:write on the app squad', async () => {
+      const mySquad = await createTestSquad('alias-mine')
+      const created = await (await create(await createTestSquad('alias-other'))).json()
+      const user = await createTestUser({ prefix: `${PREFIX}-alias` })
+      const role = await createTestRole({ prefix: `${PREFIX}-alias`, permissions: ['deployments:write'] })
+      await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: mySquad.id })
+
+      expect((await app.request(`/api/local-deployments/${created.id}`, { method: 'PATCH' })).status).toBe(401)
+      expect((await patch(created.id, { alias: `${aliasPart}-cross` }, user.token)).status).toBe(403)
+      expect((await getLocalDeployment(created.id))!.alias).toBeNull()
+      await cleanupTestRbac(`${PREFIX}-alias`)
+    })
   })
 
   it('POST /api/squads/:id/local-deployments creates attached localDeployments', async () => {

@@ -10,6 +10,7 @@ import { acquireDomHarness } from '../../test/domHarness'
 import type { LocalDeployment } from '@ficus/shared'
 
 import { localDeploymentActionErrorMessage } from '../../lib/localDeploymentActionError'
+import { getLocalDeploymentAppHost, previewLocalDeploymentAliasUrl } from './localDeploymentAppHost'
 
 const { LocalDeploymentsPanel } = await import('./LocalDeploymentsPanel')
 
@@ -95,6 +96,46 @@ describe('LocalDeploymentsPanel', () => {
       'logs not captured'
     )
   })
+
+  test('shows the alias host the app is linked by, and offers the alias editor only with per-app hosts', () => {
+    const aliased = renderPanel([
+      localDeployment({
+        alias: 'dashboard',
+        urlPathOrHost: 'https://noah--dashboard.ficus.garden/?_ficus_token=token',
+      }),
+    ])
+    expect(aliased).toContain('noah--dashboard.ficus.garden')
+    expect(aliased).not.toContain('_ficus_token')
+    expect(aliased).toContain('Change app alias (dashboard)')
+
+    const idHost = renderPanel([
+      localDeployment({ urlPathOrHost: 'https://noah--0123456789ab.ficus.garden/?_ficus_token=t' }),
+    ])
+    expect(idHost).toContain('noah--0123456789ab.ficus.garden')
+    expect(idHost).toContain('Set app alias')
+
+    // Path mount (no apps domain): an alias would have no effect, so no editor.
+    const pathMount = renderPanel([localDeployment()])
+    expect(pathMount).not.toContain('Set app alias')
+  })
+})
+
+describe('alias host helpers', () => {
+  test('reads the app host only from an absolute per-app URL', () => {
+    expect(getLocalDeploymentAppHost('https://noah--dashboard.ficus.garden/?_ficus_token=t')).toBe(
+      'noah--dashboard.ficus.garden'
+    )
+    expect(getLocalDeploymentAppHost('/api/app/local-1/?_ficus_token=t')).toBeNull()
+  })
+
+  test('previews the alias URL for a tenant label that itself contains --', () => {
+    expect(previewLocalDeploymentAliasUrl('team--blue--0123456789ab.ficus.app', 'board')).toBe(
+      'https://team--blue--board.ficus.app/'
+    )
+    expect(previewLocalDeploymentAliasUrl('noah--dashboard.ficus.garden', 'reports')).toBe(
+      'https://noah--reports.ficus.garden/'
+    )
+  })
 })
 
 const spies: Array<{ mockRestore: () => void }> = []
@@ -135,6 +176,8 @@ async function mountPanel(localDeployments: LocalDeployment[]) {
   return {
     click,
     alert,
+    document: dom.window.document,
+    act: dom.act,
     async cleanup() {
       await dom.cleanup()
       queryClient.clear()
@@ -234,5 +277,67 @@ describe('LocalDeploymentsPanel action errors', () => {
       'Something went wrong. Try again.'
     )
     expect(localDeploymentActionErrorMessage(apiError(409, '  Local app is archived  '))).toBe('Local app is archived')
+  })
+})
+
+describe('LocalDeploymentsPanel alias editor', () => {
+  const hosted = (overrides: Partial<LocalDeployment> = {}) =>
+    localDeployment({ urlPathOrHost: 'https://noah--0123456789ab.ficus.garden/?_ficus_token=t', ...overrides })
+
+  async function typeAlias(panel: Awaited<ReturnType<typeof mountPanel>>, value: string) {
+    const input = panel.document.querySelector<HTMLInputElement>('#local-deployment-alias')
+    if (!input) throw new Error('alias input not rendered')
+    await panel.act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!
+      setter.call(input, value)
+      input.dispatchEvent(new panel.document.defaultView!.Event('input', { bubbles: true }))
+    })
+  }
+
+  async function submit(panel: Awaited<ReturnType<typeof mountPanel>>, label: string) {
+    const button = [...panel.document.querySelectorAll<HTMLButtonElement>('button')].find(
+      (candidate) => candidate.textContent === label
+    )
+    if (!button) throw new Error(`No ${label} button`)
+    await panel.act(async () => button.click())
+    await panel.act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    })
+  }
+
+  test('saves a new alias through PATCH, previewing its host', async () => {
+    const update = spyOn(workspaceApi, 'updateLocalDeploymentAlias').mockResolvedValue(hosted({ alias: 'dashboard' }))
+    spies.push(update)
+    const panel = await mountPanel([hosted()])
+    try {
+      await panel.click('Set app alias')
+      await typeAlias(panel, 'Dashboard')
+      expect(panel.document.body.textContent).toContain('Served at https://noah--dashboard.ficus.garden/.')
+      await submit(panel, 'Save')
+      expect(update).toHaveBeenCalledWith('local-1', 'dashboard')
+      expect(panel.document.querySelector('#local-deployment-alias')).toBeNull()
+    } finally {
+      await panel.cleanup()
+    }
+  })
+
+  test("shows the server's reason when an alias is refused, and removes an alias with null", async () => {
+    const update = spyOn(workspaceApi, 'updateLocalDeploymentAlias')
+      .mockRejectedValueOnce(apiError(409, 'That alias is already used by another app'))
+      .mockResolvedValueOnce(hosted())
+    spies.push(update)
+    const panel = await mountPanel([
+      hosted({ alias: 'dashboard', urlPathOrHost: 'https://noah--dashboard.ficus.garden/' }),
+    ])
+    try {
+      await panel.click('Change app alias (dashboard)')
+      await typeAlias(panel, 'reports')
+      await submit(panel, 'Save')
+      expect(panel.alert()).toBe('That alias is already used by another app')
+      await submit(panel, 'Remove alias')
+      expect(update).toHaveBeenLastCalledWith('local-1', null)
+    } finally {
+      await panel.cleanup()
+    }
   })
 })

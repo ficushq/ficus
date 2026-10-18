@@ -971,8 +971,16 @@ export interface LocalDeployment {
   squadId: string
   sandboxId: string
   name: string
+  /**
+   * Optional hostname alias: on a hosted instance (per-app hosts) the app is
+   * served at `<tenant>--<alias>.<apps domain>` and `urlPathOrHost` uses that
+   * host; its id host redirects there. Null (or absent from older servers) when
+   * the app has none.
+   */
+  alias?: string | null
   port: number
   targetHost: string
+  /** The link to open, copy or share: the alias host when the app has an alias, else the id host or path. */
   urlPathOrHost: string
   visibility: LocalDeploymentVisibility
   mode: LocalDeploymentMode
@@ -995,6 +1003,12 @@ export interface LocalDeployment {
 
 export interface CreateLocalDeploymentInput {
   name: string
+  /**
+   * Optional hostname alias (lowercase letters, digits, single hyphens). Needs
+   * per-app hosts (FICUS_APPS_DOMAIN); refused when it is taken, reserved,
+   * invalid, or freed by another app within the last 24 hours.
+   */
+  alias?: string | null
   /**
    * OMIT THIS. Ficus assigns a free port and passes it to the app as `$PORT`,
    * which is the only way it can guarantee the port is actually free.

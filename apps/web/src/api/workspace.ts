@@ -292,6 +292,17 @@ export async function restartLocalDeployment(localDeploymentId: string): Promise
   return apiFetch<LocalDeployment>(`/local-deployments/${localDeploymentId}/restart`, { method: 'POST' })
 }
 
+/** Set (a name) or clear (null) the app's hostname alias. */
+export async function updateLocalDeploymentAlias(
+  localDeploymentId: string,
+  alias: string | null
+): Promise<LocalDeployment> {
+  return apiFetch<LocalDeployment>(`/local-deployments/${localDeploymentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ alias }),
+  })
+}
+
 export async function archiveLocalDeployment(localDeploymentId: string): Promise<LocalDeployment> {
   return apiFetch<LocalDeployment>(`/local-deployments/${localDeploymentId}`, { method: 'DELETE' })
 }

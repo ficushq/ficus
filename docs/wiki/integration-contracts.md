@@ -159,6 +159,62 @@ concurrency, and
 Historical rationale: app subdomain design.
 The historical status and error-response checklist do not override current code.
 
+### App aliases: `<tenant>--<alias>.<apps-domain>`
+
+An app may take an alias. Its host is then `<tenant>--<alias>.<apps-domain>`,
+and every link Core issues (`urlPathOrHost`) uses that host. Core enforces the
+rules that keep the host-to-app mapping unambiguous
+(`services/deploy/local-deployment-alias.ts`):
+
+- Lowercase `a-z`, `0-9` and single hyphens only. No `--`: the bridge splits
+  the label at the last `--`, and `xn--` is the punycode marker. No leading or
+  trailing hyphen, and no non-ASCII input (it is refused, never case-mapped).
+- Never the 12-hex id form. A label of exactly 12 lowercase hex characters is
+  always a deployment id, never an alias.
+- Not a reserved name (`api`, `admin`, `www`, `app`, `apps`, `mail`, `status`
+  and the rest of the list in code).
+- `<tenant>--<alias>` fits in 63 characters.
+- Unique per instance (unique index `local_deployments_alias_uniq`). The
+  tenant label is unique across Ficus Cloud, so the host is globally unique.
+- A freed alias (renamed, cleared or archived) is held for 24 hours
+  (`local_deployment_alias_releases`). Only the app that freed it may take it
+  back sooner, so a browser's cookies for the old app never reach a new one.
+
+Without an apps domain an alias cannot be set, and one that already exists has
+no routing effect: the path mount is unchanged.
+
+Routing, by hop:
+
+- **Platform bridge** (pending, ficus-platform): an app label whose part after
+  the last `--` is not 12 lowercase hex characters is an alias. Validate it
+  like the rules above (the same pattern and length; Core repeats every
+  check). Forward it exactly like an id host, to
+  `/api/app/~<alias>/<path>` with the browser query plus `_ficus_token`, with
+  `X-Forwarded-Host` set to the validated alias host. Credential cookies and
+  the token-link redirect work per host as they already do. Until this ships,
+  the bridge answers an alias host with its invalid-host 400. The id host
+  keeps working, but it redirects to the alias host, so an aliased app is
+  unreachable on Ficus Cloud until then.
+- **Core**: `~` marks an alias in the route parameter. It is never part of a
+  uuid prefix or a DNS label, so an all-hex alias such as `cafe` is never
+  read as an id prefix. Core resolves `~<alias>` only when the socket peer is a
+  trusted proxy and `X-Forwarded-Host` is exactly that alias host. Anywhere
+  else, including the Ficus host, the alias route does not exist (401). Both
+  hosts get the same access checks, cookies, `Authorization` and host
+  handling.
+- **Core, id host of an aliased app**: after the same access checks, an HTTP
+  request gets a `307` to `https://<alias host>/<same path>?<same query>`, with
+  `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. The redirect
+  is temporary, so clearing the alias ends it at once. A GET or HEAD carries
+  the request's `_ficus_token` on to the alias host, where the bridge sets that
+  host's cookie and strips the token, so the visitor lands signed in. Other
+  methods drop it, because the bridge's credential redirect would turn the
+  request into a GET and lose the body. Such a request needs the alias host's
+  cookie already, which any page loaded from the alias host has. The redirect
+  is never sent before the credential checks out, so it does not reveal the
+  alias. A WebSocket handshake cannot follow a redirect, so it is served on
+  the id host.
+
 ### WebSockets on either mount
 
 A WebSocket handshake (a GET with `Upgrade: websocket` that `Connection`
@@ -171,7 +227,8 @@ Dev servers use it for hot reload (Next.js `/_next/webpack-hmr`, Vite).
   handshake's `Origin`, because a socket is not gated by CORS and the Lax
   credential cookie is sent from any same-site page (other apps and tenants
   share the site). On the per-app origin, `Origin` must be exactly
-  `https://<app host>`. On the path mount, it must be a Ficus web origin. A
+  `https://<app host>` for one of the app's own hosts: its id host, or its
+  alias host while it has one (on either host). On the path mount, it must be a Ficus web origin. A
   missing `Origin` means a non-browser client, which is allowed. Anything
   else gets a marked 403. Core opens the app's socket first. If the app
   refuses or does not answer within 15 seconds, Core returns a marked 502 and

@@ -134,13 +134,18 @@ export function isWebSocketUpgradeRequest(request: Request): boolean {
  * the browser also sends from any same-SITE page: every other app on the apps
  * domain and every other tenant on the Ficus domain (neither is a public suffix).
  * An ordinary HTTP request from such a page cannot read the answer; a socket
- * could. So a browser handshake must come from the origin the app is served on:
- * its own origin, or on the path mount a Ficus web origin (the path mount shares
- * it). A missing Origin is a non-browser client, which holds the credential itself.
+ * could. So a browser handshake must come from an origin the app is served on:
+ * on a per-app origin one of the app's own hosts (its id host, and its alias
+ * host while it has one), or on the path mount a Ficus web origin (the path
+ * mount shares it). A missing Origin is a non-browser client, which holds the
+ * credential itself.
  */
-export function isAllowedLocalAppWebSocketOrigin(origin: string | null, appHost: string | null): boolean {
+export function isAllowedLocalAppWebSocketOrigin(origin: string | null, appHosts: readonly string[] | null): boolean {
   if (!origin) return true
-  if (appHost) return normalizeOrigin(origin) === `https://${appHost}`
+  if (appHosts) {
+    const normalized = normalizeOrigin(origin)
+    return appHosts.some((appHost) => normalized === `https://${appHost}`)
+  }
   return isAllowedWsOrigin(origin)
 }
 

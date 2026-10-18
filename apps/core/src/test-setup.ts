@@ -826,6 +826,9 @@ if (testDbUnavailableReason !== undefined) {
         `CREATE UNIQUE INDEX IF NOT EXISTS "local_deployments_live_port_scope_uniq"
         ON "local_deployments" ("port_scope", "port")
         WHERE "archived_at" IS NULL`,
+        // local deployments: one app per hostname alias per instance.
+        `CREATE UNIQUE INDEX IF NOT EXISTS "local_deployments_alias_uniq"
+        ON "local_deployments" ("alias")`,
         // squad slots: preserve the three live-state uniqueness fences that
         // drizzle-kit push may omit for partial indexes.
         `CREATE UNIQUE INDEX IF NOT EXISTS "idx_slot_pools_active_key_unique"
