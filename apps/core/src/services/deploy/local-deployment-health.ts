@@ -12,6 +12,7 @@ import {
   updateLocalDeploymentRecord,
 } from './local-deployment-service'
 import { ensureSquadSandbox } from '../sandbox/ensure'
+import { TmuxServerUnreachableError } from '../sandbox/tmux'
 import { isBoxMigrating } from '../machines/queries'
 import {
   LocalDeploymentLaunchFailedError,
@@ -154,8 +155,11 @@ export async function refreshLocalDeploymentHealth(target: string | LocalDeploym
       },
       deps.scheduleObservationTimeout
     )
-  } catch {
+  } catch (error) {
     await update({ status: 'unhealthy' })
+    // The session may well be alive on a server only another tmux can reach:
+    // report that specifically, and not as a reason to recover by restarting.
+    if (error instanceof TmuxServerUnreachableError) throw error
     throw new LocalDeploymentHealthUnavailableError()
   }
   const initialGrace =
@@ -457,6 +461,9 @@ async function restartManagedLocalDeploymentOnce(
           log.warn(`LocalDeployment ${current.id}: stop cleanup unverified; check box connectivity`)
         }
       }
+      // Not a failed launch: the previous session could not be stopped or
+      // checked, so it may still be running. The specific reason is the outcome.
+      if (error instanceof TmuxServerUnreachableError) throw error
       throw new Error(
         confirmedFailure
           ? 'Managed app launch failed; check startup logs. Automatic recovery will retry after cooldown.'
@@ -532,9 +539,10 @@ export async function restartManagedLocalDeploymentsForSandbox(
  * for {@link restartManagedLocalDeploymentsForSandbox} to bring back up on the
  * TARGET box once the move is proven.
  *
- * The session kill is `tmux kill-session ... || true` (a no-op on an absent
- * session), so this only rejects if the box exec transport itself fails — in
- * which case the migration must abort pre-archive rather than tar a live tree.
+ * The session kill is a no-op on an absent session, so this only rejects if
+ * the box exec transport fails or the tmux server cannot be reached (the app
+ * may still be running) — in which case the migration must abort pre-archive
+ * rather than tar a live tree.
  */
 export async function stopLocalDeploymentsForSandbox(sandboxId: string): Promise<void> {
   const supervisor = new LocalDeploymentProcessSupervisor()

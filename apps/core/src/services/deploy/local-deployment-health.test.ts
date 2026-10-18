@@ -21,6 +21,7 @@ import {
 } from './local-deployment-health'
 import { drainLocalDeploymentHealthObservations } from './local-deployment-observation'
 import { LocalDeploymentLaunchFailedError } from './local-deployment-process-supervisor'
+import { TmuxServerUnreachableError } from '../sandbox/tmux'
 import {
   clearBoxMigrating,
   deleteMachine,
@@ -403,6 +404,46 @@ describe('localDeployment health', () => {
       throw new Error('transport credentials must not escape')
     }
     await expect(refreshLocalDeploymentHealth(deployment.id)).rejects.toThrow('Sandbox unavailable')
+    expect((await getLocalDeployment(deployment.id))?.status).toBe('unhealthy')
+  })
+
+  it('reports an unreachable tmux server as unhealthy with the specific error, never crashed', async () => {
+    const squad = await createTestSquad('tmux-unreachable')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'running', processId: 'old-session' })
+    supervisor.hasSession = async () => {
+      throw new TmuxServerUnreachableError('/usr/bin/tmux: server exited unexpectedly')
+    }
+    const refresh = refreshLocalDeploymentHealth(deployment.id)
+    await expect(refresh).rejects.toBeInstanceOf(TmuxServerUnreachableError)
+    await expect(refresh).rejects.toThrow('server exited unexpectedly')
+    expect((await getLocalDeployment(deployment.id))?.status).toBe('unhealthy')
+    expect(connectCalls).toHaveLength(0)
+  })
+
+  it('does not relaunch over a session it cannot see when its box reappears', async () => {
+    const squad = await createTestSquad('tmux-unreachable-box')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'running', processId: 'old-session' })
+    supervisor.hasSession = async () => {
+      throw new TmuxServerUnreachableError()
+    }
+    await expect(restartManagedLocalDeploymentsForSandbox(deployment.sandboxId)).rejects.toBeInstanceOf(
+      TmuxServerUnreachableError
+    )
+    expect(supervisor.starts).toHaveLength(0)
+    expect(supervisor.stops).toHaveLength(0)
+  })
+
+  it('reports a launch blocked by an unreachable tmux server specifically, as unhealthy rather than crashed', async () => {
+    const squad = await createTestSquad('tmux-unreachable-launch')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    supervisor.startManagedLocalDeployment = async () => {
+      throw new TmuxServerUnreachableError('/usr/bin/tmux: server exited unexpectedly')
+    }
+    await expect(restartManagedLocalDeployment(deployment.id, { explicit: true })).rejects.toThrow(
+      'likely a tmux client/server version mismatch'
+    )
     expect((await getLocalDeployment(deployment.id))?.status).toBe('unhealthy')
   })
 

@@ -53,7 +53,7 @@ Monitor output (line batches and lifecycle status) is delivered to the agent as 
 
 ## Lifecycle
 
-The worker supervisor starts a tmux session inside the monitor's sandbox. The launcher appends the command's output to `<work root>/.ficus/monitors/<id>/logs/current.log` and writes `exitCode` when the command ends. The supervisor keeps a live foreground stream of that log and polls the session's liveness. Output batches are delivered through the existing DB-backed steering-message path.
+The worker supervisor starts a tmux session inside the monitor's own sandbox (a private agent box or the squad box). It uses the pinned tmux on Ficus's own socket (`tmux -L ficus`), whatever the box's `PATH` or devbox profile; see [Which tmux Ficus runs](deployments.md#which-tmux-ficus-runs). The launcher appends the command's output to `<work root>/.ficus/monitors/<id>/logs/current.log` and writes `exitCode` when the command ends. The supervisor keeps a live foreground stream of that log and polls the session's liveness. Output batches are delivered through the existing DB-backed steering-message path.
 
 ### Delivered offset
 
@@ -71,6 +71,7 @@ Each poll checks tmux liveness first, then the `timedOut` marker, then the `exit
 - **`timedOut` present: timed out** in the sandbox (see [Deadline](#deadline)). This is checked before everything else, so a run the watchdog stopped is never treated as a loss, even when no `exitCode` was written.
 - **`exitCode` present: exited.** The monitor ends with that exit code. Exits never restart, whatever the code.
 - **Work dir gone (box recreated), or no session and no `exitCode`: a loss.** The restart policy decides what happens. Treating a vanished session as still running would leave the monitor silent in `running` until its timeout.
+- **tmux server unreachable** (no installed tmux can talk to it, typically a stale server of another tmux version): liveness is unknown, so this is never a loss and never relaunches. It counts as an unavailable probe, as below. If it lasts 15 minutes, the monitor fails with the specific tmux reason. A new monitor is unaffected by a stale server on the default socket: its session goes to the Ficus socket. A launch that cannot reach the Ficus server fails with the same specific reason.
 - **Exec fails:** after 5 consecutive failures the sandbox counts as unreachable. The supervisor re-ensures the sandbox at most once a minute, the same way the outage recovery watch does, and waits. Unavailability alone is not a loss: the first successful probe decides whether the run survived. If the sandbox stays unreachable for 15 minutes, the monitor fails with `sandbox unavailable for 15m; gave up waiting for it to come back`.
 
 The row is authoritative across Core processes. If another process (the API, or agent cleanup) cancels or ends the monitor, the next poll kills the tmux session and stops supervising it. It never overwrites the recorded outcome.

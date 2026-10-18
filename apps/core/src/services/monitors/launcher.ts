@@ -1,4 +1,5 @@
-import { loadLaunchPathLines, runWithLaunchPath } from '../sandbox/launch-path'
+import { loadLaunchPathLines, recordLaunchPathCommand, runWithLaunchPath } from '../sandbox/launch-path'
+import { TMUX_UNREACHABLE_MARKER, tmuxShellFunctions } from '../sandbox/tmux'
 import { isHostRuntime, isVmRuntime } from '../sandbox/runtime'
 import { WORKSPACE_DOT_DIR } from '../workspace/dot-dir'
 import {
@@ -220,3 +221,81 @@ echo "$status" > "$FICUS_MONITOR_DIR/exitCode"
 ${TIMESTAMP} > "$FICUS_MONITOR_DIR/exitedAt" || true
 exit "$status"
 `
+
+/** Probe answers ({@link monitorProbeCommand}): the work dir is gone, or the session is, without an exit. */
+export const MONITOR_DIR_GONE = '__MONITOR_DIR_GONE__'
+export const MONITOR_PROCESS_GONE = '__MONITOR_PROCESS_GONE__'
+/** The in-sandbox watchdog stopped the command at its deadline (see LAUNCHER_SCRIPT). */
+export const MONITOR_PROBE_TIMED_OUT = '__MONITOR_TIMED_OUT__'
+/** Prefix of the launch command's report of the log size before the run. */
+export const MONITOR_LOG_SIZE_MARKER = '__FICUS_MONITOR_LOG_SIZE__='
+
+/**
+ * The box command that (re)launches a monitor: writes {@link LAUNCHER_SCRIPT},
+ * records the caller's PATH and starts the session with the pinned tmux on the
+ * Ficus socket (see sandbox/tmux.ts), in the monitor's OWN box — a private
+ * agent box or the squad box alike. Prints the log size before the run.
+ *
+ * The session name is unique to the monitor, and a relaunch only follows a
+ * probe that found the session gone, so an old server no tmux can reach does
+ * not block the launch (`kill` is best effort). Starting a session on a Ficus
+ * server no tmux can reach exits with the unreachable marker.
+ */
+export function monitorLaunchCommand(args: {
+  dir: string
+  logFile: string
+  processId: string
+  env: Record<string, string>
+}): string {
+  const { dir, logFile, processId } = args
+  const script = `${dir}/run.sh`
+  const launchCommand = [
+    ...Object.entries(args.env).map(([key, value]) => `${key}=${shellQuote(value)}`),
+    `bash ${shellQuote(script)}`,
+  ].join(' ')
+  return [
+    'set -e',
+    `mkdir -p ${shellQuote(`${dir}/logs`)}`,
+    `cat > ${shellQuote(script)} <<'EOF'\n${LAUNCHER_SCRIPT}EOF`,
+    `chmod +x ${shellQuote(script)}`,
+    // The tmux session gets the tmux server's PATH, not ours (see launch-path.ts).
+    recordLaunchPathCommand(dir),
+    // A stale exitCode (or timeout marker) from a lost run must not read as this run's.
+    `rm -f ${shellQuote(`${dir}/exitCode`)} ${shellQuote(`${dir}/exitedAt`)} ${shellQuote(`${dir}/${MONITOR_TIMED_OUT_FILE}`)}`,
+    `touch ${shellQuote(logFile)}`,
+    // Measured BEFORE the new run can append to it.
+    `log_size=$(wc -c < ${shellQuote(logFile)} | tr -d ' ')`,
+    tmuxShellFunctions(),
+    `ficus_tmux_kill ${shellQuote(processId)} || true`,
+    `ficus_tmux_status=0; ficus_tmux_new ${shellQuote(processId)} ${shellQuote(launchCommand)} || ficus_tmux_status=$?`,
+    `[ "$ficus_tmux_status" = 2 ] && ficus_tmux_unreachable`,
+    `[ "$ficus_tmux_status" = 0 ] || exit "$ficus_tmux_status"`,
+    `echo "${MONITOR_LOG_SIZE_MARKER}$log_size"`,
+  ].join('\n')
+}
+
+/**
+ * One liveness probe. Order matters: tmux liveness is sampled BEFORE the
+ * exitCode file, and the launcher writes exitCode before its session ends,
+ * so "no session and no exitCode" can only mean the process was lost.
+ *
+ * The watchdog's timeout marker wins over both: it is written before the
+ * watchdog signals anything, so a run it stopped is reported timed out even
+ * if the launcher died before recording an exit code (never a loss).
+ *
+ * A tmux server no installed tmux can reach (tmux status 2) is UNKNOWN, never
+ * "gone": the run may be alive on a server of another tmux version, so the
+ * probe answers with the unreachable marker instead of
+ * {@link MONITOR_PROCESS_GONE}. Empty output means still running.
+ */
+export function monitorProbeCommand(dir: string, processId: string): string {
+  return (
+    `${tmuxShellFunctions()}\n` +
+    `if [ ! -d ${shellQuote(dir)} ]; then echo ${MONITOR_DIR_GONE}; ` +
+    `else tmux_state=0; ficus_tmux_has ${shellQuote(processId)} || tmux_state=$?; ` +
+    `if [ -f ${shellQuote(`${dir}/${MONITOR_TIMED_OUT_FILE}`)} ]; then echo ${MONITOR_PROBE_TIMED_OUT}; ` +
+    `elif [ -f ${shellQuote(`${dir}/exitCode`)} ]; then cat ${shellQuote(`${dir}/exitCode`)}; ` +
+    `elif [ "$tmux_state" = 1 ]; then echo ${MONITOR_PROCESS_GONE}; ` +
+    `elif [ "$tmux_state" = 2 ]; then echo "${TMUX_UNREACHABLE_MARKER} $ficus_tmux_error"; fi; fi`
+  )
+}
