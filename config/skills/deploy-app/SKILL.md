@@ -120,9 +120,29 @@ first request and Ficus then sets a cookie scoped to that one app, so the app's
 own scripts, styles and fetches authenticate automatically — nothing to
 configure. Hosted `.app` URLs always use HTTPS.
 
-WebSocket upgrades are not supported by the local or hosted app proxy. Use
-ordinary HTTP, SSE, or polling, or choose an external deployment when the app
-requires WebSockets.
+WebSockets work through the app proxy, on hosted app origins and on the
+self-hosted `/api/app/<id>/` path alike. Dev-server hot reload (Vite, Next.js
+HMR) and the app's own sockets need no extra setup. What to know:
+
+- **Open the socket under the app's own path.** Hosted: `wss://<app-origin>/ws`.
+  Path mount: `wss://<ficus-host>/api/app/<id>/ws`. Build the URL from
+  `$FICUS_APP_BASE_PATH` or from `location`, never a bare `/ws`: on the path
+  mount that reaches Ficus itself, not your app.
+- **The upgrade is authenticated like any other request.** The browser sends the
+  access cookie the first page load set, so do not put the token in the socket
+  URL. A browser handshake must also come from the page the app is served on:
+  the app's own origin when hosted, the Ficus origin on the path mount. Any other
+  Origin gets `403`. As with HTTP, the path mount forwards no cookies to the
+  app, so cookie-based socket auth inside the app works only on hosted origins.
+- **Limits.** The app has 15 seconds to accept the upgrade, or the browser gets
+  a `502`. A message over 16 MB closes the socket with code `1009`. Core pings
+  idle browser sockets so they stay open. A proxy or edge in front of Core may
+  still close quiet sockets, so send a heartbeat if one can sit idle for minutes.
+- **Sockets drop; reconnect.** A Core restart, an app or sandbox restart, or a
+  reconnect at the hosted edge closes the socket, and nothing resumes it.
+  Reconnect with backoff and resync state. Some dev servers mishandle the old
+  socket's late close after reconnecting: Next 16 dev HMR can hang on
+  "Rendering". Reloading the page recovers.
 
 Two consequences worth knowing:
 
