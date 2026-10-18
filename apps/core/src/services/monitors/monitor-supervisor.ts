@@ -20,6 +20,7 @@ import {
   sessionNameForMonitor,
   shellQuote,
 } from './launcher'
+import { MONITOR_POLL_MAX_INTERVAL_MS, MONITOR_POLL_FAILURE_TOLERANCE } from './liveness'
 
 const log = createLogger('monitor-supervisor')
 const MIN_BATCH_INTERVAL_MS = 2000
@@ -36,7 +37,7 @@ const POLL_FAST_INTERVAL_MS = 2_000
 const POLL_FAST_WINDOW_MS = 30_000
 const POLL_MID_INTERVAL_MS = 5_000
 const POLL_MID_WINDOW_MS = 120_000
-const POLL_MAX_INTERVAL_MS = 15_000
+const POLL_MAX_INTERVAL_MS = MONITOR_POLL_MAX_INTERVAL_MS
 
 /**
  * A loss within this long of the most recent (re)launch is RAPID and counts
@@ -706,7 +707,7 @@ export class MonitorSupervisor {
    *  tolerance the monitor WAITS for the sandbox (re-ensuring it) for up to
    *  {@link MONITOR_SANDBOX_GRACE_MS}: whether the run survived is decided by
    *  the first successful probe, not by the outage itself. */
-  static readonly POLL_FAILURE_TOLERANCE = 5
+  static readonly POLL_FAILURE_TOLERANCE = MONITOR_POLL_FAILURE_TOLERANCE
 
   /** One liveness probe (see {@link monitorProbeCommand}). */
   private probeCommand(state: State): string {
@@ -717,6 +718,9 @@ export class MonitorSupervisor {
   async pollExit(monitorId: string): Promise<void> {
     const state = this.states.get(monitorId)
     if (!state || state.finishing || state.stopping || state.restartTimer) return
+    // Timestamp the probe start: a slow response must not manufacture fresh liveness.
+    const probedAt = new Date(this.now())
+    const launchedAt = state.monitor.launchedAt
     let text: string
     try {
       text = (await this.manager.exec(state.monitor.sandboxId, ['bash', '-lc', this.probeCommand(state)]))
@@ -780,6 +784,7 @@ export class MonitorSupervisor {
 
     // Still running.
     if (canceling) return // the canceller is stopping it
+    await state.monitor.confirmAlive(probedAt, launchedAt)
     if (state.streamDown) await this.openStream(state)
     await this.resetRapidCountIfStable(state)
   }

@@ -215,6 +215,55 @@ describe('MonitorSupervisor', () => {
     })
   }
 
+  it('persists silent process liveness without emitting output or waking the agent', async () => {
+    const monitor = await createMonitor({ timeoutMs: 86_400_000 })
+    const supervisor = makeSupervisor(sandbox, async (_id, content) => sent.push(content))
+    await supervisor.start(monitor)
+    const launch = monitor.launchedAt!.getTime()
+    clock += 3 * 60 * 60_000
+    await supervisor.pollExit(monitor.id)
+    await monitor.reload()
+    expect(monitor.lastConfirmedAliveAt!.getTime()).toBe(clock)
+    expect(monitor.launchedAt!.getTime()).toBe(launch)
+    expect(monitor.lastBatchAt).toBeNull()
+    expect(sent).toHaveLength(0)
+
+    const confirmed = clock
+    clock += 60_000
+    sandbox.execError = new Error('sandbox unreachable')
+    await supervisor.pollExit(monitor.id)
+    expect((await monitor.reload()).lastConfirmedAliveAt!.getTime()).toBe(confirmed)
+    sandbox.execError = null
+    sandbox.probe = 'FICUS_TMUX_UNREACHABLE /usr/bin/tmux: server exited unexpectedly'
+    await supervisor.pollExit(monitor.id)
+    expect((await monitor.reload()).lastConfirmedAliveAt!.getTime()).toBe(confirmed)
+    // A terminal result must never refresh the successful-probe timestamp either.
+    sandbox.probe = '0'
+    await supervisor.pollExit(monitor.id)
+    expect((await monitor.reload()).status).toBe('exited')
+    expect(monitor.lastConfirmedAliveAt!.getTime()).toBe(confirmed)
+  })
+
+  it('fences liveness writes against cancel, relaunch, and older probe completions', async () => {
+    const monitor = await createMonitor({ timeoutMs: 86_400_000 })
+    await monitor.markRunning(new Date(clock))
+    const launch = monitor.launchedAt
+    clock += 60_000
+    await monitor.confirmAlive(new Date(clock), launch)
+    await monitor.confirmAlive(new Date(clock - 1000), launch)
+    expect((await monitor.reload()).lastConfirmedAliveAt!.getTime()).toBe(clock)
+    await monitor.update({ nextRestartAt: new Date(clock + 5000) })
+    await monitor.confirmAlive(new Date(clock + 1000), launch)
+    expect((await monitor.reload()).lastConfirmedAliveAt!.getTime()).toBe(clock)
+    await monitor.update({ status: 'canceling', nextRestartAt: null })
+    await monitor.confirmAlive(new Date(clock + 1000), launch)
+    expect((await monitor.reload()).lastConfirmedAliveAt!.getTime()).toBe(clock)
+    await monitor.update({ status: 'running' })
+    await monitor.markRunning(new Date(clock + 2000))
+    await monitor.confirmAlive(new Date(clock + 3000), launch)
+    expect((await monitor.reload()).lastConfirmedAliveAt!.getTime()).toBe(clock + 2000)
+  })
+
   it('starts tmux, streams logs, and batches stdout', async () => {
     const monitor = await createMonitor()
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
@@ -643,10 +692,10 @@ describe('MonitorSupervisor', () => {
       sandbox.execs.some((a) => a.join(' ').includes("ficus_tmux_kill '") && !a.join(' ').includes("ficus_tmux_new '"))
     ).toBe(false)
 
+    clock += 1000
     const second = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await second.recoverOnStartup()
-    await waitFor(() => sandbox.probes() >= 1)
-    await Bun.sleep(20)
+    await waitFor(async () => (await monitor.reload()).lastConfirmedAliveAt?.getTime() === clock)
     await monitor.reload()
     expect(monitor.status).toBe('running')
     expect(sandbox.launches()).toBe(1)

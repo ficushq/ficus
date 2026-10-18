@@ -1583,6 +1583,13 @@
       "when": 1792300137058,
       "tag": "0225_storage_exact_home_totals",
       "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1792342090607,
+      "tag": "0226_sweet_loa",
+      "breakpoints": true
     }
   ]
 }
