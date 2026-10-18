@@ -36,6 +36,18 @@ See [Single-origin and reverse proxy deployment](reverse-proxy.md) for copy-past
 
 Registered log paths must stay inside the squad's workspace: relative paths resolve against the workspace root, traversal (`..`), absolute paths outside the workspace, and cross-squad paths are rejected with a 400, and symlink escapes are re-checked inside the sandbox on every read. A registered file that is missing or unreadable shows a one-line notice in the log viewer instead of an error.
 
+### App aliases
+
+On a hosted instance (`FICUS_APPS_DOMAIN` set) each app is served at `<tenant>--<first 12 hex of its id>.<apps domain>`. An app may also take an alias, so it is served at `<tenant>--<alias>.<apps domain>` instead, for example `noah--dashboard.ficus.garden`:
+
+- Set it when creating the app (`--alias <name>` on `ficus deploy local start`/`attach`, or `alias` in the create body), or later with `ficus deploy local alias <id> <name>`, the alias editor in the web local apps panel, or `PATCH /api/local-deployments/<id>` with `{ "alias": "<name>" }`. Remove it with `ficus deploy local alias <id> --clear` or `{ "alias": null }`.
+- Every app link Ficus shows, copies or opens (`urlPathOrHost` in the API, the CLI, the panel, agent tools) uses the alias host while there is one, and the id host otherwise.
+- The id host keeps working. While the app has an alias, it redirects to the alias host (307, same path and query), and a token link lands signed in there. WebSockets are served on both hosts.
+- An alias uses lowercase letters, digits and single hyphens. It cannot contain `--`, start or end with a hyphen, look like the 12-hex id form, or be a reserved name such as `api`, `www` or `status`, and `<tenant>--<alias>` must fit in 63 characters. Aliases are unique per instance. A removed, renamed or archived app's alias stays unavailable to other apps for 24 hours.
+- Without `FICUS_APPS_DOMAIN`, an alias cannot be set; apps stay on `/api/app/<id>/`.
+
+The routing contract, including the pending Platform bridge change that alias hosts need on Ficus Cloud, is in [integration contracts](integration-contracts.md#app-aliases-tenant--aliasapps-domain).
+
 ### Managed local app reconciliation
 
 The worker reconciles live local apps immediately on Core startup and every **30 seconds** by default (`LOCAL_APP_HEALTH_POLL_INTERVAL_MS`). Health observation is read-only: it never ensures, recreates, starts or stops the app/box. A missing managed tmux session becomes `crashed`; a live session without a ready HTTP response becomes `unhealthy`. A TCP accept from an SSH tunnel is not proof that the app is listening. `running` requires both the deployment's own session and an HTTP response from `/` (200–499). Redirects are not followed, response bodies are not consumed, and each HTTP probe has a **2-second total deadline**. Attached web apps require the HTTP response but have no managed session identity check. This is readiness, not an application-specific health check or a cryptographic identity guarantee.

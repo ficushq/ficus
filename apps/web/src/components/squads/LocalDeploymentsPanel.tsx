@@ -7,8 +7,10 @@ import {
   restartLocalDeployment,
   stopLocalDeployment,
   subscribeToLocalDeploymentLogs,
+  updateLocalDeploymentAlias,
 } from '../../api/workspace'
 import { useURLStringState } from '../../hooks/useURLState'
+import { getLocalDeploymentAppHost, previewLocalDeploymentAliasUrl } from './localDeploymentAppHost'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { queryKeys } from '../../queryKeys'
@@ -16,7 +18,16 @@ import { queries } from '../../queryOptions'
 import { Badge, type BadgeColor } from '../Badge'
 import { Modal } from '../Modal'
 import { CollectionSkeleton } from '../loading/Skeleton'
-import { ArchiveIcon, ChevronDownIcon, ClipboardIcon, LinkIcon, LogsIcon, RefreshIcon, StopIcon } from '../icons'
+import {
+  ArchiveIcon,
+  ChevronDownIcon,
+  ClipboardIcon,
+  LinkIcon,
+  LogsIcon,
+  PencilIcon,
+  RefreshIcon,
+  StopIcon,
+} from '../icons'
 
 interface LocalDeploymentsPanelProps {
   squadId: string
@@ -62,6 +73,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   const [statusFilter, setStatusFilter] = useState<LocalDeploymentStatusFilter>('all')
   const [showDone, setShowDone] = useState(false)
   const [logsLocalDeploymentId, setLogsLocalDeploymentId] = useURLStringState<string>('localDeploymentLogs', '')
+  const [aliasLocalDeploymentId, setAliasLocalDeploymentId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { can, isLoading: permissionsLoading } = usePermissions(squadId)
   const canWriteDeployments = !permissionsLoading && can('deployments:write')
@@ -98,6 +110,8 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   const doneLocalDeployments = visibleLocalDeployments.filter((localDeployment) => localDeployment.archivedAt)
   const logsLocalDeployment =
     localDeployments.find((localDeployment) => localDeployment.id === logsLocalDeploymentId) ?? null
+  const aliasLocalDeployment =
+    localDeployments.find((localDeployment) => localDeployment.id === aliasLocalDeploymentId) ?? null
 
   useEffect(() => {
     if (
@@ -176,6 +190,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
             onStop={(localDeployment) => stopMutation.mutate(localDeployment.id)}
             onArchive={confirmArchiveLocalDeployment}
             onShowLogs={showLogs}
+            onEditAlias={(localDeployment) => setAliasLocalDeploymentId(localDeployment.id)}
             canWriteDeployments={canWriteDeployments}
             canDeleteDeployments={canDeleteDeployments}
           />
@@ -213,6 +228,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
                 onStop={(localDeployment) => stopMutation.mutate(localDeployment.id)}
                 onArchive={confirmArchiveLocalDeployment}
                 onShowLogs={showLogs}
+                onEditAlias={(localDeployment) => setAliasLocalDeploymentId(localDeployment.id)}
                 canWriteDeployments={canWriteDeployments}
                 canDeleteDeployments={canDeleteDeployments}
               />
@@ -222,6 +238,13 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
       )}
 
       {logsLocalDeployment && <LocalDeploymentLogsModal localDeployment={logsLocalDeployment} onClose={closeLogs} />}
+      {aliasLocalDeployment && (
+        <LocalDeploymentAliasModal
+          localDeployment={aliasLocalDeployment}
+          onClose={() => setAliasLocalDeploymentId(null)}
+          onSaved={invalidate}
+        />
+      )}
     </div>
   )
 }
@@ -238,6 +261,7 @@ interface LocalDeploymentRowsProps {
   onStop: (localDeployment: LocalDeployment) => void
   onArchive: (localDeployment: LocalDeployment) => void
   onShowLogs: (localDeployment: LocalDeployment) => void
+  onEditAlias: (localDeployment: LocalDeployment) => void
   canWriteDeployments: boolean
   canDeleteDeployments: boolean
 }
@@ -254,6 +278,7 @@ function LocalDeploymentRows({
   onStop,
   onArchive,
   onShowLogs,
+  onEditAlias,
   canWriteDeployments,
   canDeleteDeployments,
 }: LocalDeploymentRowsProps) {
@@ -262,6 +287,7 @@ function LocalDeploymentRows({
       {localDeployments.map((localDeployment) => {
         const canStop = !archived && localDeployment.status !== 'stopped' && !isBusy
         const canRestart = !archived && localDeployment.mode === 'managed' && !isBusy
+        const appHost = getLocalDeploymentAppHost(localDeployment.urlPathOrHost)
 
         return (
           <div
@@ -284,6 +310,11 @@ function LocalDeploymentRows({
                   )}
                 </div>
                 <h4 className="text-sm font-medium text-primary mt-1 truncate">{localDeployment.name}</h4>
+                {appHost && !archived && (
+                  <div className="mt-0.5 text-xs text-muted font-mono break-all" title="App host">
+                    {appHost}
+                  </div>
+                )}
                 <div className="mt-0.5 text-xs text-muted break-words">
                   {localDeployment.mode.toLowerCase()}
                   {localDeployment.mode === 'attached'
@@ -315,6 +346,17 @@ function LocalDeploymentRows({
                   >
                     <LinkIcon className="h-4 w-4" />
                   </button>
+                  {appHost && (
+                    <button
+                      type="button"
+                      onClick={() => onEditAlias(localDeployment)}
+                      disabled={!canWriteDeployments}
+                      className="ficus-button ficus-button-ghost p-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={localDeployment.alias ? `Change app alias (${localDeployment.alias})` : 'Set app alias'}
+                    >
+                      <PencilIcon className="h-4 w-4" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onRestart(localDeployment)}
@@ -371,6 +413,88 @@ function LocalDeploymentRows({
         )
       })}
     </div>
+  )
+}
+
+const ALIAS_INPUT_CLASS =
+  'ficus-field w-full px-3 py-2 text-sm rounded-md border border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:ring-2 focus:ring-accent/50 min-h-[44px] md:min-h-0'
+
+/** Set, change or remove an app's hostname alias. The server validates; its reason is shown as is. */
+function LocalDeploymentAliasModal({
+  localDeployment,
+  onClose,
+  onSaved,
+}: {
+  localDeployment: LocalDeployment
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [value, setValue] = useState(localDeployment.alias ?? '')
+  const appHost = getLocalDeploymentAppHost(localDeployment.urlPathOrHost)
+  const mutation = useMutation({
+    mutationFn: (alias: string | null) => updateLocalDeploymentAlias(localDeployment.id, alias),
+    onSuccess: () => {
+      onSaved()
+      onClose()
+    },
+  })
+  const candidate = value.trim().toLowerCase()
+
+  return (
+    <Modal isOpen onClose={onClose} title={`${localDeployment.name} alias`}>
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (candidate) mutation.mutate(candidate)
+        }}
+      >
+        <label className="block text-sm text-primary" htmlFor="local-deployment-alias">
+          Alias
+        </label>
+        <input
+          id="local-deployment-alias"
+          className={ALIAS_INPUT_CLASS}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="dashboard"
+          autoComplete="off"
+          spellCheck={false}
+          maxLength={63}
+        />
+        <p className="text-xs text-muted">
+          {appHost && candidate
+            ? `Served at ${previewLocalDeploymentAliasUrl(appHost, candidate)}. `
+            : 'The app gets its own host named after the alias. '}
+          Lowercase letters, digits and single hyphens. The id link keeps working and redirects there. A removed alias
+          stays unavailable to other apps for 24 hours.
+        </p>
+        {mutation.error && (
+          <p className="text-xs text-status-danger-600 dark:text-status-danger-400" role="alert">
+            {(mutation.error as Error).message}
+          </p>
+        )}
+        <div className="flex flex-wrap justify-end gap-2">
+          {localDeployment.alias && (
+            <button
+              type="button"
+              onClick={() => mutation.mutate(null)}
+              disabled={mutation.isPending}
+              className="ficus-button ficus-button-secondary px-3 py-1.5 rounded text-sm disabled:opacity-40"
+            >
+              Remove alias
+            </button>
+          )}
+          <button
+            type="submit"
+            disabled={mutation.isPending || !candidate || candidate === localDeployment.alias}
+            className="ficus-button ficus-button-primary px-3 py-1.5 rounded text-sm disabled:opacity-40"
+          >
+            Save
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
