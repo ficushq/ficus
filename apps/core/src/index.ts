@@ -7,7 +7,9 @@ import {
 } from './services/integrations/openai-services/settings'
 import { Hono } from 'hono'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
-import { upgradeWebSocket, websocket } from 'hono/bun'
+import { upgradeWebSocket } from 'hono/bun'
+import { coreWebSocketHandler } from './services/deploy/local-deployment-websocket'
+import { shutdownLocalAppWebSockets } from './services/deploy/local-deployment-websocket-registry'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { agentTypesRoutes } from './routes/agent-types'
@@ -1091,12 +1093,17 @@ if (import.meta.main) {
   })
 
   // Add graceful shutdown handling
+  let server: ReturnType<typeof Bun.serve> | null = null
   const gracefulShutdown = async (signal: string) => {
     readiness.markStopping()
     log.info(`Received ${signal}, shutting down...`)
+    // First, while the server still runs: relayed app sockets get 1012 (service
+    // restart) and reconnect once Core is back, instead of dying with 1006.
+    await shutdownLocalAppWebSockets()
     await stopSubsystems(subsystems, log)
     terminalManager.cleanup()
     await getSandboxManager().cleanup()
+    await server?.stop(true)
     process.exit(0)
   }
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
@@ -1104,7 +1111,7 @@ if (import.meta.main) {
 
   log.info(`Running on http://${host}:${port}`)
 
-  Bun.serve({
+  server = Bun.serve({
     hostname: host,
     port,
     fetch(request, server) {
@@ -1117,7 +1124,8 @@ if (import.meta.main) {
       // wrapper for peer-address capture.
       return app.fetch(request, server)
     },
-    websocket,
+    // Hono's handler plus drain and explicit limits (local-deployment-websocket.ts).
+    websocket: coreWebSocketHandler,
     // Every route but the local-app proxy: that one extends its own requests
     // (LOCAL_APP_PROXY_IDLE_TIMEOUT_SECONDS) so a slow app can still answer.
     idleTimeout: 30,

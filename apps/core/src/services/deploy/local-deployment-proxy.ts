@@ -17,7 +17,9 @@ import { localDeploymentProxyError, stripLocalDeploymentProxyErrorMarker } from 
 import {
   isAllowedLocalAppWebSocketOrigin,
   isWebSocketUpgradeRequest,
+  logLocalAppWebSocketRefusal,
   proxyLocalAppWebSocket,
+  type LocalAppWebSocketRefusal,
   type WebSocketUpgradeServer,
 } from './local-deployment-websocket'
 
@@ -147,6 +149,10 @@ interface LocalDeploymentProxyDependencies {
   fetch: typeof fetch
   /** How long the app gets to accept a WebSocket upgrade. */
   webSocketConnectTimeoutMs?: number
+  /** How often a relayed socket pings the app (tests shorten it). */
+  webSocketPingIntervalMs?: number
+  /** Open relayed sockets allowed per deployment (tests lower it). */
+  webSocketMaxSocketsPerDeployment?: number
   /** Idle timeout for one proxied HTTP request (tests shorten it). */
   requestIdleTimeoutSeconds?: number
 }
@@ -159,6 +165,8 @@ function getDependencies(): LocalDeploymentProxyDependencies {
     resolveLocalDeploymentTarget: dependencyOverrides.resolveLocalDeploymentTarget ?? resolveLocalDeploymentTarget,
     fetch: dependencyOverrides.fetch ?? fetch,
     webSocketConnectTimeoutMs: dependencyOverrides.webSocketConnectTimeoutMs,
+    webSocketPingIntervalMs: dependencyOverrides.webSocketPingIntervalMs,
+    webSocketMaxSocketsPerDeployment: dependencyOverrides.webSocketMaxSocketsPerDeployment,
     requestIdleTimeoutSeconds: dependencyOverrides.requestIdleTimeoutSeconds,
   }
 }
@@ -183,11 +191,17 @@ export async function proxyLocalDeploymentRequest(
   path: string,
   server?: LocalAppProxyServer
 ): Promise<Response> {
+  const upgrade = isWebSocketUpgradeRequest(request)
+  // A refused WebSocket upgrade is logged (deployment, status, category only); HTTP refusals are not.
+  const refuse = (message: string, status: number, category: LocalAppWebSocketRefusal) => {
+    if (upgrade) logLocalAppWebSocketRefusal(localDeploymentId, status, category)
+    return localDeploymentProxyError(message, status)
+  }
   const localDeployment = await getLocalDeployment(localDeploymentId)
   if (!localDeployment || localDeployment.status === 'stopped')
-    return localDeploymentProxyError('LocalDeployment not found', 404)
+    return refuse('LocalDeployment not found', 404, 'not-found')
   if (localDeployment.visibility !== 'private')
-    return localDeploymentProxyError('Unsupported localDeployment visibility', 403)
+    return refuse('Unsupported localDeployment visibility', 403, 'unsupported-visibility')
 
   const deps = getDependencies()
   let target: { host: string; port: number }
@@ -209,7 +223,7 @@ export async function proxyLocalDeploymentRequest(
   // (including a wrong-squad agent) could proxy into any squad's deployed app.
   // Inbound auth headers are stripped before forwarding (stripUnsafeProxyHeaders).
   if (!(await isValidLocalDeploymentBrowserToken(localDeployment.id, presented.token))) {
-    return localDeploymentProxyError('Unauthorized', 401)
+    return refuse('Unauthorized', 401, 'unauthorized')
   }
   const normalizedPath = path.replace(/^\/+/, '')
   const targetUrl = new URL(`http://${target.host}:${target.port}/${normalizedPath}`)
@@ -243,17 +257,20 @@ export async function proxyLocalDeploymentRequest(
     headers.set('x-forwarded-host', request.headers.get('host') ?? sourceUrl.host)
   }
 
-  if (isWebSocketUpgradeRequest(request)) {
+  if (upgrade) {
     if (!isAllowedLocalAppWebSocketOrigin(request.headers.get('origin'), publicHost)) {
-      return localDeploymentProxyError('Forbidden', 403)
+      return refuse('Forbidden', 403, 'forbidden-origin')
     }
-    if (!server) return localDeploymentProxyError('WebSocket upgrades are not available on this route', 501)
+    if (!server) return refuse('WebSocket upgrades are not available on this route', 501, 'no-upgrade-server')
     return proxyLocalAppWebSocket({
       server,
       request,
       targetUrl,
       headers,
+      access: { localDeploymentId: localDeployment.id, token: presented.token! },
       connectTimeoutMs: deps.webSocketConnectTimeoutMs,
+      pingIntervalMs: deps.webSocketPingIntervalMs,
+      maxSocketsPerDeployment: deps.webSocketMaxSocketsPerDeployment,
     })
   }
 

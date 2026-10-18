@@ -269,7 +269,7 @@ export async function hasActiveLocalDeployments(sandboxId: string): Promise<bool
 
 export async function markLocalDeploymentsStoppedForSandbox(sandboxId: string): Promise<void> {
   const now = new Date()
-  await db
+  const stoppedRows = await db
     .update(localDeployments)
     .set({ status: 'stopped', keepSandboxAlive: false, processId: null, updatedAt: now })
     .where(
@@ -279,6 +279,9 @@ export async function markLocalDeploymentsStoppedForSandbox(sandboxId: string): 
         ne(localDeployments.mode, 'managed')
       )
     )
+    .returning()
+  // Announced like every other stop: it is also what closes the app's open WebSockets.
+  for (const row of stoppedRows) emitLocalDeploymentUpdated(toLocalDeployment(row))
 
   const managedRows = await db
     .update(localDeployments)

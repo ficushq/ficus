@@ -135,14 +135,31 @@ HMR) and the app's own sockets need no extra setup. What to know:
   Origin gets `403`. As with HTTP, the path mount forwards no cookies to the
   app, so cookie-based socket auth inside the app works only on hosted origins.
 - **Limits.** The app has 15 seconds to accept the upgrade, or the browser gets
-  a `502`. A message over 16 MB closes the socket with code `1009`. Core pings
-  idle browser sockets so they stay open. A proxy or edge in front of Core may
-  still close quiet sockets, so send a heartbeat if one can sit idle for minutes.
-- **Sockets drop; reconnect.** A Core restart, an app or sandbox restart, or a
-  reconnect at the hosted edge closes the socket, and nothing resumes it.
+  a `502`. A message over 16 MiB closes the socket with code `1009`. At most 50
+  sockets may be open per app; one more gets `429`. Core pings idle browser
+  sockets so they stay open, and pings the app's side every 30 seconds: an app
+  that stops answering pings is disconnected (the browser sees `1011`). A proxy
+  or edge in front of Core may still close quiet sockets, so send a heartbeat if
+  one can sit idle for minutes.
+- **Read promptly.** Core holds at most 16 MiB per direction per socket. A
+  browser that falls behind makes Core pause reading from the app until it
+  catches up; an app that stops reading what the browser sends gets the socket
+  closed with `1013`. No message is dropped silently.
+- **Access ends, sockets close.** Stopping, archiving or deleting the app closes
+  its open sockets with `1001`; a change of visibility or access token closes
+  them with `1008`.
+- **Sockets drop; reconnect.** A Core restart (close code `1012`), an app or
+  sandbox restart, or a reconnect at the hosted edge closes the socket, and
+  nothing resumes it.
   Reconnect with backoff and resync state. Some dev servers mishandle the old
   socket's late close after reconnecting: Next 16 dev HMR can hang on
   "Rendering". Reloading the page recovers.
+
+The proxy strips `Authorization`, `X-Auth-Token` and `Cookie` from every
+request before it reaches the app (on hosted origins it re-adds the app's own
+cookies). An app whose client sends `Authorization: Bearer …` receives no
+`Authorization` header: send the app's credential in a header of its own (for
+example `X-App-Auth`) or, on hosted origins, an app-scoped cookie.
 
 Two consequences worth knowing:
 
