@@ -10,9 +10,18 @@ import { removeDormantAgents } from '../../../api/system'
 import { terminateSquadAgent } from '../../../api/squads'
 import { ChevronRightIcon } from '../../icons'
 import { ConfirmStorageAction } from './ConfirmStorageAction'
-import { FolderRow, GrowthText, HomeMeta } from './FolderRow'
+import { ApproximateMark, FolderRow, GrowthText, HomeMeta } from './FolderRow'
 import { IdleConsultantsDialog } from './IdleConsultantsDialog'
-import { agentDetails, automaticRemovalDate, measuredSize, removalSummary, storageSize, sumBytes } from './format'
+import {
+  agentDetails,
+  APPROXIMATE_SQUAD_HINT,
+  automaticRemovalDate,
+  measuredSize,
+  removalSummary,
+  squadSize,
+  storageSize,
+  sumBytes,
+} from './format'
 
 interface Props {
   squad: StorageSquad
@@ -49,6 +58,7 @@ function AgentRow({ folder, action }: { folder: StorageFolder; action?: ReactNod
         )}
       </span>
       <span className="flex shrink-0 items-center gap-3">
+        <ApproximateMark folder={folder} />
         <span className="tabular-nums text-secondary">{measuredSize(folder)}</span>
         {action}
       </span>
@@ -112,7 +122,7 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
     retentionDays
   )
   // Past the date, the dormant sweep is working through them (up to 5 a minute).
-  const dormantSummary = `${dormant.length} dormant · ${storageSize(sumBytes(dormant))} · ${
+  const dormantSummary = `${dormant.length} dormant · ${approximateSum(dormant)} · ${
     !removalDate
       ? `removed automatically after ${retentionDays} days`
       : removalDate.getTime() <= Date.now()
@@ -136,7 +146,7 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
   const removable = dormant.filter((folder) => !folder.agent?.removalPending)
 
   const removing = dialog?.kind === 'remove' ? dialog.folders : []
-  const removingBytes = storageSize(sumBytes(removing))
+  const removingBytes = approximateSum(removing)
   const dormantFolder = dialog?.kind === 'dormant' ? dialog.folder : null
 
   return (
@@ -151,7 +161,7 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
                 <GrowthText growth={squad.growth} />
               </span>
             )}
-            <span>{measuredSize(squad)}</span>
+            <span title={squad.totalExact === false ? APPROXIMATE_SQUAD_HINT : undefined}>{squadSize(squad)}</span>
           </span>
         </span>
       </summary>
@@ -251,4 +261,9 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
       )}
     </details>
   )
+}
+
+/** A sum of homes' sizes, marked ≈ when any of them is an approximate total. */
+function approximateSum(folders: StorageFolder[]): string {
+  return `${folders.some((folder) => folder.totalExact === false) ? '≈ ' : ''}${storageSize(sumBytes(folders))}`
 }

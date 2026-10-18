@@ -17,6 +17,8 @@ import {
   parseDuRecords,
   parseListRecords,
   segments,
+  TOTAL_COMMAND,
+  TOTAL_SSH_TIMEOUT_MS,
   type PathOutput,
 } from './chunk'
 
@@ -39,6 +41,12 @@ import {
  * Children are strictly deeper, depth is capped, and a pass has at most
  * MAX_ITEMS_PER_PASS items, so splitting cannot loop.
  *
+ * Exact totals: a home that has to be split also gets a `total` item, measured
+ * once with a single total-only du under its own, longer time limit
+ * (pending --> done | failed; never retried or split). Its value is the home's
+ * total; the split tree stays the folder breakdown. If it cannot finish, the
+ * home's total falls back to the sum of its parts and is marked approximate.
+ *
  * When every item of a home is resolved its tree is materialized into
  * storage_home_results (the latest value, kept across passes) and a growth
  * sample. When the pass has nothing left it completes and its queue is deleted.
@@ -48,8 +56,10 @@ import {
  * re-measures everything.
  *
  * Hardlinks: du runs once per queued path, so a file is counted once within a
- * measured path (a whole box home unless it had to be split). A file hardlinked
- * into two homes, or into two split subtrees, counts in each. The previous single
+ * measured path. A home's total therefore counts a file once when it comes from
+ * one du (the home measured whole, or its total item), but a file hardlinked into
+ * two split subtrees counts in each subtree's folder size, and in an approximate
+ * total. A file hardlinked into two homes counts in each. The previous single
  * whole-machine du counted it once, in whichever home it visited first.
  */
 
@@ -82,7 +92,7 @@ export interface ScanContext {
   sleep?: (ms: number) => Promise<void>
 }
 
-type Work = { kind: 'measure' | 'list'; items: Item[] }
+type Work = { kind: 'measure' | 'list' | 'total'; items: Item[] }
 
 interface ChunkOutcome {
   disk: { usedBytes: number; totalBytes: number } | null
@@ -124,13 +134,18 @@ export async function ensurePass(machineId: string, homes: string[], ctx: ScanCo
   })
 }
 
-/** Listings first, then a lone retry, then a batch of same-depth paths; nothing left means df only. */
+/**
+ * Listings first, then a lone retry, then a batch of same-depth paths, and only once no tree work
+ * is left, one home's total (so a long total never holds up the breakdown); nothing left means df only.
+ */
 export async function nextWork(passId: string): Promise<Work> {
-  const byState = (state: Item['state'], limit: number) =>
+  const byState = (state: Item['state'], limit: number, kind: Item['kind'] = 'tree') =>
     db
       .select()
       .from(storageScanItems)
-      .where(and(eq(storageScanItems.passId, passId), eq(storageScanItems.state, state)))
+      .where(
+        and(eq(storageScanItems.passId, passId), eq(storageScanItems.kind, kind), eq(storageScanItems.state, state))
+      )
       .orderBy(asc(storageScanItems.path))
       .limit(limit)
   const splits = await byState('split_pending', SCAN_BATCH)
@@ -138,19 +153,27 @@ export async function nextWork(passId: string): Promise<Work> {
   const solo = await byState('solo', 1)
   if (solo.length) return { kind: 'measure', items: solo }
   const pending = await byState('pending', SCAN_BATCH * 8)
-  const depth = pending[0] ? detailDepth(pending[0].path) : 0
-  return {
-    kind: 'measure',
-    items: pending.filter((item) => detailDepth(item.path) === depth).slice(0, SCAN_BATCH),
+  if (pending.length) {
+    const depth = detailDepth(pending[0]!.path)
+    return { kind: 'measure', items: pending.filter((item) => detailDepth(item.path) === depth).slice(0, SCAN_BATCH) }
   }
+  const total = await byState('pending', 1, 'total')
+  if (total.length) return { kind: 'total', items: total }
+  return { kind: 'measure', items: [] }
 }
 
 export async function runChunk(machine: Machine, work: Work, runner: SshRunner): Promise<ChunkOutcome> {
   const paths = work.items.map((item) => item.path)
-  const command = work.kind === 'list' ? LIST_COMMAND : measureCommand(paths[0] ? detailDepth(paths[0]) : 0)
+  const command =
+    work.kind === 'list'
+      ? LIST_COMMAND
+      : work.kind === 'total'
+        ? TOTAL_COMMAND
+        : measureCommand(paths[0] ? detailDepth(paths[0]) : 0)
+  const timeoutMs = work.kind === 'total' ? TOTAL_SSH_TIMEOUT_MS : CHUNK_SSH_TIMEOUT_MS
   const empty = parseChunkOutput('', paths.length)
   try {
-    const result = await runner.run(machine, command, { stdin: chunkInput(paths), timeoutMs: CHUNK_SSH_TIMEOUT_MS })
+    const result = await runner.run(machine, command, { stdin: chunkInput(paths), timeoutMs })
     const output = parseChunkOutput(result.stdout, paths.length)
     const finished = output.paths.every((path) => path.complete)
     // 124: `timeout` stopped the chunk; 137: it had to SIGKILL a hung command; 125: xargs saw the
@@ -185,17 +208,33 @@ export async function applyChunk(tx: Tx, pass: ScanPass, work: Work, outcome: Ch
     const isHome = item.path === item.home
     if (!output.complete) {
       if (!outcome.timedOut || index !== firstIncomplete) continue // Not reached: unchanged.
-      if (work.kind === 'list') await setItem(tx, item.id, { state: 'failed', error: 'scan_timeout' })
+      // A total-only du had its full time limit: the home's total falls back to the sum of its parts.
+      if (work.kind !== 'measure') await setItem(tx, item.id, { state: 'failed', error: 'scan_timeout' })
       else if (index > 0) await setItem(tx, item.id, { state: 'solo' })
       else {
         // Keep subdirectory totals du finished before the limit; the split reuses them.
         const partial = parseDuRecords(output.records, item.path)
         partial.delete(item.path)
         await setItem(tx, item.id, { state: 'split_pending', details: orNull(Object.fromEntries(partial)) })
+        // Its parts are measured separately, so the home's total needs a du of its own.
+        if (isHome)
+          await tx
+            .insert(storageScanItems)
+            .values({ passId: pass.id, home: item.home, path: item.home, kind: 'total' })
+            .onConflictDoNothing()
       }
       continue
     }
     const error = output.exitCode === 0 ? null : 'permission_denied'
+    if (work.kind === 'total') {
+      const total = parseDuRecords(output.records, item.path).get(item.path)
+      await setItem(
+        tx,
+        item.id,
+        total === undefined ? { state: 'failed', error: 'missing' } : { state: 'done', bytes: total, error }
+      )
+      continue
+    }
     if (work.kind === 'measure') {
       const entries = parseDuRecords(output.records, item.path)
       const total = entries.get(item.path)
@@ -337,6 +376,7 @@ export function assembleHome(home: string, rows: ResolvedItem[]) {
 async function resolveHome(tx: Tx, pass: ScanPass, home: string, now: Date) {
   const rows = await tx
     .select({
+      kind: storageScanItems.kind,
       path: storageScanItems.path,
       state: storageScanItems.state,
       bytes: storageScanItems.bytes,
@@ -346,19 +386,31 @@ async function resolveHome(tx: Tx, pass: ScanPass, home: string, now: Date) {
     .from(storageScanItems)
     .where(and(eq(storageScanItems.passId, pass.id), eq(storageScanItems.home, home)))
   if (rows.some((row) => (UNRESOLVED as readonly string[]).includes(row.state))) return
-  const root = rows.find((row) => row.path === home)
+  const tree = rows.filter((row) => row.kind === 'tree')
+  const root = tree.find((row) => row.path === home)
   if (!root || root.error === 'missing') return
-  const assembled = assembleHome(home, rows)
-  // An entirely unmeasured home keeps its previous value instead of erasing it.
-  if (assembled.bytes === null) return
-  const status = assembled.errors.length ? 'partial' : 'available'
+  const assembled = assembleHome(home, tree)
+  // One du of the whole home: the home measured unsplit, or its own total-only du.
+  const measured = rows.find((row) => row.kind === 'total' && row.state === 'done' && row.bytes !== null)
+  // An entirely unmeasured home keeps its previous value instead of erasing it — unless its
+  // total-only du finished, which is the exact total even when the breakdown could not be listed.
+  if (assembled.bytes === null && !measured) return
+  const totalExact = Boolean(measured) || root.state === 'done'
+  const bytes = (measured?.bytes ?? assembled.bytes) as number
+  // The folder tree keeps the breakdown; its sizes can add up to more than an exact total.
+  assembled.entries.set(home, bytes)
+  const errors = [
+    ...new Set([...assembled.errors, ...(measured?.error === 'permission_denied' ? [measured.error] : [])]),
+  ].sort()
+  const status = errors.length ? 'partial' : 'available'
   const values = {
     machineId: pass.machineId,
     home,
     generation: pass.generation,
-    bytes: assembled.bytes,
+    bytes,
+    totalExact,
     status,
-    errors: assembled.errors,
+    errors,
     folder: buildFolderTree(home, assembled.entries, assembled.partial),
     measuredAt: now,
   } as const
@@ -366,11 +418,9 @@ async function resolveHome(tx: Tx, pass: ScanPass, home: string, now: Date) {
     .insert(storageHomeResults)
     .values(values)
     .onConflictDoUpdate({ target: [storageHomeResults.machineId, storageHomeResults.home], set: values })
-  // Growth compares complete measurements only.
-  if (status === 'available')
-    await tx
-      .insert(storageUsageSamples)
-      .values({ machineId: pass.machineId, subject: home, bytes: assembled.bytes, measuredAt: now })
+  // Growth compares complete, exact measurements only: an approximate total is never a baseline.
+  if (status === 'available' && totalExact)
+    await tx.insert(storageUsageSamples).values({ machineId: pass.machineId, subject: home, bytes, measuredAt: now })
 }
 
 async function completeIfDone(tx: Tx, pass: ScanPass, now: Date) {
@@ -427,9 +477,14 @@ export async function scanMachine(
 ): Promise<{ usedBytes: number; totalBytes: number } | null> {
   const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   let disk: { usedBytes: number; totalBytes: number } | null = null
+  let resumed = false
   while (Date.now() < ctx.deadline) {
     const pass = await ensurePass(target.machine.id, target.homes, ctx)
     if (!pass) break
+    // Still resting after a chunk an earlier tick (or another worker) ran. Within this run the sleep
+    // below already enforces the rest.
+    if (!resumed && pass.resumeAt && pass.resumeAt.getTime() > Date.now()) break
+    resumed = true
     if (
       (pass.lastError === 'ssh_failed' || pass.lastError === 'scan_failed') &&
       pass.lastErrorAt &&
@@ -439,14 +494,20 @@ export async function scanMachine(
     const work = await nextWork(pass.id)
     const started = Date.now()
     const outcome = await runChunk(target.machine, work, ctx.runner)
+    // Idle at least as long as the chunk ran. The rest is stored on the pass, so it also holds when
+    // this tick ends first (a total can outlast the tick) and for the next tick or another worker.
+    const pause = Math.max(MIN_PAUSE_MS, Date.now() - started)
     const applied = await db.transaction(async (tx) => {
       if (!(await ctx.holdsLease(tx))) return false
       await applyChunk(tx, pass, work, outcome)
+      await tx
+        .update(storageScanPasses)
+        .set({ resumeAt: new Date(Date.now() + pause) })
+        .where(eq(storageScanPasses.id, pass.id))
       return true
     })
     if (!applied || outcome.failure) break
     if (outcome.disk) disk = outcome.disk
-    const pause = Math.max(MIN_PAUSE_MS, Date.now() - started)
     if (Date.now() + pause >= ctx.deadline) break
     await sleep(pause)
   }

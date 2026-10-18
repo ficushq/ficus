@@ -182,9 +182,11 @@ export function StorageSection() {
           </p>
           <p>
             Other disk usage includes shared tools, system files, and storage not attributed to a squad. Sizes are
-            estimates of allocated space measured at different moments, so totals are approximate. Hardlinked files are
-            counted once within each measured home (or part of a home measured separately); a file hardlinked into
-            several homes counts in each. A folder&apos;s size is not a prediction of space freed by deleting it.
+            estimates of allocated space measured at different moments, so totals are approximate. Folder sizes can add
+            up to more than the total: files hard-linked into several folders are counted in each. A home&apos;s total
+            counts such a file once, except where it is marked approximate (≈ on a squad that includes one); a file
+            hard-linked into several homes counts in each. A folder&apos;s size is not a prediction of space freed by
+            deleting it.
           </p>
           <p>
             Storage is measured continuously in the background, a few homes at a time at low priority, even with this

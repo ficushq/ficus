@@ -1,5 +1,6 @@
 import type { Machine } from '../machines/queries'
 import type { SshResult, SshRunner } from '../machines/ssh'
+import { CHUNK_TIMEOUT_SECONDS, TOTAL_TIMEOUT_SECONDS } from './chunk'
 
 /**
  * Test doubles for the storage scanner's SSH side. Nothing here contacts a real
@@ -51,6 +52,13 @@ export interface FakeRemoteOptions {
   cost?: Map<string, number>
   used?: number
   size?: number
+  /**
+   * What one total-only du reports for a path when it is less than the sum of its parts (files
+   * hard-linked into several subdirectories are counted once by a single du).
+   */
+  totals?: Map<string, number>
+  /** Work units one total-only du can afford (default: `budget` scaled by its longer time limit). */
+  totalBudget?: number
 }
 
 /**
@@ -60,7 +68,7 @@ export interface FakeRemoteOptions {
  * budget is spent, exactly as `timeout` would (exit 124, output cut short).
  */
 export function fakeRemote(dirs: Map<string, number>, options: FakeRemoteOptions) {
-  const calls: Array<{ kind: 'measure' | 'list'; paths: string[]; command: string }> = []
+  const calls: Array<{ kind: 'measure' | 'list' | 'total'; paths: string[]; command: string }> = []
   let failure: (() => SshResult | never) | null = null
   const children = (path: string) =>
     [...dirs.keys()].filter((other) => other.startsWith(`${path}/`) && !other.slice(path.length + 1).includes('/'))
@@ -70,18 +78,22 @@ export function fakeRemote(dirs: Map<string, number>, options: FakeRemoteOptions
       const paths = String(opts?.stdin ?? '')
         .split('\0')
         .slice(0, -1)
-      const kind = command.includes('find "$1"') ? 'list' : 'measure'
+      const kind = command.includes('find "$1"') ? 'list' : command.includes('du -x -s ') ? 'total' : 'measure'
       calls.push({ kind, paths, command })
       if (failure) return failure()
       let out = `Used 1B-blocks\n${options.used ?? 1000} ${options.size ?? 2000}\n\0`
-      let budget = options.budget
+      let budget =
+        kind === 'total'
+          ? (options.totalBudget ?? (options.budget * TOTAL_TIMEOUT_SECONDS) / CHUNK_TIMEOUT_SECONDS)
+          : options.budget
       let timedOut = false
       const maxDepth = Number(/--max-depth=(\d+)/.exec(command)?.[1] ?? 0)
       const visit = (path: string, depth: number): boolean => {
         for (const child of children(path)) if (!visit(child, depth + 1)) return false
         budget -= options.cost?.get(path) ?? 1
         if (budget < 0) return false
-        if (depth <= maxDepth) out += `${total(path)}\t${path}\0`
+        const size = kind === 'total' ? (options.totals?.get(path) ?? total(path)) : total(path)
+        if (depth <= maxDepth) out += `${size}\t${path}\0`
         return true
       }
       for (const path of paths) {
@@ -89,7 +101,7 @@ export function fakeRemote(dirs: Map<string, number>, options: FakeRemoteOptions
           out += '#1\0'
           continue
         }
-        if (kind === 'measure') {
+        if (kind !== 'list') {
           if (!visit(path, 0)) {
             timedOut = true
             break

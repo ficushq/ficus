@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { storageHomeResults, storageScanItems, storageScanPasses, storageUsageSamples } from '../../db/schema'
 import type { Machine } from '../machines/queries'
 import type { SshRunner } from '../machines/ssh'
 import { SshTimeoutError } from '../machines/ssh'
+import { TOTAL_COMMAND } from './chunk'
 import { assembleHome, MAX_ITEMS_PER_PASS, RETAIN_PASSES, scanMachine, type ScanContext } from './scanner'
 import { fakeRemote, fixtureTree } from './scan.test-helper'
 import { buildStorageSnapshot } from './view'
@@ -34,6 +35,8 @@ function context(runner: SshRunner, overrides: Partial<ScanContext> = {}): ScanC
   }
 }
 
+/** Let the rest a previous run stored on the pass elapse (as time passing would). */
+const rested = () => db.update(storageScanPasses).set({ resumeAt: null })
 const passes = () =>
   db
     .select()
@@ -183,6 +186,7 @@ describe('incremental storage scanner', () => {
     expect((await passes())[0]!.status).toBe('running')
 
     const second = fakeRemote(dirs, { budget: 14 })
+    await rested()
     await scanMachine({ machine, homes }, context(second.runner))
     const remeasured = second.calls.flatMap((call) => call.paths).filter((path) => done.has(path))
     expect(remeasured).toEqual([])
@@ -207,7 +211,7 @@ describe('incremental storage scanner', () => {
     await scanMachine({ machine, homes }, context(remote.runner))
     expect(remote.calls.length).toBe(calls) // Backing off.
 
-    await db.update(storageScanPasses).set({ lastErrorAt: sql`now() - interval '10 minutes'` })
+    await db.update(storageScanPasses).set({ lastErrorAt: sql`now() - interval '10 minutes'`, resumeAt: null })
     await scanMachine({ machine, homes }, context(remote.runner))
     ;[pass] = await passes()
     expect(pass).toMatchObject({ status: 'completed', lastError: null })
@@ -326,6 +330,225 @@ describe('incremental storage scanner', () => {
     )
     expect(await results()).toEqual(new Map())
     expect((await items()).every((item) => item.state === 'pending')).toBe(true)
+  })
+})
+
+describe('exact home totals', () => {
+  const split = '/home/box_000000000000'
+  const small = '/home/box_00000000000a'
+  // One home too large for one chunk (1 + 6 + 36 directories of 4 KiB against a budget of 20), one tiny.
+  const tree = () => fixtureTree(1, 6).set(small, 8192)
+  // Hard links shared by its subdirectories: one du of the whole home counts them once.
+  const EXACT = 30 * 4096
+  const samples = (subject: string) =>
+    db
+      .select()
+      .from(storageUsageSamples)
+      .where(and(eq(storageUsageSamples.machineId, machine.id), eq(storageUsageSamples.subject, subject)))
+  const view = async (homes: string[]) =>
+    (await buildStorageSnapshot([{ machine, owners: owners(homes) }])).machines[0]!
+
+  test('a split home stores one total-only du as its exact total; its folders can add up to more', async () => {
+    const dirs = tree()
+    const homes = homesOf(dirs)
+    const remote = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT]]) })
+    await scanMachine({ machine, homes }, context(remote.runner))
+    const totals = remote.calls.filter((call) => call.kind === 'total')
+    // The unsplit home was already measured by a single du.
+    expect(totals.map((call) => call.paths)).toEqual([[split]])
+    expect(totals[0]!.command).toBe(TOTAL_COMMAND)
+    // The total runs only once the breakdown has no tree work left.
+    const kinds = remote.calls.filter((call) => call.paths.length).map((call) => call.kind)
+    expect(kinds.lastIndexOf('measure')).toBeLessThan(kinds.indexOf('total'))
+    expect((await passes())[0]!.status).toBe('completed')
+
+    const saved = await results()
+    expect(saved.get(split)).toMatchObject({ bytes: EXACT, totalExact: true, status: 'available', errors: [] })
+    const folder = saved.get(split)!.folder
+    expect(folder.bytes).toBe(EXACT)
+    const folderSum = folder.children.reduce((sum, child) => sum + child.bytes!, 0)
+    expect(folderSum).toBe(remote.total(split) - dirs.get(split)!)
+    expect(folderSum).toBeGreaterThan(EXACT)
+    expect(saved.get(small)).toMatchObject({ bytes: 8192, totalExact: true, status: 'available' })
+    expect((await samples(split)).map((sample) => sample.bytes)).toEqual([EXACT])
+
+    const machineView = await view(homes)
+    const squad = machineView.squads[0]!
+    expect(squad.totalExact).toBe(true)
+    expect(squad.bytes).toBe(EXACT + 8192)
+    expect(squad.folders.find((item) => item.path === split)).toMatchObject({ bytes: EXACT, totalExact: true })
+  })
+
+  test('a total that cannot finish falls back to the folder sum, marked approximate, without a growth sample', async () => {
+    const dirs = tree()
+    const homes = homesOf(dirs)
+    const remote = fakeRemote(dirs, { budget: 20, totalBudget: 10, totals: new Map([[split, EXACT]]) })
+    await scanMachine({ machine, homes }, context(remote.runner))
+    // Tried once with the full time limit, not retried.
+    expect(remote.calls.filter((call) => call.kind === 'total').map((call) => call.paths)).toEqual([[split]])
+    expect((await passes())[0]!.status).toBe('completed')
+
+    const saved = await results()
+    // The breakdown itself is complete: approximate, not partial.
+    expect(saved.get(split)).toMatchObject({
+      bytes: remote.total(split),
+      totalExact: false,
+      status: 'available',
+      errors: [],
+    })
+    expect(saved.get(small)).toMatchObject({ totalExact: true })
+    expect(await samples(split)).toHaveLength(0)
+    expect(await samples(small)).toHaveLength(1)
+
+    const machineView = await view(homes)
+    expect(machineView.diagnostics!.reasons).not.toContain('scan_timeout')
+    const squad = machineView.squads[0]!
+    expect(squad.totalExact).toBe(false)
+    expect(squad.folders.find((item) => item.path === split)).toMatchObject({ totalExact: false })
+    expect(squad.folders.find((item) => item.path === small)).toMatchObject({ totalExact: true })
+  })
+
+  test('the rest after a chunk is stored, so an immediate next run waits it out', async () => {
+    const dirs = tree()
+    const homes = homesOf(dirs)
+    const first = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT]]) })
+    const ctx = context(first.runner)
+    const once: SshRunner = {
+      run: async (...args) => {
+        ctx.deadline = 0 // One chunk, then this tick ends.
+        return first.runner.run(...args)
+      },
+    }
+    await scanMachine(
+      { machine, homes },
+      {
+        ...ctx,
+        runner: once,
+        get deadline() {
+          return ctx.deadline
+        },
+      }
+    )
+    expect(first.calls).toHaveLength(1)
+    const [pass] = await passes()
+    expect(pass!.resumeAt!.getTime()).toBeGreaterThan(Date.now())
+
+    const second = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT]]) })
+    await scanMachine({ machine, homes }, context(second.runner))
+    expect(second.calls).toEqual([]) // Still resting.
+
+    await rested()
+    await scanMachine({ machine, homes }, context(second.runner))
+    expect(second.calls.length).toBeGreaterThan(0)
+    expect((await passes())[0]!.status).toBe('completed')
+  })
+
+  test('a total that cannot connect stays queued, backs off, then becomes exact', async () => {
+    const dirs = tree()
+    const homes = homesOf(dirs)
+    const remote = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT]]) })
+    let offline = true
+    const flaky: SshRunner = {
+      run: async (machineArg, command, opts) =>
+        offline && command === TOTAL_COMMAND
+          ? { exitCode: 255, stdout: '', stderr: 'ssh: connect to host: Connection refused' }
+          : remote.runner.run(machineArg, command, opts),
+    }
+    await scanMachine({ machine, homes }, context(flaky))
+    expect((await passes())[0]).toMatchObject({ status: 'running', lastError: 'ssh_failed' })
+    expect((await items()).filter((item) => item.kind === 'total')).toMatchObject([{ home: split, state: 'pending' }])
+    expect((await results()).has(split)).toBe(false)
+
+    offline = false
+    const before = remote.calls.length
+    await scanMachine({ machine, homes }, context(flaky))
+    expect(remote.calls.length).toBe(before) // Backing off.
+
+    await db.update(storageScanPasses).set({ lastErrorAt: sql`now() - interval '10 minutes'`, resumeAt: null })
+    await scanMachine({ machine, homes }, context(flaky))
+    expect((await passes())[0]!.status).toBe('completed')
+    expect((await results()).get(split)).toMatchObject({ bytes: EXACT, totalExact: true })
+  })
+
+  test('a restart mid-pass keeps a finished total and does not measure it again', async () => {
+    // Two split homes: their totals run last, one after the other.
+    const dirs = fixtureTree(2, 6)
+    const homes = homesOf(dirs)
+    const other = homes.find((home) => home !== split)!
+    const first = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT]]) })
+    const ctx = context(first.runner)
+    const interrupted: SshRunner = {
+      run: async (...args) => {
+        const result = await first.runner.run(...args)
+        // The breakdown finishes, then the first total: then the process "dies".
+        if (first.calls.at(-1)?.kind === 'total') ctx.deadline = 0
+        return result
+      },
+    }
+    await scanMachine(
+      { machine, homes },
+      {
+        ...ctx,
+        runner: interrupted,
+        get deadline() {
+          return ctx.deadline
+        },
+      }
+    )
+    const totals = first.calls.filter((call) => call.kind === 'total')
+    expect(totals.map((call) => call.paths)).toEqual([[split]])
+    expect((await passes())[0]!.status).toBe('running')
+    expect((await items()).filter((item) => item.kind === 'total')).toMatchObject([
+      { home: split, state: 'done', bytes: EXACT },
+      { home: other, state: 'pending' },
+    ])
+    expect((await results()).get(split)).toMatchObject({ bytes: EXACT, totalExact: true })
+
+    const second = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT * 2]]) })
+    await rested()
+    await scanMachine({ machine, homes }, context(second.runner))
+    expect(second.calls.filter((call) => call.kind === 'total').map((call) => call.paths)).toEqual([[other]])
+    expect((await passes())[0]!.status).toBe('completed')
+    expect((await results()).get(split)).toMatchObject({ bytes: EXACT, totalExact: true })
+  })
+
+  test('growth compares exact totals only: exact, then approximate, then exact', async () => {
+    const dirs = fixtureTree(1, 6)
+    const homes = homesOf(dirs)
+    await scanMachine(
+      { machine, homes },
+      context(fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT]]) }).runner)
+    )
+    await db
+      .update(storageUsageSamples)
+      .set({ measuredAt: sql`${storageUsageSamples.measuredAt} - interval '25 hours'` })
+      .where(eq(storageUsageSamples.machineId, machine.id))
+
+    // The total-only du times out: the inflated folder sum is shown, but is not growth.
+    await scanMachine(
+      { machine, homes },
+      context(fakeRemote(dirs, { budget: 20, totalBudget: 10, used: 1500 }).runner, { requestedAt: new Date() })
+    )
+    let machineView = await view(homes)
+    let home = machineView.squads[0]!.folders[0]!
+    expect(home).toMatchObject({ bytes: fixtureTree(1, 6).size * 4096, totalExact: false })
+    expect(home.growth).toBeUndefined()
+    expect(machineView.squads[0]!.growth).toBeUndefined()
+    expect(machineView.diskGrowth?.bytes).toBe(500)
+    expect(await samples(split)).toHaveLength(1)
+
+    await scanMachine(
+      { machine, homes },
+      context(fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT + 8192]]) }).runner, {
+        requestedAt: new Date(),
+      })
+    )
+    machineView = await view(homes)
+    home = machineView.squads[0]!.folders[0]!
+    expect(home).toMatchObject({ bytes: EXACT + 8192, totalExact: true })
+    expect(home.growth?.bytes).toBe(8192)
+    expect(Date.now() - Date.parse(home.growth!.since)).toBeGreaterThan(24 * 3_600_000)
+    expect(machineView.squads[0]!.growth?.bytes).toBe(8192)
   })
 })
 
