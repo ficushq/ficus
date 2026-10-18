@@ -1,5 +1,5 @@
 {
-  "id": "ce962ee2-a747-4822-a174-5c57b2020922",
+  "id": "c1148ed5-c1b1-481d-8c01-1408af66fa5a",
   "prevId": "8e55c6f6-6f85-41c4-b843-2d0d6c212c95",
   "version": "7",
   "dialect": "postgresql",
@@ -19457,8 +19457,7 @@
           "name": "total_exact",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
-          "default": false
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -19776,6 +19775,12 @@
         },
         "last_error_at": {
           "name": "last_error_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resume_at": {
+          "name": "resume_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

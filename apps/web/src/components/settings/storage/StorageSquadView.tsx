@@ -122,7 +122,7 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
     retentionDays
   )
   // Past the date, the dormant sweep is working through them (up to 5 a minute).
-  const dormantSummary = `${dormant.length} dormant · ${storageSize(sumBytes(dormant))} · ${
+  const dormantSummary = `${dormant.length} dormant · ${approximateSum(dormant)} · ${
     !removalDate
       ? `removed automatically after ${retentionDays} days`
       : removalDate.getTime() <= Date.now()
@@ -146,7 +146,7 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
   const removable = dormant.filter((folder) => !folder.agent?.removalPending)
 
   const removing = dialog?.kind === 'remove' ? dialog.folders : []
-  const removingBytes = storageSize(sumBytes(removing))
+  const removingBytes = approximateSum(removing)
   const dormantFolder = dialog?.kind === 'dormant' ? dialog.folder : null
 
   return (
@@ -261,4 +261,9 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
       )}
     </details>
   )
+}
+
+/** A sum of homes' sizes, marked ≈ when any of them is an approximate total. */
+function approximateSum(folders: StorageFolder[]): string {
+  return `${folders.some((folder) => folder.totalExact === false) ? '≈ ' : ''}${storageSize(sumBytes(folders))}`
 }

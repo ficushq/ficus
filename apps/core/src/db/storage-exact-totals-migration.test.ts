@@ -7,7 +7,7 @@ import { db } from './index'
 const migration = await Bun.file(new URL('../../drizzle/0225_storage_exact_home_totals.sql', import.meta.url)).text()
 const statements = migration.split('--> statement-breakpoint').filter((statement) => statement.trim())
 
-test('exact-totals migration marks old results approximate, drops home growth samples, and allows total items', async () => {
+test('exact-totals migration leaves old results unknown, drops home growth samples, and allows total items', async () => {
   const namespace = `storage_exact_totals_${crypto.randomUUID().replaceAll('-', '')}`
   const rollback = new Error('owned migration fixture rollback')
   const pass = crypto.randomUUID()
@@ -24,6 +24,7 @@ test('exact-totals migration marks old results approximate, drops home growth sa
         CONSTRAINT "storage_scan_items_path" UNIQUE("pass_id","path"))`)
       await run(`CREATE TABLE "storage_home_results" ("machine_id" uuid NOT NULL, "home" text NOT NULL,
         "bytes" bigint, PRIMARY KEY ("machine_id","home"))`)
+      await run(`CREATE TABLE "storage_scan_passes" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL)`)
       await run(`CREATE TABLE "storage_usage_samples" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
         "machine_id" uuid NOT NULL, "subject" text NOT NULL, "bytes" bigint NOT NULL)`)
       const machine = crypto.randomUUID()
@@ -39,7 +40,7 @@ test('exact-totals migration marks old results approximate, drops home growth sa
         { subject: 'host', bytes: '100' },
       ])
       expect(await select(`SELECT "bytes", "total_exact" FROM "${namespace}"."storage_home_results"`)).toEqual([
-        { bytes: '27', total_exact: false },
+        { bytes: '27', total_exact: null },
       ])
       expect(await select(`SELECT "kind" FROM "${namespace}"."storage_scan_items"`)).toEqual([{ kind: 'tree' }])
       // A home's total item shares its path with the home's tree item; a second tree item still conflicts.

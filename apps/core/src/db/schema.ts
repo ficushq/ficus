@@ -4693,6 +4693,11 @@ export const storageScanPasses = pgTable(
     /** Fixed classification of the last failed chunk; cleared by the next successful one. */
     lastError: varchar('last_error', { length: 32 }).$type<'ssh_failed' | 'ssh_timeout' | 'scan_failed'>(),
     lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+    /**
+     * The machine rests until this time: after each chunk the scanner stays idle at least as long as
+     * the chunk ran, across ticks, workers and restarts.
+     */
+    resumeAt: timestamp('resume_at', { withTimezone: true }),
   },
   (table) => [
     unique('storage_scan_passes_generation').on(table.machineId, table.generation),
@@ -4740,10 +4745,11 @@ export const storageHomeResults = pgTable(
     generation: integer('generation').notNull(),
     bytes: bigint('bytes', { mode: 'number' }),
     /**
-     * bytes came from one du of the whole home (hard-linked files counted once). False: the sum of
-     * separately measured parts, where a file hard-linked into several counts in each.
+     * True: bytes came from one du of the whole home (hard-linked files counted once). False: the sum
+     * of separately measured parts, where a file hard-linked into several counts in each. Null:
+     * measured before exactness was recorded (unknown), shown without a marker until re-measured.
      */
-    totalExact: boolean('total_exact').notNull().default(false),
+    totalExact: boolean('total_exact'),
     status: varchar('status', { length: 16 }).$type<'available' | 'partial' | 'unavailable'>().notNull(),
     errors: jsonb('errors').$type<Array<'scan_timeout' | 'permission_denied'>>().notNull().default([]),
     folder: jsonb('folder').$type<import('@ficus/shared').StorageFolder>().notNull(),

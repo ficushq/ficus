@@ -35,6 +35,8 @@ function context(runner: SshRunner, overrides: Partial<ScanContext> = {}): ScanC
   }
 }
 
+/** Let the rest a previous run stored on the pass elapse (as time passing would). */
+const rested = () => db.update(storageScanPasses).set({ resumeAt: null })
 const passes = () =>
   db
     .select()
@@ -184,6 +186,7 @@ describe('incremental storage scanner', () => {
     expect((await passes())[0]!.status).toBe('running')
 
     const second = fakeRemote(dirs, { budget: 14 })
+    await rested()
     await scanMachine({ machine, homes }, context(second.runner))
     const remeasured = second.calls.flatMap((call) => call.paths).filter((path) => done.has(path))
     expect(remeasured).toEqual([])
@@ -208,7 +211,7 @@ describe('incremental storage scanner', () => {
     await scanMachine({ machine, homes }, context(remote.runner))
     expect(remote.calls.length).toBe(calls) // Backing off.
 
-    await db.update(storageScanPasses).set({ lastErrorAt: sql`now() - interval '10 minutes'` })
+    await db.update(storageScanPasses).set({ lastErrorAt: sql`now() - interval '10 minutes'`, resumeAt: null })
     await scanMachine({ machine, homes }, context(remote.runner))
     ;[pass] = await passes()
     expect(pass).toMatchObject({ status: 'completed', lastError: null })
@@ -354,6 +357,9 @@ describe('exact home totals', () => {
     // The unsplit home was already measured by a single du.
     expect(totals.map((call) => call.paths)).toEqual([[split]])
     expect(totals[0]!.command).toBe(TOTAL_COMMAND)
+    // The total runs only once the breakdown has no tree work left.
+    const kinds = remote.calls.filter((call) => call.paths.length).map((call) => call.kind)
+    expect(kinds.lastIndexOf('measure')).toBeLessThan(kinds.indexOf('total'))
     expect((await passes())[0]!.status).toBe('completed')
 
     const saved = await results()
@@ -402,16 +408,81 @@ describe('exact home totals', () => {
     expect(squad.folders.find((item) => item.path === small)).toMatchObject({ totalExact: true })
   })
 
-  test('a restart mid-pass keeps a finished total and does not measure it again', async () => {
+  test('the rest after a chunk is stored, so an immediate next run waits it out', async () => {
     const dirs = tree()
     const homes = homesOf(dirs)
     const first = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT]]) })
     const ctx = context(first.runner)
+    const once: SshRunner = {
+      run: async (...args) => {
+        ctx.deadline = 0 // One chunk, then this tick ends.
+        return first.runner.run(...args)
+      },
+    }
+    await scanMachine(
+      { machine, homes },
+      {
+        ...ctx,
+        runner: once,
+        get deadline() {
+          return ctx.deadline
+        },
+      }
+    )
+    expect(first.calls).toHaveLength(1)
+    const [pass] = await passes()
+    expect(pass!.resumeAt!.getTime()).toBeGreaterThan(Date.now())
+
+    const second = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT]]) })
+    await scanMachine({ machine, homes }, context(second.runner))
+    expect(second.calls).toEqual([]) // Still resting.
+
+    await rested()
+    await scanMachine({ machine, homes }, context(second.runner))
+    expect(second.calls.length).toBeGreaterThan(0)
+    expect((await passes())[0]!.status).toBe('completed')
+  })
+
+  test('a total that cannot connect stays queued, backs off, then becomes exact', async () => {
+    const dirs = tree()
+    const homes = homesOf(dirs)
+    const remote = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT]]) })
+    let offline = true
+    const flaky: SshRunner = {
+      run: async (machineArg, command, opts) =>
+        offline && command === TOTAL_COMMAND
+          ? { exitCode: 255, stdout: '', stderr: 'ssh: connect to host: Connection refused' }
+          : remote.runner.run(machineArg, command, opts),
+    }
+    await scanMachine({ machine, homes }, context(flaky))
+    expect((await passes())[0]).toMatchObject({ status: 'running', lastError: 'ssh_failed' })
+    expect((await items()).filter((item) => item.kind === 'total')).toMatchObject([{ home: split, state: 'pending' }])
+    expect((await results()).has(split)).toBe(false)
+
+    offline = false
+    const before = remote.calls.length
+    await scanMachine({ machine, homes }, context(flaky))
+    expect(remote.calls.length).toBe(before) // Backing off.
+
+    await db.update(storageScanPasses).set({ lastErrorAt: sql`now() - interval '10 minutes'`, resumeAt: null })
+    await scanMachine({ machine, homes }, context(flaky))
+    expect((await passes())[0]!.status).toBe('completed')
+    expect((await results()).get(split)).toMatchObject({ bytes: EXACT, totalExact: true })
+  })
+
+  test('a restart mid-pass keeps a finished total and does not measure it again', async () => {
+    // Two split homes: their totals run last, one after the other.
+    const dirs = fixtureTree(2, 6)
+    const homes = homesOf(dirs)
+    const other = homes.find((home) => home !== split)!
+    const first = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT]]) })
+    const ctx = context(first.runner)
     const interrupted: SshRunner = {
       run: async (...args) => {
-        // Measure (times out), list (split), total: then the process "dies".
-        if (first.calls.length === 2) ctx.deadline = 0
-        return first.runner.run(...args)
+        const result = await first.runner.run(...args)
+        // The breakdown finishes, then the first total: then the process "dies".
+        if (first.calls.at(-1)?.kind === 'total') ctx.deadline = 0
+        return result
       },
     }
     await scanMachine(
@@ -424,16 +495,19 @@ describe('exact home totals', () => {
         },
       }
     )
-    expect(first.calls.map((call) => call.kind)).toEqual(['measure', 'list', 'total'])
+    const totals = first.calls.filter((call) => call.kind === 'total')
+    expect(totals.map((call) => call.paths)).toEqual([[split]])
     expect((await passes())[0]!.status).toBe('running')
     expect((await items()).filter((item) => item.kind === 'total')).toMatchObject([
-      { home: split, path: split, state: 'done', bytes: EXACT },
+      { home: split, state: 'done', bytes: EXACT },
+      { home: other, state: 'pending' },
     ])
-    expect(await results()).toEqual(new Map())
+    expect((await results()).get(split)).toMatchObject({ bytes: EXACT, totalExact: true })
 
     const second = fakeRemote(dirs, { budget: 20, totals: new Map([[split, EXACT * 2]]) })
+    await rested()
     await scanMachine({ machine, homes }, context(second.runner))
-    expect(second.calls.filter((call) => call.kind === 'total')).toEqual([])
+    expect(second.calls.filter((call) => call.kind === 'total').map((call) => call.paths)).toEqual([[other]])
     expect((await passes())[0]!.status).toBe('completed')
     expect((await results()).get(split)).toMatchObject({ bytes: EXACT, totalExact: true })
   })

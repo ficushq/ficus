@@ -22,6 +22,11 @@ import { parseDfOutput } from '../machines/machine-health'
 export const CHUNK_TIMEOUT_SECONDS = 20
 /** Local SSH limit: the remote limit plus the kill grace and connection slack. */
 export const CHUNK_SSH_TIMEOUT_MS = (CHUNK_TIMEOUT_SECONDS + 5 + 15) * 1000
+// Accepted trade-off: the storage monitor gives each tick ~40 s, but a total can run this long, so
+// a running total holds that tick (and, on an instance with several machines, delays the others'
+// chunks) until it ends. Pacing still holds: the scanner rests as long as the total ran
+// (storage_scan_passes.resume_at). Cloud tenants have one machine host, so totals get no separate
+// runner or lease for now.
 /** Remote time limit for one home's total-only du ({@link TOTAL_COMMAND}). */
 export const TOTAL_TIMEOUT_SECONDS = 180
 /** Local SSH limit for a total-only du, sized like {@link CHUNK_SSH_TIMEOUT_MS}. */

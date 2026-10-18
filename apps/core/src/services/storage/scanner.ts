@@ -135,8 +135,8 @@ export async function ensurePass(machineId: string, homes: string[], ctx: ScanCo
 }
 
 /**
- * Listings first, then a lone retry, then one home's total, then a batch of same-depth paths;
- * nothing left means df only.
+ * Listings first, then a lone retry, then a batch of same-depth paths, and only once no tree work
+ * is left, one home's total (so a long total never holds up the breakdown); nothing left means df only.
  */
 export async function nextWork(passId: string): Promise<Work> {
   const byState = (state: Item['state'], limit: number, kind: Item['kind'] = 'tree') =>
@@ -152,14 +152,14 @@ export async function nextWork(passId: string): Promise<Work> {
   if (splits.length) return { kind: 'list', items: splits }
   const solo = await byState('solo', 1)
   if (solo.length) return { kind: 'measure', items: solo }
+  const pending = await byState('pending', SCAN_BATCH * 8)
+  if (pending.length) {
+    const depth = detailDepth(pending[0]!.path)
+    return { kind: 'measure', items: pending.filter((item) => detailDepth(item.path) === depth).slice(0, SCAN_BATCH) }
+  }
   const total = await byState('pending', 1, 'total')
   if (total.length) return { kind: 'total', items: total }
-  const pending = await byState('pending', SCAN_BATCH * 8)
-  const depth = pending[0] ? detailDepth(pending[0].path) : 0
-  return {
-    kind: 'measure',
-    items: pending.filter((item) => detailDepth(item.path) === depth).slice(0, SCAN_BATCH),
-  }
+  return { kind: 'measure', items: [] }
 }
 
 export async function runChunk(machine: Machine, work: Work, runner: SshRunner): Promise<ChunkOutcome> {
@@ -390,12 +390,13 @@ async function resolveHome(tx: Tx, pass: ScanPass, home: string, now: Date) {
   const root = tree.find((row) => row.path === home)
   if (!root || root.error === 'missing') return
   const assembled = assembleHome(home, tree)
-  // An entirely unmeasured home keeps its previous value instead of erasing it.
-  if (assembled.bytes === null) return
   // One du of the whole home: the home measured unsplit, or its own total-only du.
   const measured = rows.find((row) => row.kind === 'total' && row.state === 'done' && row.bytes !== null)
+  // An entirely unmeasured home keeps its previous value instead of erasing it — unless its
+  // total-only du finished, which is the exact total even when the breakdown could not be listed.
+  if (assembled.bytes === null && !measured) return
   const totalExact = Boolean(measured) || root.state === 'done'
-  const bytes = measured?.bytes ?? assembled.bytes
+  const bytes = (measured?.bytes ?? assembled.bytes) as number
   // The folder tree keeps the breakdown; its sizes can add up to more than an exact total.
   assembled.entries.set(home, bytes)
   const errors = [
@@ -476,9 +477,14 @@ export async function scanMachine(
 ): Promise<{ usedBytes: number; totalBytes: number } | null> {
   const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   let disk: { usedBytes: number; totalBytes: number } | null = null
+  let resumed = false
   while (Date.now() < ctx.deadline) {
     const pass = await ensurePass(target.machine.id, target.homes, ctx)
     if (!pass) break
+    // Still resting after a chunk an earlier tick (or another worker) ran. Within this run the sleep
+    // below already enforces the rest.
+    if (!resumed && pass.resumeAt && pass.resumeAt.getTime() > Date.now()) break
+    resumed = true
     if (
       (pass.lastError === 'ssh_failed' || pass.lastError === 'scan_failed') &&
       pass.lastErrorAt &&
@@ -488,14 +494,20 @@ export async function scanMachine(
     const work = await nextWork(pass.id)
     const started = Date.now()
     const outcome = await runChunk(target.machine, work, ctx.runner)
+    // Idle at least as long as the chunk ran. The rest is stored on the pass, so it also holds when
+    // this tick ends first (a total can outlast the tick) and for the next tick or another worker.
+    const pause = Math.max(MIN_PAUSE_MS, Date.now() - started)
     const applied = await db.transaction(async (tx) => {
       if (!(await ctx.holdsLease(tx))) return false
       await applyChunk(tx, pass, work, outcome)
+      await tx
+        .update(storageScanPasses)
+        .set({ resumeAt: new Date(Date.now() + pause) })
+        .where(eq(storageScanPasses.id, pass.id))
       return true
     })
     if (!applied || outcome.failure) break
     if (outcome.disk) disk = outcome.disk
-    const pause = Math.max(MIN_PAUSE_MS, Date.now() - started)
     if (Date.now() + pause >= ctx.deadline) break
     await sleep(pause)
   }
