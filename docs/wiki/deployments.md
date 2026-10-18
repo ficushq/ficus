@@ -56,6 +56,17 @@ Use `browser_open({ "localDeploymentId": "<full-deployment-uuid>" })` instead of
 
 Path-based apps require the operator's browser-reachable `APP_URL`; hosted app URLs retain their own origin. Inspect IDs/status without printing credentials using `ficus deploy local list <squad-id> --json | jq '.[] | {id, name, status, port}'`. Do not reconstruct redacted URLs or paste credentials into logs/messages. App screenshots and content still need review before sharing.
 
+### WebSockets through the local app proxy
+
+The proxy relays WebSocket upgrades on both mounts: the hosted per-app origin and the `/api/app/<id>/` path (`apps/core/src/services/deploy/local-deployment-websocket.ts`, called from `local-deployment-proxy.ts`).
+
+- **Authorization** is the HTTP rule: a valid per-deployment token, from `_ficus_token` or the path-scoped `ficus_app_<id>` cookie, is checked before the app is contacted. Cookie, host and client-address headers follow the HTTP rules too. The path mount forwards no cookies to the app. The per-app origin forwards app cookies, minus Ficus's own.
+- **Origin check:** a browser handshake must come from the app's own origin (`https://<app-host>`) on the per-app origin, or from an allowed Ficus web origin on the path mount. Anything else gets a marked `403`. A handshake without `Origin` is a non-browser client and needs only the token.
+- **Path:** the socket must be opened under the app's mount. On the path mount that is `/api/app/<id>/…`. A bare `/ws` is Core's own event socket. Self-hosted reverse proxies must forward `Upgrade` for `/api/app/` as well as `/ws` (see [reverse proxy](reverse-proxy.md)).
+- **Handshake:** Core opens the app's socket first, so a refusal or no answer within 15 s (`LOCAL_APP_WEBSOCKET_CONNECT_TIMEOUT_MS`) is a marked `502`, not an accepted socket that closes at once. The subprotocol the app chooses is passed to the browser. Frames, and code and reason on close, are relayed both ways. An abnormal close from the app (for example `1006`, no close frame) reaches the browser as `1011`.
+- **Limits:** Core's `Bun.serve` passes Hono's `websocket` handler with no options, so Bun's defaults apply on the browser side: 120 s idle timeout with automatic pings (an answering browser stays connected), 16 MB maximum message (close `1009`), and a 16 MB send buffer. The `idleTimeout: 30` and `LOCAL_APP_PROXY_IDLE_TIMEOUT_SECONDS` values apply to HTTP requests, not open sockets. Limits of the hosted edge (the Platform bridge, Cloudflare) are outside this repository.
+- **Lifetime:** sockets do not survive a Core restart, an app or box restart, or an edge reconnect, and nothing resumes them. Apps must reconnect. Some dev servers mishandle the old socket's late close after reconnecting (Next 16 dev HMR can hang on "Rendering"); a page reload recovers.
+
 Direct loopback health probes do not verify proxy access. A provider-side `403` (such as Cloudflare error `1010` on unsigned requests) occurs before Ficus authentication and needs separate operator investigation, not weaker preview access controls.
 
 ## Security and cost guardrails
