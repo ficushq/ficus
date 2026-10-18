@@ -13,6 +13,7 @@ import { useURLStringState } from '../../hooks/useURLState'
 import { getLocalDeploymentAppHost, previewLocalDeploymentAliasUrl } from './localDeploymentAppHost'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
+import { localDeploymentActionErrorMessage } from '../../lib/localDeploymentActionError'
 import { queryKeys } from '../../queryKeys'
 import { queries } from '../../queryOptions'
 import { Badge, type BadgeColor } from '../Badge'
@@ -54,6 +55,14 @@ const STATUS_FILTERS: LocalDeploymentStatusFilter[] = [
   'stopped',
 ]
 
+type LocalDeploymentAction = 'restart' | 'stop' | 'archive'
+
+interface LocalDeploymentActionError {
+  action: LocalDeploymentAction
+  localDeploymentId: string
+  message: string
+}
+
 function getLocalDeploymentBrowserUrl(urlPathOrHost: string): string {
   if (/^https?:\/\//i.test(urlPathOrHost)) return urlPathOrHost
 
@@ -72,6 +81,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   const [confirmArchiveLocalDeploymentId, setConfirmArchiveLocalDeploymentId] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<LocalDeploymentStatusFilter>('all')
   const [showDone, setShowDone] = useState(false)
+  const [actionError, setActionError] = useState<LocalDeploymentActionError | null>(null)
   const [logsLocalDeploymentId, setLogsLocalDeploymentId] = useURLStringState<string>('localDeploymentLogs', '')
   const [aliasLocalDeploymentId, setAliasLocalDeploymentId] = useState<string | null>(null)
   const queryClient = useQueryClient()
@@ -91,13 +101,32 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
     queryClient.invalidateQueries({ queryKey: queryKeys.sandbox.status(squadId) })
   }
 
-  const stopMutation = useMutation({ mutationFn: stopLocalDeployment, onSuccess: invalidate })
-  const restartMutation = useMutation({ mutationFn: restartLocalDeployment, onSuccess: invalidate })
+  const onActionSuccess = () => {
+    setActionError(null)
+    invalidate()
+  }
+  const onActionError = (action: LocalDeploymentAction) => (error: unknown, localDeploymentId: string) =>
+    setActionError({ action, localDeploymentId, message: localDeploymentActionErrorMessage(error) })
+
+  const stopMutation = useMutation({
+    mutationFn: stopLocalDeployment,
+    onSuccess: onActionSuccess,
+    onError: onActionError('stop'),
+  })
+  const restartMutation = useMutation({
+    mutationFn: restartLocalDeployment,
+    onSuccess: onActionSuccess,
+    onError: onActionError('restart'),
+  })
   const archiveMutation = useMutation({
     mutationFn: archiveLocalDeployment,
     onSuccess: () => {
       setConfirmArchiveLocalDeploymentId(null)
-      invalidate()
+      onActionSuccess()
+    },
+    onError: (error, localDeploymentId) => {
+      setConfirmArchiveLocalDeploymentId(null)
+      onActionError('archive')(error, localDeploymentId)
     },
   })
 
@@ -154,9 +183,19 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   if (localDeployments.length === 0) return <div className="text-sm text-muted">No local deployments running yet.</div>
 
   const isBusy = stopMutation.isPending || restartMutation.isPending || archiveMutation.isPending
+  const actionErrorAppName = actionError
+    ? (localDeployments.find((localDeployment) => localDeployment.id === actionError.localDeploymentId)?.name ??
+      'local app')
+    : null
 
   return (
     <div className="space-y-3 min-w-0">
+      {actionError && (
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400 break-words">
+          Couldn&apos;t {actionError.action} {actionErrorAppName}: {actionError.message}
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-1">
         {STATUS_FILTERS.map((filter) => (
           <Badge
@@ -471,7 +510,7 @@ function LocalDeploymentAliasModal({
         </p>
         {mutation.error && (
           <p className="text-xs text-status-danger-600 dark:text-status-danger-400" role="alert">
-            {(mutation.error as Error).message}
+            {localDeploymentActionErrorMessage(mutation.error)}
           </p>
         )}
         <div className="flex flex-wrap justify-end gap-2">
