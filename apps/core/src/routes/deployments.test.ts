@@ -598,6 +598,71 @@ describe('deployments routes', () => {
     expect(supervisorStarts).toHaveLength(1)
   })
 
+  it('POST /restart relaunches a crashed or stopped restartPolicy never app and returns the new run', async () => {
+    const { restartManagedLocalDeployment, stopLocalDeploymentReadinessChecks } =
+      await import('../services/deploy/local-deployment-health')
+    configureLocalDeploymentHealthDependencies({
+      ensureSquadSandbox: async () => '/workspace',
+      supervisor: { ...getRouteSupervisor(), hasSession: async () => true } as any,
+      probeLocalDeploymentHttp: async () => false,
+      resolveLocalDeploymentTarget: async () => ({ host: 'localhost', port: 5173 }),
+      // Park the background readiness check until the test aborts it below.
+      waitForReadinessInterval: (signal) =>
+        new Promise<void>((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })),
+      isBoxMigrating: async () => false,
+    })
+    configureDeploymentsRouteDependencies({
+      ensureSquadSandbox,
+      refreshLocalDeploymentHealth: async (id) => (await getLocalDeployment(id))!,
+      supervisor: getRouteSupervisor() as any,
+      restartManagedLocalDeployment,
+    })
+    const squad = await createTestSquad()
+    const createRes = await app.request(`/api/squads/${squad.id}/local-deployments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(adminUser.token) },
+      body: JSON.stringify({ name: 'web', port: 5173, command: './run.sh up', restartPolicy: 'never' }),
+    })
+    const localDeployment = await createRes.json()
+
+    for (const status of ['crashed', 'stopped'] as const) {
+      await updateLocalDeploymentRecord(localDeployment.id, { status })
+      supervisorStarts.length = 0
+      const res = await app.request(`/api/local-deployments/${localDeployment.id}/restart`, {
+        method: 'POST',
+        headers: authHeaders(adminUser.token),
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).status).toBe('restarting')
+      expect(supervisorStarts).toEqual([expect.objectContaining({ command: './run.sh up' })])
+    }
+    await stopLocalDeploymentReadinessChecks()
+  })
+
+  it('POST /restart reports why an app cannot be restarted instead of its old status', async () => {
+    const { restartManagedLocalDeployment } = await import('../services/deploy/local-deployment-health')
+    configureDeploymentsRouteDependencies({
+      ensureSquadSandbox,
+      refreshLocalDeploymentHealth: async (id) => (await getLocalDeployment(id))!,
+      supervisor: getRouteSupervisor() as any,
+      restartManagedLocalDeployment,
+    })
+    const squad = await createTestSquad()
+    const createRes = await app.request(`/api/squads/${squad.id}/local-deployments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(adminUser.token) },
+      body: JSON.stringify({ name: 'web', port: 5173, mode: 'attached' }),
+    })
+    const localDeployment = await createRes.json()
+
+    const res = await app.request(`/api/local-deployments/${localDeployment.id}/restart`, {
+      method: 'POST',
+      headers: authHeaders(adminUser.token),
+    })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toContain('Only managed local apps can be restarted')
+  })
+
   it('DELETE /api/local-deployments/:localDeploymentId stops managed localDeployments and archives the row', async () => {
     const squad = await createTestSquad()
     const createRes = await app.request(`/api/squads/${squad.id}/local-deployments`, {

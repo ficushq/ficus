@@ -278,8 +278,10 @@ function registerLocalCommands(deploy: Command): void {
     .action((id) => mutateLocal(id, 'stop'))
   local
     .command('restart <id>')
-    .description('Restart a managed local app run')
-    .action((id) => mutateLocal(id, 'restart'))
+    .description(
+      'Stop a managed local app run (if running) and launch its command again, whatever its status or restart policy'
+    )
+    .action((id) => restartLocal(id))
   local
     .command('archive <id>')
     .description('Archive a local app run')
@@ -320,9 +322,26 @@ async function createLocalDeployment(squadId: string, options: Record<string, un
   }
 }
 
-async function mutateLocal(id: string, action: 'stop' | 'restart'): Promise<void> {
+async function mutateLocal(id: string, action: 'stop'): Promise<void> {
   try {
     printLocal(await apiPost<LocalDeployment>(`/api/local-deployments/${id}/${action}`))
+  } catch (error) {
+    outputError(error as Error)
+  }
+}
+
+/** Statuses of a run that was just launched; anything else means no new run started. */
+const NEW_RUN_STATUSES = new Set<LocalDeployment['status']>(['starting', 'restarting', 'running'])
+
+async function restartLocal(id: string): Promise<void> {
+  try {
+    const run = await apiPost<LocalDeployment>(`/api/local-deployments/${id}/restart`)
+    if (!NEW_RUN_STATUSES.has(run.status)) {
+      // e.g. a concurrent stop won the race: report it rather than a stale status.
+      outputError(new Error(`Local app ${run.name} did not restart: it is ${run.status}`))
+      return
+    }
+    printLocal(run, `Restarted local app ${run.name}: ${run.status}`)
   } catch (error) {
     outputError(error as Error)
   }
@@ -348,13 +367,13 @@ function toLocalRow(run: LocalDeployment) {
   }
 }
 
-function printLocal(run: LocalDeployment): void {
+function printLocal(run: LocalDeployment, heading = `Local app ${run.name} ${run.status}`): void {
   if (isJsonMode()) {
     output(run)
     return
   }
 
-  console.log(`Local app ${run.name} ${run.status}`)
+  console.log(heading)
   console.log(`  ID: ${run.id}`)
   console.log(`  URL: ${run.urlPathOrHost}`)
   console.log(`  Port: ${run.port}`)

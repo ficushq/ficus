@@ -23,6 +23,7 @@ import {
 import { LocalDeploymentProcessSupervisor } from '../services/deploy/local-deployment-process-supervisor'
 import { LocalDeploymentLogPathOutsideWorkspaceError } from '../services/deploy/local-deployment-log-path'
 import {
+  LocalDeploymentRestartRejectedError,
   refreshLocalDeploymentHealth,
   restartManagedLocalDeployment,
   startManagedLocalDeployment,
@@ -462,8 +463,9 @@ export const deploymentsRouter = new Hono()
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
       try {
-        return c.json(await getDependencies().restartManagedLocalDeployment(localDeployment.id, { allowStopped: true }))
+        return c.json(await getDependencies().restartManagedLocalDeployment(localDeployment.id, { explicit: true }))
       } catch (err) {
+        if (err instanceof LocalDeploymentRestartRejectedError) return c.json({ error: err.message }, 409)
         const provisioning = getSandboxProvisionErrorResponse(err)
         if (provisioning) {
           if (provisioning.retryAfter) c.header('Retry-After', provisioning.retryAfter)

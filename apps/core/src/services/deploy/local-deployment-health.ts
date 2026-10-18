@@ -233,8 +233,16 @@ export interface RestartLocalDeploymentOptions {
    * knows it is the migration and chooses not to be gated by its own fence.
    */
   skipIfMigrating?: boolean
-  /** Only an explicit operator restart may start a stopped deployment. */
-  allowStopped?: boolean
+  /**
+   * An operator restart (`POST /local-deployments/:id/restart`). It always
+   * stops the current session (if any) and launches the command again, whatever
+   * the status (running, crashed, stopped) and restart policy: `restartPolicy`
+   * governs AUTOMATIC recovery only. Anything that prevents the relaunch
+   * (archived, attached, migrating, a concurrent launch) throws a reason
+   * instead of returning the old record, which a caller would misreport as the
+   * outcome of the restart.
+   */
+  explicit?: boolean
   /** First launch, including managed apps with restartPolicy never. */
   initial?: boolean
   /** Automatic recovery must inspect again after ensure, before killing a session. */
@@ -249,7 +257,10 @@ export interface RestartLocalDeploymentOptions {
  * resuming on a squad box ran ensureSquadSandbox's restart at once — so a
  * concurrent caller joins the restart already under way instead.
  */
-const restartsInFlight = new Map<string, Promise<LocalDeployment>>()
+const restartsInFlight = new Map<string, { restart: Promise<LocalDeployment>; explicit: boolean }>()
+
+/** An explicit restart could not relaunch; the message is the reason shown to the operator. */
+export class LocalDeploymentRestartRejectedError extends Error {}
 
 export function startManagedLocalDeployment(
   localDeploymentId: string,
@@ -285,12 +296,20 @@ function runManagedLocalDeployment(
   opts: RestartLocalDeploymentOptions,
   collaborators?: Partial<LocalDeploymentHealthDependencies>
 ): Promise<LocalDeployment> {
+  const explicit = opts.explicit === true
   const inFlight = restartsInFlight.get(localDeploymentId)
-  if (inFlight) return inFlight
-  const restart = restartManagedLocalDeploymentOnce(localDeploymentId, opts, collaborators).finally(() => {
-    restartsInFlight.delete(localDeploymentId)
+  if (inFlight && (!explicit || inFlight.explicit)) return inFlight.restart
+  // Automatic recovery may legitimately decide not to relaunch (the app is
+  // healthy, or its policy is never). An operator restart must relaunch, so it
+  // queues behind a non-explicit launch instead of adopting its result, and
+  // takes over the slot so later callers join the operator restart.
+  const run = () => restartManagedLocalDeploymentOnce(localDeploymentId, opts, collaborators)
+  const restart: Promise<LocalDeployment> = (
+    inFlight ? inFlight.restart.catch(() => undefined).then(run) : run()
+  ).finally(() => {
+    if (restartsInFlight.get(localDeploymentId)?.restart === restart) restartsInFlight.delete(localDeploymentId)
   })
-  restartsInFlight.set(localDeploymentId, restart)
+  restartsInFlight.set(localDeploymentId, { restart, explicit })
   return restart
 }
 
@@ -300,11 +319,20 @@ async function restartManagedLocalDeploymentOnce(
   collaborators: Partial<LocalDeploymentHealthDependencies> = {}
 ): Promise<LocalDeployment> {
   const localDeployment = await requireLocalDeployment(localDeploymentId)
-  if (localDeployment.archivedAt || (localDeployment.status === 'stopped' && !opts.allowStopped)) return localDeployment
-  if (localDeployment.mode !== 'managed') {
+  if (localDeployment.archivedAt) {
+    if (opts.explicit) throw new LocalDeploymentRestartRejectedError('Archived local apps cannot be restarted.')
     return localDeployment
   }
-  if (!opts.initial && localDeployment.restartPolicy !== 'always') {
+  if (localDeployment.status === 'stopped' && !opts.explicit) return localDeployment
+  if (localDeployment.mode !== 'managed') {
+    if (opts.explicit)
+      throw new LocalDeploymentRestartRejectedError(
+        'Only managed local apps can be restarted; an attached app is started outside Ficus.'
+      )
+    return localDeployment
+  }
+  // restartPolicy governs automatic recovery only, never an operator restart.
+  if (!opts.initial && !opts.explicit && localDeployment.restartPolicy !== 'always') {
     return localDeployment
   }
   if (!localDeployment.command?.trim()) {
@@ -316,6 +344,10 @@ async function restartManagedLocalDeploymentOnce(
     log.info(
       `Skipping restart of managed localDeployment ${localDeploymentId}: box ${localDeployment.sandboxId} is mid-migration`
     )
+    if (opts.explicit)
+      throw new LocalDeploymentRestartRejectedError(
+        "The app's box is being migrated; restart it after the migration completes."
+      )
     return localDeployment
   }
   try {
@@ -339,14 +371,23 @@ async function restartManagedLocalDeploymentOnce(
     const [lock] = await tx.execute<{ acquired: boolean }>(
       sql`select pg_try_advisory_xact_lock(hashtextextended(${`local-deployment-restart:${localDeployment.id}`}, 0)) as acquired`
     )
-    if (!lock.acquired) return requireLocalDeployment(localDeployment.id)
+    if (!lock.acquired) {
+      if (opts.explicit)
+        throw new LocalDeploymentRestartRejectedError(
+          'Another launch of this app is in progress; check its status and retry the restart if needed.'
+        )
+      return requireLocalDeployment(localDeployment.id)
+    }
     const current = await requireLocalDeployment(localDeployment.id)
     // A second Core process may have completed recovery while we ensured the
     // box. Its new generation wins; do not immediately kill/restart it again.
-    if (current.restartCount !== localDeployment.restartCount || (!opts.initial && current.restartPolicy !== 'always'))
+    if (
+      current.restartCount !== localDeployment.restartCount ||
+      (!opts.initial && !opts.explicit && current.restartPolicy !== 'always')
+    )
       return current
     if (opts.initial && current.processId) return current
-    const explicitlyRestartingStopped = opts.allowStopped && localDeployment.status === 'stopped'
+    const explicitlyRestartingStopped = opts.explicit && localDeployment.status === 'stopped'
     if (
       current.archivedAt ||
       (current.status === 'stopped' &&
