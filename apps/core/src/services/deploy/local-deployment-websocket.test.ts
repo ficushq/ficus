@@ -362,11 +362,11 @@ describe('local app WebSocket upgrades', () => {
       await client.nextMessages(1)
     }
 
-    expect(app.handshakes.map(({ headers }) => headers.authorization)).toEqual([
+    expect(app.handshakes.map(({ headers }): string | null => headers.authorization ?? null)).toEqual([
       appBearer,
-      undefined,
-      undefined,
-      undefined,
+      null,
+      null,
+      null,
     ])
   })
 
