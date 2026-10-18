@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, lt, or } from 'drizzle-orm'
 import { db } from '../db'
 import { agents, monitors } from '../db/schema'
 import { BaseEntity } from './base'
@@ -27,6 +27,7 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
   declare batchDebounceMs: number
   declare exitCode: number | null
   declare lastBatchAt: Date | null
+  declare lastConfirmedAliveAt: Date | null
   declare linesEmitted: number
   declare bytesEmitted: number
   declare createdAt: Date
@@ -164,6 +165,7 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
         status: 'running',
         startedAt: this.startedAt ?? now,
         launchedAt: now,
+        lastConfirmedAliveAt: now,
         deadlineAt: this.deadlineAt ?? new Date(now.getTime() + this.timeoutMs),
         nextRestartAt: null,
       })
@@ -172,6 +174,24 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
     if (!row) return false
     Object.assign(this, row)
     return true
+  }
+
+  /** A successful probe may refresh only the same still-running launch. */
+  async confirmAlive(now: Date, launchedAt: Date | null): Promise<void> {
+    const [row] = await db
+      .update(monitors)
+      .set({ lastConfirmedAliveAt: now })
+      .where(
+        and(
+          eq(monitors.id, this.id),
+          eq(monitors.status, 'running'),
+          isNull(monitors.nextRestartAt),
+          launchedAt ? eq(monitors.launchedAt, launchedAt) : isNull(monitors.launchedAt),
+          or(isNull(monitors.lastConfirmedAliveAt), lt(monitors.lastConfirmedAliveAt, now))
+        )
+      )
+      .returning({ lastConfirmedAliveAt: monitors.lastConfirmedAliveAt })
+    if (row) this.lastConfirmedAliveAt = row.lastConfirmedAliveAt
   }
 
   /**
@@ -223,6 +243,7 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
       startedAt: this.startedAt?.toISOString() ?? null,
       endedAt: this.endedAt?.toISOString() ?? null,
       lastBatchAt: this.lastBatchAt?.toISOString() ?? null,
+      lastConfirmedAliveAt: this.lastConfirmedAliveAt?.toISOString() ?? null,
       restartPolicy: this.restartPolicy,
       restartLimit: this.restartLimit,
       restartCount: this.restartCount,

@@ -14,7 +14,8 @@ import {
   workStreams,
 } from '../../db/schema'
 import { eventEmitter } from '../../lib/infra/event-emitter'
-import { getSquadDemandSnapshots, SUPERVISED_ACTIVITY_WINDOW_MS, type SquadDemandSnapshot } from './demand'
+import { getSquadDemandSnapshots, type SquadDemandSnapshot } from './demand'
+import { MONITOR_LIVENESS_WINDOW_MS } from '../monitors/liveness'
 import { reconcileDeadFleet } from './dead-fleet'
 import { FleetIncidentNotifier } from './notifier'
 
@@ -349,7 +350,7 @@ describe('dead fleet reconciliation', () => {
     ])
   })
 
-  test('an idle worker supervising a live monitor is not stalled; a silent monitor alerts and new output recovers', async () => {
+  test('a silent supervised worker stays quiet for hours; stale probes alert and a successful probe recovers', async () => {
     // A flow attempt is running with no waits; its agent is idle between monitor events.
     const streamId = crypto.randomUUID()
     await db.insert(workStreams).values({
@@ -399,12 +400,19 @@ describe('dead fleet reconciliation', () => {
       await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshots.get(squadId)!]]) })
     }
 
-    // 45 minutes idle: past the 30-minute stall window, but the monitor is live.
-    await reconcileAt(at(45 * 60_000))
-    expect(await incidents()).toEqual([])
+    // Quiet checkpoints more than two hours apart must never produce alert/recovery pairs.
+    const healthyAt = 3 * 60 * 60_000
+    for (const elapsed of [45 * 60_000, healthyAt]) {
+      await db
+        .update(monitors)
+        .set({ lastConfirmedAliveAt: at(elapsed) })
+        .where(eq(monitors.id, monitorId))
+      await reconcileAt(at(elapsed))
+      expect(await incidents()).toEqual([])
+    }
 
-    // The monitor stays silent past the activity window: a real stall, alerted at once.
-    const stalledAt = at(SUPERVISED_ACTIVITY_WINDOW_MS + 60_000)
+    // Supervision stops succeeding: the stale running row must not mask demand.
+    const stalledAt = at(healthyAt + MONITOR_LIVENESS_WINDOW_MS + 1)
     await reconcileAt(stalledAt)
     const [incident] = await incidents()
     expect(incident).toMatchObject({ startedAt: START, resolvedAt: null })
@@ -416,9 +424,9 @@ describe('dead fleet reconciliation', () => {
         and(eq(fleetIncidentNotifications.incidentId, incident!.id), eq(fleetIncidentNotifications.audience, 'manager'))
       )
 
-    // New output proves the job is advancing again: the incident resolves with a recovery.
+    // A fresh process check recovers even with no output and no new agent run.
     const recoveredAt = new Date(stalledAt.getTime() + 60_000)
-    await db.update(monitors).set({ lastBatchAt: recoveredAt }).where(eq(monitors.id, monitorId))
+    await db.update(monitors).set({ lastConfirmedAliveAt: recoveredAt }).where(eq(monitors.id, monitorId))
     await reconcileAt(recoveredAt)
     expect((await incidents())[0]?.resolvedAt).toEqual(recoveredAt)
     expect((await notifications(incident!.id)).some((row) => row.kind === 'recovery')).toBe(true)

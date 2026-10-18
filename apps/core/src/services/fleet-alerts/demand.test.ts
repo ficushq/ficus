@@ -15,6 +15,7 @@ import {
   workStreamFlowRuns,
   workStreams,
 } from '../../db/schema'
+import { MONITOR_LIVENESS_WINDOW_MS } from '../monitors/liveness'
 import { getSquadDemandSnapshots, SUPERVISED_ACTIVITY_WINDOW_MS } from './demand'
 
 const NOW = new Date('2026-08-18T12:00:00.000Z')
@@ -273,7 +274,7 @@ describe('actionable squad demand', () => {
     expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
   })
 
-  test('an idle attempt agent supervising a live monitor or local app is not a stall until its signal goes stale', async () => {
+  test('silent healthy monitors protect their attempt, but stale checks, ended monitors and expired deadlines do not', async () => {
     const id = await addWorkStream({ assigneeAgentId: targetAgentId })
     const definition = createBlankWorkflow()
     await db.insert(workStreamFlowRuns).values({
@@ -307,27 +308,63 @@ describe('actionable squad demand', () => {
       createdAt: at(windowMinutes + 60),
       startedAt: at(windowMinutes + 60),
       launchedAt: at(windowMinutes + 60),
-      lastBatchAt: at(40),
+      lastBatchAt: at(windowMinutes + 60),
+      lastConfirmedAliveAt: at(1),
     })
-    // Recent output: the agent is idle between events of live work.
+    // Chlea regression: no output or agent run for hours, but successful process probes.
     expect(await count()).toBe(0)
-    // Silent past the window: the monitor no longer masks the stall.
+    // Recent output does not cover failed/stopped supervision.
     await db
       .update(monitors)
-      .set({ lastBatchAt: at(windowMinutes + 1) })
+      .set({
+        lastBatchAt: at(0),
+        lastConfirmedAliveAt: at(MONITOR_LIVENESS_WINDOW_MS / 60_000 + 0.01),
+      })
       .where(eq(monitors.id, monitorId))
     expect(await count()).toBe(1)
-    // A recent relaunch is a fresh sign of life.
+    // Boundary and legacy rows: only real, recent confirmations count.
     await db
       .update(monitors)
-      .set({ launchedAt: at(5) })
+      .set({ lastConfirmedAliveAt: at(MONITOR_LIVENESS_WINDOW_MS / 60_000) })
       .where(eq(monitors.id, monitorId))
     expect(await count()).toBe(0)
-    // A lost or finished monitor is not activity.
-    await db.update(monitors).set({ status: 'exited' }).where(eq(monitors.id, monitorId))
+    await db.update(monitors).set({ lastConfirmedAliveAt: null }).where(eq(monitors.id, monitorId))
     expect(await count()).toBe(1)
+    await db
+      .update(monitors)
+      .set({ lastConfirmedAliveAt: at(-1) })
+      .where(eq(monitors.id, monitorId))
+    expect(await count()).toBe(1)
+    await db
+      .update(monitors)
+      .set({ lastConfirmedAliveAt: at(0) })
+      .where(eq(monitors.id, monitorId))
+    expect(await count()).toBe(0)
+    for (const status of ['starting', 'canceling', 'exited', 'failed', 'canceled', 'timed-out'] as const) {
+      await db.update(monitors).set({ status }).where(eq(monitors.id, monitorId))
+      expect(await count()).toBe(1)
+    }
+    await db.update(monitors).set({ status: 'running', deadlineAt: NOW }).where(eq(monitors.id, monitorId))
+    expect(await count()).toBe(1)
+    // Legacy deadline derives from first start, never a fresh heartbeat.
+    await db
+      .update(monitors)
+      .set({ deadlineAt: null, startedAt: at(1500) })
+      .where(eq(monitors.id, monitorId))
+    expect(await count()).toBe(1)
+    await db
+      .update(monitors)
+      .set({ startedAt: at(180) })
+      .where(eq(monitors.id, monitorId))
+    expect(await count()).toBe(0)
+    await db
+      .update(monitors)
+      .set({ nextRestartAt: at(-1) })
+      .where(eq(monitors.id, monitorId))
+    expect(await count()).toBe(1)
+    await db.update(monitors).set({ nextRestartAt: null }).where(eq(monitors.id, monitorId))
     // Another squad agent's monitor does not cover this stream's attempt agent.
-    await db.update(monitors).set({ status: 'running', agentId: secondTargetAgentId }).where(eq(monitors.id, monitorId))
+    await db.update(monitors).set({ agentId: secondTargetAgentId }).where(eq(monitors.id, monitorId))
     expect(await count()).toBe(1)
 
     const appId = crypto.randomUUID()

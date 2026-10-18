@@ -1,0 +1,1 @@
+ALTER TABLE "monitors" ADD COLUMN "last_confirmed_alive_at" timestamp;

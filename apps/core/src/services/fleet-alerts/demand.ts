@@ -7,6 +7,7 @@ import {
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { isInboxMessageWakeEligible } from '../../entities/InboxMessage'
+import { MONITOR_LIVENESS_WINDOW_MS } from '../monitors/liveness'
 import { awaitsCodeHostDelivery } from '../workflows/delivery-state'
 
 export interface SquadDemandSnapshot {
@@ -21,16 +22,7 @@ const liveAgentStatusSql = sql.join(
   sql`, `
 )
 
-/**
- * How long a stream agent's supervised background work counts as progress
- * without a fresh signal. An agent that waits on a long job through an
- * event-only monitor (or a managed local app plus periodic check-ins) is idle
- * between events, often for 30-45 minutes at a time, while the job advances.
- * Two hours is four times the 30-minute dead-fleet alert window, so such gaps
- * do not raise false stalls, while a monitor that has gone silent (or an app
- * whose owner stopped checking it) still raises a stall alert at most two hours
- * after its last sign of life rather than masking a real stall indefinitely.
- */
+/** Freshness window for managed local apps and their owners' check-ins. */
 export const SUPERVISED_ACTIVITY_WINDOW_MS = 2 * 60 * 60_000
 
 interface StreamDemand {
@@ -43,8 +35,8 @@ interface StreamDemand {
   attemptAgents: Record<string, string>
   /**
    * Stream agents (assignee, participants, flow attempt agents) whose supervised
-   * background work proves progress within {@link SUPERVISED_ACTIVITY_WINDOW_MS}:
-   * a running monitor with recent output or (re)launch, or a running managed
+   * background work has a recent health confirmation: a running monitor
+   * confirmed alive by its supervisor, or a running managed
    * local app the agent created in the stream's squad while the agent ran recently.
    */
   supervisingAgents?: string[]
@@ -106,6 +98,7 @@ interface DemandRow extends Record<string, unknown> {
  */
 export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map<string, SquadDemandSnapshot>> {
   const now = input.now.toISOString()
+  const monitorCutoff = new Date(input.now.getTime() - MONITOR_LIVENESS_WINDOW_MS).toISOString()
   const activityCutoff = new Date(input.now.getTime() - SUPERVISED_ACTIVITY_WINDOW_MS).toISOString()
   const rows = await db.execute<DemandRow>(sql`
     WITH active_squads AS (
@@ -236,10 +229,9 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         'attemptAgents', COALESCE(flow.attempt_agents, '{}'::jsonb),
         'waits', (SELECT COALESCE(jsonb_agg(jsonb_build_object('flowAttemptId', wait.flow_attempt_id)), '[]'::jsonb)
           FROM work_stream_waits AS wait WHERE wait.work_stream_id = stream.id AND wait.closed_at IS NULL),
-        -- Idle agents whose supervised background work is still advancing
-        -- (see SUPERVISED_ACTIVITY_WINDOW_MS). Liveness is the supervisors':
-        -- a monitor leaves 'running' once its process is lost, and a local app
-        -- leaves 'running' when its health poll fails.
+        -- Idle agents whose background work is supervised. Monitor process
+        -- confirmation is independent of stdout; local apps retain their existing
+        -- status/owner freshness policy.
         'supervisingAgents', (SELECT COALESCE(jsonb_agg(owner.id), '[]'::jsonb)
           FROM agents AS owner
           WHERE owner.squad_id = stream.squad_id
@@ -248,10 +240,14 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
             AND (
               EXISTS (SELECT 1 FROM monitors AS monitor
                 WHERE monitor.agent_id = owner.id AND monitor.status = 'running'
-                  -- Output or a (re)launch is the freshness signal: a monitor
-                  -- that stays silent past the window no longer masks a stall.
-                  AND GREATEST(monitor.last_batch_at, monitor.launched_at, monitor.started_at, monitor.created_at)
-                    >= ${activityCutoff}::timestamptz)
+                  AND monitor.next_restart_at IS NULL
+                  -- Event-only monitors can be silent for hours while healthy.
+                  -- Require recent process confirmation, not stdout or a stale status row.
+                  AND monitor.last_confirmed_alive_at >= ${monitorCutoff}::timestamptz
+                  AND monitor.last_confirmed_alive_at <= ${now}::timestamptz
+                  AND COALESCE(monitor.deadline_at,
+                    COALESCE(monitor.started_at, monitor.created_at) + monitor.timeout_ms * interval '1 millisecond')
+                    > ${now}::timestamptz)
               OR EXISTS (SELECT 1 FROM local_deployments AS app
                 WHERE app.created_by_agent_id = owner.id AND app.squad_id = stream.squad_id
                   AND app.archived_at IS NULL AND app.mode = 'managed' AND app.status = 'running'

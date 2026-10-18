@@ -55,6 +55,14 @@ Monitor output (line batches and lifecycle status) is delivered to the agent as 
 
 The worker supervisor starts a tmux session inside the monitor's own sandbox (a private agent box or the squad box). It uses the pinned tmux on Ficus's own socket (`tmux -L ficus`), whatever the box's `PATH` or devbox profile; see [Which tmux Ficus runs](deployments.md#which-tmux-ficus-runs). The launcher appends the command's output to `<work root>/.ficus/monitors/<id>/logs/current.log` and writes `exitCode` when the command ends. The supervisor keeps a live foreground stream of that log and polls the session's liveness. Output batches are delivered through the existing DB-backed steering-message path.
 
+### Quiet monitors and stall alerts
+
+A running monitor attached to a work stream's agent counts as supervised waiting while its process has been confirmed alive recently. Successful launches and liveness probes persist `lastConfirmedAliveAt`; they do not emit output or wake the agent. Event-only monitors can therefore remain silent for hours without causing a squad stall alert.
+
+The confirmation expires after 150 seconds: the 15-second maximum poll interval times the five-failure retry allowance plus one poll, with another minute for exec/database latency. Failed probes do not refresh it. Pending restarts, terminal states and expired deadlines do not suppress stall detection, even if a previous confirmation is recent. After a Core restart, successful probes renew the timestamp; merely loading an old `running` row does not. Existing monitors acquire the timestamp on their next successful probe after upgrade.
+
+This confirms that the watcher is alive, not that the watched job is making useful progress. Monitor commands should still detect and report job-specific errors or stalled progress. Provider and sandbox outage alerts remain independent.
+
 ### Delivered offset
 
 The stream reads the log by byte offset (`tail -c +<offset+1> -F`), not from its current end. The supervisor tracks two offsets:

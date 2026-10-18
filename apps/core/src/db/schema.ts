@@ -1999,6 +1999,8 @@ export const monitors = pgTable(
     batchDebounceMs: integer('batch_debounce_ms').notNull(),
     exitCode: integer('exit_code'),
     lastBatchAt: timestamp('last_batch_at'),
+    // Successful process probes, independent of event-only stdout.
+    lastConfirmedAliveAt: timestamp('last_confirmed_alive_at'),
     linesEmitted: integer('lines_emitted').notNull().default(0),
     bytesEmitted: integer('bytes_emitted').notNull().default(0),
     createdAt: timestamp('created_at').notNull().defaultNow(),
