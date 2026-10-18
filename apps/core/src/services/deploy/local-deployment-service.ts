@@ -209,6 +209,20 @@ export async function isValidLocalDeploymentBrowserToken(
   return timingSafeEqual(expected, received)
 }
 
+/**
+ * Whether `token` is any deployment's browser access token. The local-app proxy
+ * asks so it never hands one app another app's credential.
+ */
+export async function isAnyLocalDeploymentBrowserToken(token: string): Promise<boolean> {
+  if (!token) return false
+  const [row] = await db
+    .select({ id: localDeployments.id })
+    .from(localDeployments)
+    .where(eq(localDeployments.browserAccessToken, token))
+    .limit(1)
+  return !!row
+}
+
 function emitLocalDeploymentUpdated(localDeployment: LocalDeployment): void {
   eventEmitter.emit('sandboxLocalDeployment.updated', {
     localDeploymentId: localDeployment.id,

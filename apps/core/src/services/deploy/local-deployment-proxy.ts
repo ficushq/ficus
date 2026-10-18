@@ -13,6 +13,7 @@ import {
   localDeploymentCookieName,
   presentedLocalDeploymentToken,
 } from './local-deployment-auth'
+import { appOriginAuthorization } from './local-deployment-app-authorization'
 import { localDeploymentProxyError, stripLocalDeploymentProxyErrorMarker } from './local-deployment-proxy-response'
 import {
   isAllowedLocalAppWebSocketOrigin,
@@ -37,6 +38,10 @@ const HOP_BY_HOP = new Set([
   'upgrade',
 ])
 
+/**
+ * Removed from every request; on a per-app origin the app's own cookies and its
+ * own Authorization value are then put back (minus Ficus credentials).
+ */
 const SENSITIVE_AUTH_HEADERS = ['authorization', 'x-auth-token', 'cookie']
 
 /**
@@ -221,7 +226,8 @@ export async function proxyLocalDeploymentRequest(
   // Always require a valid per-deployment browser token, even when the request
   // carries a Ficus session/agent identity. Otherwise any logged-in principal
   // (including a wrong-squad agent) could proxy into any squad's deployed app.
-  // Inbound auth headers are stripped before forwarding (stripUnsafeProxyHeaders).
+  // Inbound auth headers are stripped before forwarding (stripUnsafeProxyHeaders);
+  // only the per-app origin below puts the app's own back.
   if (!(await isValidLocalDeploymentBrowserToken(localDeployment.id, presented.token))) {
     return refuse('Unauthorized', 401, 'unauthorized')
   }
@@ -236,20 +242,25 @@ export async function proxyLocalDeploymentRequest(
   const headers = new Headers(request.headers)
   stripUnsafeProxyHeaders(headers)
   setClientAddressHeaders(headers, getClientAddress(request))
-  // Cookies and host, by mount:
+  // Cookies, Authorization and host, by mount:
   //   - per-app origin: the app owns its origin, so its cookies go to it (minus
   //     Ficus's own), the ones it sets reach the browser host-only (no Domain),
+  //     its own Authorization value goes to it (unless it is a Ficus credential),
   //     and it sees its own public host;
   //   - path mount (/api/app/<id>/ on the Ficus host): the origin is shared with
-  //     Ficus and every other app, so no cookie reaches the app (it would get
-  //     the Ficus session and other apps' cookies) and none it sets reaches the
-  //     browser (it could overwrite Ficus's or another app's). Host stays the
-  //     Ficus host; X-Forwarded-Host is the trusted proxy's, else that Host.
+  //     Ficus and every other app, so no cookie or Authorization reaches the app
+  //     (it would get the Ficus session and other apps' cookies) and no cookie it
+  //     sets reaches the browser (it could overwrite Ficus's or another app's).
+  //     Host stays the Ficus host; X-Forwarded-Host is the trusted proxy's, else
+  //     that Host.
+  // Both apply to a WebSocket upgrade too: it is relayed with these headers.
   const trustedPeer = isTrustedProxyPeer(request)
   const publicHost = trustedPeer ? perAppOriginHost(request, localDeployment.id) : null
   if (publicHost) {
     const cookie = appCookieHeader(request.headers.get('cookie'), localDeployment.id)
     if (cookie) headers.set('cookie', cookie)
+    const authorization = await appOriginAuthorization(request.headers.get('authorization'), presented.token!)
+    if (authorization) headers.set('authorization', authorization)
     headers.set('host', publicHost)
     headers.set('x-forwarded-host', publicHost)
     headers.set('x-forwarded-proto', 'https')
