@@ -74,7 +74,12 @@ The first tokenized request redirects to the validated HTTPS host, removes
 Secure, HttpOnly, SameSite=Lax cookie. Platform forwards its credential to Core;
 setting that cookie is not token validation. Core validates the deployment token
 and deployment state. Platform removes authorization headers, client-supplied
-`x-ficus-*` headers, and hop-by-hop headers before forwarding. Its HTTP
+`x-ficus-*` headers, and hop-by-hop headers before forwarding. Core now
+forwards the app's own `Authorization` on the app origin (see Core below), so
+the target contract is for the bridge to pass the browser's `Authorization` to
+Core unchanged while still removing `X-Auth-Token`. That Platform change is
+pending: until it ships, a hosted app receives no `Authorization` and must use
+a header of its own (for example `X-App-Auth`). Its HTTP
 transport is streaming and strips `Upgrade`; WebSockets follow the separate
 contract below.
 
@@ -121,12 +126,16 @@ None of them exists legitimately on the apps domain. Each hop has a job:
   deployment's app host. Core then forwards the cookies minus the Ficus names,
   sets `Host` and `X-Forwarded-Host` to the app host and `X-Forwarded-Proto`
   to `https`, and returns the app's `Set-Cookie` host-only (Ficus names
-  dropped, `Domain` removed), the same as the bridge. Any other forwarded host
-  is ignored.
+  dropped, `Domain` removed), the same as the bridge. It also forwards the
+  browser's `Authorization`, only after the deployment credential checked out
+  and only when the value is not a Ficus credential
+  (`services/deploy/local-deployment-app-authorization.ts`). Any other
+  forwarded host is ignored.
 
 The path mount (`<tenant host>/api/app/<id>/`) shares the Ficus origin with
 Ficus and every other app. No cookie reaches the app there, because it would
-carry the Ficus session and other apps' cookies. None of the app's
+carry the Ficus session and other apps' cookies; neither does
+`Authorization`. None of the app's
 `Set-Cookie` reaches the browser either, because it could overwrite Ficus's or
 another app's cookies. Core sets only its path-scoped `ficus_app_<id>` access
 cookie. The app sees the Ficus host in `Host` and `X-Forwarded-Host`. Apps
@@ -198,7 +207,9 @@ Dev servers use it for hot reload (Next.js `/_next/webpack-hmr`, Vite).
      unchanged: `Cookie` minus Ficus names, `Host` set to the tenant host,
      `X-Forwarded-Host` set to the validated app host,
      `X-Forwarded-Proto: https`, the same single client address, and
-     authorization and `x-ficus-*` stripped. `Upgrade: websocket`,
+     authorization and `x-ficus-*` stripped (target, pending the same
+     Platform change: pass `Authorization` to Core, which applies the HTTP
+     rule). `Upgrade: websocket`,
      `Connection: Upgrade` and the browser's `Sec-WebSocket-Key`,
      `Sec-WebSocket-Version`, `Sec-WebSocket-Protocol` and
      `Sec-WebSocket-Extensions` are added. `Origin` stays as the browser sent

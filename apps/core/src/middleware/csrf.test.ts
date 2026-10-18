@@ -8,6 +8,7 @@ function app() {
   a.use('/api/*', csrfProtection)
   a.get('/api/thing', (c) => c.json({ ok: true }))
   a.post('/api/thing', (c) => c.json({ ok: true }))
+  a.post('/api/app/:id/*', (c) => c.json({ ok: true }))
   return a
 }
 
@@ -134,6 +135,33 @@ describe('csrfProtection', () => {
     })
     expect(res.status).toBe(403)
     expect(await res.json()).toEqual({ error: 'Missing CSRF token' })
+  })
+
+  // A local app on its own origin authenticates its own API calls with its own bearer;
+  // Core never reads a header credential on the proxy route.
+  test("local-app proxy: the app's own bearer from the app's own origin → allowed", async () => {
+    const res = await app().request('/api/app/0d7c1e2a-0000-0000-0000-000000000000/api/items', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer app-token', Origin: 'https://noah--0d7c1e2a0000.ficus.garden' },
+    })
+    expect(res.status).toBe(200)
+  })
+
+  test('local-app proxy: a header does not exempt a Ficus-session cookie from the CSRF header', async () => {
+    const res = await app().request('/api/app/0d7c1e2a-0000-0000-0000-000000000000/api/items', {
+      method: 'POST',
+      headers: { Cookie: 'ficus_session=t', Authorization: 'Bearer ficus_agent_x' },
+    })
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'Missing CSRF token' })
+  })
+
+  test('a path that only starts like the proxy route keeps the bearer Origin check', async () => {
+    const res = await app().request('/api/apps', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ficus_agent_x', Origin: 'https://evil.example.com' },
+    })
+    expect(res.status).toBe(403)
   })
 
   test('cookie-authed mutation WITH the CSRF header, with a foreign Origin → allowed (cookie path unchanged)', async () => {
