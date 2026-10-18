@@ -156,10 +156,16 @@ HMR) and the app's own sockets need no extra setup. What to know:
   "Rendering". Reloading the page recovers.
 
 The proxy strips `Authorization`, `X-Auth-Token` and `Cookie` from every
-request before it reaches the app (on hosted origins it re-adds the app's own
-cookies). An app whose client sends `Authorization: Bearer …` receives no
-`Authorization` header: send the app's credential in a header of its own (for
-example `X-App-Auth`) or, on hosted origins, an app-scoped cookie.
+request, then puts back by mount:
+
+- **Hosted app origin** (`<tenant>--<id>.<apps domain>`): the app's own cookies
+  (minus Ficus's) and its own `Authorization` header, so
+  `Authorization: Bearer <app token>` from the app's client reaches the app. A
+  Ficus credential in it (a `ficus_…` token, the app's access token) is still
+  dropped. `X-Auth-Token` never reaches the app.
+- **Path mount** (`/api/app/<id>/`): nothing. No cookie and no `Authorization`
+  reach the app; send its credential in a header of its own (for example
+  `X-App-Auth`) or use the hosted origin.
 
 Two consequences worth knowing:
 
