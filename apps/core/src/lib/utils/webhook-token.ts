@@ -8,7 +8,7 @@
 import { createHash, randomBytes } from 'crypto'
 import { bytesToHex } from './hex'
 
-const TOKEN_PREFIX = 'whsec_'
+export const WEBHOOK_TOKEN_PREFIX = 'whsec_'
 const TOKEN_BYTES = 32 // 256 bits of entropy
 
 /**
@@ -17,7 +17,7 @@ const TOKEN_BYTES = 32 // 256 bits of entropy
  */
 export function generateWebhookToken(): string {
   const bytes = randomBytes(TOKEN_BYTES)
-  return TOKEN_PREFIX + bytesToHex(bytes)
+  return WEBHOOK_TOKEN_PREFIX + bytesToHex(bytes)
 }
 
 /**

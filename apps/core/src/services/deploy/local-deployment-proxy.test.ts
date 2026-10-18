@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { like } from 'drizzle-orm'
 import { brotliCompressSync, brotliDecompressSync, deflateSync, gunzipSync, gzipSync, inflateSync } from 'node:zlib'
 import { db, squads } from '../../db'
 import { Squad } from '../../entities/Squad'
 import { Hono } from 'hono'
 import { attachPeerAddress } from '../../lib/client-address'
+import { csrfProtection } from '../../middleware/csrf'
 import { identityMiddleware } from '../../middleware/identity'
 import { deploymentsRouter } from '../../routes/deployments'
 import {
@@ -616,6 +617,161 @@ describe('localDeployment proxy', () => {
 
       expect(forwarded.has('cookie')).toBe(false)
       expect(forwarded.get('host')).toBe('noah.ficus.sh')
+    })
+
+    // The app's own Authorization (its own API's bearer) reaches it only on its own
+    // origin, only once the request carried this deployment's credential, and never
+    // when the value is a Ficus credential.
+    describe('Authorization by mount', () => {
+      const APP_BEARER = 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhcHAtdXNlciJ9.app-signature'
+
+      async function onAppOrigin(input: { authorization: string; token?: (own: string) => string; peer?: string }) {
+        const squad = await createTestSquad()
+        const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+        await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+        const id = localDeployment.id
+        const own = browserToken(localDeployment)
+        enableHostedApps()
+        const token = input.token ? input.token(own) : own
+        const request = new Request(`${TENANT_ORIGIN}/api/app/${id}/api/items?_ficus_token=${token}`, {
+          headers: {
+            host: 'noah.ficus.sh',
+            'x-forwarded-host': appHost(id),
+            authorization: input.authorization.replaceAll('<own>', own),
+            'x-auth-token': 'ficus_sess_x-auth-secret',
+          },
+        })
+        attachPeerAddress(request, input.peer ?? '127.0.0.1')
+        const response = await proxyLocalDeploymentRequest(id, request, 'api/items')
+        return { id, own, response, forwarded: fetchCalls[0]?.init.headers as Headers | undefined }
+      }
+
+      it("forwards the app's own bearer on its own origin", async () => {
+        const { response, forwarded } = await onAppOrigin({ authorization: APP_BEARER })
+
+        expect(response.status).toBe(201)
+        expect(forwarded!.get('authorization')).toBe(APP_BEARER)
+        expect(forwarded!.has('x-auth-token')).toBe(false)
+      })
+
+      it('strips a Ficus credential in Authorization on the app origin', async () => {
+        const squad = await createTestSquad()
+        const other = await createLocalDeployment(squad, { name: 'other', port: 5174, mode: 'attached' })
+        for (const authorization of [
+          'Bearer ficus_sess_session-secret',
+          'Bearer ficus_agent_agent-secret',
+          'Bearer ficus_dev_device-secret',
+          'Bearer ficus_sys_system-secret',
+          'Bearer <own>',
+          `Bearer ${browserToken(other)}`,
+          `Basic ${Buffer.from('user:ficus_sess_session-secret').toString('base64')}`,
+        ]) {
+          fetchCalls.length = 0
+          const { response, forwarded } = await onAppOrigin({ authorization })
+          expect(response.status).toBe(201)
+          expect(forwarded!.has('authorization')).toBe(false)
+        }
+      })
+
+      it('strips any Authorization on the path mount', async () => {
+        for (const authorization of [APP_BEARER, 'Bearer ficus_sess_session-secret']) {
+          fetchCalls.length = 0
+          const { forwarded } = await proxied({ headers: { authorization, 'x-forwarded-host': 'noah.ficus.sh' } })
+          expect(forwarded.has('authorization')).toBe(false)
+        }
+      })
+
+      it('strips it when the app host comes from a peer that is not a trusted proxy (no per-app origin)', async () => {
+        const { forwarded } = await onAppOrigin({ authorization: APP_BEARER, peer: '203.0.113.20' })
+
+        expect(forwarded!.has('authorization')).toBe(false)
+        expect(forwarded!.get('host')).toBe('noah.ficus.sh')
+      })
+
+      it('refuses a request without the deployment credential before anything reaches the app', async () => {
+        const missing = await onAppOrigin({ authorization: APP_BEARER, token: () => '' })
+        const wrong = await onAppOrigin({ authorization: APP_BEARER, token: () => 'wrong' })
+
+        expect(missing.response.status).toBe(401)
+        expect(wrong.response.status).toBe(401)
+        expect(fetchCalls).toHaveLength(0)
+      })
+
+      it('never logs the Authorization value', async () => {
+        const previousLevel = process.env.LOG_LEVEL
+        process.env.LOG_LEVEL = 'debug'
+        const lines: string[] = []
+        const capture = (...args: unknown[]) => void lines.push(args.map((arg) => JSON.stringify(arg) ?? '').join(' '))
+        const spies = [spyOn(console, 'log'), spyOn(console, 'warn'), spyOn(console, 'error')].map((spy) =>
+          spy.mockImplementation(capture)
+        )
+        try {
+          await onAppOrigin({ authorization: 'Bearer app-bearer-secret' })
+          await onAppOrigin({ authorization: 'Bearer ficus_sess_session-secret' })
+          await onAppOrigin({ authorization: 'Bearer app-bearer-secret', token: () => 'wrong' })
+          await proxied({ headers: { authorization: 'Bearer path-bearer-secret' } })
+        } finally {
+          for (const spy of spies) spy.mockRestore()
+          if (previousLevel === undefined) delete process.env.LOG_LEVEL
+          else process.env.LOG_LEVEL = previousLevel
+        }
+        expect(lines.join('\n')).not.toContain('secret')
+      })
+
+      it("delivers the app's bearer on a POST from its own origin through Core's chain, over real sockets", async () => {
+        const squad = await createTestSquad()
+        const localDeployment = await createLocalDeployment(squad, { name: 'web', port: 5173, mode: 'attached' })
+        await updateLocalDeploymentRecord(localDeployment.id, { status: 'running' })
+        const id = localDeployment.id
+        const seen: Array<string | null> = []
+        const app = Bun.serve({
+          port: 0,
+          hostname: '127.0.0.1',
+          fetch(req) {
+            seen.push(req.headers.get('authorization'))
+            return new Response('ok')
+          },
+        })
+        // Core's own chain for this route: CSRF, identity, then the proxy.
+        const routes = new Hono()
+        routes.use('/api/*', csrfProtection)
+        routes.use('/api/*', identityMiddleware)
+        routes.all('/api/app/:id/*', (c) => proxyLocalDeploymentRequest(id, c.req.raw, 'api/items'))
+        const core = Bun.serve({
+          port: 0,
+          hostname: '127.0.0.1',
+          fetch(req, server) {
+            attachPeerAddress(req, server.requestIP(req)?.address)
+            return routes.fetch(req)
+          },
+        })
+        configureLocalDeploymentProxyDependencies({
+          resolveLocalDeploymentTarget: async () => ({ host: '127.0.0.1', port: app.port! }),
+        })
+        enableHostedApps()
+        try {
+          const response = await fetch(
+            `http://127.0.0.1:${core.port}/api/app/${id}/api/items?_ficus_token=${browserToken(localDeployment)}`,
+            {
+              method: 'POST',
+              body: '{}',
+              headers: {
+                host: 'noah.ficus.sh',
+                'x-forwarded-host': appHost(id),
+                origin: `https://${appHost(id)}`,
+                authorization: APP_BEARER,
+              },
+            }
+          )
+          await response.arrayBuffer()
+
+          expect(response.status).toBe(200)
+          expect(seen).toEqual([APP_BEARER])
+        } finally {
+          core.stop(true)
+          app.stop(true)
+        }
+      })
     })
 
     it('round-trips app cookies and the app host over real sockets', async () => {

@@ -339,6 +339,37 @@ describe('local app WebSocket upgrades', () => {
     expect(JSON.stringify(headers)).not.toContain(token)
   })
 
+  it('applies the HTTP Authorization rules to the upgrade: the app bearer only on its own origin, never a Ficus credential', async () => {
+    const appBearer = 'Bearer app-socket-token'
+    const { id, token, appHost } = await runningDeployment()
+    const appOrigin = (authorization: string) =>
+      browser(coreUrl(id, 'socket', `_ficus_token=${token}`), {
+        headers: { host: 'noah.ficus.sh', 'x-forwarded-host': appHost, origin: `https://${appHost}`, authorization },
+      })
+    const pathMount = () =>
+      browser(coreUrl(id, 'socket', `_ficus_token=${token}`), {
+        headers: { host: 'noah.ficus.sh', origin: TENANT_ORIGIN, authorization: appBearer },
+      })
+    // One at a time, so the app records the handshakes in this order.
+    for (const open of [
+      () => appOrigin(appBearer),
+      () => appOrigin('Bearer ficus_sess_x'),
+      () => appOrigin(`Bearer ${token}`),
+      pathMount,
+    ]) {
+      const client = open()
+      await client.opened
+      await client.nextMessages(1)
+    }
+
+    expect(app.handshakes.map(({ headers }): string | null => headers.authorization ?? null)).toEqual([
+      appBearer,
+      null,
+      null,
+      null,
+    ])
+  })
+
   it('propagates a close from the browser to the app, code and reason included', async () => {
     const { id, token } = await runningDeployment()
     const client = browser(coreUrl(id, 'socket', `_ficus_token=${token}`), { headers: { origin: TENANT_ORIGIN } })

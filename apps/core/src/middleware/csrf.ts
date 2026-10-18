@@ -5,6 +5,9 @@ import { corsAllowOrigins, normalizeOrigin } from '../services/auth/web-origins'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
+/** The local-app proxy route, matched as identity.ts matches it. */
+const LOCAL_APP_PROXY_PATH = /^\/api\/app\/[^/]+(?:\/|$)/
+
 /**
  * CSRF defense for cookie-authenticated browser requests. The session cookie is
  * sent automatically, so a state-changing request authenticated *by cookie* must
@@ -23,10 +26,17 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
  * the same allowlist CORS uses: an allowed first-party origin passes, anything else —
  * including the literal `null` opaque origin — is rejected. The first-party web app never
  * sends a bearer, so this never fires for it; it only closes the shell/iframe gap.
+ *
+ * The local-app proxy (/api/app/<id>/) is the exception: Core never reads a header
+ * credential there (identity.ts authenticates it by the deployment's own token only),
+ * and an app on its own origin sends its OWN `Authorization` with its own Origin, which
+ * no allowlist names. So there a header is not a Ficus bearer: it neither exempts the
+ * request nor triggers the Origin check, and the cookie rule below applies unchanged.
  */
 export const csrfProtection = createMiddleware(async (c, next) => {
   if (SAFE_METHODS.has(c.req.method)) return next()
-  const hasBearer = !!c.req.header('Authorization') || !!c.req.header('X-Auth-Token')
+  const hasBearer =
+    !LOCAL_APP_PROXY_PATH.test(c.req.path) && (!!c.req.header('Authorization') || !!c.req.header('X-Auth-Token'))
   if (hasBearer) {
     const origin = c.req.header('Origin')
     if (!origin) return next()
