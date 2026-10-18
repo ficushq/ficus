@@ -15,6 +15,7 @@ import {
 } from './monitor-supervisor'
 import type { ISandboxManager, SpawnHook } from '../sandbox'
 import { boxUnixUser } from '../machines/box-paths'
+import { TmuxServerUnreachableError } from '../sandbox/tmux'
 
 type FakeStream = {
   cmd: string
@@ -58,10 +59,10 @@ class FakeSandbox implements ISandboxManager {
     const cmd = args.join(' ')
     const mapped = this.outputs.get(cmd)
     if (mapped) return mapped
-    if (cmd.includes('tmux new-session') && this.beforeLaunch) await this.beforeLaunch()
-    if (cmd.includes('tmux new-session'))
+    if (cmd.includes("ficus_tmux_new '") && this.beforeLaunch) await this.beforeLaunch()
+    if (cmd.includes("ficus_tmux_new '"))
       return Buffer.from(this.logSize === null ? '' : `${LOG_SIZE_MARKER}${this.logSize}\n`)
-    if (cmd.includes('tmux has-session')) return Buffer.from(this.probe)
+    if (cmd.includes("ficus_tmux_has '")) return Buffer.from(this.probe)
     if (cmd.includes('head -c')) return Buffer.from(this.catchUp)
     return Buffer.from('')
   }
@@ -104,10 +105,10 @@ class FakeSandbox implements ISandboxManager {
     return 'docker-sysbox' as const
   }
   launches(): number {
-    return this.execs.filter((args) => args.join(' ').includes('tmux new-session')).length
+    return this.execs.filter((args) => args.join(' ').includes("ficus_tmux_new '")).length
   }
   probes(): number {
-    return this.execs.filter((args) => args.join(' ').includes('tmux has-session')).length
+    return this.execs.filter((args) => args.join(' ').includes("ficus_tmux_has '")).length
   }
 }
 
@@ -119,7 +120,7 @@ const TIMED_OUT = '__MONITOR_TIMED_OUT__'
 function launchTimeouts(sandbox: FakeSandbox): number[] {
   return sandbox.execs
     .map((args) => args.join(' '))
-    .filter((cmd) => cmd.includes('tmux new-session'))
+    .filter((cmd) => cmd.includes("ficus_tmux_new '"))
     .map((cmd) => Number(/FICUS_MONITOR_TIMEOUT_SECONDS=\W*(\d+)/.exec(cmd)?.[1]))
 }
 
@@ -219,7 +220,7 @@ describe('MonitorSupervisor', () => {
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
     expect(monitor.status).toBe('running')
-    expect(sandbox.execs[0].join(' ')).toContain('tmux new-session')
+    expect(sandbox.execs[0].join(' ')).toContain("ficus_tmux_new '")
     expect(sandbox.streams).toHaveLength(1)
 
     supervisor.onStdoutChunk(monitor.id, 'one\ntwo\n')
@@ -376,7 +377,7 @@ describe('MonitorSupervisor', () => {
     await monitor.reload()
     expect(monitor.status).toBe('canceled')
     expect(monitor.endedAt).toBeInstanceOf(Date)
-    expect(sandbox.execs.at(-1)?.join(' ')).toContain('tmux kill-session')
+    expect(sandbox.execs.at(-1)?.join(' ')).toContain("ficus_tmux_kill '")
     expect(sent.at(-1)).toContain('canceled.')
   })
 
@@ -401,11 +402,11 @@ describe('MonitorSupervisor', () => {
     const monitor = await createMonitor({ timeoutMs: 10 })
     sandbox.exec = async (_sandboxId, args) => {
       sandbox.execs.push(args)
-      // The start() launch command also contains 'tmux kill-session' (to clean up
+      // The start() launch command also contains "ficus_tmux_kill '" (to clean up
       // stale sessions before creating a new one). Only throw for standalone
       // kill-session calls — i.e. NOT the combined launch that also runs new-session.
       const cmd = args.join(' ')
-      if (cmd.includes('tmux kill-session') && !cmd.includes('tmux new-session')) throw new Error('Sandbox not found')
+      if (cmd.includes("ficus_tmux_kill '") && !cmd.includes("ficus_tmux_new '")) throw new Error('Sandbox not found')
       return Buffer.from('0')
     }
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
@@ -414,7 +415,7 @@ describe('MonitorSupervisor', () => {
     await monitor.reload()
     expect(monitor.status).toBe('timed-out')
     expect(monitor.endedAt).toBeInstanceOf(Date)
-    expect(sandbox.execs.some((args) => args.join(' ').includes('tmux kill-session'))).toBe(true)
+    expect(sandbox.execs.some((args) => args.join(' ').includes("ficus_tmux_kill '"))).toBe(true)
     expect(sent.at(-1)).toContain('timed out.')
   })
 
@@ -478,8 +479,8 @@ describe('MonitorSupervisor', () => {
     const supervisor = makeSupervisor(sandbox, async () => {})
     await supervisor.start(monitor)
     await supervisor.pollExit(monitor.id)
-    const probe = sandbox.execs.map((a) => a.join(' ')).find((cmd) => cmd.includes('tmux has-session'))!
-    expect(probe.indexOf('tmux has-session')).toBeLessThan(probe.indexOf('/exitCode'))
+    const probe = sandbox.execs.map((a) => a.join(' ')).find((cmd) => cmd.includes("ficus_tmux_has '"))!
+    expect(probe.indexOf("ficus_tmux_has '")).toBeLessThan(probe.indexOf('/exitCode'))
     expect(probe).toContain(PROCESS_GONE)
   })
 
@@ -529,6 +530,76 @@ describe('MonitorSupervisor', () => {
     })
   })
 
+  describe('tmux server of another version in a private agent box', () => {
+    const PRIVATE_BOX = 'agent_0123abcd'
+    const UNREACHABLE = 'FICUS_TMUX_UNREACHABLE /usr/bin/tmux: server exited unexpectedly'
+
+    it('launches with the pinned tmux on the Ficus socket inside the monitor own box', async () => {
+      const monitor = await createMonitor({ sandboxId: PRIVATE_BOX })
+      const execSandboxes: string[] = []
+      const exec = sandbox.exec.bind(sandbox)
+      sandbox.exec = async (sandboxId, args) => {
+        execSandboxes.push(sandboxId)
+        return exec(sandboxId, args)
+      }
+      await makeSupervisor(sandbox, async () => {}).start(monitor)
+      const launch = sandbox.execs[0][2]
+      expect(execSandboxes[0]).toBe(PRIVATE_BOX)
+      expect(launch).toContain('/usr/bin/tmux')
+      expect(launch).toContain('-L ficus new-session')
+      // No bare, PATH-resolved tmux invocation anywhere in the command.
+      expect(launch.split('\n').some((line) => /^\s*tmux\s/.test(line))).toBe(false)
+    })
+
+    it('never reads an unreachable tmux server as a loss and never relaunches for it', async () => {
+      const monitor = await createMonitor({ sandboxId: PRIVATE_BOX, restartPolicy: 'on-loss' })
+      const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+      await supervisor.start(monitor)
+      sandbox.probe = UNREACHABLE
+      for (let i = 0; i < MonitorSupervisor.POLL_FAILURE_TOLERANCE + 2; i++) await supervisor.pollExit(monitor.id)
+      await monitor.reload()
+      expect(monitor.status).toBe('running')
+      expect(sandbox.launches()).toBe(1)
+      expect(monitor.restartCount).toBe(0)
+
+      // tmux answers again and the run is still alive: nothing lost or rerun.
+      sandbox.probe = ''
+      await supervisor.pollExit(monitor.id)
+      await monitor.reload()
+      expect(monitor.status).toBe('running')
+      expect(sandbox.launches()).toBe(1)
+      expect(sent.some((c) => c.includes('failed'))).toBe(false)
+    })
+
+    it('fails with the tmux reason only after the server stays unreachable for the grace period', async () => {
+      const monitor = await createMonitor({ sandboxId: PRIVATE_BOX, timeoutMs: 24 * 60 * 60_000 })
+      const supervisor = makeSupervisor(sandbox, async () => {})
+      await supervisor.start(monitor)
+      sandbox.probe = UNREACHABLE
+      for (let i = 0; i < MonitorSupervisor.POLL_FAILURE_TOLERANCE; i++) await supervisor.pollExit(monitor.id)
+      clock += MONITOR_SANDBOX_GRACE_MS + 1000
+      await supervisor.pollExit(monitor.id)
+      await monitor.reload()
+      expect(monitor.status).toBe('failed')
+      expect(monitor.failureKind).toBe('infrastructure')
+      expect(monitor.failureReason).toContain('tmux server on the box is unreachable')
+      expect(monitor.failureReason).toContain('server exited unexpectedly')
+      expect(sandbox.launches()).toBe(1)
+    })
+
+    it('reports a launch onto an unreachable tmux server with the specific reason', async () => {
+      const monitor = await createMonitor({ sandboxId: PRIVATE_BOX })
+      sandbox.execError = new Error(`Command failed with exit code 86: ${UNREACHABLE}`)
+      await expect(makeSupervisor(sandbox, async () => {}).start(monitor)).rejects.toBeInstanceOf(
+        TmuxServerUnreachableError
+      )
+      await monitor.reload()
+      expect(monitor.status).toBe('failed')
+      expect(monitor.failureReason).toContain('likely a tmux client/server version mismatch')
+      expect(monitor.failureReason).toContain('server exited unexpectedly')
+    })
+  })
+
   it('re-establishes an ended log stream from the received offset without dropping or repeating output', async () => {
     const monitor = await createMonitor()
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
@@ -569,7 +640,7 @@ describe('MonitorSupervisor', () => {
     await monitor.reload()
     expect(monitor.status).toBe('running')
     expect(
-      sandbox.execs.some((a) => a.join(' ').includes('kill-session -t') && !a.join(' ').includes('new-session'))
+      sandbox.execs.some((a) => a.join(' ').includes("ficus_tmux_kill '") && !a.join(' ').includes("ficus_tmux_new '"))
     ).toBe(false)
 
     const second = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
@@ -619,7 +690,7 @@ describe('MonitorSupervisor', () => {
     sandbox.probe = ''
     await waitFor(async () => (await monitor.reload()).restartCount === 1)
     expect(monitor.processId).toBe(processId)
-    expect(sandbox.execs.some((args) => args.join(' ').includes(`tmux new-session -d -s '${processId}'`))).toBe(true)
+    expect(sandbox.execs.some((args) => args.join(' ').includes(`ficus_tmux_new '${processId}'`))).toBe(true)
   })
 
   it('reattaches a monitor whose tmux session is still alive on recovery', async () => {
@@ -654,7 +725,7 @@ describe('MonitorSupervisor', () => {
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.recoverOnStartup()
     await waitFor(async () => (await monitor.reload()).status === 'timed-out')
-    expect(sandbox.execs.some((a) => a.join(' ').includes(`tmux kill-session -t 'ficus-monitor-test'`))).toBe(true)
+    expect(sandbox.execs.some((a) => a.join(' ').includes(`ficus_tmux_kill 'ficus-monitor-test'`))).toBe(true)
     expect(sandbox.launches()).toBe(0)
     expect(sandbox.streams).toHaveLength(0)
   })
@@ -743,8 +814,8 @@ describe('MonitorSupervisor', () => {
     await canceled
     await waitFor(() => {
       const cmds = sandbox.execs.map((a) => a.join(' '))
-      const relaunch = cmds.findLastIndex((c) => c.includes('tmux new-session'))
-      return cmds.slice(relaunch + 1).some((c) => c.includes('tmux kill-session') && !c.includes('new-session'))
+      const relaunch = cmds.findLastIndex((c) => c.includes("ficus_tmux_new '"))
+      return cmds.slice(relaunch + 1).some((c) => c.includes("ficus_tmux_kill '") && !c.includes("ficus_tmux_new '"))
     })
     await monitor.reload()
     expect(monitor.status).toBe('canceled')
@@ -909,7 +980,7 @@ describe('MonitorSupervisor', () => {
 
     await monitor.reload()
     expect(monitor.status).toBe('canceled')
-    expect(sandbox.execs.at(-1)!.join(' ')).toContain(`tmux kill-session -t 'ficus-monitor-test'`)
+    expect(sandbox.execs.at(-1)!.join(' ')).toContain(`ficus_tmux_kill 'ficus-monitor-test'`)
     expect(sent).toHaveLength(0)
   })
 
@@ -963,7 +1034,7 @@ describe('MonitorSupervisor', () => {
       await monitor.reload()
     } while (monitor.status !== 'overload' && Date.now() < deadline)
     expect(monitor.status).toBe('overload')
-    expect(sandbox.execs.some((a) => a.join(' ').includes('tmux kill-session'))).toBe(true)
+    expect(sandbox.execs.some((a) => a.join(' ').includes("ficus_tmux_kill '"))).toBe(true)
     expect(sent.some((c) => c.includes('output exceeded'))).toBe(true)
     expect(sent.filter((c) => c.includes('output exceeded'))).toHaveLength(1)
   })
@@ -1025,7 +1096,7 @@ describe('MonitorSupervisor', () => {
       expect(cleanup).toContain("/timedOut'")
 
       await supervisor.pollExit(monitor.id)
-      const probe = sandbox.execs.map((a) => a.join(' ')).find((cmd) => cmd.includes('tmux has-session'))!
+      const probe = sandbox.execs.map((a) => a.join(' ')).find((cmd) => cmd.includes("ficus_tmux_has '"))!
       expect(probe.indexOf('/timedOut')).toBeGreaterThan(-1)
       expect(probe.indexOf('/timedOut')).toBeLessThan(probe.indexOf('/exitCode'))
     })

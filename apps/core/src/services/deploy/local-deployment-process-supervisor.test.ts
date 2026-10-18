@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -11,6 +11,8 @@ import {
 } from './local-deployment-log-path'
 import { SandboxClient } from '../sandbox/client/http-client'
 import { LAUNCH_PATH_FILE } from '../sandbox/launch-path'
+import { setTmuxCandidatesForTesting, TMUX_UNREACHABLE_EXIT_CODE, TmuxServerUnreachableError } from '../sandbox/tmux'
+import { createFakeTmuxBox, type FakeTmuxBox } from '../sandbox/tmux-fake.test-helper'
 import {
   LAUNCHER_SCRIPT,
   LocalDeploymentLaunchFailedError,
@@ -120,8 +122,8 @@ describe('LocalDeploymentProcessSupervisor', () => {
       let reaped = 0
       const manager = Object.assign(new FakeSandboxManager(), {
         streamExec: (_id: string, args: string[], stdout: (chunk: Buffer) => void) => {
-          expect(args[2]).toContain('tmux has-session')
-          expect(args[2]).not.toContain('kill-session')
+          expect(args[2]).toContain("ficus_tmux_has 'owned-session'")
+          expect(args[2]).not.toContain("ficus_tmux_kill '")
           queueMicrotask(() => stdout(Buffer.from(`FICUS_SESSION_${alive ? 'ALIVE' : 'MISSING'}\n`)))
           return {
             cancel: () => {},
@@ -173,11 +175,12 @@ describe('LocalDeploymentProcessSupervisor', () => {
       })
 
       const command = manager.execCalls[0].args[2]
-      const tmuxPrefix = "tmux new-session -d -s 'ficus-local-deployment-abcdef12' "
-      const tmuxInvocation = command.split('\n').at(-1)!
-      expect(tmuxInvocation.startsWith(tmuxPrefix)).toBe(true)
+      const tmuxPrefix = "ficus_tmux_status=0; ficus_tmux_new 'ficus-local-deployment-abcdef12' "
+      const tmuxSuffix = ' || ficus_tmux_status=$?'
+      const tmuxInvocation = command.split('\n').find((line) => line.startsWith(tmuxPrefix))!
+      expect(tmuxInvocation.endsWith(tmuxSuffix)).toBe(true)
 
-      const encodedLaunchCommand = tmuxInvocation.slice(tmuxPrefix.length)
+      const encodedLaunchCommand = tmuxInvocation.slice(tmuxPrefix.length, -tmuxSuffix.length)
       expect(encodedLaunchCommand.startsWith("'")).toBe(true)
       expect(encodedLaunchCommand.endsWith("'")).toBe(true)
       const launchCommand = encodedLaunchCommand.slice(1, -1).replaceAll(`'"'"'`, "'")
@@ -274,9 +277,12 @@ describe('LocalDeploymentProcessSupervisor', () => {
     })
 
     const command = manager.execCalls[0].args[2]
-    expect(command).toContain("tmux kill-session -t 'ficus-local-deployment-abcdef12' 2>/dev/null || true")
-    expect(command).toContain("tmux has-session -t 'ficus-local-deployment-abcdef12' 2>/dev/null || break")
-    expect(command).toContain("tmux new-session -d -s 'ficus-local-deployment-abcdef12'")
+    const kill = command.indexOf("ficus_tmux_kill 'ficus-local-deployment-abcdef12' || ficus_tmux_unreachable")
+    const wait = command.indexOf("ficus_tmux_has 'ficus-local-deployment-abcdef12' || ficus_tmux_status=$?")
+    const start = command.indexOf("ficus_tmux_new 'ficus-local-deployment-abcdef12'")
+    expect(kill).toBeGreaterThan(-1)
+    expect(wait).toBeGreaterThan(kill)
+    expect(start).toBeGreaterThan(wait)
   })
 
   it('records the caller PATH beside run.sh before starting the tmux session', async () => {
@@ -295,7 +301,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
       `printf '%s\\n' "$PATH" > '/workspace/1/.ficus/local-deployments/abcdef12-1234-1234-1234-123456789abc/${LAUNCH_PATH_FILE}'`
     )
     expect(record).toBeGreaterThan(-1)
-    expect(record).toBeLessThan(command.indexOf('tmux new-session'))
+    expect(record).toBeLessThan(command.indexOf("ficus_tmux_new '"))
   })
 
   it('starts managed localDeployments in tmux session ficus-local-deployment-<short-id>', async () => {
@@ -311,7 +317,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
 
     const command = manager.execCalls[0].args.join(' ')
     expect(result.processId).toBe('ficus-local-deployment-abcdef12')
-    expect(command).toContain("tmux new-session -d -s 'ficus-local-deployment-abcdef12'")
+    expect(command).toContain("ficus_tmux_new 'ficus-local-deployment-abcdef12'")
     // The launch command is itself single-quoted for tmux, so each quote is escaped.
     expect(command).toContain(`FICUS_LOCAL_DEPLOYMENT_PORT='"'"'5173'"'"'`)
   })
@@ -329,8 +335,8 @@ describe('LocalDeploymentProcessSupervisor', () => {
     })
     expect(result.processId).toBe(processId)
     const command = manager.execCalls[0].args.join(' ')
-    expect(command).toContain(`tmux kill-session -t '${processId}'`)
-    expect(command).toContain(`tmux new-session -d -s '${processId}'`)
+    expect(command).toContain(`ficus_tmux_kill '${processId}'`)
+    expect(command).toContain(`ficus_tmux_new '${processId}'`)
     expect(command).not.toContain('ficus-local-deployment-abcdef12')
   })
 
@@ -340,10 +346,10 @@ describe('LocalDeploymentProcessSupervisor', () => {
 
     await supervisor.stopLocalDeployment('squad_1', 'tau-local-deployment-abcdef12')
 
-    expect(manager.execCalls[0]).toEqual({
-      sandboxId: 'squad_1',
-      args: ['bash', '-lc', "tmux kill-session -t 'tau-local-deployment-abcdef12' || true"],
-    })
+    expect(manager.execCalls[0].sandboxId).toBe('squad_1')
+    expect(manager.execCalls[0].args[2]).toEndWith(
+      "\nficus_tmux_kill 'tau-local-deployment-abcdef12' || ficus_tmux_unreachable"
+    )
   })
 
   it('tails persisted log file without leaking missing-file errors', async () => {
@@ -360,13 +366,39 @@ describe('LocalDeploymentProcessSupervisor', () => {
   it('detects tmux session existence with execStatus', async () => {
     const manager = new FakeSandboxManager()
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
-    manager.statuses.set("tmux has-session -t 'tau-local-deployment-abcdef12'", 1)
+    manager.execStatus = async (sandboxId, args) => {
+      manager.execStatusCalls.push({ sandboxId, args })
+      return 1
+    }
 
     await expect(supervisor.hasSession('squad_1', 'tau-local-deployment-abcdef12')).resolves.toBe(false)
-    expect(manager.execStatusCalls[0]).toEqual({
+    expect(manager.execStatusCalls[0].sandboxId).toBe('squad_1')
+    expect(manager.execStatusCalls[0].args[2]).toContain("ficus_tmux_has 'tau-local-deployment-abcdef12'")
+  })
+
+  it('reports an unreachable tmux server from has-session as an error, not as a missing session', async () => {
+    const manager = new FakeSandboxManager()
+    manager.execStatus = async () => TMUX_UNREACHABLE_EXIT_CODE
+    await expect(
+      new LocalDeploymentProcessSupervisor(manager).hasSession('squad_1', 'ficus-local-deployment-abcdef12')
+    ).rejects.toBeInstanceOf(TmuxServerUnreachableError)
+  })
+
+  it('reports an unreachable tmux server at launch as that, not as a failed launch', async () => {
+    const manager = new FakeSandboxManager()
+    manager.exec = async () => {
+      throw new Error(
+        'Command failed with exit code 86: FICUS_TMUX_UNREACHABLE /usr/bin/tmux: server exited unexpectedly'
+      )
+    }
+    const launch = new LocalDeploymentProcessSupervisor(manager).startManagedLocalDeployment({
+      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
       sandboxId: 'squad_1',
-      args: ['bash', '-lc', "tmux has-session -t 'tau-local-deployment-abcdef12'"],
+      command: 'bun run dev',
+      port: 5173,
     })
+    await expect(launch).rejects.toBeInstanceOf(TmuxServerUnreachableError)
+    await expect(launch).rejects.toThrow('server exited unexpectedly')
   })
 
   it('defaults FICUS_LOCAL_DEPLOYMENT_CWD to the squad workspace mount when cwd is omitted', async () => {
@@ -523,5 +555,144 @@ describe('local deployment launcher', () => {
     expect(run.log).toContain('started')
     expect(run.log).toContain('ficus-test-node: command not found')
     expect(run.recordedExit).toBe('127')
+  })
+})
+
+/**
+ * The exact commands the supervisor builds, run by real bash against a fake
+ * tmux (see tmux-fake.test-helper.ts) with ANOTHER tmux first on PATH, as on a
+ * box whose devbox profile carries its own tmux.
+ */
+describe('LocalDeploymentProcessSupervisor with the pinned tmux', () => {
+  const SQUAD = '0f0e0d0c-1111-4222-8333-444455556666'
+  const SANDBOX = `squad_${SQUAD}`
+  const ID = 'abcdef12-1234-1234-1234-123456789abc'
+  const SESSION = 'ficus-local-deployment-abcdef12'
+  let root: string
+  let box: FakeTmuxBox
+  let systemTmux: string
+  let prevRuntime: string | undefined
+  let prevHome: string | undefined
+
+  class BashSandboxManager extends FakeSandboxManager {
+    private env() {
+      return {
+        PATH: `${join(root, 'devbox-bin')}:${join(root, 'user-bin')}:/usr/bin:/bin`,
+        HOME: root,
+        FAKE_TMUX_STATE: box.state,
+      }
+    }
+    private run(args: string[]) {
+      const result = Bun.spawnSync(['/bin/bash', ...args.slice(1)], { env: this.env() })
+      return {
+        exitCode: result.exitCode,
+        out: result.stdout.toString() + result.stderr.toString(),
+        stdout: result.stdout,
+      }
+    }
+    override async exec(_sandboxId: string, args: string[]): Promise<Buffer> {
+      const result = this.run(args)
+      if (result.exitCode !== 0) throw new Error(`Command failed with exit code ${result.exitCode}: ${result.out}`)
+      return result.stdout
+    }
+    override async execStatus(_sandboxId: string, args: string[]): Promise<number> {
+      return this.run(args).exitCode
+    }
+    override streamExec(_sandboxId: string, args: string[], onStdout: (chunk: Buffer) => void) {
+      const result = this.run(args)
+      queueMicrotask(() => onStdout(result.stdout))
+      return { cancel: () => {}, cancelAndWait: async () => {} }
+    }
+  }
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'ficus-pinned-tmux-'))
+    box = createFakeTmuxBox(root)
+    systemTmux = box.install(join(root, 'system-bin', 'tmux'), '3.4')
+    box.install(join(root, 'devbox-bin', 'tmux'), '3.7')
+    mkdirSync(join(root, 'user-bin'))
+    writeFileSync(join(root, 'user-bin', 'ficus-user-tool'), '#!/bin/sh\necho "user tool ran"\n')
+    chmodSync(join(root, 'user-bin', 'ficus-user-tool'), 0o755)
+    setTmuxCandidatesForTesting([systemTmux])
+    prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
+    prevHome = process.env.HOME_DIR
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
+    process.env.HOME_DIR = root
+  })
+
+  afterEach(() => {
+    setTmuxCandidatesForTesting(null)
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
+    if (prevHome === undefined) delete process.env.HOME_DIR
+    else process.env.HOME_DIR = prevHome
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const deploymentDir = () => join(root, 'workspaces', 'squads', SQUAD, '.ficus', 'local-deployments', ID)
+  const start = (supervisor: LocalDeploymentProcessSupervisor, processId?: string) =>
+    supervisor.startManagedLocalDeployment({
+      localDeploymentId: ID,
+      sandboxId: SANDBOX,
+      command:
+        'echo "$PATH" > "$FICUS_LOCAL_DEPLOYMENT_DIR/app-path"; ficus-user-tool > "$FICUS_LOCAL_DEPLOYMENT_DIR/app-out"',
+      port: 5173,
+      processId,
+    })
+
+  it('launches, observes and stops with the pinned tmux; the app still gets the caller PATH', async () => {
+    const supervisor = new LocalDeploymentProcessSupervisor(new BashSandboxManager())
+    expect(await start(supervisor)).toEqual({ processId: SESSION })
+    expect(box.hasSession('ficus', SESSION)).toBe(true)
+    expect(await supervisor.hasSession(SANDBOX, SESSION)).toBe(true)
+    expect(await supervisor.hasSession(SANDBOX, SESSION, new AbortController().signal)).toBe(true)
+    await supervisor.stopLocalDeployment(SANDBOX, SESSION)
+    expect(await supervisor.hasSession(SANDBOX, SESSION)).toBe(false)
+    expect(await supervisor.hasSession(SANDBOX, SESSION, new AbortController().signal)).toBe(false)
+
+    // The devbox tmux first on PATH was never run.
+    expect(new Set(box.callers())).toEqual(new Set([systemTmux]))
+    // The fake tmux hands the session only /usr/bin:/bin; the launcher restored the caller's PATH.
+    expect(readFileSync(join(deploymentDir(), 'app-out'), 'utf8')).toBe('user tool ran\n')
+    expect(readFileSync(join(deploymentDir(), 'app-path'), 'utf8')).toContain(join(root, 'user-bin'))
+  })
+
+  it('finds a session started on the default socket before the upgrade, and restarts it onto the Ficus socket', async () => {
+    box.seedSession('default', '3.4', SESSION)
+    const supervisor = new LocalDeploymentProcessSupervisor(new BashSandboxManager())
+    expect(await supervisor.hasSession(SANDBOX, SESSION)).toBe(true)
+    expect(await supervisor.hasSession(SANDBOX, SESSION, new AbortController().signal)).toBe(true)
+
+    await start(supervisor, SESSION)
+    expect(box.hasSession('default', SESSION)).toBe(false)
+    expect(box.hasSession('ficus', SESSION)).toBe(true)
+  })
+
+  it('reports a stale server of another version as unreachable on every call, never as gone or as a failed launch', async () => {
+    box.seedSession('default', '3.7', SESSION)
+    const supervisor = new LocalDeploymentProcessSupervisor(new BashSandboxManager())
+
+    await expect(supervisor.hasSession(SANDBOX, SESSION)).rejects.toBeInstanceOf(TmuxServerUnreachableError)
+    await expect(supervisor.hasSession(SANDBOX, SESSION, new AbortController().signal)).rejects.toThrow(
+      'server exited unexpectedly'
+    )
+    await expect(supervisor.stopLocalDeployment(SANDBOX, SESSION)).rejects.toBeInstanceOf(TmuxServerUnreachableError)
+    const launch = start(supervisor, SESSION)
+    await expect(launch).rejects.toBeInstanceOf(TmuxServerUnreachableError)
+    await expect(launch).rejects.toThrow('server exited unexpectedly')
+    // The possibly-running old session is left alone and no second copy was started.
+    expect(box.hasSession('default', SESSION)).toBe(true)
+    expect(box.serverVersion('ficus')).toBeNull()
+  })
+
+  it('stops a stale session of another version when the tmux that started it is installed', async () => {
+    setTmuxCandidatesForTesting([systemTmux, join(root, 'devbox-bin', 'tmux')])
+    box.seedSession('default', '3.7', SESSION)
+    const supervisor = new LocalDeploymentProcessSupervisor(new BashSandboxManager())
+    expect(await supervisor.hasSession(SANDBOX, SESSION)).toBe(true)
+    await start(supervisor, SESSION)
+    expect(box.hasSession('default', SESSION)).toBe(false)
+    // The new session runs on Ficus's own server, started by the pinned binary.
+    expect(box.serverVersion('ficus')).toBe('3.4')
   })
 })

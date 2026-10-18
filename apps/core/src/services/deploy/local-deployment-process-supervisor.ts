@@ -2,6 +2,12 @@ import type { SandboxClient, BashResponse } from '../sandbox/client/http-client'
 import type { ISandboxManager } from '../sandbox'
 import { getSandboxManager } from '../sandbox'
 import { loadLaunchPathLines, recordLaunchPathCommand, runWithLaunchPath } from '../sandbox/launch-path'
+import {
+  TMUX_UNREACHABLE_EXIT_CODE,
+  TmuxServerUnreachableError,
+  tmuxShellFunctions,
+  tmuxUnreachableFromOutput,
+} from '../sandbox/tmux'
 import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
 import { WORKSPACE_DOT_DIR } from '../workspace/dot-dir'
 import { localDeploymentProxyPath } from './local-deployment-auth'
@@ -71,6 +77,21 @@ ${TIMESTAMP} > "$FICUS_LOCAL_DEPLOYMENT_DIR/exitedAt" || true
 exit "$status"
 `
 
+/** Exits 0 alive (either socket), 1 missing, {@link TMUX_UNREACHABLE_EXIT_CODE} unknown. */
+function hasSessionCommand(processId: string): string {
+  return [
+    tmuxShellFunctions(),
+    `ficus_tmux_status=0; ficus_tmux_has ${shellQuote(processId)} || ficus_tmux_status=$?`,
+    '[ "$ficus_tmux_status" = 2 ] && ficus_tmux_unreachable',
+    'exit "$ficus_tmux_status"',
+  ].join('\n')
+}
+
+function sessionStatus(exitCode: number): boolean {
+  if (exitCode === TMUX_UNREACHABLE_EXIT_CODE) throw new TmuxServerUnreachableError()
+  return exitCode === 0
+}
+
 export class LocalDeploymentProcessSupervisor {
   constructor(private manager: ISandboxManager = getSandboxManager()) {}
 
@@ -107,14 +128,24 @@ export class LocalDeploymentProcessSupervisor {
       `cat > ${script} <<'EOF'\n${LAUNCHER_SCRIPT}EOF`,
       `chmod +x ${script}`,
       recordLaunchPathCommand(dir),
-      `tmux kill-session -t ${shellQuote(processId)} 2>/dev/null || true`,
-      `for _ in {1..20}; do tmux has-session -t ${shellQuote(processId)} 2>/dev/null || break; sleep 0.1; done`,
-      `tmux new-session -d -s ${shellQuote(processId)} ${shellQuote(launchCommand)}`,
+      // The pinned tmux (see sandbox/tmux.ts). A server no tmux can reach means
+      // the previous session may still be running: stop rather than start a
+      // second copy, and report it as unreachable, not as a failed launch.
+      tmuxShellFunctions(),
+      `ficus_tmux_kill ${shellQuote(processId)} || ficus_tmux_unreachable`,
+      `for _ in {1..20}; do ficus_tmux_status=0; ficus_tmux_has ${shellQuote(processId)} || ficus_tmux_status=$?; [ "$ficus_tmux_status" = 1 ] && break; [ "$ficus_tmux_status" = 2 ] && ficus_tmux_unreachable; sleep 0.1; done`,
+      `ficus_tmux_status=0; ficus_tmux_new ${shellQuote(processId)} ${shellQuote(launchCommand)} || ficus_tmux_status=$?`,
+      `[ "$ficus_tmux_status" = 2 ] && ficus_tmux_unreachable`,
+      `exit "$ficus_tmux_status"`,
     ].join('\n')
 
     try {
       await this.manager.exec(args.sandboxId, ['bash', '-lc', command])
     } catch (error) {
+      if (error instanceof Error) {
+        const unreachable = tmuxUnreachableFromOutput(error.message)
+        if (unreachable) throw unreachable
+      }
       // Only a terminal executor exit proves failure. Lost/truncated transport
       // may have launched the session; never classify that outcome as a crash.
       if (error instanceof Error && /^Command failed with exit code \d+:/.test(error.message))
@@ -124,18 +155,32 @@ export class LocalDeploymentProcessSupervisor {
     return { processId }
   }
 
+  /**
+   * Kill the session on both the Ficus and the legacy socket. Throws
+   * {@link TmuxServerUnreachableError} when a server cannot be reached, since
+   * the app may then still be running.
+   */
   async stopLocalDeployment(sandboxId: string, processId: string): Promise<void> {
-    await this.manager.exec(sandboxId, ['bash', '-lc', `tmux kill-session -t ${shellQuote(processId)} || true`])
+    try {
+      await this.manager.exec(sandboxId, [
+        'bash',
+        '-lc',
+        `${tmuxShellFunctions()}\nficus_tmux_kill ${shellQuote(processId)} || ficus_tmux_unreachable`,
+      ])
+    } catch (error) {
+      throw (error instanceof Error && tmuxUnreachableFromOutput(error.message)) || error
+    }
   }
 
+  /**
+   * Whether the session is alive on either socket. Throws
+   * {@link TmuxServerUnreachableError} when that cannot be determined: an
+   * unreachable server is never "session gone".
+   */
   async hasSession(sandboxId: string, processId: string, signal?: AbortSignal): Promise<boolean> {
     if (signal) return this.observeSession(sandboxId, processId, signal)
-    const status = await this.manager.execStatus(sandboxId, [
-      'bash',
-      '-lc',
-      `tmux has-session -t ${shellQuote(processId)}`,
-    ])
-    return status === 0
+    const status = await this.manager.execStatus(sandboxId, ['bash', '-lc', hasSessionCommand(processId)])
+    return sessionStatus(status)
   }
 
   private async observeSession(sandboxId: string, processId: string, signal: AbortSignal): Promise<boolean> {
@@ -148,7 +193,7 @@ export class LocalDeploymentProcessSupervisor {
       : manager.getClientForSandbox?.(sandboxId)
     signal.throwIfAborted()
     if (client) {
-      const stream = client.bash({ command: `tmux has-session -t ${shellQuote(processId)}` })
+      const stream = client.bash({ command: hasSessionCommand(processId) })
       return new Promise<boolean>((resolve, reject) => {
         let exitCode: number | undefined
         let failure: unknown
@@ -168,7 +213,13 @@ export class LocalDeploymentProcessSupervisor {
           signal.removeEventListener('abort', abort)
           if (signal.aborted || failure) return
           if (exitCode === undefined) abort()
-          else resolve(exitCode === 0)
+          else {
+            try {
+              resolve(sessionStatus(exitCode))
+            } catch (error) {
+              reject(error)
+            }
+          }
         })
       })
     }
@@ -190,11 +241,15 @@ export class LocalDeploymentProcessSupervisor {
         [
           'bash',
           '-lc',
-          `if tmux has-session -t ${shellQuote(processId)} 2>/dev/null; then echo FICUS_SESSION_ALIVE; else echo FICUS_SESSION_MISSING; fi`,
+          `${tmuxShellFunctions()}\nficus_tmux_status=0; ficus_tmux_has ${shellQuote(processId)} || ficus_tmux_status=$?\n` +
+            'case "$ficus_tmux_status" in 0) echo FICUS_SESSION_ALIVE ;; 1) echo FICUS_SESSION_MISSING ;; ' +
+            '*) echo "FICUS_SESSION_UNREACHABLE $ficus_tmux_error" ;; esac',
         ],
         (chunk) => {
           output += chunk.toString()
-          if (/FICUS_SESSION_(ALIVE|MISSING)/.test(output))
+          const unreachable = /FICUS_SESSION_UNREACHABLE([^\n]*)\n/.exec(output)
+          if (unreachable) void stop().then(() => reject(new TmuxServerUnreachableError(unreachable[1])), reject)
+          else if (/FICUS_SESSION_(ALIVE|MISSING)/.test(output))
             void stop().then(() => resolve(output.includes('FICUS_SESSION_ALIVE')), reject)
         },
         () => {

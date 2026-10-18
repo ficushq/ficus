@@ -6,12 +6,16 @@ import { Monitor } from '../../entities/Monitor'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { getSandboxManager, type ISandboxManager } from '../sandbox'
-import { recordLaunchPathCommand } from '../sandbox/launch-path'
+import { TmuxServerUnreachableError, tmuxShellFunctions, tmuxUnreachableFromOutput } from '../sandbox/tmux'
 import {
-  LAUNCHER_SCRIPT,
-  MONITOR_TIMED_OUT_FILE,
+  MONITOR_DIR_GONE as DIR_GONE,
+  MONITOR_LOG_SIZE_MARKER as LOG_SIZE_MARKER,
+  MONITOR_PROCESS_GONE as PROCESS_GONE,
+  MONITOR_PROBE_TIMED_OUT as TIMED_OUT,
   monitorDir,
+  monitorLaunchCommand,
   monitorLaunchTimeoutSeconds,
+  monitorProbeCommand,
   monitorWorkRoot,
   sessionNameForMonitor,
   shellQuote,
@@ -53,12 +57,6 @@ const RESTART_RETRY_MS = 15_000
 const ENSURE_THROTTLE_MS = 60_000
 /** Output read at the end of a run that the live stream had not delivered yet. */
 const CATCH_UP_MAX_BYTES = 256 * 1024
-
-const DIR_GONE = '__MONITOR_DIR_GONE__'
-const PROCESS_GONE = '__MONITOR_PROCESS_GONE__'
-/** The in-sandbox watchdog stopped the command at its deadline (see LAUNCHER_SCRIPT). */
-const TIMED_OUT = '__MONITOR_TIMED_OUT__'
-const LOG_SIZE_MARKER = '__FICUS_MONITOR_LOG_SIZE__='
 
 /**
  * Delay before the next exit poll, given how long the monitor has been polled.
@@ -266,7 +264,6 @@ export class MonitorSupervisor {
     if (!monitor.processId) await monitor.update({ processId })
     const squadId = await this.resolveSquadId(monitor.agentId)
     const { workRoot, dir, logFile } = this.workPaths(monitor, squadId)
-    const script = `${dir}/run.sh`
     const cwd = monitor.cwd?.trim() || workRoot
     const monitorEnv: Record<string, string> = {
       FICUS_MONITOR_ID: monitor.id,
@@ -277,27 +274,13 @@ export class MonitorSupervisor {
       // deadline, so a relaunch can never extend the monitor's life.
       FICUS_MONITOR_TIMEOUT_SECONDS: String(monitorLaunchTimeoutSeconds(monitor, this.now())),
     }
-    const launchCommand = [
-      ...Object.entries(monitorEnv).map(([key, value]) => `${key}=${shellQuote(value)}`),
-      `bash ${shellQuote(script)}`,
-    ].join(' ')
-    const command = [
-      'set -e',
-      `mkdir -p ${shellQuote(`${dir}/logs`)}`,
-      `cat > ${shellQuote(script)} <<'EOF'\n${LAUNCHER_SCRIPT}EOF`,
-      `chmod +x ${shellQuote(script)}`,
-      // The tmux session gets the tmux server's PATH, not ours (see launch-path.ts).
-      recordLaunchPathCommand(dir),
-      // A stale exitCode (or timeout marker) from a lost run must not read as this run's.
-      `rm -f ${shellQuote(`${dir}/exitCode`)} ${shellQuote(`${dir}/exitedAt`)} ${shellQuote(`${dir}/${MONITOR_TIMED_OUT_FILE}`)}`,
-      `touch ${shellQuote(logFile)}`,
-      // Measured BEFORE the new run can append to it.
-      `log_size=$(wc -c < ${shellQuote(logFile)} | tr -d ' ')`,
-      `tmux kill-session -t ${shellQuote(processId)} 2>/dev/null || true`,
-      `tmux new-session -d -s ${shellQuote(processId)} ${shellQuote(launchCommand)}`,
-      `echo "${LOG_SIZE_MARKER}$log_size"`,
-    ].join('\n')
-    const out = await this.manager.exec(monitor.sandboxId, ['bash', '-lc', command])
+    const command = monitorLaunchCommand({ dir, logFile, processId, env: monitorEnv })
+    let out: Buffer
+    try {
+      out = await this.manager.exec(monitor.sandboxId, ['bash', '-lc', command])
+    } catch (error) {
+      throw (error instanceof Error && tmuxUnreachableFromOutput(error.message)) || error
+    }
     const size = parseLogSize(out.toString())
     const previous = monitor.logOffset
     // Everything this process has read, delivered or not.
@@ -709,7 +692,7 @@ export class MonitorSupervisor {
       await this.manager.exec(monitor.sandboxId, [
         'bash',
         '-lc',
-        `tmux kill-session -t ${shellQuote(monitor.processId)} || true`,
+        `${tmuxShellFunctions()}\nficus_tmux_kill ${shellQuote(monitor.processId)} || ficus_tmux_unreachable`,
       ])
     } catch (err) {
       // Sandbox may be gone; proceed to the terminal transition regardless.
@@ -725,24 +708,10 @@ export class MonitorSupervisor {
    *  the first successful probe, not by the outage itself. */
   static readonly POLL_FAILURE_TOLERANCE = 5
 
-  /**
-   * One liveness probe. Order matters: tmux liveness is sampled BEFORE the
-   * exitCode file, and the launcher writes exitCode before its session ends,
-   * so "no session and no exitCode" can only mean the process was lost.
-   *
-   * The watchdog's timeout marker wins over both: it is written before the
-   * watchdog signals anything, so a run it stopped is reported timed out even
-   * if the launcher died before recording an exit code (never a loss).
-   */
+  /** One liveness probe (see {@link monitorProbeCommand}). */
   private probeCommand(state: State): string {
     const { dir } = this.workPaths(state.monitor, state.squadId)
-    return (
-      `if [ ! -d ${shellQuote(dir)} ]; then echo ${DIR_GONE}; ` +
-      `else alive=0; tmux has-session -t ${shellQuote(state.monitor.processId)} 2>/dev/null && alive=1; ` +
-      `if [ -f ${shellQuote(`${dir}/${MONITOR_TIMED_OUT_FILE}`)} ]; then echo ${TIMED_OUT}; ` +
-      `elif [ -f ${shellQuote(`${dir}/exitCode`)} ]; then cat ${shellQuote(`${dir}/exitCode`)}; ` +
-      `elif [ "$alive" = 0 ]; then echo ${PROCESS_GONE}; fi; fi`
-    )
+    return monitorProbeCommand(dir, state.monitor.processId)
   }
 
   async pollExit(monitorId: string): Promise<void> {
@@ -758,6 +727,13 @@ export class MonitorSupervisor {
       return
     }
     if (this.states.get(monitorId) !== state || state.finishing || state.stopping) return
+    // The box answered but its tmux server did not: liveness is unknown, so
+    // wait (as for an unreachable box) instead of reading it as a loss.
+    const tmuxUnreachable = tmuxUnreachableFromOutput(text)
+    if (tmuxUnreachable) {
+      await this.onPollFailure(state, tmuxUnreachable)
+      return
+    }
     if (state.unreachableSince !== undefined) log.info(`monitor ${monitorId}: sandbox reachable again`)
     state.pollFailureCount = 0
     state.unreachableSince = undefined
@@ -836,7 +812,10 @@ export class MonitorSupervisor {
         err
       )
       await this.finish(state, 'failed', null, {
-        reason: `sandbox unavailable for ${formatMinutes(MONITOR_SANDBOX_GRACE_MS)}; gave up waiting for it to come back`,
+        reason:
+          err instanceof TmuxServerUnreachableError
+            ? `${err.message} Gave up after ${formatMinutes(MONITOR_SANDBOX_GRACE_MS)}.`
+            : `sandbox unavailable for ${formatMinutes(MONITOR_SANDBOX_GRACE_MS)}; gave up waiting for it to come back`,
         failureKind: 'infrastructure',
       })
       return
@@ -960,7 +939,10 @@ export class MonitorSupervisor {
       state.unreachableSince ??= now
       if (now - state.unreachableSince >= MONITOR_SANDBOX_GRACE_MS) {
         await this.finish(state, 'failed', null, {
-          reason: `sandbox unavailable for ${formatMinutes(MONITOR_SANDBOX_GRACE_MS)}; command could not be restarted`,
+          reason:
+            err instanceof TmuxServerUnreachableError
+              ? `${err.message} Command could not be restarted for ${formatMinutes(MONITOR_SANDBOX_GRACE_MS)}.`
+              : `sandbox unavailable for ${formatMinutes(MONITOR_SANDBOX_GRACE_MS)}; command could not be restarted`,
           failureKind: 'infrastructure',
         })
         return

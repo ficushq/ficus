@@ -13,6 +13,7 @@ import {
 } from './local-deployment-health'
 import { drainLocalDeploymentHealthObservations } from './local-deployment-observation'
 import { listPeriodicRunners } from '../../lib/infra/PeriodicRunner'
+import { TmuxServerUnreachableError } from '../sandbox/tmux'
 import {
   drainLocalDeploymentRecoveries,
   reconcileLocalDeploymentHealth,
@@ -134,6 +135,52 @@ describe('local deployment health poller', () => {
     await reconcile()
     await drainLocalDeploymentRecoveries()
     expect(starts).toBe(1)
+  })
+
+  it('never restarts an app whose tmux server is unreachable, and resumes once it answers', async () => {
+    const squad = await createTestSquad('tmux-unreachable')
+    const deployment = await createLocalDeployment(squad, { name: 'web', port: 5173, command: 'bun run dev' })
+    await updateLocalDeploymentRecord(deployment.id, { status: 'running', processId: 'session' })
+    let tmuxReachable = false
+    let starts = 0
+    let stops = 0
+    configureLocalDeploymentHealthDependencies({
+      ensureSquadSandbox: async () => '/workspace',
+      isBoxMigrating: async () => false,
+      probeLocalDeploymentHttp: async () => true,
+      resolveLocalDeploymentTarget: async () => ({ host: 'localhost', port: 5173 }),
+      supervisor: {
+        hasSession: async () => {
+          if (!tmuxReachable) throw new TmuxServerUnreachableError('/usr/bin/tmux: server exited unexpectedly')
+          return true
+        },
+        startManagedLocalDeployment: async () => {
+          starts++
+          return { processId: 'session' }
+        },
+        stopLocalDeployment: async () => {
+          stops++
+        },
+      },
+    })
+    const reconcile = async () => {
+      await reconcileLocalDeploymentHealth({
+        listLiveLocalDeployments: async () => [(await getLocalDeployment(deployment.id))!],
+        refreshLocalDeploymentHealth,
+        restartManagedLocalDeployment,
+      })
+      await drainLocalDeploymentRecoveries()
+    }
+    for (let tick = 0; tick < 3; tick++) await reconcile()
+    expect((await getLocalDeployment(deployment.id))?.status).toBe('unhealthy')
+    expect(starts).toBe(0)
+    expect(stops).toBe(0)
+
+    tmuxReachable = true
+    await reconcile()
+    expect((await getLocalDeployment(deployment.id))?.status).toBe('running')
+    expect(starts).toBe(0)
+    expect((await getLocalDeployment(deployment.id))?.restartCount).toBe(0)
   })
 
   it('recovers a lost app listener despite an accepting forward without an operator restart', async () => {
