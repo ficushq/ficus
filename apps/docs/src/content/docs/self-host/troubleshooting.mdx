@@ -23,7 +23,7 @@ ficus server logs -c worker -n 100
 ficus server logs -f
 ```
 
-Stop following with Ctrl+C. This leaves Ficus running. For the default port, `curl -i http://localhost:3000/health` checks whether Core answers. An unauthenticated request to a protected `/api/` route can return 401 even when the service is healthy.
+Stop following with Ctrl+C. This leaves Ficus running. For the default port, `curl -i http://localhost:3000/health` checks whether Core answers. `/health` never touches the database, so it can report ok while database-backed pages fail; `curl -i http://localhost:3000/health/db` returns 200 when Core can query its database and 503 when it can't. An unauthenticated request to a protected `/api/` route can return 401 even when the service is healthy.
 
 ## Setup stops before it finishes
 

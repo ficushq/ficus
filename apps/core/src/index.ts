@@ -77,6 +77,7 @@ import { routingRouter } from './routes/routing'
 import { amtpRouter } from './routes/amtp'
 import { userPreferencesRouter } from './routes/user-preferences'
 import { productFeedbackRouter } from './routes/product-feedback'
+import { createDatabaseHealthRouter } from './routes/health-db'
 import { farmPreferencesRouter } from './routes/farm-preferences'
 import { farmChatRouter } from './routes/farm-chat'
 import { farmRouter } from './routes/farm'
@@ -265,6 +266,7 @@ app.use(
 const readiness = new RuntimeReadiness('api', process.env.FICUS_RUNTIME_INSTANCE_ID)
 app.get('/ready', () => readiness.response())
 app.get('/health', (c) => c.json({ status: 'ok' }))
+app.route('/health/db', createDatabaseHealthRouter())
 
 // Cross-process events from ficus-worker (see lib/infra/local-events.ts). Not
 // under /api, so it carries none of the browser auth middleware below — it is
