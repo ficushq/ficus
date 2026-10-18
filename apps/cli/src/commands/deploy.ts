@@ -33,6 +33,7 @@ interface AppDeployment {
 interface LocalDeployment {
   id: string
   name: string
+  alias?: string | null
   status: string
   urlPathOrHost: string
   port: number
@@ -206,6 +207,9 @@ function registerExternalCommands(deploy: Command): void {
     })
 }
 
+const ALIAS_OPTION_HELP =
+  'Hostname alias (hosted instances): the app is served at <tenant>--<name>.<apps domain> instead of its id host'
+
 function registerLocalCommands(deploy: Command): void {
   const local = deploy.command('local').description('Manage local app runs in squad sandboxes')
 
@@ -256,6 +260,7 @@ function registerLocalCommands(deploy: Command): void {
     .option('--cwd <cwd>', 'Working directory inside the sandbox')
     .option('--env-secret-ref <key>', 'Secret Store key to expose to the process', collect, [])
     .option('--restart-policy <policy>', 'Restart policy (always|never)')
+    .option('--alias <name>', ALIAS_OPTION_HELP)
     .action(async (squadId, options) => createLocalDeployment(squadId, { ...options, mode: 'managed' }))
 
   local
@@ -270,7 +275,18 @@ function registerLocalCommands(deploy: Command): void {
       'Path of a log file the app already writes (relative to the squad workspace, or absolute inside it) so ' +
         'the panel can stream it'
     )
+    .option('--alias <name>', ALIAS_OPTION_HELP)
     .action(async (squadId, options) => createLocalDeployment(squadId, { ...options, mode: 'attached' }))
+
+  local
+    .command('alias <id> [name]')
+    .description(
+      'Give a local app run a hostname alias, served at <tenant>--<name>.<apps domain> on hosted instances ' +
+        '(its id host then redirects there), or remove it with --clear. Lowercase letters, digits and single ' +
+        'hyphens; a removed alias stays unavailable to other apps for 24 hours.'
+    )
+    .option('--clear', 'Remove the alias (the app goes back to its id host)')
+    .action(async (id, name, options) => setLocalAlias(id, name, options.clear === true))
 
   local
     .command('stop <id>')
@@ -314,9 +330,25 @@ async function createLocalDeployment(squadId: string, options: Record<string, un
       envSecretRefs: options.envSecretRef,
       restartPolicy: options.restartPolicy,
       logPath: options.logPath,
+      ...(options.alias === undefined ? {} : { alias: options.alias }),
     }
     const created = await apiPost<LocalDeployment>(`/api/squads/${squadId}/local-deployments`, body)
     printLocal(created)
+  } catch (error) {
+    outputError(error as Error)
+  }
+}
+
+async function setLocalAlias(id: string, name: string | undefined, clear: boolean): Promise<void> {
+  if (clear === (name !== undefined)) {
+    outputError(
+      new Error(clear ? 'Pass either a name or --clear, not both' : 'Pass an alias name, or --clear to remove it')
+    )
+    return
+  }
+  try {
+    const run = await apiPatch<LocalDeployment>(`/api/local-deployments/${id}`, { alias: clear ? null : name })
+    printLocal(run, run.alias ? `Local app ${run.name} is now ${run.alias}` : `Local app ${run.name} has no alias`)
   } catch (error) {
     outputError(error as Error)
   }
@@ -375,6 +407,7 @@ function printLocal(run: LocalDeployment, heading = `Local app ${run.name} ${run
 
   console.log(heading)
   console.log(`  ID: ${run.id}`)
+  if (run.alias) console.log(`  Alias: ${run.alias}`)
   console.log(`  URL: ${run.urlPathOrHost}`)
   console.log(`  Port: ${run.port}`)
   console.log(`  Mode: ${run.mode}`)

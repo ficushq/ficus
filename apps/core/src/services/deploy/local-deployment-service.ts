@@ -1,16 +1,26 @@
 import { timingSafeEqual } from 'crypto'
-import { and, desc, eq, gte, inArray, isNull, lt, ne } from 'drizzle-orm'
+import { and, desc, eq, gt, gte, inArray, isNull, lt, ne } from 'drizzle-orm'
 import type { CreateLocalDeploymentInput, LocalDeployment, LocalDeploymentStatus } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
-import { db, localDeployments } from '../../db'
+import { db, localDeploymentAliasReleases, localDeployments } from '../../db'
+import { getPostgresError } from '../../db/errors'
 import { AmbiguousPrefixError, uuidPrefixCondition } from '../../db/prefix-match'
 import { Squad } from '../../entities/Squad'
 import { normalizeLocalDeploymentInput } from './local-deployment-validation'
 import { resolveLocalDeploymentPort } from './local-deployment-ports'
 import { resolveLocalDeploymentPortScope } from './local-deployment-port-scope'
 import { createLogger } from '../../lib/infra/logger'
+import {
+  LOCAL_DEPLOYMENT_ALIAS_COOLDOWN_MS,
+  LocalDeploymentAliasError,
+  isWellFormedLocalDeploymentAlias,
+  normalizeLocalDeploymentAlias,
+} from './local-deployment-alias'
 
 type LocalDeploymentRow = typeof localDeployments.$inferSelect
+type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+const ALIAS_UNIQUE_INDEX = 'local_deployments_alias_uniq'
 
 const ACTIVE_LOCAL_APP_STATUSES: LocalDeploymentRow['status'][] = ['starting', 'running', 'restarting']
 const log = createLogger('local-deployment')
@@ -81,10 +91,29 @@ function validateHostedAppsConfig(): void {
  * off or misconfigured (the app is then reachable only on the path mount).
  */
 export function getLocalDeploymentPublicHost(localDeploymentId: string): string | null {
+  return hostedAppHost(localDeploymentId.replaceAll('-', '').slice(0, 12).toLowerCase())
+}
+
+/**
+ * The app's alias host, `<tenant>--<alias>.<apps domain>`, or null when it has
+ * no alias or hosted app URLs are off or misconfigured. The hosted Platform
+ * bridge routes it to Core as `/api/app/~<alias>/` (docs/wiki/integration-contracts.md).
+ */
+export function getLocalDeploymentAliasHost(alias: string | null | undefined): string | null {
+  if (!alias || !isWellFormedLocalDeploymentAlias(alias)) return null
+  return hostedAppHost(alias)
+}
+
+/** The host the app is linked by: its alias host when it has one, else its id host. */
+export function getLocalDeploymentPreferredHost(row: { id: string; alias?: string | null }): string | null {
+  return getLocalDeploymentAliasHost(row.alias) ?? getLocalDeploymentPublicHost(row.id)
+}
+
+function hostedAppHost(appLabel: string): string | null {
   try {
     const appsDomain = getHostedAppsDomain()
     if (!appsDomain) return null
-    return `${getHostedTenantLabel()}--${localDeploymentId.replaceAll('-', '').slice(0, 12).toLowerCase()}.${appsDomain}`
+    return `${getHostedTenantLabel()}--${appLabel}.${appsDomain}`
   } catch (error) {
     if (!(error instanceof HostedAppsConfigError)) throw error
     if (!warnedHostedConfigErrors.has(error.message)) {
@@ -95,8 +124,8 @@ export function getLocalDeploymentPublicHost(localDeploymentId: string): string 
   }
 }
 
-function buildBrowserLocalDeploymentUrl(row: Pick<LocalDeploymentRow, 'id' | 'browserAccessToken'>): string {
-  const publicHost = getLocalDeploymentPublicHost(row.id)
+function buildBrowserLocalDeploymentUrl(row: Pick<LocalDeploymentRow, 'id' | 'alias' | 'browserAccessToken'>): string {
+  const publicHost = getLocalDeploymentPreferredHost(row)
   const base = publicHost ? `https://${publicHost}/` : buildLocalDeploymentProxyPath(row.id)
   if (!row.browserAccessToken) return base
   return `${base}?_ficus_token=${encodeURIComponent(row.browserAccessToken)}`
@@ -108,6 +137,7 @@ export function toLocalDeployment(row: LocalDeploymentRow): LocalDeployment {
     squadId: row.squadId,
     sandboxId: row.sandboxId,
     name: row.name,
+    alias: row.alias ?? null,
     port: row.port,
     targetHost: row.targetHost,
     urlPathOrHost: buildBrowserLocalDeploymentUrl(row),
@@ -135,6 +165,9 @@ export async function createLocalDeployment(squad: Squad, input: CreateLocalDepl
   // live row. A bad operator value must not leave an unreachable orphan behind.
   validateHostedAppsConfig()
   const normalized = normalizeLocalDeploymentInput(input, { squadId: squad.id })
+  // Before the port, like the config: a refused alias must leave nothing behind.
+  const alias =
+    input.alias === undefined || input.alias === null ? null : normalizeRequestedLocalDeploymentAlias(input.alias)
   // Absent port => Ficus assigns one (the default, and the only way to guarantee
   // it is free); explicit port => rejected if another live deployment in the
   // same network scope holds it.
@@ -143,30 +176,151 @@ export async function createLocalDeployment(squad: Squad, input: CreateLocalDepl
   const port = await resolveLocalDeploymentPort(portScope, normalized.port)
   const localDeploymentId = crypto.randomUUID()
   const browserAccessToken = generateLocalDeploymentBrowserToken()
-  const [row] = await db
-    .insert(localDeployments)
-    .values({
-      id: localDeploymentId,
-      squadId: squad.id,
-      sandboxId,
-      portScope,
-      name: normalized.name,
-      port,
-      targetHost: '127.0.0.1',
-      browserAccessToken,
-      visibility: normalized.visibility,
-      mode: normalized.mode,
-      status: 'starting',
-      keepSandboxAlive: true,
-      command: normalized.command ?? null,
-      cwd: normalized.cwd ?? null,
-      logPath: normalized.logPath ?? null,
-      envSecretRefs: normalized.envSecretRefs ?? null,
-      restartPolicy: normalized.restartPolicy,
+  const row = await withAliasConflicts(() =>
+    db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(localDeployments)
+        .values({
+          id: localDeploymentId,
+          squadId: squad.id,
+          sandboxId,
+          portScope,
+          name: normalized.name,
+          alias,
+          port,
+          targetHost: '127.0.0.1',
+          browserAccessToken,
+          visibility: normalized.visibility,
+          mode: normalized.mode,
+          status: 'starting',
+          keepSandboxAlive: true,
+          command: normalized.command ?? null,
+          cwd: normalized.cwd ?? null,
+          logPath: normalized.logPath ?? null,
+          envSecretRefs: normalized.envSecretRefs ?? null,
+          restartPolicy: normalized.restartPolicy,
+        })
+        .returning()
+      if (alias) await claimReleasedAlias(tx, alias, localDeploymentId)
+      return inserted
     })
-    .returning()
+  )
 
   return toLocalDeployment(row)
+}
+
+/** A requested alias in stored form, or the reason it cannot be used on this instance. */
+export function normalizeRequestedLocalDeploymentAlias(raw: unknown): string {
+  let tenantLabel: string | null = null
+  try {
+    if (getHostedAppsDomain()) tenantLabel = getHostedTenantLabel()
+  } catch (error) {
+    if (!(error instanceof HostedAppsConfigError)) throw error
+  }
+  if (!tenantLabel) {
+    throw new LocalDeploymentAliasError(
+      'App aliases need per-app hosts, which this instance does not have (FICUS_APPS_DOMAIN is not set); the app is served at its /api/app/<id>/ path',
+      'unavailable'
+    )
+  }
+  return normalizeLocalDeploymentAlias(raw, tenantLabel)
+}
+
+/** Turn the alias unique index firing into the caller-facing conflict. */
+async function withAliasConflicts<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    const postgres = getPostgresError(error)
+    if (postgres?.code === '23505' && postgres.constraint === ALIAS_UNIQUE_INDEX) {
+      throw new LocalDeploymentAliasError('That alias is already used by another app', 'conflict')
+    }
+    throw error
+  }
+}
+
+/**
+ * Within the transaction that just wrote `alias` to this app: refuse it while
+ * another app freed it less than the cooldown ago, else forget the release.
+ *
+ * Called AFTER the write, not before. A concurrent release of the same alias
+ * holds its row's index entry until it commits, so the write waits for it;
+ * this read then runs in a fresh READ COMMITTED snapshot and sees the release.
+ * Read first, and a claim racing a release would miss it.
+ */
+async function claimReleasedAlias(tx: DatabaseTransaction, alias: string, localDeploymentId: string): Promise<void> {
+  const cutoff = new Date(Date.now() - LOCAL_DEPLOYMENT_ALIAS_COOLDOWN_MS)
+  const [release] = await tx
+    .select()
+    .from(localDeploymentAliasReleases)
+    .where(and(eq(localDeploymentAliasReleases.alias, alias), gt(localDeploymentAliasReleases.releasedAt, cutoff)))
+    .limit(1)
+  if (release && release.localDeploymentId !== localDeploymentId) {
+    const availableAt = new Date(release.releasedAt.getTime() + LOCAL_DEPLOYMENT_ALIAS_COOLDOWN_MS)
+    throw new LocalDeploymentAliasError(
+      `That alias was released by another app recently; it can be claimed after ${availableAt.toISOString()}`,
+      'conflict'
+    )
+  }
+  await tx.delete(localDeploymentAliasReleases).where(eq(localDeploymentAliasReleases.alias, alias))
+}
+
+/** Start the cooldown on an alias this app just gave up. */
+async function recordAliasRelease(tx: DatabaseTransaction, alias: string, localDeploymentId: string): Promise<void> {
+  const releasedAt = new Date()
+  await tx
+    .insert(localDeploymentAliasReleases)
+    .values({ alias, localDeploymentId, releasedAt })
+    .onConflictDoUpdate({ target: localDeploymentAliasReleases.alias, set: { localDeploymentId, releasedAt } })
+}
+
+/**
+ * Set (a string) or clear (null) a live app's alias. Setting needs per-app
+ * hosts with alias hosts enabled; clearing always works. The old alias, if any,
+ * enters the cooldown. Throws {@link LocalDeploymentAliasError} for a refused
+ * alias, and `Sandbox localDeployment not found` for a missing or archived app.
+ */
+export async function setLocalDeploymentAlias(id: string, rawAlias: string | null): Promise<LocalDeployment> {
+  const alias = rawAlias === null ? null : normalizeRequestedLocalDeploymentAlias(rawAlias)
+  const result = await withAliasConflicts(() =>
+    db.transaction(async (tx) => {
+      // Lock the row: two concurrent changes to one app must not both read the
+      // same old alias (one of them would then never record its release).
+      const [current] = await tx
+        .select()
+        .from(localDeployments)
+        .where(and(eq(localDeployments.id, id), isNull(localDeployments.archivedAt)))
+        .for('update')
+        .limit(1)
+      if (!current) throw new Error('Sandbox localDeployment not found')
+      if (current.alias === alias) return { row: current, changed: false }
+      const [row] = await tx
+        .update(localDeployments)
+        .set({ alias, updatedAt: new Date() })
+        .where(eq(localDeployments.id, id))
+        .returning()
+      if (alias) await claimReleasedAlias(tx, alias, id)
+      if (current.alias) await recordAliasRelease(tx, current.alias, id)
+      return { row: row!, changed: true }
+    })
+  )
+  const localDeployment = toLocalDeployment(result.row)
+  if (result.changed) emitLocalDeploymentUpdated(localDeployment)
+  return localDeployment
+}
+
+/**
+ * The live app holding `alias`, or null. Only for a request that arrived on
+ * that alias's own host (local-deployment-auth.ts checks the host first).
+ */
+export async function getLocalDeploymentByAlias(alias: string): Promise<LocalDeployment | null> {
+  if (!isWellFormedLocalDeploymentAlias(alias)) return null
+  const [row] = await db
+    .select()
+    .from(localDeployments)
+    .where(and(eq(localDeployments.alias, alias), isNull(localDeployments.archivedAt)))
+    .limit(1)
+  return row ? toLocalDeployment(row) : null
 }
 
 export async function listLocalDeployments(
@@ -233,11 +387,30 @@ function emitLocalDeploymentUpdated(localDeployment: LocalDeployment): void {
 
 export async function archiveLocalDeploymentRecord(id: string): Promise<LocalDeployment> {
   const now = new Date()
-  const [row] = await db
-    .update(localDeployments)
-    .set({ status: 'stopped', keepSandboxAlive: false, processId: null, archivedAt: now, updatedAt: now })
-    .where(eq(localDeployments.id, id))
-    .returning()
+  // An archived app gives up its alias (into the cooldown), so its host stops
+  // resolving and the name can later serve another app.
+  const row = await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ alias: localDeployments.alias })
+      .from(localDeployments)
+      .where(eq(localDeployments.id, id))
+      .for('update')
+      .limit(1)
+    const [archived] = await tx
+      .update(localDeployments)
+      .set({
+        status: 'stopped',
+        keepSandboxAlive: false,
+        processId: null,
+        alias: null,
+        archivedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(localDeployments.id, id))
+      .returning()
+    if (current?.alias) await recordAliasRelease(tx, current.alias, id)
+    return archived
+  })
 
   if (!row) {
     throw new Error('Sandbox localDeployment not found')
