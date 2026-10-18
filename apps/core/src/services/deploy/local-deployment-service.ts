@@ -219,7 +219,7 @@ export function normalizeRequestedLocalDeploymentAlias(raw: unknown): string {
   }
   if (!tenantLabel) {
     throw new LocalDeploymentAliasError(
-      'App aliases need per-app hosts, which this instance does not have (FICUS_APPS_DOMAIN is not set); the app is served at its /api/app/<id>/ path',
+      'App aliases need per-app hosts, which this instance does not have (FICUS_APPS_DOMAIN is not set, or it or APP_URL is invalid); the app is served at its /api/app/<id>/ path',
       'unavailable'
     )
   }
@@ -276,7 +276,7 @@ async function recordAliasRelease(tx: DatabaseTransaction, alias: string, localD
 
 /**
  * Set (a string) or clear (null) a live app's alias. Setting needs per-app
- * hosts with alias hosts enabled; clearing always works. The old alias, if any,
+ * hosts (FICUS_APPS_DOMAIN); clearing always works. The old alias, if any,
  * enters the cooldown. Throws {@link LocalDeploymentAliasError} for a refused
  * alias, and `Sandbox localDeployment not found` for a missing or archived app.
  */

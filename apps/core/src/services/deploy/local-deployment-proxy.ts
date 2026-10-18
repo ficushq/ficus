@@ -127,6 +127,19 @@ function perAppOrigin(request: Request, localDeployment: LocalDeployment): PerAp
   return null
 }
 
+/** The app-proxy credential under its current and pre-Ficus names: never passed on in a query. */
+const CREDENTIAL_QUERY_PARAMS = new Set(['_ficus_token', LEGACY_TOKEN_QUERY_PARAM])
+
+/** A raw `name=value` query pair's name as URLSearchParams would read it. */
+function decodedQueryName(pair: string): string {
+  const name = pair.split('=', 1)[0]!.replaceAll('+', ' ')
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    return name
+  }
+}
+
 /**
  * Send a browser from the app's id host on to its alias host: same path and
  * query, 307 so the method and body survive. Temporary and never cached, so
@@ -146,11 +159,14 @@ function perAppOrigin(request: Request, localDeployment: LocalDeployment): PerAp
 function aliasHostRedirect(aliasHost: string, path: string, sourceUrl: URL, method: string, token: string): Response {
   const location = new URL(`https://${aliasHost}/`)
   location.pathname = `/${path.replace(/^\/+/, '')}`
-  const search = new URLSearchParams(sourceUrl.search)
-  search.delete('_ficus_token')
-  search.delete(LEGACY_TOKEN_QUERY_PARAM)
-  if (method === 'GET' || method === 'HEAD') search.set('_ficus_token', token)
-  location.search = search.toString()
+  // The query as sent, byte for byte, minus the credential: re-serializing it
+  // through URLSearchParams would change its encoding (`%20` becomes `+`).
+  const kept = sourceUrl.search
+    .slice(1)
+    .split('&')
+    .filter((pair) => pair && !CREDENTIAL_QUERY_PARAMS.has(decodedQueryName(pair)))
+  if (method === 'GET' || method === 'HEAD') kept.push(`_ficus_token=${encodeURIComponent(token)}`)
+  location.search = kept.join('&')
   return new Response(null, {
     status: 307,
     headers: {

@@ -1035,11 +1035,6 @@ export interface CreateLocalDeploymentInput {
   restartPolicy?: LocalDeploymentRestartPolicy
 }
 
-/** PATCH /api/local-deployments/:id. `alias: null` clears it. */
-export interface UpdateLocalDeploymentInput {
-  alias: string | null
-}
-
 export interface LocalDeploymentLogs {
   localDeploymentId: string
   lines: string[]

@@ -153,7 +153,8 @@ describe('local app aliases', () => {
     init: RequestInit = {}
   ) {
     const url = new URL(`http://127.0.0.1:${core.port}/api/app/${routeParameter}/${pathAndQuery.replace(/^\//, '')}`)
-    if (token !== null) url.searchParams.set('_ficus_token', token)
+    // Appended raw, as the bridge sends it: searchParams.set would re-encode the whole query.
+    if (token !== null) url.search = `${url.search ? `${url.search}&` : '?'}_ficus_token=${encodeURIComponent(token)}`
     return fetch(url, {
       redirect: 'manual',
       ...init,
@@ -335,6 +336,8 @@ describe('local app aliases', () => {
       const location = new URL(response.headers.get('location')!)
       expect(location.origin).toBe(`https://${aliasHost(name)}`)
       expect(location.pathname).toBe('/a/b%20c')
+      // The query keeps its exact encoding; only the credential is replaced.
+      expect(location.search).toBe(`?q=1&q=2&next=%2Fx&_ficus_token=${encodeURIComponent(token)}`)
       expect(location.searchParams.getAll('q')).toEqual(['1', '2'])
       expect(location.searchParams.get('next')).toBe('/x')
       expect(location.searchParams.getAll('_ficus_token')).toEqual([token])
@@ -367,12 +370,15 @@ describe('local app aliases', () => {
       const name = alias('post')
       const { id, token } = await runningApp({ alias: name })
 
-      const response = await bridgeRequest(id, idHost(id), '/api/items?x=1', token, { method: 'POST', body: '{"a":1}' })
+      const response = await bridgeRequest(id, idHost(id), '/api/items?x=a%20b&_tau_token=legacy', token, {
+        method: 'POST',
+        body: '{"a":1}',
+      })
 
       expect(response.status).toBe(307)
       const location = new URL(response.headers.get('location')!)
       expect(`${location.origin}${location.pathname}${location.search}`).toBe(
-        `https://${aliasHost(name)}/api/items?x=1`
+        `https://${aliasHost(name)}/api/items?x=a%20b`
       )
       expect(app.seen).toHaveLength(0)
     })

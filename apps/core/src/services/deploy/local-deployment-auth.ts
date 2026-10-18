@@ -90,7 +90,7 @@ export const LOCAL_DEPLOYMENT_ALIAS_ROUTE_MARKER = '~'
  * `~<alias>`. An alias resolves ONLY for the request the hosted Platform bridge
  * forwards from that alias's own host: a trusted proxy peer naming exactly
  * `<tenant>--<alias>.<apps domain>` in X-Forwarded-Host (see
- * local-deployment-proxy.ts perAppOriginHost for why that header is believable
+ * local-deployment-proxy.ts perAppOrigin for why that header is believable
  * from that peer). Anywhere else, on the Ficus host or without an apps domain,
  * an alias is not a route at all.
  */
