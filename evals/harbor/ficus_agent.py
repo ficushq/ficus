@@ -208,7 +208,7 @@ class FicusSquad(BaseAgent):
     async def bootstrap_command(self, environment, mode, filename):
         return await self.checked(
             environment,
-            f"{ROOT}/bin/bun --preload ./apps/core/src/scripts/harbor-provider.ts run apps/core/src/scripts/harbor-trial.ts {mode} {ROOT}/{filename}",
+            f"{ROOT}/bin/bun run --preload=./apps/core/src/scripts/harbor-provider.ts apps/core/src/scripts/harbor-trial.ts {mode} {ROOT}/{filename}",
             cwd=RUNTIME,
             env=self.env,
             timeout_sec=60,
@@ -228,7 +228,7 @@ class FicusSquad(BaseAgent):
     async def start_process(self, environment, entry, name):
         await self.checked(
             environment,
-            f"nohup setsid {ROOT}/bin/bun --preload ./apps/core/src/scripts/harbor-provider.ts run {shlex.quote(entry)} > {ROOT}/{name}.log 2>&1 < /dev/null & echo $! > {ROOT}/{name}.pid",
+            f"nohup setsid {ROOT}/bin/bun run --preload=./apps/core/src/scripts/harbor-provider.ts {shlex.quote(entry)} > {ROOT}/{name}.log 2>&1 < /dev/null & echo $! > {ROOT}/{name}.pid",
             cwd=RUNTIME,
             env=self.env,
         )
@@ -378,8 +378,20 @@ class FicusSquad(BaseAgent):
             for turn in snapshot["executions"]
             if turn["status"] == "completed"
         }
+        attempted_agents = {turn["agentId"] for turn in snapshot["executions"]}
+        attempted_roles = sorted(
+            {
+                agent["agentTypeId"]
+                for agent in snapshot["agents"]
+                if agent["id"] in attempted_agents
+            }
+        )
         context.metadata = {
             **(context.metadata or {}),
+            "attempted_roles": attempted_roles,
+            "engineer_only_verified": attempted_roles == ["engineer"]
+            if getattr(self, "workflow", None) == "engineer"
+            else None,
             "executed_roles": sorted(
                 {
                     agent["agentTypeId"]

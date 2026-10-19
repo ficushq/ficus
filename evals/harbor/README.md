@@ -1,23 +1,23 @@
 # Full-squad Harbor evaluation
 
-This experimental adapter targets **Ficus squad orchestration** on existing Harbor tasks.
-The first pilot verified task startup, model calls, grading, accounting, and cleanup,
-and later exercised manager, engineer, and reviewer, but has not yet completed
-the full workflow or a frozen matched comparison. See [pilot evidence](PILOT.md). It
-uses the real manager, engineer, reviewer, tools, execution queue, and work-stream
-state machine. Harbor owns task instructions, containers, time limits, verifier,
-and scores. This is not a new benchmark or a replacement grader.
+This experimental adapter runs Ficus on existing Harbor tasks, using its real
+tools, execution queue, isolated database, and work-stream state machine. Harbor
+owns task instructions, containers, time limits, verifier, and scores. This is
+not a new benchmark or replacement grader.
 
-The initial configuration is the engineering preset with **With Review**
-(`builder-reviewer`): manager → engineer → independent reviewer → deliverable,
-including returns for rework. Generic delivery guidance permits an explicitly authorized in-place deliverable only in a disposable, single-task workspace; shared checkouts retain normal worktree isolation. Its existing `completion.mode: deliverable` needs
-no GitHub repository or PR. The original task instruction is included verbatim in a generic full-squad execution envelope sent to the manager. The envelope requires work-stream creation, delegation, review, and unattended local delivery, without adding task-specific hints. The same guidance is also supplied as squad context. All
-roles and model tiers use the same pinned model. Memory is disabled for this
-first configuration, and every trial starts with an empty database.
+Four GPT-6.1 Sol development checks have passed the official verifier: Ficus and
+Pi engineer-only, and Ficus and Pi architect → engineer → independent reviewer
+with a coordinator. Ficus's full run also completed every durable workflow step.
+These are adapter checks on one small, previously inspected task, not a frozen
+performance comparison. See [pilot evidence](PILOT.md) for results, prior failures,
+and limitations.
 
-Observed completed roles are recorded as `executed_roles`; a run that never delegates must not be presented as a completed squad test. A single-worker Ficus configuration is not the primary entry. Harbor's supported
-Pi adapter is the external baseline. Results from this configuration should be
-labeled **Ficus full squad / With Review / fresh memory disabled**.
+All roles use the same model and reasoning effort. Ficus starts each trial with
+an empty disposable database and memory disabled. Local deliverable completion
+requires no GitHub repository or PR. Explicitly authorized in-place delivery is
+limited to a disposable single-task workspace; ordinary shared checkout isolation
+and review remain required. Completed roles are recorded as `executed_roles`;
+a run that never delegates must not be presented as a completed squad test.
 
 The broader comparison design is in [the evaluation plan](EVALUATION_PLAN.md).
 Small Terminal-Bench tasks validate the adapter; they do not by themselves test
@@ -52,9 +52,52 @@ CPU and memory limits remain unchanged; sidecar overhead must be reported when
 comparing total compute cost. Installing Ficus adds runtime dependencies, as
 other installed Harbor agents do.
 
-## Capped pilot
+## Native OpenAI trials and workflow arms
 
-The included proxy is intentionally narrow: text Chat Completions with
+Ficus already supports OpenAI through Pi. The trial-only preload redirects Pi's
+native OpenAI Responses provider to the budget proxy; production provider code
+and defaults are unchanged. The older development adapter used a generic
+Chat Completions account, which bypassed that native path.
+
+For GPT-6.1 Sol, start the proxy with `--model gpt-6.1-sol`. Both harnesses use
+medium reasoning, text/function tools, Standard service, and at most 8192 output
+tokens per request. The proxy records terminal Responses usage, including
+incomplete responses and cache writes. Short-context rates per million tokens
+are $2 input, $0.10 cache read, $2.50 cache write, and $10 output; above 272K input,
+input/cache rates double and output rates increase 1.5×. A $5.50 reservation
+covers the full context and output ceiling. Missing usage retains the hold;
+a missing cache-write field charges uncached input conservatively at the
+cache-write rate. See [the model documentation](https://developers.openai.com/api/docs/models/gpt-6.1-sol).
+
+The runner accepts `--workflow engineer` (default) or `--workflow planned`:
+
+- Ficus engineer uses the existing Solo preset with its worker set to engineer.
+  The disposable fixture clears its manager reference before creating the work
+  stream, so lifecycle messages cannot introduce manager reasoning. Inspect all
+  executions to verify that only the engineer ran.
+- Ficus planned uses the existing Engineering preset, changing only completion
+  to local deliverable. It retains architect, engineer, reviewer, and manager.
+- Pi engineer uses Harbor's single-session runner.
+- Pi planned loads the pinned Pi package's subagent example extension, with
+  architect, engineer, and reviewer definitions and a coordinator instruction.
+  The example handles process spawning and handoffs; no new routing engine is
+  introduced. Role definitions omit model overrides to inherit the coordinator's
+  model and thinking. Only the coordinator explicitly loads the extension.
+
+The workflow adapters are experimental. Preserve installation/dispatch failures
+as validation attempts; do not score them as a representative comparison. The Pi
+parent trajectory omits child inference: use the shared proxy ledger, not its
+parent-only token totals, for aggregate cost. Independent child contexts and
+Ficus's within-stream session reuse are a remaining workflow difference to
+report and investigate before a scored multi-agent comparison.
+
+`native-tool-smoke.ts <access.json>` explicitly runs a two-call SDK tool
+roundtrip using the `native-tool-smoke` scoped client. This is a transport check,
+not a benchmark. It never reads the host's real API key.
+
+## Original Chat Completions pilot
+
+The original proxy configuration permits text Chat Completions with
 `gpt-4.1-mini-2025-04-14` or `gpt-4.1-2025-04-14`, one response, at most 8192 output tokens, and no hosted
 tools. Its verified price basis is $0.40/M input, $0.10/M cached input, and
 $1.60/M output. It conservatively reserves $0.50 before each request against a
@@ -85,7 +128,7 @@ The runner below assumes Docker Desktop/OrbStack's `host.docker.internal` name.
 In another terminal with the venv active:
 
 ```sh
-python evals/harbor/run-pilot.py ficus /tmp/harbor-datasets/terminal-bench/fix-git \
+python evals/harbor/run-pilot.py ficus /tmp/harbor-datasets/terminal-bench/fix-git --workflow reviewed \
   --access /tmp/ficus-pilot/access.json --runtime-archive /tmp/ficus-runtime.tar.gz \
   --jobs-dir /tmp/ficus-harbor-jobs --job-name ficus-fix-git-1
 python evals/harbor/run-pilot.py pi /tmp/harbor-datasets/terminal-bench/fix-git \

@@ -1,6 +1,8 @@
 # Pilot evidence — 2026-10-19
 
-Status: **integration in progress; full-squad completion is not yet verified**.
+Status: **four native GPT-6.1 Sol adapter checks passed; feature-level comparison remains pending**.
+The chronological sections below preserve earlier failures; the final section
+records the current validated configuration.
 Do not publish these attempts as a Ficus squad leaderboard result.
 
 The pilot used Harbor 0.24.0 and the unmodified `fix-git` task downloaded from
@@ -228,3 +230,80 @@ performed. Model transport and accounting support remain implementation work.
 See [the evaluation plan](EVALUATION_PLAN.md) for the revised scope: complex
 features, unattended delivery, and parallel throughput, alongside official task
 quality rather than a single small-task cost ranking.
+
+## Native Pi GPT-6.1 Sol: four-arm adapter validation
+
+The user confirmed **$3.49** on the provider dashboard through call 281. With
+inference stopped, an append-only **$3.50** checkpoint includes a rounding margin.
+The existing $20 cumulative cap and every original receipt/reservation remain
+unchanged. This is operator-reported billing evidence, not an independent billing
+API reconciliation.
+
+Ficus already supports the model through Pi. The evaluation-only preload and
+proxy now preserve Pi's native Responses transport instead of using the old
+adapter's generic Chat Completions account. Production provider/authentication
+code and model defaults were not changed. A two-call native SDK function-tool
+roundtrip completed for $0.000526 before task runs.
+
+All four arms used `gpt-6.1-sol`, medium reasoning, the same 8192-token response
+ceiling, and Harbor 0.24.0 with Pi 0.99.1. Ficus runtime archive SHA256:
+`903ff3d33a08776c4005c3430ef13152101d25b72435fc27b242320573efec18`,
+from runtime commit `eea49e862c5d`. The task was `prove-plus-comm`, checksum
+`c2e6faf1396913cf529854f75a27939b6f05ac811f1415150312aa6d22248a1c`.
+The official task and grader were unchanged; no verifier or solution was supplied
+to the agents. This task was already inspected in development and is not a fresh
+scored sample.
+
+| Job                           | Official reward | Model calls | Metered inference | Wall / setup / agent seconds |
+| ----------------------------- | --------------- | ----------- | ----------------- | ---------------------------- |
+| `pi-sol-engineer-smoke-v2`    | 1               | 5           | $0.010575         | 68.80 / 25.60 / 19.24        |
+| `ficus-sol-engineer-smoke-v2` | 1               | 8           | $0.116096         | 237.95 / 71.77 / 142.69      |
+| `pi-sol-planned-smoke-v2`     | 1               | 16          | $0.053383         | 134.18 / 28.22 / 83.20       |
+| `ficus-sol-planned-smoke`     | 1               | 25          | $0.333332         | 305.94 / 70.87 / 212.07      |
+
+Ficus engineer-only executed only the engineer; its fixture suppressed manager
+lifecycle dispatch before creating the work stream. Ficus planned executed the
+manager, architect, engineer, and reviewer. Its design, implement, and review
+attempts all completed; the work stream was done, the flow completion-ready,
+and no pending messages or open waits remained. No operator messages or approvals
+were injected. Pi's packaged subagent extension executed architect, engineer,
+and reviewer under its coordinator, all on the selected model. Its reviewer
+explicitly approved the result after independent validation.
+
+Neither successful multi-agent run required rework. The rework route is configured
+but not yet exercised end to end. Pi starts fresh child sessions on dispatch;
+Ficus can reuse a role's session on rework. This remains a disclosed workflow
+mismatch before a scored comparison. Initial Pi result files lacked role/token
+metadata because metadata was populated before Harbor's post-run hook. Raw
+sessions and proxy receipts were retained, and a supplementary role audit
+confirmed all child executions. The adapter now populates metadata after the run
+and suppresses misleading parent-only aggregate usage. Original result files
+were not rewritten.
+
+These timings include local container/runtime overhead; Ficus's agent phase also
+includes isolated service startup. The runs were not scheduled as a controlled
+latency study, so this table does not establish a speed ratio, feature quality,
+human time saved, or a leaderboard score.
+
+Retained startup failures before these successful attempts:
+
+- `pi-sol-engineer-smoke`: Harbor rejected the undeclared workflow option before
+  inference. The adapter now declares its option schema.
+- `ficus-sol-engineer-smoke`: malformed Bun preload argument order printed help
+  instead of starting services. Stopped without model calls; corrected to
+  `bun run --preload=... <entry>`.
+- `pi-sol-planned-smoke`: the installer assumed the wrong Pi package-root depth.
+  It failed before inference; corrected for the pinned `dist/bundle/cli.js` entry.
+
+Calls 282–337 all have usage receipts and no provider errors. New metered usage,
+including the native tool check, is **$0.513912**. Raw confirmed usage is
+**$4.000186**; effective cumulative budget accounting is **$4.013912** after the
+rounded reconciliation, leaving **$15.986088** of the authorized $20 cap. Twelve
+historical unknown reservations remain in the raw audit; none are unresolved
+since this checkpoint. The proxy and owned trial containers are stopped.
+
+Twenty-nine offline Python adapter/proxy tests passed, along with the native
+provider test (one test, six assertions), Core typecheck, Ruff/format, and whitespace
+checks. The next step is an existing feature benchmark with a frozen sample and
+its official evaluator; the smoke checks alone do not answer the product-value
+question.

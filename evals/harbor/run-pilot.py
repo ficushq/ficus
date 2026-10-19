@@ -68,11 +68,13 @@ if args.harness == "ficus":
         "model_api=" + access.get("model_api", "openai-completions"),
     ]
 else:
-    if args.workflow != "engineer":
-        parser.error("Multi-agent Pi adapter is not yet validated")
+    if args.workflow == "reviewed":
+        parser.error("Use engineer or planned for the Pi baseline")
     command += [
         "-a",
-        "pi",
+        "pi_workflow:PiWorkflow",
+        "--ak",
+        f"workflow={args.workflow}",
         "--ak",
         "version=0.99.1",
         "--ak",

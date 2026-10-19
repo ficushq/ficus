@@ -18,7 +18,9 @@ replacement for correctness.
 2. **Complex features:** use [FeatureBench](https://github.com/LiberCoders/FeatureBench),
    initially a predeclared sample from its V1.1 fast split. It provides feature
    tasks and an official evaluator without a GPU requirement. Integration is not
-   yet implemented. Pin the dataset, source revision, task images, and grading
+   yet validated. Harbor has an existing adapter, but its downloaded tasks retain
+   agent-visible answer material; see [preflight findings](FEATUREBENCH.md). Pin
+   the dataset, source revision, task images, and grading
    configuration; do not compare a V1.1 sample directly with a V1.0 leaderboard.
 3. **Parallel delivery:** run the same predeclared batch of external tasks with
    controlled concurrency. This measures independent-work throughput, not the
@@ -37,7 +39,7 @@ comparisons; any persistent-memory experiment is separately labeled.
 ## Comparisons
 
 Use the same API model and reasoning effort for all roles and baselines. Start
-with `gpt-6.1-sol` after Responses support and usage accounting are validated.
+with `gpt-6.1-sol`; native Pi transport and usage accounting now pass adapter checks.
 Record provider-returned model identifiers, configuration, and run dates. No
 production model defaults need to change.
 
@@ -57,7 +59,8 @@ validate the actual role configuration before running the comparison.
 - Baseline: execute the equivalent roles and handoffs using an existing supported
   workflow in the comparison harness where available. Separate role sessions
   preserve independent review. The existing single-session Harbor Pi adapter is
-  not yet this baseline; baseline workflow support remains to be established.
+  extended by the packaged Pi subagent example for the planned arm. Both arms
+  have completed a smoke task; rework remains unexercised.
 - Parallel comparison: run equivalent workflows concurrently on the same batch,
   with matched aggregate resources and concurrency limits on both sides.
 
@@ -80,8 +83,8 @@ The engineer-only Ficus configuration is now an explicit evaluation arm, not a
 substitute for testing full squads. Verify that no manager, architect, or
 reviewer performs task reasoning or supplies extra guidance in that arm. Keep
 ordinary runtime bookkeeping and count its overhead; disclose any unavoidable
-extra model calls. Do not claim engineer-only support until the adapter has
-actually exercised it.
+extra model calls. The smoke trace confirms engineer-only execution; repeat that audit for scored
+runs.
 
 Report three comparisons on the same predeclared tasks:
 
@@ -136,15 +139,16 @@ are assisted evaluations and must not be mixed with unattended benchmark scores.
 
 ## Next execution gates
 
-1. Validate GPT-6.1 Responses tool use and full usage accounting under the existing
-   cumulative $20 pilot cap; retain prior uncertain charges until reconciled.
-2. Validate all four configurations: engineer-only Ficus and Pi, plus equivalent
-   architect, engineer, reviewer, and coordination roles in both harnesses.
-   Complete adapter checks for each, including rework and delivery for the
-   multi-agent arms. Log idle/handoff behavior without assuming a production
+1. Native Pi GPT-6.1 tool use and all-role accounting are validated under the
+   unchanged $20 cap. Preserve checkpoints and raw historical reservations.
+2. All four configurations completed one official smoke task. Before a scored
+   feature comparison, exercise rework and document/match the remaining session
+   lifecycle difference: Pi dispatches fresh children; Ficus can reuse a role
+   session within a stream. Log idle/handoff behavior without assuming a production
    defect. An unavailable arm stays unexecuted rather than being substituted.
-3. Integrate FeatureBench task setup and patch submission with its untouched
-   official evaluator, then freeze a small matched sample and configuration.
+3. Resolve the existing FeatureBench adapter’s answer-isolation and versioning
+   issues, validate baseline/oracle grading separately, then freeze a small
+   matched sample and configuration. Preserve the upstream acceptance tests.
 4. Estimate cost from that pilot before requesting or scheduling a broader run.
    The current budget does not authorize a large feature or parallel suite.
 5. Add batch and supervised measurements only after quality and workflow
