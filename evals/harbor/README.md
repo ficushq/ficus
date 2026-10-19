@@ -2,7 +2,8 @@
 
 This experimental adapter targets **Ficus squad orchestration** on existing Harbor tasks.
 The first pilot verified task startup, model calls, grading, accounting, and cleanup,
-but did not yet complete an engineer/reviewer workflow. See [pilot evidence](PILOT.md). It
+and later exercised manager, engineer, and reviewer, but has not yet completed
+the full workflow or a frozen matched comparison. See [pilot evidence](PILOT.md). It
 uses the real manager, engineer, reviewer, tools, execution queue, and work-stream
 state machine. Harbor owns task instructions, containers, time limits, verifier,
 and scores. This is not a new benchmark or a replacement grader.
@@ -70,6 +71,11 @@ trial tokens. Keep the proxy state private and outside the source checkout. The
 proxy listens on the host so Docker can reach it, requires a random bearer token,
 and only forwards to the fixed OpenAI endpoint. Stop it when the pilot ends. The default cap is $10; the CLI permits at most $20.
 Raise it only with explicit budget authorization, reusing the same ledger.
+Upstream failures retain reservations. The proxy records sanitized error codes,
+request IDs, and retry headers, and applies known provider cooldowns across all
+trial clients; local cooldown rejections create no new reservation. A local cap
+stop returns HTTP 403 with `pilot_budget_exhausted`, distinct from a provider
+failure. Missing usage requires authoritative reconciliation, not a ledger reset.
 The runner below assumes Docker Desktop/OrbStack's `host.docker.internal` name.
 
 In another terminal with the venv active:

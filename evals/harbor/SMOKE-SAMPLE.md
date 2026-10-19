@@ -28,3 +28,13 @@ Report official reward, actual executed roles and durable flow completion,
 wall-clock time (including setup, reported separately where available), and
 aggregate cost for every role. A prose claim of completion is not workflow
 completion; a completed workflow is not necessarily a passing verifier.
+
+## Recorded outcome
+
+The first Ficus attempt exercised all three roles but was stopped at the shared
+budget guard after three upstream HTTP 429 responses retained their reservations.
+Its review step was incomplete. Harbor recorded cancellation and no verifier
+reward. The Pi `prove-plus-comm` attempt and both `overfull-hbox` attempts remain
+unexecuted. This frozen comparison is incomplete; no tasks were substituted.
+Further transport changes must use a new configuration label. Full accounting
+and limitations are recorded in [PILOT.md](PILOT.md).

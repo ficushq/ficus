@@ -7,10 +7,14 @@ usage retains its full reservation, including after a process crash.
 
 import argparse
 import json
+import math
 import os
+import re
 import secrets
 import sqlite3
 import threading
+import time
+from email.utils import parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -21,6 +25,10 @@ MODEL = "gpt-4.1-mini-2025-04-14"
 # at $1.60/M is < $0.50. Only text and ordinary function tools are allowed.
 RESERVATION = 500_000
 FULL_MODEL = "gpt-4.1-2025-04-14"
+
+
+class SpendCapReached(ValueError):
+    pass
 
 
 class Budget:
@@ -42,6 +50,9 @@ class Budget:
                 ("http_status", "INTEGER"),
                 ("failure", "TEXT"),
                 ("model", "TEXT"),
+                ("provider_code", "TEXT"),
+                ("request_id", "TEXT"),
+                ("retry_after", "TEXT"),
             ):
                 if name not in columns:
                     db.execute(f"ALTER TABLE calls ADD COLUMN {name} {kind}")
@@ -54,7 +65,7 @@ class Budget:
                 0
             ]
             if total + self.reservation > self.cap:
-                raise ValueError("Pilot spend cap reached")
+                raise SpendCapReached("Pilot spend cap reached")
             return db.execute(
                 "INSERT INTO calls(client,charge,model) VALUES(?,?,?)",
                 (client, self.reservation, self.model),
@@ -81,11 +92,20 @@ class Budget:
                 (charge, json.dumps(usage), identifier),
             )
 
-    def note(self, identifier, *, status=None, failure=None):
+    def note(
+        self,
+        identifier,
+        *,
+        status=None,
+        failure=None,
+        provider_code=None,
+        request_id=None,
+        retry_after=None,
+    ):
         with self.lock, sqlite3.connect(self.path) as db:
             db.execute(
-                "UPDATE calls SET http_status=coalesce(?,http_status), failure=coalesce(?,failure) WHERE id=?",
-                (status, failure, identifier),
+                "UPDATE calls SET http_status=coalesce(?,http_status), failure=coalesce(?,failure), provider_code=coalesce(?,provider_code), request_id=coalesce(?,request_id), retry_after=coalesce(?,retry_after) WHERE id=?",
+                (status, failure, provider_code, request_id, retry_after, identifier),
             )
 
     def summary(self):
@@ -128,22 +148,43 @@ def validate(payload, model=MODEL):
     return payload
 
 
+def retry_delay(value):
+    """Honor numeric or HTTP-date Retry-After without copying arbitrary headers."""
+    if not value:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            seconds = parsedate_to_datetime(value).timestamp() - time.time()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return (
+        max(1, math.ceil(seconds)) if math.isfinite(seconds) and seconds > 0 else None
+    )
+
+
 def handler(budget, tokens, api_key):
     observed_clients = set()
+    cooldown_lock = threading.Lock()
+    cooldown_until = 0.0
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
 
-        def reply(self, code, data):
+        def reply(self, code, data, retry_after=None):
             body = json.dumps(data).encode()
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            if retry_after is not None:
+                self.send_header("Retry-After", str(retry_after))
             self.end_headers()
             self.wfile.write(body)
 
         def do_POST(self):
+            nonlocal cooldown_until
             token = self.headers.get("Authorization", "").removeprefix("Bearer ")
             client = tokens.get(token)
             if not client:
@@ -173,15 +214,34 @@ def handler(budget, tokens, api_key):
                         ),
                         flush=True,
                     )
+                with cooldown_lock:
+                    delay = max(0, math.ceil(cooldown_until - time.monotonic()))
+                if delay:
+                    return self.reply(
+                        429,
+                        {
+                            "error": {
+                                "code": "rate_limit_backoff",
+                                "message": "Provider cooldown is active; retry after the specified delay",
+                            }
+                        },
+                        retry_after=delay,
+                    )
                 identifier = budget.reserve(client)
+            except SpendCapReached:
+                return self.reply(
+                    403,
+                    {
+                        "error": {
+                            "code": "pilot_budget_exhausted",
+                            "message": "Cumulative pilot spend cap reached",
+                        }
+                    },
+                )
             except (ValueError, KeyError, TypeError):
                 return self.reply(
                     400,
-                    {
-                        "error": {
-                            "message": "Request rejected or pilot spend cap reached"
-                        }
-                    },
+                    {"error": {"message": "Invalid pilot request"}},
                 )
             usage = None
             started = False
@@ -193,16 +253,49 @@ def handler(budget, tokens, api_key):
                     stream=True,
                     timeout=(15, 180),
                 ) as response:
-                    budget.note(identifier, status=response.status_code)
+                    request_id = response.headers.get("x-request-id", "")[:128]
+                    retry_after = response.headers.get("Retry-After", "")[:128]
+                    budget.note(
+                        identifier,
+                        status=response.status_code,
+                        request_id=request_id,
+                        retry_after=retry_after,
+                    )
                     if response.status_code != 200:
-                        # Conservatively retain the reservation on upstream errors.
+                        # No usage receipt: retain the reservation, even for a known rejection.
+                        code = None
+                        try:
+                            error = response.json().get("error", {})
+                            value = (
+                                error.get("code") if isinstance(error, dict) else None
+                            )
+                            if isinstance(value, str) and re.fullmatch(
+                                r"[a-zA-Z0-9_.-]{1,80}", value
+                            ):
+                                code = value
+                        except (ValueError, AttributeError):
+                            pass
+                        budget.note(identifier, provider_code=code)
+                        delay = retry_delay(retry_after)
+                        if response.status_code == 429 and code in {
+                            "rate_limit_exceeded",
+                            "slow_down",
+                        }:
+                            delay = delay or 10
+                        if response.status_code in {429, 503} and delay:
+                            with cooldown_lock:
+                                cooldown_until = max(
+                                    cooldown_until, time.monotonic() + delay
+                                )
                         return self.reply(
                             response.status_code,
                             {
                                 "error": {
-                                    "message": "Upstream inference error; see provider account"
+                                    "code": code or "upstream_error",
+                                    "message": "Upstream inference error; see provider account",
                                 }
                             },
+                            retry_after=delay,
                         )
                     self.send_response(200)
                     self.send_header(

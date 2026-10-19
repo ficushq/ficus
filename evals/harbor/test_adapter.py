@@ -1,13 +1,22 @@
 import concurrent.futures
 import io
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from budget_proxy import FULL_MODEL, MODEL, RESERVATION, Budget, handler, validate
+from budget_proxy import (
+    FULL_MODEL,
+    MODEL,
+    RESERVATION,
+    Budget,
+    handler,
+    retry_delay,
+    validate,
+)
 from ficus_agent import FicusSquad, disposition, squad_handoff
 
 
@@ -201,6 +210,128 @@ class AccountingTests(unittest.TestCase):
 
 
 class ProxyTests(unittest.TestCase):
+    def request(self, cls):
+        request = object.__new__(cls)
+        body = json.dumps({"model": MODEL, "messages": []}).encode()
+        request.headers = {
+            "Authorization": "Bearer test-token",
+            "Content-Length": str(len(body)),
+        }
+        request.path = "/v1/chat/completions"
+        request.rfile = io.BytesIO(body)
+        request.wfile = io.BytesIO()
+        request.response_headers = {}
+        request.send_response = lambda status: setattr(request, "status", status)
+        request.send_header = lambda key, value: request.response_headers.update(
+            {key: value}
+        )
+        request.end_headers = lambda: None
+        return request
+
+    def upstream(self, status, code, headers=None):
+        class Response:
+            status_code = status
+
+            def __init__(self):
+                self.headers = headers or {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def json(self):
+                return {
+                    "error": {
+                        "code": code,
+                        "message": "private provider account details",
+                    }
+                }
+
+        return Response()
+
+    def test_rate_limit_retains_hold_and_cooldown_prevents_another_paid_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "spend.sqlite"
+            budget = Budget(path)
+            cls = handler(budget, {"test-token": "trial"}, "dummy-test-key")
+            response = self.upstream(
+                429,
+                "rate_limit_exceeded",
+                {"Retry-After": "30", "x-request-id": "req-test"},
+            )
+            with patch("budget_proxy.requests.post", return_value=response) as upstream:
+                first = self.request(cls)
+                first.do_POST()
+                second = self.request(cls)
+                second.do_POST()
+                self.assertEqual(upstream.call_count, 1)
+            self.assertEqual(first.status, 429)
+            self.assertEqual(first.response_headers["Retry-After"], "30")
+            self.assertEqual(
+                json.loads(first.wfile.getvalue())["error"]["code"],
+                "rate_limit_exceeded",
+            )
+            self.assertEqual(second.status, 429)
+            self.assertEqual(
+                json.loads(second.wfile.getvalue())["error"]["code"],
+                "rate_limit_backoff",
+            )
+            self.assertNotIn(b"private provider", first.wfile.getvalue())
+            self.assertEqual(
+                budget.summary()["trial"],
+                {"requests": 1, "unknown_usage": 1, "usd_upper_bound": 0.5},
+            )
+            with sqlite3.connect(path) as db:
+                self.assertEqual(
+                    db.execute(
+                        "SELECT http_status,provider_code,request_id,retry_after FROM calls"
+                    ).fetchone(),
+                    (429, "rate_limit_exceeded", "req-test", "30"),
+                )
+
+    def test_cumulative_budget_stop_is_explicit_and_does_not_call_provider(self):
+        with tempfile.TemporaryDirectory() as directory:
+            budget = Budget(Path(directory) / "spend.sqlite", 0.5)
+            budget.reserve("previous")
+            cls = handler(budget, {"test-token": "trial"}, "dummy-test-key")
+            request = self.request(cls)
+            with patch("budget_proxy.requests.post") as upstream:
+                request.do_POST()
+                upstream.assert_not_called()
+            self.assertEqual(request.status, 403)
+            self.assertEqual(
+                json.loads(request.wfile.getvalue())["error"]["code"],
+                "pilot_budget_exhausted",
+            )
+            self.assertNotIn("trial", budget.summary())
+
+    def test_unrecognized_error_is_redacted_and_keeps_reservation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            budget = Budget(Path(directory) / "spend.sqlite")
+            cls = handler(budget, {"test-token": "trial"}, "dummy-test-key")
+            request = self.request(cls)
+            with patch(
+                "budget_proxy.requests.post",
+                return_value=self.upstream(400, "private value with spaces"),
+            ):
+                request.do_POST()
+            self.assertEqual(request.status, 400)
+            self.assertEqual(
+                json.loads(request.wfile.getvalue())["error"]["code"], "upstream_error"
+            )
+            self.assertNotIn("Retry-After", request.response_headers)
+            self.assertNotIn(b"private", request.wfile.getvalue())
+            self.assertEqual(budget.summary()["trial"]["unknown_usage"], 1)
+
+    def test_retry_after_supports_seconds_dates_and_invalid_values(self):
+        self.assertEqual(retry_delay("1.2"), 2)
+        with patch("budget_proxy.time.time", return_value=0):
+            self.assertEqual(retry_delay("Thu, 01 Jan 1970 00:01:00 GMT"), 60)
+        for value in (None, "", "invalid", "nan", "inf", "-1"):
+            self.assertIsNone(retry_delay(value))
+
     def test_client_disconnect_still_collects_upstream_usage(self):
         class Response:
             status_code = 200
