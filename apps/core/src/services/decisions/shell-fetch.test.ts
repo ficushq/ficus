@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { fetchesOutsideContent, SHELL_FETCH_SOURCE_MAX, splitSimpleCommands } from './shell-fetch'
+import { fetchesOutsideContent, shellCommandContext, SHELL_FETCH_SOURCE_MAX, splitSimpleCommands } from './shell-fetch'
 
 describe('fetchesOutsideContent: commands that read outside content', () => {
   test.each([
@@ -184,5 +184,37 @@ describe('the shell parser', () => {
     expect(fetchesOutsideContent('gh pr view 1; gh pr view 1; curl https://example.com/z')).toEqual({
       source: 'gh pr view 1, curl example.com/z',
     })
+  })
+})
+
+describe('privacy-safe structural command context', () => {
+  test('describes compound calls without forwarding arbitrary arguments', () => {
+    expect(
+      shellCommandContext(
+        'ficus workstream advance --help; gh pr view 24 -R private/repo; git -C /private grep -n pattern -- file | head -90'
+      )
+    ).toEqual(['ficus workstream advance --help', 'gh pr view', 'git grep', 'head'])
+  })
+
+  test('nested shells retain useful structure, not script literals or heredoc bodies', () => {
+    expect(
+      shellCommandContext(`bash -c 'ficus workstream update --help; curl https://secret.example?token=secret'; cat <<'EOF'
+private-body
+EOF`)
+    ).toEqual(['bash', 'ficus workstream update --help', 'curl', 'cat'])
+  })
+
+  test('unknown commands, arguments, executable paths and variable names are not forwarded', () => {
+    expect(
+      shellCommandContext(
+        '/secret-path/custom-secret secret-arg; $SECRET_COMMAND; env SECRET=value /bin/curl -u user:pass https://example.com'
+      )
+    ).toEqual(['other command', 'other command', 'curl'])
+  })
+
+  test('bounds the number of reported commands', () => {
+    const context = shellCommandContext('echo secret;'.repeat(100))
+    expect(context).toHaveLength(33)
+    expect(context.at(-1)).toBe('additional commands omitted')
   })
 })
