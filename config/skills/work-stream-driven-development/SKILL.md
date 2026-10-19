@@ -29,9 +29,18 @@ stage-specific objectives. Separate work streams only for independently useful
 deliverables or genuine dependencies; parallel checks can join within one flow.
 
 Before repository mutations, create an isolated worktree using the configured
-base branch. Use `squad_bash` for repository inspection, git, tests, builds, and
+base branch by default. If the user explicitly requests local in-place delivery
+in a disposable, single-task workspace that is not shared with other streams,
+record that isolation, exact path, and authorized mutation scope in the work
+stream description. Use the requested deliverable-mode flow without repository,
+branch, or worktree provisioning flags; keep the required review and verification
+and deliver in that checkout. Do not infer this exception for ordinary shared
+checkouts or use it to authorize remote pushes or bypass review.
+
+Use `squad_bash` for repository inspection, git, tests, builds, and
 local deployments. Do not reset another checkout or create duplicate worktrees.
-Pass `--repository <checkout-path>` to `ficus workstream create` to create or validate
+When worktree isolation is required, pass `--repository <checkout-path>` to
+`ficus workstream create` to create or validate
 an isolated worktree and detect code-host identity before workers start. Optional
 `--branch`, `--worktree`, `--base-branch`, and `--git-remote` override defaults.
 Without `--repository`, Git flags only attach existing metadata. Do not create a

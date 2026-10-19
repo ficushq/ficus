@@ -1,0 +1,358 @@
+"""Full Ficus squad adapter for Harbor 0.24.0. Official tasks and verifiers stay owned by Harbor."""
+
+import asyncio
+import hashlib
+import json
+import re
+import secrets
+import shlex
+import tempfile
+import time
+import uuid
+from pathlib import Path
+
+from harbor.agents.base import BaseAgent
+from harbor.agents.model_connection import ModelConnectionSpec
+from harbor.environments.base import BaseEnvironment
+from harbor.environments.docker.docker import DockerEnvironment
+from harbor.models.agent.context import AgentContext
+
+ROOT = "/opt/ficus-harbor"
+RUNTIME = ROOT + "/runtime"
+ACTIVE = {"queued", "waiting-maintenance", "waiting-sandbox", "running", "stopping"}
+
+
+def disposition(snapshot):
+    """A quiet manager is not completion while its delegated work is still active."""
+    turns = snapshot["executions"]
+    if snapshot.get("pendingMessages"):
+        return None
+    if not turns or any(turn["status"] in ACTIVE for turn in turns):
+        return None
+    if any(agent["status"] == "waiting-input" for agent in snapshot["agents"]):
+        return "waiting-for-human"
+    streams = snapshot["streams"]
+    if streams and all(stream["status"] == "done" for stream in streams):
+        return "delivered"
+    if any(stream["status"] in {"active", "queued"} for stream in streams):
+        return None
+    return "canceled" if streams else "settled-without-work-stream"
+
+
+async def docker(*args, check=True):
+    process = await asyncio.create_subprocess_exec(
+        "docker", *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=180)
+    except BaseException:
+        process.kill()
+        await process.wait()
+        raise
+    if check and process.returncode:
+        raise RuntimeError(f"Docker {args[0]} failed: {stderr.decode()[:1500]}")
+    return stdout.decode().strip()
+
+
+class FicusSquad(BaseAgent):
+    MODEL_CONNECTION = ModelConnectionSpec(passthrough=True)
+    DEFAULT_SETUP_TIMEOUT_SEC = 900.0
+
+    def __init__(self, *args, runtime_archive=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not runtime_archive:
+            raise ValueError(
+                "Pass --ak runtime_archive=/absolute/path/ficus-runtime.tar.gz"
+            )
+        self.archive = Path(runtime_archive).resolve(strict=True)
+        self.network = "ficus-harbor-" + uuid.uuid4().hex[:12]
+        self.database = "ficus-harbor-db-" + uuid.uuid4().hex[:12]
+        self.container = None
+        self.env = {}
+        self.snapshot = None
+        with self.archive.open("rb") as archive:
+            self.archive_sha = hashlib.file_digest(archive, "sha256").hexdigest()
+
+    @staticmethod
+    def name():
+        return "ficus-squad"
+
+    def version(self):
+        # The exact source commit is also recorded in runtime-revision.json.
+        return self.archive_sha
+
+    async def checked(self, environment, command, **kwargs):
+        result = await environment.exec(command, **kwargs)
+        if result.return_code:
+            raise RuntimeError(
+                f"Ficus runtime command failed ({result.return_code}): {(result.stderr or result.stdout or '')[-2000:]}"
+            )
+        return result.stdout or ""
+
+    async def upload_json(self, environment, destination, payload):
+        with tempfile.TemporaryDirectory(prefix="ficus-harbor-input-") as directory:
+            path = Path(directory) / "input.json"
+            path.write_text(json.dumps(payload))
+            path.chmod(0o600)
+            await environment.upload_file(path, destination)
+        await self.checked(
+            environment, f"chmod 600 {shlex.quote(destination)}", user="root"
+        )
+
+    async def setup(self, environment: BaseEnvironment):
+        if not isinstance(environment, DockerEnvironment):
+            raise TypeError(
+                "The first Ficus adapter supports Harbor's local Docker environment only"
+            )
+        if environment.default_user not in (None, "root", "0", 0):
+            raise ValueError(
+                "This adapter currently requires a root task user; refusing to change the task's user"
+            )
+        if self.mcp_servers or self.skills_dir:
+            raise ValueError(
+                "Task-supplied MCP/skills are not supported by this adapter yet"
+            )
+        await self.checked(
+            environment,
+            "test ! -e /opt/ficus-harbor && mkdir -p /opt/ficus-harbor",
+            user="root",
+        )
+        await environment.upload_file(self.archive, ROOT + "/runtime.tar.gz")
+        await self.checked(
+            environment,
+            f"tar -xzf {ROOT}/runtime.tar.gz -C /opt && rm {ROOT}/runtime.tar.gz",
+            timeout_sec=180,
+            user="root",
+        )
+        await self.checked(
+            environment,
+            "command -v apt-get >/dev/null && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git curl bash tmux procps ca-certificates util-linux",
+            timeout_sec=180,
+            user="root",
+        )
+        self.workspace = (await self.checked(environment, "pwd")).strip()
+        # Use the container's own ID, not a global Docker name or an existing Ficus instance.
+        hostname = (await self.checked(environment, "cat /etc/hostname")).strip()
+        if not re.fullmatch(r"[0-9a-f]{12,64}", hostname):
+            raise ValueError("Expected the task container ID as its hostname")
+        self.container = (
+            await docker("inspect", "--format", "{{.Id}}", hostname)
+        ).strip()
+        self.env = {
+            "FICUS_HARBOR_TRIAL": "1",
+            "FICUS_SANDBOX_RUNTIME": "host",
+            "FICUS_ROOT": RUNTIME,
+            "HOME_DIR": ROOT + "/data",
+            "PORT": "17300",
+            "WORKER_PORT": "17302",
+            "FICUS_WORKER_EVENT_PORT": "17303",
+            "APP_URL": "http://127.0.0.1:17300",
+            "FICUS_SERVE_WEB": "0",
+            "FICUS_ENCRYPTION_KEY": secrets.token_hex(32),
+            "FICUS_PASSWORD": secrets.token_hex(32),
+            "FICUS_INTERNAL_EVENT_TOKEN": secrets.token_hex(32),
+            "SHELL": "/bin/bash",
+            "PATH": ROOT
+            + "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "DATABASE_URL": f"postgres://postgres:{secrets.token_hex(24)}@{self.database}:5432/ficus_harbor",
+        }
+        await environment.download_file(
+            RUNTIME + "/evals/harbor/revision.json",
+            self.logs_dir / "runtime-revision.json",
+        )
+
+    async def bootstrap_command(self, environment, mode, filename):
+        return await self.checked(
+            environment,
+            f"{ROOT}/bin/bun run apps/core/src/scripts/harbor-trial.ts {mode} {ROOT}/{filename}",
+            cwd=RUNTIME,
+            env=self.env,
+            timeout_sec=60,
+        )
+
+    async def ready(self, environment, port):
+        for _ in range(120):
+            result = await environment.exec(
+                f"curl --connect-timeout 1 --max-time 2 -fsS http://127.0.0.1:{port}/ready",
+                timeout_sec=15,
+            )
+            if result.return_code == 0:
+                return
+            await asyncio.sleep(1)
+        raise RuntimeError("Ficus did not become ready; see API/worker logs")
+
+    async def start_process(self, environment, entry, name):
+        await self.checked(
+            environment,
+            f"nohup setsid {ROOT}/bin/bun run {shlex.quote(entry)} > {ROOT}/{name}.log 2>&1 < /dev/null & echo $! > {ROOT}/{name}.pid",
+            cwd=RUNTIME,
+            env=self.env,
+        )
+
+    async def run(
+        self, instruction: str, environment: BaseEnvironment, context: AgentContext
+    ):
+        access = self.model_connection
+        if not self.model_name or not access.api_key or not access.base_url:
+            raise ValueError(
+                "An explicit model, API credential and endpoint are required"
+            )
+        if access.provider != "openai":
+            raise ValueError("The pilot supports OpenAI chat completions only")
+        from urllib.parse import urlsplit
+
+        password = urlsplit(self.env["DATABASE_URL"]).password
+        outcome = "interrupted"
+        try:
+            await docker("network", "create", "--internal", self.network)
+            await docker("network", "connect", self.network, self.container)
+            # Ephemeral DB, no published ports, no host data mounts or Docker socket in the task.
+            await docker(
+                "run",
+                "-d",
+                "--name",
+                self.database,
+                "--network",
+                self.network,
+                "--label",
+                "ficus.harbor=true",
+                "--tmpfs",
+                "/var/lib/postgresql/data",
+                "-e",
+                f"POSTGRES_PASSWORD={password}",
+                "-e",
+                "POSTGRES_DB=ficus_harbor",
+                "pgvector/pgvector:pg17",
+            )
+            for attempt in range(60):
+                try:
+                    await docker(
+                        "exec",
+                        self.database,
+                        "pg_isready",
+                        "-U",
+                        "postgres",
+                        "-d",
+                        "ficus_harbor",
+                    )
+                    break
+                except RuntimeError:
+                    if attempt == 59:
+                        raise
+                    await asyncio.sleep(1)
+            await self.start_process(environment, "apps/core/src/index.ts", "api")
+            await self.ready(environment, 17300)
+            await self.upload_json(
+                environment,
+                ROOT + "/trial.json",
+                {
+                    "model": self.model_name.split("/", 1)[1],
+                    "baseUrl": access.base_url,
+                    "key": access.api_key,
+                    "workspace": self.workspace,
+                    "instruction": (
+                        "Execute the following task through the full squad, not as a manager-only chat. "
+                        "First create and start a work stream using the configured builder-reviewer workflow "
+                        "and yourself as owner. Delegate implementation to its engineer, let its independent "
+                        "reviewer check the result, and handle any rework through the workflow. "
+                        "This is an unattended local delivery: resolve ambiguity by inspecting the workspace, "
+                        "do not request human replies or GitHub delivery, and leave final files in the original "
+                        "task workspace. The task below is the complete user requirement.\n\n"
+                        "Task:\n" + instruction
+                    ),
+                },
+            )
+            await self.bootstrap_command(environment, "seed", "identity.json")
+            await self.checked(environment, f"rm {ROOT}/trial.json")
+            await self.start_process(environment, "apps/core/src/worker.ts", "worker")
+            await self.ready(environment, 17302)
+            settled_since = None
+            while True:
+                await self.bootstrap_command(environment, "snapshot", "snapshot.json")
+                await environment.download_file(
+                    ROOT + "/snapshot.json", self.logs_dir / "snapshot.json"
+                )
+                self.snapshot = json.loads(
+                    (self.logs_dir / "snapshot.json").read_text()
+                )
+                status = disposition(self.snapshot)
+                # Observe stable quiescence across polls, allowing completion events to enqueue the manager.
+                settled_since = (settled_since or time.monotonic()) if status else None
+                if settled_since and time.monotonic() - settled_since >= 5:
+                    outcome = status
+                    break
+                await asyncio.sleep(2)
+        finally:
+            context.metadata = {
+                "configuration": "full-squad-with-review",
+                "outcome": outcome,
+                "memory": "fresh-disabled",
+                "runtime_sha256": self.version(),
+            }
+            # Always stop the owned worker before the benchmark verifier examines the filesystem.
+            for name in ("worker", "api"):
+                try:
+                    await self.checked(
+                        environment,
+                        f"if test -f {ROOT}/{name}.pid; then "
+                        f"pid=$(cat {ROOT}/{name}.pid); kill -TERM -- -$pid 2>/dev/null || true; "
+                        "for i in $(seq 1 10); do kill -0 -- -$pid 2>/dev/null || exit 0; sleep 1; done; "
+                        "kill -KILL -- -$pid 2>/dev/null || true; fi",
+                        timeout_sec=20,
+                    )
+                except (RuntimeError, OSError, TimeoutError) as error:
+                    self.logger.warning("Could not stop owned process: %s", error)
+            try:
+                await self.bootstrap_command(environment, "snapshot", "snapshot.json")
+                await self.bootstrap_command(environment, "export", "messages.json")
+            except (RuntimeError, OSError, TimeoutError) as error:
+                self.logger.warning("Could not export final Ficus state: %s", error)
+            for filename in (
+                "api.log",
+                "worker.log",
+                "identity.json",
+                "snapshot.json",
+                "messages.json",
+            ):
+                try:
+                    await environment.download_file(
+                        ROOT + "/" + filename, self.logs_dir / filename
+                    )
+                except (RuntimeError, OSError, TimeoutError) as error:
+                    self.logger.warning("Could not collect %s: %s", filename, error)
+            await docker("rm", "-f", "-v", self.database, check=False)
+            await docker(
+                "network", "disconnect", self.network, self.container, check=False
+            )
+            await docker("network", "rm", self.network, check=False)
+            self.populate_context_post_run(context)
+
+    def populate_context_post_run(self, context):
+        path = self.logs_dir / "snapshot.json"
+        if not path.exists():
+            return
+        snapshot = json.loads(path.read_text())
+        completed_agents = {
+            turn["agentId"]
+            for turn in snapshot["executions"]
+            if turn["status"] == "completed"
+        }
+        context.metadata = {
+            **(context.metadata or {}),
+            "executed_roles": sorted(
+                {
+                    agent["agentTypeId"]
+                    for agent in snapshot["agents"]
+                    if agent["id"] in completed_agents
+                }
+            ),
+        }
+        usage = snapshot["usage"]
+        context.n_input_tokens = sum(
+            row["inputTokens"] + row["cacheReadTokens"] + row["cacheWriteTokens"]
+            for row in usage
+        )
+        context.n_cache_tokens = sum(row["cacheReadTokens"] for row in usage)
+        context.n_output_tokens = sum(row["outputTokens"] for row in usage)
+        # Compatible endpoints have no Ficus list price. Never report that as a free trial.
+        context.cost_usd = None

@@ -191,8 +191,17 @@ systemPrompt: |
   mutations, commits, and PRs are prohibited. This intentional no-worktree exception
   is not permission to implement; use a separate worktree-backed implementation
   stream if scope changes. Any code, configuration, or documentation mutation
-  requires a dedicated branch and worktree.
-  Create repository-changing streams with --repository <checkout-path>. Ficus runs
+  requires a dedicated branch and worktree by default.
+  Exception: when the user explicitly requests local in-place delivery in a
+  disposable, single-task workspace that is not shared with other work streams,
+  that workspace already supplies isolation. Record the exact path, isolation,
+  authorized mutations, and local delivery requirement in the stream description.
+  Use the requested deliverable-mode flow; omit --repository, --branch, and
+  --worktree rather than provisioning a second checkout. Preserve required
+  independent review and verification, and leave the result in the requested
+  checkout. This does not authorize modifying shared checkouts, pushing to a
+  remote, changing merge policy, or bypassing review.
+  For ordinary repository-changing streams, use --repository <checkout-path>. Ficus runs
   git worktree add in the squad runtime before participants start and records the
   Git workspace and detected code-host identity atomically with stream creation.
   Optional --branch <branch>, --worktree {{workspaceRoot}}/worktrees/<branch>,
