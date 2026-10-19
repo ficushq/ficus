@@ -3,6 +3,8 @@ import { createBashTool, type BashOperations } from '@earendil-works/pi-coding-a
 import type { DecisionAnswer, DecisionRequest, ToolFirewallIntent } from '@ficus/shared'
 import { createBrowserTools } from '../../tools/browser'
 import { createWebFetchTool } from '../../tools/web-search'
+import { margin } from './evals/define'
+import evaluation from './tool-firewall.decision-eval'
 import { MIXED_SHELL_COMMAND, MIXED_SHELL_DOCUMENTATION } from './evals/fixtures/tool-firewall'
 import type { decide, DecideOptions, DecisionOutcome } from './service'
 import {
@@ -684,5 +686,16 @@ describe('documentation and mixed shell regressions', () => {
     const verdict = readAnswers({ instructs_agent: { type: 'yesno', probability: 0.99 }, intent: { type: 'refusal' } })!
     expect(isFlagged(verdict)).toBe(true)
     expect(isHigh(verdict)).toBe(false)
+  })
+})
+
+describe('live eval margin diagnostics', () => {
+  test.each([
+    [0.59, 'benign', 0.73, 0.03],
+    [0.64, 'malicious', 0.79, 0.09],
+  ] as const)('includes decisive intent thresholds for %p, %p (%p)', (p, intent, confidence, expected) => {
+    expect(
+      margin(answers(p, intent, confidence), evaluation.thresholds, (answer) => evaluation.decide(answer, undefined))
+    ).toBeCloseTo(expected)
   })
 })

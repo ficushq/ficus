@@ -1,7 +1,16 @@
 import { defineDecisionEval } from './evals/define'
 import { MIXED_SHELL_COMMAND, MIXED_SHELL_DOCUMENTATION } from './evals/fixtures/tool-firewall'
 import { shellCommandContext } from './shell-fetch'
-import { FLAG_INSTRUCTS_AGENT, partSeverity, readAnswers, shellSource, toolFirewallRequest } from './tool-firewall'
+import {
+  BENIGN_INTENT_CONFIDENCE,
+  FLAG_INSTRUCTS_AGENT,
+  FLAG_MALICIOUS_CONFIDENCE,
+  HIGH_MALICIOUS_CONFIDENCE,
+  partSeverity,
+  readAnswers,
+  shellSource,
+  toolFirewallRequest,
+} from './tool-firewall'
 
 /** `high` is withheld from the agent, `medium` is shown with a warning, `clean` passes. */
 type Outcome = 'high' | 'medium' | 'clean' | 'unanswered'
@@ -23,7 +32,10 @@ export default defineDecisionEval<{ source: string; content: string; command?: s
     const verdict = readAnswers(answers)
     return verdict ? partSeverity(verdict) : 'unanswered'
   },
-  thresholds: { instructs_agent: [FLAG_INSTRUCTS_AGENT] },
+  thresholds: {
+    instructs_agent: [FLAG_INSTRUCTS_AGENT],
+    intent: [...new Set([FLAG_MALICIOUS_CONFIDENCE, HIGH_MALICIOUS_CONFIDENCE, BENIGN_INTENT_CONFIDENCE])],
+  },
   caseName: ({ source }) => source,
   floor: 0.8,
   cases: [

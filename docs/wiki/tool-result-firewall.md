@@ -46,12 +46,16 @@ bun run test src/services/decisions/tool-firewall.test.ts src/services/decisions
 bun run test:db:down
 ```
 
-Live classifier evaluation (from the repository root, with authorized decision providers configured):
+Live classifier evaluation (from the repository root, with authorized enabled providers and the worker's temporary `decisions:evaluate` permission):
 
 ```sh
-bun run decisions:eval tool-firewall --from env --repeat 2 --record
+bun run decisions:eval tool-firewall --from worker --repeat 2 --record --max-cost 1
 ```
 
-Environment providers use `FICUS_EVAL_<KIND>_API_KEY` (for example `FICUS_EVAL_JEV_API_KEY`); see `apps/core/src/services/decisions/evals/providers.ts` for provider-specific settings. Alternatively use `--from local` with an authorized local instance, or `--from backend:<label>` with an authorized CLI backend and `provider-auth:write` permission. Do not put credentials in commands, logs, or committed fixtures.
+Worker mode uses only the injected worker identity, not provider credentials or a human login. See [Decision evaluation access](decision-evaluations.md) for authorization, provider selection, rate limits and revocation. Revoke temporary evaluation permission when live calls finish.
+
+With two providers, 17 cases repeated twice require 68 calls, exceeding the endpoint's 60-call/minute limit if they complete in one window. If rate-limited, retain the failure evidence and run each provider separately with `--provider <kind>` (34 calls), leaving a full rate-limit window between runs. Recording merges provider results into the same snapshot. Inspect every repeat, not just the snapshot's first answered attempt. `--max-cost` is a soft per-run budget, not a hard quota; account for all runs and do not retry indefinitely.
+
+Operators may explicitly select `--from env`, `--from local`, or an authorized `--from backend:<label>` as described in the access guide. Workers must not fall back to a human backend or read provider credentials. Do not put credentials in commands, logs, or committed fixtures.
 
 Inspect all mandatory cases, margins and repeat flips, then commit the generated `apps/core/src/services/decisions/__decision-snapshots__/tool-firewall.json`. Offline replay flags old prompt snapshots as stale; successful replay of stale entries is **not** evidence for the new classifier. The eval includes the reported mixed-help/status/grep example, standalone agent documentation, quoted attacks, real redirects, forged boundaries, and attacks disguised as or mixed with help.
