@@ -463,3 +463,92 @@ function httpSource(name: string, args: string[], viaXargs = false): string | nu
   const variable = operands.find((arg) => arg.startsWith('$'))
   return variable ? `${name} ${truncate(variable, 80)}` : name
 }
+
+// Context is deliberately lossy: raw command arguments have NOT passed through the tool-output
+// secret redactor. Emit only fixed vocabulary, never paths, URL queries, headers, assignments,
+// script bodies, search strings or arbitrary executable names. This is a privacy filter, NOT an
+// allowlist for screening: unknown commands still contribute output and confer no trust.
+const CONTEXT_COMMANDS = new Set([
+  ...HTTP_CLIENTS,
+  ...TEXT_BROWSERS,
+  ...SHELLS,
+  'eval',
+  'ficus',
+  'tau',
+  'git',
+  'gh',
+  'cat',
+  'grep',
+  'rg',
+  'head',
+  'tail',
+  'sed',
+  'awk',
+  'jq',
+  'echo',
+  'printf',
+])
+const CONTEXT_OPERATIONS: Record<string, readonly string[]> = {
+  ficus: [
+    'workstream advance',
+    'workstream update',
+    'workstream flow',
+    'workstream finish',
+    'ws advance',
+    'ws update',
+    'ws flow',
+    'ws finish',
+  ],
+  gh: [
+    'pr view',
+    'pr list',
+    'pr diff',
+    'pr checks',
+    'issue view',
+    'issue list',
+    'repo view',
+    'run view',
+    'api',
+    'search',
+  ],
+  git: ['grep', 'show', 'log', 'diff', 'status'],
+}
+CONTEXT_OPERATIONS.tau = CONTEXT_OPERATIONS.ficus!
+const CONTEXT_MAX_COMMANDS = 32
+
+/** Bounded syntactic hints for the classifier, not the full command or proof of output provenance. */
+export function shellCommandContext(command: string): string[] {
+  const context: string[] = []
+  const visit = (script: string, depth: number) => {
+    if (depth > MAX_DEPTH) return
+    for (const words of splitSimpleCommands(script)) {
+      if (context.length > CONTEXT_MAX_COMMANDS) return
+      const leading = leadingCommand(words)
+      if (!leading) continue
+      const [executable, ...args] = leading.argv
+      const name = basename(executable!)
+      if (!CONTEXT_COMMANDS.has(name)) {
+        context.push('other command')
+        continue
+      }
+      // Git's common global options precede the operation. Never retain their values.
+      let start = 0
+      if (name === 'git') {
+        while (['-C', '-c', '--git-dir', '--work-tree'].includes(args[start] ?? '')) start += 2
+      }
+      const operation = CONTEXT_OPERATIONS[name]?.find((operation) =>
+        operation.split(' ').every((word, index) => args[start + index] === word)
+      )
+      context.push(`${name}${operation ? ` ${operation}` : ''}${args.includes('--help') ? ' --help' : ''}`)
+      if (SHELLS.has(name)) {
+        const flag = args.findIndex((arg) => /^-[a-zA-Z]*c[a-zA-Z]*$/.test(arg))
+        const nested = flag === -1 ? undefined : args.slice(flag + 1).find((arg) => !arg.startsWith('-'))
+        if (nested) visit(nested, depth + 1)
+      } else if (name === 'eval') visit(args.join(' '), depth + 1)
+    }
+  }
+  visit(command, 0)
+  return context.length > CONTEXT_MAX_COMMANDS
+    ? [...context.slice(0, CONTEXT_MAX_COMMANDS), 'additional commands omitted']
+    : context
+}

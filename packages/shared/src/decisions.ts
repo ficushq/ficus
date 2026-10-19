@@ -378,7 +378,7 @@ export interface ToolFirewallFlag {
   /** Only flagged results carry a verdict; a clean result is left as it was. */
   flagged: true
   severity: 'high' | 'medium'
-  /** The highest probability, across the screened parts, that the content instructs an AI agent. */
+  /** Highest probability of current-reader redirection across screened parts; not attack probability. */
   instructsAgent: number
   /** The most worrying intent any screened part was given, if the model answered. */
   intent?: ToolFirewallIntent
