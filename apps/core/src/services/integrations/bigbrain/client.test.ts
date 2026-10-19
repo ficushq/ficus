@@ -1,77 +1,141 @@
 import { expect, test } from 'bun:test'
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { BigbrainClient } from './client'
 
-const secret = 'fixture-secret'
-test('uses fixed encoded endpoints and bearer only in the authorization header', async () => {
-  const requests: Request[] = []
+function fixture(reply: (name: string, args: Record<string, unknown>) => unknown) {
+  const calls: { name: string; arguments?: Record<string, unknown> }[] = []
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+  const server = new Server({ name: 'synthetic', version: '1' }, { capabilities: { tools: {} } })
+  server.setRequestHandler(ListToolsRequestSchema, () => ({
+    tools: ['load_memory', 'search_vault', 'read_note', 'drop', 'admin'].map((name) => ({
+      name,
+      inputSchema: { type: 'object' as const },
+    })),
+  }))
+  server.setRequestHandler(CallToolRequestSchema, (request) => {
+    calls.push(request.params)
+    return {
+      content: [
+        {
+          type: 'text',
+          text:
+            request.params.name === 'load_memory'
+              ? String(reply(request.params.name, request.params.arguments ?? {}))
+              : JSON.stringify(reply(request.params.name, request.params.arguments ?? {})),
+        },
+      ],
+    }
+  })
+  const ready = server.connect(serverTransport)
   const client = new BigbrainClient({
-    apiBase: 'https://brain.example',
-    credential: () => secret,
-    fetch: async (input, init) => {
-      const request = new Request(input, init)
-      requests.push(request)
-      return Response.json({ hits: [] })
+    transport: async () => {
+      await ready
+      return clientTransport
     },
   })
-  expect(await client.search('hello world', 10)).toEqual({ hits: [] })
-  expect(requests[0]!.url).toBe('https://brain.example/v1/search?q=hello%20world&n=10')
-  expect(requests[0]!.headers.get('authorization')).toBe(`Bearer ${secret}`)
-  expect(requests[0]!.url).not.toContain(secret)
-})
-
-test.each([
-  [401, 'invalid_auth'],
-  [403, 'missing_scope'],
-  [500, 'unavailable'],
-] as const)('sanitizes HTTP %s', async (status, code) => {
-  const client = new BigbrainClient({
-    apiBase: 'https://brain.example',
-    credential: () => secret,
-    fetch: async () => new Response(`remote body ${secret}`, { status }),
-  })
+  return { client, calls, dispose: () => server.close() }
+}
+test('uses current search contract and preserves provenance/filter metadata', async () => {
+  const response = {
+    hits: [{ path: 'log/insertions/one.json', provenance: { from_kind: 'agent' } }],
+    relaxation: 'literal',
+    applied_filters: { source: 'mcp' },
+    only_agent_records: true,
+  }
+  const f = fixture(() => response)
   try {
-    await client.validate()
-    throw new Error('expected rejection')
-  } catch (error) {
-    expect(JSON.stringify(error)).toContain(code)
-    expect(JSON.stringify(error)).not.toContain(secret)
-    expect(JSON.stringify(error)).not.toContain('remote body')
+    expect(await f.client.searchVault({ queries: ['one', 'two'], after: '2026-01-01', n: 2 })).toEqual(response)
+    expect(f.calls).toEqual([
+      { name: 'search_vault', arguments: { queries: ['one', 'two'], after: '2026-01-01', n: 2 } },
+    ])
+  } finally {
+    await f.dispose()
   }
 })
-
-test.each([
-  ['whoami', () => ({ scopes: ['vault:read'], extra: true }), (client: BigbrainClient) => client.validate()],
-  ['search malformed hit', () => ({ hits: [{ path: 42 }] }), (client: BigbrainClient) => client.search('query')],
-  [
-    'search oversized hit count',
-    () => ({ hits: Array.from({ length: 51 }, () => ({ path: 'note.md' })) }),
-    (client: BigbrainClient) => client.search('query'),
-  ],
-  [
-    'note oversized content',
-    () => ({ path: 'note.md', content: 'x'.repeat(200 * 1024) }),
-    (client: BigbrainClient) => client.getNote('note.md'),
-  ],
-  [
-    'drop unknown field',
-    () => ({ path: 'drop.md', secret: 'unexpected' }),
-    (client: BigbrainClient) => client.dropMarkdown('body'),
-  ],
-] as const)('rejects invalid_response for %s response shapes', async (_name, body, invoke) => {
-  const client = new BigbrainClient({
-    apiBase: 'https://brain.example',
-    credential: () => secret,
-    fetch: async () => Response.json(body()),
-  })
-  await expect(invoke(client)).rejects.toMatchObject({ code: 'invalid_response' })
+test('preserves paginated markdown, windows and unresolved links', async () => {
+  const path = 'log/insertions/one.json'
+  const response = {
+    path,
+    markdown: '<untrusted-data>slice</untrusted-data>',
+    markdown_length: 100,
+    start: 10,
+    end: 15,
+    truncated: true,
+    links: [{ name: 'unknown', path: null }],
+    window: { total: 40 },
+  }
+  const f = fixture(() => response)
+  try {
+    expect(await f.client.readNote({ path, start: 10, chars: 5, q: 'term', slack: 2 })).toEqual(response)
+  } finally {
+    await f.dispose()
+  }
 })
-
-test('rejects insecure non-loopback bases and oversized streamed bodies', async () => {
-  expect(() => new BigbrainClient({ apiBase: 'http://brain.example', credential: () => secret })).toThrow()
+test('load memory accepts no parameters and queued drops are not saved receipts', async () => {
+  const f = fixture((name) => (name === 'load_memory' ? '' : { queued: true, id: 'synthetic' }))
+  try {
+    expect(await f.client.loadMemory()).toBe('')
+    expect(f.calls[0]).toEqual({ name: 'load_memory', arguments: {} })
+  } finally {
+    await f.dispose()
+  }
+  const drop = fixture(() => ({ queued: true, id: 'synthetic' }))
+  try {
+    expect(await drop.client.drop({ title: 'Finding', body: 'Evidence', kind: 'finding' })).toEqual({
+      queued: true,
+      id: 'synthetic',
+    })
+  } finally {
+    await drop.dispose()
+  }
+})
+test('strict inputs reject identity, traversal and ambiguous search before transport', async () => {
+  let launched = false
   const client = new BigbrainClient({
-    apiBase: 'https://brain.example',
-    credential: () => secret,
-    fetch: async () => new Response(new Uint8Array(256 * 1024 + 1)),
+    transport: async () => {
+      launched = true
+      throw new Error('should not launch')
+    },
   })
-  await expect(client.validate()).rejects.toMatchObject({ code: 'response_too_large' })
+  for (const path of ['../x', '/secret', 'x//y', 'x/./y', 'C:/x', 'x\\y'])
+    await expect(client.readNote({ path })).rejects.toMatchObject({ code: 'invalid_configuration' })
+  await expect(client.searchVault({ query: 'x', queries: ['y'] })).rejects.toMatchObject({
+    code: 'invalid_configuration',
+  })
+  await expect(client.drop({ title: 'x', body: 'y', author: 'admin' } as never)).rejects.toMatchObject({
+    code: 'invalid_configuration',
+  })
+  expect(launched).toBe(false)
+})
+test.each([
+  { path: 'memory/x', markdown: 'x', start: 20, end: 10, markdown_length: 30 },
+  { path: 'memory/x', markdown: 'x', links: [{ name: 'bad', path: '../secret' }] },
+  { path: 'wrong', markdown: 'x' },
+])('rejects unsafe or inconsistent read responses', async (response) => {
+  const f = fixture(() => response)
+  try {
+    await expect(f.client.readNote({ path: 'memory/x' })).rejects.toMatchObject({ code: 'invalid_response' })
+  } finally {
+    await f.dispose()
+  }
+})
+test('gate is rechecked after initialization and before dispatch', async () => {
+  const f = fixture(() => ({ hits: [] }))
+  try {
+    await expect(
+      f.client.searchVault(
+        { query: 'x' },
+        {
+          beforeCall: async () => {
+            throw new Error('revoked')
+          },
+        }
+      )
+    ).rejects.toMatchObject({ code: 'unavailable' })
+    expect(f.calls).toHaveLength(0)
+  } finally {
+    await f.dispose()
+  }
 })
