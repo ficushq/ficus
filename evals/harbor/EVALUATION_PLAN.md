@@ -41,17 +41,46 @@ with `gpt-6.1-sol` after Responses support and usage accounting are validated.
 Record provider-returned model identifiers, configuration, and run dates. No
 production model defaults need to change.
 
-- Ficus: full squad with independent review, including manager and review costs.
-- Pi: one session per task, with its normal tools and original task statement.
-- Parallel Pi: multiple independent sessions on the same batch. Do not compare
-  only parallel Ficus with serial Pi and attribute the difference to orchestration.
+The primary comparison must match the workflow as well as the model:
+**architect → engineer → independent reviewer → delivery**, with the same
+review-to-engineer rework path. If Ficus also uses a separate manager, provide
+the baseline an equivalent coordination role and include both sides' costs.
+Do not rename the current manager/engineer/reviewer pilot an architect workflow;
+validate the actual role configuration before running the comparison.
+
+- Ficus: execute that workflow through its normal squad orchestration.
+- Baseline: execute the equivalent roles and handoffs using an existing supported
+  workflow in the comparison harness where available. Separate role sessions
+  preserve independent review. The existing single-session Harbor Pi adapter is
+  not yet this baseline; baseline workflow support remains to be established.
+- Parallel comparison: run equivalent workflows concurrently on the same batch,
+  with matched aggregate resources and concurrency limits on both sides.
+
+Use equivalent role instructions, task information, planning requirements,
+review criteria, handoff artifacts, tool permissions, reviewer context, and
+rework limits. Preserve harness-specific mechanics and record unavoidable
+mismatches instead of silently changing either workflow. Do not give one side
+extra planning or review opportunities. Count all orchestration inference,
+including manager calls, against the aggregate budget.
+
+Prefer an existing multi-agent workflow over building a bespoke competitor. If
+Pi needs human handoffs, that is a separately labeled supervised workflow:
+record the coordination time and supplied information, and do not mix it into
+the unattended comparison. An automated adapter may transport artifacts and
+invoke declared stages, but any new planning, routing, or recovery intelligence
+is part of the evaluated baseline and must be disclosed. Do not assume Pi needs
+human coordination before inspecting available workflow support.
+
+Single-session Pi remains useful as an optional reference for the cost and
+quality of adding planning/review stages. It is not the primary evidence for
+Ficus's orchestration advantage. Earlier single-session pilot results remain
+adapter checks and do not constitute a matched-workflow comparison.
 
 Record and match task time limits, aggregate inference budget, CPU/memory, and
 maximum simultaneous model requests. Include Ficus database/runtime overhead.
 Run single-task quality and batch-throughput comparisons separately. A second
 budget setting can describe tradeoffs, but must be declared before running it.
-Any extra baseline review stage is a distinct configuration, not silently added
-or omitted to favor one system.
+Freeze the workflow and baseline configuration before selecting scored attempts.
 
 ## Outcomes to report separately
 
@@ -87,8 +116,10 @@ are assisted evaluations and must not be mixed with unattended benchmark scores.
 
 1. Validate GPT-6.1 Responses tool use and full usage accounting under the existing
    cumulative $20 pilot cap; retain prior uncertain charges until reconciled.
-2. Complete one end-to-end full-squad adapter check, including independent review
-   and delivery. Log idle/handoff behavior without assuming a production defect.
+2. Establish equivalent architect, engineer, reviewer, and coordination roles in
+   both harnesses, then complete an end-to-end adapter check for each, including
+   rework and delivery. Log idle/handoff behavior without assuming a production
+   defect. Do not substitute single-session Pi if workflow support is missing.
 3. Integrate FeatureBench task setup and patch submission with its untouched
    official evaluator, then freeze a small matched sample and configuration.
 4. Estimate cost from that pilot before requesting or scheduling a broader run.
