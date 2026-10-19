@@ -1,6 +1,8 @@
 # Full-squad Harbor evaluation
 
-This adapter evaluates **Ficus squad orchestration** on existing Harbor tasks. It
+This experimental adapter targets **Ficus squad orchestration** on existing Harbor tasks.
+The first pilot verified task startup, model calls, grading, accounting, and cleanup,
+but did not yet complete an engineer/reviewer workflow. See [pilot evidence](PILOT.md). It
 uses the real manager, engineer, reviewer, tools, execution queue, and work-stream
 state machine. Harbor owns task instructions, containers, time limits, verifier,
 and scores. This is not a new benchmark or a replacement grader.

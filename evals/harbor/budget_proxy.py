@@ -37,6 +37,14 @@ class Budget:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, client TEXT, charge INTEGER, usage TEXT)"
             )
+            columns = {row[1] for row in db.execute("PRAGMA table_info(calls)")}
+            for name, kind in (
+                ("http_status", "INTEGER"),
+                ("failure", "TEXT"),
+                ("model", "TEXT"),
+            ):
+                if name not in columns:
+                    db.execute(f"ALTER TABLE calls ADD COLUMN {name} {kind}")
         Path(self.path).chmod(0o600)
 
     def reserve(self, client):
@@ -48,8 +56,8 @@ class Budget:
             if total + self.reservation > self.cap:
                 raise ValueError("Pilot spend cap reached")
             return db.execute(
-                "INSERT INTO calls(client,charge) VALUES(?,?)",
-                (client, self.reservation),
+                "INSERT INTO calls(client,charge,model) VALUES(?,?,?)",
+                (client, self.reservation, self.model),
             ).lastrowid
 
     def settle(self, identifier, usage):
@@ -71,6 +79,13 @@ class Budget:
             db.execute(
                 "UPDATE calls SET charge=?, usage=? WHERE id=?",
                 (charge, json.dumps(usage), identifier),
+            )
+
+    def note(self, identifier, *, status=None, failure=None):
+        with self.lock, sqlite3.connect(self.path) as db:
+            db.execute(
+                "UPDATE calls SET http_status=coalesce(?,http_status), failure=coalesce(?,failure) WHERE id=?",
+                (status, failure, identifier),
             )
 
     def summary(self):
@@ -178,6 +193,7 @@ def handler(budget, tokens, api_key):
                     stream=True,
                     timeout=(15, 180),
                 ) as response:
+                    budget.note(identifier, status=response.status_code)
                     if response.status_code != 200:
                         # Conservatively retain the reservation on upstream errors.
                         return self.reply(
@@ -195,18 +211,29 @@ def handler(budget, tokens, api_key):
                     )
                     self.end_headers()
                     started = True
+                    disconnected = False
                     if payload.get("stream"):
                         for line in response.iter_lines():
                             if line.startswith(b"data: ") and line != b"data: [DONE]":
                                 event = json.loads(line[6:])
                                 usage = event.get("usage") or usage
-                            self.wfile.write(line + b"\n")
-                            self.wfile.flush()
+                            if not disconnected:
+                                try:
+                                    self.wfile.write(line + b"\n")
+                                    self.wfile.flush()
+                                except OSError:
+                                    # The provider can finish billing after the client leaves.
+                                    # Drain to the final usage chunk rather than losing evidence.
+                                    disconnected = True
+                                    budget.note(
+                                        identifier, failure="client_disconnected"
+                                    )
                     else:
                         data = response.json()
                         usage = data.get("usage")
                         self.wfile.write(json.dumps(data).encode())
-            except (requests.RequestException, OSError, ValueError, TypeError):
+            except (requests.RequestException, OSError, ValueError, TypeError) as error:
+                budget.note(identifier, failure=type(error).__name__)
                 if not started:
                     self.reply(502, {"error": {"message": "Inference unavailable"}})
             finally:

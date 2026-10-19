@@ -1,11 +1,13 @@
 import concurrent.futures
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from budget_proxy import FULL_MODEL, MODEL, RESERVATION, Budget, validate
+from budget_proxy import FULL_MODEL, MODEL, RESERVATION, Budget, handler, validate
 from ficus_agent import FicusSquad, disposition
 
 
@@ -165,6 +167,53 @@ class AccountingTests(unittest.TestCase):
                 context.metadata["executed_roles"], ["engineer", "manager", "reviewer"]
             )
             self.assertIsNone(context.cost_usd)
+
+
+class ProxyTests(unittest.TestCase):
+    def test_client_disconnect_still_collects_upstream_usage(self):
+        class Response:
+            status_code = 200
+
+            def __init__(self):
+                self.headers = {"Content-Type": "text/event-stream"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def iter_lines(self):
+                yield b'data: {"choices": []}'
+                yield b""
+                yield b'data: {"usage": {"prompt_tokens": 100, "completion_tokens": 10}}'
+                yield b""
+                yield b"data: [DONE]"
+
+        class Disconnected:
+            def write(self, value):
+                raise BrokenPipeError()
+
+        with tempfile.TemporaryDirectory() as directory:
+            budget = Budget(Path(directory) / "spend.sqlite")
+            cls = handler(budget, {"test-token": "trial"}, "dummy-test-key")
+            request = object.__new__(cls)
+            body = json.dumps({"model": MODEL, "stream": True, "messages": []}).encode()
+            request.headers = {
+                "Authorization": "Bearer test-token",
+                "Content-Length": str(len(body)),
+            }
+            request.path = "/v1/chat/completions"
+            request.rfile = io.BytesIO(body)
+            request.wfile = Disconnected()
+            request.send_response = lambda *_: None
+            request.send_header = lambda *_: None
+            request.end_headers = lambda: None
+            with patch("budget_proxy.requests.post", return_value=Response()):
+                request.do_POST()
+            summary = budget.summary()["trial"]
+            self.assertEqual(summary["unknown_usage"], 0)
+            self.assertAlmostEqual(summary["usd_upper_bound"], 0.000056)
 
 
 if __name__ == "__main__":
