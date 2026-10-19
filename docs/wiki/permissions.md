@@ -17,6 +17,14 @@ while endpoint-specific ownership and resource checks still apply. A permission
 alone does not turn a token into a user or an agent. The token value is revealed
 only once, after creation.
 
+## Decision evaluation access
+
+`decisions:evaluate` permits bounded model evaluations and minimal enabled-provider
+metadata only. It grants neither provider management nor secret access, and is
+not included in default roles. See [decision evaluation access](decision-evaluations.md)
+for worker invocation, temporary per-worker grants/revocation, scoping, cost
+attribution, rate limits and rollout requirements.
+
 ## Human-only squad controls
 
 Some squad settings check `squads:update` **and** require a literal, enabled human

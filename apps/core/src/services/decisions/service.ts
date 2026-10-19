@@ -320,7 +320,11 @@ function recordDecisionUsage(
     listCostUsd: cost.nanodollars === null ? null : cost.nanodollars / 1e9,
     tokensEstimated: cost.estimated,
     attribution: attributionFromSource(source),
-    source: { purpose, ...(source?.kind ? { kind: source.kind } : {}) },
+    source: {
+      purpose,
+      ...(source?.kind ? { kind: source.kind } : {}),
+      ...(source?.actor ? { actor: source.actor } : {}),
+    },
   })
 }
 
