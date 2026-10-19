@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import ts from 'typescript'
 import { backendProviders, resolveProviders } from './providers'
 
 const keys = [
@@ -230,4 +231,17 @@ test('redirects do not send a worker token to another origin', async () => {
   } finally {
     await other.stop(true)
   }
+})
+
+test('the public resolver declaration accepts arbitrary CLI source strings', () => {
+  // Bun's runtime tests erase types. Check the actual exported declaration too,
+  // without loading the Core dependency graph or running a full Core typecheck.
+  const source = readFileSync(join(import.meta.dir, 'providers.ts'), 'utf8')
+  const declaration = ts.transpileDeclaration(source, {
+    fileName: 'providers.ts',
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+    reportDiagnostics: true,
+  })
+  expect(declaration.diagnostics).toEqual([])
+  expect(declaration.outputText).toContain('resolveProviders(from?: string): Promise<EvalProvider[]>')
 })

@@ -187,7 +187,7 @@ export function defaultProviderSource(): 'worker' | 'local' {
 }
 
 /** Explicit sources never fall back to a different host, database or credential. */
-export async function resolveProviders(from = defaultProviderSource()): Promise<EvalProvider[]> {
+export async function resolveProviders(from: string = defaultProviderSource()): Promise<EvalProvider[]> {
   if (from === 'local') return localProviders()
   if (from === 'env') return envProviders()
   if (from === 'worker') return workerProviders()
