@@ -2,7 +2,7 @@
  * Decision evals: run labelled cases for decision-powered features against real decision
  * providers, record and diff their answers, and review saved corrections.
  *
- *   bun run decisions:eval [eval…] [--from local|env|backend:<label>] [--provider id|kind,…]
+ *   bun run decisions:eval [eval…] [--from local|env|worker|backend:<label>] [--provider id|kind,…]
  *                          [--repeat N] [--variant name] [--record] [--diff] [--max-cost dollars]
  *                          [--markdown file] [--json file]
  *   bun run decisions:eval --list
@@ -42,12 +42,12 @@ for (let index = 0; index < args.length; index++) {
 }
 const flag = (name: string) => (typeof flags.get(name) === 'string' ? (flags.get(name) as string) : undefined)
 
-const from = flag('from') ?? 'local'
+const { PLACEHOLDER_DATABASE_URL, resolveProviders, selectProviders, defaultProviderSource } =
+  await import('../services/decisions/evals/providers')
+const from = flag('from') ?? defaultProviderSource()
 const usesInstance = from === 'local' || flags.has('inbox') || flags.has('accept') || flags.has('dismiss')
 const root = join(import.meta.dir, '../../../..')
 if (usesInstance) loadRootEnvForStandaloneScript(root)
-const { PLACEHOLDER_DATABASE_URL, resolveProviders, selectProviders } =
-  await import('../services/decisions/evals/providers')
 // Feature modules import the database module; without an instance, give it a URL it never uses.
 if (!process.env.DATABASE_URL) process.env.DATABASE_URL = PLACEHOLDER_DATABASE_URL
 

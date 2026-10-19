@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import {
   DECISION_PROVIDER_KIND_INFO,
@@ -7,10 +8,19 @@ import {
   DECISION_PURPOSE_INFO,
   DECISION_PURPOSES,
   decisionRequestSchema,
+  decisionModelReadsImages,
+  decisionPricePerMillion,
   decisionRoutingSchema,
 } from '@ficus/shared'
-import { requirePermission } from '../middleware/require-permission'
+import { requireAnyPermission, requirePermission } from '../middleware/require-permission'
 import { auditActor, type Identity } from '../services/rbac'
+import { attributionFromIdentity } from '../services/inference-usage/types'
+import {
+  createEvaluationLimiter,
+  EVALUATION_MAX_BODY_BYTES,
+  EVALUATION_MAX_TEXT_BYTES,
+  EVALUATION_TIMEOUT_MS,
+} from '../services/decisions/evaluation-limits'
 import { getOpenAIServiceKey } from '../services/integrations/openai-services/settings'
 import { systemOneBase } from '../services/decisions/adapters'
 import { EvalCaptureUnavailableError, evalCaptureState, setEvalCapture } from '../services/decisions/evals/capture'
@@ -41,6 +51,16 @@ import {
  */
 
 const app = new Hono()
+
+/** Both Settings and eval calls derive attribution from authentication, never request fields. */
+function decisionSource(identity: Identity, kind: 'settings-try' | 'eval'): Record<string, string> {
+  const actor = identity.type === 'agent' ? `agent:${identity.agentId}` : auditActor(identity)
+  const source: Record<string, string> = { kind, actor }
+  for (const [key, value] of Object.entries(attributionFromIdentity(identity))) {
+    if (typeof value === 'string') source[key] = value
+  }
+  return source
+}
 
 const providerInput = z.object({
   kind: z.enum(DECISION_PROVIDER_KINDS),
@@ -171,6 +191,95 @@ app.put('/features/:id', requirePermission('provider-auth:write'), async (c) => 
   return c.json(decisionFeatures())
 })
 
+// Separate authorization from Settings: evaluation access grants no management or secret reads.
+// Match existing unscoped RBAC semantics: system user roles, or a live worker's own squad authority.
+const evaluationPermission = () => requireAnyPermission('decisions:evaluate', 'provider-auth:write')
+const acquireEvaluation = createEvaluationLimiter()
+const evaluationInput = decisionRequestSchema
+  .extend({
+    providerId: z.string().min(1).max(128),
+    purpose: z.enum(DECISION_PURPOSES),
+  })
+  .strict()
+
+app.get('/evaluate', evaluationPermission(), (c) =>
+  c.json({
+    providers: listDecisionProviders()
+      .filter((provider) => provider.enabled)
+      .map((provider) => ({
+        id: provider.id,
+        kind: provider.kind,
+        label: provider.label,
+        model: provider.model,
+        enabled: true,
+        effectivePricePerMillionInput: decisionPricePerMillion(provider),
+      })),
+  })
+)
+
+app.post(
+  '/evaluate',
+  evaluationPermission(),
+  bodyLimit({
+    maxSize: EVALUATION_MAX_BODY_BYTES,
+    onError: (c) => c.json({ error: 'Evaluation request too large' }, 413),
+  }),
+  async (c) => {
+    let input: unknown
+    try {
+      input = await c.req.json()
+    } catch (error) {
+      // Hono's streaming bodyLimit raises this while JSON is being consumed. Handle it
+      // before the root error handler logs an expected size rejection as a server fault.
+      if (error instanceof Error && error.name === 'BodyLimitError')
+        return c.json({ error: 'Evaluation request too large' }, 413)
+      throw error
+    }
+    const parsed = evaluationInput.safeParse(input)
+    if (!parsed.success)
+      return c.json({ error: 'Send a decision request with providerId and a known purpose, without overrides' }, 400)
+    const { providerId, purpose, ...request } = parsed.data
+    const { images: _images, ...text } = request
+    if (Buffer.byteLength(JSON.stringify(text), 'utf8') > EVALUATION_MAX_TEXT_BYTES)
+      return c.json({ error: 'Evaluation text exceeds 64 KiB' }, 413)
+    const provider = getDecisionProvider(providerId)
+    if (!provider?.enabled) return c.json({ error: 'No such enabled decision provider' }, 404)
+    if (request.images?.length && !decisionModelReadsImages(provider))
+      return c.json({ error: 'This provider does not read images' }, 400)
+    const source = decisionSource(c.get('identity') as Identity, 'eval')
+    const release = acquireEvaluation(source.actor!)
+    if (!release) {
+      c.header('Retry-After', '60')
+      return c.json({ error: 'Evaluation rate or concurrency limit reached' }, 429)
+    }
+    const started = Date.now()
+    try {
+      let outcome: DecisionOutcome
+      try {
+        const result = await askProvider(provider, request, {
+          signal: AbortSignal.any([
+            c.req.raw.signal,
+            AbortSignal.timeout(Math.min(EVALUATION_TIMEOUT_MS, getDecisionRouting().timeoutMs)),
+          ]),
+        })
+        // Never echo arbitrary provider model metadata to an evaluation-only caller.
+        outcome = { ok: true, result: { ...result, model: provider.model } }
+      } catch {
+        // Provider errors may include keys, URLs, account ids or upstream response bodies.
+        outcome = {
+          ok: false,
+          reason: 'unavailable',
+          errors: [{ providerId, error: 'Evaluation provider unavailable' }],
+        }
+      }
+      recordProviderAnswer(purpose, provider, request, outcome, Date.now() - started, source)
+      return c.json(outcome)
+    } finally {
+      release()
+    }
+  }
+)
+
 const tryInput = decisionRequestSchema.extend({
   /** Ask this provider directly, or else the purpose's providers in order (the default order without one). */
   providerId: z.string().optional(),
@@ -184,6 +293,7 @@ app.post('/try', requirePermission('provider-auth:write'), async (c) => {
   const parsed = tryInput.safeParse(await c.req.json())
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid question' }, 400)
   const { providerId, purpose, source = 'settings-try', ...request } = parsed.data
+  const attributedSource = decisionSource(c.get('identity') as Identity, source)
   if (providerId) {
     const provider = getDecisionProvider(providerId)
     if (!provider) return c.json({ error: 'No such decision provider' }, 404)
@@ -201,10 +311,10 @@ app.post('/try', requirePermission('provider-auth:write'), async (c) => {
         errors: [{ providerId, error: String(error instanceof Error ? error.message : error) }],
       }
     }
-    recordProviderAnswer(purpose ?? 'default', provider, request, outcome, Date.now() - started, { kind: source })
+    recordProviderAnswer(purpose ?? 'default', provider, request, outcome, Date.now() - started, attributedSource)
     return c.json(outcome)
   }
-  return c.json(await decide(purpose ?? 'default', request, { source: { kind: source } }))
+  return c.json(await decide(purpose ?? 'default', request, { source: attributedSource }))
 })
 
 export default app

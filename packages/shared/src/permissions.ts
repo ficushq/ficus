@@ -193,6 +193,9 @@ export const Permissions = {
   PROVIDER_AUTH_READ: 'provider-auth:read',
   PROVIDER_AUTH_WRITE: 'provider-auth:write',
 
+  // Ask configured enabled decision providers for evaluations; no management or secret access.
+  DECISIONS_EVALUATE: 'decisions:evaluate',
+
   // Usage and spend (the instance-wide inference cost ledger)
   USAGE_READ: 'usage:read',
 

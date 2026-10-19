@@ -131,6 +131,8 @@ export const PERMISSION_DESCRIPTIONS = {
   'workflows:delete': 'Delete saved workflow presets.',
   'provider-auth:read': 'View AI provider accounts, connection status, and model-routing configuration.',
   'provider-auth:write': 'Connect and manage AI provider accounts, credentials, priority, and model routing.',
+  'decisions:evaluate':
+    'Run bounded evaluations against enabled decision providers and view evaluation metadata; no provider management or secret access.',
   'usage:read':
     'View inference usage and spend across the instance: the per-call cost ledger, breakdowns, and subscription fees.',
   'webhooks:read': 'View webhook setup and delivery status.',
