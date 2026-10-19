@@ -182,6 +182,7 @@ class FicusSquad(BaseAgent):
         self.container = (
             await docker("inspect", "--format", "{{.Id}}", hostname)
         ).strip()
+        task_path = (await self.checked(environment, 'printf "%s" "$PATH"')).strip()
         self.env = {
             "FICUS_HARBOR_TRIAL": "1",
             "FICUS_SANDBOX_RUNTIME": "host",
@@ -196,8 +197,7 @@ class FicusSquad(BaseAgent):
             "FICUS_PASSWORD": secrets.token_hex(32),
             "FICUS_INTERNAL_EVENT_TOKEN": secrets.token_hex(32),
             "SHELL": "/bin/bash",
-            "PATH": ROOT
-            + "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "PATH": ROOT + "/bin:" + task_path,
             "DATABASE_URL": f"postgres://postgres:{secrets.token_hex(24)}@{self.database}:5432/ficus_harbor",
         }
         await environment.download_file(

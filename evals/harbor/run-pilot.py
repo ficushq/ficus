@@ -12,6 +12,7 @@ parser.add_argument(
     "--workflow", choices=("engineer", "planned", "reviewed"), default="engineer"
 )
 parser.add_argument("--access", type=Path, required=True)
+parser.add_argument("--client", help="Proxy client label; defaults to harness-task")
 parser.add_argument("--runtime-archive", type=Path)
 parser.add_argument("--jobs-dir", type=Path, required=True)
 parser.add_argument("--job-name", required=True)
@@ -32,7 +33,7 @@ env = {
 }
 env.update(
     {
-        "OPENAI_API_KEY": access["clients"][f"{args.harness}-{args.task.name}"],
+        "OPENAI_API_KEY": access["clients"][args.client or f"{args.harness}-{args.task.name}"],
         "OPENAI_BASE_URL": f"http://host.docker.internal:{access['port']}/v1",
         "PYTHONPATH": str(Path(__file__).resolve().parent),
         "DOCKER_DEFAULT_PLATFORM": "linux/amd64",

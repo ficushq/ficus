@@ -1,8 +1,9 @@
 # FeatureBench integration preflight — 2026-10-19
 
-Status: **do not score the downloaded Harbor tasks yet**. No feature-task
-inference or oracle run was started. The four-arm Terminal-Bench smoke checks
-are recorded separately in [PILOT.md](PILOT.md).
+Status: **unmodified downloaded tasks remain unsuitable; an isolated lv1
+variant now passes preparation checks**. The original masked baseline receives
+0 and the reference solution receives 1. The four-arm Terminal-Bench smoke
+checks are recorded separately in [PILOT.md](PILOT.md).
 
 ## Existing integration
 
@@ -63,3 +64,37 @@ Before paid feature runs:
 
 This preflight uses no additional inference. The $20 cumulative cap remains in
 force; a full FeatureBench suite has not been authorized or scheduled.
+
+## Isolated lv1 preparation and frozen pilot
+
+`prepare_featurebench.py` prepares a fresh task from a locally built upstream
+image. It checks that the mask applied, retains the original Git state and
+answer/test fixtures on the host, removes them from the agent filesystem, clears
+stale bytecode/source copies, and initializes a single masked Git commit. The
+only package source found in the Pydantic image is `/testbed/pydantic`; no second
+pristine package tree or held-out test file remains. Root cannot access the host
+Docker socket or original image layers from the task container.
+
+Harbor uploads `tests/` only after the agent finishes. A wrapper then restores
+upstream Git/index metadata without overwriting agent working files and invokes
+the byte-identical upstream test script. This preserves the existing acceptance
+tests and change guard. Oracle-only fixtures live in `solution/`, never in the
+agent image. Level-two tasks are deliberately unsupported by this preparer.
+
+Two local isolation tests verify answer-history removal, preserved agent edits
+on grading restoration, and refusal of an unapplied/invalid mask. Live setup
+attempts one and two failed before grading because the temporary preparation
+entrypoint persisted through Docker commit; setting an explicit passthrough
+entrypoint corrected it. These attempts used no model inference. The third
+isolated baseline received 0 and the oracle received 1, without exceptions.
+
+All eight downloaded task files match dataset commit
+`37db108843a49bb31a592e37a75e2c40dc3f9749`. [feature-pilot.json](feature-pilot.json)
+freezes source hashes, the isolated image, runtime, task limits, model, ordered
+arms, and budget before feature inference. The task is Pydantic deprecated-field
+support. This is an exploratory single-task pilot using the pinned Harbor
+snapshot, not the originally proposed V1.1 fast split or a leaderboard estimate.
+
+The Ficus adapter now preserves the task image's PATH when prepending its own
+runtime tools. Both harnesses can activate the image's `testbed` conda environment.
+No production runtime or provider changes were required.
