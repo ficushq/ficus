@@ -180,3 +180,51 @@ configuration; no prompt changes or operator steering. Retain the earlier
 interrupted sample separately. The proxy now retains error details and honors
 known cooldowns. The reconciliation and restart/cap behavior pass 20 offline
 tests. This remains development validation, not a leaderboard estimate.
+
+### Handoff finding from the transport-revision trace
+
+In the `prove-plus-comm` retry, the engineer received the complete handoff,
+including the exact versioned `ficus workstream advance` command, but ended with
+a formatted delivery summary instead. The ordinary automatic continuation then
+elicited another summary saying the work was ready for review. No advance was
+attempted, so this evidence does not indicate a CLI rejection or permission error.
+There were no provider errors during these turns. The generic continuation did
+not restate the pending workflow action. The operator only inspected state and
+transcripts; no messages, approvals, or task changes were injected.
+
+This is evidence about this experimental configuration with GPT-4.1, not proof
+that production squads exhibit the same idle behavior. Do not change production
+continuation or completion semantics on this evidence alone. The next model
+configuration should use an available current model and its supported transport
+before drawing a conclusion about the workflow.
+
+### Transport-revision outcomes and stop
+
+| Harness / task            | Official reward | Workflow / termination                                                                      | Metered inference                                         |
+| ------------------------- | --------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Ficus / `prove-plus-comm` | 1               | Agent timeout; manager and engineer executed, reviewer did not; build step remained running | $0.324282 / 26 calls                                      |
+| Pi / `prove-plus-comm`    | 1               | Completed normally                                                                          | $0.008676 / 5 calls                                       |
+| Ficus / `overfull-hbox`   | Not graded      | Operator canceled when the user requested a model change                                    | $0.666740 / 48 calls, plus $11.00 unresolved reservations |
+| Pi / `overfull-hbox`      | Not run         | Configuration stopped                                                                       | —                                                         |
+
+The proof task used the same task checksum for both harnesses. Ficus's agent
+execution took 907.32 seconds including timeout cleanup; Pi's took 10.59 seconds.
+Setup is separate (68.30 and 29.50 seconds respectively). A passing proof does
+not make the timed-out Ficus workflow a completed full-squad run. These are
+adapter validation results, not a representative estimate of product work.
+
+The interrupted second task had five provider `rate_limit_exceeded` responses
+without usage (calls 271, 273, 275, 277, 279). The reservations remain recorded.
+At stop, 281 raw calls contain $3.486274 confirmed metered usage; effective
+cumulative exposure after the call-202 reconciliation is $14.499698 against the
+unchanged $20 cap. Exposure includes uncertain holds and is not actual spend.
+The proxy and owned Harbor containers are stopped.
+
+The available API model list includes `gpt-6.1-sol`. Its official documentation
+requires Responses for tool calling, so changing only the model string in the
+existing Chat Completions pilot is insufficient. No GPT-6.1 scored run has been
+performed. Model transport and accounting support remain implementation work.
+
+See [the evaluation plan](EVALUATION_PLAN.md) for the revised scope: complex
+features, unattended delivery, and parallel throughput, alongside official task
+quality rather than a single small-task cost ranking.

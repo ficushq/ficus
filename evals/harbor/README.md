@@ -19,6 +19,10 @@ Observed completed roles are recorded as `executed_roles`; a run that never dele
 Pi adapter is the external baseline. Results from this configuration should be
 labeled **Ficus full squad / With Review / fresh memory disabled**.
 
+The broader comparison design is in [the evaluation plan](EVALUATION_PLAN.md).
+Small Terminal-Bench tasks validate the adapter; they do not by themselves test
+the value of autonomous product development.
+
 ## Installation and runtime
 
 Python 3.12+, uv, Docker, and enough local disk for the task/runtime images are

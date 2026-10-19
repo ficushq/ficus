@@ -1,0 +1,98 @@
+# Evaluating full-squad Ficus
+
+## Question
+
+Can Ficus deliver substantial, correct work with less human supervision, and
+keep multiple pieces of work moving while the user is away? Lower inference cost
+on a small bug fix is a separate question. Neither advantage is assumed.
+
+This plan uses external tasks and their original graders. Operational
+measurements supplement those scores; they are not a new benchmark score or a
+replacement for correctness.
+
+## Workloads
+
+1. **Adapter checks:** small Terminal-Bench tasks establish that tools, delegation,
+   review, delivery, accounting, and grading work. Preserve failures and incomplete
+   workflows. Do not extrapolate a leaderboard or product-value claim from them.
+2. **Complex features:** use [FeatureBench](https://github.com/LiberCoders/FeatureBench),
+   initially a predeclared sample from its V1.1 fast split. It provides feature
+   tasks and an official evaluator without a GPU requirement. Integration is not
+   yet implemented. Pin the dataset, source revision, task images, and grading
+   configuration; do not compare a V1.1 sample directly with a V1.0 leaderboard.
+3. **Parallel delivery:** run the same predeclared batch of external tasks with
+   controlled concurrency. This measures independent-work throughput, not the
+   harder claim that agents coordinate dependent changes in one product.
+4. **Product continuity:** subsequently evaluate a sequence of real features on
+   the same product, with acceptance criteria fixed before work starts and
+   independent review. Label this a case study unless an existing benchmark
+   supports the sequence. Report integration conflicts, regressions, and rework;
+   do not present it as a public benchmark result.
+
+Select tasks before seeing results, record exclusions for infrastructure
+compatibility, and retain unsuccessful and interrupted attempts. Keep solutions
+and hidden tests out of agent context. Use fresh state for standard benchmark
+comparisons; any persistent-memory experiment is separately labeled.
+
+## Comparisons
+
+Use the same API model and reasoning effort for all roles and baselines. Start
+with `gpt-6.1-sol` after Responses support and usage accounting are validated.
+Record provider-returned model identifiers, configuration, and run dates. No
+production model defaults need to change.
+
+- Ficus: full squad with independent review, including manager and review costs.
+- Pi: one session per task, with its normal tools and original task statement.
+- Parallel Pi: multiple independent sessions on the same batch. Do not compare
+  only parallel Ficus with serial Pi and attribute the difference to orchestration.
+
+Record and match task time limits, aggregate inference budget, CPU/memory, and
+maximum simultaneous model requests. Include Ficus database/runtime overhead.
+Run single-task quality and batch-throughput comparisons separately. A second
+budget setting can describe tradeoffs, but must be declared before running it.
+Any extra baseline review stage is a distinct configuration, not silently added
+or omitted to favor one system.
+
+## Outcomes to report separately
+
+| Outcome             | Measurement                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------- |
+| Correctness         | Original benchmark grade and fully resolved tasks; partial test passes reported separately                |
+| Unattended delivery | Tasks both officially accepted and delivered through the intended workflow without human rescue           |
+| Throughput          | Accepted tasks per batch wall-clock hour at the declared concurrency and resource limits                  |
+| Human attention     | Timed active minutes spent reading, deciding, steering, repairing, and approving                          |
+| Interruptions       | Requests that require a person, grouped by clarification, approval, recovery, and coordination            |
+| Waiting             | Time genuinely blocked on a person, separately from model, tool, rate-limit, and orchestration waits      |
+| Review and rework   | Review rounds, returned work, defects caught, and defects remaining at independent acceptance             |
+| Cost                | All roles, retries, failures, and infrastructure; distinguish metered charges from uncertain reservations |
+
+A quiet but stuck squad has not returned useful time. Report unfinished tasks
+alongside unattended successes. A workflow marked delivered is not automatically
+correct, and a correct patch with a stuck workflow is not autonomous delivery.
+
+## Measuring focus without inventing a proxy
+
+Unattended benchmark runs can measure requests for help and waiting, but cannot
+establish human time saved. For that claim, run a separate supervised comparison
+with a fixed assistance policy and scheduled review windows. Log actual active
+human time, interruptions, and the longest interval of accepted progress without
+intervention. Separate one-time setup from recurring supervision. Do not use
+message counts or model runtime as substitutes for human attention.
+
+Use matched task groups and vary which system is used first to reduce learning
+and order effects. Keep human help and approvals in the audit trail. These runs
+are assisted evaluations and must not be mixed with unattended benchmark scores.
+
+## Next execution gates
+
+1. Validate GPT-6.1 Responses tool use and full usage accounting under the existing
+   cumulative $20 pilot cap; retain prior uncertain charges until reconciled.
+2. Complete one end-to-end full-squad adapter check, including independent review
+   and delivery. Log idle/handoff behavior without assuming a production defect.
+3. Integrate FeatureBench task setup and patch submission with its untouched
+   official evaluator, then freeze a small matched sample and configuration.
+4. Estimate cost from that pilot before requesting or scheduling a broader run.
+   The current budget does not authorize a large feature or parallel suite.
+5. Add batch and supervised measurements only after quality and workflow
+   completion work. Report quality, attention, speed, and cost side by side;
+   do not collapse them into an arbitrary composite score.
