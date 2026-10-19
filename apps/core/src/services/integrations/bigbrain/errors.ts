@@ -1,4 +1,10 @@
 export type BigbrainErrorCode =
+  | 'binding_unavailable'
+  | 'binding_changed'
+  | 'unsupported_host'
+  | 'busy'
+  | 'outcome_unknown'
+  | 'cancelled'
   | 'invalid_auth'
   | 'missing_scope'
   | 'rate_limited'
