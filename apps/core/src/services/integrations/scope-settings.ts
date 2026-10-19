@@ -3,10 +3,8 @@ import {
   db,
   settings,
   squads,
-  agents,
   integrationConnections as connections,
   integrationConnectionAssignments as assignments,
-  integrationExportConsents,
   type DbTx,
 } from '../../db'
 import { resolveOAuthAuthority } from './authorization/authority'
@@ -155,23 +153,6 @@ export async function reconcileSquadIntegration(
         .join(',')
     const changed = signature(existing) !== signature(desired)
     if (changed) {
-      const removed = existing.filter((item) => !desired.some((next) => next.connectionId === item.connectionId))
-      if (removed.length)
-        await tx
-          .update(integrationExportConsents)
-          .set({ revokedAt: new Date() })
-          .where(
-            and(
-              inArray(
-                integrationExportConsents.agentId,
-                tx.select({ id: agents.id }).from(agents).where(eq(agents.squadId, squadId))
-              ),
-              inArray(
-                integrationExportConsents.connectionId,
-                removed.map((item) => item.connectionId)
-              )
-            )
-          )
       await tx.delete(assignments).where(and(eq(assignments.squadId, squadId), eq(assignments.providerKey, provider)))
       if (desired.length)
         await tx.insert(assignments).values(desired.map((item) => ({ squadId, providerKey: provider, ...item })))

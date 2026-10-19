@@ -21,17 +21,15 @@ beforeEach(() => {
   }
 })
 
-test('help permits credentials only through stdin and requires explicit export consent', () => {
+test('help selects a local binding without tokens or transcript controls', () => {
   const program = new Command().exitOverride()
   registerIntegrationCommands(program)
   const integration = program.commands.find((command) => command.name() === 'integration')!
   const create = integration.commands.find((command) => command.name() === 'create')!.helpInformation()
-  expect(create).toContain('--credential-stdin')
-  expect(create).not.toContain('--squad')
-  expect(create).not.toContain('--token')
-  expect(create).not.toContain('--credential <')
-  const enable = integration.commands.find((command) => command.name() === 'export-enable')!.helpInformation()
-  expect(enable).toContain('--consent')
+  expect(create).toContain('--local-binding')
+  expect(create).not.toContain('--api-base')
+  expect(create).not.toContain('--credential-stdin')
+  expect(integration.commands.some((command) => command.name().startsWith('export-'))).toBe(false)
 })
 
 describe('commit signing visibility', () => {
@@ -98,16 +96,13 @@ describe('global connection lifecycle paths', () => {
     expect(apiGet).toHaveBeenCalledWith('/api/integrations/connections/connection-1')
   })
 
-  test('create and credential rotation use global paths with stdin-only values', async () => {
-    await run(
-      ['integration', 'create', 'bigbrain', '--api-base', 'https://brain.example', '--credential-stdin'],
-      'create-secret'
-    )
-    expect(apiPost).toHaveBeenCalledWith('/api/integrations/connections', {
-      provider: 'bigbrain',
-      displayName: 'Bigbrain',
-      configuration: { version: 1, apiBase: 'https://brain.example' },
-      credential: 'create-secret',
+  test('local selection and unrelated credential rotation use explicit endpoints', async () => {
+    await run(['integration', 'local-bindings', 'bigbrain'])
+    expect(apiGet).toHaveBeenCalledWith('/api/integrations/providers/bigbrain/local-bindings')
+    await run(['integration', 'create', 'bigbrain', '--local-binding', 'personal', '--display-name', 'Memory'])
+    expect(apiPost).toHaveBeenCalledWith('/api/integrations/providers/bigbrain/local-connections', {
+      bindingId: 'personal',
+      displayName: 'Memory',
     })
 
     await run(

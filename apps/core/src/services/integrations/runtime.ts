@@ -1,3 +1,5 @@
+import { BigbrainBindings } from './bigbrain/local-bindings'
+import { BigbrainLocalConnections } from './bigbrain/local-connections'
 import { GitHubIdentityAuthorization } from './github/identity-authorization'
 import { GitHubPersonalOAuthFinalizer } from './github/personal-oauth-finalizer'
 import { notifyDeliverySnapshotChanged } from './github/delivery-presentation-store'
@@ -81,16 +83,7 @@ import {
   DbIntegrationCredentialCleanupRepository,
   IntegrationCredentialCleanupWorker,
 } from './credential-cleanup-worker'
-import { ExportConsentService } from './export/consent-service'
-import { DbExportConsentRepository } from './export/db-consent-repository'
 import { DbIntegrationAuditRecorder } from './db-audit'
-import { DbExportOutboxRepository } from './export/db-outbox-repository'
-import { ExportOutbox } from './export/outbox'
-import { ExportCompletionProjector } from './export/completion-projector'
-import { IntegrationExportWorker } from './export/worker'
-import { IntegrationExportRuntime } from './export/runtime-worker'
-import { resolveExportDelivery, resolveExportDeliveryDecision } from './export/delivery-context'
-import { encrypt, decrypt, getEncryptionKey } from '../secrets/crypto'
 import { dispatchVerifiedWebhookEvent } from '../webhooks/dispatch'
 import { getLastRealWebhookDeliveriesForRepos } from '../webhooks/store'
 import { getLastGitHubRelayDeliveries } from './github/relay-deliveries'
@@ -147,20 +140,6 @@ import { buildSquadK8sSandboxOptions, resolveLifecycleGenerationForSandbox } fro
 import { Squad } from '../../entities/Squad'
 import { ensureSquadWorkspace } from '../squad/workspace'
 import { buildAgentProjectionTargets, withLazyProjectionManager } from './runtime-gate'
-
-export function isCurrentExportConsentConnection(
-  connection: { id: string } | null,
-  requestedConnectionId: string
-): boolean {
-  return connection?.id === requestedConnectionId
-}
-
-export function isCurrentExportConsentAgent(
-  agent: { squadId: string | null; parentAgentId: string | null } | null,
-  squadId: string
-): boolean {
-  return Boolean(agent && agent.squadId === squadId && !agent.parentAgentId)
-}
 
 const log = createLogger('integration-event-polling')
 const oauthLog = createLogger('integration-oauth')
@@ -568,7 +547,8 @@ export const integrationConnectionService = new IntegrationConnectionService({
     delete: (key) => getSecretStore().delete(key),
   },
   resolveProvider: (key, version) => integrationRegistry.require(key, version),
-  allowsManualCredential: (key) => integrationRegistry.plugin(key)?.authorization.kind !== 'oauth2',
+  allowsManualCredential: (key) =>
+    key !== 'bigbrain' && integrationRegistry.plugin(key)?.authorization.kind !== 'oauth2',
   currentOAuthAuthority: (key) =>
     integrationRegistry.plugin(key)?.authorization.kind === 'oauth2' ? resolveOAuthAuthority() : undefined,
   operatorAlert: sendOAuthControlPlaneAlert,
@@ -621,6 +601,7 @@ export async function initializeIntegrationDefaults() {
 }
 
 export const integrationRoutesService = Object.assign(integrationConnectionService, {
+  localBigbrain: new BigbrainLocalConnections(new BigbrainBindings(), integrationConnectionService),
   catalog: () =>
     Promise.all(
       [
@@ -883,139 +864,4 @@ export const squadIntegrationRoutesService = {
 export const integrationRevalidationWorker = new IntegrationRevalidationWorker(
   integrationConnectionRepository,
   integrationConnectionService
-)
-
-export const exportConsentService = new ExportConsentService(
-  new DbExportConsentRepository(),
-  {
-    check: async ({ agentId, squadId, connectionId }) => {
-      const [{ Agent }, { AgentType }, connection] = await Promise.all([
-        import('../../entities/Agent'),
-        import('../../entities/AgentType'),
-        integrationConnectionRepository.getAssigned(squadId, 'bigbrain'),
-      ])
-      const agent = await Agent.find(agentId)
-      const agentType = agent ? await AgentType.find(agent.agentTypeId) : null
-      const policyAllows =
-        agentType?.integrationCapabilities?.version === 1 &&
-        agentType.integrationCapabilities.allow.bigbrain?.includes('conversation_export')
-      return {
-        allowed: Boolean(
-          policyAllows &&
-          isCurrentExportConsentAgent(agent, squadId) &&
-          isCurrentExportConsentConnection(connection, connectionId) &&
-          connection?.enabled &&
-          connection.authState === 'authenticated' &&
-          connection.healthState === 'healthy' &&
-          connection.grantedScopes.includes('inbox:write') &&
-          connection.validatedRevision === connection.materialRevision &&
-          connection.validationExpiresAt &&
-          connection.validationExpiresAt > new Date()
-        ),
-      }
-    },
-  },
-  undefined,
-  integrationAuditRecorder
-)
-
-const exportOutboxRepository = new DbExportOutboxRepository()
-export const integrationExportOutbox = new ExportOutbox(exportOutboxRepository, {
-  encrypt: (plaintext) => encrypt(Buffer.from(plaintext).toString('base64'), getEncryptionKey()),
-  decrypt: (payload) => Buffer.from(decrypt(payload.encrypted, payload.iv, getEncryptionKey()), 'base64'),
-})
-export const integrationExportProjector = new ExportCompletionProjector(
-  integrationExportOutbox,
-  integrationAuditRecorder
-)
-
-const integrationExportWorker = new IntegrationExportWorker({
-  repository: exportOutboxRepository,
-  outbox: integrationExportOutbox,
-  recheck: async (batch) => {
-    const decision = await resolveExportDeliveryDecision(batch)
-    if (!decision.allowed && decision.permanent && decision.context) {
-      await integrationAuditRecorder.record({
-        connectionId: decision.context.connection.id,
-        squadId: decision.context.agent.squadId!,
-        agentId: decision.context.agent.id,
-        userId: decision.context.consent.consentedByUserId,
-        capability: 'conversation_export',
-        action: 'cancel',
-        outcome: 'denied',
-        code: decision.code,
-        idempotencyKey: batch.idempotencyKey,
-        recordCount: batch.recordCount,
-        byteCount: batch.byteCount,
-        at: new Date(),
-      })
-    }
-    return decision.allowed
-      ? { allowed: true as const }
-      : { allowed: false as const, code: decision.code, permanent: decision.permanent }
-  },
-  deliver: async (batch, payload) => {
-    const context = await resolveExportDelivery(batch)
-    if (!context) return { ok: false, code: 'runtime_gate_denied', gated: true, permanent: false }
-    const credential = getSecretStore().get(context.connection.credentialRef)
-    if (!credential) return { ok: false, code: 'credential_unavailable', gated: true, permanent: false }
-    try {
-      const exportDriver = integrationRegistry.plugin('bigbrain')?.runtime.conversationExport
-      if (!exportDriver) return { ok: false, code: 'provider_unavailable', gated: true, permanent: true }
-      await exportDriver.send({
-        payload,
-        connection: {
-          id: context.connection.id,
-          squadId: context.agent.squadId!,
-          providerKey: context.connection.providerKey,
-          adapterVersion: context.connection.adapterVersion,
-          configuration: context.connection.configuration as { version: 1; apiBase: string },
-        },
-        credential,
-        agentId: context.agent.id,
-        squadId: context.agent.squadId!,
-        streamId: batch.idempotencyKey,
-        fromLine: 1,
-      })
-      await integrationAuditRecorder.record({
-        connectionId: context.connection.id,
-        squadId: context.agent.squadId!,
-        agentId: context.agent.id,
-        capability: 'conversation_export',
-        action: 'deliver',
-        outcome: 'succeeded',
-        idempotencyKey: batch.idempotencyKey,
-        recordCount: batch.recordCount,
-        byteCount: batch.byteCount,
-        at: new Date(),
-      })
-      return { ok: true }
-    } catch (error) {
-      const code = error instanceof Error && 'code' in error ? String(error.code) : 'provider_error'
-      if (code === 'invalid_auth') {
-        await integrationConnectionRepository.disableRuntimeAuthFailure({
-          id: context.connection.id,
-          materialRevision: context.connection.materialRevision,
-        })
-      }
-      await integrationAuditRecorder.record({
-        connectionId: context.connection.id,
-        squadId: context.agent.squadId!,
-        agentId: context.agent.id,
-        capability: 'conversation_export',
-        action: 'deliver',
-        outcome: 'failed',
-        idempotencyKey: batch.idempotencyKey,
-        recordCount: batch.recordCount,
-        byteCount: batch.byteCount,
-        code,
-        at: new Date(),
-      })
-      return { ok: false, code, retryable: !['invalid_auth', 'missing_scope'].includes(code) }
-    }
-  },
-})
-export const integrationExportRuntime = new IntegrationExportRuntime(
-  integrationExportWorker,
-  integrationExportProjector
 )

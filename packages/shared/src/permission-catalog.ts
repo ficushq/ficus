@@ -41,7 +41,6 @@ export const PERMISSION_DESCRIPTIONS = {
     'Use connected integration accounts through Ficus, subject to squad access and provider permissions.',
   'integrations:write':
     'Enable integrations, configure credentials and webhooks, and manage accounts and squad connections.',
-  'integrations:export': 'Send conversation content to connected external services. Does not export credentials.',
   'memory:read': 'Browse, download, and search squad memory and view its synchronization status.',
   'memory:write': 'Create and edit squad memory and manage its indexing and synchronization.',
   'inbox:read': 'Read inbox messages and attachments within the caller’s allowed inboxes.',

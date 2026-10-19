@@ -36,6 +36,11 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
       requiredCapabilities: [],
     },
   ])
+  const localList = mock(async () => ({
+    state: 'available',
+    bindings: [{ id: 'approved', label: 'Approved', vaultPath: '/vault', executablePath: '/bin/bigbrain' }],
+  }))
+  const localCreate = mock(async () => get())
   const setEnabled = mock(async (_provider: string, enabled: boolean, _actor: string) => ({ enabled }))
   const list = mock(async () => [{ ...summary, configuration: { apiBase: 'secret' }, credentialRef: 'secret' }])
   const get = mock(async () => ({ ...summary, configuration: { version: 1 }, usage: { squadCount: 0, squads: [] } }))
@@ -99,6 +104,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
     '/api/integrations',
     createIntegrationsRouter({
       catalog,
+      localBigbrain: { list: localList, create: localCreate },
       setEnabled,
       list,
       get,
@@ -134,6 +140,8 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
   return {
     app,
     calls: {
+      localList,
+      localCreate,
       catalog,
       setEnabled,
       list,
@@ -745,14 +753,14 @@ describe('integration routes', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        provider: 'bigbrain',
+        provider: 'example',
         displayName: 'Brain',
-        configuration: { version: 1, apiBase: 'https://brain.example' },
+        configuration: { version: 1 },
         credential: 'bearer',
       }),
     })
     expect(response.status).toBe(201)
-    expect(calls.create).toHaveBeenCalledWith(expect.objectContaining({ providerKey: 'bigbrain' }))
+    expect(calls.create).toHaveBeenCalledWith(expect.objectContaining({ providerKey: 'example' }))
   })
 
   test('provider-exact write grant is denied for a loaded connection from another provider', async () => {
@@ -1263,4 +1271,35 @@ test('common personal callback reports generation/ownership domain refusals with
   } finally {
     await db.delete(users).where(eq(users.id, user!.id))
   }
+})
+
+test('local BigBrain endpoints require instance provider permissions before resolving bindings', async () => {
+  const denied = createApp({
+    type: 'system',
+    systemTokenId: 'token-local-denied',
+    name: 'local',
+    scopes: ['integrations:read:github'],
+  })
+  expect((await denied.app.request('/api/integrations/providers/bigbrain/local-bindings')).status).toBe(403)
+  expect(denied.calls.localList).not.toHaveBeenCalled()
+  const allowed = createApp({
+    type: 'system',
+    systemTokenId: 'token-local',
+    name: 'local',
+    scopes: ['integrations:read:bigbrain', 'integrations:write:bigbrain'],
+  })
+  expect((await allowed.app.request('/api/integrations/providers/bigbrain/local-bindings')).status).toBe(200)
+  const post = (body: unknown) =>
+    allowed.app.request('/api/integrations/providers/bigbrain/local-connections', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  expect((await post({ bindingId: 'approved', displayName: 'Memory', executablePath: '/evil' })).status).toBe(400)
+  expect(allowed.calls.localCreate).not.toHaveBeenCalled()
+  expect((await post({ bindingId: 'approved', displayName: 'Memory' })).status).toBe(201)
+  expect(allowed.calls.localCreate).toHaveBeenCalledWith(
+    { bindingId: 'approved', displayName: 'Memory' },
+    expect.any(String)
+  )
 })

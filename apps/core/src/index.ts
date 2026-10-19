@@ -1,3 +1,4 @@
+import { stopAllBigbrainProcesses } from './services/integrations/bigbrain/stdio-transport'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { mountCoreDocs } from './lib/docs-serve'
 import {
@@ -66,13 +67,10 @@ import { memoryRouter } from './routes/memory'
 import { grantsRouter } from './routes/grants'
 import { createIntegrationsRouter, createSquadIntegrationsRouter } from './routes/integrations'
 import {
-  exportConsentService,
   integrationRoutesService,
   githubIdentityRoutesService,
   squadIntegrationRoutesService,
 } from './services/integrations/runtime'
-import { createExternalExportRouter } from './routes/external-export'
-import { Agent } from './entities/Agent'
 import { routingRouter } from './routes/routing'
 import { amtpRouter } from './routes/amtp'
 import { userPreferencesRouter } from './routes/user-preferences'
@@ -320,17 +318,6 @@ app.route('/api/agents', agentPrivateRouter)
 app.route('/api/agents', agentSecretsRouter)
 app.route('/api/agents', agentDeliverySuggestionRouter)
 app.route('/api/agents', agentsRouter)
-app.route(
-  '/api/agents',
-  createExternalExportRouter({
-    service: exportConsentService,
-    findAgent: async (id) => {
-      const agent = await Agent.find(id)
-      return agent ? { id: agent.id, squadId: agent.squadId, parentAgentId: agent.parentAgentId } : null
-    },
-    authorize: (identity, squadId, permission) => hasPermission(identity, permission, squadId),
-  })
-)
 app.route('/api/artifacts', artifactsRouter)
 app.route('/api/inbox', inboxRouter)
 app.route('/api/squad-presets', squadPresetsRouter)
@@ -605,6 +592,7 @@ let unregisterAgentActivity: (() => void) | null = null
 let liveActivityFanout: LiveActivityFanout | null = null
 
 const subsystems: Subsystem[] = [
+  subsystem('bigbrain-processes', () => {}, stopAllBigbrainProcesses),
   subsystem(
     'squad-activity-materialization',
     () => {

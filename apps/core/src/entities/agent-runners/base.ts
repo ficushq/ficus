@@ -642,7 +642,7 @@ export abstract class AgentRunner {
       repository: integrationConnectionRepository,
       currentAuthority: deploymentOAuthAuthorityForProvider,
       supportedAdapterVersion: (provider) => integrationRegistry.get(provider)?.adapterVersion,
-      supportedConfigVersion: (provider) => (provider === 'bigbrain' ? 1 : undefined),
+      supportedConfigVersion: (provider) => (provider === 'bigbrain' ? 2 : undefined),
     })
     const factory = integrationRegistry.plugin('bigbrain')?.runtime.agentTools
     if (!factory) return []

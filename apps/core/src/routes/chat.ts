@@ -155,7 +155,7 @@ export const chatRouter = new Hono().post('/', zValidator('json', chatRequestSch
             throw new ImageInputUnsupportedError(IMAGE_UNSUPPORTED_ERROR)
           }
         },
-        // Export provenance is server-owned and only a resolved human direct chat qualifies.
+        // Direct-chat provenance is server-owned and only a resolved human direct chat qualifies.
         metadata: sender
           ? {
               ...(input.pagePath ? { pagePath: input.pagePath } : {}),

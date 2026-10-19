@@ -128,20 +128,28 @@ export function registerIntegrationCommands(
     .description('Show one connection. GitHub connections include commitSigning, checked against GitHub')
     .action(run(async (connection) => showConnections(await apiGet(`/api/integrations/connections/${connection}`))))
   integration
+    .command('local-bindings <provider>')
+    .description('List operator-approved BigBrain vaults on the Core host (same-host self-hosted only)')
+    .action(
+      run(async (provider) => {
+        if (provider !== 'bigbrain') throw new Error('Local bindings are supported only for BigBrain')
+        output(await apiGet('/api/integrations/providers/bigbrain/local-bindings'))
+      })
+    )
+  integration
     .command('create <provider>')
-    .requiredOption('--api-base <url>')
-    .requiredOption('--credential-stdin', 'Read bearer credential from stdin')
+    .description(
+      'Select a local vault already declared by the Core host operator; paths belong to Core, not this CLI device'
+    )
+    .requiredOption('--local-binding <id>', 'Approved Core host binding ID')
     .option('--display-name <name>', 'Display name')
     .action(
       run(async (provider, options) => {
-        if (!options.credentialStdin) throw new Error('--credential-stdin is required')
-        const credential = await dependencies.readCredential()
+        if (provider !== 'bigbrain') throw new Error('Use the provider authorization flow for this integration')
         output(
-          await apiPost('/api/integrations/connections', {
-            provider,
-            displayName: options.displayName ?? 'Bigbrain',
-            configuration: { version: 1, apiBase: options.apiBase },
-            credential,
+          await apiPost('/api/integrations/providers/bigbrain/local-connections', {
+            bindingId: options.localBinding,
+            displayName: options.displayName ?? 'BigBrain',
           })
         )
       })
@@ -218,33 +226,6 @@ export function registerIntegrationCommands(
         output({ assigned: false })
       })
     )
-
-  integration
-    .command('export-status <agent>')
-    .action(run(async (agent) => output(await apiGet(`/api/agents/${agent}/external-export`))))
-  integration
-    .command('export-enable <agent>')
-    .requiredOption('--connection <uuid>')
-    .requiredOption('--consent', 'Explicitly consent to prospective eligible text export')
-    .action(
-      run(async (agent, options) => {
-        if (!options.consent) throw new Error('--consent is required')
-        output(
-          await apiPost(`/api/agents/${agent}/external-export`, {
-            connectionId: options.connection,
-            consent: true,
-            policyVersion: 1,
-            projectionVersion: 1,
-          })
-        )
-      })
-    )
-  integration.command('export-disable <agent>').action(
-    run(async (agent) => {
-      await apiDelete(`/api/agents/${agent}/external-export`)
-      output({ state: 'disabled' })
-    })
-  )
 }
 
 const SIGNING_STATE = { on: 'on', off: 'off', needs_attention: 'needs attention' } as const

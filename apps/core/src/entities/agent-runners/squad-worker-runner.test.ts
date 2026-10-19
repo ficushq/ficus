@@ -453,7 +453,7 @@ describe('SquadWorkerRunner artifact tool registration', () => {
   })
 
   it('captures the exact final policy-filtered environment including dynamic integration tools', async () => {
-    integrationTools = [{ name: 'bigbrain_search' }]
+    integrationTools = [{ name: 'bigbrain_search_vault' }]
     const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
     const agentType = makeAgentType({
       id: 'worker',
@@ -473,7 +473,7 @@ describe('SquadWorkerRunner artifact tool registration', () => {
         config.tools.allow,
         config.tools.deny
       ).map((tool) => tool.name)
-      expect(effectiveParentNames).toEqual(['bash', 'bigbrain_search'])
+      expect(effectiveParentNames).toEqual(['bash', 'bigbrain_search_vault'])
       expect(dispatchSpy.mock.calls[0]?.[0].parentExecutionContext?.environmentToolNames).toEqual(effectiveParentNames)
     } finally {
       dispatchSpy.mockRestore()

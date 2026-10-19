@@ -1,3 +1,4 @@
+import { stopAllBigbrainProcesses } from './services/integrations/bigbrain/stdio-transport'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { forwardAssistantUpdates, reconcileAssistantSummaries } from './services/assistant-conversation-updates'
 import { Hono } from 'hono'
@@ -446,6 +447,7 @@ const assistantUpdateRunner = createPeriodicRunner({
   },
 })
 const subsystems: Subsystem[] = [
+  subsystem('bigbrain-processes', () => {}, stopAllBigbrainProcesses),
   subsystem(
     'assistant-update-forwarding',
     () => assistantUpdateRunner.start(),
@@ -552,17 +554,6 @@ const subsystems: Subsystem[] = [
     async () => {
       const { maintenanceWorkerController } = await import('./services/maintenance')
       await maintenanceWorkerController.stop()
-    }
-  ),
-  subsystem(
-    'integration-export',
-    async () => {
-      const { integrationExportRuntime } = await import('./services/integrations/runtime')
-      integrationExportRuntime.start()
-    },
-    async () => {
-      const { integrationExportRuntime } = await import('./services/integrations/runtime')
-      await integrationExportRuntime.stop()
     }
   ),
   subsystem(

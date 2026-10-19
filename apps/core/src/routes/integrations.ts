@@ -1,3 +1,5 @@
+import { BigbrainError } from '../services/integrations/bigbrain/errors'
+import type { BigbrainLocalConnections } from '../services/integrations/bigbrain/local-connections'
 import { resolveDefaultGitHubIdentity } from '../services/sandbox/github-identity'
 import { isDeploymentIntegration } from '../services/integrations/deployment/settings'
 import { isChannelIntegration, type ChannelSettingsView } from '../services/integrations/channels/settings'
@@ -87,6 +89,7 @@ export interface IntegrationRoutesService extends Pick<
   IntegrationConnectionService,
   'create' | 'validate' | 'enable' | 'disable' | 'replaceCredential' | 'remove'
 > {
+  localBigbrain?: Pick<BigbrainLocalConnections, 'list' | 'create'>
   serviceSettings?: {
     get(provider: string): ReturnType<typeof getDeploymentIntegrationSettings>
     configure(
@@ -253,6 +256,42 @@ async function completionAccess(
 
 export function createIntegrationsRouter(service: IntegrationRoutesService): Hono {
   return new Hono()
+    .get('/providers/bigbrain/local-bindings', async (c) => {
+      const denied = await authorize(c, 'integrations:read:bigbrain')
+      if (denied) return denied
+      return c.json((await service.localBigbrain?.list()) ?? { state: 'setup_required', bindings: [] })
+    })
+    .post(
+      '/providers/bigbrain/local-connections',
+      zValidator(
+        'json',
+        z
+          .object({
+            bindingId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+            displayName: z.string().trim().min(1).max(200),
+          })
+          .strict()
+      ),
+      async (c) => {
+        const denied = await authorize(c, 'integrations:write:bigbrain')
+        if (denied) return denied
+        if (!service.localBigbrain)
+          return c.json({ error: 'Local BigBrain setup is unavailable on this Core host' }, 400)
+        try {
+          return c.json(await service.localBigbrain.create(c.req.valid('json'), identityActor(c.get('identity'))), 201)
+        } catch (error) {
+          if (error instanceof BigbrainError)
+            return c.json(
+              {
+                error: `Local BigBrain setup failed (${error.code}). Check the Core host binding declaration.`,
+                code: error.code,
+              },
+              400
+            )
+          throw error
+        }
+      }
+    )
     .get('/outputs', async (c) => {
       if (!c.get('identity')) return c.json({ error: 'Unauthorized' }, 401)
       c.set('authzChecked', true)
@@ -601,6 +640,8 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const body = c.req.valid('json')
       const denied = await authorize(c, `integrations:write:${body.provider}`)
       if (denied) return denied
+      if (body.provider === 'bigbrain')
+        return c.json({ error: 'Select an approved local BigBrain binding instead of a credential' }, 400)
       try {
         return c.json(
           await service.create({
@@ -628,6 +669,8 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const denied = await authorizeConnection(c, service, 'write')
       if (denied) return denied
       const body = c.req.valid('json')
+      if ((await service.providerFor(c.req.param('connectionId'))) === 'bigbrain')
+        return c.json({ error: 'Create a new local BigBrain connection to change its binding' }, 400)
       try {
         return c.json(
           await service.replaceCredential(

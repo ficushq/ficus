@@ -185,7 +185,6 @@ export interface MessageMetadata {
   replySuggestions?: string[]
   /** Server-owned direct-chat provenance; request bodies must not set these fields. */
   executionId?: string
-  externalExport?: 'disabled' | 'enabled'
   content?: ContentBlock[]
   imageIds?: string[] // Array of image UUIDs attached to the message
   deliveryMode?: DeliveryMode // How the message was delivered (steer or follow-up)
@@ -585,7 +584,6 @@ export interface TaskTypeWithSteps extends TaskType {
 
 export const INTEGRATION_CAPABILITIES = [
   'agent_tools',
-  'conversation_export',
   'webhook_ingress',
   'messaging',
   'memory_source',

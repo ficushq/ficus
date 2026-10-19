@@ -241,15 +241,6 @@ export const integrationHealthStateEnum = pgEnum('integration_health_state', [
   'degraded',
   'unreachable',
 ])
-export const integrationExportBatchStateEnum = pgEnum('integration_export_batch_state', [
-  'pending',
-  'processing',
-  'retry_wait',
-  'delivered',
-  'dead_letter',
-  'canceled',
-])
-
 // Tables
 export const skills = pgTable('skills', {
   id: varchar('id', { length: 100 }).primaryKey(),
@@ -4307,75 +4298,6 @@ export const integrationRevocationJobs = pgTable(
       'integration_revocation_jobs_client_authority_check',
       sql`${table.clientAuthority} in ('local', 'platform_broker')`
     ),
-  ]
-)
-
-export const integrationExportConsents = pgTable(
-  'integration_export_consents',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    connectionId: uuid('connection_id')
-      .notNull()
-      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
-    agentId: uuid('agent_id')
-      .notNull()
-      .references(() => agents.id, { onDelete: 'cascade' }),
-    consentedByUserId: uuid('consented_by_user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'restrict' }),
-    consentedAt: timestamp('consented_at', { withTimezone: true }).notNull().defaultNow(),
-    revokedAt: timestamp('revoked_at', { withTimezone: true }),
-    policyVersion: integer('policy_version').notNull().default(1),
-    projectionVersion: integer('projection_version').notNull().default(1),
-    adoptedEnqueueOrder: bigint('adopted_enqueue_order', { mode: 'bigint' }).notNull(),
-  },
-  (table) => [
-    uniqueIndex('uq_integration_export_consents_active_agent')
-      .on(table.agentId)
-      .where(sql`${table.revokedAt} IS NULL`),
-    index('idx_integration_export_consents_connection').on(table.connectionId),
-  ]
-)
-
-export const integrationExportCursors = pgTable('integration_export_cursors', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  consentId: uuid('consent_id')
-    .notNull()
-    .unique()
-    .references(() => integrationExportConsents.id, { onDelete: 'cascade' }),
-  lastDeliveredEnqueueOrder: bigint('last_delivered_enqueue_order', { mode: 'bigint' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
-
-export const integrationExportBatches = pgTable(
-  'integration_export_batches',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    cursorId: uuid('cursor_id')
-      .notNull()
-      .references(() => integrationExportCursors.id, { onDelete: 'cascade' }),
-    idempotencyKey: uuid('idempotency_key').notNull().defaultRandom(),
-    firstEnqueueOrder: bigint('first_enqueue_order', { mode: 'bigint' }).notNull(),
-    lastEnqueueOrder: bigint('last_enqueue_order', { mode: 'bigint' }).notNull(),
-    recordCount: integer('record_count').notNull(),
-    byteCount: integer('byte_count').notNull(),
-    encryptedPayload: text('encrypted_payload'),
-    payloadIv: text('payload_iv'),
-    state: integrationExportBatchStateEnum('state').notNull().default('pending'),
-    attempts: integer('attempts').notNull().default(0),
-    leaseToken: uuid('lease_token'),
-    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
-    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
-    lastErrorCode: varchar('last_error_code', { length: 64 }),
-    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    unique('uq_integration_export_batches_idempotency').on(table.idempotencyKey),
-    unique('uq_integration_export_batches_cursor_first_order').on(table.cursorId, table.firstEnqueueOrder),
-    index('idx_integration_export_batches_due').on(table.nextAttemptAt, table.state),
   ]
 )
 

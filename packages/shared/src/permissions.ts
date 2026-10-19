@@ -52,7 +52,6 @@ export const Permissions = {
   INTEGRATIONS_READ: 'integrations:read',
   INTEGRATIONS_USE: 'integrations:use',
   INTEGRATIONS_WRITE: 'integrations:write',
-  INTEGRATIONS_EXPORT: 'integrations:export',
 
   // Memory
   MEMORY_READ: 'memory:read',

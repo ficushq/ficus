@@ -4,10 +4,16 @@ import { assertIntegrationPluginContract } from './plugin-contract'
 import { notionPlugin } from './notion/plugin'
 
 const fixtures = {
-  validConfiguration: { version: 1 as const, apiBase: 'https://brain.example' },
+  validConfiguration: {
+    version: 2 as const,
+    bindingId: 'approved',
+    bindingFingerprint: 'a'.repeat(64),
+    vaultPath: '/vault',
+    executablePath: '/bin/bigbrain',
+  },
   invalidConfigurations: [{ version: 1, apiBase: 'https://brain.example', extra: true }],
-  credential: 'bearer-SENTINEL',
-  secretSentinels: ['bearer-SENTINEL'],
+  credential: 'aabb0011',
+  secretSentinels: ['aabb0011'],
 }
 
 describe('first-party integration plugin contract', () => {

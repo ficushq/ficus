@@ -8,12 +8,12 @@ describe('agent type integration policy', () => {
   test('parses, normalizes, persists, and exports version 1 policy', () => {
     const sync = new AgentTypeSync()
     const parsed = sync.parse(
-      `${base}integrations:\n  version: 1\n  allow:\n    bigbrain: [agent_tools, agent_tools, conversation_export]\n`,
+      `${base}integrations:\n  version: 1\n  allow:\n    bigbrain: [agent_tools, agent_tools]\n`,
       'test.yaml'
     )
     expect(parsed.integrations).toEqual({
       version: 1,
-      allow: { bigbrain: ['agent_tools', 'conversation_export'] },
+      allow: { bigbrain: ['agent_tools'] },
     })
     const record = sync.toRecord(parsed)
     expect(record.integrationCapabilities).toEqual(parsed.integrations)
