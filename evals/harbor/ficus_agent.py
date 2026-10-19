@@ -22,6 +22,27 @@ RUNTIME = ROOT + "/runtime"
 ACTIVE = {"queued", "waiting-maintenance", "waiting-sandbox", "running", "stopping"}
 
 
+def squad_handoff(instruction):
+    """Keep task text verbatim while making the requested execution mode explicit."""
+    return (
+        "Complete the task below through a full Ficus squad with independent review.\n\n"
+        "BEGIN TASK\n" + instruction + "\nEND TASK\n\n"
+        "Execution contract: you are the manager, not the implementer. Before investigating "
+        "or changing task files, use squad_bash to create a work stream with "
+        "`ficus workstream create <title> --squad <your-squad-id> --owner <your-agent-id> "
+        "--workflow builder-reviewer -d <self-contained-description>`. Your IDs are in "
+        "your system context; consult CLI help if needed. Include the complete task, "
+        "the exact workspace path, and the user's authorization for in-place changes "
+        "in this disposable, single-task workspace. Omit repository/branch/worktree "
+        "provisioning flags: this workspace already supplies isolation. Let the flow "
+        "run its engineer and independent reviewer; coordinate blockers and rework. "
+        "Do not implement the task yourself or replace independent review with a "
+        "manager self-check, even if the task looks small. No human is available: "
+        "delegate investigation of ambiguity to the engineer. Deliver the final files "
+        "in the original workspace without GitHub, a PR, or remote deployment."
+    )
+
+
 def disposition(snapshot):
     """A quiet manager is not completion while its delegated work is still active."""
     turns = snapshot["executions"]
@@ -250,16 +271,7 @@ class FicusSquad(BaseAgent):
                     "baseUrl": access.base_url,
                     "key": access.api_key,
                     "workspace": self.workspace,
-                    "instruction": (
-                        "Execute the following task through the full squad, not as a manager-only chat. "
-                        "First create and start a work stream using the configured builder-reviewer workflow "
-                        "and yourself as owner. Delegate implementation to its engineer, let its independent "
-                        "reviewer check the result, and handle any rework through the workflow. "
-                        "This is an unattended local delivery: resolve ambiguity by inspecting the workspace, "
-                        "do not request human replies or GitHub delivery, and leave final files in the original "
-                        "task workspace. The task below is the complete user requirement.\n\n"
-                        "Task:\n" + instruction
-                    ),
+                    "instruction": squad_handoff(instruction),
                 },
             )
             await self.bootstrap_command(environment, "seed", "identity.json")

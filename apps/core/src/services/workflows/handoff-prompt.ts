@@ -76,6 +76,7 @@ export function flowMessage(
     attempt.branch || activeWorkflowAttempts(run.state).length > 1
       ? 'Parallel work is active in this shared workspace.'
       : '',
+    'Before ending a completed step, execute the advance command below with your actual outcome and evidence, and check that it succeeds. A written verdict, notify_contact message, inbox read, or memory note does not advance the workflow. If the command fails, inspect the current flow and resolve the error rather than reporting completion. If your attempt is paused or blocked, respect that state instead of advancing.',
     `Prefer --content with single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer evidence; no temporary file is needed. Choose the appropriate outcome above and replace the evidence string:\n\`\`\`bash\nficus workstream advance ${workStreamRef(stream)} --stdin <<'FICUS_COMMAND'\n${JSON.stringify(example, null, 2)}\nFICUS_COMMAND\n\`\`\``,
     step.kind === 'decision' ? '' : ATTACH_GUIDANCE,
   ]

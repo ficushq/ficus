@@ -24,6 +24,7 @@ Every Ficus attempt had an empty disposable database and memory disabled.
 | `pi-fix-git-gpt41` | GPT-4.1 | Official reward 1 | Harbor's Pi baseline completed the task. |
 | `ficus-fix-git-gpt41` | GPT-4.1 | Official reward 0 | Manager implemented directly and delivered an incorrect resolution; no worker/reviewer. |
 | `ficus-fix-git-envelope` | GPT-4.1 | Official reward 0 | Manager attempted work-stream creation, selected a PR workflow, and hit repository/worktree setup errors; inference later hit the conservative cap. |
+| `ficus-fix-git-local-delivery` | GPT-4.1 | Official reward 1 | Correct local delivery, but manager implemented directly; no engineer or reviewer. |
 
 Model snapshots were `gpt-4.1-mini-2025-04-14` and `gpt-4.1-2025-04-14`.
 The Pi baseline was 0.99.1 with thinking off and Chat Completions; Ficus uses the
@@ -89,3 +90,17 @@ and an official verifier result. Until then, this is a draft integration. More
 inference requires reconciling the unknown reservations against authoritative
 provider usage or explicitly authorizing additional budget; do not reset the
 ledger to get around the cap.
+
+## Authorized continuation
+
+The user authorized another $10, raising the cumulative cap to $20. The original
+ledger and its four unknown reservations remain intact. The first continuation
+(`ficus-fix-git-local-delivery`) used the corrected local workflow bootstrap and
+passed the official task verifier, but again ran only the manager. Its 18 new
+requests all returned metered usage, adding $0.313942. This is evidence of local
+delivery, not full-squad orchestration.
+
+The next development configuration makes the generic handoff explicit about the
+first CLI work-stream creation action and prohibits manager implementation even
+for a small task. The original task remains verbatim; no task-specific solution
+hint is added. It is recorded separately as `ficus-fix-git-explicit-orchestration`.

@@ -68,7 +68,8 @@ python evals/harbor/budget_proxy.py --state /tmp/ficus-pilot --cap-usd 10 \
 The key stays in the proxy. The generated `access.json` contains only scoped
 trial tokens. Keep the proxy state private and outside the source checkout. The
 proxy listens on the host so Docker can reach it, requires a random bearer token,
-and only forwards to the fixed OpenAI endpoint. Stop it when the pilot ends.
+and only forwards to the fixed OpenAI endpoint. Stop it when the pilot ends. The default cap is $10; the CLI permits at most $20.
+Raise it only with explicit budget authorization, reusing the same ledger.
 The runner below assumes Docker Desktop/OrbStack's `host.docker.internal` name.
 
 In another terminal with the venv active:

@@ -8,7 +8,17 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from budget_proxy import FULL_MODEL, MODEL, RESERVATION, Budget, handler, validate
-from ficus_agent import FicusSquad, disposition
+from ficus_agent import FicusSquad, disposition, squad_handoff
+
+
+class HandoffTests(unittest.TestCase):
+    def test_original_task_is_verbatim_and_orchestration_is_explicit(self):
+        task = "An arbitrary task.\nKeep its exact wording and whitespace.  "
+        handoff = squad_handoff(task)
+        self.assertIn("BEGIN TASK\n" + task + "\nEND TASK", handoff)
+        self.assertIn("--workflow builder-reviewer", handoff)
+        self.assertIn("Do not implement the task yourself", handoff)
+        self.assertIn("independent reviewer", handoff)
 
 
 class CompletionTests(unittest.TestCase):
@@ -62,6 +72,27 @@ class BudgetTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 restarted.reserve("baseline")
             self.assertEqual(restarted.summary()["squad"]["usd_upper_bound"], 1)
+
+    def test_authorized_cap_increase_preserves_old_unknown_reservations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "spend.sqlite"
+            original = Budget(path, 10, FULL_MODEL)
+            for _ in range(4):
+                original.reserve("old-unknown")
+            with self.assertRaises(ValueError):
+                original.reserve("next-run")
+            increased = Budget(path, 20, FULL_MODEL)
+            for _ in range(5):
+                increased.reserve("next-run")
+            with self.assertRaises(ValueError):
+                increased.reserve("over-cap")
+            self.assertEqual(increased.summary()["old-unknown"]["unknown_usage"], 4)
+            self.assertAlmostEqual(
+                increased.summary()["old-unknown"]["usd_upper_bound"], 8.8
+            )
+            self.assertAlmostEqual(
+                increased.summary()["next-run"]["usd_upper_bound"], 11
+            )
 
     def test_usage_settlement_includes_cached_tokens(self):
         with tempfile.TemporaryDirectory() as directory:

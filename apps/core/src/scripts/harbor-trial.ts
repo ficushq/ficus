@@ -1,7 +1,18 @@
 /** Isolated Harbor trial bootstrap/observer. Never point this at an existing instance. */
 import { readFile, writeFile } from 'node:fs/promises'
 import { asc, and, eq, isNull } from 'drizzle-orm'
-import { db, agents, agentTypes, modelTiers, executions, messages, workStreams, inferenceUsage } from '../db'
+import {
+  db,
+  agents,
+  agentTypes,
+  modelTiers,
+  executions,
+  messages,
+  workStreams,
+  inferenceUsage,
+  workStreamFlowRuns,
+  workStreamWaits,
+} from '../db'
 import { getSecretStore } from '../services/secrets'
 import { getSettingsStore } from '../services/settings'
 import { writeAccountStore } from '../services/agent/account-store'
@@ -80,7 +91,7 @@ if (command === 'seed') {
   await writeFile(output, JSON.stringify({ squadId: squad.id, managerId: manager.id }))
 } else if (command === 'snapshot') {
   // The database belongs to exactly one trial: include all agents, even parented children.
-  const [members, turns, streams, usage, pendingMessages] = await Promise.all([
+  const [members, turns, streams, usage, pendingMessages, flows, waits] = await Promise.all([
     db
       .select({
         id: agents.id,
@@ -105,8 +116,27 @@ if (command === 'seed') {
       .select({ id: messages.id })
       .from(messages)
       .where(and(eq(messages.pending, true), isNull(messages.injectedAt))),
+    db
+      .select({
+        workStreamId: workStreamFlowRuns.workStreamId,
+        version: workStreamFlowRuns.version,
+        state: workStreamFlowRuns.state,
+      })
+      .from(workStreamFlowRuns),
+    db
+      .select({
+        workStreamId: workStreamWaits.workStreamId,
+        type: workStreamWaits.type,
+        actor: workStreamWaits.actor,
+        message: workStreamWaits.message,
+      })
+      .from(workStreamWaits)
+      .where(isNull(workStreamWaits.closedAt)),
   ])
-  await writeFile(output, JSON.stringify({ agents: members, executions: turns, streams, usage, pendingMessages }))
+  await writeFile(
+    output,
+    JSON.stringify({ agents: members, executions: turns, streams, usage, pendingMessages, flows, waits })
+  )
 } else if (command === 'export') {
   const transcript = await db
     .select({

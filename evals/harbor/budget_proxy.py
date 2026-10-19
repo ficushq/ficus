@@ -251,8 +251,8 @@ def main():
     parser.add_argument("--cap-usd", type=float, default=10)
     parser.add_argument("--client", action="append", required=True)
     args = parser.parse_args()
-    if not 0 < args.cap_usd <= 10:
-        parser.error("Pilot cap must be between $0 and $10")
+    if not 0 < args.cap_usd <= 20:
+        parser.error("Pilot cap must be between $0 and $20")
     args.state.mkdir(mode=0o700, parents=True, exist_ok=True)
     api_key = os.environ.pop("OPENAI_API_KEY")
     tokens = {secrets.token_urlsafe(32): client for client in args.client}
