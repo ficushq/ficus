@@ -9,6 +9,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import uuid
 from pathlib import Path
@@ -62,6 +63,8 @@ def prepare(task, image, output):
     task = task.resolve(strict=True)
     if not task.name.endswith(".lv1"):
         raise ValueError("Only audited lv1 task preparation is supported")
+    if not task.name.startswith("pydantic__pydantic."):
+        raise ValueError("Only the audited Pydantic verifier layout is supported")
     if output.exists():
         raise ValueError("Output must be new; do not overwrite a frozen task")
     source_paths = [
@@ -137,6 +140,37 @@ def prepare(task, image, output):
                     task / "environment" / filename
                 ):
                     raise ValueError("Image fixture does not match task: " + filename)
+            # Immutable acceptance files stay host-side until grading. Include the
+            # complete test tree and pytest configuration, not agent-authored tests.
+            with (fixtures / "verifier-inputs.tar.gz").open("wb") as target:
+                docker(
+                    "exec",
+                    container,
+                    "git",
+                    "-C",
+                    "/testbed",
+                    "archive",
+                    "--format=tar.gz",
+                    "HEAD",
+                    "tests",
+                    "pyproject.toml",
+                    stdout=target,
+                )
+            with tarfile.open(fixtures / "verifier-inputs.tar.gz") as archive:
+                expected = {
+                    member.name: (
+                        "symlink:" + member.linkname
+                        if member.issym()
+                        else hashlib.sha256(
+                            archive.extractfile(member).read()
+                        ).hexdigest()
+                    )
+                    for member in archive.getmembers()
+                    if member.isfile() or member.issym()
+                }
+            (fixtures / "verifier-inputs.json").write_text(
+                json.dumps(expected, sort_keys=True)
+            )
             docker("exec", container, "bash", "-c", SANITIZE)
             audit = docker(
                 "exec",
@@ -175,11 +209,30 @@ printf 'working_tree='; git status --porcelain
             )
             for filename in ("task.toml", "instruction.md"):
                 shutil.copyfile(task / filename, stage / filename)
+            task_config = stage / "task.toml"
+            task_config.write_text(
+                'artifacts = [{ source = "/testbed", destination = "workspace", exclude = [".git", "__pycache__", ".pytest_cache"] }]\n\n'
+                + task_config.read_text()
+            )
             shutil.copytree(task / "tests", stage / "tests", dirs_exist_ok=True)
             shutil.copyfile(task / "tests/test.sh", stage / "tests/upstream-test.sh")
             (stage / "tests/restore.sh").write_text(RESTORE)
+            shutil.copyfile(
+                Path(__file__).with_name("verify_featurebench.py"),
+                stage / "tests/verify_featurebench.py",
+            )
             (stage / "tests/test.sh").write_text(
-                "#!/bin/bash\nset -euo pipefail\nbash /tests/restore.sh\nexec bash /tests/upstream-test.sh\n"
+                "#!/bin/bash\nset -euo pipefail\n"
+                "mkdir -p /logs/artifacts /logs/verifier\n"
+                "tar -czf /logs/artifacts/submission.tar.gz --exclude=.git --exclude=__pycache__ --exclude=.pytest_cache -C /testbed .\n"
+                "sha256sum /logs/artifacts/submission.tar.gz > /logs/artifacts/submission.sha256\n"
+                "# A failed preparation/check can never leave a passing reward.\n"
+                "trap 'echo 0 > /logs/verifier/reward.txt; echo verifier_input_failure > /logs/verifier/reason.txt' ERR\n"
+                "bash /tests/restore.sh\n"
+                "python3 /tests/verify_featurebench.py restore\n"
+                "git -C /testbed restore --source=HEAD --staged -- tests pyproject.toml\n"
+                "bash /tests/upstream-test.sh\n"
+                "python3 /tests/verify_featurebench.py check\n"
             )
             # Oracle fixtures are uploaded only when running Harbor's oracle agent.
             shutil.copytree(stage / "tests", stage / "solution")
@@ -197,6 +250,8 @@ printf 'working_tree='; git status --porcelain
                 "agent_image_tag": tag,
                 "preparation_sha256": digest(Path(__file__)),
                 "audit": audit,
+                "verifier_inputs_sha256": digest(fixtures / "verifier-inputs.tar.gz"),
+                "verifier_guard_sha256": digest(stage / "tests/verify_featurebench.py"),
                 "grader_unchanged": digest(stage / "tests/upstream-test.sh")
                 == provenance["tests/test.sh"],
             }

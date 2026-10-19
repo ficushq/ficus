@@ -88,3 +88,69 @@ class FeatureBenchIsolationTests(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse((repo / ".git").exists())
+
+
+class VerifierInputTests(unittest.TestCase):
+    def test_colliding_agent_tests_are_replaced_and_source_is_preserved(self):
+        import hashlib
+
+        from verify_featurebench import restore_inputs, verify_inputs
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            official = root / "official"
+            (official / "tests").mkdir(parents=True)
+            (official / "tests/test_feature.py").write_text(
+                "assert implementation() == 42\n"
+            )
+            (official / "pyproject.toml").write_text("[tool.pytest.ini_options]\n")
+            (official / "tests/linked").symlink_to("../source-tests")
+            expected = {
+                str(p.relative_to(official)): (
+                    "symlink:" + str(p.readlink())
+                    if p.is_symlink()
+                    else hashlib.sha256(p.read_bytes()).hexdigest()
+                )
+                for p in official.rglob("*")
+                if p.is_file() or p.is_symlink()
+            }
+            archive = root / "fixtures.tar.gz"
+            with tarfile.open(archive, "w:gz") as target:
+                target.add(official / "tests", arcname="tests")
+                target.add(official / "pyproject.toml", arcname="pyproject.toml")
+            repo = root / "testbed"
+            (repo / "tests").mkdir(parents=True)
+            (repo / "tests/test_feature.py").write_text("assert True\n")
+            (repo / "tests/conftest.py").write_text("# agent collection override\n")
+            (repo / "pyproject.toml").write_text("# agent config\n")
+            (repo / "implementation.py").write_text("ANSWER = 42\n")
+            restore_inputs(repo, archive, expected)
+            self.assertEqual(
+                (repo / "tests/test_feature.py").read_text(),
+                "assert implementation() == 42\n",
+            )
+            self.assertFalse((repo / "tests/conftest.py").exists())
+            self.assertEqual(str((repo / "tests/linked").readlink()), "../source-tests")
+            self.assertEqual((repo / "implementation.py").read_text(), "ANSWER = 42\n")
+            (repo / "tests/test_feature.py").write_text("assert True\n")
+            with self.assertRaisesRegex(ValueError, "hashes"):
+                verify_inputs(repo, expected)
+
+    def test_unsafe_fixture_is_rejected_before_submission_changes(self):
+        import io
+
+        from verify_featurebench import restore_inputs
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tests").mkdir()
+            keep = root / "tests/keep.py"
+            keep.write_text("original")
+            archive = root / "bad.tar.gz"
+            with tarfile.open(archive, "w:gz") as target:
+                member = tarfile.TarInfo("../outside.py")
+                member.size = 1
+                target.addfile(member, io.BytesIO(b"x"))
+            with self.assertRaisesRegex(ValueError, "Unsafe"):
+                restore_inputs(root, archive, {})
+            self.assertEqual(keep.read_text(), "original")

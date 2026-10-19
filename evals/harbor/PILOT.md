@@ -1,6 +1,6 @@
 # Pilot evidence — 2026-10-19
 
-Status: **four native GPT-6.1 Sol adapter checks passed; feature-level comparison remains pending**.
+Status: **four native GPT-6.1 Sol adapter checks passed; the feature pilot exposed a verifier defect and was stopped for repair**.
 The chronological sections below preserve earlier failures; the final section
 records the current validated configuration.
 Do not publish these attempts as a Ficus squad leaderboard result.
@@ -307,3 +307,83 @@ provider test (one test, six assertions), Core typecheck, Ruff/format, and white
 checks. The next step is an existing feature benchmark with a frozen sample and
 its official evaluator; the smoke checks alone do not answer the product-value
 question.
+
+## Frozen FeatureBench pilot
+
+The task and four-arm configuration were frozen in `feature-pilot.json` before
+inference. The isolated lv1 task retains the byte-identical upstream grader;
+its masked baseline scores 0 and reference solution scores 1. Source and image
+provenance, answer-material removal, and preparation failures are recorded in
+[FEATUREBENCH.md](FEATUREBENCH.md). This is one exploratory Pydantic task, not a
+representative estimate or leaderboard result. No operator messages, fabricated
+approvals, retries, or changes to the frozen configuration were supplied.
+
+### Ficus planned: orchestration completed, acceptance failed
+
+`feature-ficus-planned-1` received official reward **0**, with **10 tests passed
+and 2 failed**, without a Harbor exception. The manager, architect, engineer,
+and independent reviewer all executed. Design completed, implementation advanced
+to review, the reviewer requested changes, the engineer repaired the issue,
+and the second review approved. The stream ended `done`, with no pending
+messages or open waits. The flow's final status was `completion-ready`.
+
+The first review found inherited computed-field metadata shared between parent
+and child models: child configuration could change parent serialization after a
+rebuild. Its evidence included a reproduction and targeted repair request. This
+is an observed autonomous rework cycle; it does not establish that review made
+the external acceptance score better, because the intermediate revision was not
+graded independently.
+
+The official failures were missing `GenerateJsonSchema.encode_default` and
+`rebuild_model_fields`. The delivery trace classified broad regression failures
+as pre-existing missing baseline infrastructure and outside the completed work.
+That suggests a scope/dependency classification problem: missing baseline code
+can still be necessary for the requested behavior. This is a hypothesis from
+one task, not a reason to change production guidance or the remaining pilot arms
+mid-run. Internal focused-test success and completed workflow state did not
+establish external acceptance.
+
+All 108 requests returned usage receipts, with no provider failures. Metered
+cost was **$1.604015**, including all roles and rework. Total wall time was
+**1,632.78 seconds**, including 71.19 seconds of adapter setup; agent execution
+was **1,531.02 seconds**. Cumulative effective accounting reached **$5.617927**
+against the unchanged $20 cap before the Pi planned arm began. Local compute
+cost is excluded; this emulated local run is not a production latency estimate.
+The outcomes below supersede the remaining-arm status at this checkpoint.
+
+
+### Pi planned: nominal pass invalidated by verifier audit
+
+`feature-pi-planned-1` emitted reward 1, but this is **not a valid benchmark pass**.
+The engineer independently created `tests/test_deprecated_fields.py`, colliding
+with the withheld test path. The unchanged upstream shell grader failed to
+restore the official file, ignored the error, and ran 29 agent-authored tests
+instead of the 12 official acceptance tests. Its subsequent regression stage
+reported 50 passed, 1 skipped, and 1 xfailed; that does not repair the missing
+acceptance coverage. This is a verifier defect, not evidence of deliberate
+benchmark exploitation by Pi.
+
+The coordinator dispatched architect, engineer, reviewer, engineer for rework,
+and reviewer again. The first reviewer independently caught the same shared
+parent/child computed-field metadata bug observed in the Ficus run. All 128
+requests were metered, costing **$1.301571**. Wall time was **1,038.21 seconds**,
+including 16.87 seconds of setup and 988.06 seconds of agent execution. These
+measurements describe the attempt, not cost or time to a verified solution.
+The completed task workspace was not retained by that adapter configuration,
+so a trustworthy regrade of this exact candidate is unavailable. Do not
+reconstruct an alleged final candidate from partial transcripts or count this
+nominal pass in a comparison.
+
+`feature-ficus-engineer-1` had already started when the verifier log audit found
+the collision. It was stopped, retaining its logs and an interrupted workspace
+snapshot. Harbor recorded `CancelledError`, no reward, and only engineer
+execution; four calls cost **$0.072859**, all with usage receipts. The last call
+recorded client disconnection during cancellation but still settled its usage.
+Pi engineer-only was not started. The original four-arm pilot is incomplete;
+it must not be silently resumed under a changed grader or reported as a matched
+comparison.
+
+Paid inference and owned task containers were stopped. Cumulative effective
+accounting is **$6.992357** against the unchanged **$20** cap, leaving
+**$13.007643**. The raw historical unknown reservations remain preserved under
+the earlier reconciliation checkpoints; no new usage is unresolved.

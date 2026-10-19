@@ -98,3 +98,43 @@ snapshot, not the originally proposed V1.1 fast split or a leaderboard estimate.
 The Ficus adapter now preserves the task image's PATH when prepending its own
 runtime tools. Both harnesses can activate the image's `testbed` conda environment.
 No production runtime or provider changes were required.
+
+## Verifier collision discovered during the pilot
+
+The first Pi feature run created `tests/test_deprecated_fields.py` independently.
+Upstream restoration failed because that path existed, but its `|| true` fallback
+allowed grading to continue against agent-authored tests. The nominal reward 1
+is invalid; the trace showed 29 agent tests instead of 12 official tests. The
+Ficus planned run received 0 against the official tests, but the matched pilot
+was stopped: Ficus engineer-only was interrupted and Pi engineer-only unexecuted.
+No completed candidate archive exists for the Pi attempt, so it cannot be
+regraded confidently. All attempts and costs remain in `PILOT.md`.
+
+The revised preparer is intentionally limited to the audited Pydantic layout.
+At verification time, after archiving the submitted workspace, it restores the
+original `tests/` tree and `pyproject.toml` from host-only fixtures. Agent code is
+preserved; agent-authored tests/configuration do not replace acceptance inputs.
+`verify_featurebench.py` checks exact file and symlink hashes before and after the
+byte-identical upstream grader. Any preparation or integrity error overwrites
+reward with 0 and records `verifier_input_failure`; such errors are infrastructure
+failures, not model failures. Safe repository-relative symlinks are preserved;
+archive traversal and members below symlinks are rejected. This is a disclosed
+verifier-preparation correction, not a change to the official assertions.
+
+The initial guard controls stopped on a legitimate Pydantic test-tree symlink;
+they are retained as setup failures, not baseline/oracle scores. After correcting
+that handling, live controls produced baseline 0 (12 failed), oracle 1, baseline
+with a fake colliding acceptance file 0 (12 official tests failed), and oracle
+with a fake colliding file 1 (12 official acceptance tests and the regression
+stage passed). Every control reported verified official input hashes. Pre-grading
+submission archives and post-grading workspaces were collected successfully.
+Thirty-three offline tests pass, including collision replacement, preservation
+of agent code, post-restoration tampering detection, and unsafe-fixture refusal.
+
+`feature-pilot-v2.json` freezes this separate revision before further inference.
+Models, prompts, roles, limits, task instructions, and ordered arms are unchanged.
+One attempt per arm is allowed under this corrected revision, retaining all
+previous failures and the invalid pass; it is not a best-of score. The unchanged
+$20 cap includes the $6.992357 already accounted for. The task has now been
+inspected during integration debugging and remains a development pilot, not an
+unseen-task estimate. A later credible comparison needs fresh held-out tasks.
