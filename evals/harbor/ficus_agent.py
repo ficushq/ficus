@@ -22,15 +22,24 @@ RUNTIME = ROOT + "/runtime"
 ACTIVE = {"queued", "waiting-maintenance", "waiting-sandbox", "running", "stopping"}
 
 
-def squad_handoff(instruction):
+def squad_handoff(instruction, workflow="reviewed"):
     """Keep task text verbatim while making the requested execution mode explicit."""
+    if workflow == "engineer":
+        return instruction
+    workflow_flag = "--workflow builder-reviewer " if workflow == "reviewed" else ""
+    planning = (
+        " Include the architect planning stage before implementation."
+        if workflow == "planned"
+        else ""
+    )
     return (
         "Complete the task below through a full Ficus squad with independent review.\n\n"
         "BEGIN TASK\n" + instruction + "\nEND TASK\n\n"
         "Execution contract: you are the manager, not the implementer. Before investigating "
         "or changing task files, use squad_bash to create a work stream with "
         "`ficus workstream create <title> --squad <your-squad-id> --owner <your-agent-id> "
-        "--workflow builder-reviewer -d <self-contained-description>`. Your IDs are in "
+        + workflow_flag
+        + "-d <self-contained-description>`. Your IDs are in "
         "your system context; consult CLI help if needed. Include the complete task, "
         "the exact workspace path, and the user's authorization for in-place changes "
         "in this disposable, single-task workspace. Omit repository/branch/worktree "
@@ -40,6 +49,7 @@ def squad_handoff(instruction):
         "manager self-check, even if the task looks small. No human is available: "
         "delegate investigation of ambiguity to the engineer. Deliver the final files "
         "in the original workspace without GitHub, a PR, or remote deployment."
+        + planning
     )
 
 
@@ -79,12 +89,25 @@ class FicusSquad(BaseAgent):
     MODEL_CONNECTION = ModelConnectionSpec(passthrough=True)
     DEFAULT_SETUP_TIMEOUT_SEC = 900.0
 
-    def __init__(self, *args, runtime_archive=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        runtime_archive=None,
+        model_api="openai-completions",
+        workflow="reviewed",
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         if not runtime_archive:
             raise ValueError(
                 "Pass --ak runtime_archive=/absolute/path/ficus-runtime.tar.gz"
             )
+        if model_api not in {"openai-completions", "openai-responses"}:
+            raise ValueError("Unsupported model transport")
+        self.model_api = model_api
+        if workflow not in {"engineer", "reviewed", "planned"}:
+            raise ValueError("Unsupported trial workflow")
+        self.workflow = workflow
         self.archive = Path(runtime_archive).resolve(strict=True)
         self.network = "ficus-harbor-" + uuid.uuid4().hex[:12]
         self.database = "ficus-harbor-db-" + uuid.uuid4().hex[:12]
@@ -185,7 +208,7 @@ class FicusSquad(BaseAgent):
     async def bootstrap_command(self, environment, mode, filename):
         return await self.checked(
             environment,
-            f"{ROOT}/bin/bun run apps/core/src/scripts/harbor-trial.ts {mode} {ROOT}/{filename}",
+            f"{ROOT}/bin/bun --preload ./apps/core/src/scripts/harbor-provider.ts run apps/core/src/scripts/harbor-trial.ts {mode} {ROOT}/{filename}",
             cwd=RUNTIME,
             env=self.env,
             timeout_sec=60,
@@ -205,7 +228,7 @@ class FicusSquad(BaseAgent):
     async def start_process(self, environment, entry, name):
         await self.checked(
             environment,
-            f"nohup setsid {ROOT}/bin/bun run {shlex.quote(entry)} > {ROOT}/{name}.log 2>&1 < /dev/null & echo $! > {ROOT}/{name}.pid",
+            f"nohup setsid {ROOT}/bin/bun --preload ./apps/core/src/scripts/harbor-provider.ts run {shlex.quote(entry)} > {ROOT}/{name}.log 2>&1 < /dev/null & echo $! > {ROOT}/{name}.pid",
             cwd=RUNTIME,
             env=self.env,
         )
@@ -219,9 +242,11 @@ class FicusSquad(BaseAgent):
                 "An explicit model, API credential and endpoint are required"
             )
         if access.provider != "openai":
-            raise ValueError("The pilot supports OpenAI chat completions only")
+            raise ValueError("The pilot supports OpenAI only")
         from urllib.parse import urlsplit
 
+        self.env["FICUS_HARBOR_MODEL_API"] = self.model_api
+        self.env["FICUS_HARBOR_BASE_URL"] = access.base_url.rstrip("/")
         password = urlsplit(self.env["DATABASE_URL"]).password
         outcome = "interrupted"
         try:
@@ -268,10 +293,12 @@ class FicusSquad(BaseAgent):
                 ROOT + "/trial.json",
                 {
                     "model": self.model_name.split("/", 1)[1],
+                    "modelApi": self.model_api,
                     "baseUrl": access.base_url,
                     "key": access.api_key,
                     "workspace": self.workspace,
-                    "instruction": squad_handoff(instruction),
+                    "instruction": squad_handoff(instruction, self.workflow),
+                    "workflow": self.workflow,
                 },
             )
             await self.bootstrap_command(environment, "seed", "identity.json")
@@ -296,7 +323,9 @@ class FicusSquad(BaseAgent):
                 await asyncio.sleep(2)
         finally:
             context.metadata = {
-                "configuration": "full-squad-with-review",
+                "configuration": self.workflow,
+                "model_api": self.model_api,
+                "thinking": "medium" if self.model_api == "openai-responses" else "off",
                 "outcome": outcome,
                 "memory": "fresh-disabled",
                 "runtime_sha256": self.version(),

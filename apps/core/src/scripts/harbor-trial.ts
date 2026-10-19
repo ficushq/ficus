@@ -4,6 +4,7 @@ import { asc, and, eq, isNull } from 'drizzle-orm'
 import {
   db,
   agents,
+  squads,
   agentTypes,
   modelTiers,
   executions,
@@ -18,6 +19,8 @@ import { getSettingsStore } from '../services/settings'
 import { writeAccountStore } from '../services/agent/account-store'
 import { Squad } from '../entities/Squad'
 import { Agent } from '../entities/Agent'
+import { WorkStream } from '../entities/WorkStream'
+import type { WorkflowSource } from '@ficus/shared'
 
 const root = '/opt/ficus-harbor'
 if (process.env.FICUS_HARBOR_TRIAL !== '1' || process.env.HOME_DIR !== `${root}/data`) {
@@ -34,6 +37,8 @@ if (!output?.startsWith(`${root}/`)) throw new Error('Output must be inside the 
 if (command === 'seed') {
   const config = JSON.parse(await readFile(`${root}/trial.json`, 'utf8')) as {
     model: string
+    workflow?: 'engineer' | 'planned' | 'reviewed'
+    modelApi?: string
     baseUrl: string
     key: string
     workspace: string
@@ -42,15 +47,16 @@ if (command === 'seed') {
   if ((await db.select({ id: agents.id }).from(agents).limit(1)).length) throw new Error('Trial database is not empty')
   await getSecretStore().initialize()
   await getSettingsStore().initialize()
+  const native = config.modelApi === 'openai-responses'
   await writeAccountStore(
     {
       version: 1,
       accounts: {
-        'harbor-openai': [
+        [native ? 'openai' : 'harbor-openai']: [
           {
             id: 'harbor-trial',
             enabled: true,
-            kind: 'openai-compatible',
+            kind: native ? undefined : 'openai-compatible',
             providerId: 'harbor-openai',
             credential: { type: 'api_key', key: config.key },
             baseUrl: config.baseUrl,
@@ -62,33 +68,71 @@ if (command === 'seed') {
     },
     'harbor'
   )
-  const model = `harbor-openai/${config.model}`
+  const model = native ? `openai:${config.model}:medium` : `harbor-openai/${config.model}`
   // Pin EVERY role and tier; spawned workers must not silently use another model.
   await db.update(modelTiers).set({ chain: model, yamlFieldOverrides: ['chain'] })
   await db.update(agentTypes).set({ model, yamlFieldOverrides: ['model'] })
+  const mode = config.workflow ?? 'reviewed'
+  if (!['engineer', 'planned', 'reviewed'].includes(mode)) throw new Error('Unknown trial workflow')
+  const workflow: WorkflowSource =
+    mode === 'engineer'
+      ? {
+          kind: 'preset',
+          id: 'solo',
+          customizations: [
+            {
+              op: 'put-participant',
+              id: 'worker',
+              participant: { agentTypeId: 'engineer', session: 'reuse-within-stream' },
+            },
+          ],
+        }
+      : mode === 'planned'
+        ? {
+            kind: 'preset',
+            id: 'engineering',
+            customizations: [{ op: 'set-completion', completion: { mode: 'deliverable' } }],
+          }
+        : { kind: 'preset', id: 'builder-reviewer', customizations: [] }
   const squad = await Squad.create({
     name: 'Harbor trial',
-    purpose: 'Complete the task in the provided local environment with independent review.',
+    purpose:
+      mode === 'engineer'
+        ? 'Complete the task with one engineer.'
+        : 'Complete the task with planning and independent review.',
     squadPresetId: 'engineering',
     hostWorkspacePath: config.workspace,
     context: `This is an unattended local in-place delivery run in a disposable, single-task workspace, not a shared checkout. The user has authorized completing the supplied task. The task workspace is ${config.workspace}. Inspect it to resolve ambiguity; no human can answer questions. Deliver completed files in that exact workspace, without requiring GitHub, a pull request, a merge approval, or an external deployment.`,
     metadata: {
       memory: { enabled: false },
-      workflow: { kind: 'preset', id: 'builder-reviewer' },
+      workflow,
       workflowSetup: {
         guidance:
-          'The user requires the With Review flow and local in-place delivery in this disposable, single-task workspace. Inherit the saved default; do not select a PR-based coding flow. No other stream shares this workspace.',
-        choices: [{ when: 'All tasks in this isolated run.', source: { kind: 'preset', id: 'builder-reviewer' } }],
+          'Use the saved workflow and local in-place delivery in this disposable, single-task workspace. Inherit the saved default; do not select a PR-based coding flow. No other stream shares this workspace.',
+        choices: [{ when: 'All tasks in this isolated run.', source: workflow }],
       },
     },
     typeContext: {
       manager:
-        'Run this task through your squad. Create and start a work stream using the configured With Review workflow, with an engineer producing the deliverable and an independent reviewer checking it. Delegate implementation rather than doing it yourself. Handle rework through that workflow and finish after review. Do not stop at a plan or clarification question: inspect the workspace and make reasonable decisions from the task requirements. Do not use a separate worktree unless the completed changes are put back into the supplied workspace before finishing.',
+        'Run this task through your squad. Create and start a work stream using the configured workflow, with an engineer producing the deliverable and an independent reviewer checking it. Delegate implementation rather than doing it yourself. Handle rework through that workflow and finish after review. Do not stop at a plan or clarification question: inspect the workspace and make reasonable decisions from the task requirements. Do not use a separate worktree unless the completed changes are put back into the supplied workspace before finishing.',
     },
   })
-  const manager = await Agent.mustFind(squad.managerAgentId!)
-  await manager.sendMessage(config.instruction, { metadata: { source: 'harbor' } })
-  await writeFile(output, JSON.stringify({ squadId: squad.id, managerId: manager.id }))
+  if (mode === 'engineer') {
+    // Fixture-only: keep the normal solo flow, but no manager receives lifecycle
+    // notices or performs task reasoning. Audit every execution after the run.
+    await db.update(squads).set({ managerAgentId: null }).where(eq(squads.id, squad.id))
+    const stream = await WorkStream.create({
+      squadId: squad.id,
+      title: 'Harbor task',
+      description: config.instruction,
+      workflow,
+    })
+    await writeFile(output, JSON.stringify({ squadId: squad.id, workStreamId: stream.id, workflow: mode }))
+  } else {
+    const manager = await Agent.mustFind(squad.managerAgentId!)
+    await manager.sendMessage(config.instruction, { metadata: { source: 'harbor' } })
+    await writeFile(output, JSON.stringify({ squadId: squad.id, managerId: manager.id, workflow: mode }))
+  }
 } else if (command === 'snapshot') {
   // The database belongs to exactly one trial: include all agents, even parented children.
   const [members, turns, streams, usage, pendingMessages, flows, waits] = await Promise.all([

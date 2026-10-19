@@ -8,6 +8,9 @@ from pathlib import Path
 parser = argparse.ArgumentParser()
 parser.add_argument("harness", choices=("ficus", "pi"))
 parser.add_argument("task", type=Path)
+parser.add_argument(
+    "--workflow", choices=("engineer", "planned", "reviewed"), default="engineer"
+)
 parser.add_argument("--access", type=Path, required=True)
 parser.add_argument("--runtime-archive", type=Path)
 parser.add_argument("--jobs-dir", type=Path, required=True)
@@ -59,16 +62,22 @@ if args.harness == "ficus":
         "ficus_agent:FicusSquad",
         "--ak",
         f"runtime_archive={args.runtime_archive.resolve()}",
+        "--ak",
+        f"workflow={args.workflow}",
+        "--ak",
+        "model_api=" + access.get("model_api", "openai-completions"),
     ]
 else:
+    if args.workflow != "engineer":
+        parser.error("Multi-agent Pi adapter is not yet validated")
     command += [
         "-a",
         "pi",
         "--ak",
         "version=0.99.1",
         "--ak",
-        "model_api=openai-completions",
+        "model_api=" + access.get("model_api", "openai-completions"),
         "--ak",
-        "thinking=off",
+        "thinking=" + access.get("thinking", "off"),
     ]
 os.execvpe("harbor", command, env)

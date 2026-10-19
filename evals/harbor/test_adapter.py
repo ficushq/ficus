@@ -29,6 +29,15 @@ class HandoffTests(unittest.TestCase):
         self.assertIn("Do not implement the task yourself", handoff)
         self.assertIn("independent reviewer", handoff)
 
+    def test_engineer_gets_original_task_without_manager_instruction(self):
+        task = "Implement a feature.  "
+        self.assertEqual(squad_handoff(task, "engineer"), task)
+
+    def test_planned_inherits_saved_flow_and_requires_architect(self):
+        text = squad_handoff("A task", "planned")
+        self.assertNotIn("--workflow builder-reviewer", text)
+        self.assertIn("architect planning stage", text)
+
 
 class CompletionTests(unittest.TestCase):
     def state(self):

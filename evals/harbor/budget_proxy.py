@@ -1,4 +1,4 @@
-"""Pilot-only text Chat Completions proxy with a durable, conservative spend ceiling.
+"""Pilot-only text inference proxy with a durable, conservative spend ceiling.
 
 Real credentials stay on the operator's host. A scoped bearer token is supplied to
 all agents in one trial. No request content or credentials are logged. Unknown
@@ -27,6 +27,10 @@ MODEL = "gpt-4.1-mini-2025-04-14"
 # at $1.60/M is < $0.50. Only text and ordinary function tools are allowed.
 RESERVATION = 500_000
 FULL_MODEL = "gpt-4.1-2025-04-14"
+SOL_MODEL = "gpt-6.1-sol"
+# Full 1.05M context at the highest Standard cache-write rate ($5/M
+# above 272K), plus 8192 output at $15/M, is below $5.50.
+SOL_RESERVATION = 5_500_000
 
 
 class SpendCapReached(ValueError):
@@ -35,11 +39,17 @@ class SpendCapReached(ValueError):
 
 class Budget:
     def __init__(self, path, cap_usd=10, model=MODEL):
-        if model not in (MODEL, FULL_MODEL):
+        if model not in (MODEL, FULL_MODEL, SOL_MODEL):
             raise ValueError("Unsupported pilot model")
         self.model = model
         self.multiplier = 5 if model == FULL_MODEL else 1
-        self.reservation = 2_200_000 if model == FULL_MODEL else RESERVATION
+        self.reservation = (
+            SOL_RESERVATION
+            if model == SOL_MODEL
+            else 2_200_000
+            if model == FULL_MODEL
+            else RESERVATION
+        )
         self.path = str(path)
         self.cap = round(cap_usd * 1_000_000)
         self.lock = threading.Lock()
@@ -124,17 +134,36 @@ class Budget:
 
     def settle(self, identifier, usage):
         # Unknown/malformed usage must never release a reservation.
-        prompt, completion = usage["prompt_tokens"], usage["completion_tokens"]
-        cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
-        if (
-            not all(isinstance(v, int) and v >= 0 for v in (prompt, completion, cached))
-            or cached > prompt
-        ):
-            raise ValueError("Invalid usage")
-        # Round UP to microdollars, with integer arithmetic.
-        charge = (
-            ((prompt - cached) * 4 + cached + completion * 16) * self.multiplier + 9
-        ) // 10
+        if self.model == SOL_MODEL:
+            prompt, completion = usage["input_tokens"], usage["output_tokens"]
+            details = usage.get("input_tokens_details") or {}
+            cached = details.get("cached_tokens", 0)
+            # If a receipt omits the new field, charge the remaining input at
+            # cache-write rates conservatively, rather than undercounting it.
+            written = details.get("cache_write_tokens", prompt - cached)
+            values = (prompt, completion, cached, written)
+            if (
+                not all(type(v) is int and v >= 0 for v in values)
+                or cached + written > prompt
+            ):
+                raise ValueError("Invalid Responses usage")
+            input_rate, output_rate = (2, 15) if prompt > 272_000 else (1, 10)
+            charge = (
+                ((prompt - cached - written) * 20 + cached + written * 25) * input_rate
+                + completion * output_rate * 10
+                + 9
+            ) // 10
+        else:
+            prompt, completion = usage["prompt_tokens"], usage["completion_tokens"]
+            cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+            if (
+                not all(type(v) is int and v >= 0 for v in (prompt, completion, cached))
+                or cached > prompt
+            ):
+                raise ValueError("Invalid usage")
+            charge = (
+                ((prompt - cached) * 4 + cached + completion * 16) * self.multiplier + 9
+            ) // 10
         if charge > self.reservation:
             raise ValueError("Unexpected usage exceeds conservative reservation")
         with self.lock, sqlite3.connect(self.path) as db:
@@ -199,6 +228,81 @@ def validate(payload, model=MODEL):
     return payload
 
 
+def validate_responses(payload):
+    """Permit only stateless text/function inference through Pi's native transport."""
+    allowed = {
+        "model",
+        "input",
+        "instructions",
+        "tools",
+        "tool_choice",
+        "stream",
+        "max_output_tokens",
+        "reasoning",
+        "include",
+        "store",
+        "background",
+        "service_tier",
+        "parallel_tool_calls",
+        "prompt_cache_key",
+        "prompt_cache_retention",
+        "prompt_cache_options",
+        "text",
+    }
+    if set(payload) - allowed or payload.get("model") != SOL_MODEL:
+        raise ValueError("Unsupported Responses request")
+    if payload.get("store") or payload.get("background"):
+        raise ValueError("Only foreground stateless inference is allowed")
+    items = payload.get("input", [])
+    if not isinstance(items, (str, list)):
+        raise TypeError("Invalid input")
+    for item in items if isinstance(items, list) else []:
+        kind = item.get("type", "message")
+        if kind not in {
+            "message",
+            "function_call",
+            "function_call_output",
+            "reasoning",
+        }:
+            raise ValueError("Only text and client-side function history allowed")
+        if kind == "message":
+            content = item.get("content", "")
+            if not isinstance(content, (str, list)):
+                raise ValueError("Invalid message content")
+            if isinstance(content, list) and any(
+                part.get("type") not in {"input_text", "output_text"}
+                for part in content
+            ):
+                raise ValueError("Only text input allowed")
+        if kind == "function_call_output" and not isinstance(item.get("output"), str):
+            raise ValueError("Only text function outputs allowed")
+    if any(tool.get("type") != "function" for tool in payload.get("tools", [])):
+        raise ValueError("Only client-side functions allowed")
+    limit = payload.get("max_output_tokens", 8192)
+    if type(limit) is not int or limit < 16:
+        raise ValueError("Invalid output token limit")
+    payload["max_output_tokens"] = min(limit, 8192)
+    reasoning = payload.get("reasoning") or {}
+    if reasoning.get("effort", "medium") != "medium":
+        raise ValueError("This configuration pins medium reasoning")
+    payload["reasoning"] = {**reasoning, "effort": "medium"}
+    payload["service_tier"] = "default"
+    payload["store"] = False
+    payload["background"] = False
+    payload.pop("prompt_cache_retention", None)
+    return payload
+
+
+def response_usage(event):
+    if event.get("type") in {
+        "response.completed",
+        "response.incomplete",
+        "response.failed",
+    }:
+        return (event.get("response") or {}).get("usage")
+    return None
+
+
 def retry_delay(value):
     """Honor numeric or HTTP-date Retry-After without copying arbitrary headers."""
     if not value:
@@ -240,13 +344,21 @@ def handler(budget, tokens, api_key):
             client = tokens.get(token)
             if not client:
                 return self.reply(401, {"error": {"message": "Invalid trial token"}})
-            if self.path != "/v1/chat/completions":
+            endpoint = (
+                "/v1/responses" if budget.model == SOL_MODEL else "/v1/chat/completions"
+            )
+            if self.path != endpoint:
                 return self.reply(404, {"error": {"message": "Endpoint not allowed"}})
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if length < 1 or length > 16_000_000:
                     raise ValueError("Invalid request size")
-                payload = validate(json.loads(self.rfile.read(length)), budget.model)
+                raw = json.loads(self.rfile.read(length))
+                payload = (
+                    validate_responses(raw)
+                    if budget.model == SOL_MODEL
+                    else validate(raw, budget.model)
+                )
                 if client not in observed_clients:
                     observed_clients.add(client)
                     system = "\n".join(
@@ -289,7 +401,7 @@ def handler(budget, tokens, api_key):
                         }
                     },
                 )
-            except (ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError, AttributeError):
                 return self.reply(
                     400,
                     {"error": {"message": "Invalid pilot request"}},
@@ -298,7 +410,7 @@ def handler(budget, tokens, api_key):
             started = False
             try:
                 with requests.post(
-                    "https://api.openai.com/v1/chat/completions",
+                    "https://api.openai.com" + endpoint,
                     json=payload,
                     headers={"Authorization": "Bearer " + api_key},
                     stream=True,
@@ -360,7 +472,11 @@ def handler(budget, tokens, api_key):
                         for line in response.iter_lines():
                             if line.startswith(b"data: ") and line != b"data: [DONE]":
                                 event = json.loads(line[6:])
-                                usage = event.get("usage") or usage
+                                usage = (
+                                    response_usage(event)
+                                    if budget.model == SOL_MODEL
+                                    else event.get("usage")
+                                ) or usage
                             if not disconnected:
                                 try:
                                     self.wfile.write(line + b"\n")
@@ -391,7 +507,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--port", type=int, default=0)
-    parser.add_argument("--model", choices=(MODEL, FULL_MODEL), default=MODEL)
+    parser.add_argument(
+        "--model", choices=(MODEL, FULL_MODEL, SOL_MODEL), default=MODEL
+    )
     parser.add_argument("--cap-usd", type=float, default=10)
     parser.add_argument("--client", action="append", required=True)
     args = parser.parse_args()
@@ -411,6 +529,10 @@ def main():
             {
                 "port": server.server_port,
                 "model": args.model,
+                "model_api": "openai-responses"
+                if args.model == SOL_MODEL
+                else "openai-completions",
+                "thinking": "medium" if args.model == SOL_MODEL else "off",
                 "clients": {v: k for k, v in tokens.items()},
             }
         )
