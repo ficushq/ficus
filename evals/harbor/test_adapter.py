@@ -103,6 +103,39 @@ class BudgetTests(unittest.TestCase):
                 increased.summary()["next-run"]["usd_upper_bound"], 11
             )
 
+    def test_reconciliation_preserves_calls_and_new_spend_across_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "spend.sqlite"
+            budget = Budget(path, 5, FULL_MODEL)
+            budget.reserve("unknown")
+            paid = budget.reserve("metered")
+            budget.settle(paid, {"prompt_tokens": 100000, "completion_tokens": 0})
+            budget.reconcile("0.21", "User verified provider total; rounded upward")
+            self.assertAlmostEqual(budget.total(), 0.21)
+            restarted = Budget(path, 5, FULL_MODEL)
+            restarted.reserve("new-one")
+            restarted.reserve("new-two")
+            self.assertAlmostEqual(restarted.total(), 4.61)
+            with self.assertRaises(ValueError):
+                restarted.reserve("over-cap")
+            with sqlite3.connect(path) as db:
+                self.assertEqual(
+                    db.execute("SELECT charge,usage FROM calls WHERE id=1").fetchone(),
+                    (2200000, None),
+                )
+                self.assertEqual(
+                    db.execute(
+                        "SELECT through_call,upper_bound,confirmed,raw_exposure FROM reconciliations"
+                    ).fetchone(),
+                    (2, 210000, 200000, 2400000),
+                )
+            with self.assertRaises(ValueError):
+                restarted.reconcile("0.1", "Below metered cost")
+            with self.assertRaises(ValueError):
+                restarted.reconcile("nan", "Invalid")
+            with self.assertRaises(ValueError):
+                restarted.reconcile("5", "")
+
     def test_usage_settlement_includes_cached_tokens(self):
         with tempfile.TemporaryDirectory() as directory:
             budget = Budget(Path(directory) / "spend.sqlite")

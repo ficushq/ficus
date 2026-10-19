@@ -117,3 +117,15 @@ and official reward. A handful of tasks is a smoke pilot, not a leaderboard
 claim. Run a predeclared broader sample with matched budgets after the adapter is
 validated. Future Ficus-specific regression cases can use Harbor too, but their
 scores must stay separate from public benchmark results.
+
+## Reconciling missing usage
+
+Stop the proxy and all trials before reconciling. `Budget.reconcile(total_usd,
+evidence)` appends an operator checkpoint through the current last call using a
+conservative provider total covering every call so far. Include the source,
+time/scope, and rounding or reporting-delay margin in the evidence. It never
+rewrites call rows or pretends unknown calls have token receipts. Future
+reservations use this baseline plus subsequent calls under the unchanged cap.
+`Budget.total()` returns that effective cumulative exposure; per-client
+`summary()` retains raw call accounting and is not reconciliation-adjusted.
+Do not reconcile from a partial, stale, or unrelated billing total.

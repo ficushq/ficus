@@ -14,6 +14,8 @@ import secrets
 import sqlite3
 import threading
 import time
+from datetime import UTC, datetime
+from decimal import ROUND_CEILING, Decimal
 from email.utils import parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -45,6 +47,9 @@ class Budget:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, client TEXT, charge INTEGER, usage TEXT)"
             )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS reconciliations(through_call INTEGER PRIMARY KEY, upper_bound INTEGER NOT NULL, confirmed INTEGER NOT NULL, raw_exposure INTEGER NOT NULL, evidence TEXT NOT NULL, recorded_at TEXT NOT NULL)"
+            )
             columns = {row[1] for row in db.execute("PRAGMA table_info(calls)")}
             for name, kind in (
                 ("http_status", "INTEGER"),
@@ -61,15 +66,61 @@ class Budget:
     def reserve(self, client):
         with self.lock, sqlite3.connect(self.path) as db:
             db.execute("BEGIN IMMEDIATE")
-            total = db.execute("SELECT coalesce(sum(charge),0) FROM calls").fetchone()[
-                0
-            ]
+            total = self.exposure(db)
             if total + self.reservation > self.cap:
                 raise SpendCapReached("Pilot spend cap reached")
             return db.execute(
                 "INSERT INTO calls(client,charge,model) VALUES(?,?,?)",
                 (client, self.reservation, self.model),
             ).lastrowid
+
+    @staticmethod
+    def exposure(db):
+        checkpoint = db.execute(
+            "SELECT through_call,upper_bound FROM reconciliations ORDER BY through_call DESC LIMIT 1"
+        ).fetchone()
+        cutoff, baseline = checkpoint or (0, 0)
+        return (
+            baseline
+            + db.execute(
+                "SELECT coalesce(sum(charge),0) FROM calls WHERE id>?", (cutoff,)
+            ).fetchone()[0]
+        )
+
+    def reconcile(self, total_usd, evidence):
+        """Operator-only checkpoint; stop all inference first. Never rewrites calls.
+
+        Supply a conservative provider total covering every call to date, with
+        evidence and rounding/delay margin. The checkpoint includes metered calls,
+        unresolved calls, and any other account spend included by the provider.
+        """
+        amount = Decimal(str(total_usd))
+        if not amount.is_finite() or amount < 0 or not evidence.strip():
+            raise ValueError("A finite provider total and evidence are required")
+        upper = int((amount * 1_000_000).to_integral_value(rounding=ROUND_CEILING))
+        with self.lock, sqlite3.connect(self.path) as db:
+            db.execute("BEGIN IMMEDIATE")
+            cutoff, confirmed, raw = db.execute(
+                "SELECT max(id),coalesce(sum(CASE WHEN usage IS NOT NULL THEN charge ELSE 0 END),0),coalesce(sum(charge),0) FROM calls"
+            ).fetchone()
+            if cutoff is None or upper < confirmed:
+                raise ValueError("Provider total cannot be below confirmed usage")
+            db.execute(
+                "INSERT INTO reconciliations VALUES(?,?,?,?,?,?)",
+                (
+                    cutoff,
+                    upper,
+                    confirmed,
+                    raw,
+                    evidence,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+        return {"through_call": cutoff, "usd_upper_bound": upper / 1e6}
+
+    def total(self):
+        with sqlite3.connect(self.path) as db:
+            return self.exposure(db) / 1e6
 
     def settle(self, identifier, usage):
         # Unknown/malformed usage must never release a reservation.

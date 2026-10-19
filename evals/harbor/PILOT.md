@@ -160,3 +160,23 @@ against a live provider and require a separately labeled future configuration.
 No completed full-squad workflow or matched comparison has yet been established.
 The evidence supports integration debugging and identifies orchestration and
 transport failure modes; it does not establish a leaderboard result.
+
+## Provider reconciliation and transport revision
+
+The operator reported the provider dashboard's total spend for today as $2.49,
+matching the $2.486576 metered ledger at call 202. With inference stopped, an
+append-only reconciliation checkpoint uses **$2.50** as a conservative rounded
+baseline through call 202. The original 202 call rows, including all seven
+unknown reservations, remain unchanged. New reservations add to this baseline
+under the same $20 cumulative cap; this is not a cap increase or ledger reset.
+The dashboard figure is operator-reported, not independently obtained through
+the billing API, and may be subject to provider reporting latency.
+
+A separately labeled transport-revision validation will retry `prove-plus-comm`
+with the unchanged runtime `17ade874`, full-squad handoff, model, task, and
+original time limit. It will then run the matched Pi baseline, followed by Ficus
+and Pi on `overfull-hbox` if budget permits. One attempt per harness/task in this
+configuration; no prompt changes or operator steering. Retain the earlier
+interrupted sample separately. The proxy now retains error details and honors
+known cooldowns. The reconciliation and restart/cap behavior pass 20 offline
+tests. This remains development validation, not a leaderboard estimate.
