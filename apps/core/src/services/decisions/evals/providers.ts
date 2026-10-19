@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { expandTilde } from '@ficus/shared/node'
+import { getHomeDir } from '../../../lib/utils/home'
 import {
   DECISION_PROVIDER_KIND_INFO,
   DECISION_PROVIDER_KINDS,
@@ -38,7 +39,7 @@ const kindModel = (kind: DecisionProviderKind, model?: string) =>
  */
 export async function localProviders(): Promise<EvalProvider[]> {
   if (!process.env.DATABASE_URL || process.env.DATABASE_URL === PLACEHOLDER_DATABASE_URL)
-    throw new Error('No DATABASE_URL: run from a checkout with a root .env, or use --from env|backend:<label>')
+    throw new Error('No DATABASE_URL: run from a checkout with a root .env, or use --from worker|env|backend:<label>')
   const { getSecretStore } = await import('../../secrets')
   await getSecretStore().initialize()
   const { listDecisionProviders } = await import('../store')
@@ -83,33 +84,72 @@ export async function envProviders(env: Record<string, string | undefined> = pro
   return providers
 }
 
-/**
- * The providers of a running instance, asked through its `POST /api/decisions/try` with a CLI
- * backend's credentials (`~/.ficus/cli/auth.json`), so no key leaves that instance. That route needs
- * the `provider-auth:write` permission there (the same as editing Decision Providers).
- */
+/** Use only the worker's injected identity; never consult a password or saved login. */
+export async function workerProviders(): Promise<EvalProvider[]> {
+  if (!process.env.FICUS_API_URL) throw new Error('Worker evaluations require FICUS_API_URL; no backend fallback')
+  if (!process.env.FICUS_TOKEN) throw new Error('Worker evaluations require FICUS_TOKEN; no human login fallback')
+  return remoteProviders(process.env.FICUS_API_URL, process.env.FICUS_TOKEN, 'worker')
+}
+
+/** Explicit operator backend selection, independent of ambient worker credentials. */
 export async function backendProviders(label: string): Promise<EvalProvider[]> {
-  const storePath = process.env.FICUS_DEV_AUTH_STORE_PATH || join(homedir(), '.ficus', 'cli', 'auth.json')
-  if (!existsSync(storePath)) throw new Error(`No CLI auth store at ${storePath}`)
-  const backend = (
-    JSON.parse(readFileSync(storePath, 'utf8')) as {
-      backends?: Record<string, { apiUrl?: string; password?: string }>
+  if (process.env.FICUS_AGENT_CONTEXT === '1' || process.env.FICUS_WEBHOOK_CONTEXT === '1')
+    throw new Error('Use --from worker with the injected identity, not a saved human backend')
+  const storePath = expandTilde(
+    process.env.FICUS_AUTH_STORE || process.env.FICUS_DEV_AUTH_STORE_PATH || join(getHomeDir(), 'cli', 'auth.json')
+  )
+  if (!existsSync(storePath)) throw new Error('No CLI auth store; select --from worker for injected authentication')
+  let backend: { apiUrl?: string; password?: string } | undefined
+  try {
+    backend = JSON.parse(readFileSync(storePath, 'utf8')).backends?.[label]
+  } catch {
+    throw new Error('Invalid CLI auth store')
+  }
+  if (typeof backend?.apiUrl !== 'string' || typeof backend.password !== 'string' || !backend.password)
+    throw new Error('No valid CLI backend with that label')
+  return remoteProviders(backend.apiUrl, backend.password, label)
+}
+
+/** A credential is sent only to the explicitly selected HTTP(S) API, never across redirects. */
+function apiBase(apiUrl: string): string {
+  try {
+    const url = new URL(apiUrl)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
+      throw new Error()
+    return url.toString().replace(/\/+$/, '')
+  } catch {
+    throw new Error('Invalid Ficus API URL (expected HTTP(S), without credentials, query or fragment)')
+  }
+}
+
+async function remoteProviders(apiUrl: string, token: string, label: string): Promise<EvalProvider[]> {
+  const base = apiBase(apiUrl)
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  // Do not surface response bodies, URL-bearing transport errors or auth-store parse excerpts.
+  async function send(init: RequestInit): Promise<Response> {
+    let response: Response
+    try {
+      response = await fetch(`${base}/api/decisions/evaluate`, { ...init, headers, redirect: 'error' })
+    } catch {
+      throw new Error('Could not reach the evaluation API (or request aborted)')
     }
-  ).backends?.[label]
-  if (!backend?.apiUrl || !backend.password) throw new Error(`No CLI backend named "${label}"`)
-  const base = backend.apiUrl.replace(/\/$/, '')
-  const headers = { Authorization: `Bearer ${backend.password}`, 'Content-Type': 'application/json' }
-  const listing = await fetch(`${base}/api/decisions`, { headers })
-  if (!listing.ok) throw new Error(`${label}: GET /api/decisions answered ${listing.status}`)
-  const { providers } = (await listing.json()) as {
-    providers: Array<{
-      id: string
-      label: string
-      kind: DecisionProviderKind
-      model: string
-      enabled: boolean
-      effectivePricePerMillionInput?: number
-    }>
+    if (!response.ok) throw new Error(`Evaluation API answered HTTP ${response.status}`)
+    return response
+  }
+  const listing = await send({ signal: AbortSignal.timeout(15_000) })
+  let providers: Array<{
+    id: string
+    label: string
+    kind: DecisionProviderKind
+    model: string
+    enabled: boolean
+    effectivePricePerMillionInput?: number | null
+  }>
+  try {
+    providers = (await listing.json()).providers
+    if (!Array.isArray(providers)) throw new Error()
+  } catch {
+    throw new Error('Invalid evaluation provider listing')
   }
   return providers
     .filter((provider) => provider.enabled)
@@ -118,42 +158,41 @@ export async function backendProviders(label: string): Promise<EvalProvider[]> {
       label: `${provider.label} (${label})`,
       kind: provider.kind,
       model: provider.model,
-      ...(provider.effectivePricePerMillionInput !== undefined
+      ...(provider.effectivePricePerMillionInput != null
         ? { pricePerMillionInput: provider.effectivePricePerMillionInput }
         : {}),
       readsImages: decisionModelReadsImages(provider),
       ask: async (request, signal, purpose) => {
-        const response = await fetch(`${base}/api/decisions/try`, {
+        const response = await send({
           method: 'POST',
-          headers,
-          // Logged on that instance as an eval run under the eval's feature, so its spend shows.
-          body: JSON.stringify({
-            providerId: provider.id,
-            ...request,
-            source: 'eval',
-            ...(purpose ? { purpose } : {}),
-          }),
+          body: JSON.stringify({ ...request, providerId: provider.id, purpose }),
           signal,
         })
-        const body = (await response.json()) as {
-          ok?: boolean
-          result?: { answers: Record<string, DecisionAnswer>; model?: string; usage?: { inputTokens?: number } }
-          errors?: Array<{ error: string }>
-          error?: string
+        try {
+          const body = (await response.json()) as {
+            ok?: boolean
+            result?: { answers: Record<string, DecisionAnswer>; model?: string; usage?: { inputTokens?: number } }
+          }
+          if (!body.ok || !body.result) throw new Error()
+          return body.result
+        } catch {
+          throw new Error('Evaluation provider did not return an answer')
         }
-        if (!response.ok || !body.ok || !body.result)
-          throw new Error(body.errors?.[0]?.error ?? body.error ?? `HTTP ${response.status}`)
-        return body.result
       },
     }))
 }
 
-/** `local` (default), `env`, or `backend:<label>`. */
-export async function resolveProviders(from = 'local'): Promise<EvalProvider[]> {
+export function defaultProviderSource(): 'worker' | 'local' {
+  return process.env.FICUS_AGENT_CONTEXT === '1' || process.env.FICUS_WEBHOOK_CONTEXT === '1' ? 'worker' : 'local'
+}
+
+/** Explicit sources never fall back to a different host, database or credential. */
+export async function resolveProviders(from = defaultProviderSource()): Promise<EvalProvider[]> {
   if (from === 'local') return localProviders()
   if (from === 'env') return envProviders()
+  if (from === 'worker') return workerProviders()
   if (from.startsWith('backend:')) return backendProviders(from.slice('backend:'.length))
-  throw new Error(`Unknown provider source "${from}": use local, env or backend:<label>`)
+  throw new Error('Unknown provider source: use local, env, worker or backend:<label>')
 }
 
 /** Keep the providers a `--provider` list names, by ID or kind; all when there is no list. */
