@@ -41,9 +41,14 @@ with `gpt-6.1-sol` after Responses support and usage accounting are validated.
 Record provider-returned model identifiers, configuration, and run dates. No
 production model defaults need to change.
 
-The primary comparison must match the workflow as well as the model:
-**architect → engineer → independent reviewer → delivery**, with the same
-review-to-engineer rework path. If Ficus also uses a separate manager, provide
+Use a two-by-two design, matching the workflow as well as the model:
+
+| Workflow     | Ficus                                                  | Comparison harness                                              |
+| ------------ | ------------------------------------------------------ | --------------------------------------------------------------- |
+| Single agent | Engineer-only workflow                                 | Single Pi engineer session                                      |
+| Multi-agent  | Architect → engineer → independent reviewer → delivery | Equivalent architect, engineer, reviewer, and delivery workflow |
+
+Both multi-agent configurations use the same review-to-engineer rework path. If Ficus also uses a separate manager, provide
 the baseline an equivalent coordination role and include both sides' costs.
 Do not rename the current manager/engineer/reviewer pilot an architect workflow;
 validate the actual role configuration before running the comparison.
@@ -71,10 +76,27 @@ invoke declared stages, but any new planning, routing, or recovery intelligence
 is part of the evaluated baseline and must be disclosed. Do not assume Pi needs
 human coordination before inspecting available workflow support.
 
-Single-session Pi remains useful as an optional reference for the cost and
-quality of adding planning/review stages. It is not the primary evidence for
-Ficus's orchestration advantage. Earlier single-session pilot results remain
-adapter checks and do not constitute a matched-workflow comparison.
+The engineer-only Ficus configuration is now an explicit evaluation arm, not a
+substitute for testing full squads. Verify that no manager, architect, or
+reviewer performs task reasoning or supplies extra guidance in that arm. Keep
+ordinary runtime bookkeeping and count its overhead; disclose any unavoidable
+extra model calls. Do not claim engineer-only support until the adapter has
+actually exercised it.
+
+Report three comparisons on the same predeclared tasks:
+
+1. Ficus engineer versus Pi engineer: differences between harnesses for one agent.
+2. Ficus multi-agent versus baseline multi-agent: differences with matched roles.
+3. Multi-agent versus single-agent within each harness: the quality, attention,
+   latency, and cost effects of adding planning and review.
+
+Use matched aggregate budgets for the controlled comparison, not a full budget
+per role. A separately declared practical-budget experiment can measure whether
+extra spend buys useful quality or autonomy. Do not select different tasks for
+each arm based on observed results. Repeat and vary run order when budget permits;
+a tiny pilot cannot establish a reliable interaction between harness and workflow.
+Earlier single-session pilot results still do not constitute this four-arm
+comparison, because corresponding Ficus engineer-only runs were not performed.
 
 Record and match task time limits, aggregate inference budget, CPU/memory, and
 maximum simultaneous model requests. Include Ficus database/runtime overhead.
@@ -116,10 +138,11 @@ are assisted evaluations and must not be mixed with unattended benchmark scores.
 
 1. Validate GPT-6.1 Responses tool use and full usage accounting under the existing
    cumulative $20 pilot cap; retain prior uncertain charges until reconciled.
-2. Establish equivalent architect, engineer, reviewer, and coordination roles in
-   both harnesses, then complete an end-to-end adapter check for each, including
-   rework and delivery. Log idle/handoff behavior without assuming a production
-   defect. Do not substitute single-session Pi if workflow support is missing.
+2. Validate all four configurations: engineer-only Ficus and Pi, plus equivalent
+   architect, engineer, reviewer, and coordination roles in both harnesses.
+   Complete adapter checks for each, including rework and delivery for the
+   multi-agent arms. Log idle/handoff behavior without assuming a production
+   defect. An unavailable arm stays unexecuted rather than being substituted.
 3. Integrate FeatureBench task setup and patch submission with its untouched
    official evaluator, then freeze a small matched sample and configuration.
 4. Estimate cost from that pilot before requesting or scheduling a broader run.
