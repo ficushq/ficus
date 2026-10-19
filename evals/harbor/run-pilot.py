@@ -33,7 +33,9 @@ env = {
 }
 env.update(
     {
-        "OPENAI_API_KEY": access["clients"][args.client or f"{args.harness}-{args.task.name}"],
+        "OPENAI_API_KEY": access["clients"][
+            args.client or f"{args.harness}-{args.task.name}"
+        ],
         "OPENAI_BASE_URL": f"http://host.docker.internal:{access['port']}/v1",
         "PYTHONPATH": str(Path(__file__).resolve().parent),
         "DOCKER_DEFAULT_PLATFORM": "linux/amd64",

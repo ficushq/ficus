@@ -31,7 +31,12 @@
   "memory_gib": 8,
   "concurrency": 1,
   "runtime_sha256": "903ff3d33a08776c4005c3430ef13152101d25b72435fc27b242320573efec18",
-  "arms_in_order": ["ficus-planned", "pi-planned", "ficus-engineer", "pi-engineer"],
+  "arms_in_order": [
+    "ficus-planned",
+    "pi-planned",
+    "ficus-engineer",
+    "pi-engineer"
+  ],
   "accounting_baseline_usd": 4.013912,
   "cumulative_cap_usd": 20,
   "stop_policy": "Stop on cap; retain interrupted/unexecuted arms. No retries, model/prompt changes, operator messages, or fabricated approvals.",
@@ -41,7 +46,7 @@
   "adapter_files_sha256": {
     "ficus_agent.py": "3c10076d9b943be64b7fc154bdb14e8ac9b24977d2c762eb7f5a46ac0841291f",
     "pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
-    "run-pilot.py": "bc6f697ac6b03ffcbed326e128f6650e9fb2b920e2d9060eaee80b5191d34d1e",
+    "run-pilot.py": "76c63b63f817da336db8907801645f02c6a475b79eb66c27c9e62969765fcc65",
     "budget_proxy.py": "609dfa326f8c7dee88ecdf218bd7a73023a349890a8e22a30ab7b0ec6980121b"
   }
 }
