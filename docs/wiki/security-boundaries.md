@@ -26,32 +26,66 @@ Signed image URLs gate image bytes. Current responses use `private, max-age=<sec
 
 Expired sessions, passkey challenges, email verifications, and expired or consumed WebSocket tickets are removed by the auth cleanup service. Startup/shutdown wires its scheduler. See `apps/core/src/services/auth/cleanup.ts`, `cleanup-scheduler.ts`, and `apps/core/src/index.ts`.
 
-## Bigbrain capability and credential boundaries
+## BigBrain local process and capability boundaries
 
-Bigbrain is registered as an implemented integration plugin. The older decision's “implementation held” header is historical. Its narrow-capability and privacy rationale remains useful, but the registry now includes other providers and connections are assigned to squads; “Bigbrain only” and “squad-owned connection” are not descriptions of the whole current integration architecture.
+The [BigBrain implementation contract](bigbrain.md) replaces the unused
+API/token connector with same-host stdio MCP. The local integration changes
+in this section are the target contract reviewed on 2026-10-19; protocol
+inspection is not a passing implementation/security test result.
 
-The runner requires both a version-1 integration policy allowing Bigbrain `agent_tools` and a matching tool allow entry before constructing its dynamic tools. Individual calls recheck squad identity, capability, assigned enabled connection, supported versions, authenticated/healthy state, matching material and validated revisions, unexpired validation, and provider scope before loading credentials and calling the provider. The four tools are search, note retrieval, memory retrieval, and Markdown inbox drop. Reads require `vault:read`; drop requires `inbox:write`.
+Only an OS-operator-owned host declaration may select a vault, executable, and
+named local connection. API/CLI callers can select declared bindings but cannot
+supply shell text, argv, environment maps, a new executable, or a credential-file
+path. Core API and Core worker must share the same local filesystem and service
+account. Hosted instances and no-isolation host agent execution are refused;
+there is no browser-local or remote-worker vault bridge. No vault, executable,
+credential file, or BigBrain environment is projected to agents. This is not an
+OS security boundary against the host administrator or an already privileged
+agent runtime.
 
-Sources: `apps/core/src/entities/agent-runners/base.ts` (`allowsBigbrainIntegrationTools`, `resolveIntegrationTools`); `apps/core/src/services/integrations/runtime-gate.ts`; `apps/core/src/services/integrations/bigbrain/tools.ts`; `apps/core/src/services/integrations/bigbrain/plugin.ts`.
+The runner requires a version-1 integration policy allowing `agent_tools` and
+matching explicit tool allowances. Calls recheck squad identity, provider enable,
+assignment, supported versions, connection state, material/validation revisions,
+validation freshness, and the advertised public-tool capability. Host declaration
+identity is pinned and rechecked; editing it cannot silently retarget an existing
+pooled connection. BigBrain authenticates each call using its own private local
+credential and supplies the contribution's author, not tool input or MCP client
+handshake text. Advertised tools alone are not proof of authorization; validation
+also makes a bounded read-only call, and upstream enforces the drop scope.
 
-Connection validation has a 15-minute freshness window and records results against a material revision. Runtime authentication failures disable the matching revision so stale failures cannot disable a replacement credential. Safe connection views project selected fields; audit records describe actions and outcomes without copying conversation bodies. The client uses fixed `/v1` operations, bounded responses, timeouts, validated response shapes, and sanitized error codes. See `apps/core/src/services/integrations/connection-service.ts`, `db-connection-repository.ts`, `audit.ts`, and `bigbrain/client.ts`.
+The public Ficus surface is `bigbrain_load_memory`, `bigbrain_search_vault`,
+`bigbrain_read_note`, and `bigbrain_drop`. Removing the last tool allowance makes
+an agent read-only through this connector. An allowed drop can send arbitrary
+material the agent can access; it is deliberate outbound contribution, not an
+automatic transcript/summary channel. One upstream named credential has one
+upstream attribution even when multiple squads use it; the Ficus audit retains
+the actual caller identity without recording content.
 
-## Conversation export is separately consented
+Each invocation owns bounded stdio/process-group lifetime. Cleanup must include
+the upstream CLI's child process on timeout, abort, malformed output, and Core
+shutdown. Provider output is untrusted data even if its provenance says trusted;
+Ficus's existing tool firewall remains in the path. Raw stderr, credentials,
+queries, note bodies, and drop content do not belong in logs or audits. A drop
+with a lost response has an unknown outcome and is never automatically replayed.
 
-Export has its own `conversation_export` capability and requires `inbox:write`. Consent is prospective: enabling it records the current maximum enqueue order, policy/projection versions, connection, agent, and consenting user. Squad-less agents and subagents are ineligible. Existing history is not backfilled by this consent mechanism.
+## No automated transcript export
 
-On completion, the projector selects messages attributed to that execution. It requires a completed root-agent execution and active consent; message projection rejects the whole selected execution group for pending or pre-consent messages, mismatched agent/execution/user provenance, deleted or redacted metadata, disabled export, images, attachments, or an incomplete user/assistant pair. Human messages must be server-attributed `user_chat` from the consenting user. NDJSON serialization emits only role and text; transport metadata uses synthetic session/cwd values rather than local paths.
+There is no `conversation_export` integration capability, `integrations:export`
+permission, external-export route or consent UI, completion listener, projection
+job, encrypted export outbox, retry worker, or BigBrain session sender in the
+replacement. No automatic summary/drop replaces it. Export-only schema is
+removed by a generated forward migration, not live SQL or a legacy migration
+service. Deploying this change later requires replacing both API and worker so
+an old exporter cannot remain resident.
 
-Sources: `apps/core/src/services/integrations/export/consent-service.ts`, `completion-projector.ts`, `projection.ts`; `apps/core/src/services/integrations/bigbrain/export.ts`.
-
-The outbox encrypts stable payloads before persistence, limits batches to 100 records and 256 KiB, and delivers through ordered leased work with bounded retries. Current consent, assignment, eligibility, versions, policy, connection health/auth/revision/freshness, and scope are checked before decryption and checked again in delivery before provider I/O. Successful delivery advances the cursor and scrubs the stored ciphertext and IV. Revoking consent prevents subsequent gated delivery; it does not delete already delivered provider data.
-
-Sources: `apps/core/src/services/integrations/export/outbox.ts`, `worker.ts`, `delivery-context.ts`, `db-outbox-repository.ts`; runtime wiring in `apps/core/src/services/integrations/runtime.ts`.
-
-These controls do not prove arbitrary conversation text contains no sensitive information. `redactConversationText` uses specific credential patterns and an optional known-secret list; the completion projector currently does not pass that list. Ordinary prose containing paths, environment details, or sensitive material outside those patterns can remain. The broader historical requirement to reject every uncertain content-safety case therefore remains a reconciliation item, not a guarantee of this page.
+Ordinary Ficus conversation history, manual downloads, internal memory features,
+shared integration credential cleanup/revalidation, OAuth projection, workflow
+outputs and unrelated integrations must remain intact. The `integrations/export`
+subtree is export-specific; the separate `integrations/projection` subtree is
+shared credential/tool projection and is not removed.
 
 ## Historical rationale and verification pointers
 
 The preserved sources are `docs/history/plans/2026-06-17-rbac-v2-design.md`, `docs/history/plans/2026-06-17-rbac-v2-plan-3-deferred-security.md`, `docs/history/decisions/2026-08-14-integrations-bigbrain.md`, and `docs/history/plans/2026-08-14-integrations-bigbrain.md`. Historical “deferred security” titles do not imply their entire implementation remains unfinished.
 
-Useful regression sources include `apps/core/src/services/auth/resolve-token.test.ts`, `apps/core/src/services/ws/manager.test.ts`, `apps/core/src/services/integrations/runtime-gate.test.ts`, `apps/core/src/entities/agent-runners/base.integration-tools.test.ts`, and the tests alongside the export projector, consent service, worker, and outbox repository. They identify intended boundaries; their presence is not a current passing-test result.
+Useful regression sources include `apps/core/src/services/auth/resolve-token.test.ts`, `apps/core/src/services/ws/manager.test.ts`, `apps/core/src/services/integrations/runtime-gate.test.ts`, `apps/core/src/entities/agent-runners/base.integration-tools.test.ts`, and the focused BigBrain host-binding, transport, tool, and removal tests specified by the local connector contract. They identify intended boundaries; their presence is not a current passing-test result.

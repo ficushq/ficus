@@ -1,10 +1,10 @@
-# External integrations and Bigbrain
+# External integrations and BigBrain
 
 ## App directory and global switches
 
 Open **Settings → Integrations** to search the app directory. Each card has a global enabled/disabled switch. Expand **Settings** on an enabled card to manage its accounts, app configuration, and webhook delivery. Enabling a card opens its settings; disabling it hides them.
 
-The global switch applies across all squads. Disabling an integration stops new credential access, polling, webhook handling, workflow output delivery, and conversation exports, and reconciles its tools and credentials out of squad sandboxes. Existing account credentials, each account's enabled state, and squad assignments are preserved. Re-enabling restores those selections, subject to normal credential validation. Requests already sent to a provider may finish; disabling does not revoke the external authorization. Use Disconnect for that separate lifecycle action.
+The global switch applies across all squads. Disabling an integration stops new credential access, polling, webhook handling, and workflow output delivery, and reconciles its tools and credentials out of squad sandboxes. Existing account credentials, each account's enabled state, and squad assignments are preserved. Re-enabling restores those selections, subject to normal credential validation. Requests already sent to a provider may finish; disabling does not revoke the external authorization. Use Disconnect for that separate lifecycle action.
 
 Integrations start disabled until explicitly enabled. Saved enable/disable choices are preserved on subsequent upgrades and restarts. Changing a switch requires the provider's global integration write permission. Per-account switches and squad assignment choices still apply beneath the global switch.
 
@@ -14,79 +14,38 @@ GitHub account setup, account selection, and credential lifecycle are described 
 
 Workflows can consume typed integration outputs, and optional squad triggers can create work from issue assignments or review requests. See [Workflows: integration updates and triggers](workflows.md#integration-updates-and-new-work-triggers) and the subscription runtime. GitHub streams with declared subscriptions use their flow consumers; unconverted streams keep the legacy scripts described below.
 
-Ficus's integrations layer provides instance-global external service connections through narrow, provider-neutral capabilities. Each squad selects one pooled connection per provider. Bigbrain is the first provider. GitHub can publish typed outputs into flow subscriptions while retaining its legacy connection setup. Linear runtime paths remain on their existing adapters; Slack, Discord, and Telegram credentials are connection-scoped (one connection per provider) while the channel runtime still owns delivery and routing.
+Ficus's integrations layer provides instance-global external service connections through narrow, provider-neutral capabilities. Each squad selects one pooled connection per provider. BigBrain provides local memory tools. GitHub can publish typed outputs into flow subscriptions while retaining its legacy connection setup. Linear runtime paths remain on their existing adapters; Slack, Discord, and Telegram credentials are connection-scoped (one connection per provider) while the channel runtime still owns delivery and routing.
 
-## Clean-room provenance
+## Connection lifecycle and BigBrain
 
-The protocol behavior used for this connector was independently described from observable behavior at `elsehow/bigbrain@5681d62beebad7812d901ed25ce911241e277c13`. No repository-wide root license was observable, so Ficus treats that source as unavailable for reuse. This implementation does not copy or adapt its source, tests, comments, scripts, documentation, or prose, and does not depend on that repository.
+Connections belong to an instance-global pool. Authorized global integration
+operators manage connection lifecycle; squads select from redacted pooled
+connection summaries. Global enablement, account enablement, squad selection,
+and agent capability/tool permissions remain independent gates. Many squads can
+select one connection; an unassigned squad has no BigBrain access.
 
-## Connection lifecycle
+Creation and enablement perform live validation outside database locks, then
+commit against the connection's material revision. Validation is fresh for 15
+minutes; healthy enabled connections are revalidated before expiry. Stale
+validation, uncertain health, invalid authentication, unknown versions, or a
+missing assignment fail closed. Disable/removal retain authoritative impact
+confirmation for assigned squads.
 
-Connections belong to an instance-global pool. An authorized Operator or Admin manages the pool from Settings → Integrations using an HTTPS API base and bearer credential. Squad Settings → Integrations reuses that lifecycle surface when the viewer has global access and additionally provides a selector for the connection that squad uses. Many squads may select one connection; a squad with no selection has no integration for that provider.
+**BigBrain uses an explicitly declared local vault on the self-hosted Core
+machine, not an API base and bearer-token form.** See [BigBrain local vault
+connections](bigbrain.md) for the implementation contract, upstream pin and
+provenance, exact machine boundary, operator setup, CLI selection, tools, failure
+states, and removal/release boundary. Hosted and remote-vault configurations are
+not supported. Ficus does not automatically capture or export transcripts and
+does not replace capture with background summaries or drops.
 
-The credential is encrypted by Ficus's secret store. Full pool responses contain safe configuration and `credentialConfigured` status, never a credential value or reference. The squad selector receives only connection ID, provider, display name, enabled state, and health state.
-
-Creation and enablement perform live validation. Provider I/O occurs outside database locks, followed by a material-revision compare-and-set. Validation remains fresh for 15 minutes. Healthy connections are scheduled for revalidation two minutes before expiry so the worker's one-minute polling interval does not create a recurring authorization gap. Failed validations retain their retry backoff. Changed credentials/configuration, stale validation, uncertain health, invalid authentication, unknown versions, or a missing assignment fail closed.
-
-Bigbrain scopes:
-
-- `vault:read`: search, note retrieval, and memory retrieval
-- `inbox:write`: Markdown drop and consented conversation export
-
-Safely provide a credential to the CLI through stdin, never an argument:
-
-```sh
-printf '%s' "$BIGBRAIN_TOKEN" | ficus integration create bigbrain \
-  --api-base https://brain.example --credential-stdin
-
-ficus integration list --provider bigbrain
-ficus integration assign bigbrain --squad "$SQUAD_ID" --connection "$CONNECTION_ID"
-# Remove the squad binding without deleting the pooled connection:
-ficus integration unassign bigbrain --squad "$SQUAD_ID"
-```
-
-Agent tools require both a version-1 integration policy and explicit `tools.allow` entries:
-
-```yaml
-integrations:
-  version: 1
-  allow:
-    bigbrain: [agent_tools, conversation_export]
-tools:
-  allow:
-    - bigbrain_search
-    - bigbrain_get_note
-    - bigbrain_get_memory
-    - bigbrain_drop_markdown
-```
-
-Absence is denial. Enabling a connection does not expose tools or consent any conversation. `bigbrain_drop_markdown` is a consent-independent outbound channel: once an Operator or Admin enables both `agent_tools` policy and that tool, the agent can send arbitrary Markdown it can access to Bigbrain. Conversation-export consent does not govern this tool.
-
-Pool lifecycle authorization is instance-scoped and provider-subselected: `integrations:read:<providerKey>` and `integrations:write:<providerKey>`. A bare instance `integrations:read` or `integrations:write` grant covers every provider, while an exact provider grant does not cross providers. The squad selector separately uses squad-scoped `integrations:read` and `integrations:write`. A squad-scoped grant never reveals pooled credential or configuration details and never authorizes lifecycle actions. Admins inherit these permissions through the Admin role's implicit `*` permission.
-
-## Conversation export and consent
-
-Conversation export is default-off. A human with `integrations:export` must explicitly consent for a specific top-level squad conversation and connection. Consent records the user, time, connection, policy/projection versions, and the current message high-water, so export is prospective and never backfills earlier history.
-
-Only server-attributed user/assistant text from complete executions is projected. Ficus excludes system/developer/internal and inbox events, hidden reasoning, tool calls and results, attachments/images/binary data, deleted/redacted records, subagents, unrelated sessions, uncertain provenance, and message metadata content. Text passes conservative credential redaction before encoding.
-
-Revocation immediately prevents future creation or delivery. It does not delete data already delivered remotely. Ficus makes no remote-deletion promise.
-
-The encrypted ordered outbox stores stable payload bytes and an idempotency key. Batches contain at most 100 complete records and 256 KiB. Ambiguous retries reuse identical bytes. The cursor advances only in the transaction that marks a 2xx delivery successful; acknowledged payload ciphertext is scrubbed. Retry/dead-letter records and audits contain counts, bytes, identifiers, and sanitized codes only.
-
-## Operations
-
-- Before disabling, rotating, or removing a connection, inspect the authoritative usage confirmation. It names/counts affected squads. Disable and rotation preserve assignments and consents but suspend runtime use until the connection is re-enabled; removal cascades all assignments.
-- Rotate a suspected credential, which disables and invalidates the connection, then validate and explicitly enable it again. The blast radius includes every assigned squad.
-- A 401 invalidates authentication and disables runtime capabilities. Missing scope, timeout, and availability failures suspend capabilities pending successful validation.
-- Inspect health, validation expiry, retry/dead-letter counts, and sanitized error codes. Provider response bodies and exported content must never appear in logs or audits.
-- For credential leakage, disable the connection, revoke the remote credential, rotate it in Ficus, revoke affected export consents, and review content-free audit identifiers.
-
-## Migration and rollback
-
-The migration preserves every existing connection row, credential reference, consent, cursor, and encrypted batch. It creates an assignment only from each squad's previously enabled connection, so effective exports continue without credential entry, backfill, or a destination blip. Duplicate display names are disambiguated for the global pool. The old nullable connection `squad_id` remains only as rollout provenance; runtime resolution never uses it.
-
-Ficus's migrator is forward-only and does not provide a schema-down command. A safe application rollback retains the additive assignment table and nullable legacy provenance. Before rolling application code back, disable every Bigbrain connection, revoke active export consents, stop the export and revalidation workers, and verify that no batch remains in `pending`, `processing`, or `retry_wait`. After the older application is running, verify existing provider paths and confirm the integration workers are absent. Destructive removal requires a separately reviewed forward migration. Neither application rollback nor consent revocation removes data already delivered remotely.
+Pool authorization is instance-scoped and provider-subselected:
+`integrations:read:<providerKey>` and `integrations:write:<providerKey>`. A bare
+instance grant covers every provider; an exact provider grant does not cross
+providers. Squad selection separately uses squad-scoped `integrations:read` and
+`integrations:write`. A squad grant never exposes pooled private material or
+configuration and never authorizes pool lifecycle actions. Admins inherit these
+permissions through their implicit `*` grant.
 
 ## Future adapter seams
 
