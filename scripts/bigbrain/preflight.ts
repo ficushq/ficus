@@ -412,6 +412,9 @@ export async function runIsolationChecks(target: string, stage: { name: string }
     return
   }
   stage.name = 'storage'
+  // Fixed breadcrumb: does this root ExecStartPre see the service's private mount view?
+  if (/ \/var\/lib\/ficus-bigbrain (?:ro|rw),/.test(await readFile('/proc/self/mountinfo', 'utf8').catch(() => '')))
+    noteStage('preflight_sees_private_view')
   await verifyRecordedVaultStorage(target)
   const record = await readPrivateJson(managedPaths({ vaultId: target }).control, 'receipt.json', controlReceiptSchema)
   stage.name = 'socket-directory'

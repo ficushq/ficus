@@ -3,6 +3,7 @@ import { constants as C } from 'node:fs'
 import { lstat, open, rename, unlink, mkdir, type FileHandle } from 'node:fs/promises'
 import { isAbsolute, resolve, dirname, basename } from 'node:path'
 import type { z } from 'zod'
+import { errnoToken, noteStage } from './diagnostics'
 
 const DIRECTORY_FLAGS = C.O_RDONLY | C.O_DIRECTORY | C.O_NOFOLLOW | C.O_NONBLOCK
 const FILE_FLAGS = C.O_RDONLY | C.O_NOFOLLOW | C.O_NONBLOCK
@@ -16,16 +17,30 @@ async function openPrivateDirectory(path: string, uid: number, privateLeaf = tru
   if (process.platform !== 'linux' || !isAbsolute(path) || resolve(path) !== path || path === '/') throw new Error()
   let directory = await open('/', DIRECTORY_FLAGS)
   try {
+    let depth = 0
     for (const component of path.slice(1).split('/')) {
-      const next = await open(`/proc/self/fd/${directory.fd}/${component}`, DIRECTORY_FLAGS)
+      depth += 1
+      let next: FileHandle
+      try {
+        next = await open(`/proc/self/fd/${directory.fd}/${component}`, DIRECTORY_FLAGS)
+      } catch (error) {
+        noteStage(`walk_open_${depth}_${errnoToken(error)}`)
+        throw error
+      }
       await directory.close()
       directory = next
       const info = await directory.stat()
       const stickyRoot = info.uid === 0 && (info.mode & 0o1000) !== 0
-      if ((info.uid !== 0 && info.uid !== uid) || ((info.mode & 0o022) !== 0 && !stickyRoot)) throw new Error()
+      if ((info.uid !== 0 && info.uid !== uid) || ((info.mode & 0o022) !== 0 && !stickyRoot)) {
+        noteStage(`walk_unsafe_${depth}`)
+        throw new Error()
+      }
     }
     const leaf = await directory.stat()
-    if (leaf.uid !== uid || (leaf.mode & (privateLeaf ? 0o077 : 0o022)) !== 0) throw new Error()
+    if (leaf.uid !== uid || (leaf.mode & (privateLeaf ? 0o077 : 0o022)) !== 0) {
+      noteStage('walk_leaf_unsafe')
+      throw new Error()
+    }
     return directory
   } catch (error) {
     await directory.close().catch(() => {})
@@ -105,10 +120,22 @@ async function openOwnedFile(
     if (assetName) checkedAssetName(name)
     else checkedName(name)
     dir = await openPrivateDirectory(directory, uid, privateFile)
-    file = await open(`/proc/self/fd/${dir.fd}/${name}`, FILE_FLAGS)
+    try {
+      file = await open(`/proc/self/fd/${dir.fd}/${name}`, FILE_FLAGS)
+    } catch (error) {
+      noteStage(`file_open_${errnoToken(error)}`)
+      throw error
+    }
     const info = await file.stat()
-    if (!info.isFile() || info.nlink !== 1 || info.uid !== uid || (info.mode & 0o777) !== (privateFile ? 0o600 : 0o644))
+    if (
+      !info.isFile() ||
+      info.nlink !== 1 ||
+      info.uid !== uid ||
+      (info.mode & 0o777) !== (privateFile ? 0o600 : 0o644)
+    ) {
+      noteStage('file_unsafe')
       throw new Error()
+    }
     return file
   } catch {
     await file?.close().catch(() => {})
@@ -150,7 +177,16 @@ async function readOwnedJson<T>(
     const maxBytes = options.maxBytes ?? 16384
     checkedBudget(maxBytes)
     file = await openOwnedFile(directory, name, options.uid ?? 0, privateFile)
-    return schema.parse(JSON.parse(await boundedText(file, maxBytes)))
+    const text = await boundedText(file, maxBytes).catch((error: unknown) => {
+      noteStage('json_oversize')
+      throw error
+    })
+    const parsed = schema.safeParse(JSON.parse(text))
+    if (!parsed.success) {
+      noteStage('json_schema')
+      throw new Error()
+    }
+    return parsed.data
   } catch {
     throw new Error('storage_unavailable')
   } finally {
