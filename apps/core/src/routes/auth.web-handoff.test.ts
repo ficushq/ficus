@@ -10,6 +10,7 @@ import { cleanupTestRbac, createTestUser } from '../test-utils'
 import { User } from '../entities/User'
 import { createDeviceToken, revokeDeviceToken } from '../services/auth/device-tokens'
 import { resolveTokenContext } from '../services/auth/resolve-token'
+import { primaryWebOrigin } from '../services/auth/web-origins'
 import { consumeWsTicket } from '../services/auth/ws-ticket'
 import { DeviceConnectionRegistry } from '../services/auth/device-connection-registry'
 import { findActiveDeviceTokenIds } from '../services/auth/device-tokens'
@@ -79,6 +80,8 @@ describe('web handoff routes', () => {
     expect(await resolveTokenContext(token)).toEqual({
       identity: { type: 'user', userId: user.id },
       deviceTokenId: device.id,
+      // No Origin on this exchange, so the session records the primary origin.
+      signInOrigin: primaryWebOrigin(),
     })
     const bound = await db.select().from(sessions).where(eq(sessions.deviceTokenId, device.id))
     expect(bound.map((row) => row.userId)).toEqual([user.id])

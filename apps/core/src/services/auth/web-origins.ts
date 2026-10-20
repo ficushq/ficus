@@ -57,8 +57,13 @@ export function primaryWebOrigin(state: UrlState = describePublicAppUrl()): stri
  * from the request, so a caller cannot steer the link to another host or path.
  */
 export function primaryWebAppUrl(): string {
+  return webAppUrlForOrigin(primaryWebOrigin())
+}
+
+/** The web app's root URL at one of this server's origins: that origin plus APP_BASE_PATH, no trailing slash. */
+export function webAppUrlForOrigin(origin: string): string {
   const basePath = (process.env.APP_BASE_PATH ?? '').trim().replace(/^\/+|\/+$/g, '')
-  return basePath ? `${primaryWebOrigin()}/${basePath}` : primaryWebOrigin()
+  return basePath ? `${origin}/${basePath}` : origin
 }
 
 /**
@@ -103,4 +108,28 @@ export function rpOriginForRequest(
 ): string {
   const normalized = normalizeOrigin(requestOrigin)
   return normalized && corsAllowOrigins(state).includes(normalized) ? normalized : primaryWebOrigin(state)
+}
+
+/**
+ * The origin a STEP-UP assertion (re-confirming a signed-in person before issuing a
+ * passkey enrollment code) is verified against: the request Origin when allowlisted;
+ * otherwise the origin recorded on the caller's session when it was minted
+ * (allowlisted then, and server state — never the header); otherwise the primary origin.
+ *
+ * The session fallback keeps the step-up usable from a tab still signed in at an
+ * address an administrator has just moved away from, which is exactly when a person
+ * needs a passkey for the new address. It cannot widen anything: the browser-signed
+ * clientDataJSON.origin must still equal it, and it is never used for login or
+ * registration.
+ */
+export function rpOriginForStepUp(
+  requestOrigin: string | undefined | null,
+  sessionOrigin: string | undefined | null,
+  state: UrlState = describePublicAppUrl()
+): string {
+  const normalized = normalizeOrigin(requestOrigin)
+  if (normalized && corsAllowOrigins(state).includes(normalized)) return normalized
+  const recorded = normalizeOrigin(sessionOrigin)
+  if (recorded && /^https?:\/\/[^/\s]+$/.test(recorded)) return recorded
+  return primaryWebOrigin(state)
 }

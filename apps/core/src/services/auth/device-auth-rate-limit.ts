@@ -55,3 +55,9 @@ export const webHandoffExchangeLimiter = new FixedWindowLimiter()
 
 /** Web handoff mints, per paired device. */
 export const webHandoffMintLimiter = new FixedWindowLimiter()
+
+/** Passkey enrollment code issues (including failed step-ups), per user. */
+export const passkeyCodeIssueLimiter = new FixedWindowLimiter()
+
+/** Passkey enrollment code redemption calls, per client address (the codes are 80-bit; this bounds hammering). */
+export const passkeyCodeRedeemLimiter = new FixedWindowLimiter()

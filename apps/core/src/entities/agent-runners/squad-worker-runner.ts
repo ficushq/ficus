@@ -27,7 +27,7 @@ import { Squad } from '../Squad'
 import { ensureSquadSandbox, ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
 import { AgentSession } from '../AgentSession'
 import { createAsyncAskHumanTool, createMemoryTools, createSetAgentPurposeTool, createMonitorTool } from '../../tools'
-import { createSquadBashTool } from '../../tools/squad-bash'
+import { createSquadBashTool, SQUAD_BASH_TOOL_KEY } from '../../tools/squad-bash'
 import {
   AGENT_PURPOSE_DISPLAY_SECTION_TITLE,
   SET_AGENT_PURPOSE_INSTRUCTIONS,
@@ -226,11 +226,6 @@ export class SquadWorkerRunner extends AgentRunner {
     })
     const notifyContactTool = createNotifyContactTool({ agentId: this.agent.id })
     const subagentLifecycleTools = createSubagentLifecycleTools({ agentId: this.agent.id })
-    const monitorTool = createMonitorTool({
-      agentId: this.agent.id,
-      sandboxId: lightId,
-      workspacePath: this.workspacePath,
-    })
     const todoTools = createSquadTodoTools(this.squad.id, this.agent.id)
     const setAgentPurposeTool = createSetAgentPurposeTool({ agentId: this.agent.id })
 
@@ -250,7 +245,6 @@ export class SquadWorkerRunner extends AgentRunner {
             askHumanTool,
             notifyContactTool,
             ...subagentLifecycleTools,
-            monitorTool,
             ...(sandboxStatusTool ? [sandboxStatusTool] : []),
             setAgentPurposeTool,
             ...todoTools,
@@ -267,6 +261,14 @@ export class SquadWorkerRunner extends AgentRunner {
       )
       sessionOptions.tools!.core = [
         ...(sessionOptions.tools?.core ?? []),
+        createMonitorTool({
+          agentId: this.agent.id,
+          sandboxId: lightId,
+          workspacePath: this.workspacePath,
+          squadSandboxId: effectiveEnvironmentTools.some((tool) => tool.name === SQUAD_BASH_TOOL_KEY)
+            ? this.squad.sandboxId
+            : undefined,
+        }),
         createDispatchTool({
           agentId: this.agent.id,
           parentExecutionContext: {

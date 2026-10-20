@@ -1,5 +1,5 @@
 {
-  "id": "10cf2eac-8124-4c9f-8dd1-e59843650bd6",
+  "id": "489a92ba-93e9-493b-aa79-f6020c61bb62",
   "prevId": "ca5274ea-e5a3-4335-b55c-33c38d78db73",
   "version": "7",
   "dialect": "postgresql",
@@ -12136,453 +12136,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.managed_bigbrain_operations": {
-      "name": "managed_bigbrain_operations",
-      "schema": "",
-      "columns": {
-        "request_id": {
-          "name": "request_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "vault_id": {
-          "name": "vault_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "action": {
-          "name": "action",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "input_hash": {
-          "name": "input_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expected_generation": {
-          "name": "expected_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "issued_at": {
-          "name": "issued_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'accepted'"
-        },
-        "code": {
-          "name": "code",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_managed_bigbrain_operations_vault": {
-          "name": "idx_managed_bigbrain_operations_vault",
-          "columns": [
-            {
-              "expression": "vault_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "managed_bigbrain_operations_vault_id_managed_bigbrain_vaults_id_fk": {
-          "name": "managed_bigbrain_operations_vault_id_managed_bigbrain_vaults_id_fk",
-          "tableFrom": "managed_bigbrain_operations",
-          "tableTo": "managed_bigbrain_vaults",
-          "columnsFrom": [
-            "vault_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "managed_bigbrain_operations_action_check": {
-          "name": "managed_bigbrain_operations_action_check",
-          "value": "\"managed_bigbrain_operations\".\"action\" in ('create', 'rename', 'retry', 'owner-invite', 'read-revoke', 'read-reconnect', 'delete')"
-        },
-        "managed_bigbrain_operations_status_check": {
-          "name": "managed_bigbrain_operations_status_check",
-          "value": "\"managed_bigbrain_operations\".\"status\" in ('accepted', 'applied', 'failed')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.managed_bigbrain_vaults": {
-      "name": "managed_bigbrain_vaults",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "owner_handle": {
-          "name": "owner_handle",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_display": {
-          "name": "owner_display",
-          "type": "varchar(120)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "display_name": {
-          "name": "display_name",
-          "type": "varchar(120)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "host_display_name": {
-          "name": "host_display_name",
-          "type": "varchar(120)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "connection_id": {
-          "name": "connection_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "upstream_vault_id": {
-          "name": "upstream_vault_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'requested'"
-        },
-        "read_access": {
-          "name": "read_access",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "desired_generation": {
-          "name": "desired_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "applied_generation": {
-          "name": "applied_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "desired_action": {
-          "name": "desired_action",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "operation_request_id": {
-          "name": "operation_request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "operation_hash": {
-          "name": "operation_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "create_request_id": {
-          "name": "create_request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "create_request_hash": {
-          "name": "create_request_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "create_recipe": {
-          "name": "create_recipe",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "artifact_digest": {
-          "name": "artifact_digest",
-          "type": "varchar(71)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "host_receipt_id": {
-          "name": "host_receipt_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "backup": {
-          "name": "backup",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'unknown'"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "next_attempt_at": {
-          "name": "next_attempt_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error_code": {
-          "name": "last_error_code",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retryable": {
-          "name": "retryable",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "origin": {
-          "name": "origin",
-          "type": "varchar(253)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "read_material": {
-          "name": "read_material",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uq_managed_bigbrain_vaults_create_request": {
-          "name": "uq_managed_bigbrain_vaults_create_request",
-          "columns": [
-            {
-              "expression": "create_request_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_managed_bigbrain_vaults_connection": {
-          "name": "uq_managed_bigbrain_vaults_connection",
-          "columns": [
-            {
-              "expression": "connection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"managed_bigbrain_vaults\".\"connection_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_managed_bigbrain_vaults_live_display_name": {
-          "name": "uq_managed_bigbrain_vaults_live_display_name",
-          "columns": [
-            {
-              "expression": "display_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"managed_bigbrain_vaults\".\"state\" <> 'deleted'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_managed_bigbrain_vaults_due": {
-          "name": "idx_managed_bigbrain_vaults_due",
-          "columns": [
-            {
-              "expression": "next_attempt_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "managed_bigbrain_vaults_owner_user_id_users_id_fk": {
-          "name": "managed_bigbrain_vaults_owner_user_id_users_id_fk",
-          "tableFrom": "managed_bigbrain_vaults",
-          "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "managed_bigbrain_vaults_connection_id_integration_connections_id_fk": {
-          "name": "managed_bigbrain_vaults_connection_id_integration_connections_id_fk",
-          "tableFrom": "managed_bigbrain_vaults",
-          "tableTo": "integration_connections",
-          "columnsFrom": [
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "managed_bigbrain_vaults_created_by_user_id_users_id_fk": {
-          "name": "managed_bigbrain_vaults_created_by_user_id_users_id_fk",
-          "tableFrom": "managed_bigbrain_vaults",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "managed_bigbrain_vaults_state_check": {
-          "name": "managed_bigbrain_vaults_state_check",
-          "value": "\"managed_bigbrain_vaults\".\"state\" in ('requested', 'provisioning', 'ready', 'degraded', 'failed', 'deleting', 'deleted')"
-        },
-        "managed_bigbrain_vaults_read_access_check": {
-          "name": "managed_bigbrain_vaults_read_access_check",
-          "value": "\"managed_bigbrain_vaults\".\"read_access\" in ('pending', 'active', 'revoked')"
-        },
-        "managed_bigbrain_vaults_action_check": {
-          "name": "managed_bigbrain_vaults_action_check",
-          "value": "\"managed_bigbrain_vaults\".\"desired_action\" is null or \"managed_bigbrain_vaults\".\"desired_action\" in ('create', 'rename', 'read-revoke', 'read-reconnect', 'delete')"
-        },
-        "managed_bigbrain_vaults_backup_check": {
-          "name": "managed_bigbrain_vaults_backup_check",
-          "value": "\"managed_bigbrain_vaults\".\"backup\" in ('unknown', 'included', 'excluded')"
-        },
-        "managed_bigbrain_vaults_generation_check": {
-          "name": "managed_bigbrain_vaults_generation_check",
-          "value": "\"managed_bigbrain_vaults\".\"desired_generation\" >= 1 and \"managed_bigbrain_vaults\".\"applied_generation\" >= 0 and \"managed_bigbrain_vaults\".\"applied_generation\" <= \"managed_bigbrain_vaults\".\"desired_generation\""
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.memory_access_audit": {
       "name": "memory_access_audit",
       "schema": "",
@@ -14852,6 +14405,126 @@
       "uniqueConstraints": {
         "pairing_codes_code_hash_unique": {
           "name": "pairing_codes_code_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.passkey_enrollment_codes": {
+      "name": "passkey_enrollment_codes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_hash": {
+          "name": "code_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_origin": {
+          "name": "issued_origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "redeemed_origin": {
+          "name": "redeemed_origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "redeemed_credential_id": {
+          "name": "redeemed_credential_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_passkey_enrollment_codes_user": {
+          "name": "idx_passkey_enrollment_codes_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "passkey_enrollment_codes_user_id_users_id_fk": {
+          "name": "passkey_enrollment_codes_user_id_users_id_fk",
+          "tableFrom": "passkey_enrollment_codes",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "passkey_enrollment_codes_code_hash_unique": {
+          "name": "passkey_enrollment_codes_code_hash_unique",
           "nullsNotDistinct": false,
           "columns": [
             "code_hash"
@@ -17132,6 +16805,12 @@
         "device_token_id": {
           "name": "device_token_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sign_in_origin": {
+          "name": "sign_in_origin",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         }

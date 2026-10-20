@@ -182,7 +182,8 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     section: 'account',
     id: 'passkeys',
     label: 'Passkeys',
-    keywords: 'password authentication security credential biometric touch id face id',
+    keywords:
+      'password authentication security credential biometric touch id face id add passkey another address hostname link code',
   },
   {
     section: 'system',

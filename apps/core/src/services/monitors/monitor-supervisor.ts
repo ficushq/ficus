@@ -98,10 +98,10 @@ type SendMessage = (
   options: { deliveryMode: 'steer'; metadata: Record<string, unknown> }
 ) => Promise<unknown>
 
-type LossKind = 'sandbox-restarted' | 'process-lost'
+type LossKind = 'directory-lost' | 'process-lost'
 const LOSS_REASON: Record<LossKind, string> = {
-  'sandbox-restarted': 'sandbox restarted',
-  'process-lost': 'process ended without recording an exit code (sandbox restart or killed)',
+  'directory-lost': 'monitor state directory is missing (cause unknown)',
+  'process-lost': 'process ended without recording an exit code (cause unknown)',
 }
 
 type TerminalStatus = 'exited' | 'canceled' | 'timed-out' | 'overload' | 'failed'
@@ -183,7 +183,7 @@ async function defaultEnsureSandboxReachable(sandboxId: string): Promise<boolean
  * Lifecycle guarantees (docs/wiki/agent-background-monitors.md):
  * - Core shutdown DETACHES (in-memory only); `recoverOnStartup` reattaches to
  *   still-running sessions without rerunning or counting anything.
- * - A LOSS (sandbox restarted, or the process vanished without an exit code)
+ * - A LOSS (monitor state directory is missing, or the process vanished without an exit code)
  *   follows the monitor's restart policy: `never` fails with a clear reason,
  *   `on-loss` relaunches with backoff and a rapid-restart limit. Exits,
  *   cancel, timeout and overload never restart.
@@ -771,7 +771,7 @@ export class MonitorSupervisor {
         return
       }
       log.warn(`monitor ${monitorId}: ${result === DIR_GONE ? 'work dir missing' : 'session gone without exitCode'}`)
-      await this.handleLoss(state, result === DIR_GONE ? 'sandbox-restarted' : 'process-lost')
+      await this.handleLoss(state, result === DIR_GONE ? 'directory-lost' : 'process-lost')
       return
     }
     if (result !== '') {
@@ -988,7 +988,7 @@ export class MonitorSupervisor {
         : `not counted toward the rapid-restart limit: it had run ${window}+ since its last launch`
     await this.sendMessage(
       monitor.agentId,
-      `Monitor "${monitor.label}" (${shortId}) restarted after sandbox loss: ${monitor.lastRestartReason ?? 'process lost'} (${counting}).`,
+      `Monitor "${monitor.label}" (${shortId}) restarted: ${monitor.lastRestartReason ?? 'process lost'} (${counting}).`,
       {
         deliveryMode: 'steer',
         metadata: {

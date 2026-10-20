@@ -80,7 +80,14 @@ Ficus checks the address format only (scheme, host, optional port and path; no c
 After a change:
 
 - **Passkeys** don't carry over to a new hostname. Existing passkeys keep working at the local address (`FICUS_LOCAL_APP_URL`, for example Ficus Desktop's `http://localhost:<port>`) and at the hostname they were made on while it stays allowed; you can keep signing in and pairing phones from there.
-- **Lost your passkey?** on the new address's sign-in page needs email delivery from the server, and it replaces all of your existing passkeys and signs out every session. Without email it sends nothing.
+- **To use a passkey at the new address**, add one from an address where your passkeys still work (the address you used to make the change, or the local address):
+  1. Open **Settings → Account → Passkeys** and choose **Add a passkey for another address**.
+  2. Confirm with one of your passkeys. Ficus shows a one-time link and a code, valid for 15 minutes.
+  3. Open the link at the new address, or go to `https://<new address>/add-passkey` and type the code, then create the passkey. You're signed in there.
+
+  This adds a passkey. Your other passkeys and sessions stay as they are. Each person adds their own. A code works once, only for the account that created it, and creating another code cancels the previous one.
+
+- **Lost your passkey?** on the sign-in page is a last resort. It needs email delivery from the server, and it replaces all of your existing passkeys and signs out every session. Without email it sends nothing.
 - If the address you were using stops being allowed and you can't sign in, set `APP_URL` in the server environment and restart Ficus; the environment value overrides the setting.
 - **Ficus account (Mobile & Pro):** connect the account again. Pending approvals for the old address are cancelled. Devices and Instance Pro slots stay with the old address in your Ficus account and do not move.
 - **Integrations:** update OAuth redirect URLs and GitHub or Linear webhook URLs with your providers. The confirmation lists the old and new values.
