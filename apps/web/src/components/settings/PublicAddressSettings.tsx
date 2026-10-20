@@ -98,7 +98,7 @@ function UrlChanges({ title, changes }: { title: string; changes: UrlChange[] })
 }
 
 /**
- * The server's public address (Administration → Mobile & Pro): the one address used for
+ * The server's public address (Administration → Server address): the one address used for
  * links, sign-in, OAuth callbacks, webhooks and the Ficus app. Administrators change it
  * here unless the server environment (APP_URL) or Ficus Cloud sets it.
  */
@@ -175,7 +175,7 @@ export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string)
     currentOrigin !== originOf(status.localUrl)
 
   return (
-    <div data-setting-target="mobile-public-url" tabIndex={-1} className="space-y-4">
+    <div data-setting-target="server-address" tabIndex={-1} className="space-y-4">
       <SettingsRow
         label="Public address"
         description={

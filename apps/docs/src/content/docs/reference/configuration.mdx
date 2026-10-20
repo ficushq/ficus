@@ -46,18 +46,18 @@ Changing `HOME_DIR` or `DATABASE_URL` selects different storage; it does not mov
 
 ## Browser addresses and ports
 
-| Setting                   | Meaning and local behavior                                                                                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                    | API and built-in web port; fresh local setup uses 3000.                                                                                                                                       |
-| `HOST`                    | API bind address. Outside Kubernetes, the default is `127.0.0.1`; setting it can expose the listener beyond the local machine.                                                                |
-| `WORKER_PORT`             | Worker HTTP port; setup derives the API port plus 2. Not the browser entrypoint.                                                                                                              |
-| `FICUS_WORKER_BIND`       | Worker bind address. Overrides `HOST`; otherwise the worker defaults to loopback outside Kubernetes.                                                                                          |
-| `FICUS_WORKER_EVENT_PORT` | Internal event port; setup derives the API port plus 3.                                                                                                                                       |
-| `APP_URL`                 | Public application address for links, sign-in, callbacks and the Ficus app. When set, it locks the **Public address** in Settings → Mobile & Pro; leave it unset to manage the address there. |
-| `FICUS_LOCAL_APP_URL`     | Local address provided by Ficus Desktop or `ficus setup` (`http://localhost:<port>`). Used only when no public address is set, and never locks it.                                            |
-| `FICUS_WEB_ORIGIN`        | Pins the primary browser origin for passkeys and browser access policy: `scheme://host[:port]`, with no path. The public and local addresses are always also allowed.                         |
-| `FICUS_API_URL`           | API address used by clients and runtime connections. Keep it reachable from the components that use it.                                                                                       |
-| `FICUS_SERVE_WEB`         | `1`, `true` or `yes` serves the built web app from Core. `0`, `false` or `no` disables it. If unset, Core serves it only when a build exists.                                                 |
+| Setting                   | Meaning and local behavior                                                                                                                                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                    | API and built-in web port; fresh local setup uses 3000.                                                                                                                                                          |
+| `HOST`                    | API bind address. Outside Kubernetes, the default is `127.0.0.1`; setting it can expose the listener beyond the local machine.                                                                                   |
+| `WORKER_PORT`             | Worker HTTP port; setup derives the API port plus 2. Not the browser entrypoint.                                                                                                                                 |
+| `FICUS_WORKER_BIND`       | Worker bind address. Overrides `HOST`; otherwise the worker defaults to loopback outside Kubernetes.                                                                                                             |
+| `FICUS_WORKER_EVENT_PORT` | Internal event port; setup derives the API port plus 3.                                                                                                                                                          |
+| `APP_URL`                 | Public application address for links, sign-in, callbacks and the Ficus app. When set, it locks the **Public address** in Settings → Administration → Server address; leave it unset to manage the address there. |
+| `FICUS_LOCAL_APP_URL`     | Local address provided by Ficus Desktop or `ficus setup` (`http://localhost:<port>`). Used only when no public address is set, and never locks it.                                                               |
+| `FICUS_WEB_ORIGIN`        | Pins the primary browser origin for passkeys and browser access policy: `scheme://host[:port]`, with no path. The public and local addresses are always also allowed.                                            |
+| `FICUS_API_URL`           | API address used by clients and runtime connections. Keep it reachable from the components that use it.                                                                                                          |
+| `FICUS_SERVE_WEB`         | `1`, `true` or `yes` serves the built web app from Core. `0`, `false` or `no` disables it. If unset, Core serves it only when a build exists.                                                                    |
 
 The public address can also be set without editing `.env`; see [where the public address comes from](/self-host/runtime-and-access/#where-the-public-address-comes-from). Example for a same-machine HTTPS proxy configured in `.env`, with the API still on its local port:
 

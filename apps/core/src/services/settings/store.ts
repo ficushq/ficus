@@ -114,7 +114,7 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
     type: 'string',
     default: '',
     description:
-      'Canonical public application URL (scheme, host, optional port and base path). The APP_URL environment variable overrides it; when empty, the launcher-provided local address applies. Change it in Settings → Mobile & Pro.',
+      'Canonical public application URL (scheme, host, optional port and base path). The APP_URL environment variable overrides it; when empty, the launcher-provided local address applies. Change it in Settings → Administration → Server address.',
     validate: (value) => (normalizePublicAppUrl(value) ? null : PUBLIC_APP_URL_FORMAT_ERROR),
     // Written by ficus-api; notifications, prompts and sandbox env are built in ficus-worker.
     crossProcess: true,

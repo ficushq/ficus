@@ -42,7 +42,7 @@ For browser access from another device, use a hostname you control and an HTTPS 
 1. Point your hostname at the server and arrange an HTTPS certificate with your proxy.
 2. Make sure `FICUS_SERVE_WEB=1` is set in the Ficus checkout's `.env` (setup sets it).
 3. Proxy the whole hostname to `http://127.0.0.1:3000`. Forward ordinary HTTP requests and WebSocket upgrades for both `/ws` and `/ws/*`, including terminal connections, and for `/api/app/*`, where squad local apps open their own WebSockets (for example, dev-server hot reload).
-4. Sign in at the server's current address as an administrator, open **Settings → Administration → Mobile & Pro**, and set the **Public address** to `https://ficus.example.com`. Review the confirmation, which lists the passkey, Ficus account and integration callback changes, and save. It takes effect immediately; no restart is needed.
+4. Sign in at the server's current address as an administrator, open **Settings → Administration → Server address**, and set the **Public address** to `https://ficus.example.com`. Review the confirmation, which lists the passkey, Ficus account and integration callback changes, and save. It takes effect immediately; no restart is needed.
 5. Open the HTTPS address and test login, live task updates and a terminal session.
 
 If you manage configuration as files instead, set the address in `.env` and restart with `ficus server restart`. An environment value locks the setting, and Settings shows it as **Set by the server environment**:
@@ -66,12 +66,12 @@ ficus.example.com {
 
 Ficus uses one public address for links, sign-in, integration OAuth callbacks, webhooks and the Ficus app. It is resolved in this order:
 
-| Source                                        | Locks the setting | Notes                                                                                                                                                                         |
-| --------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `APP_URL` environment variable                | Yes               | Shown as **Set by the server environment**. Remove it to manage the address in Settings.                                                                                      |
-| `PUBLIC_URL` environment variable             | Yes               | Older name, used only when `APP_URL` is unset.                                                                                                                                |
-| **Public address** in Settings → Mobile & Pro | —                 | Changed by administrators; takes effect without a restart. Every change is recorded with who made it.                                                                         |
-| `FICUS_LOCAL_APP_URL` environment variable    | No                | The local address a launcher (Ficus Desktop, `ficus setup`) provides. It is used only when nothing above is set, and stays allowed for sign-in after a public address is set. |
+| Source                                                           | Locks the setting | Notes                                                                                                                                                                         |
+| ---------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_URL` environment variable                                   | Yes               | Shown as **Set by the server environment**. Remove it to manage the address in Settings.                                                                                      |
+| `PUBLIC_URL` environment variable                                | Yes               | Older name, used only when `APP_URL` is unset.                                                                                                                                |
+| **Public address** in Settings → Administration → Server address | —                 | Changed by administrators; takes effect without a restart. Every change is recorded with who made it.                                                                         |
+| `FICUS_LOCAL_APP_URL` environment variable                       | No                | The local address a launcher (Ficus Desktop, `ficus setup`) provides. It is used only when nothing above is set, and stays allowed for sign-in after a public address is set. |
 
 On the first start after upgrading, a non-local `APP_URL` or `PUBLIC_URL` is also copied into the setting once, so the server keeps its address if you later remove the variable. Ficus Cloud servers are always managed by Ficus Cloud.
 

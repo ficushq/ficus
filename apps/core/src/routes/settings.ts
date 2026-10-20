@@ -6,7 +6,8 @@ import { parseJsonBody } from './json-body'
 
 const app = new Hono()
 
-const MANAGED_SETTING_ERROR = 'Change the public address in Settings → Mobile & Pro (PUT /api/public-url).'
+const MANAGED_SETTING_ERROR =
+  'Change the public address in Settings → Administration → Server address (PUT /api/public-url).'
 
 /** List all known settings with metadata */
 app.get('/', requirePermission('settings:read'), async (c) => {

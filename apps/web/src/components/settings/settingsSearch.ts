@@ -33,6 +33,8 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   workflows: 'flows presets participants handoffs loops parallel branches review solo engineering completion policy',
 
   mobile: 'mobile app phone tablet device pair qr code download server address free pro widgets live activities push',
+  'server-address':
+    'public server url address app_url hostname domain https origin port base path links sign-in passkeys oauth callback webhooks desktop local',
   'mobile-pro':
     'public server url address mobile app pro ficus account connect disconnect relay push self-hosted instance pro slots device allowance live activities',
   integrations:
@@ -61,8 +63,8 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     keywords: 'feedback report problem bug idea suggestion ai response contact ficus team support help',
   },
   {
-    section: 'mobile-pro',
-    id: 'mobile-public-url',
+    section: 'server-address',
+    id: 'server-address',
     label: 'Public address',
     keywords:
       'https public url origin address hostname ip port base path mobile relay app_url change edit desktop server address',

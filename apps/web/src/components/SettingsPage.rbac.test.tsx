@@ -214,8 +214,10 @@ describe('SettingsPage RBAC tabs', () => {
     )
     expect(html).toContain('href="/settings?section=mobile-pro"')
     expect(html).toContain('Connect a Ficus account and manage Pro coverage')
-    expect(html).not.toContain('mobile-public-url')
-    expect(html).not.toContain('Public address')
+    // A small pointer to Server address, never the editor.
+    expect(html).toContain('OAuth callback and webhook URLs use this server’s public address')
+    expect(html).toContain('href="/settings?section=server-address&amp;setting=server-address"')
+    expect(html).not.toContain('data-setting-target="server-address"')
     expect(html).not.toContain('Checking the public address')
   })
 
@@ -223,8 +225,11 @@ describe('SettingsPage RBAC tabs', () => {
     const html = await renderSettings('/settings?section=mobile-pro', ['settings:read'], { human: true })
     expect(html).toContain('Ficus account')
     expect(html).toContain('Instance Pro')
-    // The editable public address block (its status loads client-side).
-    expect(html).toContain('Checking the public address…')
+    // A read-only summary that links to the Server address section; no editor here.
+    expect(html).toContain('data-public-address-summary')
+    expect(html).toContain('Change in Server address')
+    expect(html).not.toContain('Checking the public address')
+    expect(html).not.toContain('data-setting-target="server-address"')
     expect(html).not.toContain('Pair a mobile device')
     expect(html).not.toContain('Connect Ficus account</button>')
   })
@@ -237,6 +242,33 @@ describe('SettingsPage RBAC tabs', () => {
       const html = await renderSettings('/settings?section=mobile-pro', [...permissions], { human })
       expect(html).not.toContain('Instance Pro allowance')
       expect(html).not.toContain('Manage Pro and devices')
+    }
+  })
+
+  test('administration Server address shows the editor to human settings readers', async () => {
+    const html = await renderSettings('/settings?section=server-address', ['settings:read'], { human: true })
+    expect(html).toContain('Server address')
+    expect(html).toContain('integration OAuth callbacks and webhooks')
+    // The editor's status loads client-side.
+    expect(html).toContain('Checking the public address…')
+  })
+
+  test('Server address is also available on Ficus Cloud', async () => {
+    const html = await renderSettings('/settings?section=server-address', ['settings:read'], {
+      human: true,
+      managed: true,
+    })
+    expect(html).toContain('Checking the public address…')
+  })
+
+  test('administration Server address denies ordinary members and nonhuman identities', async () => {
+    for (const [permissions, human] of [
+      [[], true],
+      [['settings:read'], false],
+    ] as const) {
+      const html = await renderSettings('/settings?section=server-address', [...permissions], { human })
+      expect(html).not.toContain('Checking the public address')
+      expect(html).not.toContain('integration OAuth callbacks and webhooks')
     }
   })
 

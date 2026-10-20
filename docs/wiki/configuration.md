@@ -82,7 +82,7 @@ The canonical public application address drives links, sign-in origins, integrat
 
 1. `APP_URL` environment variable (locks the setting).
 2. `PUBLIC_URL` environment variable (legacy; locks the setting).
-3. The `PUBLIC_APP_URL` server setting, edited by administrators in **Settings → Administration → Mobile & Pro** (`PUT /api/public-url`, version-checked and audited in `setting_audit_log`). The generic `/api/settings` route refuses this key.
+3. The `PUBLIC_APP_URL` server setting, edited by administrators in **Settings → Administration → Server address** (`PUT /api/public-url`, version-checked and audited in `setting_audit_log`). The generic `/api/settings` route refuses this key.
 4. `FICUS_LOCAL_APP_URL` (launcher default; never a lock).
 
 `FICUS_MANAGED=1` servers are always locked. A change applies without a restart in API and worker (settings change notifications, with the 5-minute refresh as a backstop). On the first API start after upgrading, a non-loopback `APP_URL`/`PUBLIC_URL` is copied into the setting once (`PUBLIC_APP_URL_MIGRATED` marks it). Values are format-checked only: http(s), a host, optional port and path, no credentials, query, fragment, control characters, backslashes or encoded slashes, at most 2048 characters. `APP_BASE_PATH` remains build-time; the address's path should match it.
