@@ -3955,6 +3955,59 @@ export const integrationConnections = pgTable(
 )
 
 /**
+ * Managed shared BigBrain vaults hosted on this tenant's own Core server (one row per vault). The
+ * vault ID is minted here and is the Platform/host identity; Platform and the root host own the
+ * provisioning state, this row is Core's durable request + last-synchronized view of it. Rows are
+ * tombstoned (`state = 'deleted'`), never removed with an integration connection, so a deleted
+ * vault cannot be resurrected by an old request. No owner/member/read credentials live here.
+ */
+export const managedBigbrainVaults = pgTable(
+  'managed_bigbrain_vaults',
+  {
+    id: uuid('id').primaryKey(),
+    ownerUserId: uuid('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    displayName: varchar('display_name', { length: 120 }).notNull(),
+    connectionId: uuid('connection_id').references(() => integrationConnections.id, { onDelete: 'set null' }),
+    upstreamVaultId: uuid('upstream_vault_id'),
+    state: varchar('state', { length: 16 }).notNull().default('requested'),
+    readAccess: varchar('read_access', { length: 16 }).notNull().default('pending'),
+    desiredGeneration: integer('desired_generation').notNull().default(1),
+    appliedGeneration: integer('applied_generation').notNull().default(0),
+    operationId: uuid('operation_id'),
+    /** Idempotent create: the same request ID replays this row; a different body conflicts. */
+    createRequestId: uuid('create_request_id').notNull(),
+    createRequestHash: varchar('create_request_hash', { length: 64 }).notNull(),
+    lastErrorCode: varchar('last_error_code', { length: 64 }),
+    retryable: boolean('retryable').notNull().default(false),
+    /** `updatedAt` of the last applied Platform summary: the tie-break within one generation. */
+    platformUpdatedAt: timestamp('platform_updated_at', { withTimezone: true }),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_managed_bigbrain_vaults_create_request').on(table.createRequestId),
+    uniqueIndex('uq_managed_bigbrain_vaults_connection')
+      .on(table.connectionId)
+      .where(sql`${table.connectionId} is not null`),
+    uniqueIndex('uq_managed_bigbrain_vaults_live_display_name')
+      .on(table.displayName)
+      .where(sql`${table.state} <> 'deleted'`),
+    check(
+      'managed_bigbrain_vaults_state_check',
+      sql`${table.state} in ('requested', 'provisioning', 'ready', 'degraded', 'failed', 'deleting', 'deleted')`
+    ),
+    check('managed_bigbrain_vaults_read_access_check', sql`${table.readAccess} in ('pending', 'active', 'revoked')`),
+    check(
+      'managed_bigbrain_vaults_generation_check',
+      sql`${table.desiredGeneration} >= 1 and ${table.appliedGeneration} >= 0 and ${table.appliedGeneration} <= ${table.desiredGeneration}`
+    ),
+  ]
+)
+
+/**
  * The latest delivery the hosted integration relay accepted for a connection and repository, after
  * its revision and authorization checks: live webhook evidence for poll suppression and the poll
  * replay baseline, exactly like a verified direct `webhook_events` row (see GitHubPrWatchPolicy).
