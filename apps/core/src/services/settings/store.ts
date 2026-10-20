@@ -1,6 +1,12 @@
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import { decisionFeatureSwitchesSchema, decisionRoutingSchema } from '@ficus/shared'
-import { db, settings } from '../../db'
+import { db, settingAuditLog, settings } from '../../db'
+import {
+  normalizePublicAppUrl,
+  PUBLIC_APP_URL_FORMAT_ERROR,
+  PUBLIC_APP_URL_MIGRATED_SETTING_KEY,
+  PUBLIC_APP_URL_SETTING_KEY,
+} from '../../lib/public-app-url-format'
 import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
 import { listen, notify } from '../../lib/infra/local-events'
@@ -64,6 +70,32 @@ interface SettingDef {
    * `startPeriodicRefresh` covers everything else.
    */
   crossProcess?: boolean
+  /**
+   * Writes must go through `writeManaged` (compare-and-set on a version token,
+   * validator, and an audit row in one transaction). Plain `set()`/`delete()`
+   * and the generic `/api/settings/:key` route refuse the key so no write path
+   * can bypass the specialized admin route.
+   */
+  managed?: boolean
+}
+
+/** Thrown by `writeManaged` when the caller's version token no longer matches the stored row. */
+export class SettingVersionConflictError extends Error {
+  constructor(
+    readonly key: string,
+    readonly currentVersion: string
+  ) {
+    super(`Setting '${key}' changed since it was read`)
+    this.name = 'SettingVersionConflictError'
+  }
+}
+
+/** Thrown by `set()`/`delete()` for a key that only `writeManaged` may change. */
+export class SettingManagedError extends Error {
+  constructor(readonly key: string) {
+    super(`Setting '${key}' is managed and cannot be changed through the generic settings path`)
+    this.name = 'SettingManagedError'
+  }
 }
 
 /** Thrown by `SettingsStore.set` when a value fails its key's validator. */
@@ -78,6 +110,21 @@ export class SettingValidationError extends Error {
 }
 
 const KNOWN_SETTINGS: Record<string, SettingDef> = {
+  [PUBLIC_APP_URL_SETTING_KEY]: {
+    type: 'string',
+    default: '',
+    description:
+      'Canonical public application URL (scheme, host, optional port and base path). The APP_URL environment variable overrides it; when empty, the launcher-provided local address applies. Change it in Settings → Mobile & Pro.',
+    validate: (value) => (normalizePublicAppUrl(value) ? null : PUBLIC_APP_URL_FORMAT_ERROR),
+    // Written by ficus-api; notifications, prompts and sandbox env are built in ficus-worker.
+    crossProcess: true,
+    managed: true,
+  },
+  [PUBLIC_APP_URL_MIGRATED_SETTING_KEY]: {
+    type: 'string',
+    default: '',
+    description: 'When the one-time APP_URL/PUBLIC_URL to public address seed ran (internal).',
+  },
   STORAGE_SCAN_INTERVAL_HOURS: {
     type: 'number',
     default: '1',
@@ -279,6 +326,28 @@ export interface SettingMetadata {
   updatedBy: string | null
 }
 
+/** True when the key may only be written through `SettingsStore.writeManaged`. */
+export function isManagedSetting(key: string): boolean {
+  return KNOWN_SETTINGS[key]?.managed === true
+}
+
+/**
+ * Optimistic-concurrency token for a settings row: its `updated_at` in ISO
+ * form, `'unset'` when no row exists, `'legacy'` for a row without a timestamp.
+ */
+export function settingVersionToken(row: { updatedAt: Date | null } | undefined): string {
+  if (!row) return 'unset'
+  return row.updatedAt ? row.updatedAt.toISOString() : 'legacy'
+}
+
+export interface SettingAuditEntry {
+  previousValue: string | null
+  newValue: string | null
+  actor: string
+  source: string
+  createdAt: Date
+}
+
 // --- Change Listeners ---
 
 export type SettingChangeListener = (key: string, value: string) => void | Promise<void>
@@ -450,6 +519,7 @@ export class SettingsStore {
    * entirely, so a rejected write leaves the previous value in place.
    */
   async set(key: string, value: string, updatedBy = 'admin'): Promise<void> {
+    if (isManagedSetting(key)) throw new SettingManagedError(key)
     const validationError = KNOWN_SETTINGS[key]?.validate?.(value)
     if (validationError) {
       throw new SettingValidationError(validationError, key)
@@ -480,6 +550,7 @@ export class SettingsStore {
 
   /** Delete a setting (reverts to default). */
   async delete(key: string): Promise<void> {
+    if (isManagedSetting(key)) throw new SettingManagedError(key)
     await db.delete(settings).where(eq(settings.key, key))
     this.cache.delete(key)
     const def = KNOWN_SETTINGS[key]
@@ -487,6 +558,85 @@ export class SettingsStore {
     log.info(`Setting '${key}' deleted (reverted to default: '${defaultValue}')`)
     await this.notifyListeners(key, defaultValue)
     this.emitCrossProcessChange(key)
+  }
+
+  /** Current optimistic-concurrency token for a key (see {@link settingVersionToken}). */
+  async settingVersion(key: string): Promise<string> {
+    const [row] = await db.select({ updatedAt: settings.updatedAt }).from(settings).where(eq(settings.key, key))
+    return settingVersionToken(row)
+  }
+
+  /** Most recent audit entry for a managed key, if any. */
+  async latestAuditEntry(key: string): Promise<SettingAuditEntry | undefined> {
+    const [row] = await db
+      .select({
+        previousValue: settingAuditLog.previousValue,
+        newValue: settingAuditLog.newValue,
+        actor: settingAuditLog.actor,
+        source: settingAuditLog.source,
+        createdAt: settingAuditLog.createdAt,
+      })
+      .from(settingAuditLog)
+      .where(eq(settingAuditLog.key, key))
+      .orderBy(desc(settingAuditLog.createdAt))
+      .limit(1)
+    return row
+  }
+
+  /**
+   * Compare-and-set for a managed key: validates, checks `expectedVersion`
+   * against the locked row, upserts (or deletes for `null`) and writes an
+   * audit row in one transaction, then updates the cache, listeners and peer
+   * processes. Returns the new version token.
+   *
+   * @throws {SettingValidationError} invalid value
+   * @throws {SettingVersionConflictError} the row changed since `expectedVersion` was read
+   */
+  async writeManaged(
+    key: string,
+    value: string | null,
+    opts: { expectedVersion: string; actor: string; source: string }
+  ): Promise<{ version: string }> {
+    const def = KNOWN_SETTINGS[key]
+    if (!def?.managed) throw new Error(`Setting '${key}' is not a managed setting`)
+    if (value !== null) {
+      const validationError = def.validate?.(value)
+      if (validationError) throw new SettingValidationError(validationError, key)
+    }
+    let result: { version: string; changed: boolean }
+    try {
+      result = await db.transaction(async (tx) => {
+        const [row] = await tx.select().from(settings).where(eq(settings.key, key)).for('update')
+        const current = settingVersionToken(row)
+        if (current !== opts.expectedVersion) throw new SettingVersionConflictError(key, current)
+        if (value === null && !row) return { version: 'unset', changed: false }
+        const now = new Date()
+        if (value === null) await tx.delete(settings).where(eq(settings.key, key))
+        else if (row)
+          await tx.update(settings).set({ value, updatedAt: now, updatedBy: opts.actor }).where(eq(settings.key, key))
+        else await tx.insert(settings).values({ key, value, updatedAt: now, updatedBy: opts.actor })
+        await tx.insert(settingAuditLog).values({
+          key,
+          previousValue: row?.value ?? null,
+          newValue: value,
+          actor: opts.actor,
+          source: opts.source,
+        })
+        return { version: value === null ? 'unset' : now.toISOString(), changed: true }
+      })
+    } catch (error) {
+      if (error instanceof SettingVersionConflictError) throw error
+      // Two first writers both saw no row; the loser hits the primary key.
+      if (isUniqueViolation(error)) throw new SettingVersionConflictError(key, await this.settingVersion(key))
+      throw error
+    }
+    if (!result.changed) return { version: result.version }
+    if (value === null) this.cache.delete(key)
+    else this.cache.set(key, value)
+    log.info(`Managed setting '${key}' ${value === null ? 'cleared' : 'updated'} by ${opts.actor} (${opts.source})`)
+    await this.notifyListeners(key, value ?? def.default)
+    this.emitCrossProcessChange(key)
+    return { version: result.version }
   }
 
   /** List all known settings with metadata. */
@@ -525,6 +675,15 @@ export class SettingsStore {
       this.cache.set(row.key, row.value)
     }
   }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  let current: unknown = error
+  for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth++) {
+    if ((current as { code?: unknown }).code === '23505') return true
+    current = (current as { cause?: unknown }).cause
+  }
+  return false
 }
 
 // --- Singleton ---
