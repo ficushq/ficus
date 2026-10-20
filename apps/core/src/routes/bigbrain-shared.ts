@@ -28,7 +28,8 @@ export function createBigbrainSharedRouter(service: ManagedVaultRouteService): H
       return c.json(response.body, response.status as 400)
     }
   }
-  const body = async (c: Context): Promise<unknown> => c.req.json().catch(() => undefined)
+  // Malformed JSON propagates to the root JSON-body handler (stable 400), never swallowed here.
+  const body = (c: Context): Promise<unknown> => c.req.json()
 
   return new Hono()
     .get('/', (c) => handle(c, async (identity) => ({ vaults: await service.list(identity) })))
