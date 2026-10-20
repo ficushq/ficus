@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   attachIntegration,
@@ -19,6 +20,7 @@ export function ConnectionAssignmentPicker({
   canRead,
   canWrite,
   embedded = false,
+  managed = false,
 }: {
   squadId: string
   provider: string
@@ -26,6 +28,27 @@ export function ConnectionAssignmentPicker({
   canRead: boolean
   canWrite: boolean
   embedded?: boolean
+  /** Managed shared vaults: several attached at once, each selected explicitly; never a default. */
+  managed?: boolean
+}) {
+  if (managed) return <ManagedVaultAssignment {...{ squadId, provider, presentation, canRead, canWrite, embedded }} />
+  return <SingleConnectionAssignment {...{ squadId, provider, presentation, canRead, canWrite, embedded }} />
+}
+
+function SingleConnectionAssignment({
+  squadId,
+  provider,
+  presentation,
+  canRead,
+  canWrite,
+  embedded,
+}: {
+  squadId: string
+  provider: string
+  presentation: { label: string }
+  canRead: boolean
+  canWrite: boolean
+  embedded: boolean
 }) {
   const client = useQueryClient()
   const selection = useQuery({ ...integrationQueries.squad(squadId, provider), enabled: canRead })
@@ -211,6 +234,99 @@ export function ConnectionAssignmentPicker({
           Unable to update the squad connection.
         </p>
       )}
+    </section>
+  )
+}
+
+/**
+ * Managed shared BigBrain vaults for one squad. Managers see every vault they may attach; other
+ * readers see only what this squad already has (the server filters the list). Attaching never
+ * makes a default and never detaches another vault; each row has its own pending state.
+ */
+function ManagedVaultAssignment({
+  squadId,
+  provider,
+  presentation,
+  canRead,
+  canWrite,
+  embedded,
+}: {
+  squadId: string
+  provider: string
+  presentation: { label: string }
+  canRead: boolean
+  canWrite: boolean
+  embedded: boolean
+}) {
+  const client = useQueryClient()
+  const selection = useQuery({ ...integrationQueries.squad(squadId, provider), enabled: canRead })
+  const [pending, setPending] = useState<Record<string, boolean>>({})
+  const [failed, setFailed] = useState<string | null>(null)
+  const toggle = useMutation({
+    mutationFn: async (input: { id: string; attach: boolean }) => {
+      if (input.attach) await attachIntegration(squadId, provider, input.id, false)
+      else await detachIntegration(squadId, provider, input.id)
+    },
+    onMutate: (input) => {
+      setFailed(null)
+      setPending((current) => ({ ...current, [input.id]: true }))
+    },
+    onError: (_error, input) => setFailed(input.id),
+    onSettled: async (_data, _error, input) => {
+      setPending(({ [input.id]: _done, ...rest }) => rest)
+      await client.invalidateQueries({ queryKey: integrationQueryKeys.squad(squadId, provider) })
+    },
+  })
+  if (!canRead) return null
+  if (selection.isLoading)
+    return (
+      <section className={clsx(!embedded && 'mt-6 border-b border-panel-border py-4')}>
+        <FormSkeleton label="Loading shared vaults for this squad" sections={1} />
+      </section>
+    )
+  if (selection.isError)
+    return (
+      <p role="alert" className="mt-3 text-sm text-status-danger-600">
+        Unable to load shared vaults for this squad.
+      </p>
+    )
+  const value = selection.data!
+  const attached = new Set((value.attached ?? []).map((item) => item.id))
+  const rows = value.connections
+  return (
+    <section className={clsx(!embedded && 'mt-6 border-b border-panel-border py-4')}>
+      <h3 className="text-sm font-medium text-primary">Shared vaults for this squad — {presentation.label}</h3>
+      <p className="mt-1 text-xs text-muted">
+        Agents in this squad get read access to each vault attached here and must name the vault they read. Members
+        contribute in the BigBrain app.
+      </p>
+      <div className="mt-3 space-y-2">
+        {rows.length === 0 && (
+          <p className="text-sm text-muted">
+            {canWrite ? 'No shared vaults are ready to attach yet.' : 'No shared vaults are attached to this squad.'}
+          </p>
+        )}
+        {rows.map((connection) => {
+          const isAttached = attached.has(connection.id)
+          return (
+            <label key={connection.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isAttached}
+                disabled={!canWrite || pending[connection.id] || (!isAttached && !connection.enabled)}
+                onChange={() => toggle.mutate({ id: connection.id, attach: !isAttached })}
+              />
+              {connection.displayName}
+              {!connection.enabled && <span className="text-xs text-muted">(read access off)</span>}
+              {failed === connection.id && (
+                <span role="alert" className="text-xs text-status-danger-600">
+                  Could not update
+                </span>
+              )}
+            </label>
+          )
+        })}
+      </div>
     </section>
   )
 }

@@ -96,6 +96,7 @@ export function SquadIntegrationCard({
             squadId={squadId}
             provider={entry.key}
             presentation={{ label: entry.label }}
+            managed={entry.connectionMode === 'managed'}
             canRead
             canWrite={canWrite}
           />

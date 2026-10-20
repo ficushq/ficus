@@ -173,3 +173,91 @@ describe('ConnectionAssignmentPicker', () => {
     })
   })
 })
+
+describe('managed shared vaults', () => {
+  const managedSelection = {
+    providerKey: 'bigbrain',
+    assignment: null,
+    attached: [
+      {
+        id: 'a',
+        providerKey: 'bigbrain',
+        displayName: 'Alpha',
+        enabled: true,
+        healthState: 'healthy',
+        isDefault: false,
+      },
+    ],
+    connections: [
+      { id: 'a', providerKey: 'bigbrain', displayName: 'Alpha', enabled: true, healthState: 'healthy' },
+      { id: 'b', providerKey: 'bigbrain', displayName: 'Beta', enabled: true, healthState: 'healthy' },
+      { id: 'c', providerKey: 'bigbrain', displayName: 'Revoked', enabled: false, healthState: 'unknown' },
+    ],
+  }
+  async function renderManaged(canWrite: boolean, data: unknown = managedSelection) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    client.setQueryData(integrationQueryKeys.squad('squad-1', 'bigbrain'), data)
+    const { ConnectionAssignmentPicker } = await import('./ConnectionAssignmentPicker')
+    await harness.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ConnectionAssignmentPicker
+            squadId="squad-1"
+            provider="bigbrain"
+            presentation={{ label: 'BigBrain' }}
+            managed
+            canRead
+            canWrite={canWrite}
+          />
+        </QueryClientProvider>
+      )
+    )
+  }
+  const box = (name: string) =>
+    [...container.querySelectorAll('label')].find((l) => l.textContent?.includes(name))!.querySelector('input')!
+  const settle = async () => {
+    for (let i = 0; i < 3; i++) await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  test('attaches B alongside A with no default and no single-select', async () => {
+    await renderManaged(true)
+    expect(container.querySelector('select')).toBeNull()
+    expect(container.textContent).not.toContain('Make default')
+    expect(container.textContent).toContain('must name the vault they read')
+    expect(box('Alpha').checked).toBe(true)
+    expect(box('Beta').checked).toBe(false)
+    await harness.act(async () => {
+      fireEvent.click(box('Beta'))
+      await settle()
+    })
+    const writes = requests.filter((r) => r.method !== 'GET')
+    expect(writes).toHaveLength(1)
+    expect([writes[0]!.method, new URL(writes[0]!.url).pathname]).toEqual([
+      'PUT',
+      '/api/squads/squad-1/integrations/bigbrain/assignment',
+    ])
+    expect(JSON.parse(writes[0]!.body)).toEqual({ connectionId: 'b', makeDefault: false })
+  })
+
+  test('detaching A removes only A', async () => {
+    await renderManaged(true)
+    await harness.act(async () => {
+      fireEvent.click(box('Alpha'))
+      await settle()
+    })
+    const writes = requests.filter((r) => r.method !== 'GET')
+    expect(writes.map((w) => [w.method, new URL(w.url).search])).toEqual([['DELETE', '?connectionId=a']])
+  })
+
+  test('a vault without read access cannot be newly attached', async () => {
+    await renderManaged(true)
+    expect(box('Revoked').disabled).toBe(true)
+  })
+
+  test('a squad reader sees only its attached vaults and cannot change them', async () => {
+    await renderManaged(false, { ...managedSelection, connections: managedSelection.attached })
+    expect(container.textContent).toContain('Alpha')
+    expect(container.textContent).not.toContain('Beta')
+    expect(box('Alpha').disabled).toBe(true)
+  })
+})
