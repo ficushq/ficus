@@ -787,6 +787,21 @@ describe('localDeployment health', () => {
   })
 
   it('restarts the remaining deployments when one fails, then reports the failure', async () => {
+    let readinessChecks = 0
+    configureLocalDeploymentHealthDependencies({
+      ensureSquadSandbox: async () => '/workspace',
+      supervisor,
+      // This test asserts the launch result, before readiness reconciliation.
+      // A real 500ms tick can mark the fake's absent session crashed on a busy runner.
+      // afterEach aborts and drains this owned wait before resetting dependencies.
+      waitForReadinessInterval: (signal) => {
+        readinessChecks++
+        return new Promise<void>((_resolve, reject) => {
+          signal.throwIfAborted()
+          signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true })
+        })
+      },
+    })
     const squad = await createTestSquad('one-fails')
     const failing = await createLocalDeployment(squad, { name: 'failing', port: 5173, command: 'bun run dev' })
     const healthy = await createLocalDeployment(squad, { name: 'healthy', port: 5174, command: 'bun run dev' })
@@ -800,6 +815,8 @@ describe('localDeployment health', () => {
     expect(supervisor.starts.map((start) => start.localDeploymentId).sort()).toEqual([failing.id, healthy.id].sort())
     const restarted = (await getLocalDeployment(healthy.id)) as LocalDeployment
     expect(restarted.status).toBe('restarting')
+    expect(restarted.restartCount).toBe(1)
+    expect(readinessChecks).toBe(1)
   })
 
   it('does not restart attached localDeployments', async () => {
