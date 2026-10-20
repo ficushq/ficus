@@ -275,13 +275,19 @@ try {
       .stdout.split('\0')
       .filter((part) => part !== '')
   const scriptOf = (digest: string) => `/opt/ficus-bigbrain/releases/${digest.slice(7)}/ficus-bigbrain-host.js`
+  // The old installer returns right after `enable --now` (Type=simple): give its gateway a moment
+  // to exec before reading what it runs.
+  for (let i = 0; i < 30 && !gatewayArgv().includes(scriptOf(previousDigest)); i++) await Bun.sleep(500)
   const oldPid = gatewayPid()
   check(
     'the previous release is installed and its gateway runs',
     previousDigest !== provenance.digest &&
       unitProperty('ficus-bigbrain-gateway.service', 'ActiveState') === 'active' &&
       gatewayArgv().includes(scriptOf(previousDigest)),
-    `${previousDigest.slice(7, 19)} pid=${oldPid}`
+    `${previousDigest.slice(7, 19)} pid=${oldPid} argv=${gatewayArgv()
+      .map((a) => a.replace(/^\/opt\/ficus-bigbrain\/releases\/([0-9a-f]{12})[0-9a-f]+/, '<release $1>'))
+      .join(' ')
+      .slice(0, 200)}`
   )
   toolkitInstall(release, config)
   check('toolkit install created the host record', host().hostEpoch === 1)
