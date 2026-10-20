@@ -214,14 +214,17 @@ describe('SettingsPage RBAC tabs', () => {
     )
     expect(html).toContain('href="/settings?section=mobile-pro"')
     expect(html).toContain('Connect a Ficus account and manage Pro coverage')
-    expect(html).not.toContain('Server address')
+    expect(html).not.toContain('mobile-public-url')
+    expect(html).not.toContain('Public address')
+    expect(html).not.toContain('Checking the public address')
   })
 
   test('administration Mobile & Pro allows human settings readers without integration grants', async () => {
     const html = await renderSettings('/settings?section=mobile-pro', ['settings:read'], { human: true })
     expect(html).toContain('Ficus account')
     expect(html).toContain('Instance Pro')
-    expect(html).toContain('Server address')
+    // The editable public address block (its status loads client-side).
+    expect(html).toContain('Checking the public address…')
     expect(html).not.toContain('Pair a mobile device')
     expect(html).not.toContain('Connect Ficus account</button>')
   })
