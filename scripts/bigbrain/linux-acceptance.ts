@@ -9,7 +9,7 @@
  * where <release-dir>/bigbrain is the built runtime artifact.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { MANAGED_BIGBRAIN_DEFAULT_LIMITS, MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
 
 const release = process.argv[2]
@@ -39,6 +39,9 @@ function must(argv: string[], input?: string) {
 
 const TENANT = randomUUID()
 const BINDING = randomUUID()
+/** The rebuilt machine in the disaster-recovery scenario gets a new physical host binding. */
+const REBUILT_BINDING = randomUUID()
+let binding = BINDING
 const ZONE = 'bigbrain.example.test'
 const OWNER = { userId: randomUUID(), handle: 'ada', display: 'Ada' }
 const A = randomUUID()
@@ -51,7 +54,7 @@ function helper(fields: Record<string, unknown>) {
   const request = {
     contractVersion: 1,
     tenantId: TENANT,
-    physicalHostBinding: BINDING,
+    physicalHostBinding: binding,
     hostEpoch: epoch,
     requestId: randomUUID(),
     ...fields,
@@ -396,6 +399,16 @@ try {
     (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200)) === 200
   )
 
+  // ---------------------------------------------------------------- crash restart (SIGKILL)
+  const killedPid = unitProperty(`ficus-bigbrain@${B}.service`, 'MainPID')
+  must(['/bin/kill', '-KILL', killedPid])
+  const revived = await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200, 60)
+  check(
+    'a SIGKILLed vault is restarted by systemd and serves its data again',
+    revived === 200 && unitProperty(`ficus-bigbrain@${B}.service`, 'MainPID') !== killedPid,
+    `${revived}`
+  )
+
   // ---------------------------------------------------------------- disk bound
   const fill = asVault(
     A,
@@ -431,6 +444,9 @@ try {
     staged.ok === true && staged.inventory?.vaults?.length === 2,
     JSON.stringify(staged.code ?? staged.inventory?.vaults?.length)
   )
+  // Keep the staged copy as "the backup" for the disaster-recovery scenario below.
+  const backupCopy = mkdtempSync('/var/tmp/bigbrain-dr-')
+  must(['/bin/cp', '-a', '/var/lib/ficus-bigbrain/backup/managed-bigbrain', `${backupCopy}/managed-bigbrain`])
   check(
     'vaults restarted after staging',
     unitProperty(`ficus-bigbrain@${A}.service`, 'ActiveState') === 'active' &&
@@ -489,6 +505,98 @@ try {
   check('A unmounted', sh(['/usr/bin/findmnt', rA.storage.mount]).code !== 0)
   check('B still serves after A deleted', (await gateway(B, '/v1/whoami', handoffB.token)).status === 200)
   check('A host no longer routed', (await gateway(A, '/v1/whoami')).status === 404)
+
+  // ---------------------------------------------------------------- disaster recovery
+  // The machine is lost and rebuilt (new physical host binding). Setup stages the backup's
+  // vault data before installing; Platform fences the host epoch, then sends authoritative
+  // grants: A was deleted after the backup (excluded), B is restored under its current name.
+  const rebuild = sh([
+    '/bin/bash',
+    '-c',
+    [
+      'set -u',
+      `systemctl stop ficus-bigbrain-gateway.service 'ficus-bigbrain@*.service'`,
+      `systemctl stop "$(systemd-escape -p --suffix=mount ${rB.storage.mount})"`,
+      `for loop in $(losetup -j ${rB.storage.image} | cut -d: -f1); do losetup -d "$loop"; done`,
+      `userdel bbv_${hex(B).slice(0, 24)}`,
+      `rm -rf /var/lib/ficus-bigbrain /etc/ficus/bigbrain /run/ficus-bigbrain`,
+      `rm -f /etc/systemd/system/ficus-bigbrain@*.service /etc/systemd/system/*ficus*bigbrain*.mount /etc/tmpfiles.d/ficus-bigbrain*.conf`,
+      'systemctl daemon-reload',
+    ].join('\n'),
+  ])
+  check('the machine is rebuilt without any managed vault state', rebuild.code === 0, rebuild.stderr.slice(0, 300))
+  const rebuilt = { ...config, physicalHostBinding: REBUILT_BINDING }
+  must([
+    '/bin/bash',
+    '-c',
+    `set -euo pipefail; source scripts/setup/lib.sh; bigbrain_restore_stage "$1" "$2"; bigbrain_install "$3" "$2"`,
+    'restore',
+    backupCopy,
+    JSON.stringify(rebuilt),
+    release,
+  ])
+  binding = REBUILT_BINDING
+  epoch = 1
+  check('setup staged the backup and installed the rebuilt host', host().hostEpoch === 1)
+  const fenced = helper({ action: 'restore-fence', hostEpoch: 2, previousHostEpoch: 1, effectId: randomUUID() })
+  epoch = 2
+  const inventory = fenced.archive as {
+    manifestDigest: string
+    vaults: { vaultId: string; upstreamVaultId: string; generation: number }[]
+  }
+  check(
+    'restore fence reports the backup inventory (both vaults)',
+    fenced.ok === true && inventory?.vaults?.length === 2,
+    JSON.stringify(fenced.code ?? fenced.stderr ?? null)
+  )
+  const archivedB = inventory.vaults.find((v) => v.vaultId === B)!
+  const restored = helper({
+    action: 'restore',
+    effectId: randomUUID(),
+    archiveManifestDigest: inventory.manifestDigest,
+    currentVaults: [
+      { vaultId: A, disposition: 'exclude', code: 'not_found' },
+      {
+        vaultId: B,
+        disposition: 'restore',
+        upstreamVaultId: archivedB.upstreamVaultId,
+        generation: archivedB.generation + 1,
+        displayName: 'Beta renamed',
+        owner: OWNER,
+        origin: `https://bb-${hex(B)}.${ZONE}`,
+        readAccess: 'revoked',
+      },
+    ],
+  })
+  check(
+    'restore applies the authoritative grants',
+    restored.ok === true,
+    JSON.stringify(restored.code ?? restored.stderr ?? null)
+  )
+  check('the excluded deleted vault A is not restored', !existsSync(`/var/lib/ficus-bigbrain/control/${A}`))
+  check('restored B uses the current (Platform) name', receipt(B).displayName === 'Beta renamed')
+  check(
+    'restored B rotated every credential: the pre-backup Ficus token is rejected',
+    (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 401)) === 401
+  )
+  const reconnected = helper({
+    action: 'read-reconnect',
+    vaultId: B,
+    expectedGeneration: archivedB.generation + 1,
+    generation: archivedB.generation + 2,
+  })
+  const freshB = JSON.parse(readFileSync(`/var/lib/ficus-bigbrain/read-handoff/${B}.json`, 'utf8'))
+  const restoredIdentity = await gateway(B, '/v1/whoami', freshB.token)
+  const restoredActor = (await restoredIdentity.json().catch(() => ({}))) as Record<string, any>
+  check(
+    'after an explicit reconnect B serves its original upstream vault read-only',
+    reconnected.ok === true &&
+      restoredIdentity.status === 200 &&
+      restoredActor.vault?.id === handoffB.upstreamVaultId &&
+      JSON.stringify(restoredActor.permissions) === '["read"]',
+    `${restoredIdentity.status}`
+  )
+  check('the deleted vault A is still not routed after restore', (await gateway(A, '/v1/whoami')).status === 404)
 } catch (error) {
   check(
     'acceptance run completed without an unexpected error',
