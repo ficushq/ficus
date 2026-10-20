@@ -34,14 +34,57 @@ function opts(partial: Partial<SetupOptions> = {}): SetupOptions {
 }
 
 describe('computeEnvUpdates', () => {
+  describe('application address', () => {
+    const merged = (o: SetupOptions, existingEnv: string) =>
+      parseEnvFile(mergeEnvFile(existingEnv, computeEnvUpdates(o, secrets, { existingEnv })))
+
+    it('a default install declares only the local address, leaving the public address editable', () => {
+      const env = merged(opts(), '')
+      expect(env.FICUS_LOCAL_APP_URL).toBe('http://localhost:3000')
+      expect(env.APP_URL).toBeUndefined()
+      expect(env.FICUS_WEB_ORIGIN).toBeUndefined()
+    })
+
+    it('blanks the .env.example placeholder instead of leaving it as a locked address', () => {
+      const env = merged(opts(), 'APP_URL=https://your-domain.com\n')
+      expect(env.APP_URL).toBe('')
+      expect(env.FICUS_LOCAL_APP_URL).toBe('http://localhost:3000')
+    })
+
+    it('an explicit --app-url locks the public address as before', () => {
+      const env = merged(
+        opts({ appUrl: 'https://ficus.example.com', explicit: new Set(['appUrl']) }),
+        'APP_URL=https://your-domain.com\n'
+      )
+      expect(env.APP_URL).toBe('https://ficus.example.com')
+      expect(env.FICUS_WEB_ORIGIN).toBe('https://ficus.example.com')
+      expect(env.FICUS_LOCAL_APP_URL).toBe('http://localhost:3000')
+    })
+
+    it('keeps an existing APP_URL, still following --port, so a re-run never strands a stale value', () => {
+      const before = 'APP_URL=http://localhost:3000\nFICUS_WEB_ORIGIN=http://localhost:3000\n'
+      expect(merged(opts(), before).APP_URL).toBe('http://localhost:3000')
+      const moved = merged(
+        opts({ port: 4000, apiUrl: 'http://localhost:4000', appUrl: 'http://localhost:4000', explicit: new Set(['port']) }),
+        before
+      )
+      expect(moved).toMatchObject({
+        APP_URL: 'http://localhost:4000',
+        FICUS_WEB_ORIGIN: 'http://localhost:4000',
+        FICUS_LOCAL_APP_URL: 'http://localhost:4000',
+      })
+    })
+  })
+
   it('maps host options onto the managed keys with explicit flags only where the operator chose', () => {
     const updates = computeEnvUpdates(opts({ explicit: new Set(['runtime', 'port']) }), secrets)
     const byKey = Object.fromEntries(updates.map((u) => [u.key, u]))
     expect(byKey.FICUS_SANDBOX_RUNTIME).toEqual({ key: 'FICUS_SANDBOX_RUNTIME', value: 'host', explicit: true })
     expect(byKey.PORT).toEqual({ key: 'PORT', value: '3000', explicit: true })
     expect(byKey.FICUS_API_URL.explicit).toBe(true)
-    expect(byKey.APP_URL.explicit).toBe(true)
-    expect(byKey.FICUS_WEB_ORIGIN.value).toBe('http://localhost:3000')
+    expect(byKey.FICUS_LOCAL_APP_URL).toEqual({ key: 'FICUS_LOCAL_APP_URL', value: 'http://localhost:3000', explicit: true })
+    expect(byKey.APP_URL).toBeUndefined()
+    expect(byKey.FICUS_WEB_ORIGIN).toBeUndefined()
     expect(byKey.FICUS_ENCRYPTION_KEY).toEqual({ key: 'FICUS_ENCRYPTION_KEY', value: 'aa'.repeat(32), explicit: false })
     expect(byKey.FICUS_INTERNAL_EVENT_TOKEN.explicit).toBe(false)
     expect(byKey.FICUS_PASSWORD).toEqual({ key: 'FICUS_PASSWORD', value: 'tok', explicit: false })
