@@ -1,7 +1,7 @@
-"""Restore and audit immutable Pydantic verifier inputs after agent execution.
+"""Restore and audit immutable FeatureBench verifier inputs after agent execution.
 
 Uploaded with /tests only after inference. The upstream grader remains unchanged.
-This deliberately supports only the audited Pydantic tests/ + pyproject.toml layout.
+Only the explicitly audited repository layouts below are supported.
 """
 
 import argparse
@@ -13,8 +13,24 @@ import tarfile
 from pathlib import Path, PurePosixPath
 
 
-def hashes(root):
-    paths = [root / "pyproject.toml", *(root / "tests").rglob("*")]
+LAYOUTS = {
+    "pydantic": ("tests", "pyproject.toml"),
+    "pandas": (
+        "pandas/tests",
+        "pandas/conftest.py",
+        "pyproject.toml",
+        "requirements-dev.txt",
+    ),
+}
+
+
+def hashes(root, layout="pydantic"):
+    paths = []
+    for relative in LAYOUTS[layout]:
+        path = root / relative
+        paths.append(path)
+        if path.is_dir() and not path.is_symlink():
+            paths.extend(path.rglob("*"))
     return {
         str(path.relative_to(root)): (
             "symlink:" + str(path.readlink())
@@ -28,7 +44,7 @@ def hashes(root):
     }
 
 
-def restore_inputs(root, archive_path, expected):
+def restore_inputs(root, archive_path, expected, layout="pydantic"):
     # Reject unsafe fixture members before touching the disposable submission.
     with tarfile.open(archive_path) as archive:
         members = archive.getmembers()
@@ -38,7 +54,12 @@ def restore_inputs(root, archive_path, expected):
                 path.is_absolute()
                 or ".." in path.parts
                 or not path.parts
-                or path.parts[0] not in {"tests", "pyproject.toml"}
+                or not any(
+                    path == PurePosixPath(p)
+                    or PurePosixPath(p) in path.parents
+                    or (member.isdir() and path in PurePosixPath(p).parents)
+                    for p in LAYOUTS[layout]
+                )
                 or not (member.isdir() or member.isfile() or member.issym())
             ):
                 raise ValueError("Unsafe verifier fixture member")
@@ -55,16 +76,19 @@ def restore_inputs(root, archive_path, expected):
                 for parent in map(str, path.parents)
             ):
                 raise ValueError("Fixture member nested below a symlink")
-        tests = root / "tests"
-        if tests.is_symlink():
-            tests.unlink()
-        elif tests.exists():
-            shutil.rmtree(tests)
-        config = root / "pyproject.toml"
-        if config.is_symlink() or config.is_file():
-            config.unlink()
-        elif config.exists():
-            raise ValueError("Unexpected directory at verifier config")
+        for relative in LAYOUTS[layout]:
+            target = root / relative
+            for parent in target.parents:
+                if parent == root:
+                    break
+                if parent.is_symlink():
+                    raise ValueError("Unsafe verifier parent symlink")
+        for relative in LAYOUTS[layout]:
+            target = root / relative
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            elif target.is_dir():
+                shutil.rmtree(target)
         for member in members:
             target = root / member.name
             if member.issym():
@@ -76,11 +100,11 @@ def restore_inputs(root, archive_path, expected):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with archive.extractfile(member) as source:
                     target.write_bytes(source.read())
-    verify_inputs(root, expected)
+    verify_inputs(root, expected, layout)
 
 
-def verify_inputs(root, expected):
-    actual = hashes(root)
+def verify_inputs(root, expected, layout="pydantic"):
+    actual = hashes(root, layout)
     if actual != expected:
         raise ValueError("Official verifier input hashes do not match")
 
@@ -94,10 +118,20 @@ def main():
     )
     args = parser.parse_args()
     expected = json.loads((args.fixtures / "verifier-inputs.json").read_text())
+    layout_path = args.fixtures / "verifier-layout.json"
+    layout = (
+        json.loads(layout_path.read_text())["layout"]
+        if layout_path.exists()
+        else "pydantic"
+    )
+    if layout not in LAYOUTS:
+        raise ValueError("Unsupported verifier layout")
     if args.mode == "restore":
-        restore_inputs(args.root, args.fixtures / "verifier-inputs.tar.gz", expected)
+        restore_inputs(
+            args.root, args.fixtures / "verifier-inputs.tar.gz", expected, layout
+        )
     else:
-        verify_inputs(args.root, expected)
+        verify_inputs(args.root, expected, layout)
     print("Official verifier inputs verified")
 
 

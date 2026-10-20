@@ -8,11 +8,14 @@ import argparse
 import hashlib
 import json
 import shutil
+import shlex
 import subprocess
 import tarfile
 import tempfile
 import uuid
 from pathlib import Path
+
+from verify_featurebench import LAYOUTS
 
 RESTORE = r"""#!/bin/bash
 set -euo pipefail
@@ -63,8 +66,13 @@ def prepare(task, image, output):
     task = task.resolve(strict=True)
     if not task.name.endswith(".lv1"):
         raise ValueError("Only audited lv1 task preparation is supported")
-    if not task.name.startswith("pydantic__pydantic."):
-        raise ValueError("Only the audited Pydantic verifier layout is supported")
+    prefixes = {"pydantic__pydantic.": "pydantic", "pandas-dev__pandas.": "pandas"}
+    layout = next((v for k, v in prefixes.items() if task.name.startswith(k)), None)
+    if layout is None:
+        raise ValueError(
+            "Only audited Pydantic and Pandas verifier layouts are supported"
+        )
+    verifier_paths = LAYOUTS[layout]
     if output.exists():
         raise ValueError("Output must be new; do not overwrite a frozen task")
     source_paths = [
@@ -152,8 +160,7 @@ def prepare(task, image, output):
                     "archive",
                     "--format=tar.gz",
                     "HEAD",
-                    "tests",
-                    "pyproject.toml",
+                    *verifier_paths,
                     stdout=target,
                 )
             with tarfile.open(fixtures / "verifier-inputs.tar.gz") as archive:
@@ -170,6 +177,9 @@ def prepare(task, image, output):
                 }
             (fixtures / "verifier-inputs.json").write_text(
                 json.dumps(expected, sort_keys=True)
+            )
+            (fixtures / "verifier-layout.json").write_text(
+                json.dumps({"layout": layout})
             )
             docker("exec", container, "bash", "-c", SANITIZE)
             audit = docker(
@@ -230,7 +240,7 @@ printf 'working_tree='; git status --porcelain
                 "trap 'echo 0 > /logs/verifier/reward.txt; echo verifier_input_failure > /logs/verifier/reason.txt' ERR\n"
                 "bash /tests/restore.sh\n"
                 "python3 /tests/verify_featurebench.py restore\n"
-                "git -C /testbed restore --source=HEAD --staged -- tests pyproject.toml\n"
+                f"git -C /testbed restore --source=HEAD --staged -- {shlex.join(verifier_paths)}\n"
                 "bash /tests/upstream-test.sh\n"
                 "python3 /tests/verify_featurebench.py check\n"
             )
@@ -244,6 +254,8 @@ printf 'working_tree='; git status --porcelain
             )
             manifest = {
                 "source_task": task.name,
+                "verifier_layout": layout,
+                "verifier_paths": verifier_paths,
                 "source_files_sha256": provenance,
                 "original_image_id": image_id,
                 "agent_image_id": sanitized,

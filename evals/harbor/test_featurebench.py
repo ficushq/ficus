@@ -154,3 +154,60 @@ class VerifierInputTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unsafe"):
                 restore_inputs(root, archive, {})
             self.assertEqual(keep.read_text(), "original")
+
+
+class PandasVerifierTests(unittest.TestCase):
+    def test_nested_official_inputs_replace_collisions_without_removing_source(self):
+        from verify_featurebench import LAYOUTS, hashes, restore_inputs, verify_inputs
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            official = root / "official"
+            (official / "pandas/tests/arrays").mkdir(parents=True)
+            (official / "pandas/tests/arrays/test_concat.py").write_text(
+                "assert concat() == 42\n"
+            )
+            for name in LAYOUTS["pandas"][1:]:
+                (official / name).write_text("# official\n")
+            archive = root / "inputs.tar.gz"
+            with tarfile.open(archive, "w:gz") as target:
+                # Git archive includes the shared parent directory.
+                member = tarfile.TarInfo("pandas")
+                member.type = tarfile.DIRTYPE
+                target.addfile(member)
+                for name in LAYOUTS["pandas"]:
+                    target.add(official / name, arcname=name)
+            expected = hashes(official, "pandas")
+            repo = root / "submission"
+            (repo / "pandas/tests").mkdir(parents=True)
+            (repo / "pandas/core").mkdir()
+            source = repo / "pandas/core/concat.py"
+            source.write_text("# agent implementation\n")
+            (repo / "pandas/tests/conftest.py").write_text("# override\n")
+            (repo / "pandas/conftest.py").write_text("# override\n")
+            restore_inputs(repo, archive, expected, "pandas")
+            self.assertEqual(source.read_text(), "# agent implementation\n")
+            self.assertFalse((repo / "pandas/tests/conftest.py").exists())
+            self.assertEqual((repo / "pandas/conftest.py").read_text(), "# official\n")
+            (repo / "pandas/tests/arrays/test_concat.py").write_text("assert True\n")
+            with self.assertRaisesRegex(ValueError, "hashes"):
+                verify_inputs(repo, expected, "pandas")
+
+    def test_nested_parent_symlink_is_rejected_before_mutation(self):
+        from verify_featurebench import restore_inputs
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            outside = root / "outside"
+            (outside / "tests").mkdir(parents=True)
+            keep = outside / "tests/keep.py"
+            keep.write_text("original")
+            repo = root / "submission"
+            repo.mkdir()
+            (repo / "pandas").symlink_to(outside)
+            archive = root / "inputs.tar.gz"
+            with tarfile.open(archive, "w:gz"):
+                pass
+            with self.assertRaisesRegex(ValueError, "parent symlink"):
+                restore_inputs(repo, archive, {}, "pandas")
+            self.assertEqual(keep.read_text(), "original")

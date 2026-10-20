@@ -112,6 +112,24 @@ class BudgetTests(unittest.TestCase):
                 increased.summary()["next-run"]["usd_upper_bound"], 11
             )
 
+    def test_fifty_dollar_cap_keeps_existing_sol_exposure(self):
+        from budget_proxy import SOL_MODEL, SpendCapReached
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "spend.sqlite"
+            previous = Budget(path, 20, SOL_MODEL)
+            for _ in range(3):
+                previous.reserve("existing")
+            with self.assertRaises(SpendCapReached):
+                previous.reserve("over-old-cap")
+            raised = Budget(path, 50, SOL_MODEL)
+            for _ in range(6):
+                raised.reserve("fresh")
+            with self.assertRaises(SpendCapReached):
+                raised.reserve("over-new-cap")
+            self.assertEqual(raised.total(), 49.5)
+            self.assertEqual(raised.summary()["existing"]["unknown_usage"], 3)
+
     def test_reconciliation_preserves_calls_and_new_spend_across_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "spend.sqlite"

@@ -116,7 +116,7 @@ python evals/harbor/budget_proxy.py --state /tmp/ficus-pilot --cap-usd 10 \
 The key stays in the proxy. The generated `access.json` contains only scoped
 trial tokens. Keep the proxy state private and outside the source checkout. The
 proxy listens on the host so Docker can reach it, requires a random bearer token,
-and only forwards to the fixed OpenAI endpoint. Stop it when the pilot ends. The default cap is $10; the CLI permits at most $20.
+and only forwards to the fixed OpenAI endpoint. Stop it when the pilot ends. The default cap is $10; the CLI permits at most $50.
 Raise it only with explicit budget authorization, reusing the same ledger.
 Upstream failures retain reservations. The proxy records sanitized error codes,
 request IDs, and retry headers, and applies known provider cooldowns across all
@@ -176,7 +176,6 @@ reservations use this baseline plus subsequent calls under the unchanged cap.
 `Budget.total()` returns that effective cumulative exposure; per-client
 `summary()` retains raw call accounting and is not reconciliation-adjusted.
 Do not reconcile from a partial, stale, or unrelated billing total.
-
 
 ## Scope/completion prompt regression experiment
 
