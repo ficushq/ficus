@@ -317,7 +317,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
               {/* Passkeys are the only credential here, so losing one is a lockout.
                   Offered unconditionally: it is invite-independent, and the endpoint
                   answers the same for an unknown address, so it leaks nothing. */}
-              <p className="text-xs text-secondary mt-2 text-center">
+              <p className="text-xs text-secondary mt-6 text-center">
                 <button type="button" onClick={() => setShowRecovery(true)} className="ficus-button ficus-button-link">
                   Lost your passkey?
                 </button>
