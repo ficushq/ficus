@@ -33,6 +33,8 @@ export const gatewayManifestSchema = managedBigbrainHostBindingSchema
   })
   .strict()
   .refine((v) => new Set(v.routes.map((r) => r.vaultId)).size === v.routes.length)
+  // Routing is by hostname: a duplicate fails closed instead of reaching the first match.
+  .refine((v) => new Set(v.routes.map((r) => new URL(r.origin).hostname)).size === v.routes.length)
 export type GatewayManifest = z.infer<typeof gatewayManifestSchema>
 
 const GET_PATHS = new Set([

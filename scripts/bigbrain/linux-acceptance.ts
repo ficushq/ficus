@@ -291,6 +291,16 @@ try {
       !existsSync(`/var/lib/ficus-bigbrain/control/${foreign}`),
     JSON.stringify([spoofed.code])
   )
+  // Same 12-hex short id as A: the host itself refuses a second vault behind A's hostname.
+  const twin = `${A.slice(0, 13)}-4999-8999-999999999999`
+  const doubled = create(twin, 'Twin', ORIGINS[A]!)
+  check(
+    "create of another vault behind A's hostname is refused before anything exists",
+    doubled.ok === false &&
+      doubled.code === 'identity_mismatch' &&
+      !existsSync(`/var/lib/ficus-bigbrain/control/${twin}`),
+    JSON.stringify([doubled.code])
+  )
   check('vaults have distinct non-root UIDs', rA.os.uid !== rB.os.uid && rA.os.uid > 0 && rB.os.uid > 0)
   const mountA = sh(['/usr/bin/findmnt', '-n', '-o', 'FSTYPE,OPTIONS', rA.storage.mount]).stdout.trim()
   check(

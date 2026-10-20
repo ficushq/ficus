@@ -192,6 +192,31 @@ test('every archived vault is planned from the archive: newer generation, instal
       'other.example.org'
     )[0]!.origin
   ).toBe(`https://acme-bb-${short}.other.example.org`)
+  // Two archived vaults behind one hostname (same short id and label) are refused as a whole.
+  const twin = `${A.slice(0, 13)}-4999-8999-999999999999`
+  const doubled = backupManifestSchema.parse({
+    ...archived.manifest,
+    vaults: [
+      archived.manifest.vaults[0]!,
+      {
+        ...archived.manifest.vaults[0]!,
+        vaultId: twin,
+        archive: `vaults/${twin}.tar`,
+        origin: `https://acme-bb-${short}.example.com`,
+      },
+    ],
+  })
+  expect(() =>
+    planArchiveRestore(doubled, archived.inventory, archived.inventory.manifestDigest, 'example.com')
+  ).toThrow('identity_mismatch')
+  // A prefixed label that cannot fit the restoring host's zone is refused, never silently changed.
+  const longLabel = 'a'.repeat(47)
+  const tight = await staged(TENANT, `https://${longLabel}-bb-${short}.example.com`)
+  const tightArchive = await readStagedArchive({ root: tight.root, etc: tight.etc, uid })
+  const longZone = `${'z'.repeat(60)}.${'y'.repeat(60)}.${'x'.repeat(60)}.example.com`
+  expect(() =>
+    planArchiveRestore(tightArchive.manifest, tightArchive.inventory, tightArchive.inventory.manifestDigest, longZone)
+  ).toThrow('identity_mismatch')
   // A recorded origin of another vault is not a valid archive.
   await expect(staged(TENANT, `https://acme-bb-${'0'.repeat(12)}.example.com`)).rejects.toThrow()
   // Persisted outside the archive; exact replay is accepted, a different plan conflicts.

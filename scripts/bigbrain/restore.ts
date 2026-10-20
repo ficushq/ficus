@@ -113,12 +113,15 @@ export function planArchiveRestore(
   zone: string
 ): RestoreEntry[] {
   if (archiveManifestDigest !== inventory.manifestDigest) throw new Error('identity_mismatch')
-  return manifest.vaults.map((v) => {
+  const plan = manifest.vaults.map((v) => {
     // Archives without an origin predate tenant-prefixed hostnames: those vaults use bb-<32 hex>.
     const archived = v.origin === undefined ? null : parseManagedBigbrainOrigin(v.origin)
     if (v.origin !== undefined && (!archived || !managedBigbrainOriginHasVault(v.origin, v.vaultId)))
       throw new Error('identity_mismatch')
     const origin = managedBigbrainVaultOrigin({ vaultId: v.vaultId, zone, tenantLabel: archived?.tenantLabel ?? null })
+    // Never silently change the recorded form (a prefixed label that cannot fit this zone).
+    if (archived && parseManagedBigbrainOrigin(origin)?.tenantLabel !== archived.tenantLabel)
+      throw new Error('identity_mismatch')
     return restoreEntrySchema.parse({
       vaultId: v.vaultId,
       upstreamVaultId: v.upstreamVaultId,
@@ -128,6 +131,9 @@ export function planArchiveRestore(
       origin,
     })
   })
+  // Two archived vaults behind one hostname would misroute: refuse the whole plan.
+  if (new Set(plan.map((v) => new URL(v.origin).hostname)).size !== plan.length) throw new Error('identity_mismatch')
+  return plan
 }
 
 /** Persist the plan OUTSIDE the extracted archive before any vault is restored. A retry for the

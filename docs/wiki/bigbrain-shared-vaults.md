@@ -96,7 +96,10 @@ record (a `bb-<32 hex>` vault sends an empty body, as before), and kept in backu
 the addresses of vaults created afterwards. A restore keeps each vault's address form and moves
 it to the restoring server's zone. Every check accepts only these two forms for the vault: when
 a vault is created, the server accepts only the fallback address or the prefixed address with its
-installed tenant label and zone. Tenant subdomains that start with `bb-` or end in `-bb-` plus
+installed tenant label and zone. Later checks (gateway routes, Caddy sites, units, Core's read
+client) check a stored address against its vault only, so an address recorded under an earlier
+tenant label keeps working. The server also refuses a new vault whose address another recorded
+vault already has, and the gateway refuses to load two routes for one address. Tenant subdomains that start with `bb-` or end in `-bb-` plus
 12 hex characters are reserved (`managedBigbrainReservesLabel`) and Platform must refuse them,
 so a tenant name cannot clash with a vault address.
 

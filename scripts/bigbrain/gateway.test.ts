@@ -43,6 +43,14 @@ test('credential-free manifest is strict, bounded, identity-preserving and conta
   expect(
     gatewayManifestSchema.safeParse({ ...manifest, routes: [manifest.routes[0], manifest.routes[0]] }).success
   ).toBe(false)
+  // Two vaults behind one tenant-prefixed hostname (same 12-hex short id) fail closed, never misroute.
+  const twin = `${other.slice(0, 13)}-4999-8999-999999999999`
+  expect(
+    gatewayManifestSchema.safeParse({
+      ...manifest,
+      routes: [manifest.routes[1], { ...manifest.routes[1], vaultId: twin, origin: `https://${b}` }],
+    }).success
+  ).toBe(false)
   expect(
     gatewayManifestSchema.safeParse({
       ...manifest,

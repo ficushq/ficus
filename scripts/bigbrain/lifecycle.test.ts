@@ -28,7 +28,7 @@ let counter = 0
 const rid = () => `${(++counter).toString(16).padStart(8, '0')}-0000-4000-8000-000000000000`
 const token = (id: string) => `sv_${id}_${'t'.repeat(43)}`
 
-async function fixture(options: { loseMint?: boolean } = {}) {
+async function fixture(options: { loseMint?: boolean; tenantLabel?: string } = {}) {
   const outer = await mkdtemp(join(tmpdir(), 'bigbrain-lifecycle-'))
   roots.push(outer)
   const root = join(outer, 'state')
@@ -47,6 +47,7 @@ async function fixture(options: { loseMint?: boolean } = {}) {
       upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
       artifactDigest: digest,
       zone: 'example.com',
+      ...(options.tenantLabel ? { tenantLabel: options.tenantLabel } : {}),
       limits: { ...MANAGED_BIGBRAIN_DEFAULT_LIMITS, perVaultDiskBytes: 16 * 1024 ** 2 },
       effect: null,
     },
@@ -219,6 +220,27 @@ test('create runs every phase once: owner escrow, ONE read-only agent credential
   expect(handoff.token).not.toBe(token('00000001'))
   expect((await stat(managedPaths({ root: f.root, vaultId: A }).handoff)).mode & 0o777).toBe(0o600)
   expect(f.ingress()).toBeGreaterThan(0)
+})
+
+test('the host refuses a new vault whose hostname another recorded vault already has, before anything exists', async () => {
+  const f = await fixture({ tenantLabel: 'acme' })
+  const prefixed = (id: string) => `https://acme-bb-${id.replaceAll('-', '').slice(0, 12)}.example.com`
+  expect(await f.send({ ...createRequest(), origin: prefixed(A) })).toMatchObject({
+    ok: true,
+    receipt: { state: 'ready', origin: prefixed(A) },
+  })
+  // Same 12-hex short id as A (e.g. Core's database restored from an older backup): same hostname.
+  const twin = `${A.slice(0, 13)}-4999-8999-999999999999`
+  expect(prefixed(twin)).toBe(prefixed(A))
+  expect(await f.send({ ...createRequest(), vaultId: twin, origin: prefixed(twin) })).toMatchObject({
+    ok: false,
+    code: 'identity_mismatch',
+  })
+  await expect(stat(managedPaths({ root: f.root, vaultId: twin }).control)).rejects.toThrow()
+  // Its bb-<32 hex> form is a different hostname and is admitted.
+  expect(
+    await f.send({ ...createRequest(), vaultId: twin, origin: `https://bb-${twin.replaceAll('-', '')}.example.com` })
+  ).toMatchObject({ ok: true })
 })
 
 test('read-revoke removes Core material first and revokes only the reader; reconnect mints exactly one new reader', async () => {

@@ -7,6 +7,7 @@ import { cachedOwnerAppLink, ownerInviteCacheSchema } from './invite-cache'
 import { NativeVaultAdmin } from './native-admin'
 import { BIGBRAIN_STATE_ROOT, managedPaths } from './paths'
 import {
+  assertHostnameFree,
   markReady,
   prepareStorage,
   readVaultRecord,
@@ -91,6 +92,8 @@ export async function createVault(request: Request<'create'>, host: InstalledHos
   const existing = await readVaultRecord(request.vaultId, deps)
   let record: ControlReceipt
   if (admitVaultRequest(request, existing) === 'create') {
+    // Before anything exists: never two vaults behind one hostname (gateway/Caddy route by it).
+    await assertHostnameFree(request.vaultId, request.origin, deps)
     const storage = await reserveStorage(request.vaultId, host, deps)
     record = await saveVaultRecord(
       controlReceiptSchema.parse({

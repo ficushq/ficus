@@ -59,6 +59,27 @@ export async function readVaultRecord(vaultId: string, deps: ProvisionDeps): Pro
   if (!(await present(join(paths.control, 'receipt.json')))) return null
   return readPrivateJson(paths.control, 'receipt.json', controlReceiptSchema, { uid: deps.uid })
 }
+const VAULT_DIR = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+/** Every recorded vault on this host, any phase or state. */
+export async function listVaultRecords(deps: ProvisionDeps): Promise<ControlReceipt[]> {
+  const control = join(deps.root ?? BIGBRAIN_STATE_ROOT, 'control')
+  const ids = (await readdir(control)).sort().filter((name) => VAULT_DIR.test(name))
+  const records = await Promise.all(ids.map((id) => readVaultRecord(id, deps)))
+  return records.filter((r): r is ControlReceipt => r !== null)
+}
+/** A tenant-prefixed hostname carries only 12 hex of the vault ID, so the host itself refuses a
+ * new vault whose hostname any other recorded vault (any state) already has. Core checks short
+ * ids too, but its database may be older than this host (a restored backup). */
+export async function assertHostnameFree(vaultId: string, origin: string, deps: ProvisionDeps): Promise<void> {
+  const hostname = new URL(origin).hostname
+  for (const other of await listVaultRecords(deps))
+    if (
+      other.receipt.vaultId !== vaultId &&
+      other.receipt.origin !== null &&
+      new URL(other.receipt.origin).hostname === hostname
+    )
+      throw new Error('identity_mismatch')
+}
 export async function saveVaultRecord(record: ControlReceipt, deps: ProvisionDeps): Promise<ControlReceipt> {
   const parsed = controlReceiptSchema.parse(record)
   const paths = managedPaths({ vaultId: parsed.receipt.vaultId, root: deps.root })
