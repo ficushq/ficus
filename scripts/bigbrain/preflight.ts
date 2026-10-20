@@ -231,15 +231,12 @@ export function verifyLoopBacking(
     })
     .passthrough()
   const parsed = schema.safeParse(value)
-  if (!parsed.success || !/^7:\d+$/.test(expected.device)) throw new Error('storage_unavailable')
+  if (!parsed.success || !/^7:\d+$/.test(expected.device)) refuse('storage_unavailable', 'loop_schema')
   const entry = parsed.data.loopdevices[0]!
-  if (
-    entry.name !== `/dev/loop${expected.device.slice(2)}` ||
-    entry['back-file'] !== expected.image ||
-    String(entry['back-ino']) !== String(expected.inode) ||
-    entry['back-maj:min'] !== linuxDeviceId(expected.imageDevice)
-  )
-    throw new Error('storage_unavailable')
+  if (entry.name !== `/dev/loop${expected.device.slice(2)}`) refuse('storage_unavailable', 'loop_name')
+  if (entry['back-file'] !== expected.image) refuse('storage_unavailable', 'loop_file')
+  if (String(entry['back-ino']) !== String(expected.inode)) refuse('storage_unavailable', 'loop_inode')
+  if (entry['back-maj:min'] !== linuxDeviceId(expected.imageDevice)) refuse('storage_unavailable', 'loop_device')
 }
 
 export async function verifyCurrentCgroup(role: Role, unit: string): Promise<void> {
