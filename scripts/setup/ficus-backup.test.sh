@@ -376,5 +376,65 @@ else
   printf 'SKIP: yq not on PATH — skipping backup.s3_prefix validation test\n' >&2
 fi
 
+# --- managed BigBrain: an installed host's vaults enter the SAME encrypted envelope via the
+# host role (fake here; the real role is covered by scripts/bigbrain/backup.test.ts).
+BB="${SCRATCH}/bigbrain"
+mkdir -p "${BB}/etc" "${BB}/state/control"
+: >"${BB}/state/control/host.lock"
+printf '{}\n' >"${BB}/etc/host.json"
+FAKE_BB_HOST="${SCRATCH}/fake-bigbrain-host.sh"
+cat >"${FAKE_BB_HOST}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "\$1" >>"${BB}/calls"
+# The caller holds the lifecycle lock for the whole role.
+flock -n -x "${BB}/state/control/host.lock" true && { echo '{"ok":false,"code":"lock_not_held"}'; exit 1; }
+case "\$1" in
+  backup-stage)
+    mkdir -p "${BB}/state/backup/managed-bigbrain/vaults"
+    printf 'vault-tar\n' >"${BB}/state/backup/managed-bigbrain/vaults/a.tar"
+    printf '{"schema":1}\n' >"${BB}/state/backup/managed-bigbrain/manifest.json"
+    if [[ -n \${FAKE_BB_FAIL:-} ]]; then echo '{"ok":false,"code":"storage_unavailable"}'; exit 1; fi
+    echo '{"ok":true,"staged":true}' ;;
+  backup-release) rm -rf "${BB}/state/backup"; echo '{"ok":true}' ;;
+  *) exit 9 ;;
+esac
+EOF
+chmod 755 "${FAKE_BB_HOST}"
+bb_backup() { # WORKDIR [extra env...]
+  local work=$1
+  shift
+  env FICUS_BACKUP_BIGBRAIN_ETC="${BB}/etc" FICUS_BACKUP_BIGBRAIN_STATE="${BB}/state" \
+    FICUS_BACKUP_BIGBRAIN_HOST_CMD="${FAKE_BB_HOST}" FICUS_BACKUP_DRY_RUN=1 \
+    FICUS_BACKUP_PG_DUMP_CMD="${FAKE_PG_DUMP}" FICUS_BACKUP_WORKDIR="${work}" "$@" "${RENDERED}" >/dev/null 2>&1
+}
+bb_rc=0
+bb_backup "${SCRATCH}/bb-work" || bb_rc=$?
+expect_eq 'managed BigBrain: backup with staged vaults exits 0' "${bb_rc}" 0
+mkdir -p "${SCRATCH}/bb-out"
+openssl enc -d -aes-256-cbc -pbkdf2 -pass "pass:${PASSPHRASE}" -in "${SCRATCH}/bb-work/${TODAY}.tar.gz.enc" |
+  tar -xzf - -C "${SCRATCH}/bb-out"
+expect_eq 'managed BigBrain: manifest is inside the encrypted envelope' \
+  "$(cat "${SCRATCH}/bb-out/managed-bigbrain/manifest.json" 2>/dev/null || echo MISSING)" '{"schema":1}'
+expect_eq 'managed BigBrain: vault data is inside the encrypted envelope' \
+  "$(cat "${SCRATCH}/bb-out/managed-bigbrain/vaults/a.tar" 2>/dev/null || echo MISSING)" 'vault-tar'
+expect_eq 'managed BigBrain: stage then release, each under the lock' "$(tr '\n' ' ' <"${BB}/calls")" 'backup-stage backup-release '
+expect_eq 'managed BigBrain: the unencrypted staging copy is released even on a dry run' \
+  "$([[ -e ${BB}/state/backup ]] && echo present || echo absent)" absent
+
+rm -f "${BB}/calls"
+bb_rc=0
+bb_backup "${SCRATCH}/bb-fail-work" FAKE_BB_FAIL=1 || bb_rc=$?
+expect_eq 'managed BigBrain: a staging refusal fails the whole backup' "$([[ ${bb_rc} -ne 0 ]] && echo failed || echo ok)" failed
+expect_eq 'managed BigBrain: no envelope is written without the vaults' \
+  "$([[ -e ${SCRATCH}/bb-fail-work/${TODAY}.tar.gz.enc ]] && echo present || echo absent)" absent
+expect_eq 'managed BigBrain: a refused stage is still released' "$(tr '\n' ' ' <"${BB}/calls")" 'backup-stage backup-release '
+
+rm -f "${BB}/calls" "${BB}/etc/host.json"
+bb_rc=0
+bb_backup "${SCRATCH}/bb-absent-work" || bb_rc=$?
+expect_eq 'managed BigBrain: hosts without an installed record are unchanged' \
+  "${bb_rc}:$([[ -e ${BB}/calls ]] && echo called || echo untouched)" '0:untouched'
+
 printf '\n%d passed, %d failed\n' "${PASS}" "${FAIL}"
 [[ ${FAIL} -eq 0 ]]

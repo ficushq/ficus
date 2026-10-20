@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test'
-import { assertCgroupBudget, proveSocketBindPolicy, verifyLoopBacking, verifyScratchMounts } from './preflight'
+import {
+  assertCgroupBudget,
+  proveSocketBindPolicy,
+  verifyLoopBacking,
+  verifyRecordedVaultStorage,
+  verifyScratchMounts,
+} from './preflight'
 const facts = {
   memoryMax: '268435456',
   swapMax: '0',
@@ -84,4 +90,87 @@ test('loop device is tied to the exact root-owned image inode and backing filesy
     { ...loop, 'back-maj:min': '8:2' },
   ])
     expect(() => verifyLoopBacking(expected, { loopdevices: [bad] })).toThrow('storage_unavailable')
+})
+
+test('recorded storage stays verifiable across host epoch advances and upgrades; a foreign binding or image never is', async () => {
+  const { mkdtemp, mkdir, open, rm, stat } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { reservedVaultFixture } = await import('./host-test-fixtures')
+  const { initializeStorageNamespace } = await import('./volume-image')
+  const { ensureOwnedDirectory, writePrivateJson } = await import('./secure-files')
+  const { installedHostSchema } = await import('./control-input')
+  const { controlReceiptSchema } = await import('./receipts')
+  const { managedPaths } = await import('./paths')
+  const shared = await import('../../packages/shared/src/managed-bigbrain')
+  const outer = await mkdtemp(join(tmpdir(), 'bigbrain-storage-'))
+  try {
+    const uid = process.getuid!()
+    const gid = process.getgid!()
+    const root = join(outer, 'state')
+    const etc = join(outer, 'etc')
+    await initializeStorageNamespace({ root, uid })
+    await mkdir(etc, { mode: 0o700 })
+    const base = reservedVaultFixture(root)
+    const paths = managedPaths({ root, vaultId: base.receipt.vaultId })
+    const image = await open(paths.image, 'wx', 0o600)
+    await image.truncate(base.storage.diskBytes)
+    await image.close()
+    const info = await stat(paths.image)
+    await mkdir(paths.mount, { mode: 0o700 })
+    const os = { uid, gid, imageDevice: info.dev, imageInode: info.ino, mountDevice: '7:4' }
+    const record = { ...base, phase: 'ready' as const, os }
+    await ensureOwnedDirectory(paths.control, 0o700, { uid })
+    await writePrivateJson(paths.control, 'receipt.json', record, controlReceiptSchema, { uid })
+    const host = {
+      contractVersion: 1,
+      tenantId: base.receipt.tenantId,
+      physicalHostBinding: base.receipt.physicalHostBinding,
+      // Advanced epoch and upgraded artifact since the vault was created.
+      hostEpoch: base.receipt.hostEpoch + 3,
+      hostState: 'active',
+      upstreamCommit: shared.MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
+      artifactDigest: `sha256:${'c'.repeat(64)}`,
+      zone: 'example.com',
+      limits: shared.MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+      effect: null,
+    }
+    await writePrivateJson(etc, 'host.json', host, installedHostSchema, { uid })
+    const major = (info.dev >> 8) & 0xfff
+    const minor = (info.dev & 0xff) | ((info.dev >> 12) & 0xfff00)
+    const options = {
+      root,
+      etc,
+      uid,
+      mountinfo: async () => `1 0 7:4 / ${paths.mount} rw,nodev,nosuid,noexec - ext4 /dev/loop4 rw\n`,
+      run: async () => ({
+        code: 0,
+        stdout: JSON.stringify({
+          loopdevices: [
+            { name: '/dev/loop4', 'back-file': paths.image, 'back-ino': info.ino, 'back-maj:min': `${major}:${minor}` },
+          ],
+        }),
+      }),
+    }
+    await verifyRecordedVaultStorage(base.receipt.vaultId, options)
+    await writePrivateJson(
+      etc,
+      'host.json',
+      { ...host, physicalHostBinding: '99999999-9999-4999-8999-999999999999' },
+      installedHostSchema,
+      { uid }
+    )
+    await expect(verifyRecordedVaultStorage(base.receipt.vaultId, options)).rejects.toThrow('storage_unavailable')
+    await writePrivateJson(etc, 'host.json', host, installedHostSchema, { uid })
+    await writePrivateJson(
+      paths.control,
+      'receipt.json',
+      { ...record, os: { ...os, imageInode: os.imageInode + 1 } },
+      controlReceiptSchema,
+      { uid }
+    )
+    await expect(verifyRecordedVaultStorage(base.receipt.vaultId, options)).rejects.toThrow('storage_unavailable')
+  } finally {
+    await rm(outer, { recursive: true, force: true })
+  }
 })

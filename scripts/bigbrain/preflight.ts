@@ -193,17 +193,29 @@ export async function verifyCurrentCgroup(role: Role, unit: string): Promise<voi
 }
 
 /** Read-only storage verification. No missing mount may fall back to the Core root filesystem. */
-export async function verifyRecordedVaultStorage(vaultId: string): Promise<void> {
-  const paths = managedPaths({ vaultId })
-  const record = await readPrivateJson(paths.control, 'receipt.json', controlReceiptSchema)
-  const host = await readPrivateJson('/etc/ficus/bigbrain', 'host.json', installedHostSchema)
+/** Storage identity only. The host epoch and installed artifact digest legitimately move on
+ * (suspend/resume, upgrades) without changing a vault's storage, so they are fenced at
+ * admission, not here; a stale receipt epoch must not strand a vault's own service start.
+ */
+export async function verifyRecordedVaultStorage(
+  vaultId: string,
+  options: {
+    root?: string
+    etc?: string
+    uid?: number
+    mountinfo?: () => Promise<string>
+    run?: typeof runPrivateCommand
+  } = {}
+): Promise<void> {
+  const paths = managedPaths({ vaultId, root: options.root })
+  const fs = { uid: options.uid }
+  const record = await readPrivateJson(paths.control, 'receipt.json', controlReceiptSchema, fs)
+  const host = await readPrivateJson(options.etc ?? '/etc/ficus/bigbrain', 'host.json', installedHostSchema, fs)
   const os = record.os
   if (
     host.hostState !== 'active' ||
     host.physicalHostBinding !== record.receipt.physicalHostBinding ||
     host.tenantId !== record.receipt.tenantId ||
-    host.hostEpoch !== record.receipt.hostEpoch ||
-    host.artifactDigest !== record.receipt.artifactDigest ||
     record.receipt.vaultId !== vaultId ||
     record.storage.mount !== paths.mount ||
     record.storage.image !== paths.image ||
@@ -215,7 +227,7 @@ export async function verifyRecordedVaultStorage(vaultId: string): Promise<void>
   if (
     !image.isFile() ||
     image.nlink !== 1 ||
-    image.uid !== 0 ||
+    image.uid !== (options.uid ?? 0) ||
     (image.mode & 0o777) !== 0o600 ||
     image.size !== record.storage.diskBytes ||
     image.dev !== os.imageDevice ||
@@ -224,9 +236,9 @@ export async function verifyRecordedVaultStorage(vaultId: string): Promise<void>
     throw new Error('storage_unavailable')
   verifyVaultMount(
     { mount: paths.mount, device: os.mountDevice, filesystem: 'ext4' },
-    await readFile('/proc/self/mountinfo', 'utf8')
+    await (options.mountinfo ?? (() => readFile('/proc/self/mountinfo', 'utf8')))()
   )
-  const loop = await runPrivateCommand([
+  const loop = await (options.run ?? runPrivateCommand)([
     '/usr/sbin/losetup',
     '--list',
     '--json',

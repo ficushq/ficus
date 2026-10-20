@@ -28,6 +28,10 @@
 #                                  file path>` and must write a dump to that
 #                                  path — lets tests exercise tar/encrypt/
 #                                  decrypt/untar without a live postgres.
+#   FICUS_BACKUP_BIGBRAIN_ETC / FICUS_BACKUP_BIGBRAIN_STATE / FICUS_BACKUP_BIGBRAIN_HOST_CMD
+#                                  managed BigBrain paths and host-role command
+#                                  (tests only; defaults are the installed paths
+#                                  and the installed release's host binary).
 #   FICUS_BACKUP_WORKDIR=<dir>      use this directory for staging instead of a
 #                                  fresh mktemp dir. The cleanup trap removes
 #                                  it (and everything in it — the unencrypted
@@ -89,8 +93,33 @@ PASSFILE=$(mktemp)
 # upload can never leak an encrypted tarball (or the unencrypted dump/tar
 # intermediates) on disk.
 KEEP_ARTIFACT=0
+# Managed BigBrain (opt-in, only when this host has an installed record). The host role runs
+# under the same lifecycle flock as the root control helper; staging is a quiescent copy.
+BIGBRAIN_ETC=${FICUS_BACKUP_BIGBRAIN_ETC:-/etc/ficus/bigbrain}
+BIGBRAIN_STATE=${FICUS_BACKUP_BIGBRAIN_STATE:-/var/lib/ficus-bigbrain}
+BIGBRAIN_STAGED=0
+bigbrain_host() { # ROLE — prints one JSON line
+  local bin digest lock="${BIGBRAIN_STATE}/control/host.lock"
+  if [[ -n ${FICUS_BACKUP_BIGBRAIN_HOST_CMD:-} ]]; then
+    bin=${FICUS_BACKUP_BIGBRAIN_HOST_CMD}
+  else
+    digest=$(jq -r '.artifactDigest' "${BIGBRAIN_ETC}/host.json") || return 1
+    [[ ${digest} =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+    bin="/opt/ficus-bigbrain/releases/${digest#sha256:}/ficus-bigbrain-host"
+  fi
+  [[ -f ${lock} && ! -L ${lock} ]] || return 1
+  (
+    exec 8<>"${lock}"
+    flock -w 180 -x 8
+    "${bin}" "$1"
+  )
+}
 cleanup() {
   rm -f "${PASSFILE}"
+  # The staged copy is unencrypted vault data: always released, even on a dry run.
+  if [[ ${BIGBRAIN_STAGED} -eq 1 ]]; then
+    bigbrain_host backup-release >/dev/null 2>&1 || log_info "managed BigBrain staging release failed; the next run discards it"
+  fi
   [[ ${KEEP_ARTIFACT} -eq 1 ]] && return
   rm -rf "${WORKDIR}"
 }
@@ -102,6 +131,25 @@ DATE=$(date -u '+%Y-%m-%d')
 DUMP_FILE="${WORKDIR}/db.dump"
 TAR_FILE="${WORKDIR}/backup.tar.gz"
 ENC_FILE="${WORKDIR}/${DATE}.tar.gz.enc"
+
+# ---------------------------------------------------- managed BigBrain vaults
+if [[ -e ${BIGBRAIN_ETC}/host.json ]]; then
+  log_info "staging managed BigBrain vaults (stopped, verified copy; restarted per desired state)"
+  bb_out=$(bigbrain_host backup-stage) || true
+  # Arm the release first: a refusal may still have left a partial staging directory.
+  BIGBRAIN_STAGED=1
+  if [[ $(jq -r '.ok // false' <<<"${bb_out}" 2>/dev/null) != true ]]; then
+    bb_code=$(jq -r '.code // "operation_failed"' <<<"${bb_out}" 2>/dev/null) || bb_code=operation_failed
+    [[ ${bb_code} =~ ^[a-z_]{1,40}$ ]] || bb_code=operation_failed
+    die "managed BigBrain backup staging failed (${bb_code}) — refusing to write a backup without its vaults"
+  fi
+  [[ $(jq -r '.staged' <<<"${bb_out}") == true ]] || BIGBRAIN_STAGED=0
+fi
+BIGBRAIN_TAR_ARGS=()
+if [[ ${BIGBRAIN_STAGED} -eq 1 ]]; then
+  [[ -f ${BIGBRAIN_STATE}/backup/managed-bigbrain/manifest.json ]] || die "managed BigBrain staging produced no manifest"
+  BIGBRAIN_TAR_ARGS=(-C "${BIGBRAIN_STATE}/backup" managed-bigbrain)
+fi
 
 # ---------------------------------------------------------------- pg_dump
 log_info "dumping database (mode=${DB_MODE})"
@@ -130,7 +178,8 @@ tar_rc=0
 tar -czf "${TAR_FILE}" \
   -C "$(dirname "${DUMP_FILE}")" "$(basename "${DUMP_FILE}")" \
   -C "$(dirname "${HOME_DIR}")" "$(basename "${HOME_DIR}")" \
-  -C "${DEST}" '.env' || tar_rc=$?
+  -C "${DEST}" '.env' \
+  "${BIGBRAIN_TAR_ARGS[@]}" || tar_rc=$?
 if ((tar_rc == 1)); then
   log_info "tar: some files changed while they were archived — kept the archive"
 elif ((tar_rc != 0)); then
