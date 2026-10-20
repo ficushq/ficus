@@ -107,7 +107,11 @@ export function registerBigbrainVaultCommands(
     .command('create')
     .description('Create a shared vault owned by you')
     .requiredOption('--name <name>', 'Vault name')
-    .requiredOption('--handle <handle>', 'Your BigBrain handle in this vault (cannot be changed later)')
+    .requiredOption(
+      '--handle <handle>',
+      'Your name in this vault, shown to members next to what you write. Pick a new one; it is not a BigBrain ' +
+        'account. 1-64 of a-z 0-9 . _ -, starting with a letter or number; cannot be changed later'
+    )
     .action(
       run(async (options: { name: string; handle: string }) =>
         output(

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
@@ -10,12 +10,13 @@ import {
   type ManagedBigbrainVault,
 } from '../../api/integrations'
 import { ApiError } from '../../api/client'
-import { integrationQueries } from '../../queryOptions'
+import { integrationQueries, queries } from '../../queryOptions'
 import { integrationQueryKeys } from '../../queryKeys'
 import { Badge, type BadgeColor } from '../Badge'
 import { ConfirmButton } from '../ConfirmButton'
 import { LoadingContent, LoadingSurface, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { BigbrainOwnerInviteDialog } from './BigbrainOwnerInviteDialog'
+import { bigbrainHandleProblem, isValidBigbrainHandle, suggestBigbrainHandle } from './bigbrainHandle'
 
 const STATE_LABEL: Record<ManagedBigbrainVault['state'], [string, BadgeColor]> = {
   requested: ['Requested', 'queue'],
@@ -31,7 +32,6 @@ const READ_LABEL: Record<ManagedBigbrainVault['readAccess'], string> = {
   active: 'Ficus can read',
   revoked: 'Ficus read access revoked',
 }
-const HANDLE = /^[a-z0-9][a-z0-9._-]{0,63}$/
 
 function failure(error: unknown): string {
   const code =
@@ -49,19 +49,27 @@ function failure(error: unknown): string {
   return code ? `That did not work (${code.slice(0, 40)}).` : 'That did not work. Try again.'
 }
 
+const newDraft = () => ({ requestId: crypto.randomUUID(), displayName: '', ownerHandle: null })
+
 export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boolean }) {
   const client = useQueryClient()
   const vaults = useQuery(integrationQueries.managedBigbrainVaults())
+  // Only used to suggest a handle; a failed lookup simply leaves the field empty.
+  const me = useQuery({ ...queries.auth.me(), retry: false })
+  const handleIds = { hint: useId(), problem: useId() }
   // One create draft owns one request ID until it succeeds, so a retried submit is idempotent.
-  const [draft, setDraft] = useState({ requestId: crypto.randomUUID(), displayName: '', ownerHandle: '' })
+  // A null handle means "not edited yet": the field shows the suggestion until the user types.
+  const [draft, setDraft] = useState<{ requestId: string; displayName: string; ownerHandle: string | null }>(newDraft)
   const [createError, setCreateError] = useState<string | null>(null)
   const refresh = () => client.invalidateQueries({ queryKey: integrationQueryKeys.managedBigbrainVaults() })
+  const ownerHandle = draft.ownerHandle ?? suggestBigbrainHandle(me.data)
+  const handleProblem = bigbrainHandleProblem(ownerHandle)
 
   const create = useMutation({
-    mutationFn: () => createManagedBigbrainVault(draft),
+    mutationFn: () => createManagedBigbrainVault({ ...draft, ownerHandle }),
     onMutate: () => setCreateError(null),
     onSuccess: async () => {
-      setDraft({ requestId: crypto.randomUUID(), displayName: '', ownerHandle: '' })
+      setDraft(newDraft())
       await refresh()
     },
     onError: (error) => setCreateError(failure(error)),
@@ -79,14 +87,16 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
           loading={vaults.isLoading}
           fallback={
             <LoadingSurface label="Loading shared vaults">
-              <SkeletonRows count={2}>
-                {(index) => (
-                  <div key={index} className="space-y-2 border-b border-panel-border py-3">
-                    <SkeletonLine className="w-40" />
-                    <SkeletonLine className="w-56 max-w-full" />
-                  </div>
-                )}
-              </SkeletonRows>
+              <div className="divide-y divide-panel-border">
+                <SkeletonRows count={2}>
+                  {(index) => (
+                    <div key={index} className="space-y-2 py-3">
+                      <SkeletonLine className="w-40" />
+                      <SkeletonLine className="w-56 max-w-full" />
+                    </div>
+                  )}
+                </SkeletonRows>
+              </div>
             </LoadingSurface>
           }
         >
@@ -96,7 +106,8 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
             </p>
           )}
           {vaults.data?.length === 0 && <p className="text-sm text-muted">No shared vaults yet.</p>}
-          <ul className="space-y-0">
+          {/* Dividers only between rows: the form below draws the single line after the list. */}
+          <ul className="divide-y divide-panel-border">
             {vaults.data?.map((vault) => (
               <VaultRow key={vault.vaultId} vault={vault} canWrite={canWrite} onChanged={refresh} />
             ))}
@@ -124,18 +135,32 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
             />
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-primary">
-            Your BigBrain handle
+            Your handle in this vault
             <input
               className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2 font-mono"
-              value={draft.ownerHandle}
+              value={ownerHandle}
+              placeholder="e.g. ada"
+              autoComplete="off"
+              spellCheck={false}
+              aria-invalid={handleProblem ? true : undefined}
+              aria-describedby={handleProblem ? `${handleIds.hint} ${handleIds.problem}` : handleIds.hint}
               onChange={(event) => setDraft({ ...draft, ownerHandle: event.target.value.toLowerCase() })}
               disabled={create.isPending}
               required
             />
-            <span className="font-normal text-muted">
-              You become the vault owner under this handle. It cannot be changed later.
-            </span>
           </label>
+          <div id={handleIds.hint} className="space-y-0.5 text-xs text-muted">
+            <p>
+              A name you pick now, not a BigBrain account. Members see it next to what you write. Each vault has its
+              own, and it cannot be changed later.
+            </p>
+            <p>1–64 lowercase letters, numbers, “.”, “_” or “-”, starting with a letter or number.</p>
+          </div>
+          {handleProblem && (
+            <p id={handleIds.problem} className="text-xs text-status-danger-600">
+              {handleProblem}
+            </p>
+          )}
           <button
             type="submit"
             className="ficus-button ficus-button-primary self-start rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
@@ -143,8 +168,7 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
               create.isPending ||
               !draft.displayName.trim() ||
               draft.displayName !== draft.displayName.trim() ||
-              !HANDLE.test(draft.ownerHandle) ||
-              draft.ownerHandle === 'ficus-reader'
+              !isValidBigbrainHandle(ownerHandle)
             }
           >
             {create.isPending ? 'Creating…' : 'Create vault'}
@@ -192,7 +216,7 @@ function VaultRow({
   const busy = operation.isPending || vault.state === 'deleting'
 
   return (
-    <li className="border-b border-panel-border py-3 text-sm">
+    <li className="py-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="font-medium text-primary">{vault.displayName}</div>

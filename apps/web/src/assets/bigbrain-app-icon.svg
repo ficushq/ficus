@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="BigBrain">
+  <title>BigBrain app icon</title>
+  <!-- Apple's macOS icon grid: a 1024 canvas, the 824 rounded plate inset
+       100 on every side with a ~22.5% corner radius — the OS does NOT mask
+       app icons, so the plate is part of the artwork. Plate = the brand card
+       colour (brand/README.md). The cube is web/ui/src/assets/logo.svg with
+       its geometry untouched, framed by favicon.svg's viewBox (the mark's
+       own bounding box + 3% air) and scaled so it fills ~62% of the plate,
+       which is where Apple's own glyphs sit. desktop/icons.sh renders this
+       into src-tauri/icons/ with `tauri icon`. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#fcfcfa"/>
+  <g transform="translate(256 256) scale(6.826667) translate(-19.3 -2.85)">
+    <path d="M76.8 24.4 L54.4 62.3 L32.8 49 L55.2 11 Z" fill="#141414"/>
+    <path d="M44.8 5 L55.2 11 L32.8 49 L22.4 43 Z" fill="#4f46e5"/>
+    <path d="M22.4 43 L32.8 49 L54.4 62.3 L44 56.3 Z" fill="#3fa34d"/>
+    <path d="M39.2 63.7 L60 75.7 L60 39.7 L39.2 27.7 Z" fill="#4f46e5"/>
+    <path d="M91.2 57.7 L60 75.7 L60 39.7 L91.2 21.7 Z" fill="#d857a8"/>
+    <path d="M70.4 9.7 L91.2 21.7 L60 39.7 L39.2 27.7 Z" fill="#d99a2b"/>
+  </g>
+</svg>
