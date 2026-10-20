@@ -52,7 +52,14 @@ const results = async () =>
   )
 async function items() {
   const ids = (await passes()).map((pass) => pass.id)
-  return ids.length ? db.select().from(storageScanItems).where(inArray(storageScanItems.passId, ids)) : []
+  // Ordered so assertions on several items do not depend on Postgres's arbitrary row order.
+  return ids.length
+    ? db
+        .select()
+        .from(storageScanItems)
+        .where(inArray(storageScanItems.passId, ids))
+        .orderBy(storageScanItems.home, storageScanItems.path)
+    : []
 }
 
 describe('incremental storage scanner', () => {
