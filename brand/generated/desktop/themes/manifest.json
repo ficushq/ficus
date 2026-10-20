@@ -1,0 +1,169 @@
+{
+  "icons": [
+    {
+      "themeId": "ficus",
+      "appearance": "light",
+      "file": "ficus-light.png",
+      "colors": {
+        "tile": "#f1e9db",
+        "leaf": "#3f6b4f",
+        "pot": "#b0582f",
+        "sideLeaves": "#8a9a5b"
+      }
+    },
+    {
+      "themeId": "ficus",
+      "appearance": "dark",
+      "file": "ficus-dark.png",
+      "colors": {
+        "tile": "#1c1a17",
+        "leaf": "#5e7f4e",
+        "pot": "#c46a3c",
+        "sideLeaves": "#87945a"
+      }
+    },
+    {
+      "themeId": "iris",
+      "appearance": "light",
+      "file": "iris-light.png",
+      "colors": {
+        "tile": "#faf9fc",
+        "leaf": "#5b21b6",
+        "pot": "#a855f7",
+        "sideLeaves": "#c4b5fd"
+      }
+    },
+    {
+      "themeId": "iris",
+      "appearance": "dark",
+      "file": "iris-dark.png",
+      "colors": {
+        "tile": "#090a12",
+        "leaf": "#c4b5fd",
+        "pot": "#a855f7",
+        "sideLeaves": "#706893"
+      }
+    },
+    {
+      "themeId": "harbor",
+      "appearance": "light",
+      "file": "harbor-light.png",
+      "colors": {
+        "tile": "#f4f9fa",
+        "leaf": "#0e5f6d",
+        "pot": "#2696aa",
+        "sideLeaves": "#adc9d3"
+      }
+    },
+    {
+      "themeId": "harbor",
+      "appearance": "dark",
+      "file": "harbor-dark.png",
+      "colors": {
+        "tile": "#0b161e",
+        "leaf": "#157181",
+        "pot": "#2696aa",
+        "sideLeaves": "#adc9d3"
+      }
+    },
+    {
+      "themeId": "ember",
+      "appearance": "light",
+      "file": "ember-light.png",
+      "colors": {
+        "tile": "#fcf8f3",
+        "leaf": "#97371d",
+        "pot": "#d67d3a",
+        "sideLeaves": "#d9bea9"
+      }
+    },
+    {
+      "themeId": "ember",
+      "appearance": "dark",
+      "file": "ember-dark.png",
+      "colors": {
+        "tile": "#1b1412",
+        "leaf": "#b04728",
+        "pot": "#d67d3a",
+        "sideLeaves": "#d9bea9"
+      }
+    },
+    {
+      "themeId": "nurebairo",
+      "appearance": "constant",
+      "file": "nurebairo.png",
+      "colors": {
+        "tile": "#21191f",
+        "leaf": "#cf717a",
+        "pot": "#87494f",
+        "sideLeaves": "#814951"
+      }
+    },
+    {
+      "themeId": "phosphorus",
+      "appearance": "constant",
+      "file": "phosphorus.png",
+      "colors": {
+        "tile": "#d3e0d5",
+        "leaf": "#62517a",
+        "pot": "#40354f",
+        "sideLeaves": "#9591a3"
+      }
+    },
+    {
+      "themeId": "yamabukiiro",
+      "appearance": "constant",
+      "file": "yamabukiiro.png",
+      "colors": {
+        "tile": "#e0aa24",
+        "leaf": "#64204f",
+        "pot": "#411533",
+        "sideLeaves": "#9c5e3c"
+      }
+    },
+    {
+      "themeId": "moegiiro",
+      "appearance": "constant",
+      "file": "moegiiro.png",
+      "colors": {
+        "tile": "#286a3c",
+        "leaf": "#ffda52",
+        "pot": "#a68e35",
+        "sideLeaves": "#9ea848"
+      }
+    },
+    {
+      "themeId": "adzukiiro",
+      "appearance": "constant",
+      "file": "adzukiiro.png",
+      "colors": {
+        "tile": "#803653",
+        "leaf": "#bcc9dd",
+        "pot": "#7a8390",
+        "sideLeaves": "#a1879f"
+      }
+    },
+    {
+      "themeId": "asagiiro",
+      "appearance": "constant",
+      "file": "asagiiro.png",
+      "colors": {
+        "tile": "#355f7b",
+        "leaf": "#ffd65a",
+        "pot": "#a68b3b",
+        "sideLeaves": "#a4a069"
+      }
+    },
+    {
+      "themeId": "high-contrast",
+      "appearance": "constant",
+      "file": "high-contrast.png",
+      "colors": {
+        "tile": "#ffffff",
+        "leaf": "#000000",
+        "pot": "#808080",
+        "sideLeaves": "#737373"
+      }
+    }
+  ]
+}

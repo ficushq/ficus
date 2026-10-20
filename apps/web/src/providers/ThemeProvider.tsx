@@ -19,6 +19,7 @@ import {
 import { findWebTheme, resolveWebTheme, type WebThemeDefinition } from '../theme/registry'
 import { tokenColor } from '../theme/tokenReader'
 import { applyResolvedTheme } from '../theme/apply'
+import { publishThemeIcon } from '../theme/appIcon'
 import { getThemeStorage, persistSurfaceSnapshot } from '../theme/storage'
 
 import { applyCustomTheme, customSelection, persistResolvedSnapshot, removeCustomProperties } from '../theme/custom'
@@ -301,6 +302,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
       meta.content = surface
     }
+
+    // The favicon and Desktop's Dock icon follow the real selection only, so they are set before any preview repaints.
+    publishThemeIcon(root, {
+      themeId: resolvedThemeDefinition.id,
+      appearance: resolvedAppearance,
+      custom: custom !== null,
+    })
 
     // Reapply the active preview (editor draft, quick-picker hover), if any,
     // AFTER our own real paint above. This is what makes a preview survive

@@ -88,9 +88,12 @@ other vaults' names, owners, usage or state.
 
 ## Lifecycle
 
-1. **Create.** Settings → Integrations → BigBrain → **New shared vault**. Choose a name and your
-   BigBrain handle. You become the owner under that handle; the handle cannot change later. The
-   vault shows **Setting up**, then **Ready**.
+1. **Create.** Settings → Integrations → BigBrain → **New shared vault**. Choose a vault name and
+   your handle in this vault. The handle is a name you pick now, not an existing BigBrain account
+   or login: you become the vault owner under it, and members see it next to what you write. It
+   is 1–64 lowercase letters, numbers, `.`, `_` or `-`, starting with a letter or number
+   (`ficus-reader` is reserved). Each vault has its own handle, and it cannot change later. The
+   form suggests one from your email name. The vault shows **Setting up**, then **Ready**.
 2. **Connect your device.** On a ready vault you own, choose **Connect a device**, then **Create
    device link**. The link is single-use and expires after an hour. Anyone holding it gets your
    owner access, so create it only when you are about to paste it into the BigBrain app on your

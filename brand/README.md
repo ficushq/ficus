@@ -160,6 +160,33 @@ dependency); rerun it only when the sources or its character set change.
 `#c46a3c` (pot) — a recolor of the light palette, not the dark-mode sage
 accent above.
 
+## Theme icons
+
+The app icon follows the active theme: the web favicon and the Desktop Dock
+icon take each part of the mark from the theme's own colors. One mapping,
+`themeIconColors` in `packages/shared/src/theme-icon.ts`, colors every
+surface, so the generated icons, the favicon and Desktop's live icon for a
+custom theme agree:
+
+| Part        | Color                                                                                                      |
+| ----------- | ---------------------------------------------------------------------------------------------------------- |
+| Tile        | `--color-bg-page`                                                                                          |
+| Leaf        | `--color-primary`, else its hover or light shade, else the text color: the first with 3:1 on the tile      |
+| Pot         | `--swatch-secondary` when it has 2:1 on the tile; otherwise the leaf color darkened (lightened on black)   |
+| Side leaves | `--swatch-tertiary`, unless it is faint on the tile or merges with the leaf or pot: then a leaf/tile blend |
+
+Ficus light reproduces the brand mark on linen exactly. Built-in Ficus dark
+keeps the bundled dark icon (`ficus-mark-dark.svg` on soil) rather than the
+theme's own colors. The single-appearance themes have only a background, a
+text color and an accent, so their secondary swatch is the background and the
+pot falls back to the darkened leaf: a near-white text-color pot was tried and
+rejected.
+
+A theme with light and dark appearances gets an icon for each; a
+single-appearance theme gets one. `scripts/brand/generate.test.ts` checks the
+set covers every built-in theme and that Ficus light and dark match the
+bundled Desktop icons pixel for pixel. Mobile does not use these yet.
+
 ## Type
 
 - **Fraunces** — display face; the lowercase "ficus" wordmark.
@@ -213,6 +240,13 @@ it must satisfy sharp's patched minimum (8.18.6 for sharp 0.35.4). Check
   continuous-corner ("squircle") tile, radius 185 with 60% corner smoothing,
   centered in a transparent 1024 canvas over a soft drop shadow (28px blur,
   12px down, 30% black).
+- `desktop/themes/` — a Dock icon per built-in theme, on the same tile:
+  `<theme>-light.png` and `<theme>-dark.png` for a theme with both
+  appearances, `<theme>.png` for a single-appearance theme. `manifest.json`
+  lists each file with its colors, and `template.svg` is the same drawing with
+  `{{tile}}`, `{{leaf}}`, `{{pot}}` and `{{sideLeaves}}` in place of the
+  colors, for Desktop to draw a custom theme's icon live. See
+  [Theme icons](#theme-icons).
 - `mobile/` — `icon.png` (1024, opaque, iOS), `adaptive-icon.png` (1024,
   transparent, Android foreground), `adaptive-background.png` (1024, solid
   linen), `splash-icon.png` (1024, transparent), `notification-icon.png`
