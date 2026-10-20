@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 /// <reference types="vite-plugin-pwa/client" />
 
-declare const __FICUS_APP_URL__: string
 declare const __FICUS_APP_BASE_PATH__: string
 /** Build id shared by the page bundle and the service worker; undefined outside vite builds (tests). */
 declare const __FICUS_SW_CACHE_VERSION__: string | undefined

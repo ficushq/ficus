@@ -17,6 +17,7 @@ import { getSquadSshPath } from '../../squad/ssh'
 import { getSquadWorkspacePath } from '../../squad/workspace'
 import { workspaceDotPath } from '../../workspace/dot-dir'
 import { createLogger } from '../../../lib/infra/logger'
+import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 
 const log = createLogger('sandbox-host')
 
@@ -296,7 +297,8 @@ export function buildHostCommandEnv(
   const env: Record<string, string> = { ...base }
   env.PATH = `${hostBinDir()}:${base.PATH ?? FALLBACK_PATH}`
   env.FICUS_API_URL = resolveHostApiUrl()
-  if (process.env.APP_URL) env.APP_URL = process.env.APP_URL
+  const appUrl = resolvePublicAppUrl()
+  if (appUrl) env.APP_URL = appUrl
   // An INJECTED TOKEN is what makes a shell an agent's. Operator-driven shells
   // (web terminals, `exec`, the manager's spawns) get no token, and must keep
   // the operator's own CLI auth store and resolution — overriding those would

@@ -9,23 +9,29 @@ import { db } from '../../db'
 import { userCredentials, webauthnChallenges } from '../../db/schema'
 import { eq, and, gt, lt } from 'drizzle-orm'
 import { User } from '../../entities/User'
-import { primaryWebOrigin } from './web-origins'
+import { rpOriginForRequest } from './web-origins'
 
 // AuthenticatorTransport is not exported from @simplewebauthn/server main entry
 type AuthenticatorTransport = 'ble' | 'cable' | 'hybrid' | 'internal' | 'nfc' | 'smart-card' | 'usb'
 
-function getRpConfig() {
-  const origin = primaryWebOrigin()
-  // The RP ID must be the registrable domain of the origin — default it to the origin's
-  // host (e.g. home.example.com) rather than "localhost", which would reject passkeys on a
-  // real domain. Set WEBAUTHN_RP_ID only to pin a parent domain.
+/**
+ * WebAuthn relying-party settings for one ceremony. The origin is the request's
+ * Origin when it is one of this server's allowed origins (public address, local
+ * address, pinned web origins), else the primary origin — so a passkey works on the
+ * hostname it was registered on and no existing credential is silently re-bound.
+ * The RP ID is that origin's host; WEBAUTHN_RP_ID pins a parent domain only when it
+ * actually covers the chosen host (otherwise the browser would reject it anyway).
+ */
+export function rpConfigFor(requestOrigin?: string | null) {
+  const origin = rpOriginForRequest(requestOrigin)
   let originHost = 'localhost'
   try {
     originHost = new URL(origin).hostname
   } catch {
     /* keep the localhost fallback */
   }
-  const rpId = process.env.WEBAUTHN_RP_ID ?? originHost
+  const pinned = process.env.WEBAUTHN_RP_ID?.trim().toLowerCase()
+  const rpId = pinned && (originHost === pinned || originHost.endsWith(`.${pinned}`)) ? pinned : originHost
   const rpName = process.env.WEBAUTHN_RP_NAME ?? 'Ficus'
   return { rpId, rpName, origin }
 }
@@ -59,8 +65,8 @@ export async function cleanupExpiredChallenges(): Promise<void> {
   await db.delete(webauthnChallenges).where(lt(webauthnChallenges.expiresAt, new Date()))
 }
 
-export async function generateRegOptions(user: User) {
-  const { rpId, rpName } = getRpConfig()
+export async function generateRegOptions(user: User, requestOrigin?: string | null) {
+  const { rpId, rpName } = rpConfigFor(requestOrigin)
   const existingCreds = await user.getCredentials()
 
   const options = await generateRegistrationOptions({
@@ -82,8 +88,12 @@ export async function generateRegOptions(user: User) {
   return options
 }
 
-export async function verifyRegResponse(user: User, response: any): Promise<VerifiedRegistrationResponse> {
-  const { rpId, origin } = getRpConfig()
+export async function verifyRegResponse(
+  user: User,
+  response: any,
+  requestOrigin?: string | null
+): Promise<VerifiedRegistrationResponse> {
+  const { rpId, origin } = rpConfigFor(requestOrigin)
   const expectedChallenge = await getAndDeleteChallenge(`reg:${user.id}`)
   if (!expectedChallenge) throw new Error('Challenge expired or not found')
 
@@ -95,8 +105,8 @@ export async function verifyRegResponse(user: User, response: any): Promise<Veri
   })
 }
 
-export async function generateAuthOptions(email?: string) {
-  const { rpId } = getRpConfig()
+export async function generateAuthOptions(email?: string, requestOrigin?: string | null) {
+  const { rpId } = rpConfigFor(requestOrigin)
   let allowCredentials: { id: string; transports?: AuthenticatorTransport[] }[] | undefined
 
   if (email) {
@@ -128,8 +138,8 @@ export async function generateAuthOptions(email?: string) {
 
 export class PasskeyAuthenticationError extends Error {}
 
-export async function verifyAuthResponse(challengeKey: string, response: any) {
-  const { rpId, origin } = getRpConfig()
+export async function verifyAuthResponse(challengeKey: string, response: any, requestOrigin?: string | null) {
+  const { rpId, origin } = rpConfigFor(requestOrigin)
   const expectedChallenge = await getAndDeleteChallenge(challengeKey)
   if (!expectedChallenge) throw new PasskeyAuthenticationError('Challenge expired or not found')
 

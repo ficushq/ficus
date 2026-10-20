@@ -1,6 +1,11 @@
 export {
   SettingsStore,
   SettingValidationError,
+  SettingVersionConflictError,
+  SettingManagedError,
+  isManagedSetting,
+  settingVersionToken,
+  type SettingAuditEntry,
   SETTING_CHANGED_CHANNEL,
   SETTINGS_STORE_REFRESH_INTERVAL_MS,
   getSettingsStore,

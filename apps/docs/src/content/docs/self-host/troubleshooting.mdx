@@ -81,7 +81,7 @@ For remote access, confirm the proxy reaches the API and forwards `/ws` as well 
 ## Login or CLI authentication fails
 
 - **The initial password no longer works:** after an administrator registers a passkey, use passkey login. The setup password is a bootstrap credential.
-- **Passkey registration fails behind a proxy:** verify the HTTPS address and `FICUS_WEB_ORIGIN`. The setting must contain an origin with no path.
+- **Passkey registration fails behind a proxy:** verify the HTTPS address, the **Public address** in Settings → Administration → Server address, and `FICUS_WEB_ORIGIN` if set. `FICUS_WEB_ORIGIN` must contain an origin with no path. Passkeys only work on the hostname they were made on.
 - **The CLI returns 401:** run `ficus auth status` to see its backend and credential source, then authorize a device again:
 
   ```sh

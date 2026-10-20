@@ -30,10 +30,7 @@ function publicOrigin(raw: string | undefined) {
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error()
     return url.toString().replace(/\/+$/, '')
   } catch {
-    throw new RelayConnectionError(
-      'Set this server’s application URL (APP_URL) to its public HTTPS address before connecting.',
-      400
-    )
+    throw new RelayConnectionError('Set this server’s public address to an HTTPS URL before connecting.', 400)
   }
 }
 /**
@@ -116,6 +113,17 @@ export class RelayServerConnection {
     // Clear authority first. Verifier cleanup can safely be retried or abandoned.
     await this.deps.save(pendingKey, '', actor)
     if (previous) await this.deps.remove(verifierKey(previous.id)).catch(() => {})
+  }
+  /**
+   * The public address changed (Settings or a peer process): a pending approval was
+   * started for the old address, so cancel it now rather than on its next poll. The
+   * saved credential needs no action — it is keyed by the address, so the old one is
+   * simply no longer selected.
+   */
+  handlePublicAddressChange(): Promise<void> {
+    return this.exclusive(async () => {
+      if (this.deps.read(pendingKey)) await this.clearPending('system')
+    })
   }
   private assertSelfHosted() {
     if (this.deps.env().FICUS_MANAGED === '1')

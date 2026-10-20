@@ -1,3 +1,5 @@
+import { resolvePublicAppUrl } from '../../../lib/public-app-url'
+
 const CALLBACK_PATH = '/settings/integrations/oauth/callback'
 
 export function resolveIntegrationOAuthCallbackUrl(providerKey = 'notion'): string {
@@ -9,7 +11,7 @@ const hasControlCharacter = (value: string) =>
   [...value].some((character) => character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127)
 
 export function resolveOAuthCallbackUrl(
-  appUrl: string | undefined = process.env.APP_URL,
+  appUrl: string | undefined = resolvePublicAppUrl(),
   appBasePath: string | undefined = process.env.APP_BASE_PATH
 ): string {
   if (!appUrl || appUrl.includes('\\')) throw invalidPublicUrl()

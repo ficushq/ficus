@@ -6,6 +6,7 @@ import { db } from '../../db'
 import { emailVerifications, authSettings, type EmailVerificationPurpose } from '../../db/schema'
 import { createLogger } from '../../lib/infra/logger'
 import { primaryWebAppUrl } from './web-origins'
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
 
 const log = createLogger('auth-email')
 
@@ -44,13 +45,13 @@ interface InstanceIdentity {
  * own several instances (hosted tenants all mail from the same platform), and a
  * bare "Ficus — Verify your email" gives them no way to tell which one asked.
  *
- * Derived from APP_URL, the public origin every hosted tenant and most
+ * Derived from the public application address (APP_URL or the Settings public address), the public origin every hosted tenant and most
  * self-hosts already set. Returns null when it is unset or unparseable — a bare
  * local install then gets the original, instance-less wording rather than an
  * `undefined` in its subject line.
  */
 export function instanceIdentity(): InstanceIdentity | null {
-  const raw = process.env.APP_URL?.trim()
+  const raw = resolvePublicAppUrl()
   if (!raw) return null
   try {
     const parsed = new URL(raw)

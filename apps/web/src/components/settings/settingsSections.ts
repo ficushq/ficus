@@ -77,6 +77,11 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
     label: 'Configuration',
     items: [
       {
+        id: 'server-address',
+        label: 'Server address',
+        description: 'Public address for links, sign-in, integrations and the Ficus app.',
+      },
+      {
         id: 'mobile-pro',
         label: 'Mobile & Pro',
         description: 'Ficus account connection, relays and Instance Pro coverage.',
@@ -170,6 +175,7 @@ const SECTION_PERMISSIONS: Partial<Record<SectionId, string>> = {
   signup: 'settings:read',
   memory: 'settings:read',
   'mobile-pro': 'settings:read',
+  'server-address': 'settings:read',
   providers: 'provider-auth:read',
   'decision-providers': 'provider-auth:read',
   skills: 'skills:read',

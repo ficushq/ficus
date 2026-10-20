@@ -1,4 +1,5 @@
 import { MobileProSection } from './settings/MobileProSection'
+import { ServerAddressSection } from './settings/ServerAddressSection'
 import { MobileSection } from './settings/MobileSection'
 import { SETTINGS_SEARCH_ENTRIES } from './settings/settingsSearch'
 import { LinkedChatAccounts } from './settings/LinkedChatAccounts'
@@ -109,6 +110,8 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
   const hideUpdates = updateSettings.data?.managed === true
   const mobilePageAllowed = identity?.type === 'user'
   const mobileSetupAllowed = mobilePageAllowed && can('settings:read')
+  // Independent of Mobile & Pro: the address is server-wide (also shown on Ficus Cloud, as managed).
+  const serverAddressAllowed = identity?.type === 'user' && can('settings:read')
   const integrationAllowed =
     catalog.isSuccess &&
     Array.isArray(catalog.data?.integrations) &&
@@ -123,8 +126,18 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
       ) &&
       !(section === 'updates' && hideUpdates) &&
       !(section === 'mobile' && !mobilePageAllowed) &&
-      !(section === 'mobile-pro' && !mobileSetupAllowed),
-    [can, permissionsLoading, catalog.isPending, mobilePageAllowed, mobileSetupAllowed, integrationAllowed, hideUpdates]
+      !(section === 'mobile-pro' && !mobileSetupAllowed) &&
+      !(section === 'server-address' && !serverAddressAllowed),
+    [
+      can,
+      permissionsLoading,
+      catalog.isPending,
+      mobilePageAllowed,
+      mobileSetupAllowed,
+      serverAddressAllowed,
+      integrationAllowed,
+      hideUpdates,
+    ]
   )
   const legacySection = searchParams.get('section')
   const target = searchParams.get('setting') ?? ''
@@ -177,7 +190,11 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
     <div className="h-full min-h-0 flex flex-col md:flex-row grow gap-4 md:gap-6">
       <SettingsNavigation
         groups={visibleGroups}
-        searchEntries={SETTINGS_SEARCH_ENTRIES.filter((entry) => entry.section !== 'mobile-pro' || mobileSetupAllowed)}
+        searchEntries={SETTINGS_SEARCH_ENTRIES.filter(
+          (entry) =>
+            (entry.section !== 'mobile-pro' || mobileSetupAllowed) &&
+            (entry.section !== 'server-address' || serverAddressAllowed)
+        )}
         activeSection={activeSection}
         onSectionChange={setActiveSection}
         showOnboardingLink={showOnboardingLink}
@@ -194,6 +211,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
           {activeSection === 'integrations' && <IntegrationsSection />}
           {activeSection === 'mobile' && <MobileSection />}
           {activeSection === 'mobile-pro' && <MobileProSection />}
+          {activeSection === 'server-address' && <ServerAddressSection />}
           {activeSection === 'notification-rules' && <NotificationsConfigSection />}
           {activeSection === 'providers' && <ProviderAuthSection />}
           {activeSection === 'decision-providers' && <DecisionModelsSection />}

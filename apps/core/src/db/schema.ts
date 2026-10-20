@@ -2726,6 +2726,21 @@ export const settings = pgTable('settings', {
   updatedBy: varchar('updated_by', { length: 100 }),
 })
 
+// Audit trail for settings written through SettingsStore.writeManaged (e.g. PUBLIC_APP_URL).
+export const settingAuditLog = pgTable(
+  'setting_audit_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    key: varchar('key', { length: 255 }).notNull(),
+    previousValue: text('previous_value'),
+    newValue: text('new_value'),
+    actor: varchar('actor', { length: 100 }).notNull(),
+    source: varchar('source', { length: 32 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('idx_setting_audit_log_key_created').on(t.key, t.createdAt)]
+)
+
 // Durable cross-process Kubernetes provisioning circuit and fenced operation leases.
 export const k8sProvisionControls = pgTable('k8s_provision_controls', {
   scope: varchar('scope', { length: 64 }).primaryKey(),

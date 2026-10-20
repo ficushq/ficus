@@ -15,8 +15,10 @@ import {
 import { Modal } from '../Modal'
 import { OverflowMenu } from '../OverflowMenu'
 import { ExternalLink, SETTINGS_BUTTON_SIZE, SETTINGS_HEADING, SettingsRow } from './SettingsRow'
+import { Link } from 'react-router-dom'
 
 const CONNECT_FORM_ID = 'ficus-account-connect'
+const SERVER_ADDRESS_HREF = '/settings?section=server-address&setting=server-address'
 const FIELD = 'ficus-field w-full rounded-lg border border-th-border bg-surface px-3 py-2 text-sm text-primary'
 
 /** The connect form's default name: the name Ficus already knows, else this server's hostname. */
@@ -307,7 +309,10 @@ export function RelayConnectionSettings() {
           </div>
           {data.setupError && (
             <p className="text-sm text-status-attention-600" role="status">
-              {data.setupError}
+              {data.setupError}{' '}
+              <Link to={SERVER_ADDRESS_HREF} className="text-accent-light hover:underline">
+                Change in Server address →
+              </Link>
             </p>
           )}
           {request && (
@@ -352,11 +357,15 @@ export function RelayConnectionSettings() {
               </form>
             )
           )}
-          <div data-setting-target="mobile-public-url" tabIndex={-1}>
+          <div data-public-address-summary>
             <SettingsRow
-              label="Server address"
-              description="Uses the public address from server setup, including any port or path."
-              value={<span className="break-all font-mono text-xs">{data.origin || 'Not configured'}</span>}
+              label="Public address"
+              description={
+                <Link to={SERVER_ADDRESS_HREF} className="text-accent-light hover:underline">
+                  Change in Server address →
+                </Link>
+              }
+              value={<span className="break-all font-mono text-xs">{data.origin || 'Not set'}</span>}
             />
           </div>
         </div>

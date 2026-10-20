@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { serveStatic } from 'hono/bun'
 import type { Hono } from 'hono'
 import { resolveFarmDist, resolveWebDist } from './web-dist'
-import { primaryWebOrigin } from '../services/auth/web-origins'
+import { hasConfiguredWebOrigin, primaryWebOrigin } from '../services/auth/web-origins'
 
 type Log = { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void }
 
@@ -36,11 +36,11 @@ export function renderIndexHtml(html: string, origin: string): string {
 
 /**
  * This instance's public origin, for the placeholder above. The configured web
- * origin (FICUS_WEB_ORIGIN, the same source WebAuthn trusts) wins; otherwise the
+ * origin (FICUS_WEB_ORIGIN, or the effective public address — the same source WebAuthn trusts) wins; otherwise the
  * reverse proxy's forwarded headers; otherwise the request URL itself.
  */
 export function publicOrigin(c: { req: { url: string; header: (name: string) => string | undefined } }): string {
-  if (process.env.FICUS_WEB_ORIGIN ?? process.env.WEBAUTHN_ORIGIN ?? process.env.APP_URL) return primaryWebOrigin()
+  if (hasConfiguredWebOrigin()) return primaryWebOrigin()
   const host = c.req.header('x-forwarded-host')?.split(',')[0].trim()
   if (host) {
     const proto = c.req.header('x-forwarded-proto')?.split(',')[0].trim() || 'https'

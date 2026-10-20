@@ -40,12 +40,14 @@ to own its connection. The mobile app still signs in to each instance
 separately; connecting a Ficus account does not grant access to your squads.
 
 1. Open the server’s webapp and go to **Settings → Administration → Mobile & Pro**.
-2. Check the **Server address**. Ficus uses the public `APP_URL` already configured
-   during server setup, including any port and installation path (for example,
-   `https://ficus.example.com:8443/ficus`). You do not need to enter it again for
-   mobile. The app must be able to reach this HTTPS address. If it is missing or
-   incorrect, update your server’s existing `APP_URL` configuration before
-   connecting.
+2. Check the **Public address** shown there, including any port and installation
+   path (for example, `https://ficus.example.com:8443/ficus`). The app must be able
+   to reach this HTTPS address. If it is missing or incorrect, choose **Change in
+   Server address** (**Settings → Administration → Server address**), set it,
+   review the confirmation and save. It takes effect immediately. If it says
+   **Set by the server environment**, change `APP_URL` where the server is
+   configured (on Ficus Desktop, update the app) — see
+   [where the public address comes from](/self-host/runtime-and-access/#where-the-public-address-comes-from).
 3. Check the **Server name** (it starts as the server’s hostname) and choose
    **Connect Ficus account**.
 4. Sign in to Ficus Cloud in the approval page. Check that its server address and
@@ -102,9 +104,12 @@ filters work together.
 
 ## Reconnect or disconnect
 
-Changing the server’s `APP_URL` requires reconnecting the Ficus account at that
-address. The old Cloud server record and any subscription remain in your account;
-review them in **Manage Pro and devices** before leaving an old server unused.
+Changing the server’s public address requires reconnecting the Ficus account at
+the new address, and pending connection approvals for the old address are
+cancelled. Phones pair with the new address again. The old Cloud server record,
+its devices and any subscription remain in your account and do not move to the new
+address; review them in **Manage Pro and devices** before leaving an old server
+unused.
 
 To replace the server’s credential or rename it, choose **Reconnect…** from the
 Ficus account menu (**Reconnect Ficus account** when the connection needs

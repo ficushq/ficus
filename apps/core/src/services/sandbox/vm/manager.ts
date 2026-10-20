@@ -131,6 +131,7 @@ import { gitIdentityEnv, resolveGitHubIdentity as resolveGitHubIdentityReal } fr
 import { beginSandboxSetupWork, trackSandboxSetupWork } from '../setup-progress'
 import { getSecretStore } from '../../secrets'
 import { effectiveMachineScripts, type PrebuiltReadOpts } from '../../machines/machine-prebuilt'
+import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 
 const log = createLogger('vm-sandbox')
 
@@ -494,7 +495,7 @@ function productionDeps(): VmSandboxManagerDeps {
     getSecret: (key) => getSecretStore().get(key),
     getBundleVersion: async () => (await currentBundleVersionCached()).version,
     getBoxProvisionVersion: defaultBoxProvisionVersion(),
-    getAppUrl: () => process.env.APP_URL,
+    getAppUrl: () => resolvePublicAppUrl(),
     resolveBoxApiUrl: (machine) => resolveBoxApiUrlReal(machine),
     resolveBoxApiTransport: (machine) => resolveBoxApiTransportReal(machine),
     resolveMachine: (req) => resolvePlacement(req),

@@ -1,5 +1,15 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { getSettingsStore, SettingsStore, SettingValidationError, SETTING_CHANGED_CHANNEL } from './store'
+import { eq } from 'drizzle-orm'
+import { db, settingAuditLog, settings } from '../../db'
+import {
+  getSettingsStore,
+  isManagedSetting,
+  SettingManagedError,
+  SettingsStore,
+  SettingValidationError,
+  SettingVersionConflictError,
+  SETTING_CHANGED_CHANNEL,
+} from './store'
 import { listPeriodicRunnerNames, listPeriodicRunners } from '../../lib/infra/PeriodicRunner'
 import { listen } from '../../lib/infra/local-events'
 import { createProviderHealthRegistry, PROVIDER_HEALTH_STATE_KEY } from '../provider-health/registry'
@@ -410,5 +420,83 @@ describe('SettingsStore periodic refresh', () => {
     expect(runner?.runnerIntervalMs).toBe(5 * 60_000)
 
     store.stopPeriodicRefresh()
+  })
+})
+
+describe('managed settings', () => {
+  const KEY = 'PUBLIC_APP_URL'
+  const opts = (expectedVersion: string, actor = 'user:a') => ({ expectedVersion, actor, source: 'admin-api' })
+
+  afterEach(async () => {
+    await db.delete(settings).where(eq(settings.key, KEY))
+    await db.delete(settingAuditLog).where(eq(settingAuditLog.key, KEY))
+    await getSettingsStore().refreshKey(KEY)
+  })
+
+  test('plain set/delete refuse a managed key', async () => {
+    const store = getSettingsStore()
+    await expect(store.set(KEY, 'https://x.example')).rejects.toBeInstanceOf(SettingManagedError)
+    await expect(store.delete(KEY)).rejects.toBeInstanceOf(SettingManagedError)
+    expect(isManagedSetting(KEY)).toBe(true)
+    expect(isManagedSetting('EMBEDDINGS_ENABLED')).toBe(false)
+  })
+
+  test('writeManaged is compare-and-set, audited, notifies and clears with null', async () => {
+    const store = getSettingsStore()
+    await store.initialize()
+    const seen: Array<[string, string]> = []
+    const off = store.onChange((key, value) => {
+      if (key === KEY) seen.push([key, value])
+    })
+    try {
+      expect(await store.settingVersion(KEY)).toBe('unset')
+      const first = await store.writeManaged(KEY, 'https://x.example', opts('unset'))
+      expect(first.version).not.toBe('unset')
+      expect(store.getStoredValue(KEY)).toBe('https://x.example')
+      expect(await store.settingVersion(KEY)).toBe(first.version)
+
+      const stale = store.writeManaged(KEY, 'https://y.example', opts('unset', 'user:b'))
+      await expect(stale).rejects.toBeInstanceOf(SettingVersionConflictError)
+      await expect(stale).rejects.toMatchObject({ currentVersion: first.version })
+      expect(store.getStoredValue(KEY)).toBe('https://x.example')
+
+      const second = await store.writeManaged(KEY, 'https://y.example', opts(first.version, 'user:b'))
+      await store.writeManaged(KEY, null, opts(second.version))
+      expect(store.getStoredValue(KEY)).toBeUndefined()
+      expect(await store.settingVersion(KEY)).toBe('unset')
+
+      const rows = await db
+        .select()
+        .from(settingAuditLog)
+        .where(eq(settingAuditLog.key, KEY))
+        .orderBy(settingAuditLog.createdAt)
+      expect(rows.map((r) => [r.previousValue, r.newValue, r.actor, r.source])).toEqual([
+        [null, 'https://x.example', 'user:a', 'admin-api'],
+        ['https://x.example', 'https://y.example', 'user:b', 'admin-api'],
+        ['https://y.example', null, 'user:a', 'admin-api'],
+      ])
+      expect(await store.latestAuditEntry(KEY)).toMatchObject({ previousValue: 'https://y.example', newValue: null })
+      expect(seen.map(([, value]) => value)).toEqual(['https://x.example', 'https://y.example', ''])
+    } finally {
+      off()
+    }
+  })
+
+  test('concurrent first writers: exactly one wins', async () => {
+    const store = getSettingsStore()
+    const results = await Promise.allSettled([
+      store.writeManaged(KEY, 'https://a.example', opts('unset')),
+      store.writeManaged(KEY, 'https://b.example', opts('unset')),
+    ])
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+    const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult
+    expect(rejected.reason).toBeInstanceOf(SettingVersionConflictError)
+  })
+
+  test('writeManaged runs the validator and rejects unmanaged keys', async () => {
+    const store = getSettingsStore()
+    await expect(store.writeManaged(KEY, 'ftp://x', opts('unset'))).rejects.toBeInstanceOf(SettingValidationError)
+    await expect(store.writeManaged('EMBEDDINGS_ENABLED', 'true', opts('unset'))).rejects.toThrow('not a managed')
+    expect(await store.settingVersion(KEY)).toBe('unset')
   })
 })

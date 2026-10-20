@@ -1,10 +1,13 @@
 import { Hono } from 'hono'
-import { getSettingsStore, SettingValidationError } from '../services/settings'
+import { getSettingsStore, isManagedSetting, SettingValidationError } from '../services/settings'
 import { requirePermission } from '../middleware/require-permission'
 import { auditActor, type Identity } from '../services/rbac'
 import { parseJsonBody } from './json-body'
 
 const app = new Hono()
+
+const MANAGED_SETTING_ERROR =
+  'Change the public address in Settings → Administration → Server address (PUT /api/public-url).'
 
 /** List all known settings with metadata */
 app.get('/', requirePermission('settings:read'), async (c) => {
@@ -26,6 +29,7 @@ app.get('/:key', requirePermission('settings:read'), async (c) => {
 app.put('/:key', requirePermission('settings:write'), async (c) => {
   const key = c.req.param('key')
   if (key.startsWith('__integration-')) return c.json({ error: 'Use integration settings' }, 400)
+  if (isManagedSetting(key)) return c.json({ error: MANAGED_SETTING_ERROR }, 400)
   const parsedBody = await parseJsonBody(c)
   if (!parsedBody.ok) {
     return c.json({ error: 'Invalid JSON body' }, 400)
@@ -60,6 +64,7 @@ app.put('/:key', requirePermission('settings:write'), async (c) => {
 app.delete('/:key', requirePermission('settings:write'), async (c) => {
   const key = c.req.param('key')
   if (key.startsWith('__integration-')) return c.json({ error: 'Use integration settings' }, 400)
+  if (isManagedSetting(key)) return c.json({ error: MANAGED_SETTING_ERROR }, 400)
   const store = getSettingsStore()
   await store.delete(key)
   return c.json({ key, deleted: true })
