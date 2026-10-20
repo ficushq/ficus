@@ -8,7 +8,7 @@ The global switch applies across all squads. Disabling an integration stops new 
 
 Integrations start disabled until explicitly enabled. Saved enable/disable choices are preserved on subsequent upgrades and restarts. Changing a switch requires the provider's global integration write permission. Per-account switches and squad assignment choices still apply beneath the global switch.
 
-The API exposes the effective global state as `enabled` in `GET /api/integrations/catalog`; change it with `PUT /api/integrations/providers/:provider/enabled` and `{ "enabled": false }` (or `true`). State is durable and checked directly across Core processes. It is managed through Integrations, rather than the generic settings API.
+The API exposes the effective global state as `enabled` in `GET /api/integrations/catalog`; change it with `PUT /api/integrations/providers/:provider/enabled` and `{ "enabled": false }` (or `true`). State is durable and checked directly across Core processes. Providers with deployment restrictions also expose a safe `availability: { available, reason? }` in the catalog. An unavailable provider remains under Disabled with a visible explanation and refuses enable requests server-side, even if a saved enabled flag exists; saved connection data is not removed. BigBrain availability describes the connected Core deployment, not whether a local binding has been configured. It is managed through Integrations, rather than the generic settings API.
 
 GitHub account setup, account selection, and credential lifecycle are described in [GitHub integrations](github-integrations.md).
 
@@ -69,7 +69,7 @@ The CLI package is installed from the public npm artifact whose pinned integrity
 
 ## Directory organization and squad access
 
-The global directory shows **Enabled** integrations first and **Disabled** integrations second, alphabetically within each section. Search covers both sections. GitHub, Notion, Linear, and Bigbrain have account pools; Discord, Slack, and Telegram have dedicated credential and channel-routing cards. Cloudflare, DigitalOcean, Netlify, Railway, Supabase, and Vercel have deployment credential cards; see [deployment setup](deployments.md).
+The global directory shows **Enabled** integrations first and **Disabled** integrations second, alphabetically within each section. Search covers both sections. GitHub, Notion, Linear, and BigBrain have account pools; Discord, Slack, and Telegram have dedicated credential and channel-routing cards. Cloudflare, DigitalOcean, Netlify, Railway, Supabase, and Vercel have deployment credential cards; see [deployment setup](deployments.md).
 
 Squad settings show only globally enabled integrations that support account assignments. Each squad can disable its integration without losing its selected accounts. Re-enabling restores its choice. Global credentials are edited only on the global directory, with integration write permission; squad account choices require squad integration write permission.
 

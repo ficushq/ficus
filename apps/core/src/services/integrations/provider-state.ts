@@ -1,3 +1,4 @@
+import { bigbrainHostAvailability } from './bigbrain/availability'
 import { eq, sql, type SQL } from 'drizzle-orm'
 import {
   db,
@@ -13,7 +14,8 @@ export const INTEGRATION_ENABLED_PREFIX = '__integration-enabled:'
 export function integrationEnabledPredicate(
   provider: string | SQL = sql`${integrationConnections.providerKey}`
 ): SQL<boolean> {
-  return sql<boolean>`coalesce((select ${settings.value} = 'true' from ${settings} where ${settings.key} = ${INTEGRATION_ENABLED_PREFIX} || ${provider}), false)`
+  const supported = bigbrainHostAvailability().available
+  return sql<boolean>`(${supported} or ${provider} <> 'bigbrain') and coalesce((select ${settings.value} = 'true' from ${settings} where ${settings.key} = ${INTEGRATION_ENABLED_PREFIX} || ${provider}), false)`
 }
 export function effectiveConnectionEnabled(): SQL<boolean> {
   return sql<boolean>`${integrationConnections.enabled} and ${integrationEnabledPredicate()}`
@@ -25,6 +27,10 @@ export async function isIntegrationEnabled(providerKey: string, store: typeof db
   return row.enabled
 }
 export async function setIntegrationEnabled(providerKey: string, enabled: boolean, actor: string): Promise<string[]> {
+  if (providerKey === 'bigbrain' && enabled) {
+    const availability = bigbrainHostAvailability()
+    if (!availability.available) throw new Error(availability.reason)
+  }
   return db.transaction(async (tx) => {
     await tx
       .insert(settings)

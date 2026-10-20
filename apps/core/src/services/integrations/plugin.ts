@@ -70,6 +70,7 @@ export interface IntegrationPluginV1<
   Credential,
   AgentTools extends IntegrationAgentToolFactory = IntegrationAgentToolFactory,
 > {
+  availability?(): { available: boolean; reason?: string }
   readonly manifestVersion: 1
   readonly key: string
   readonly adapterVersion: number
@@ -119,6 +120,7 @@ export interface IntegrationSetupStatus {
 }
 
 export interface SafeIntegrationCatalogEntry {
+  availability?: { available: boolean; reason?: string }
   setup?: IntegrationSetupStatus
   manifestVersion: 1
   key: string
@@ -157,6 +159,7 @@ export interface SafeIntegrationCatalogEntry {
 /** Build the catalog DTO field-by-field so executable and private manifest fields cannot escape. */
 export function toSafeCatalogEntry(plugin: IntegrationPluginV1<unknown, unknown>): SafeIntegrationCatalogEntry {
   return {
+    ...(plugin.availability ? { availability: plugin.availability() } : {}),
     manifestVersion: plugin.manifestVersion,
     key: plugin.key,
     adapterVersion: plugin.adapterVersion,

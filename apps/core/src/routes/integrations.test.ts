@@ -28,7 +28,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
     {
       key: 'bigbrain',
       adapterVersion: 1,
-      label: 'Bigbrain',
+      label: 'BigBrain',
       description: 'Safe',
       icon: 'bigbrain',
       connectionMode: 'manual',
@@ -1302,4 +1302,30 @@ test('local BigBrain endpoints require instance provider permissions before reso
     { bindingId: 'approved', displayName: 'Memory' },
     expect.any(String)
   )
+})
+
+test('unsupported catalog state is public and rejects API enable before persisting, but permits disable', async () => {
+  const { app, calls } = createApp({
+    type: 'system',
+    systemTokenId: 'test',
+    name: 'test',
+    scopes: ['integrations:write:bigbrain'],
+  })
+  const reason = 'BigBrain is unavailable on Ficus Cloud.'
+  calls.catalog.mockImplementation(
+    () => [{ key: 'bigbrain', availability: { available: false, reason }, enabled: false }] as any
+  )
+  const catalog = await app.request('/api/integrations/catalog')
+  expect((await catalog.json()).integrations[0].availability).toEqual({ available: false, reason })
+  const request = (enabled: boolean) =>
+    app.request('/api/integrations/providers/bigbrain/enabled', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+  const response = await request(true)
+  expect(response.status).toBe(400)
+  expect(await response.json()).toMatchObject({ error: reason, code: 'unsupported_host' })
+  expect(calls.setEnabled).not.toHaveBeenCalled()
+  expect((await request(false)).status).toBe(200)
 })

@@ -1,9 +1,10 @@
 # BigBrain local vault connections
 
-> Local connector verified against the pinned upstream on Linux on 2026-10-19.
+> Local connector verified against the pinned upstream on Linux on 2026-10-20.
+> Packaged macOS end-to-end validation is outstanding; no Desktop release is implied.
 > This page describes the local MCP connector, not the removed API/token adapter.
 
-BigBrain is a self-hosted memory engine, not a BigBrain-hosted cloud service.
+[BigBrain](https://bigbrain.cool) is a self-hosted memory engine, not a BigBrain-hosted cloud service.
 Ficus connects to an explicitly selected local vault using BigBrain's public
 stdio MCP server. The engine owns the record, indexes, credential checks, and
 contribution attribution. Ficus does not read notes directly or write its logs.
@@ -15,26 +16,38 @@ conversation history and manual downloads are unaffected.
 
 ## Supported deployment
 
-The first version supports **self-hosted Ficus with BigBrain on the Core host**:
+Supported: **Ficus Desktop's local runtime**, and explicitly configured
+**self-hosted Core**, with BigBrain on the same machine as Core.
 
+- Desktop's local runtime runs Core API and worker on your Mac as your user,
+  using `FICUS_SANDBOX_RUNTIME=host`. It needs no Docker or VM for this connector.
+  Explicitly selected self-hosted `host` runtime is supported on the same terms;
+  the Desktop marker does not grant authority or bypass deployment checks.
 - Core API handles setup/validation. Core worker handles agent tools and periodic
-  connection validation. Both processes must see the same approved executable,
-  vault paths, local BigBrain credential state, and Ficus host configuration,
-  under the same service account/filesystem namespace.
-- A browser, mobile app, or desktop client only selects a server-side binding.
-  A path on that device is not a path on the server. CLI paths likewise refer to
-  the server selected by the CLI backend, not the machine running the CLI.
-- Agent execution environments receive only the four Ficus tools. No vault
-  mount, BigBrain executable, token file, or BigBrain environment variables are
-  projected into squad or agent environments. Remote agent execution is fine;
-  remote **vault execution** is not implemented.
-- Hosted/platform-managed instances are unsupported, even if a local executable
-  happens to exist. Split API/worker hosts, browser-local vaults, remote mounts,
-  SSH bridges, and Windows are not supported by this connector.
-- A no-isolation `host` agent runtime cannot protect the service account's vault
-  from arbitrary agent shells and is refused. Other runtime restrictions and
-  privileged-operator assumptions remain unchanged. Do not place vaults or
-  executable/credential state in agent-writable workspaces.
+  connection validation. Both must see the same approved executable, vault,
+  credential state and Ficus home under the same service account/filesystem
+  namespace. Split API/worker hosts are not supported.
+- A Desktop app **attached to a remote instance**, browser, mobile app or CLI
+  selects bindings on the connected **Core host**, not paths on the client.
+  Desktop attached to Ficus Cloud cannot reach BigBrain on your Mac. Self-hosted
+  remote **agent** execution (`vm`/`k8s`) remains supported when BigBrain is local
+  to Core; remote **vault** execution, remote mounts and SSH bridges are not.
+- Hosted/platform-managed Core, Windows, and missing/unknown agent runtimes are
+  unsupported. BigBrain stays under **Disabled**, with a visible reason, even
+  when an old enabled flag is saved. Enable attempts are refused server-side;
+  saved settings/connections are retained. Missing local declarations or credentials
+  on an eligible host mean **setup required**, not an unsupported deployment.
+- **Host runtime is trusted single-user execution, not filesystem isolation.**
+  Agent shells run as the same OS user and can access/modify the user's vault,
+  executable and credentials outside the connector. Connector permission gates,
+  private file modes, ownership and workspace-overlap checks still apply, but
+  cannot contain a hostile same-user agent. Use isolated agent execution when
+  that boundary is required. See [host runtime](host-runtime.md).
+- The connector projects only four tools, not vault mounts, executables,
+  credentials or `BIGBRAIN_*` variables into agent environments. On isolated
+  runtimes this keeps vault files outside ordinary agent mounts. On host runtime
+  it does **not** prevent direct shell access. Keep these files outside all
+  agent workspaces in either case.
 
 The upstream desktop distribution is Apple-silicon macOS-only. The stdio engine
 also has a source-checkout entry point; a Linux source install needs a successful
@@ -99,9 +112,13 @@ unsupported protocol; do not silently switch transport, credential, or vault.
    Ficus. An upstream source-checkout launch can be installed as its supported
    `bigbrain` command first; Ficus accepts no user-supplied argument list.
 
-3. As the host operator, create `bigbrain-bindings.json` inside Ficus's configured
-   `HOME_DIR` (normally `~/.ficus`). Protect the directory from other users and
-   agent workspaces; the file must be a regular non-symlink file owned by the
+3. As the host operator, create `bigbrain-bindings.json` inside the **connected
+   Core's configured `HOME_DIR`**. Desktop-managed local installs default to
+   `~/.ficus/desktop` (or the local data directory selected in Desktop); CLI
+   self-hosted installs normally use `~/.ficus`. An existing CLI installation
+   opened in Desktop keeps that installation's `HOME_DIR`. Do not put the file
+   in an unrelated installation's home. Protect the directory from other users;
+   the file must be a regular non-symlink file owned by the
    service account or root, with no group/world permissions. Ficus only reads
    this file: no web/API/agent endpoint can edit it.
 
@@ -127,7 +144,38 @@ unsupported protocol; do not silently switch transport, credential, or vault.
    parses or copies that store or its sibling `.clients` files. Provisioning
    and execution must use the same choice.
 
-   Use canonical absolute paths. BigBrain's installed executable may itself be
+   Set the declaration's file mode explicitly after saving:
+
+   ```sh
+   # Use the local data directory selected in Desktop, not blindly the CLI home.
+   FICUS_HOME="$HOME/.ficus/desktop"
+   chmod 600 "$FICUS_HOME/bigbrain-bindings.json"
+   ```
+
+   **macOS:** BigBrain.app installs `~/.local/bin/bigbrain` when launched. At the
+   pinned upstream revision this is a `/bin/sh` shim that quotes the bundled
+   Bun and engine paths and forwards `"$@"`; it is not the BigBrain GUI binary.
+   Use its absolute `/Users/you/.local/bin/bigbrain` path as `executablePath`.
+   Spaces in paths are supported. Source installs can use upstream's symlink
+   to `bin/cli.ts`; Core's private launch PATH includes Core's Bun directory,
+   not an arbitrary login-shell PATH. It does not require Homebrew or global Bun
+   for the app shim, which names its own Bun explicitly. Launch BigBrain.app
+   again if it moved so upstream can refresh its shim, and revalidate.
+
+   `HOME_DIR` is **not OS `HOME`**. BigBrain's default private credential files
+   remain under the Core service user's OS home:
+   `~/.config/bigbrain/tokens/<sha256(canonical-vault-path)[0:12]>.json` and
+   `<store>.clients/<clientId>.json`. Both must be regular private files (mode
+   `0600`); their ancestors must not be group/world writable. Do not copy tokens
+   into Desktop's Ficus home or paste them into Ficus. API and worker preserve
+   OS `HOME` for the child process; general inherited `BIGBRAIN_*` variables,
+   including `BIGBRAIN_TOKENS`, are ignored. If upstream provisioning used a
+   nondefault token store, select the **same existing store** explicitly with
+   `tokenStorePath` in the host declaration. Missing state is a setup error;
+   Ficus never mints credentials.
+
+   Use canonical absolute paths (no `~` or environment expansion in JSON).
+   BigBrain's installed executable may itself be
    a symlink; its resolved target is pinned at connection creation. The vault
    must contain a regular `vault.yaml`. All declaration and executable locations
    must be outside agent-writable workspace roots. Validation never recursively
@@ -163,9 +211,11 @@ Global provider enablement, the enabled pooled connection, squad selection,
 agent-type capability, and explicit tool allowance must all permit access.
 Existing instance-scoped `integrations:read:bigbrain` /
 `integrations:write:bigbrain` permissions govern the pool. Squad-scoped grants
-cannot reveal host paths or edit host declarations. The host declaration is an
-additional OS-operator authorization boundary: integration write permission
-alone cannot make Core run an uploaded executable or choose an undeclared vault.
+cannot reveal host paths or edit host declarations. In isolated runtimes the
+host declaration is an
+additional OS-operator authorization boundary; in trusted host mode it is an
+operator-selection safeguard, not protection from same-user shells. Integration
+write permission alone cannot make Core run an uploaded executable or choose an undeclared vault.
 
 ```yaml
 integrations:
@@ -255,16 +305,16 @@ may display approved paths only to authorized global readers.
 
 Actionable errors include:
 
-| Condition                                        | What to do                                                                                         |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| Unsupported hosted/no-isolation/split-host setup | Use co-located self-hosted Core with isolated agent execution; no remote bridge is available       |
-| No host declarations                             | Ask the server operator to configure `bigbrain-bindings.json`                                      |
-| Missing/moved vault or executable                | Restore the exact path or create an explicitly selected new binding; no default-vault fallback     |
-| Binding changed                                  | Review the host declaration and explicitly create/select the new connection                        |
-| Revoked/unavailable local credential             | Provision a named connection in BigBrain, then select it explicitly                                |
-| Expired named connection                         | Renew it in BigBrain, validate, and enable in Ficus                                                |
-| Missing public tools / incompatible response     | Check the installed upstream revision; do not enable an HTTP fallback                              |
-| Timeout, busy, or oversized response             | Retry reads deliberately or request a smaller read/search; a timed-out drop has uncertain delivery |
+| Condition                                                      | What to do                                                                                                 |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Unsupported hosted/Windows/invalid-runtime or split-host setup | Use macOS/Linux local/self-hosted Core with a configured runtime and co-located BigBrain; no remote bridge |
+| No host declarations                                           | Configure `bigbrain-bindings.json` in the connected Core HOME_DIR (Desktop local data directory)           |
+| Missing/moved vault or executable                              | Restore the exact path or create an explicitly selected new binding; no default-vault fallback             |
+| Binding changed                                                | Review the host declaration and explicitly create/select the new connection                                |
+| Revoked/unavailable local credential                           | Provision a named connection in BigBrain, then select it explicitly                                        |
+| Expired named connection                                       | Renew it in BigBrain, validate, and enable in Ficus                                                        |
+| Missing public tools / incompatible response                   | Check the installed upstream revision; do not enable an HTTP fallback                                      |
+| Timeout, busy, or oversized response                           | Retry reads deliberately or request a smaller read/search; a timed-out drop has uncertain delivery         |
 
 ## Removal and release boundary
 
@@ -292,7 +342,32 @@ credentials and upstream state were synthetic and removed afterwards; no model
 calls or real user vaults were used. The fixture denies JavaScript fetch and
 Node socket connections in the CLI and its MCP child. It is not an OS network
 namespace. Idle expiry is covered with a synthetic MCP response, not a 30-day
-real-time smoke. The macOS desktop distribution was not exercised.
+real-time smoke. The Linux smoke was rerun on 2026-10-20 through the real
+Desktop-host support decision and default OS-home credential layout, without
+a support override. The macOS desktop distribution was not exercised.
+Static inspection at the same pin covers `desktop/src-tauri/src/lib.rs` (`shim_text`, `install_shim`,
+`sidecar`), `lib/bigbrainCommand.ts`, `bin/cli.ts`, `bin/mcp.ts`,
+`lib/auth.ts` and `lib/connectedClients.ts`: the app shim starts bundled Bun,
+CLI dispatch preserves explicit vault selection, and named stdio uses the
+OS-home private token store. This is compatibility evidence, **not** proof that
+an installed macOS app passes execution, signing/quarantine or permission checks.
+
+The Desktop-host regression uses the actual supervisor environment, separate
+OS/Ficus homes, a synthetic app-style shim with spaced bundle paths, and real
+Core discovery, connection persistence, validation, enablement, assignment and
+all four tools against a synthetic MCP server. It checks missing executable
+and private-state permissions separately, and hosted denial even with saved
+intent. No real vault is used. This Linux fixture is not packaged macOS success.
+
+A macOS acceptance check still needs an installation containing this **Core
+source fix** (a merged PR alone does not publish/update Desktop). Confirm the
+selected local data directory and same-account BigBrain shim, provision/select
+a named local connection as described above, then list bindings, create/validate,
+enable and assign it. Exercise working-set/search/read on non-sensitive test
+data; an explicit drop requires separate permission and a disposable vault.
+For a Desktop remote/Cloud attachment, check that the BigBrain card remains
+Disabled with its reason and cannot be enabled. Do not share token contents,
+private note contents or authorization headers as validation evidence.
 
 Normal CI uses synthetic MCP and owned-process fixtures; the upstream test is
 explicitly skipped unless `FICUS_BIGBRAIN_UPSTREAM_CHECKOUT` names a separately

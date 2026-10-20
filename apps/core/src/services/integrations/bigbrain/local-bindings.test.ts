@@ -138,3 +138,71 @@ test('default upstream credential state cannot resolve into an exposed workspace
   const defaults = new BigbrainBindings({ home, supported: () => true, osHome })
   await expect(defaults.resolve('personal')).rejects.toMatchObject({ code: 'invalid_configuration' })
 })
+
+// Same environment selected by Desktop's supervisor, not an injected support callback.
+test('Desktop local host and explicitly selected self-hosted runtimes reach real binding discovery', async () => {
+  const previous = { ...process.env }
+  try {
+    delete process.env.FICUS_MANAGED
+    process.env.HOME_DIR = home
+    process.env.FICUS_DESKTOP_MANAGED = '1'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
+    const desktop = new BigbrainBindings()
+    expect(await desktop.list()).toHaveLength(1)
+    await rm(join(home, 'bigbrain-bindings.json'))
+    expect(await desktop.list()).toEqual([])
+    await save()
+    delete process.env.FICUS_DESKTOP_MANAGED
+    for (const runtime of ['host', 'docker-sysbox', 'docker-socket', 'k8s', 'vm']) {
+      process.env.FICUS_SANDBOX_RUNTIME = runtime
+      expect(await new BigbrainBindings().list()).toHaveLength(1)
+    }
+    process.env.FICUS_DESKTOP_MANAGED = '1'
+    process.env.FICUS_MANAGED = '1' // Desktop attached to a hosted Core must not confer support.
+    await expect(new BigbrainBindings().list()).rejects.toMatchObject({ code: 'unsupported_host' })
+    delete process.env.FICUS_MANAGED
+    for (const runtime of ['', 'unknown', 'Host']) {
+      process.env.FICUS_SANDBOX_RUNTIME = runtime
+      await expect(new BigbrainBindings().list()).rejects.toMatchObject({ code: 'unsupported_host' })
+    }
+    delete process.env.FICUS_SANDBOX_RUNTIME
+    await expect(new BigbrainBindings().list()).rejects.toMatchObject({ code: 'unsupported_host' })
+  } finally {
+    process.env = previous
+  }
+})
+
+test('Desktop Ficus HOME_DIR is independent of OS HOME and default private BigBrain state', async () => {
+  const osHome = join(root, 'Users', 'Synthetic Mac')
+  const store = join(
+    osHome,
+    '.config',
+    'bigbrain',
+    'tokens',
+    createHash('sha256').update(binding.vaultPath).digest('hex').slice(0, 12) + '.json'
+  )
+  await mkdir(`${store}.clients`, { recursive: true, mode: 0o700 })
+  await writeFile(store, '{}', { mode: 0o600 })
+  await writeFile(join(`${store}.clients`, `${binding.clientId}.json`), '{}', { mode: 0o600 })
+  const launcher = join(osHome, '.local', 'bin', 'bigbrain')
+  await mkdir(join(osHome, '.local', 'bin'), { recursive: true, mode: 0o700 })
+  await symlink(binding.executablePath, launcher)
+  binding.executablePath = launcher
+  delete binding.tokenStorePath
+  await save()
+  const previous = { ...process.env }
+  try {
+    process.env.HOME = osHome
+    process.env.HOME_DIR = home
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_DESKTOP_MANAGED = '1'
+    delete process.env.FICUS_MANAGED
+    const resolved = await new BigbrainBindings().resolve('personal')
+    expect(resolved.configuration.executablePath).toBe(join(root, 'bigbrain'))
+    expect(resolved.tokenStorePath).toBeUndefined()
+    await chmod(store, 0o644)
+    await expect(new BigbrainBindings().list()).rejects.toMatchObject({ code: 'invalid_configuration' })
+  } finally {
+    process.env = previous
+  }
+})
