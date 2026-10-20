@@ -27,7 +27,10 @@ improvement. One inspected task and one attempt per arm do **not** isolate a
 causal effect or establish general harness superiority, multi-agent value, or
 human time saved. Use fresh tasks and repeated/mixed-order runs next.
 
-Effective cumulative accounting is **$10.607113 / $20**, leaving **$9.392887**.
+At the end of this four-arm pilot, effective cumulative accounting was
+**$10.607113 / $20**, leaving **$9.392887**. The subsequent
+[scope-guidance experiment](SCOPE_GUIDANCE.md) records its additional spend
+separately; cumulative accounting after that experiment is **$11.853043 / $20**.
 The corrected four-arm revision added **$3.614756** across 304 fully metered calls.
 Paid inference is stopped. No production changes were merged or deployed.
 The chronological sections below preserve earlier failures; the final section
@@ -489,3 +492,13 @@ passed all 51 tests in that file in 11.4 seconds and exited zero. That isolated
 pass does not establish that the full suite is green or prove the failure's
 cause. The deployment-health implementation and test are unchanged by this PR;
 no unrelated production fix or weakened assertion was introduced.
+
+
+## Follow-up scope-guidance experiment
+
+See [SCOPE_GUIDANCE.md](SCOPE_GUIDANCE.md). Both prompt variants passed 16/16
+fresh synthetic scope-decision checks. The generic candidate guidance then
+passed the known-task full-squad regression replay: 12/12 official acceptance
+tests and 50 regression tests, with unchanged verifier inputs and no operator
+steering. This is a separate experiment, not a replacement for the failed arm
+above. The candidate prompt commit `8739f497` also passed full CI.

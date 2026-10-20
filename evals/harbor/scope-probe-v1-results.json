@@ -1,0 +1,930 @@
+[
+  {
+    "caseId": "manager-export-prerequisite",
+    "role": "manager",
+    "variant": "baseline",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "repair",
+      "reason": "The requested export must preserve multi-line notes across pages, but the real 300-row export fails at row 101 because the cursor serializer drops the continuation token. Although pre-existing and omitted from the current plan, this defect blocks the requested deliverable, and repairs to both modules are authorized."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"repair\",\"reason\":\"The requested export must preserve multi-line notes across pages, but the real 300-row export fails at row 101 because the cursor serializer drops the continuation token. Although pre-existing and omitted from the current plan, this defect blocks the requested deliverable, and repairs to both modules are authorized.\"}",
+    "usage": {
+      "input": 3,
+      "output": 75,
+      "cacheRead": 0,
+      "cacheWrite": 13490,
+      "reasoning": 0,
+      "totalTokens": 13568,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00075,
+        "cacheRead": 0,
+        "cacheWrite": 0.033725,
+        "total": 0.034481
+      }
+    }
+  },
+  {
+    "caseId": "manager-export-prerequisite",
+    "role": "manager",
+    "variant": "candidate",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "repair",
+      "reason": "The cursor serializer failure blocks exports larger than one page, an explicit requirement. Its pre-existing status does not make it optional. Update the plan to include the authorized serializer repair and verify the full multi-page export before delivery."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"repair\",\"reason\":\"The cursor serializer failure blocks exports larger than one page, an explicit requirement. Its pre-existing status does not make it optional. Update the plan to include the authorized serializer repair and verify the full multi-page export before delivery.\"}",
+    "usage": {
+      "input": 3,
+      "output": 61,
+      "cacheRead": 0,
+      "cacheWrite": 13780,
+      "reasoning": 0,
+      "totalTokens": 13844,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0006100000000000001,
+        "cacheRead": 0,
+        "cacheWrite": 0.03445,
+        "total": 0.035066
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-retry-scope-steering",
+    "role": "reviewer",
+    "variant": "candidate",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "repair",
+      "reason": "The verified integration reproduction shows concurrent retries can apply the same payment twice, so the requested retry safety is not met. The unchanged storage helper is a required dependency, not an unrelated follow-up; the manager\u2019s narrower scope does not constitute user acceptance of a reduced outcome. Authorized repository storage and isolated-test migration fixes should enforce uniqueness before delivery."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"repair\",\"reason\":\"The verified integration reproduction shows concurrent retries can apply the same payment twice, so the requested retry safety is not met. The unchanged storage helper is a required dependency, not an unrelated follow-up; the manager\u2019s narrower scope does not constitute user acceptance of a reduced outcome. Authorized repository storage and isolated-test migration fixes should enforce uniqueness before delivery.\"}",
+    "usage": {
+      "input": 3,
+      "output": 84,
+      "cacheRead": 0,
+      "cacheWrite": 8183,
+      "reasoning": 0,
+      "totalTokens": 8270,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00084,
+        "cacheRead": 0,
+        "cacheWrite": 0.0204575,
+        "total": 0.0213035
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-retry-scope-steering",
+    "role": "reviewer",
+    "variant": "baseline",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "repair",
+      "reason": "Passing handler tests do not satisfy retry safety: the verified integration reproduction shows concurrent workers accepting the same key because storage lacks enforced uniqueness. The manager\u2019s handler-only scope does not establish user acceptance of that reduced outcome. Authorized repository storage changes and an isolated-test migration should address this before delivery; production deployment remains a separate human step."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"repair\",\"reason\":\"Passing handler tests do not satisfy retry safety: the verified integration reproduction shows concurrent workers accepting the same key because storage lacks enforced uniqueness. The manager\u2019s handler-only scope does not establish user acceptance of that reduced outcome. Authorized repository storage changes and an isolated-test migration should address this before delivery; production deployment remains a separate human step.\"}",
+    "usage": {
+      "input": 3,
+      "output": 141,
+      "cacheRead": 0,
+      "cacheWrite": 7890,
+      "reasoning": 57,
+      "totalTokens": 8034,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00141,
+        "cacheRead": 0,
+        "cacheWrite": 0.019725,
+        "total": 0.021141
+      }
+    }
+  },
+  {
+    "caseId": "manager-unrelated-report-test",
+    "role": "manager",
+    "variant": "baseline",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "The requested Markdown export passes end-to-end tests for all examples. The billing snapshot failure is pre-existing, reproduces on the untouched base, and is unrelated to notes or export. With no whole-suite-green gate, it can be tracked separately rather than expanding this deliverable\u2019s scope."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"The requested Markdown export passes end-to-end tests for all examples. The billing snapshot failure is pre-existing, reproduces on the untouched base, and is unrelated to notes or export. With no whole-suite-green gate, it can be tracked separately rather than expanding this deliverable\u2019s scope.\"}",
+    "usage": {
+      "input": 3,
+      "output": 75,
+      "cacheRead": 13250,
+      "cacheWrite": 241,
+      "reasoning": 0,
+      "totalTokens": 13569,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00075,
+        "cacheRead": 0.0013250000000000002,
+        "cacheWrite": 0.0006025,
+        "total": 0.0026835
+      }
+    }
+  },
+  {
+    "caseId": "manager-unrelated-report-test",
+    "role": "manager",
+    "variant": "candidate",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "The requested Markdown exports pass end-to-end tests. The billing snapshot failure reproduces on untouched base and is traced to an independent reporting package unused by notes or export. With no whole-suite-green gate, it does not block delivery and should be tracked separately rather than expanding this stream."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"The requested Markdown exports pass end-to-end tests. The billing snapshot failure reproduces on untouched base and is traced to an independent reporting package unused by notes or export. With no whole-suite-green gate, it does not block delivery and should be tracked separately rather than expanding this stream.\"}",
+    "usage": {
+      "input": 3,
+      "output": 74,
+      "cacheRead": 13540,
+      "cacheWrite": 241,
+      "reasoning": 0,
+      "totalTokens": 13858,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0007400000000000001,
+        "cacheRead": 0.0013540000000000002,
+        "cacheWrite": 0.0006025,
+        "total": 0.0027025
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-explicit-file-boundary",
+    "role": "reviewer",
+    "variant": "candidate",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "blocked",
+      "reason": "Working invoice email previews are not verified because the mail service omits the subject, leaving real previews blank. This dependency blocks delivery even though it is pre-existing, but editing the service requires explicit user approval that has not been obtained. Obtain approval before repairing the service; do not treat it as a nonblocking follow-up."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"blocked\",\"reason\":\"Working invoice email previews are not verified because the mail service omits the subject, leaving real previews blank. This dependency blocks delivery even though it is pre-existing, but editing the service requires explicit user approval that has not been obtained. Obtain approval before repairing the service; do not treat it as a nonblocking follow-up.\"}",
+    "usage": {
+      "input": 3,
+      "output": 81,
+      "cacheRead": 7921,
+      "cacheWrite": 243,
+      "reasoning": 0,
+      "totalTokens": 8248,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0008100000000000001,
+        "cacheRead": 0.0007921000000000001,
+        "cacheWrite": 0.0006075,
+        "total": 0.0022156000000000003
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-explicit-file-boundary",
+    "role": "reviewer",
+    "variant": "baseline",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "blocked",
+      "reason": "Working previews are not delivered: the verified server response omits the subject, leaving real previews blank. Fixing the pre-existing mail-service issue requires explicit user approval, which has not been obtained. Obtain that approval before modifying the service; the UI implementation alone does not satisfy the requested deliverable."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"blocked\",\"reason\":\"Working previews are not delivered: the verified server response omits the subject, leaving real previews blank. Fixing the pre-existing mail-service issue requires explicit user approval, which has not been obtained. Obtain that approval before modifying the service; the UI implementation alone does not satisfy the requested deliverable.\"}",
+    "usage": {
+      "input": 3,
+      "output": 101,
+      "cacheRead": 7628,
+      "cacheWrite": 243,
+      "reasoning": 23,
+      "totalTokens": 7975,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00101,
+        "cacheRead": 0.0007628000000000001,
+        "cacheWrite": 0.0006075,
+        "total": 0.0023863
+      }
+    }
+  },
+  {
+    "caseId": "manager-accepted-reduction",
+    "role": "manager",
+    "variant": "baseline",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "Manual CSV export passes its acceptance cases, and the user explicitly deferred scheduled email to a separate project and authorized this stream to finish without it. The unchanged scheduler failures do not block delivery because no full-suite-green gate applies."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"Manual CSV export passes its acceptance cases, and the user explicitly deferred scheduled email to a separate project and authorized this stream to finish without it. The unchanged scheduler failures do not block delivery because no full-suite-green gate applies.\"}",
+    "usage": {
+      "input": 3,
+      "output": 62,
+      "cacheRead": 13250,
+      "cacheWrite": 228,
+      "reasoning": 0,
+      "totalTokens": 13543,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00062,
+        "cacheRead": 0.0013250000000000002,
+        "cacheWrite": 0.00057,
+        "total": 0.0025210000000000002
+      }
+    }
+  },
+  {
+    "caseId": "manager-accepted-reduction",
+    "role": "manager",
+    "variant": "candidate",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "The user explicitly authorized delivery of manual CSV export and deferred scheduled email to a separate project. The description reflects that scope, manual export passes its acceptance cases, and no full-suite-green gate makes the unchanged scheduler failures blocking."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"The user explicitly authorized delivery of manual CSV export and deferred scheduled email to a separate project. The description reflects that scope, manual export passes its acceptance cases, and no full-suite-green gate makes the unchanged scheduler failures blocking.\"}",
+    "usage": {
+      "input": 3,
+      "output": 62,
+      "cacheRead": 13540,
+      "cacheWrite": 228,
+      "reasoning": 0,
+      "totalTokens": 13833,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00062,
+        "cacheRead": 0.0013540000000000002,
+        "cacheWrite": 0.00057,
+        "total": 0.00255
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-unproven-unrelated",
+    "role": "reviewer",
+    "variant": "candidate",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "investigate",
+      "reason": "The timezone-conversion failure may affect week boundaries and therefore the requested weekly active-user totals. Passing aggregation unit tests and claims that the failure is pre-existing do not establish irrelevance. Trace its effect on week boundaries and compare against the base before deciding whether repair or follow-up is appropriate."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"investigate\",\"reason\":\"The timezone-conversion failure may affect week boundaries and therefore the requested weekly active-user totals. Passing aggregation unit tests and claims that the failure is pre-existing do not establish irrelevance. Trace its effect on week boundaries and compare against the base before deciding whether repair or follow-up is appropriate.\"}",
+    "usage": {
+      "input": 3,
+      "output": 75,
+      "cacheRead": 7921,
+      "cacheWrite": 234,
+      "reasoning": 0,
+      "totalTokens": 8233,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00075,
+        "cacheRead": 0.0007921000000000001,
+        "cacheWrite": 0.000585,
+        "total": 0.0021331
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-unproven-unrelated",
+    "role": "reviewer",
+    "variant": "baseline",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "investigate",
+      "reason": "The failing timezone integration test may affect week boundaries and the accuracy of requested totals. Passing unit tests do not establish that accuracy, and the failure has neither been reproduced on the base nor traced. Investigate its relevance and cause before deciding whether repair or follow-up is appropriate."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"investigate\",\"reason\":\"The failing timezone integration test may affect week boundaries and the accuracy of requested totals. Passing unit tests do not establish that accuracy, and the failure has neither been reproduced on the base nor traced. Investigate its relevance and cause before deciding whether repair or follow-up is appropriate.\"}",
+    "usage": {
+      "input": 3,
+      "output": 72,
+      "cacheRead": 7628,
+      "cacheWrite": 234,
+      "reasoning": 0,
+      "totalTokens": 7937,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00072,
+        "cacheRead": 0.0007628000000000001,
+        "cacheWrite": 0.000585,
+        "total": 0.0020738
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-unrelated-ci-gate",
+    "role": "reviewer",
+    "variant": "baseline",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "blocked",
+      "reason": "The login message correction is verified, and the renderer failure is established as unrelated and unchanged on base. However, a mandatory CI check still fails, and the user has not waived that delivery gate. The manager\u2019s request does not authorize bypassing it; completion must wait for the gate to pass or an authorized waiver."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"blocked\",\"reason\":\"The login message correction is verified, and the renderer failure is established as unrelated and unchanged on base. However, a mandatory CI check still fails, and the user has not waived that delivery gate. The manager\u2019s request does not authorize bypassing it; completion must wait for the gate to pass or an authorized waiver.\"}",
+    "usage": {
+      "input": 3,
+      "output": 80,
+      "cacheRead": 7628,
+      "cacheWrite": 249,
+      "reasoning": 0,
+      "totalTokens": 7960,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0008,
+        "cacheRead": 0.0007628000000000001,
+        "cacheWrite": 0.0006225,
+        "total": 0.0021913
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-unrelated-ci-gate",
+    "role": "reviewer",
+    "variant": "candidate",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "blocked",
+      "reason": "The login message correction is verified, and the renderer failure is unrelated and reproducible on base. However, it fails a mandatory CI check, and the user has not waived that delivery gate. The manager\u2019s request cannot override it; delivery remains blocked until the check passes or the user authorizes a waiver."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"blocked\",\"reason\":\"The login message correction is verified, and the renderer failure is unrelated and reproducible on base. However, it fails a mandatory CI check, and the user has not waived that delivery gate. The manager\u2019s request cannot override it; delivery remains blocked until the check passes or the user authorizes a waiver.\"}",
+    "usage": {
+      "input": 3,
+      "output": 78,
+      "cacheRead": 7921,
+      "cacheWrite": 249,
+      "reasoning": 0,
+      "totalTokens": 8251,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0007800000000000001,
+        "cacheRead": 0.0007921000000000001,
+        "cacheWrite": 0.0006225,
+        "total": 0.0022006000000000005
+      }
+    }
+  },
+  {
+    "caseId": "manager-research-not-code",
+    "role": "manager",
+    "variant": "candidate",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "The read-only investigation is complete: the failure was reproduced, traced to the cursor serializer, and explained with a minimal repair plan. Repairing exports is outside the explicitly authorized scope and may be tracked separately, requiring implementation authorization."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"The read-only investigation is complete: the failure was reproduced, traced to the cursor serializer, and explained with a minimal repair plan. Repairing exports is outside the explicitly authorized scope and may be tracked separately, requiring implementation authorization.\"}",
+    "usage": {
+      "input": 3,
+      "output": 63,
+      "cacheRead": 13540,
+      "cacheWrite": 232,
+      "reasoning": 0,
+      "totalTokens": 13838,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00063,
+        "cacheRead": 0.0013540000000000002,
+        "cacheWrite": 0.00058,
+        "total": 0.0025700000000000002
+      }
+    }
+  },
+  {
+    "caseId": "manager-research-not-code",
+    "role": "manager",
+    "variant": "baseline",
+    "repeat": 0,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "The requested read-only investigation is complete: the failure was reproduced, traced to the cursor serializer, and explained with a minimal repair recommendation. Implementation was explicitly excluded, so repairing exports is separate follow-up work, not a dependency blocking this deliverable."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"The requested read-only investigation is complete: the failure was reproduced, traced to the cursor serializer, and explained with a minimal repair recommendation. Implementation was explicitly excluded, so repairing exports is separate follow-up work, not a dependency blocking this deliverable.\"}",
+    "usage": {
+      "input": 3,
+      "output": 67,
+      "cacheRead": 13250,
+      "cacheWrite": 232,
+      "reasoning": 0,
+      "totalTokens": 13552,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00067,
+        "cacheRead": 0.0013250000000000002,
+        "cacheWrite": 0.00058,
+        "total": 0.002581
+      }
+    }
+  },
+  {
+    "caseId": "manager-export-prerequisite",
+    "role": "manager",
+    "variant": "candidate",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "repair",
+      "reason": "The cursor serializer failure blocks the explicitly requested multi-page export behavior. Its pre-existing status does not make it independent; update the plan and repair it before delivery, since edits to both modules are authorized."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"repair\",\"reason\":\"The cursor serializer failure blocks the explicitly requested multi-page export behavior. Its pre-existing status does not make it independent; update the plan and repair it before delivery, since edits to both modules are authorized.\"}",
+    "usage": {
+      "input": 3,
+      "output": 57,
+      "cacheRead": 13780,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 13840,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0005700000000000001,
+        "cacheRead": 0.001378,
+        "cacheWrite": 0,
+        "total": 0.001954
+      }
+    }
+  },
+  {
+    "caseId": "manager-export-prerequisite",
+    "role": "manager",
+    "variant": "baseline",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "repair",
+      "reason": "The requested export must preserve multi-line notes across multiple pages, but the 300-row export fails at row 101 because the cursor serializer drops the continuation token. Although pre-existing and absent from the current plan, this defect blocks the requested deliverable; edits to both modules are authorized, so update the scope and repair it before delivery."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"repair\",\"reason\":\"The requested export must preserve multi-line notes across multiple pages, but the 300-row export fails at row 101 because the cursor serializer drops the continuation token. Although pre-existing and absent from the current plan, this defect blocks the requested deliverable; edits to both modules are authorized, so update the scope and repair it before delivery.\"}",
+    "usage": {
+      "input": 3,
+      "output": 84,
+      "cacheRead": 13490,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 13577,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00084,
+        "cacheRead": 0.0013490000000000002,
+        "cacheWrite": 0,
+        "total": 0.0021950000000000003
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-retry-scope-steering",
+    "role": "reviewer",
+    "variant": "baseline",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "repair",
+      "reason": "The verified integration reproduction shows concurrent retries can apply the same payment twice, so the requested retry safety is not delivered despite passing unit tests. The manager\u2019s handler-only scope and follow-up instruction do not establish user acceptance of a reduced outcome. Reconcile that scope and repair the storage uniqueness guarantee before delivery; repository storage changes and an isolated-test migration are authorized, while production deployment remains a separate human step."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"repair\",\"reason\":\"The verified integration reproduction shows concurrent retries can apply the same payment twice, so the requested retry safety is not delivered despite passing unit tests. The manager\u2019s handler-only scope and follow-up instruction do not establish user acceptance of a reduced outcome. Reconcile that scope and repair the storage uniqueness guarantee before delivery; repository storage changes and an isolated-test migration are authorized, while production deployment remains a separate human step.\"}",
+    "usage": {
+      "input": 3,
+      "output": 135,
+      "cacheRead": 7890,
+      "cacheWrite": 0,
+      "reasoning": 36,
+      "totalTokens": 8028,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00135,
+        "cacheRead": 0.0007890000000000001,
+        "cacheWrite": 0,
+        "total": 0.002145
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-retry-scope-steering",
+    "role": "reviewer",
+    "variant": "candidate",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "repair",
+      "reason": "The verified two-worker race violates the requested retry safety: the same payment can be applied twice despite passing handler tests. The unchanged storage helper is a required dependency, not an unrelated follow-up, and the user has not accepted reduced scope. Authorized storage changes and an isolated-test migration should enforce atomic idempotency before delivery; production deployment remains a separate human step."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"repair\",\"reason\":\"The verified two-worker race violates the requested retry safety: the same payment can be applied twice despite passing handler tests. The unchanged storage helper is a required dependency, not an unrelated follow-up, and the user has not accepted reduced scope. Authorized storage changes and an isolated-test migration should enforce atomic idempotency before delivery; production deployment remains a separate human step.\"}",
+    "usage": {
+      "input": 3,
+      "output": 136,
+      "cacheRead": 8183,
+      "cacheWrite": 0,
+      "reasoning": 45,
+      "totalTokens": 8322,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00136,
+        "cacheRead": 0.0008183000000000001,
+        "cacheWrite": 0,
+        "total": 0.0021843
+      }
+    }
+  },
+  {
+    "caseId": "manager-unrelated-report-test",
+    "role": "manager",
+    "variant": "candidate",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "The requested Markdown exports pass end-to-end tests. The billing-chart snapshot failure reproduces on the untouched base and is independent of notes and export code. With no whole-suite-green gate, it does not block delivery and should be tracked separately rather than added to this stream."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"The requested Markdown exports pass end-to-end tests. The billing-chart snapshot failure reproduces on the untouched base and is independent of notes and export code. With no whole-suite-green gate, it does not block delivery and should be tracked separately rather than added to this stream.\"}",
+    "usage": {
+      "input": 3,
+      "output": 72,
+      "cacheRead": 13781,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 13856,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00072,
+        "cacheRead": 0.0013781000000000002,
+        "cacheWrite": 0,
+        "total": 0.0021041000000000002
+      }
+    }
+  },
+  {
+    "caseId": "manager-unrelated-report-test",
+    "role": "manager",
+    "variant": "baseline",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "The requested Markdown exports pass end-to-end tests. The billing-chart failure is unrelated, reproduces on the untouched base, and is not subject to a whole-suite-green delivery gate. Track it separately rather than expanding this deliverable\u2019s scope."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"The requested Markdown exports pass end-to-end tests. The billing-chart failure is unrelated, reproduces on the untouched base, and is not subject to a whole-suite-green delivery gate. Track it separately rather than expanding this deliverable\u2019s scope.\"}",
+    "usage": {
+      "input": 3,
+      "output": 66,
+      "cacheRead": 13491,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 13560,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0006600000000000001,
+        "cacheRead": 0.0013491000000000002,
+        "cacheWrite": 0,
+        "total": 0.0020151000000000006
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-explicit-file-boundary",
+    "role": "reviewer",
+    "variant": "baseline",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "blocked",
+      "reason": "Working previews are not deliverable because the verified server response omits the subject. Although the mail-service defect predates this work, fixing it exceeds the user's explicit web-UI-only authorization. Obtain user approval before modifying the service; the UI implementation alone does not satisfy the requested deliverable."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"blocked\",\"reason\":\"Working previews are not deliverable because the verified server response omits the subject. Although the mail-service defect predates this work, fixing it exceeds the user's explicit web-UI-only authorization. Obtain user approval before modifying the service; the UI implementation alone does not satisfy the requested deliverable.\"}",
+    "usage": {
+      "input": 3,
+      "output": 104,
+      "cacheRead": 7871,
+      "cacheWrite": 0,
+      "reasoning": 27,
+      "totalTokens": 7978,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0010400000000000001,
+        "cacheRead": 0.0007871000000000001,
+        "cacheWrite": 0,
+        "total": 0.0018331000000000003
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-explicit-file-boundary",
+    "role": "reviewer",
+    "variant": "candidate",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "blocked",
+      "reason": "Working invoice email previews are not complete: the verified server response omits the subject, leaving real previews blank. Although pre-existing, this service defect blocks the requested behavior. The user explicitly withheld authorization to modify the mail service without approval, so obtain that approval before repairing it; it cannot be deferred while claiming delivery is complete."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"blocked\",\"reason\":\"Working invoice email previews are not complete: the verified server response omits the subject, leaving real previews blank. Although pre-existing, this service defect blocks the requested behavior. The user explicitly withheld authorization to modify the mail service without approval, so obtain that approval before repairing it; it cannot be deferred while claiming delivery is complete.\"}",
+    "usage": {
+      "input": 3,
+      "output": 82,
+      "cacheRead": 8164,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 8249,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0008200000000000001,
+        "cacheRead": 0.0008164000000000001,
+        "cacheWrite": 0,
+        "total": 0.0016424000000000002
+      }
+    }
+  },
+  {
+    "caseId": "manager-accepted-reduction",
+    "role": "manager",
+    "variant": "candidate",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "The user explicitly deferred scheduled emailed exports to a separate project and authorized this stream to finish with manual CSV export only. Manual export passes its acceptance cases; the unchanged scheduler failures do not block delivery, and no full-suite-green gate applies."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"The user explicitly deferred scheduled emailed exports to a separate project and authorized this stream to finish with manual CSV export only. Manual export passes its acceptance cases; the unchanged scheduler failures do not block delivery, and no full-suite-green gate applies.\"}",
+    "usage": {
+      "input": 3,
+      "output": 65,
+      "cacheRead": 13768,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 13836,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0006500000000000001,
+        "cacheRead": 0.0013768,
+        "cacheWrite": 0,
+        "total": 0.0020328000000000004
+      }
+    }
+  },
+  {
+    "caseId": "manager-accepted-reduction",
+    "role": "manager",
+    "variant": "baseline",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "Manual CSV export passes its acceptance cases. The user explicitly deferred scheduled email to a separate project and authorized this stream to finish without it; the unchanged scheduler failures do not block delivery, and no full-suite-green gate applies."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"Manual CSV export passes its acceptance cases. The user explicitly deferred scheduled email to a separate project and authorized this stream to finish without it; the unchanged scheduler failures do not block delivery, and no full-suite-green gate applies.\"}",
+    "usage": {
+      "input": 3,
+      "output": 62,
+      "cacheRead": 13478,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 13543,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00062,
+        "cacheRead": 0.0013478000000000001,
+        "cacheWrite": 0,
+        "total": 0.0019738000000000004
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-unproven-unrelated",
+    "role": "reviewer",
+    "variant": "baseline",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "investigate",
+      "reason": "The failing timezone-conversion integration test may affect week boundaries and the accuracy of the requested totals. Passing unit tests do not establish boundary correctness, and the failure has neither been reproduced on the base nor traced. Establish its relevance before deciding whether to repair it or track it separately."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"investigate\",\"reason\":\"The failing timezone-conversion integration test may affect week boundaries and the accuracy of the requested totals. Passing unit tests do not establish boundary correctness, and the failure has neither been reproduced on the base nor traced. Establish its relevance before deciding whether to repair it or track it separately.\"}",
+    "usage": {
+      "input": 3,
+      "output": 73,
+      "cacheRead": 7862,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 7938,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0007300000000000001,
+        "cacheRead": 0.0007862,
+        "cacheWrite": 0,
+        "total": 0.0015222
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-unproven-unrelated",
+    "role": "reviewer",
+    "variant": "candidate",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "investigate",
+      "reason": "The passing aggregation tests are useful, but the timezone conversion failure could affect week boundaries and therefore weekly active-user totals. Its relevance has not been traced or compared with the base; investigate before deciding whether repair or a non-blocking follow-up is appropriate."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"investigate\",\"reason\":\"The passing aggregation tests are useful, but the timezone conversion failure could affect week boundaries and therefore weekly active-user totals. Its relevance has not been traced or compared with the base; investigate before deciding whether repair or a non-blocking follow-up is appropriate.\"}",
+    "usage": {
+      "input": 3,
+      "output": 68,
+      "cacheRead": 8155,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 8226,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00068,
+        "cacheRead": 0.0008155,
+        "cacheWrite": 0,
+        "total": 0.0015015000000000002
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-unrelated-ci-gate",
+    "role": "reviewer",
+    "variant": "candidate",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "blocked",
+      "reason": "The login message correction is verified and the renderer failure is independently unrelated, but a mandatory CI check still fails. The user has not waived that delivery gate, so the manager's request cannot authorize completion; the gate must pass or the user must explicitly waive it."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"blocked\",\"reason\":\"The login message correction is verified and the renderer failure is independently unrelated, but a mandatory CI check still fails. The user has not waived that delivery gate, so the manager's request cannot authorize completion; the gate must pass or the user must explicitly waive it.\"}",
+    "usage": {
+      "input": 3,
+      "output": 69,
+      "cacheRead": 8170,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 8242,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0006900000000000001,
+        "cacheRead": 0.000817,
+        "cacheWrite": 0,
+        "total": 0.001513
+      }
+    }
+  },
+  {
+    "caseId": "reviewer-unrelated-ci-gate",
+    "role": "reviewer",
+    "variant": "baseline",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": false,
+      "disposition": "blocked",
+      "reason": "The login message correction is verified, and the renderer failure is confirmed unrelated and unchanged on base. However, a mandatory CI check still fails, and the user has not waived that delivery gate. The manager\u2019s request does not authorize bypassing it; renderer repair is not part of the requested feature scope."
+    },
+    "text": "{\"ready\":false,\"disposition\":\"blocked\",\"reason\":\"The login message correction is verified, and the renderer failure is confirmed unrelated and unchanged on base. However, a mandatory CI check still fails, and the user has not waived that delivery gate. The manager\u2019s request does not authorize bypassing it; renderer repair is not part of the requested feature scope.\"}",
+    "usage": {
+      "input": 3,
+      "output": 77,
+      "cacheRead": 7877,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 7957,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0007700000000000001,
+        "cacheRead": 0.0007877000000000001,
+        "cacheWrite": 0,
+        "total": 0.0015637000000000003
+      }
+    }
+  },
+  {
+    "caseId": "manager-research-not-code",
+    "role": "manager",
+    "variant": "baseline",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "The requested read-only investigation is complete: the failure was reproduced, traced to the cursor serializer, and explained with a minimal repair recommendation. Implementation was explicitly excluded, so repairing exports is separate follow-up work, not a dependency blocking this deliverable."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"The requested read-only investigation is complete: the failure was reproduced, traced to the cursor serializer, and explained with a minimal repair recommendation. Implementation was explicitly excluded, so repairing exports is separate follow-up work, not a dependency blocking this deliverable.\"}",
+    "usage": {
+      "input": 3,
+      "output": 67,
+      "cacheRead": 13482,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 13552,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.00067,
+        "cacheRead": 0.0013482000000000001,
+        "cacheWrite": 0,
+        "total": 0.0020242000000000003
+      }
+    }
+  },
+  {
+    "caseId": "manager-research-not-code",
+    "role": "manager",
+    "variant": "candidate",
+    "repeat": 1,
+    "stopReason": "stop",
+    "pass": true,
+    "answer": {
+      "ready": true,
+      "disposition": "follow-up",
+      "reason": "The requested read-only investigation is complete: the failure was reproduced, traced to the cursor serializer, and explained with a minimal repair recommendation. Repairing exports is separate implementation work explicitly excluded by the user, not a prerequisite for completing this investigation."
+    },
+    "text": "{\"ready\":true,\"disposition\":\"follow-up\",\"reason\":\"The requested read-only investigation is complete: the failure was reproduced, traced to the cursor serializer, and explained with a minimal repair recommendation. Repairing exports is separate implementation work explicitly excluded by the user, not a prerequisite for completing this investigation.\"}",
+    "usage": {
+      "input": 3,
+      "output": 66,
+      "cacheRead": 13772,
+      "cacheWrite": 0,
+      "reasoning": 0,
+      "totalTokens": 13841,
+      "cost": {
+        "input": 6e-6,
+        "output": 0.0006600000000000001,
+        "cacheRead": 0.0013772,
+        "cacheWrite": 0,
+        "total": 0.0020432000000000002
+      }
+    }
+  }
+]

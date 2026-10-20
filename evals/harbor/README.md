@@ -176,3 +176,12 @@ reservations use this baseline plus subsequent calls under the unchanged cap.
 `Budget.total()` returns that effective cumulative exposure; per-client
 `summary()` retains raw call accounting and is not reconciliation-adjusted.
 Do not reconcile from a partial, stale, or unrelated billing total.
+
+
+## Scope/completion prompt regression experiment
+
+[SCOPE_GUIDANCE.md](SCOPE_GUIDANCE.md) records a generic manager/reviewer/shared
+prompt change, fresh paired decision checkpoints, and a separate known-task
+full-squad replay. The diagnostic uses the same capped native Pi provider and
+ledger. It is not a replacement for external benchmarks; the replay is not
+part of the original four-arm comparison.

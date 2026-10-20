@@ -153,7 +153,11 @@ are assisted evaluations and must not be mixed with unattended benchmark scores.
    attempts preserved. Next select fresh tasks for a meaningful comparison.
    Preserve official assertions and retain each submitted workspace for
    independent regrading.
-4. Estimate cost from that pilot before requesting or scheduling a broader run.
+4. The generic dependency/completion prompt candidate passed a known-task replay;
+   both baseline and candidate passed the fresh short decision cases. See
+   `SCOPE_GUIDANCE.md`. Broader efficacy still needs fresh external tasks and
+   repeated/mixed-order trials; do not count the replay as an unseen success.
+   Estimate cost from these pilots before requesting or scheduling a broader run.
    The current budget does not authorize a large feature or parallel suite.
 5. Add batch and supervised measurements only after quality and workflow
    completion work. Report quality, attention, speed, and cost side by side;
