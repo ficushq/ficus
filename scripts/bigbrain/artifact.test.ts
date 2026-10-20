@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildBigbrainArtifact, verifyBigbrainArtifact, type BuildRunner } from './artifact'
+import { buildBigbrainArtifact, prepareBigbrainNativeSmoke, verifyBigbrainArtifact, type BuildRunner } from './artifact'
 import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin } from '../../packages/shared/src/managed-bigbrain'
 
 const roots: string[] = []
@@ -48,6 +48,15 @@ test('packages only committed pinned sources, frozen dependencies, two binaries 
   expect(f.calls.flat().some((arg) => arg.includes('systemctl') || arg.includes('curl'))).toBe(false)
   expect(await verifyBigbrainArtifact(f.output)).toEqual(manifest)
 })
+test('prepares frozen native dependencies from the verified artifact source before tests, never a moving checkout', async () => {
+  const f = await fixture()
+  await buildBigbrainArtifact({ outDir: f.output, bunVersion: '1.4.2', run: f.run })
+  const prepared = join(f.root, 'native')
+  await prepareBigbrainNativeSmoke({ artifactDir: f.output, outDir: prepared, run: f.run })
+  expect(await readFile(join(prepared, 'bun.lock'), 'utf8')).toBe('locked-dependencies')
+  expect(f.calls.filter((argv) => argv[0] === 'bun' && argv[1] === 'install')).toHaveLength(2)
+})
+
 test('refuses a changed upstream revision before installation/build', async () => {
   const f = await fixture()
   const run: BuildRunner = async (argv, cwd) =>

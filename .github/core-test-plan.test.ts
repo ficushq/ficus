@@ -33,6 +33,17 @@ test('Desktop BigBrain real MCP sessions run only in the isolated subprocess lan
   expect(selectCoreTests(plan, [file], coreRoot)).toEqual({ shared: [], isolated: [file] })
 })
 
+test('native shared BigBrain wire smoke is isolated and required with a built pinned artifact', () => {
+  const file = './src/services/integrations/bigbrain/shared-upstream.smoke.test.ts'
+  expect(plan.subprocess).toContain(file)
+  expect(plan.isolated).toContain(file)
+  expect(plan.shared).not.toContain(file)
+  const workflow = readFileSync(resolve(repoRoot, '.github/workflows/ci.yml'), 'utf8')
+  expect(workflow).toContain('Build pinned shared BigBrain fixture')
+  expect(workflow).toContain("FICUS_BIGBRAIN_REQUIRE_SHARED_SMOKE: '1'")
+  expect(workflow).toContain('FICUS_BIGBRAIN_SHARED_ARTIFACT: ${{ runner.temp }}/bigbrain-shared')
+})
+
 test('no arguments keep the full-suite selection and CI options', () => {
   expect(parseCoreTestArgs([])).toEqual({ help: false, paths: [], list: false, reverse: false, subprocessOnly: false })
   expect(parseCoreTestArgs(['--subprocess', '--reverse'])).toMatchObject({ subprocessOnly: true, reverse: true })

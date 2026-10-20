@@ -864,6 +864,11 @@ jobs:
           docker logs postgres-test
           exit 1
 
+      - name: Build pinned shared BigBrain fixture
+        run: |
+          bun scripts/bigbrain/build-artifact.ts --out-dir "$RUNNER_TEMP/bigbrain-shared"
+          bun scripts/bigbrain/prepare-native-smoke.ts "$RUNNER_TEMP/bigbrain-shared" "$RUNNER_TEMP/bigbrain-shared-deps"
+
       # Membership is enforced by .github/subprocess-lane-gate.test.ts — a test
       # file that spawns a real bun subprocess must be listed here. Adding one
       # to apps/core without adding it here fails that gate, which is what
@@ -879,6 +884,7 @@ jobs:
           src/services/integrations/bigbrain/desktop-host.test.ts
           src/services/integrations/bigbrain/stdio-transport.process.test.ts
           src/services/integrations/bigbrain/upstream.smoke.test.ts
+          src/services/integrations/bigbrain/shared-upstream.smoke.test.ts
           src/services/integrations/outputs/runtime.test.ts
           src/services/integrations/github/feedback-routing.test.ts
           src/services/execution/pickup.test.ts
@@ -913,6 +919,9 @@ jobs:
         working-directory: apps/core
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_test
+          FICUS_BIGBRAIN_SHARED_ARTIFACT: ${{ runner.temp }}/bigbrain-shared
+          FICUS_BIGBRAIN_SHARED_DEPS: ${{ runner.temp }}/bigbrain-shared-deps
+          FICUS_BIGBRAIN_REQUIRE_SHARED_SMOKE: '1'
 
   # End-to-end proof that `bun run setup` produces a running, self-updatable
   # local install (docs/history/superpowers/specs/2026-09-02-local-setup-installer-design.md §9).

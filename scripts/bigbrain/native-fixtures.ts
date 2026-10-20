@@ -1,0 +1,223 @@
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, symlink } from 'node:fs/promises'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { verifyBigbrainArtifact } from './artifact'
+
+/** Synthetic-only harness: no account/mount/systemd changes, no inherited provider env. */
+export async function nativeFixtures(root: string, artifact: string, dependencyRoot: string) {
+  const provenance = await verifyBigbrainArtifact(artifact)
+  const lockHash = `sha256:${createHash('sha256')
+    .update(await readFile(join(dependencyRoot, 'bun.lock')))
+    .digest('hex')}`
+  if (lockHash !== provenance.files['upstream-bun.lock']) throw new Error('synthetic_dependency_mismatch')
+  const env = { PATH: process.env.PATH!, HOME: join(root, 'home'), LANG: 'C.UTF-8' }
+  await mkdir(env.HOME, { mode: 0o700 })
+  const servers = new Set<{ stop(signal?: 'SIGTERM' | 'SIGKILL'): Promise<void> }>()
+  async function command(argv: string[]): Promise<string> {
+    const child = Bun.spawn(argv, { cwd: root, env, stdout: 'pipe', stderr: 'pipe' })
+    let failed = false
+    const timer = setTimeout(() => {
+      failed = true
+      child.kill('SIGKILL')
+    }, 10000)
+    const consume = async (stream: ReadableStream<Uint8Array>, retain: boolean) => {
+      const reader = stream.getReader()
+      const chunks: Uint8Array[] = []
+      let size = 0
+      try {
+        for (;;) {
+          const next = await reader.read()
+          if (next.done) break
+          size += next.value.byteLength
+          if (size > 16384) {
+            failed = true
+            child.kill('SIGKILL')
+          } else if (retain) chunks.push(next.value)
+        }
+      } finally {
+        reader.releaseLock()
+      }
+      return Buffer.concat(chunks).toString('utf8')
+    }
+    try {
+      const [stdout] = await Promise.all([consume(child.stdout, true), consume(child.stderr, false)])
+      if ((await child.exited) !== 0 || failed) throw new Error('synthetic_command_failed')
+      return stdout
+    } finally {
+      clearTimeout(timer)
+      if (child.exitCode === null) child.kill('SIGKILL')
+      await child.exited
+    }
+  }
+  const source = join(root, 'source')
+  await mkdir(source, { mode: 0o700 })
+  await command(['tar', '-xf', join(artifact, 'source.tar'), '-C', source])
+  await symlink(join(dependencyRoot, 'node_modules'), join(source, 'node_modules'))
+  // Import the actual pinned native implementation from the corresponding source archive.
+  const native = (await import(pathToFileURL(join(source, 'lib/sharedConnections.ts')).href)) as {
+    connectInvite(path: string, invite: string): Promise<{ id: string; identity: { vault: { id: string } } }>
+    readConnections(path: string): Array<{ id: string; name: string; endpoint: string; token: string }>
+    sharedRequest<T>(connection: { endpoint: string; token: string }, path: string, body?: unknown): Promise<T>
+  }
+  const binary = join(artifact, 'bigbrain-shared')
+  async function vault(name: string) {
+    const base = join(root, name)
+    await mkdir(base, { mode: 0o700 })
+    const data = join(base, 'vault')
+    const members = join(base, 'members.json')
+    const cli = (args: string[]) => command([binary, ...args, '--vault', data, '--members', members, '--json'])
+    await cli(['init', '--owner', 'ada', '--display', 'Ada'])
+    await cli(['member', 'add', 'ficus-reader', '--permissions', 'read'])
+    const minted = JSON.parse(
+      await cli([
+        'credential',
+        'mint',
+        'ficus-reader',
+        '--name',
+        'Ficus read access',
+        '--kind',
+        'agent',
+        '--scopes',
+        'read',
+      ])
+    ) as {
+      credential: { id: string; kind: string; scopes: string[]; followsMember?: boolean }
+      token: string
+    }
+    if (
+      minted.credential.kind !== 'agent' ||
+      minted.credential.scopes.join(',') !== 'read' ||
+      minted.credential.followsMember === true
+    )
+      throw new Error('synthetic_scope_mismatch')
+    let endpoint = ''
+    let running: { stop(signal?: 'SIGTERM' | 'SIGKILL'): Promise<void> } | undefined
+    async function start() {
+      const child = Bun.spawn(
+        [
+          binary,
+          'serve',
+          '--vault',
+          data,
+          '--members',
+          members,
+          '--host',
+          '127.0.0.1',
+          '--port',
+          '0',
+          '--public-url',
+          'http://127.0.0.1',
+        ],
+        { cwd: root, env, stdout: 'pipe', stderr: 'pipe' }
+      )
+      let resolveReady!: (port: number) => void
+      let rejectReady!: (error: Error) => void
+      const ready = new Promise<number>((resolve, reject) => {
+        resolveReady = resolve
+        rejectReady = reject
+      })
+      const timeout = setTimeout(() => {
+        rejectReady(new Error('synthetic_server_not_ready'))
+        child.kill('SIGKILL')
+      }, 10000)
+      const drain = async (stream: ReadableStream<Uint8Array>, stdout: boolean) => {
+        const reader = stream.getReader()
+        let first = ''
+        let parsed = !stdout
+        try {
+          for (;;) {
+            const next = await reader.read()
+            if (next.done) break
+            if (!parsed) {
+              first += new TextDecoder().decode(next.value)
+              if (first.length > 16384) {
+                rejectReady(new Error('synthetic_server_output_limit'))
+                child.kill('SIGKILL')
+                parsed = true
+              } else if (first.includes('\n')) {
+                parsed = true
+                try {
+                  const value = JSON.parse(first.split('\n')[0]!)
+                  if (value.shared !== 'listening' || !Number.isInteger(value.port) || value.port <= 0)
+                    throw new Error()
+                  resolveReady(value.port)
+                } catch {
+                  rejectReady(new Error('synthetic_server_not_ready'))
+                }
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock()
+        }
+      }
+      const drained = Promise.all([drain(child.stdout, true), drain(child.stderr, false)])
+      const server = {
+        async stop(signal: 'SIGTERM' | 'SIGKILL' = 'SIGTERM') {
+          if (child.exitCode === null) child.kill(signal)
+          const escalation = setTimeout(() => child.kill('SIGKILL'), 2000)
+          try {
+            await child.exited
+            await drained
+          } finally {
+            clearTimeout(escalation)
+            clearTimeout(timeout)
+            servers.delete(server)
+          }
+        },
+      }
+      servers.add(server)
+      running = server
+      void child.exited.then(() => rejectReady(new Error('synthetic_server_exited')))
+      try {
+        endpoint = `http://127.0.0.1:${await ready}`
+      } finally {
+        clearTimeout(timeout)
+      }
+    }
+    await start()
+    const identity = (await fetch(endpoint + '/v1/whoami', {
+      headers: { Authorization: `Bearer ${minted.token}` },
+    }).then((r) => r.json())) as { vault: { id: string } }
+    const inviteFile = join(base, 'owner-invite.txt')
+    await command([
+      join(artifact, 'bigbrain-shared-invite'),
+      '--vault',
+      data,
+      '--members',
+      members,
+      '--member',
+      'ada',
+      '--endpoint',
+      endpoint,
+      '--out',
+      inviteFile,
+    ])
+    const invite = (await readFile(inviteFile, 'utf8')).trim()
+    return {
+      cli,
+      identity,
+      minted,
+      invite,
+      get endpoint() {
+        return endpoint
+      },
+      async restart() {
+        await running!.stop('SIGKILL')
+        await start()
+      },
+      async stop() {
+        await running?.stop()
+      },
+    }
+  }
+  return {
+    native,
+    vault,
+    provenance,
+    async dispose() {
+      await Promise.all([...servers].map((server) => server.stop()))
+    },
+  }
+}

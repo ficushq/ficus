@@ -190,3 +190,27 @@ export async function verifyBigbrainArtifact(root: string): Promise<BigbrainArti
     throw new Error('artifact_invalid')
   }
 }
+
+/** CI/development preparation only, before the smoke test starts. No implicit test/runtime installs. */
+export async function prepareBigbrainNativeSmoke(options: {
+  artifactDir: string
+  outDir: string
+  run?: BuildRunner
+}): Promise<void> {
+  const manifest = await verifyBigbrainArtifact(options.artifactDir)
+  const run = options.run ?? runBuild
+  await mkdir(options.outDir, { mode: 0o700 })
+  try {
+    for (const argv of [
+      ['tar', '-xf', join(options.artifactDir, 'source.tar')],
+      ['bun', 'install', '--frozen-lockfile', '--ignore-scripts'],
+    ]) {
+      if ((await run(argv, options.outDir)).code !== 0) throw new Error('artifact_build_failed')
+    }
+    if (hash(await readFile(join(options.outDir, 'bun.lock'))) !== manifest.files['upstream-bun.lock'])
+      throw new Error('artifact_invalid')
+  } catch {
+    await rm(options.outDir, { recursive: true, force: true })
+    throw new Error('artifact_build_failed')
+  }
+}
