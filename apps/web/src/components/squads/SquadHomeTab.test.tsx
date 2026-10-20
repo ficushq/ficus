@@ -134,8 +134,14 @@ describe('SquadHomeTab', () => {
     const html = renderSquadHome([workStream()], managerAgent, [managerAgent])
     expect(html).toContain('href="/squads/squad-1/agents?newConsultant=1"')
     expect(html).toContain('href="/squads/squad-1/agents?agent=manager-1"')
-    expect(html).toContain('Manager (Manager Alpha)')
-    expect(html.indexOf('Start with a conversation')).toBeLessThan(html.indexOf('Clean active work streams card'))
+    // The Home coordinator row is labeled just "Manager"; the agent name is not repeated here.
+    expect(html).toContain('>Manager</span>')
+    expect(html).not.toContain('Manager (Manager Alpha)')
+    // Order: New chat header, then the coordinator, then active work, then recent chats.
+    expect(html.indexOf('Start with a conversation')).toBeLessThan(html.indexOf('Squad coordinator'))
+    expect(html.indexOf('Squad coordinator')).toBeLessThan(html.indexOf('squad-home-work-streams'))
+    expect(html.indexOf('Squad coordinator')).toBeLessThan(html.indexOf('Clean active work streams card'))
+    expect(html.indexOf('Clean active work streams card')).toBeLessThan(html.indexOf('Recent chats'))
     expect(html).not.toContain('data-agent-type-section="manager"')
   })
 
@@ -176,7 +182,7 @@ describe('SquadHomeTab', () => {
     expect(html).toContain('href="/squads/squad-1/agents?agent=chat-6"')
     expect(html).toContain('href="/squads/squad-1/agents"')
     expect(html).toContain('Browse chats')
-    // The coordinator sits between active work and recent chats, so it stays visible above a long chat list.
+    // The coordinator sits above active work and recent chats, so it stays visible above a long chat list.
     expect(html.indexOf('Squad coordinator')).toBeLessThan(html.indexOf('Recent chats'))
     const recentSection = html.slice(html.indexOf('Recent chats'))
     expect(recentSection).not.toContain('<button')
