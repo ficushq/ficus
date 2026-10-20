@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { dlopen, FFIType, read } from 'bun:ffi'
 import { lstat, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
@@ -76,7 +77,6 @@ export function assertCgroupBudget(role: Role, facts: CgroupFacts): void {
 export type SocketProbe = (domain: number, type: number) => { opened: boolean; errno: number }
 let libc: ReturnType<typeof openLibc> | null = null
 function openLibc() {
-  const { dlopen, FFIType } = require('bun:ffi') as typeof import('bun:ffi')
   return dlopen('libc.so.6', {
     socket: { args: [FFIType.i32, FFIType.i32, FFIType.i32], returns: FFIType.i32 },
     close: { args: [FFIType.i32], returns: FFIType.i32 },
@@ -84,7 +84,6 @@ function openLibc() {
   })
 }
 const libcSocketProbe: SocketProbe = (domain, type) => {
-  const { read } = require('bun:ffi') as typeof import('bun:ffi')
   libc ??= openLibc()
   const fd = libc.symbols.socket(domain, type, 0)
   if (fd >= 0) {
