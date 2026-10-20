@@ -78,7 +78,7 @@ export async function proveSocketBindPolicy(ownPort: number | null, bind: Binder
     try {
       own = await bind(ownPort)
     } catch {
-      throw new Error('unsupported_host')
+      throw new Error('socket_own_port_unbindable')
     }
     await own.close()
   }
@@ -88,10 +88,15 @@ export async function proveSocketBindPolicy(ownPort: number | null, bind: Binder
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? error.code : null
     if (code === 'EACCES' || code === 'EPERM') return
-    throw new Error('unsupported_host')
+    throw new Error(
+      typeof code === 'string' && /^E[A-Z]{2,15}$/.test(code)
+        ? `socket_port0_${code.toLowerCase()}`
+        : 'socket_port0_error'
+    )
   }
   await unexpected.close()
-  throw new Error('unsupported_host')
+  // Policy not enforced: binding an arbitrary port succeeded.
+  throw new Error('socket_port0_bound')
 }
 
 /** Call on the running process mount view; +ExecStartPre deliberately has a privileged
@@ -161,11 +166,11 @@ export async function verifyCurrentCgroup(role: Role, unit: string): Promise<voi
     process.arch !== 'x64' ||
     (await readFile('/proc/1/comm', 'utf8')).trim() !== 'systemd'
   )
-    throw new Error('unsupported_host')
+    throw new Error('not_systemd')
   const lines = (await readFile('/proc/self/cgroup', 'utf8')).trim().split('\n')
   const path = lines.length === 1 && lines[0]!.startsWith('0::/') ? lines[0]!.slice(3) : ''
   if (!path.endsWith(`/ficus-bigbrain.slice/${unit}`) || path.includes('..') || path.includes('\\'))
-    throw new Error('unsupported_host')
+    throw new Error('cgroup_path_unexpected')
   const own = `/sys/fs/cgroup${path}`
   const aggregate = dirname(own)
   const [
@@ -330,9 +335,11 @@ export async function preflightMain(args: string[]): Promise<void> {
 }
 async function recordPreflightRefusal(target: string, text: string): Promise<void> {
   if (!/^(gateway|control|[0-9a-f-]{36})$/.test(target)) return
-  const { mkdir, writeFile } = await import('node:fs/promises')
+  const { mkdir, readFile: read, writeFile } = await import('node:fs/promises')
+  // Operator diagnostics only (root 0600): the observed cgroup path, character-restricted.
+  const cgroup = (await read('/proc/self/cgroup', 'utf8').catch(() => '')).replace(/[^\w@./:-]/g, '?').slice(0, 300)
   await mkdir('/run/ficus-bigbrain', { mode: 0o700, recursive: true })
-  await writeFile(`/run/ficus-bigbrain/preflight-${target}.reason`, `${text}\n`, { mode: 0o600 })
+  await writeFile(`/run/ficus-bigbrain/preflight-${target}.reason`, `${text} cgroup=${cgroup}\n`, { mode: 0o600 })
 }
 
 if (import.meta.main) await preflightMain(process.argv.slice(2))

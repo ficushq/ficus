@@ -46,12 +46,16 @@ test('own port must bind, a denied arbitrary port must return policy denial, nev
   await proveSocketBindPolicy(30000, binder)
   expect(calls).toEqual([30000, 0])
   expect(closed).toBe(1)
-  for (const code of ['EADDRINUSE', 'UNKNOWN'])
+  // A collision is never proof of policy; each refusal names what was observed.
+  for (const [code, reason] of [
+    ['EADDRINUSE', 'socket_port0_eaddrinuse'],
+    ['UNKNOWN', 'socket_port0_error'],
+  ])
     await expect(
       proveSocketBindPolicy(null, async () => {
         throw Object.assign(new Error(), { code })
       })
-    ).rejects.toThrow('unsupported_host')
+    ).rejects.toThrow(reason)
   await proveSocketBindPolicy(null, async () => {
     throw Object.assign(new Error(), { code: 'EPERM' })
   })
@@ -61,7 +65,7 @@ test('own port must bind, a denied arbitrary port must return policy denial, nev
         closed++
       },
     }))
-  ).rejects.toThrow('unsupported_host')
+  ).rejects.toThrow('socket_port0_bound')
   expect(closed).toBe(2)
 })
 test('scratch must be memory-backed, noexec/nodev/nosuid and bounded; PrivateTmp on disk is insufficient', () => {
