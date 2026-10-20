@@ -87,12 +87,10 @@ export async function ensureManagedIdentity(
       '/usr/sbin/useradd',
       '--system',
       '--user-group',
-      '--groups',
-      '',
+      // No supplementary groups at all (-G is never passed). System accounts get no mail spool;
+      // Debian/Ubuntu reject `-K CREATE_MAIL_SPOOL=...` (not a login.defs key) with exit 3.
       '--no-create-home',
       '--no-log-init',
-      '-K',
-      'CREATE_MAIL_SPOOL=no',
       '--home-dir',
       '/nonexistent',
       '--shell',

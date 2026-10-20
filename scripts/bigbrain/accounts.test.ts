@@ -51,9 +51,11 @@ test('root creates one nologin/private-group identity and adopts only its full i
   expect(f.calls.filter((c) => c[0] === '/usr/sbin/useradd')).toHaveLength(1)
   expect(f.calls.find((c) => c[0] === '/usr/sbin/useradd')).toContain('--no-create-home')
   expect(f.calls.flat()).not.toContain('--remove')
-  expect(f.calls.flat()).toContain('CREATE_MAIL_SPOOL=no')
-  expect(f.calls.flat()).toContain('--no-log-init')
-  expect(f.calls.flat()).toContain('--groups')
+  const useradd = f.calls.find((c) => c[0] === '/usr/sbin/useradd')!
+  expect(useradd).toContain('--system')
+  expect(useradd).toContain('--no-log-init')
+  // Observed on Ubuntu 24.04: `-K CREATE_MAIL_SPOOL=no` exits 3. Never pass -K or -G.
+  expect(useradd.some((a) => ['-K', '-G', '--groups', '--key'].includes(a))).toBe(false)
 })
 test('truncated-name collision, foreign binding marker and unowned group never permit adoption', async () => {
   const f = fixture()
