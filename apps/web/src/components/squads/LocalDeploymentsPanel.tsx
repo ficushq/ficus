@@ -15,7 +15,8 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { localDeploymentActionErrorMessage } from '../../lib/localDeploymentActionError'
 import { queryKeys } from '../../queryKeys'
-import { queries } from '../../queryOptions'
+import { publicUrlQueries, queries } from '../../queryOptions'
+import { getLocalDeploymentBrowserUrl } from '../../lib/localDeploymentBrowserUrl'
 import { Badge, type BadgeColor } from '../Badge'
 import { Modal } from '../Modal'
 import { CollectionSkeleton } from '../loading/Skeleton'
@@ -63,19 +64,6 @@ interface LocalDeploymentActionError {
   message: string
 }
 
-function getLocalDeploymentBrowserUrl(urlPathOrHost: string): string {
-  if (/^https?:\/\//i.test(urlPathOrHost)) return urlPathOrHost
-
-  const appUrl = __FICUS_APP_URL__ || window.location.origin
-  const appBasePath = __FICUS_APP_BASE_PATH__ || import.meta.env.BASE_URL || ''
-  const base = new URL(appUrl)
-  const existingPath = base.pathname.replace(/^\/+|\/+$/g, '')
-  const basePath = appBasePath.replace(/^\/+|\/+$/g, '')
-  const pathParts = existingPath.endsWith(basePath) ? [existingPath] : [existingPath, basePath]
-  base.pathname = pathParts.filter(Boolean).join('/') + '/'
-  return new URL(urlPathOrHost.replace(/^\/+/, ''), base).toString()
-}
-
 export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   const [copiedLocalDeploymentId, setCopiedLocalDeploymentId] = useState<string | null>(null)
   const [confirmArchiveLocalDeploymentId, setConfirmArchiveLocalDeploymentId] = useState<string | null>(null)
@@ -90,6 +78,8 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   const canDeleteDeployments = !permissionsLoading && can('deployments:delete')
 
   const { data: localDeployments = [], isLoading, isSuccess } = useQuery(queries.squads.localDeployments(squadId))
+  // The server's current public address (admin-editable at runtime), not a build-time value.
+  const publicAppUrl = useQuery(publicUrlQueries.runtime()).data?.url
   const deploymentSkeletonCount = useLoadingShapeCount(
     `squads:${squadId}:local-deployments`,
     isSuccess ? localDeployments.length : undefined,
@@ -151,7 +141,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   }, [doneLocalDeployments, logsLocalDeploymentId])
 
   const copyUrl = async (localDeployment: LocalDeployment) => {
-    await navigator.clipboard.writeText(getLocalDeploymentBrowserUrl(localDeployment.urlPathOrHost))
+    await navigator.clipboard.writeText(getLocalDeploymentBrowserUrl(localDeployment.urlPathOrHost, publicAppUrl))
     setCopiedLocalDeploymentId(localDeployment.id)
     window.setTimeout(
       () => setCopiedLocalDeploymentId((current) => (current === localDeployment.id ? null : current)),
@@ -160,7 +150,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   }
 
   const openLocalDeployment = (localDeployment: LocalDeployment) => {
-    window.open(getLocalDeploymentBrowserUrl(localDeployment.urlPathOrHost), '_blank', 'noopener,noreferrer')
+    window.open(getLocalDeploymentBrowserUrl(localDeployment.urlPathOrHost, publicAppUrl), '_blank', 'noopener,noreferrer')
   }
 
   const showLogs = (localDeployment: LocalDeployment) => setLogsLocalDeploymentId(localDeployment.id)
