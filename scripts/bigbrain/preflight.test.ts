@@ -48,8 +48,8 @@ test('own port must bind, a denied arbitrary port must return policy denial, nev
   expect(closed).toBe(1)
   // A collision is never proof of policy; each refusal names what was observed.
   for (const [code, reason] of [
-    ['EADDRINUSE', 'socket_port0_eaddrinuse'],
-    ['UNKNOWN', 'socket_port0_error'],
+    ['EADDRINUSE', 'socket_anyport_eaddrinuse'],
+    ['UNKNOWN', 'socket_anyport_error'],
   ])
     await expect(
       proveSocketBindPolicy(null, async () => {
@@ -65,7 +65,7 @@ test('own port must bind, a denied arbitrary port must return policy denial, nev
         closed++
       },
     }))
-  ).rejects.toThrow('socket_port0_bound')
+  ).rejects.toThrow('socket_anyport_bound')
   expect(closed).toBe(2)
 })
 test('scratch must be memory-backed, noexec/nodev/nosuid and bounded; PrivateTmp on disk is insufficient', () => {

@@ -35,6 +35,21 @@ export function assertCgroupBudget(role: Role, facts: CgroupFacts): void {
     ['slice_swap', facts.aggregateSwapMax.trim() === '0'],
     ['slice_tasks', cap(facts.aggregatePidsMax, 192)],
   ]
+  const cpuParts = facts.aggregateCpuMax.trim().split(/\s+/)
+  const nofile = /Max open files\s+(\d+)\s+(\d+)/.exec(facts.limits)
+  checks.push(
+    [
+      'slice_cpu',
+      cpuParts.length === 2 &&
+        cap(cpuParts[0]!, Number.MAX_SAFE_INTEGER) &&
+        cap(cpuParts[1]!, Number.MAX_SAFE_INTEGER) &&
+        Number(cpuParts[0]) / Number(cpuParts[1]) <= 0.5,
+    ],
+    [
+      'unit_nofile',
+      !!nofile && cap(nofile[1]!, role === 'vault' ? 256 : 128) && cap(nofile[2]!, role === 'vault' ? 256 : 128),
+    ]
+  )
   const failed = checks.find(([, ok]) => !ok)
   if (failed) throw new Error(`budget_${failed[0]}`)
   if (
@@ -90,13 +105,13 @@ export async function proveSocketBindPolicy(ownPort: number | null, bind: Binder
     if (code === 'EACCES' || code === 'EPERM') return
     throw new Error(
       typeof code === 'string' && /^E[A-Z]{2,15}$/.test(code)
-        ? `socket_port0_${code.toLowerCase()}`
-        : 'socket_port0_error'
+        ? `socket_anyport_${code.toLowerCase()}`
+        : 'socket_anyport_error'
     )
   }
   await unexpected.close()
   // Policy not enforced: binding an arbitrary port succeeded.
-  throw new Error('socket_port0_bound')
+  throw new Error('socket_anyport_bound')
 }
 
 /** Call on the running process mount view; +ExecStartPre deliberately has a privileged
