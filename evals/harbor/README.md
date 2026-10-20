@@ -5,12 +5,15 @@ tools, execution queue, isolated database, and work-stream state machine. Harbor
 owns task instructions, containers, time limits, verifier, and scores. This is
 not a new benchmark or replacement grader.
 
-Four GPT-6.1 Sol development checks have passed the official verifier: Ficus and
-Pi engineer-only, and Ficus and Pi architect → engineer → independent reviewer
-with a coordinator. Ficus's full run also completed every durable workflow step.
-These are adapter checks on one small, previously inspected task, not a frozen
-performance comparison. See [pilot evidence](PILOT.md) for results, prior failures,
-and limitations.
+The first fresh four-arm FeatureBench comparison is complete: Ficus and Pi each
+passed in engineer-only and full architect → engineer → reviewer configurations
+on the same frozen Pandas task. Pi was faster and cheaper in both configurations.
+See [fresh-task evidence](FRESH_FEATURES.md) for official results, cost, timing,
+role verification and limitations. This is one task, not a harness ranking.
+
+Earlier Terminal-Bench smoke tests, the known Pydantic feature task, and its
+scope-guidance replay remain separate development evidence in
+[pilot evidence](PILOT.md) and [scope guidance](SCOPE_GUIDANCE.md).
 
 All roles use the same model and reasoning effort. Ficus starts each trial with
 an empty disposable database and memory disabled. Local deliverable completion

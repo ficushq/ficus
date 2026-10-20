@@ -62,8 +62,9 @@ Before paid feature runs:
 4. Grade every attempted arm, retaining failures. If using `fb eval`, specify
    `--include-failed`; report attempt one rather than best-of retries.
 
-This preflight uses no additional inference. The $20 cumulative cap remains in
-force; a full FeatureBench suite has not been authorized or scheduled.
+This preflight used no additional inference and retained the then-authorized $20
+cumulative cap. The later $50 authorization and fresh-task comparison are recorded
+in [FRESH_FEATURES.md](FRESH_FEATURES.md); a full suite is not implied.
 
 ## Isolated lv1 preparation and frozen pilot
 
