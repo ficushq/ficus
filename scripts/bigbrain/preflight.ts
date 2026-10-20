@@ -307,7 +307,8 @@ export async function verifyRecordedVaultStorage(
     etc?: string
     uid?: number
     mountinfo?: () => Promise<string>
-    run?: typeof runPrivateCommand
+    /** sysfs `backing_file` of `loopN` (default: /sys/block/loopN/loop/backing_file). */
+    backingFile?: (loop: string) => Promise<string>
   } = {}
 ): Promise<void> {
   const paths = managedPaths({ vaultId, root: options.root })
@@ -344,20 +345,15 @@ export async function verifyRecordedVaultStorage(
     { mount: paths.mount, device: os.mountDevice, filesystem: 'ext4' },
     await (options.mountinfo ?? (() => readFile('/proc/1/mountinfo', 'utf8')))()
   )
-  const loop = await (options.run ?? runPrivateCommand)([
-    '/usr/sbin/losetup',
-    '--list',
-    '--json',
-    '--output',
-    'NAME,BACK-FILE,BACK-INO,BACK-MAJ:MIN',
-    `/dev/loop${os.mountDevice.slice(2)}`,
-  ])
   noteStage('storage_mount_ok')
-  if (loop.code !== 0) refuse('storage_unavailable', 'storage_loop_list_failed')
-  verifyLoopBacking(
-    { device: os.mountDevice, image: paths.image, inode: os.imageInode, imageDevice: os.imageDevice },
-    JSON.parse(loop.stdout)
-  )
+  // sysfs, not the LOOP_GET_STATUS ioctl: this runs inside the vault's cgroup, whose
+  // PrivateDevices= device policy denies opening /dev/loopN even to root. The inode/device of
+  // the image at this exact path was verified above and the full ioctl identity at mount time.
+  const loopName = `loop${os.mountDevice.slice(2)}`
+  const backing = await (
+    options.backingFile ?? ((loop: string) => readFile(`/sys/block/${loop}/loop/backing_file`, 'utf8'))
+  )(loopName).catch(() => '')
+  if (backing !== `${paths.image}\n`) refuse('storage_unavailable', 'storage_loop_backing')
   noteStage('storage_loop_ok')
   const mounted = await lstat(paths.mount)
   if (!mounted.isDirectory() || mounted.uid !== os.uid || mounted.gid !== os.gid || (mounted.mode & 0o777) !== 0o700)

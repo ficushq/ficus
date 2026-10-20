@@ -157,23 +157,19 @@ test('recorded storage stays verifiable across host epoch advances and upgrades;
       effect: null,
     }
     await writePrivateJson(etc, 'host.json', host, installedHostSchema, { uid })
-    const major = (info.dev >> 8) & 0xfff
-    const minor = (info.dev & 0xff) | ((info.dev >> 12) & 0xfff00)
     const options = {
       root,
       etc,
       uid,
       mountinfo: async () => `1 0 7:4 / ${paths.mount} rw,nodev,nosuid,noexec - ext4 /dev/loop4 rw\n`,
-      run: async () => ({
-        code: 0,
-        stdout: JSON.stringify({
-          loopdevices: [
-            { name: '/dev/loop4', 'back-file': paths.image, 'back-ino': info.ino, 'back-maj:min': `${major}:${minor}` },
-          ],
-        }),
-      }),
+      backingFile: async (loop: string) => (loop === 'loop4' ? `${paths.image}\n` : ''),
     }
     await verifyRecordedVaultStorage(base.receipt.vaultId, options)
+    // A loop backed by another path (or the recorded path after unlink) is never the vault.
+    for (const backing of [`${paths.image}.other\n`, `${paths.image} (deleted)\n`, ''])
+      await expect(
+        verifyRecordedVaultStorage(base.receipt.vaultId, { ...options, backingFile: async () => backing })
+      ).rejects.toThrow('storage_unavailable')
     await writePrivateJson(
       etc,
       'host.json',
