@@ -1,7 +1,23 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { normalizeOrigin, corsAllowOrigins, isAllowedWsOrigin, primaryWebAppUrl, primaryWebOrigin } from './web-origins'
+import {
+  normalizeOrigin,
+  corsAllowOrigins,
+  hasConfiguredWebOrigin,
+  isAllowedWsOrigin,
+  primaryWebAppUrl,
+  primaryWebOrigin,
+  rpOriginForRequest,
+} from './web-origins'
 
-const KEYS = ['FICUS_WEB_ORIGIN', 'WEBAUTHN_ORIGIN', 'APP_URL', 'APP_BASE_PATH', 'NODE_ENV'] as const
+const KEYS = [
+  'FICUS_WEB_ORIGIN',
+  'WEBAUTHN_ORIGIN',
+  'APP_URL',
+  'PUBLIC_URL',
+  'APP_BASE_PATH',
+  'NODE_ENV',
+  'FICUS_LOCAL_APP_URL',
+] as const
 const orig: Record<string, string | undefined> = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
 afterEach(() => {
   for (const k of KEYS) {
@@ -100,5 +116,48 @@ describe('isAllowedWsOrigin (CSWSH defense)', () => {
     process.env.NODE_ENV = 'production'
     process.env.FICUS_WEB_ORIGIN = 'https://app.example.com'
     expect(isAllowedWsOrigin('http://localhost:5173')).toBe(false)
+  })
+})
+
+describe('public address and local address origins', () => {
+  // The public address setting is passed through the `state` seam so these stay DB-free.
+  const state = { url: 'https://pub.example/ficus', localUrl: 'http://localhost:61896' }
+
+  test('a pinned FICUS_WEB_ORIGIN stays primary while public and local origins are also allowed', () => {
+    process.env.FICUS_WEB_ORIGIN = 'https://pin.example'
+    expect(primaryWebOrigin(state)).toBe('https://pin.example')
+    expect(corsAllowOrigins(state)).toEqual(
+      expect.arrayContaining(['https://pin.example', 'https://pub.example', 'http://localhost:61896'])
+    )
+  })
+
+  test('without a pinned origin the public address is primary and localhost keeps working', () => {
+    delete process.env.FICUS_WEB_ORIGIN
+    delete process.env.WEBAUTHN_ORIGIN
+    process.env.NODE_ENV = 'production'
+    expect(primaryWebOrigin(state)).toBe('https://pub.example')
+    expect(corsAllowOrigins(state)).toEqual(['https://pub.example', 'http://localhost:61896'])
+    expect(hasConfiguredWebOrigin(state)).toBe(true)
+    expect(hasConfiguredWebOrigin({ url: undefined, localUrl: undefined })).toBe(false)
+  })
+
+  test('the default state follows the launcher local address from the environment', () => {
+    for (const k of ['FICUS_WEB_ORIGIN', 'WEBAUTHN_ORIGIN', 'APP_URL', 'PUBLIC_URL'] as const) delete process.env[k]
+    process.env.NODE_ENV = 'production'
+    process.env.FICUS_LOCAL_APP_URL = 'http://localhost:61896'
+    expect(isAllowedWsOrigin('http://localhost:61896')).toBe(true)
+    expect(isAllowedWsOrigin('https://evil.example')).toBe(false)
+    expect(primaryWebOrigin()).toBe('http://localhost:61896')
+  })
+
+  test('rpOriginForRequest picks an allowlisted request origin, else the primary', () => {
+    delete process.env.FICUS_WEB_ORIGIN
+    delete process.env.WEBAUTHN_ORIGIN
+    process.env.NODE_ENV = 'production'
+    expect(rpOriginForRequest('http://localhost:61896', state)).toBe('http://localhost:61896')
+    expect(rpOriginForRequest('HTTPS://Pub.Example/', state)).toBe('https://pub.example')
+    expect(rpOriginForRequest('https://evil.example', state)).toBe('https://pub.example')
+    expect(rpOriginForRequest('null', state)).toBe('https://pub.example')
+    expect(rpOriginForRequest(undefined, state)).toBe('https://pub.example')
   })
 })
