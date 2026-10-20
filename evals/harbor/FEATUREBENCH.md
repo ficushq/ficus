@@ -1,7 +1,7 @@
 # FeatureBench integration preflight — 2026-10-19
 
-Status: **unmodified downloaded tasks remain unsuitable; an isolated lv1
-variant now passes preparation checks**. The original masked baseline receives
+Status: **the corrected four-arm Pydantic pilot is complete; unmodified
+downloaded tasks remain unsuitable**. See [PILOT.md](PILOT.md) for results. The original masked baseline receives
 0 and the reference solution receives 1. The four-arm Terminal-Bench smoke
 checks are recorded separately in [PILOT.md](PILOT.md).
 

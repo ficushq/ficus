@@ -141,14 +141,18 @@ are assisted evaluations and must not be mixed with unattended benchmark scores.
 
 1. Native Pi GPT-6.1 tool use and all-role accounting are validated under the
    unchanged $20 cap. Preserve checkpoints and raw historical reservations.
-2. All four configurations completed one official smoke task. Before a scored
-   feature comparison, exercise rework and document/match the remaining session
-   lifecycle difference: Pi dispatches fresh children; Ficus can reuse a role
-   session within a stream. Log idle/handoff behavior without assuming a production
-   defect. An unavailable arm stays unexecuted rather than being substituted.
-3. Resolve the existing FeatureBench adapter’s answer-isolation and versioning
-   issues, validate baseline/oracle grading separately, then freeze a small
-   matched sample and configuration. Preserve the upstream acceptance tests.
+2. All four configurations completed one official smoke task. Both planned
+   feature attempts exercised autonomous review/rework. The remaining session
+   lifecycle difference is explicit: Pi dispatches fresh children; Ficus can
+   reuse a role session within a stream. Log idle/handoff behavior without
+   assuming a production defect. An unavailable arm stays unexecuted.
+3. The audited Pydantic FeatureBench task now isolates answer material and
+   restores immutable official verifier inputs. Baseline/oracle and colliding
+   test-file controls pass; the first pilot's nominal Pi pass was invalidated.
+   The separately frozen corrected four-arm pilot is complete, with all earlier
+   attempts preserved. Next select fresh tasks for a meaningful comparison.
+   Preserve official assertions and retain each submitted workspace for
+   independent regrading.
 4. Estimate cost from that pilot before requesting or scheduling a broader run.
    The current budget does not authorize a large feature or parallel suite.
 5. Add batch and supervised measurements only after quality and workflow

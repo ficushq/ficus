@@ -1,6 +1,35 @@
 # Pilot evidence — 2026-10-19
 
-Status: **four native GPT-6.1 Sol adapter checks passed; the feature pilot exposed a verifier defect and was stopped for repair**.
+Status: **the corrected four-arm feature pilot is complete**. The first feature
+revision exposed a verifier defect; its invalid pass and interrupted run remain
+recorded below. The current results use verified official test inputs and retained
+submission archives.
+
+| Corrected configuration | Official reward | Metered inference | Wall time | Agent time |
+| --- | --- | --- | --- | --- |
+| Ficus engineer | 1 | $0.754351 | 9m40s | 8m07s |
+| Pi engineer | 1 | $0.396861 | 4m32s | 3m44s |
+| Ficus manager + architect/engineer/reviewer | 0 (10/12 acceptance tests passed) | $1.417055 | 18m17s | 16m40s |
+| Pi coordinator + architect/engineer/reviewer | 1 | $1.046489 | 13m27s | 12m37s |
+
+Each passing arm passed all 12 official acceptance tests, then 50 regression
+tests (1 skipped, 1 xfailed). Every arm used native GPT-6.1 Sol, medium reasoning,
+the same frozen task/image, and the original resource/time limits. Wall time
+includes setup and verification. These local emulated timings are descriptive,
+not production latency measurements. Raw sanitized metrics and archive hashes
+are in [feature-pilot-v2-results.json](feature-pilot-v2-results.json).
+
+The actionable observation is that the Ficus manager explicitly scoped out two
+pre-existing helpers needed by acceptance behavior; its reviewer recognized the
+missing helpers but approved that scope. The Ficus engineer alone implemented
+them and passed. This suggests testing a general dependency/completion-guidance
+improvement. One inspected task and one attempt per arm do **not** isolate a
+causal effect or establish general harness superiority, multi-agent value, or
+human time saved. Use fresh tasks and repeated/mixed-order runs next.
+
+Effective cumulative accounting is **$10.607113 / $20**, leaving **$9.392887**.
+The corrected four-arm revision added **$3.614756** across 304 fully metered calls.
+Paid inference is stopped. No production changes were merged or deployed.
 The chronological sections below preserve earlier failures; the final section
 records the current validated configuration.
 Do not publish these attempts as a Ficus squad leaderboard result.
@@ -387,3 +416,76 @@ Paid inference and owned task containers were stopped. Cumulative effective
 accounting is **$6.992357** against the unchanged **$20** cap, leaving
 **$13.007643**. The raw historical unknown reservations remain preserved under
 the earlier reconciliation checkpoints; no new usage is unresolved.
+
+## Corrected-verifier revision (v2)
+
+`feature-pilot-v2.json` freezes the corrected verifier preparation separately.
+All model, role, prompt, resource, timeout, and order settings are unchanged.
+Official test/configuration hashes must match before and after grading, and
+pre-grading submission archives are retained. All costs below add to the earlier
+$6.992357; the original attempt history is preserved.
+
+The planned Ficus run received **0**, with **10 official tests passed and 2
+failed**, no exception, and verified input hashes. It completed design,
+implementation, and approved review without a returned attempt; all four roles
+executed and the stream ended `done`, with no pending messages or open waits.
+All 99 calls were metered, costing **$1.417055**. Wall/setup/agent times were
+**1,096.82 / 64.73 / 999.89 seconds**. Both missing helpers from the earlier run
+remained. The retained manager trace explicitly directed scope to stay focused
+and classify those pre-existing gaps as follow-up; the reviewer named both
+helpers but approved the scoped delivery. This strengthens the dependency/scope
+classification hypothesis without establishing a general failure rate.
+
+The planned Pi run received **1**, with **all 12 official acceptance tests
+passed**, then **50 regression tests passed, 1 skipped, and 1 xfailed**. Official
+input hashes matched before and after grading. The coordinator dispatched
+architect → engineer → reviewer → engineer → reviewer; the first review found
+parent/child metadata sharing and the second explicitly approved the repair.
+All 104 calls were metered, costing **$1.046489**. Wall/setup/agent times were
+**806.69 / 16.50 / 757.27 seconds**. The source archives for both planned runs
+were retained and their checksums verified. Both runs share task checksum
+`4c3c1ac1f67aeb353ed802f5133ccd96b49e071c4b19932fd2ff634fa039140c`.
+
+The engineer-only outcomes are recorded below. These are
+single-task development observations on an inspected masked-repository task;
+they do not establish harness superiority, general feature-delivery performance,
+production latency, or measured human time saved.
+
+### Engineer-only completion and final accounting
+
+Ficus engineer-only received **1**, with all 12 official acceptance tests and
+50 regression tests passing (1 skipped, 1 xfailed). Its only attempted and
+completed role was `engineer`; the manager object remained idle. The execute
+flow completed, the stream ended `done`, and there were no open waits or pending
+messages. All 53 calls were metered, costing **$0.754351**. Wall/setup/agent times
+were **580.00 / 60.09 / 487.10 seconds**.
+
+Pi engineer-only received **1** with the same official test results. It ran the
+single-session configuration without the subagent extension. All 48 calls were
+metered, costing **$0.396861**. Wall/setup/agent times were **271.68 / 15.09 /
+224.19 seconds**. All four arms share the same task checksum, verified official
+input hashes, and retained checksummed pre-grading archives. No user steering or
+approval was inserted. The corrected revision had no provider errors or missing
+usage receipts. Ficus planned completed without rework in this revision; Pi
+planned completed one repair/re-review cycle.
+
+The cumulative ledger at call 881 has $10.593387 in raw confirmed receipts and
+12 historical unknown reservations preserved from earlier development. The
+operator-reported reconciliation checkpoints bring effective cumulative
+accounting to **$10.607113**. All new calls after the last checkpoint are metered.
+The proxy was stopped and owned benchmark containers removed after the final
+arm. Do not spend the remaining $9.392887 on a broad suite without a new scoped
+sample and cost estimate.
+
+
+### Implementation validation
+
+The offline Python adapter/accounting/proxy/isolation suite passed all 33 tests;
+Ruff lint and formatting checks passed. CI on `2d4b5534` passed typecheck, lint,
+build, web, subprocess, gates, and local setup. The shared Core suite failed one
+deployment-health assertion (`restarting` expected, `crashed` received), with
+14,111 passed and 30 skipped. A focused run using Core's isolated test entrypoint
+passed all 51 tests in that file in 11.4 seconds and exited zero. That isolated
+pass does not establish that the full suite is green or prove the failure's
+cause. The deployment-health implementation and test are unchanged by this PR;
+no unrelated production fix or weakened assertion was introduced.
