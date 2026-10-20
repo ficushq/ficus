@@ -8,6 +8,8 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { JSONRPCMessageSchema, type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { BigbrainError } from './errors'
 
+/** After the wrapper exits, how long its pipes may take to close before cleanup stops waiting. */
+const CLOSE_GRACE_MS = 500
 const active = new Set<BigbrainStdioTransport>()
 export async function stopAllBigbrainProcesses(): Promise<void> {
   await Promise.all([...active].map((transport) => transport.close()))
@@ -94,7 +96,20 @@ export class BigbrainStdioTransport implements Transport {
         stdio: ['pipe', 'pipe', 'pipe'],
       })
       this.#child = child
-      this.#exited = new Promise<void>((resolve) => child.once('close', () => resolve()))
+      // Never wait on 'close' alone: a descendant that left the process group can hold the pipes
+      // open indefinitely. After 'exit', allow only a bounded grace for them to close.
+      this.#exited = new Promise<void>((resolve) => {
+        let grace: ReturnType<typeof setTimeout> | undefined
+        const settle = () => {
+          clearTimeout(grace)
+          resolve()
+        }
+        child.once('close', settle)
+        child.once('error', settle)
+        child.once('exit', () => {
+          grace = setTimeout(settle, CLOSE_GRACE_MS)
+        })
+      })
       child.once('error', () => this.#fail('unavailable'))
       child.once('exit', () => {
         if (!this.#closing) this.#fail('unavailable')
@@ -177,6 +192,10 @@ export class BigbrainStdioTransport implements Transport {
         await this.#exited
       }
     } finally {
+      // Detach from pipes an escaped descendant may still hold open.
+      child?.stdout.destroy()
+      child?.stderr.destroy()
+      child?.stdin.destroy()
       this.#buffer = Buffer.alloc(0)
       if (this.#cwd) await rm(this.#cwd, { recursive: true, force: true })
       active.delete(this)
