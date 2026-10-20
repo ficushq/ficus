@@ -27,7 +27,7 @@ const ACTOR = '__typename login ... on User { databaseId } ... on Bot { database
 const HISTORY = `author { ${ACTOR} } body lastEditedAt editor { ${ACTOR} }
   userContentEdits(first: ${GITHUB_EDIT_HISTORY_LIMIT}) { totalCount nodes { editor { ${ACTOR} } } }`
 const RENAMES = `title renames: timelineItems(itemTypes: [RENAMED_TITLE_EVENT], first: ${GITHUB_EDIT_HISTORY_LIMIT}) {
-  totalCount nodes { ... on RenamedTitleEvent { actor { ${ACTOR} } } } }`
+  pageInfo { hasNextPage } nodes { ... on RenamedTitleEvent { actor { ${ACTOR} } } } }`
 export const GITHUB_EDIT_HISTORY_QUERY = `query FicusEditHistory($id: ID!) {
   node(id: $id) {
     __typename
@@ -83,6 +83,14 @@ function complete(connection: unknown): unknown[] | null {
   return nodes
 }
 
+/** Timeline totalCount includes non-rename events even with itemTypes filtering. */
+function completeRenames(connection: unknown): unknown[] | null {
+  const page = record(connection)
+  // The query starts at the first page: only an explicit end proves all rename actors were read.
+  if (!Array.isArray(page.nodes) || record(page.pageInfo).hasNextPage !== false) return null
+  return page.nodes
+}
+
 /** Pure decision over one GraphQL `node` response. Exported for tests. */
 export function decideGitHubEditors(
   target: GitHubEditHistoryTarget,
@@ -101,7 +109,7 @@ export function decideGitHubEditors(
   )
     return null
   const edits = complete(node.userContentEdits)
-  const renames = isParent ? complete(node.renames) : []
+  const renames = isParent ? completeRenames(node.renames) : []
   if (!edits || !renames) return null
   const editors = new Map<string, GitHubAccountIdentity>()
   const add = (identity: GitHubAccountIdentity | null) => {
