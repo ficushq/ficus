@@ -20,7 +20,8 @@ KillMode=control-group
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
-PrivateTmp=yes
+TemporaryFileSystem=/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777
+TemporaryFileSystem=/var/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777
 PrivateDevices=yes
 PrivateMounts=yes
 ProtectSystem=strict

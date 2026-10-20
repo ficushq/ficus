@@ -84,6 +84,35 @@ export async function proveSocketBindPolicy(ownPort: number | null, bind: Binder
   throw new Error('unsupported_host')
 }
 
+/** Call on the running process mount view; +ExecStartPre deliberately has a privileged
+ * filesystem view and therefore is NOT proof of the eventual unprivileged scratch mounts.
+ */
+export function verifyScratchMounts(mountinfo: string): void {
+  for (const path of ['/tmp', '/var/tmp']) {
+    const matches = mountinfo
+      .split('\n')
+      .map((line) => line.split(' '))
+      .filter((fields) => fields[4] === path)
+    if (matches.length !== 1) throw new Error('unsupported_host')
+    const fields = matches[0]!
+    const split = fields.indexOf('-')
+    const options = fields[5]?.split(',') ?? []
+    const size = /(?:^|,)size=(\d+)([kmg]?)(?:,|$)/i.exec(fields[split + 3] ?? '')
+    const bytes = size
+      ? Number(size[1]) * ({ '': 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3 }[size[2]!.toLowerCase()] ?? Infinity)
+      : Infinity
+    if (
+      split < 6 ||
+      fields[split + 1] !== 'tmpfs' ||
+      !['rw', 'nosuid', 'nodev', 'noexec'].every((v) => options.includes(v)) ||
+      !Number.isSafeInteger(bytes) ||
+      bytes <= 0 ||
+      bytes > 16 * 1024 * 1024
+    )
+      throw new Error('unsupported_host')
+  }
+}
+
 export function verifyLoopBacking(
   expected: { device: string; image: string; inode: number; imageDevice: number },
   value: unknown

@@ -21,7 +21,9 @@ test('renders shipped hardened service with private identity, filesystem and bou
   expect(units.service).toContain(`ExecStartPre=+/usr/local/libexec/ficus-bigbrain-preflight ${id}`)
   for (const setting of [
     'NoNewPrivileges=yes',
-    'PrivateTmp=yes',
+    'PrivateMounts=yes',
+    'TemporaryFileSystem=/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777',
+    'TemporaryFileSystem=/var/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777',
     'PrivateDevices=yes',
     'ProtectSystem=strict',
     'ProtectHome=yes',
@@ -56,6 +58,8 @@ test('aggregate cgroup includes gateway and caps combined CPU/memory; gateway ca
   expect(aggregate).toContain('MemoryHigh=536870912')
   const gateway = await renderGatewayUnit(artifactDigest)
   expect(gateway).toContain('Slice=ficus-bigbrain.slice')
+  expect(gateway).toContain('TemporaryFileSystem=/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777')
+  expect(gateway).toContain('TemporaryFileSystem=/var/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777')
   expect(gateway).toContain('User=ficus-bb-gateway')
   expect(gateway).toContain('ExecStartPre=+/usr/local/libexec/ficus-bigbrain-preflight gateway')
   expect(gateway).toContain('SocketBindAllow=ipv4:tcp:34792')
@@ -85,6 +89,10 @@ test('fixed root launcher serializes across SSH interruption and bounds every de
     'TasksMax=64',
     'NoNewPrivileges=yes',
     'SocketBindDeny=any',
+    'PrivateMounts=yes',
+    'TemporaryFileSystem=/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777 /var/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777',
+    'ProtectSystem=strict',
+    'ReadWritePaths=/etc /var/lib/ficus-bigbrain',
     '/usr/bin/env -i',
     '/control',
     'head -c 8193',

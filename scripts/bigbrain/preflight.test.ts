@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { assertCgroupBudget, proveSocketBindPolicy, verifyLoopBacking } from './preflight'
+import { assertCgroupBudget, proveSocketBindPolicy, verifyLoopBacking, verifyScratchMounts } from './preflight'
 const facts = {
   memoryMax: '268435456',
   swapMax: '0',
@@ -58,6 +58,21 @@ test('own port must bind, a denied arbitrary port must return policy denial, nev
   ).rejects.toThrow('unsupported_host')
   expect(closed).toBe(2)
 })
+test('scratch must be memory-backed, noexec/nodev/nosuid and bounded; PrivateTmp on disk is insufficient', () => {
+  const mounts = '/tmp /var/tmp'
+    .split(' ')
+    .map((path, i) => `${i + 1} 0 0:42 / ${path} rw,nosuid,nodev,noexec - tmpfs tmpfs rw,size=16384k,mode=1777`)
+    .join('\n')
+  expect(() => verifyScratchMounts(mounts)).not.toThrow()
+  for (const bad of [
+    mounts.replace('size=16384k', 'size=32768k'),
+    mounts.replace('tmpfs tmpfs', 'ext4 /dev/vda'),
+    mounts.replace(',noexec', ''),
+    mounts.split('\n')[0]!,
+  ])
+    expect(() => verifyScratchMounts(bad)).toThrow('unsupported_host')
+})
+
 test('loop device is tied to the exact root-owned image inode and backing filesystem, not merely a path', () => {
   const expected = { device: '7:4', image: '/var/lib/ficus-bigbrain/volumes/a.img', inode: 321, imageDevice: 2049 }
   const loop = { name: '/dev/loop4', 'back-file': expected.image, 'back-ino': 321, 'back-maj:min': '8:1' }
