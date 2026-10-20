@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { LoginPage } from './LoginPage'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { acquireDomHarness } from '../test/domHarness'
+import type { DesktopBridge } from '../lib/desktop'
 
 let authStatus: {
   authEnabled: boolean
@@ -183,20 +185,18 @@ describe('LoginPage auth modes', () => {
     expect(render()).toContain('Sign in to Ficus')
     expect(render()).not.toContain('login-instance')
 
-    const priorWindow = globalThis.window
-    globalThis.window = {
-      location: { hash: '', search: '', pathname: '/', href: 'http://localhost/' },
-      ficusDesktopApp: {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      dom.window.ficusDesktopApp = {
         version: 1,
         instance: { kind: 'attached', name: 'Home server' },
         notificationsEnabled: async () => false,
         deliverNotifications: async () => {},
-      },
-    } as unknown as Window & typeof globalThis
-    try {
+      } satisfies DesktopBridge
       expect(render()).toContain('Home server')
     } finally {
-      globalThis.window = priorWindow
+      delete dom.window.ficusDesktopApp
+      await dom.cleanup()
     }
   })
 })
