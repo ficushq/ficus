@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 
 LAYOUTS = {
     "pydantic": ("tests", "pyproject.toml"),
+    "sphinx": ("tests", "pyproject.toml", "tox.ini"),
     "pandas": (
         "pandas/tests",
         "pandas/conftest.py",

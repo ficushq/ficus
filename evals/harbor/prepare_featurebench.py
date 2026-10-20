@@ -66,11 +66,15 @@ def prepare(task, image, output):
     task = task.resolve(strict=True)
     if not task.name.endswith(".lv1"):
         raise ValueError("Only audited lv1 task preparation is supported")
-    prefixes = {"pydantic__pydantic.": "pydantic", "pandas-dev__pandas.": "pandas"}
+    prefixes = {
+        "pydantic__pydantic.": "pydantic",
+        "pandas-dev__pandas.": "pandas",
+        "sphinx-doc__sphinx.": "sphinx",
+    }
     layout = next((v for k, v in prefixes.items() if task.name.startswith(k)), None)
     if layout is None:
         raise ValueError(
-            "Only audited Pydantic and Pandas verifier layouts are supported"
+            "Only explicitly audited repository verifier layouts are supported"
         )
     verifier_paths = LAYOUTS[layout]
     if output.exists():
