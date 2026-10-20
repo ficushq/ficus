@@ -159,7 +159,7 @@ test('no writer/foreign/future handoff, other host, or non-ready/revoked vault c
 test('suspend/resume, rename and Core upgrades do not invalidate an unrevoked read credential', () => {
   for (const override of [
     // Degraded keeps reading (same rule as the synchronizer and the shared tools).
-    { vault: { ...vault, state: 'degraded' } },
+    { vault: { ...vault, state: 'degraded' as const } },
     { capabilities: { ...capabilities, hostEpoch: 5 } },
     { capabilities: { ...capabilities, artifactDigest: `sha256:${'c'.repeat(64)}` } },
     { vault: { ...vault, appliedGeneration: 4 } },
