@@ -146,6 +146,9 @@ test('change → review → confirm sends the version it reviewed and reports th
   expect(text).toContain('keep working at the local address (http://localhost:61896)')
   expect(text).toContain('Account → Passkeys → Add a passkey for another address')
   expect(text).toContain('never removes passkeys or signs anyone out')
+  expect(text).toContain(
+    'A code made before saving has no link for the new address: type it at https://ficus.example.com/add-passkey'
+  )
   expect(text).toContain('is a last resort')
   expect(text).toContain('needs email delivery')
   expect(text).toContain('replaces all of your existing passkeys and signs out every session')

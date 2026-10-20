@@ -64,6 +64,16 @@ describe('Add a passkey for another address', () => {
     expect(buttonWith('Copy code')).toBeDefined()
   })
 
+  test('the typed-code hint names the page at the chosen address, base path included', async () => {
+    issuePasskeyCode.mockResolvedValueOnce({
+      ...issue,
+      links: [{ origin: 'https://new.example.com', url: `https://new.example.com/ficus/add-passkey#code=${CODE}` }],
+    })
+    await click('Add a passkey for another address')
+    await click('Continue with passkey')
+    expect(body().textContent).toContain('Or go to https://new.example.com/ficus/add-passkey and type this code')
+  })
+
   test('with several allowed addresses, choosing one swaps the link', async () => {
     await click('Add a passkey for another address')
     await click('Continue with passkey')
@@ -74,6 +84,7 @@ describe('Add a passkey for another address', () => {
       select.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
     })
     expect(body().querySelector('[data-testid="add-passkey-link"]')?.textContent).toBe(issue.links[1].url)
+    expect(body().textContent).toContain('Or go to http://localhost:61896/add-passkey and type this code')
   })
 
   test('a step-up the server refuses explains why and shows no code', async () => {

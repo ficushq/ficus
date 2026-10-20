@@ -27,6 +27,11 @@ function hostOf(origin: string): string {
   }
 }
 
+/** The /add-passkey page a link points at (origin + APP_BASE_PATH), without the code fragment. */
+function pageUrl(url: string): string {
+  return url.split('#')[0]
+}
+
 /**
  * Account → Passkeys: create a one-time link (and typeable code) that adds a passkey
  * for this account at ANOTHER allowed address of this server — for example after
@@ -168,8 +173,9 @@ export function AddPasskeyElsewhere({ apiOverride }: { apiOverride?: Partial<Add
             )}
             <div>
               <p className="text-xs text-muted mb-1">
-                Or go to <span className="text-primary">{link ? `${hostOf(link.origin)}` : 'the other address'}</span>
-                {' → '}/add-passkey and type this code:
+                Or go to{' '}
+                <span className="text-primary break-all">{link ? pageUrl(link.url) : 'the other address'}</span> and
+                type this code:
               </p>
               <div className="flex items-center gap-2">
                 <code data-testid="add-passkey-code" className="flex-1 font-mono text-base tracking-wider text-primary">
