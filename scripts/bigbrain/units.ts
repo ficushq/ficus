@@ -2,6 +2,7 @@ import { z } from 'zod'
 import vaultTemplate from '../setup/systemd/ficus-bigbrain@.service.tmpl' with { type: 'text' }
 import sliceTemplate from '../setup/systemd/ficus-bigbrain.slice.tmpl' with { type: 'text' }
 import gatewayTemplate from '../setup/systemd/ficus-bigbrain-gateway.service.tmpl' with { type: 'text' }
+import controlLauncherTemplate from '../setup/systemd/ficus-bigbrainctl.tmpl' with { type: 'text' }
 import { managedPaths } from './paths'
 import type { StorageReservation } from './storage'
 import { managedBigbrainOriginMatchesPolicy } from '../../packages/shared/src/managed-bigbrain'
@@ -64,4 +65,11 @@ export async function renderAggregateUnit(): Promise<string> {
 }
 export async function renderGatewayUnit(digest: string): Promise<string> {
   return render(gatewayTemplate, { ARTIFACT_ROOT: artifactRoot(digest) })
+}
+/** The root controller, including all CLI children, lives in a single bounded transient
+ * systemd unit. Losing the SSH waiter cannot free its mutation slot or orphan a writer.
+ * The fixed launcher must be installed root:root0750; Core never receives sudo access.
+ */
+export async function renderControlLauncher(digest: string): Promise<string> {
+  return render(controlLauncherTemplate, { ARTIFACT_ROOT: artifactRoot(digest) })
 }

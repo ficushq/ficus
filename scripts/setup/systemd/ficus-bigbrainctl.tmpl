@@ -1,0 +1,52 @@
+#!/bin/bash -p
+# Root-owned fixed Platform entrypoint. Never source tenant/profile environment or accept argv.
+set -euo pipefail
+umask 077
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8
+if [[ $# -ne 0 || $EUID -ne 0 ]]; then
+  printf '%s\n' 'Managed BigBrain control unavailable' >&2
+  exit 78
+fi
+# No truncation, no tenant-controlled parent. Installer owns this directory and lock file.
+[[ ! -L /var/lib/ficus-bigbrain/control ]] || exit 78
+[[ $(/usr/bin/stat -c '%u:%a' /var/lib/ficus-bigbrain/control) == '0:700' ]] || exit 78
+[[ ! -L /var/lib/ficus-bigbrain/control/host.lock ]] || exit 78
+exec 9<>/var/lib/ficus-bigbrain/control/host.lock
+[[ $(/usr/bin/stat -Lc '%u:%a:%h:%s' /proc/self/fd/9) == '0:600:1:0' ]] || exit 78
+busy() {
+  # Bounded even on a stuck/malformed peer; jq never receives an unbounded stdin.
+  # Discard parser diagnostics, which must not reflect caller material into logs.
+  /usr/bin/timeout --kill-after=1s 5s /usr/bin/head -c 8193 | /usr/bin/jq -Rsc '
+    if utf8bytelength > 8192 then error("invalid_request") else fromjson end |
+    if type == "object" and .contractVersion == 1 and (.requestId | type) == "string" and
+       (.requestId | test("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))
+    then {contractVersion:1,requestId:.requestId,ok:false,code:"busy",retryable:true}
+    else error("invalid_request") end
+  ' 2>/dev/null
+}
+if ! /usr/bin/flock --nonblock --exclusive 9; then busy; exit 0; fi
+# If SSH/the waiter died, the worker keeps its own bounded unit until finished. A new
+# caller may NOT launch another worker just because the client-side flock was released.
+if ! state=$(/usr/bin/systemctl show --property=ActiveState --value ficus-bigbrain-control.service 2>/dev/null); then state=missing; fi
+case "$state" in inactive|failed|missing) ;; *) busy; exit 0 ;; esac
+exec /usr/bin/systemd-run --quiet --wait --pipe --collect --service-type=exec \
+  --unit=ficus-bigbrain-control.service \
+  --property=Slice=ficus-bigbrain.slice \
+  --property=RuntimeMaxSec=180 \
+  --property=TimeoutStopSec=20 \
+  --property=KillMode=control-group \
+  --property=OOMPolicy=kill \
+  --property=MemoryHigh=100663296 \
+  --property=MemoryMax=134217728 \
+  --property=MemorySwapMax=0 \
+  --property=CPUQuota=50% \
+  --property=TasksMax=64 \
+  --property=LimitNOFILE=128 \
+  --property=NoNewPrivileges=yes \
+  --property=ProtectHome=yes \
+  --property=RestrictSUIDSGID=yes \
+  --property=RestrictRealtime=yes \
+  --property=LockPersonality=yes \
+  --property='RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
+  --property='CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID CAP_SETPCAP CAP_SYS_ADMIN' \
+  /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 {{ARTIFACT_ROOT}}/control

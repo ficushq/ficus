@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { renderVaultUnits, renderAggregateUnit, renderGatewayUnit } from './units'
+import { renderVaultUnits, renderAggregateUnit, renderGatewayUnit, renderControlLauncher } from './units'
 import { planVaultStorage } from './storage'
 
 const id = '11111111-1111-4111-8111-111111111111'
@@ -61,6 +61,38 @@ test('aggregate cgroup includes gateway and caps combined CPU/memory; gateway ca
   expect(gateway).not.toContain('BindReadOnlyPaths=/etc/ficus/bigbrain/public/routes.json')
   expect(gateway).not.toContain('{{')
 })
+test('fixed root launcher serializes across SSH interruption and bounds every descendant in a transient unit', async () => {
+  const launcher = await renderControlLauncher(artifactDigest)
+  expect(launcher).toStartWith('#!/bin/bash -p')
+  for (const setting of [
+    'flock --nonblock',
+    'ficus-bigbrain-control.service',
+    '--wait',
+    '--pipe',
+    '--collect',
+    'RuntimeMaxSec=180',
+    'KillMode=control-group',
+    'OOMPolicy=kill',
+    'MemoryMax=134217728',
+    'MemorySwapMax=0',
+    'CPUQuota=50%',
+    'Slice=ficus-bigbrain.slice',
+    'TasksMax=64',
+    'NoNewPrivileges=yes',
+    '/usr/bin/env -i',
+    '/control',
+    'head -c 8193',
+    'code:"busy"',
+  ])
+    expect(launcher).toContain(setting)
+  expect(launcher).not.toContain('$@')
+  const child = Bun.spawn(['/bin/bash', '-n'], { stdin: 'pipe', stdout: 'ignore', stderr: 'pipe' })
+  child.stdin.write(launcher)
+  child.stdin.end()
+  expect(await child.exited).toBe(0)
+  await new Response(child.stderr).text()
+})
+
 test('rejects unit specifier/newline injection, foreign vault origins, tampered account/path/port and digest', async () => {
   for (const bad of [
     { ...input, origin: 'https://evil.example.com' },
