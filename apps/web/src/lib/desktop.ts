@@ -52,6 +52,8 @@ export interface DesktopBridge {
   shell?: DesktopShell
   instance?: DesktopInstance
   notificationsPolledByShell?: boolean
+  /** Optional browser approval backup for this server connection. No address or credentials cross the bridge. */
+  signInWithBrowser?(): Promise<void>
 }
 declare global {
   interface Window {
@@ -110,4 +112,10 @@ export function desktopInstance(): DesktopInstance | undefined {
     return { kind: instance.kind, name: instance.name }
   }
   return instance
+}
+
+/** Present only when this Desktop connection supports browser device approval. */
+export function desktopBrowserSignIn(): (() => Promise<void>) | undefined {
+  const bridge = desktopBridge()
+  return typeof bridge?.signInWithBrowser === 'function' ? bridge.signInWithBrowser.bind(bridge) : undefined
 }

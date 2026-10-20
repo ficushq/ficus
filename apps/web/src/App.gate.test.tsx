@@ -181,7 +181,7 @@ describe('App auth gate', () => {
     await render('/register?token=some-invite-token')
 
     expect(container.textContent).toContain('passkey')
-    expect(container.textContent).not.toContain('Sign in with Passkey')
+    expect(container.textContent).not.toContain('Sign in with passkey')
     expect(container.querySelector('[data-testid="app-shell"]')).toBeNull()
   })
 
@@ -201,7 +201,7 @@ describe('App auth gate', () => {
       validSession = false
       await render('/farm-sign-in')
 
-      expect(container.textContent).toContain('Sign in with Passkey')
+      expect(container.textContent).toContain('Sign in with passkey')
       expect(went).toEqual([])
     })
 
