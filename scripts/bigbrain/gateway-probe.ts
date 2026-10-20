@@ -59,7 +59,12 @@ export async function verifyGatewayServes(
   const ask = (host: string, path: string) =>
     request(host, path).catch(() => ({ status: 0, code: null, protocol: null }))
   const unrouted = await ask(UNROUTED_HOST, '/v1/whoami')
-  if (unrouted.status !== 404 || unrouted.code !== 'not_found') {
+  // A parsed manifest for a suspended host answers everything with its own 503 `maintenance`.
+  const loaded =
+    manifest.hostState === 'active'
+      ? unrouted.status === 404 && unrouted.code === 'not_found'
+      : unrouted.status === 503 && unrouted.code === 'maintenance'
+  if (!loaded) {
     noteStage(
       unrouted.status === 0
         ? 'gateway_unreachable'
@@ -69,6 +74,7 @@ export async function verifyGatewayServes(
     )
     throw new Error('upstream_unavailable')
   }
+  if (manifest.hostState !== 'active') return
   for (const route of manifest.routes) {
     if (route.state !== 'ready' || (options.vaultIds && !options.vaultIds.includes(route.vaultId))) continue
     const reply = await ask(new URL(route.origin).hostname, '/v1/whoami')

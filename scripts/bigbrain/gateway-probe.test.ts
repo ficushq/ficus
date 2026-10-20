@@ -155,6 +155,25 @@ test('a ready route the gateway cannot serve, or that answers without the BigBra
   ).rejects.toThrow('upstream_unavailable')
 })
 
+test('a suspended host: the gateway has loaded the manifest when it answers its own 503 maintenance', async () => {
+  const root = await sockets()
+  const suspended: GatewayManifest = {
+    ...manifest,
+    hostState: 'suspended',
+    routes: manifest.routes.map((r) => ({ ...r, state: 'disabled' as const })),
+  }
+  gateway(
+    join(root, 'gw.sock'),
+    async () => suspended,
+    () => join(root, 'none.sock')
+  )
+  const request = gatewaySocketRequest(join(root, 'gw.sock'))
+  await verifyGatewayServes(suspended, { request })
+  await waitForGatewayServing(suspended, { request, sleep: async () => {}, attempts: 1 })
+  // ...but a 503 maintenance is not proof for an active host.
+  await expect(verifyGatewayServes(manifest, { request })).rejects.toThrow('upstream_unavailable')
+})
+
 test('the gateway rate limit on a found route is not unavailability; disabled routes are skipped', async () => {
   const asked: string[] = []
   await verifyGatewayServes(
