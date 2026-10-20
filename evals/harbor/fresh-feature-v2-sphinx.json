@@ -4,11 +4,7 @@
   "preparation": {
     "source_task": "sphinx-doc__sphinx.e347e59c.test_domain_c.4068b9e8.lv1",
     "verifier_layout": "sphinx",
-    "verifier_paths": [
-      "tests",
-      "pyproject.toml",
-      "tox.ini"
-    ],
+    "verifier_paths": ["tests", "pyproject.toml", "tox.ini"],
     "source_files_sha256": {
       "task.toml": "ef631c9e1bfb04044903fef3ab357eda8767242e0e5de7199d4d22f7feecdb89",
       "instruction.md": "e56dd0eb2b200f5abb088940774d1ee1ca8fe4c2add396ecf25e12440704c509",
@@ -39,13 +35,9 @@
       "reward": "0",
       "reason": null,
       "elapsed_seconds": 19.22,
-      "test_summaries": [
-        "35 failed in 4.10s"
-      ],
+      "test_summaries": ["35 failed in 4.10s"],
       "official_input_checks": 2,
-      "import_origin": [
-        "GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"
-      ],
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"],
       "output_sha256": "bea1b5ce5e4373c9223fc81a45e416c60e32f2414d1d187ab3d26c706bb455ae"
     },
     {
@@ -54,14 +46,9 @@
       "reward": "1",
       "reason": null,
       "elapsed_seconds": 16.4,
-      "test_summaries": [
-        "35 passed in 1.98s",
-        "81 passed in 1.15s"
-      ],
+      "test_summaries": ["35 passed in 1.98s", "81 passed in 1.15s"],
       "official_input_checks": 2,
-      "import_origin": [
-        "GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"
-      ],
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"],
       "output_sha256": "c0e8d446eaf98203d2ab072121fe085d1985926edec424b0cd54a05babf92491"
     },
     {
@@ -70,13 +57,9 @@
       "reward": "0",
       "reason": null,
       "elapsed_seconds": 13.89,
-      "test_summaries": [
-        "35 failed in 4.10s"
-      ],
+      "test_summaries": ["35 failed in 4.10s"],
       "official_input_checks": 2,
-      "import_origin": [
-        "GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"
-      ],
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"],
       "output_sha256": "327e6d1aef1e5309e2d7fdc763636c7d02699fb1bbc9b5a8bb9b6cef24bf9c75"
     },
     {
@@ -85,14 +68,9 @@
       "reward": "1",
       "reason": null,
       "elapsed_seconds": 16.96,
-      "test_summaries": [
-        "35 passed in 1.98s",
-        "81 passed in 1.16s"
-      ],
+      "test_summaries": ["35 passed in 1.98s", "81 passed in 1.16s"],
       "official_input_checks": 2,
-      "import_origin": [
-        "GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"
-      ],
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"],
       "output_sha256": "09dc188e066885c8b887b76ae95f176ff3f91994585acbaadcf839ce15410497"
     }
   ],

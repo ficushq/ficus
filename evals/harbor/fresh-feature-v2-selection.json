@@ -19,12 +19,7 @@
   "model": "gpt-6.1-sol",
   "thinking": "medium",
   "attempts_per_arm": 1,
-  "arm_order": [
-    "pi-planned",
-    "ficus-planned",
-    "pi-engineer",
-    "ficus-engineer"
-  ],
+  "arm_order": ["pi-planned", "ficus-planned", "pi-engineer", "ficus-engineer"],
   "stop_policy": "No steering or prompt tuning; preserve all failed and interrupted attempts. Stop on accounting cap or invalid grading. Incomplete four-arm results are not a matched comparison.",
   "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
   "prompt_merge_commit": "b0db7060effaad1a64c823514327be68b73a7ce7",
