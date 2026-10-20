@@ -173,3 +173,108 @@ class ConcurrentFeatureTests(unittest.TestCase):
                     if child.poll() is None:
                         child.kill()
                     child.wait(timeout=5)
+
+    def test_recovery_results_ignore_original_attempts_and_are_not_four_arm_comparison(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            ledger = root / "ledger.sqlite"
+            Budget(ledger)
+            manifest = {
+                "experiment": "concurrent-feature-v1-recovery-1",
+                "job_prefix": "cv1r1",
+                "tasks": [{"short": "a", "task": "a"}, {"short": "b", "task": "b"}],
+                "arms": ["ficus-planned"],
+            }
+            frozen = root / "manifest.json"
+            frozen.write_text(json.dumps(manifest))
+            exits = {}
+            for short in ("a", "b"):
+                for prefix in ("cv1", "cv1r1"):
+                    client = f"{prefix}-{short}-ficus-planned"
+                    trial = root / client / "trial"
+                    trial.mkdir(parents=True)
+                    (trial / "result.json").write_text(
+                        json.dumps(
+                            {
+                                "started_at": "2026-10-20T00:00:00",
+                                "finished_at": "2026-10-20T00:01:00",
+                                "verifier_result": {
+                                    "rewards": {"reward": int(prefix == "cv1r1")}
+                                },
+                            }
+                        )
+                    )
+                    with sqlite3.connect(ledger) as db:
+                        db.execute(
+                            "INSERT INTO calls(client,charge,usage) VALUES(?,?,?)",
+                            (
+                                client,
+                                100_000 if prefix == "cv1r1" else 5_500_000,
+                                "{}" if prefix == "cv1r1" else None,
+                            ),
+                        )
+                    if prefix == "cv1r1":
+                        exits[client] = 0
+            (root / "ficus-planned-batch.json").write_text(
+                json.dumps({"elapsed_seconds": 120, "exit_codes": exits})
+            )
+            report = summarize_batches(root, ledger, frozen, manifest)
+            self.assertTrue(report["complete_requested_batches"])
+            self.assertFalse(report["complete_matched_comparison"])
+            self.assertEqual(report["experiment"], manifest["experiment"])
+            self.assertEqual(report["new_confirmed_usd"], 0.2)
+            self.assertEqual(report["cumulative_exposure_usd"], 11.2)
+            self.assertEqual(report["batches"][0]["accepted_tasks"], 2)
+            self.assertEqual(report["batches"][0]["accepted_tasks_per_hour"], 60)
+            for task in report["tasks"]:
+                self.assertEqual(len(task["results"]), 1)
+                self.assertTrue(task["results"][0]["job_name"].startswith("cv1r1-"))
+
+    def test_used_client_is_rejected_even_with_empty_jobs_directory(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from run_concurrent_feature import run
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            ledger = root / "ledger.sqlite"
+            budget = Budget(ledger)
+            budget.reserve("cv1r1-a-ficus-planned")
+            manifest = {
+                "job_prefix": "cv1r1",
+                "tasks": [{"short": "a", "task": "a"}, {"short": "b", "task": "b"}],
+                "arms": ["ficus-planned"],
+                "concurrency": 2,
+                "prior_last_call_id": 1,
+                "cumulative_cap_usd": 50,
+            }
+            frozen = root / "manifest.json"
+            frozen.write_text(json.dumps(manifest))
+            args = SimpleNamespace(
+                frozen=frozen,
+                frozen_sha256=sha(frozen),
+                jobs=root / "new-jobs",
+                ledger=ledger,
+                tasks=root,
+                runtime=root / "runtime",
+                access=root / "access",
+            )
+            with (
+                patch("run_concurrent_feature.validate_inputs"),
+                patch("run_concurrent_feature.subprocess.Popen") as launch,
+            ):
+                with self.assertRaisesRegex(
+                    ValueError, "reuse an existing inference client"
+                ):
+                    run(args)
+                launch.assert_not_called()
+
+    def test_invalid_namespace_is_rejected(self):
+        from run_concurrent_feature import job_prefix
+
+        for value in ("../old", "", "a/b", "A", None):
+            with self.assertRaisesRegex(ValueError, "Invalid job namespace"):
+                job_prefix({"job_prefix": value}, {"short": "a"})
+        self.assertEqual(job_prefix({}, {"short": "a"}), "cv1-a")

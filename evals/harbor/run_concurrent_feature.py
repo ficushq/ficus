@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -11,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from budget_proxy import Budget
-from summarize_long_feature import sha, summarize
+from summarize_long_feature import ARMS, sha, summarize
 
 
 def validate_inputs(repo, tasks, manifest, runtime):
@@ -26,10 +27,30 @@ def validate_inputs(repo, tasks, manifest, runtime):
         raise ValueError("Runtime drift")
 
 
+def job_prefix(manifest, task):
+    prefix = manifest.get("job_prefix", "cv1")
+    for value in (prefix, task["short"]):
+        if not isinstance(value, str) or not re.fullmatch(
+            r"[a-z0-9]+(?:-[a-z0-9]+)*", value
+        ):
+            raise ValueError("Invalid job namespace")
+    return f"{prefix}-{task['short']}"
+
+
 def summarize_batches(jobs, ledger, frozen, manifest):
     tasks = []
     for task in manifest["tasks"]:
-        report = summarize(jobs, ledger, frozen, f"cv1-{task['short']}")
+        report = summarize(jobs, ledger, frozen, job_prefix(manifest, task))
+        report["results"] = [
+            r for r in report["results"] if r["arm"] in manifest["arms"]
+        ]
+        report["new_confirmed_usd"] = round(
+            sum(r["confirmed_cost_usd"] for r in report["results"]), 6
+        )
+        report["complete_matched_comparison"] = (
+            set(manifest["arms"]) == set(ARMS) and report["complete_matched_comparison"]
+        )
+        report["cap_usd"] = manifest.get("cumulative_cap_usd", 50)
         report["task"] = task["task"]
         tasks.append(report)
     batches = []
@@ -68,7 +89,9 @@ def summarize_batches(jobs, ledger, frozen, manifest):
         )
         batches.append(batch)
     return {
-        "experiment": "concurrent-feature-v1",
+        "experiment": manifest.get("experiment", "concurrent-feature-v1"),
+        "complete_requested_batches": len(batches) == len(manifest["arms"])
+        and all(b["complete"] for b in batches),
         "frozen_manifest_sha256": sha(frozen),
         "tasks": tasks,
         "batches": batches,
@@ -102,13 +125,30 @@ def run(args):
         raise ValueError("Manifest drift")
     if len(manifest["tasks"]) != 2 or manifest["concurrency"] != 2:
         raise ValueError("This runner requires a frozen two-task batch")
+    if (
+        not manifest["arms"]
+        or len(set(manifest["arms"])) != len(manifest["arms"])
+        or not set(manifest["arms"]) <= set(ARMS)
+    ):
+        raise ValueError("Invalid or repeated arms")
+    prefixes = [job_prefix(manifest, task) for task in manifest["tasks"]]
+    if len(set(prefixes)) != len(prefixes):
+        raise ValueError("Repeated task namespace")
     args.jobs.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env["PATH"]
     env.pop("DOCKER_DEFAULT_PLATFORM", None)
     for arm in manifest["arms"]:
         validate_inputs(repo, args.tasks, manifest, args.runtime)
+        names = [f"{job_prefix(manifest, t)}-{arm}" for t in manifest["tasks"]]
         with sqlite3.connect(f"file:{args.ledger}?mode=ro", uri=True) as db:
+            if any(
+                db.execute(
+                    "SELECT 1 FROM calls WHERE client=? LIMIT 1", (name,)
+                ).fetchone()
+                for name in names
+            ):
+                raise ValueError("Refusing to reuse an existing inference client")
             if db.execute(
                 "SELECT count(*) FROM calls WHERE id>? AND usage IS NULL",
                 (manifest["prior_last_call_id"],),
@@ -121,7 +161,6 @@ def run(args):
                 raise ValueError(
                     "Insufficient global headroom for two request reservations"
                 )
-        names = [f"cv1-{t['short']}-{arm}" for t in manifest["tasks"]]
         batch_file = args.jobs / f"{arm}-batch.json"
         if batch_file.exists() or any((args.jobs / n).exists() for n in names):
             raise ValueError("Refusing to retry an existing batch")

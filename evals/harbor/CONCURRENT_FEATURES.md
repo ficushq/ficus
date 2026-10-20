@@ -108,3 +108,28 @@ All 57 offline tests pass, including terminal HTTP-200 failures and a real-proce
 check that both disposable children terminate and usage holds survive. These tests
 make no provider calls. Failure diagnostics remain private; only hashes and
 non-sensitive summaries are committed.
+
+## Explicit recovery phase
+
+After restoring provider credits, the user authorized a **new $30 budget from
+this point forward**. The old ledger is preserved unchanged at call 2470 with
+$42.723031 exposure, including the $11 missing-receipt holds. The new phase has
+its own empty ledger; this is a budget reset, not a reconciliation or a claim
+that the interrupted calls cost nothing.
+
+`concurrent-feature-v1-recovery-1.json` freezes the recovery before inference.
+New `cv1r1` client/job IDs prevent accidental reuse of old attempts or costs.
+Only Ficus squad, Pi engineer and Ficus engineer batches run. The original Pi
+squad results remain the comparison baseline. Both Ficus squads restart once in
+pristine environments after their provider-blocked attempts; engineer controls
+are first attempts. No task-specific hints, previous solutions or failed-test
+feedback are passed to the agents. Model, runtime, prompts, tasks, graders and
+resource limits remain unchanged. The two changed infrastructure sources are
+the streamed-error handling and the runner's fail-fast/recovery bookkeeping.
+
+Report this phase separately and retain original interruption overhead. A
+three-batch recovery alone cannot claim a complete four-arm comparison. Timing
+comparisons span the interruption and fixed batch order. Existing controls are
+retained because task, grader and runtime hashes are unchanged. All 60 offline
+tests pass, including recovery/original accounting isolation and rejection of
+previously billed client IDs even when the job directory is empty.
