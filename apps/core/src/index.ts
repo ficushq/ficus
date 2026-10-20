@@ -84,6 +84,7 @@ import { themePresetsRouter } from './routes/theme-presets'
 import { notificationConfigRouter } from './routes/notification-config'
 import secretsRouter from './routes/secrets'
 import settingsRouter from './routes/settings'
+import { publicUrlRouter } from './routes/public-url'
 import systemRouter from './routes/system'
 import updatesRouter from './routes/updates'
 import providerAuthRouter from './routes/provider-auth'
@@ -349,6 +350,7 @@ app.route('/api/farm', farmRouter)
 app.route('/api/theme-presets', themePresetsRouter)
 app.route('/api/secrets', secretsRouter)
 app.route('/api/settings', settingsRouter)
+app.route('/api/public-url', publicUrlRouter)
 app.route('/api/system', systemRouter)
 app.route('/api/updates', updatesRouter)
 app.route('/api/machines', machinesRouter)
