@@ -3,7 +3,8 @@ import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { MANAGED_BIGBRAIN_HELPER } from '@ficus/shared/managed-bigbrain'
-import { runPrivateCommand, type PrivateCommandRunner } from './process'
+import { runPrivateCommand, startServiceDeliberately, type PrivateCommandRunner } from './process'
+import { GATEWAY_UNIT } from './paths'
 import {
   ensureOwnedDirectory,
   readPrivateJson,
@@ -146,9 +147,5 @@ export async function installHostAssets(artifactDigest: string, options: HostAss
   if ((await run(['/usr/bin/systemd-tmpfiles', '--create', join(tmpfiles, 'ficus-bigbrain.conf')])).code !== 0)
     throw new Error('operation_failed')
   if ((await run(['/usr/bin/systemctl', 'daemon-reload'])).code !== 0) throw new Error('operation_failed')
-  if (
-    (await run(['/usr/bin/systemctl', 'enable', '--now', 'ficus-bigbrain-gateway.service'], { timeoutMs: 45000 }))
-      .code !== 0
-  )
-    throw new Error('operation_failed')
+  if (!(await startServiceDeliberately(run, GATEWAY_UNIT, { enable: true }))) throw new Error('operation_failed')
 }

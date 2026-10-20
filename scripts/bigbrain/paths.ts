@@ -2,6 +2,8 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 
 export const BIGBRAIN_STATE_ROOT = '/var/lib/ficus-bigbrain'
+/** The credential-free gateway's unit: the only ingress to every vault socket. */
+export const GATEWAY_UNIT = 'ficus-bigbrain-gateway.service'
 const pathInput = z
   .object({
     vaultId: z

@@ -180,6 +180,8 @@ async function fixture(options: { storedIdentityForA?: string } = {}) {
 test('restores only granted vaults on fresh local storage, keeps upstream identity, revokes every imported credential and invite', async () => {
   const f = await fixture()
   const [restored] = await executeRestore(f.request, f.deps)
+  // The restore fence stopped the gateway; a completed restore reopens it for the granted vaults.
+  expect(f.host.active.has('ficus-bigbrain-gateway.service')).toBe(true)
   expect(restored).toMatchObject({
     phase: 'ready',
     // Platform's current name wins over the archived one (lineage only).

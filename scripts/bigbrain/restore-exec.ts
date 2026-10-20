@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { managedBigbrainRestoreGrantSchema, type ManagedBigbrainRestoreGrant } from '@ficus/shared/managed-bigbrain'
 import { MANAGED_BACKUP_DIR } from './backup'
 import { NativeVaultAdmin } from './native-admin'
-import { BIGBRAIN_STATE_ROOT, managedPaths } from './paths'
+import { BIGBRAIN_STATE_ROOT, GATEWAY_UNIT, managedPaths } from './paths'
 import {
   markReady,
   prepareStorage,
@@ -20,7 +20,7 @@ import {
 import { controlReceiptSchema, type ControlReceipt } from './receipts'
 import { inspectVaultArchive, planRestore, readStagedArchive, recordRestorePlan, restorePlanSchema } from './restore'
 import { readPrivateJson } from './secure-files'
-import { runPrivateCommand } from './process'
+import { runPrivateCommand, startServiceDeliberately } from './process'
 
 export interface RestoreDeps extends ProvisionDeps {
   /** Native administration as the vault's own UID (default NativeVaultAdmin). */
@@ -180,6 +180,10 @@ export async function executeRestore(request: RestoreRequest, deps: RestoreDeps)
     record = await markReady(record, deps)
     restored.push(record)
   }
+  // The restore fence stopped the gateway with every vault: reopen ingress only now that every
+  // granted vault runs (excluded vaults were never mounted, so they stay unreachable).
+  if (!(await startServiceDeliberately(deps.run ?? runPrivateCommand, GATEWAY_UNIT)))
+    throw new Error('operation_failed')
   await (deps.ingress ?? (async () => {}))()
   await rm(staging, { recursive: true, force: true })
   return restored

@@ -13,7 +13,7 @@ import {
 } from '@ficus/shared/managed-bigbrain'
 import { installedHostSchema, validateHostAdmission, type InstalledHost } from './control-input'
 import { BIGBRAIN_ETC } from './install'
-import { BIGBRAIN_STATE_ROOT, managedPaths } from './paths'
+import { BIGBRAIN_STATE_ROOT, GATEWAY_UNIT, managedPaths } from './paths'
 import { admitVaultRequest, controlReceiptSchema, hashVaultRequest, type ControlReceipt } from './receipts'
 import { readPrivateJson, writePrivateJson } from './secure-files'
 import { runPrivateCommand, startServiceDeliberately, type PrivateCommandRunner } from './process'
@@ -26,7 +26,7 @@ import { executeRestore, type RestoreDeps } from './restore-exec'
 import { createVault, ownerInvite, reconnectRead, renameVault, revokeRead, type LifecycleDeps } from './lifecycle'
 import { waitForVaultReady } from './provision'
 
-export const GATEWAY_UNIT = 'ficus-bigbrain-gateway.service'
+export { GATEWAY_UNIT }
 const ingress = (deps: ControlDeps) =>
   (deps.ingress ?? (() => publishIngress({ root: deps.root, etc: deps.etc, uid: deps.uid, run: deps.run })))()
 const RETRYABLE = new Set<ManagedBigbrainErrorCode>(['busy', 'maintenance', 'upstream_unavailable', 'operation_failed'])
