@@ -1,6 +1,7 @@
 import type { Context } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { primaryWebOrigin } from './web-origins'
+import { describePublicAppUrl } from '../../lib/public-app-url'
 
 export const SESSION_COOKIE_NAME = 'ficus_session'
 // Matches the session row TTL (User.createSession default of 30 days).
@@ -50,6 +51,11 @@ function requestHost(c: Context): string {
   }
 }
 
+function localAppHost(): string | undefined {
+  const localUrl = describePublicAppUrl().localUrl
+  return localUrl ? new URL(localUrl).host : undefined
+}
+
 /**
  * Cookie attributes derived from how the browser app is deployed relative to the
  * API. Same-site (same-origin, or cross-subdomain like noah / api-noah): SameSite=Lax
@@ -58,6 +64,13 @@ function requestHost(c: Context): string {
  */
 function cookieOptions(c: Context, maxAge: number) {
   const apiHost = requestHost(c)
+  // A request addressed to the launcher-declared local address (FICUS_LOCAL_APP_URL,
+  // e.g. Ficus Desktop's http://localhost:<port>) is served same-origin by this API.
+  // Keep that login working after an admin sets an https public address: it is
+  // same-site, and Secure cookies are not reliably kept over plain-http localhost.
+  if (apiHost && apiHost.toLowerCase() === localAppHost()) {
+    return { httpOnly: true, path: '/', sameSite: 'Lax' as const, secure: requestIsHttps(c), maxAge }
+  }
   let webHost = ''
   let webHttps = false
   try {

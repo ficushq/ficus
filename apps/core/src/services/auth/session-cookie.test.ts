@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { Hono } from 'hono'
 import { setSessionCookie, clearSessionCookie, extractSessionToken, SESSION_COOKIE_NAME } from './session-cookie'
 
-const ENV_KEYS = ['FICUS_WEB_ORIGIN', 'WEBAUTHN_ORIGIN', 'APP_URL'] as const
+const ENV_KEYS = ['FICUS_WEB_ORIGIN', 'WEBAUTHN_ORIGIN', 'APP_URL', 'PUBLIC_URL', 'FICUS_LOCAL_APP_URL'] as const
 const orig: Record<string, string | undefined> = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
 
 afterEach(() => {
@@ -107,5 +107,34 @@ describe('session cookie', () => {
       headers: { Cookie: `${SESSION_COOKIE_NAME}=ck` },
     })
     expect((await res.json()).token).toBe('ck')
+  })
+})
+
+describe('launcher local address', () => {
+  test('login on the declared local address keeps a non-Secure, same-site cookie after an https public address is set', async () => {
+    delete process.env.FICUS_WEB_ORIGIN
+    delete process.env.WEBAUTHN_ORIGIN
+    delete process.env.PUBLIC_URL
+    process.env.APP_URL = 'https://pub.example.com'
+    process.env.FICUS_LOCAL_APP_URL = 'http://localhost:61896'
+    const local = await setCookieHeader('http://localhost:61896/set')
+    expect(local).not.toContain('Secure')
+    expect(local).toContain('SameSite=Lax')
+
+    // Only the declared host is exempt; other plain-http hosts keep the https upgrade.
+    const other = await setCookieHeader('http://127.0.0.1:3000/set')
+    expect(other).toContain('Secure')
+
+    // An https request to the local host still gets Secure.
+    const res = await app().request('http://localhost:61896/set', { headers: { 'x-forwarded-proto': 'https' } })
+    expect(res.headers.get('set-cookie') ?? '').toContain('Secure')
+  })
+
+  test('without FICUS_LOCAL_APP_URL nothing changes', async () => {
+    delete process.env.FICUS_WEB_ORIGIN
+    delete process.env.WEBAUTHN_ORIGIN
+    delete process.env.FICUS_LOCAL_APP_URL
+    process.env.APP_URL = 'https://pub.example.com'
+    expect(await setCookieHeader('http://localhost:61896/set')).toContain('Secure')
   })
 })

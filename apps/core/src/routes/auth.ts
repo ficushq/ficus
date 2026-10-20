@@ -348,7 +348,7 @@ authRouter.post('/register/options', async (c) => {
     await user.update({ displayName: userDisplayName })
   }
 
-  const options = await generateRegOptions(user)
+  const options = await generateRegOptions(user, c.req.header('Origin'))
   // The address the account was registered under (the placeholder when none was given), for /register/verify.
   return c.json({ options, email: user.email })
 })
@@ -383,7 +383,7 @@ authRouter.post('/register/verify', async (c) => {
     return c.json({ error: 'User not found' }, 404)
   }
 
-  const verification = await verifyRegResponse(user, response)
+  const verification = await verifyRegResponse(user, response, c.req.header('Origin'))
   if (!verification.verified || !verification.registrationInfo) {
     return c.json({ error: 'Verification failed' }, 401)
   }
@@ -458,7 +458,7 @@ authRouter.post('/register/token/options', async (c) => {
   if (resolved instanceof Response) return resolved
   const { user, purpose } = resolved
 
-  const options = await generateRegOptions(user)
+  const options = await generateRegOptions(user, c.req.header('Origin'))
   return c.json({ options, email: user.email, displayName: user.displayName, purpose })
 })
 
@@ -488,7 +488,7 @@ authRouter.post('/register/token/verify', async (c) => {
   // The reason is logged (it names no secret): "Verification failed" alone left
   // a failed invite undiagnosable.
   let failure: string | null = null
-  const verification = await verifyRegResponse(user, response).catch((error: Error) => {
+  const verification = await verifyRegResponse(user, response, c.req.header('Origin')).catch((error: Error) => {
     failure = error.message
     return null
   })
@@ -577,7 +577,7 @@ authRouter.post('/recover/passkey', async (c) => {
 
 authRouter.post('/login/options', async (c) => {
   const body = await parseOptionalJsonObjectBody(c, {} as { email?: string })
-  const { options, challengeKey } = await generateAuthOptions(body.email)
+  const { options, challengeKey } = await generateAuthOptions(body.email, c.req.header('Origin'))
   return c.json({ options, challengeKey })
 })
 
@@ -589,7 +589,7 @@ authRouter.post('/login/verify', async (c) => {
     return c.json({ error: 'challengeKey and response required' }, 400)
   }
 
-  const result = await verifyAuthResponse(challengeKey, response).catch((error) => {
+  const result = await verifyAuthResponse(challengeKey, response, c.req.header('Origin')).catch((error) => {
     if (error instanceof PasskeyAuthenticationError) return null
     throw error
   })
@@ -1139,7 +1139,7 @@ authRouter.post('/me/credentials/options', identityMiddleware, async (c) => {
   if (identity.type !== 'user') return c.json({ error: 'Not a user' }, 400)
   const user = await User.findById(identity.userId)
   if (!user) return c.json({ error: 'User not found' }, 404)
-  const options = await generateRegOptions(user)
+  const options = await generateRegOptions(user, c.req.header('Origin'))
   return c.json({ options })
 })
 
@@ -1151,7 +1151,7 @@ authRouter.post('/me/credentials/verify', identityMiddleware, async (c) => {
   const user = await User.findById(identity.userId)
   if (!user) return c.json({ error: 'User not found' }, 404)
 
-  const verification = await verifyRegResponse(user, response)
+  const verification = await verifyRegResponse(user, response, c.req.header('Origin'))
   if (!verification.verified || !verification.registrationInfo) {
     return c.json({ error: 'Verification failed' }, 401)
   }
