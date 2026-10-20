@@ -12,6 +12,7 @@ import { linuxDeviceId, planVaultStorage } from './storage'
 import { runPrivateCommand, type PrivateCommandRunner } from './process'
 import { prepareVaultImage } from './volume-image'
 import type { ManagedIdentity } from './accounts'
+import { escrowSchema } from './bootstrap'
 
 export interface ProvisionDeps {
   root?: string
@@ -25,6 +26,8 @@ export interface ProvisionDeps {
   /** Loopback readiness of the native server (default: unauthenticated whoami answers 401). */
   probeReady?: (port: number) => Promise<boolean>
   sleep?: (ms: number) => Promise<void>
+  /** Authenticated loopback whoami with the escrowed read credential (default: fetch). */
+  whoami?: (port: number, token: string) => Promise<unknown>
   /** Read the upstream identity file from the mounted store (default: no-follow root read). */
   readUpstreamIdentity?: (record: ControlReceipt) => Promise<string>
 }
@@ -100,6 +103,16 @@ export async function prepareStorage(input: ControlReceipt, deps: ProvisionDeps)
 }
 
 const identitySchema = z.object({ id: z.string().uuid() }).passthrough()
+const whoamiSchema = z
+  .object({
+    vault: z.object({ id: z.string().uuid() }).passthrough(),
+    handle: z.string(),
+    role: z.string(),
+    kind: z.string(),
+    permissions: z.array(z.string()),
+    credential: z.object({ id: z.string() }).passthrough(),
+  })
+  .passthrough()
 /** The native vault's own identity file (`.shared-identity.json`), read by root without
  * following links from the verified mount. This is what Ficus later binds read access to. */
 export async function readUpstreamIdentity(record: ControlReceipt, deps: ProvisionDeps): Promise<string> {
@@ -172,6 +185,37 @@ export async function startVaultService(input: ControlReceipt, deps: ProvisionDe
     if (!ready) await sleep(500)
   }
   if (!ready) throw new Error('upstream_unavailable')
+  if (record.phase === 'reader_ready') {
+    // The escrowed Ficus credential must authenticate as exactly the read-only agent reader of
+    // THIS store (this first authenticated call also materializes the store's identity file).
+    const escrow = await readPrivateJson(paths.control, 'reader.json', escrowSchema, { uid: deps.uid })
+    if (escrow.phase !== 'complete' || !escrow.token) throw new Error('storage_unavailable')
+    const actor = whoamiSchema.safeParse(
+      await (
+        deps.whoami ??
+        (async (port: number, token: string) => {
+          const response = await fetch(`http://127.0.0.1:${port}/v1/whoami`, {
+            headers: { Authorization: `Bearer ${token}` },
+            redirect: 'manual',
+            signal: AbortSignal.timeout(5000),
+          })
+          if (response.status !== 200) throw new Error('upstream_unavailable')
+          return response.json()
+        })
+      )(record.storage.port, escrow.token)
+    )
+    if (
+      !actor.success ||
+      actor.data.handle !== 'ficus-reader' ||
+      actor.data.role !== 'member' ||
+      actor.data.kind !== 'agent' ||
+      actor.data.permissions.length !== 1 ||
+      actor.data.permissions[0] !== 'read' ||
+      actor.data.credential.id !== escrow.credentialId
+    )
+      throw new Error('scope_mismatch')
+    if ((await readUpstreamIdentity(record, deps)) !== actor.data.vault.id) throw new Error('identity_mismatch')
+  }
   const upstream = await readUpstreamIdentity(record, deps)
   if (record.receipt.upstreamVaultId !== null && upstream !== record.receipt.upstreamVaultId)
     throw new Error('identity_mismatch')

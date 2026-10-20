@@ -255,20 +255,14 @@ test('restore-fence closes ingress, advances the epoch and returns only the veri
   expect(await host(f)).toMatchObject({ hostEpoch: 2, effect: { action: 'restore-fence', completed: true } })
 })
 
-test('actions this host does not dispatch yet refuse instead of guessing', async () => {
+test('unknown actions and caller-supplied commands are refused by the strict request schema', async () => {
   const f = await fixture()
-  await writeFile(join(f.root, 'unused'), '')
-  for (const action of ['rename', 'read-revoke', 'read-reconnect'])
-    expect(
-      await dispatchHostRequest(
-        envelope({
-          action,
-          vaultId: A,
-          expectedGeneration: 1,
-          generation: 2,
-          ...(action === 'rename' ? { displayName: 'X' } : {}),
-        }),
-        f.deps
-      )
-    ).toMatchObject({ ok: false, code: 'unsupported_host' })
+  expect(await dispatchHostRequest(envelope({ action: 'exec', command: 'id' }), f.deps)).toMatchObject({
+    ok: false,
+    code: 'invalid_request',
+  })
+  expect(await dispatchHostRequest(envelope({ action: 'status', vaultId: A, path: '/etc' }), f.deps)).toMatchObject({
+    ok: false,
+    code: 'invalid_request',
+  })
 })

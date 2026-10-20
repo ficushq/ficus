@@ -22,6 +22,7 @@ import { deleteVaultResources, type DeleteOptions } from './delete'
 import { readStagedArchive } from './restore'
 import { publishIngress } from './ingress'
 import { executeRestore, type RestoreDeps } from './restore-exec'
+import { createVault, ownerInvite, reconnectRead, renameVault, revokeRead, type LifecycleDeps } from './lifecycle'
 
 export const GATEWAY_UNIT = 'ficus-bigbrain-gateway.service'
 const ingress = (deps: ControlDeps) =>
@@ -29,7 +30,10 @@ const ingress = (deps: ControlDeps) =>
 const RETRYABLE = new Set<ManagedBigbrainErrorCode>(['busy', 'maintenance', 'upstream_unavailable', 'operation_failed'])
 
 export interface ControlDeps
-  extends Omit<DeleteOptions, 'root' | 'uid' | 'run' | 'mountinfo'>, Omit<RestoreDeps, 'ingress'> {
+  extends
+    Omit<DeleteOptions, 'root' | 'uid' | 'run' | 'mountinfo'>,
+    Omit<RestoreDeps, 'ingress' | 'admin'>,
+    Omit<LifecycleDeps, 'ingress'> {
   root?: string
   etc?: string
   uid?: number
@@ -325,9 +329,25 @@ export async function dispatchHostRequest(input: unknown, deps: ControlDeps = {}
             code: null,
           }
         }
+        case 'create':
+        case 'rename':
+        case 'read-revoke':
+        case 'read-reconnect': {
+          const lifecycle = { ...deps, ingress: () => ingress(deps) }
+          const record =
+            request.action === 'create'
+              ? await createVault(request, installed, lifecycle)
+              : request.action === 'rename'
+                ? await renameVault(request, lifecycle)
+                : request.action === 'read-revoke'
+                  ? await revokeRead(request, lifecycle)
+                  : await reconnectRead(request, installed, lifecycle)
+          return { ...success, action: request.action, receipt: record.receipt }
+        }
+        case 'owner-invite':
+          return { ...success, action: 'owner-invite', invite: await ownerInvite(request, deps) }
         default:
-          // create/rename/owner-invite/read-revoke/read-reconnect: not yet dispatched.
-          throw new Error('unsupported_host')
+          throw new Error('invalid_request')
       }
     }
     return managedBigbrainHostReplySchema.parse(await reply())
