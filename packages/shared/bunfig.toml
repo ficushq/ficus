@@ -1,0 +1,3 @@
+[test]
+# Wire schemas have no database/DOM dependencies. Never inherit application preloads.
+preload = ["../../scripts/check-bun-test-runtime.ts"]
