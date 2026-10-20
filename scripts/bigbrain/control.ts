@@ -24,6 +24,7 @@ import { publishIngress } from './ingress'
 import { drainStages } from './diagnostics'
 import { executeRestore, type RestoreDeps } from './restore-exec'
 import { createVault, ownerInvite, reconnectRead, renameVault, revokeRead, type LifecycleDeps } from './lifecycle'
+import { waitForVaultReady } from './provision'
 
 export const GATEWAY_UNIT = 'ficus-bigbrain-gateway.service'
 const ingress = (deps: ControlDeps) =>
@@ -166,8 +167,10 @@ async function hostEffect(
   const unit = (r: ControlReceipt) => managedPaths({ vaultId: r.receipt.vaultId }).unit
   if (request.action === 'resume-tenant') {
     if (!(await startServiceDeliberately(run, GATEWAY_UNIT))) throw new Error('operation_failed')
-    for (const r of vaults.filter(serving))
-      if (!(await startServiceDeliberately(run, unit(r)))) throw new Error('operation_failed')
+    const resumed = vaults.filter(serving)
+    for (const r of resumed) if (!(await startServiceDeliberately(run, unit(r)))) throw new Error('operation_failed')
+    // Resume promises serving vaults, exactly like create: wait until each answers on its socket.
+    for (const r of resumed) await waitForVaultReady(r, deps)
   } else {
     // Close ingress first, then every vault service; storage and identities stay for resume/restore.
     for (const target of [GATEWAY_UNIT, ...vaults.map(unit)]) {

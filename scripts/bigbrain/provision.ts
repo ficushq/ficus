@@ -181,28 +181,7 @@ export async function startVaultService(input: ControlReceipt, deps: ProvisionDe
     })
   )(record.receipt.vaultId, record.os.uid)
   if (!(await startServiceDeliberately(run, paths.unit, { enable: true }))) throw new Error('upstream_unavailable')
-  const probe =
-    deps.probeReady ??
-    (async (socket: string) => {
-      try {
-        const response = await fetch(`http://${new URL(record.receipt.origin!).host}/v1/whoami`, {
-          unix: socket,
-          redirect: 'manual',
-          signal: AbortSignal.timeout(2000),
-        })
-        await response.body?.cancel()
-        return response.status === 401
-      } catch {
-        return false
-      }
-    })
-  const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
-  let ready = false
-  for (let attempt = 0; attempt < 30 && !ready; attempt++) {
-    ready = await probe(socket)
-    if (!ready) await sleep(500)
-  }
-  if (!ready) throw new Error('upstream_unavailable')
+  await waitForVaultReady(record, deps)
   if (record.phase === 'reader_ready') {
     // The escrowed Ficus credential must authenticate as exactly the read-only agent reader of
     // THIS store (this first authenticated call also materializes the store's identity file).
@@ -251,4 +230,36 @@ export async function markReady(input: ControlReceipt, deps: ProvisionDeps): Pro
   if (record.phase !== 'service_started' || record.receipt.upstreamVaultId === null)
     throw new Error('generation_conflict')
   return saveVaultRecord({ ...record, phase: 'ready', receipt: { ...record.receipt, state: 'ready' } }, deps)
+}
+
+/** Bounded wait (≈15 s) until the vault's native server answers on its socket. `Type=simple`
+ * units report "started" before Bun binds the socket, so every deliberate start that promises a
+ * serving vault (create, resume) waits here; never longer, never retried silently. */
+export async function waitForVaultReady(
+  record: ControlReceipt,
+  deps: Pick<ProvisionDeps, 'probeReady' | 'sleep'>
+): Promise<void> {
+  const socket = vaultSocketPath(record.receipt.vaultId)
+  const probe =
+    deps.probeReady ??
+    (async (socket: string) => {
+      try {
+        const response = await fetch(`http://${new URL(record.receipt.origin!).host}/v1/whoami`, {
+          unix: socket,
+          redirect: 'manual',
+          signal: AbortSignal.timeout(2000),
+        })
+        await response.body?.cancel()
+        return response.status === 401
+      } catch {
+        return false
+      }
+    })
+  const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
+  let ready = false
+  for (let attempt = 0; attempt < 30 && !ready; attempt++) {
+    ready = await probe(socket)
+    if (!ready) await sleep(500)
+  }
+  if (!ready) throw new Error('upstream_unavailable')
 }

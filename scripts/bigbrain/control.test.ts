@@ -32,7 +32,7 @@ const envelope = (fields: object) => ({
   ...fields,
 })
 
-async function fixture(options: { backupTimer?: boolean; gateway?: boolean } = {}) {
+async function fixture(options: { backupTimer?: boolean; gateway?: boolean; ready?: boolean } = {}) {
   const outer = await mkdtemp(join(tmpdir(), 'bigbrain-control-'))
   roots.push(outer)
   const root = join(outer, 'state')
@@ -117,6 +117,11 @@ async function fixture(options: { backupTimer?: boolean; gateway?: boolean } = {
   }
   const deps = {
     ingress: async () => void trace.push('ingress'),
+    probeReady: async (socket: string) => {
+      trace.push(`ready:${socket.split('/').at(-2)}`)
+      return options.ready !== false
+    },
+    sleep: async () => {},
     root,
     etc,
     uid,
@@ -201,8 +206,23 @@ test('suspend persists the new epoch/effect before stopping ingress and vaults; 
     effectId: '88888888-8888-4888-8888-888888888888',
   })
   expect(await dispatchHostRequest(resume, f.deps)).toMatchObject({ ok: true, hostEpoch: 3 })
-  expect(f.trace).toEqual([`start:${GATEWAY_UNIT}`, `start:ficus-bigbrain@${A}.service`, 'ingress'])
+  // Resume waits until each serving vault answers on its socket before republishing ingress.
+  expect(f.trace).toEqual([`start:${GATEWAY_UNIT}`, `start:ficus-bigbrain@${A}.service`, `ready:${A}`, 'ingress'])
   expect(await host(f)).toMatchObject({ hostEpoch: 3, hostState: 'active' })
+})
+
+test('a resumed vault that never answers fails the effect, leaving it incomplete for a retry', async () => {
+  const f = await fixture({ ready: false })
+  const suspend = envelope({ action: 'suspend-tenant', hostEpoch: 2, previousHostEpoch: 1, effectId: EFFECT })
+  expect(await dispatchHostRequest(suspend, f.deps)).toMatchObject({ ok: true })
+  const resume = envelope({
+    action: 'resume-tenant',
+    hostEpoch: 3,
+    previousHostEpoch: 2,
+    effectId: '88888888-8888-4888-8888-888888888888',
+  })
+  expect(await dispatchHostRequest(resume, f.deps)).toMatchObject({ ok: false, code: 'upstream_unavailable' })
+  expect(await host(f)).toMatchObject({ hostEpoch: 3, effect: { completed: false } })
 })
 
 test('delete is fenced by exact name and generation, then removes only that vault and replays', async () => {
