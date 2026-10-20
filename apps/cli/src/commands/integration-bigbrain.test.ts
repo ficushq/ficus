@@ -72,12 +72,11 @@ describe('integration bigbrain vault', () => {
     ])
   })
 
-  test('create sends a fresh request ID, the name and the owner handle', async () => {
-    await run(['create', '--name', 'Research', '--handle', 'ada'])
+  test('create sends only a fresh request ID and the name: the owner in BigBrain is always ficus', async () => {
+    await run(['create', '--name', 'Research'])
     expect(apiPost).toHaveBeenCalledWith('/api/integrations/providers/bigbrain/shared-vaults', {
       requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       displayName: 'Research',
-      ownerHandle: 'ada',
     })
   })
 

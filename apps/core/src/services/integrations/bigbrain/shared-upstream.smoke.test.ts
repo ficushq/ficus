@@ -276,7 +276,7 @@ test.skipIf(!artifact && !required)(
         body: 'The human native client can still contribute.',
       })
     } finally {
-      await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.ownerUserId, owners))
+      await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.hostOwnerUserId, owners))
       if (owners.length) await db.delete(users).where(inArray(users.id, owners))
       await fixtures?.dispose()
       await rm(root, { recursive: true, force: true })
@@ -450,7 +450,7 @@ async function createdThroughReconciler(fixtures: Awaited<ReturnType<typeof nati
       vaultId,
       requestId: randomUUID(),
       displayName: name,
-      ownerUserId: user!.id,
+      hostOwnerUserId: user!.id,
       ownerHandle: 'ada',
       ownerDisplay: 'Ada',
       actorUserId: user!.id,

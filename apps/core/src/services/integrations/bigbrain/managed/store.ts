@@ -67,7 +67,7 @@ const createRequestSchema = z
     vaultId: uuid.optional(),
     requestId: uuid,
     displayName: label,
-    ownerUserId: uuid,
+    hostOwnerUserId: uuid,
     ownerHandle: managedBigbrainOwnerSchema.shape.handle,
     ownerDisplay: managedBigbrainOwnerSchema.shape.display,
     actorUserId: uuid,
@@ -125,7 +125,7 @@ export const managedVaultStore = {
     const request = parsed.data
     const inputHash = hash([
       request.displayName,
-      request.ownerUserId,
+      request.hostOwnerUserId,
       request.ownerHandle,
       request.ownerDisplay,
       request.recipe.limits,
@@ -167,7 +167,7 @@ export const managedVaultStore = {
           .insert(managedBigbrainVaults)
           .values({
             id,
-            ownerUserId: request.ownerUserId,
+            hostOwnerUserId: request.hostOwnerUserId,
             ownerHandle: request.ownerHandle,
             ownerDisplay: request.ownerDisplay,
             displayName: request.displayName,

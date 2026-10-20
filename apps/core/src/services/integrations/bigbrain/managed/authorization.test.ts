@@ -7,7 +7,6 @@ import {
   ManagedVaultAuthorizationError,
   canEnumerateManagedVaults,
   requireManagedVaultManager,
-  requireManagedVaultOwner,
   requireManagedVaultSquadManager,
 } from './authorization'
 
@@ -61,18 +60,6 @@ test('a disabled human or one without the BigBrain write permission is refused',
   const otherProvider = await userWith(['integrations:write:notion'])
   expect(await refusal(requireManagedVaultManager(human(otherProvider)))).toBe('permission_required')
   expect(await refusal(requireManagedVaultManager(human(crypto.randomUUID())))).toBe('enabled_human_required')
-})
-
-test('owner links require the recorded owner; another administrator cannot impersonate them', async () => {
-  const owner = await userWith(['integrations:write:bigbrain'])
-  const admin = await userWith(['*'])
-  expect(await requireManagedVaultOwner(human(owner), { ownerUserId: owner })).toBe(owner)
-  expect(await refusal(requireManagedVaultOwner(human(admin), { ownerUserId: owner }))).toBe('owner_required')
-  // The owner must still hold management authority.
-  const formerManager = await userWith([])
-  expect(await refusal(requireManagedVaultOwner(human(formerManager), { ownerUserId: formerManager }))).toBe(
-    'permission_required'
-  )
 })
 
 test('attaching to a squad additionally requires that squad’s integrations:write', async () => {

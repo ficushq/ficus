@@ -142,6 +142,18 @@ export const managedBigbrainOwnerSchema = z
   .strict()
 export type ManagedBigbrainOwner = z.infer<typeof managedBigbrainOwnerSchema>
 
+/**
+ * The upstream owner of every vault Core creates. Shared vaults belong to the Ficus instance, not
+ * a person: BigBrain still needs one owner member, so it is `ficus`. `userId` is an opaque anchor
+ * the host helper records at create and matches on owner-invite (never a Ficus user); vaults
+ * created before this rule keep their creator's ID as their anchor.
+ */
+export const MANAGED_BIGBRAIN_FICUS_OWNER: ManagedBigbrainOwner = Object.freeze({
+  userId: '00000000-0000-4000-8000-00000000f1c5',
+  handle: 'ficus',
+  display: 'Ficus',
+})
+
 /** Operator ceilings: API callers may not choose/expand these budgets. */
 export const managedBigbrainLimitsSchema = z
   .object({

@@ -21,7 +21,7 @@ function vault(name: string, patch: Partial<ManagedVault> = {}) {
   const row = {
     id,
     displayName: name,
-    ownerUserId: crypto.randomUUID(),
+    hostOwnerUserId: crypto.randomUUID(),
     connectionId,
     upstreamVaultId,
     state: 'ready',
@@ -161,7 +161,7 @@ test('inventory lists only assigned, readable vaults and discloses no owner, ori
   const listed = (await f.run('bigbrain_shared_vaults', {})) as { vaults: Record<string, unknown>[] }
   expect(listed.vaults.map((v) => v.displayName).sort()).toEqual(['Design', 'Research'])
   const text = JSON.stringify(listed)
-  for (const leak of ['Unassigned', 'Revoked', research.row.ownerUserId, research.row.origin!, 'sv_'])
+  for (const leak of ['Unassigned', 'Revoked', research.row.hostOwnerUserId, research.row.origin!, 'sv_'])
     expect(text).not.toContain(leak)
   expect(f.reads).toEqual([])
 })

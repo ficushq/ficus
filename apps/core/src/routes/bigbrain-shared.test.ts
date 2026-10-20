@@ -76,13 +76,14 @@ test('the owner device link is no-store and no-referrer', async () => {
 
 test('refusals are code-only with the right status; unexpected errors are not swallowed', async () => {
   for (const [error, status, body] of [
-    [new ManagedVaultAuthorizationError('owner_required'), 403, { code: 'owner_required' }],
+    [new ManagedVaultAuthorizationError('permission_required'), 403, { code: 'permission_required' }],
     [
       new ManagedVaultServiceError('generation_conflict', 409, 4),
       409,
       { code: 'generation_conflict', currentGeneration: 4 },
     ],
     [new ManagedVaultServiceError('confirmation_mismatch', 409), 409, { code: 'confirmation_mismatch' }],
+    [new ManagedVaultServiceError('owner_unavailable', 409), 409, { code: 'owner_unavailable' }],
     [new ManagedBigbrainPlatformError('host_unreachable', true), 503, { code: 'host_unreachable', retryable: true }],
   ] as const) {
     const { hono } = app(user, {

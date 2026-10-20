@@ -4,8 +4,9 @@
  * Management requires a LITERAL enabled human session (`identity.type === 'user'`) holding the
  * instance `integrations:write:bigbrain` permission. Agents, delegated user-assistant agents,
  * system tokens and legacy/bootstrap identities are refused even with identical or wildcard
- * scopes — this deliberately does not resolve an acting user. Owner links additionally require
- * the vault's stored owner; squad attach/detach additionally requires that squad's
+ * scopes — this deliberately does not resolve an acting user. Vaults belong to the instance, so
+ * the same permission also covers owner device links (which connect a BigBrain app as the
+ * vault's upstream `ficus` owner); squad attach/detach additionally requires that squad's
  * `integrations:write`.
  */
 import { eq } from 'drizzle-orm'
@@ -16,7 +17,6 @@ export type ManagedVaultAuthorizationCode =
   | 'human_required'
   | 'enabled_human_required'
   | 'permission_required'
-  | 'owner_required'
   | 'squad_permission_required'
 
 export class ManagedVaultAuthorizationError extends Error {
@@ -42,7 +42,8 @@ async function requireEnabledHuman(identity: Identity | undefined, executor: Exe
   return identity.userId
 }
 
-/** Create, rename, retry, revoke/reconnect read access, delete. Returns the acting user ID. */
+/** Create, rename, retry, owner device links, revoke/reconnect read access, delete. Returns the
+ * acting user ID. */
 export async function requireManagedVaultManager(
   identity: Identity | undefined,
   executor: Executor = db
@@ -50,20 +51,6 @@ export async function requireManagedVaultManager(
   const userId = await requireEnabledHuman(identity, executor)
   if (!(await hasUserPermissionWithExecutor(executor, userId, MANAGED_VAULT_MANAGE_PERMISSION)))
     throw new ManagedVaultAuthorizationError('permission_required')
-  return userId
-}
-
-/** Owner device links: only the vault's recorded owner, who must still be a live manager. No
- * other administrator can mint an impersonating owner link. */
-export async function requireManagedVaultOwner(
-  identity: Identity | undefined,
-  vault: { ownerUserId: string | null },
-  executor: Executor = db
-): Promise<string> {
-  const userId = await requireManagedVaultManager(identity, executor)
-  // A vault whose owner was deleted has no owner in Ficus: nobody may mint its owner links.
-  if (vault.ownerUserId === null || userId !== vault.ownerUserId)
-    throw new ManagedVaultAuthorizationError('owner_required')
   return userId
 }
 
@@ -79,7 +66,7 @@ export async function requireManagedVaultSquadManager(
   return userId
 }
 
-/** Whether this identity may enumerate the whole managed pool (names, owners, state). Ordinary
+/** Whether this identity may enumerate the whole managed pool (names, owner handles, state). Ordinary
  * agents and squad readers see only their assigned vaults, through the assignment. */
 export async function canEnumerateManagedVaults(
   identity: Identity | undefined,

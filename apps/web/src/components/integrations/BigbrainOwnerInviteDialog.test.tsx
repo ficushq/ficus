@@ -13,8 +13,8 @@ const SECRET_FRAGMENT = 'S'.repeat(43)
 const vault: ManagedBigbrainVault = {
   vaultId: '11111111-1111-4111-8111-111111111111',
   displayName: 'Research',
-  ownerUserId: 'owner',
-  isOwner: true,
+  ownerHandle: 'ficus',
+  ownerLinksAvailable: true,
   state: 'ready',
   readAccess: 'active',
   desiredGeneration: 2,
@@ -68,7 +68,16 @@ describe('BigbrainOwnerInviteDialog', () => {
   test('requests a link only on an explicit click, with the vault’s current generation', async () => {
     await render(true)
     expect(requests).toHaveLength(0)
-    expect(document.body.textContent).toContain('Anyone holding the link gets your access')
+    const text = document.body.textContent!
+    // The trade-off is stated before any link exists: full owner access, one shared identity.
+    expect(text).toContain('Connect owner device to')
+    expect(text).toContain('as its owner, ficus')
+    expect(text).toContain('reads and writes everything and manages members')
+    expect(text).toContain('Anyone holding the link gets that access')
+    expect(text).toContain('Everyone who connects this way writes as the same owner')
+    expect(text).toContain('invite them as members from the BigBrain app')
+    expect(text).toContain('Ficus records who created each link')
+    expect(text).not.toMatch(/\byour?\b/i)
     await harness.act(async () => {
       fireEvent.click(createButton())
       await settle()

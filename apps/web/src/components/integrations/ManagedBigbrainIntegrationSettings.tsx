@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
@@ -10,13 +10,12 @@ import {
   type ManagedBigbrainVault,
 } from '../../api/integrations'
 import { ApiError } from '../../api/client'
-import { integrationQueries, queries } from '../../queryOptions'
+import { integrationQueries } from '../../queryOptions'
 import { integrationQueryKeys } from '../../queryKeys'
 import { Badge, type BadgeColor } from '../Badge'
 import { ConfirmButton } from '../ConfirmButton'
 import { LoadingContent, LoadingSurface, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { BigbrainOwnerInviteDialog } from './BigbrainOwnerInviteDialog'
-import { bigbrainHandleProblem, isValidBigbrainHandle, suggestBigbrainHandle } from './bigbrainHandle'
 
 const STATE_LABEL: Record<ManagedBigbrainVault['state'], [string, BadgeColor]> = {
   requested: ['Requested', 'queue'],
@@ -44,29 +43,23 @@ function failure(error: unknown): string {
   if (code === 'integration_disabled') return 'Enable the BigBrain integration first.'
   if (code === 'unavailable' || code === 'host_unreachable' || code === 'maintenance')
     return 'Managed BigBrain is temporarily unavailable on this server. Try again shortly.'
-  if (code === 'human_required' || code === 'permission_required' || code === 'owner_required')
-    return 'You do not have permission to do that.'
+  if (code === 'owner_unavailable') return 'Owner device links are not available for this vault.'
+  if (code === 'human_required' || code === 'permission_required') return 'You do not have permission to do that.'
   return code ? `That did not work (${code.slice(0, 40)}).` : 'That did not work. Try again.'
 }
 
-const newDraft = () => ({ requestId: crypto.randomUUID(), displayName: '', ownerHandle: null })
+const newDraft = () => ({ requestId: crypto.randomUUID(), displayName: '' })
 
 export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boolean }) {
   const client = useQueryClient()
   const vaults = useQuery(integrationQueries.managedBigbrainVaults())
-  // Only used to suggest a handle; a failed lookup simply leaves the field empty.
-  const me = useQuery({ ...queries.auth.me(), retry: false })
-  const handleIds = { hint: useId(), problem: useId() }
   // One create draft owns one request ID until it succeeds, so a retried submit is idempotent.
-  // A null handle means "not edited yet": the field shows the suggestion until the user types.
-  const [draft, setDraft] = useState<{ requestId: string; displayName: string; ownerHandle: string | null }>(newDraft)
+  const [draft, setDraft] = useState<{ requestId: string; displayName: string }>(newDraft)
   const [createError, setCreateError] = useState<string | null>(null)
   const refresh = () => client.invalidateQueries({ queryKey: integrationQueryKeys.managedBigbrainVaults() })
-  const ownerHandle = draft.ownerHandle ?? suggestBigbrainHandle(me.data)
-  const handleProblem = bigbrainHandleProblem(ownerHandle)
 
   const create = useMutation({
-    mutationFn: () => createManagedBigbrainVault({ ...draft, ownerHandle }),
+    mutationFn: () => createManagedBigbrainVault(draft),
     onMutate: () => setCreateError(null),
     onSuccess: async () => {
       setDraft(newDraft())
@@ -78,9 +71,11 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
   return (
     <section>
       <p className="mt-1 text-xs text-muted">
-        Shared vaults run on this Ficus server. People contribute from the BigBrain app; Ficus agents in squads you
-        attach can only read. Each vault has its own storage, identity and credentials, isolated from the other vaults.
-        Ficus itself can access every shared vault on this server.
+        Shared vaults run on this Ficus server and belong to it, not to one person. In BigBrain each vault&apos;s owner
+        is <span className="font-mono">ficus</span>: people who manage BigBrain here connect devices as that owner and
+        invite other members from the BigBrain app, where they write. Ficus agents in attached squads can only read.
+        Each vault has its own storage, identity and credentials, isolated from the other vaults. Ficus itself can
+        access every shared vault on this server.
       </p>
       <div className="mt-4">
         <LoadingContent
@@ -123,6 +118,10 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
           }}
         >
           <h4 className="text-sm font-medium text-primary">New shared vault</h4>
+          <p className="text-xs text-muted">
+            In BigBrain, the vault&apos;s owner is <span className="font-mono">ficus</span>. People who manage BigBrain
+            here can connect devices as that owner.
+          </p>
           <label className="flex flex-col gap-1 text-xs font-medium text-primary">
             Vault name
             <input
@@ -134,42 +133,10 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
               required
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-primary">
-            Your handle in this vault
-            <input
-              className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2 font-mono"
-              value={ownerHandle}
-              placeholder="e.g. ada"
-              autoComplete="off"
-              spellCheck={false}
-              aria-invalid={handleProblem ? true : undefined}
-              aria-describedby={handleProblem ? `${handleIds.hint} ${handleIds.problem}` : handleIds.hint}
-              onChange={(event) => setDraft({ ...draft, ownerHandle: event.target.value.toLowerCase() })}
-              disabled={create.isPending}
-              required
-            />
-          </label>
-          <div id={handleIds.hint} className="space-y-0.5 text-xs text-muted">
-            <p>
-              A name you pick now, not a BigBrain account. Members see it next to what you write. Each vault has its
-              own, and it cannot be changed later.
-            </p>
-            <p>1–64 lowercase letters, numbers, “.”, “_” or “-”, starting with a letter or number.</p>
-          </div>
-          {handleProblem && (
-            <p id={handleIds.problem} className="text-xs text-status-danger-600">
-              {handleProblem}
-            </p>
-          )}
           <button
             type="submit"
             className="ficus-button ficus-button-primary self-start rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
-            disabled={
-              create.isPending ||
-              !draft.displayName.trim() ||
-              draft.displayName !== draft.displayName.trim() ||
-              !isValidBigbrainHandle(ownerHandle)
-            }
+            disabled={create.isPending || !draft.displayName.trim() || draft.displayName !== draft.displayName.trim()}
           >
             {create.isPending ? 'Creating…' : 'Create vault'}
           </button>
@@ -231,10 +198,15 @@ function VaultRow({
           Last error: {vault.lastErrorCode}
         </p>
       )}
-      {vault.ownerUserId === null && vault.state !== 'deleted' && (
+      {/* Says before anyone clicks who the vault's owner is (BigBrain's, not a Ficus person), who
+          may connect as it, and where other members come from. */}
+      {vault.state !== 'deleted' && (
         <p className="mt-1 text-xs text-muted">
-          Owner removed from Ficus. Their devices keep working in BigBrain; Ficus can no longer create owner device
-          links for this vault.
+          Owner in BigBrain: <span className="font-mono">{vault.ownerHandle}</span>.{' '}
+          {vault.ownerLinksAvailable
+            ? 'People who manage BigBrain here can connect a device as this owner.'
+            : 'Owner device links are no longer available for this vault; existing owner devices keep working.'}{' '}
+          Other members are invited from the BigBrain app.
         </p>
       )}
       {vault.backup === 'excluded' && vault.state !== 'deleted' && (
@@ -242,19 +214,22 @@ function VaultRow({
           Last backup did not include this vault.
         </p>
       )}
-      {(canWrite || vault.isOwner) && vault.state !== 'deleted' && (
+      {canWrite && vault.state !== 'deleted' && (
         <div className="mt-2 flex flex-wrap gap-2">
           {/* Only a vault that is fully set up, published at its origin and not mid-change can
               redeem a device link; anything else would hand out a link that cannot work. */}
-          {vault.isOwner && vault.state === 'ready' && vault.pendingAction === null && vault.origin !== null && (
-            <button
-              type="button"
-              className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5"
-              onClick={() => setInviteOpen(true)}
-            >
-              Connect a device
-            </button>
-          )}
+          {vault.ownerLinksAvailable &&
+            vault.state === 'ready' &&
+            vault.pendingAction === null &&
+            vault.origin !== null && (
+              <button
+                type="button"
+                className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5"
+                onClick={() => setInviteOpen(true)}
+              >
+                Connect owner device
+              </button>
+            )}
           {canWrite && (vault.state === 'failed' || vault.retryable) && (
             <button
               type="button"
@@ -350,8 +325,8 @@ function VaultRow({
         >
           <p>
             Deleting removes this vault&apos;s server, data and every member&apos;s access now. Copies inside existing
-            Ficus server backups are not removed by this and follow your backup retention. Restoring this server from a
-            backup taken before now brings this vault back, with Ficus read access off.
+            Ficus server backups are not removed by this and follow the server&apos;s backup retention. Restoring this
+            server from a backup taken before now brings this vault back, with Ficus read access off.
           </p>
           {vault.assignedSquads.length > 0 ? (
             <div>
@@ -411,9 +386,7 @@ function VaultRow({
           {feedback.message}
         </p>
       )}
-      {vault.isOwner && (
-        <BigbrainOwnerInviteDialog vault={vault} isOpen={inviteOpen} onClose={() => setInviteOpen(false)} />
-      )}
+      {canWrite && <BigbrainOwnerInviteDialog vault={vault} isOpen={inviteOpen} onClose={() => setInviteOpen(false)} />}
     </li>
   )
 }

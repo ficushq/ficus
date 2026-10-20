@@ -1,7 +1,7 @@
 /**
  * Human lifecycle routes for managed shared BigBrain vaults, mounted under
  * `/api/integrations/providers/bigbrain/shared-vaults`. Authority is enforced in the service
- * (literal enabled human + instance permission; owner for device links). Bodies are exact
+ * (literal enabled human + instance permission, including owner device links). Bodies are exact
  * schemas; errors are codes only. The owner device link response is never cacheable.
  */
 import { Hono, type Context } from 'hono'
@@ -17,7 +17,7 @@ export function createBigbrainSharedRouter(service: ManagedVaultRouteService): H
   const handle = async (c: Context, action: (identity: Identity) => Promise<unknown>, status: 200 | 201 = 200) => {
     const identity = c.get('identity') as Identity | undefined
     if (!identity) return c.json({ error: 'Unauthorized' }, 401)
-    // The service performs the literal-human/owner authorization itself, before any effect.
+    // The service performs the literal-human/permission authorization itself, before any effect.
     c.set('authzChecked', true)
     c.header('Cache-Control', 'no-store')
     try {

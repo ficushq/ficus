@@ -16,8 +16,8 @@ const INVITE_SECRET = `https://bb-${'1'.repeat(32)}.vaults.example.com/invite#${
 const vault = (patch: Partial<ManagedBigbrainVault>): ManagedBigbrainVault => ({
   vaultId: '11111111-1111-4111-8111-111111111111',
   displayName: 'Research',
-  ownerUserId: 'owner',
-  isOwner: true,
+  ownerHandle: 'ficus',
+  ownerLinksAvailable: true,
   state: 'ready',
   readAccess: 'active',
   desiredGeneration: 3,
@@ -40,11 +40,11 @@ const research = vault({
 const design = vault({
   vaultId: '22222222-2222-4222-8222-222222222222',
   displayName: 'Design',
-  isOwner: false,
   state: 'failed',
   retryable: true,
   backup: 'excluded',
-  ownerUserId: null,
+  ownerHandle: 'ada',
+  ownerLinksAvailable: false,
   lastErrorCode: 'storage_unavailable',
 })
 
@@ -100,7 +100,6 @@ async function act(run: () => void) {
   })
 }
 const mutations = () => requests.filter((r) => r.method !== 'GET')
-const handleInput = () => container.querySelectorAll<HTMLInputElement>('form input')[1]!
 
 describe('ManagedBigbrainIntegrationSettings', () => {
   test('two named vaults each show their own state and only the applicable controls', async () => {
@@ -110,14 +109,33 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     expect(row('Research').textContent).toContain('Ficus can read')
     expect(row('Design').textContent).toContain('Failed')
     expect(row('Design').textContent).toContain('storage_unavailable')
-    // Owner device links only for the owner's ready vault; retry only where it applies.
-    expect(button('Connect a device', row('Research'))).toBeTruthy()
-    expect(button('Connect a device', row('Design'))).toBeUndefined()
+    // Owner device links only where the vault can issue them; retry only where it applies.
+    expect(button('Connect owner device', row('Research'))).toBeTruthy()
+    expect(button('Connect owner device', row('Design'))).toBeUndefined()
     expect(button('Retry', row('Design'))).toBeTruthy()
     expect(button('Retry', row('Research'))).toBeUndefined()
   })
 
-  test('device links are offered only once the owner’s vault is fully ready at its address', async () => {
+  test('each row names the vault’s owner in BigBrain and who may connect as it, before any click', async () => {
+    await render()
+    expect(row('Research').textContent).toContain(
+      'Owner in BigBrain: ficus. People who manage BigBrain here can connect a device as this owner.'
+    )
+    expect(row('Design').textContent).toContain('Owner in BigBrain: ada. Owner device links are no longer available')
+    for (const name of ['Research', 'Design'])
+      expect(row(name).textContent).toContain('Other members are invited from the BigBrain app.')
+  })
+
+  test('the card never treats the viewer as a vault owner', async () => {
+    await render(false)
+    expect(container.textContent).toContain('belong to it, not to one person')
+    expect(container.textContent).toContain("In BigBrain each vault's owner is ficus")
+    expect(container.textContent).not.toMatch(/\byou(r)?\b/i)
+    await render(true)
+    expect(container.textContent).not.toMatch(/\byou(r)?\b/i)
+  })
+
+  test('device links are offered only once the vault is fully ready at its address', async () => {
     const pending = (displayName: string, patch: Partial<ManagedBigbrainVault>) =>
       vault({ ...research, vaultId: crypto.randomUUID(), displayName, ...patch })
     await render(true, [
@@ -127,9 +145,9 @@ describe('ManagedBigbrainIntegrationSettings', () => {
       pending('Unpublished', { origin: null }),
       pending('Degraded', { state: 'degraded' }),
     ])
-    expect(button('Connect a device', row('Research'))).toBeTruthy()
+    expect(button('Connect owner device', row('Research'))).toBeTruthy()
     for (const name of ['Settingup', 'Renaming', 'Unpublished', 'Degraded'])
-      expect(button('Connect a device', row(name))).toBeUndefined()
+      expect(button('Connect owner device', row(name))).toBeUndefined()
   })
 
   test('a failure in one vault row stays in that row and sends that vault’s own generation', async () => {
@@ -148,9 +166,10 @@ describe('ManagedBigbrainIntegrationSettings', () => {
 
   test('a retried create reuses the same request ID; success starts a fresh draft', async () => {
     await render()
-    const [name, handle] = [...container.querySelectorAll<HTMLInputElement>('form input')]
+    const [name, ...others] = [...container.querySelectorAll<HTMLInputElement>('form input')]
+    // The vault name is the only input: every new vault is owned by `ficus` in BigBrain.
+    expect(others).toEqual([])
     await act(() => fireEvent.input(name!, { target: { value: 'Archive' } }))
-    await act(() => fireEvent.input(handle!, { target: { value: 'Ada' } }))
     respond = (url, method) =>
       method === 'GET'
         ? Response.json({ vaults: [research] })
@@ -160,49 +179,17 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     respond = (url, method) => (method === 'GET' ? Response.json({ vaults: [research] }) : Response.json(research))
     await act(() => fireEvent.submit(name!.closest('form')!))
     const [first, second] = mutations().map((r) => JSON.parse(r.body))
-    expect(first).toEqual({ requestId: expect.any(String), displayName: 'Archive', ownerHandle: 'ada' })
+    expect(first).toEqual({ requestId: expect.any(String), displayName: 'Archive' })
     expect(second.requestId).toBe(first.requestId)
     expect(name!.value).toBe('')
   })
 
-  test('the handle field explains it is a new per-vault name and starts from a suggestion', async () => {
+  test('the create form says the new vault is owned by ficus in BigBrain', async () => {
     await render()
     const form = container.querySelector('form')!
-    expect(form.textContent).toContain('Your handle in this vault')
-    expect(form.textContent).toContain('not a BigBrain account')
-    expect(form.textContent).toContain('Members see it next to what you write')
-    expect(form.textContent).toContain('cannot be changed later')
-    expect(form.textContent).toContain('1–64 lowercase letters, numbers')
-    expect(handleInput().value).toBe('ada.lovelace')
-    expect(handleInput().placeholder).toBe('e.g. ada')
+    expect(form.textContent).toContain("In BigBrain, the vault's owner is ficus.")
+    expect(form.textContent).not.toContain('handle')
     await act(() => fireEvent.input(form.querySelector('input')!, { target: { value: 'Archive' } }))
-    expect(button('Create vault').disabled).toBe(false)
-    await act(() => fireEvent.submit(form))
-    expect(JSON.parse(mutations()[0]!.body)).toMatchObject({ displayName: 'Archive', ownerHandle: 'ada.lovelace' })
-  })
-
-  test('an invalid handle is explained inline and blocks submit until fixed', async () => {
-    await render()
-    await act(() => fireEvent.input(container.querySelector('form input')!, { target: { value: 'Archive' } }))
-    for (const [value, message] of [
-      ['ada lovelace', 'Use only lowercase letters, numbers'],
-      ['-ada', 'Start with a lowercase letter or number.'],
-      ['ficus-reader', '“ficus-reader” is reserved.'],
-    ] as const) {
-      await act(() => fireEvent.input(handleInput(), { target: { value } }))
-      expect(handleInput().getAttribute('aria-invalid')).toBe('true')
-      const describedBy = handleInput().getAttribute('aria-describedby')!.split(' ')
-      expect(describedBy.map((id) => document.getElementById(id)?.textContent).join(' ')).toContain(message)
-      expect(button('Create vault').disabled).toBe(true)
-    }
-    // Clearing the suggestion leaves an empty, required field with no error shown.
-    await act(() => fireEvent.input(handleInput(), { target: { value: '' } }))
-    expect(handleInput().value).toBe('')
-    expect(handleInput().hasAttribute('aria-invalid')).toBe(false)
-    expect(button('Create vault').disabled).toBe(true)
-    await act(() => fireEvent.input(handleInput(), { target: { value: 'Ada_L' } }))
-    expect(handleInput().value).toBe('ada_l')
-    expect(handleInput().hasAttribute('aria-invalid')).toBe(false)
     expect(button('Create vault').disabled).toBe(false)
   })
 
@@ -239,10 +226,11 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     })
   })
 
-  test('a vault whose owner was deleted says so and offers no device link', async () => {
+  test('a vault that can no longer issue owner device links says so and offers none', async () => {
     await render()
-    expect(row('Research').textContent).not.toContain('Owner removed')
-    expect(row('Design').textContent).toContain('Owner removed from Ficus')
+    expect(row('Research').textContent).not.toContain('no longer available')
+    expect(row('Design').textContent).toContain('Owner device links are no longer available for this vault')
+    expect(button('Connect owner device', row('Design'))).toBeUndefined()
   })
 
   test('a vault left out of the last backup says so', async () => {
@@ -251,11 +239,10 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     expect(row('Research').textContent).not.toContain('Last backup did not include')
   })
 
-  test('without write permission only the owner’s device link remains', async () => {
+  test('without write permission there are no actions, owner device links included', async () => {
     await render(false)
-    expect(button('Rename', row('Research'))).toBeUndefined()
-    expect(button('Delete', row('Research'))).toBeUndefined()
-    expect(button('Connect a device', row('Research'))).toBeTruthy()
+    for (const label of ['Rename', 'Delete', 'Connect owner device', 'Revoke Ficus read access'])
+      expect(button(label, row('Research'))).toBeUndefined()
     expect(container.querySelector('form')).toBeNull()
   })
 
@@ -265,7 +252,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
       method === 'GET'
         ? Response.json({ vaults: [research, design] })
         : Response.json({ inviteUrl: INVITE_SECRET, expiresAt: new Date(Date.now() + 3_600_000).toISOString() })
-    await act(() => fireEvent.click(button('Connect a device', row('Research'))))
+    await act(() => fireEvent.click(button('Connect owner device', row('Research'))))
     expect(mutations()).toHaveLength(0)
     await act(() => fireEvent.click(button('Create device link', document.body)))
     expect(document.querySelector<HTMLInputElement>('input[aria-label="Owner device link"]')?.value).toBe(INVITE_SECRET)

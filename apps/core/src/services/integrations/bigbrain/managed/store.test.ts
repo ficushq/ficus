@@ -11,7 +11,7 @@ import { ManagedVaultStoreError, managedVaultStore as store, type ManagedVault }
 
 const createdUsers: string[] = []
 afterEach(async () => {
-  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.ownerUserId, createdUsers))
+  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.hostOwnerUserId, createdUsers))
   await db.delete(users).where(inArray(users.id, createdUsers.splice(0)))
 })
 async function human(): Promise<string> {
@@ -34,7 +34,7 @@ const createInput = (displayName: string, requestId: string, ownerUserId: string
     vaultId,
     requestId,
     displayName,
-    ownerUserId,
+    hostOwnerUserId: ownerUserId,
     ownerHandle: 'ada',
     ownerDisplay: 'Ada',
     actorUserId: ownerUserId,
@@ -256,7 +256,7 @@ test('invalid input never writes', async () => {
   ])
     expect((await refusal(store.request(input))).code).toBe('invalid_request')
   expect(
-    await db.select().from(managedBigbrainVaults).where(eq(managedBigbrainVaults.ownerUserId, owner))
+    await db.select().from(managedBigbrainVaults).where(eq(managedBigbrainVaults.hostOwnerUserId, owner))
   ).toHaveLength(0)
 })
 
