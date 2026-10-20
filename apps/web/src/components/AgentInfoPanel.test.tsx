@@ -184,7 +184,7 @@ const bigbrainConnection: IntegrationConnection = {
   enabled: true,
   authState: 'authenticated',
   healthState: 'healthy',
-  grantedScopes: ['load_memory', 'search_vault', 'read_note', 'drop'],
+  grantedScopes: ['mcp:load_memory', 'mcp:search_vault', 'mcp:read_note', 'mcp:drop'],
   validatedAt: '2026-01-01',
   validationExpiresAt: '2026-01-02',
   lastErrorCode: null,

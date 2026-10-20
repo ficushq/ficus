@@ -414,7 +414,7 @@ describe('SettingsPage global integration RBAC', () => {
     enabled: true,
     authState: 'authenticated',
     healthState: 'healthy',
-    grantedScopes: ['load_memory', 'search_vault', 'read_note', 'drop'],
+    grantedScopes: ['mcp:load_memory', 'mcp:search_vault', 'mcp:read_note', 'mcp:drop'],
     validatedAt: '2026-01-10T00:00:00Z',
     validationExpiresAt: '2026-02-10T00:00:00Z',
     lastErrorCode: null,
