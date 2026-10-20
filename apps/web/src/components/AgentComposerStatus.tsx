@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import type { ExecutionStatus } from '@ficus/shared'
 import { ActionPopup } from './ThemedPopup'
 import { Modal } from './Modal'
-import { formatTokens } from '../lib/format'
+import { formatContextPercent, formatTokens } from '../lib/format'
 
 /** A turn's state worth saying in words; plain "running" is already the Stop button and the working row. */
 const STATUS_LABEL: Partial<Record<ExecutionStatus | 'compacting' | 'resetting', string>> = {
@@ -61,7 +61,8 @@ export function AgentComposerStatus({
 }: {
   /** The execution's (or the agent's compacting/resetting) state, if any. */
   status?: ExecutionStatus | 'compacting' | 'resetting'
-  context?: { percent: number; tokens: number }
+  /** The session's current context: what the next request carries, not the session's cumulative usage. */
+  context?: { percent: number; tokens: number; contextWindow: number }
   /** Idle and allowed: Compact and Reset are only offered then. */
   canManageSession: boolean
   onCompact: () => void
@@ -69,7 +70,10 @@ export function AgentComposerStatus({
 }) {
   const [confirmReset, setConfirmReset] = useState(false)
   const label = status ? STATUS_LABEL[status] : undefined
-  const percent = context ? Math.round(context.percent) : 0
+  const percent = context ? formatContextPercent(context.percent) : ''
+  const summary = context
+    ? `Context ${percent} used · ${formatTokens(context.tokens)} of ${formatTokens(context.contextWindow)} tokens`
+    : ''
 
   return (
     <div className="flex min-w-0 items-center gap-1.5">
@@ -80,9 +84,9 @@ export function AgentComposerStatus({
       )}
       {context && (
         <ActionPopup
-          label={`Context ${percent}% used`}
-          title={`Context ${percent}% used · ${formatTokens(context.tokens)} tokens`}
-          heading={`Context ${percent}% used · ${formatTokens(context.tokens)} tokens`}
+          label={`Context ${percent} used`}
+          title={summary}
+          heading={summary}
           width={260}
           className="ficus-button ficus-button-ghost flex min-h-[44px] items-center gap-1 rounded-md px-2 text-xs tabular-nums md:min-h-0 md:py-1.5"
           items={[
@@ -108,7 +112,7 @@ export function AgentComposerStatus({
           ]}
         >
           <ContextRing percent={context.percent} />
-          <span>{percent}%</span>
+          <span>{percent}</span>
         </ActionPopup>
       )}
       <Modal

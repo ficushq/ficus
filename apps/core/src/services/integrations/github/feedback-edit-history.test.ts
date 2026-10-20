@@ -112,14 +112,62 @@ describe('decideGitHubEditors', () => {
       databaseId: 700,
       body: 'Body',
       title: 'Title',
-      renames: { totalCount: 0, nodes: [] },
+      renames: { pageInfo: { hasNextPage: false }, nodes: [] },
     }
     expect(decideGitHubEditors(pr, node(base))).toEqual({ attribution: 'creation', editor: null, editors: [] })
     expect(
-      decideGitHubEditors(pr, node({ ...base, renames: { totalCount: 1, nodes: [{ actor: actor(agent) }] } }))
+      decideGitHubEditors(
+        pr,
+        node({ ...base, renames: { pageInfo: { hasNextPage: false }, nodes: [{ actor: actor(agent) }] } })
+      )
     ).toEqual({ attribution: 'verified_edit', editor: agent, editors: [agent] })
     expect(decideGitHubEditors(pr, node({ ...base, title: 'Other' }))).toBeNull()
-    expect(decideGitHubEditors(pr, node({ ...base, renames: { totalCount: 2, nodes: [] } }))).toBeNull()
+    expect(
+      decideGitHubEditors(pr, node({ ...base, renames: { pageInfo: { hasNextPage: true }, nodes: [] } }))
+    ).toBeNull()
+  })
+
+  test.each(['issue', 'pull_request'] as const)(
+    '%s: a complete filtered rename history ignores the unfiltered timeline count',
+    (objectKind) => {
+      const target: GitHubEditHistoryTarget = { ...review, objectKind, title: 'Title' }
+      const parent = {
+        __typename: objectKind === 'issue' ? 'Issue' : 'PullRequest',
+        title: 'Title',
+        ...edited(actor(agent)),
+      }
+      // GitHub returned totalCount=112 but no rename nodes for the affected PR.
+      // That count includes ordinary timeline events, even with itemTypes filtering.
+      for (const nodes of [[], [{ actor: actor(agent) }, { actor: actor(noah) }]]) {
+        expect(
+          decideGitHubEditors(
+            target,
+            node({ ...parent, renames: { totalCount: 112, pageInfo: { hasNextPage: false }, nodes } })
+          )
+        ).toEqual({
+          attribution: 'verified_edit',
+          editor: agent,
+          editors: nodes.length ? [noah, agent] : [agent],
+        })
+      }
+    }
+  )
+
+  test('filtered rename history still fails closed on truncation, missing pagination or unknown actors', () => {
+    const target: GitHubEditHistoryTarget = { ...review, objectKind: 'pull_request', title: 'Title' }
+    for (const renames of [
+      null,
+      { nodes: [] },
+      { pageInfo: {}, nodes: [] },
+      { pageInfo: { hasNextPage: null }, nodes: [] },
+      { pageInfo: { hasNextPage: 'false' }, nodes: [] },
+      { pageInfo: { hasNextPage: false } },
+      { totalCount: 1, pageInfo: { hasNextPage: true }, nodes: [{ actor: actor(agent) }] },
+      { pageInfo: { hasNextPage: false }, nodes: [null] },
+      { pageInfo: { hasNextPage: false }, nodes: [{ actor: null }] },
+    ]) {
+      expect(decideGitHubEditors(target, node({ __typename: 'PullRequest', title: 'Title', renames }))).toBeNull()
+    }
   })
 })
 

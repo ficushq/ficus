@@ -161,13 +161,103 @@ describe('relayed answer resolution by the asking agent', () => {
     }
     expect((await resolveAs(token, questionId, { answer: 'yes', source: 'x'.repeat(2001) })).status).toBe(400)
     expect((await resolveAs(token, crypto.randomUUID(), { answer: 'yes', source: SOURCE })).status).toBe(404)
-    expect((await resolveAs(token, questionId.slice(0, 8), { answer: 'yes', source: SOURCE })).status).toBe(404)
+    expect((await resolveAs(token, 'not-a-uuid', { answer: 'yes', source: SOURCE })).status).toBe(404)
+    expect((await resolveAs(token, `${questionId.slice(0, 35)}z`, { answer: 'yes', source: SOURCE })).status).toBe(404)
 
     await db
       .update(agentQuestions)
       .set({ status: 'dismissed', dismissedAt: new Date() })
       .where(eq(agentQuestions.id, questionId))
     expect((await resolveAs(token, questionId, { answer: 'yes', source: SOURCE })).status).toBe(409)
+  })
+})
+
+describe('question ids accept a unique UUID prefix', () => {
+  const SOURCE = 'https://github.com/ficushq/ficus/pull/1#issuecomment-2'
+
+  function post(token: string, path: string, body: unknown) {
+    return app.request(`/api/agent-questions/${path}`, {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
+  async function insertQuestion(id: string) {
+    await db.insert(agentQuestions).values({
+      id,
+      agentId: agent.id,
+      squadId: squad.id,
+      questionData: { questions: [{ id: 'q', type: 'text', question: 'Proceed?' }] },
+    })
+  }
+
+  test('the asking agent resolves with the 8-character prefix printed by the CLI', async () => {
+    const token = (await createTestAgentToken({ agentId: agent.id, squadId: squad.id })).token
+    const response = await post(token, `${questionId.slice(0, 8)}/resolve`, { answer: 'Go.', source: SOURCE })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ id: questionId, status: 'answered', answerSource: SOURCE })
+  })
+
+  test('answer, blocking, and dismiss accept prefixes; uppercase prefixes match too', async () => {
+    const runner = await createTestUser({ prefix: `${prefix}-prefix-runner-${crypto.randomUUID()}` })
+    const runRole = await createTestRole({
+      prefix: `${prefix}-prefix-run-${crypto.randomUUID()}`,
+      permissions: ['agents:run'],
+    })
+    await assignRole({ userId: runner.id, roleId: runRole.id, scope: 'squad', squadId: squad.id })
+    invalidatePermissionCache()
+
+    const blocking = await post(runner.token, `${questionId.slice(0, 8).toUpperCase()}/blocking`, { blocking: true })
+    expect(blocking.status).toBe(200)
+    expect(await blocking.json()).toMatchObject({ id: questionId, status: 'open' })
+
+    const answered = await post(runner.token, `${questionId.slice(0, 12)}/answer`, { answer: 'Yes' })
+    expect(answered.status).toBe(200)
+    expect(await answered.json()).toMatchObject({ id: questionId, status: 'answered', answer: 'Yes' })
+
+    const otherId = crypto.randomUUID()
+    await insertQuestion(otherId)
+    const dismissed = await app.request(`/api/agent-questions/${otherId.slice(0, 8)}`, {
+      method: 'DELETE',
+      headers: authHeaders(runner.token),
+    })
+    expect(dismissed.status).toBe(200)
+    expect(await dismissed.json()).toMatchObject({ id: otherId, status: 'dismissed' })
+  })
+
+  test('an ambiguous prefix is rejected with the ambiguity message; an unknown prefix is 404', async () => {
+    const token = (await createTestAgentToken({ agentId: agent.id, squadId: squad.id })).token
+    const shared = crypto.randomUUID().slice(0, 8)
+    const first = `${shared}${crypto.randomUUID().slice(8)}`
+    const second = `${shared}${crypto.randomUUID().slice(8)}`
+    await insertQuestion(first)
+    await insertQuestion(second)
+
+    const ambiguous = await post(token, `${shared}/resolve`, { answer: 'yes', source: SOURCE })
+    expect(ambiguous.status).toBe(400)
+    expect(await ambiguous.json()).toEqual({
+      error: `Ambiguous question ID prefix "${shared}" matches multiple records`,
+    })
+    // A longer, unique prefix disambiguates; the full id is passed downstream.
+    const unique = await post(token, `${first.slice(0, 20)}/resolve`, { answer: 'yes', source: SOURCE })
+    expect(unique.status).toBe(200)
+    expect(await unique.json()).toMatchObject({ id: first, status: 'answered' })
+
+    const unknown = await post(token, `${crypto.randomUUID().slice(0, 13)}/resolve`, { answer: 'yes', source: SOURCE })
+    expect(unknown.status).toBe(404)
+    expect(await unknown.json()).toEqual({ error: 'Question not found' })
+  })
+
+  test('prefix lookup keeps the asking-agent authorization', async () => {
+    const otherAgent = await Agent.create({ agentTypeId: `${prefix}-type`, squadId: squad.id })
+    try {
+      const otherToken = (await createTestAgentToken({ agentId: otherAgent.id, squadId: squad.id })).token
+      const response = await post(otherToken, `${questionId.slice(0, 8)}/resolve`, { answer: 'yes', source: SOURCE })
+      expect(response.status).toBe(403)
+    } finally {
+      await db.delete(agents).where(eq(agents.id, otherAgent.id))
+    }
   })
 })
 
