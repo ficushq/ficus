@@ -315,8 +315,13 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       if (!providerKeySchema.safeParse(provider).success) return c.json({ error: 'Invalid provider' }, 400)
       const denied = await authorize(c, `integrations:write:${provider}`)
       if (denied) return denied
-      if (!service.setEnabled || !(await service.catalog?.())?.some((entry) => entry.key === provider))
-        return c.json({ error: 'Unknown integration' }, 404)
+      const entry = (await service.catalog?.())?.find((entry) => entry.key === provider)
+      if (!service.setEnabled || !entry) return c.json({ error: 'Unknown integration' }, 404)
+      if (c.req.valid('json').enabled && entry.availability?.available === false)
+        return c.json(
+          { error: entry.availability.reason ?? 'Integration unavailable on this instance.', code: 'unsupported_host' },
+          400
+        )
       const identity = c.get('identity') as Identity
       return c.json(await service.setEnabled(provider, c.req.valid('json').enabled, auditActor(identity)))
     })

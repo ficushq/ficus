@@ -125,7 +125,7 @@ describe('BigbrainIntegrationSettings', () => {
       fireEvent.click(document.querySelector('[role=option]')!)
       await settle()
     })
-    const name = container.querySelector<HTMLInputElement>('input[aria-label="Bigbrain display name"]')!
+    const name = container.querySelector<HTMLInputElement>('input[aria-label="BigBrain display name"]')!
     await harness.act(async () => {
       fireEvent.input(name, { target: { value: 'Memory' } })
       name.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -179,4 +179,33 @@ describe('BigbrainIntegrationSettings', () => {
     })
     expect(requests.some((r) => r.body.includes('"confirmAssigned":true'))).toBe(true)
   })
+})
+
+test('supported Desktop with no binding explains local setup and trusted host limits, not an unsupported deployment', async () => {
+  const { client } = await render([])
+  await harness.act(async () => {
+    client.setQueryData(integrationQueryKeys.localBindings(), { state: 'setup_required', bindings: [] })
+    await settle()
+  })
+  expect(container.querySelector('h3')?.textContent).toBe('BigBrain')
+  expect(container.textContent).toContain('Desktop local runtime')
+  expect(container.textContent).toContain('HOME_DIR')
+  expect(container.textContent).toContain('OS HOME')
+  expect(container.textContent).toContain('no filesystem isolation')
+  expect(container.textContent).not.toContain('requires same-host self-hosted Ficus with an isolated')
+})
+
+test('missing executable/credential and invalid permissions give different actionable setup guidance', async () => {
+  const { client } = await render([])
+  for (const [state, text] of [
+    ['binding_unavailable', 'missing or unreadable'],
+    ['invalid_configuration', 'ownership and permissions'],
+  ] as const) {
+    await harness.act(async () => {
+      client.setQueryData(integrationQueryKeys.localBindings(), { state, bindings: [] })
+      await settle()
+    })
+    expect(container.textContent).toContain(text)
+    expect(container.textContent).not.toContain('isolated agent runtime')
+  }
 })

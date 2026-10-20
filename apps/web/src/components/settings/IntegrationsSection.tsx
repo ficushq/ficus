@@ -1,3 +1,4 @@
+import { ExternalLink } from './SettingsRow'
 import { Link } from 'react-router-dom'
 import { IntegrationCredentialSettings } from '../integrations/IntegrationCredentialSettings'
 import { IntegrationLogo } from '../integrations/IntegrationLogo'
@@ -36,7 +37,8 @@ export function IntegrationDirectoryCard({
   setExpanded: (expanded: boolean) => void
 }) {
   const client = useQueryClient()
-  const enabled = entry.enabled === true
+  const unavailable = entry.availability?.available === false
+  const enabled = entry.enabled === true && !unavailable
   const isPush = entry.key === 'apple-push' || entry.key === 'web-push'
   const pushSettings = useQuery({
     ...integrationQueries.credentialSettings(entry.key, 'service'),
@@ -95,7 +97,8 @@ export function IntegrationDirectoryCard({
             role="switch"
             aria-label={`Enable ${entry.label} globally`}
             aria-checked={enabled}
-            disabled={!canWrite || toggle.isPending}
+            aria-describedby={unavailable ? `integration-unavailable-${entry.key}` : undefined}
+            disabled={!canWrite || toggle.isPending || unavailable}
             onClick={() => toggle.mutate(!enabled)}
             className={clsx(
               'relative mt-1 h-6 w-10 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-light disabled:cursor-not-allowed disabled:opacity-50',
@@ -115,6 +118,16 @@ export function IntegrationDirectoryCard({
           {descriptions[entry.key] ?? entry.description}
         </p>
         <div className="mt-auto">
+          {entry.key === 'bigbrain' && (
+            <ExternalLink href="https://bigbrain.cool" className="mt-2 inline-flex text-sm">
+              Learn more about BigBrain
+            </ExternalLink>
+          )}
+          {unavailable && (
+            <p id={`integration-unavailable-${entry.key}`} className="mt-3 text-sm text-muted">
+              {entry.availability?.reason ?? 'Unavailable on this instance.'}
+            </p>
+          )}
           {managedPush && <p className="mt-3 text-sm text-muted">Managed by the platform.</p>}
           {enabled && entry.setup && entry.setup.state !== 'configured' && (
             <div className="mt-3 text-xs text-status-attention-600 dark:text-status-attention-400">
@@ -285,7 +298,9 @@ export function IntegrationsSection() {
       ) : (
         <div className="space-y-6">
           {[true, false].map((enabled) => {
-            const group = matches.filter((entry) => (entry.enabled === true) === enabled)
+            const group = matches.filter(
+              (entry) => (entry.enabled === true && entry.availability?.available !== false) === enabled
+            )
             if (!group.length) return null
             return (
               <section

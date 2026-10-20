@@ -1,3 +1,4 @@
+import { integrationRoutesService } from './runtime'
 import { expect, spyOn, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import { db, integrationConnections, integrationProjectionStates, settings, squads } from '../../db'
@@ -113,6 +114,63 @@ test('disabled GitHub removes credentials and tools and ignores verified webhook
     lookup.mockRestore()
     await fixture.dispose()
     await db.delete(squads).where(eq(squads.id, squad.id))
+    if (previous) await db.update(settings).set(previous).where(eq(settings.key, key))
+    else await db.delete(settings).where(eq(settings.key, key))
+  }
+})
+
+test('unsupported BigBrain refuses direct enable and masks saved intent across repository reads without erasing it', async () => {
+  const previousEnv = { ...process.env }
+  const key = INTEGRATION_ENABLED_PREFIX + 'bigbrain'
+  const [previous] = await db.select().from(settings).where(eq(settings.key, key))
+  const id = crypto.randomUUID(),
+    revision = crypto.randomUUID()
+  const repository = new DbIntegrationConnectionRepository()
+  try {
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_DESKTOP_MANAGED = '1'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
+    await db
+      .insert(settings)
+      .values({ key, value: 'true' })
+      .onConflictDoUpdate({ target: settings.key, set: { value: 'true' } })
+    await db.insert(integrationConnections).values({
+      id,
+      providerKey: 'bigbrain',
+      adapterVersion: 2,
+      displayName: 'Synthetic',
+      configuration: { bindingId: 'preserve' },
+      credentialRef: `test:${id}`,
+      materialRevision: revision,
+      validatedRevision: revision,
+      enabled: true,
+      authState: 'authenticated',
+      healthState: 'healthy',
+      validationExpiresAt: new Date(Date.now() + 60_000),
+    })
+    expect(await isIntegrationEnabled('bigbrain')).toBe(false)
+    expect((await integrationRoutesService.catalog()).find((entry) => entry.key === 'bigbrain')).toMatchObject({
+      enabled: false,
+      availability: { available: false, reason: expect.stringContaining('unavailable on Ficus Cloud') },
+    })
+    expect((await repository.get(id))?.enabled).toBe(false)
+    expect((await repository.listPoolSummaries('bigbrain')).find((row) => row.id === id)?.enabled).toBe(false)
+    await expect(setIntegrationEnabled('bigbrain', true, 'test')).rejects.toThrow('unavailable on Ficus Cloud')
+    expect((await db.select().from(settings).where(eq(settings.key, key)))[0].value).toBe('true')
+    expect((await repository.list('bigbrain')).find((row) => row.id === id)?.configuration).toEqual({
+      bindingId: 'preserve',
+    })
+    delete process.env.FICUS_MANAGED
+    expect(await isIntegrationEnabled('bigbrain')).toBe(true)
+    await integrationRoutesService.setEnabled('bigbrain', true, 'test') // eligible even without a host binding
+    expect((await integrationRoutesService.catalog()).find((entry) => entry.key === 'bigbrain')).toMatchObject({
+      enabled: true,
+      availability: { available: true },
+    })
+    expect((await repository.get(id))?.enabled).toBe(true)
+  } finally {
+    process.env = previousEnv
+    await db.delete(integrationConnections).where(eq(integrationConnections.id, id))
     if (previous) await db.update(settings).set(previous).where(eq(settings.key, key))
     else await db.delete(settings).where(eq(settings.key, key))
   }

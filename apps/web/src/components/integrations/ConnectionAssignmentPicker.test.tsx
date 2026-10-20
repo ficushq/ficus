@@ -46,7 +46,7 @@ async function render(canWrite: boolean) {
         <ConnectionAssignmentPicker
           squadId="squad-1"
           provider="bigbrain"
-          presentation={{ label: 'Bigbrain' }}
+          presentation={{ label: 'BigBrain' }}
           canRead
           canWrite={canWrite}
         />
@@ -87,7 +87,7 @@ describe('ConnectionAssignmentPicker', () => {
     const client = await render(true)
     client.setQueryData(integrationQueryKeys.pool('bigbrain'), [])
     const select = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="Bigbrain connection for this squad"]'
+      'select[aria-label="BigBrain connection for this squad"]'
     )!
     await harness.act(async () => {
       fireEvent.change(select, { target: { value: 'three' } })

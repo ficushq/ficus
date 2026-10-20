@@ -35,8 +35,8 @@ async function renderMatrix(instance: PermissionState, squad: PermissionState) {
       {
         key: 'bigbrain',
         enabled: true,
-        label: 'Bigbrain',
-        description: 'Bigbrain',
+        label: 'BigBrain',
+        description: 'BigBrain',
         capabilities: [],
         assignable: true,
         authorization: { kind: 'manual' },
@@ -88,18 +88,18 @@ test('global management permissions do not grant squad access or expose global c
 })
 test('squad readers can expand enabled cards without global management rights', async () => {
   await renderMatrix({}, { permissions: ['integrations:read'] })
-  expect(container.textContent).toContain('Bigbrain')
+  expect(container.textContent).toContain('BigBrain')
   expect(container.querySelector<HTMLButtonElement>('[role="switch"]')?.disabled).toBe(true)
   await expand()
   expect(container.textContent).toContain('Connection for this squad')
   expect(container.textContent).not.toContain('Create and validate')
-  expect(container.querySelector('select[aria-label="Bigbrain connection for this squad"]')).toBeNull()
+  expect(container.querySelector('select[aria-label="BigBrain connection for this squad"]')).toBeNull()
 })
 test('squad writers get an editable account selector, never global credential management', async () => {
   await renderMatrix({ isError: true }, { permissions: ['integrations:read', 'integrations:write'] })
   await expand()
   expect(
-    container.querySelector<HTMLSelectElement>('select[aria-label="Bigbrain connection for this squad"]')?.disabled
+    container.querySelector<HTMLSelectElement>('select[aria-label="BigBrain connection for this squad"]')?.disabled
   ).toBe(false)
   expect(container.textContent).not.toContain('Create and validate')
   expect(container.textContent).not.toContain('API base:')
@@ -115,7 +115,7 @@ test('globally disabled providers are absent from the squad directory', async ()
   const client = await renderMatrix({}, { permissions: ['integrations:read'] })
   await harness.act(async () => {
     client.setQueryData(integrationQueryKeys.catalog(), {
-      integrations: [{ key: 'bigbrain', label: 'Bigbrain', enabled: false, assignable: true }],
+      integrations: [{ key: 'bigbrain', label: 'BigBrain', enabled: false, assignable: true }],
     })
     await waitFor(() => expect(container.querySelectorAll('article').length).toBe(0))
   })

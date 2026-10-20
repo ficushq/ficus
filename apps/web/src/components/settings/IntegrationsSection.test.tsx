@@ -15,7 +15,7 @@ let scrolled: string[]
 const entries = [
   { key: 'github', label: 'GitHub', enabled: false, description: 'Code' },
   { key: 'notion', label: 'Notion', enabled: true, description: 'Knowledge' },
-  { key: 'bigbrain', label: 'Bigbrain', description: 'Memory' },
+  { key: 'bigbrain', label: 'BigBrain', description: 'Memory' },
 ]
 beforeEach(async () => {
   harness = await acquireDomHarness({ url: 'http://localhost/settings' })
@@ -76,10 +76,10 @@ test('directory is compact by default and search filters cards by name and purpo
   expect(container.querySelectorAll('article')).toHaveLength(3)
   expect([...container.querySelectorAll('article h4')].map((heading) => heading.textContent)).toEqual([
     'Notion',
-    'Bigbrain',
+    'BigBrain',
     'GitHub',
   ])
-  expect(container.querySelector('[aria-label="Enable Bigbrain globally"]')?.getAttribute('aria-checked')).toBe('false')
+  expect(container.querySelector('[aria-label="Enable BigBrain globally"]')?.getAttribute('aria-checked')).toBe('false')
   expect(container.querySelector('[aria-label="Enabled integrations"]')?.textContent).toContain('Notion')
   expect(container.querySelector('[aria-label="Disabled integrations"]')?.textContent).toContain('GitHub')
   const search = container.querySelector('input[aria-label="Search integrations"]')!
@@ -337,4 +337,50 @@ test('GitHub callback destination expands its settings and focuses the card', as
   expect(scrolled).toEqual(['integration-card-github'])
   expect(document.activeElement).toBe(card)
   expect(container.querySelector('#integration-settings-notion')).toBeNull()
+})
+
+test('unsupported BigBrain stays Disabled even with an old enabled flag and visibly explains the disabled switch', async () => {
+  const reason = 'Requires BigBrain on the same machine as local/self-hosted Ficus; unavailable on Ficus Cloud.'
+  client.setQueryData(integrationQueryKeys.catalog(), {
+    integrations: [
+      ...entries.filter((entry) => entry.key !== 'bigbrain'),
+      {
+        key: 'bigbrain',
+        label: 'BigBrain',
+        enabled: true,
+        description: 'Memory',
+        availability: { available: false, reason },
+      },
+    ],
+  })
+  const container = await render()
+  const card = container.querySelector('[aria-label="Disabled integrations"] #integration-card-bigbrain')
+  expect(card).not.toBeNull()
+  expect(card?.textContent).toContain(reason)
+  const toggle = card!.querySelector<HTMLButtonElement>('[role="switch"]')!
+  expect(toggle.disabled).toBe(true)
+  expect(toggle.getAttribute('aria-checked')).toBe('false')
+  expect(toggle.getAttribute('aria-describedby')).toBe('integration-unavailable-bigbrain')
+  expect(container.querySelector('[aria-label="Enable GitHub globally"]')?.hasAttribute('disabled')).toBe(false)
+  expect(container.querySelector('[aria-label="Enabled integrations"]')?.textContent).toContain('Notion')
+})
+
+test('BigBrain product homepage is accessible on a disabled unsupported card without enabling it', async () => {
+  client.setQueryData(integrationQueryKeys.catalog(), {
+    integrations: [
+      {
+        key: 'bigbrain',
+        label: 'BigBrain',
+        enabled: false,
+        availability: { available: false, reason: 'Unavailable on Ficus Cloud.' },
+      },
+    ],
+  })
+  const container = await render()
+  const card = container.querySelector('[aria-label="Disabled integrations"] #integration-card-bigbrain')!
+  const link = [...card.querySelectorAll('a')].find((a) => a.textContent?.startsWith('Learn more about BigBrain'))
+  expect(link?.getAttribute('href')).toBe('https://bigbrain.cool')
+  expect(link?.getAttribute('target')).toBe('_blank')
+  expect(link?.getAttribute('rel')).toContain('noopener')
+  expect(card.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('false')
 })

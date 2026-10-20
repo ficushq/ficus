@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { BigbrainClient } from './client'
@@ -13,7 +13,8 @@ test.skipIf(!checkout)(
   async () => {
     const revision = Bun.spawnSync(['git', '-C', checkout!, 'rev-parse', 'HEAD'], { stdout: 'pipe', stderr: 'pipe' })
     expect(revision.stdout.toString().trim()).toBe(pin)
-    const root = await mkdtemp(join(tmpdir(), 'ficus-bigbrain-upstream-'))
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'ficus-bigbrain-upstream-')))
+    const previousEnv = { ...process.env }
     try {
       const home = join(root, 'home')
       const ficusHome = join(root, 'ficus')
@@ -31,7 +32,6 @@ test.skipIf(!checkout)(
         HOME: home,
         PATH: process.env.PATH!,
         BIGBRAIN_VAULT: vault,
-        BIGBRAIN_TOKENS: join(root, 'tokens.json'),
         BIGBRAIN_READ_LOG: join(root, 'reads.jsonl'),
         BIGBRAIN_ARRIVALS: join(root, 'arrivals'),
         BIGBRAIN_VAULT_POINTER: join(root, 'pointer'),
@@ -81,13 +81,19 @@ test.skipIf(!checkout)(
               vaultPath: vault,
               executablePath: executable,
               clientId,
-              tokenStorePath: env.BIGBRAIN_TOKENS,
             },
           ],
         }),
         { mode: 0o600 }
       )
-      const bindings = new BigbrainBindings({ home: ficusHome, supported: () => true })
+      Object.assign(process.env, {
+        HOME: home,
+        HOME_DIR: ficusHome,
+        FICUS_SANDBOX_RUNTIME: 'host',
+        FICUS_DESKTOP_MANAGED: '1',
+      })
+      delete process.env.FICUS_MANAGED
+      const bindings = new BigbrainBindings()
       const binding = await bindings.resolve('synthetic')
       const client = new BigbrainClient({ configuration: binding.configuration, clientId, bindings })
       expect(await client.validate()).toHaveLength(4)
@@ -109,6 +115,7 @@ test.skipIf(!checkout)(
       await cli(['auth', 'revoke', clientId])
       await expect(client.loadMemory()).rejects.toBeDefined()
     } finally {
+      process.env = previousEnv
       await rm(root, { recursive: true, force: true })
     }
   },

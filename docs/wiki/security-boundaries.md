@@ -1,6 +1,6 @@
 # Security boundaries
 
-This page preserves the security rationale behind RBAC v2 and the Bigbrain integration, reconciled with repository code on 2026-09-08. It describes inspected implementation, not a completed penetration test or proof that every historical acceptance criterion passes. Deferred proposals and verification gaps are in Security follow-ups.
+This page preserves the security rationale behind RBAC v2 and the BigBrain integration, reconciled with repository code on 2026-09-08. It describes inspected implementation, not a completed penetration test or proof that every historical acceptance criterion passes. Deferred proposals and verification gaps are in Security follow-ups.
 
 ## Identity and permission authority
 
@@ -37,11 +37,21 @@ Only an OS-operator-owned host declaration may select a vault, executable, and
 named local connection. API/CLI callers can select declared bindings but cannot
 supply shell text, argv, environment maps, a new executable, or a credential-file
 path. Core API and Core worker must share the same local filesystem and service
-account. Hosted instances and no-isolation host agent execution are refused;
-there is no browser-local or remote-worker vault bridge. No vault, executable,
-credential file, or BigBrain environment is projected to agents. This is not an
-OS security boundary against the host administrator or an already privileged
-agent runtime.
+account. Hosted/platform-managed instances are refused, including direct enable
+attempts; their effective catalog/runtime state stays disabled without deleting
+saved settings. Desktop's **local** runtime and explicitly selected self-hosted
+`host` execution are supported under the trusted single-user model. Desktop
+attached to a remote/hosted Core does not move the vault or confer eligibility.
+Remote agents are supported; there is no remote-vault or browser-local bridge.
+
+No vault, executable, credential file or BigBrain environment is projected to
+agents by this connector. On **host** runtime arbitrary agent shells already run
+as the service user: private modes, operator declarations and workspace checks
+are **not a hostile-agent filesystem boundary** and cannot protect same-user
+vaults/credentials from shell access or modification. They remain selection,
+configuration and other-user checks. Use an isolated runtime if agents must not
+have direct OS access. This is never a boundary against the host administrator
+or an already privileged agent runtime.
 
 The runner requires a version-1 integration policy allowing `agent_tools` and
 matching explicit tool allowances. Calls recheck squad identity, provider enable,

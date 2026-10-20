@@ -5,8 +5,7 @@ import { createHash } from 'node:crypto'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { getHomeDir } from '../../../lib/utils/home'
-import { isPlatformManaged } from '../../secrets/managed'
-import { isHostRuntime, requireSandboxRuntime } from '../../sandbox/runtime'
+import { bigbrainHostAvailability } from './availability'
 import { BigbrainError } from './errors'
 
 const pathSchema = z
@@ -56,13 +55,6 @@ function contains(parent: string, child: string): boolean {
   const rel = relative(parent, child)
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
-function supportedHost(): boolean {
-  try {
-    return process.platform !== 'win32' && !isPlatformManaged() && !isHostRuntime() && !!requireSandboxRuntime()
-  } catch {
-    return false
-  }
-}
 
 /** Only an OS operator can declare executable/vault authority. API callers select IDs, never paths. */
 export class BigbrainBindings {
@@ -72,7 +64,7 @@ export class BigbrainBindings {
   constructor(options: { home?: string; supported?: () => boolean; osHome?: string } = {}) {
     this.#home = options.home ?? getHomeDir()
     this.#osHome = options.osHome ?? getDefaultEnvironment().HOME
-    this.#supported = options.supported ?? supportedHost
+    this.#supported = options.supported ?? (() => bigbrainHostAvailability().available)
   }
   async list(): Promise<BigbrainBindingSummary[]> {
     const entries = await this.#read()

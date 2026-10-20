@@ -6,6 +6,18 @@ whatever that machine has installed. Pick this for a personal machine or a
 trusted single-user VM; pick docker/k8s/vm when you need isolation. See
 [sandbox-runtimes.md](sandbox-runtimes.md) to compare all five runtimes.
 
+## BigBrain on the local host
+
+[BigBrain local connections](bigbrain.md) support Desktop's local runtime and
+explicitly selected self-hosted host runtime. Both Core processes and BigBrain
+must share the local account/filesystem. Desktop attached to Cloud cannot access
+a vault on the Mac. The connector still enforces declared binding selection,
+private credential metadata, permission gates and bounded MCP processes, but
+agent shells have the same OS access as Core: none of those checks creates
+filesystem isolation. Only use this with trusted agents and data. Desktop's
+`HOME_DIR` is its selected local data directory (usually `~/.ficus/desktop`),
+not OS `HOME`, where BigBrain's default private credential state remains.
+
 ## Enable
 
 Put this in `.env` and restart the api + worker (setup toolkit: `runtime.sandbox: host`):

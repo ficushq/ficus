@@ -1,3 +1,4 @@
+import { bigbrainHostAvailability } from './availability'
 import { BigbrainError } from './errors'
 import { BigbrainProvider, type BigbrainConfigV2 } from './provider'
 import { createBigbrainTools, type BigbrainTool, type BigbrainToolContext } from './tools'
@@ -10,11 +11,12 @@ const plugin: IntegrationPluginV1<
   string,
   { createTools(context: BigbrainToolContext): readonly BigbrainTool[] }
 > = {
+  availability: bigbrainHostAvailability,
   manifestVersion: 1,
   key: 'bigbrain',
   adapterVersion: 2,
   presentation: {
-    label: 'Bigbrain',
+    label: 'BigBrain',
     description: 'Connect an approved local BigBrain vault on the Core host.',
     icon: 'bigbrain',
     connectionMode: 'local',
