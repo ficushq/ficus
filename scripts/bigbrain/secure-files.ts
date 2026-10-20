@@ -233,11 +233,26 @@ export async function writePublicText(
   }
 }
 
+/** The fixed root-only helper launcher: operator-owned 0750, never group/other-writable. */
+export async function writeOwnerExecutable(
+  directory: string,
+  name: string,
+  text: string,
+  options: Options = {}
+): Promise<void> {
+  try {
+    checkedName(name)
+    await writeOwnedBytes(directory, name, Buffer.from(text), 0o750, options)
+  } catch {
+    throw new Error('storage_unavailable')
+  }
+}
+
 async function writeOwnedBytes(
   directory: string,
   name: string,
   bytes: Buffer,
-  mode: 0o600 | 0o644,
+  mode: 0o600 | 0o644 | 0o750,
   options: Options
 ): Promise<void> {
   let dir: FileHandle | undefined

@@ -8,6 +8,8 @@ import {
 } from '../../packages/shared/src/managed-bigbrain'
 import { verifyBigbrainArtifact } from './artifact'
 import { verifyHostBun } from './host-bun'
+import { installHostAssets } from './host-assets'
+import { publishIngress } from './ingress'
 import { installedHostSchema, type InstalledHost } from './control-input'
 import { ensureOwnedDirectory, readPrivateJson, writePrivateJson } from './secure-files'
 import { initializeStorageNamespace } from './volume-image'
@@ -28,6 +30,9 @@ export interface InstallOptions {
   probeHost: () => Promise<void>
   /** Interpreter check against the artifact's recorded Bun version (default: verifyHostBun). */
   hostBun?: (version: string) => Promise<void>
+  /** Launcher/slice/gateway installation and initial ingress (defaults: the real installers). */
+  hostAssets?: (artifactDigest: string) => Promise<void>
+  ingress?: () => Promise<unknown>
 }
 export type InstallResult =
   | { installed: false }
@@ -162,6 +167,10 @@ export async function installManagedHost(options: InstallOptions): Promise<Insta
         }
   )
   await writePrivateJson(etc, 'host.json', host, installedHostSchema, fs)
+  // Credential-free routes/sites first (empty for a new host), then the release-bound launcher,
+  // units and gateway. A refusal leaves the recorded host but no new helper/gateway.
+  await (options.ingress ?? (() => publishIngress({ root: options.state, etc, uid })))()
+  await (options.hostAssets ?? ((digest) => installHostAssets(digest, { etc, uid })))(artifactDigest)
   return { installed: true, created: !existing, artifactDigest, hostEpoch: host.hostEpoch, hostState: host.hostState }
 }
 

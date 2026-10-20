@@ -27,6 +27,7 @@ async function fixture() {
   const digest = await syntheticArtifact(artifactRoot)
   let probes = 0
   const bunChecks: string[] = []
+  const steps: string[] = []
   const options = {
     config,
     artifactRoot,
@@ -40,8 +41,10 @@ async function fixture() {
     hostBun: async (version: string) => {
       bunChecks.push(version)
     },
+    ingress: async () => void steps.push('ingress'),
+    hostAssets: async (digest: string) => void steps.push(`assets:${digest}`),
   }
-  return { outer, options, digest, probes: () => probes, bunChecks }
+  return { outer, options, digest, probes: () => probes, bunChecks, steps }
 }
 const host = (f: Awaited<ReturnType<typeof fixture>>) =>
   readPrivateJson(f.options.etc, 'host.json', installedHostSchema, { uid })
@@ -77,6 +80,8 @@ test('first install seeds the host record from the persisted binding and install
   expect((await stat(release)).mode & 0o777).toBe(0o755)
   expect((await stat(join(release, 'bigbrain-shared.js'))).mode & 0o777).toBe(0o644)
   expect(f.bunChecks).toEqual(['1.4.2'])
+  // Routes/sites are derived first, then the release-bound launcher/units/gateway.
+  expect(f.steps).toEqual(['ingress', `assets:${f.digest}`])
   expect((await stat(join(release, 'LICENSE'))).mode & 0o777).toBe(0o644)
   expect((await stat(join(f.options.etc, 'host.json'))).mode & 0o777).toBe(0o600)
   expect((await stat(join(f.options.state, 'control'))).mode & 0o777).toBe(0o700)
