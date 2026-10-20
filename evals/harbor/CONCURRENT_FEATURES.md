@@ -54,3 +54,57 @@ before and after each batch, refuses existing attempt directories, owns its chil
 processes, and retains separate batch timelines and per-trial results. Use its
 `--frozen-sha256` argument to pin the manifest itself. Credentials are read from a
 private proxy access file and never committed.
+
+## Partial results — provider credits exhausted
+
+The Pi squad batch completed both official graders in **20m03s**, with 15m43s
+of overlapping agent execution. Its cost was **$2.063421**. Neither task passed
+all official checks, so accepted-task throughput is zero for this batch:
+
+| Task | Feature checks | Regression checks | Result | Inference USD |
+| --- | ---: | ---: | --- | ---: |
+| returns | 157/159 | 61/61 | Fail | $0.996580 |
+| aiomonitor | 51/53 | 8/8 | Fail | $1.066841 |
+
+`returns` failed two `lash` checks involving the entire error tuple. `aiomonitor`
+returned 404 for the grader's `/api/snapshot/save` and `/api/snapshot/list` routes.
+Official scores remain unchanged. Both Pi submissions added tests without removing
+existing assertion lines. The aiomonitor reviewer found a task-ID reuse bug and
+requested a revision; it approved the second implementation, which still missed
+the route checks. The returns reviewer approved its first implementation. These
+are examples of review contributing useful checks without guaranteeing acceptance.
+
+Both Ficus squads started, but the provider then reported **no remaining API
+credits** during their design-stage work. The transport returned HTTP 200 while
+the runtime logged an SDK credit error. Operator diagnostics identified the
+blocker and cancelled both attempts; neither has an official score. They are
+provider-blocked, **not task failures**. Neither engineer-only batch was launched.
+The comparison is incomplete; do not rank Ficus against Pi from this batch.
+
+This experiment added **$2.376550 confirmed usage**, including $0.313129 before
+the Ficus failures. Two calls lack usage receipts and retain **$11** in conservative
+reservations. Prior accounting plus confirmed new usage is **$31.723031**; total
+ledger exposure including those holds is **$42.723031 / $50**. Paid inference is
+stopped. Do not release reservations without provider evidence or silently retry
+these attempts. Restore API credits and reconcile dashboard usage before deciding
+on an explicitly recorded recovery experiment; preserve the original attempts.
+
+`concurrent-feature-v1-partial-results.json` records individual results, review
+provenance, overlap, artifact hashes and credit-error evidence. Frozen inputs
+still matched after cancellation and before the following post-run fixes.
+
+### Post-run infrastructure fixes
+
+The proxy now recognizes terminal `error` and `response.failed` events under
+HTTP 200, records a sanitized provider code, forwards a complete event and closes
+the failed stream. Missing usage still retains the full reservation. This follows
+the [official Responses streaming event format](https://developers.openai.com/api/reference/resources/responses/streaming-events).
+The batch runner checks the ledger during execution and stops both owned processes
+on provider failure instead of waiting for their full task deadlines. It records
+cancellation exit codes and the stop reason. This changes no scored attempt or
+frozen runtime/prompts. A new freeze is required before any future inference.
+
+All 57 offline tests pass, including terminal HTTP-200 failures and a real-process
+check that both disposable children terminate and usage holds survive. These tests
+make no provider calls. Failure diagnostics remain private; only hashes and
+non-sensitive summaries are committed.

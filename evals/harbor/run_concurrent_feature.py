@@ -57,7 +57,10 @@ def summarize_batches(jobs, ledger, frozen, manifest):
         batch.update(
             complete=complete,
             accepted_tasks=accepted,
-            completed_tasks=len(rows),
+            finished_attempts=len(rows),
+            completed_tasks=sum(
+                r["exception"] is None and r["reward"] is not None for r in rows
+            ),
             accepted_tasks_per_hour=round(accepted * 3600 / duration, 4)
             if complete and duration
             else None,
@@ -76,6 +79,20 @@ def summarize_batches(jobs, ledger, frozen, manifest):
         "new_confirmed_usd": round(sum(t["new_confirmed_usd"] for t in tasks), 6),
         "human_attention_minutes": None,
     }
+
+
+def check_provider_failures(ledger, clients):
+    with sqlite3.connect(f"file:{ledger}?mode=ro", uri=True) as db:
+        for client in clients:
+            row = db.execute(
+                "SELECT id,failure,http_status FROM calls WHERE client=? "
+                "AND (failure IS NOT NULL OR http_status>=400) ORDER BY id LIMIT 1",
+                (client,),
+            ).fetchone()
+            if row:
+                raise ValueError(
+                    f"Provider failure for {client}, call {row[0]}; stop batch without retry"
+                )
 
 
 def run(args):
@@ -150,11 +167,20 @@ def run(args):
                     raise
                 children.append((name, child, out))
                 print("START", name, flush=True)
-            for name, child, _ in children:
-                batch["exit_codes"][name] = child.wait()
-                print("FINISH", name, batch["exit_codes"][name], flush=True)
+            while True:
+                check_provider_failures(args.ledger, names)
+                for name, child, _ in children:
+                    if name not in batch["exit_codes"] and child.poll() is not None:
+                        batch["exit_codes"][name] = child.returncode
+                        print("FINISH", name, child.returncode, flush=True)
+                if len(batch["exit_codes"]) == len(children):
+                    break
+                time.sleep(1)
+        except BaseException as error:
+            batch["stop_reason"] = type(error).__name__ + ": " + str(error)
+            raise
         finally:
-            for _, child, out in children:
+            for name, child, out in children:
                 if child.poll() is None:
                     child.terminate()
                     try:
@@ -162,6 +188,7 @@ def run(args):
                     except subprocess.TimeoutExpired:
                         child.kill()
                         child.wait()
+                batch["exit_codes"][name] = child.returncode
                 out.close()
             batch.update(
                 finished_at=datetime.now(UTC).isoformat(),

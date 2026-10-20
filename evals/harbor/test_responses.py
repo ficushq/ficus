@@ -135,3 +135,63 @@ class ResponsesTests(unittest.TestCase):
                 self.assertAlmostEqual(budget.total(), 0.0004)
                 self.assertEqual(budget.summary()["trial"]["unknown_usage"], 0)
                 self.assertIn(kind.encode(), request.wfile.getvalue())
+
+    def test_stream_failure_under_http_200_is_forwarded_recorded_and_stops_reading(
+        self,
+    ):
+        for kind in ("error", "response.failed"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                budget = Budget(Path(directory) / "ledger", 20, SOL_MODEL)
+                cls = handler(budget, {"test-token": "trial"}, "fake-key")
+                request = helpers.ProxyTests().request(cls)
+                body = json.dumps(
+                    {"model": SOL_MODEL, "input": "test", "stream": True}
+                ).encode()
+                request.path = "/v1/responses"
+                request.headers["Content-Length"] = str(len(body))
+                request.rfile = io.BytesIO(body)
+                error = {"code": "insufficient_quota", "message": "No credits remain"}
+                event = (
+                    {"type": kind, **error}
+                    if kind == "error"
+                    else {"type": kind, "response": {"error": error, "usage": None}}
+                )
+                response = helpers.ProxyTests().upstream(
+                    200, None, {"Content-Type": "text/event-stream"}
+                )
+
+                def events():
+                    yield b"event: " + kind.encode()
+                    yield b"data: " + json.dumps(event).encode()
+                    raise AssertionError(
+                        "Must close after the terminal failure, not wait for another chunk"
+                    )
+
+                response.iter_lines = events
+                with patch("budget_proxy.requests.post", return_value=response):
+                    request.do_POST()
+                self.assertEqual(budget.total(), SOL_RESERVATION / 1e6)
+                self.assertEqual(budget.summary()["trial"]["unknown_usage"], 1)
+                self.assertTrue(request.wfile.getvalue().endswith(b"\n\n"))
+                import sqlite3
+
+                with sqlite3.connect(budget.path) as db:
+                    self.assertEqual(
+                        db.execute(
+                            "SELECT http_status,failure,provider_code,usage FROM calls"
+                        ).fetchone(),
+                        (200, "upstream_stream_error", "insufficient_quota", None),
+                    )
+
+    def test_stream_error_codes_are_sanitized_without_persisting_messages(self):
+        from budget_proxy import stream_failure
+
+        self.assertEqual(
+            stream_failure(
+                {"type": "error", "code": "private value / token", "message": "private"}
+            ),
+            "upstream_stream_error",
+        )
+        self.assertIsNone(
+            stream_failure({"type": "response.incomplete", "response": {"usage": None}})
+        )

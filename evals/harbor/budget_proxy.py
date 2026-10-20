@@ -322,6 +322,22 @@ def response_usage(event):
     return None
 
 
+def stream_failure(event):
+    """Return a safe code for terminal Responses failures, even under HTTP 200."""
+    if event.get("type") == "response.failed":
+        error = (event.get("response") or {}).get("error") or {}
+    elif event.get("type") == "error":
+        error = event
+    else:
+        return None
+    code = error.get("code")
+    return (
+        code
+        if isinstance(code, str) and re.fullmatch(r"[a-zA-Z0-9_.-]{1,80}", code)
+        else "upstream_stream_error"
+    )
+
+
 def retry_delay(value):
     """Honor numeric or HTTP-date Retry-After without copying arbitrary headers."""
     if not value:
@@ -489,6 +505,7 @@ def handler(budget, tokens, api_key):
                     disconnected = False
                     if payload.get("stream"):
                         for line in response.iter_lines():
+                            terminal_failure = None
                             if line.startswith(b"data: ") and line != b"data: [DONE]":
                                 event = json.loads(line[6:])
                                 usage = (
@@ -496,9 +513,19 @@ def handler(budget, tokens, api_key):
                                     if budget.model == SOL_MODEL
                                     else event.get("usage")
                                 ) or usage
+                                if budget.model == SOL_MODEL:
+                                    terminal_failure = stream_failure(event)
+                                    if terminal_failure:
+                                        budget.note(
+                                            identifier,
+                                            failure="upstream_stream_error",
+                                            provider_code=terminal_failure,
+                                        )
                             if not disconnected:
                                 try:
-                                    self.wfile.write(line + b"\n")
+                                    self.wfile.write(
+                                        line + (b"\n\n" if terminal_failure else b"\n")
+                                    )
                                     self.wfile.flush()
                                 except OSError:
                                     # The provider can finish billing after the client leaves.
@@ -507,6 +534,10 @@ def handler(budget, tokens, api_key):
                                     budget.note(
                                         identifier, failure="client_disconnected"
                                     )
+                            if terminal_failure:
+                                # Forward the complete SSE event, then close the failed
+                                # response. Without a usage receipt its hold stays intact.
+                                break
                     else:
                         data = response.json()
                         usage = data.get("usage")

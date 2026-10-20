@@ -85,3 +85,91 @@ class ConcurrentFeatureTests(unittest.TestCase):
             prompt.write_text("changed")
             with self.assertRaisesRegex(ValueError, "Task drift"):
                 validate_inputs(root, root, manifest, runtime)
+
+    def test_inflight_is_allowed_but_stream_failure_stops_only_its_batch(self):
+        from run_concurrent_feature import check_provider_failures
+
+        with tempfile.TemporaryDirectory() as folder:
+            ledger = Path(folder) / "ledger.sqlite"
+            budget = Budget(ledger)
+            call = budget.reserve("current")
+            budget.note(call, status=200)
+            check_provider_failures(ledger, ["current"])
+            budget.note(
+                call,
+                failure="upstream_stream_error",
+                provider_code="insufficient_quota",
+            )
+            check_provider_failures(ledger, ["different-batch"])
+            with self.assertRaisesRegex(ValueError, "Provider failure for current"):
+                check_provider_failures(ledger, ["current"])
+            self.assertEqual(budget.summary()["current"]["unknown_usage"], 1)
+
+    def test_provider_failure_terminates_both_owned_processes_and_records_stop(self):
+        import subprocess
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from run_concurrent_feature import run
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            jobs = root / "jobs"
+            ledger = root / "ledger.sqlite"
+            budget = Budget(ledger, 50)
+            manifest = {
+                "tasks": [{"task": "a", "short": "a"}, {"task": "b", "short": "b"}],
+                "arms": ["pi-planned"],
+                "concurrency": 2,
+                "prior_last_call_id": 0,
+                "cumulative_cap_usd": 50,
+            }
+            frozen = root / "frozen.json"
+            frozen.write_text(json.dumps(manifest))
+            args = SimpleNamespace(
+                frozen=frozen,
+                frozen_sha256=sha(frozen),
+                jobs=jobs,
+                ledger=ledger,
+                tasks=root,
+                runtime=root / "runtime",
+                access=root / "access",
+            )
+            real_popen = subprocess.Popen
+            children = []
+
+            def start_fixture(command, **kwargs):
+                child = real_popen(
+                    [sys.executable, "-c", "import time; time.sleep(30)"], **kwargs
+                )
+                children.append(child)
+                if len(children) == 2:
+                    call = budget.reserve("cv1-a-pi-planned")
+                    budget.note(call, status=200, failure="upstream_stream_error")
+                return child
+
+            try:
+                with (
+                    patch("run_concurrent_feature.validate_inputs"),
+                    patch(
+                        "run_concurrent_feature.subprocess.Popen",
+                        side_effect=start_fixture,
+                    ),
+                ):
+                    with self.assertRaisesRegex(ValueError, "Provider failure"):
+                        run(args)
+                self.assertEqual(len(children), 2)
+                self.assertTrue(all(child.poll() is not None for child in children))
+                batch = json.loads((jobs / "pi-planned-batch.json").read_text())
+                self.assertIn("Provider failure", batch["stop_reason"])
+                self.assertEqual(
+                    set(batch["exit_codes"]), {"cv1-a-pi-planned", "cv1-b-pi-planned"}
+                )
+                self.assertEqual(
+                    budget.summary()["cv1-a-pi-planned"]["unknown_usage"], 1
+                )
+            finally:
+                for child in children:
+                    if child.poll() is None:
+                        child.kill()
+                    child.wait(timeout=5)
