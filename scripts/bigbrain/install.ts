@@ -1,5 +1,5 @@
 import { chmod, copyFile, lstat, mkdtemp, readdir, rename, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   MANAGED_BIGBRAIN_CONTRACT_VERSION,
   MANAGED_BIGBRAIN_DEFAULT_LIMITS,
@@ -52,6 +52,15 @@ async function present(path: string): Promise<boolean> {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return false
     throw new Error('storage_unavailable')
   }
+}
+
+async function ensureParentDirectory(path: string, uid: number): Promise<void> {
+  if (path === '/' || (await present(path)) === false) {
+    if (path !== '/') await ensureOwnedDirectory(path, 0o755, { uid })
+    return
+  }
+  const info = await lstat(path)
+  if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o022) !== 0) throw new Error('storage_unavailable')
 }
 
 /** An installed release is immutable: re-verify content AND that only the installer can write it. */
@@ -140,6 +149,8 @@ export async function installManagedHost(options: InstallOptions): Promise<Insta
   }
   // Before any write: the bundles run only under the exact Bun they were built and tested with.
   await (options.hostBun ?? ((version) => verifyHostBun(version, { uid })))(provenance.bunVersion)
+  // Shared parents (/etc/ficus) may already exist with any safe mode; create only if absent.
+  await ensureParentDirectory(dirname(etc), uid)
   for (const [path, mode] of [
     [opt, 0o755],
     [join(opt, 'releases'), 0o755],

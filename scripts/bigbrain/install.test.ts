@@ -49,6 +49,19 @@ async function fixture() {
 const host = (f: Awaited<ReturnType<typeof fixture>>) =>
   readPrivateJson(f.options.etc, 'host.json', installedHostSchema, { uid })
 
+test('a missing shared parent of the config directory is created; an unsafe existing one refuses', async () => {
+  const f = await fixture()
+  const etc = join(f.outer, 'missing-parent', 'bigbrain')
+  expect(await installManagedHost({ ...f.options, etc })).toMatchObject({ installed: true, created: true })
+  const g = await fixture()
+  const { mkdir, chmod } = await import('node:fs/promises')
+  await mkdir(join(g.outer, 'unsafe'), { mode: 0o777 })
+  await chmod(join(g.outer, 'unsafe'), 0o777)
+  await expect(installManagedHost({ ...g.options, etc: join(g.outer, 'unsafe', 'bigbrain') })).rejects.toThrow(
+    'storage_unavailable'
+  )
+})
+
 test('disabled is a no-op that writes nothing and never probes', async () => {
   const f = await fixture()
   expect(await installManagedHost({ ...f.options, config: { enabled: false } })).toEqual({ installed: false })

@@ -983,11 +983,11 @@ jobs:
         run: |
           set -euo pipefail
           # The pinned host interpreter the bundles run under (setup installs it root-owned).
-          stat -c '%U:%G:%a %n' /usr/local/bin /usr/local /usr /
-          # Hosted runner images may leave /usr/local writable by a non-root group; a real host's
-          # interpreter chain must not be, and the installer refuses otherwise. Normalize it here.
-          sudo chown root:root /usr/local /usr/local/bin
-          sudo chmod go-w /usr/local /usr/local/bin
+          stat -c '%U:%G:%a %n' /usr/local/bin /usr/local /usr /opt /etc /
+          # Hosted runner images leave e.g. /usr/local/bin world-writable (observed 777); a real
+          # host's interpreter/install parents must not be, and the installer refuses otherwise.
+          sudo chown root:root /usr/local /usr/local/bin /opt
+          sudo chmod go-w /usr/local /usr/local/bin /opt
           sudo install -m 0755 -o root -g root "$(command -v bun)" /usr/local/bin/bun
           sudo apt-get update -qq
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy
