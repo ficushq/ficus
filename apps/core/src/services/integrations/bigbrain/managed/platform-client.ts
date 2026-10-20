@@ -1,36 +1,19 @@
 /**
- * Private Core → Platform transport for managed shared BigBrain vaults.
+ * Private Core → Platform transport for managed shared BigBrain vaults: support (capabilities)
+ * and per-vault DNS only. Vault operations run locally through the root helper.
  *
- * Fixed route templates under `/api/managed-bigbrain` (the contract's Platform endpoints), the
- * instance bearer, no redirects, a bounded body and deadline, and strict shared response schemas.
- * Errors carry only an allowlisted contract code; raw Platform bodies, URLs and tokens never cross
- * this boundary. The client never retries on its own: callers repeat the SAME request ID (Platform
- * replays it idempotently) and never mint a new identity or invite to recover from a lost reply.
+ * Fixed route templates under `/api/managed-bigbrain`, the instance bearer, no redirects, a
+ * bounded body and deadline, and strict shared response schemas. Errors carry only an
+ * allowlisted contract code; raw Platform bodies, URLs and tokens never cross this boundary.
  */
-import type { ZodType } from 'zod'
+import { z, type ZodType } from 'zod'
 import {
   MANAGED_BIGBRAIN_ERROR_CODES,
   managedBigbrainCapabilitiesSchema,
-  managedBigbrainDeleteVaultSchema,
-  managedBigbrainOperationSchema,
-  managedBigbrainOwnerInviteResultSchema,
-  managedBigbrainOwnerInviteSchema,
-  managedBigbrainPutVaultSchema,
-  managedBigbrainReadAccessSchema,
-  managedBigbrainRetrySchema,
-  managedBigbrainVaultListSchema,
-  managedBigbrainVaultSummarySchema,
+  managedBigbrainDnsRecordSchema,
   type ManagedBigbrainCapabilities,
-  type ManagedBigbrainDeleteVault,
+  type ManagedBigbrainDnsRecord,
   type ManagedBigbrainErrorCode,
-  type ManagedBigbrainOperation,
-  type ManagedBigbrainOwnerInvite,
-  type ManagedBigbrainOwnerInviteResult,
-  type ManagedBigbrainPutVault,
-  type ManagedBigbrainReadAccess,
-  type ManagedBigbrainRetry,
-  type ManagedBigbrainVaultList,
-  type ManagedBigbrainVaultSummary,
 } from '@ficus/shared/managed-bigbrain'
 import { BrokerUnconfiguredError, requireBrokerConfig } from '../../authorization/authority'
 import {
@@ -44,10 +27,10 @@ const PREFIX = '/api/managed-bigbrain'
 const DEFAULT_TIMEOUT_MS = 20_000
 /** Two summaries or one capability record are a few KiB; anything larger is not a contract reply. */
 const MAX_RESPONSE_BYTES = 64 * 1024
-const VAULT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const CONTRACT_CODES: ReadonlySet<string> = new Set(MANAGED_BIGBRAIN_ERROR_CODES)
 const RETRYABLE_CODES: ReadonlySet<ManagedBigbrainErrorCode> = new Set([
   'busy',
+  'dns_unavailable',
   'capacity',
   'host_unreachable',
   'maintenance',
@@ -71,17 +54,6 @@ type Method = 'GET' | 'PUT' | 'POST' | 'DELETE'
 
 function refuse(code: ManagedBigbrainErrorCode, status?: number, retryable?: boolean): never {
   throw new ManagedBigbrainPlatformError(code, retryable ?? (RETRYABLE_CODES.has(code) || status === 429), status)
-}
-
-function vaultPath(vaultId: string, suffix = ''): string {
-  if (!VAULT_ID.test(vaultId)) refuse('invalid_request')
-  return `${PREFIX}/vaults/${vaultId}${suffix}`
-}
-
-function checkedBody<T>(schema: ZodType<T>, body: unknown): T {
-  const parsed = schema.safeParse(body)
-  if (!parsed.success) refuse('invalid_request')
-  return parsed.data
 }
 
 /** HTTP status → contract code when Platform's body carries no allowlisted code. */
@@ -152,7 +124,10 @@ async function call<T>(
     }
     let decoded: unknown
     try {
-      decoded = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+      decoded =
+        response.status === 204 && bytes.byteLength === 0
+          ? undefined
+          : JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
     } catch {
       refuse('invalid_response', response.status, false)
     }
@@ -165,77 +140,38 @@ async function call<T>(
   }
 }
 
-/** A reply about a different vault than the one addressed is never applied to local state. */
-function sameVault<T extends { vaultId: string }>(vaultId: string, value: T): T {
-  if (value.vaultId !== vaultId) refuse('invalid_response', undefined, false)
-  return value
+const VAULT = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+function dnsPath(vaultId: string): string {
+  if (!VAULT.test(vaultId)) refuse('invalid_request')
+  return `${PREFIX}/dns/${vaultId}`
 }
 
+/** Platform keeps only what it alone can do: the capability report (pinned-SSH probe, binding,
+ * epoch, certificate/zone coverage) and the exact per-vault DNS record. Core never sends names,
+ * owners or generations, and Platform keeps no vault records. */
 export const managedBigbrainPlatform = {
   /** `expectedTenantId`: the tenant this Core already recorded; a different binding is refused. */
-  async capabilities(options: CallOptions & { expectedTenantId?: string } = {}): Promise<ManagedBigbrainCapabilities> {
+  async support(options: CallOptions & { expectedTenantId?: string } = {}): Promise<ManagedBigbrainCapabilities> {
     const value = await call('GET', `${PREFIX}/capabilities`, managedBigbrainCapabilitiesSchema, undefined, options)
     if (options.expectedTenantId !== undefined && value.tenantId !== options.expectedTenantId)
       refuse('identity_mismatch', undefined, false)
     return value
   },
-  listVaults(options?: CallOptions): Promise<ManagedBigbrainVaultList> {
-    return call('GET', `${PREFIX}/vaults`, managedBigbrainVaultListSchema, undefined, options)
+  /** Idempotent: Platform creates or returns the exact owned record for this vault. A record for
+   * another origin than Core derived is never accepted. */
+  async ensureDns(vaultId: string, expectedOrigin: string, options?: CallOptions): Promise<ManagedBigbrainDnsRecord> {
+    const record = await call('PUT', dnsPath(vaultId), managedBigbrainDnsRecordSchema, {}, options)
+    if (record.vaultId !== vaultId || record.origin !== expectedOrigin) refuse('identity_mismatch', undefined, false)
+    return record
   },
-  async getVault(vaultId: string, options?: CallOptions): Promise<ManagedBigbrainVaultSummary> {
-    const path = vaultPath(vaultId)
-    return sameVault(vaultId, await call('GET', path, managedBigbrainVaultSummarySchema, undefined, options))
-  },
-  async putVault(
-    vaultId: string,
-    input: ManagedBigbrainPutVault,
-    options?: CallOptions
-  ): Promise<ManagedBigbrainOperation> {
-    const path = vaultPath(vaultId)
-    const body = checkedBody(managedBigbrainPutVaultSchema, input)
-    return sameVault(vaultId, await call('PUT', path, managedBigbrainOperationSchema, body, options))
-  },
-  async retryVault(
-    vaultId: string,
-    input: ManagedBigbrainRetry,
-    options?: CallOptions
-  ): Promise<ManagedBigbrainOperation> {
-    const path = vaultPath(vaultId, '/retry')
-    const body = checkedBody(managedBigbrainRetrySchema, input)
-    return sameVault(vaultId, await call('POST', path, managedBigbrainOperationSchema, body, options))
-  },
-  async setReadAccess(
-    vaultId: string,
-    input: ManagedBigbrainReadAccess,
-    options?: CallOptions
-  ): Promise<ManagedBigbrainOperation> {
-    const path = vaultPath(vaultId, '/read-access')
-    const body = checkedBody(managedBigbrainReadAccessSchema, input)
-    return sameVault(vaultId, await call('POST', path, managedBigbrainOperationSchema, body, options))
-  },
-  async deleteVault(
-    vaultId: string,
-    input: ManagedBigbrainDeleteVault,
-    options?: CallOptions
-  ): Promise<ManagedBigbrainOperation> {
-    const path = vaultPath(vaultId)
-    const body = checkedBody(managedBigbrainDeleteVaultSchema, input)
-    if (body.confirmedVaultId !== vaultId) refuse('invalid_request')
-    return sameVault(vaultId, await call('DELETE', path, managedBigbrainOperationSchema, body, options))
-  },
-  /** SECRET result: the caller re-verifies the live owner before returning it, and must never log,
-   * cache, audit or persist it. */
-  async createOwnerInvite(
-    vaultId: string,
-    input: ManagedBigbrainOwnerInvite,
-    options?: CallOptions
-  ): Promise<ManagedBigbrainOwnerInviteResult> {
-    const path = vaultPath(vaultId, '/owner-invite')
-    const body = checkedBody(managedBigbrainOwnerInviteSchema, input)
-    const result = await call('POST', path, managedBigbrainOwnerInviteResultSchema, body, options)
-    if (!result.inviteUrl.startsWith(`https://bb-${vaultId.replaceAll('-', '')}.`))
-      refuse('invalid_response', undefined, false)
-    return result
+  /** Removes only the exact owned record; an absent record is already the goal. */
+  async deleteDns(vaultId: string, options?: CallOptions): Promise<void> {
+    try {
+      await call('DELETE', dnsPath(vaultId), z.unknown(), undefined, options)
+    } catch (error) {
+      if (error instanceof ManagedBigbrainPlatformError && error.code === 'not_found') return
+      throw error
+    }
   },
 }
 export type ManagedBigbrainPlatformClient = typeof managedBigbrainPlatform

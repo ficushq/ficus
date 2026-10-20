@@ -1,6 +1,6 @@
 /**
- * Bounded synchronization of managed shared vaults: Platform capability + vault summaries into
- * Core's store, and each ready vault's host read handoff into exactly one pool connection.
+ * Bounded synchronization of each managed vault's host read handoff into exactly one pool
+ * connection (vault state itself comes from the reconciler applying host receipts).
  *
  * Only lifecycle state moves here — never vault content. Every step is idempotent: a lost
  * acknowledgement or restart re-runs safely (an orphaned connection for the vault is adopted, not
@@ -13,10 +13,9 @@ import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT, type ManagedBigbrainCapabilities } fr
 import { isPlatformManaged } from '../../../secrets/managed'
 import type { IntegrationConnectionRecord } from '../../connection-repository'
 import { readMaterialMatches } from '../shared-client'
-import { noteManagedBigbrainCapabilityFailure, recordManagedBigbrainCapabilities } from './availability'
+import { currentManagedBigbrainCapabilities } from './availability'
 import { isManagedSharedConfig, type ManagedSharedConfig } from './config'
 import { readManagedReadHandoff, splitReadHandoff } from './host-material'
-import { managedBigbrainPlatform } from './platform-client'
 import { managedReadVault } from './read-target'
 import { managedReadMaterialSchema, managedVaultStore, type ManagedVault } from './store'
 
@@ -45,8 +44,8 @@ export interface ManagedSyncConnections {
 }
 
 export interface ManagedSyncDeps {
-  platform?: Pick<typeof managedBigbrainPlatform, 'capabilities' | 'listVaults'>
-  store?: typeof managedVaultStore
+  store?: Pick<typeof managedVaultStore, 'all' | 'clearReadMaterial' | 'recordReadMaterial' | 'bindConnection'>
+  capabilities?: () => ManagedBigbrainCapabilities | null
   readHandoff?: typeof readManagedReadHandoff
   connections: ManagedSyncConnections
   /** Pool rows for this provider (adopting an orphan after a lost acknowledgement). */
@@ -65,43 +64,22 @@ export type ManagedSyncOutcome =
   | 'fenced'
   | 'failed'
 export interface ManagedSyncReport {
-  skipped?: 'not_managed' | 'capabilities_unavailable' | 'unavailable'
+  skipped?: 'not_managed'
   vaults: Record<string, ManagedSyncOutcome>
 }
 
 export async function synchronizeManagedBigbrain(deps: ManagedSyncDeps): Promise<ManagedSyncReport> {
   const report: ManagedSyncReport = { vaults: {} }
   if (!isPlatformManaged()) return { ...report, skipped: 'not_managed' }
-  const platform = deps.platform ?? managedBigbrainPlatform
   const store = deps.store ?? managedVaultStore
-  let capabilities: ManagedBigbrainCapabilities
-  try {
-    capabilities = await platform.capabilities()
-  } catch (error) {
-    noteManagedBigbrainCapabilityFailure(error)
-    return { ...report, skipped: 'capabilities_unavailable' }
-  }
-  recordManagedBigbrainCapabilities(capabilities)
-  // Unavailable/suspended: reads already fail closed through availability; import nothing.
-  if (!capabilities.available) return { ...report, skipped: 'unavailable' }
-  const { items } = await platform.listVaults()
-  const touched = new Set<string>()
-  for (const summary of items) {
-    if (!(await store.get(summary.vaultId))) continue // created elsewhere: never adopted blindly
+  // Fences always run (they are local); imports need an eligible host right now.
+  const capabilities = (deps.capabilities ?? currentManagedBigbrainCapabilities)()
+  for (const row of await store.all()) {
+    if (row.state === 'deleted' && !row.connectionId && !row.readMaterial) continue
     try {
-      await store.applySummary(summary)
-      touched.add(summary.vaultId)
+      report.vaults[row.id] = await reconcileVault(row, capabilities, deps, store)
     } catch {
-      report.vaults[summary.vaultId] = 'failed'
-    }
-  }
-  for (const id of touched) {
-    const row = await store.get(id)
-    if (!row) continue
-    try {
-      report.vaults[id] = await reconcileVault(row, capabilities, deps, store)
-    } catch {
-      report.vaults[id] = 'failed'
+      report.vaults[row.id] = 'failed'
     }
   }
   return report
@@ -109,17 +87,18 @@ export async function synchronizeManagedBigbrain(deps: ManagedSyncDeps): Promise
 
 async function reconcileVault(
   row: ManagedVault,
-  capabilities: ManagedBigbrainCapabilities,
+  capabilities: ManagedBigbrainCapabilities | null,
   deps: ManagedSyncDeps,
-  store: typeof managedVaultStore
+  store: NonNullable<ManagedSyncDeps['store']>
 ): Promise<ManagedSyncOutcome> {
-  if (row.state !== 'ready' || row.readAccess !== 'active') {
+  if ((row.state !== 'ready' && row.state !== 'degraded') || row.readAccess !== 'active') {
     // Fence first: forget material, then disable the connection (an access fence, not deletion).
     if (row.readMaterial) await store.clearReadMaterial(row.id)
     if (row.connectionId && (await deps.getConnection(row.connectionId))?.enabled)
       await deps.connections.disable(row.connectionId, MANAGED_BIGBRAIN_SYNC_ACTOR, true)
     return 'fenced'
   }
+  if (!capabilities) return 'pending_handoff'
   const handoff = await (deps.readHandoff ?? readManagedReadHandoff)(row.id)
   if (!handoff) return 'pending_handoff'
   const { material, token } = splitReadHandoff(handoff)

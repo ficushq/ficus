@@ -1,18 +1,22 @@
 /**
  * Human lifecycle for managed shared BigBrain vaults: create, list, rename, retry, owner device
  * link, read-access revoke/reconnect and delete. Every operation checks literal human authority
- * BEFORE any Platform call. Platform is the generation authority: Core only verifies the caller's
- * expected generation against its synchronized view, sends the mutation, then applies Platform's
- * fresh summary. Access fences (revoke, delete) disable Core's read connection first.
+ * BEFORE any effect. Core is the vault authority: an operation is recorded here (generation
+ * fence, replay ledger, Core-side intent applied at once) and the worker reconciler executes it
+ * on this host through the local root helper. Access fences (revoke, delete) disable Core's read
+ * connection first.
  *
- * The owner link is a secret transient result: never stored, cached, logged or audited here.
+ * The owner link is the one synchronous host call: a secret transient result, never stored,
+ * cached, logged or audited here, and returned only after the owner is re-checked.
  */
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
+  MANAGED_BIGBRAIN_MAX_VAULTS,
+  managedBigbrainOwnerInviteResultSchema,
   managedBigbrainOwnerSchema,
-  managedBigbrainVaultSummarySchema,
   type ManagedBigbrainErrorCode,
+  type ManagedBigbrainInstalledHost,
   type ManagedBigbrainOwnerInviteResult,
 } from '@ficus/shared/managed-bigbrain'
 import { db, users } from '../../../../db'
@@ -24,8 +28,11 @@ import {
   requireManagedVaultOwner,
   ManagedVaultAuthorizationError,
 } from './authorization'
-import { managedBigbrainAvailability } from './availability'
-import { ManagedBigbrainPlatformError, managedBigbrainPlatform } from './platform-client'
+import { currentManagedBigbrainHost, managedBigbrainAvailability } from './availability'
+import { ManagedHostError, type ManagedHostClient } from './host-client'
+import { managedVaultOrigin } from './host-identity'
+import { managedVaultOperations } from './operations'
+import { ManagedBigbrainPlatformError } from './platform-client'
 import { ManagedVaultStoreError, managedVaultStore, type ManagedVault } from './store'
 
 export type ManagedVaultServiceCode =
@@ -47,7 +54,11 @@ export class ManagedVaultServiceError extends Error {
   }
 }
 
-const label = managedBigbrainVaultSummarySchema.innerType().shape.displayName
+const label = z
+  .string()
+  .min(1)
+  .max(120)
+  .refine((v) => v === v.trim() && !/\p{Cc}/u.test(v))
 const requestId = z.string().uuid()
 const generation = z.number().int().safe().min(1)
 export const createManagedVaultInputSchema = z
@@ -74,30 +85,41 @@ export interface ManagedVaultView {
   readAccess: string
   desiredGeneration: number
   appliedGeneration: number
+  pendingAction: string | null
   upstreamVaultId: string | null
   origin: string | null
   connectionId: string | null
   lastErrorCode: string | null
   retryable: boolean
+  backup: string
+  /** Squads that lose read access if this vault is deleted (management view only). */
+  assignedSquads: { id: string; name: string }[]
   updatedAt: string
 }
 
 export interface ManagedVaultServiceDeps {
-  platform?: Omit<typeof managedBigbrainPlatform, 'capabilities'>
   store?: typeof managedVaultStore
+  operations?: typeof managedVaultOperations
+  hostClient: Pick<ManagedHostClient, 'call'>
+  /** The eligible installed host (envelope, zone, limits, pin); null when unavailable. */
+  host?: () => ManagedBigbrainInstalledHost | null
   /** Immediate Core access fence for a vault's read connection (disable; never delete). */
   disableConnection: (connectionId: string, actor: string) => Promise<void>
+  /** Squads attached to a connection. */
+  usage: (connectionId: string) => Promise<{ squads: readonly { id: string; name: string }[] }>
   isEnabled?: () => Promise<boolean>
   available?: () => { available: boolean }
+  now?: () => Date
 }
 
 export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
-  const platform = deps.platform ?? managedBigbrainPlatform
   const store = deps.store ?? managedVaultStore
+  const operations = deps.operations ?? managedVaultOperations
   const isEnabled = deps.isEnabled ?? (() => isIntegrationEnabled('bigbrain'))
   const available = deps.available ?? (() => managedBigbrainAvailability())
+  const currentHost = deps.host ?? (() => currentManagedBigbrainHost())
 
-  function view(row: ManagedVault, userId: string): ManagedVaultView {
+  async function view(row: ManagedVault, userId: string): Promise<ManagedVaultView> {
     return {
       vaultId: row.id,
       displayName: row.displayName,
@@ -107,29 +129,27 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       readAccess: row.readAccess,
       desiredGeneration: row.desiredGeneration,
       appliedGeneration: row.appliedGeneration,
+      pendingAction: row.desiredAction,
       upstreamVaultId: row.upstreamVaultId,
       origin: row.origin,
       connectionId: row.connectionId,
       lastErrorCode: row.lastErrorCode,
       retryable: row.retryable,
+      backup: row.backup,
+      assignedSquads: row.connectionId ? [...(await deps.usage(row.connectionId)).squads].slice(0, 100) : [],
       updatedAt: row.updatedAt.toISOString(),
     }
   }
-
   async function live(vaultId: string): Promise<ManagedVault> {
     const row = await store.get(vaultId)
     if (!row || row.state === 'deleted') throw new ManagedVaultServiceError('not_found', 404)
     return row
   }
-  function fenceGeneration(row: ManagedVault, expected: number): void {
-    if (row.desiredGeneration !== expected)
-      throw new ManagedVaultServiceError('generation_conflict', 409, row.desiredGeneration)
+  function requireHost(): ManagedBigbrainInstalledHost {
+    const host = available().available ? currentHost() : null
+    if (!host) throw new ManagedVaultServiceError('unavailable', 503)
+    return host
   }
-  /** The owner exactly as recorded at create: Platform refuses any change on later updates. */
-  function owner(row: ManagedVault) {
-    return { userId: row.ownerUserId, handle: row.ownerHandle, display: row.ownerDisplay }
-  }
-  /** Display label for a new owner, from their profile at create time (then frozen). */
   async function ownerDisplay(userId: string, handle: string): Promise<string> {
     const [user] = await db
       .select({ displayName: users.displayName, email: users.email })
@@ -137,14 +157,6 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       .where(eq(users.id, userId))
     const candidate = (user?.displayName ?? user?.email.split('@')[0] ?? handle).replace(/\p{Cc}/gu, ' ').trim()
     return (candidate || handle).slice(0, 120).trim()
-  }
-  /** Apply Platform's fresh summary after a mutation (best effort: sync converges regardless). */
-  async function refresh(vaultId: string): Promise<ManagedVault> {
-    try {
-      return await store.applySummary(await platform.getVault(vaultId))
-    } catch {
-      return (await store.get(vaultId))!
-    }
   }
   async function fence(row: ManagedVault, actor: string): Promise<void> {
     if (row.connectionId) await deps.disableConnection(row.connectionId, actor)
@@ -155,7 +167,7 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
     async list(identity: Identity | undefined): Promise<ManagedVaultView[]> {
       if (!(await canEnumerateManagedVaults(identity))) throw new ManagedVaultServiceError('forbidden', 403)
       const userId = (identity as { userId: string }).userId
-      return (await store.list()).map((row) => view(row, userId))
+      return Promise.all((await store.list()).map((row) => view(row, userId)))
     },
 
     async get(identity: Identity | undefined, vaultId: string): Promise<ManagedVaultView> {
@@ -167,56 +179,59 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       const userId = await requireManagedVaultManager(identity)
       const body = parse(createManagedVaultInputSchema, input)
       if (!(await isEnabled())) throw new ManagedVaultServiceError('integration_disabled', 409)
-      if (!available().available) throw new ManagedVaultServiceError('unavailable', 503)
+      const host = requireHost()
+      const existing = await store.list()
+      // A replay of an existing request is answered even at capacity.
+      const replay = existing.find((row) => row.createRequestId === body.requestId)
+      if (!replay && existing.length >= Math.min(MANAGED_BIGBRAIN_MAX_VAULTS, host.limits.maxVaults))
+        throw new ManagedVaultServiceError('capacity', 429)
+      const vaultId = replay?.id ?? crypto.randomUUID()
       const row = await store.request({
+        vaultId,
         requestId: body.requestId,
         displayName: body.displayName,
         ownerUserId: userId,
         ownerHandle: body.ownerHandle,
         ownerDisplay: await ownerDisplay(userId, body.ownerHandle),
         actorUserId: userId,
+        recipe: {
+          origin: managedVaultOrigin(vaultId, host.zone),
+          limits: host.limits,
+          upstreamCommit: host.upstreamCommit,
+          artifactDigest: host.artifactDigest,
+        },
       })
-      await platform.putVault(row.id, {
-        requestId: body.requestId,
-        expectedGeneration: 0,
-        displayName: row.displayName,
-        owner: owner(row),
-      })
-      return view(await refresh(row.id), userId)
+      return view(row, userId)
     },
 
     async rename(identity: Identity | undefined, vaultId: string, input: unknown): Promise<ManagedVaultView> {
       const userId = await requireManagedVaultManager(identity)
       const body = parse(renameManagedVaultInputSchema, input)
-      const row = await live(vaultId)
-      fenceGeneration(row, body.expectedGeneration)
-      // The owner never changes through a rename.
-      await platform.putVault(vaultId, {
-        requestId: body.requestId,
-        expectedGeneration: body.expectedGeneration,
-        displayName: body.displayName,
-        owner: owner(row),
-      })
-      return view(await refresh(vaultId), userId)
+      await live(vaultId)
+      const row = await store.requestOperation(vaultId, { action: 'rename', ...body })
+      return view(row, userId)
     },
 
     async retry(identity: Identity | undefined, vaultId: string, input: unknown): Promise<ManagedVaultView> {
       const userId = await requireManagedVaultManager(identity)
       const body = parse(managedVaultFenceInputSchema, input)
-      fenceGeneration(await live(vaultId), body.expectedGeneration)
-      await platform.retryVault(vaultId, body)
-      return view(await refresh(vaultId), userId)
+      await live(vaultId)
+      return view(await store.retry(vaultId, body), userId)
     },
 
     async setReadAccess(identity: Identity | undefined, vaultId: string, input: unknown): Promise<ManagedVaultView> {
       const userId = await requireManagedVaultManager(identity)
       const body = parse(managedVaultReadAccessInputSchema, input)
       const row = await live(vaultId)
-      fenceGeneration(row, body.expectedGeneration)
       // Revoke fences Core first: no read can start once the human asked to revoke.
-      if (body.action === 'revoke') await fence(row, `user:${userId}`)
-      await platform.setReadAccess(vaultId, body)
-      return view(await refresh(vaultId), userId)
+      if (body.action === 'revoke' && row.desiredGeneration === body.expectedGeneration)
+        await fence(row, `user:${userId}`)
+      const updated = await store.requestOperation(vaultId, {
+        action: body.action === 'revoke' ? 'read-revoke' : 'read-reconnect',
+        requestId: body.requestId,
+        expectedGeneration: body.expectedGeneration,
+      })
+      return view(updated, userId)
     },
 
     /** Returns the SECRET owner device link once; callers must send it with no-store headers. */
@@ -228,11 +243,33 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       const row = await live(vaultId)
       const userId = await requireManagedVaultOwner(identity, row)
       const body = parse(managedVaultFenceInputSchema, input)
-      fenceGeneration(row, body.expectedGeneration)
-      const result = await platform.createOwnerInvite(vaultId, { ...body, actorUserId: userId })
+      if (row.desiredGeneration !== body.expectedGeneration || row.desiredAction !== null)
+        throw new ManagedVaultServiceError('generation_conflict', 409, row.desiredGeneration)
+      if (row.state !== 'ready' && row.state !== 'degraded')
+        throw new ManagedVaultServiceError('generation_conflict', 409)
+      const host = requireHost()
+      const window = await operations.openInviteWindow(
+        body.requestId,
+        vaultId,
+        body.expectedGeneration,
+        (deps.now ?? (() => new Date()))()
+      )
+      if (window.status === 'expired') throw new ManagedVaultServiceError('invite_expired', 409)
+      if (window.status === 'conflict') throw new ManagedVaultServiceError('request_conflict', 409)
+      const reply = await deps.hostClient.call(host, body.requestId, {
+        action: 'owner-invite',
+        vaultId,
+        expectedGeneration: body.expectedGeneration,
+        actorUserId: userId,
+        issuedAt: window.issuedAt,
+        expiresAt: window.expiresAt,
+      })
+      const invite = 'invite' in reply ? managedBigbrainOwnerInviteResultSchema.safeParse(reply.invite) : null
+      if (!invite?.success || !invite.data.inviteUrl.startsWith(`${row.origin}/invite#`))
+        throw new ManagedVaultServiceError('invalid_response', 502)
       // Authority may have been lost while the host call was in flight: verify again.
       await requireManagedVaultOwner(identity, await live(vaultId))
-      return result
+      return invite.data
     },
 
     async delete(identity: Identity | undefined, vaultId: string, input: unknown): Promise<ManagedVaultView> {
@@ -241,10 +278,15 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       const row = await live(vaultId)
       if (body.confirmedVaultId !== row.id || body.confirmedName !== row.displayName)
         throw new ManagedVaultServiceError('confirmation_mismatch', 409)
-      fenceGeneration(row, body.expectedGeneration)
+      if (row.desiredGeneration !== body.expectedGeneration)
+        throw new ManagedVaultServiceError('generation_conflict', 409, row.desiredGeneration)
       await fence(row, `user:${userId}`)
-      await platform.deleteVault(vaultId, body)
-      return view(await refresh(vaultId), userId)
+      const updated = await store.requestOperation(vaultId, {
+        action: 'delete',
+        requestId: body.requestId,
+        expectedGeneration: body.expectedGeneration,
+      })
+      return view(updated, userId)
     },
   }
 }
@@ -269,9 +311,12 @@ export function managedVaultErrorResponse(error: unknown): { status: number; bod
   if (error instanceof ManagedVaultStoreError)
     return {
       status: error.code === 'not_found' ? 404 : error.code === 'invalid_request' ? 400 : 409,
-      body: { code: error.code },
+      body: {
+        code: error.code,
+        ...(error.currentGeneration === undefined ? {} : { currentGeneration: error.currentGeneration }),
+      },
     }
-  if (error instanceof ManagedBigbrainPlatformError) {
+  if (error instanceof ManagedHostError || error instanceof ManagedBigbrainPlatformError) {
     const status =
       error.code === 'invalid_request'
         ? 400

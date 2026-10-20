@@ -158,6 +158,7 @@ test.skipIf(!artifact && !required)(
             artifactDigest: material.artifactDigest,
             sharedProtocol: 1,
             hostState: 'active',
+            zone: 'example.com',
             limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
             observedAt: new Date().toISOString(),
           },

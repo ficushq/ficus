@@ -33,6 +33,7 @@ const capabilities = {
   artifactDigest: `sha256:${'b'.repeat(64)}`,
   sharedProtocol: 1 as const,
   hostState: 'active' as const,
+  zone: 'example.com',
   limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   observedAt: '2026-10-20T00:00:00.000Z',
 }

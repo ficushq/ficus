@@ -522,7 +522,6 @@ export const managedVaultStore = {
           eq(managedBigbrainVaults.id, vaultId),
           or(eq(managedBigbrainVaults.state, 'ready'), eq(managedBigbrainVaults.state, 'degraded')),
           eq(managedBigbrainVaults.readAccess, 'active'),
-          isNull(managedBigbrainVaults.desiredAction),
           eq(managedBigbrainVaults.upstreamVaultId, material.data.upstreamVaultId),
           sql`${managedBigbrainVaults.appliedGeneration} >= ${material.data.generation}`
         )

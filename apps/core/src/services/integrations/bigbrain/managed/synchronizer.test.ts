@@ -4,12 +4,12 @@ import {
   MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
   type ManagedBigbrainCapabilities,
+  type ManagedBigbrainHostReceipt,
   type ManagedBigbrainReadHandoff,
-  type ManagedBigbrainVaultSummary,
 } from '@ficus/shared/managed-bigbrain'
 import { db, integrationConnections, managedBigbrainVaults, users } from '../../../../db'
 import type { IntegrationConnectionRecord } from '../../connection-repository'
-import { clearManagedBigbrainCapabilities, managedBigbrainAvailability } from './availability'
+import { clearManagedBigbrainCapabilities } from './availability'
 import { managedVaultStore as store } from './store'
 import { synchronizeManagedBigbrain, type ManagedSyncConnections } from './synchronizer'
 
@@ -44,6 +44,7 @@ const capabilities = (patch: Partial<ManagedBigbrainCapabilities> = {}): Managed
   sharedProtocol: 1,
   hostEpoch: 2,
   hostState: 'active',
+  zone: 'vaults.example.com',
   limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   observedAt: new Date().toISOString(),
   ...patch,
@@ -57,33 +58,44 @@ async function vault(name = `Vault ${crypto.randomUUID()}`) {
     .values({ email: `${crypto.randomUUID()}@example.com` })
     .returning()
   owners.push(user!.id)
-  const row = await store.request({
+  const vaultId = crypto.randomUUID()
+  const created = await store.request({
+    vaultId,
     requestId: crypto.randomUUID(),
     displayName: name,
     ownerUserId: user!.id,
     ownerHandle: 'ada',
     ownerDisplay: 'Ada',
     actorUserId: user!.id,
+    recipe: {
+      origin: origin(vaultId),
+      limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+      upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
+      artifactDigest: `sha256:${'b'.repeat(64)}`,
+    },
   })
   const upstreamVaultId = crypto.randomUUID()
-  const summary = (patch: Partial<ManagedBigbrainVaultSummary> = {}): ManagedBigbrainVaultSummary => ({
-    contractVersion: 1,
-    vaultId: row.id,
-    displayName: row.displayName,
-    ownerUserId: user!.id,
-    state: 'ready',
-    readAccess: 'active',
-    desiredGeneration: 1,
-    appliedGeneration: 1,
-    upstreamVaultId,
-    upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
-    origin: origin(row.id),
-    operationId: crypto.randomUUID(),
-    lastErrorCode: null,
-    retryable: false,
-    updatedAt: new Date().toISOString(),
-    ...patch,
-  })
+  /** Apply a host receipt for this vault (what the reconciler does). */
+  const receipt = async (patch: Partial<ManagedBigbrainHostReceipt> = {}) =>
+    store.applyReceipt({
+      receiptId: crypto.randomUUID(),
+      tenantId: TENANT,
+      physicalHostBinding: HOST,
+      vaultId,
+      hostEpoch: 1,
+      generation: 1,
+      upstreamVaultId,
+      displayName: name,
+      state: 'ready',
+      upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
+      artifactDigest: `sha256:${'b'.repeat(64)}`,
+      localPort: null,
+      origin: origin(vaultId),
+      readAccess: 'active',
+      ...patch,
+    })
+  const row = await receipt()
+  void created
   const handoff = (patch: Partial<ManagedBigbrainReadHandoff> = {}): ManagedBigbrainReadHandoff => {
     const credentialId = patch.credentialId ?? '0123abcd'
     return {
@@ -104,7 +116,7 @@ async function vault(name = `Vault ${crypto.randomUUID()}`) {
       ...patch,
     }
   }
-  return { row, summary, handoff }
+  return { row, receipt, handoff }
 }
 
 /** In-memory pool standing in for the connection service + repository + credential store. */
@@ -160,14 +172,8 @@ function pool(options: { failCreateAfterInsert?: boolean } = {}) {
   return {
     rows,
     calls,
-    deps: (
-      platform: { caps: ManagedBigbrainCapabilities; items: ManagedBigbrainVaultSummary[] },
-      handoffs: Map<string, ManagedBigbrainReadHandoff>
-    ) => ({
-      platform: {
-        capabilities: async () => platform.caps,
-        listVaults: async () => ({ items: platform.items }),
-      },
+    deps: (caps: ManagedBigbrainCapabilities | null, handoffs: Map<string, ManagedBigbrainReadHandoff>) => ({
+      capabilities: () => caps,
       readHandoff: async (id: string) => handoffs.get(id) ?? null,
       connections,
       listConnections: async () => [...rows.values()],
@@ -180,9 +186,8 @@ function pool(options: { failCreateAfterInsert?: boolean } = {}) {
 test('a ready vault with a matching host handoff becomes exactly one enabled pool connection', async () => {
   const a = await vault()
   const p = pool()
-  const deps = p.deps({ caps: capabilities(), items: [a.summary()] }, new Map([[a.row.id, a.handoff()]]))
+  const deps = p.deps(capabilities(), new Map([[a.row.id, a.handoff()]]))
   expect((await synchronizeManagedBigbrain(deps)).vaults[a.row.id]).toBe('imported')
-  expect(managedBigbrainAvailability().available).toBe(true)
   const bound = await store.get(a.row.id)
   expect(bound?.connectionId).toBeTruthy()
   expect(JSON.stringify(bound?.readMaterial)).not.toContain('sv_')
@@ -195,7 +200,7 @@ test('a ready vault with a matching host handoff becomes exactly one enabled poo
 test('a lost create acknowledgement adopts the orphaned connection instead of creating another', async () => {
   const a = await vault()
   const p = pool({ failCreateAfterInsert: true })
-  const deps = p.deps({ caps: capabilities(), items: [a.summary()] }, new Map([[a.row.id, a.handoff()]]))
+  const deps = p.deps(capabilities(), new Map([[a.row.id, a.handoff()]]))
   expect((await synchronizeManagedBigbrain(deps)).vaults[a.row.id]).toBe('failed')
   expect((await synchronizeManagedBigbrain(deps)).vaults[a.row.id]).toBe('imported')
   expect(p.calls.filter((c) => c.startsWith('create:'))).toHaveLength(1)
@@ -213,7 +218,7 @@ test('a handoff for another host, tenant, future generation or pin is never impo
     a.handoff({ upstreamVaultId: crypto.randomUUID() }),
   ]) {
     const p = pool()
-    const deps = p.deps({ caps: capabilities(), items: [a.summary()] }, new Map([[a.row.id, bad]]))
+    const deps = p.deps(capabilities(), new Map([[a.row.id, bad]]))
     expect((await synchronizeManagedBigbrain(deps)).vaults[a.row.id]).toBe('handoff_mismatch')
     expect(p.calls).toEqual([])
   }
@@ -228,16 +233,18 @@ test('revocation and deletion fence: material is forgotten and the connection di
     [a.row.id, a.handoff()],
     [b.row.id, b.handoff({ credentialId: '89abcdef' })],
   ])
-  const platform = { caps: capabilities(), items: [a.summary(), b.summary()] }
-  await synchronizeManagedBigbrain(p.deps(platform, handoffs))
+  await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))
   const connA = (await store.get(a.row.id))!.connectionId!
   const connB = (await store.get(b.row.id))!.connectionId!
-  platform.items = [
-    a.summary({ readAccess: 'revoked', desiredGeneration: 2, appliedGeneration: 2 }),
-    b.summary({ state: 'deleted', desiredGeneration: 3, appliedGeneration: 3 }),
-  ]
-  const report = await synchronizeManagedBigbrain(p.deps(platform, handoffs))
-  expect(report.vaults).toEqual({ [a.row.id]: 'fenced', [b.row.id]: 'fenced' })
+  await store.requestOperation(a.row.id, {
+    action: 'read-revoke',
+    requestId: crypto.randomUUID(),
+    expectedGeneration: 1,
+  })
+  await store.requestOperation(b.row.id, { action: 'delete', requestId: crypto.randomUUID(), expectedGeneration: 1 })
+  // Fences are local: they apply even while the host is unavailable.
+  const report = await synchronizeManagedBigbrain(p.deps(null, handoffs))
+  expect([report.vaults[a.row.id], report.vaults[b.row.id]]).toEqual(['fenced', 'fenced'])
   expect((await store.get(a.row.id))?.readMaterial).toBeNull()
   expect([p.rows.get(connA)?.enabled, p.rows.get(connB)?.enabled]).toEqual([false, false])
   expect(p.rows.size).toBe(2)
@@ -247,37 +254,35 @@ test('a newly minted credential (reconnect) rotates and re-enables; a human disa
   const a = await vault()
   const p = pool()
   const handoffs = new Map([[a.row.id, a.handoff()]])
-  const platform = { caps: capabilities(), items: [a.summary()] }
-  await synchronizeManagedBigbrain(p.deps(platform, handoffs))
+  await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))
   const id = (await store.get(a.row.id))!.connectionId!
   // A person disables the connection: same credential, so sync leaves it disabled.
-  await p.deps(platform, handoffs).connections.disable(id)
-  expect((await synchronizeManagedBigbrain(p.deps(platform, handoffs))).vaults[a.row.id]).toBe('current')
+  await p.deps(capabilities(), handoffs).connections.disable(id)
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('current')
   expect(p.rows.get(id)?.enabled).toBe(false)
   // Explicit reconnect minted a new credential at a later generation.
-  platform.items = [a.summary({ desiredGeneration: 3, appliedGeneration: 3 })]
+  await store.requestOperation(a.row.id, {
+    action: 'read-revoke',
+    requestId: crypto.randomUUID(),
+    expectedGeneration: 1,
+  })
+  await a.receipt({ generation: 2, readAccess: 'revoked' })
+  await store.requestOperation(a.row.id, {
+    action: 'read-reconnect',
+    requestId: crypto.randomUUID(),
+    expectedGeneration: 2,
+  })
+  await a.receipt({ generation: 3 })
   handoffs.set(a.row.id, a.handoff({ credentialId: 'fedcba98', generation: 3 }))
-  expect((await synchronizeManagedBigbrain(p.deps(platform, handoffs))).vaults[a.row.id]).toBe('rotated')
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('rotated')
   expect(p.rows.get(id)?.enabled).toBe(true)
   expect(p.calls.filter((c) => c.startsWith('create:'))).toHaveLength(1)
 })
 
-test('suspended or unreachable Platform imports nothing; an unknown vault is never adopted', async () => {
+test('without an eligible host nothing is imported', async () => {
   const a = await vault()
   const p = pool()
-  const handoffs = new Map([[a.row.id, a.handoff()]])
-  const suspended = capabilities({ available: false, reasonCode: 'maintenance', hostState: 'suspended' })
-  expect((await synchronizeManagedBigbrain(p.deps({ caps: suspended, items: [a.summary()] }, handoffs))).skipped).toBe(
-    'unavailable'
-  )
-  const down = p.deps({ caps: capabilities(), items: [] }, handoffs)
-  down.platform.capabilities = async () => {
-    throw new Error('host unreachable')
-  }
-  expect((await synchronizeManagedBigbrain(down)).skipped).toBe('capabilities_unavailable')
-  expect(managedBigbrainAvailability().available).toBe(false)
-  const stranger = { ...a.summary(), vaultId: crypto.randomUUID(), origin: null }
-  const report = await synchronizeManagedBigbrain(p.deps({ caps: capabilities(), items: [stranger] }, handoffs))
-  expect(report.vaults).toEqual({})
+  const report = await synchronizeManagedBigbrain(p.deps(null, new Map([[a.row.id, a.handoff()]])))
+  expect(report.vaults[a.row.id]).toBe('pending_handoff')
   expect(p.calls).toEqual([])
 })

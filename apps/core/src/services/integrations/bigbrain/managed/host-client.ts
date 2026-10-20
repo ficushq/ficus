@@ -33,10 +33,12 @@ export class ManagedHostError extends Error {
 type Request = ManagedBigbrainHostRequest
 type Action = Request['action']
 /** Request body for an action, without the envelope Core fills in from the installed host. */
-export type ManagedHostCall<A extends Action = Action> = Omit<
-  Extract<Request, { action: A }>,
-  'contractVersion' | 'requestId' | 'tenantId' | 'physicalHostBinding' | 'hostEpoch'
->
+export type ManagedHostCall = Request extends infer R
+  ? R extends Request
+    ? Omit<R, 'contractVersion' | 'requestId' | 'tenantId' | 'physicalHostBinding' | 'hostEpoch'>
+    : never
+  : never
+
 const SLOW = new Set<Action>(['create', 'delete'])
 const STDERR_BYTES = 4096
 
@@ -165,10 +167,10 @@ export function createManagedHostClient(options: ManagedHostClientOptions = {}) 
 
   return {
     /** Send one helper request for `host` (the installed record supplies the envelope). */
-    async call<A extends Action>(
+    async call(
       host: Pick<ManagedBigbrainInstalledHost, 'tenantId' | 'physicalHostBinding' | 'hostEpoch'>,
       requestId: string,
-      call: ManagedHostCall<A>
+      call: ManagedHostCall
     ): Promise<Extract<ManagedBigbrainHostReply, { ok: true }>> {
       const parsed = managedBigbrainHostRequestSchema.safeParse({
         contractVersion: MANAGED_BIGBRAIN_CONTRACT_VERSION,
