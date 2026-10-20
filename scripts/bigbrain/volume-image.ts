@@ -211,7 +211,21 @@ export async function prepareVaultImage(input: ControlReceipt, options: Options 
         throw new Error('operation_failed')
       await verifyImage(true)
       if (
-        (await run(['/usr/sbin/mkfs.ext4', '-F', '-q', '-U', record.receipt.vaultId, '--', paths.image])).code !== 0 ||
+        // nodiscard: mke2fs otherwise punches holes in a regular-file image, silently un-reserving
+        // the preallocated space the storage budget counted (observed on Ubuntu 24.04).
+        (
+          await run([
+            '/usr/sbin/mkfs.ext4',
+            '-F',
+            '-q',
+            '-E',
+            'nodiscard',
+            '-U',
+            record.receipt.vaultId,
+            '--',
+            paths.image,
+          ])
+        ).code !== 0 ||
         !(await filesystem())
       )
         throw new Error('operation_failed')

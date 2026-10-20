@@ -100,6 +100,8 @@ test('journals identity/image inode before reservation/format; exact retry never
   expect(await prepareVaultImage(f.record, f.options)).toEqual(first)
   expect(f.calls.filter((c) => c[0] === '/usr/sbin/useradd')).toHaveLength(1)
   expect(f.calls.filter((c) => c[0] === '/usr/sbin/mkfs.ext4')).toHaveLength(1)
+  // Formatting must not punch holes in the preallocated image (would un-reserve its disk budget).
+  expect(f.calls.find((c) => c[0] === '/usr/sbin/mkfs.ext4')!.join(' ')).toContain('-E nodiscard')
 })
 test('lost format response recovers matching filesystem without repeating format; reservation failure never formats', async () => {
   const f = await fixture()
