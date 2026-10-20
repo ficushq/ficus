@@ -72,7 +72,7 @@ export function BigbrainLocalSetupPanel({ hasConnections }: { hasConnections: bo
   const state = setup.data
   if (!state) return null
   const where = state.hostPlatform === 'darwin' ? 'this Mac' : 'the Ficus host'
-  const title = `${hasConnections ? 'Connect another vault' : 'Connect BigBrain'} on ${where}`
+  const title = `${hasConnections ? 'Connect or repair a vault' : 'Connect BigBrain'} on ${where}`
   if (state.state === 'unsupported_host')
     return (
       <p role="alert" className="mt-4 text-sm text-muted">

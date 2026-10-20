@@ -29,6 +29,8 @@ export const SETUP_COMMAND_ARGV = Object.freeze(['mcp', 'config'] as const)
 const STDOUT_LIMIT = 64 * 1024
 const STDERR_LIMIT = 16 * 1024
 const DEFAULT_DEADLINE_MS = 20_000
+/** After the wrapper exits, how long its already-written output may take to drain. */
+const CLOSE_GRACE_MS = 500
 const clientId = z.string().regex(/^[a-f0-9]{8}$/)
 const bounded = z.string().max(4096)
 // `ConnectedClients.stdio(id)` at the pinned upstream: {mcpServers:{bigbrain:{command,args,env}}}.
@@ -87,7 +89,9 @@ function execute(
     const stderr: Buffer[] = []
     let stdoutBytes = 0
     let stderrBytes = 0
-    let failure: BigbrainSetupCommandError | undefined
+    let settled = false
+    let exitCode: number | null = null
+    let closeGrace: ReturnType<typeof setTimeout> | undefined
     const killGroup = () => {
       if (!child.pid) return
       try {
@@ -96,10 +100,26 @@ function execute(
         /* already gone */
       }
     }
-    const fail = (error: BigbrainSetupCommandError) => {
-      failure ??= error
+    // Never wait on 'close' alone: a descendant that left the process group can hold the pipes
+    // open indefinitely. Settling detaches and destroys our pipe ends, so it cannot wedge setup.
+    const settle = (outcome: { error: BigbrainSetupCommandError } | { code: number | null }) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      clearTimeout(closeGrace)
       killGroup()
+      child.stdout.removeAllListeners('data')
+      child.stderr.removeAllListeners('data')
+      child.stdout.destroy()
+      child.stderr.destroy()
+      if ('error' in outcome) return reject(outcome.error)
+      resolve({
+        code: outcome.code,
+        stdout: Buffer.concat(stdout).toString('utf8'),
+        stderr: Buffer.concat(stderr).toString('utf8'),
+      })
     }
+    const fail = (error: BigbrainSetupCommandError) => settle({ error })
     const timer = setTimeout(
       () => fail(new BigbrainSetupCommandError('timeout')),
       options.deadlineMs ?? DEFAULT_DEADLINE_MS
@@ -114,6 +134,9 @@ function execute(
       if (stderrBytes < STDERR_LIMIT) stderr.push(data.subarray(0, STDERR_LIMIT - stderrBytes))
       stderrBytes += data.length
     })
+    // Swallow errors from destroyed pipe ends after settling.
+    child.stdout.on('error', () => {})
+    child.stderr.on('error', () => {})
     child.once('error', (error: NodeJS.ErrnoException) =>
       fail(
         new BigbrainSetupCommandError(
@@ -121,13 +144,14 @@ function execute(
         )
       )
     )
-    child.once('close', (code) => {
-      clearTimeout(timer)
-      // The wrapper may exit before its children: always reap the owned group.
+    child.once('exit', (code) => {
+      exitCode = code
+      // The wrapper may exit before its children: reap the owned group, then allow a short,
+      // bounded drain of already-written output before settling without 'close'.
       killGroup()
-      if (failure) return reject(failure)
-      resolve({ code, stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') })
+      closeGrace = setTimeout(() => settle({ code: exitCode }), CLOSE_GRACE_MS)
     })
+    child.once('close', (code) => settle({ code: exitCode ?? code }))
   })
 }
 

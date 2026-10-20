@@ -8,7 +8,17 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-export type SyntheticMode = 'ok' | 'revoked' | 'garbage' | 'sleep' | 'big' | 'wrong-vault' | 'fail' | 'spawn-child'
+export type SyntheticMode =
+  | 'ok'
+  | 'revoked'
+  | 'garbage'
+  | 'sleep'
+  | 'big'
+  | 'wrong-vault'
+  | 'fail'
+  | 'spawn-child'
+  | 'escaped-child'
+  | 'escaped-child-ok'
 
 export interface SyntheticBigbrain {
   root: string
@@ -45,6 +55,13 @@ export async function createSyntheticBigbrain(root: string, osHome: string): Pro
       if (mode === 'garbage') { console.log('Authorization: Bearer SECRET-TOKEN not json'); process.exit(0); }
       if (mode === 'big') { process.stdout.write('x'.repeat(200000)); process.exit(0); }
       if (mode === 'sleep') { setTimeout(() => {}, 60000); }
+      else if (mode === 'escaped-child' || mode === 'escaped-child-ok') {
+        // A descendant in its own session (setsid) keeps stdout/stderr open after the group is killed.
+        const escaped = spawn('setsid', ['sleep', '30'], { stdio: ['ignore', 'inherit', 'inherit'] });
+        appendFileSync(${JSON.stringify(observed)}, JSON.stringify({ escapedPid: escaped.pid })+'\\n');
+        if (mode === 'escaped-child') setTimeout(() => {}, 60000);
+        else { console.log(JSON.stringify({ mcpServers: { bigbrain: { command: 'x', args: ['mcp', '--client', 'abcd1234'], env: { BIGBRAIN_VAULT: vault } } } })); process.exit(0); }
+      }
       else if (mode === 'spawn-child') { spawn('sleep', ['30'], { stdio: 'inherit' }); setTimeout(() => {}, 60000); }
       else {
         const store = join(process.env.HOME, '.config', 'bigbrain', 'tokens', createHash('sha256').update(vault).digest('hex').slice(0, 12) + '.json');

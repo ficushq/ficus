@@ -618,7 +618,7 @@ describe('SettingsPage global integration RBAC', () => {
     expect(bigbrainCard().textContent).toContain(`Executable: ${operationsBinding.executablePath}`)
     expect(bigbrainCard().textContent).toContain('Core host, not the browser')
     expect(bigbrainCard().querySelector('input[aria-label="API base"]')).toBeNull()
-    expect(buttonTexts(bigbrainCard()).includes('Connect another vault on this Mac')).toBe(canWrite)
+    expect(buttonTexts(bigbrainCard()).includes('Connect or repair a vault on this Mac')).toBe(canWrite)
     expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(1)
     expect(observerCount(integrationQueryKeys.localSetup())).toBe(canWrite ? 1 : 0)
     for (const squad of squads) {

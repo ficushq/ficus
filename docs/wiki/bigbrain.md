@@ -140,7 +140,9 @@ selection.
 - Ficus then validates and enables the connection through the normal lifecycle.
 - Removing a Ficus connection does not revoke BigBrain's connection. Revoke
   “Local MCP configuration” in BigBrain.app under Connected Clients when access
-  should end.
+  should end. This is the same connection any other client set up with
+  `bigbrain mcp config` uses for that vault, so revoking it disconnects those
+  clients too.
 
 Equivalent CLI inspection (connecting needs a signed-in person in the web UI):
 

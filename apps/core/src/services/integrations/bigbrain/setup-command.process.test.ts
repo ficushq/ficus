@@ -93,3 +93,38 @@ test('a hung command and its children are killed at the deadline; one setup runs
     clientId: expect.stringMatching(/^[a-f0-9]{8}$/),
   })
 }, 15000)
+
+test('a descendant that escaped the process group and holds the pipes cannot wedge setup', async () => {
+  const escapedPids = async () =>
+    (await bigbrain.launches()).flatMap((entry) => ('escapedPid' in entry ? [Number(entry.escapedPid)] : []))
+  try {
+    // Hung wrapper plus an escaped pipe holder: the deadline is still a hard cap.
+    await bigbrain.setMode('escaped-child')
+    const started = Date.now()
+    await expect(
+      runBigbrainSetupCommand({ executablePath: bigbrain.executable, vaultPath: vault, deadlineMs: 800 })
+    ).rejects.toMatchObject({ code: 'timeout' })
+    expect(Date.now() - started).toBeLessThan(2500)
+    // A wrapper that exits normally while the escaped holder lingers still settles promptly.
+    await bigbrain.setMode('escaped-child-ok')
+    const exited = Date.now()
+    await expect(
+      runBigbrainSetupCommand({ executablePath: bigbrain.executable, vaultPath: vault, deadlineMs: 10_000 })
+    ).resolves.toEqual({ clientId: 'abcd1234' })
+    expect(Date.now() - exited).toBeLessThan(3000)
+    // Setup is not left busy.
+    await bigbrain.setMode('ok')
+    await expect(runBigbrainSetupCommand({ executablePath: bigbrain.executable, vaultPath: vault })).resolves.toEqual({
+      clientId: expect.stringMatching(/^[a-f0-9]{8}$/),
+    })
+    expect((await escapedPids()).length).toBe(2)
+  } finally {
+    for (const pid of await escapedPids()) {
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+}, 20000)
