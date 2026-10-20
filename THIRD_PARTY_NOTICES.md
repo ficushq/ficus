@@ -6,8 +6,8 @@ The browser voice denoiser includes a compiled dependency (DataDog/dtln-rs with 
 
 Generated server, CLI, mobile and browser artifacts need a distribution-specific notice inventory before publication. The installed dependency manifest audit is supporting evidence, not that inventory: it includes development dependencies, examples and host-specific optional packages that may not ship.
 
-The BigBrain integration mark (`apps/web/src/assets/bigbrain-mark.png`) is the
-unmodified official static cube avatar from `elsehow/bigbrain` at revision
+The BigBrain integration mark (`apps/web/src/assets/bigbrain-app-icon.svg`) is the
+unmodified BigBrain desktop app icon from `elsehow/bigbrain` at revision
 `cb61ea00bf9b85cb4cea1c8717cedfb0a40896ed`, whose root license and package
 metadata declare AGPL-3.0-only. Its [asset provenance](apps/web/src/assets/README.md)
 records the upstream path and checksum. BigBrain branding is used to identify
