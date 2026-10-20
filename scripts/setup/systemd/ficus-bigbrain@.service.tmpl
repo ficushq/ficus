@@ -1,0 +1,78 @@
+[Unit]
+Description=Managed BigBrain vault {{VAULT_ID}}
+BindsTo={{MOUNT_UNIT}}
+After={{MOUNT_UNIT}} network.target
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User={{VAULT_USER}}
+Group={{VAULT_USER}}
+Slice=ficus-bigbrain.slice
+UMask=0077
+# The server loads its font assets relative to the working directory: the immutable release.
+WorkingDirectory={{ARTIFACT_ROOT}}
+# systemd still applies this unit's mount namespace (TemporaryFileSystem/InaccessiblePaths) to
+# '+' commands on some builds: the root preflight re-enters the HOST mount namespace to see the
+# real receipt, image and mount it verifies.
+ExecStartPre=+/usr/bin/nsenter --mount=/proc/1/ns/mnt -- /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js preflight {{VAULT_ID}}
+# Unprivileged, fully sandboxed self-check: no IPv4/IPv6 sockets at all, bounded scratch.
+ExecStartPre=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js sandbox {{VAULT_ID}}
+ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/bigbrain-serve.js --vault {{VAULT_PATH}} --members {{MEMBERS_PATH}} --socket /run/ficus-bigbrain/vaults/{{VAULT_ID}}/http.sock --public-url {{ORIGIN}}
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=30
+KillMode=control-group
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+# PrivateTmp directories alone still consume the Core disk; use bounded memory-backed scratch.
+TemporaryFileSystem=/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777
+TemporaryFileSystem=/var/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# Own network/IPC namespaces: no host abstract Unix sockets, no SysV/POSIX IPC with peers; filesystem
+# sockets (the only listeners) still work. No new namespaces, native syscalls only, a service
+# syscall allow-list (denials return EPERM rather than killing), and no clock/hostname changes.
+PrivateNetwork=yes
+PrivateIPC=yes
+RemoveIPC=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+ProtectClock=yes
+ProtectHostname=yes
+# No IP sockets at all (seccomp, enforced on every systemd build): the vault serves only
+# on its root-prepared Unix socket, so it can never squat a peer's or the gateway's listener.
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+# Defense in depth where systemd is built with BPF support; not relied upon.
+SocketBindDeny=any
+TemporaryFileSystem=/var/lib/ficus-bigbrain:ro
+BindPaths={{MOUNT_PATH}}
+ReadWritePaths={{MOUNT_PATH}}
+ReadWritePaths=-/run/ficus-bigbrain/vaults/{{VAULT_ID}}
+InaccessiblePaths=-/etc/ficus -/etc/ficus-core -/var/lib/ficus-core -/var/lib/ficus -/opt/ficus-core -/opt/ficus-machine
+MemoryMax=268435456
+MemorySwapMax=0
+TasksMax=64
+LimitNOFILE=256
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

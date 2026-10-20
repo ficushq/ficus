@@ -383,6 +383,9 @@ artifact_upgrade() {
   require_host_layout_ready "${release_dir}"
   host_migrate_require_privilege "${release_dir}"
   prepare_upgrade_host
+  # Managed BigBrain (opt-in): install the candidate's immutable runtime before the flip;
+  # the host record keeps its authoritative epoch/state. Refusal stops the upgrade here.
+  bigbrain_install "${release_dir}" "$(bigbrain_config_json)"
 
   log_step "artifact upgrade 4/5: host migrations and systemd units are prepared right before the flip"
   # Both happen inside artifact_activate's pre-flip hook (host_layout_preflip,
@@ -467,6 +470,10 @@ git_target_check() { # REV
   git_rev_is_ficus "${SRC_DEST}" "$1" ||
     die "refusing revision $1: it is a pre-Ficus Core release (its package.json is not named ficus) — choose a Ficus release"
   host_migrate_require_privilege "${SRC_DEST}"
+  # The managed BigBrain runtime ships only in signed artifact releases (never built here).
+  if bigbrain_enabled "$(bigbrain_config_json)"; then
+    die "managed BigBrain is enabled: upgrade this host with a signed artifact release, not a git ref"
+  fi
   prepare_upgrade_host
 }
 

@@ -840,6 +840,16 @@ if (testDbUnavailableReason !== undefined) {
         `CREATE UNIQUE INDEX IF NOT EXISTS "idx_slot_waiters_queued_owner_unique"
         ON "slot_waiters" ("pool_id", "owner_agent_id")
         WHERE "status" = 'queued'`,
+        // managed BigBrain vaults: idempotent create arbiter, one vault per connection, and
+        // unique live display names (deleted tombstones free the name).
+        `CREATE UNIQUE INDEX IF NOT EXISTS "uq_managed_bigbrain_vaults_create_request"
+        ON "managed_bigbrain_vaults" ("create_request_id")`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "uq_managed_bigbrain_vaults_connection"
+        ON "managed_bigbrain_vaults" ("connection_id")
+        WHERE "connection_id" IS NOT NULL`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "uq_managed_bigbrain_vaults_live_display_name"
+        ON "managed_bigbrain_vaults" ("display_name")
+        WHERE "state" <> 'deleted'`,
       ]
 
       const idxScript = idxStatements.join('; ')

@@ -72,6 +72,10 @@ start without one of these five values.
 use the setup toolkit and choose a sandbox runtime appropriate for your workload
 and isolation requirements.
 
+On Ficus Cloud, [managed shared BigBrain vaults](bigbrain-shared-vaults.md) run on the
+tenant's existing Core server. Core runs vault operations locally as `root`; Platform installs
+the feature, owns per-vault DNS records and runs tenant lifecycle.
+
 ## Design lines (deliberate, not gaps)
 
 - The vm tier stays dumb: no affinity/limits/scheduler in the packer. The

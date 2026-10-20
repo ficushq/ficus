@@ -1,17 +1,31 @@
-import { bigbrainHostAvailability } from './availability'
+import { isPlatformManaged } from '../../secrets/managed'
+import { requireSandboxRuntime } from '../../sandbox/runtime'
 import { BigbrainError } from './errors'
-import { BigbrainProvider, type BigbrainConfigV2 } from './provider'
+import { bigbrainDeploymentAvailability } from './managed/availability'
+import { parseBigbrainCredential, type BigbrainConfiguration } from './managed/config'
+import { BigbrainProvider } from './provider'
+import { createSharedBigbrainTools } from './shared-tools'
 import { createBigbrainTools, type BigbrainTool, type BigbrainToolContext } from './tools'
 import type { IntegrationPluginV1 } from '../plugin'
 
 const provider = new BigbrainProvider()
 
+/** Shared vault reads are offered only to agents on an isolated runtime: a `host` agent shell
+ * runs as the Core service account, which can read every vault's private material. */
+function isolatedAgentRuntime(): boolean {
+  try {
+    return requireSandboxRuntime() !== 'host'
+  } catch {
+    return false
+  }
+}
+
 const plugin: IntegrationPluginV1<
-  BigbrainConfigV2,
+  BigbrainConfiguration,
   string,
   { createTools(context: BigbrainToolContext): readonly BigbrainTool[] }
 > = {
-  availability: bigbrainHostAvailability,
+  availability: () => bigbrainDeploymentAvailability(),
   manifestVersion: 1,
   key: 'bigbrain',
   adapterVersion: 2,
@@ -20,6 +34,8 @@ const plugin: IntegrationPluginV1<
     description: 'Connect an approved local BigBrain vault on the Core host.',
     icon: 'bigbrain',
     connectionMode: 'local',
+    // Ficus Cloud hosts managed shared vaults; elsewhere a local binding on the Core host.
+    resolveConnectionMode: () => (isPlatformManaged() ? 'managed' : 'local'),
     assignable: true,
     requiredCapabilities: ['agent_tools'],
   },
@@ -27,10 +43,7 @@ const plugin: IntegrationPluginV1<
     parseConfiguration: (input) => provider.parseConfig(input),
     safeConfiguration: (configuration) => ({ ...configuration }),
     credential: {
-      parse(value) {
-        if (typeof value !== 'string' || !/^[a-f0-9]{8}$/.test(value)) throw new Error('Invalid credential')
-        return value
-      },
+      parse: parseBigbrainCredential,
       serialize(value) {
         return this.parse(value)
       },
@@ -39,7 +52,16 @@ const plugin: IntegrationPluginV1<
   authorization: { kind: 'manual' },
   runtime: {
     provider,
-    agentTools: { createTools: createBigbrainTools },
+    agentTools: {
+      // Ficus Cloud: only the read-only managed shared tools (never personal drop). Elsewhere the
+      // unchanged personal local-binding tools.
+      createTools: (context) =>
+        isPlatformManaged()
+          ? context.assignments && isolatedAgentRuntime()
+            ? createSharedBigbrainTools({ ...context, assignments: context.assignments })
+            : []
+          : createBigbrainTools(context),
+    },
   },
   sandbox: {
     packages: [],

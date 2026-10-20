@@ -1930,6 +1930,12 @@ render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH [TRUSTED_PROXY...]
   shift 4
   printf '{\n    servers {\n        trusted_proxies static %s\n        trusted_proxies_strict\n        client_ip_headers CF-Connecting-IP\n    }\n}\n\n' \
     "${CLOUDFLARE_PROXY_RANGES[*]}${*:+ $*}"
+  # Managed BigBrain (opt-in): the root controller owns the per-vault site files; every
+  # normal Core re-render (setup AND upgrade) must keep importing them. A glob that matches
+  # nothing is valid Caddy config, so an enabled host with no vaults yet still validates.
+  if [[ ${BIGBRAIN_INGRESS:-false} == true ]]; then
+    printf 'import %s/caddy/*.caddy\n\n' "${BIGBRAIN_ETC}"
+  fi
   printf '%s {\n    tls %s %s\n' "${host}" "${cert}" "${key}"
   if (($# > 0)); then
     printf '    @app_bridge {\n        remote_ip %s\n        path /api/app/*\n    }\n' "$*"
@@ -1938,6 +1944,108 @@ render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH [TRUSTED_PROXY...]
   fi
   printf '    reverse_proxy 127.0.0.1:%s {\n        header_up X-Forwarded-For {client_ip}\n        header_up X-Forwarded-Host {host}\n        header_up X-Forwarded-Proto {scheme}\n    }\n}\n' \
     "${port}"
+}
+
+# ------------------------------------------------------------------ managed BigBrain
+#
+# Opt-in (default off) shared vaults served on THIS Core host. Config section, written by
+# the control plane before install and validated again by the installer's strict schema:
+#   bigbrain: { enabled, tenant_id, physical_host_binding, host_epoch, zone }
+# Only signed artifact releases carry the runtime (<release>/bigbrain); nothing is built or
+# downloaded on the host. The installer seeds an ABSENT host record only; it never adopts a
+# different tenant/binding, never rewinds the host epoch and never uninstalls vault data.
+BIGBRAIN_ETC="${BIGBRAIN_ETC:-/etc/ficus/bigbrain}"       # test seams only
+BIGBRAIN_STATE="${BIGBRAIN_STATE:-/var/lib/ficus-bigbrain}"
+BIGBRAIN_BUN="${BIGBRAIN_BUN:-/usr/local/bin/bun}"
+
+bigbrain_config_json() {
+  local section
+  section=$(yq -o=json -I=0 '.bigbrain // {}' "${CFG_FILE}" 2>/dev/null) ||
+    die "config: failed to read the bigbrain section from ${CFG_FILE}"
+  jq -ce '
+    if type != "object" then error("shape") else . end |
+    if (.enabled // false) == false then
+      if (keys - ["enabled"]) == [] then {enabled: false} else error("identity without enabled") end
+    elif (keys - ["enabled", "tenant_id", "physical_host_binding", "host_epoch", "zone"]) != [] then error("unknown key")
+    else {enabled: .enabled, tenantId: .tenant_id, physicalHostBinding: .physical_host_binding,
+          hostEpoch: .host_epoch, zone: .zone}
+    end' <<<"${section}" 2>/dev/null ||
+    die "config: bigbrain must contain only enabled, tenant_id, physical_host_binding, host_epoch and zone (identity only when enabled: true)"
+}
+
+bigbrain_enabled() { # CONFIG_JSON
+  [[ $(jq -r '.enabled' <<<"$1") == true ]]
+}
+
+# Install/upgrade under the host lifecycle lock shared with the root helper launcher.
+bigbrain_install() { # RELEASE_DIR CONFIG_JSON
+  local release=$1 config=$2 runtime out code
+  if ! bigbrain_enabled "${config}"; then
+    if as_root test -e "${BIGBRAIN_ETC}/host.json"; then
+      die "managed BigBrain is installed on this host: bigbrain.enabled: false would orphan its vaults — remove them through the control plane first; nothing was changed"
+    fi
+    return 0
+  fi
+  runtime="${release}/bigbrain/ficus-bigbrain-host.js"
+  [[ -f ${runtime} && ! -L ${runtime} ]] ||
+    die "managed BigBrain needs a signed artifact release that carries its runtime (${release}/bigbrain); nothing was changed"
+  # The lock file is opened without truncation or replacement (a held flock stays valid);
+  # the installer itself verifies every directory/mode it relies on.
+  # shellcheck disable=SC2016 # expanded by the root shell, from its own argv
+  out=$(as_root /bin/bash -p -c '
+    set -euo pipefail
+    umask 077
+    state=$1 runtime=$2 bun=$3
+    [[ -d $state ]] || install -d -m 0711 -o root -g root "$state"
+    [[ -d $state/control ]] || install -d -m 0700 -o root -g root "$state/control"
+    [[ ! -L $state/control/host.lock ]]
+    exec 9<>"$state/control/host.lock"
+    flock -w 180 -x 9
+    # The installer verifies this interpreter (ownership, exact version) before any write.
+    exec /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 \
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "$bun" --no-install --no-env-file "$runtime" install
+  ' ficus-bigbrain-install "${BIGBRAIN_STATE}" "${runtime}" "${BIGBRAIN_BUN}" <<<"${config}") || true
+  if [[ $(jq -r '.ok // false' <<<"${out}" 2>/dev/null) != true ]]; then
+    code=$(jq -r '.code // "operation_failed"' <<<"${out}" 2>/dev/null) || code=operation_failed
+    [[ ${code} =~ ^[a-z_]{1,40}$ ]] || code=operation_failed
+    die "managed BigBrain install refused (${code}); the host record was not changed"
+  fi
+  log_info "managed BigBrain runtime installed: $(jq -c '{created, artifactDigest, hostEpoch, hostState}' <<<"${out}")"
+}
+
+# Restore: an envelope's managed-bigbrain/ directory never reaches HOME_DIR or the database
+# step. It is checked BEFORE any database/file change (same tenant, enabled host, strict shape:
+# manifest.json + vaults/<uuid>.tar regular files only) and moved to the fixed root-private
+# staging the host's restore-fence reads. Vault identity/authority come later from the control
+# plane's current grants, never from the archive. No-op for envelopes without vaults.
+bigbrain_restore_stage() { # OUT_DIR CONFIG_JSON
+  local src="$1/managed-bigbrain" config=$2 entry tenant dest
+  [[ -e ${src} || -L ${src} ]] || return 0
+  [[ -d ${src} && ! -L ${src} ]] || die "restore: the backup's managed BigBrain entry is not a plain directory — refusing"
+  bigbrain_enabled "${config}" ||
+    die "restore: this backup contains managed BigBrain vaults but this host is not enabled for them — refusing before any database or file change"
+  while IFS= read -r -d '' entry; do
+    entry=${entry#"$1/"}
+    if [[ -L $1/${entry} ]] ||
+      ! [[ (${entry} == managed-bigbrain/manifest.json && -f $1/${entry}) ||
+        (${entry} == managed-bigbrain/vaults && -d $1/${entry}) ||
+        (${entry} =~ ^managed-bigbrain/vaults/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tar$ && -f $1/${entry}) ]]; then
+      die "restore: unexpected entry in the backup's managed BigBrain data — refusing before any database or file change"
+    fi
+  done < <(find "${src}" -mindepth 1 -print0)
+  tenant=$(jq -er '.tenantId' "${src}/manifest.json" 2>/dev/null) ||
+    die "restore: the backup's managed BigBrain manifest is unreadable — refusing before any database or file change"
+  [[ ${tenant} == "$(jq -r '.tenantId' <<<"${config}")" ]] ||
+    die "restore: the backup's managed BigBrain vaults belong to a different tenant — refusing before any database or file change"
+  dest="${BIGBRAIN_STATE}/restore"
+  as_root test -d "${BIGBRAIN_STATE}" || as_root install -d -m 0711 -o root -g root "${BIGBRAIN_STATE}"
+  as_root test -d "${dest}" || as_root install -d -m 0700 -o root -g root "${dest}"
+  as_root test ! -L "${dest}" || die "restore: ${dest} is a symlink — refusing"
+  as_root rm -rf "${dest}/managed-bigbrain"
+  as_root mv "${src}" "${dest}/managed-bigbrain" || die "restore: could not stage the managed BigBrain data"
+  as_root chown -R --no-dereference root:root "${dest}/managed-bigbrain"
+  as_root chmod -R go-rwx "${dest}/managed-bigbrain"
+  log_info "restore: managed BigBrain vault data staged for the control plane's authoritative restore"
 }
 
 # Overridable via env (default unchanged) for the same reason as
@@ -2077,6 +2185,7 @@ upgrade_caddy_prepare() { # ENV_FILE
   local env_file=$1 origin host port trusted_raw
   local -a trusted=()
   UPGRADE_CADDYFILE=''
+  if bigbrain_enabled "$(bigbrain_config_json)"; then BIGBRAIN_INGRESS=true; fi
   if [[ $(cfg_bool '.ingress.caddy' 'false') != true ]]; then
     log_info "caddy ingress: ingress.caddy is not enabled — Caddyfile re-render skipped"
     return 0

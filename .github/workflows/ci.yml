@@ -200,6 +200,32 @@ jobs:
           }
           if (( status != 0 )); then exit $(( status )); fi
 
+      - name: Run managed BigBrain setup hook suite
+        run: |
+          set -o pipefail
+          status=0
+          out=$(bash scripts/setup/bigbrain-host.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::bigbrain-host.test.sh ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
+      # The rendered nightly backup script round-trip (dry run, fake pg_dump), including the
+      # managed BigBrain staging that must land in the same encrypted envelope.
+      - name: Run backup script suite
+        run: |
+          set -o pipefail
+          status=0
+          out=$(bash scripts/setup/ficus-backup.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::ficus-backup.test.sh ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
       # The installer's SSH host-key pinning against a real sshd on 127.0.0.1
       # (started by the suite as the runner user; never a remote host).
       - name: Run setup SSH host-key suite
@@ -864,6 +890,15 @@ jobs:
           docker logs postgres-test
           exit 1
 
+      # Pure/owned-loopback tests, not the privileged host containment acceptance lane.
+      - name: Run managed BigBrain host unit tests
+        run: bun run test:bigbrain-host
+
+      - name: Build pinned shared BigBrain fixture
+        run: |
+          bun scripts/bigbrain/build-artifact.ts --out-dir "$RUNNER_TEMP/bigbrain-shared"
+          bun scripts/bigbrain/prepare-native-smoke.ts "$RUNNER_TEMP/bigbrain-shared" "$RUNNER_TEMP/bigbrain-shared-deps"
+
       # Membership is enforced by .github/subprocess-lane-gate.test.ts — a test
       # file that spawns a real bun subprocess must be listed here. Adding one
       # to apps/core without adding it here fails that gate, which is what
@@ -878,7 +913,9 @@ jobs:
           src/services/work-streams/worktree-cleanup-reconciler.test.ts
           src/services/integrations/bigbrain/desktop-host.test.ts
           src/services/integrations/bigbrain/stdio-transport.process.test.ts
+          src/services/integrations/bigbrain/managed/host-client.process.test.ts
           src/services/integrations/bigbrain/upstream.smoke.test.ts
+          src/services/integrations/bigbrain/shared-upstream.smoke.test.ts
           src/services/integrations/outputs/runtime.test.ts
           src/services/integrations/github/feedback-routing.test.ts
           src/services/execution/pickup.test.ts
@@ -913,6 +950,83 @@ jobs:
         working-directory: apps/core
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_test
+          FICUS_BIGBRAIN_SHARED_ARTIFACT: ${{ runner.temp }}/bigbrain-shared
+          FICUS_BIGBRAIN_SHARED_DEPS: ${{ runner.temp }}/bigbrain-shared-deps
+          FICUS_BIGBRAIN_REQUIRE_SHARED_SMOKE: '1'
+
+  # Managed BigBrain containment on a DISPOSABLE runner (never a shared or production host):
+  # real toolkit install, root launcher, two vaults with their own accounts, loop mounts,
+  # systemd units and cgroups, then attacks from inside vault A's own mount namespace, cgroup
+  # and UID. Fails closed: a skipped/unsupported environment is missing evidence, not a pass.
+  bigbrain-linux-containment:
+    name: Managed BigBrain Linux containment
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in lockstep with .bun-version (enforced by .github/bun-version-gate.test.ts).
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Host prerequisites (disposable runner only)
+        run: |
+          set -euo pipefail
+          # The pinned host interpreter the bundles run under (setup installs it root-owned).
+          stat -c '%U:%G:%a %n' /usr/local/bin /usr/local /usr /opt /etc /
+          # Hosted runner images leave e.g. /usr/local/bin world-writable (observed 777); a real
+          # host's interpreter/install parents must not be, and the installer refuses otherwise.
+          sudo chown root:root /usr/local /usr/local/bin /opt
+          sudo chmod go-w /usr/local /usr/local/bin /opt
+          sudo install -m 0755 -o root -g root "$(command -v bun)" /usr/local/bin/bun
+          sudo apt-get update -qq
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy
+          # Self-signed stand-in for the origin certificate covering the vault zone.
+          sudo install -d -m 0755 /etc/caddy/tls
+          sudo openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout /etc/caddy/tls/origin.key -out /etc/caddy/tls/origin.crt \
+            -subj '/CN=*.bigbrain.example.test' -addext 'subjectAltName=DNS:*.bigbrain.example.test' 2>/dev/null
+          sudo chmod 0600 /etc/caddy/tls/origin.key
+          printf 'import /etc/ficus/bigbrain/caddy/*.caddy\n' | sudo tee /etc/caddy/Caddyfile >/dev/null
+          sudo systemctl restart caddy
+          # Core's backup timer stand-in: probe requires the existing encrypted backup to be enabled.
+          printf '[Unit]\nDescription=stand-in\n[Service]\nType=oneshot\nExecStart=/bin/true\n' | sudo tee /etc/systemd/system/ficus-backup.service >/dev/null
+          printf '[Unit]\nDescription=stand-in\n[Timer]\nOnCalendar=*-*-* 03:15:00\n[Install]\nWantedBy=timers.target\n' | sudo tee /etc/systemd/system/ficus-backup.timer >/dev/null
+          sudo systemctl daemon-reload
+          sudo systemctl enable ficus-backup.timer
+          test -e /sys/fs/cgroup/cgroup.controllers || { echo '::error::cgroup v2 unavailable: containment evidence missing'; exit 1; }
+
+      - name: Build the managed BigBrain runtime release
+        run: bun scripts/bigbrain/build-artifact.ts --out-dir "$RUNNER_TEMP/release/bigbrain"
+
+      - name: Containment acceptance
+        run: |
+          set -o pipefail
+          status=0
+          out=$(sudo /usr/local/bin/bun scripts/bigbrain/linux-acceptance.ts "$RUNNER_TEMP/release" 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::containment acceptance did not end with a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          sudo systemctl --no-pager status 'ficus-bigbrain*' caddy || true
+          sudo journalctl --no-pager -n 200 -u 'ficus-bigbrain*' -u caddy || true
 
   # End-to-end proof that `bun run setup` produces a running, self-updatable
   # local install (docs/history/superpowers/specs/2026-09-02-local-setup-installer-design.md §9).

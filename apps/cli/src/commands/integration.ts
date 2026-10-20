@@ -6,11 +6,13 @@ import type {
 import { Command } from 'commander'
 import { apiDelete, apiGet, apiPost, apiPut } from '../client'
 import { isJsonMode, output, outputError } from '../output'
+import { registerBigbrainVaultCommands, type BigbrainVaultCommandDependencies } from './integration-bigbrain'
 
 const MAX_CREDENTIAL_BYTES = 16 * 1024
 
 interface IntegrationCommandDependencies {
   readCredential: () => Promise<string>
+  bigbrain?: BigbrainVaultCommandDependencies
 }
 
 export function registerIntegrationCommands(
@@ -18,6 +20,7 @@ export function registerIntegrationCommands(
   dependencies: IntegrationCommandDependencies = { readCredential: readCredentialFromStdin }
 ): void {
   const integration = program.command('integration').description('Manage external integrations')
+  registerBigbrainVaultCommands(integration, dependencies.bigbrain)
   integration
     .command('connect <provider>')
     .option('--connection <uuid>', 'Reconnect an existing account')

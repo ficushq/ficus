@@ -60,6 +60,7 @@ import { createCodingTools, isHostRuntime } from '../../services/sandbox'
 import { createSandboxStatusTool } from '../../tools/sandbox-status'
 import { createShortTermMemoryTools, createAgentShortTermMemoryStorage } from '../../tools/short-term-memory'
 import { BIGBRAIN_TOOL_NAMES, type BigbrainToolContext } from '../../services/integrations/bigbrain/tools'
+import { BIGBRAIN_SHARED_TOOL_NAMES } from '../../services/integrations/bigbrain/shared-tools'
 import { resolveOAuthAuthority } from '../../services/integrations/authorization/authority'
 import { IntegrationRuntimeGate } from '../../services/integrations/runtime-gate'
 import {
@@ -89,7 +90,7 @@ export function allowsBigbrainIntegrationTools(
 ): boolean {
   return Boolean(
     toolsAllow &&
-    BIGBRAIN_TOOL_NAMES.some((name) => toolNameMatchesAny(toolsAllow, name)) &&
+    [...BIGBRAIN_TOOL_NAMES, ...BIGBRAIN_SHARED_TOOL_NAMES].some((name) => toolNameMatchesAny(toolsAllow, name)) &&
     policy?.version === 1 &&
     policy.allow.bigbrain?.includes('agent_tools')
   )
@@ -657,6 +658,7 @@ export abstract class AgentRunner {
       },
       audit: integrationAuditRecorder,
       connections: integrationConnectionRepository,
+      assignments: integrationConnectionRepository,
     }
     return factory.createTools(context)
   }

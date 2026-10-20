@@ -12,8 +12,14 @@ test('catalog exposes connected Core availability without probing bindings or tr
     delete process.env.FICUS_MANAGED
     expect(registry.catalog()[0]).toMatchObject({ label: 'BigBrain', availability: { available: true } })
     process.env.FICUS_MANAGED = '1'
+    // Cloud offers managed shared vaults instead, and only once Platform confirms the host.
     expect(registry.catalog()[0]).toMatchObject({
-      availability: { available: false, reason: expect.stringContaining('unavailable on Ficus Cloud') },
+      connectionMode: 'managed',
+      availability: { available: false, reason: expect.stringContaining('not been confirmed') },
+    })
+    expect(bigbrainHostAvailability()).toMatchObject({
+      available: false,
+      reason: expect.stringContaining('unavailable on Ficus Cloud'),
     })
     delete process.env.FICUS_MANAGED
     delete process.env.FICUS_SANDBOX_RUNTIME

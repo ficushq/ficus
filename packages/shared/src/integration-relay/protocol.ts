@@ -1,8 +1,13 @@
 import { z } from 'zod'
 import { OAUTH_BROKER_SCOPES } from '../oauth-broker/protocol'
+import { MANAGED_BIGBRAIN_SCOPES } from '../managed-bigbrain'
 
 export const INTEGRATION_RELAY_SCOPES = ['integrations.events:subscribe', 'integrations.events:consume'] as const
-export const INSTANCE_INTEGRATION_SCOPES = [...OAUTH_BROKER_SCOPES, ...INTEGRATION_RELAY_SCOPES] as const
+export const INSTANCE_INTEGRATION_SCOPES = [
+  ...OAUTH_BROKER_SCOPES,
+  ...INTEGRATION_RELAY_SCOPES,
+  ...MANAGED_BIGBRAIN_SCOPES,
+] as const
 export type IntegrationRelayScope = (typeof INTEGRATION_RELAY_SCOPES)[number]
 export const RELAY_MAX_PAYLOAD_BYTES = 1024 * 1024
 export const RELAY_BATCH_SIZE = 10

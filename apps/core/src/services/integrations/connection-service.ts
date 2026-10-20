@@ -296,10 +296,13 @@ export class IntegrationConnectionService {
     credential: string,
     actor: string,
     confirmAssigned = false,
-    configuration?: unknown
+    configuration?: unknown,
+    /** Trusted internal flow (like `create`'s): material came from an authorization, not a person. */
+    authorizationGrant?: true
   ): Promise<SafeIntegrationConnection> {
     const current = await this.#mustGet(id)
-    if (!this.#allowsManualCredential(current.providerKey)) throw new IntegrationManualCredentialNotAllowedError()
+    if (!authorizationGrant && !this.#allowsManualCredential(current.providerKey))
+      throw new IntegrationManualCredentialNotAllowedError()
     const parsedConfiguration =
       configuration === undefined
         ? undefined

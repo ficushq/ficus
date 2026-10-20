@@ -64,7 +64,7 @@ export interface IntegrationConnection extends IntegrationConnectionSummary {
 export interface IntegrationCatalogItem {
   availability?: { available: boolean; reason?: string }
   setup?: { state: 'configured' | 'needs_setup' | 'needs_attention'; issues: string[] }
-  connectionMode?: 'local' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
+  connectionMode?: 'local' | 'managed' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
 
   enabled?: boolean
   key: string
@@ -167,6 +167,73 @@ export interface BigbrainLocalBindings {
 }
 export const getBigbrainLocalBindings = (fetcher: ApiFetcher = apiFetch) =>
   fetcher<BigbrainLocalBindings>('/integrations/providers/bigbrain/local-bindings')
+/** Management view of one managed shared BigBrain vault (never credentials or host paths). */
+export interface ManagedBigbrainVault {
+  vaultId: string
+  displayName: string
+  /** Null once the owner's Ficus account was deleted. */
+  ownerUserId: string | null
+  isOwner: boolean
+  state: 'requested' | 'provisioning' | 'ready' | 'degraded' | 'failed' | 'deleting' | 'deleted'
+  readAccess: 'pending' | 'active' | 'revoked'
+  desiredGeneration: number
+  appliedGeneration: number
+  upstreamVaultId: string | null
+  origin: string | null
+  connectionId: string | null
+  lastErrorCode: string | null
+  retryable: boolean
+  /** The host operation still to run, if any (Core records it; the server applies it shortly). */
+  pendingAction: 'create' | 'rename' | 'read-revoke' | 'read-reconnect' | 'delete' | null
+  /** Whether the most recent server backup included this vault. */
+  backup: 'unknown' | 'included' | 'excluded'
+  /** Squads that lose read access if this vault is deleted. */
+  assignedSquads: { id: string; name: string }[]
+  updatedAt: string
+}
+/** SECRET: a single-use owner device link. Keep in component state only; never cache or log. */
+export interface ManagedBigbrainOwnerInvite {
+  inviteUrl: string
+  expiresAt: string
+}
+const MANAGED_VAULTS = '/integrations/providers/bigbrain/shared-vaults'
+const vaultPath = (vaultId: string) => `${MANAGED_VAULTS}/${encodeURIComponent(vaultId)}`
+export const listManagedBigbrainVaults = (fetcher: ApiFetcher = apiFetch) =>
+  fetcher<{ vaults: ManagedBigbrainVault[] }>(MANAGED_VAULTS).then((value) => value.vaults)
+export const createManagedBigbrainVault = (
+  input: { requestId: string; displayName: string; ownerHandle: string },
+  fetcher: ApiFetcher = apiFetch
+) => fetcher<ManagedBigbrainVault>(MANAGED_VAULTS, { method: 'POST', body: JSON.stringify(input) })
+export const renameManagedBigbrainVault = (
+  vaultId: string,
+  input: { requestId: string; expectedGeneration: number; displayName: string },
+  fetcher: ApiFetcher = apiFetch
+) => fetcher<ManagedBigbrainVault>(vaultPath(vaultId), { method: 'PATCH', body: JSON.stringify(input) })
+export const retryManagedBigbrainVault = (
+  vaultId: string,
+  input: { requestId: string; expectedGeneration: number },
+  fetcher: ApiFetcher = apiFetch
+) => fetcher<ManagedBigbrainVault>(`${vaultPath(vaultId)}/retry`, { method: 'POST', body: JSON.stringify(input) })
+export const setManagedBigbrainReadAccess = (
+  vaultId: string,
+  input: { requestId: string; expectedGeneration: number; action: 'revoke' | 'reconnect' },
+  fetcher: ApiFetcher = apiFetch
+) => fetcher<ManagedBigbrainVault>(`${vaultPath(vaultId)}/read-access`, { method: 'POST', body: JSON.stringify(input) })
+export const deleteManagedBigbrainVault = (
+  vaultId: string,
+  input: { requestId: string; expectedGeneration: number; confirmedVaultId: string; confirmedName: string },
+  fetcher: ApiFetcher = apiFetch
+) => fetcher<ManagedBigbrainVault>(vaultPath(vaultId), { method: 'DELETE', body: JSON.stringify(input) })
+export const createManagedBigbrainOwnerInvite = (
+  vaultId: string,
+  input: { requestId: string; expectedGeneration: number },
+  fetcher: ApiFetcher = apiFetch
+) =>
+  fetcher<ManagedBigbrainOwnerInvite>(`${vaultPath(vaultId)}/owner-invite`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+
 export const createLocalBigbrainIntegration = (
   input: { bindingId: string; displayName: string },
   fetcher: ApiFetcher = apiFetch

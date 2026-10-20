@@ -66,8 +66,10 @@ import { squadEnvRouter } from './routes/squad-env'
 import { memoryRouter } from './routes/memory'
 import { grantsRouter } from './routes/grants'
 import { createIntegrationsRouter, createSquadIntegrationsRouter } from './routes/integrations'
+import { createBigbrainSharedRouter } from './routes/bigbrain-shared'
 import {
   integrationRoutesService,
+  managedVaultService,
   githubIdentityRoutesService,
   squadIntegrationRoutesService,
 } from './services/integrations/runtime'
@@ -329,6 +331,7 @@ app.route('/api/squads', squadsRouter)
 app.route('/api/squads', slotsRouter)
 app.route('/api/slots', slotResourcesRouter)
 app.route('/api/activity', activityRouter)
+app.route('/api/integrations/providers/bigbrain/shared-vaults', createBigbrainSharedRouter(managedVaultService))
 app.route('/api/integrations', createIntegrationsRouter(integrationRoutesService))
 app.route('/api/squads', createSquadIntegrationsRouter(squadIntegrationRoutesService))
 app.route('/api', deploymentsRouter)
@@ -593,8 +596,21 @@ let unregisterSquadActivity: (() => void) | null = null
 let unregisterAgentActivity: (() => void) | null = null
 let liveActivityFanout: LiveActivityFanout | null = null
 
+let managedBigbrainCapabilityRunner: import('./lib/infra/PeriodicRunner').PeriodicRunner | null = null
 const subsystems: Subsystem[] = [
   subsystem('bigbrain-processes', () => {}, stopAllBigbrainProcesses),
+  subsystem(
+    'managed-bigbrain-capabilities',
+    async () => {
+      const { createManagedBigbrainCapabilityRunner } = await import('./services/integrations/bigbrain/managed/runner')
+      managedBigbrainCapabilityRunner = createManagedBigbrainCapabilityRunner()
+      managedBigbrainCapabilityRunner.start()
+    },
+    async () => {
+      await managedBigbrainCapabilityRunner?.stop()
+      managedBigbrainCapabilityRunner = null
+    }
+  ),
   subsystem(
     'squad-activity-materialization',
     () => {

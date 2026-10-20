@@ -133,6 +133,23 @@ ingress:
   trusted_proxies: []
 
 # -----------------------------------------------------------------------------
+# Optional managed BigBrain shared vaults on THIS host (off by default). Only the
+# Ficus Cloud control plane turns this on: it persists the tenant/host identity
+# below BEFORE install. Requires ingress.caddy and source.mode: artifact (the
+# vault runtime ships only in signed releases). Each vault gets its own system
+# account, bounded filesystem and service; Core itself never receives vault
+# write access. Paths, limits and binaries are fixed and not configurable.
+# host_epoch seeds a NEW host record only; an installed host keeps its own.
+# Setting enabled: false on a host that has vaults is refused.
+# -----------------------------------------------------------------------------
+bigbrain:
+  enabled: false
+  # tenant_id: <uuid>               # control-plane tenant
+  # physical_host_binding: <uuid>   # this VM incarnation; replaced hosts get a new one
+  # host_epoch: 0
+  # zone: <vault DNS zone>          # vault origins are https://bb-<vault hex>.<zone>
+
+# -----------------------------------------------------------------------------
 # Optional nightly encrypted backup (off by default). When enabled, setup
 # installs a systemd timer that nightly: pg_dump's the database, tars it with
 # HOME_DIR (the agent workspace/memory tree) and <dest>/.env (the encryption

@@ -1,0 +1,694 @@
+#!/usr/bin/env bun
+/**
+ * Disposable-runner acceptance for managed BigBrain containment. Runs as ROOT on a throwaway CI
+ * VM only (never a shared or production host): real install through the setup-toolkit hook, real
+ * helper launcher, real accounts/loop mounts/systemd units/cgroups, and attacks executed from
+ * inside vault A's own mount namespace, cgroup and UID.
+ *
+ * Usage (CI): sudo /usr/local/bin/bun scripts/bigbrain/linux-acceptance.ts <release-dir>
+ * where <release-dir>/bigbrain is the built runtime artifact.
+ */
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { MANAGED_BIGBRAIN_DEFAULT_LIMITS, MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
+
+const release = process.argv[2]
+if (!release || process.getuid?.() !== 0 || process.platform !== 'linux') {
+  console.error('usage: sudo bun scripts/bigbrain/linux-acceptance.ts <release-dir> (Linux, root, disposable VM only)')
+  process.exit(64)
+}
+const results: { check: string; ok: boolean; detail?: string }[] = []
+function check(name: string, ok: boolean, detail?: string) {
+  results.push({ check: name, ok, ...(detail ? { detail } : {}) })
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`)
+}
+function sh(argv: string[], input?: string) {
+  const proc = Bun.spawnSync(argv, {
+    stdin: input === undefined ? 'ignore' : Buffer.from(input),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  return { code: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() }
+}
+function must(argv: string[], input?: string) {
+  const result = sh(argv, input)
+  if (result.code !== 0)
+    throw new Error(`${argv[0]} ${argv[1] ?? ''} failed (${result.code}): ${result.stderr.slice(0, 400)}`)
+  return result.stdout
+}
+
+const TENANT = randomUUID()
+const BINDING = randomUUID()
+/** The rebuilt machine in the disaster-recovery scenario gets a new physical host binding. */
+const REBUILT_BINDING = randomUUID()
+let binding = BINDING
+const ZONE = 'bigbrain.example.test'
+const OWNER = { userId: randomUUID(), handle: 'ada', display: 'Ada' }
+const A = randomUUID()
+const B = randomUUID()
+const hex = (id: string) => id.replaceAll('-', '')
+const config = { enabled: true, tenantId: TENANT, physicalHostBinding: BINDING, hostEpoch: 1, zone: ZONE }
+let epoch = 1
+
+function helper(fields: Record<string, unknown>) {
+  const request = {
+    contractVersion: 1,
+    tenantId: TENANT,
+    physicalHostBinding: binding,
+    hostEpoch: epoch,
+    requestId: randomUUID(),
+    ...fields,
+  }
+  const out = sh(['/usr/local/libexec/ficus-bigbrainctl'], JSON.stringify(request))
+  try {
+    const reply = JSON.parse(out.stdout.trim().split('\n').at(-1) ?? 'null') as Record<string, any>
+    // Control's own fixed stage tokens and command trail (no secrets) explain a refusal.
+    if (reply?.ok === false)
+      reply.stderr = [
+        out.stderr.trim().split('\n').slice(-3).join(' | '),
+        sh(['/bin/cat', '/var/lib/ficus-bigbrain/control/last-failure']).stdout.trim(),
+      ].join(' || ')
+    return reply
+  } catch {
+    return { ok: false, code: 'unparseable', raw: out.stdout.slice(0, 200), stderr: out.stderr.slice(0, 400) }
+  }
+}
+const create = (vaultId: string, name: string) =>
+  helper({
+    action: 'create',
+    vaultId,
+    expectedGeneration: 0,
+    generation: 1,
+    displayName: name,
+    owner: OWNER,
+    origin: `https://bb-${hex(vaultId)}.${ZONE}`,
+    limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+    upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
+    artifactDigest: host().artifactDigest,
+  })
+function host() {
+  return JSON.parse(readFileSync('/etc/ficus/bigbrain/host.json', 'utf8')) as {
+    artifactDigest: string
+    hostEpoch: number
+  }
+}
+function unitProperty(unit: string, property: string) {
+  return must(['/usr/bin/systemctl', 'show', '--property', property, '--value', unit]).trim()
+}
+function receipt(vaultId: string) {
+  return JSON.parse(readFileSync(`/var/lib/ficus-bigbrain/control/${vaultId}/receipt.json`, 'utf8'))
+}
+/** After a restart the service needs a moment: poll a gateway status briefly, never assume. */
+async function eventually(read: () => Promise<number>, want: number, attempts = 30): Promise<number> {
+  let status = 0
+  for (let i = 0; i < attempts; i++) {
+    status = await read().catch(() => 0)
+    if (status === want) return status
+    await Bun.sleep(500)
+  }
+  return status
+}
+const GATEWAY_SOCKET = '/run/ficus-bigbrain/gateway/http.sock'
+/** Production path minus Caddy/TLS: the gateway's Unix socket, routed by Host. */
+async function gateway(vaultId: string, path: string, token?: string, init: RequestInit = {}) {
+  return fetch(`http://bb-${hex(vaultId)}.${ZONE}${path}`, {
+    ...init,
+    unix: GATEWAY_SOCKET,
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init.headers ?? {}) },
+    redirect: 'manual',
+  })
+}
+
+/** Run a script AS a compromised vault: a transient clone of that vault's real unit file (same
+ * User/Group, seccomp address families, capability set, mount namespace and read/write paths,
+ * same slice) whose only change is ExecStart; output goes to a root-only file. */
+function asVault(vaultId: string, script: string): Record<string, string> {
+  const source = readFileSync(`/etc/systemd/system/ficus-bigbrain@${vaultId}.service`, 'utf8')
+  const name = `ficus-bigbrain-attack-${hex(vaultId).slice(0, 12)}`
+  const scriptPath = `/opt/ficus-bigbrain/${name}.js`
+  const outPath = `/run/${name}.json`
+  writeFileSync(scriptPath, script, { mode: 0o644 })
+  const lines = source
+    .split('\n')
+    .filter(
+      (line) => !line.startsWith('ExecStartPre=') && !line.startsWith('Restart=') && !line.startsWith('StandardOutput=')
+    )
+    .map((line) =>
+      line.startsWith('Type=')
+        ? 'Type=oneshot'
+        : line.startsWith('ExecStart=')
+          ? `ExecStart=/usr/local/bin/bun --no-install --no-env-file ${scriptPath}`
+          : line.startsWith('Description=')
+            ? 'Description=containment attack clone'
+            : line
+    )
+  const unit = lines.join('\n').replace('[Service]', `[Service]\nStandardOutput=file:${outPath}`)
+  writeFileSync(`/etc/systemd/system/${name}.service`, unit, { mode: 0o644 })
+  must(['/usr/bin/systemctl', 'daemon-reload'])
+  sh(['/usr/bin/systemctl', 'start', `${name}.service`])
+  const out = sh(['/bin/cat', outPath]).stdout
+  sh(['/bin/rm', '-f', `/etc/systemd/system/${name}.service`, scriptPath, outPath])
+  must(['/usr/bin/systemctl', 'daemon-reload'])
+  try {
+    return JSON.parse(out.trim().split('\n').at(-1) ?? '{}') as Record<string, string>
+  } catch {
+    return { error: out.slice(0, 300) }
+  }
+}
+const ATTACK_PRELUDE = `
+  const net = require('node:net'); const dgram = require('node:dgram'); const fs = require('node:fs');
+  const errName = (e) => e?.code ?? ('NOCODE_' + String(e?.errno ?? e?.name ?? 'unknown')).slice(0, 40);
+  const listenTcp = (host) => new Promise((resolve) => { try { const s = net.createServer(); s.once('error', (e) => resolve(errName(e))); s.listen(0, host, () => { s.close(); resolve('BOUND') }) } catch (e) { resolve(errName(e)) } });
+  // Kernel truth independent of the runtime's error mapping: socket(2) itself, errno via libc.
+  const ffi = require('bun:ffi');
+  const libc = ffi.dlopen('libc.so.6', { socket: { args: ['i32', 'i32', 'i32'], returns: 'i32' }, close: { args: ['i32'], returns: 'i32' }, __errno_location: { args: [], returns: 'ptr' } });
+  const rawSocket = (family, type) => { const fd = libc.symbols.socket(family, type, 0); if (fd >= 0) { libc.symbols.close(fd); return 'OPENED' } const errno = ffi.read.i32(libc.symbols.__errno_location(), 0); return errno === 97 ? 'EAFNOSUPPORT' : errno === 1 ? 'EPERM' : 'ERRNO_' + errno };
+  const listenUdp = () => new Promise((resolve) => { try { const s = dgram.createSocket('udp4'); s.once('error', (e) => resolve(e.code)); s.bind(0, '127.0.0.1', () => { s.close(); resolve('BOUND') }) } catch (e) { resolve(e.code ?? 'THROWN') } });
+  const listenUnix = (path) => new Promise((resolve) => { try { const s = net.createServer(); s.once('error', (e) => resolve(e.code)); s.listen(path, () => { s.close(); resolve('BOUND') }) } catch (e) { resolve(e.code ?? 'THROWN') } });
+  const connectUnix = (path) => new Promise((resolve) => { const c = net.connect(path); c.once('error', (e) => resolve(e.code)); c.once('connect', () => { c.destroy(); resolve('CONNECTED') }) });
+  const read = (p) => { try { fs.readFileSync(p); return 'READ' } catch (e) { return e.code } };
+  const list = (p) => { try { fs.readdirSync(p); return 'LISTED' } catch (e) { return e.code } };
+  const write = (p) => { try { fs.writeFileSync(p, 'x'); return 'WROTE' } catch (e) { return e.code } };
+  const unshare = () => { try { const r = require('node:child_process').spawnSync('/usr/bin/unshare', ['-r', '-n', '/bin/true']); return r.status === 0 ? 'UNSHARED' : 'REFUSED_' + String(r.status ?? r.error?.code ?? 'signal') } catch (e) { return 'REFUSED_' + errName(e) } };
+  const interfaces = () => { try { return fs.readFileSync('/proc/self/net/dev', 'utf8').split('\\n').slice(2).map((l) => l.split(':')[0].trim()).filter(Boolean).join(',') } catch (e) { return e.code } };
+`
+const HOST_ABSTRACT = 'ficus-bigbrain-acceptance-host-probe'
+
+try {
+  // ---------------------------------------------------------------- prerequisites, named
+  const { probeSupportedHost } = await import('./install')
+  const { verifyHostBun } = await import('./host-bun')
+  const { verifyBigbrainArtifact } = await import('./artifact')
+  const provenance = await verifyBigbrainArtifact(`${release}/bigbrain`).catch((e) => {
+    check('artifact verifies', false, String(e?.message))
+    throw e
+  })
+  check('artifact verifies', true, provenance.digest)
+  await probeSupportedHost().then(
+    () => check('host support probe', true),
+    (e) => check('host support probe', false, String(e?.message))
+  )
+  const chain = ['/usr/local/bin/bun', '/usr/local/bin', '/usr/local', '/usr', '/']
+    .map((p) => sh(['/usr/bin/stat', '-L', '-c', '%U:%G:%a %n', p]).stdout.trim())
+    .join('; ')
+  await verifyHostBun(provenance.bunVersion).then(
+    () => check('host Bun verified', true, chain),
+    (e) =>
+      check(
+        'host Bun verified',
+        false,
+        `${String(e?.message)}; ${chain}; version=${sh(['/usr/local/bin/bun', '--version']).stdout.trim()}`
+      )
+  )
+
+  // ---------------------------------------------------------------- install through the toolkit
+  must([
+    '/bin/bash',
+    '-c',
+    `set -euo pipefail; source scripts/setup/lib.sh; bigbrain_install "$1" "$2"`,
+    'install',
+    release,
+    JSON.stringify(config),
+  ])
+  check('toolkit install created the host record', host().hostEpoch === 1)
+  const launcher = sh(['/usr/bin/stat', '-c', '%U:%G:%a', '/usr/local/libexec/ficus-bigbrainctl']).stdout.trim()
+  check('launcher is root-only (root:root 750)', launcher === 'root:root:750', launcher)
+  const reason = (target: string) =>
+    [
+      sh(['/bin/cat', `/run/ficus-bigbrain/preflight-${target}.reason`]).stdout.trim(),
+      sh([
+        '/bin/cat',
+        target === 'gateway'
+          ? '/run/ficus-bigbrain/gateway/sandbox.reason'
+          : `/run/ficus-bigbrain/vaults/${target}/sandbox.reason`,
+      ]).stdout.trim(),
+      target === 'gateway' ? sh(['/bin/cat', '/run/ficus-bigbrain/gateway/start.reason']).stdout.trim() : '',
+      unitProperty(
+        target === 'gateway' ? 'ficus-bigbrain-gateway.service' : `ficus-bigbrain@${target}.service`,
+        'Result'
+      ),
+    ].join(' | ')
+  check(
+    'gateway service active',
+    unitProperty('ficus-bigbrain-gateway.service', 'ActiveState') === 'active',
+    reason('gateway')
+  )
+
+  const probe = helper({ action: 'probe' })
+  check(
+    'probe reports available',
+    probe.ok === true && probe.capabilities?.available === true,
+    JSON.stringify(probe.capabilities?.reasonCode ?? [probe.code, probe.stderr])
+  )
+
+  // ---------------------------------------------------------------- two vaults
+  const a = create(A, 'Alpha')
+  check(
+    'create A ready',
+    a.ok === true && a.receipt?.state === 'ready',
+    JSON.stringify(a.ok ? a.receipt?.state : [a.code, a.stderr, reason(A)])
+  )
+  const b = create(B, 'Beta')
+  check(
+    'create B ready',
+    b.ok === true && b.receipt?.state === 'ready',
+    JSON.stringify(b.ok ? b.receipt?.state : [b.code, b.stderr, reason(B)])
+  )
+  const rA = receipt(A)
+  const rB = receipt(B)
+  check('vaults have distinct non-root UIDs', rA.os.uid !== rB.os.uid && rA.os.uid > 0 && rB.os.uid > 0)
+  const mountA = sh(['/usr/bin/findmnt', '-n', '-o', 'FSTYPE,OPTIONS', rA.storage.mount]).stdout.trim()
+  check(
+    'A is a separate ext4 loop mount with nodev,nosuid,noexec',
+    /^ext4 .*nosuid.*nodev.*noexec|^ext4 .*nodev.*nosuid.*noexec/.test(mountA) ||
+      (mountA.startsWith('ext4') && ['nodev', 'nosuid', 'noexec'].every((o) => mountA.includes(o))),
+    mountA
+  )
+
+  // cgroup limits actually in force (kernel values, not unit text)
+  const cgA = unitProperty(`ficus-bigbrain@${A}.service`, 'ControlGroup')
+  const memA = readFileSync(`/sys/fs/cgroup${cgA}/memory.max`, 'utf8').trim()
+  check(
+    'vault memory.max enforced by the kernel',
+    memA === String(MANAGED_BIGBRAIN_DEFAULT_LIMITS.perVaultMemoryBytes),
+    memA
+  )
+  // `ficus-bigbrain.slice` nests under `ficus.slice` (systemd dash hierarchy): use the real parent.
+  const sliceDir = `/sys/fs/cgroup${cgA.slice(0, cgA.lastIndexOf('/'))}`
+  const slice = readFileSync(`${sliceDir}/memory.max`, 'utf8').trim()
+  check(
+    'aggregate slice memory.max enforced',
+    slice === String(MANAGED_BIGBRAIN_DEFAULT_LIMITS.aggregateMemoryBytes),
+    slice
+  )
+  const cpu = readFileSync(`${sliceDir}/cpu.max`, 'utf8').trim()
+  check('aggregate slice CPU quota enforced (50%)', cpu === '50000 100000', cpu)
+
+  // scratch inside the RUNNING vault process
+  const pidA = unitProperty(`ficus-bigbrain@${A}.service`, 'MainPID')
+  const mounts = readFileSync(`/proc/${pidA}/mountinfo`, 'utf8').split('\n')
+  for (const path of ['/tmp', '/var/tmp']) {
+    const line = mounts.find((l) => l.split(' ')[4] === path) ?? ''
+    check(
+      `${path} in the running vault is bounded tmpfs (noexec,nosuid,nodev)`,
+      / - tmpfs /.test(line) && /size=16384k/.test(line) && /noexec/.test(line),
+      line.slice(0, 200)
+    )
+  }
+
+  // ---------------------------------------------------------------- wire through the real gateway
+  const handoffA = JSON.parse(readFileSync(`/var/lib/ficus-bigbrain/read-handoff/${A}.json`, 'utf8'))
+  const handoffB = JSON.parse(readFileSync(`/var/lib/ficus-bigbrain/read-handoff/${B}.json`, 'utf8'))
+  const who = await gateway(A, '/v1/whoami', handoffA.token)
+  const actor = (await who.json().catch(() => ({}))) as Record<string, any>
+  check(
+    'Ficus read credential authenticates as read-only agent via gateway',
+    who.status === 200 && actor.kind === 'agent' && JSON.stringify(actor.permissions) === '["read"]',
+    `${who.status}`
+  )
+  const write = await gateway(A, '/v1/evidence', handoffA.token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'x', body: 'y' }),
+  })
+  check('Ficus read credential cannot write (403)', write.status === 403, `${write.status}`)
+  const cross = await gateway(A, '/v1/whoami', handoffB.token)
+  check("B's credential is rejected by A (401)", cross.status === 401, `${cross.status}`)
+  const unknown = await gateway(randomUUID(), '/v1/whoami', handoffA.token)
+  check('unknown vault host never reaches a vault (404)', unknown.status === 404, `${unknown.status}`)
+
+  // ---------------------------------------------------------------- attacks from inside vault A
+  const sockA = `/run/ficus-bigbrain/vaults/${A}`
+  const sockB = `/run/ficus-bigbrain/vaults/${B}`
+  const gatewayGid = Number(must(['/usr/bin/getent', 'group', 'ficus-bb-gateway']).split(':')[2])
+  const dirA = sh(['/usr/bin/stat', '-c', '%u:%g:%a', sockA]).stdout.trim()
+  check('A socket directory is owner A, group gateway, setgid 2750', dirA === `${rA.os.uid}:${gatewayGid}:2750`, dirA)
+  const socketMode = sh(['/usr/bin/stat', '-c', '%a', `${sockA}/http.sock`]).stdout.trim()
+  check('A socket is 0660 (gateway group only)', socketMode === '660', socketMode)
+  const attackScript = (phase: string) => `${ATTACK_PRELUDE}
+    (async () => console.log(JSON.stringify({
+      phase: '${phase}',
+      tcp4: await listenTcp('127.0.0.1'),
+      tcp6: await listenTcp('::1'),
+      tcp4Raw: rawSocket(2, 1),
+      tcp6Raw: rawSocket(10, 1),
+      udp6Raw: rawSocket(10, 2),
+      udp4: await listenUdp(),
+      peerSocketDir: write('${sockB}/http.sock'),
+      peerSocketBind: await listenUnix('${sockB}/evil.sock'),
+      peerConnect: await connectUnix('${sockB}/http.sock'),
+      gatewaySocketBind: await listenUnix('/run/ficus-bigbrain/gateway/evil.sock'),
+      gatewayReplace: write('/run/ficus-bigbrain/gateway/http.sock'),
+      peerStore: list('${rB.storage.mount}'),
+      hostRecord: read('/etc/ficus/bigbrain/host.json'),
+      control: list('/var/lib/ficus-bigbrain/control'),
+      handoff: read('/var/lib/ficus-bigbrain/read-handoff/${A}.json'),
+      escrow: read('/var/lib/ficus-bigbrain/control/${A}/owner.json'),
+      launcher: read('/usr/local/libexec/ficus-bigbrainctl'),
+      ownStore: list('${rA.storage.mount}/vault'),
+      hostAbstract: await connectUnix('\\0${HOST_ABSTRACT}'),
+      unshare: unshare(),
+      interfaces: interfaces(),
+    })))()
+  `
+  const denied = (v: string | undefined) => !!v && ['EACCES', 'EPERM', 'ENOENT', 'EROFS', 'EAFNOSUPPORT'].includes(v)
+  const verdicts = (attack: Record<string, string>, when: string) => {
+    console.log(`attack observations (${when}): ${JSON.stringify(attack)}`)
+    const refused = (v: string | undefined) => v === 'EAFNOSUPPORT' || v === 'EPERM'
+    check(`${when}: A cannot open any udp4 socket`, refused(attack.udp4), attack.udp4)
+    // socket(2) is the kernel verdict; the runtime listener must also never have bound.
+    for (const [key, raw] of [
+      ['tcp4', 'tcp4Raw'],
+      ['tcp6', 'tcp6Raw'],
+    ] as const)
+      check(
+        `${when}: A cannot open any ${key} socket`,
+        refused(attack[raw]) && !!attack[key] && attack[key] !== 'BOUND',
+        `${attack[raw]} / ${attack[key]}`
+      )
+    check(`${when}: A cannot open any udp6 socket`, refused(attack.udp6Raw), attack.udp6Raw)
+    check(`${when}: A cannot create files in B's socket directory`, denied(attack.peerSocketDir), attack.peerSocketDir)
+    check(
+      `${when}: A cannot bind a socket in B's socket directory`,
+      denied(attack.peerSocketBind),
+      attack.peerSocketBind
+    )
+    check(`${when}: A cannot connect to B's socket`, denied(attack.peerConnect), attack.peerConnect)
+    check(
+      `${when}: A cannot bind in the gateway's socket directory`,
+      denied(attack.gatewaySocketBind),
+      attack.gatewaySocketBind
+    )
+    check(`${when}: A cannot replace the gateway socket`, denied(attack.gatewayReplace), attack.gatewayReplace)
+    check(`${when}: A cannot read B's store`, denied(attack.peerStore), attack.peerStore)
+    check(`${when}: A cannot read the host record`, denied(attack.hostRecord), attack.hostRecord)
+    check(`${when}: A cannot list root control state`, denied(attack.control), attack.control)
+    check(`${when}: A cannot read its own Ficus read handoff`, denied(attack.handoff), attack.handoff)
+    check(`${when}: A cannot read root owner escrow`, denied(attack.escrow), attack.escrow)
+    check(`${when}: A cannot read the root helper launcher`, denied(attack.launcher), attack.launcher)
+    check(`${when}: A can still use its own store`, attack.ownStore === 'LISTED', attack.ownStore)
+    check(
+      `${when}: A cannot reach an abstract socket bound in the host network namespace`,
+      !!attack.hostAbstract && attack.hostAbstract !== 'CONNECTED',
+      attack.hostAbstract
+    )
+    check(
+      `${when}: A cannot create a new namespace (unshare)`,
+      attack.unshare?.startsWith('REFUSED_') === true,
+      attack.unshare
+    )
+    check(`${when}: A sees only its own loopback interface`, attack.interfaces === 'lo', attack.interfaces)
+  }
+  // A root listener in the HOST network namespace: proof the vault's namespace is private.
+  const { createServer } = await import('node:net')
+  const hostProbe = createServer((socket) => socket.end())
+  await new Promise<void>((resolve, reject) => {
+    hostProbe.once('error', reject)
+    hostProbe.listen(`\0${HOST_ABSTRACT}`, () => resolve())
+  })
+  const { connect } = await import('node:net')
+  check(
+    'the host abstract probe is reachable from the host namespace',
+    await new Promise<boolean>((resolve) => {
+      const c = connect(`\0${HOST_ABSTRACT}`)
+      c.once('connect', () => (c.destroy(), resolve(true)))
+      c.once('error', () => resolve(false))
+    })
+  )
+  verdicts(asVault(A, attackScript('B running')), 'B running')
+  // B stopped: its socket path is the prize. A still cannot take it.
+  must(['/usr/bin/systemctl', 'stop', `ficus-bigbrain@${B}.service`])
+  verdicts(asVault(A, attackScript('B stopped')), 'B stopped')
+  must(['/usr/bin/systemctl', 'start', `ficus-bigbrain@${B}.service`])
+  check(
+    'B restarts on a root-reprepared socket and serves again',
+    (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200)) === 200
+  )
+  // After a restart of B and of the gateway, the boundary still holds.
+  must(['/usr/bin/systemctl', 'restart', 'ficus-bigbrain-gateway.service'])
+  verdicts(asVault(A, attackScript('after restarts')), 'after restarts')
+  check(
+    'gateway serves after restart',
+    (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200)) === 200
+  )
+  hostProbe.close()
+
+  // ---------------------------------------------------------------- crash restart (SIGKILL)
+  const killedPid = unitProperty(`ficus-bigbrain@${B}.service`, 'MainPID')
+  must(['/bin/kill', '-KILL', killedPid])
+  const revived = await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200, 60)
+  check(
+    'a SIGKILLed vault is restarted by systemd and serves its data again',
+    revived === 200 && unitProperty(`ficus-bigbrain@${B}.service`, 'MainPID') !== killedPid,
+    `${revived}`
+  )
+
+  // ---------------------------------------------------------------- disk bound
+  const fill = asVault(
+    A,
+    `
+    const fs = require('node:fs'); const block = Buffer.alloc(1 << 20); let written = 0; let code = 'NONE';
+    try { const fd = fs.openSync('${rA.storage.mount}/vault/fill.bin', 'w'); for (let i = 0; i < 1024; i++) { fs.writeSync(fd, block); written++ } fs.closeSync(fd) } catch (e) { code = e.code }
+    try { fs.unlinkSync('${rA.storage.mount}/vault/fill.bin') } catch {}
+    console.log(JSON.stringify({ code, written: String(written) }))
+  `
+  )
+  check(
+    'A’s writes stop at its own bounded filesystem (ENOSPC)',
+    fill.code === 'ENOSPC' && Number(fill.written) <= 512,
+    JSON.stringify(fill)
+  )
+  check('B unaffected by A filling its disk', (await gateway(B, '/v1/whoami', handoffB.token)).status === 200)
+
+  // ---------------------------------------------------------------- backup role
+  const lock = '/var/lib/ficus-bigbrain/control/host.lock'
+  const stage = must([
+    '/usr/bin/flock',
+    '-x',
+    lock,
+    '/usr/local/bin/bun',
+    '--no-install',
+    '--no-env-file',
+    `/opt/ficus-bigbrain/releases/${host().artifactDigest.slice(7)}/ficus-bigbrain-host.js`,
+    'backup-stage',
+  ])
+  const staged = JSON.parse(stage.trim().split('\n').at(-1)!)
+  check(
+    'backup stages both vaults quiescently',
+    staged.ok === true && staged.inventory?.vaults?.length === 2,
+    JSON.stringify(staged.code ?? staged.inventory?.vaults?.length)
+  )
+  // Keep the staged copy as "the backup" for the disaster-recovery scenario below.
+  const backupCopy = mkdtempSync('/var/tmp/bigbrain-dr-')
+  must(['/bin/cp', '-a', '/var/lib/ficus-bigbrain/backup/managed-bigbrain', `${backupCopy}/managed-bigbrain`])
+  check(
+    'vaults restarted after staging',
+    unitProperty(`ficus-bigbrain@${A}.service`, 'ActiveState') === 'active' &&
+      unitProperty(`ficus-bigbrain@${B}.service`, 'ActiveState') === 'active'
+  )
+  must([
+    '/usr/bin/flock',
+    '-x',
+    lock,
+    '/usr/local/bin/bun',
+    '--no-install',
+    '--no-env-file',
+    `/opt/ficus-bigbrain/releases/${host().artifactDigest.slice(7)}/ficus-bigbrain-host.js`,
+    'backup-release',
+  ])
+  check('staging released', !existsSync('/var/lib/ficus-bigbrain/backup'))
+
+  // ---------------------------------------------------------------- nightly partial backup
+  // B's storage is unavailable (mount stopped): a nightly run excludes B, stages A and says so;
+  // a termination run (FICUS_BACKUP_REQUIRE_COMPLETE=1) refuses instead.
+  const bbHost = (role: string, extra: string[] = []) =>
+    sh([
+      '/usr/bin/flock',
+      '-x',
+      lock,
+      '/usr/bin/env',
+      ...extra,
+      '/usr/local/bin/bun',
+      '--no-install',
+      '--no-env-file',
+      `/opt/ficus-bigbrain/releases/${host().artifactDigest.slice(7)}/ficus-bigbrain-host.js`,
+      role,
+    ])
+  const mountB = must(['/usr/bin/systemd-escape', '-p', '--suffix=mount', rB.storage.mount]).trim()
+  must(['/usr/bin/systemctl', 'stop', mountB])
+  const strict = JSON.parse(
+    bbHost('backup-stage', ['FICUS_BACKUP_REQUIRE_COMPLETE=1']).stdout.trim().split('\n').at(-1)!
+  )
+  check('a termination backup refuses when one vault is unavailable', strict.ok === false, JSON.stringify(strict.code))
+  bbHost('backup-release')
+  const partial = JSON.parse(bbHost('backup-stage').stdout.trim().split('\n').at(-1)!)
+  check(
+    'a nightly backup stages A and excludes the unavailable B',
+    partial.ok === true &&
+      partial.partial === true &&
+      partial.inventory?.vaults?.map((v: { vaultId: string }) => v.vaultId).join() === A &&
+      partial.excluded?.[0]?.vaultId === B,
+    JSON.stringify({ code: partial.code, excluded: partial.excluded?.length })
+  )
+  check('the excluded vault is marked in its receipt', receipt(B).receipt.backup === 'excluded')
+  bbHost('backup-release')
+  must(['/usr/bin/systemctl', 'start', `ficus-bigbrain@${B}.service`])
+  check(
+    'B serves again after its storage returns',
+    (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200)) === 200
+  )
+
+  // ---------------------------------------------------------------- read revoke keeps humans
+  const revoke = helper({ action: 'read-revoke', vaultId: A, expectedGeneration: 1, generation: 2 })
+  check(
+    'read-revoke succeeds',
+    revoke.ok === true && revoke.receipt?.readAccess === 'revoked',
+    JSON.stringify(revoke.code)
+  )
+  check('revoked read token rejected (401)', (await gateway(A, '/v1/whoami', handoffA.token)).status === 401)
+  check('handoff removed on revoke', !existsSync(`/var/lib/ficus-bigbrain/read-handoff/${A}.json`))
+
+  // ---------------------------------------------------------------- suspend / resume
+  const suspend = helper({ action: 'suspend-tenant', hostEpoch: 2, previousHostEpoch: 1, effectId: randomUUID() })
+  epoch = 2
+  check(
+    'suspend closes ingress and stops vaults',
+    suspend.ok === true &&
+      unitProperty('ficus-bigbrain-gateway.service', 'ActiveState') !== 'active' &&
+      unitProperty(`ficus-bigbrain@${B}.service`, 'ActiveState') !== 'active'
+  )
+  const resume = helper({ action: 'resume-tenant', hostEpoch: 3, previousHostEpoch: 2, effectId: randomUUID() })
+  epoch = 3
+  check(
+    'resume restarts gateway and vaults',
+    resume.ok === true && (await gateway(B, '/v1/whoami', handoffB.token)).status === 200
+  )
+
+  // ---------------------------------------------------------------- delete A, B untouched
+  const del = helper({
+    action: 'delete',
+    vaultId: A,
+    expectedGeneration: 2,
+    generation: 3,
+    confirmedVaultId: A,
+    confirmedName: 'Alpha',
+  })
+  check('delete A', del.ok === true && del.receipt?.state === 'deleted', JSON.stringify(del.code))
+  check('A account removed', sh(['/usr/bin/getent', 'passwd', `bbv_${hex(A).slice(0, 24)}`]).code === 2)
+  check('A image removed', !existsSync(rA.storage.image))
+  check('A unmounted', sh(['/usr/bin/findmnt', rA.storage.mount]).code !== 0)
+  check('B still serves after A deleted', (await gateway(B, '/v1/whoami', handoffB.token)).status === 200)
+  check('A host no longer routed', (await gateway(A, '/v1/whoami')).status === 404)
+
+  // ---------------------------------------------------------------- disaster recovery
+  // The machine is lost and rebuilt (new physical host binding). Setup stages the backup's
+  // vault data before installing; Platform fences the host epoch, then sends authoritative
+  // grants: A was deleted after the backup (excluded), B is restored under its current name.
+  const rebuild = sh([
+    '/bin/bash',
+    '-c',
+    [
+      'set -u',
+      `systemctl stop ficus-bigbrain-gateway.service 'ficus-bigbrain@*.service'`,
+      `systemctl stop "$(systemd-escape -p --suffix=mount ${rB.storage.mount})"`,
+      `for loop in $(losetup -j ${rB.storage.image} | cut -d: -f1); do losetup -d "$loop"; done`,
+      `userdel bbv_${hex(B).slice(0, 24)}`,
+      `rm -rf /var/lib/ficus-bigbrain /etc/ficus/bigbrain /run/ficus-bigbrain`,
+      `rm -f /etc/systemd/system/ficus-bigbrain@*.service /etc/systemd/system/*ficus*bigbrain*.mount /etc/tmpfiles.d/ficus-bigbrain*.conf`,
+      'systemctl daemon-reload',
+    ].join('\n'),
+  ])
+  check('the machine is rebuilt without any managed vault state', rebuild.code === 0, rebuild.stderr.slice(0, 300))
+  const rebuilt = { ...config, physicalHostBinding: REBUILT_BINDING }
+  must([
+    '/bin/bash',
+    '-c',
+    `set -euo pipefail; source scripts/setup/lib.sh; bigbrain_restore_stage "$1" "$2"; bigbrain_install "$3" "$2"`,
+    'restore',
+    backupCopy,
+    JSON.stringify(rebuilt),
+    release,
+  ])
+  binding = REBUILT_BINDING
+  epoch = 1
+  check('setup staged the backup and installed the rebuilt host', host().hostEpoch === 1)
+  const fenced = helper({ action: 'restore-fence', hostEpoch: 2, previousHostEpoch: 1, effectId: randomUUID() })
+  epoch = 2
+  const inventory = fenced.archive as {
+    manifestDigest: string
+    vaults: { vaultId: string; upstreamVaultId: string; generation: number }[]
+  }
+  check(
+    'restore fence reports the backup inventory (both vaults)',
+    fenced.ok === true && inventory?.vaults?.length === 2,
+    JSON.stringify(fenced.code ?? fenced.stderr ?? null)
+  )
+  const archivedA = inventory.vaults.find((v) => v.vaultId === A)!
+  const archivedB = inventory.vaults.find((v) => v.vaultId === B)!
+  // No grants: the host restores exactly the archive (Core's restored DB is the vault authority).
+  const restored = helper({
+    action: 'restore',
+    effectId: randomUUID(),
+    archiveManifestDigest: inventory.manifestDigest,
+  })
+  check('restore restores the archive', restored.ok === true, JSON.stringify(restored.code ?? restored.stderr ?? null))
+  check(
+    'both archived vaults come back, read-revoked, at a newer generation',
+    [A, B].every((v) => receipt(v).receipt.readAccess === 'revoked' && receipt(v).receipt.state === 'ready') &&
+      receipt(A).receipt.generation === archivedA.generation + 1 &&
+      receipt(B).receipt.generation === archivedB.generation + 1
+  )
+  check(
+    'restored vaults keep their archived names',
+    receipt(B).displayName === 'Beta' && receipt(A).displayName === 'Alpha'
+  )
+  check(
+    'restored B rotated every credential: the pre-backup Ficus token is rejected',
+    (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 401)) === 401
+  )
+  const reconnected = helper({
+    action: 'read-reconnect',
+    vaultId: B,
+    expectedGeneration: archivedB.generation + 1,
+    generation: archivedB.generation + 2,
+  })
+  const freshB = JSON.parse(readFileSync(`/var/lib/ficus-bigbrain/read-handoff/${B}.json`, 'utf8'))
+  const restoredIdentity = await gateway(B, '/v1/whoami', freshB.token)
+  const restoredActor = (await restoredIdentity.json().catch(() => ({}))) as Record<string, any>
+  check(
+    'after an explicit reconnect B serves its original upstream vault read-only',
+    reconnected.ok === true &&
+      restoredIdentity.status === 200 &&
+      restoredActor.vault?.id === handoffB.upstreamVaultId &&
+      JSON.stringify(restoredActor.permissions) === '["read"]',
+    `${restoredIdentity.status}`
+  )
+  // Core-style reconciliation: A was deleted in Core after this backup was taken, so Core's
+  // tombstone wins: status, then delete fenced on the host's receipt generation and name.
+  const statusA = helper({ action: 'status', vaultId: A })
+  const redeleted = helper({
+    action: 'delete',
+    vaultId: A,
+    expectedGeneration: statusA.receipt.generation,
+    generation: statusA.receipt.generation + 1,
+    confirmedVaultId: A,
+    confirmedName: statusA.receipt.displayName,
+  })
+  check(
+    'Core reconciliation deletes the restored-but-tombstoned vault A',
+    statusA.ok === true && redeleted.ok === true && redeleted.receipt?.state === 'deleted',
+    JSON.stringify(redeleted.code ?? null)
+  )
+  check('A is not routed after the reconcile delete', (await gateway(A, '/v1/whoami')).status === 404)
+  check('B still serves after A is reconciled away', (await gateway(B, '/v1/whoami', freshB.token)).status === 200)
+} catch (error) {
+  check(
+    'acceptance run completed without an unexpected error',
+    false,
+    error instanceof Error ? error.message : String(error)
+  )
+}
+
+const failed = results.filter((r) => !r.ok)
+console.log(`\n${results.length - failed.length} passed, ${failed.length} failed`)
+process.exit(failed.length === 0 ? 0 : 1)

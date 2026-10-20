@@ -2,6 +2,15 @@ import type { IntegrationProvider, ProviderValidation } from './types'
 import type { OAuthAuthority } from './authorization/authority'
 import type { OAuthCredentialBundleV1 } from './authorization/credential-bundle'
 
+export type IntegrationConnectionMode =
+  | 'local'
+  | 'managed'
+  | 'credential'
+  | 'oauth2'
+  | 'channel'
+  | 'deployment'
+  | 'service'
+
 export interface CredentialCodec<Credential> {
   parse(value: unknown): Credential
   serialize(value: Credential): string
@@ -95,7 +104,9 @@ export interface IntegrationPluginV1<
       | 'apple-push'
       | 'web-push'
       | 'openai-services'
-    readonly connectionMode: 'local' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
+    readonly connectionMode: IntegrationConnectionMode
+    /** Deployment-dependent mode (e.g. managed on Ficus Cloud); defaults to `connectionMode`. */
+    resolveConnectionMode?(): IntegrationConnectionMode
     readonly assignable: boolean
     readonly requiredCapabilities: readonly string[]
   }
@@ -145,7 +156,7 @@ export interface SafeIntegrationCatalogEntry {
     | 'apple-push'
     | 'web-push'
     | 'openai-services'
-  connectionMode: 'local' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
+  connectionMode: IntegrationConnectionMode
   assignable: boolean
   requiredCapabilities: readonly string[]
   sandbox: {
@@ -166,7 +177,7 @@ export function toSafeCatalogEntry(plugin: IntegrationPluginV1<unknown, unknown>
     label: plugin.presentation.label,
     description: plugin.presentation.description,
     icon: plugin.presentation.icon,
-    connectionMode: plugin.presentation.connectionMode,
+    connectionMode: plugin.presentation.resolveConnectionMode?.() ?? plugin.presentation.connectionMode,
     assignable: plugin.presentation.assignable,
     requiredCapabilities: [...plugin.presentation.requiredCapabilities],
     sandbox: {

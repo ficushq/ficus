@@ -1,0 +1,2 @@
+[test]
+preload = ["../check-bun-test-runtime.ts"]

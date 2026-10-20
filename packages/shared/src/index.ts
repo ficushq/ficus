@@ -128,3 +128,5 @@ export * from './decision-conditions'
 export * from './screenshot-filing'
 
 export * from './github-feedback'
+
+export * from './managed-bigbrain'

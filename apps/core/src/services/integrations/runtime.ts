@@ -1,3 +1,6 @@
+import { isManagedBigbrainProvider } from './bigbrain/managed/availability'
+import { createManagedHostClient } from './bigbrain/managed/host-client'
+import { createManagedVaultService } from './bigbrain/managed/service'
 import { BigbrainBindings } from './bigbrain/local-bindings'
 import { BigbrainLocalConnections } from './bigbrain/local-connections'
 import { GitHubIdentityAuthorization } from './github/identity-authorization'
@@ -602,6 +605,15 @@ export async function initializeIntegrationDefaults() {
   }
 }
 
+/** Human lifecycle for managed shared vaults; its access fence disables (never deletes) the
+ * vault's read connection even while squads still have it assigned. */
+export const managedVaultService = createManagedVaultService({
+  // Only constructed into a process; it spawns the root helper only on a managed deployment.
+  hostClient: createManagedHostClient(),
+  disableConnection: (id, actor) => integrationConnectionService.disable(id, actor, true),
+  usage: (id) => integrationConnectionRepository.usage(id),
+})
+
 export const integrationRoutesService = Object.assign(integrationConnectionService, {
   localBigbrain: new BigbrainLocalConnections(new BigbrainBindings(), integrationConnectionService),
   catalog: () =>
@@ -797,14 +809,26 @@ export const squadIntegrationRoutesService = {
       GITHUB_USER: connection.configuration.login,
     }
   },
-  async selection(squadId: string, providerKey: string) {
+  /** `audience: 'assigned'` (managed shared vaults, ordinary squad readers): only this squad's
+   * attached connections, never the global pool's names or state. */
+  async selection(squadId: string, providerKey: string, options: { audience?: 'manager' | 'assigned' } = {}) {
     const scope = await reconcileSquadIntegration(squadId, providerKey)
-    const [assignment, connections, projection, attached] = await Promise.all([
+    const assignedOnly = options.audience === 'assigned'
+    const [assignment, pool, projection, attached] = await Promise.all([
       integrationConnectionRepository.getAssigned(squadId, providerKey),
-      integrationConnectionRepository.listPoolSummaries(providerKey),
+      assignedOnly ? Promise.resolve(null) : integrationConnectionRepository.listPoolSummaries(providerKey),
       integrationProjectionStateRepository.get(squadId, providerKey),
       integrationConnectionRepository.listAssigned(squadId, providerKey),
     ])
+    const connections =
+      pool ??
+      attached.map((row) => ({
+        id: row.id,
+        providerKey: row.providerKey,
+        displayName: row.displayName,
+        enabled: row.enabled,
+        healthState: row.healthState,
+      }))
     return {
       providerKey,
       scope,
@@ -833,9 +857,11 @@ export const squadIntegrationRoutesService = {
     actor?: import('./connection-repository').IntegrationAssignmentActor,
     makeDefault = true
   ) {
+    // Managed shared vaults: several per squad, each selected explicitly; never a squad default.
+    const shared = isManagedBigbrainProvider(providerKey)
     const assignment = await integrationConnectionRepository.assign(squadId, providerKey, connectionId, actor, {
-      retainPrevious: providerKey === 'github',
-      makeDefault: providerKey === 'github' ? makeDefault : true,
+      retainPrevious: providerKey === 'github' || shared,
+      makeDefault: shared ? false : providerKey === 'github' ? makeDefault : true,
     })
     await regenerateEnvFileForSquad(squadId)
     eventEmitter.emit('integration.projection-invalidated', { squadId, providerKey })

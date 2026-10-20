@@ -14,6 +14,7 @@ import { ChannelIntegrationSettings } from '../integrations/ChannelIntegrationSe
 import type { ProviderId } from './channelFormHelpers'
 import { LinearIntegrationSettings } from '../integrations/LinearIntegrationSettings'
 import { BigbrainIntegrationSettings } from '../integrations/BigbrainIntegrationSettings'
+import { ManagedBigbrainIntegrationSettings } from '../integrations/ManagedBigbrainIntegrationSettings'
 import { GitHubIntegrationSettings } from '../integrations/GitHubIntegrationSettings'
 import { NotionIntegrationSettings } from '../integrations/NotionIntegrationSettings'
 
@@ -21,6 +22,16 @@ const descriptions: Record<string, string> = {
   github: 'Connect repositories, follow issues and pull requests, and bring GitHub events into your workflows.',
   notion: 'Give your squads access to pages, databases, and knowledge in Notion.',
   bigbrain: 'Connect an approved local BigBrain vault for memory and deliberate contributions.',
+}
+const managedDescriptions: Record<string, string> = {
+  bigbrain: 'Shared BigBrain vaults on this server: people contribute from the BigBrain app, squads read.',
+}
+function describe(entry: { key: string; description: string; connectionMode?: string }): string {
+  return (
+    (entry.connectionMode === 'managed' ? managedDescriptions[entry.key] : undefined) ??
+    descriptions[entry.key] ??
+    entry.description
+  )
 }
 
 export function IntegrationDirectoryCard({
@@ -114,9 +125,7 @@ export function IntegrationDirectoryCard({
             />
           </button>
         </div>
-        <p className="mt-3 min-h-[4.5rem] text-sm leading-relaxed text-muted">
-          {descriptions[entry.key] ?? entry.description}
-        </p>
+        <p className="mt-3 min-h-[4.5rem] text-sm leading-relaxed text-muted">{describe(entry)}</p>
         <div className="mt-auto">
           {entry.key === 'bigbrain' && (
             <ExternalLink href="https://bigbrain.cool" className="mt-2 inline-flex text-sm">
@@ -217,7 +226,12 @@ export function IntegrationDirectoryCard({
           )}
           {entry.key === 'linear' && <LinearIntegrationSettings canWrite={canWrite} />}
           {entry.key === 'notion' && <NotionIntegrationSettings canRead canWrite={canWrite} embedded />}
-          {entry.key === 'bigbrain' && <BigbrainIntegrationSettings canRead canWrite={canWrite} embedded />}
+          {entry.key === 'bigbrain' &&
+            (entry.connectionMode === 'managed' ? (
+              <ManagedBigbrainIntegrationSettings canWrite={canWrite} />
+            ) : (
+              <BigbrainIntegrationSettings canRead canWrite={canWrite} embedded />
+            ))}
         </div>
       )}
     </article>
@@ -248,11 +262,7 @@ export function IntegrationsSection() {
   )
   const matches = visible
     .sort((left, right) => left.label.localeCompare(right.label))
-    .filter((entry) =>
-      `${entry.label} ${descriptions[entry.key] ?? entry.description}`
-        .toLowerCase()
-        .includes(search.trim().toLowerCase())
-    )
+    .filter((entry) => `${entry.label} ${describe(entry)}`.toLowerCase().includes(search.trim().toLowerCase()))
   return (
     <div className="space-y-6">
       <header>

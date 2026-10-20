@@ -1,0 +1,71 @@
+[Unit]
+Description=Bounded credential-free managed BigBrain gateway
+After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=ficus-bb-gateway
+Group=ficus-bb-gateway
+Slice=ficus-bigbrain.slice
+WorkingDirectory=/
+UMask=0077
+ExecStartPre=+/usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js preflight gateway
+ExecStartPre=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js sandbox gateway
+ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js gateway
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+TemporaryFileSystem=/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777
+TemporaryFileSystem=/var/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# Own network/IPC namespaces: no host abstract Unix sockets, no SysV/POSIX IPC with peers; filesystem
+# sockets (the only listeners) still work. No new namespaces, native syscalls only, a service
+# syscall allow-list (denials return EPERM rather than killing), and no clock/hostname changes.
+PrivateNetwork=yes
+PrivateIPC=yes
+RemoveIPC=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+ProtectClock=yes
+ProtectHostname=yes
+# Unix sockets only: Caddy reaches the gateway, and the gateway reaches each vault, through
+# root-prepared socket directories; no IP listener exists to be squatted.
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SocketBindDeny=any
+# "-": the root preflight creates it in this same start; absent means no socket (fails closed).
+ReadWritePaths=-/run/ficus-bigbrain/gateway
+TemporaryFileSystem=/etc/ficus:ro
+# Bind the public directory, not the route inode: root publishes with atomic rename.
+BindReadOnlyPaths=/etc/ficus/bigbrain/public
+InaccessiblePaths=-/var/lib/ficus-bigbrain -/etc/ficus-core -/var/lib/ficus-core -/var/lib/ficus -/opt/ficus-core -/opt/ficus-machine
+MemoryMax=134217728
+MemorySwapMax=0
+TasksMax=64
+LimitNOFILE=128
+StandardOutput=null
+# Only this gateway's own fixed refusal messages reach stderr (no request data is ever logged).
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

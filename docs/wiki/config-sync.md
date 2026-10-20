@@ -6,17 +6,17 @@ Config sync bridges bundled configuration files and database records. On API sta
 
 `apps/core/src/services/config-sync/index.ts` registers nine domains in this order:
 
-| Domain          | Synchronizer        | Source                                           | DB table               |
-| --------------- | ------------------- | ------------------------------------------------ | ---------------------- |
-| Roles           | `RoleSync`          | `config/roles/defaults.yaml`                     | `roles`                |
-| Skills          | `SkillSync`         | `config/skills/<id>/SKILL.md` and support files  | `skills`               |
-| Shared prompts  | `SharedPromptSync`  | `config/agent-types/shared/*.md`               | `shared_prompts`       |
-| Model tiers     | `ModelTierSync`     | `config/model-tiers/`                            | `model_tiers`          |
-| Agent types     | `AgentTypeSync`     | `config/agent-types/`                            | `agent_types`          |
-| Squad presets   | `SquadPresetSync`   | `config/squad-presets/`                          | `squad_presets`        |
-| Workflows       | `WorkflowSync`      | `config/workflows/`                              | `workflows`            |
-| Channels        | `ChannelSync`       | `config/channels/`                               | `channel_instances`    |
-| Notifications   | `NotificationSync`  | `config/notifications/`                          | `notification_config`  |
+| Domain         | Synchronizer       | Source                                          | DB table              |
+| -------------- | ------------------ | ----------------------------------------------- | --------------------- |
+| Roles          | `RoleSync`         | `config/roles/defaults.yaml`                    | `roles`               |
+| Skills         | `SkillSync`        | `config/skills/<id>/SKILL.md` and support files | `skills`              |
+| Shared prompts | `SharedPromptSync` | `config/agent-types/shared/*.md`                | `shared_prompts`      |
+| Model tiers    | `ModelTierSync`    | `config/model-tiers/`                           | `model_tiers`         |
+| Agent types    | `AgentTypeSync`    | `config/agent-types/`                           | `agent_types`         |
+| Squad presets  | `SquadPresetSync`  | `config/squad-presets/`                         | `squad_presets`       |
+| Workflows      | `WorkflowSync`     | `config/workflows/`                             | `workflows`           |
+| Channels       | `ChannelSync`      | `config/channels/`                              | `channel_instances`   |
+| Notifications  | `NotificationSync` | `config/notifications/`                         | `notification_config` |
 
 The eight non-role domains extend `ConfigSync`. Roles have separate synchronization rules described below. `syncAllConfig()` runs during API startup; the worker reads the resulting database configuration and does not run startup synchronization.
 

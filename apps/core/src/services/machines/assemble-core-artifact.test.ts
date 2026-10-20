@@ -95,6 +95,9 @@ async function makeCheckout(): Promise<string> {
   for (const name of ['server.js', 'librust_pty.so', 'ficus.js', 'bootstrap.sh', 'box-provision.sh']) {
     await write(join(root, 'machine', name), `machine ${name}\n`)
   }
+  for (const name of ['bigbrain-shared.js', 'ficus-bigbrain-host.js', 'provenance.json']) {
+    await write(join(root, 'bigbrain', name), `bigbrain ${name}\n`)
+  }
 
   await write(
     join(root, 'node_modules/playwright-core/package.json'),
@@ -242,6 +245,9 @@ describe('assembleCoreArtifact', () => {
         'machine/librust_pty.so',
         'machine/server.js',
         'machine/ficus.js',
+        'bigbrain/bigbrain-shared.js',
+        'bigbrain/ficus-bigbrain-host.js',
+        'bigbrain/provenance.json',
         'node_modules/bun-pty/index.js',
         'package.json',
       ].sort()
@@ -424,7 +430,7 @@ describe('assembleCoreArtifact', () => {
     const fake = makeRun()
     const { result } = await assemble({ smoke: true }, fake)
 
-    expect(result.smoke).toEqual({ migrateExitCode: 1, verifiedFiles: 32 })
+    expect(result.smoke).toEqual({ migrateExitCode: 1, verifiedFiles: 35 })
     expect(fake.calls).toContainEqual([
       'bun',
       expect.stringMatching(/apps\/core\/dist\/smoke-configured-extensions\.js$/),
@@ -499,6 +505,8 @@ describe('build-core-artifact.sh', () => {
     expect(script).toContain('extensions:install')
     expect(script).toMatch(/rm -rf "\$REPO_ROOT\/machine"/)
     expect(script).toMatch(/bun\s+scripts\/artifact\/build-machine-bundles\.ts/)
+    expect(script).toMatch(/rm -rf "\$REPO_ROOT\/bigbrain"/)
+    expect(script).toMatch(/bun\s+scripts\/bigbrain\/build-artifact\.ts --out-dir "\$REPO_ROOT\/bigbrain"/)
   })
 
   it('fails the build when the assembler does not emit all three trailer keys', async () => {

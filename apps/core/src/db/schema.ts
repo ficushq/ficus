@@ -4003,6 +4003,118 @@ export const integrationConnections = pgTable(
 )
 
 /**
+ * Managed shared BigBrain vaults hosted on this tenant's own Core server (one row per vault). Core
+ * is the vault authority: this row is the desired state (name, owner, desired generation and
+ * pending action) and the last applied host receipt. The root host keeps the applied state and
+ * private material. Rows are tombstoned (`state = 'deleted'`), never removed with an integration
+ * connection. No owner/member/read credentials live here.
+ */
+export const managedBigbrainVaults = pgTable(
+  'managed_bigbrain_vaults',
+  {
+    id: uuid('id').primaryKey(),
+    /** The vault's Ficus owner. Null once that user is deleted: the vault keeps serving and the
+     * owner's existing devices keep working upstream, but Ficus can no longer mint owner links.
+     * Never reassigned automatically. */
+    ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** The owner's upstream identity as sent at create; never re-derived from a mutable profile. */
+    ownerHandle: varchar('owner_handle', { length: 64 }).notNull(),
+    ownerDisplay: varchar('owner_display', { length: 120 }).notNull(),
+    /** Core's name (authoritative). `hostDisplayName` is the host's recorded name. */
+    displayName: varchar('display_name', { length: 120 }).notNull(),
+    hostDisplayName: varchar('host_display_name', { length: 120 }),
+    connectionId: uuid('connection_id').references(() => integrationConnections.id, { onDelete: 'set null' }),
+    upstreamVaultId: uuid('upstream_vault_id'),
+    state: varchar('state', { length: 16 }).notNull().default('requested'),
+    readAccess: varchar('read_access', { length: 16 }).notNull().default('pending'),
+    desiredGeneration: integer('desired_generation').notNull().default(1),
+    appliedGeneration: integer('applied_generation').notNull().default(0),
+    /** Pending host operation (null when the host has applied the desired generation). */
+    desiredAction: varchar('desired_action', { length: 16 }),
+    operationRequestId: uuid('operation_request_id'),
+    operationHash: varchar('operation_hash', { length: 64 }),
+    /** Idempotent create: the same request ID replays this row; a different body conflicts. */
+    createRequestId: uuid('create_request_id').notNull(),
+    createRequestHash: varchar('create_request_hash', { length: 64 }).notNull(),
+    /** Snapshot sent with the host create (origin, limits, upstream pin, artifact digest). */
+    createRecipe: jsonb('create_recipe').notNull(),
+    artifactDigest: varchar('artifact_digest', { length: 71 }),
+    hostReceiptId: uuid('host_receipt_id'),
+    /** Whether the latest host backup staging included this vault. */
+    backup: varchar('backup', { length: 16 }).notNull().default('unknown'),
+    attempts: integer('attempts').notNull().default(0),
+    /** When the reconciler may next try the pending operation; null = paused until a retry. */
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    lastErrorCode: varchar('last_error_code', { length: 64 }),
+    retryable: boolean('retryable').notNull().default(false),
+    /** Public vault origin (routing Host only; derived from the installed zone, never a client value). */
+    origin: varchar('origin', { length: 253 }).notNull(),
+    /** Imported host read handoff WITHOUT its token (the token lives only in the credential
+     * store under the connection's credentialRef). Null until imported or after revocation. */
+    readMaterial: jsonb('read_material'),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_managed_bigbrain_vaults_create_request').on(table.createRequestId),
+    uniqueIndex('uq_managed_bigbrain_vaults_connection')
+      .on(table.connectionId)
+      .where(sql`${table.connectionId} is not null`),
+    uniqueIndex('uq_managed_bigbrain_vaults_live_display_name')
+      .on(table.displayName)
+      .where(sql`${table.state} <> 'deleted'`),
+    index('idx_managed_bigbrain_vaults_due').on(table.nextAttemptAt),
+    check(
+      'managed_bigbrain_vaults_state_check',
+      sql`${table.state} in ('requested', 'provisioning', 'ready', 'degraded', 'failed', 'deleting', 'deleted')`
+    ),
+    check('managed_bigbrain_vaults_read_access_check', sql`${table.readAccess} in ('pending', 'active', 'revoked')`),
+    check(
+      'managed_bigbrain_vaults_action_check',
+      sql`${table.desiredAction} is null or ${table.desiredAction} in ('create', 'rename', 'read-revoke', 'read-reconnect', 'delete')`
+    ),
+    check('managed_bigbrain_vaults_backup_check', sql`${table.backup} in ('unknown', 'included', 'excluded')`),
+    check(
+      'managed_bigbrain_vaults_generation_check',
+      sql`${table.desiredGeneration} >= 1 and ${table.appliedGeneration} >= 0 and ${table.appliedGeneration} <= ${table.desiredGeneration}`
+    ),
+  ]
+)
+
+/**
+ * Secret-free replay ledger for human vault operations: one row per request ID with the hash of
+ * what was asked, so a replay is idempotent and a different body under the same ID conflicts.
+ * `issuedAt`/`expiresAt` are the immutable owner-link window for owner-invite requests.
+ */
+export const managedBigbrainOperations = pgTable(
+  'managed_bigbrain_operations',
+  {
+    requestId: uuid('request_id').primaryKey(),
+    vaultId: uuid('vault_id')
+      .notNull()
+      .references(() => managedBigbrainVaults.id, { onDelete: 'cascade' }),
+    action: varchar('action', { length: 16 }).notNull(),
+    inputHash: varchar('input_hash', { length: 64 }).notNull(),
+    expectedGeneration: integer('expected_generation').notNull(),
+    generation: integer('generation').notNull(),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    status: varchar('status', { length: 16 }).notNull().default('accepted'),
+    code: varchar('code', { length: 64 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_managed_bigbrain_operations_vault').on(table.vaultId),
+    check(
+      'managed_bigbrain_operations_action_check',
+      sql`${table.action} in ('create', 'rename', 'retry', 'owner-invite', 'read-revoke', 'read-reconnect', 'delete')`
+    ),
+    check('managed_bigbrain_operations_status_check', sql`${table.status} in ('accepted', 'applied', 'failed')`),
+  ]
+)
+
+/**
  * The latest delivery the hosted integration relay accepted for a connection and repository, after
  * its revision and authorization checks: live webhook evidence for poll suppression and the poll
  * replay baseline, exactly like a verified direct `webhook_events` row (see GitHubPrWatchPolicy).

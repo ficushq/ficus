@@ -23,6 +23,8 @@ export interface BigbrainToolContext {
   connections: Pick<import('../connection-repository').IntegrationConnectionRepository, 'disableRuntimeAuthFailure'>
   audit: IntegrationAuditRecorder
   client?: (options: BigbrainClientOptions) => BigbrainClient
+  /** This squad's attached connections (assignment rows only); managed shared tools list these. */
+  assignments?: { listAssigned(squadId: string, providerKey: string): Promise<readonly { id: string }[]> }
 }
 
 export function createBigbrainTools(context: BigbrainToolContext): BigbrainTool[] {

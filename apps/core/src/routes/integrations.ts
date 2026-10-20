@@ -17,6 +17,12 @@ import { requireSquadPermission } from '../middleware'
 // authorized rather than the raw param, which may be a short prefix naming a different scope.
 import { resolvedSquadId } from '../middleware/require-permission'
 import { auditActor, hasPermission, type Identity } from '../services/rbac'
+import { isManagedBigbrainProvider } from '../services/integrations/bigbrain/managed/availability'
+import {
+  ManagedVaultAuthorizationError,
+  canEnumerateManagedVaults,
+  requireManagedVaultSquadManager,
+} from '../services/integrations/bigbrain/managed/authorization'
 import {
   IntegrationConnectionInUseError,
   IntegrationManualCredentialNotAllowedError,
@@ -189,7 +195,8 @@ export interface SquadIntegrationRoutesService {
   ): Promise<Record<string, string> | null>
   selection(
     squadId: string,
-    providerKey: string
+    providerKey: string,
+    options?: { audience?: 'manager' | 'assigned' }
   ): Promise<{
     providerKey: string
     scope?: { enabled: boolean; inheritDefault: boolean; globalDefaultId: string | null }
@@ -639,6 +646,8 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       if (!parsed.success) return c.json({ error: 'Valid provider is required' }, 400)
       const denied = await authorize(c, `integrations:read:${parsed.data}`)
       if (denied) return denied
+      if (isManagedBigbrainProvider(parsed.data) && !(await canEnumerateManagedVaults(c.get('identity'))))
+        return c.json({ error: 'Forbidden' }, 403)
       return c.json(await service.list(parsed.data))
     })
     .post('/connections', zValidator('json', createSchema), async (c) => {
@@ -667,6 +676,12 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
     .get('/connections/:connectionId', async (c) => {
       const denied = await authorizeConnection(c, service, 'read')
       if (denied) return denied
+      // Non-disclosure: an unassigned managed vault does not exist for non-managers.
+      if (
+        isManagedBigbrainProvider(await service.providerFor(c.req.param('connectionId'))) &&
+        !(await canEnumerateManagedVaults(c.get('identity')))
+      )
+        return c.json({ error: 'Integration connection not found' }, 404)
       const value = await service.get(c.req.param('connectionId'))
       return value ? c.json(value) : c.json({ error: 'Integration connection not found' }, 404)
     })
@@ -693,6 +708,8 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const connectionId = c.req.param('connectionId')
       const denied = await authorizeConnection(c, service, 'write')
       if (denied) return denied
+      if (isManagedBigbrainProvider(await service.providerFor(c.req.param('connectionId'))))
+        return managedLifecycleOnly(c)
       if (!service.refresh) return c.json({ error: 'Refresh unavailable' }, 404)
       return c.json(await service.refresh(connectionId))
     })
@@ -701,9 +718,12 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       zValidator('json', z.object({ connectionId: z.string().uuid() }).strict()),
       async (c) => {
         const provider = parseProviderParam(c.req.param('provider'))
-        if (!provider || !service.setDefault) return c.json({ error: 'Unsupported integration' }, 404)
+        if (!provider) return c.json({ error: 'Unsupported integration' }, 404)
         const denied = await authorize(c, `integrations:write:${provider}`)
         if (denied) return denied
+        // Managed shared vaults have no provider-global default: each squad selects explicitly.
+        if (isManagedBigbrainProvider(provider)) return managedLifecycleOnly(c)
+        if (!service.setDefault) return c.json({ error: 'Unsupported integration' }, 404)
         await service.setDefault(provider, c.req.valid('json').connectionId)
         return c.json({ ok: true })
       }
@@ -711,11 +731,15 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
     .post('/connections/:connectionId/validate', async (c) => {
       const denied = await authorizeConnection(c, service, 'write')
       if (denied) return denied
+      if (isManagedBigbrainProvider(await service.providerFor(c.req.param('connectionId'))))
+        return managedLifecycleOnly(c)
       return c.json(await service.validate(c.req.param('connectionId'), identityActor(c.get('identity'))))
     })
     .post('/connections/:connectionId/enable', async (c) => {
       const denied = await authorizeConnection(c, service, 'write')
       if (denied) return denied
+      if (isManagedBigbrainProvider(await service.providerFor(c.req.param('connectionId'))))
+        return managedLifecycleOnly(c)
       return c.json(await service.enable(c.req.param('connectionId'), identityActor(c.get('identity'))))
     })
     .post('/connections/:connectionId/disable', zValidator('json', confirmationSchema), async (c) => {
@@ -735,6 +759,8 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
     .delete('/connections/:connectionId', async (c) => {
       const denied = await authorizeConnection(c, service, 'write')
       if (denied) return denied
+      if (isManagedBigbrainProvider(await service.providerFor(c.req.param('connectionId'))))
+        return managedLifecycleOnly(c)
       try {
         await service.remove(
           c.req.param('connectionId'),
@@ -767,6 +793,9 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       ),
       async (c) => {
         const provider = parseProviderParam(c.req.param('provider'))
+        // Managed shared vaults have no default to inherit: each squad selects vaults explicitly.
+        if (isManagedBigbrainProvider(provider) && c.req.valid('json').inheritDefault === true)
+          return managedLifecycleOnly(c)
         if (!provider || !service.configureScope) return c.json({ error: 'Unsupported integration' }, 404)
         return c.json(await service.configureScope(resolvedSquadId(c), provider, c.req.valid('json')))
       }
@@ -837,7 +866,12 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
     .get('/:squadId/integrations/:provider', requireSquadPermission('integrations:read', 'squadId'), async (c) => {
       const providerKey = parseProviderParam(c.req.param('provider'))
       if (!providerKey) return c.json({ error: 'Invalid provider' }, 400)
-      const selection = await service.selection(resolvedSquadId(c), providerKey)
+      const audience = isManagedBigbrainProvider(providerKey)
+        ? (await canEnumerateManagedVaults(c.get('identity')))
+          ? ('manager' as const)
+          : ('assigned' as const)
+        : undefined
+      const selection = await service.selection(resolvedSquadId(c), providerKey, audience ? { audience } : {})
       return c.json({
         providerKey,
         ...(selection.scope ? { scope: selection.scope } : {}),
@@ -857,6 +891,15 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       async (c) => {
         const providerKey = parseProviderParam(c.req.param('provider'))
         if (!providerKey) return c.json({ error: 'Invalid provider' }, 400)
+        if (isManagedBigbrainProvider(providerKey)) {
+          try {
+            await requireManagedVaultSquadManager(c.get('identity'), resolvedSquadId(c))
+          } catch (error) {
+            if (error instanceof ManagedVaultAuthorizationError)
+              return c.json({ error: 'Forbidden', code: error.code }, 403)
+            throw error
+          }
+        }
         return c.json(
           redactSummary(
             await service.assign(
@@ -903,6 +946,15 @@ function assignmentActor(identity: Identity | undefined): IntegrationAssignmentA
   if (identity?.type === 'user') return { userId: identity.userId }
   if (identity?.type === 'agent') return { agentId: identity.agentId }
   return undefined
+}
+
+/** Generic integration mutations cannot change a managed shared vault: its lifecycle (create,
+ * reconnect, revoke, delete) is human-only and fenced through the managed vault routes. */
+function managedLifecycleOnly(c: any): Response {
+  return c.json(
+    { error: 'Managed BigBrain vaults change only through their vault settings.', code: 'managed_lifecycle' },
+    409
+  )
 }
 
 async function authorize(c: any, permission: string): Promise<Response | null> {

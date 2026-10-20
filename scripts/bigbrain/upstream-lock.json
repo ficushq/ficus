@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/elsehow/bigbrain.git",
+  "commit": "cb61ea00bf9b85cb4cea1c8717cedfb0a40896ed",
+  "sharedProtocol": 1,
+  "mcpProtocol": "2025-06-18",
+  "target": "bun-linux-x64",
+  "license": "AGPL-3.0-only"
+}

@@ -1056,6 +1056,7 @@ export const queries = {
 
 import {
   getBigbrainLocalBindings,
+  listManagedBigbrainVaults,
   getIntegrationOAuthApp,
   getGitHubWebhookSettings,
   getGitHubCommitSigning,
@@ -1068,6 +1069,16 @@ import {
   listIntegrationPool,
 } from './api/integrations'
 export const integrationQueries = {
+  /** Polls only while a vault is mid-transition; settled vaults do not refetch on a timer. */
+  managedBigbrainVaults: () =>
+    queryOptions({
+      queryKey: integrationQueryKeys.managedBigbrainVaults(),
+      queryFn: () => listManagedBigbrainVaults(),
+      refetchInterval: (query) =>
+        query.state.data?.some((vault) => ['requested', 'provisioning', 'deleting'].includes(vault.state))
+          ? 5_000
+          : false,
+    }),
   localBindings: () =>
     queryOptions({ queryKey: integrationQueryKeys.localBindings(), queryFn: () => getBigbrainLocalBindings() }),
   githubRepositoryAccess: (connectionId: string) =>
