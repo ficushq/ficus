@@ -144,6 +144,6 @@ export class NativeVaultAdmin {
   }
   async revokeCredential(id: string): Promise<void> {
     if (!/^[a-f0-9]{8}$/.test(id)) throw new Error('invalid_request')
-    await this.invoke(['credential', 'revoke', id], z.object({ revoked: z.literal(id) }))
+    await this.invoke(['credential', 'revoke', id], z.object({ id: z.literal(id), revoked: z.literal(true) }).strict())
   }
 }

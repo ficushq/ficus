@@ -106,3 +106,12 @@ test('bootstrap accepts only the exact requested owner, private person read+writ
   const failing = new NativeVaultAdmin(record, { run: async () => ({ code: 1, stdout: 'PRIVATE' }) })
   await expect(failing.initializeOwner()).rejects.toThrow('upstream_unavailable')
 })
+
+test('revocation accepts only the pinned CLI acknowledgement for the exact credential', async () => {
+  const ack = (stdout: unknown) =>
+    new NativeVaultAdmin(record, { run: async () => ({ code: 0, stdout: JSON.stringify(stdout) }) })
+  await ack({ id: '12345678', revoked: true }).revokeCredential('12345678')
+  await expect(ack({ id: '87654321', revoked: true }).revokeCredential('12345678')).rejects.toThrow('invalid_response')
+  await expect(ack({ id: '12345678', revoked: false }).revokeCredential('12345678')).rejects.toThrow('invalid_response')
+  await expect(ack({ id: '12345678', revoked: true }).revokeCredential('../x')).rejects.toThrow('invalid_request')
+})
