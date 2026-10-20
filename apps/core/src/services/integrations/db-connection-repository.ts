@@ -169,6 +169,29 @@ export class DbIntegrationConnectionRepository
     return row ? { ...map(row.connection), squadId } : null
   }
 
+  async getAssignedById(
+    squadId: string,
+    providerKey: string,
+    connectionId: string
+  ): Promise<AssignedIntegrationConnectionRecord | null> {
+    // A malformed ID is simply not assigned (and must never reach Postgres as a uuid cast error).
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(connectionId)) return null
+    await reconcileSquadIntegration(squadId, providerKey)
+    const [row] = await db
+      .select({ connection: { ...getTableColumns(integrationConnections), enabled: effectiveConnectionEnabled() } })
+      .from(integrationConnectionAssignments)
+      .innerJoin(integrationConnections, eq(integrationConnections.id, integrationConnectionAssignments.connectionId))
+      .where(
+        and(
+          eq(integrationConnectionAssignments.squadId, squadId),
+          eq(integrationConnectionAssignments.providerKey, providerKey),
+          eq(integrationConnectionAssignments.connectionId, connectionId)
+        )
+      )
+      .limit(1)
+    return row ? { ...map(row.connection), squadId } : null
+  }
+
   async listAssigned(squadId: string, providerKey: string) {
     await reconcileSquadIntegration(squadId, providerKey)
     const rows = await db

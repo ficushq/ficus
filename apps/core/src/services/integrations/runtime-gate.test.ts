@@ -167,3 +167,65 @@ describe('IntegrationRuntimeGate', () => {
     expect(await gate.check(input)).toEqual({ allowed: false, code: 'capability_not_allowed' })
   })
 })
+
+describe('explicit connection selection', () => {
+  const connectionB = { ...connection, id: 'connection-b', displayName: 'Design' }
+  function explicitGate(assigned: Record<string, AssignedIntegrationConnectionRecord>) {
+    const calls = { default: 0, byId: [] as string[] }
+    const gate = new IntegrationRuntimeGate({
+      currentAuthority: () => 'local',
+      repository: {
+        getAssigned: async () => {
+          calls.default += 1
+          return connection
+        },
+        getAssignedById: async (squadId, provider, connectionId) => {
+          calls.byId.push(`${squadId}/${provider}/${connectionId}`)
+          return assigned[connectionId] ?? null
+        },
+      },
+      now: () => now,
+      supportedAdapterVersion: () => 1,
+      supportedConfigVersion: () => 1,
+    })
+    return { gate, calls }
+  }
+  const agentRead = setup().input
+
+  test('explicit selection resolves exactly that assigned connection and never the default', async () => {
+    const { gate, calls } = explicitGate({ 'connection-b': connectionB, connection })
+    const result = await gate.check({ ...agentRead, connectionId: 'connection-b' })
+    expect(result.allowed && result.connection.id).toBe('connection-b')
+    expect(calls).toEqual({ default: 0, byId: ['squad/bigbrain/connection-b'] })
+  })
+
+  test('an unassigned or unknown selection is denied without falling back', async () => {
+    const { gate, calls } = explicitGate({ connection })
+    expect(await gate.check({ ...agentRead, connectionId: 'connection-b' })).toEqual({
+      allowed: false,
+      code: 'connection_unavailable',
+    })
+    expect(calls.default).toBe(0)
+  })
+
+  test('the usual fences still apply to an explicitly selected connection', async () => {
+    const { gate } = explicitGate({ 'connection-b': { ...connectionB, enabled: false } })
+    expect(await gate.check({ ...agentRead, connectionId: 'connection-b' })).toEqual({
+      allowed: false,
+      code: 'connection_disabled',
+    })
+    const stale = explicitGate({ 'connection-b': { ...connectionB, validatedRevision: 'old' } })
+    expect(await stale.gate.check({ ...agentRead, connectionId: 'connection-b' })).toEqual({
+      allowed: false,
+      code: 'revision_mismatch',
+    })
+  })
+
+  test('a resolver without explicit lookup cannot satisfy an explicit selection', async () => {
+    const { gate } = setup()
+    expect(await gate.check({ ...agentRead, connectionId: 'connection' })).toEqual({
+      allowed: false,
+      code: 'connection_unavailable',
+    })
+  })
+})

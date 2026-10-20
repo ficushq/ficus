@@ -62,6 +62,12 @@ export interface CreatePendingConnection<C> {
 
 export interface AssignedConnectionResolver {
   getAssigned(squadId: string, providerKey: string): Promise<AssignedIntegrationConnectionRecord | null>
+  /** The named connection only if it is assigned to this squad for this provider (any default flag). */
+  getAssignedById?(
+    squadId: string,
+    providerKey: string,
+    connectionId: string
+  ): Promise<AssignedIntegrationConnectionRecord | null>
 }
 
 export interface IntegrationAssignmentActor {

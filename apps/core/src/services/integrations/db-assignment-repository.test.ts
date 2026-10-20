@@ -262,3 +262,40 @@ test('pool summaries expose only redacted lifecycle fields and usage', async () 
     await db.delete(integrationConnections).where(eq(integrationConnections.id, connection.id))
   }
 })
+
+test('explicit lookup resolves each of two assigned connections and nothing else', async () => {
+  const repository = new DbIntegrationConnectionRepository()
+  const [squad, other] = await db
+    .insert(squads)
+    .values([
+      { name: `Explicit ${crypto.randomUUID()}`, purpose: 'test' },
+      { name: `Explicit other ${crypto.randomUUID()}`, purpose: 'test' },
+    ])
+    .returning()
+  const [a, b, unassigned] = await Promise.all([
+    createEnabled(repository),
+    createEnabled(repository),
+    createEnabled(repository),
+  ])
+  try {
+    await repository.assign(squad!.id, 'bigbrain', a.id)
+    await repository.assign(squad!.id, 'bigbrain', b.id, undefined, { retainPrevious: true, makeDefault: false })
+    expect((await repository.getAssignedById(squad!.id, 'bigbrain', a.id))?.id).toBe(a.id)
+    expect(await repository.getAssignedById(squad!.id, 'bigbrain', b.id)).toMatchObject({
+      id: b.id,
+      squadId: squad!.id,
+    })
+    // Never another squad's assignment, an unassigned pool row, another provider or a bad ID.
+    expect(await repository.getAssignedById(squad!.id, 'bigbrain', unassigned.id)).toBeNull()
+    expect(await repository.getAssignedById(other!.id, 'bigbrain', a.id)).toBeNull()
+    expect(await repository.getAssignedById(squad!.id, 'notion', a.id)).toBeNull()
+    expect(await repository.getAssignedById(squad!.id, 'bigbrain', 'not-a-uuid')).toBeNull()
+    // Removing one of two leaves the other selectable.
+    await repository.unassign(squad!.id, 'bigbrain', undefined, a.id)
+    expect(await repository.getAssignedById(squad!.id, 'bigbrain', a.id)).toBeNull()
+    expect((await repository.getAssignedById(squad!.id, 'bigbrain', b.id))?.id).toBe(b.id)
+  } finally {
+    await db.delete(squads).where(inArray(squads.id, [squad!.id, other!.id]))
+    await db.delete(integrationConnections).where(inArray(integrationConnections.id, [a.id, b.id, unassigned.id]))
+  }
+})

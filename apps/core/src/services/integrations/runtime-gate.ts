@@ -81,6 +81,9 @@ export class IntegrationRuntimeGate {
     provider: string
     capability: IntegrationCapability
     requiredScope?: string
+    /** Explicit selection (managed shared vaults): resolved only through this squad's assignment,
+     * never the provider default and never a global pool lookup. */
+    connectionId?: string
   }): Promise<RuntimeGateDecision> {
     if (!input.agent.squadId || input.agent.squadId !== input.squadId) {
       return denied('agent_scope_mismatch')
@@ -89,7 +92,11 @@ export class IntegrationRuntimeGate {
     if (policy?.version !== 1 || !policy.allow[input.provider]?.includes(input.capability)) {
       return denied('capability_not_allowed')
     }
-    const connection = await this.#dependencies.repository.getAssigned(input.squadId, input.provider)
+    const repository = this.#dependencies.repository
+    const connection =
+      input.connectionId === undefined
+        ? await repository.getAssigned(input.squadId, input.provider)
+        : ((await repository.getAssignedById?.(input.squadId, input.provider, input.connectionId)) ?? null)
     if (!connection) return denied('connection_unavailable')
     if (!connection.enabled) return denied('connection_disabled')
     const currentAuthority = this.#dependencies.currentAuthority(input.provider)
