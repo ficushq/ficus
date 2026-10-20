@@ -171,7 +171,8 @@ export const getBigbrainLocalBindings = (fetcher: ApiFetcher = apiFetch) =>
 export interface ManagedBigbrainVault {
   vaultId: string
   displayName: string
-  ownerUserId: string
+  /** Null once the owner's Ficus account was deleted. */
+  ownerUserId: string | null
   isOwner: boolean
   state: 'requested' | 'provisioning' | 'ready' | 'degraded' | 'failed' | 'deleting' | 'deleted'
   readAccess: 'pending' | 'active' | 'revoked'

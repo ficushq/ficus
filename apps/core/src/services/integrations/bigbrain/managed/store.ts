@@ -30,6 +30,7 @@ export type ManagedVaultStoreCode =
   | 'identity_mismatch'
   | 'not_found'
   | 'generation_conflict'
+  | 'capacity'
 
 export class ManagedVaultStoreError extends Error {
   constructor(
@@ -67,6 +68,8 @@ const createRequestSchema = z
     ownerDisplay: managedBigbrainOwnerSchema.shape.display,
     actorUserId: uuid,
     recipe: managedCreateRecipeSchema,
+    /** Live vaults allowed on this host; checked under a lock with the insert. */
+    maxLive: z.number().int().min(1).optional(),
   })
   .strict()
 export type ManagedVaultCreateRequest = z.infer<typeof createRequestSchema>
@@ -138,6 +141,15 @@ export const managedVaultStore = {
     const id = request.vaultId ?? crypto.randomUUID()
     try {
       const inserted = await db.transaction(async (tx) => {
+        if (request.maxLive !== undefined) {
+          // Serialize creates so two concurrent requests cannot both pass the capacity check.
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext('managed_bigbrain_vaults:create'))`)
+          const [live] = await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(managedBigbrainVaults)
+            .where(ne(managedBigbrainVaults.state, 'deleted'))
+          if ((live?.n ?? 0) >= request.maxLive) throw new ManagedVaultStoreError('capacity')
+        }
         const [row] = await tx
           .insert(managedBigbrainVaults)
           .values({

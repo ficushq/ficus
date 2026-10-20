@@ -111,6 +111,23 @@ other vaults' names, owners, usage or state.
    follow your backup retention. Restoring the server from a backup taken before the delete
    brings the vault back, with Ficus read access off.
 
+### When the owner leaves
+
+Ficus never hands a vault's ownership to someone else automatically.
+
+- **Owner disabled in Ficus.** The vault keeps serving, members keep their access, and the
+  owner's devices keep working in BigBrain. Ficus refuses new owner device links until the
+  owner's account is enabled again.
+- **Owner deleted from Ficus.** Deleting the user always succeeds. The vault keeps serving and
+  shows **Owner removed from Ficus**; the owner's BigBrain devices keep working, but nobody can
+  create owner device links for it from Ficus, including administrators. A vault still being set
+  up when its owner is deleted stops with `owner_removed`.
+- **Recovering.** A remaining member with access in the BigBrain app keeps reading and writing
+  there, and the owner (if their device still works) can invite others from the BigBrain app.
+  To put the vault under a new Ficus owner, a person with `integrations:write:bigbrain` creates a
+  new vault owned by the new person, members move their records over in BigBrain, and the old
+  vault is deleted. Ficus does not edit a vault's upstream owner.
+
 Every change is fenced by the vault's generation. If something changed meanwhile (another
 person renamed it, for example), Ficus refuses with the current generation instead of applying a
 stale request. A change waits until the server has applied the previous one; only a delete can

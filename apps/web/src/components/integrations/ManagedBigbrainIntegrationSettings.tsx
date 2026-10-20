@@ -207,6 +207,12 @@ function VaultRow({
           Last error: {vault.lastErrorCode}
         </p>
       )}
+      {vault.ownerUserId === null && vault.state !== 'deleted' && (
+        <p className="mt-1 text-xs text-muted">
+          Owner removed from Ficus. Their devices keep working in BigBrain; Ficus can no longer create owner device
+          links for this vault.
+        </p>
+      )}
       {vault.backup === 'excluded' && vault.state !== 'deleted' && (
         <p className="mt-1 text-xs text-status-attention-700 dark:text-status-attention-300">
           Last backup did not include this vault.

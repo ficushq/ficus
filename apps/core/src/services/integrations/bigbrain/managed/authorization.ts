@@ -57,11 +57,13 @@ export async function requireManagedVaultManager(
  * other administrator can mint an impersonating owner link. */
 export async function requireManagedVaultOwner(
   identity: Identity | undefined,
-  vault: { ownerUserId: string },
+  vault: { ownerUserId: string | null },
   executor: Executor = db
 ): Promise<string> {
   const userId = await requireManagedVaultManager(identity, executor)
-  if (userId !== vault.ownerUserId) throw new ManagedVaultAuthorizationError('owner_required')
+  // A vault whose owner was deleted has no owner in Ficus: nobody may mint its owner links.
+  if (vault.ownerUserId === null || userId !== vault.ownerUserId)
+    throw new ManagedVaultAuthorizationError('owner_required')
   return userId
 }
 

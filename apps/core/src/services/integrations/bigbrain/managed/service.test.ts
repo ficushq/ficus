@@ -6,10 +6,11 @@ import {
   type ManagedBigbrainInstalledHost,
 } from '@ficus/shared/managed-bigbrain'
 import { db, managedBigbrainVaults, users } from '../../../../db'
+import { User } from '../../../../entities/User'
 import { assignRole, cleanupTestRbac, createTestRole, createTestUser } from '../../../../test-utils/rbac'
 import type { Identity } from '../../../rbac/permissions'
 import { ManagedHostError, type ManagedHostCall } from './host-client'
-import { ManagedVaultServiceError, createManagedVaultService, managedVaultErrorResponse } from './service'
+import { createManagedVaultService, managedVaultErrorResponse } from './service'
 import { managedVaultStore } from './store'
 
 const PREFIX = `mbb-svc-${crypto.randomUUID().slice(0, 8)}`
@@ -168,8 +169,7 @@ test('create refuses beyond the vault limit, but still answers a replay', async 
   const input = create(`Only ${crypto.randomUUID()}`)
   await svc.create(owner, input)
   const refusal = await svc.create(owner, create(`Second ${crypto.randomUUID()}`)).catch((e) => e)
-  expect(refusal).toBeInstanceOf(ManagedVaultServiceError)
-  expect([refusal.code, refusal.status]).toEqual(['capacity', 429])
+  expect(managedVaultErrorResponse(refusal)).toEqual({ status: 429, body: { code: 'capacity' } })
   expect((await svc.create(owner, input)).displayName).toBe(input.displayName)
 })
 
@@ -276,6 +276,64 @@ test('an expired owner-link window is refused rather than minting a new link', a
     now: () => new Date(Date.now() + 2 * 3_600_000),
   })
   expect(await code(later.ownerInvite(owner, created.vaultId, fence))).toBe('invite_expired')
+})
+
+test('deleting an owner never fails: their live vault keeps serving without an owner; tombstones never block', async () => {
+  const owner = await human(['integrations:write:bigbrain'])
+  const formerOwner = await human(['integrations:write:bigbrain'])
+  const admin = await human(['*'])
+  const { svc, calls } = service()
+  const live = await svc.create(owner, create(`Owned ${crypto.randomUUID()}`))
+  await makeReady(live.vaultId)
+  const gone = await svc.create(formerOwner, create(`Gone ${crypto.randomUUID()}`))
+  await makeReady(gone.vaultId)
+  await svc.delete(formerOwner, gone.vaultId, {
+    requestId: crypto.randomUUID(),
+    expectedGeneration: 1,
+    confirmedVaultId: gone.vaultId,
+    confirmedName: gone.displayName,
+  })
+  await managedVaultStore.finalizeTombstone(gone.vaultId)
+  try {
+    // Exactly the path DELETE /api/users/:id takes.
+    await (await User.findById(formerOwner.userId))!.delete()
+    await (await User.findById(owner.userId))!.delete()
+    expect(await User.findById(owner.userId)).toBeNull()
+    expect(await User.findById(formerOwner.userId)).toBeNull()
+    const orphan = await svc.get(admin, live.vaultId)
+    expect(orphan).toMatchObject({ ownerUserId: null, isOwner: false, state: 'ready' })
+    // Nobody inherits owner authority: not an administrator, not automatically.
+    expect(
+      await code(svc.ownerInvite(admin, live.vaultId, { requestId: crypto.randomUUID(), expectedGeneration: 1 }))
+    ).toBe('owner_required')
+    expect(calls).toEqual([])
+    // Other management continues, and the vault can still be deleted.
+    expect(
+      await svc.delete(admin, live.vaultId, {
+        requestId: crypto.randomUUID(),
+        expectedGeneration: 1,
+        confirmedVaultId: live.vaultId,
+        confirmedName: live.displayName,
+      })
+    ).toMatchObject({ pendingAction: 'delete' })
+  } finally {
+    await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.id, [live.vaultId, gone.vaultId]))
+  }
+})
+
+test('concurrent creates never exceed the vault limit', async () => {
+  const owner = await human(['integrations:write:bigbrain'])
+  const { svc } = service({ maxVaults: 2 })
+  const results = await Promise.allSettled(
+    Array.from({ length: 5 }, (_, i) => svc.create(owner, create(`Race ${i} ${crypto.randomUUID()}`)))
+  )
+  expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2)
+  for (const r of results.filter((r) => r.status === 'rejected'))
+    expect(managedVaultErrorResponse((r as PromiseRejectedResult).reason)).toEqual({
+      status: 429,
+      body: { code: 'capacity' },
+    })
+  expect(await managedVaultStore.list()).toHaveLength(2)
 })
 
 test('managers see affected squads; listing needs BigBrain read authority; refusals map to codes only', async () => {

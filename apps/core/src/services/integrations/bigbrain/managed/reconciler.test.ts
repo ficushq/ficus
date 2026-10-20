@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import {
   MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
@@ -270,6 +270,21 @@ test('a vault left out of a partial nightly backup is surfaced, and cleared by t
   f.receipts.set(row.id, { ...f.receipts.get(row.id)!, backup: 'included' })
   await sweepManagedVaults(f.deps)
   expect((await store.get(row.id))?.backup).toBe('included')
+})
+
+test('a pending create whose owner was deleted stops without touching DNS or the host', async () => {
+  const f = fakeHost()
+  const row = await requested()
+  await db.delete(users).where(eq(users.id, row.ownerUserId!))
+  expect(await reconcileNext({ ...f.deps, now: () => new Date(Date.now() + 1000) })).toBe('failed')
+  expect(await store.get(row.id)).toMatchObject({
+    ownerUserId: null,
+    state: 'failed',
+    lastErrorCode: 'owner_removed',
+    retryable: false,
+  })
+  expect([f.calls, f.dns]).toEqual([[], []])
+  await db.delete(managedBigbrainVaults).where(eq(managedBigbrainVaults.id, row.id))
 })
 
 test('nothing runs while managed BigBrain is unavailable', async () => {

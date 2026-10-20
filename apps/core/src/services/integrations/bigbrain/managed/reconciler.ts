@@ -68,7 +68,7 @@ async function applyPending(
         expectedGeneration: 0,
         generation: 1,
         displayName: row.displayName,
-        owner: { userId: row.ownerUserId, handle: row.ownerHandle, display: row.ownerDisplay },
+        owner: { userId: row.ownerUserId!, handle: row.ownerHandle, display: row.ownerDisplay },
         origin: recipe.origin,
         limits: recipe.limits,
         upstreamCommit: recipe.upstreamCommit as never,
@@ -124,6 +124,12 @@ export async function reconcileNext(deps: ManagedReconcilerDeps): Promise<Reconc
   if (!row || !row.operationRequestId) return 'idle'
   const host = (deps.host ?? currentManagedBigbrainHost)()
   if (!host) return 'unavailable'
+  if (row.desiredAction === 'create' && row.ownerUserId === null) {
+    // The owner's Ficus account was deleted before the host create ran: there is nobody to make
+    // owner. Stop (not retryable, never reassigned); a person deletes it and creates it again.
+    await store.recordFailure(row.id, row.operationRequestId, { code: 'owner_removed', retryable: false, now })
+    return 'failed'
+  }
   try {
     return await applyPending(row, host, deps)
   } catch (error) {

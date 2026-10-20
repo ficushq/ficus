@@ -3965,9 +3965,10 @@ export const managedBigbrainVaults = pgTable(
   'managed_bigbrain_vaults',
   {
     id: uuid('id').primaryKey(),
-    ownerUserId: uuid('owner_user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'restrict' }),
+    /** The vault's Ficus owner. Null once that user is deleted: the vault keeps serving and the
+     * owner's existing devices keep working upstream, but Ficus can no longer mint owner links.
+     * Never reassigned automatically. */
+    ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
     /** The owner's upstream identity as sent at create; never re-derived from a mutable profile. */
     ownerHandle: varchar('owner_handle', { length: 64 }).notNull(),
     ownerDisplay: varchar('owner_display', { length: 120 }).notNull(),

@@ -12271,7 +12271,7 @@
           "name": "owner_user_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "owner_handle": {
           "name": "owner_handle",
@@ -12526,7 +12526,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "managed_bigbrain_vaults_connection_id_integration_connections_id_fk": {

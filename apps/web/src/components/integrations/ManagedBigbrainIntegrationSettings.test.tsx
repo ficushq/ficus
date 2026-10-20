@@ -41,6 +41,7 @@ const design = vault({
   state: 'failed',
   retryable: true,
   backup: 'excluded',
+  ownerUserId: null,
   lastErrorCode: 'storage_unavailable',
 })
 
@@ -164,6 +165,12 @@ describe('ManagedBigbrainIntegrationSettings', () => {
       confirmedVaultId: research.vaultId,
       confirmedName: 'Research',
     })
+  })
+
+  test('a vault whose owner was deleted says so and offers no device link', async () => {
+    await render()
+    expect(row('Research').textContent).not.toContain('Owner removed')
+    expect(row('Design').textContent).toContain('Owner removed from Ficus')
   })
 
   test('a vault left out of the last backup says so', async () => {

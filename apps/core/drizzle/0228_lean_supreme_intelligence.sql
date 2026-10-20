@@ -16,7 +16,7 @@ CREATE TABLE "managed_bigbrain_operations" (
 --> statement-breakpoint
 CREATE TABLE "managed_bigbrain_vaults" (
 	"id" uuid PRIMARY KEY NOT NULL,
-	"owner_user_id" uuid NOT NULL,
+	"owner_user_id" uuid,
 	"owner_handle" varchar(64) NOT NULL,
 	"owner_display" varchar(120) NOT NULL,
 	"display_name" varchar(120) NOT NULL,
@@ -53,7 +53,7 @@ CREATE TABLE "managed_bigbrain_vaults" (
 );
 --> statement-breakpoint
 ALTER TABLE "managed_bigbrain_operations" ADD CONSTRAINT "managed_bigbrain_operations_vault_id_managed_bigbrain_vaults_id_fk" FOREIGN KEY ("vault_id") REFERENCES "public"."managed_bigbrain_vaults"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "managed_bigbrain_vaults" ADD CONSTRAINT "managed_bigbrain_vaults_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "managed_bigbrain_vaults" ADD CONSTRAINT "managed_bigbrain_vaults_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "managed_bigbrain_vaults" ADD CONSTRAINT "managed_bigbrain_vaults_connection_id_integration_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."integration_connections"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "managed_bigbrain_vaults" ADD CONSTRAINT "managed_bigbrain_vaults_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_managed_bigbrain_operations_vault" ON "managed_bigbrain_operations" USING btree ("vault_id");--> statement-breakpoint

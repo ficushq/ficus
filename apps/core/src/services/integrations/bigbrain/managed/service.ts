@@ -79,7 +79,8 @@ export const deleteManagedVaultInputSchema = managedVaultFenceInputSchema
 export interface ManagedVaultView {
   vaultId: string
   displayName: string
-  ownerUserId: string
+  /** Null once the owner's Ficus account was deleted (shown as "owner removed"). */
+  ownerUserId: string | null
   isOwner: boolean
   state: string
   readAccess: string
@@ -124,7 +125,7 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       vaultId: row.id,
       displayName: row.displayName,
       ownerUserId: row.ownerUserId,
-      isOwner: row.ownerUserId === userId,
+      isOwner: row.ownerUserId !== null && row.ownerUserId === userId,
       state: row.state,
       readAccess: row.readAccess,
       desiredGeneration: row.desiredGeneration,
@@ -180,13 +181,12 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       const body = parse(createManagedVaultInputSchema, input)
       if (!(await isEnabled())) throw new ManagedVaultServiceError('integration_disabled', 409)
       const host = requireHost()
-      const existing = await store.list()
-      // A replay of an existing request is answered even at capacity.
-      const replay = existing.find((row) => row.createRequestId === body.requestId)
-      if (!replay && existing.length >= Math.min(MANAGED_BIGBRAIN_MAX_VAULTS, host.limits.maxVaults))
-        throw new ManagedVaultServiceError('capacity', 429)
+      // A replay of an existing request is answered even at capacity; a new one is counted under
+      // a lock with its insert, so concurrent creates cannot exceed the limit.
+      const replay = (await store.list()).find((row) => row.createRequestId === body.requestId)
       const vaultId = replay?.id ?? crypto.randomUUID()
       const row = await store.request({
+        maxLive: Math.min(MANAGED_BIGBRAIN_MAX_VAULTS, host.limits.maxVaults),
         vaultId,
         requestId: body.requestId,
         displayName: body.displayName,
@@ -310,7 +310,14 @@ export function managedVaultErrorResponse(error: unknown): { status: number; bod
   if (error instanceof ManagedVaultAuthorizationError) return { status: 403, body: { code: error.code } }
   if (error instanceof ManagedVaultStoreError)
     return {
-      status: error.code === 'not_found' ? 404 : error.code === 'invalid_request' ? 400 : 409,
+      status:
+        error.code === 'not_found'
+          ? 404
+          : error.code === 'invalid_request'
+            ? 400
+            : error.code === 'capacity'
+              ? 429
+              : 409,
       body: {
         code: error.code,
         ...(error.currentGeneration === undefined ? {} : { currentGeneration: error.currentGeneration }),
