@@ -44,34 +44,56 @@ export function PasskeyLogin({ onSuccess, authenticate = startAuthentication }: 
     }
   }
 
+  const busy = loading || openingBrowser
+  const errorLine = error && (
+    <p role="alert" className="text-status-danger-600 dark:text-status-danger-400 text-sm">
+      {error}
+    </p>
+  )
+
+  // A Desktop window offers browser sign-in only for an attached self-hosted installation. Its people
+  // made their passkeys in a browser or password manager, which Electron's built-in passkey prompt
+  // cannot see, so the browser is the main way in and the in-app passkey (one saved in Ficus Desktop,
+  // or a security key) is the alternative. Nothing starts on its own, even after a failed attempt.
+  if (signInWithBrowser)
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={handleBrowserLogin}
+            disabled={busy}
+            className="ficus-button ficus-button-primary w-full px-4 py-2.5 rounded-md font-medium text-sm disabled:opacity-50"
+          >
+            {openingBrowser ? 'Opening your browser…' : 'Sign in with your browser'}
+          </button>
+          <p className="text-secondary text-sm text-center">
+            Approve this sign-in in your browser with the passkey or password manager you normally use.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleLogin}
+          disabled={busy}
+          className="ficus-button ficus-button-link block mx-auto text-sm disabled:opacity-50"
+        >
+          {loading ? 'Waiting for your passkey…' : 'Use a passkey or security key instead'}
+        </button>
+        {errorLine}
+      </div>
+    )
+
   return (
     <div className="space-y-4">
       <button
         type="button"
         onClick={handleLogin}
-        disabled={loading || openingBrowser}
-        className="ficus-button ficus-button-primary w-full px-4 py-2 rounded-md font-medium text-sm disabled:opacity-50"
+        disabled={busy}
+        className="ficus-button ficus-button-primary w-full px-4 py-2.5 rounded-md font-medium text-sm disabled:opacity-50"
       >
-        {loading ? 'Authenticating...' : 'Sign in with Passkey'}
+        {loading ? 'Waiting for your passkey…' : 'Sign in with passkey'}
       </button>
-      {signInWithBrowser && (
-        <div className="space-y-2">
-          <button
-            type="button"
-            onClick={handleBrowserLogin}
-            disabled={loading || openingBrowser}
-            className="ficus-button ficus-button-secondary w-full px-4 py-2 rounded-md font-medium text-sm disabled:opacity-50"
-          >
-            {openingBrowser ? 'Opening browser...' : 'Sign in with browser'}
-          </button>
-          <p className="text-secondary text-sm">Use your usual passkey provider in your browser.</p>
-        </div>
-      )}
-      {error && (
-        <p role="alert" className="text-status-danger-600 dark:text-status-danger-400 text-sm">
-          {error}
-        </p>
-      )}
+      {errorLine}
     </div>
   )
 }

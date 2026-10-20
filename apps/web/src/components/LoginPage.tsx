@@ -4,6 +4,8 @@ import { apiUrl } from '../api/client'
 import { PasskeyLogin } from './auth/PasskeyLogin'
 import { PasskeyRegister } from './auth/PasskeyRegister'
 import { PasskeyRecoveryRequest } from './auth/PasskeyRecoveryRequest'
+import { FicusLogo } from './FicusLogo'
+import { desktopInstance } from '../lib/desktop'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
 
 // The managed-instance "Open instance" link
@@ -280,11 +282,31 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
     // keep the affordance and let the register call's own error speak.
     const selfRegisterBlocked = authStatus.canSelfRegister === false
     const registering = showRegister && !selfRegisterBlocked
-    const heading = showRecovery ? 'Lost your passkey?' : registering ? 'Create Account' : 'Login'
+    const heading = showRecovery ? 'Lost your passkey?' : registering ? 'Create Account' : 'Sign in to Ficus'
+    // A Desktop window names its instance (as its header does once signed in); switching instances
+    // happens from Desktop's File menu, not here.
+    const instance = desktopInstance()
+    // Recovery sends a sign-in link by email, so it is only offered where this server can send one.
+    const recoveryAvailable = authStatus.emailConfigured
     return (
       <div className="h-full flex items-center justify-center bg-page px-4">
         <div className="ficus-section w-full max-w-sm p-6">
-          <h1 className="text-lg font-semibold text-primary mb-4">{heading}</h1>
+          {showRecovery || registering ? (
+            <h1 className="text-lg font-semibold text-primary mb-4">{heading}</h1>
+          ) : (
+            <div className="flex flex-col items-center gap-3 mb-6 text-center">
+              <FicusLogo className="w-10 h-10" decorative />
+              <h1 className="text-xl font-semibold text-primary">{heading}</h1>
+              {instance && (
+                <p
+                  data-testid="login-instance"
+                  className="max-w-full truncate rounded-full border border-panel-border bg-surface-secondary px-3 py-1 text-sm text-secondary"
+                >
+                  {instance.name}
+                </p>
+              )}
+            </div>
+          )}
           {showRecovery ? (
             <PasskeyRecoveryRequest onBack={() => setShowRecovery(false)} />
           ) : registering ? (
@@ -314,14 +336,20 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                   </button>
                 </p>
               )}
-              {/* Passkeys are the only credential here, so losing one is a lockout.
-                  Offered unconditionally: it is invite-independent, and the endpoint
-                  answers the same for an unknown address, so it leaks nothing. */}
-              <p className="text-xs text-secondary mt-6 text-center">
-                <button type="button" onClick={() => setShowRecovery(true)} className="ficus-button ficus-button-link">
-                  Lost your passkey?
-                </button>
-              </p>
+              {/* Passkeys are the only credential here, so losing one is a lockout. Offered whenever
+                  this server can email (invite-independent; the endpoint answers the same for an
+                  unknown address, so it leaks nothing). Without email delivery it could never arrive. */}
+              {recoveryAvailable && (
+                <p className="text-sm text-secondary mt-6 pt-4 border-t border-panel-border text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowRecovery(true)}
+                    className="ficus-button ficus-button-link"
+                  >
+                    Lost your passkey?
+                  </button>
+                </p>
+              )}
             </>
           )}
         </div>

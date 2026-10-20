@@ -8,6 +8,7 @@ let authStatus: {
   hasUsers: boolean
   hasAdminUser: boolean
   canSelfRegister?: boolean
+  emailConfigured?: boolean
 } | null = null
 let isAuthenticated = false
 
@@ -64,7 +65,7 @@ describe('LoginPage auth modes', () => {
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
 
-    expect(html).toContain('Sign in with Passkey')
+    expect(html).toContain('Sign in with passkey')
     expect(html).toContain('Create account')
   })
 
@@ -76,7 +77,7 @@ describe('LoginPage auth modes', () => {
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
 
-    expect(html).toContain('Sign in with Passkey')
+    expect(html).toContain('Sign in with passkey')
     // The affordance is simply absent — no explanatory line, since an invitee
     // arrives via their emailed link rather than this screen.
     expect(html).not.toContain('Create account')
@@ -120,7 +121,14 @@ describe('LoginPage auth modes', () => {
   test('offers passkey recovery in passkey mode', async () => {
     // Passkeys are the only credential in this mode, so losing one is a lockout —
     // there has to be a visible way out that does not need a session.
-    authStatus = { authEnabled: true, mode: 'passkey', hasUsers: true, hasAdminUser: true, canSelfRegister: true }
+    authStatus = {
+      authEnabled: true,
+      mode: 'passkey',
+      hasUsers: true,
+      hasAdminUser: true,
+      canSelfRegister: true,
+      emailConfigured: true,
+    }
     const html = renderToStaticMarkup(
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
@@ -131,7 +139,14 @@ describe('LoginPage auth modes', () => {
   test('recovery is offered even on an invite-only instance', async () => {
     // Recovery is orthogonal to signup policy: it only ever reaches an account that
     // already exists, so hiding it behind canSelfRegister would strand invited users.
-    authStatus = { authEnabled: true, mode: 'passkey', hasUsers: true, hasAdminUser: true, canSelfRegister: false }
+    authStatus = {
+      authEnabled: true,
+      mode: 'passkey',
+      hasUsers: true,
+      hasAdminUser: true,
+      canSelfRegister: false,
+      emailConfigured: true,
+    }
     const html = renderToStaticMarkup(
       <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
     )
@@ -139,5 +154,49 @@ describe('LoginPage auth modes', () => {
     // Invite-only is expressed by the ABSENCE of the create-account affordance.
     expect(html).not.toContain('Create account')
     expect(html).toContain('Lost your passkey?')
+  })
+
+  test('recovery is hidden when this server cannot send email', async () => {
+    // The recovery link is emailed; without email delivery it could never arrive.
+    authStatus = {
+      authEnabled: true,
+      mode: 'passkey',
+      hasUsers: true,
+      hasAdminUser: true,
+      canSelfRegister: true,
+      emailConfigured: false,
+    }
+    const html = renderToStaticMarkup(
+      <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
+    )
+
+    expect(html).toContain('Sign in with passkey')
+    expect(html).not.toContain('Lost your passkey?')
+  })
+
+  test('passkey sign-in is headed "Sign in to Ficus" and names the Desktop instance when there is one', async () => {
+    authStatus = { authEnabled: true, mode: 'passkey', hasUsers: true, hasAdminUser: true }
+    const render = () =>
+      renderToStaticMarkup(
+        <LoginPage auth={{ authStatus, isAuthenticated, login: async () => {}, loginWithToken: async () => {} }} />
+      )
+    expect(render()).toContain('Sign in to Ficus')
+    expect(render()).not.toContain('login-instance')
+
+    const priorWindow = globalThis.window
+    globalThis.window = {
+      location: { hash: '', search: '', pathname: '/', href: 'http://localhost/' },
+      ficusDesktopApp: {
+        version: 1,
+        instance: { kind: 'attached', name: 'Home server' },
+        notificationsEnabled: async () => false,
+        deliverNotifications: async () => {},
+      },
+    } as unknown as Window & typeof globalThis
+    try {
+      expect(render()).toContain('Home server')
+    } finally {
+      globalThis.window = priorWindow
+    }
   })
 })

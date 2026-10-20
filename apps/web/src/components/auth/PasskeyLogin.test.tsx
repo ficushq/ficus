@@ -45,13 +45,26 @@ async function render(withBrowser = true) {
 }
 const buttons = () => Array.from(container.querySelectorAll('button'))
 
-test('passkey remains first and primary; browser approval is an explicit secondary action', async () => {
+const PASSKEY = 'Use a passkey or security key instead'
+const BROWSER = 'Sign in with your browser'
+const button = (label: string) => buttons().find((candidate) => candidate.textContent === label)!
+
+test('an attached Desktop window leads with browser sign-in; the in-app passkey is the alternative', async () => {
   await render()
-  expect(buttons().map((button) => button.textContent)).toEqual(['Sign in with Passkey', 'Sign in with browser'])
-  expect(buttons()[0]!.classList.contains('ficus-button-primary')).toBe(true)
-  expect(buttons()[1]!.classList.contains('ficus-button-secondary')).toBe(true)
+  expect(buttons().map((candidate) => candidate.textContent)).toEqual([BROWSER, PASSKEY])
+  expect(button(BROWSER).classList.contains('ficus-button-primary')).toBe(true)
+  expect(button(PASSKEY).classList.contains('ficus-button-link')).toBe(true)
+  expect(container.textContent).toContain('passkey or password manager you normally use')
   expect(browserSignIn).not.toHaveBeenCalled()
-  await dom.act(async () => buttons()[0]!.click())
+  expect(authenticate).not.toHaveBeenCalled()
+
+  await dom.act(async () => button(BROWSER).click())
+  expect(browserSignIn).toHaveBeenCalledTimes(1)
+  expect(authenticate).not.toHaveBeenCalled()
+})
+test('the in-app passkey still signs in from an attached window', async () => {
+  await render()
+  await dom.act(async () => button(PASSKEY).click())
   expect(authenticate).toHaveBeenCalledWith({ optionsJSON: { challenge: 'test' } })
   expect(verifyLogin).toHaveBeenCalledWith('challenge', { id: 'assertion' })
   expect(success).toHaveBeenCalledTimes(1)
@@ -60,23 +73,24 @@ test('passkey remains first and primary; browser approval is an explicit seconda
 test('a failed passkey attempt leaves browser sign-in usable and does not start it automatically', async () => {
   authenticate.mockRejectedValueOnce(new Error('Passkey unavailable'))
   await render()
-  await dom.act(async () => buttons()[0]!.click())
+  await dom.act(async () => button(PASSKEY).click())
   expect(container.textContent).toContain('Passkey unavailable')
   expect(browserSignIn).not.toHaveBeenCalled()
-  await dom.act(async () => buttons()[1]!.click())
+  await dom.act(async () => button(BROWSER).click())
   expect(browserSignIn).toHaveBeenCalledTimes(1)
   expect(success).not.toHaveBeenCalled()
 })
 test('a browser approval error leaves both choices usable', async () => {
   browserSignIn.mockRejectedValueOnce(new Error('Could not open browser'))
   await render()
-  await dom.act(async () => buttons()[1]!.click())
+  await dom.act(async () => button(BROWSER).click())
   expect(container.textContent).toContain('Could not open browser')
-  expect(buttons().every((button) => !button.disabled)).toBe(true)
+  expect(buttons().every((candidate) => !candidate.disabled)).toBe(true)
 })
-test('ordinary browsers and older Desktop builds retain the existing passkey login', async () => {
+test('ordinary browsers, local and remote Desktop windows keep passkey sign-in alone', async () => {
   await render(false)
-  expect(buttons().map((button) => button.textContent)).toEqual(['Sign in with Passkey'])
+  expect(buttons().map((candidate) => candidate.textContent)).toEqual(['Sign in with passkey'])
+  expect(buttons()[0]!.classList.contains('ficus-button-primary')).toBe(true)
 })
 
 test('both choices are disabled during a pending passkey ceremony', async () => {
@@ -88,9 +102,9 @@ test('both choices are disabled during a pending passkey ceremony', async () => 
       })
   )
   await render()
-  await dom.act(async () => buttons()[0]!.click())
-  expect(buttons().every((button) => button.disabled)).toBe(true)
+  await dom.act(async () => button(PASSKEY).click())
+  expect(buttons().every((candidate) => candidate.disabled)).toBe(true)
   expect(browserSignIn).not.toHaveBeenCalled()
   await dom.act(async () => finish({ id: 'assertion' } as never))
-  expect(buttons().every((button) => !button.disabled)).toBe(true)
+  expect(buttons().every((candidate) => !candidate.disabled)).toBe(true)
 })
