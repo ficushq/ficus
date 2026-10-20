@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test'
 import {
   assignIntegration,
+  getBigbrainLocalBindings,
+  createLocalBigbrainIntegration,
   callbackIntegrationAuthorization,
   completeIntegrationAuthorization,
   configureIntegrationOAuthApp,
@@ -75,5 +77,15 @@ describe('integration pool API', () => {
     expect(fetcher).toHaveBeenCalledWith('/integrations/connections/connection-1?confirmAssigned=true', {
       method: 'DELETE',
     })
+  })
+})
+
+test('local BigBrain API sends only an approved binding selection', async () => {
+  await getBigbrainLocalBindings(fetcher)
+  expect(fetcher).toHaveBeenLastCalledWith('/integrations/providers/bigbrain/local-bindings')
+  await createLocalBigbrainIntegration({ bindingId: 'approved', displayName: 'Memory' }, fetcher)
+  expect(fetcher).toHaveBeenLastCalledWith('/integrations/providers/bigbrain/local-connections', {
+    method: 'POST',
+    body: JSON.stringify({ bindingId: 'approved', displayName: 'Memory' }),
   })
 })

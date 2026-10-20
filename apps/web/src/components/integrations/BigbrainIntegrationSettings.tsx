@@ -1,11 +1,11 @@
+import { SelectionPopup } from '../ThemedPopup'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
-  createIntegration,
+  createLocalBigbrainIntegration,
   integrationAction,
   removeIntegration,
-  replaceIntegrationCredential,
   type IntegrationConnection,
 } from '../../api/integrations'
 import { ApiError } from '../../api/client'
@@ -25,11 +25,9 @@ function operationError(operation: string, error: unknown): string {
 
 type Usage = IntegrationConnection['usage']
 type Confirmation = {
-  operation: 'disable' | 'replace' | 'remove'
+  operation: 'disable' | 'remove'
   connectionId: string
   usage: Usage
-  credential?: string
-  editorEpoch?: number
 }
 type OperationFeedback = { kind: 'success' | 'error'; message: string }
 
@@ -78,18 +76,15 @@ export function BigbrainIntegrationSettings({
   const pool = useQuery({ ...integrationQueries.pool('bigbrain'), enabled: canRead })
   const connections = pool.data ?? []
   const [displayName, setDisplayName] = useState('')
-  const [apiBase, setApiBase] = useState('')
-  const [credential, setCredential] = useState('')
-  const [replacingId, setReplacingId] = useState<string | null>(null)
-  const [nextCredential, setNextCredential] = useState('')
+  const bindings = useQuery({ ...integrationQueries.localBindings(), enabled: canRead })
+  const [bindingId, setBindingId] = useState('')
+  const selectedBinding = bindings.data?.bindings.find((binding) => binding.id === bindingId)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [feedback, setFeedback] = useState<OperationFeedback | null>(null)
   const [pendingTargets, setPendingTargets] = useState<Record<string, number>>({})
   const feedbackSequence = useRef(0)
-  const replacementEpoch = useRef(0)
   const connectionIds = connections.map((connection) => connection.id).join(':')
   const liveConnectionIdsRef = useStableRef(new Set(connections.map((connection) => connection.id)))
-  const replacingIdRef = useStableRef(replacingId)
   const beginOperation = () => {
     setFeedback(null)
     setConfirmation(null)
@@ -118,11 +113,7 @@ export function BigbrainIntegrationSettings({
   const refresh = () => client.invalidateQueries({ queryKey: integrationQueryKeys.all })
   const clearCredentialDrafts = useCallback(() => {
     setDisplayName('')
-    setApiBase('')
-    setCredential('')
-    replacementEpoch.current += 1
-    setReplacingId(null)
-    setNextCredential('')
+    setBindingId('')
     setConfirmation(null)
   }, [])
   useEffect(() => {
@@ -136,16 +127,19 @@ export function BigbrainIntegrationSettings({
   }, [connectionIds])
 
   const create = useMutation({
-    mutationFn: (variables: { displayName: string; apiBase: string; credential: string }) =>
-      createIntegration(variables),
+    mutationFn: (variables: { displayName: string; bindingId: string }) => createLocalBigbrainIntegration(variables),
     onMutate: beginOperation,
-    onSuccess: async (_data, _variables, sequence) => {
+    onSuccess: async (data, _variables, sequence) => {
       if (isLatest(sequence)) {
         setDisplayName('')
-        setApiBase('')
-        setCredential('')
+        setBindingId('')
       }
-      showLatestFeedback(sequence, { kind: 'success', message: 'Connection created.' })
+      showLatestFeedback(
+        sequence,
+        data.lastErrorCode
+          ? { kind: 'error', message: `Connection created but validation failed (${data.lastErrorCode}).` }
+          : { kind: 'success', message: 'Connection created and validated. Enable it when ready.' }
+      )
       await refresh()
     },
     onError: (error, _variables, sequence) =>
@@ -159,7 +153,15 @@ export function BigbrainIntegrationSettings({
       confirmAssigned?: boolean
     }) => integrationAction(variables.connectionId, variables.action, variables.confirmAssigned),
     onMutate: beginTargetOperation,
-    onSuccess: async (_data, variables, context) => {
+    onSuccess: async (data, variables, context) => {
+      if ('lastErrorCode' in data && data.lastErrorCode) {
+        showLatestFeedback(context?.sequence, {
+          kind: 'error',
+          message: `Validation failed (${data.lastErrorCode}). Check the Core host binding and Connected Clients.`,
+        })
+        await refresh()
+        return
+      }
       const message =
         variables.action === 'validate'
           ? 'Connection validated.'
@@ -188,57 +190,6 @@ export function BigbrainIntegrationSettings({
             : 'Disabling the connection'
       if (isLiveTarget(variables.connectionId))
         showLatestFeedback(context?.sequence, { kind: 'error', message: operationError(operation, error) })
-    },
-    onSettled: finishTargetOperation,
-  })
-
-  const replaceCredential = useMutation({
-    mutationFn: (variables: {
-      connectionId: string
-      credential: string
-      editorEpoch: number
-      confirmAssigned?: boolean
-    }) => replaceIntegrationCredential(variables.connectionId, variables.credential, variables.confirmAssigned),
-    onMutate: beginTargetOperation,
-    onSuccess: async (_data, variables, context) => {
-      if (
-        isLatest(context?.sequence) &&
-        isLiveTarget(variables.connectionId) &&
-        replacingIdRef.current === variables.connectionId &&
-        replacementEpoch.current === variables.editorEpoch
-      ) {
-        setNextCredential('')
-        setReplacingId(null)
-      }
-      showLatestFeedback(context?.sequence, {
-        kind: 'success',
-        message: 'Credential replaced. Validate the connection before enabling it.',
-      })
-      await refresh()
-    },
-    onError: (error, variables, context) => {
-      const usage = usageFrom(error)
-      if (
-        usage &&
-        isLatest(context?.sequence) &&
-        isLiveTarget(variables.connectionId) &&
-        replacingIdRef.current === variables.connectionId &&
-        replacementEpoch.current === variables.editorEpoch
-      ) {
-        setConfirmation({
-          operation: 'replace',
-          connectionId: variables.connectionId,
-          usage,
-          credential: variables.credential,
-          editorEpoch: variables.editorEpoch,
-        })
-        return
-      }
-      if (isLiveTarget(variables.connectionId))
-        showLatestFeedback(context?.sequence, {
-          kind: 'error',
-          message: operationError('Replacing the credential', error),
-        })
     },
     onSettled: finishTargetOperation,
   })
@@ -273,8 +224,7 @@ export function BigbrainIntegrationSettings({
       <section className={embedded ? undefined : 'mt-6 border-b border-panel-border py-5'}>
         {!embedded && <h3 className="text-sm font-medium text-primary">Bigbrain</h3>}
         <p className="mt-1 text-xs text-muted">
-          Connections are global. A connection never enables conversation export; each conversation requires separate
-          consent.
+          Same-host self-hosted Ficus only. Vaults and executables belong to the Core host, not this browser.
         </p>
         <LoadingSurface label="Loading Bigbrain connections" className="mt-4 space-y-3">
           <SkeletonRows count={2}>
@@ -306,14 +256,12 @@ export function BigbrainIntegrationSettings({
     <section className={embedded ? undefined : 'mt-6 border-b border-panel-border py-5'}>
       {!embedded && <h3 className="text-sm font-medium text-primary">Bigbrain</h3>}
       <p className="text-xs text-muted mt-1">
-        Connections are global. A connection never enables conversation export; each conversation requires separate
-        consent.
+        Same-host self-hosted Ficus only. Vaults and executables belong to the Core host, not this browser. Agents
+        receive tools, not vault files.
       </p>
       <div className="mt-4 space-y-4">
         {connections.map((connection) => {
           const actionPending = action.isPending && action.variables?.connectionId === connection.id
-          const replacePending =
-            replaceCredential.isPending && replaceCredential.variables?.connectionId === connection.id
           const pending = (pendingTargets[connection.id] ?? 0) > 0
           const confirming = confirmation?.connectionId === connection.id ? confirmation : null
           return (
@@ -321,15 +269,19 @@ export function BigbrainIntegrationSettings({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="font-medium text-primary">{connection.displayName}</div>
-                  <div className="text-xs text-muted">API base: {connection.configuration.apiBase}</div>
+                  <div className="text-xs text-muted break-all">
+                    Vault: {connection.configuration.vaultPath}
+                    <br />
+                    Executable: {connection.configuration.executablePath}
+                  </div>
                 </div>
                 <div className="rounded-full border border-th-border px-2 py-1 text-xs text-muted">
                   {lifecycleLabel(connection, actionPending && action.variables?.action === 'validate')}
                 </div>
               </div>
               <div className="mt-2 text-xs text-muted">
-                {connection.credentialConfigured ? 'Credential configured' : 'Credential not configured'} · Validation
-                expires: {connection.validationExpiresAt ?? 'not validated'}
+                {connection.credentialConfigured ? 'Local connection selected' : 'Local connection unavailable'} ·
+                Validation expires: {connection.validationExpiresAt ?? 'not validated'}
               </div>
               {connection.lastErrorCode && <div role="alert">{connection.lastErrorCode}</div>}
               {canWrite && (
@@ -356,20 +308,6 @@ export function BigbrainIntegrationSettings({
                         ? 'Disable'
                         : 'Enable'}
                   </button>
-                  <button
-                    disabled={pending}
-                    onClick={() => {
-                      replacementEpoch.current += 1
-                      feedbackSequence.current += 1
-                      setFeedback(null)
-                      setReplacingId(connection.id)
-                      setNextCredential('')
-                      setConfirmation(null)
-                    }}
-                    className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 disabled:opacity-50"
-                  >
-                    Replace credential
-                  </button>
                   <ConfirmButton
                     className="rounded-md px-3 py-1.5"
                     key={`${connectionIds}:${connection.id}`}
@@ -379,60 +317,6 @@ export function BigbrainIntegrationSettings({
                     onConfirm={() => remove.mutate({ connectionId: connection.id })}
                   />
                 </div>
-              )}
-              {canWrite && replacingId === connection.id && (
-                <form
-                  className="mt-3 flex flex-col gap-2"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    replaceCredential.mutate({
-                      connectionId: connection.id,
-                      credential: nextCredential,
-                      editorEpoch: replacementEpoch.current,
-                    })
-                  }}
-                >
-                  <label className="flex flex-col gap-1 text-xs font-medium text-primary">
-                    New credential
-                    <input
-                      aria-label={`Replacement Bigbrain credential for ${connection.displayName}`}
-                      className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2 text-primary"
-                      type="password"
-                      autoComplete="off"
-                      value={nextCredential}
-                      onChange={(event) => {
-                        replacementEpoch.current += 1
-                        setConfirmation(null)
-                        setNextCredential(event.target.value)
-                      }}
-                      disabled={replacePending}
-                      required
-                    />
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={pending}
-                      className="ficus-button ficus-button-primary rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
-                    >
-                      {replacePending ? 'Replacing…' : 'Save credential'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        replacementEpoch.current += 1
-                        feedbackSequence.current += 1
-                        setFeedback(null)
-                        setNextCredential('')
-                        setReplacingId(null)
-                        setConfirmation(null)
-                      }}
-                      className="ficus-button ficus-button-secondary rounded-md px-3 py-2 text-sm"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
               )}
               {confirming && (
                 <div
@@ -451,13 +335,6 @@ export function BigbrainIntegrationSettings({
                     onClick={() => {
                       if (confirming.operation === 'disable')
                         action.mutate({ connectionId: connection.id, action: 'disable', confirmAssigned: true })
-                      else if (confirming.operation === 'replace')
-                        replaceCredential.mutate({
-                          connectionId: connection.id,
-                          credential: confirming.credential ?? '',
-                          editorEpoch: confirming.editorEpoch ?? -1,
-                          confirmAssigned: true,
-                        })
                       else remove.mutate({ connectionId: connection.id, confirmAssigned: true })
                     }}
                   >
@@ -469,12 +346,23 @@ export function BigbrainIntegrationSettings({
           )
         })}
       </div>
-      {canWrite && (
+      {canWrite && bindings.isLoading && <p role="status">Loading approved Core host vaults…</p>}
+      {canWrite && bindings.isError && (
+        <p role="alert">Unable to load approved vaults. Check Core host setup and retry.</p>
+      )}
+      {canWrite && bindings.data && bindings.data.state !== 'available' && (
+        <p role="alert" className="mt-3 text-sm text-muted">
+          {bindings.data.state === 'unsupported_host'
+            ? 'BigBrain requires same-host self-hosted Ficus with an isolated agent runtime. Hosted and browser-local vaults are not supported.'
+            : 'Ask the Core host operator to check bigbrain-bindings.json in the Ficus home directory, vault paths, executable permissions and Connected Clients. Then reload these settings.'}
+        </p>
+      )}
+      {canWrite && bindings.data?.state === 'available' && (
         <form
           className="mt-5 flex flex-col gap-2 border-t border-th-border pt-4"
           onSubmit={(event) => {
             event.preventDefault()
-            create.mutate({ displayName, apiBase, credential })
+            if (selectedBinding) create.mutate({ displayName, bindingId })
           }}
         >
           <h4 className="text-sm font-medium text-primary">Add connection</h4>
@@ -489,35 +377,27 @@ export function BigbrainIntegrationSettings({
               required
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-primary">
-            API base
-            <input
-              aria-label="Bigbrain API base"
-              className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2"
-              type="url"
-              value={apiBase}
-              onChange={(event) => setApiBase(event.target.value)}
-              disabled={create.isPending}
-              required
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-primary">
-            Credential
-            <input
-              aria-label="Bigbrain credential"
-              className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2"
-              type="password"
-              autoComplete="off"
-              value={credential}
-              onChange={(event) => setCredential(event.target.value)}
-              disabled={create.isPending}
-              required
-            />
-          </label>
+          <SelectionPopup
+            value={bindingId}
+            label="Approved local vault"
+            options={(bindings.data?.bindings ?? []).map((binding) => ({ value: binding.id, label: binding.label }))}
+            onChange={setBindingId}
+            disabled={create.isPending}
+            className="ficus-field rounded-md px-3 py-2 text-left text-sm"
+          >
+            {selectedBinding?.label ?? 'Choose an approved vault'}
+          </SelectionPopup>
+          {selectedBinding && (
+            <p className="text-xs text-muted break-all">
+              Core host vault: {selectedBinding.vaultPath}
+              <br />
+              Executable: {selectedBinding.executablePath}
+            </p>
+          )}
           <button
             type="submit"
             className="ficus-button ficus-button-primary rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
-            disabled={create.isPending}
+            disabled={create.isPending || !selectedBinding || !displayName.trim()}
           >
             {create.isPending ? 'Creating and validating…' : 'Create and validate'}
           </button>

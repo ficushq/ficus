@@ -258,7 +258,7 @@ describe('AgentInfoPanel external-export query gating', () => {
 
     expect(container.textContent).not.toContain('External conversation export')
     expect(requests.some((url) => url.includes('/external-export'))).toBe(false)
-    expect(queryClient.getQueryState(integrationQueryKeys.export(baseAgent.id))).toBeUndefined()
+    expect(queryClient.getQueryState([...integrationQueryKeys.all, 'export', baseAgent.id])).toBeUndefined()
   })
 
   test('does not query integrations or external-export without read permission', async () => {
@@ -267,7 +267,7 @@ describe('AgentInfoPanel external-export query gating', () => {
     expect(container.textContent).not.toContain('External conversation export')
     expect(requests.some((url) => url.includes('/squads/squad-1/integrations'))).toBe(false)
     expect(requests.some((url) => url.includes('/external-export'))).toBe(false)
-    expect(queryClient.getQueryState(integrationQueryKeys.export(baseAgent.id))).toBeUndefined()
+    expect(queryClient.getQueryState([...integrationQueryKeys.all, 'export', baseAgent.id])).toBeUndefined()
   })
 
   test('an enabled but unassigned pool connection does not expose export consent', async () => {
@@ -275,15 +275,15 @@ describe('AgentInfoPanel external-export query gating', () => {
 
     expect(container.textContent).not.toContain('External conversation export')
     expect(requests.some((url) => url.includes('/external-export'))).toBe(false)
-    expect(queryClient.getQueryState(integrationQueryKeys.export(baseAgent.id))).toBeUndefined()
+    expect(queryClient.getQueryState([...integrationQueryKeys.all, 'export', baseAgent.id])).toBeUndefined()
   })
 
-  test('fetches export status for the assigned enabled Bigbrain connection on a root agent', async () => {
+  test('never registers export consent even with an assigned enabled connection', async () => {
     const queryClient = await renderLive({ assignment: bigbrainConnection })
 
-    expect(container.textContent).toContain('External conversation export')
-    expect(requests.some((url) => url.includes('/agents/agent-1/external-export'))).toBe(true)
-    expect(queryClient.getQueryState(integrationQueryKeys.export(baseAgent.id))).toBeDefined()
+    expect(container.textContent).not.toContain('External conversation export')
+    expect(requests.some((url) => url.includes('/agents/agent-1/external-export'))).toBe(false)
+    expect(queryClient.getQueryState([...integrationQueryKeys.all, 'export', baseAgent.id])).toBeUndefined()
   })
 
   test('does not fetch export status for a child agent', async () => {
@@ -292,7 +292,7 @@ describe('AgentInfoPanel external-export query gating', () => {
 
     expect(container.textContent).not.toContain('External conversation export')
     expect(requests.some((url) => url.includes('/external-export'))).toBe(false)
-    expect(queryClient.getQueryState(integrationQueryKeys.export(baseAgent.id))).toBeUndefined()
+    expect(queryClient.getQueryState([...integrationQueryKeys.all, 'export', baseAgent.id])).toBeUndefined()
   })
 })
 

@@ -62,6 +62,7 @@ export const onboardingQueryKeys = {
 }
 
 export const integrationQueryKeys = {
+  localBindings: () => [...integrationQueryKeys.all, 'local-bindings', 'bigbrain'] as const,
   outputs: () => ['integrations', 'outputs'] as const,
   all: ['integrations'] as const,
   catalog: () => [...integrationQueryKeys.all, 'catalog'] as const,
@@ -80,7 +81,6 @@ export const integrationQueryKeys = {
     [...integrationQueryKeys.all, 'github-commit-signing', connectionId] as const,
   oauthApp: (provider: string) => [...integrationQueryKeys.all, 'oauth-app', provider] as const,
   squad: (squadId: string, provider: string) => [...integrationQueryKeys.all, 'squad', squadId, provider] as const,
-  export: (agentId: string) => [...integrationQueryKeys.all, 'export', agentId] as const,
 }
 
 export const modelCatalogQueryKeys = {

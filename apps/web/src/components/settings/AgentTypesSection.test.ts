@@ -53,7 +53,6 @@ describe('agent type save payload', () => {
     toolsAllow: '',
     toolsDeny: '',
     integrationAgentTools: false,
-    integrationConversationExport: false,
   }
 
   // PUT replaces the whole row and the server now stores `includes`, so the
@@ -89,7 +88,6 @@ describe('agent type create payload', () => {
     toolsAllow: '',
     toolsDeny: '',
     integrationAgentTools: false,
-    integrationConversationExport: false,
   }
 
   // The create form has its own shared prompt picker; dropping `includes` from
@@ -117,4 +115,10 @@ describe('resolved prompt preview', () => {
     expect(source.includes('Couldn&apos;t load the resolved prompt')).toBe(true)
     expect(source.includes('const { data, isLoading, error } = useQuery')).toBe(true)
   })
+})
+
+test('agent policy retains tools without a transcript export affordance', () => {
+  expect(source).not.toContain('Conversation export')
+  expect(source).not.toContain('conversation_export')
+  expect(source).toContain('integrationAgentTools')
 })

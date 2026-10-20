@@ -207,7 +207,6 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
     toolsAllow: '',
     toolsDeny: '',
     integrationAgentTools: false,
-    integrationConversationExport: false,
   })
 
   const createMutation = useMutation({
@@ -299,9 +298,7 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
       />
       <IntegrationPolicyFields
         agentTools={form.integrationAgentTools}
-        conversationExport={form.integrationConversationExport}
         onAgentTools={(value) => setForm({ ...form, integrationAgentTools: value })}
-        onConversationExport={(value) => setForm({ ...form, integrationConversationExport: value })}
       />
       <div className="flex items-center gap-2 pt-2">
         <button
@@ -593,9 +590,7 @@ function AgentTypeRow({
               />
               <IntegrationPolicyFields
                 agentTools={form.integrationAgentTools}
-                conversationExport={form.integrationConversationExport}
                 onAgentTools={(value) => setForm({ ...form, integrationAgentTools: value })}
-                onConversationExport={(value) => setForm({ ...form, integrationConversationExport: value })}
               />
 
               <div className="flex items-center gap-2 pt-2">
@@ -872,27 +867,16 @@ function FormField({
   )
 }
 
-function integrationPolicy(
-  agentTools: boolean,
-  conversationExport: boolean
-): AgentTypeConfig['integrationCapabilities'] {
-  const capabilities = [
-    ...(agentTools ? ['agent_tools' as const] : []),
-    ...(conversationExport ? ['conversation_export' as const] : []),
-  ]
-  return capabilities.length ? { version: 1, allow: { bigbrain: capabilities } } : null
+function integrationPolicy(agentTools: boolean): AgentTypeConfig['integrationCapabilities'] {
+  return agentTools ? { version: 1, allow: { bigbrain: ['agent_tools'] } } : null
 }
 
 function IntegrationPolicyFields({
   agentTools,
-  conversationExport,
   onAgentTools,
-  onConversationExport,
 }: {
   agentTools: boolean
-  conversationExport: boolean
   onAgentTools(value: boolean): void
-  onConversationExport(value: boolean): void
 }) {
   const { can } = usePermissions()
   const { data: connections = [] } = useQuery({
@@ -909,14 +893,6 @@ function IntegrationPolicyFields({
       <label className="block text-sm">
         <input type="checkbox" checked={agentTools} onChange={(event) => onAgentTools(event.target.checked)} /> Agent
         tools
-      </label>
-      <label className="block text-sm">
-        <input
-          type="checkbox"
-          checked={conversationExport}
-          onChange={(event) => onConversationExport(event.target.checked)}
-        />{' '}
-        Conversation export
       </label>
       <p className="text-xs text-muted">
         Agent tools also require explicit tools.allow entries for each bigbrain_* tool.
@@ -943,7 +919,7 @@ export function agentTypeUpdatePayload(form: AgentTypeForm): Partial<AgentTypeCo
     extensions: csvToArray(form.extensions),
     toolsAllow: csvToArray(form.toolsAllow),
     toolsDeny: csvToArray(form.toolsDeny),
-    integrationCapabilities: integrationPolicy(form.integrationAgentTools, form.integrationConversationExport),
+    integrationCapabilities: integrationPolicy(form.integrationAgentTools),
   }
 }
 
@@ -974,9 +950,6 @@ function agentTypeToForm(at: AgentTypeConfig) {
     integrationAgentTools:
       at.integrationCapabilities?.version === 1 &&
       Boolean(at.integrationCapabilities.allow.bigbrain?.includes('agent_tools')),
-    integrationConversationExport:
-      at.integrationCapabilities?.version === 1 &&
-      Boolean(at.integrationCapabilities.allow.bigbrain?.includes('conversation_export')),
   }
 }
 

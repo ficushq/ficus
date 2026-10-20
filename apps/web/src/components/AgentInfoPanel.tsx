@@ -5,13 +5,12 @@ import { AgentScopesPanel } from './AgentScopesPanel'
 import { AgentSecretsPanel } from './AgentSecretsPanel'
 import { SquadSandboxStatusCard } from './sandbox/SquadSandboxStatusCard'
 import { AmtpMailboxSection } from './AmtpMailboxSection'
-import { ExternalExportControl } from './ExternalExportControl'
 import { usePermissions } from '../hooks/usePermissions'
 import { Link } from 'react-router-dom'
 import { KeyIcon } from './icons'
 import { agentWorkspaceHref, hasPrivateArea } from './workspace/agentPrivateTargets'
 import { useQuery } from '@tanstack/react-query'
-import { integrationQueries, modelCatalogQuery, queries } from '../queryOptions'
+import { modelCatalogQuery, queries } from '../queryOptions'
 import { formatTokens } from '../lib/format'
 import { isCodexModelSpec } from '../lib/modelSpec'
 import {
@@ -76,12 +75,6 @@ function ModelLabel({ model, catalog }: { model: ParsedDisplayModelSpec; catalog
 export function AgentInfoPanel({ agent, agentType }: AgentInfoPanelProps) {
   const { data: catalog = [] } = useQuery(modelCatalogQuery(agent.id))
   const { can } = usePermissions(agent.squadId ?? undefined)
-  const canReadIntegrations = can('integrations:read')
-  const { data: selection } = useQuery({
-    ...integrationQueries.squad(agent.squadId ?? '', 'bigbrain'),
-    enabled: Boolean(agent.squadId) && canReadIntegrations,
-  })
-  const bigbrainConnection = canReadIntegrations && selection?.assignment?.enabled ? selection.assignment : undefined
   const display = getAgentModelDisplay(agent, agentType)
   // The chat keeps the agent's detail live; read it here too so usage is current.
   const { data: detail } = useQuery({ ...queries.agents.detail(agent.id) })
@@ -169,17 +162,6 @@ export function AgentInfoPanel({ agent, agentType }: AgentInfoPanelProps) {
               )}
             </dl>
           </section>
-        )}
-        {/* Conversation export is a per-connection consent surface — with no
-            enabled Bigbrain connection on this squad there is nothing to
-            consent TO, and rendering the section on an instance that never
-            configured the integration was pure confusion. */}
-        {agent.squadId && !agent.parentAgentId && bigbrainConnection && (
-          <ExternalExportControl
-            agentId={agent.id}
-            connectionId={bigbrainConnection.id}
-            canExport={can('integrations:export')}
-          />
         )}
         <div
           role="group"

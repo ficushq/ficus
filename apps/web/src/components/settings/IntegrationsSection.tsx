@@ -19,7 +19,7 @@ import { NotionIntegrationSettings } from '../integrations/NotionIntegrationSett
 const descriptions: Record<string, string> = {
   github: 'Connect repositories, follow issues and pull requests, and bring GitHub events into your workflows.',
   notion: 'Give your squads access to pages, databases, and knowledge in Notion.',
-  bigbrain: 'Connect shared memory and selectively save conversations to Bigbrain.',
+  bigbrain: 'Connect an approved local BigBrain vault for memory and deliberate contributions.',
 }
 
 export function IntegrationDirectoryCard({

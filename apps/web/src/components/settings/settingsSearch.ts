@@ -36,7 +36,7 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   'mobile-pro':
     'public server url address mobile app pro ficus account connect disconnect relay push self-hosted instance pro slots device allowance live activities',
   integrations:
-    'bigbrain github linear notion discord slack telegram cloudflare digitalocean netlify railway supabase vercel apple apns p8 web push vapid google cloud openai realtime transcription embeddings speech text-to-speech service account deployment hosting tokens bot channels oauth connections pool assignment authorization',
+    'bigbrain local vault core host bindings memory github linear notion discord slack telegram cloudflare digitalocean netlify railway supabase vercel apple apns p8 web push vapid google cloud openai realtime transcription embeddings speech text-to-speech service account deployment hosting tokens bot channels oauth connections pool assignment authorization',
   'notification-rules': 'outbound alerts delivery channels event rules',
   amtp: 'federation peers identity public key allow rules trust',
   machines: 'register hardware cpu memory capacity ssh sandbox workers exe.dev private key',

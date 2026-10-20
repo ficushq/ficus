@@ -1054,7 +1054,7 @@ export const queries = {
 } as const
 
 import {
-  getExternalExport,
+  getBigbrainLocalBindings,
   getIntegrationOAuthApp,
   getGitHubWebhookSettings,
   getGitHubCommitSigning,
@@ -1067,6 +1067,8 @@ import {
   listIntegrationPool,
 } from './api/integrations'
 export const integrationQueries = {
+  localBindings: () =>
+    queryOptions({ queryKey: integrationQueryKeys.localBindings(), queryFn: () => getBigbrainLocalBindings() }),
   githubRepositoryAccess: (connectionId: string) =>
     queryOptions({
       queryKey: integrationQueryKeys.githubRepositoryAccess(connectionId),
@@ -1133,8 +1135,6 @@ export const integrationQueries = {
       queryKey: integrationQueryKeys.squad(squadId, provider),
       queryFn: () => getSquadIntegrationSelection(squadId, provider),
     }),
-  export: (agentId: string) =>
-    queryOptions({ queryKey: integrationQueryKeys.export(agentId), queryFn: () => getExternalExport(agentId) }),
 }
 
 export const modelCatalogQuery = (agentId?: string) =>
