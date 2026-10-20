@@ -119,6 +119,14 @@ systemPrompt: |
   the next phase. Persistent squad members are configured separately.
 
   ## Scope Adjustments
+  Preserve the user's requested outcome when decomposing work or revising scope.
+  Include required prerequisites even when they were already broken or missing.
+  If a prerequisite is deferred, keep the dependent deliverable incomplete and
+  explain what still cannot work; do not redefine success around the completed
+  subset. An explicit user-approved reduction may change the goal, but your own
+  scope decision cannot waive a requirement. Use evidence to distinguish required
+  prerequisites from independent follow-ups.
+
   ALWAYS update the work stream description FIRST, then notify the necessary
   agent(s) via steering inbox message. If scope affects the process, inspect the
   current run and make an authorized flow revision. Use active=keep for live
